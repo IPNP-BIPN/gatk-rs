@@ -1991,8 +1991,6 @@ pub fn gather_vcfs_cloud(parser: &Parser) -> Outcome {
 /// read WHOLE before the traversal starts, because the transformer needs its covariates before it
 /// can judge a base.
 pub fn apply_bqsr(parser: &Parser) -> Outcome {
-    use gatk_engine::bqsr_transformer::ApplyBqsrArguments;
-
     let resolved_filters = resolve_read_filters(parser, "ApplyBQSR")?;
 
     let inputs = arguments(parser, "input");
@@ -2088,21 +2086,7 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
     }
     let filter = read_filter(parser, &resolved_filters, &header)?;
 
-    let bqsr = ApplyBqsrArguments {
-        preserve_qscores_less_than: number_or(parser, "preserve-qscores-less-than", 6),
-        quantization_levels: number_or(parser, "quantize-quals", 0),
-        static_quantization_quals: arguments(parser, "static-quantized-quals")
-            .iter()
-            .filter_map(|value| value.parse().ok())
-            .collect(),
-        round_down: flag(parser, "round-down-quantized"),
-        emit_original_quals: flag(parser, "emit-original-quals"),
-        use_original_base_qualities: flag(parser, "use-original-qualities"),
-        global_qscore_prior: scalar(parser, "global-qscore-prior")
-            .and_then(|value| value.parse().ok())
-            .unwrap_or(-1.0),
-        allow_missing_read_groups: flag(parser, "allow-missing-read-group"),
-    };
+    let bqsr = apply_bqsr_arguments(parser);
 
     let command_line = crate::command_line::expanded("ApplyBQSR", parser);
     let options = gatk_tools::print_reads::Options {
@@ -2154,6 +2138,27 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
         })?;
     }
     Ok(None)
+}
+
+/// `ApplyBQSRArgumentCollection` as the parser read it, which ApplyBQSR and ApplyBQSRSpark share.
+pub(crate) fn apply_bqsr_arguments(
+    parser: &Parser,
+) -> gatk_engine::bqsr_transformer::ApplyBqsrArguments {
+    gatk_engine::bqsr_transformer::ApplyBqsrArguments {
+        preserve_qscores_less_than: number_or(parser, "preserve-qscores-less-than", 6),
+        quantization_levels: number_or(parser, "quantize-quals", 0),
+        static_quantization_quals: arguments(parser, "static-quantized-quals")
+            .iter()
+            .filter_map(|value| value.parse().ok())
+            .collect(),
+        round_down: flag(parser, "round-down-quantized"),
+        emit_original_quals: flag(parser, "emit-original-quals"),
+        use_original_base_qualities: flag(parser, "use-original-qualities"),
+        global_qscore_prior: scalar(parser, "global-qscore-prior")
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(-1.0),
+        allow_missing_read_groups: flag(parser, "allow-missing-read-group"),
+    }
 }
 
 /// An integer argument with the tool's own default where it was not given.
@@ -12435,6 +12440,24 @@ pub fn base_recalibrator(parser: &Parser) -> Outcome {
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
+    let table = recalibration_table(parser, &source, &header, &intervals, &filters)?;
+    std::fs::write(&output, table).map_err(|error| {
+        Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
+    })?;
+    // What `doWork` returns, which `handleResult` prints after `Tool returned:`.
+    Ok(Some("SUCCESS".to_string()))
+}
+
+/// The recalibration table's text, from the reads a startup produced: `BaseRecalibrator`'s
+/// traversal and `BaseRecalibratorSparkFn`'s one partition are the same engine over the same
+/// known sites, each read joined with the sites overlapping its own span.
+pub(crate) fn recalibration_table(
+    parser: &Parser,
+    source: &ReadsDataSource,
+    header: &SamHeader,
+    intervals: &[gatk_engine::interval::SimpleInterval],
+    filters: &[gatk_tools::filter_resolution::ResolvedFilter],
+) -> Result<String, Thrown> {
     let reference_path = argument(parser, "reference").ok_or_else(|| {
         Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
     })?;
@@ -12487,37 +12510,33 @@ pub fn base_recalibrator(parser: &Parser) -> Outcome {
         }
     }
 
-    // The contig the READS are on, whole: the counting pass compares a read's bases against the
-    // reference, so the contig it needs is the reads' and not whichever the reference lists first.
-    // Taking the reference's first contig instead sliced a thousand bases of `chrOther` with `chr1`
-    // coordinates and panicked.
+    // The contig each READ is on, whole: the counting pass compares a read's bases against the
+    // reference, so the contig it needs is its own and not whichever the reference lists first.
+    // Taking the reference's first contig sliced a thousand bases of `chrOther` with `chr1`
+    // coordinates and panicked, and taking the reads' first compared a chr2 read against chr1.
     //
     // The query is a CLOSURE because the order is observable: the reference is opened at startup
     // and read only once the traversal has produced reads, so a row that hands a BAM the wrong
     // index AND a reference without the reads' contig answers the read failure. Querying first
     // answered the contig instead.
-    let wanted = header
-        .sequences
-        .first()
-        .map(|sequence| sequence.name.clone())
-        .unwrap_or_default();
-    let mut bases = || -> Result<Vec<u8>, gatk_tools::base_recalibrator::BaseRecalibratorError> {
-        let length = dictionary
-            .sequences
-            .iter()
-            .find(|sequence| sequence.name == wanted)
-            .map(|sequence| sequence.length)
-            .ok_or_else(|| {
+    let mut bases =
+        |wanted: &str| -> Result<Vec<u8>, gatk_tools::base_recalibrator::BaseRecalibratorError> {
+            let length = dictionary
+                .sequences
+                .iter()
+                .find(|sequence| sequence.name == wanted)
+                .map(|sequence| sequence.length)
+                .ok_or_else(|| {
+                    gatk_tools::base_recalibrator::BaseRecalibratorError::Reads(
+                        gatk_engine::reads::ReadsError::ContigNotInDictionary(wanted.to_string()),
+                    )
+                })?;
+            reference.query(wanted, 1, length).map_err(|error| {
                 gatk_tools::base_recalibrator::BaseRecalibratorError::Reads(
-                    gatk_engine::reads::ReadsError::ContigNotInDictionary(wanted.clone()),
+                    gatk_engine::reads::ReadsError::Malformed(format!("{error:?}")),
                 )
-            })?;
-        reference.query(&wanted, 1, length).map_err(|error| {
-            gatk_tools::base_recalibrator::BaseRecalibratorError::Reads(
-                gatk_engine::reads::ReadsError::Malformed(format!("{error:?}")),
-            )
-        })
-    };
+            })
+        };
 
     let arguments_for_engine = gatk_engine::base_recalibration_engine::EngineArguments {
         covariates: gatk_engine::covariates::RecalibrationArguments {
@@ -12533,15 +12552,15 @@ pub fn base_recalibrator(parser: &Parser) -> Outcome {
             .unwrap_or(-1),
         use_original_base_qualities: flag(parser, "use-original-qualities"),
     };
-    let filter = read_filter(parser, &filters, &header)?;
-    let table = gatk_tools::base_recalibrator::base_recalibrator(
-        &source,
+    let filter = read_filter(parser, filters, header)?;
+    gatk_tools::base_recalibrator::base_recalibrator(
+        source,
         &mut bases,
         &known_sites,
         &arguments_for_engine,
         number_or(parser, "quantizing-levels", 16),
         &filter,
-        &intervals,
+        intervals,
     )
     .map_err(|error| match error {
         // A read failure is the reference's own exception, class and all: the EOF on a record body
@@ -12556,12 +12575,7 @@ pub fn base_recalibrator(parser: &Parser) -> Outcome {
             reads_traversal_error(error)
         }
         other => Thrown::user(other.message()),
-    })?;
-    std::fs::write(&output, table).map_err(|error| {
-        Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
-    })?;
-    // What `doWork` returns, which `handleResult` prints after `Tool returned:`.
-    Ok(Some("SUCCESS".to_string()))
+    })
 }
 
 /// `GtfToBed`, whose BED is one-based because nothing converts the GTF's own coordinates.
@@ -24072,8 +24086,8 @@ pub fn local_assembler(parser: &Parser) -> Outcome {
 #[path = "runners_spark.rs"]
 mod spark_runners;
 pub use spark_runners::{
-    count_bases_spark, count_reads_spark, count_variants_spark, flag_stat_spark, pileup_spark,
-    print_reads_spark,
+    apply_bqsr_spark, base_recalibrator_spark, bqsr_pipeline_spark, count_bases_spark,
+    count_reads_spark, count_variants_spark, flag_stat_spark, pileup_spark, print_reads_spark,
 };
 
 /// `GroundTruthReadsBuilder`, in a file of its own.

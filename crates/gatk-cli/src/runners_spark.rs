@@ -465,89 +465,215 @@ pub fn print_reads_spark(parser: &Parser) -> Outcome {
     let filter = read_filter(parser, &filters, &header)?;
     let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    // `writeReads(ctx, output, reads, header, false)`: PrintReadsSpark asks for no sort.
+    write_spark_reads(parser, &header, &records, &output, false)?;
+    Ok(None)
+}
 
+/// `GATKSparkTool.writeReads` through `ReadsSparkSink` and Disq, as described above.
+///
+/// With `sort_to_header`, a coordinate-sorted header is sorted to first (`sortSamRecordsToMatchHeader`), over
+/// `getRecommendedNumReducers()` partitions, and Disq writes ONE STREAM PER PARTITION: a part file
+/// each for `--sharded-output`, and for a single file each partition's records compressed on
+/// their own between the header and the terminator, the `.sbi` merged part by part.
+fn write_spark_reads(
+    parser: &Parser,
+    header: &SamHeader,
+    records: &[BamRecord],
+    output: &str,
+    sort_to_header: bool,
+) -> Result<(), Thrown> {
     let mut header = header.clone();
     let sort_order = header.attributes.get("SO").map(str::to_string);
     let group_order = header.attributes.get("GO").unwrap_or("none").to_string();
     header.attributes.remove("SO");
     header.attributes.remove("GO");
     header.set_group_order(&group_order);
-    if let Some(order) = sort_order {
-        header.set_sort_order(&order);
+    if let Some(order) = &sort_order {
+        header.set_sort_order(order);
     }
+    let partitions = if sort_to_header {
+        sorted_partitions(parser, sort_order.as_deref(), records)?
+    } else {
+        vec![records.to_vec()]
+    };
 
     let (level, deflater) = output_compression(parser);
     let failed = |what: &str, error: String| {
         Thrown::non_user(PORT_FAILURE, format!("could not write {what}: {error}"))
     };
     if flag(parser, "sharded-output") {
-        let mut writer =
-            htsjdk_bam::writer::BamWriter::with_compression(Vec::new(), &header, level, deflater)
-                .map_err(|error| failed(&output, error.to_string()))?;
-        for record in &records {
-            writer
-                .write(record)
-                .map_err(|error| failed(&output, error.to_string()))?;
+        let directory = std::path::Path::new(output);
+        std::fs::create_dir_all(directory).map_err(|error| failed(output, error.to_string()))?;
+        for (index, partition) in partitions.iter().enumerate() {
+            let mut writer = htsjdk_bam::writer::BamWriter::with_compression(
+                Vec::new(),
+                &header,
+                level,
+                deflater,
+            )
+            .map_err(|error| failed(output, error.to_string()))?;
+            for record in partition {
+                writer
+                    .write(record)
+                    .map_err(|error| failed(output, error.to_string()))?;
+            }
+            let part = writer
+                .finish()
+                .map_err(|error| failed(output, error.to_string()))?;
+            std::fs::write(directory.join(format!("part-r-{index:05}.bam")), &part)
+                .map_err(|error| failed(output, error.to_string()))?;
         }
-        let part = writer
-            .finish()
-            .map_err(|error| failed(&output, error.to_string()))?;
-        let directory = std::path::Path::new(&output);
-        std::fs::create_dir_all(directory)
-            .and_then(|()| std::fs::write(directory.join("part-r-00000.bam"), &part))
-            .and_then(|()| std::fs::write(directory.join("_SUCCESS"), b""))
-            .map_err(|error| failed(&output, error.to_string()))?;
-        return Ok(None);
+        std::fs::write(directory.join("_SUCCESS"), b"")
+            .map_err(|error| failed(output, error.to_string()))?;
+        return Ok(());
     }
 
     // The header part: a header-only BAM without its terminator.
     let mut header_part =
         htsjdk_bam::writer::BamWriter::with_compression(Vec::new(), &header, level, deflater)
             .and_then(|writer| writer.finish())
-            .map_err(|error| failed(&output, error.to_string()))?;
+            .map_err(|error| failed(output, error.to_string()))?;
     header_part.truncate(header_part.len() - htsjdk_bgzf::EMPTY_GZIP_BLOCK.len());
 
-    // The records' part, whose offsets the splitting index records relative to the whole file.
-    let shift = (header_part.len() as u64) << 16;
-    let mut stream = htsjdk_bgzf::BgzfWriter::with_deflater(Vec::new(), level, deflater);
-    let mut sbi = htsjdk_bam::sbi::SbiIndexWriter::new(
-        number_or(parser, "splitting-index-granularity", 4096).max(1) as u64,
-    );
-    let mut encoded = Vec::new();
-    for record in &records {
-        encoded.clear();
-        record
-            .encode_into(&mut encoded)
-            .map_err(|error| failed(&output, format!("{error:?}")))?;
-        sbi.process_record(shift + stream.file_pointer())
-            .map_err(|error| failed(&output, error))?;
-        std::io::Write::write_all(&mut stream, &encoded)
-            .map_err(|error| failed(&output, error.to_string()))?;
-    }
-    let records_part = stream
-        .into_inner_without_terminator()
-        .map_err(|error| failed(&output, error.to_string()))?;
-
+    // Each partition's records, whose offsets the splitting index records relative to the whole
+    // file. `SBIIndexMerger` keeps every part's own offsets, counted from that part's first
+    // record, shifted to where the part starts.
+    let granularity = number_or(parser, "splitting-index-granularity", 4096).max(1) as u64;
     let mut bam = header_part;
-    bam.extend_from_slice(&records_part);
+    let mut offsets: Vec<u64> = Vec::new();
+    let mut encoded = Vec::new();
+    for partition in &partitions {
+        let shift = (bam.len() as u64) << 16;
+        let mut stream = htsjdk_bgzf::BgzfWriter::with_deflater(Vec::new(), level, deflater);
+        for (index, record) in partition.iter().enumerate() {
+            encoded.clear();
+            record
+                .encode_into(&mut encoded)
+                .map_err(|error| failed(output, format!("{error:?}")))?;
+            if (index as u64).is_multiple_of(granularity) {
+                offsets.push(shift + stream.file_pointer());
+            }
+            std::io::Write::write_all(&mut stream, &encoded)
+                .map_err(|error| failed(output, error.to_string()))?;
+        }
+        let part = stream
+            .into_inner_without_terminator()
+            .map_err(|error| failed(output, error.to_string()))?;
+        bam.extend_from_slice(&part);
+    }
     let terminator_offset = (bam.len() as u64) << 16;
     bam.extend_from_slice(&htsjdk_bgzf::EMPTY_GZIP_BLOCK);
-    std::fs::write(&output, &bam).map_err(|error| failed(&output, error.to_string()))?;
+    std::fs::write(output, &bam).map_err(|error| failed(output, error.to_string()))?;
 
-    if flag(parser, "create-output-bam-index") {
+    if flag(parser, "create-output-bam-index") && sort_order.as_deref() == Some("coordinate") {
+        // shortcut: the index is built from the whole file; Disq merges one per part with
+        // `BAMIndexMerger`, which is the same index on every array row measured so far. Port the
+        // merger if a multi-partition row ever disagrees.
         let bai = htsjdk_bam::build_index::build_bam_index(&bam)
             .map_err(|error| failed(&format!("{output}.bai"), format!("{error:?}")))?;
         std::fs::write(format!("{output}.bai"), bai)
             .map_err(|error| failed(&format!("{output}.bai"), error.to_string()))?;
     }
     if flag(parser, "create-output-bam-splitting-index") {
-        let index = sbi
+        let mut sbi = htsjdk_bam::sbi::SbiIndexWriter::new(1);
+        for offset in &offsets {
+            sbi.process_record(*offset)
+                .map_err(|error| failed(&format!("{output}.sbi"), error))?;
+        }
+        let mut index = sbi
             .finish(terminator_offset, bam.len() as u64, None, None)
             .map_err(|error| failed(&format!("{output}.sbi"), error))?;
+        // The merged header carries every record and the parts' granularity, where a writer fed
+        // only the kept offsets counted those at a granularity of one.
+        let records: usize = partitions.iter().map(Vec::len).sum();
+        index[44..52].copy_from_slice(&(records as u64).to_le_bytes());
+        index[52..60].copy_from_slice(&granularity.to_le_bytes());
         std::fs::write(format!("{output}.sbi"), index)
             .map_err(|error| failed(&format!("{output}.sbi"), error.to_string()))?;
     }
-    Ok(None)
+    Ok(())
+}
+
+/// `SparkUtils.sortUsingElementsAsKeys` for a coordinate-sorted header: `sortByKey` with
+/// `HeaderlessSAMRecordCoordinateComparator` over a `RangePartitioner` of
+/// `getRecommendedNumReducers()` partitions. Any other order is written as it was read.
+///
+/// The sort is stable, as Spark's `TimSort` is, so equal keys keep the traversal's order.
+fn sorted_partitions(
+    parser: &Parser,
+    sort_order: Option<&str>,
+    records: &[BamRecord],
+) -> Result<Vec<Vec<BamRecord>>, Thrown> {
+    if sort_order != Some("coordinate") {
+        return Ok(vec![records.to_vec()]);
+    }
+    let mut sorted = records.to_vec();
+    sorted.sort_by(htsjdk_bam::coordinate::compare);
+
+    // `getRecommendedNumReducers`: the argument, else one per ten megabytes of input.
+    let mut reducers = number_or(parser, "num-reducers", 0).max(0) as usize;
+    if reducers == 0 {
+        let size = argument(parser, "input")
+            .and_then(|input| std::fs::metadata(input).ok())
+            .map(|data| data.len())
+            .unwrap_or(0);
+        reducers = 1 + (size / (10 * 1024 * 1024)) as usize;
+    }
+    let bounds = range_bounds(&sorted, reducers)?;
+    let mut partitions: Vec<Vec<BamRecord>> = vec![Vec::new(); bounds.len() + 1];
+    for record in sorted {
+        // `getPartition`: the first bound the key is not greater than.
+        let partition = bounds
+            .iter()
+            .position(|bound| htsjdk_bam::coordinate::compare(&record, bound).is_le())
+            .unwrap_or(bounds.len());
+        partitions[partition].push(record);
+    }
+    Ok(partitions)
+}
+
+/// `RangePartitioner`'s bounds over one input partition, the sketch taking every key: weight one
+/// each, then `determineBounds(candidates, min(partitions, candidates))`.
+///
+/// shortcut: one input partition holding at most `sampleSizePerPartition` keys, where the sketch is
+/// the whole partition; more is a reservoir sample the port does not draw, and is refused by name.
+fn range_bounds(sorted: &[BamRecord], partitions: usize) -> Result<Vec<BamRecord>, Thrown> {
+    if partitions <= 1 || sorted.is_empty() {
+        return Ok(Vec::new());
+    }
+    let sample_size = (20.0 * partitions as f64).min(1e6);
+    let per_partition = (3.0 * sample_size).ceil() as usize;
+    if sorted.len() > per_partition {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            format!(
+                "Sorting {} reads into {partitions} partitions samples them, which this port does \
+                 not reproduce yet. This message is the port's own and not GATK's.",
+                sorted.len()
+            ),
+        ));
+    }
+    let partitions = partitions.min(sorted.len());
+    let step = sorted.len() as f64 / partitions as f64;
+    let mut cumulative = 0.0f64;
+    let mut target = step;
+    let mut bounds: Vec<BamRecord> = Vec::new();
+    for key in sorted {
+        if bounds.len() >= partitions - 1 {
+            break;
+        }
+        cumulative += 1.0;
+        if cumulative >= target
+            && bounds
+                .last()
+                .is_none_or(|previous| htsjdk_bam::coordinate::compare(key, previous).is_gt())
+        {
+            bounds.push(key.clone());
+            target += step;
+        }
+    }
+    Ok(bounds)
 }
 
 /// `-O`, written with `print`: the text and no newline after it.
@@ -619,4 +745,165 @@ pub fn flag_stat_spark(parser: &Parser) -> Outcome {
     gatk_tools::tool_stdout::println(&text);
     spark_output(parser, &text)?;
     Ok(None)
+}
+
+/// `BaseRecalibratorSpark.runTool`: `BaseRecalibratorSparkFn` over the reads joined with the
+/// known sites overlapping each one, written with `RecalUtils.outputRecalibrationReport`.
+///
+/// One partition is the walker's engine over the walker's reads, so the table is
+/// `BaseRecalibrator`'s; what differs is the startup and the return. `runTool` returns nothing,
+/// so there is no `Tool returned:` line where the walker prints `SUCCESS`.
+pub fn base_recalibrator_spark(parser: &Parser) -> Outcome {
+    let SparkStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = spark_startup(parser, "BaseRecalibratorSpark")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    spark_known_sites(parser)?;
+    let table = super::recalibration_table(parser, &source, &header, &intervals, &filters)?;
+    tables_combine(&header)?;
+    std::fs::write(&output, table)
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
+    Ok(None)
+}
+
+/// `ApplyBQSRSpark.runTool`: the filtered reads through one `BQSRReadTransformer`, then
+/// `writeReads`, which is PrintReadsSpark's writer.
+pub fn apply_bqsr_spark(parser: &Parser) -> Outcome {
+    let SparkStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = spark_startup(parser, "ApplyBQSRSpark")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let filter = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    // The report is opened in `runTool`, after the reads are defined and before any is read.
+    let recal = argument(parser, "bqsr-recal-file").unwrap_or_default();
+    let recal_text = std::fs::read_to_string(&recal)
+        .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&recal, false)))?;
+    let recalibrated = recalibrated(
+        &header,
+        &recal_text,
+        &super::apply_bqsr_arguments(parser),
+        &records,
+    )?;
+    write_spark_reads(parser, &header, &recalibrated, &output, true)?;
+    Ok(None)
+}
+
+/// `BQSRPipelineSpark.runTool`: both passes in one job, the table never written.
+///
+/// The table is built from the initial reads filtered AGAIN by the six BQSR-specific filters,
+/// which do not honour the command line; the table is applied to the initial reads, which carry
+/// only the wellformed filter and whatever the command line added.
+pub fn bqsr_pipeline_spark(parser: &Parser) -> Outcome {
+    let SparkStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = spark_startup(parser, "BQSRPipelineSpark")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let mut for_table = filters.clone();
+    for name in [
+        "MappingQualityNotZeroReadFilter",
+        "MappingQualityAvailableReadFilter",
+        "MappedReadFilter",
+        "NotSecondaryAlignmentReadFilter",
+        "NotDuplicateReadFilter",
+        "PassesVendorQualityCheckReadFilter",
+    ] {
+        for_table.push(gatk_tools::filter_resolution::ResolvedFilter {
+            name: name.to_string(),
+            negated: false,
+        });
+    }
+    spark_known_sites(parser)?;
+    let table = super::recalibration_table(parser, &source, &header, &intervals, &for_table)?;
+    tables_combine(&header)?;
+    let filter = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    // `ApplyBQSRUniqueArgumentCollection.toApplyBQSRArgumentCollection(bqsrArgs)`: the
+    // preserve threshold and the original-qualities switch are the table's own arguments.
+    let recalibrated = recalibrated(
+        &header,
+        &table,
+        &super::apply_bqsr_arguments(parser),
+        &records,
+    )?;
+    write_spark_reads(parser, &header, &recalibrated, &output, true)?;
+    Ok(None)
+}
+
+/// `addVCFsForSpark`: a known-sites file is shipped to the executors by its extension, so a BED,
+/// which the walker reads, is refused before a read is.
+fn spark_known_sites(parser: &Parser) -> Result<(), Thrown> {
+    for path in arguments(parser, "known-sites") {
+        if !(path.ends_with(".vcf") || path.ends_with(".vcf.gz")) {
+            return Err(Thrown::non_user(
+                "java.lang.IllegalArgumentException",
+                "Unrecognized known sites file extension. Must be .vcf or .vcf.gz",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// `treeAggregate`'s first combine: the empty table is sized by the read groups' DISTINCT
+/// identifiers (the PU, else the ID), while `BaseRecalibrationEngine` sizes the partition's by
+/// `getReadGroups().size()`. Two read groups sharing a PU make the two disagree, and
+/// `RecalUtils.combineTables` refuses inside the executor whatever the reads were.
+fn tables_combine(header: &SamHeader) -> Result<(), Thrown> {
+    let mut identifiers: Vec<&str> = Vec::new();
+    for group in &header.read_groups {
+        let identifier = group.attributes.get("PU").unwrap_or(&group.id);
+        if !identifiers.contains(&identifier) {
+            identifiers.push(identifier);
+        }
+    }
+    if identifiers.len() == header.read_groups.len() {
+        return Ok(());
+    }
+    eprintln!("ERROR Executor - Exception in task 0.0 in stage 0.0 (TID 0)");
+    Err(Thrown::non_user(
+        "java.lang.IllegalArgumentException",
+        format!(
+            "Table1 {},3 not equal to {},3",
+            identifiers.len(),
+            header.read_groups.len()
+        ),
+    ))
+}
+
+/// The transformer's refusals keep their class: a read group the table lacks is a
+/// `GATKException`, exit 3.
+fn recalibrated(
+    header: &SamHeader,
+    recal_text: &str,
+    arguments: &gatk_engine::bqsr_transformer::ApplyBqsrArguments,
+    records: &[BamRecord],
+) -> Result<Vec<BamRecord>, Thrown> {
+    gatk_tools::apply_bqsr::recalibrate(header, recal_text, arguments, records).map_err(|error| {
+        Thrown {
+            failure: if error.is_user() {
+                Failure::User
+            } else {
+                Failure::Other
+            },
+            exception: error.java_class(),
+            message: Some(error.message()),
+        }
+    })
 }

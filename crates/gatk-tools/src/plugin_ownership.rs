@@ -296,7 +296,9 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         // `CountReadsSpark.getDefaultReadFilters` is the same singleton, and its two siblings keep
         // `GATKSparkTool`'s own default, the wellformed filter alone.
         "CountReadsSpark" => Some(&["AllowAllReadsReadFilter"]),
-        "CountBasesSpark" | "FlagStatSpark" => Some(&["WellformedReadFilter"]),
+        "CountBasesSpark" | "FlagStatSpark" | "ApplyBQSRSpark" | "BQSRPipelineSpark" => {
+            Some(&["WellformedReadFilter"])
+        }
         // `PileupSpark.getDefaultReadFilters`: Pileup's five, with the wellformed filter LAST.
         "PileupSpark" => Some(&[
             "MappedReadFilter",
@@ -327,7 +329,8 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         // over the corpus's reads.bam, where the eighth read is a duplicate and the reference
         // reports "1 read(s) filtered by: NotDuplicateReadFilter" -- a port with no defaults at all
         // counted that read and its recalibration table carried nine observations too many.
-        "BaseRecalibrator" => Some(&[
+        // `BaseRecalibratorSpark.getDefaultReadFilters` is the walker's own list.
+        "BaseRecalibrator" | "BaseRecalibratorSpark" => Some(&[
             "MappingQualityNotZeroReadFilter",
             "MappingQualityAvailableReadFilter",
             "MappedReadFilter",

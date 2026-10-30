@@ -593,9 +593,17 @@ def first_error(text):
     A log line's time of day is taken off its head: `CreateReadCountPanelOfNormals` refuses with a
     WARN naming the exception it caught, and the stamp in front of it is the only part of that line
     two runs cannot share.
+
+    The user error is looked for first: a Spark thread stopped by that same refusal can log an
+    `InterruptedException` ahead of it, on some runs and not others, and that line is the
+    scheduler's rather than the tool's. `ApplyBQSRSpark` measured 19 of 20 on it in run 40928504522.
     """
-    for line in text.split("\n"):
-        if "Exception" in line or line.startswith("ERROR") or "A USER ERROR" in line:
+    lines = text.split("\n")
+    for line in lines:
+        if "A USER ERROR" in line:
+            return LOG_TIME.sub("", line.strip())
+    for line in lines:
+        if "Exception" in line or line.startswith("ERROR"):
             return LOG_TIME.sub("", line.strip())
     return text.strip().split("\n")[-1][:200] if text.strip() else ""
 

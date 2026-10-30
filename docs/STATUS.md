@@ -7,10 +7,10 @@ Ports vendored from main at: htsjdk-rs `0e5afcc8f4bb`, picard-rs `d6e5de789adf`
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 268 | 86.2% |
+| oracle-backed | 271 | 87.1% |
 | golden-pending | 0 | 0.0% |
 | unchecked | 0 | 0.0% |
-| not started | 43 | 13.8% |
+| not started | 40 | 12.9% |
 | **total** | **311** | |
 
 `oracle-backed` means CI re-derives the tool's goldens in the pinned container on every run and compares them. It does **not** mean the tool is byte-identical over its whole argument surface: that is what the argument-coverage column is for. A t-wise array (`tools/coverage/covering.py`, sized in [what-pairwise-coverage-costs.md](what-pairwise-coverage-costs.md)) is run against the reference and the port, and the column reports the fraction of its rows on which the two answered identically, rejections included. `not measured` means the array has never been run against a port binary, which is still true of most tools here.
@@ -149,7 +149,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 
 </details>
 
-## gatk-origin tools (147 of 190 started)
+## gatk-origin tools (150 of 190 started)
 
 | tool | archetype | state | suites | cases | argument coverage | cost (cold / steady) |
 |---|---|---|---|---:|---|---|
@@ -164,8 +164,11 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `AnnotateVcfWithBamDepth` | variant-walker | oracle-backed | annotate-vcf-with-bam-depth | 1 | t=2, 23/23 rows (100%) | 0.002 / 0.055 |
 | `AnnotateVcfWithExpectedAlleleFraction` | variant-walker | oracle-backed | annotate-vcf-with-expected-allele-fraction | 1 | t=2, 23/23 rows (100%) | 0.002 / 0.054 |
 | `ApplyBQSR` | record-transform | oracle-backed | apply-bqsr, tool-argument-declarations, tool-argument-enums | 3 | t=2, 21/21 rows (100%) | 0.003 / 0.071 |
+| `ApplyBQSRSpark` | record-transform | oracle-backed | spark-walkers | 1 | t=2, 20/20 rows (100%) | not measured |
 | `ApplyVQSR` | variant-transform | oracle-backed | apply-vqsr-allele-specific, apply-vqsr-site-filtering, apply-vqsr-tranches, apply-vqsr-two-modes | 4 | t=2, 25/25 rows (100%) | 0.002 / 0.058 |
+| `BQSRPipelineSpark` | record-transform | oracle-backed | spark-walkers | 1 | t=2, 23/23 rows (100%) | not measured |
 | `BaseRecalibrator` | record-transform | oracle-backed | base-recalibrator | 1 | t=2, 21/21 rows (100%) | 0.006 / 0.127 |
+| `BaseRecalibratorSpark` | record-transform | oracle-backed | spark-walkers | 1 | t=2, 22/22 rows (100%) | not measured |
 | `BwaMemIndexImageCreator` | reference-utility | oracle-backed | bwa-index-image | 1 | t=2, 15/15 rows (100%) | 0.003 / 0.085 |
 | `CRAMIssue8768Detector` | unclassified | oracle-backed | cram-issue-8768-detector | 1 | t=2, 11/11 rows (100%) | 0.007 / 0.145 |
 | `CalculateAverageCombinedAnnotations` | unclassified | oracle-backed | calculate-average-combined-annotations | 1 | t=2, 16/16 rows (100%) | 0.003 / 0.065 |
@@ -301,9 +304,9 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `VariantRecalibrator` | variant-transform | oracle-backed | variant-recalibrator | 1 | t=2, 26/26 rows (100%) | 0.081 / 1.010 |
 | `VariantsToTable` | variant-walker | oracle-backed | variants-to-table | 1 | t=2, 23/23 rows (100%) | 0.002 / 0.056 |
 
-<details><summary>43 not started</summary>
+<details><summary>40 not started</summary>
 
-`ApplyBQSRSpark`, `BQSRPipelineSpark`, `BaseRecalibratorSpark`, `BwaAndMarkDuplicatesPipelineSpark`, `BwaSpark`, `CalcMetadataSpark`, `CollectAllelicCountsSpark`, `CollectBaseDistributionByCycleSpark`, `CollectInsertSizeMetricsSpark`, `CollectMultipleMetricsSpark`, `CollectQualityYieldMetricsSpark`, `CompareDuplicatesSpark`, `CpxVariantReInterpreterSpark`, `DetermineGermlineContigPloidy`, `DiscoverVariantsFromContigAlignmentsSAMSpark`, `ExtractOriginalAlignmentRecordsByNameSpark`, `ExtractSVEvidenceSpark`, `FindBadGenomicKmersSpark`, `FindBreakpointEvidenceSpark`, `GenomicsDBImport`, `GermlineCNVCaller`, `HaplotypeCallerSpark`, `HtsgetReader`, `MarkDuplicatesSpark`, `MeanQualityByCycleSpark`, `NVScoreVariants`, `ParallelCopyGCSDirectoryIntoHDFSSpark`, `PathSeqBwaSpark`, `PathSeqFilterSpark`, `PathSeqPipelineSpark`, `PathSeqScoreSpark`, `PlotDenoisedCopyRatios`, `PlotModeledSegments`, `PostprocessGermlineCNVCalls`, `PrintVariantsSpark`, `QualityScoreDistributionSpark`, `ReadsPipelineSpark`, `RevertSamSpark`, `ScoreVariantAnnotations`, `SortSamSpark`, `StructuralVariationDiscoveryPipelineSpark`, `SvDiscoverFromLocalAssemblyContigAlignmentsSpark`, `TrainVariantAnnotationsModel`
+`BwaAndMarkDuplicatesPipelineSpark`, `BwaSpark`, `CalcMetadataSpark`, `CollectAllelicCountsSpark`, `CollectBaseDistributionByCycleSpark`, `CollectInsertSizeMetricsSpark`, `CollectMultipleMetricsSpark`, `CollectQualityYieldMetricsSpark`, `CompareDuplicatesSpark`, `CpxVariantReInterpreterSpark`, `DetermineGermlineContigPloidy`, `DiscoverVariantsFromContigAlignmentsSAMSpark`, `ExtractOriginalAlignmentRecordsByNameSpark`, `ExtractSVEvidenceSpark`, `FindBadGenomicKmersSpark`, `FindBreakpointEvidenceSpark`, `GenomicsDBImport`, `GermlineCNVCaller`, `HaplotypeCallerSpark`, `HtsgetReader`, `MarkDuplicatesSpark`, `MeanQualityByCycleSpark`, `NVScoreVariants`, `ParallelCopyGCSDirectoryIntoHDFSSpark`, `PathSeqBwaSpark`, `PathSeqFilterSpark`, `PathSeqPipelineSpark`, `PathSeqScoreSpark`, `PlotDenoisedCopyRatios`, `PlotModeledSegments`, `PostprocessGermlineCNVCalls`, `PrintVariantsSpark`, `QualityScoreDistributionSpark`, `ReadsPipelineSpark`, `RevertSamSpark`, `ScoreVariantAnnotations`, `SortSamSpark`, `StructuralVariationDiscoveryPipelineSpark`, `SvDiscoverFromLocalAssemblyContigAlignmentsSpark`, `TrainVariantAnnotationsModel`
 
 </details>
 

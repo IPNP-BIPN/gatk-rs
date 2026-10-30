@@ -562,6 +562,14 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.spark.pipelines.PrintReadsSpark());
         declarations("PileupSpark",
                 new org.broadinstitute.hellbender.tools.spark.PileupSpark());
+        // X.1, fourth brick: BQSR on Spark, whose non-Spark twins already run. The table, its
+        // application, and the pipeline that chains the two in one job.
+        declarations("BaseRecalibratorSpark",
+                new org.broadinstitute.hellbender.tools.spark.BaseRecalibratorSpark());
+        declarations("ApplyBQSRSpark",
+                new org.broadinstitute.hellbender.tools.spark.ApplyBQSRSpark());
+        declarations("BQSRPipelineSpark",
+                new org.broadinstitute.hellbender.tools.spark.pipelines.BQSRPipelineSpark());
 
         // A read walker: its own input, and the arguments it inherits.
         parse("CountReads", "no-arguments", new String[]{});
