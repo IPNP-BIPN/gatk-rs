@@ -3341,6 +3341,9 @@ public class MakeFixtures {
                 "/work/fixtures/depth2.rd.txt\n/work/fixtures/depth3.rd.txt\n"
                         + "/work/fixtures/depth2.rd.txt\n",
                 StandardCharsets.UTF_8);
+        // Read names as a file of them holds them: bare, and with `@` and a mate suffix to come off.
+        Files.writeString(dir.resolve("read_names.txt"), "HWI:1:FC:1:1:1:1\n@HWI:1:FC:1:1:3:3/1\n");
+        Files.writeString(dir.resolve("read_names2.txt"), "HWI:1:FC:1:1:2:2/2\nnobody\n");
         Files.writeString(dir.resolve("samples.list"), "zulu\nbravo\nnobody\nzulu\n",
                 StandardCharsets.UTF_8);
         // For `SiteDepthtoBAF`: allele depths for two samples at four chr1 sites and one chr2 site,

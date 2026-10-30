@@ -296,7 +296,13 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         // `CountReadsSpark.getDefaultReadFilters` is the same singleton, and so is
         // `SortSamSpark`'s; its two siblings keep `GATKSparkTool`'s own default, the wellformed
         // filter alone.
-        "CountReadsSpark" | "SortSamSpark" | "RevertSamSpark" => Some(&["AllowAllReadsReadFilter"]),
+        "CountReadsSpark"
+        | "SortSamSpark"
+        | "RevertSamSpark"
+        | "MeanQualityByCycleSpark"
+        | "QualityScoreDistributionSpark"
+        | "CollectBaseDistributionByCycleSpark"
+        | "CollectQualityYieldMetricsSpark" => Some(&["AllowAllReadsReadFilter"]),
         "CountBasesSpark" | "FlagStatSpark" | "ApplyBQSRSpark" | "BQSRPipelineSpark" => {
             Some(&["WellformedReadFilter"])
         }

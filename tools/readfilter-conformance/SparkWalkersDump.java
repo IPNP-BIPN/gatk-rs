@@ -1,5 +1,5 @@
 /*
- * The twelve Spark tools this port runs, end to end through Main, against `--spark-master local[1]`.
+ * The seventeen Spark tools this port runs, end to end through Main, against `--spark-master local[1]`.
  *
  * The covering arrays compare the port against the reference row by row on every CI run; what
  * they cannot do is hold a golden, so nothing re-derives a fixed answer for these tools. This dump
@@ -68,6 +68,8 @@ public class SparkWalkersDump {
             + "chr2\t20\t.\tG\tA\t50\t.\t.\n";
 
     /** The same sites with one sample's calls, which PrintVariantsSpark cannot carry through Kryo. */
+    static final String READ_NAMES = "@r001\nr002/1\nr003/2\nnobody\n";
+
     static final String GENOTYPED_VCF = "##fileformat=VCFv4.2\n"
             + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
             + "##contig=<ID=chr1,length=200>\n"
@@ -80,7 +82,7 @@ public class SparkWalkersDump {
         PrintReadsDump.emptyDirectory(DIR);
         Files.createDirectories(DIR);
 
-        System.out.println("# SparkWalkersDump: twelve Spark tools through Main, --spark-master local[1]");
+        System.out.println("# SparkWalkersDump: seventeen Spark tools through Main, --spark-master local[1]");
 
         final Path fasta = DIR.resolve("ref.fasta");
         Files.write(fasta, ReadWalkerDump.FASTA.getBytes());
@@ -96,6 +98,7 @@ public class SparkWalkersDump {
         new Main().instanceMain(new String[] {"IndexFeatureFile", "-I", indexedVcf.toString()});
         final Path genotypedVcf = DIR.resolve("genotyped.vcf");
         Files.write(genotypedVcf, GENOTYPED_VCF.getBytes());
+        Files.write(DIR.resolve("names.txt"), READ_NAMES.getBytes());
         Files.write(DIR.resolve("revert.map.tsv"), ("READ_GROUP_ID\tOUTPUT\nrg1\t"
                 + DIR.resolve("out/revert-sam-map/mapped.bam") + "\n").getBytes());
         Files.write(DIR.resolve("revert.bad-map.tsv"), "ID\tFILE\nrg1\tx.bam\n".getBytes());
@@ -103,7 +106,7 @@ public class SparkWalkersDump {
         // The fixtures travel, so the port runs over these bytes rather than its own rebuild.
         for (final String name : new String[] {"ref.fasta", "ref.fasta.fai", "ref.dict",
                 "reads.bam", "reads.bai", "plain.vcf", "genotyped.vcf", "revert.map.tsv",
-                "revert.bad-map.tsv"}) {
+                "revert.bad-map.tsv", "names.txt"}) {
             System.out.printf("input\t%s\t%s%n", name,
                     Base64.getEncoder().encodeToString(Files.readAllBytes(DIR.resolve(name))));
         }
@@ -222,6 +225,47 @@ public class SparkWalkersDump {
                 "--output-map", DIR.resolve("revert.bad-map.tsv").toString());
         run("revert-sam-map-missing", null, revert, "-I", i, "--output-by-readgroup", "true",
                 "--output-map", DIR.resolve("no-such.tsv").toString());
+        // A filter by read name, whose `@`, `/1` and `/2` come off the file's lines, in both senses
+        // and with a read filter it parses and never applies.
+        final Path names = DIR.resolve("names.txt");
+        final String extract = "ExtractOriginalAlignmentRecordsByNameSpark";
+        run("extract-by-name", "extract-by-name.bam", extract, "-I", i, "--use-jdk-deflater",
+                "true", "--read-name-file", names.toString(),
+                "-O", out("extract-by-name", "extract-by-name.bam"));
+        run("extract-by-name-invert", "extract-by-name-invert.bam", extract, "-I", i,
+                "--use-jdk-deflater", "true", "--read-name-file", names.toString(),
+                "--invert-match", "true",
+                "-O", out("extract-by-name-invert", "extract-by-name-invert.bam"));
+        run("extract-by-name-missing", null, extract, "-I", i,
+                "--read-name-file", DIR.resolve("no-such-names.txt").toString(),
+                "-O", out("extract-by-name-missing", "extract-by-name-missing.bam"));
+        // The metrics the Spark pipelines compute themselves. Their files are compared with the
+        // time of the run taken out, and `--chart` needs an R the container does not have.
+        run("mean-quality", "mean-quality.metrics", "MeanQualityByCycleSpark", "-I", i,
+                "-O", out("mean-quality", "mean-quality.metrics"));
+        run("mean-quality-pf", "mean-quality-pf.metrics", "MeanQualityByCycleSpark", "-I", i,
+                "--pfReadsOnly", "true", "--alignedReadsOnly", "true",
+                "-O", out("mean-quality-pf", "mean-quality-pf.metrics"));
+        run("mean-quality-no-output", null, "MeanQualityByCycleSpark", "-I", i);
+        run("quality-distribution", "quality-distribution.metrics",
+                "QualityScoreDistributionSpark", "-I", i,
+                "-O", out("quality-distribution", "quality-distribution.metrics"));
+        run("quality-distribution-no-calls", "quality-distribution-no-calls.metrics",
+                "QualityScoreDistributionSpark", "-I", i, "--includeNoCalls", "true",
+                "--alignedReadsOnly", "true",
+                "-O", out("quality-distribution-no-calls", "quality-distribution-no-calls.metrics"));
+        run("base-distribution", "base-distribution.metrics",
+                "CollectBaseDistributionByCycleSpark", "-I", i,
+                "-O", out("base-distribution", "base-distribution.metrics"));
+        run("base-distribution-aligned", "base-distribution-aligned.metrics",
+                "CollectBaseDistributionByCycleSpark", "-I", i, "--aligned-reads-only", "true",
+                "--pf-reads-only", "true",
+                "-O", out("base-distribution-aligned", "base-distribution-aligned.metrics"));
+        run("quality-yield", "quality-yield.metrics", "CollectQualityYieldMetricsSpark", "-I", i,
+                "-O", out("quality-yield", "quality-yield.metrics"));
+        run("quality-yield-original", "quality-yield-original.metrics",
+                "CollectQualityYieldMetricsSpark", "-I", i, "--use-original-qualities", "true",
+                "-O", out("quality-yield-original", "quality-yield-original.metrics"));
         // PrintVariantsSpark: Disq's VCF writer, as text, block-compressed with its tabix index,
         // over an interval of the indexed copy, refused for BCF, and failing inside the job on a
         // record with genotypes.
@@ -301,8 +345,19 @@ public class SparkWalkersDump {
         }
         for (final Path path : produced) {
             System.out.printf("file\t%s\t%s\t%s%n", label, outDir.relativize(path),
-                    Base64.getEncoder().encodeToString(Files.readAllBytes(path)));
+                    Base64.getEncoder().encodeToString(withoutTheTime(path)));
         }
+    }
+
+    /** A metrics file with the one line two runs cannot share taken out. */
+    static byte[] withoutTheTime(final Path path) throws Exception {
+        final byte[] bytes = Files.readAllBytes(path);
+        if (!path.toString().endsWith(".metrics")) {
+            return bytes;
+        }
+        return new String(bytes, StandardCharsets.UTF_8)
+                .replaceAll("(?m)^# Started on: .*$", "# Started on: <start time>")
+                .getBytes(StandardCharsets.UTF_8);
     }
 
     static String masked(final String text) {

@@ -22,6 +22,8 @@
 //!    `--remove-default-attributes-to-clear` always fails, `--remove-duplicate-information` keeps
 //!    them, every reverted read comes out paired, and `--sanitize` reads all-high qualities as
 //!    Illumina or Solexa and fails on what the offset takes below zero;
+//!  * **a filter by read name**, which parses `--read-filter` and never applies it;
+//!  * **the metrics the Spark pipelines compute themselves**, under GATK's own metric classes;
 //!  * **and PileupSpark's text-file directory**, Hadoop's checksums included.
 //!
 //! # How the runs are replayed
@@ -85,6 +87,22 @@ fn files_under(dir: &std::path::Path) -> Vec<(String, Vec<u8>)> {
     }
     found.sort();
     found
+}
+
+/// A metrics file with `# Started on:` masked as the dump masks it: the one line two runs cannot share.
+fn without_the_time(bytes: &[u8]) -> Vec<u8> {
+    let text = String::from_utf8_lossy(bytes);
+    let lines: Vec<&str> = text
+        .split('\n')
+        .map(|line| {
+            if line.starts_with("# Started on: ") {
+                "# Started on: <start time>"
+            } else {
+                line
+            }
+        })
+        .collect();
+    lines.join("\n").into_bytes()
 }
 
 #[test]
@@ -181,7 +199,17 @@ fn every_run_replays_as_the_reference_ran_it() {
                 (name.to_string(), corpus::decode_base64(encoded))
             })
             .collect();
-        let produced = files_under(&out_dir);
+        let produced: Vec<(String, Vec<u8>)> = files_under(&out_dir)
+            .into_iter()
+            .map(|(name, bytes)| {
+                let bytes = if name.ends_with(".metrics") {
+                    without_the_time(&bytes)
+                } else {
+                    bytes
+                };
+                (name, bytes)
+            })
+            .collect();
         let names = |files: &[(String, Vec<u8>)]| -> Vec<String> {
             files.iter().map(|(name, _)| name.clone()).collect()
         };

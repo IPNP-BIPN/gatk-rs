@@ -12430,6 +12430,273 @@
         "`--remove-default-attributes-to-clear` always fails, so it would take every row it sits on; the `revert-sam-defaults` run measures it."
       ],
       "--remove-default-attributes-to-clear": []
+    },
+    "MeanQualityByCycleSpark": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000",
+        "<unset>"
+      ],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--program-name": [
+        "counts",
+        "counts2"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "chr1:1-500",
+        "chr1:400-600",
+        "<unset>"
+      ],
+      "--output": [
+        "/work/out/MeanQualityByCycleSpark.txt",
+        "/work/out/MeanQualityByCycleSpark2.txt"
+      ],
+      "--chart": [],
+      "$why": [
+        "The Spark values every record walker here has. `--chart` needs an R the pinned container does not have, so it is measured nowhere."
+      ]
+    },
+    "QualityScoreDistributionSpark": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000",
+        "<unset>"
+      ],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--program-name": [
+        "counts",
+        "counts2"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "chr1:1-500",
+        "chr1:400-600",
+        "<unset>"
+      ],
+      "--output": [
+        "/work/out/QualityScoreDistributionSpark.txt",
+        "/work/out/QualityScoreDistributionSpark2.txt"
+      ],
+      "--chart": [],
+      "$why": [
+        "The Spark values every record walker here has. `--chart` needs an R the pinned container does not have, so it is measured nowhere."
+      ]
+    },
+    "CollectBaseDistributionByCycleSpark": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000",
+        "<unset>"
+      ],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--program-name": [
+        "counts",
+        "counts2"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "chr1:1-500",
+        "chr1:400-600",
+        "<unset>"
+      ],
+      "--output": [
+        "/work/out/CollectBaseDistributionByCycleSpark.txt",
+        "/work/out/CollectBaseDistributionByCycleSpark2.txt"
+      ],
+      "--chart": [],
+      "$why": [
+        "The Spark values every record walker here has. `--chart` needs an R the pinned container does not have, so it is measured nowhere."
+      ]
+    },
+    "CollectQualityYieldMetricsSpark": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000",
+        "<unset>"
+      ],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--program-name": [
+        "counts",
+        "counts2"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "chr1:1-500",
+        "chr1:400-600",
+        "<unset>"
+      ],
+      "--output": [
+        "/work/out/CollectQualityYieldMetricsSpark.txt",
+        "/work/out/CollectQualityYieldMetricsSpark2.txt"
+      ],
+      "$why": [
+        "The Spark values every record walker here has. `--chart` needs an R the pinned container does not have, so it is measured nowhere."
+      ]
+    },
+    "ExtractOriginalAlignmentRecordsByNameSpark": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000",
+        "<unset>"
+      ],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--program-name": [
+        "counts",
+        "counts2"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "chr1:1-500",
+        "chr1:400-600",
+        "<unset>"
+      ],
+      "--output": [
+        "/work/out/extract.bam",
+        "/work/out/extract2.bam"
+      ],
+      "--read-name-file": [
+        "/work/fixtures/read_names.txt",
+        "/work/fixtures/read_names2.txt"
+      ],
+      "$why": [
+        "SortSamSpark's values and writer, with a name list the corpus has."
+      ]
     }
   },
   "constraints": [
