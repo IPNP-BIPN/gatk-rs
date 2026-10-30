@@ -293,6 +293,21 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         // returns `ALLOW_ALL_READS` alone, so this is the one read walker here whose default chain
         // does not carry the wellformed filter at all.
         "UnmarkDuplicates" => Some(&["AllowAllReadsReadFilter"]),
+        // `InsertSizeMetricsCollector.getDefaultReadFilters`, Picard's checks as ten filters, and
+        // the first of the pair where Picard takes the second. The mapping quality is parameterised
+        // at nought, which is the declaration's default.
+        "CollectInsertSizeMetricsSpark" => Some(&[
+            "WellformedReadFilter",
+            "MappedReadFilter",
+            "PairedReadFilter",
+            "NonZeroFragmentLengthReadFilter",
+            "FirstOfPairReadFilter",
+            "ProperlyPairedReadFilter",
+            "NotDuplicateReadFilter",
+            "NotSecondaryAlignmentReadFilter",
+            "NotSupplementaryAlignmentReadFilter",
+            "MappingQualityReadFilter",
+        ]),
         // `CountReadsSpark.getDefaultReadFilters` is the same singleton, and so is
         // `SortSamSpark`'s; its two siblings keep `GATKSparkTool`'s own default, the wellformed
         // filter alone.

@@ -27,6 +27,8 @@
 //!  * **CompareDuplicatesSpark**, whose filter holds for the first BAM only, whose keys are looked
 //!    up in the first header for both, and whose summary comes in an order no two JVMs share, so
 //!    the dump and this test sort it;
+//!  * **CollectInsertSizeMetricsSpark**, GATK's collector and not Picard's: ten filters that keep
+//!    the first of the pair, FR, TANDEM, RF, and no file when no category passes;
 //!  * **and PileupSpark's text-file directory**, Hadoop's checksums included.
 //!
 //! # How the runs are replayed

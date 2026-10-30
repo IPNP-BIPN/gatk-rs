@@ -1557,14 +1557,24 @@ fn spark_metric_reads(
     parser: &Parser,
     tool: &str,
 ) -> Result<(Vec<BamRecord>, Vec<String>), Thrown> {
+    let start = spark_startup(parser, tool)?;
+    spark_metric_reads_of(parser, tool, &start)
+}
+
+/// [`spark_metric_reads`] past the startup, for a tool with a check of its own between the two.
+fn spark_metric_reads_of(
+    parser: &Parser,
+    tool: &str,
+    start: &SparkStart,
+) -> Result<(Vec<BamRecord>, Vec<String>), Thrown> {
     let SparkStart {
         source,
         header,
         intervals,
         filters,
-    } = spark_startup(parser, tool)?;
-    let filter = read_filter(parser, &filters, &header)?;
-    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+    } = start;
+    let filter = read_filter(parser, filters, header)?;
+    let records = gatk_tools::read_walker::traverse(source, intervals, &filter)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
     // `getMetricsFile`: the command line, then the time the run started.
     let headers = vec![
@@ -1662,6 +1672,58 @@ pub fn collect_quality_yield_metrics_spark(parser: &Parser) -> Outcome {
         &headers,
     );
     save_spark_metrics(parser, &text)?;
+    Ok(None)
+}
+
+/// `CollectInsertSizeMetricsSpark.runTool`: `MetricsCollectorSparkTool`'s lifecycle over
+/// `InsertSizeMetricsCollector`, which is GATK's own and not Picard's.
+pub fn collect_insert_size_metrics_spark(parser: &Parser) -> Outcome {
+    let tool = "CollectInsertSizeMetricsSpark";
+    let start = spark_startup(parser, tool)?;
+    // `validateExpectedSortOrder`, with `assumeSorted` false.
+    let order = start.header.attributes.get("SO").unwrap_or("unsorted");
+    if order != "coordinate" {
+        let input = arguments(parser, "input").join(",");
+        return Err(Thrown::user(format!(
+            "Input \"{input}\" has sort order \"{order}\" but \"coordinate\" is required.If you \
+             believe the file to be sorted correctly, use assume-sorted=true"
+        )));
+    }
+    let (records, headers) = spark_metric_reads_of(parser, tool, &start)?;
+    if records.is_empty() {
+        return Err(Thrown::non_user(
+            "org.broadinstitute.hellbender.exceptions.GATKException",
+            "No valid reads found in input file.",
+        ));
+    }
+    let mut levels = arguments(parser, "metric-accumulation-level");
+    if levels.is_empty() {
+        levels.push("ALL_READS".to_string());
+    }
+    let settings = gatk_tools::spark_metrics::InsertSizeArguments {
+        minimum_pct: scalar(parser, "min-category-reads-percentage")
+            .and_then(|text| text.parse().ok())
+            .unwrap_or(0.05),
+        deviations: double_or(parser, "histogram-plot-deviations-tolerance", 10.0),
+        width: scalar(parser, "width").and_then(|text| text.parse().ok()),
+        levels,
+    };
+    let text = gatk_tools::spark_metrics::insert_size(&records, &start.header, &settings, &headers)
+        .map_err(|message| {
+            // `isEmpty` is stage 0, and `mapPartitions` the stage after it.
+            eprintln!("ERROR Executor - Exception in task 0.0 in stage 1.0 (TID 1)");
+            Thrown::non_user("org.apache.spark.SparkException", message)
+        })?;
+    if let Some(text) = text {
+        save_spark_metrics(parser, &text)?;
+        if flag(parser, "produce-plot") {
+            return Err(Thrown::non_user(
+                PORT_LIMITATION,
+                "--produce-plot runs R, which the port does not. This message is the port's own \
+                 and not GATK's.",
+            ));
+        }
+    }
     Ok(None)
 }
 

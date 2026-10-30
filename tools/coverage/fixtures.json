@@ -12764,6 +12764,90 @@
       "--disable-read-filter": [
         "AllowAllReadsReadFilter"
       ]
+    },
+    "CollectInsertSizeMetricsSpark": {
+      "--input": [
+        "/work/fixtures/pairs.bam",
+        "/work/fixtures/pairs2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/pairs.bai",
+        "/work/fixtures/pairs2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-1200",
+        "chr1:600-2500",
+        "<unset>"
+      ],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--program-name": [
+        "counts",
+        "counts2"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "chr1:1-200",
+        "chr1:800-1000",
+        "<unset>"
+      ],
+      "--output": [
+        "/work/out/CollectInsertSizeMetricsSpark.txt",
+        "/work/out/CollectInsertSizeMetricsSpark2.txt"
+      ],
+      "--histogram-plot-file": [
+        "/work/out/plot.pdf"
+      ],
+      "--produce-plot": [
+        "false"
+      ],
+      "--width": [
+        "125",
+        "<unset>"
+      ],
+      "--histogram-plot-deviations-tolerance": [
+        "10.0",
+        "1.0"
+      ],
+      "--min-category-reads-percentage": [
+        "0.05",
+        "0.2"
+      ],
+      "--metric-accumulation-level": [
+        "ALL_READS",
+        "SAMPLE",
+        "LIBRARY",
+        "READ_GROUP"
+      ],
+      "--reference": [],
+      "--disable-read-filter": [
+        "NotDuplicateReadFilter"
+      ],
+      "$why": [
+        "Pairs in every orientation and two read groups, so a level and a threshold change what the file holds. --produce-plot holds at false: the plot runs R, which the pinned container does not have, and -H names a file nothing then writes. No --reference: no dictionary of the corpus matches these BAMs, and the startup's refusal is the other Spark tools' to measure. An inverted filter keeps only what passes the ten defaults: inverting one of them is refused, and inverting most others empties the tool, so the value here keeps the TANDEM pair."
+      ],
+      "--inverted-read-filter": [
+        "MateDifferentStrandReadFilter",
+        "<unset>"
+      ]
     }
   },
   "constraints": [

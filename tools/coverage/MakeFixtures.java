@@ -203,6 +203,72 @@ public class MakeFixtures {
 
     /** A small coordinate-sorted BAM: eight reads on one contig, one of them a duplicate. */
     /**
+     * pairs.bam: proper pairs in two read groups of one sample, FR with one far outlier, then RF and
+     * TANDEM, for CollectInsertSizeMetricsSpark. `widen` lengthens the FR inserts, which moves the
+     * median and the widths.
+     */
+    static void insertSizePairs(final Path bam, final int widen) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord one = new SAMReadGroupRecord("rg1");
+        one.setSample("sample1");
+        one.setLibrary("lib1");
+        one.setPlatformUnit("unit1");
+        header.addReadGroup(one);
+        final SAMReadGroupRecord two = new SAMReadGroupRecord("rg2");
+        two.setSample("sample1");
+        two.setLibrary("lib2");
+        two.setPlatformUnit("unit2");
+        header.addReadGroup(two);
+        // start, insert, reverse, mate reverse, group.
+        final Object[][] pairs = {
+                {100, 100, false, true, "rg1"}, {300, 110, false, true, "rg1"},
+                {500, 100, false, true, "rg2"}, {700, 120, false, true, "rg1"},
+                {900, 130, false, true, "rg2"}, {1100, 5000, false, true, "rg1"},
+                {1300, 100, false, true, "rg2"}, {1500, 140, false, true, "rg1"},
+                {1700, -40, true, false, "rg1"}, {1900, -50, true, false, "rg2"},
+                {2100, 110, false, false, "rg1"},
+        };
+        final List<SAMRecord> records = new ArrayList<>();
+        for (int index = 0; index < pairs.length; index++) {
+            final Object[] pair = pairs[index];
+            final boolean reverse = (boolean) pair[2];
+            final boolean mateReverse = (boolean) pair[3];
+            final int start = (int) pair[0];
+            final int insert = (int) pair[1] + (reverse == mateReverse || reverse ? 0 : widen);
+            final int mate = reverse || reverse == mateReverse
+                    ? start + insert : start + insert - 10;
+            for (final boolean first : new boolean[] {true, false}) {
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("pair" + index);
+                record.setFlags(0x1 | 0x2 | (first ? 0x40 : 0x80)
+                        | ((first ? reverse : mateReverse) ? 0x10 : 0)
+                        | ((first ? mateReverse : reverse) ? 0x20 : 0));
+                record.setReferenceIndex(0);
+                record.setAlignmentStart(first ? start : mate);
+                record.setMateReferenceIndex(0);
+                record.setMateAlignmentStart(first ? mate : start);
+                record.setInferredInsertSize(first ? insert : -insert);
+                record.setCigarString("10M");
+                record.setMappingQuality(60);
+                record.setReadString("ACGTACGTAC");
+                record.setBaseQualityString("IIIIIIIIII");
+                record.setAttribute("RG", pair[4]);
+                records.add(record);
+            }
+        }
+        records.sort(java.util.Comparator.comparingInt(SAMRecord::getAlignmentStart));
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             bam.toFile())) {
+            records.forEach(writer::addAlignment);
+        }
+    }
+
+    /**
      * dup_*.bam: eight reads in groups of the MarkDuplicates key, for CompareDuplicatesSpark. a1/a2,
      * b1/b2 and c1/c2 share a start, d1 is reverse and clipped, e1 is on chr2 in a read group with no
      * library. `moveMarks` moves one mark inside a group and adds one to another.
@@ -2962,6 +3028,8 @@ public class MakeFixtures {
         bamTwo(dir.resolve("reads2.bam"));
         duplicateGroups(dir.resolve("dup_a.bam"), false);
         duplicateGroups(dir.resolve("dup_marks.bam"), true);
+        insertSizePairs(dir.resolve("pairs.bam"), 0);
+        insertSizePairs(dir.resolve("pairs2.bam"), 15);
         bamWithOriginalQualities(dir.resolve("reads_oq.bam"));
         indels(dir.resolve("indels.bam"));
         twoGroups(dir.resolve("groups.bam"));

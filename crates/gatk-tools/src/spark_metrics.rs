@@ -12,7 +12,9 @@ use htsjdk_metrics::file::{Histogram, MetricBean, MetricsFile, Value};
 
 const PAIRED: u16 = 0x1;
 const UNMAPPED: u16 = 0x4;
+const MATE_UNMAPPED: u16 = 0x8;
 const REVERSE: u16 = 0x10;
+const MATE_REVERSE: u16 = 0x20;
 const SECOND_OF_PAIR: u16 = 0x80;
 const SECONDARY: u16 = 0x100;
 const FAILS_VENDOR_QUALITY: u16 = 0x200;
@@ -349,4 +351,337 @@ pub fn quality_yield<'a>(
     let mut file = with_headers(headers);
     file.add_metric(&yields);
     file.write()
+}
+
+/// `InsertSizeMetrics`, GATK's: no `MODE_INSERT_SIZE` and no `WIDTH_OF_95_PERCENT`, which Picard's
+/// has, and the inherited `SAMPLE`, `LIBRARY` and `READ_GROUP` after the declared fields.
+struct InsertSizeRow {
+    median: f64,
+    median_absolute_deviation: f64,
+    min: i32,
+    max: i32,
+    mean: f64,
+    standard_deviation: f64,
+    read_pairs: i64,
+    orientation: &'static str,
+    widths: [i32; 10],
+    sample: Option<String>,
+    library: Option<String>,
+    read_group: Option<String>,
+}
+
+impl MetricBean for InsertSizeRow {
+    fn class_name(&self) -> &str {
+        "org.broadinstitute.hellbender.metrics.InsertSizeMetrics"
+    }
+
+    fn columns(&self) -> &[&'static str] {
+        &[
+            "MEDIAN_INSERT_SIZE",
+            "MEDIAN_ABSOLUTE_DEVIATION",
+            "MIN_INSERT_SIZE",
+            "MAX_INSERT_SIZE",
+            "MEAN_INSERT_SIZE",
+            "STANDARD_DEVIATION",
+            "READ_PAIRS",
+            "PAIR_ORIENTATION",
+            "WIDTH_OF_10_PERCENT",
+            "WIDTH_OF_20_PERCENT",
+            "WIDTH_OF_30_PERCENT",
+            "WIDTH_OF_40_PERCENT",
+            "WIDTH_OF_50_PERCENT",
+            "WIDTH_OF_60_PERCENT",
+            "WIDTH_OF_70_PERCENT",
+            "WIDTH_OF_80_PERCENT",
+            "WIDTH_OF_90_PERCENT",
+            "WIDTH_OF_99_PERCENT",
+            "SAMPLE",
+            "LIBRARY",
+            "READ_GROUP",
+        ]
+    }
+
+    fn values(&self) -> Vec<Value> {
+        let text = |value: &Option<String>| value.clone().map_or(Value::Null, Value::Str);
+        let mut values = vec![
+            Value::Double(self.median),
+            Value::Double(self.median_absolute_deviation),
+            Value::Long(i64::from(self.min)),
+            Value::Long(i64::from(self.max)),
+            Value::Double(self.mean),
+            Value::Double(self.standard_deviation),
+            Value::Long(self.read_pairs),
+            Value::Str(self.orientation.to_string()),
+        ];
+        values.extend(
+            self.widths
+                .iter()
+                .map(|width| Value::Long(i64::from(*width))),
+        );
+        values.extend([
+            text(&self.sample),
+            text(&self.library),
+            text(&self.read_group),
+        ]);
+        values
+    }
+}
+
+/// What `InsertSizeMetricsArgumentCollection` hands the collector.
+pub struct InsertSizeArguments {
+    pub minimum_pct: f32,
+    pub deviations: f64,
+    pub width: Option<i32>,
+    pub levels: Vec<String>,
+}
+
+/// `PerUnitInsertSizeMetricsCollector`. The map is a `LinkedHashMap` because Kryo cannot carry an
+/// `EnumMap`, so the rows come in insertion order, FR, TANDEM, RF, where Picard's come FR, RF, TANDEM.
+struct InsertSizeUnit {
+    histograms: [(&'static str, htsjdk_metrics::histogram::Histogram); 3],
+    sample: Option<String>,
+    library: Option<String>,
+    read_group: Option<String>,
+}
+
+impl InsertSizeUnit {
+    fn new(sample: Option<String>, library: Option<String>, read_group: Option<String>) -> Self {
+        let prefix = read_group
+            .as_ref()
+            .or(library.as_ref())
+            .or(sample.as_ref())
+            .map_or("All_Reads.".to_string(), |unit| format!("{unit}."));
+        let histogram = |suffix: &str| {
+            htsjdk_metrics::histogram::Histogram::new("insert_size", &format!("{prefix}{suffix}"))
+        };
+        InsertSizeUnit {
+            histograms: [
+                ("FR", histogram("fr_count")),
+                ("TANDEM", histogram("tandem_count")),
+                ("RF", histogram("rf_count")),
+            ],
+            sample,
+            library,
+            read_group,
+        }
+    }
+
+    /// `addMetricsToFile`. The width is a FIELD that the first category to pass sets when no
+    /// `--width` did, so that category's median and deviation trim every category after it.
+    fn add_to_file(mut self, file: &mut MetricsFile, arguments: &InsertSizeArguments) {
+        let total_inserts: f64 = self.histograms.iter().map(|(_, h)| h.count()).sum();
+        let mut trim_width = arguments.width;
+        for (orientation, histogram) in &mut self.histograms {
+            let total = histogram.count();
+            if total <= total_inserts * f64::from(arguments.minimum_pct) {
+                continue;
+            }
+            let median = histogram.median();
+            let median_absolute_deviation = histogram.median_absolute_deviation();
+            let (min, max) = (
+                histogram.min().unwrap_or(0.0),
+                histogram.max().unwrap_or(0.0),
+            );
+            let widths = insert_size_widths(histogram, median, min, max, total);
+            let width = *trim_width
+                .get_or_insert((median + arguments.deviations * median_absolute_deviation) as i32);
+            histogram.trim_by_width(width);
+            file.add_metric(&InsertSizeRow {
+                median,
+                median_absolute_deviation,
+                min: min as i32,
+                max: max as i32,
+                mean: histogram.mean(),
+                standard_deviation: histogram.standard_deviation(),
+                read_pairs: total as i64,
+                orientation,
+                widths,
+                sample: self.sample.clone(),
+                library: self.library.clone(),
+                read_group: self.read_group.clone(),
+            });
+            file.histograms.push(Histogram {
+                bin_label: histogram.bin_label.clone(),
+                value_label: histogram.value_label.clone(),
+                key_class: "java.lang.Integer".to_string(),
+                bins: histogram
+                    .bins()
+                    .map(|(bin, value)| (format!("{}", bin as i64), value))
+                    .collect(),
+            });
+        }
+    }
+}
+
+/// The scan outward from the median behind the `WIDTH_OF_n_PERCENT` columns.
+fn insert_size_widths(
+    histogram: &htsjdk_metrics::histogram::Histogram,
+    median: f64,
+    min: f64,
+    max: f64,
+    total: f64,
+) -> [i32; 10] {
+    const THRESHOLDS: [f64; 10] = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99];
+    let mut widths = [0; 10];
+    let mut covered = 0.0;
+    let (mut low, mut high) = (median, median);
+    while low >= min || high <= max {
+        // `(int) low`, so a median of 300.5 reads the bin at 300.
+        if let Some(value) = histogram.get(f64::from(low as i32)) {
+            covered += value;
+        }
+        if low != high {
+            if let Some(value) = histogram.get(f64::from(high as i32)) {
+                covered += value;
+            }
+        }
+        let percent_covered = covered / total;
+        let distance = (high - low) as i32 + 1;
+        for (threshold, width) in THRESHOLDS.iter().zip(&mut widths) {
+            if percent_covered >= *threshold && *width == 0 {
+                *width = distance;
+            }
+        }
+        low -= 1.0;
+        high += 1.0;
+    }
+    widths
+}
+
+/// `SamPairUtil.getPairOrientation` as htsjdk 4.2.0 has it, indexed as the unit's histograms are:
+/// no mate cigar, and a tie is `RF`.
+fn insert_size_orientation(
+    record: &BamRecord,
+    header: &htsjdk_bam::header::SamHeader,
+) -> Result<usize, String> {
+    let name = &record.read_name;
+    if record.flags & UNMAPPED != 0
+        || record.flags & PAIRED == 0
+        || record.flags & MATE_UNMAPPED != 0
+    {
+        return Err(format!(
+            "Invalid SAMRecord: {name}. This method only works for SAMRecords that are paired \
+             reads with both reads aligned."
+        ));
+    }
+    if record.reference_index != record.mate_reference_index {
+        let contig = |index: i32| {
+            usize::try_from(index)
+                .ok()
+                .and_then(|index| header.sequences.get(index))
+                .map_or("*", |sequence| sequence.name.as_str())
+        };
+        return Err(format!(
+            "Invalid SAMRecord: {name}. This method only works for SAMRecords that are paired \
+             reads with both reads aligned to the same reference. Found difference references:{} \
+             and {}.",
+            contig(record.reference_index),
+            contig(record.mate_reference_index)
+        ));
+    }
+    let reverse = record.flags & REVERSE != 0;
+    if reverse == (record.flags & MATE_REVERSE != 0) {
+        return Ok(1);
+    }
+    let (positive, negative) = if reverse {
+        (
+            i64::from(record.mate_alignment_start),
+            i64::from(record.alignment_end()),
+        )
+    } else {
+        (
+            i64::from(record.alignment_start),
+            i64::from(record.alignment_start) + i64::from(record.inferred_insert_size),
+        )
+    };
+    Ok(if positive < negative { 0 } else { 2 })
+}
+
+/// `InsertSizeMetricsCollector`: the metrics file's text, or `None` when every category fell
+/// under `--min-category-reads-percentage` and the tool writes nothing. `Err` is what
+/// `getPairOrientation` says of a read that the filter chain, disabled, let through.
+pub fn insert_size(
+    records: &[BamRecord],
+    header: &htsjdk_bam::header::SamHeader,
+    arguments: &InsertSizeArguments,
+    headers: &[String],
+) -> Result<Option<String>, String> {
+    // `MultiLevelReducibleCollector.setup`, whatever order the levels were asked in.
+    type Distributor = (&'static str, Vec<(Option<String>, InsertSizeUnit)>);
+    let mut distributors: Vec<Distributor> = Vec::new();
+    for level in ["ALL_READS", "SAMPLE", "LIBRARY", "READ_GROUP"] {
+        if !arguments.levels.iter().any(|asked| asked == level) {
+            continue;
+        }
+        let mut units: Vec<(Option<String>, InsertSizeUnit)> = Vec::new();
+        if level == "ALL_READS" {
+            units.push((None, InsertSizeUnit::new(None, None, None)));
+        }
+        for group in header.read_groups.iter().filter(|_| level != "ALL_READS") {
+            let field = |tag: &str| group.attributes.get(tag).map(str::to_string);
+            let (key, sample, library, read_group) = match level {
+                "SAMPLE" => (field("SM"), field("SM"), None, None),
+                "LIBRARY" => (field("LB"), field("SM"), field("LB"), None),
+                _ => (field("PU"), field("SM"), field("LB"), field("PU")),
+            };
+            if !units.iter().any(|(known, _)| *known == key) {
+                units.push((key, InsertSizeUnit::new(sample, library, read_group)));
+            }
+        }
+        distributors.push((level, units));
+    }
+    for record in records {
+        let insert_size = f64::from(record.inferred_insert_size.unsigned_abs() as i32);
+        let orientation = insert_size_orientation(record, header)?;
+        let group = match record.tags.get(Tag::new(b"RG")) {
+            Some(TagValue::Str(id)) => header.read_groups.iter().find(|group| group.id == *id),
+            _ => None,
+        };
+        for (level, units) in &mut distributors {
+            let at = if *level == "ALL_READS" {
+                // A read no group answers for is `unknown`, and only this distributor makes no
+                // unknown collector: `UnsupportedOperationException`, with the filters off.
+                if group.is_none() {
+                    return Err("Should not happen".to_string());
+                }
+                0
+            } else {
+                let tag = match *level {
+                    "SAMPLE" => "SM",
+                    "LIBRARY" => "LB",
+                    _ => "PU",
+                };
+                // A group without the field is `unknown` too, and its own null-keyed unit stays
+                // empty: the lookup never asks for a null.
+                let key = group
+                    .and_then(|group| group.attributes.get(tag))
+                    .unwrap_or("unknown")
+                    .to_string();
+                match units
+                    .iter()
+                    .position(|(known, _)| known.as_ref() == Some(&key))
+                {
+                    Some(at) => at,
+                    None => {
+                        let unknown = || Some("unknown".to_string());
+                        let unit = match *level {
+                            "SAMPLE" => InsertSizeUnit::new(unknown(), None, None),
+                            "LIBRARY" => InsertSizeUnit::new(unknown(), unknown(), None),
+                            _ => InsertSizeUnit::new(unknown(), unknown(), unknown()),
+                        };
+                        units.push((Some(key), unit));
+                        units.len() - 1
+                    }
+                }
+            };
+            units[at].1.histograms[orientation].1.increment(insert_size);
+        }
+    }
+    let mut file = with_headers(headers);
+    for (_, units) in distributors {
+        for (_, unit) in units {
+            unit.add_to_file(&mut file, arguments);
+        }
+    }
+    Ok((!file.histograms.is_empty()).then(|| file.write()))
 }

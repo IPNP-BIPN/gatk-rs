@@ -89,7 +89,7 @@ public class SparkWalkersDump {
         PrintReadsDump.emptyDirectory(DIR);
         Files.createDirectories(DIR);
 
-        System.out.println("# SparkWalkersDump: eighteen Spark tools through Main, --spark-master local[1]");
+        System.out.println("# SparkWalkersDump: nineteen Spark tools through Main, --spark-master local[1]");
 
         final Path fasta = DIR.resolve("ref.fasta");
         Files.write(fasta, ReadWalkerDump.FASTA.getBytes());
@@ -132,12 +132,18 @@ public class SparkWalkersDump {
             duplicateFixture(DIR.resolve(pair[0]), pair[1], pair[2], pair[3], pair[4]);
         }
 
+        insertSizeFixture(DIR.resolve("pairs.bam"), SAMFileHeader.SortOrder.coordinate, false);
+        insertSizeFixture(DIR.resolve("pairs-away.bam"), SAMFileHeader.SortOrder.coordinate, true);
+        insertSizeFixture(DIR.resolve("pairs-unsorted.bam"), SAMFileHeader.SortOrder.unsorted,
+                false);
+
         // The fixtures travel, so the port runs over these bytes rather than its own rebuild.
         for (final String name : new String[] {"ref.fasta", "ref.fasta.fai", "ref.dict",
                 "reads.bam", "reads.bai", "plain.vcf", "genotyped.vcf", "revert.map.tsv",
                 "revert.bad-map.tsv", "names.txt", "dup-a.bam", "dup-a.bai", "dup-marks.bam",
                 "dup-marks.bai", "dup-renamed.bam", "dup-uneven.bam", "dup-moved.bam",
-                "dup-no-group.bam", "dup-other-group.bam", "dup-fewer.bam"}) {
+                "dup-no-group.bam", "dup-other-group.bam", "dup-fewer.bam", "pairs.bam",
+                "pairs.bai", "pairs-away.bam", "pairs-unsorted.bam"}) {
             System.out.printf("input\t%s\t%s%n", name,
                     Base64.getEncoder().encodeToString(Files.readAllBytes(DIR.resolve(name))));
         }
@@ -173,6 +179,51 @@ public class SparkWalkersDump {
                 "-I2", DIR.resolve("dup-marks.bam").toString(), "--use-jdk-deflater", "true",
                 "-O", out("compare-output", "first.bam"),
                 "-O2", out("compare-output", "second.bam"));
+
+        // COLLECTINSERTSIZEMETRICSSPARK is GATK's collector, not Picard's: ten filters, FR, TANDEM,
+        // RF, a width the first category fixes for the others, and no file when none passes.
+        final String insert = "CollectInsertSizeMetricsSpark";
+        final String pairsBam = DIR.resolve("pairs.bam").toString();
+        final String[][] inserts = {
+                {"insert-size"},
+                {"insert-size-levels", "--metric-accumulation-level", "SAMPLE",
+                        "--metric-accumulation-level", "READ_GROUP",
+                        "--metric-accumulation-level", "LIBRARY"},
+                {"insert-size-all-levels", "--metric-accumulation-level", "ALL_READS",
+                        "--metric-accumulation-level", "SAMPLE",
+                        "--metric-accumulation-level", "LIBRARY",
+                        "--metric-accumulation-level", "READ_GROUP"},
+                {"insert-size-width", "--width", "125"},
+                {"insert-size-width-one", "--width", "1"},
+                {"insert-size-tolerance", "-TOL", "1.0"},
+                {"insert-size-minimum", "-M", "0.2"},
+                {"insert-size-all-kept", "-M", "0.0"},
+                {"insert-size-interval", "-L", "chr1:100-600"},
+                {"insert-size-filter", "-RF", "ReadLengthReadFilter", "--min-read-length", "1",
+                        "--max-read-length", "5"},
+                {"insert-size-second", "-DF", "FirstOfPairReadFilter", "-RF",
+                        "SecondOfPairReadFilter"},
+                {"insert-size-no-defaults", "--disable-tool-default-read-filters", "true"},
+                {"insert-size-sample", "--metric-accumulation-level", "SAMPLE",
+                        "--disable-tool-default-read-filters", "true"},
+        };
+        for (final String[] row : inserts) {
+            final List<String> argv = new ArrayList<>(Arrays.asList("-I", pairsBam, "-H",
+                    "unused.pdf",
+                    "-O", out(row[0], "insert.metrics")));
+            argv.addAll(Arrays.asList(row).subList(1, row.length));
+            run(row[0], "insert.metrics", insert, argv.toArray(new String[0]));
+        }
+        run("insert-size-away", null, insert, "-I", DIR.resolve("pairs-away.bam").toString(),
+                "-H", "unused.pdf", "-O", out("insert-size-away", "insert.metrics"));
+        run("insert-size-none-pass", "insert.metrics", insert, "-I", pairsBam, "-H", "unused.pdf",
+                "-M", "1.0", "-O", out("insert-size-none-pass", "insert.metrics"));
+        run("insert-size-unsorted", null, insert, "-I", DIR.resolve("pairs-unsorted.bam").toString(),
+                "-H", "unused.pdf", "-O", out("insert-size-unsorted", "insert.metrics"));
+        run("insert-size-no-reads", null, insert, "-I", bam.toString(), "-H", "unused.pdf",
+                "-O", out("insert-size-no-reads", "insert.metrics"));
+        run("insert-size-no-plot-file", null, insert, "-I", pairsBam,
+                "-O", out("insert-size-no-plot-file", "insert.metrics"));
 
         final String r = fasta.toString();
         final String i = bam.toString();
@@ -347,6 +398,94 @@ public class SparkWalkersDump {
         run("print-variants-genotyped", "print-variants-genotyped.vcf", "PrintVariantsSpark",
                 "-V", genotypedVcf.toString(),
                 "-O", out("print-variants-genotyped", "print-variants-genotyped.vcf"));
+    }
+
+    /**
+     * Pairs in two read groups of one sample: rg1 has a library and a platform unit, rg2 neither.
+     * Mostly FR with one far outlier, then RF and TANDEM pairs, a duplicate and a pair with no
+     * group; `away` adds a read on another contig than its mate whose flag still says proper.
+     */
+    static void insertSizeFixture(final Path bam, final SAMFileHeader.SortOrder order,
+                                  final boolean away) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        dictionary.addSequence(new SAMSequenceRecord("chr2", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(order);
+        final SAMReadGroupRecord one = new SAMReadGroupRecord("rg1");
+        one.setSample("sample1");
+        one.setLibrary("lib1");
+        one.setPlatformUnit("unit1");
+        header.addReadGroup(one);
+        final SAMReadGroupRecord two = new SAMReadGroupRecord("rg2");
+        two.setSample("sample1");
+        header.addReadGroup(two);
+        // start, mate start, insert, first's flags beyond paired/first/proper, group.
+        final Object[][] pairs = {
+                {100, 190, 100, 0x20, "rg1"}, {200, 300, 110, 0x20, "rg1"},
+                {300, 390, 100, 0x20, "rg1"}, {400, 510, 120, 0x20, "rg1"},
+                {500, 620, 130, 0x20, "rg2"}, {600, 690, 100, 0x20, "rg2"},
+                {700, 5690, 5000, 0x20, "rg1"}, {800, 910, 120, 0x420, "rg1"},
+                {900, 1010, 120, 0x20, null},
+                // The reverse read first: RF, on either side of the forward mate.
+                {1100, 1050, -40, 0x10, "rg1"}, {1200, 1140, -50, 0x10, "rg2"},
+                // Both forward.
+                {1300, 1400, 110, 0, "rg1"},
+        };
+        final List<SAMRecord> records = new ArrayList<>();
+        for (int index = 0; index < pairs.length; index++) {
+            final Object[] pair = pairs[index];
+            final int flags = (int) pair[3];
+            final int start = (int) pair[0];
+            final int mate = (int) pair[1];
+            final int insert = (int) pair[2];
+            for (final boolean first : new boolean[] {true, false}) {
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("p" + index);
+                final boolean reverse = (flags & 0x10) != 0;
+                final boolean mateReverse = (flags & 0x20) != 0;
+                record.setFlags(0x1 | 0x2 | (first ? 0x40 : 0x80) | (flags & 0x400)
+                        | ((first ? reverse : mateReverse) ? 0x10 : 0)
+                        | ((first ? mateReverse : reverse) ? 0x20 : 0));
+                record.setReferenceIndex(0);
+                record.setAlignmentStart(first ? start : mate);
+                record.setMateReferenceIndex(0);
+                record.setMateAlignmentStart(first ? mate : start);
+                record.setInferredInsertSize(first ? insert : -insert);
+                record.setCigarString("10M");
+                record.setMappingQuality(60);
+                record.setReadString("ACGTACGTAC");
+                record.setBaseQualityString("IIIIIIIIII");
+                if (pair[4] != null) {
+                    record.setAttribute("RG", pair[4]);
+                }
+                records.add(record);
+            }
+        }
+        if (away) {
+            final SAMRecord other = new SAMRecord(header);
+            other.setReadName("away");
+            other.setFlags(0x1 | 0x2 | 0x40 | 0x20);
+            other.setReferenceIndex(1);
+            other.setAlignmentStart(50);
+            other.setMateReferenceIndex(0);
+            other.setMateAlignmentStart(50);
+            other.setInferredInsertSize(80);
+            other.setCigarString("10M");
+            other.setMappingQuality(60);
+            other.setReadString("ACGTACGTAC");
+            other.setBaseQualityString("IIIIIIIIII");
+            other.setAttribute("RG", "rg1");
+            records.add(other);
+        }
+        records.sort(java.util.Comparator.comparingInt(SAMRecord::getReferenceIndex)
+                .thenComparingInt(SAMRecord::getAlignmentStart));
+        try (final SAMFileWriter writer = new SAMFileWriterFactory().setCreateIndex(
+                order == SAMFileHeader.SortOrder.coordinate)
+                .makeBAMWriter(header, true, bam.toFile())) {
+            records.forEach(writer::addAlignment);
+        }
     }
 
     /**

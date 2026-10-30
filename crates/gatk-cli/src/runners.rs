@@ -24087,11 +24087,11 @@ pub fn local_assembler(parser: &Parser) -> Outcome {
 mod spark_runners;
 pub use spark_runners::{
     apply_bqsr_spark, base_recalibrator_spark, bqsr_pipeline_spark,
-    collect_base_distribution_by_cycle_spark, collect_quality_yield_metrics_spark,
-    compare_duplicates_spark, count_bases_spark, count_reads_spark, count_variants_spark,
-    extract_original_alignment_records_by_name_spark, flag_stat_spark, mean_quality_by_cycle_spark,
-    pileup_spark, print_reads_spark, print_variants_spark, quality_score_distribution_spark,
-    revert_sam_spark, sort_sam_spark,
+    collect_base_distribution_by_cycle_spark, collect_insert_size_metrics_spark,
+    collect_quality_yield_metrics_spark, compare_duplicates_spark, count_bases_spark,
+    count_reads_spark, count_variants_spark, extract_original_alignment_records_by_name_spark,
+    flag_stat_spark, mean_quality_by_cycle_spark, pileup_spark, print_reads_spark,
+    print_variants_spark, quality_score_distribution_spark, revert_sam_spark, sort_sam_spark,
 };
 
 /// `GroundTruthReadsBuilder`, in a file of its own.
