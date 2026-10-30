@@ -395,6 +395,34 @@ pub fn print_variants_spark(parser: &Parser) -> Outcome {
             })
             .collect();
 
+    // Nothing kept is not one answer but three, and which depends on the index. Disq keeps a split
+    // only where a query touches one of the index's blocks: a tabix bin of 16384 bases, a Tribble
+    // bin of 8000 (shortcut: the width `IndexFeatureFile` left this corpus's small VCF, which it
+    // may optimise on a larger one). With no split at all the shard join without `--shuffle` asks
+    // for no partitions, and a block-compressed output with an index has no part to merge.
+    let touches_block = match &intervals {
+        None => true,
+        Some(intervals) => {
+            let width = if variant.ends_with(".gz") || variant.ends_with(".bgz") {
+                16384
+            } else {
+                8000
+            };
+            loci.iter().any(|locus| {
+                intervals.iter().any(|interval| {
+                    interval.contig == locus.contig
+                        && (locus.start - 1) / width <= (interval.end - 1) / width
+                        && (interval.start - 1) / width <= (locus.stop - 1) / width
+                })
+            })
+        }
+    };
+    if kept.is_empty() && !touches_block && !flag(parser, "shuffle") {
+        return Err(Thrown::non_user(
+            "java.lang.IllegalArgumentException",
+            "requirement failed: Number of partitions (0) must be positive.",
+        ));
+    }
     if output.ends_with(".bcf") || output.ends_with(".bcf.gz") {
         return Err(Thrown {
             failure: Failure::User,
@@ -430,6 +458,23 @@ pub fn print_variants_spark(parser: &Parser) -> Outcome {
             )
         };
         return Err(Thrown::non_user("org.apache.spark.SparkException", message));
+    }
+    if kept.is_empty() && touches_block && !flag(parser, "shuffle") {
+        eprintln!("ERROR Executor - Exception in task 0.0 in stage 1.0 (TID 1)");
+        return Err(Thrown::non_user(
+            "java.lang.ArrayIndexOutOfBoundsException",
+            "Index -1 out of bounds for length 1",
+        ));
+    }
+    if kept.is_empty()
+        && !touches_block
+        && (output.ends_with(".gz") || output.ends_with(".bgz"))
+        && flag(parser, "create-output-variant-index")
+    {
+        return Err(Thrown::non_user(
+            "java.lang.IllegalArgumentException",
+            "Cannot merge zero tabix files",
+        ));
     }
     let failed = |error: String| {
         Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
