@@ -1148,7 +1148,9 @@ fn write_reverted(
             Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
         })?;
     }
-    if output.ends_with(".sam") && !flag(parser, "sharded-output") {
+    // `--sharded-output` is BAM parts under whatever the directory is called.
+    let sharded = flag(parser, "sharded-output");
+    if output.ends_with(".sam") && !sharded {
         // Disq's SAM writer: the text, whatever the partitions, and no index of any kind.
         let records: Vec<BamRecord> = partitions.iter().flatten().cloned().collect();
         let text = htsjdk_bam::sam_file::write_sam(header, &records)
@@ -1157,12 +1159,12 @@ fn write_reverted(
             Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
         });
     }
-    if !output.ends_with(".bam") {
+    if !output.ends_with(".bam") && !sharded {
         return Err(Thrown::non_user(
             PORT_LIMITATION,
             format!(
-                "{output}: Disq's CRAM writer and sharded SAM are not ported yet. This message is \
-                 the port's own and not GATK's."
+                "{output}: Disq's CRAM writer is not ported yet. This message is the port's own \
+                 and not GATK's."
             ),
         ));
     }
