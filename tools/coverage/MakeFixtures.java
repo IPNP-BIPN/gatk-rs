@@ -203,6 +203,184 @@ public class MakeFixtures {
 
     /** A small coordinate-sorted BAM: eight reads on one contig, one of them a duplicate. */
     /**
+     * Reads for every record type MarkDuplicatesSpark makes: optical and library duplicates among
+     * pairs, a set of four for the finder's graph, FR against RF at one key, fragments alone and
+     * beside a pair, an unmapped mate, secondaries and supplementaries, a mate missing from the file,
+     * names with no location, and a failed vendor check.
+     */
+    static void markingFixture(final Path bam, final SAMFileHeader.SortOrder order, final String variant) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        dictionary.addSequence(new SAMSequenceRecord("chr2", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(order);
+        if (variant.equals("scattered")) {
+            header.setGroupOrder(SAMFileHeader.GroupOrder.query);
+        }
+        if (!variant.equals("no-groups")) {
+            for (final String[] group : new String[][] {{"rg1", "lib1"}, {"rg2", "lib2"}, {"rg3", null}}) {
+                final SAMReadGroupRecord record = new SAMReadGroupRecord(group[0]);
+                record.setSample("sample1");
+                record.setLibrary(group[1]);
+                header.addReadGroup(record);
+            }
+        }
+        final List<SAMRecord> records = new ArrayList<>();
+        // name, contig, start, flags, cigar, mate contig, mate start, quality, group, mapping quality
+        final Object[][] reads = variant.equals("clean") ? new Object[][] {
+                {"c:1:1101:10:10", 0, 100, 0x63, "10M", 0, 200, 30, "rg1", 60},
+                {"c:1:1101:10:10", 0, 200, 0x93, "10M", 0, 100, 30, "rg1", 60},
+                {"c:1:1101:20:20", 0, 300, 0x63, "10M", 0, 400, 30, "rg1", 60},
+                {"c:1:1101:20:20", 0, 400, 0x93, "10M", 0, 300, 30, "rg1", 60},
+        } : new Object[][] {
+                // Optical and library duplicates of one pair, and the best in the middle.
+                {"x:1:1101:1000:1000", 0, 100, 0x63, "10M", 0, 200, 30, "rg1", 60},
+                {"x:1:1101:1000:1000", 0, 200, 0x93, "10M", 0, 100, 30, "rg1", 60},
+                {"x:1:1101:1010:1010", 0, 100, 0x63, "10M", 0, 200, 40, "rg1", 60},
+                {"x:1:1101:1010:1010", 0, 200, 0x93, "10M", 0, 100, 40, "rg1", 60},
+                {"x:1:1102:5000:5000", 0, 100, 0x63, "10M", 0, 200, 20, "rg1", 60},
+                {"x:1:1102:5000:5000", 0, 200, 0x93, "10M", 0, 100, 20, "rg1", 60},
+                // The same place in the other library is no duplicate of it.
+                {"y:1:1101:1000:1000", 0, 100, 0x63, "10M", 0, 200, 30, "rg2", 60},
+                {"y:1:1101:1000:1000", 0, 200, 0x93, "10M", 0, 100, 30, "rg2", 60},
+                // Four and more: the graph, a chain of three and one apart.
+                {"g:1:1101:1000:1000", 0, 1000, 0x63, "10M", 0, 1100, 20, "rg1", 60},
+                {"g:1:1101:1000:1000", 0, 1100, 0x93, "10M", 0, 1000, 20, "rg1", 60},
+                {"g:1:1101:1090:1000", 0, 1000, 0x63, "10M", 0, 1100, 20, "rg1", 60},
+                {"g:1:1101:1090:1000", 0, 1100, 0x93, "10M", 0, 1000, 20, "rg1", 60},
+                {"g:1:1101:1180:1000", 0, 1000, 0x63, "10M", 0, 1100, 25, "rg1", 60},
+                {"g:1:1101:1180:1000", 0, 1100, 0x93, "10M", 0, 1000, 25, "rg1", 60},
+                {"g:1:1101:9000:9000", 0, 1000, 0x63, "10M", 0, 1100, 40, "rg1", 60},
+                {"g:1:1101:9000:9000", 0, 1100, 0x93, "10M", 0, 1000, 40, "rg1", 60},
+                {"g:1:1101:9050:9000", 0, 1000, 0x63, "10M", 0, 1100, 10, "rg1", 60},
+                {"g:1:1101:9050:9000", 0, 1100, 0x93, "10M", 0, 1000, 10, "rg1", 60},
+                // FR and RF at one key: which read is first of pair flips the optical orientation.
+                {"o:1:1101:1000:1000", 0, 2000, 0x63, "10M", 0, 2100, 30, "rg1", 60},
+                {"o:1:1101:1000:1000", 0, 2100, 0x93, "10M", 0, 2000, 30, "rg1", 60},
+                {"o:1:1101:1020:1000", 0, 2000, 0xA3, "10M", 0, 2100, 20, "rg1", 60},
+                {"o:1:1101:1020:1000", 0, 2100, 0x53, "10M", 0, 2000, 20, "rg1", 60},
+                {"o:1:1101:1040:1000", 0, 2000, 0x63, "10M", 0, 2100, 10, "rg1", 60},
+                {"o:1:1101:1040:1000", 0, 2100, 0x93, "10M", 0, 2000, 10, "rg1", 60},
+                {"o:1:1101:1060:1000", 0, 2000, 0xA3, "10M", 0, 2100, 10, "rg1", 60},
+                {"o:1:1101:1060:1000", 0, 2100, 0x53, "10M", 0, 2000, 10, "rg1", 60},
+                // Both reads on one start, and a pair across contigs.
+                {"s:1:1101:1:1", 0, 3000, 0x73, "10M", 0, 3000, 30, "rg1", 60},
+                {"s:1:1101:1:1", 0, 3000, 0xB3, "10M", 0, 3000, 30, "rg1", 60},
+                {"t:1:1101:1:1", 0, 3100, 0x43, "10M", 1, 3200, 30, "rg1", 60},
+                {"t:1:1101:1:1", 1, 3200, 0x83, "10M", 0, 3100, 30, "rg1", 60},
+                {"t:1:1101:2:2", 1, 3200, 0x43, "10M", 0, 3100, 40, "rg1", 60},
+                {"t:1:1101:2:2", 0, 3100, 0x83, "10M", 1, 3200, 40, "rg1", 60},
+                // Fragments on their own, and clipping that moves the unclipped start.
+                {"f:1:1101:1:1", 0, 4000, 0, "10M", -1, 0, 30, "rg1", 60},
+                {"f:1:1101:2:2", 0, 4000, 0, "10M", -1, 0, 35, "rg1", 60},
+                {"f:1:1101:3:3", 0, 4002, 0, "2S8M", -1, 0, 39, "rg1", 60},
+                {"f:1:1101:4:4", 0, 4100, 0x10, "10M", -1, 0, 30, "rg1", 60},
+                {"f:1:1101:5:5", 0, 4095, 0x10, "5M5S", -1, 0, 30, "rg1", 60},
+                // A fragment on a pair's read's place loses to the pair whatever it scores.
+                {"h:1:1101:1:1", 0, 5000, 0x63, "10M", 0, 5100, 10, "rg1", 60},
+                {"h:1:1101:1:1", 0, 5100, 0x93, "10M", 0, 5000, 10, "rg1", 60},
+                {"h:1:1101:2:2", 0, 5000, 0, "10M", -1, 0, 40, "rg1", 60},
+                // A mapped read with its unmapped mate, beside a duplicate of it.
+                {"u:1:1101:1:1", 0, 6000, 0x49, "10M", 0, 6000, 40, "rg1", 60},
+                {"u:1:1101:1:1", 0, 6000, 0x85, "*", 0, 6000, 40, "rg1", 0},
+                {"u:1:1101:2:2", 0, 6000, 0x49, "10M", 0, 6000, 20, "rg1", 60},
+                {"u:1:1101:2:2", 0, 6000, 0x85, "*", 0, 6000, 20, "rg1", 0},
+                // Both unmapped, and unmapped alone.
+                {"n:1:1101:1:1", -1, 0, 0x4D, "*", -1, 0, 30, "rg1", 0},
+                {"n:1:1101:1:1", -1, 0, 0x8D, "*", -1, 0, 30, "rg1", 0},
+                {"n:1:1101:2:2", -1, 0, 0x4, "*", -1, 0, 30, "rg1", 0},
+                // A primary that lost keeps its secondary and supplementary company in the verdict.
+                {"p:1:1101:1:1", 0, 7000, 0x63, "10M", 0, 7100, 30, "rg1", 60},
+                {"p:1:1101:1:1", 0, 7100, 0x93, "10M", 0, 7000, 30, "rg1", 60},
+                {"p:1:1101:1:1", 0, 7500, 0x163, "10M", 0, 7100, 30, "rg1", 60},
+                {"p:1:1101:2:2", 0, 7000, 0x63, "10M", 0, 7100, 40, "rg1", 60},
+                {"p:1:1101:2:2", 0, 7100, 0x93, "10M", 0, 7000, 40, "rg1", 60},
+                {"p:1:1101:2:2", 0, 7600, 0x863, "10M", 0, 7100, 40, "rg1", 60},
+                // Nothing but a supplementary, and a mate the file does not hold.
+                {"q:1:1101:1:1", 0, 7700, 0x800, "10M", -1, 0, 30, "rg1", 60},
+                {"l:1:1101:1:1", 0, 7800, 0x63, "10M", 0, 7900, 30, "rg1", 60},
+                {"l:1:1101:2:2", 0, 7800, 0x63, "10M", 0, 7900, 30, "rg1", 60},
+                // Names with no location, and one where a failed check loses it the score.
+                {"plainA", 0, 8000, 0x63, "10M", 0, 8100, 30, "rg1", 60},
+                {"plainA", 0, 8100, 0x93, "10M", 0, 8000, 30, "rg1", 60},
+                {"plainB", 0, 8000, 0x63, "10M", 0, 8100, 31, "rg1", 60},
+                {"plainB", 0, 8100, 0x93, "10M", 0, 8000, 31, "rg1", 60},
+                {"v:1:1101:1:1", 0, 8200, 0x263, "10M", 0, 8300, 40, "rg1", 60},
+                {"v:1:1101:1:1", 0, 8300, 0x293, "10M", 0, 8200, 40, "rg1", 60},
+                {"v:1:1101:2:2", 0, 8200, 0x63, "10M", 0, 8300, 10, "rg1", 60},
+                {"v:1:1101:2:2", 0, 8300, 0x93, "10M", 0, 8200, 10, "rg1", 60},
+                // The group with no library.
+                {"w:1:1101:1:1", 0, 9000, 0, "10M", -1, 0, 30, "rg3", 60},
+                {"w:1:1101:2:2", 0, 9000, 0, "10M", -1, 0, 20, "rg3", 60},
+                {"w:1:1101:3:3", 0, 9300, 0x400, "20M", -1, 0, 20, "rg3", 60},
+        };
+        for (final Object[] read : reads) {
+            if (variant.equals("one-library") && !"rg1".equals(read[8])) {
+                continue;
+            }
+            final SAMRecord record = new SAMRecord(header);
+            record.setReadName((String) read[0]);
+            record.setFlags((int) read[3]);
+            record.setReferenceIndex((int) read[1]);
+            record.setAlignmentStart((int) read[2]);
+            record.setCigarString((String) read[4]);
+            record.setMateReferenceIndex((int) read[5]);
+            record.setMateAlignmentStart((int) read[6]);
+            record.setMappingQuality((int) read[9]);
+            record.setReadString("ACGTACGTACACGTACGTAC".substring(0, ((String) read[4]).equals("20M") ? 20 : 10));
+            final char[] qualities = new char[record.getReadLength()];
+            java.util.Arrays.fill(qualities, (char) (33 + (int) read[7]));
+            record.setBaseQualityString(new String(qualities));
+            if (!variant.equals("no-groups")) {
+                record.setAttribute("RG", read[8]);
+            }
+            // A marking the input already carries is taken back.
+            if (read[0].equals("x:1:1101:1000:1000")) {
+                record.setAttribute("DT", "LB");
+            }
+            records.add(record);
+        }
+        final SAMRecord first = records.get(0);
+        if (variant.equals("no-read-group")) {
+            records.get(4).setAttribute("RG", null);
+        }
+        if (variant.equals("unknown-read-group")) {
+            records.get(4).setAttribute("RG", "elsewhere");
+        }
+        if (variant.equals("three")) {
+            final SAMRecord third = first.deepCopy();
+            third.setAlignmentStart(50);
+            records.add(third);
+        }
+        if (variant.equals("collision")) {
+            // One name: a read whose mate is mapped and a fragment, both answered as not duplicate.
+            final SAMRecord alone = new SAMRecord(header);
+            alone.setReadName("l:1:1101:1:1");
+            alone.setFlags(0);
+            alone.setReferenceIndex(0);
+            alone.setAlignmentStart(7850);
+            alone.setCigarString("10M");
+            alone.setMappingQuality(60);
+            alone.setReadString("ACGTACGTAC");
+            alone.setBaseQualityString("IIIIIIIIII");
+            alone.setAttribute("RG", "rg1");
+            records.add(alone);
+        }
+        final boolean scattered = variant.equals("scattered");
+        final boolean presorted = order == SAMFileHeader.SortOrder.unsorted || scattered;
+        if (scattered) {
+            // Ordered by position under a header that says grouped: a name comes back later.
+            records.sort(java.util.Comparator.comparingInt(SAMRecord::getAlignmentStart));
+        }
+        try (final SAMFileWriter writer = new SAMFileWriterFactory()
+                .setCreateIndex(order == SAMFileHeader.SortOrder.coordinate)
+                .makeBAMWriter(header, presorted, bam.toFile())) {
+            records.forEach(writer::addAlignment);
+        }
+    }
+
+    /**
      * insert_pairs.bam: proper pairs in two read groups of one sample, FR with one far outlier, then RF and
      * TANDEM, for CollectInsertSizeMetricsSpark. `widen` lengthens the FR inserts, which moves the
      * median and the widths.
@@ -3042,6 +3220,12 @@ public class MakeFixtures {
         bamTwo(dir.resolve("reads2.bam"));
         duplicateGroups(dir.resolve("dup_a.bam"), false);
         duplicateGroups(dir.resolve("dup_marks.bam"), true);
+        markingFixture(dir.resolve("marking.bam"), SAMFileHeader.SortOrder.coordinate, "");
+        markingFixture(dir.resolve("marking_names.bam"), SAMFileHeader.SortOrder.queryname, "");
+        markingFixture(dir.resolve("marking_one.bam"), SAMFileHeader.SortOrder.coordinate, "one-library");
+        markingFixture(dir.resolve("marking_three.bam"), SAMFileHeader.SortOrder.coordinate, "three");
+        markingFixture(dir.resolve("marking_collision.bam"), SAMFileHeader.SortOrder.queryname, "collision");
+        markingFixture(dir.resolve("marking_no_group.bam"), SAMFileHeader.SortOrder.queryname, "no-read-group");
         insertSizePairs(dir.resolve("insert_pairs.bam"), 0);
         insertSizePairs(dir.resolve("insert_pairs2.bam"), 15);
         bamWithOriginalQualities(dir.resolve("reads_oq.bam"));

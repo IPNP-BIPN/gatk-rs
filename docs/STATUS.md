@@ -8,9 +8,9 @@ Ports vendored from main at: htsjdk-rs `0e5afcc8f4bb`, picard-rs `d6e5de789adf`
 | state | tools | share |
 |---|---:|---:|
 | oracle-backed | 262 | 84.2% |
-| golden-pending | 20 | 6.4% |
+| golden-pending | 21 | 6.8% |
 | unchecked | 0 | 0.0% |
-| not started | 29 | 9.3% |
+| not started | 28 | 9.0% |
 | **total** | **311** | |
 
 `oracle-backed` means CI re-derives the tool's goldens in the pinned container on every run and compares them. It does **not** mean the tool is byte-identical over its whole argument surface: that is what the argument-coverage column is for. A t-wise array (`tools/coverage/covering.py`, sized in [what-pairwise-coverage-costs.md](what-pairwise-coverage-costs.md)) is run against the reference and the port, and the column reports the fraction of its rows on which the two answered identically, rejections included. `not measured` means the array has never been run against a port binary, which is still true of most tools here.
@@ -149,7 +149,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 
 </details>
 
-## gatk-origin tools (161 of 190 started)
+## gatk-origin tools (162 of 190 started)
 
 | tool | archetype | state | suites | cases | argument coverage | cost (cold / steady) |
 |---|---|---|---|---:|---|---|
@@ -257,6 +257,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `LeftAlignIndels` | record-transform | oracle-backed | left-align-indels-tool | 1 | t=2, 19/19 rows (100%) | 0.003 / 0.044 |
 | `LocalAssembler` | locus-walker | oracle-backed | local-assembler | 1 | t=2, 21/21 rows (100%) | 0.004 / 0.105 |
 | `MTLowHeteroplasmyFilterTool` | unclassified | oracle-backed | mt-low-heteroplasmy | 1 | t=2, 15/15 rows (100%) | 0.002 / 0.055 |
+| `MarkDuplicatesSpark` | record-transform | golden-pending | spark-walkers | 1 | not measured | not measured |
 | `MeanQualityByCycleSpark` | reporting-walker | golden-pending | spark-walkers | 1 | not measured | not measured |
 | `MergeAnnotatedRegions` | unclassified | oracle-backed | merge-annotated-regions | 1 | t=2, 18/18 rows (100%) | 0.002 / 0.058 |
 | `MergeAnnotatedRegionsByAnnotation` | unclassified | oracle-backed | merge-annotated-regions-by-annotation | 1 | t=2, 22/22 rows (100%) | 0.002 / 0.057 |
@@ -315,9 +316,9 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `VariantRecalibrator` | variant-transform | oracle-backed | variant-recalibrator | 1 | t=2, 26/26 rows (100%) | 0.081 / 1.010 |
 | `VariantsToTable` | variant-walker | oracle-backed | variants-to-table | 1 | t=2, 23/23 rows (100%) | 0.002 / 0.056 |
 
-<details><summary>29 not started</summary>
+<details><summary>28 not started</summary>
 
-`BwaAndMarkDuplicatesPipelineSpark`, `BwaSpark`, `CalcMetadataSpark`, `CollectAllelicCountsSpark`, `CpxVariantReInterpreterSpark`, `DetermineGermlineContigPloidy`, `DiscoverVariantsFromContigAlignmentsSAMSpark`, `ExtractSVEvidenceSpark`, `FindBadGenomicKmersSpark`, `FindBreakpointEvidenceSpark`, `GenomicsDBImport`, `GermlineCNVCaller`, `HaplotypeCallerSpark`, `HtsgetReader`, `MarkDuplicatesSpark`, `NVScoreVariants`, `ParallelCopyGCSDirectoryIntoHDFSSpark`, `PathSeqBwaSpark`, `PathSeqFilterSpark`, `PathSeqPipelineSpark`, `PathSeqScoreSpark`, `PlotDenoisedCopyRatios`, `PlotModeledSegments`, `PostprocessGermlineCNVCalls`, `ReadsPipelineSpark`, `ScoreVariantAnnotations`, `StructuralVariationDiscoveryPipelineSpark`, `SvDiscoverFromLocalAssemblyContigAlignmentsSpark`, `TrainVariantAnnotationsModel`
+`BwaAndMarkDuplicatesPipelineSpark`, `BwaSpark`, `CalcMetadataSpark`, `CollectAllelicCountsSpark`, `CpxVariantReInterpreterSpark`, `DetermineGermlineContigPloidy`, `DiscoverVariantsFromContigAlignmentsSAMSpark`, `ExtractSVEvidenceSpark`, `FindBadGenomicKmersSpark`, `FindBreakpointEvidenceSpark`, `GenomicsDBImport`, `GermlineCNVCaller`, `HaplotypeCallerSpark`, `HtsgetReader`, `NVScoreVariants`, `ParallelCopyGCSDirectoryIntoHDFSSpark`, `PathSeqBwaSpark`, `PathSeqFilterSpark`, `PathSeqPipelineSpark`, `PathSeqScoreSpark`, `PlotDenoisedCopyRatios`, `PlotModeledSegments`, `PostprocessGermlineCNVCalls`, `ReadsPipelineSpark`, `ScoreVariantAnnotations`, `StructuralVariationDiscoveryPipelineSpark`, `SvDiscoverFromLocalAssemblyContigAlignmentsSpark`, `TrainVariantAnnotationsModel`
 
 </details>
 

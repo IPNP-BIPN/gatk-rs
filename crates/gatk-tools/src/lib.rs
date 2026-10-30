@@ -129,6 +129,7 @@ pub mod main_entry;
 pub mod main_usage;
 pub mod main_usage_catalogue;
 pub mod make_sites_only_vcf;
+pub mod mark_duplicates_spark;
 pub mod merge_mutect2_mc3;
 pub mod merge_vcfs;
 pub mod methylation_type_caller;

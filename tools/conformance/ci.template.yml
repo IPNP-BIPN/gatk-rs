@@ -244,7 +244,7 @@ jobs:
             --tool BaseRecalibratorSpark --tool ApplyBQSRSpark --tool BQSRPipelineSpark \
             --tool SortSamSpark --tool PrintVariantsSpark --tool RevertSamSpark \
             --tool CollectInsertSizeMetricsSpark --tool CompareDuplicatesSpark \
-            --tool CollectMultipleMetricsSpark \
+            --tool CollectMultipleMetricsSpark --tool MarkDuplicatesSpark \
             --tool ExtractOriginalAlignmentRecordsByNameSpark --tool MeanQualityByCycleSpark \
             --tool QualityScoreDistributionSpark --tool CollectBaseDistributionByCycleSpark \
             --tool CollectQualityYieldMetricsSpark \

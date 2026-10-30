@@ -226,22 +226,22 @@ fn spark_traversal_source(
     source: ReadsDataSource,
 ) -> Result<ReadsDataSource, Thrown> {
     // `getUnfilteredReads` with intervals is a Disq traversal, which needs the index beside the
-    // BAM. Without one the reference fails inside an executor task, and that failure is Spark's
-    // log rather than a GATK refusal; the port says so in its own words.
+    // BAM. Without one the reference fails inside the first executor task.
     let source = if intervals_specified(parser) {
         let path = std::path::Path::new(input);
         match htsjdk_bam::sam_files::find_index(path) {
             Some(index) => ReadsDataSource::open(path, &index)
                 .map_err(|error| Thrown::user(format!("{error:?}")))?,
             None => {
+                let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+                eprintln!("ERROR Executor - Exception in task 0.0 in stage 0.0 (TID 0)");
                 return Err(Thrown::non_user(
-                    PORT_LIMITATION,
+                    "org.apache.spark.SparkException",
                     format!(
-                        "Intervals set but no index file found for file:{input}: the reference \
-                         fails this inside a Spark task, which this port does not reproduce. \
-                         This message is the port's own and not GATK's."
+                        "Intervals set but no index file found for file:{}",
+                        absolute.display()
                     ),
-                ))
+                ));
             }
         }
     } else {
@@ -1895,6 +1895,142 @@ pub fn collect_insert_size_metrics_spark(parser: &Parser) -> Outcome {
             ));
         }
     }
+    Ok(None)
+}
+
+/// `MarkDuplicatesSpark.runTool`.
+///
+/// One input, a queryname sort when the header does not promise the names are grouped, the marking,
+/// the metrics, and the file coordinate-sorted whatever came in. Reads are one partition here: the
+/// reducers only move the partition boundaries, which a name never spans.
+pub fn mark_duplicates_spark(parser: &Parser) -> Outcome {
+    use gatk_tools::mark_duplicates_spark as md;
+    let tool = "MarkDuplicatesSpark";
+    if arguments(parser, "input").len() > 1 {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "MarkDuplicatesSpark over several inputs merges their headers, which this port does \
+             not do yet. This message is the port's own and not GATK's.",
+        ));
+    }
+    let flow = flag(parser, "flow-quality-sum-strategy")
+        || flag(parser, "single-end-reads-end-position-significant")
+        || flag(parser, "single-end-reads-clipping-is-end")
+        || flag(parser, "flowbased")
+        || number_or(parser, "flow-skip-start-homopolymers", 0) != 0;
+    if flow {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "MarkDuplicatesSpark's flow mode is not ported yet. This message is the port's own \
+             and not GATK's.",
+        ));
+    }
+    let SparkStart {
+        source,
+        mut header,
+        intervals,
+        filters,
+    } = spark_startup(parser, tool)?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    // `SamFileHeaderMerger`, which an input goes through even alone, keeps no group order.
+    header.attributes.remove("GO");
+    let order = header
+        .attributes
+        .get("SO")
+        .unwrap_or("unsorted")
+        .to_string();
+    if flag(parser, "treat-unsorted-as-querygroup-ordered")
+        && (order == "unknown" || order == "unsorted")
+    {
+        header.set_group_order("query");
+    }
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let mut records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    drop(filter);
+
+    let mut tagging = match scalar(parser, "duplicate-tagging-policy").as_deref() {
+        Some("All") => md::Tagging::All,
+        Some("OpticalOnly") => md::Tagging::OpticalOnly,
+        _ => md::Tagging::DontTag,
+    };
+    let (remove_all, remove_sequencing) = (
+        flag(parser, "remove-all-duplicates"),
+        flag(parser, "remove-sequencing-duplicates"),
+    );
+    if remove_sequencing && tagging == md::Tagging::DontTag {
+        tagging = md::Tagging::OpticalOnly;
+    }
+    let regex = md::ReadNameRegex::from_arg(argument(parser, "read-name-regex").as_deref())
+        .map_err(|error| Thrown::non_user("java.util.regex.PatternSyntaxException", error))?;
+    let settings = md::MarkArguments {
+        scoring: match scalar(parser, "duplicate-scoring-strategy").as_deref() {
+            Some("TOTAL_MAPPED_REFERENCE_LENGTH") => md::Scoring::TotalMappedReferenceLength,
+            Some("FLOW_SUM_OF_BASE_QUALITIES") => md::Scoring::FlowSumOfBaseQualities,
+            _ => md::Scoring::SumOfBaseQualities,
+        },
+        dont_mark_unmapped_mates: flag(parser, "do-not-mark-unmapped-mates"),
+        tagging,
+        read_name_regex: regex,
+        pixel_distance: number_or(parser, "optical-duplicate-pixel-distance", 100),
+    };
+
+    // `getHeaderReadGroupIndexMap`, on the driver.
+    if header.read_groups.is_empty() {
+        return Err(Thrown::user(
+            "Bad input: Sam file header missing Read Group fields. MarkDuplicatesSpark currently \
+             requires reads to be labeled with read group tags, please add read groups tags to \
+             your reads",
+        ));
+    }
+    // `querynameSortReadsIfNecessary`.
+    let grouped = header.attributes.get("SO") == Some("queryname")
+        || header.attributes.get("GO") == Some("query");
+    if !grouped {
+        records.sort_by(htsjdk_bam::query_name::compare);
+    }
+    let marked = md::mark(vec![records], &header, &settings).map_err(|failure| {
+        // Measured on one partition: a queryname sort of its own takes two stages and a task,
+        // and the zip comes two stages and a task after the grouping.
+        let (stage, task) = match (grouped, failure.late) {
+            (true, false) => (1, 1),
+            (true, true) => (3, 3),
+            (false, false) => (3, 2),
+            (false, true) => (5, 4),
+        };
+        eprintln!("ERROR Executor - Exception in task 0.0 in stage {stage}.0 (TID {task})");
+        Thrown::non_user("org.apache.spark.SparkException", failure.message)
+    })?;
+    if let Some(metrics) = argument(parser, "metrics-file") {
+        let headers = vec![
+            crate::command_line::expanded(tool, parser),
+            format!("Started on: {}", java_display_now()),
+        ];
+        std::fs::write(&metrics, md::metrics_file(&marked, &header, &headers)).map_err(
+            |error| Thrown::non_user(PORT_FAILURE, format!("could not write {metrics}: {error}")),
+        )?;
+    }
+    let kept: Vec<BamRecord> = marked
+        .reads
+        .into_iter()
+        .filter(|record| {
+            if remove_all {
+                !gatk_engine::read::is_duplicate(record)
+            } else if remove_sequencing {
+                !matches!(
+                    record.tags.get(htsjdk_bam::tag::Tag::new(b"DT")),
+                    Some(htsjdk_bam::tag::TagValue::Str(kind)) if kind == "SQ"
+                )
+            } else {
+                true
+            }
+        })
+        .collect();
+    header.set_sort_order("coordinate");
+    write_spark_reads(parser, &header, &kept, &output, true)?;
     Ok(None)
 }
 

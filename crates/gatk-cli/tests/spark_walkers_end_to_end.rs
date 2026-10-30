@@ -29,6 +29,8 @@
 //!    the dump and this test sort it;
 //!  * **CollectInsertSizeMetricsSpark**, GATK's collector and not Picard's: ten filters that keep
 //!    the first of the pair, FR, TANDEM, RF, and no file when no category passes;
+//!  * **MarkDuplicatesSpark**, whose verdict is a read name's, so that a read's company follows
+//!    it, over every record type it makes and with the finder's graph;
 //!  * **CollectMultipleMetricsSpark**, those two collectors in the order asked for, each through
 //!    its own filters, the command line's being parsed and bypassed;
 //!  * **and PileupSpark's text-file directory**, Hadoop's checksums included.

@@ -318,7 +318,8 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         | "QualityScoreDistributionSpark"
         | "CollectBaseDistributionByCycleSpark"
         | "CollectQualityYieldMetricsSpark"
-        | "CompareDuplicatesSpark" => Some(&["AllowAllReadsReadFilter"]),
+        | "CompareDuplicatesSpark"
+        | "MarkDuplicatesSpark" => Some(&["AllowAllReadsReadFilter"]),
         "CountBasesSpark"
         | "FlagStatSpark"
         | "ApplyBQSRSpark"

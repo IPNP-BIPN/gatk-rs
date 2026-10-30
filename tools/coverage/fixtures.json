@@ -12928,6 +12928,119 @@
       "$why": [
         "Pairs in every orientation and two read groups, so a level and the collectors change what the two files hold. No --reference: no dictionary of the corpus matches these BAMs. A filter on the command line is parsed and then bypassed, so a value here only has to survive the descriptor."
       ]
+    },
+    "MarkDuplicatesSpark": {
+      "--input": [
+        "/work/fixtures/marking.bam",
+        "/work/fixtures/marking_names.bam",
+        "/work/fixtures/marking_one.bam"
+      ],
+      "--read-index": [],
+      "--intervals": [
+        "chr1:1-3000",
+        "chr1:1000-9000",
+        "<unset>"
+      ],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--program-name": [
+        "counts",
+        "counts2"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "chr1:2000-2200",
+        "<unset>"
+      ],
+      "--output": [
+        "/work/out/marked.bam",
+        "/work/out/marked2.bam"
+      ],
+      "--reference": [],
+      "--disable-read-filter": [
+        "WellformedReadFilter"
+      ],
+      "--metrics-file": [
+        "/work/out/marked.metrics",
+        "<unset>"
+      ],
+      "--duplicate-scoring-strategy": [
+        "SUM_OF_BASE_QUALITIES",
+        "TOTAL_MAPPED_REFERENCE_LENGTH",
+        "FLOW_SUM_OF_BASE_QUALITIES"
+      ],
+      "--duplicate-tagging-policy": [
+        "DontTag",
+        "All",
+        "OpticalOnly"
+      ],
+      "--remove-all-duplicates": [],
+      "--remove-sequencing-duplicates": [],
+      "--do-not-mark-unmapped-mates": [
+        "false",
+        "true"
+      ],
+      "--read-name-regex": [
+        "[^:]*:[^:]*:([0-9]+):([0-9]+):([0-9]+)",
+        "null",
+        "<unset>"
+      ],
+      "--optical-duplicate-pixel-distance": [
+        "5",
+        "100",
+        "100000"
+      ],
+      "--allow-multiple-sort-orders-in-input": [
+        "false",
+        "true"
+      ],
+      "--treat-unsorted-as-querygroup-ordered": [
+        "false",
+        "true"
+      ],
+      "--flowbased": [
+        "false"
+      ],
+      "--flow-quality-sum-strategy": [
+        "false"
+      ],
+      "--single-end-reads-end-position-significant": [
+        "false"
+      ],
+      "--single-end-reads-clipping-is-end": [
+        "false"
+      ],
+      "--flow-q-is-known-end": [
+        "false"
+      ],
+      "--flow-skip-start-homopolymers": [
+        "0"
+      ],
+      "--flow-end-pos-uncertainty": [
+        "0",
+        "3"
+      ],
+      "$why": [
+        "Every record type the tool makes, in the three orders of header it treats apart, the one-library copy being what brings the histogram. The two removals exclude --duplicate-tagging-policy, even at false, so they are measured in the spark-walkers golden and left out here. The flow arguments hold at their defaults: the port refuses flow mode by name. A single input: several merge their headers, which the port also refuses by name."
+      ]
     }
   },
   "constraints": [

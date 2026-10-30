@@ -587,6 +587,8 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.spark.pipelines.metrics.CollectInsertSizeMetricsSpark());
         declarations("CollectMultipleMetricsSpark",
                 new org.broadinstitute.hellbender.tools.spark.pipelines.metrics.CollectMultipleMetricsSpark());
+        declarations("MarkDuplicatesSpark",
+                new org.broadinstitute.hellbender.tools.spark.transforms.markduplicates.MarkDuplicatesSpark());
         declarations("MeanQualityByCycleSpark",
                 new org.broadinstitute.hellbender.tools.spark.pipelines.metrics.MeanQualityByCycleSpark());
         declarations("QualityScoreDistributionSpark",

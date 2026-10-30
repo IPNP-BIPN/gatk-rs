@@ -311,6 +311,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CollectQualityYieldMetricsSpark" => Some(run_collect_quality_yield_metrics_spark),
         "CollectInsertSizeMetricsSpark" => Some(run_collect_insert_size_metrics_spark),
         "CollectMultipleMetricsSpark" => Some(run_collect_multiple_metrics_spark),
+        "MarkDuplicatesSpark" => Some(run_mark_duplicates_spark),
         "CompareDuplicatesSpark" => Some(run_compare_duplicates_spark),
         "ExtractOriginalAlignmentRecordsByNameSpark" => {
             Some(run_extract_original_alignment_records_by_name_spark)
@@ -1081,6 +1082,10 @@ fn run_collect_insert_size_metrics_spark(args: &[String]) -> Result<Option<Strin
 
 fn run_collect_multiple_metrics_spark(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::collect_multiple_metrics_spark(&parsed("CollectMultipleMetricsSpark", args)?)
+}
+
+fn run_mark_duplicates_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::mark_duplicates_spark(&parsed("MarkDuplicatesSpark", args)?)
 }
 
 fn run_compare_duplicates_spark(args: &[String]) -> Result<Option<String>, Thrown> {
