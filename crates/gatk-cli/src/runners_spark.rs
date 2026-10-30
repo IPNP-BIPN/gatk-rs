@@ -1737,6 +1737,126 @@ pub fn collect_quality_yield_metrics_spark(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// The arguments of `InsertSizeMetricsArgumentCollection`, and `ALL_READS` without a level.
+fn insert_size_settings(parser: &Parser) -> gatk_tools::spark_metrics::InsertSizeArguments {
+    let mut levels = arguments(parser, "metric-accumulation-level");
+    if levels.is_empty() {
+        levels.push("ALL_READS".to_string());
+    }
+    gatk_tools::spark_metrics::InsertSizeArguments {
+        minimum_pct: scalar(parser, "min-category-reads-percentage")
+            .and_then(|text| text.parse().ok())
+            .unwrap_or(0.05),
+        deviations: double_or(parser, "histogram-plot-deviations-tolerance", 10.0),
+        width: scalar(parser, "width").and_then(|text| text.parse().ok()),
+        levels,
+    }
+}
+
+/// `CollectMultipleMetricsSpark.runTool`: the collectors in the order asked for, each over the
+/// reads through its own default filters. The command line's filters are parsed and validated and
+/// then bypassed, and each collector's arguments are its defaults but for the accumulation levels,
+/// which only the insert sizes read.
+pub fn collect_multiple_metrics_spark(parser: &Parser) -> Outcome {
+    let tool = "CollectMultipleMetricsSpark";
+    let start = spark_startup(parser, tool)?;
+    let base = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let mut collectors = arguments(parser, "collectors");
+    if collectors.is_empty() {
+        collectors = vec![
+            "CollectInsertSizeMetrics".to_string(),
+            "CollectQualityYieldMetrics".to_string(),
+        ];
+    }
+
+    let allow_all = |_: &BamRecord| true;
+    let mut reads = None;
+    // The stage and task the next job takes: an aggregate is one, and `isEmpty` one more.
+    let mut stage = 0;
+    for collector in &collectors {
+        let insert_size = collector == "CollectInsertSizeMetrics";
+        // `validateCollector`, naming the enum constant's own class, and with the output's name
+        // chosen first.
+        let order = start.header.attributes.get("SO").unwrap_or("unsorted");
+        if order != "coordinate" {
+            let constant = if insert_size { 1 } else { 2 };
+            return Err(Thrown::user(format!(
+                "Input \"org.broadinstitute.hellbender.tools.spark.pipelines.metrics.\
+                 CollectMultipleMetricsSpark$SparkCollectors${constant}\" has sort order \
+                 \"{order}\" but \"coordinate\" is required.If you believe the file to be \
+                 sorted correctly, use assume-sorted=true"
+            )));
+        }
+        if reads.is_none() {
+            let records =
+                gatk_tools::read_walker::traverse(&start.source, &start.intervals, &allow_all)
+                    .map_err(|error| Thrown::user(format!("{error:?}")))?;
+            let headers = vec![
+                crate::command_line::expanded(tool, parser),
+                format!("Started on: {}", java_display_now()),
+            ];
+            reads = Some((records, headers));
+        }
+        let Some((records, headers)) = &reads else {
+            unreachable!("the reads were just traversed");
+        };
+        if insert_size {
+            // `InsertSizeMetricsCollector.getDefaultReadFilters`; its `MappingQualityReadFilter`
+            // is parameterised at nought and keeps every read.
+            let chain =
+                gatk_tools::plugin_ownership::default_filters("CollectInsertSizeMetricsSpark")
+                    .unwrap_or_default()
+                    .iter()
+                    .filter(|name| **name != "MappingQualityReadFilter")
+                    .map(|name| gatk_tools::filter_resolution::ResolvedFilter {
+                        name: name.to_string(),
+                        negated: false,
+                    })
+                    .collect::<Vec<_>>();
+            let filter = read_filter(parser, &chain, &start.header)?;
+            let kept = records
+                .iter()
+                .filter(|read| filter(read))
+                .cloned()
+                .collect::<Vec<_>>();
+            if kept.is_empty() {
+                return Err(Thrown::non_user(
+                    "org.broadinstitute.hellbender.exceptions.GATKException",
+                    "No valid reads found in input file.",
+                ));
+            }
+            let text = gatk_tools::spark_metrics::insert_size(
+                &kept,
+                &start.header,
+                &insert_size_settings(parser),
+                headers,
+            )
+            .map_err(|message| {
+                let task = stage + 1;
+                eprintln!("ERROR Executor - Exception in task 0.0 in stage {task}.0 (TID {task})");
+                Thrown::non_user("org.apache.spark.SparkException", message)
+            })?;
+            if let Some(text) = text {
+                write_multiple_metrics(&format!("{base}.insertSizeMetrics.txt"), &text)?;
+            }
+            stage += 2;
+        } else {
+            let text = gatk_tools::spark_metrics::quality_yield(records.iter(), false, headers);
+            write_multiple_metrics(&format!("{base}.qualityYieldMetrics.txt"), &text)?;
+            stage += 1;
+        }
+    }
+    Ok(None)
+}
+
+fn write_multiple_metrics(output: &str, text: &str) -> Result<(), Thrown> {
+    std::fs::write(output, text).map_err(|error| {
+        Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
+    })
+}
+
 /// `CollectInsertSizeMetricsSpark.runTool`: `MetricsCollectorSparkTool`'s lifecycle over
 /// `InsertSizeMetricsCollector`, which is GATK's own and not Picard's.
 pub fn collect_insert_size_metrics_spark(parser: &Parser) -> Outcome {
@@ -1758,18 +1878,7 @@ pub fn collect_insert_size_metrics_spark(parser: &Parser) -> Outcome {
             "No valid reads found in input file.",
         ));
     }
-    let mut levels = arguments(parser, "metric-accumulation-level");
-    if levels.is_empty() {
-        levels.push("ALL_READS".to_string());
-    }
-    let settings = gatk_tools::spark_metrics::InsertSizeArguments {
-        minimum_pct: scalar(parser, "min-category-reads-percentage")
-            .and_then(|text| text.parse().ok())
-            .unwrap_or(0.05),
-        deviations: double_or(parser, "histogram-plot-deviations-tolerance", 10.0),
-        width: scalar(parser, "width").and_then(|text| text.parse().ok()),
-        levels,
-    };
+    let settings = insert_size_settings(parser);
     let text = gatk_tools::spark_metrics::insert_size(&records, &start.header, &settings, &headers)
         .map_err(|message| {
             // `isEmpty` is stage 0, and `mapPartitions` the stage after it.

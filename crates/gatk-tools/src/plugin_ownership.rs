@@ -319,9 +319,11 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         | "CollectBaseDistributionByCycleSpark"
         | "CollectQualityYieldMetricsSpark"
         | "CompareDuplicatesSpark" => Some(&["AllowAllReadsReadFilter"]),
-        "CountBasesSpark" | "FlagStatSpark" | "ApplyBQSRSpark" | "BQSRPipelineSpark" => {
-            Some(&["WellformedReadFilter"])
-        }
+        "CountBasesSpark"
+        | "FlagStatSpark"
+        | "ApplyBQSRSpark"
+        | "BQSRPipelineSpark"
+        | "CollectMultipleMetricsSpark" => Some(&["WellformedReadFilter"]),
         // `PileupSpark.getDefaultReadFilters`: Pileup's five, with the wellformed filter LAST.
         "PileupSpark" => Some(&[
             "MappedReadFilter",

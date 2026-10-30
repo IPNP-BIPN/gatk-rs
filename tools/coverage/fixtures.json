@@ -12772,12 +12772,12 @@
     },
     "CollectInsertSizeMetricsSpark": {
       "--input": [
-        "/work/fixtures/pairs.bam",
-        "/work/fixtures/pairs2.bam"
+        "/work/fixtures/insert_pairs.bam",
+        "/work/fixtures/insert_pairs2.bam"
       ],
       "--read-index": [
-        "/work/fixtures/pairs.bai",
-        "/work/fixtures/pairs2.bai"
+        "/work/fixtures/insert_pairs.bai",
+        "/work/fixtures/insert_pairs2.bai"
       ],
       "--intervals": [
         "chr1:1-1200",
@@ -12852,6 +12852,81 @@
       "--inverted-read-filter": [
         "MateDifferentStrandReadFilter",
         "<unset>"
+      ]
+    },
+    "CollectMultipleMetricsSpark": {
+      "--input": [
+        "/work/fixtures/insert_pairs.bam",
+        "/work/fixtures/insert_pairs2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/insert_pairs.bai",
+        "/work/fixtures/insert_pairs2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-1200",
+        "chr1:600-2500",
+        "<unset>"
+      ],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--program-name": [
+        "counts",
+        "counts2"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "chr1:1-200",
+        "chr1:800-1000",
+        "<unset>"
+      ],
+      "--output": [
+        "/work/out/multi",
+        "/work/out/multi2"
+      ],
+      "--metric-accumulation-level": [
+        "ALL_READS",
+        "SAMPLE",
+        "LIBRARY",
+        "READ_GROUP"
+      ],
+      "--reference": [],
+      "--disable-read-filter": [
+        "WellformedReadFilter"
+      ],
+      "--collectors": [
+        "CollectInsertSizeMetrics",
+        "CollectQualityYieldMetrics",
+        "<unset>"
+      ],
+      "--assume-sorted": [
+        "true",
+        "false"
+      ],
+      "--read-filter": [
+        "GoodCigarReadFilter",
+        "<unset>"
+      ],
+      "$why": [
+        "Pairs in every orientation and two read groups, so a level and the collectors change what the two files hold. No --reference: no dictionary of the corpus matches these BAMs. A filter on the command line is parsed and then bypassed, so a value here only has to survive the descriptor."
       ]
     }
   },

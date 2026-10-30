@@ -6662,7 +6662,7 @@
     },
     {
       "id": "tool-argument-declarations",
-      "status": "oracle-backed",
+      "status": "golden-pending",
       "title": "what one tool declares, and therefore which command lines it accepts",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6682,7 +6682,7 @@
         {
           "dump": "ToolArgumentDeclarationDump",
           "golden": "crates/gatk-tools/tests/data/tool_declarations.txt.gz",
-          "why": "Frozen from the candidate artefact of run 41067896483, byte for byte the local dump, with the seventh Spark brick (X.1): CompareDuplicatesSpark."
+          "why": "Pending the candidate artefact of the ninth Spark brick (X.1): CollectMultipleMetricsSpark."
         }
       ]
     },
@@ -6730,7 +6730,7 @@
     },
     {
       "id": "tool-argument-enums",
-      "status": "oracle-backed",
+      "status": "golden-pending",
       "title": "the constants an enum-valued argument accepts, and what a value outside them costs",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6750,7 +6750,7 @@
         {
           "dump": "ToolArgumentEnumDump",
           "golden": "crates/gatk-tools/tests/data/tool_argument_enums.txt.gz",
-          "why": "Frozen from the candidate artefact of run 41067896483, byte for byte the local dump, with the seventh Spark brick (X.1): CompareDuplicatesSpark."
+          "why": "Pending the candidate artefact of the ninth Spark brick (X.1): CollectMultipleMetricsSpark."
         }
       ]
     },
@@ -8104,8 +8104,8 @@
     },
     {
       "id": "spark-walkers",
-      "status": "oracle-backed",
-      "title": "Nineteen Spark tools end to end through Main, on one partition",
+      "status": "golden-pending",
+      "title": "Twenty Spark tools end to end through Main, on one partition",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "CountReadsSpark",
@@ -8126,7 +8126,8 @@
         "CollectBaseDistributionByCycleSpark",
         "CollectQualityYieldMetricsSpark",
         "CompareDuplicatesSpark",
-        "CollectInsertSizeMetricsSpark"
+        "CollectInsertSizeMetricsSpark",
+        "CollectMultipleMetricsSpark"
       ],
       "java_props": [
         "-Duser.language=en",
@@ -8189,7 +8190,7 @@
       "compare": {
         "mode": "lines"
       },
-      "expect_rows": 337,
+      "expect_rows": 395,
       "expect_contains": [
             "revert-sam-defaults\tjava.lang.UnsupportedOperationException",
             "revert-sam-sanitize\torg.apache.spark.SparkException:Base quality score -1 is invalid",
@@ -8213,7 +8214,7 @@
         {
           "dump": "SparkWalkersDump",
           "golden": "crates/gatk-tools/tests/data/spark_walkers.txt.gz",
-          "why": "Frozen from the candidate artefact of run 41067896483, in the pinned container on a real x86-64 runner, byte for byte the local dump: nineteen Spark tools, adding SortSamSpark, PrintVariantsSpark, RevertSamSpark, the name filter, five metrics and CompareDuplicatesSpark to the earlier runs. Before that, frozen from the golden-pending artefact of run 40458473356, in the pinned container on a real x86-64 runner, with BaseRecalibratorSpark, ApplyBQSRSpark and BQSRPipelineSpark, the fourth Spark brick: twenty-one runs, the first eighteen byte for byte the earlier golden. Eighteen runs over one reference, the shared eleven-read BAM and a four-record VCF, the fixtures travelling as base64. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 40318773837, and byte for byte what this laptop produced."
+          "why": "Pending the candidate artefact of the ninth Spark brick (X.1): CollectMultipleMetricsSpark. Before that, frozen from the candidate artefact of run 41067896483, in the pinned container on a real x86-64 runner, byte for byte the local dump: nineteen Spark tools, adding SortSamSpark, PrintVariantsSpark, RevertSamSpark, the name filter, five metrics and CompareDuplicatesSpark to the earlier runs. Before that, frozen from the golden-pending artefact of run 40458473356, in the pinned container on a real x86-64 runner, with BaseRecalibratorSpark, ApplyBQSRSpark and BQSRPipelineSpark, the fourth Spark brick: twenty-one runs, the first eighteen byte for byte the earlier golden. Eighteen runs over one reference, the shared eleven-read BAM and a four-record VCF, the fixtures travelling as base64. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 40318773837, and byte for byte what this laptop produced."
         }
       ],
       "$java_props_why": "GATK's jar carries runtimeAddOpens in its manifest, which only java -jar honours; the dump runs from the classpath, so Spark's StorageUtils needs the same opens passed by hand. Level 2 is what GATKConfig gives a real gatk invocation and instanceMain never sees (#1032)."

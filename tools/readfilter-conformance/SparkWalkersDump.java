@@ -225,6 +225,47 @@ public class SparkWalkersDump {
         run("insert-size-no-plot-file", null, insert, "-I", pairsBam,
                 "-O", out("insert-size-no-plot-file", "insert.metrics"));
 
+        // COLLECTMULTIPLEMETRICSSPARK runs the two collectors over the same reads, in the order
+        // asked for, each through its own default filters: the command line's are parsed and then
+        // bypassed. -O is a base name, and each collector's failure names its enum constant.
+        final String multiple = "CollectMultipleMetricsSpark";
+        final String insertOnly = "CollectInsertSizeMetrics";
+        final String yieldOnly = "CollectQualityYieldMetrics";
+        final String[][] multiples = {
+                {"multiple"},
+                {"multiple-insert", "--collectors", insertOnly},
+                {"multiple-yield", "--collectors", yieldOnly},
+                {"multiple-reversed", "--collectors", yieldOnly, "--collectors", insertOnly},
+                {"multiple-twice", "--collectors", insertOnly, "--collectors", insertOnly},
+                {"multiple-levels", "--metric-accumulation-level", "SAMPLE",
+                        "--metric-accumulation-level", "READ_GROUP"},
+                {"multiple-interval", "-L", "chr1:100-600"},
+                {"multiple-bypassed", "-RF", "ReadLengthReadFilter", "--min-read-length", "1000",
+                        "--max-read-length", "2000"},
+                {"multiple-no-defaults", "--disable-tool-default-read-filters", "true"},
+                {"multiple-not-assumed", "--assume-sorted", "false"},
+        };
+        for (final String[] row : multiples) {
+            final List<String> argv = new ArrayList<>(Arrays.asList("-I", pairsBam,
+                    "-O", out(row[0], "metrics")));
+            argv.addAll(Arrays.asList(row).subList(1, row.length));
+            run(row[0], "metrics", multiple, argv.toArray(new String[0]));
+        }
+        final String pairsUnsorted = DIR.resolve("pairs-unsorted.bam").toString();
+        final String pairsAway = DIR.resolve("pairs-away.bam").toString();
+        run("multiple-unsorted", null, multiple, "-I", pairsUnsorted,
+                "-O", out("multiple-unsorted", "metrics"));
+        run("multiple-unsorted-yield", null, multiple, "-I", pairsUnsorted,
+                "--collectors", yieldOnly, "-O", out("multiple-unsorted-yield", "metrics"));
+        run("multiple-away", null, multiple, "-I", pairsAway, "-O", out("multiple-away", "metrics"));
+        run("multiple-no-reads", null, multiple, "-I", bam.toString(),
+                "-O", out("multiple-no-reads", "metrics"));
+        run("multiple-no-reads-yield", "metrics", multiple, "-I", bam.toString(),
+                "--collectors", yieldOnly, "-O", out("multiple-no-reads-yield", "metrics"));
+        run("multiple-bad-collector", null, multiple, "-I", pairsBam, "--collectors", "Nope",
+                "-O", out("multiple-bad-collector", "metrics"));
+        run("multiple-no-output", null, multiple, "-I", pairsBam);
+
         final String r = fasta.toString();
         final String i = bam.toString();
         run("count-reads", null, "CountReadsSpark", "-I", i);
@@ -629,7 +670,7 @@ public class SparkWalkersDump {
     /** A metrics file with the one line two runs cannot share taken out. */
     static byte[] withoutTheTime(final Path path) throws Exception {
         final byte[] bytes = Files.readAllBytes(path);
-        if (!path.toString().endsWith(".metrics")) {
+        if (!path.toString().endsWith(".metrics") && !path.toString().endsWith("Metrics.txt")) {
             return bytes;
         }
         return new String(bytes, StandardCharsets.UTF_8)

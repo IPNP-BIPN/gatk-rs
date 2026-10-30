@@ -203,7 +203,7 @@ public class MakeFixtures {
 
     /** A small coordinate-sorted BAM: eight reads on one contig, one of them a duplicate. */
     /**
-     * pairs.bam: proper pairs in two read groups of one sample, FR with one far outlier, then RF and
+     * insert_pairs.bam: proper pairs in two read groups of one sample, FR with one far outlier, then RF and
      * TANDEM, for CollectInsertSizeMetricsSpark. `widen` lengthens the FR inserts, which moves the
      * median and the widths.
      */
@@ -3042,8 +3042,8 @@ public class MakeFixtures {
         bamTwo(dir.resolve("reads2.bam"));
         duplicateGroups(dir.resolve("dup_a.bam"), false);
         duplicateGroups(dir.resolve("dup_marks.bam"), true);
-        insertSizePairs(dir.resolve("pairs.bam"), 0);
-        insertSizePairs(dir.resolve("pairs2.bam"), 15);
+        insertSizePairs(dir.resolve("insert_pairs.bam"), 0);
+        insertSizePairs(dir.resolve("insert_pairs2.bam"), 15);
         bamWithOriginalQualities(dir.resolve("reads_oq.bam"));
         indels(dir.resolve("indels.bam"));
         twoGroups(dir.resolve("groups.bam"));
