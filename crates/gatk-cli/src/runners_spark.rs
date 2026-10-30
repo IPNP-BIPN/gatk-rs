@@ -260,7 +260,7 @@ fn spark_traversal_source(
 /// intervals through its index and refuses one that has none, from inside the job, which surfaces
 /// as the `IllegalArgumentException` itself rather than a GATK error.
 pub fn count_variants_spark(parser: &Parser) -> Outcome {
-    let (variant, intervals) = variant_spark_startup(parser)?;
+    let (variant, intervals) = variant_spark_startup(parser, false)?;
     let (codec, text) = open_feature_input(&variant)?;
     let features: Vec<Locus> = gatk_tools::feature_codec::features(&text, codec)
         .into_iter()
@@ -286,8 +286,13 @@ pub fn count_variants_spark(parser: &Parser) -> Outcome {
 /// and Disq's refusal of an interval query over a VCF with no index.
 ///
 /// Returns the `-V` path and the traversal intervals.
+///
+/// A `VariantWalkerSpark` asks its driving variants first: `getBestAvailableSequenceDictionary` is
+/// overridden there, so `PrintVariantsSpark`'s intervals resolve against the VCF's contigs whatever
+/// `--reference` says, unless the header has none or only lengths an index synthesized.
 fn variant_spark_startup(
     parser: &Parser,
+    variant_walker: bool,
 ) -> Result<(String, Option<Vec<gatk_engine::interval::SimpleInterval>>), Thrown> {
     spark_context(parser)?;
     let reference = reference_dictionary(parser)?;
@@ -304,8 +309,20 @@ fn variant_spark_startup(
 
     // `getBestAvailableSequenceDictionary`: the reference's, then the reads', and with neither an
     // interval cannot be resolved at all.
+    let driving = match argument(parser, "variant") {
+        Some(variant) if variant_walker && intervals_specified(parser) => {
+            let (_, text) = open_feature_input(&variant)?;
+            let dictionary = vcf_dictionary(&text);
+            dictionary
+                .sequences
+                .iter()
+                .any(|sequence| sequence.length > 0)
+                .then_some(dictionary)
+        }
+        _ => None,
+    };
     let intervals =
-        match reference.as_ref().or(reads.as_ref()) {
+        match driving.as_ref().or(reference.as_ref()).or(reads.as_ref()) {
             Some(best) => interval_arguments(parser, best)?.map(|parameters| parameters.intervals),
             None if intervals_specified(parser) => return Err(Thrown::user(
                 "We require at least one input source that has a sequence dictionary (reference \
@@ -347,7 +364,7 @@ fn variant_spark_startup(
 /// compressed alone, the records' own stream and one terminator, with a `.tbi` APPENDED when
 /// indexing is on.
 pub fn print_variants_spark(parser: &Parser) -> Outcome {
-    let (variant, intervals) = variant_spark_startup(parser)?;
+    let (variant, intervals) = variant_spark_startup(parser, true)?;
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;

@@ -2979,6 +2979,20 @@ public class MakeFixtures {
         // index GATK produced.
         new org.broadinstitute.hellbender.tools.IndexFeatureFile()
                 .instanceMain(new String[] {"-I", dir.resolve("reads.vcf.gz").toString()});
+        // The same sites with no genotypes, the only records PrintVariantsSpark's Kryo can carry
+        // to the writer, so that tool's array measures what it writes as well as its refusals.
+        final String sites = vcf().replace(
+                "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n", "")
+                .replace("\tFORMAT\tsample1", "").replace("\tGT\t0/1", "");
+        Files.writeString(dir.resolve("sites.vcf"), sites, StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", dir.resolve("sites.vcf").toString()});
+        try (final OutputStream out =
+                     new BlockCompressedOutputStream(dir.resolve("sites.vcf.gz").toFile())) {
+            out.write(sites.getBytes(StandardCharsets.UTF_8));
+        }
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", dir.resolve("sites.vcf.gz").toString()});
         // A file NAMED like a tabix index and not gzipped at all. `DumpTabixIndex` checks the name
         // before it opens anything, so a `.vcf` handed to it is refused for its name and never
         // reaches the gzip layer; this one gets past the name and fails inside `java.util.zip`,

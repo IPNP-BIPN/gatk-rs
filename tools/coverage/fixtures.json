@@ -12301,8 +12301,8 @@
     },
     "PrintVariantsSpark": {
       "--variant": [
-        "/work/fixtures/indexed.vcf",
-        "/work/fixtures/reads.vcf",
+        "/work/fixtures/sites.vcf",
+        "/work/fixtures/sites.vcf.gz",
         "/work/fixtures/reads.vcf.gz"
       ],
       "--input": [
@@ -12354,7 +12354,12 @@
       ],
       "$why": [
         "CountVariantsSpark's values, with a plain and a block-compressed output, which Disq",
-        "writes as text with no index and as BGZF with its .tbi."
+        "writes as text with no index and as BGZF with its .tbi.",
+        "The sites-only VCFs reach the writer, where a record with genotypes never does, and the genotyped one is that failure. No --reference: the corpus's other dictionary only refuses, and the startup's refusal is the other Spark tools' to measure."
+      ],
+      "--reference": [],
+      "--disable-read-filter": [
+        "WellformedReadFilter"
       ]
     },
     "RevertSamSpark": {
