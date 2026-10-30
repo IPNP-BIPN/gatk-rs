@@ -541,6 +541,9 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.spark.pipelines.metrics.QualityScoreDistributionSpark());
         declarations("CollectBaseDistributionByCycleSpark",
                 new org.broadinstitute.hellbender.tools.spark.pipelines.metrics.CollectBaseDistributionByCycleSpark());
+        // X.1, seventh brick: two BAMs compared by their duplicate marks.
+        declarations("CompareDuplicatesSpark",
+                new org.broadinstitute.hellbender.tools.spark.validation.CompareDuplicatesSpark());
         // The table first, then the arguments that point into it.
         final List<String> names = new ArrayList<>(types.keySet());
         java.util.Collections.sort(names);

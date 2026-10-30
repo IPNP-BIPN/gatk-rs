@@ -6662,7 +6662,7 @@
     },
     {
       "id": "tool-argument-declarations",
-      "status": "oracle-backed",
+      "status": "golden-pending",
       "title": "what one tool declares, and therefore which command lines it accepts",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6682,7 +6682,7 @@
         {
           "dump": "ToolArgumentDeclarationDump",
           "golden": "crates/gatk-tools/tests/data/tool_declarations.txt.gz",
-          "why": "Frozen from the candidate artefact of run 41058016485, byte for byte the local dump, with the sixth Spark brick (X.1): a read-name filter and five metrics."
+          "why": "Pending the candidate artefact of the seventh Spark brick (X.1): CompareDuplicatesSpark."
         }
       ]
     },
@@ -6730,7 +6730,7 @@
     },
     {
       "id": "tool-argument-enums",
-      "status": "oracle-backed",
+      "status": "golden-pending",
       "title": "the constants an enum-valued argument accepts, and what a value outside them costs",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6750,7 +6750,7 @@
         {
           "dump": "ToolArgumentEnumDump",
           "golden": "crates/gatk-tools/tests/data/tool_argument_enums.txt.gz",
-          "why": "Frozen from the candidate artefact of run 41058016485, byte for byte the local dump, with the sixth Spark brick (X.1): a read-name filter and five metrics."
+          "why": "Pending the candidate artefact of the seventh Spark brick (X.1): CompareDuplicatesSpark."
         }
       ]
     },
