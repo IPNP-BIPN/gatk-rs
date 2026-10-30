@@ -13016,30 +13016,18 @@
         "false",
         "true"
       ],
-      "--flowbased": [
-        "false"
-      ],
-      "--flow-quality-sum-strategy": [
-        "false"
-      ],
-      "--single-end-reads-end-position-significant": [
-        "false"
-      ],
-      "--single-end-reads-clipping-is-end": [
-        "false"
-      ],
-      "--flow-q-is-known-end": [
-        "false"
-      ],
-      "--flow-skip-start-homopolymers": [
-        "0"
-      ],
+      "--flowbased": ["false", "true"],
+      "--flow-quality-sum-strategy": ["false", "true"],
+      "--single-end-reads-end-position-significant": ["false", "true"],
+      "--single-end-reads-clipping-is-end": ["false", "true"],
+      "--flow-q-is-known-end": ["false", "true"],
+      "--flow-skip-start-homopolymers": ["0", "2"],
       "--flow-end-pos-uncertainty": [
         "0",
         "3"
       ],
       "$why": [
-        "Every record type the tool makes, in the three orders of header it treats apart, the one-library copy being what brings the histogram. The two removals exclude --duplicate-tagging-policy, even at false, so they are measured in the spark-walkers golden and left out here. The flow arguments hold at their defaults: the port refuses flow mode by name. A single input: several merge their headers, which the port also refuses by name."
+        "Every record type the tool makes, in the three orders of header it treats apart, the one-library copy being what brings the histogram. The two removals exclude --duplicate-tagging-policy, even at false, so they are measured in the spark-walkers golden and left out here. The array keeps to a single input and to fixtures without flow tags; the golden measures several inputs and a flow-tagged fixture."
       ]
     }
   },

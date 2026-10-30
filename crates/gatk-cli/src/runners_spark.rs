@@ -1906,38 +1906,132 @@ pub fn collect_insert_size_metrics_spark(parser: &Parser) -> Outcome {
 pub fn mark_duplicates_spark(parser: &Parser, mode: &Parser) -> Outcome {
     use gatk_tools::mark_duplicates_spark as md;
     let tool = "MarkDuplicatesSpark";
-    if arguments(parser, "input").len() > 1 {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "MarkDuplicatesSpark over several inputs merges their headers, which this port does \
-             not do yet. This message is the port's own and not GATK's.",
+    // `initializeReads`: `concatMerge`. The inputs are a map's keys, so a path given twice is read
+    // once, and the checks below still see two.
+    let filters = resolve_read_filters(parser, tool)?;
+    spark_context(parser)?;
+    let reference = reference_dictionary(parser)?;
+    let given = arguments(parser, "input");
+    let mut inputs: Vec<String> = Vec::new();
+    for input in &given {
+        if !inputs.contains(input) {
+            inputs.push(input.clone());
+        }
+    }
+    if inputs.is_empty() {
+        return Err(Thrown::command_line(
+            "Argument input was missing: Argument 'input' is required",
         ));
     }
-    let SparkStart {
-        source,
-        mut header,
-        intervals,
-        filters,
-    } = spark_startup(parser, tool)?;
+    let sources = inputs
+        .iter()
+        .map(|input| spark_reads_header(input))
+        .collect::<Result<Vec<ReadsDataSource>, Thrown>>()?;
+    let own_headers: Vec<SamHeader> = sources.iter().map(|s| s.header().clone()).collect();
+    let merged = gatk_tools::sam_file_header_merger::merge(&own_headers)
+        .map_err(|message| Thrown::non_user("htsjdk.samtools.SAMException", message))?;
+    let mut header = merged.header;
+    let best = reference.clone().unwrap_or_else(|| header.clone());
+    let intervals = match interval_arguments(parser, &best)? {
+        Some(parameters) => parameters.intervals,
+        None => Vec::new(),
+    };
+    if !flag(parser, "disable-sequence-dictionary-validation") {
+        if let Some(reference) = &reference {
+            validate_reference_against_reads(reference, &header)?;
+        }
+    }
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
-    // `SamFileHeaderMerger`, which an input goes through even alone, keeps no group order.
-    header.attributes.remove("GO");
-    let order = header
-        .attributes
-        .get("SO")
-        .unwrap_or("unsorted")
-        .to_string();
-    if flag(parser, "treat-unsorted-as-querygroup-ordered")
-        && (order == "unknown" || order == "unsorted")
-    {
+
+    let treat_unsorted = flag(parser, "treat-unsorted-as-querygroup-ordered");
+    let unsorted = |input: &SamHeader| {
+        matches!(
+            input.attributes.get("SO").unwrap_or("unsorted"),
+            "unknown" | "unsorted"
+        )
+    };
+    if given.len() > 1 {
+        let allow = flag(parser, "allow-multiple-sort-orders-in-input");
+        // `treatAsReadGroupOrdered`.
+        let badly_sorted = given.iter().find(|input| {
+            let at = inputs.iter().position(|known| known == *input).unwrap_or(0);
+            let own = &own_headers[at];
+            let grouped = own.attributes.get("SO") == Some("queryname")
+                || own.attributes.get("GO") == Some("query");
+            !(grouped || (treat_unsorted && unsorted(own)))
+        });
+        match badly_sorted {
+            Some(input) if !allow => {
+                let at = inputs.iter().position(|known| known == input).unwrap_or(0);
+                return Err(Thrown::user(format!(
+                    "Multiple inputs to MarkDuplicatesSpark detected. MarkDuplicatesSpark requires \
+                     all inputs to be queryname sorted or querygroup-sorted for multi-input \
+                     processing but input {input} was sorted in {} order",
+                    gatk_tools::sam_file_header_merger::header_to_string(&own_headers[at])
+                )));
+            }
+            None if !allow => header.set_group_order("query"),
+            _ => {}
+        }
+    } else if treat_unsorted && unsorted(&header) {
         header.set_group_order("query");
     }
 
+    let sources = inputs
+        .iter()
+        .zip(sources)
+        .map(|(input, source)| spark_traversal_source(parser, input, source))
+        .collect::<Result<Vec<ReadsDataSource>, Thrown>>()?;
     let filter = read_filter(parser, &filters, &header)?;
-    let mut records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
-        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    // `getReads`: a union, one partition an input, of the reads under the merged header. A read
+    // holds its contig by name, which is what makes its index the merged dictionary's.
+    let contigs: std::collections::HashMap<&str, i32> = header
+        .sequences
+        .iter()
+        .enumerate()
+        .map(|(index, sequence)| (sequence.name.as_str(), index as i32))
+        .collect();
+    let mut partitions: Vec<Vec<BamRecord>> = Vec::new();
+    for (source, own) in sources.iter().zip(&own_headers) {
+        let translate = |record: &mut BamRecord| {
+            let index = |old: i32| match usize::try_from(old) {
+                Ok(at) => own
+                    .sequences
+                    .get(at)
+                    .and_then(|sequence| contigs.get(sequence.name.as_str()).copied())
+                    .unwrap_or(old),
+                Err(_) => old,
+            };
+            record.reference_index = index(record.reference_index);
+            record.mate_reference_index = index(record.mate_reference_index);
+        };
+        let mut records = if merged.merged_dictionaries {
+            gatk_tools::read_walker::traverse(source, &intervals, &|record: &BamRecord| {
+                let mut record = record.clone();
+                translate(&mut record);
+                filter(&record)
+            })
+        } else {
+            gatk_tools::read_walker::traverse(source, &intervals, &filter)
+        }
+        .map_err(|error| match error {
+            // Disq's query, in the executor, over a file that lacks a contig the merge has.
+            gatk_engine::reads::ReadsError::ContigNotInDictionary(contig) => {
+                eprintln!("ERROR Executor - Exception in task 0.0 in stage 0.0 (TID 0)");
+                Thrown::non_user(
+                    "org.apache.spark.SparkException",
+                    format!("Contig {contig} not present in reads sequence dictionary"),
+                )
+            }
+            error => Thrown::user(format!("{error:?}")),
+        })?;
+        if merged.merged_dictionaries {
+            records.iter_mut().for_each(translate);
+        }
+        partitions.push(records);
+    }
     drop(filter);
 
     let mut tagging = match scalar(parser, "duplicate-tagging-policy").as_deref() {
@@ -1986,9 +2080,11 @@ pub fn mark_duplicates_spark(parser: &Parser, mode: &Parser) -> Outcome {
     let grouped = header.attributes.get("SO") == Some("queryname")
         || header.attributes.get("GO") == Some("query");
     if !grouped {
+        let mut records: Vec<BamRecord> = partitions.into_iter().flatten().collect();
         records.sort_by(htsjdk_bam::query_name::compare);
+        partitions = vec![records];
     }
-    let marked = md::mark(vec![records], &header, &settings).map_err(|failure| {
+    let marked = md::mark(partitions, &header, &settings).map_err(|failure| {
         // Measured on one partition: a queryname sort of its own takes two stages and a task,
         // and the zip comes two stages and a task after the grouping.
         let (stage, task) = match (grouped, failure.late) {
@@ -2194,10 +2290,14 @@ fn sorted_partitions(
     // `getRecommendedNumReducers`: the argument, else one per ten megabytes of input.
     let mut reducers = number_or(parser, "num-reducers", 0).max(0) as usize;
     if reducers == 0 {
-        let size = argument(parser, "input")
-            .and_then(|input| std::fs::metadata(input).ok())
+        let mut inputs = arguments(parser, "input");
+        inputs.sort();
+        inputs.dedup();
+        let size: u64 = inputs
+            .iter()
+            .filter_map(|input| std::fs::metadata(input).ok())
             .map(|data| data.len())
-            .unwrap_or(0);
+            .sum();
         reducers = 1 + (size / (10 * 1024 * 1024)) as usize;
     }
     let bounds = range_bounds(&sorted, reducers, compare)?;

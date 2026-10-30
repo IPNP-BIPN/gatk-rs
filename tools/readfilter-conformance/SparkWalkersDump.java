@@ -133,6 +133,35 @@ public class SparkWalkersDump {
         }
 
         flowMarkingFixture(DIR.resolve("marking-flow.bam"));
+        final String[] twoContigs = {"chr1", "chr2"};
+        final String[][] twoGroups = {{"rg1", "lib1"}, {"rg4", "lib4"}};
+        final String[][] noPrograms = {};
+        final SAMFileHeader.SortOrder byName = SAMFileHeader.SortOrder.queryname;
+        final SAMFileHeader.SortOrder byPlace = SAMFileHeader.SortOrder.coordinate;
+        final SAMFileHeader.SortOrder noOrder = SAMFileHeader.SortOrder.unsorted;
+        mergeFixture(DIR.resolve("more-queryname.bam"), byName, false, twoContigs, twoGroups, noPrograms, "from more", "rg4");
+        mergeFixture(DIR.resolve("more-copy.bam"), byName, false, twoContigs, twoGroups, noPrograms, "from more", "rg4");
+        mergeFixture(DIR.resolve("more-coordinate.bam"), byPlace, false, twoContigs, twoGroups, noPrograms, "from more", "rg4");
+        mergeFixture(DIR.resolve("more-unsorted.bam"), noOrder, false, twoContigs, twoGroups, noPrograms, "from more", "rg4");
+        mergeFixture(DIR.resolve("more-grouped.bam"), noOrder, true, twoContigs, twoGroups, noPrograms, "from more", "rg4");
+        mergeFixture(DIR.resolve("more-scattered.bam"), noOrder, true, twoContigs, twoGroups, noPrograms, "from more", "rg4");
+        // One id with two libraries, whose reads keep the id and so take the first file's library.
+        mergeFixture(DIR.resolve("more-collision.bam"), byName, false, twoContigs,
+                new String[][] {{"rg1", "other"}, {"rg2", "lib2"}}, noPrograms, null, "rg1");
+        mergeFixture(DIR.resolve("more-programs-a.bam"), byName, false, twoContigs, twoGroups,
+                new String[][] {{"pg1", "first", null}, {"pg2", "second", "pg1"}}, null, "rg4");
+        mergeFixture(DIR.resolve("more-programs-b.bam"), byName, false, twoContigs, twoGroups,
+                new String[][] {{"pg1", "other", null}, {"pg2", "second", "pg1"}, {"pg3", "third", "pg2"}}, null, "rg4");
+        mergeFixture(DIR.resolve("more-programs-dangling.bam"), byName, false, twoContigs, twoGroups,
+                new String[][] {{"pg1", "first", "gone"}}, null, "rg4");
+        // A contig between the two others, which the merge places in front of chr2.
+        mergeFixture(DIR.resolve("more-contig.bam"), byName, false, new String[] {"chr1", "chrM", "chr2"}, twoGroups, noPrograms, null, "rg4");
+        mergeFixture(DIR.resolve("more-contig-place.bam"), byPlace, false, new String[] {"chr1", "chrM", "chr2"}, twoGroups, noPrograms, null, "rg4");
+        mergeFixture(DIR.resolve("more-swapped.bam"), byName, false, new String[] {"chr2", "chr1"}, twoGroups, noPrograms, null, "rg4");
+        // One input still goes through the merger: groups in id order, nothing else of its @HD.
+        mergeFixture(DIR.resolve("more-header.bam"), byPlace, false, twoContigs,
+                new String[][] {{"rg4", "lib4"}, {"rg1", "lib1"}},
+                new String[][] {{"pg9", "last", null}, {"pg1", "first", null}}, "from more", "rg4");
         markingFixture(DIR.resolve("marking.bam"), SAMFileHeader.SortOrder.coordinate, "");
         markingFixture(DIR.resolve("marking-queryname.bam"), SAMFileHeader.SortOrder.queryname, "");
         markingFixture(DIR.resolve("marking-unsorted.bam"), SAMFileHeader.SortOrder.unsorted, "");
@@ -165,7 +194,12 @@ public class SparkWalkersDump {
                 "marking-queryname.bam", "marking-unsorted.bam", "marking-one-library.bam",
                 "marking-clean.bam", "marking-no-groups.bam", "marking-no-read-group.bam",
                 "marking-unknown-read-group.bam", "marking-three.bam", "marking-collision.bam",
-                "marking-scattered.bam", "marking-flow.bam"}) {
+                "marking-scattered.bam", "marking-flow.bam", "more-queryname.bam", "more-copy.bam",
+                "more-coordinate.bam", "more-coordinate.bai", "more-unsorted.bam", "more-grouped.bam",
+                "more-scattered.bam",
+                "more-collision.bam", "more-programs-a.bam", "more-programs-b.bam",
+                "more-programs-dangling.bam", "more-contig.bam", "more-contig-place.bam",
+                "more-contig-place.bai", "more-swapped.bam", "more-header.bam"}) {
             System.out.printf("input\t%s\t%s%n", name,
                     Base64.getEncoder().encodeToString(Files.readAllBytes(DIR.resolve(name))));
         }
@@ -374,6 +408,48 @@ public class SparkWalkersDump {
             argv.addAll(Arrays.asList(row).subList(1, row.length));
             run(row[0], "marked.bam", marks, argv.toArray(new String[0]));
         }
+        // SEVERAL INPUTS are a union, one partition an input, under the header their merge makes.
+        final String allowed = "--allow-multiple-sort-orders-in-input";
+        final String treat = "--treat-unsorted-as-querygroup-ordered";
+        final String[][] severalRows = {
+                {"mark-two", "marking-queryname.bam,more-queryname.bam"},
+                {"mark-two-grouped", "more-grouped.bam,more-copy.bam"},
+                {"mark-two-scattered", "more-scattered.bam,more-queryname.bam"},
+                {"mark-two-same-path", "marking-queryname.bam,marking-queryname.bam"},
+                {"mark-two-same-reads", "more-queryname.bam,more-copy.bam"},
+                {"mark-two-coordinate", "marking.bam,more-coordinate.bam"},
+                {"mark-two-second-bad", "marking-queryname.bam,more-coordinate.bam"},
+                {"mark-two-unsorted", "marking-unsorted.bam,more-unsorted.bam"},
+                {"mark-two-treated", "marking-unsorted.bam,more-unsorted.bam", treat, "true"},
+                {"mark-two-treated-mixed", "marking-queryname.bam,more-unsorted.bam", treat, "true"},
+                {"mark-two-allowed", "marking.bam,more-coordinate.bam", allowed, "true"},
+                {"mark-two-allowed-mixed", "marking-queryname.bam,more-coordinate.bam", allowed, "true"},
+                {"mark-two-allowed-grouped", "marking-queryname.bam,more-queryname.bam", allowed, "true"},
+                {"mark-two-same-reads-sorted", "more-queryname.bam,more-copy.bam", allowed, "true"},
+                {"mark-two-collision", "marking-queryname.bam,more-collision.bam"},
+                {"mark-two-programs", "more-programs-a.bam,more-programs-b.bam"},
+                {"mark-two-dangling", "more-queryname.bam,more-programs-dangling.bam"},
+                {"mark-two-dictionaries", "marking-queryname.bam,more-contig.bam"},
+                {"mark-two-dictionaries-sorted", "marking.bam,more-contig-place.bam", allowed, "true"},
+                {"mark-two-dictionaries-swapped", "marking-queryname.bam,more-swapped.bam"},
+                {"mark-two-interval", "marking.bam,more-coordinate.bam", allowed, "true", "-L", "chr1:100-300"},
+                {"mark-two-interval-contig", "marking.bam,more-contig-place.bam", allowed, "true", "-L", "chrM:1-500"},
+                {"mark-two-interval-no-index", "marking.bam,more-unsorted.bam", allowed, "true", "-L", "chr1:100-300"},
+                {"mark-two-no-groups", "marking-no-groups.bam,more-coordinate.bam", allowed, "true"},
+                {"mark-two-unknown-group", "marking-unknown-read-group.bam,more-coordinate.bam", allowed, "true"},
+                {"mark-two-missing", "marking-queryname.bam,nowhere.bam"},
+                {"mark-one-merged-header", "more-header.bam"},
+        };
+        for (final String[] row : severalRows) {
+            final List<String> argv = new ArrayList<>();
+            for (final String input : row[1].split(",")) {
+                argv.addAll(Arrays.asList("-I", DIR.resolve(input).toString()));
+            }
+            argv.addAll(Arrays.asList("--use-jdk-deflater", "true", "--duplicate-tagging-policy", "All",
+                    "-O", out(row[0], "marked.bam"), "-M", out(row[0], "marked.metrics")));
+            argv.addAll(Arrays.asList(row).subList(2, row.length));
+            run(row[0], "marked.bam", marks, argv.toArray(new String[0]));
+        }
         run("mark-interval-no-index", null, marks, "-I", DIR.resolve("marking-queryname.bam").toString(),
                 "-L", "chr1:100-300", "-O", out("mark-interval-no-index", "marked.bam"));
 
@@ -563,6 +639,89 @@ public class SparkWalkersDump {
      * beside a pair, an unmapped mate, secondaries and supplementaries, a mate missing from the file,
      * names with no location, and a failed vendor check.
      */
+    /** A few reads over the given contigs, with what the header merger has to reconcile. */
+    static void mergeFixture(final Path bam, final SAMFileHeader.SortOrder order, final boolean grouped,
+                             final String[] contigs, final String[][] groups, final String[][] programs,
+                             final String comment, final String group) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        for (final String contig : contigs) {
+            dictionary.addSequence(new SAMSequenceRecord(contig, 100000));
+        }
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(order);
+        if (grouped) {
+            header.setGroupOrder(SAMFileHeader.GroupOrder.query);
+        }
+        for (final String[] entry : groups) {
+            final SAMReadGroupRecord record = new SAMReadGroupRecord(entry[0]);
+            record.setSample("sample1");
+            record.setLibrary(entry[1]);
+            header.addReadGroup(record);
+        }
+        for (final String[] entry : programs) {
+            final htsjdk.samtools.SAMProgramRecord record = new htsjdk.samtools.SAMProgramRecord(entry[0]);
+            record.setProgramName(entry[1]);
+            record.setPreviousProgramGroupId(entry[2]);
+            header.addProgramRecord(record);
+        }
+        if (comment != null) {
+            header.addComment(comment);
+        }
+        final int chr1 = dictionary.getSequenceIndex("chr1");
+        final int chr2 = dictionary.getSequenceIndex("chr2");
+        final int last = contigs.length > 2 ? 1 : chr2;
+        // name, contig, start, flags, mate contig, mate start, quality, group
+        final Object[][] reads = {
+                // At the place of marking.bam's first pair, in its library when the group is rg1.
+                {"m:1:1101:1:1", chr1, 100, 0x63, chr1, 200, 50, group},
+                {"m:1:1101:1:1", chr1, 200, 0x93, chr1, 100, 50, group},
+                {"m:1:1101:1000:1000", chr1, 100, 0x63, chr1, 200, 15, "rg1"},
+                {"m:1:1101:1000:1000", chr1, 200, 0x93, chr1, 100, 15, "rg1"},
+                // A name marking.bam also has, with reads of its own.
+                {"f:1:1101:1:1", chr1, 4000, 0, -1, 0, 37, "rg1"},
+                {"m:1:1101:7:7", last, 300, 0x63, last, 400, 30, group},
+                {"m:1:1101:7:7", last, 400, 0x93, last, 300, 30, group},
+                {"m:1:1101:8:8", last, 300, 0x63, last, 400, 20, group},
+                {"m:1:1101:8:8", last, 400, 0x93, last, 300, 20, group},
+                {"m:1:1101:9:9", chr2, 500, 0, -1, 0, 30, group},
+        };
+        // One name that comes back under a header that says grouped: two fragments, each best at
+        // its place, so one name is answered twice and only that name.
+        final Object[][] back = {
+                {"z:1:1101:1:1", chr1, 8000, 0, -1, 0, 30, group},
+                {"z:1:1101:2:2", chr1, 8500, 0, -1, 0, 30, group},
+                {"z:1:1101:1:1", chr1, 9000, 0, -1, 0, 30, group},
+        };
+        final List<Object[]> all = new ArrayList<>(Arrays.asList(reads));
+        if (bam.getFileName().toString().contains("scattered")) {
+            all.addAll(Arrays.asList(back));
+        }
+        final List<SAMRecord> records = new ArrayList<>();
+        for (final Object[] read : all) {
+            final SAMRecord record = new SAMRecord(header);
+            record.setReadName((String) read[0]);
+            record.setFlags((int) read[3]);
+            record.setReferenceIndex((int) read[1]);
+            record.setAlignmentStart((int) read[2]);
+            record.setCigarString("10M");
+            record.setMateReferenceIndex((int) read[4]);
+            record.setMateAlignmentStart((int) read[5]);
+            record.setMappingQuality(60);
+            record.setReadString("ACGTACGTAC");
+            final char[] qualities = new char[10];
+            Arrays.fill(qualities, (char) (33 + (int) read[6]));
+            record.setBaseQualityString(new String(qualities));
+            record.setAttribute("RG", read[7]);
+            records.add(record);
+        }
+        final SAMFileWriterFactory factory = new SAMFileWriterFactory()
+                .setCreateIndex(order == SAMFileHeader.SortOrder.coordinate);
+        try (SAMFileWriter writer = factory.makeBAMWriter(header, false, bam)) {
+            records.forEach(writer::addAlignment);
+        }
+    }
+
     static void markingFixture(final Path bam, final SAMFileHeader.SortOrder order, final String variant) {
         final SAMFileHeader header = new SAMFileHeader();
         final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();

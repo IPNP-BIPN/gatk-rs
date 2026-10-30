@@ -8191,7 +8191,7 @@
       "compare": {
         "mode": "lines"
       },
-      "expect_rows": 650,
+      "expect_rows": 792,
       "expect_contains": [
             "revert-sam-defaults\tjava.lang.UnsupportedOperationException",
             "revert-sam-sanitize\torg.apache.spark.SparkException:Base quality score -1 is invalid",
@@ -8208,7 +8208,9 @@
         "file\tprint-variants-gz\tprint-variants-gz.vcf.gz.tbi\t",
         "error\tprint-variants-bcf\torg.broadinstitute.hellbender.exceptions.UserException$UnimplementedFeature:It is currently not possible to write a BCF file on spark.",
         "error\tprint-variants-genotyped\torg.apache.spark.SparkException:Job aborted due to stage failure: Exception while getting task result: com.esotericsoftware.kryo.KryoException",
-        "error\tsort-sam-unsorted\torg.broadinstitute.barclay.argparser.CommandLineException$BadArgumentValue:Argument sort-order has a bad value: unsorted."
+        "error\tsort-sam-unsorted\torg.broadinstitute.barclay.argparser.CommandLineException$BadArgumentValue:Argument sort-order has a bad value: unsorted.",
+        "error\tmark-two-coordinate\torg.broadinstitute.hellbender.exceptions.UserException:Multiple inputs to MarkDuplicatesSpark detected.",
+        "file\tmark-two\tmarked.metrics\t"
       ],
       "$expect_why": "Disq's guessed start counting 3 of the 11 reads, an interval count over the indexed VCF, PrintReadsSpark's splitting index and PileupSpark's part file written, the unindexed interval query refused, BaseRecalibratorSpark's table, BQSRPipelineSpark's BAM with its splitting index, SortSamSpark's queryname output indexed only for splitting, the order it has no sort for refused, PrintVariantsSpark's tabix index, its BCF refusal, and its failure inside the job on a record with genotypes.",
       "cases": [

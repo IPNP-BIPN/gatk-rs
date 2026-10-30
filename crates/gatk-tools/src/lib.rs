@@ -174,6 +174,7 @@ pub mod reference_walker;
 pub mod remove_nearby_indels;
 pub mod rename_sample_in_vcf;
 pub mod revert_base_quality_scores;
+pub mod sam_file_header_merger;
 pub mod sam_output;
 pub mod select_variants;
 pub mod select_variants_header;

@@ -1180,7 +1180,9 @@ impl DuplicationMetrics {
         let size = self.estimated_library_size?;
         let unique = self.read_pairs_examined - self.read_pair_duplicates;
         let roi = |x: f64| {
-            size as f64 * (1.0 - (-(x * self.read_pairs_examined as f64) / size as f64).exp())
+            size as f64
+                * (1.0
+                    - jmath::strict_math::exp(-(x * self.read_pairs_examined as f64) / size as f64))
                 / unique as f64
         };
         Some(Histogram {
@@ -1199,7 +1201,7 @@ impl DuplicationMetrics {
 
 /// `DuplicationMetrics.f`.
 fn f(x: f64, c: f64, n: f64) -> f64 {
-    c / x - 1.0 + (-n / x).exp()
+    c / x - 1.0 + jmath::strict_math::exp(-n / x)
 }
 
 /// `DuplicationMetrics.estimateLibrarySize`: forty bisections, and nothing where there is nothing
