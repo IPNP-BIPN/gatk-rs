@@ -1084,8 +1084,25 @@ fn run_collect_multiple_metrics_spark(args: &[String]) -> Result<Option<String>,
     runners::collect_multiple_metrics_spark(&parsed("CollectMultipleMetricsSpark", args)?)
 }
 
+/// `customCommandLineValidation`: `--flowbased` sets its mode's arguments, each one unless it was
+/// given, on the values the tool reads and not on the command line the metrics header reports.
 fn run_mark_duplicates_spark(args: &[String]) -> Result<Option<String>, Thrown> {
-    runners::mark_duplicates_spark(&parsed("MarkDuplicatesSpark", args)?)
+    let parser = parsed("MarkDuplicatesSpark", args)?;
+    if !runners::flag(&parser, "flowbased") {
+        return runners::mark_duplicates_spark(&parser, &parser);
+    }
+    let mut mode = args.to_vec();
+    for (name, value) in [
+        ("--single-end-reads-end-position-significant", "true"),
+        ("--single-end-reads-clipping-is-end", "true"),
+        ("--flow-end-pos-uncertainty", "1"),
+        ("--flow-skip-start-homopolymers", "0"),
+    ] {
+        if !args.iter().any(|arg| arg == name) {
+            mode.extend([name.to_string(), value.to_string()]);
+        }
+    }
+    runners::mark_duplicates_spark(&parser, &parsed("MarkDuplicatesSpark", &mode)?)
 }
 
 fn run_compare_duplicates_spark(args: &[String]) -> Result<Option<String>, Thrown> {

@@ -28,6 +28,8 @@ const LIBRARY: &str = "LB";
 /// The markers `mark` reads back off a name: never a duplicate, and an optical duplicate.
 const NO_OPTICAL_MARKER: i32 = -1;
 const OPTICAL_DUPLICATE_MARKER: i32 = -2;
+/// `FlowBasedReadUtils.FLOW_BASED_INSIGNIFICANT_END`.
+const INSIGNIFICANT_END: i32 = 0;
 /// `DEFAULT_MAX_DUPLICATE_SET_SIZE`: a longer list is not looked at.
 const MAX_DUPLICATE_SET_SIZE: usize = 300_000;
 
@@ -82,6 +84,28 @@ pub struct MarkArguments {
     pub tagging: Tagging,
     pub read_name_regex: ReadNameRegex,
     pub pixel_distance: i32,
+    pub flow: FlowArguments,
+}
+
+/// The flow half of `MarkDuplicatesSparkArgumentCollection`.
+#[derive(Debug, Clone, Default)]
+pub struct FlowArguments {
+    pub quality_sum_strategy: bool,
+    pub end_location_significant: bool,
+    pub end_uncertainty: i32,
+    pub use_clipped_locations: bool,
+    pub skip_start_homopolymers: i32,
+    pub q_is_known_end: bool,
+}
+
+impl FlowArguments {
+    /// `isFlowEnabled`, which `FLOW_Q_IS_KNOWN_END` and the uncertainty alone do not turn on.
+    fn enabled(&self) -> bool {
+        self.quality_sum_strategy
+            || self.end_location_significant
+            || self.use_clipped_locations
+            || self.skip_start_homopolymers != 0
+    }
 }
 
 /// A failure inside a Spark task: the job grouping the names, or, `late`, the one zipping their
@@ -152,6 +176,191 @@ fn stranded_unclipped_start(record: &BamRecord) -> i32 {
     } else {
         gatk_engine::read_utils::unclipped_start(record)
     }
+}
+
+/// `FlowBasedRead.CLIPPING_TAG_NAME`.
+fn clipping_tag(record: &BamRecord) -> Option<&str> {
+    match record.tags.get(Tag::new(b"tm")) {
+        Some(TagValue::Str(text)) => Some(text),
+        _ => None,
+    }
+}
+
+/// `FlowBasedReadUtils.readEndMarkedUnclipped`.
+fn end_marked_unclipped(record: &BamRecord, q_is_known_end: bool) -> bool {
+    clipping_tag(record).is_some_and(|tm| tm.contains('A') || (q_is_known_end && tm.contains('Q')))
+}
+
+/// `FlowBasedReadUtils.readEndMarkedUncertain`.
+fn end_marked_uncertain(record: &BamRecord) -> bool {
+    clipping_tag(record).is_some_and(|tm| tm.contains('Q') || tm.contains('Z'))
+}
+
+/// `FlowBasedReadUtils.getReadFlowOrder`: the read's group's, else the first group's that has one.
+fn flow_order<'a>(record: &BamRecord, header: &'a SamHeader) -> Option<&'a str> {
+    read_group_of(record)
+        .and_then(|id| header.read_groups.iter().find(|rg| rg.id == id))
+        .and_then(|group| group.attributes.get("FO"))
+        .or_else(|| {
+            header
+                .read_groups
+                .iter()
+                .find_map(|group| group.attributes.get("FO"))
+        })
+}
+
+/// The length `getMarkDupReadStart` and `getMarkDupReadEnd` skip off the read's start or end: whole
+/// homopolymers, with the flows that read nothing counted against the number asked for.
+fn skipped_homopolymers(
+    record: &BamRecord,
+    order: Option<&str>,
+    skip: i32,
+    from_end: bool,
+) -> Result<i32, TaskFailure> {
+    let bases = &record.read_bases;
+    let at = |index: usize| {
+        bases[if from_end {
+            bases.len() - 1 - index
+        } else {
+            index
+        }]
+    };
+    if bases.is_empty() {
+        return Err(early(
+            "java.lang.ArrayIndexOutOfBoundsException: Index 0 out of bounds for length 0"
+                .to_string(),
+        ));
+    }
+    let order = order.map(str::as_bytes);
+    // The reference never comes back from a base its flow order does not hold.
+    if order.is_some_and(|flows| !bases.iter().all(|base| flows.contains(base))) {
+        return Err(early(format!(
+            "Read {} holds a base outside its flow order, where the reference never returns. This \
+             message is the port's own and not GATK's.",
+            record.read_name
+        )));
+    }
+    let mut base = at(0);
+    let mut flow = 0usize;
+    let mut left = skip;
+    if let Some(flows) = order {
+        while flows[flow] != base {
+            flow = (flow + 1) % flows.len();
+            left -= 1;
+        }
+    }
+    let mut size = 1usize;
+    while size < bases.len() {
+        if at(size) != base {
+            left -= 1;
+            if left <= 0 {
+                break;
+            }
+            base = at(size);
+            if let Some(flows) = order {
+                flow = (flow + 1) % flows.len();
+                while flows[flow] != base {
+                    left -= 1;
+                    flow = (flow + 1) % flows.len();
+                }
+                if left <= 0 {
+                    break;
+                }
+            }
+        }
+        size += 1;
+    }
+    Ok(size as i32)
+}
+
+/// `FlowBasedReadUtils.getMarkDupReadStart`.
+fn flow_read_start(
+    record: &BamRecord,
+    end_semantics: bool,
+    header: &SamHeader,
+    flow: &FlowArguments,
+) -> Result<i32, TaskFailure> {
+    let unclipped = gatk_engine::read_utils::unclipped_start(record);
+    if !end_semantics && flow.skip_start_homopolymers != 0 {
+        let start = unclipped
+            + skipped_homopolymers(
+                record,
+                flow_order(record, header),
+                flow.skip_start_homopolymers,
+                false,
+            )?;
+        return Ok(if flow.use_clipped_locations {
+            start.max(gatk_engine::read_utils::start(record))
+        } else {
+            start
+        });
+    }
+    Ok(if end_marked_unclipped(record, flow.q_is_known_end) {
+        unclipped
+    } else if end_semantics && end_marked_uncertain(record) {
+        INSIGNIFICANT_END
+    } else if flow.use_clipped_locations {
+        gatk_engine::read_utils::start(record)
+    } else {
+        unclipped
+    })
+}
+
+/// `FlowBasedReadUtils.getMarkDupReadEnd`.
+fn flow_read_end(
+    record: &BamRecord,
+    end_semantics: bool,
+    header: &SamHeader,
+    flow: &FlowArguments,
+) -> Result<i32, TaskFailure> {
+    let unclipped = gatk_engine::read_utils::unclipped_end(record);
+    if !end_semantics && flow.skip_start_homopolymers != 0 {
+        let end = unclipped
+            - skipped_homopolymers(
+                record,
+                flow_order(record, header),
+                flow.skip_start_homopolymers,
+                true,
+            )?;
+        return Ok(if flow.use_clipped_locations {
+            end.min(gatk_engine::read_utils::end(record))
+        } else {
+            end
+        });
+    }
+    Ok(if end_marked_unclipped(record, flow.q_is_known_end) {
+        unclipped
+    } else if end_semantics && end_marked_uncertain(record) {
+        INSIGNIFICANT_END
+    } else if flow.use_clipped_locations {
+        gatk_engine::read_utils::end(record)
+    } else {
+        unclipped
+    })
+}
+
+/// `FlowModeFragment.getFlowSumOfBaseQualities`: a homopolymer scores its first quality.
+fn flow_fragment_sum(record: &BamRecord, start: i32, end: i32) -> i32 {
+    let (start, end) = if read::is_reverse_strand(record) {
+        (end, start)
+    } else {
+        (start, end)
+    };
+    let first = (start - gatk_engine::read_utils::unclipped_start(record)).max(0) as usize;
+    let trimmed = (gatk_engine::read_utils::unclipped_end(record) - end).max(0) as usize;
+    let mut sum = 0;
+    let (mut last, mut effective) = (0u8, 0i32);
+    for index in first..record.read_bases.len().saturating_sub(trimmed) {
+        let base = record.read_bases[index];
+        if base != last {
+            effective = i32::from(record.base_qualities[index] as i8);
+        }
+        if effective >= 15 {
+            sum += effective;
+        }
+        last = base;
+    }
+    sum
 }
 
 /// `ReadsKey.longKeyForFragment`, sign extension included: its mask keeps an int negative when the
@@ -275,6 +484,7 @@ struct Scored {
     was_flipped: bool,
     read_group: i32,
     location: Location,
+    end: i32,
 }
 
 impl Scored {
@@ -537,20 +747,60 @@ fn names_of_non_duplicates(
                     continue;
                 }
                 let library = library_byte(record)?;
-                let key = Key::Fragment(single_key(record, library));
-                let group = groups.entry(key).or_default();
                 if has_mapped_mate(record) {
-                    group.has_empty_fragment = true;
+                    let key = Key::Fragment(single_key(record, library));
+                    groups.entry(key).or_default().has_empty_fragment = true;
                 } else {
-                    group.fragments.push(Scored {
+                    let flow = &arguments.flow;
+                    let (start, end, fragment_score) = if flow.enabled() {
+                        // `FlowModeFragment`, which keys on a start of its own.
+                        let reverse = read::is_reverse_strand(record);
+                        let start = if reverse {
+                            flow_read_end(record, false, header, flow)?
+                        } else {
+                            flow_read_start(record, false, header, flow)?
+                        };
+                        let end = if !flow.end_location_significant {
+                            INSIGNIFICANT_END
+                        } else if reverse {
+                            flow_read_start(record, true, header, flow)?
+                        } else {
+                            flow_read_end(record, true, header, flow)?
+                        };
+                        let fragment_score = if end == INSIGNIFICANT_END {
+                            -1
+                        } else if flow.quality_sum_strategy
+                            && crate::flow_based_read::has_flow_tags(record)
+                        {
+                            flow_fragment_sum(record, start, end).min(i32::from(i16::MAX / 2))
+                                as i16
+                        } else {
+                            score(record, arguments.scoring)
+                        };
+                        (start, end, fragment_score)
+                    } else {
+                        (
+                            stranded_unclipped_start(record),
+                            INSIGNIFICANT_END,
+                            score(record, arguments.scoring),
+                        )
+                    };
+                    let key = Key::Fragment(fragment_key(
+                        start,
+                        read::is_reverse_strand(record),
+                        reference(record),
+                        library,
+                    ));
+                    groups.entry(key).or_default().fragments.push(Scored {
                         partition,
                         name: record.read_name.clone(),
-                        score: score(record, arguments.scoring),
+                        score: fragment_score,
                         first_reverse: read::is_reverse_strand(record),
                         second_reverse: false,
                         was_flipped: false,
                         read_group: -1,
                         location: Location::NONE,
+                        end,
                     });
                 }
                 primaries.push(record);
@@ -568,7 +818,10 @@ fn names_of_non_duplicates(
                     primaries.len(),
                     primaries
                         .iter()
-                        .map(|record| format!("indexpair[{partition},{}]", read_text(record, header)))
+                        .map(|record| format!(
+                                "indexpair[{partition},{}]",
+                                gatk_engine::assembly_region::render_read(record, header)
+                            ))
                         .collect::<Vec<_>>()
                         .join("\n")
                 )));
@@ -592,16 +845,11 @@ fn names_of_non_duplicates(
 
     for group in groups.into_values() {
         if !group.fragments.is_empty() && !group.has_empty_fragment {
-            let located: Vec<Scored> = group
-                .fragments
-                .into_iter()
-                .map(|fragment| Scored {
-                    location: location(&fragment.name, &arguments.read_name_regex),
-                    ..fragment
-                })
-                .collect();
-            let kept = &located[best(&located)];
-            names.push((kept.partition, kept.name.clone(), NO_OPTICAL_MARKER));
+            if arguments.flow.end_location_significant {
+                handle_fragments_with_end(group.fragments, arguments, &mut names);
+            } else {
+                names.push(handle_fragments(group.fragments, arguments));
+            }
         }
         if !group.pairs.is_empty() {
             handle_pairs(group.pairs, arguments, optical, &mut names);
@@ -624,18 +872,59 @@ fn names_of_non_duplicates(
     Ok(answers)
 }
 
-/// `GATKRead.toString`, over reads already known to be mapped.
-fn read_text(record: &BamRecord, header: &SamHeader) -> String {
-    let contig = usize::try_from(record.reference_index)
-        .ok()
-        .and_then(|index| header.sequences.get(index))
-        .map_or("*", |sequence| sequence.name.as_str());
-    format!(
-        "{} {contig}:{}-{}",
-        record.read_name,
-        gatk_engine::read_utils::start(record),
-        gatk_engine::read_utils::end(record)
-    )
+/// `handleFragments`: the best of them, once the names are parsed.
+fn handle_fragments(fragments: Vec<Scored>, arguments: &MarkArguments) -> (usize, String, i32) {
+    let located: Vec<Scored> = fragments
+        .into_iter()
+        .map(|fragment| Scored {
+            location: location(&fragment.name, &arguments.read_name_regex),
+            ..fragment
+        })
+        .collect();
+    let kept = &located[best(&located)];
+    (kept.partition, kept.name.clone(), NO_OPTICAL_MARKER)
+}
+
+/// `handleFragmentsWithEndPosition`: by end, then runs whose ends lie within the uncertainty of
+/// the run so far, a best from each. An insignificant end goes with whichever run is open.
+fn handle_fragments_with_end(
+    mut fragments: Vec<Scored>,
+    arguments: &MarkArguments,
+    names: &mut Vec<(usize, String, i32)>,
+) {
+    if let [only] = &fragments[..] {
+        names.push((only.partition, only.name.clone(), 0));
+        return;
+    }
+    fragments.sort_by_key(|fragment| fragment.end);
+    let uncertainty = arguments.flow.end_uncertainty;
+    let mut run: Vec<Scored> = Vec::new();
+    let (mut low, mut high) = (0, 0);
+    for fragment in fragments {
+        let end = fragment.end;
+        if run.is_empty() {
+            if end != INSIGNIFICANT_END {
+                low = end - uncertainty;
+                high = end + uncertainty;
+            }
+        } else if end == INSIGNIFICANT_END {
+            // Simply accumulated.
+        } else if low == 0 {
+            low = end - uncertainty;
+            high = end + uncertainty;
+        } else if end >= low && end <= high {
+            low = low.min(end - uncertainty);
+            high = high.max(end + uncertainty);
+        } else {
+            names.push(handle_fragments(std::mem::take(&mut run), arguments));
+            low = end - uncertainty;
+            high = end + uncertainty;
+        }
+        run.push(fragment);
+    }
+    if !run.is_empty() {
+        names.push(handle_fragments(run, arguments));
+    }
 }
 
 /// `Pair`'s constructor: the read further left first, with FR forced when both start alike.
@@ -695,6 +984,7 @@ fn new_pair(
         was_flipped: read::is_first_of_pair(second),
         read_group: i32::from(read_group as i16),
         location: Location::NONE,
+        end: INSIGNIFICANT_END,
     };
     Ok((key, scored))
 }

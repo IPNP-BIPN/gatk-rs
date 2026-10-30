@@ -132,6 +132,7 @@ public class SparkWalkersDump {
             duplicateFixture(DIR.resolve(pair[0]), pair[1], pair[2], pair[3], pair[4]);
         }
 
+        flowMarkingFixture(DIR.resolve("marking-flow.bam"));
         markingFixture(DIR.resolve("marking.bam"), SAMFileHeader.SortOrder.coordinate, "");
         markingFixture(DIR.resolve("marking-queryname.bam"), SAMFileHeader.SortOrder.queryname, "");
         markingFixture(DIR.resolve("marking-unsorted.bam"), SAMFileHeader.SortOrder.unsorted, "");
@@ -164,7 +165,7 @@ public class SparkWalkersDump {
                 "marking-queryname.bam", "marking-unsorted.bam", "marking-one-library.bam",
                 "marking-clean.bam", "marking-no-groups.bam", "marking-no-read-group.bam",
                 "marking-unknown-read-group.bam", "marking-three.bam", "marking-collision.bam",
-                "marking-scattered.bam"}) {
+                "marking-scattered.bam", "marking-flow.bam"}) {
             System.out.printf("input\t%s\t%s%n", name,
                     Base64.getEncoder().encodeToString(Files.readAllBytes(DIR.resolve(name))));
         }
@@ -345,6 +346,34 @@ public class SparkWalkersDump {
         run("mark-mutex", null, marks, "-I", marking, "--remove-all-duplicates", "true",
                 "--duplicate-tagging-policy", "All", "-O", out("mark-mutex", "marked.bam"));
         run("mark-no-output", null, marks, "-I", marking);
+        final String flows = DIR.resolve("marking-flow.bam").toString();
+        final String[][] flowRows = {
+                {"mark-flow-plain"},
+                {"mark-flowbased", "--flowbased", "true"},
+                {"mark-flowbased-wide", "--flowbased", "true", "--flow-end-pos-uncertainty", "3"},
+                {"mark-flowbased-narrow", "--flowbased", "true", "--flow-end-pos-uncertainty", "0"},
+                {"mark-flow-end", "--single-end-reads-end-position-significant", "true"},
+                {"mark-flow-end-wide", "--single-end-reads-end-position-significant", "true",
+                        "--flow-end-pos-uncertainty", "2"},
+                {"mark-flow-clipped", "--single-end-reads-clipping-is-end", "true"},
+                {"mark-flow-sum", "--flow-quality-sum-strategy", "true"},
+                {"mark-flow-sum-end", "--flow-quality-sum-strategy", "true",
+                        "--single-end-reads-end-position-significant", "true"},
+                {"mark-flow-skip", "--flow-skip-start-homopolymers", "1"},
+                {"mark-flow-skip-two", "--flow-skip-start-homopolymers", "2"},
+                {"mark-flow-skip-clipped", "--flow-skip-start-homopolymers", "2",
+                        "--single-end-reads-clipping-is-end", "true"},
+                {"mark-flow-q", "--single-end-reads-end-position-significant", "true",
+                        "--flow-q-is-known-end", "true"},
+                {"mark-flow-uncertainty-alone", "--flow-end-pos-uncertainty", "5"},
+        };
+        for (final String[] row : flowRows) {
+            final List<String> argv = new ArrayList<>(Arrays.asList("-I", flows,
+                    "--use-jdk-deflater", "true", "--duplicate-tagging-policy", "All",
+                    "-O", out(row[0], "marked.bam"), "-M", out(row[0], "marked.metrics")));
+            argv.addAll(Arrays.asList(row).subList(1, row.length));
+            run(row[0], "marked.bam", marks, argv.toArray(new String[0]));
+        }
         run("mark-interval-no-index", null, marks, "-I", DIR.resolve("marking-queryname.bam").toString(),
                 "-L", "chr1:100-300", "-O", out("mark-interval-no-index", "marked.bam"));
 
@@ -702,6 +731,78 @@ public class SparkWalkersDump {
         try (final SAMFileWriter writer = new SAMFileWriterFactory()
                 .setCreateIndex(order == SAMFileHeader.SortOrder.coordinate)
                 .makeBAMWriter(header, presorted, bam.toFile())) {
+            records.forEach(writer::addAlignment);
+        }
+    }
+
+    /**
+     * Fragments at one start with the ends flow mode tells apart: ends a base or two apart, clips on
+     * either side that a clipped location sees, the tm tag's A, Q and Z, homopolymers to skip, and a
+     * read in a group with no flow order.
+     */
+    static void flowMarkingFixture(final Path bam) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.queryname);
+        final SAMReadGroupRecord flow = new SAMReadGroupRecord("flow");
+        flow.setSample("sample1");
+        flow.setLibrary("lib1");
+        flow.setAttribute("FO", "TGCA");
+        header.addReadGroup(flow);
+        final SAMReadGroupRecord plain = new SAMReadGroupRecord("plain");
+        plain.setSample("sample1");
+        plain.setLibrary("lib1");
+        header.addReadGroup(plain);
+        // name, start, flags, cigar, bases, quality, tm, flow tags, group
+        final Object[][] reads = {
+                {"a:1:1:1:1", 100, 0, "12M", "AACCGGTTAACC", 30, null, true, "flow"},
+                {"a:1:1:2:2", 100, 0, "13M", "AACCGGTTAACCG", 31, null, true, "flow"},
+                {"a:1:1:3:3", 100, 0, "14M", "AACCGGTTAACCGG", 32, null, false, "flow"},
+                {"a:1:1:4:4", 100, 0, "20M", "AACCGGTTAACCGGTTAACC", 20, null, true, "flow"},
+                {"a:1:1:5:5", 100, 0, "20M", "AACCGGTTAACCGGTTAACC", 25, "Q", true, "flow"},
+                {"a:1:1:6:6", 100, 0, "20M", "AACCGGTTAACCGGTTAACC", 26, "Z", true, "flow"},
+                {"b:1:1:1:1", 200, 0, "2S12M", "TTAACCGGTTAACC", 30, null, true, "flow"},
+                {"b:1:1:2:2", 202, 0, "12M2S", "AACCGGTTAACCGG", 31, null, true, "flow"},
+                {"b:1:1:3:3", 202, 0, "12M", "AACCGGTTAACC", 32, "A", true, "flow"},
+                {"b:1:1:4:4", 200, 0, "2S12M", "TTAACCGGTTAACC", 33, "A", true, "flow"},
+                {"c:1:1:1:1", 300, 0x10, "12M", "AACCGGTTAACC", 30, null, true, "flow"},
+                {"c:1:1:2:2", 301, 0x10, "11M", "AACCGGTTAAC", 31, null, true, "flow"},
+                {"c:1:1:3:3", 296, 0x10, "4S12M", "AACCAACCGGTTAACC", 32, null, true, "flow"},
+                {"d:1:1:1:1", 400, 0, "12M", "AAAACCGGTTAA", 30, null, true, "flow"},
+                {"d:1:1:2:2", 402, 0, "10M", "AACCGGTTAA", 31, null, true, "flow"},
+                {"d:1:1:3:3", 404, 0, "8M", "CCGGTTAA", 32, null, true, "flow"},
+                {"e:1:1:1:1", 500, 0, "12M", "TTGGCCAATTGG", 30, null, false, "plain"},
+                {"e:1:1:2:2", 501, 0, "11M", "TGGCCAATTGG", 31, null, false, "plain"},
+        };
+        final List<SAMRecord> records = new ArrayList<>();
+        for (final Object[] read : reads) {
+            final SAMRecord record = new SAMRecord(header);
+            record.setReadName((String) read[0]);
+            record.setFlags((int) read[2]);
+            record.setReferenceIndex(0);
+            record.setAlignmentStart((int) read[1]);
+            record.setCigarString((String) read[3]);
+            record.setMappingQuality(60);
+            final String bases = (String) read[4];
+            record.setReadString(bases);
+            final char[] qualities = new char[bases.length()];
+            for (int index = 0; index < qualities.length; index++) {
+                qualities[index] = (char) (33 + (int) read[5] + (index % 3));
+            }
+            record.setBaseQualityString(new String(qualities));
+            if (read[6] != null) {
+                record.setAttribute("tm", read[6]);
+            }
+            if ((boolean) read[7]) {
+                record.setAttribute("tp", new byte[qualities.length]);
+            }
+            record.setAttribute("RG", read[8]);
+            records.add(record);
+        }
+        try (final SAMFileWriter writer = new SAMFileWriterFactory()
+                .makeBAMWriter(header, false, bam.toFile())) {
             records.forEach(writer::addAlignment);
         }
     }

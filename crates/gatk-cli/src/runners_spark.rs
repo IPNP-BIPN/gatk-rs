@@ -1903,7 +1903,7 @@ pub fn collect_insert_size_metrics_spark(parser: &Parser) -> Outcome {
 /// One input, a queryname sort when the header does not promise the names are grouped, the marking,
 /// the metrics, and the file coordinate-sorted whatever came in. Reads are one partition here: the
 /// reducers only move the partition boundaries, which a name never spans.
-pub fn mark_duplicates_spark(parser: &Parser) -> Outcome {
+pub fn mark_duplicates_spark(parser: &Parser, mode: &Parser) -> Outcome {
     use gatk_tools::mark_duplicates_spark as md;
     let tool = "MarkDuplicatesSpark";
     if arguments(parser, "input").len() > 1 {
@@ -1911,18 +1911,6 @@ pub fn mark_duplicates_spark(parser: &Parser) -> Outcome {
             PORT_LIMITATION,
             "MarkDuplicatesSpark over several inputs merges their headers, which this port does \
              not do yet. This message is the port's own and not GATK's.",
-        ));
-    }
-    let flow = flag(parser, "flow-quality-sum-strategy")
-        || flag(parser, "single-end-reads-end-position-significant")
-        || flag(parser, "single-end-reads-clipping-is-end")
-        || flag(parser, "flowbased")
-        || number_or(parser, "flow-skip-start-homopolymers", 0) != 0;
-    if flow {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "MarkDuplicatesSpark's flow mode is not ported yet. This message is the port's own \
-             and not GATK's.",
         ));
     }
     let SparkStart {
@@ -1976,6 +1964,14 @@ pub fn mark_duplicates_spark(parser: &Parser) -> Outcome {
         tagging,
         read_name_regex: regex,
         pixel_distance: number_or(parser, "optical-duplicate-pixel-distance", 100),
+        flow: md::FlowArguments {
+            quality_sum_strategy: flag(mode, "flow-quality-sum-strategy"),
+            end_location_significant: flag(mode, "single-end-reads-end-position-significant"),
+            end_uncertainty: number_or(mode, "flow-end-pos-uncertainty", 0),
+            use_clipped_locations: flag(mode, "single-end-reads-clipping-is-end"),
+            skip_start_homopolymers: number_or(mode, "flow-skip-start-homopolymers", 0),
+            q_is_known_end: flag(mode, "flow-q-is-known-end"),
+        },
     };
 
     // `getHeaderReadGroupIndexMap`, on the driver.
