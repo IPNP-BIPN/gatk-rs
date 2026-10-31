@@ -18,6 +18,9 @@
 //!   the index beside the BAM itself.
 use super::*;
 
+/// `LibraryIdGenerator.UNKNOWN_LIBRARY`.
+const UNKNOWN_LIBRARY: &str = "Unknown Library";
+
 /// What `runPipeline` hands `runTool`: the reads, their header, the traversal intervals and the
 /// resolved filter chain.
 struct SparkStart {
@@ -205,11 +208,28 @@ fn spark_startup(parser: &Parser, tool: &str) -> Result<SparkStart, Thrown> {
         }
     }
 
+    let source = spark_traversal_source(parser, &input, source)?;
+
+    Ok(SparkStart {
+        source,
+        header,
+        intervals,
+        filters,
+    })
+}
+
+/// What `getUnfilteredReads` traverses: the BAM with its index under intervals, from Disq's first
+/// record.
+fn spark_traversal_source(
+    parser: &Parser,
+    input: &str,
+    source: ReadsDataSource,
+) -> Result<ReadsDataSource, Thrown> {
     // `getUnfilteredReads` with intervals is a Disq traversal, which needs the index beside the
     // BAM. Without one the reference fails inside an executor task, and that failure is Spark's
     // log rather than a GATK refusal; the port says so in its own words.
     let source = if intervals_specified(parser) {
-        let path = std::path::Path::new(&input);
+        let path = std::path::Path::new(input);
         match htsjdk_bam::sam_files::find_index(path) {
             Some(index) => ReadsDataSource::open(path, &index)
                 .map_err(|error| Thrown::user(format!("{error:?}")))?,
@@ -228,16 +248,9 @@ fn spark_startup(parser: &Parser, tool: &str) -> Result<SparkStart, Thrown> {
         source
     };
     // Disq reads from the record its guesser accepts, which is not always the first.
-    let source = source
+    source
         .with_disq_split_start()
-        .map_err(|error| Thrown::user(format!("{error:?}")))?;
-
-    Ok(SparkStart {
-        source,
-        header,
-        intervals,
-        filters,
-    })
+        .map_err(|error| Thrown::user(format!("{error:?}")))
 }
 
 /// `CountVariantsSpark.runTool`: Disq's variants over `-L`, counted and printed like the reads.
@@ -1214,6 +1227,331 @@ pub fn extract_original_alignment_records_by_name_spark(parser: &Parser) -> Outc
     Ok(None)
 }
 
+/// `MatchType`, in declaration order: the order `--throw-on-diff` looks for them in.
+#[derive(Clone, Copy, PartialEq)]
+enum MatchType {
+    Equal,
+    SizeUnequal,
+    ReadMismatch,
+    DiffNumDupes,
+    DifferentRepresentativeRead,
+}
+
+const MATCH_TYPES: [(MatchType, &str); 5] = [
+    (MatchType::Equal, "EQUAL"),
+    (MatchType::SizeUnequal, "SIZE_UNEQUAL"),
+    (MatchType::ReadMismatch, "READ_MISMATCH"),
+    (MatchType::DiffNumDupes, "DIFF_NUM_DUPES"),
+    (
+        MatchType::DifferentRepresentativeRead,
+        "DIFFERENT_REPRESENTATIVE_READ",
+    ),
+];
+
+/// `removeNonReadGroupAttributes`, then the read as the first BAM's header sees it: the tool
+/// looks a read's contig up there by name, whichever BAM the read came from.
+fn compared_read(mut record: BamRecord, own: &SamHeader, first: &SamHeader) -> BamRecord {
+    let group = htsjdk_bam::tag::Tag::new(b"RG");
+    let kept = record.tags.get(group).cloned();
+    record.tags = htsjdk_bam::tag::Tags::new();
+    if let Some(value) = kept {
+        record.tags.insert(group, value);
+    }
+    let reindexed = |index: i32| {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| own.sequences.get(index))
+            .and_then(|contig| first.sequences.iter().position(|s| s.name == contig.name))
+            .map_or(gatk_engine::read::NO_ALIGNMENT_REFERENCE_INDEX, |index| {
+                index as i32
+            })
+    };
+    record.reference_index = reindexed(record.reference_index);
+    record.mate_reference_index = reindexed(record.mate_reference_index);
+    record
+}
+
+/// `ReadUtils.getStrandedUnclippedStart`.
+fn stranded_unclipped_start(record: &BamRecord) -> i32 {
+    if gatk_engine::read::is_reverse_strand(record) {
+        gatk_engine::read_utils::unclipped_end(record)
+    } else {
+        gatk_engine::read_utils::unclipped_start(record)
+    }
+}
+
+/// `ReadsKey.longKeyForFragment`, sign extension included: its mask keeps an int negative when
+/// the reference index is, so an unmapped read's key loses its start.
+fn fragment_key(start: i32, reverse: bool, reference_index: i32, library: u8) -> i64 {
+    (i64::from(start) << 32)
+        | i64::from((reference_index << 16) & 0xFFFF_0000_u32 as i32)
+        | i64::from((i32::from(library as i8) << 8) & 0xFF00)
+        | i64::from(reverse)
+}
+
+/// The reads of one BAM by the MarkDuplicates key, then by start: `splitByStart` under `cogroup`.
+///
+/// A read whose group the first header cannot answer for fails `mapToPair`, inside `stage`.
+fn duplicate_groups(
+    records: &[BamRecord],
+    header: &SamHeader,
+    libraries: &[String],
+    stage: u32,
+) -> Result<std::collections::BTreeMap<(i64, i32), Vec<BamRecord>>, Thrown> {
+    let mut groups: std::collections::BTreeMap<(i64, i32), Vec<BamRecord>> = Default::default();
+    for record in records {
+        let name = &record.read_name;
+        let group = read_group_of(record);
+        let known = group.and_then(|id| header.read_groups.iter().find(|rg| rg.id == id));
+        let Some(known) = known else {
+            eprintln!("ERROR Executor - Exception in task 0.0 in stage {stage}.0 (TID {stage})");
+            return Err(Thrown::non_user(
+                "org.apache.spark.SparkException",
+                match group {
+                    None => format!(
+                        "SAM/BAM/CRAM file (unknown) is malformed: Read {name} is missing the read \
+                         group (RG) tag, which is required by the GATK.  Please use \
+                         http://gatkforums.broadinstitute.org/discussion/59/\
+                         companion-utilities-replacereadgroups to fix this problem"
+                    ),
+                    Some(id) => format!(
+                        "SAM/BAM/CRAM file (unknown) is malformed: Read {name} contains an (RG) \
+                         tag with the group {id} which is not found in the file header."
+                    ),
+                },
+            ));
+        };
+        let library = known.attributes.get("LB").unwrap_or(UNKNOWN_LIBRARY);
+        let index = libraries.iter().position(|l| l == library).unwrap_or(0);
+        let start = stranded_unclipped_start(record);
+        let reference = if gatk_engine::read::is_unmapped(record) {
+            gatk_engine::read::NO_ALIGNMENT_REFERENCE_INDEX
+        } else {
+            record.reference_index
+        };
+        let key = fragment_key(
+            start,
+            gatk_engine::read::is_reverse_strand(record),
+            reference,
+            index as u8,
+        );
+        groups.entry((key, start)).or_default().push(record.clone());
+    }
+    Ok(groups)
+}
+
+/// `CompareDuplicatesSpark.getDupes`.
+fn match_type(first: &[BamRecord], second: &[BamRecord]) -> MatchType {
+    if first.len() != second.len() {
+        return MatchType::SizeUnequal;
+    }
+    let sorted = |reads: &[BamRecord]| {
+        let mut reads = reads.to_vec();
+        reads.sort_by(gatk_engine::read_utils::compare_read_coordinate);
+        reads
+    };
+    let (first, second) = (sorted(first), sorted(second));
+    if first
+        .iter()
+        .zip(&second)
+        .any(|(one, other)| one.read_name != other.read_name)
+    {
+        return MatchType::ReadMismatch;
+    }
+    // Sets, so a read marked twice over counts once.
+    let marked = |reads: &[BamRecord]| {
+        let mut dupes: Vec<BamRecord> = Vec::new();
+        for record in reads
+            .iter()
+            .filter(|record| gatk_engine::read::is_duplicate(record))
+        {
+            if !dupes.contains(record) {
+                dupes.push(record.clone());
+            }
+        }
+        dupes
+    };
+    let (first, second) = (marked(&first), marked(&second));
+    if first.len() != second.len() {
+        return MatchType::DiffNumDupes;
+    }
+    if first.iter().any(|record| !second.contains(record)) {
+        return MatchType::DifferentRepresentativeRead;
+    }
+    MatchType::Equal
+}
+
+/// `CompareDuplicatesSpark.runTool`: the same reads under the same marks, or which way they differ.
+///
+/// The filter chain is `getReads()`'s, so it holds only for the first BAM; the second is read
+/// through a `ReadsSparkSource` of its own, under the same intervals and no filter at all.
+pub fn compare_duplicates_spark(parser: &Parser) -> Outcome {
+    let SparkStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = spark_startup(parser, "CompareDuplicatesSpark")?;
+    let (output, output2) = (argument(parser, "output"), argument(parser, "output2"));
+    if output.is_some() != output2.is_some() {
+        return Err(Thrown::non_user(
+            "java.lang.IllegalArgumentException",
+            "Arguments '--output' and '--output2' must both be specified together in order to \
+             write mismatch bams or not at all",
+        ));
+    }
+    let input2 = argument(parser, "input2").ok_or_else(|| {
+        Thrown::command_line("Argument input2 was missing: Argument 'input2' is required")
+    })?;
+    let second_source = spark_reads_header(&input2)?;
+    let second_header = second_source.header().clone();
+    let second_source = spark_traversal_source(parser, &input2, second_source)?;
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let keep_all: Filter = Box::new(|_| true);
+    let traverse = |source, own: &SamHeader, filter| {
+        gatk_tools::read_walker::traverse(source, &intervals, filter)
+            .map(|records| {
+                records
+                    .into_iter()
+                    .map(|record| compared_read(record, own, &header))
+                    .collect::<Vec<_>>()
+            })
+            .map_err(|error| Thrown::user(format!("{error:?}")))
+    };
+    let first = traverse(&source, &header, &filter)?;
+    let second = traverse(&second_source, &second_header, &keep_all)?;
+    if first.len() != second.len() {
+        return Err(Thrown::user(format!(
+            "input bams have different numbers of mapped reads: {},{}",
+            first.len(),
+            second.len()
+        )));
+    }
+    gatk_tools::tool_stdout::println(&format!(
+        "processing bams with {} mapped reads",
+        first.len()
+    ));
+    let duplicates = |reads: &[BamRecord]| {
+        reads
+            .iter()
+            .filter(|r| gatk_engine::read::is_duplicate(r))
+            .count()
+    };
+    let (first_dupes, second_dupes) = (duplicates(&first), duplicates(&second));
+    if first_dupes != second_dupes {
+        gatk_tools::tool_stdout::println(&format!(
+            "BAMs have different number of total duplicates: {first_dupes},{second_dupes}"
+        ));
+    }
+    gatk_tools::tool_stdout::println(&format!("first and second: {first_dupes},{second_dupes}"));
+
+    // `constructLibraryIndex`.
+    let mut libraries: Vec<String> = Vec::new();
+    for group in &header.read_groups {
+        let library = group.attributes.get("LB").unwrap_or(UNKNOWN_LIBRARY);
+        if !libraries.iter().any(|known| known == library) {
+            libraries.push(library.to_string());
+        }
+    }
+    if libraries.len() > 255 {
+        return Err(Thrown::non_user(
+            "org.broadinstitute.hellbender.exceptions.GATKException",
+            format!(
+                "Detected too many read libraries among read groups header, currently \
+                 MarkDuplicatesSpark only supports up to 256 unique readgroup libraries but {} \
+                 were found",
+                libraries.len()
+            ),
+        ));
+    }
+    let first_groups = duplicate_groups(&first, &header, &libraries, 4)?;
+    let second_groups = duplicate_groups(&second, &header, &libraries, 5)?;
+
+    // A key the second BAM lacks hands `getDupes` a null, the first thing the cogroup's own stage
+    // does with it. With no `--num-reducers` there is one partition, and otherwise `HashPartitioner`
+    // says which task fails first: `Objects.hash` of the long key.
+    let reducers = number_or(parser, "num-reducers", 0).max(1);
+    let lost = first_groups
+        .keys()
+        .filter(|key| !second_groups.contains_key(*key))
+        .map(|(key, _)| {
+            let hash = 31i32.wrapping_add((*key ^ ((*key as u64) >> 32) as i64) as i32);
+            i64::from(hash).rem_euclid(reducers as i64)
+        })
+        .min();
+    if let Some(task) = lost {
+        eprintln!(
+            "ERROR Executor - Exception in task {task}.0 in stage 6.0 (TID {})",
+            6 + task
+        );
+        return Err(Thrown {
+            failure: Failure::Other,
+            exception: "org.apache.spark.SparkException",
+            message: None,
+        });
+    }
+    let tagged: Vec<(MatchType, &[BamRecord], &[BamRecord])> = first_groups
+        .iter()
+        .map(|(key, one)| {
+            let other = second_groups[key].as_slice();
+            (match_type(one, other), one.as_slice(), other)
+        })
+        .collect();
+
+    if let (Some(output), Some(output2)) = (&output, &output2) {
+        let mut names = std::collections::HashSet::new();
+        for (_, one, other) in tagged.iter().filter(|(kind, ..)| *kind != MatchType::Equal) {
+            names.extend(one.iter().chain(*other).map(|r| r.read_name.as_str()));
+        }
+        // `setAttribute("in", ...)` lands on the `@HD` the reads were read under, behind `SO`.
+        let (mut written, sort_order) = disq_header(&header);
+        written.attributes.set("in", "original read file source");
+        for (reads, path) in [(&first, output), (&second, output2)] {
+            let kept: Vec<BamRecord> = reads
+                .iter()
+                .filter(|record| names.contains(record.read_name.as_str()))
+                .cloned()
+                .collect();
+            let partitions = sorted_partitions(parser, sort_order.as_deref(), &kept)?;
+            write_spark_partitions(parser, &written, sort_order.as_deref(), &partitions, path)?;
+        }
+    }
+
+    let count = |kind: MatchType| tagged.iter().filter(|(found, ..)| *found == kind).count();
+    if count(MatchType::SizeUnequal) != 0 {
+        return Err(Thrown::user(
+            "The number of reads by the MarkDuplicates key were unequal, indicating that the BAMs \
+             are not the same",
+        ));
+    }
+    if count(MatchType::ReadMismatch) != 0 {
+        return Err(Thrown::user(
+            "The reads grouped by the MarkDuplicates key were not the same, indicating that the \
+             BAMs are not the same",
+        ));
+    }
+    if flag(parser, "print-summary") {
+        // The reference walks a `HashSet` of the constants, whose order is their identity hashes
+        // and so another on every JVM. Theirs in declaration order is one of the orders it prints.
+        gatk_tools::tool_stdout::println("##############################");
+        for (kind, name) in MATCH_TYPES {
+            gatk_tools::tool_stdout::println(&format!("{name}: {}", count(kind)));
+        }
+    }
+    if flag(parser, "throw-on-diff") {
+        for (kind, name) in MATCH_TYPES {
+            if kind != MatchType::Equal && count(kind) != 0 {
+                return Err(Thrown::user(format!(
+                    "found difference between the two BAMs: {name} with count {}",
+                    count(kind)
+                )));
+            }
+        }
+    }
+    Ok(None)
+}
+
 /// The reads and headers a Spark metrics tool aggregates, and the `-O` it saves to.
 fn spark_metric_reads(
     parser: &Parser,
@@ -1340,6 +1678,17 @@ fn write_spark_reads(
     output: &str,
     sort_to_header: bool,
 ) -> Result<(), Thrown> {
+    let (header, sort_order) = disq_header(header);
+    let partitions = if sort_to_header {
+        sorted_partitions(parser, sort_order.as_deref(), records)?
+    } else {
+        vec![records.to_vec()]
+    };
+    write_spark_partitions(parser, &header, sort_order.as_deref(), &partitions, output)
+}
+
+/// The header as Disq writes it, `GO` and then `SO` moved behind what else `@HD` holds, and its order.
+fn disq_header(header: &SamHeader) -> (SamHeader, Option<String>) {
     let mut header = header.clone();
     let sort_order = header.attributes.get("SO").map(str::to_string);
     let group_order = header.attributes.get("GO").unwrap_or("none").to_string();
@@ -1349,12 +1698,7 @@ fn write_spark_reads(
     if let Some(order) = &sort_order {
         header.set_sort_order(order);
     }
-    let partitions = if sort_to_header {
-        sorted_partitions(parser, sort_order.as_deref(), records)?
-    } else {
-        vec![records.to_vec()]
-    };
-    write_spark_partitions(parser, &header, sort_order.as_deref(), &partitions, output)
+    (header, sort_order)
 }
 
 /// [`write_spark_reads`] past the sort: the header as Disq writes it, and one stream per partition.

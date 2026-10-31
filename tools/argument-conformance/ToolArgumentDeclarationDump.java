@@ -591,6 +591,9 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.spark.pipelines.metrics.QualityScoreDistributionSpark());
         declarations("CollectBaseDistributionByCycleSpark",
                 new org.broadinstitute.hellbender.tools.spark.pipelines.metrics.CollectBaseDistributionByCycleSpark());
+        // X.1, seventh brick: two BAMs compared by their duplicate marks.
+        declarations("CompareDuplicatesSpark",
+                new org.broadinstitute.hellbender.tools.spark.validation.CompareDuplicatesSpark());
 
         // A read walker: its own input, and the arguments it inherits.
         parse("CountReads", "no-arguments", new String[]{});

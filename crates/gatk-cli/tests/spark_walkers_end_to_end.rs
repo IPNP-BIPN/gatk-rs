@@ -24,6 +24,9 @@
 //!    Illumina or Solexa and fails on what the offset takes below zero;
 //!  * **a filter by read name**, which parses `--read-filter` and never applies it;
 //!  * **the metrics the Spark pipelines compute themselves**, under GATK's own metric classes;
+//!  * **CompareDuplicatesSpark**, whose filter holds for the first BAM only, whose keys are looked
+//!    up in the first header for both, and whose summary comes in an order no two JVMs share, so
+//!    the dump and this test sort it;
 //!  * **and PileupSpark's text-file directory**, Hadoop's checksums included.
 //!
 //! # How the runs are replayed
@@ -105,6 +108,19 @@ fn without_the_time(bytes: &[u8]) -> Vec<u8> {
     lines.join("\n").into_bytes()
 }
 
+/// `CompareDuplicatesSpark`'s summary sorted, as the dump leaves it: the reference walks a
+/// `HashSet` of enum constants, which is another order on every JVM.
+fn sorted_summary(stdout: &str) -> String {
+    const RULE: &str = "##############################\n";
+    let Some(at) = stdout.find(RULE) else {
+        return stdout.to_string();
+    };
+    let (head, tail) = stdout.split_at(at + RULE.len());
+    let mut lines: Vec<&str> = tail.lines().collect();
+    lines.sort_unstable();
+    format!("{head}{}\n", lines.join("\n"))
+}
+
 #[test]
 fn every_run_replays_as_the_reference_ran_it() {
     let text = golden();
@@ -163,7 +179,7 @@ fn every_run_replays_as_the_reference_ran_it() {
             std::fs::create_dir_all(&out_dir).expect("an output directory");
         }
         let ran = gatk_cli::run(&argv);
-        let stdout = ran.stdout.replace(&cwd, "<cwd>");
+        let stdout = sorted_summary(&ran.stdout.replace(&cwd, "<cwd>"));
         let expected = row("stdout", label).expect("a stdout row");
         if stdout != expected {
             failures.push(format!(

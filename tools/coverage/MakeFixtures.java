@@ -202,6 +202,52 @@ public class MakeFixtures {
     }
 
     /** A small coordinate-sorted BAM: eight reads on one contig, one of them a duplicate. */
+    /**
+     * dup_*.bam: eight reads in groups of the MarkDuplicates key, for CompareDuplicatesSpark. a1/a2,
+     * b1/b2 and c1/c2 share a start, d1 is reverse and clipped, e1 is on chr2 in a read group with no
+     * library. `moveMarks` moves one mark inside a group and adds one to another.
+     */
+    static void duplicateGroups(final Path bam, final boolean moveMarks) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        dictionary.addSequence(new SAMSequenceRecord("chr2", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord withLibrary = new SAMReadGroupRecord("rg1");
+        withLibrary.setSample("sample1");
+        withLibrary.setLibrary("lib1");
+        header.addReadGroup(withLibrary);
+        final SAMReadGroupRecord noLibrary = new SAMReadGroupRecord("rg2");
+        noLibrary.setSample("sample1");
+        header.addReadGroup(noLibrary);
+        final Object[][] reads = {
+                {"a1", 0, 100, 0x400, 0, "10M"}, {"a2", 0, 100, 0, 0, "10M"},
+                {"b1", 0, 200, 0, 0x400, "10M"}, {"b2", 0, 200, 0x400, 0, "10M"},
+                {"c1", 0, 300, 0, 0x400, "10M"}, {"c2", 0, 300, 0, 0, "10M"},
+                {"d1", 0, 402, 0x10, 0x10, "2S8M"},
+                {"e1", 1, 50, 0, 0, "10M"},
+        };
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, false,
+                             bam.toFile())) {
+            for (final Object[] read : reads) {
+                final String name = (String) read[0];
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName(name);
+                record.setFlags(moveMarks ? (int) read[4] : (int) read[3]);
+                record.setReferenceIndex((int) read[1]);
+                record.setAlignmentStart((int) read[2]);
+                record.setCigarString((String) read[5]);
+                record.setMappingQuality(name.equals("c2") ? 10 : 60);
+                record.setReadString("ACGTACGTAC");
+                record.setBaseQualityString("IIIIIIIIII");
+                record.setAttribute("RG", name.equals("e1") ? "rg2" : "rg1");
+                writer.addAlignment(record);
+            }
+        }
+    }
+
     static void bam(final Path bam) {
         final SAMFileHeader header = new SAMFileHeader();
         final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
@@ -2914,6 +2960,8 @@ public class MakeFixtures {
                 StandardCharsets.UTF_8);
         bam(dir.resolve("reads.bam"));
         bamTwo(dir.resolve("reads2.bam"));
+        duplicateGroups(dir.resolve("dup_a.bam"), false);
+        duplicateGroups(dir.resolve("dup_marks.bam"), true);
         bamWithOriginalQualities(dir.resolve("reads_oq.bam"));
         indels(dir.resolve("indels.bam"));
         twoGroups(dir.resolve("groups.bam"));
