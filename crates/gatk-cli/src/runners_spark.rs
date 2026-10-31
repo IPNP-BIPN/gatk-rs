@@ -720,6 +720,226 @@ fn oversized_read_refusal(
     Ok(())
 }
 
+/// `CalcMetadataSpark.runTool`: every read, with no read filter, into one partition's statistics.
+pub fn calc_metadata_spark(parser: &Parser) -> Outcome {
+    use gatk_tools::read_metadata::{MetadataFailure, ReadMetadata};
+    let SparkStart {
+        source,
+        header,
+        intervals,
+        ..
+    } = spark_startup(parser, "CalcMetadataSpark")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    // Disq cuts a BAM at the split size, where the port has one partition to report.
+    let input = arguments(parser, "input").remove(0);
+    let split = match number_or(parser, "bam-partition-size", 0) {
+        0 => 32 * 1024 * 1024,
+        size => i64::from(size),
+    };
+    if std::fs::metadata(&input).is_ok_and(|file| file.len() as i64 > split) {
+        return Err(Thrown::user(format!(
+            "{input} is larger than one partition, and this port reports a single partition's \
+             statistics."
+        )));
+    }
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let metadata = ReadMetadata::new(&header, &records).map_err(|failure| match failure {
+        MetadataFailure::Unpaired => {
+            eprintln!("ERROR Executor - Exception in task 0.0 in stage 0.0 (TID 0)");
+            Thrown::non_user(
+                "org.apache.spark.SparkException",
+                "Job aborted due to stage failure: Task 0 in stage 0.0 failed 1 times: \
+                 java.lang.IllegalStateException: Cannot get mate information for an unpaired read",
+            )
+        }
+        MetadataFailure::NoReads => Thrown::non_user("java.lang.ArithmeticException", "/ by zero"),
+        MetadataFailure::Order(error) => Thrown::user(format!("{error:?}")),
+    })?;
+    let bytes = if flag(parser, "write-as-binary") {
+        metadata.flushed_binary()
+    } else {
+        metadata.text().into_bytes()
+    };
+    std::fs::write(&output, bytes).map_err(|error| {
+        Thrown::user(format!(
+            "Couldn't write file {output} because Could not create file at path:{output} due to \
+             {output} ({})",
+            java_io_reason(&error)
+        ))
+    })?;
+    Ok(None)
+}
+
+/// `FindBadGenomicKmersSpark.runTool`: no reads are needed, and the reference is read whole.
+pub fn find_bad_genomic_kmers_spark(parser: &Parser) -> Outcome {
+    use gatk_tools::find_bad_genomic_kmers as kmers;
+    let tool = "FindBadGenomicKmersSpark";
+    resolve_read_filters(parser, tool)?;
+    spark_context(parser)?;
+    let dictionary = reference_dictionary(parser)?.ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let inputs = arguments(parser, "input");
+    if inputs.len() > 1 {
+        return Err(Thrown::user(
+            "Sorry, we only support a single reads input for for this spark tool.",
+        ));
+    }
+    let reads = match inputs.first() {
+        Some(input) => Some(spark_reads_header(input)?.header().clone()),
+        None => None,
+    };
+    interval_arguments(parser, &dictionary)?;
+    if !flag(parser, "disable-sequence-dictionary-validation") {
+        if let Some(reads) = &reads {
+            validate_reference_against_reads(&dictionary, reads)?;
+        }
+    }
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let k = number_or(parser, "k-size", 51);
+    let max_dust = number_or(parser, "kmer-max-dust-score", 49);
+
+    let illegal =
+        |message: &str| Thrown::non_user("java.lang.IllegalArgumentException", message.to_string());
+    if k == 0 {
+        return Err(illegal("provided kmer size is zero"));
+    }
+    if i64::from(k) > kmers::REF_RECORD_LEN as i64 {
+        // `start += effectiveRecLen` does not advance: the reference fills the heap.
+        return Err(Thrown::non_user(
+            "java.lang.OutOfMemoryError",
+            "Java heap space",
+        ));
+    }
+    let reference_path = argument(parser, "reference").expect("the dictionary came from it");
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let mut chunks = Vec::new();
+    for sequence in &dictionary.sequences {
+        let bases = reference
+            .query(&sequence.name, 1, sequence.length)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        kmers::chunk_contig(&bases, k, &mut chunks);
+    }
+    if k < 0 {
+        return Err(illegal("provided kmer size is non positive"));
+    }
+    if max_dust <= 0 {
+        return Err(illegal("provided DUST filter score is non positive"));
+    }
+    let task_failure = |message: String| {
+        eprintln!("ERROR Executor - Exception in task 0.0 in stage 0.0 (TID 0)");
+        Thrown::non_user(
+            "org.apache.spark.SparkException",
+            format!(
+                "Job aborted due to stage failure: Task 0 in stage 0.0 failed 1 times: {message}"
+            ),
+        )
+    };
+    if k < 4 {
+        return Err(task_failure(
+            "org.broadinstitute.hellbender.exceptions.GATKException: kmer size must be at least 4 \
+             for this filter to work properly."
+                .to_string(),
+        ));
+    }
+    const EVEN: &str = "Kmer length must be odd to canonicalize.";
+    let mut kill_list = kmers::collect_ubiquitous_kmers(k, max_dust, kmers::MAX_KMER_FREQ, &chunks)
+        .map_err(|failure| match failure {
+            kmers::KmerFailure::EvenSize => {
+                task_failure(format!("java.lang.IllegalArgumentException: {EVEN}"))
+            }
+            other => task_failure(format!("java.lang.IllegalStateException: {other:?}")),
+        })?;
+    if let Some(fasta) = argument(parser, "high-copy-fasta") {
+        let lines = high_copy_lines(&fasta)?;
+        let extra = kmers::process_fasta(&lines, k, max_dust).map_err(|failure| match failure {
+            kmers::KmerFailure::EvenSize => illegal(EVEN),
+            kmers::KmerFailure::EmptyLine => Thrown::non_user(
+                "java.lang.StringIndexOutOfBoundsException",
+                "String index out of range: 0",
+            ),
+            kmers::KmerFailure::Table(failed) => {
+                Thrown::non_user("java.lang.IllegalStateException", failed.0)
+            }
+        })?;
+        kill_list = kmers::uniquify(&kill_list, &extra)
+            .map_err(|failed| Thrown::non_user("java.lang.IllegalStateException", failed.0))?;
+    }
+    std::fs::write(&output, kmers::kmers_file(&kill_list, k)).map_err(|error| {
+        Thrown::user(format!(
+            "Couldn't write file {output} because Could not create file at path:{output} due to \
+             {output} ({})",
+            java_io_reason(&error)
+        ))
+    })?;
+    Ok(None)
+}
+
+/// `BucketUtils.openFile` then `readLine`: a block compressed name is inflated, and each UTF-16 unit
+/// outside ASCII is one character that is not a base.
+fn high_copy_lines(path: &str) -> Result<Vec<Vec<u8>>, Thrown> {
+    let bytes = std::fs::read(path).map_err(|error| {
+        Thrown::user(format!(
+            "Couldn't read file {path}. Error was: {path} ({})",
+            java_io_reason(&error)
+        ))
+    })?;
+    let bytes = if path.ends_with(".gz") || path.ends_with(".bgz") || path.ends_with(".bgzf") {
+        let mut inflated = Vec::new();
+        std::io::Read::read_to_end(
+            &mut flate2::read::MultiGzDecoder::new(bytes.as_slice()),
+            &mut inflated,
+        )
+        .map_err(|error| Thrown::user(format!("Couldn't read file {path}. Error was: {error}")))?;
+        inflated
+    } else {
+        bytes
+    };
+    let text = String::from_utf8_lossy(&bytes);
+    let mut lines = Vec::new();
+    let mut line = Vec::new();
+    let mut chars = text.encode_utf16().peekable();
+    let mut pending = false;
+    while let Some(unit) = chars.next() {
+        pending = true;
+        match unit {
+            0x0a => {
+                lines.push(std::mem::take(&mut line));
+                pending = false;
+            }
+            0x0d => {
+                if chars.peek() == Some(&0x0a) {
+                    chars.next();
+                }
+                lines.push(std::mem::take(&mut line));
+                pending = false;
+            }
+            unit if unit < 0x80 => line.push(unit as u8),
+            _ => line.push(b'?'),
+        }
+    }
+    if pending {
+        lines.push(line);
+    }
+    Ok(lines)
+}
+
+/// What `FileInputStream` puts in the parentheses of its `FileNotFoundException`.
+fn java_io_reason(error: &std::io::Error) -> &'static str {
+    match error.kind() {
+        std::io::ErrorKind::NotFound => "No such file or directory",
+        std::io::ErrorKind::PermissionDenied => "Permission denied",
+        _ => "Is a directory",
+    }
+}
+
 /// `CollectAllelicCountsSpark.processAlignments`: `CollectAllelicCounts`' table, every locus of
 /// every interval, over `LocusWalkerSpark`'s shards as in [`pileup_spark`].
 pub fn collect_allelic_counts_spark(parser: &Parser) -> Outcome {

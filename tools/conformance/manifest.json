@@ -6662,7 +6662,7 @@
     },
     {
       "id": "tool-argument-declarations",
-      "status": "oracle-backed",
+      "status": "golden-pending",
       "title": "what one tool declares, and therefore which command lines it accepts",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6682,7 +6682,7 @@
         {
           "dump": "ToolArgumentDeclarationDump",
           "golden": "crates/gatk-tools/tests/data/tool_declarations.txt.gz",
-          "why": "Frozen from the candidate artefact of run 41201436568, with the tenth Spark brick (X.1): CollectAllelicCountsSpark."
+          "why": "Pending the candidate artefact of the eleventh Spark brick (X.1): FindBadGenomicKmersSpark and CalcMetadataSpark."
         }
       ]
     },
@@ -6730,7 +6730,7 @@
     },
     {
       "id": "tool-argument-enums",
-      "status": "oracle-backed",
+      "status": "golden-pending",
       "title": "the constants an enum-valued argument accepts, and what a value outside them costs",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6750,7 +6750,7 @@
         {
           "dump": "ToolArgumentEnumDump",
           "golden": "crates/gatk-tools/tests/data/tool_argument_enums.txt.gz",
-          "why": "Frozen from the candidate artefact of run 41201436568, with the tenth Spark brick (X.1): CollectAllelicCountsSpark."
+          "why": "Pending the candidate artefact of the eleventh Spark brick (X.1): FindBadGenomicKmersSpark and CalcMetadataSpark."
         }
       ]
     },
@@ -8104,8 +8104,8 @@
     },
     {
       "id": "spark-walkers",
-      "status": "oracle-backed",
-      "title": "Twenty-two Spark tools end to end through Main, on one partition",
+      "status": "golden-pending",
+      "title": "Twenty-four Spark tools end to end through Main, on one partition",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "CountReadsSpark",
@@ -8127,6 +8127,8 @@
         "CollectQualityYieldMetricsSpark",
         "CompareDuplicatesSpark",
         "CollectAllelicCountsSpark",
+        "FindBadGenomicKmersSpark",
+        "CalcMetadataSpark",
         "CollectInsertSizeMetricsSpark",
         "CollectMultipleMetricsSpark",
         "MarkDuplicatesSpark"
@@ -8192,7 +8194,7 @@
       "compare": {
         "mode": "lines"
       },
-      "expect_rows": 865,
+      "expect_rows": 997,
       "expect_contains": [
         "revert-sam-defaults\tjava.lang.UnsupportedOperationException",
         "revert-sam-sanitize\torg.apache.spark.SparkException:Base quality score -1 is invalid",
@@ -8218,7 +8220,7 @@
         {
           "dump": "SparkWalkersDump",
           "golden": "crates/gatk-tools/tests/data/spark_walkers.txt.gz",
-          "why": "Frozen from the candidate artefact of run 41201436568, with the tenth Spark brick (X.1): CollectAllelicCountsSpark."
+          "why": "Pending the candidate artefact of the eleventh Spark brick (X.1): FindBadGenomicKmersSpark and CalcMetadataSpark."
         }
       ],
       "$java_props_why": "GATK's jar carries runtimeAddOpens in its manifest, which only java -jar honours; the dump runs from the classpath, so Spark's StorageUtils needs the same opens passed by hand. Level 2 is what GATKConfig gives a real gatk invocation and instanceMain never sees (#1032)."

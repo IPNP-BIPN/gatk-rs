@@ -13076,18 +13076,156 @@
         "false",
         "true"
       ],
-      "--flowbased": ["false", "true"],
-      "--flow-quality-sum-strategy": ["false", "true"],
-      "--single-end-reads-end-position-significant": ["false", "true"],
-      "--single-end-reads-clipping-is-end": ["false", "true"],
-      "--flow-q-is-known-end": ["false", "true"],
-      "--flow-skip-start-homopolymers": ["0", "2"],
+      "--flowbased": [
+        "false",
+        "true"
+      ],
+      "--flow-quality-sum-strategy": [
+        "false",
+        "true"
+      ],
+      "--single-end-reads-end-position-significant": [
+        "false",
+        "true"
+      ],
+      "--single-end-reads-clipping-is-end": [
+        "false",
+        "true"
+      ],
+      "--flow-q-is-known-end": [
+        "false",
+        "true"
+      ],
+      "--flow-skip-start-homopolymers": [
+        "0",
+        "2"
+      ],
       "--flow-end-pos-uncertainty": [
         "0",
         "3"
       ],
       "$why": [
         "Every record type the tool makes, in the three orders of header it treats apart, the one-library copy being what brings the histogram. The two removals exclude --duplicate-tagging-policy, even at false, so they are measured in the spark-walkers golden and left out here. The array keeps to a single input and to fixtures without flow tags; the golden measures several inputs and a flow-tagged fixture."
+      ]
+    },
+    "FindBadGenomicKmersSpark": {
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "chr1:1-500",
+        "<unset>"
+      ],
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "<unset>"
+      ],
+      "--read-index": [],
+      "--reference": [
+        "/work/fixtures/reference.fasta",
+        "/work/fixtures/amplicon.fasta"
+      ],
+      "--intervals": [
+        "chr1:1-1000",
+        "<unset>"
+      ],
+      "--output": [
+        "/work/out/kmers.txt",
+        "/work/out/kmers2.txt"
+      ],
+      "--program-name": [
+        "kmers",
+        "kmers2"
+      ],
+      "--k-size": [
+        "21",
+        "31",
+        "51"
+      ],
+      "--kmer-max-dust-score": [
+        "3",
+        "49"
+      ],
+      "--high-copy-fasta": [
+        "/work/fixtures/pathseq_kmers.fasta",
+        "<unset>"
+      ],
+      "$why": [
+        "The tool writes what its tables hold, so the reference that repeats and the sizes that find its repeats are what vary. The reads are optional and only their dictionary matters."
+      ]
+    },
+    "CalcMetadataSpark": {
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "chr1:1-500",
+        "<unset>"
+      ],
+      "--input": [
+        "/work/fixtures/insert_pairs.bam",
+        "/work/fixtures/insert_pairs2.bam",
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [],
+      "--reference": [],
+      "--intervals": [
+        "chr1:1-1200",
+        "chr1:600-2500",
+        "<unset>"
+      ],
+      "--output": [
+        "/work/out/metadata.txt",
+        "/work/out/metadata2.txt"
+      ],
+      "--program-name": [
+        "metadata",
+        "metadata2"
+      ],
+      "$why": [
+        "Paired reads, for the fragment sizes, and an unpaired BAM, which keeps the refusal of a read with no mate in the array."
       ]
     }
   },
