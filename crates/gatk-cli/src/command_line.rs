@@ -59,6 +59,29 @@ fn display_one(value: &Value) -> String {
     }
 }
 
+/// What one definition's field prints: a `float` is held widened and prints as the `float` it is,
+/// so `--min-category-reads-percentage` says 0.05 where the widened double says 0.05000000074505806.
+fn definition_values(definition: &gatk_barclay::Definition) -> Vec<String> {
+    match (&definition.class, &definition.value) {
+        (gatk_barclay::ValueClass::Float, Value::Double(value)) => {
+            vec![jmath::to_string::float_to_string(*value as f32)]
+        }
+        // `Set<MetricAccumulationLevel>` starts as an `EnumSet` and stays one: the levels print in
+        // declaration order, once each, whatever order they were asked in.
+        (gatk_barclay::ValueClass::Enum { constants, .. }, Value::List(_))
+            if definition.long_name() == "metric-accumulation-level" =>
+        {
+            let asked = display_values(&definition.value);
+            constants
+                .iter()
+                .filter(|constant| asked.iter().any(|level| level == *constant))
+                .map(|constant| constant.to_string())
+                .collect()
+        }
+        (_, value) => display_values(value),
+    }
+}
+
 /// `getCommandLine()`: the class's simple name, then the set arguments, then the defaulted ones.
 ///
 /// `class_name` is `callerArguments.getClass().getSimpleName()`, which for every tool here is the
@@ -77,7 +100,7 @@ pub fn expanded(class_name: &str, parser: &Parser) -> String {
 
     for definition in parser.definitions() {
         if definition.has_been_set() {
-            let values = display_values(&definition.value);
+            let values = definition_values(definition);
             if values.is_empty() {
                 // A collection SET to `null` is emptied and still counts as set: its display string
                 // is empty and the join still puts a space for it, so the line carries two spaces
@@ -108,7 +131,7 @@ pub fn expanded(class_name: &str, parser: &Parser) -> String {
         }
         // The DEFAULT is what is printed, and the parser left it in the value, so the two agree.
         // A default that renders as the empty string still prints its name and a trailing space.
-        let values = display_values(&definition.value);
+        let values = definition_values(definition);
         if values.is_empty() {
             line.push_str(" --");
             line.push_str(definition.long_name());

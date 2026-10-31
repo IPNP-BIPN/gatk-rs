@@ -12301,8 +12301,8 @@
     },
     "PrintVariantsSpark": {
       "--variant": [
-        "/work/fixtures/indexed.vcf",
-        "/work/fixtures/reads.vcf",
+        "/work/fixtures/sites.vcf",
+        "/work/fixtures/sites.vcf.gz",
         "/work/fixtures/reads.vcf.gz"
       ],
       "--input": [
@@ -12354,7 +12354,12 @@
       ],
       "$why": [
         "CountVariantsSpark's values, with a plain and a block-compressed output, which Disq",
-        "writes as text with no index and as BGZF with its .tbi."
+        "writes as text with no index and as BGZF with its .tbi.",
+        "The sites-only VCFs reach the writer, where a record with genotypes never does, and the genotyped one is that failure. No --reference: the corpus's other dictionary only refuses, and the startup's refusal is the other Spark tools' to measure."
+      ],
+      "--reference": [],
+      "--disable-read-filter": [
+        "WellformedReadFilter"
       ]
     },
     "RevertSamSpark": {
@@ -12763,6 +12768,266 @@
       "--reference": [],
       "--disable-read-filter": [
         "AllowAllReadsReadFilter"
+      ]
+    },
+    "CollectInsertSizeMetricsSpark": {
+      "--input": [
+        "/work/fixtures/insert_pairs.bam",
+        "/work/fixtures/insert_pairs2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/insert_pairs.bai",
+        "/work/fixtures/insert_pairs2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-1200",
+        "chr1:600-2500",
+        "<unset>"
+      ],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--program-name": [
+        "counts",
+        "counts2"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "chr1:1-200",
+        "chr1:800-1000",
+        "<unset>"
+      ],
+      "--output": [
+        "/work/out/CollectInsertSizeMetricsSpark.txt",
+        "/work/out/CollectInsertSizeMetricsSpark2.txt"
+      ],
+      "--histogram-plot-file": [
+        "/work/out/plot.pdf"
+      ],
+      "--produce-plot": [
+        "false"
+      ],
+      "--width": [
+        "125",
+        "<unset>"
+      ],
+      "--histogram-plot-deviations-tolerance": [
+        "10.0",
+        "1.0"
+      ],
+      "--min-category-reads-percentage": [
+        "0.05",
+        "0.2"
+      ],
+      "--metric-accumulation-level": [
+        "ALL_READS",
+        "SAMPLE",
+        "LIBRARY",
+        "READ_GROUP"
+      ],
+      "--reference": [],
+      "--disable-read-filter": [
+        "NotDuplicateReadFilter"
+      ],
+      "$why": [
+        "Pairs in every orientation and two read groups, so a level and a threshold change what the file holds. --produce-plot holds at false: the plot runs R, which the pinned container does not have, and -H names a file nothing then writes. No --reference: no dictionary of the corpus matches these BAMs, and the startup's refusal is the other Spark tools' to measure. An inverted filter keeps only what passes the ten defaults: inverting one of them is refused, and inverting most others empties the tool, so the value here keeps the TANDEM pair."
+      ],
+      "--inverted-read-filter": [
+        "MateDifferentStrandReadFilter",
+        "<unset>"
+      ]
+    },
+    "CollectMultipleMetricsSpark": {
+      "--input": [
+        "/work/fixtures/insert_pairs.bam",
+        "/work/fixtures/insert_pairs2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/insert_pairs.bai",
+        "/work/fixtures/insert_pairs2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-1200",
+        "chr1:600-2500",
+        "<unset>"
+      ],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--program-name": [
+        "counts",
+        "counts2"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "chr1:1-200",
+        "chr1:800-1000",
+        "<unset>"
+      ],
+      "--output": [
+        "/work/out/multi",
+        "/work/out/multi2"
+      ],
+      "--metric-accumulation-level": [
+        "ALL_READS",
+        "SAMPLE",
+        "LIBRARY",
+        "READ_GROUP"
+      ],
+      "--reference": [],
+      "--disable-read-filter": [
+        "WellformedReadFilter"
+      ],
+      "--collectors": [
+        "CollectInsertSizeMetrics",
+        "CollectQualityYieldMetrics",
+        "<unset>"
+      ],
+      "--assume-sorted": [
+        "true",
+        "false"
+      ],
+      "--read-filter": [
+        "GoodCigarReadFilter",
+        "<unset>"
+      ],
+      "$why": [
+        "Pairs in every orientation and two read groups, so a level and the collectors change what the two files hold. No --reference: no dictionary of the corpus matches these BAMs. A filter on the command line is parsed and then bypassed, so a value here only has to survive the descriptor."
+      ]
+    },
+    "MarkDuplicatesSpark": {
+      "--input": [
+        "/work/fixtures/marking.bam",
+        "/work/fixtures/marking_names.bam",
+        "/work/fixtures/marking_one.bam"
+      ],
+      "--read-index": [],
+      "--intervals": [
+        "chr1:1-3000",
+        "chr1:1000-9000",
+        "<unset>"
+      ],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--program-name": [
+        "counts",
+        "counts2"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "chr1:2000-2200",
+        "<unset>"
+      ],
+      "--output": [
+        "/work/out/marked.bam",
+        "/work/out/marked2.bam"
+      ],
+      "--reference": [],
+      "--disable-read-filter": [
+        "WellformedReadFilter"
+      ],
+      "--metrics-file": [
+        "/work/out/marked.metrics",
+        "<unset>"
+      ],
+      "--duplicate-scoring-strategy": [
+        "SUM_OF_BASE_QUALITIES",
+        "TOTAL_MAPPED_REFERENCE_LENGTH",
+        "FLOW_SUM_OF_BASE_QUALITIES"
+      ],
+      "--duplicate-tagging-policy": [
+        "DontTag",
+        "All",
+        "OpticalOnly"
+      ],
+      "--remove-all-duplicates": [],
+      "--remove-sequencing-duplicates": [],
+      "--do-not-mark-unmapped-mates": [
+        "false",
+        "true"
+      ],
+      "--read-name-regex": [
+        "[^:]*:[^:]*:([0-9]+):([0-9]+):([0-9]+)",
+        "null",
+        "<unset>"
+      ],
+      "--optical-duplicate-pixel-distance": [
+        "5",
+        "100",
+        "100000"
+      ],
+      "--allow-multiple-sort-orders-in-input": [
+        "false",
+        "true"
+      ],
+      "--treat-unsorted-as-querygroup-ordered": [
+        "false",
+        "true"
+      ],
+      "--flowbased": ["false", "true"],
+      "--flow-quality-sum-strategy": ["false", "true"],
+      "--single-end-reads-end-position-significant": ["false", "true"],
+      "--single-end-reads-clipping-is-end": ["false", "true"],
+      "--flow-q-is-known-end": ["false", "true"],
+      "--flow-skip-start-homopolymers": ["0", "2"],
+      "--flow-end-pos-uncertainty": [
+        "0",
+        "3"
+      ],
+      "$why": [
+        "Every record type the tool makes, in the three orders of header it treats apart, the one-library copy being what brings the histogram. The two removals exclude --duplicate-tagging-policy, even at false, so they are measured in the spark-walkers golden and left out here. The array keeps to a single input and to fixtures without flow tags; the golden measures several inputs and a flow-tagged fixture."
       ]
     }
   },

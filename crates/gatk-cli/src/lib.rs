@@ -309,6 +309,9 @@ pub fn runner(name: &str) -> Option<Runner> {
         "QualityScoreDistributionSpark" => Some(run_quality_score_distribution_spark),
         "CollectBaseDistributionByCycleSpark" => Some(run_collect_base_distribution_by_cycle_spark),
         "CollectQualityYieldMetricsSpark" => Some(run_collect_quality_yield_metrics_spark),
+        "CollectInsertSizeMetricsSpark" => Some(run_collect_insert_size_metrics_spark),
+        "CollectMultipleMetricsSpark" => Some(run_collect_multiple_metrics_spark),
+        "MarkDuplicatesSpark" => Some(run_mark_duplicates_spark),
         "CompareDuplicatesSpark" => Some(run_compare_duplicates_spark),
         "ExtractOriginalAlignmentRecordsByNameSpark" => {
             Some(run_extract_original_alignment_records_by_name_spark)
@@ -1071,6 +1074,35 @@ fn run_collect_base_distribution_by_cycle_spark(args: &[String]) -> Result<Optio
 
 fn run_collect_quality_yield_metrics_spark(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::collect_quality_yield_metrics_spark(&parsed("CollectQualityYieldMetricsSpark", args)?)
+}
+
+fn run_collect_insert_size_metrics_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::collect_insert_size_metrics_spark(&parsed("CollectInsertSizeMetricsSpark", args)?)
+}
+
+fn run_collect_multiple_metrics_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::collect_multiple_metrics_spark(&parsed("CollectMultipleMetricsSpark", args)?)
+}
+
+/// `customCommandLineValidation`: `--flowbased` sets its mode's arguments, each one unless it was
+/// given, on the values the tool reads and not on the command line the metrics header reports.
+fn run_mark_duplicates_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    let parser = parsed("MarkDuplicatesSpark", args)?;
+    if !runners::flag(&parser, "flowbased") {
+        return runners::mark_duplicates_spark(&parser, &parser);
+    }
+    let mut mode = args.to_vec();
+    for (name, value) in [
+        ("--single-end-reads-end-position-significant", "true"),
+        ("--single-end-reads-clipping-is-end", "true"),
+        ("--flow-end-pos-uncertainty", "1"),
+        ("--flow-skip-start-homopolymers", "0"),
+    ] {
+        if !args.iter().any(|arg| arg == name) {
+            mode.extend([name.to_string(), value.to_string()]);
+        }
+    }
+    runners::mark_duplicates_spark(&parser, &parsed("MarkDuplicatesSpark", &mode)?)
 }
 
 fn run_compare_duplicates_spark(args: &[String]) -> Result<Option<String>, Thrown> {

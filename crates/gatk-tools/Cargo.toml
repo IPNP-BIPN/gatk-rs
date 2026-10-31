@@ -6,6 +6,8 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+# `--read-name-regex`, whose capture groups `gatk_engine::java_regex` does not carry.
+regex = "1"
 # CombineGVCFs combines the raw annotations its inputs carry, and reads which ones through the
 # annotation catalogue.
 gatk-annotation = { path = "../gatk-annotation" }

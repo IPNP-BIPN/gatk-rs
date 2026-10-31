@@ -226,22 +226,22 @@ fn spark_traversal_source(
     source: ReadsDataSource,
 ) -> Result<ReadsDataSource, Thrown> {
     // `getUnfilteredReads` with intervals is a Disq traversal, which needs the index beside the
-    // BAM. Without one the reference fails inside an executor task, and that failure is Spark's
-    // log rather than a GATK refusal; the port says so in its own words.
+    // BAM. Without one the reference fails inside the first executor task.
     let source = if intervals_specified(parser) {
         let path = std::path::Path::new(input);
         match htsjdk_bam::sam_files::find_index(path) {
             Some(index) => ReadsDataSource::open(path, &index)
                 .map_err(|error| Thrown::user(format!("{error:?}")))?,
             None => {
+                let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+                eprintln!("ERROR Executor - Exception in task 0.0 in stage 0.0 (TID 0)");
                 return Err(Thrown::non_user(
-                    PORT_LIMITATION,
+                    "org.apache.spark.SparkException",
                     format!(
-                        "Intervals set but no index file found for file:{input}: the reference \
-                         fails this inside a Spark task, which this port does not reproduce. \
-                         This message is the port's own and not GATK's."
+                        "Intervals set but no index file found for file:{}",
+                        absolute.display()
                     ),
-                ))
+                ));
             }
         }
     } else {
@@ -260,7 +260,7 @@ fn spark_traversal_source(
 /// intervals through its index and refuses one that has none, from inside the job, which surfaces
 /// as the `IllegalArgumentException` itself rather than a GATK error.
 pub fn count_variants_spark(parser: &Parser) -> Outcome {
-    let (variant, intervals) = variant_spark_startup(parser)?;
+    let (variant, intervals) = variant_spark_startup(parser, false)?;
     let (codec, text) = open_feature_input(&variant)?;
     let features: Vec<Locus> = gatk_tools::feature_codec::features(&text, codec)
         .into_iter()
@@ -286,8 +286,13 @@ pub fn count_variants_spark(parser: &Parser) -> Outcome {
 /// and Disq's refusal of an interval query over a VCF with no index.
 ///
 /// Returns the `-V` path and the traversal intervals.
+///
+/// A `VariantWalkerSpark` asks its driving variants first: `getBestAvailableSequenceDictionary` is
+/// overridden there, so `PrintVariantsSpark`'s intervals resolve against the VCF's contigs whatever
+/// `--reference` says, unless the header has none or only lengths an index synthesized.
 fn variant_spark_startup(
     parser: &Parser,
+    variant_walker: bool,
 ) -> Result<(String, Option<Vec<gatk_engine::interval::SimpleInterval>>), Thrown> {
     spark_context(parser)?;
     let reference = reference_dictionary(parser)?;
@@ -304,8 +309,20 @@ fn variant_spark_startup(
 
     // `getBestAvailableSequenceDictionary`: the reference's, then the reads', and with neither an
     // interval cannot be resolved at all.
+    let driving = match argument(parser, "variant") {
+        Some(variant) if variant_walker && intervals_specified(parser) => {
+            let (_, text) = open_feature_input(&variant)?;
+            let dictionary = vcf_dictionary(&text);
+            dictionary
+                .sequences
+                .iter()
+                .any(|sequence| sequence.length > 0)
+                .then_some(dictionary)
+        }
+        _ => None,
+    };
     let intervals =
-        match reference.as_ref().or(reads.as_ref()) {
+        match driving.as_ref().or(reference.as_ref()).or(reads.as_ref()) {
             Some(best) => interval_arguments(parser, best)?.map(|parameters| parameters.intervals),
             None if intervals_specified(parser) => return Err(Thrown::user(
                 "We require at least one input source that has a sequence dictionary (reference \
@@ -347,7 +364,7 @@ fn variant_spark_startup(
 /// compressed alone, the records' own stream and one terminator, with a `.tbi` APPENDED when
 /// indexing is on.
 pub fn print_variants_spark(parser: &Parser) -> Outcome {
-    let (variant, intervals) = variant_spark_startup(parser)?;
+    let (variant, intervals) = variant_spark_startup(parser, true)?;
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
@@ -378,6 +395,34 @@ pub fn print_variants_spark(parser: &Parser) -> Outcome {
             })
             .collect();
 
+    // Nothing kept is not one answer but three, and which depends on the index. Disq keeps a split
+    // only where a query touches one of the index's blocks: a tabix bin of 16384 bases, a Tribble
+    // bin of 8000 (shortcut: the width `IndexFeatureFile` left this corpus's small VCF, which it
+    // may optimise on a larger one). With no split at all the shard join without `--shuffle` asks
+    // for no partitions, and a block-compressed output with an index has no part to merge.
+    let touches_block = match &intervals {
+        None => true,
+        Some(intervals) => {
+            let width = if variant.ends_with(".gz") || variant.ends_with(".bgz") {
+                16384
+            } else {
+                8000
+            };
+            loci.iter().any(|locus| {
+                intervals.iter().any(|interval| {
+                    interval.contig == locus.contig
+                        && (locus.start - 1) / width <= (interval.end - 1) / width
+                        && (interval.start - 1) / width <= (locus.stop - 1) / width
+                })
+            })
+        }
+    };
+    if kept.is_empty() && !touches_block && !flag(parser, "shuffle") {
+        return Err(Thrown::non_user(
+            "java.lang.IllegalArgumentException",
+            "requirement failed: Number of partitions (0) must be positive.",
+        ));
+    }
     if output.ends_with(".bcf") || output.ends_with(".bcf.gz") {
         return Err(Thrown {
             failure: Failure::User,
@@ -413,6 +458,23 @@ pub fn print_variants_spark(parser: &Parser) -> Outcome {
             )
         };
         return Err(Thrown::non_user("org.apache.spark.SparkException", message));
+    }
+    if kept.is_empty() && touches_block && !flag(parser, "shuffle") {
+        eprintln!("ERROR Executor - Exception in task 0.0 in stage 1.0 (TID 1)");
+        return Err(Thrown::non_user(
+            "java.lang.ArrayIndexOutOfBoundsException",
+            "Index -1 out of bounds for length 1",
+        ));
+    }
+    if kept.is_empty()
+        && !touches_block
+        && (output.ends_with(".gz") || output.ends_with(".bgz"))
+        && flag(parser, "create-output-variant-index")
+    {
+        return Err(Thrown::non_user(
+            "java.lang.IllegalArgumentException",
+            "Cannot merge zero tabix files",
+        ));
     }
     let failed = |error: String| {
         Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
@@ -1557,14 +1619,24 @@ fn spark_metric_reads(
     parser: &Parser,
     tool: &str,
 ) -> Result<(Vec<BamRecord>, Vec<String>), Thrown> {
+    let start = spark_startup(parser, tool)?;
+    spark_metric_reads_of(parser, tool, &start)
+}
+
+/// [`spark_metric_reads`] past the startup, for a tool with a check of its own between the two.
+fn spark_metric_reads_of(
+    parser: &Parser,
+    tool: &str,
+    start: &SparkStart,
+) -> Result<(Vec<BamRecord>, Vec<String>), Thrown> {
     let SparkStart {
         source,
         header,
         intervals,
         filters,
-    } = spark_startup(parser, tool)?;
-    let filter = read_filter(parser, &filters, &header)?;
-    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+    } = start;
+    let filter = read_filter(parser, filters, header)?;
+    let records = gatk_tools::read_walker::traverse(source, intervals, &filter)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
     // `getMetricsFile`: the command line, then the time the run started.
     let headers = vec![
@@ -1662,6 +1734,395 @@ pub fn collect_quality_yield_metrics_spark(parser: &Parser) -> Outcome {
         &headers,
     );
     save_spark_metrics(parser, &text)?;
+    Ok(None)
+}
+
+/// The arguments of `InsertSizeMetricsArgumentCollection`, and `ALL_READS` without a level.
+fn insert_size_settings(parser: &Parser) -> gatk_tools::spark_metrics::InsertSizeArguments {
+    let mut levels = arguments(parser, "metric-accumulation-level");
+    if levels.is_empty() {
+        levels.push("ALL_READS".to_string());
+    }
+    gatk_tools::spark_metrics::InsertSizeArguments {
+        minimum_pct: scalar(parser, "min-category-reads-percentage")
+            .and_then(|text| text.parse().ok())
+            .unwrap_or(0.05),
+        deviations: double_or(parser, "histogram-plot-deviations-tolerance", 10.0),
+        width: scalar(parser, "width").and_then(|text| text.parse().ok()),
+        levels,
+    }
+}
+
+/// `CollectMultipleMetricsSpark.runTool`: the collectors in the order asked for, each over the
+/// reads through its own default filters. The command line's filters are parsed and validated and
+/// then bypassed, and each collector's arguments are its defaults but for the accumulation levels,
+/// which only the insert sizes read.
+pub fn collect_multiple_metrics_spark(parser: &Parser) -> Outcome {
+    let tool = "CollectMultipleMetricsSpark";
+    let start = spark_startup(parser, tool)?;
+    let base = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let mut collectors = arguments(parser, "collectors");
+    if collectors.is_empty() {
+        collectors = vec![
+            "CollectInsertSizeMetrics".to_string(),
+            "CollectQualityYieldMetrics".to_string(),
+        ];
+    }
+
+    let allow_all = |_: &BamRecord| true;
+    let mut reads = None;
+    // The stage and task the next job takes: an aggregate is one, and `isEmpty` one more.
+    let mut stage = 0;
+    for collector in &collectors {
+        let insert_size = collector == "CollectInsertSizeMetrics";
+        // `validateCollector`, naming the enum constant's own class, and with the output's name
+        // chosen first.
+        let order = start.header.attributes.get("SO").unwrap_or("unsorted");
+        if order != "coordinate" {
+            let constant = if insert_size { 1 } else { 2 };
+            return Err(Thrown::user(format!(
+                "Input \"org.broadinstitute.hellbender.tools.spark.pipelines.metrics.\
+                 CollectMultipleMetricsSpark$SparkCollectors${constant}\" has sort order \
+                 \"{order}\" but \"coordinate\" is required.If you believe the file to be \
+                 sorted correctly, use assume-sorted=true"
+            )));
+        }
+        if reads.is_none() {
+            let records =
+                gatk_tools::read_walker::traverse(&start.source, &start.intervals, &allow_all)
+                    .map_err(|error| Thrown::user(format!("{error:?}")))?;
+            let headers = vec![
+                crate::command_line::expanded(tool, parser),
+                format!("Started on: {}", java_display_now()),
+            ];
+            reads = Some((records, headers));
+        }
+        let Some((records, headers)) = &reads else {
+            unreachable!("the reads were just traversed");
+        };
+        if insert_size {
+            // `InsertSizeMetricsCollector.getDefaultReadFilters`; its `MappingQualityReadFilter`
+            // is parameterised at nought and keeps every read.
+            let chain =
+                gatk_tools::plugin_ownership::default_filters("CollectInsertSizeMetricsSpark")
+                    .unwrap_or_default()
+                    .iter()
+                    .filter(|name| **name != "MappingQualityReadFilter")
+                    .map(|name| gatk_tools::filter_resolution::ResolvedFilter {
+                        name: name.to_string(),
+                        negated: false,
+                    })
+                    .collect::<Vec<_>>();
+            let filter = read_filter(parser, &chain, &start.header)?;
+            let kept = records
+                .iter()
+                .filter(|read| filter(read))
+                .cloned()
+                .collect::<Vec<_>>();
+            if kept.is_empty() {
+                return Err(Thrown::non_user(
+                    "org.broadinstitute.hellbender.exceptions.GATKException",
+                    "No valid reads found in input file.",
+                ));
+            }
+            let text = gatk_tools::spark_metrics::insert_size(
+                &kept,
+                &start.header,
+                &insert_size_settings(parser),
+                headers,
+            )
+            .map_err(|message| {
+                let task = stage + 1;
+                eprintln!("ERROR Executor - Exception in task 0.0 in stage {task}.0 (TID {task})");
+                Thrown::non_user("org.apache.spark.SparkException", message)
+            })?;
+            if let Some(text) = text {
+                write_multiple_metrics(&format!("{base}.insertSizeMetrics.txt"), &text)?;
+            }
+            stage += 2;
+        } else {
+            let text = gatk_tools::spark_metrics::quality_yield(records.iter(), false, headers);
+            write_multiple_metrics(&format!("{base}.qualityYieldMetrics.txt"), &text)?;
+            stage += 1;
+        }
+    }
+    Ok(None)
+}
+
+fn write_multiple_metrics(output: &str, text: &str) -> Result<(), Thrown> {
+    std::fs::write(output, text).map_err(|error| {
+        Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
+    })
+}
+
+/// `CollectInsertSizeMetricsSpark.runTool`: `MetricsCollectorSparkTool`'s lifecycle over
+/// `InsertSizeMetricsCollector`, which is GATK's own and not Picard's.
+pub fn collect_insert_size_metrics_spark(parser: &Parser) -> Outcome {
+    let tool = "CollectInsertSizeMetricsSpark";
+    let start = spark_startup(parser, tool)?;
+    // `validateExpectedSortOrder`, with `assumeSorted` false.
+    let order = start.header.attributes.get("SO").unwrap_or("unsorted");
+    if order != "coordinate" {
+        let input = arguments(parser, "input").join(",");
+        return Err(Thrown::user(format!(
+            "Input \"{input}\" has sort order \"{order}\" but \"coordinate\" is required.If you \
+             believe the file to be sorted correctly, use assume-sorted=true"
+        )));
+    }
+    let (records, headers) = spark_metric_reads_of(parser, tool, &start)?;
+    if records.is_empty() {
+        return Err(Thrown::non_user(
+            "org.broadinstitute.hellbender.exceptions.GATKException",
+            "No valid reads found in input file.",
+        ));
+    }
+    let settings = insert_size_settings(parser);
+    let text = gatk_tools::spark_metrics::insert_size(&records, &start.header, &settings, &headers)
+        .map_err(|message| {
+            // `isEmpty` is stage 0, and `mapPartitions` the stage after it.
+            eprintln!("ERROR Executor - Exception in task 0.0 in stage 1.0 (TID 1)");
+            Thrown::non_user("org.apache.spark.SparkException", message)
+        })?;
+    if let Some(text) = text {
+        save_spark_metrics(parser, &text)?;
+        if flag(parser, "produce-plot") {
+            return Err(Thrown::non_user(
+                PORT_LIMITATION,
+                "--produce-plot runs R, which the port does not. This message is the port's own \
+                 and not GATK's.",
+            ));
+        }
+    }
+    Ok(None)
+}
+
+/// `MarkDuplicatesSpark.runTool`.
+///
+/// One input, a queryname sort when the header does not promise the names are grouped, the marking,
+/// the metrics, and the file coordinate-sorted whatever came in. Reads are one partition here: the
+/// reducers only move the partition boundaries, which a name never spans.
+pub fn mark_duplicates_spark(parser: &Parser, mode: &Parser) -> Outcome {
+    use gatk_tools::mark_duplicates_spark as md;
+    let tool = "MarkDuplicatesSpark";
+    // `initializeReads`: `concatMerge`. The inputs are a map's keys, so a path given twice is read
+    // once, and the checks below still see two.
+    let filters = resolve_read_filters(parser, tool)?;
+    spark_context(parser)?;
+    let reference = reference_dictionary(parser)?;
+    let given = arguments(parser, "input");
+    let mut inputs: Vec<String> = Vec::new();
+    for input in &given {
+        if !inputs.contains(input) {
+            inputs.push(input.clone());
+        }
+    }
+    if inputs.is_empty() {
+        return Err(Thrown::command_line(
+            "Argument input was missing: Argument 'input' is required",
+        ));
+    }
+    let sources = inputs
+        .iter()
+        .map(|input| spark_reads_header(input))
+        .collect::<Result<Vec<ReadsDataSource>, Thrown>>()?;
+    let own_headers: Vec<SamHeader> = sources.iter().map(|s| s.header().clone()).collect();
+    let merged = gatk_tools::sam_file_header_merger::merge(&own_headers)
+        .map_err(|message| Thrown::non_user("htsjdk.samtools.SAMException", message))?;
+    let mut header = merged.header;
+    let best = reference.clone().unwrap_or_else(|| header.clone());
+    let intervals = match interval_arguments(parser, &best)? {
+        Some(parameters) => parameters.intervals,
+        None => Vec::new(),
+    };
+    if !flag(parser, "disable-sequence-dictionary-validation") {
+        if let Some(reference) = &reference {
+            validate_reference_against_reads(reference, &header)?;
+        }
+    }
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+
+    let treat_unsorted = flag(parser, "treat-unsorted-as-querygroup-ordered");
+    let unsorted = |input: &SamHeader| {
+        matches!(
+            input.attributes.get("SO").unwrap_or("unsorted"),
+            "unknown" | "unsorted"
+        )
+    };
+    if given.len() > 1 {
+        let allow = flag(parser, "allow-multiple-sort-orders-in-input");
+        // `treatAsReadGroupOrdered`.
+        let badly_sorted = given.iter().find(|input| {
+            let at = inputs.iter().position(|known| known == *input).unwrap_or(0);
+            let own = &own_headers[at];
+            let grouped = own.attributes.get("SO") == Some("queryname")
+                || own.attributes.get("GO") == Some("query");
+            !(grouped || (treat_unsorted && unsorted(own)))
+        });
+        match badly_sorted {
+            Some(input) if !allow => {
+                let at = inputs.iter().position(|known| known == input).unwrap_or(0);
+                return Err(Thrown::user(format!(
+                    "Multiple inputs to MarkDuplicatesSpark detected. MarkDuplicatesSpark requires \
+                     all inputs to be queryname sorted or querygroup-sorted for multi-input \
+                     processing but input {input} was sorted in {} order",
+                    gatk_tools::sam_file_header_merger::header_to_string(&own_headers[at])
+                )));
+            }
+            None if !allow => header.set_group_order("query"),
+            _ => {}
+        }
+    } else if treat_unsorted && unsorted(&header) {
+        header.set_group_order("query");
+    }
+
+    let sources = inputs
+        .iter()
+        .zip(sources)
+        .map(|(input, source)| spark_traversal_source(parser, input, source))
+        .collect::<Result<Vec<ReadsDataSource>, Thrown>>()?;
+    let filter = read_filter(parser, &filters, &header)?;
+    // `getReads`: a union, one partition an input, of the reads under the merged header. A read
+    // holds its contig by name, which is what makes its index the merged dictionary's.
+    let contigs: std::collections::HashMap<&str, i32> = header
+        .sequences
+        .iter()
+        .enumerate()
+        .map(|(index, sequence)| (sequence.name.as_str(), index as i32))
+        .collect();
+    let mut partitions: Vec<Vec<BamRecord>> = Vec::new();
+    for (source, own) in sources.iter().zip(&own_headers) {
+        let translate = |record: &mut BamRecord| {
+            let index = |old: i32| match usize::try_from(old) {
+                Ok(at) => own
+                    .sequences
+                    .get(at)
+                    .and_then(|sequence| contigs.get(sequence.name.as_str()).copied())
+                    .unwrap_or(old),
+                Err(_) => old,
+            };
+            record.reference_index = index(record.reference_index);
+            record.mate_reference_index = index(record.mate_reference_index);
+        };
+        let mut records = if merged.merged_dictionaries {
+            gatk_tools::read_walker::traverse(source, &intervals, &|record: &BamRecord| {
+                let mut record = record.clone();
+                translate(&mut record);
+                filter(&record)
+            })
+        } else {
+            gatk_tools::read_walker::traverse(source, &intervals, &filter)
+        }
+        .map_err(|error| match error {
+            // Disq's query, in the executor, over a file that lacks a contig the merge has.
+            gatk_engine::reads::ReadsError::ContigNotInDictionary(contig) => {
+                eprintln!("ERROR Executor - Exception in task 0.0 in stage 0.0 (TID 0)");
+                Thrown::non_user(
+                    "org.apache.spark.SparkException",
+                    format!("Contig {contig} not present in reads sequence dictionary"),
+                )
+            }
+            error => Thrown::user(format!("{error:?}")),
+        })?;
+        if merged.merged_dictionaries {
+            records.iter_mut().for_each(translate);
+        }
+        partitions.push(records);
+    }
+    drop(filter);
+
+    let mut tagging = match scalar(parser, "duplicate-tagging-policy").as_deref() {
+        Some("All") => md::Tagging::All,
+        Some("OpticalOnly") => md::Tagging::OpticalOnly,
+        _ => md::Tagging::DontTag,
+    };
+    let (remove_all, remove_sequencing) = (
+        flag(parser, "remove-all-duplicates"),
+        flag(parser, "remove-sequencing-duplicates"),
+    );
+    if remove_sequencing && tagging == md::Tagging::DontTag {
+        tagging = md::Tagging::OpticalOnly;
+    }
+    let regex = md::ReadNameRegex::from_arg(argument(parser, "read-name-regex").as_deref())
+        .map_err(|error| Thrown::non_user("java.util.regex.PatternSyntaxException", error))?;
+    let settings = md::MarkArguments {
+        scoring: match scalar(parser, "duplicate-scoring-strategy").as_deref() {
+            Some("TOTAL_MAPPED_REFERENCE_LENGTH") => md::Scoring::TotalMappedReferenceLength,
+            Some("FLOW_SUM_OF_BASE_QUALITIES") => md::Scoring::FlowSumOfBaseQualities,
+            _ => md::Scoring::SumOfBaseQualities,
+        },
+        dont_mark_unmapped_mates: flag(parser, "do-not-mark-unmapped-mates"),
+        tagging,
+        read_name_regex: regex,
+        pixel_distance: number_or(parser, "optical-duplicate-pixel-distance", 100),
+        flow: md::FlowArguments {
+            quality_sum_strategy: flag(mode, "flow-quality-sum-strategy"),
+            end_location_significant: flag(mode, "single-end-reads-end-position-significant"),
+            end_uncertainty: number_or(mode, "flow-end-pos-uncertainty", 0),
+            use_clipped_locations: flag(mode, "single-end-reads-clipping-is-end"),
+            skip_start_homopolymers: number_or(mode, "flow-skip-start-homopolymers", 0),
+            q_is_known_end: flag(mode, "flow-q-is-known-end"),
+        },
+    };
+
+    // `getHeaderReadGroupIndexMap`, on the driver.
+    if header.read_groups.is_empty() {
+        return Err(Thrown::user(
+            "Bad input: Sam file header missing Read Group fields. MarkDuplicatesSpark currently \
+             requires reads to be labeled with read group tags, please add read groups tags to \
+             your reads",
+        ));
+    }
+    // `querynameSortReadsIfNecessary`.
+    let grouped = header.attributes.get("SO") == Some("queryname")
+        || header.attributes.get("GO") == Some("query");
+    if !grouped {
+        let mut records: Vec<BamRecord> = partitions.into_iter().flatten().collect();
+        records.sort_by(htsjdk_bam::query_name::compare);
+        partitions = vec![records];
+    }
+    let marked = md::mark(partitions, &header, &settings).map_err(|failure| {
+        // Measured on one partition: a queryname sort of its own takes two stages and a task,
+        // and the zip comes two stages and a task after the grouping.
+        let (stage, task) = match (grouped, failure.late) {
+            (true, false) => (1, 1),
+            (true, true) => (3, 3),
+            (false, false) => (3, 2),
+            (false, true) => (5, 4),
+        };
+        eprintln!("ERROR Executor - Exception in task 0.0 in stage {stage}.0 (TID {task})");
+        Thrown::non_user("org.apache.spark.SparkException", failure.message)
+    })?;
+    if let Some(metrics) = argument(parser, "metrics-file") {
+        let headers = vec![
+            crate::command_line::expanded(tool, parser),
+            format!("Started on: {}", java_display_now()),
+        ];
+        std::fs::write(&metrics, md::metrics_file(&marked, &header, &headers)).map_err(
+            |error| Thrown::non_user(PORT_FAILURE, format!("could not write {metrics}: {error}")),
+        )?;
+    }
+    let kept: Vec<BamRecord> = marked
+        .reads
+        .into_iter()
+        .filter(|record| {
+            if remove_all {
+                !gatk_engine::read::is_duplicate(record)
+            } else if remove_sequencing {
+                !matches!(
+                    record.tags.get(htsjdk_bam::tag::Tag::new(b"DT")),
+                    Some(htsjdk_bam::tag::TagValue::Str(kind)) if kind == "SQ"
+                )
+            } else {
+                true
+            }
+        })
+        .collect();
+    header.set_sort_order("coordinate");
+    write_spark_reads(parser, &header, &kept, &output, true)?;
     Ok(None)
 }
 
@@ -1829,10 +2290,14 @@ fn sorted_partitions(
     // `getRecommendedNumReducers`: the argument, else one per ten megabytes of input.
     let mut reducers = number_or(parser, "num-reducers", 0).max(0) as usize;
     if reducers == 0 {
-        let size = argument(parser, "input")
-            .and_then(|input| std::fs::metadata(input).ok())
+        let mut inputs = arguments(parser, "input");
+        inputs.sort();
+        inputs.dedup();
+        let size: u64 = inputs
+            .iter()
+            .filter_map(|input| std::fs::metadata(input).ok())
             .map(|data| data.len())
-            .unwrap_or(0);
+            .sum();
         reducers = 1 + (size / (10 * 1024 * 1024)) as usize;
     }
     let bounds = range_bounds(&sorted, reducers, compare)?;

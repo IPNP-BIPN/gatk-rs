@@ -89,7 +89,7 @@ public class SparkWalkersDump {
         PrintReadsDump.emptyDirectory(DIR);
         Files.createDirectories(DIR);
 
-        System.out.println("# SparkWalkersDump: eighteen Spark tools through Main, --spark-master local[1]");
+        System.out.println("# SparkWalkersDump: twenty-one Spark tools through Main, --spark-master local[1]");
 
         final Path fasta = DIR.resolve("ref.fasta");
         Files.write(fasta, ReadWalkerDump.FASTA.getBytes());
@@ -132,12 +132,74 @@ public class SparkWalkersDump {
             duplicateFixture(DIR.resolve(pair[0]), pair[1], pair[2], pair[3], pair[4]);
         }
 
+        flowMarkingFixture(DIR.resolve("marking-flow.bam"));
+        final String[] twoContigs = {"chr1", "chr2"};
+        final String[][] twoGroups = {{"rg1", "lib1"}, {"rg4", "lib4"}};
+        final String[][] noPrograms = {};
+        final SAMFileHeader.SortOrder byName = SAMFileHeader.SortOrder.queryname;
+        final SAMFileHeader.SortOrder byPlace = SAMFileHeader.SortOrder.coordinate;
+        final SAMFileHeader.SortOrder noOrder = SAMFileHeader.SortOrder.unsorted;
+        mergeFixture(DIR.resolve("more-queryname.bam"), byName, false, twoContigs, twoGroups, noPrograms, "from more", "rg4");
+        mergeFixture(DIR.resolve("more-copy.bam"), byName, false, twoContigs, twoGroups, noPrograms, "from more", "rg4");
+        mergeFixture(DIR.resolve("more-coordinate.bam"), byPlace, false, twoContigs, twoGroups, noPrograms, "from more", "rg4");
+        mergeFixture(DIR.resolve("more-unsorted.bam"), noOrder, false, twoContigs, twoGroups, noPrograms, "from more", "rg4");
+        mergeFixture(DIR.resolve("more-grouped.bam"), noOrder, true, twoContigs, twoGroups, noPrograms, "from more", "rg4");
+        mergeFixture(DIR.resolve("more-scattered.bam"), noOrder, true, twoContigs, twoGroups, noPrograms, "from more", "rg4");
+        // One id with two libraries, whose reads keep the id and so take the first file's library.
+        mergeFixture(DIR.resolve("more-collision.bam"), byName, false, twoContigs,
+                new String[][] {{"rg1", "other"}, {"rg2", "lib2"}}, noPrograms, null, "rg1");
+        mergeFixture(DIR.resolve("more-programs-a.bam"), byName, false, twoContigs, twoGroups,
+                new String[][] {{"pg1", "first", null}, {"pg2", "second", "pg1"}}, null, "rg4");
+        mergeFixture(DIR.resolve("more-programs-b.bam"), byName, false, twoContigs, twoGroups,
+                new String[][] {{"pg1", "other", null}, {"pg2", "second", "pg1"}, {"pg3", "third", "pg2"}}, null, "rg4");
+        mergeFixture(DIR.resolve("more-programs-dangling.bam"), byName, false, twoContigs, twoGroups,
+                new String[][] {{"pg1", "first", "gone"}}, null, "rg4");
+        // A contig between the two others, which the merge places in front of chr2.
+        mergeFixture(DIR.resolve("more-contig.bam"), byName, false, new String[] {"chr1", "chrM", "chr2"}, twoGroups, noPrograms, null, "rg4");
+        mergeFixture(DIR.resolve("more-contig-place.bam"), byPlace, false, new String[] {"chr1", "chrM", "chr2"}, twoGroups, noPrograms, null, "rg4");
+        mergeFixture(DIR.resolve("more-swapped.bam"), byName, false, new String[] {"chr2", "chr1"}, twoGroups, noPrograms, null, "rg4");
+        // One input still goes through the merger: groups in id order, nothing else of its @HD.
+        mergeFixture(DIR.resolve("more-header.bam"), byPlace, false, twoContigs,
+                new String[][] {{"rg4", "lib4"}, {"rg1", "lib1"}},
+                new String[][] {{"pg9", "last", null}, {"pg1", "first", null}}, "from more", "rg4");
+        markingFixture(DIR.resolve("marking.bam"), SAMFileHeader.SortOrder.coordinate, "");
+        markingFixture(DIR.resolve("marking-queryname.bam"), SAMFileHeader.SortOrder.queryname, "");
+        markingFixture(DIR.resolve("marking-unsorted.bam"), SAMFileHeader.SortOrder.unsorted, "");
+        markingFixture(DIR.resolve("marking-one-library.bam"), SAMFileHeader.SortOrder.coordinate,
+                "one-library");
+        markingFixture(DIR.resolve("marking-clean.bam"), SAMFileHeader.SortOrder.coordinate, "clean");
+        markingFixture(DIR.resolve("marking-no-groups.bam"), SAMFileHeader.SortOrder.coordinate,
+                "no-groups");
+        markingFixture(DIR.resolve("marking-no-read-group.bam"), SAMFileHeader.SortOrder.coordinate,
+                "no-read-group");
+        markingFixture(DIR.resolve("marking-unknown-read-group.bam"),
+                SAMFileHeader.SortOrder.coordinate, "unknown-read-group");
+        markingFixture(DIR.resolve("marking-three.bam"), SAMFileHeader.SortOrder.coordinate, "three");
+        markingFixture(DIR.resolve("marking-collision.bam"), SAMFileHeader.SortOrder.coordinate,
+                "collision");
+        markingFixture(DIR.resolve("marking-scattered.bam"), SAMFileHeader.SortOrder.unsorted,
+                "scattered");
+        insertSizeFixture(DIR.resolve("pairs.bam"), SAMFileHeader.SortOrder.coordinate, false);
+        insertSizeFixture(DIR.resolve("pairs-away.bam"), SAMFileHeader.SortOrder.coordinate, true);
+        insertSizeFixture(DIR.resolve("pairs-unsorted.bam"), SAMFileHeader.SortOrder.unsorted,
+                false);
+
         // The fixtures travel, so the port runs over these bytes rather than its own rebuild.
         for (final String name : new String[] {"ref.fasta", "ref.fasta.fai", "ref.dict",
                 "reads.bam", "reads.bai", "plain.vcf", "genotyped.vcf", "revert.map.tsv",
                 "revert.bad-map.tsv", "names.txt", "dup-a.bam", "dup-a.bai", "dup-marks.bam",
                 "dup-marks.bai", "dup-renamed.bam", "dup-uneven.bam", "dup-moved.bam",
-                "dup-no-group.bam", "dup-other-group.bam", "dup-fewer.bam"}) {
+                "dup-no-group.bam", "dup-other-group.bam", "dup-fewer.bam", "pairs.bam",
+                "pairs.bai", "pairs-away.bam", "pairs-unsorted.bam", "marking.bam", "marking.bai",
+                "marking-queryname.bam", "marking-unsorted.bam", "marking-one-library.bam",
+                "marking-clean.bam", "marking-no-groups.bam", "marking-no-read-group.bam",
+                "marking-unknown-read-group.bam", "marking-three.bam", "marking-collision.bam",
+                "marking-scattered.bam", "marking-flow.bam", "more-queryname.bam", "more-copy.bam",
+                "more-coordinate.bam", "more-coordinate.bai", "more-unsorted.bam", "more-grouped.bam",
+                "more-scattered.bam",
+                "more-collision.bam", "more-programs-a.bam", "more-programs-b.bam",
+                "more-programs-dangling.bam", "more-contig.bam", "more-contig-place.bam",
+                "more-contig-place.bai", "more-swapped.bam", "more-header.bam"}) {
             System.out.printf("input\t%s\t%s%n", name,
                     Base64.getEncoder().encodeToString(Files.readAllBytes(DIR.resolve(name))));
         }
@@ -173,6 +235,223 @@ public class SparkWalkersDump {
                 "-I2", DIR.resolve("dup-marks.bam").toString(), "--use-jdk-deflater", "true",
                 "-O", out("compare-output", "first.bam"),
                 "-O2", out("compare-output", "second.bam"));
+
+        // COLLECTINSERTSIZEMETRICSSPARK is GATK's collector, not Picard's: ten filters, FR, TANDEM,
+        // RF, a width the first category fixes for the others, and no file when none passes.
+        final String insert = "CollectInsertSizeMetricsSpark";
+        final String pairsBam = DIR.resolve("pairs.bam").toString();
+        final String[][] inserts = {
+                {"insert-size"},
+                {"insert-size-levels", "--metric-accumulation-level", "SAMPLE",
+                        "--metric-accumulation-level", "READ_GROUP",
+                        "--metric-accumulation-level", "LIBRARY"},
+                {"insert-size-all-levels", "--metric-accumulation-level", "ALL_READS",
+                        "--metric-accumulation-level", "SAMPLE",
+                        "--metric-accumulation-level", "LIBRARY",
+                        "--metric-accumulation-level", "READ_GROUP"},
+                {"insert-size-width", "--width", "125"},
+                {"insert-size-width-one", "--width", "1"},
+                {"insert-size-tolerance", "-TOL", "1.0"},
+                {"insert-size-minimum", "-M", "0.2"},
+                {"insert-size-all-kept", "-M", "0.0"},
+                {"insert-size-interval", "-L", "chr1:100-600"},
+                {"insert-size-filter", "-RF", "ReadLengthReadFilter", "--min-read-length", "1",
+                        "--max-read-length", "5"},
+                {"insert-size-second", "-DF", "FirstOfPairReadFilter", "-RF",
+                        "SecondOfPairReadFilter"},
+                {"insert-size-no-defaults", "--disable-tool-default-read-filters", "true"},
+                {"insert-size-sample", "--metric-accumulation-level", "SAMPLE",
+                        "--disable-tool-default-read-filters", "true"},
+        };
+        for (final String[] row : inserts) {
+            final List<String> argv = new ArrayList<>(Arrays.asList("-I", pairsBam, "-H",
+                    "unused.pdf",
+                    "-O", out(row[0], "insert.metrics")));
+            argv.addAll(Arrays.asList(row).subList(1, row.length));
+            run(row[0], "insert.metrics", insert, argv.toArray(new String[0]));
+        }
+        run("insert-size-away", null, insert, "-I", DIR.resolve("pairs-away.bam").toString(),
+                "-H", "unused.pdf", "-O", out("insert-size-away", "insert.metrics"));
+        run("insert-size-none-pass", "insert.metrics", insert, "-I", pairsBam, "-H", "unused.pdf",
+                "-M", "1.0", "-O", out("insert-size-none-pass", "insert.metrics"));
+        run("insert-size-unsorted", null, insert, "-I", DIR.resolve("pairs-unsorted.bam").toString(),
+                "-H", "unused.pdf", "-O", out("insert-size-unsorted", "insert.metrics"));
+        run("insert-size-no-reads", null, insert, "-I", bam.toString(), "-H", "unused.pdf",
+                "-O", out("insert-size-no-reads", "insert.metrics"));
+        run("insert-size-no-plot-file", null, insert, "-I", pairsBam,
+                "-O", out("insert-size-no-plot-file", "insert.metrics"));
+
+        // COLLECTMULTIPLEMETRICSSPARK runs the two collectors over the same reads, in the order
+        // asked for, each through its own default filters: the command line's are parsed and then
+        // bypassed. -O is a base name, and each collector's failure names its enum constant.
+        final String multiple = "CollectMultipleMetricsSpark";
+        final String insertOnly = "CollectInsertSizeMetrics";
+        final String yieldOnly = "CollectQualityYieldMetrics";
+        final String[][] multiples = {
+                {"multiple"},
+                {"multiple-insert", "--collectors", insertOnly},
+                {"multiple-yield", "--collectors", yieldOnly},
+                {"multiple-reversed", "--collectors", yieldOnly, "--collectors", insertOnly},
+                {"multiple-twice", "--collectors", insertOnly, "--collectors", insertOnly},
+                {"multiple-levels", "--metric-accumulation-level", "SAMPLE",
+                        "--metric-accumulation-level", "READ_GROUP"},
+                {"multiple-interval", "-L", "chr1:100-600"},
+                {"multiple-bypassed", "-RF", "ReadLengthReadFilter", "--min-read-length", "1000",
+                        "--max-read-length", "2000"},
+                {"multiple-no-defaults", "--disable-tool-default-read-filters", "true"},
+                {"multiple-not-assumed", "--assume-sorted", "false"},
+        };
+        for (final String[] row : multiples) {
+            final List<String> argv = new ArrayList<>(Arrays.asList("-I", pairsBam,
+                    "-O", out(row[0], "metrics")));
+            argv.addAll(Arrays.asList(row).subList(1, row.length));
+            run(row[0], "metrics", multiple, argv.toArray(new String[0]));
+        }
+        final String pairsUnsorted = DIR.resolve("pairs-unsorted.bam").toString();
+        final String pairsAway = DIR.resolve("pairs-away.bam").toString();
+        run("multiple-unsorted", null, multiple, "-I", pairsUnsorted,
+                "-O", out("multiple-unsorted", "metrics"));
+        run("multiple-unsorted-yield", null, multiple, "-I", pairsUnsorted,
+                "--collectors", yieldOnly, "-O", out("multiple-unsorted-yield", "metrics"));
+        run("multiple-away", null, multiple, "-I", pairsAway, "-O", out("multiple-away", "metrics"));
+        run("multiple-no-reads", null, multiple, "-I", bam.toString(),
+                "-O", out("multiple-no-reads", "metrics"));
+        run("multiple-no-reads-yield", "metrics", multiple, "-I", bam.toString(),
+                "--collectors", yieldOnly, "-O", out("multiple-no-reads-yield", "metrics"));
+        run("multiple-bad-collector", null, multiple, "-I", pairsBam, "--collectors", "Nope",
+                "-O", out("multiple-bad-collector", "metrics"));
+        run("multiple-no-output", null, multiple, "-I", pairsBam);
+
+        // MARKDUPLICATESSPARK answers with the names that are not duplicates, so every read of a
+        // name follows it, and it always writes a coordinate-sorted file.
+        final String marks = "MarkDuplicatesSpark";
+        final String marking = DIR.resolve("marking.bam").toString();
+        final String[][] markRows = {
+                {"mark"},
+                {"mark-all", "--duplicate-tagging-policy", "All"},
+                {"mark-optical", "--duplicate-tagging-policy", "OpticalOnly"},
+                {"mark-remove-all", "--remove-all-duplicates", "true"},
+                {"mark-remove-sequencing", "--remove-sequencing-duplicates", "true"},
+                {"mark-length", "-DS", "TOTAL_MAPPED_REFERENCE_LENGTH"},
+                {"mark-flow-score", "-DS", "FLOW_SUM_OF_BASE_QUALITIES"},
+                {"mark-keep-mates", "--do-not-mark-unmapped-mates", "true"},
+                {"mark-no-names", "--read-name-regex", "null", "--duplicate-tagging-policy", "All"},
+                {"mark-regex", "--read-name-regex", "[^:]*:[^:]*:([0-9]+):([0-9]+):([0-9]+)",
+                        "--duplicate-tagging-policy", "All"},
+                {"mark-distance", "--optical-duplicate-pixel-distance", "5",
+                        "--duplicate-tagging-policy", "All"},
+                {"mark-wide", "--optical-duplicate-pixel-distance", "100000",
+                        "--duplicate-tagging-policy", "All"},
+                {"mark-interval", "-L", "chr1:100-300"},
+                {"mark-reducers", "--num-reducers", "2"},
+                {"mark-filter", "-RF", "MappingQualityReadFilter", "--minimum-mapping-quality", "30"},
+        };
+        for (final String[] row : markRows) {
+            final List<String> argv = new ArrayList<>(Arrays.asList("-I", marking,
+                    "--use-jdk-deflater", "true",
+                    "-O", out(row[0], "marked.bam"), "-M", out(row[0], "marked.metrics")));
+            argv.addAll(Arrays.asList(row).subList(1, row.length));
+            run(row[0], "marked.bam", marks, argv.toArray(new String[0]));
+        }
+        final String[][] markInputs = {
+                {"mark-queryname", "marking-queryname.bam"},
+                {"mark-unsorted", "marking-unsorted.bam"},
+                {"mark-one-library", "marking-one-library.bam"},
+                {"mark-clean", "marking-clean.bam"},
+                {"mark-no-groups", "marking-no-groups.bam"},
+                {"mark-no-read-group", "marking-no-read-group.bam"},
+                {"mark-unknown-read-group", "marking-unknown-read-group.bam"},
+                {"mark-three", "marking-three.bam"},
+                {"mark-collision", "marking-collision.bam"},
+                {"mark-scattered", "marking-scattered.bam"},
+        };
+        for (final String[] row : markInputs) {
+            run(row[0], "marked.bam", marks, "-I", DIR.resolve(row[1]).toString(),
+                    "--use-jdk-deflater", "true",
+                    "-O", out(row[0], "marked.bam"), "-M", out(row[0], "marked.metrics"));
+        }
+        run("mark-no-metrics", "marked.bam", marks, "-I", marking, "--use-jdk-deflater", "true",
+                "-O", out("mark-no-metrics", "marked.bam"));
+        run("mark-three-no-metrics", null, marks, "-I", DIR.resolve("marking-three.bam").toString(),
+                "-O", out("mark-three-no-metrics", "marked.bam"));
+        run("mark-treated", "marked.bam", marks, "-I", DIR.resolve("marking-unsorted.bam").toString(),
+                "--treat-unsorted-as-querygroup-ordered", "true", "--use-jdk-deflater", "true",
+                "-O", out("mark-treated", "marked.bam"), "-M", out("mark-treated", "marked.metrics"));
+        run("mark-mutex", null, marks, "-I", marking, "--remove-all-duplicates", "true",
+                "--duplicate-tagging-policy", "All", "-O", out("mark-mutex", "marked.bam"));
+        run("mark-no-output", null, marks, "-I", marking);
+        final String flows = DIR.resolve("marking-flow.bam").toString();
+        final String[][] flowRows = {
+                {"mark-flow-plain"},
+                {"mark-flowbased", "--flowbased", "true"},
+                {"mark-flowbased-wide", "--flowbased", "true", "--flow-end-pos-uncertainty", "3"},
+                {"mark-flowbased-narrow", "--flowbased", "true", "--flow-end-pos-uncertainty", "0"},
+                {"mark-flow-end", "--single-end-reads-end-position-significant", "true"},
+                {"mark-flow-end-wide", "--single-end-reads-end-position-significant", "true",
+                        "--flow-end-pos-uncertainty", "2"},
+                {"mark-flow-clipped", "--single-end-reads-clipping-is-end", "true"},
+                {"mark-flow-sum", "--flow-quality-sum-strategy", "true"},
+                {"mark-flow-sum-end", "--flow-quality-sum-strategy", "true",
+                        "--single-end-reads-end-position-significant", "true"},
+                {"mark-flow-skip", "--flow-skip-start-homopolymers", "1"},
+                {"mark-flow-skip-two", "--flow-skip-start-homopolymers", "2"},
+                {"mark-flow-skip-clipped", "--flow-skip-start-homopolymers", "2",
+                        "--single-end-reads-clipping-is-end", "true"},
+                {"mark-flow-q", "--single-end-reads-end-position-significant", "true",
+                        "--flow-q-is-known-end", "true"},
+                {"mark-flow-uncertainty-alone", "--flow-end-pos-uncertainty", "5"},
+        };
+        for (final String[] row : flowRows) {
+            final List<String> argv = new ArrayList<>(Arrays.asList("-I", flows,
+                    "--use-jdk-deflater", "true", "--duplicate-tagging-policy", "All",
+                    "-O", out(row[0], "marked.bam"), "-M", out(row[0], "marked.metrics")));
+            argv.addAll(Arrays.asList(row).subList(1, row.length));
+            run(row[0], "marked.bam", marks, argv.toArray(new String[0]));
+        }
+        // SEVERAL INPUTS are a union, one partition an input, under the header their merge makes.
+        final String allowed = "--allow-multiple-sort-orders-in-input";
+        final String treat = "--treat-unsorted-as-querygroup-ordered";
+        final String[][] severalRows = {
+                {"mark-two", "marking-queryname.bam,more-queryname.bam"},
+                {"mark-two-grouped", "more-grouped.bam,more-copy.bam"},
+                {"mark-two-scattered", "more-scattered.bam,more-queryname.bam"},
+                {"mark-two-same-path", "marking-queryname.bam,marking-queryname.bam"},
+                {"mark-two-same-reads", "more-queryname.bam,more-copy.bam"},
+                {"mark-two-coordinate", "marking.bam,more-coordinate.bam"},
+                {"mark-two-second-bad", "marking-queryname.bam,more-coordinate.bam"},
+                {"mark-two-unsorted", "marking-unsorted.bam,more-unsorted.bam"},
+                {"mark-two-treated", "marking-unsorted.bam,more-unsorted.bam", treat, "true"},
+                {"mark-two-treated-mixed", "marking-queryname.bam,more-unsorted.bam", treat, "true"},
+                {"mark-two-allowed", "marking.bam,more-coordinate.bam", allowed, "true"},
+                {"mark-two-allowed-mixed", "marking-queryname.bam,more-coordinate.bam", allowed, "true"},
+                {"mark-two-allowed-grouped", "marking-queryname.bam,more-queryname.bam", allowed, "true"},
+                {"mark-two-same-reads-sorted", "more-queryname.bam,more-copy.bam", allowed, "true"},
+                {"mark-two-collision", "marking-queryname.bam,more-collision.bam"},
+                {"mark-two-programs", "more-programs-a.bam,more-programs-b.bam"},
+                {"mark-two-dangling", "more-queryname.bam,more-programs-dangling.bam"},
+                {"mark-two-dictionaries", "marking-queryname.bam,more-contig.bam"},
+                {"mark-two-dictionaries-sorted", "marking.bam,more-contig-place.bam", allowed, "true"},
+                {"mark-two-dictionaries-swapped", "marking-queryname.bam,more-swapped.bam"},
+                {"mark-two-interval", "marking.bam,more-coordinate.bam", allowed, "true", "-L", "chr1:100-300"},
+                {"mark-two-interval-contig", "marking.bam,more-contig-place.bam", allowed, "true", "-L", "chrM:1-500"},
+                {"mark-two-interval-no-index", "marking.bam,more-unsorted.bam", allowed, "true", "-L", "chr1:100-300"},
+                {"mark-two-no-groups", "marking-no-groups.bam,more-coordinate.bam", allowed, "true"},
+                {"mark-two-unknown-group", "marking-unknown-read-group.bam,more-coordinate.bam", allowed, "true"},
+                {"mark-two-missing", "marking-queryname.bam,nowhere.bam"},
+                {"mark-one-merged-header", "more-header.bam"},
+        };
+        for (final String[] row : severalRows) {
+            final List<String> argv = new ArrayList<>();
+            for (final String input : row[1].split(",")) {
+                argv.addAll(Arrays.asList("-I", DIR.resolve(input).toString()));
+            }
+            argv.addAll(Arrays.asList("--use-jdk-deflater", "true", "--duplicate-tagging-policy", "All",
+                    "-O", out(row[0], "marked.bam"), "-M", out(row[0], "marked.metrics")));
+            argv.addAll(Arrays.asList(row).subList(2, row.length));
+            run(row[0], "marked.bam", marks, argv.toArray(new String[0]));
+        }
+        run("mark-interval-no-index", null, marks, "-I", DIR.resolve("marking-queryname.bam").toString(),
+                "-L", "chr1:100-300", "-O", out("mark-interval-no-index", "marked.bam"));
 
         final String r = fasta.toString();
         final String i = bam.toString();
@@ -350,6 +629,427 @@ public class SparkWalkersDump {
     }
 
     /**
+     * Pairs in two read groups of one sample: rg1 has a library and a platform unit, rg2 neither.
+     * Mostly FR with one far outlier, then RF and TANDEM pairs, a duplicate and a pair with no
+     * group; `away` adds a read on another contig than its mate whose flag still says proper.
+     */
+    /**
+     * Reads for every record type MarkDuplicatesSpark makes: optical and library duplicates among
+     * pairs, a set of four for the finder's graph, FR against RF at one key, fragments alone and
+     * beside a pair, an unmapped mate, secondaries and supplementaries, a mate missing from the file,
+     * names with no location, and a failed vendor check.
+     */
+    /** A few reads over the given contigs, with what the header merger has to reconcile. */
+    static void mergeFixture(final Path bam, final SAMFileHeader.SortOrder order, final boolean grouped,
+                             final String[] contigs, final String[][] groups, final String[][] programs,
+                             final String comment, final String group) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        for (final String contig : contigs) {
+            dictionary.addSequence(new SAMSequenceRecord(contig, 100000));
+        }
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(order);
+        if (grouped) {
+            header.setGroupOrder(SAMFileHeader.GroupOrder.query);
+        }
+        for (final String[] entry : groups) {
+            final SAMReadGroupRecord record = new SAMReadGroupRecord(entry[0]);
+            record.setSample("sample1");
+            record.setLibrary(entry[1]);
+            header.addReadGroup(record);
+        }
+        for (final String[] entry : programs) {
+            final htsjdk.samtools.SAMProgramRecord record = new htsjdk.samtools.SAMProgramRecord(entry[0]);
+            record.setProgramName(entry[1]);
+            record.setPreviousProgramGroupId(entry[2]);
+            header.addProgramRecord(record);
+        }
+        if (comment != null) {
+            header.addComment(comment);
+        }
+        final int chr1 = dictionary.getSequenceIndex("chr1");
+        final int chr2 = dictionary.getSequenceIndex("chr2");
+        final int last = contigs.length > 2 ? 1 : chr2;
+        // name, contig, start, flags, mate contig, mate start, quality, group
+        final Object[][] reads = {
+                // At the place of marking.bam's first pair, in its library when the group is rg1.
+                {"m:1:1101:1:1", chr1, 100, 0x63, chr1, 200, 50, group},
+                {"m:1:1101:1:1", chr1, 200, 0x93, chr1, 100, 50, group},
+                {"m:1:1101:1000:1000", chr1, 100, 0x63, chr1, 200, 15, "rg1"},
+                {"m:1:1101:1000:1000", chr1, 200, 0x93, chr1, 100, 15, "rg1"},
+                // A name marking.bam also has, with reads of its own.
+                {"f:1:1101:1:1", chr1, 4000, 0, -1, 0, 37, "rg1"},
+                {"m:1:1101:7:7", last, 300, 0x63, last, 400, 30, group},
+                {"m:1:1101:7:7", last, 400, 0x93, last, 300, 30, group},
+                {"m:1:1101:8:8", last, 300, 0x63, last, 400, 20, group},
+                {"m:1:1101:8:8", last, 400, 0x93, last, 300, 20, group},
+                {"m:1:1101:9:9", chr2, 500, 0, -1, 0, 30, group},
+        };
+        // One name that comes back under a header that says grouped: two fragments, each best at
+        // its place, so one name is answered twice and only that name.
+        final Object[][] back = {
+                {"z:1:1101:1:1", chr1, 8000, 0, -1, 0, 30, group},
+                {"z:1:1101:2:2", chr1, 8500, 0, -1, 0, 30, group},
+                {"z:1:1101:1:1", chr1, 9000, 0, -1, 0, 30, group},
+        };
+        final List<Object[]> all = new ArrayList<>(Arrays.asList(reads));
+        if (bam.getFileName().toString().contains("scattered")) {
+            all.addAll(Arrays.asList(back));
+        }
+        final List<SAMRecord> records = new ArrayList<>();
+        for (final Object[] read : all) {
+            final SAMRecord record = new SAMRecord(header);
+            record.setReadName((String) read[0]);
+            record.setFlags((int) read[3]);
+            record.setReferenceIndex((int) read[1]);
+            record.setAlignmentStart((int) read[2]);
+            record.setCigarString("10M");
+            record.setMateReferenceIndex((int) read[4]);
+            record.setMateAlignmentStart((int) read[5]);
+            record.setMappingQuality(60);
+            record.setReadString("ACGTACGTAC");
+            final char[] qualities = new char[10];
+            Arrays.fill(qualities, (char) (33 + (int) read[6]));
+            record.setBaseQualityString(new String(qualities));
+            record.setAttribute("RG", read[7]);
+            records.add(record);
+        }
+        final SAMFileWriterFactory factory = new SAMFileWriterFactory()
+                .setCreateIndex(order == SAMFileHeader.SortOrder.coordinate);
+        try (SAMFileWriter writer = factory.makeBAMWriter(header, false, bam)) {
+            records.forEach(writer::addAlignment);
+        }
+    }
+
+    static void markingFixture(final Path bam, final SAMFileHeader.SortOrder order, final String variant) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        dictionary.addSequence(new SAMSequenceRecord("chr2", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(order);
+        if (variant.equals("scattered")) {
+            header.setGroupOrder(SAMFileHeader.GroupOrder.query);
+        }
+        if (!variant.equals("no-groups")) {
+            for (final String[] group : new String[][] {{"rg1", "lib1"}, {"rg2", "lib2"}, {"rg3", null}}) {
+                final SAMReadGroupRecord record = new SAMReadGroupRecord(group[0]);
+                record.setSample("sample1");
+                record.setLibrary(group[1]);
+                header.addReadGroup(record);
+            }
+        }
+        final List<SAMRecord> records = new ArrayList<>();
+        // name, contig, start, flags, cigar, mate contig, mate start, quality, group, mapping quality
+        final Object[][] reads = variant.equals("clean") ? new Object[][] {
+                {"c:1:1101:10:10", 0, 100, 0x63, "10M", 0, 200, 30, "rg1", 60},
+                {"c:1:1101:10:10", 0, 200, 0x93, "10M", 0, 100, 30, "rg1", 60},
+                {"c:1:1101:20:20", 0, 300, 0x63, "10M", 0, 400, 30, "rg1", 60},
+                {"c:1:1101:20:20", 0, 400, 0x93, "10M", 0, 300, 30, "rg1", 60},
+        } : new Object[][] {
+                // Optical and library duplicates of one pair, and the best in the middle.
+                {"x:1:1101:1000:1000", 0, 100, 0x63, "10M", 0, 200, 30, "rg1", 60},
+                {"x:1:1101:1000:1000", 0, 200, 0x93, "10M", 0, 100, 30, "rg1", 60},
+                {"x:1:1101:1010:1010", 0, 100, 0x63, "10M", 0, 200, 40, "rg1", 60},
+                {"x:1:1101:1010:1010", 0, 200, 0x93, "10M", 0, 100, 40, "rg1", 60},
+                {"x:1:1102:5000:5000", 0, 100, 0x63, "10M", 0, 200, 20, "rg1", 60},
+                {"x:1:1102:5000:5000", 0, 200, 0x93, "10M", 0, 100, 20, "rg1", 60},
+                // The same place in the other library is no duplicate of it.
+                {"y:1:1101:1000:1000", 0, 100, 0x63, "10M", 0, 200, 30, "rg2", 60},
+                {"y:1:1101:1000:1000", 0, 200, 0x93, "10M", 0, 100, 30, "rg2", 60},
+                // Four and more: the graph, a chain of three and one apart.
+                {"g:1:1101:1000:1000", 0, 1000, 0x63, "10M", 0, 1100, 20, "rg1", 60},
+                {"g:1:1101:1000:1000", 0, 1100, 0x93, "10M", 0, 1000, 20, "rg1", 60},
+                {"g:1:1101:1090:1000", 0, 1000, 0x63, "10M", 0, 1100, 20, "rg1", 60},
+                {"g:1:1101:1090:1000", 0, 1100, 0x93, "10M", 0, 1000, 20, "rg1", 60},
+                {"g:1:1101:1180:1000", 0, 1000, 0x63, "10M", 0, 1100, 25, "rg1", 60},
+                {"g:1:1101:1180:1000", 0, 1100, 0x93, "10M", 0, 1000, 25, "rg1", 60},
+                {"g:1:1101:9000:9000", 0, 1000, 0x63, "10M", 0, 1100, 40, "rg1", 60},
+                {"g:1:1101:9000:9000", 0, 1100, 0x93, "10M", 0, 1000, 40, "rg1", 60},
+                {"g:1:1101:9050:9000", 0, 1000, 0x63, "10M", 0, 1100, 10, "rg1", 60},
+                {"g:1:1101:9050:9000", 0, 1100, 0x93, "10M", 0, 1000, 10, "rg1", 60},
+                // FR and RF at one key: which read is first of pair flips the optical orientation.
+                {"o:1:1101:1000:1000", 0, 2000, 0x63, "10M", 0, 2100, 30, "rg1", 60},
+                {"o:1:1101:1000:1000", 0, 2100, 0x93, "10M", 0, 2000, 30, "rg1", 60},
+                {"o:1:1101:1020:1000", 0, 2000, 0xA3, "10M", 0, 2100, 20, "rg1", 60},
+                {"o:1:1101:1020:1000", 0, 2100, 0x53, "10M", 0, 2000, 20, "rg1", 60},
+                {"o:1:1101:1040:1000", 0, 2000, 0x63, "10M", 0, 2100, 10, "rg1", 60},
+                {"o:1:1101:1040:1000", 0, 2100, 0x93, "10M", 0, 2000, 10, "rg1", 60},
+                {"o:1:1101:1060:1000", 0, 2000, 0xA3, "10M", 0, 2100, 10, "rg1", 60},
+                {"o:1:1101:1060:1000", 0, 2100, 0x53, "10M", 0, 2000, 10, "rg1", 60},
+                // Both reads on one start, and a pair across contigs.
+                {"s:1:1101:1:1", 0, 3000, 0x73, "10M", 0, 3000, 30, "rg1", 60},
+                {"s:1:1101:1:1", 0, 3000, 0xB3, "10M", 0, 3000, 30, "rg1", 60},
+                {"t:1:1101:1:1", 0, 3100, 0x43, "10M", 1, 3200, 30, "rg1", 60},
+                {"t:1:1101:1:1", 1, 3200, 0x83, "10M", 0, 3100, 30, "rg1", 60},
+                {"t:1:1101:2:2", 1, 3200, 0x43, "10M", 0, 3100, 40, "rg1", 60},
+                {"t:1:1101:2:2", 0, 3100, 0x83, "10M", 1, 3200, 40, "rg1", 60},
+                // Fragments on their own, and clipping that moves the unclipped start.
+                {"f:1:1101:1:1", 0, 4000, 0, "10M", -1, 0, 30, "rg1", 60},
+                {"f:1:1101:2:2", 0, 4000, 0, "10M", -1, 0, 35, "rg1", 60},
+                {"f:1:1101:3:3", 0, 4002, 0, "2S8M", -1, 0, 39, "rg1", 60},
+                {"f:1:1101:4:4", 0, 4100, 0x10, "10M", -1, 0, 30, "rg1", 60},
+                {"f:1:1101:5:5", 0, 4095, 0x10, "5M5S", -1, 0, 30, "rg1", 60},
+                // A fragment on a pair's read's place loses to the pair whatever it scores.
+                {"h:1:1101:1:1", 0, 5000, 0x63, "10M", 0, 5100, 10, "rg1", 60},
+                {"h:1:1101:1:1", 0, 5100, 0x93, "10M", 0, 5000, 10, "rg1", 60},
+                {"h:1:1101:2:2", 0, 5000, 0, "10M", -1, 0, 40, "rg1", 60},
+                // A mapped read with its unmapped mate, beside a duplicate of it.
+                {"u:1:1101:1:1", 0, 6000, 0x49, "10M", 0, 6000, 40, "rg1", 60},
+                {"u:1:1101:1:1", 0, 6000, 0x85, "*", 0, 6000, 40, "rg1", 0},
+                {"u:1:1101:2:2", 0, 6000, 0x49, "10M", 0, 6000, 20, "rg1", 60},
+                {"u:1:1101:2:2", 0, 6000, 0x85, "*", 0, 6000, 20, "rg1", 0},
+                // Both unmapped, and unmapped alone.
+                {"n:1:1101:1:1", -1, 0, 0x4D, "*", -1, 0, 30, "rg1", 0},
+                {"n:1:1101:1:1", -1, 0, 0x8D, "*", -1, 0, 30, "rg1", 0},
+                {"n:1:1101:2:2", -1, 0, 0x4, "*", -1, 0, 30, "rg1", 0},
+                // A primary that lost keeps its secondary and supplementary company in the verdict.
+                {"p:1:1101:1:1", 0, 7000, 0x63, "10M", 0, 7100, 30, "rg1", 60},
+                {"p:1:1101:1:1", 0, 7100, 0x93, "10M", 0, 7000, 30, "rg1", 60},
+                {"p:1:1101:1:1", 0, 7500, 0x163, "10M", 0, 7100, 30, "rg1", 60},
+                {"p:1:1101:2:2", 0, 7000, 0x63, "10M", 0, 7100, 40, "rg1", 60},
+                {"p:1:1101:2:2", 0, 7100, 0x93, "10M", 0, 7000, 40, "rg1", 60},
+                {"p:1:1101:2:2", 0, 7600, 0x863, "10M", 0, 7100, 40, "rg1", 60},
+                // Nothing but a supplementary, and a mate the file does not hold.
+                {"q:1:1101:1:1", 0, 7700, 0x800, "10M", -1, 0, 30, "rg1", 60},
+                {"l:1:1101:1:1", 0, 7800, 0x63, "10M", 0, 7900, 30, "rg1", 60},
+                {"l:1:1101:2:2", 0, 7800, 0x63, "10M", 0, 7900, 30, "rg1", 60},
+                // Names with no location, and one where a failed check loses it the score.
+                {"plainA", 0, 8000, 0x63, "10M", 0, 8100, 30, "rg1", 60},
+                {"plainA", 0, 8100, 0x93, "10M", 0, 8000, 30, "rg1", 60},
+                {"plainB", 0, 8000, 0x63, "10M", 0, 8100, 31, "rg1", 60},
+                {"plainB", 0, 8100, 0x93, "10M", 0, 8000, 31, "rg1", 60},
+                {"v:1:1101:1:1", 0, 8200, 0x263, "10M", 0, 8300, 40, "rg1", 60},
+                {"v:1:1101:1:1", 0, 8300, 0x293, "10M", 0, 8200, 40, "rg1", 60},
+                {"v:1:1101:2:2", 0, 8200, 0x63, "10M", 0, 8300, 10, "rg1", 60},
+                {"v:1:1101:2:2", 0, 8300, 0x93, "10M", 0, 8200, 10, "rg1", 60},
+                // The group with no library.
+                {"w:1:1101:1:1", 0, 9000, 0, "10M", -1, 0, 30, "rg3", 60},
+                {"w:1:1101:2:2", 0, 9000, 0, "10M", -1, 0, 20, "rg3", 60},
+                {"w:1:1101:3:3", 0, 9300, 0x400, "20M", -1, 0, 20, "rg3", 60},
+        };
+        for (final Object[] read : reads) {
+            if (variant.equals("one-library") && !"rg1".equals(read[8])) {
+                continue;
+            }
+            final SAMRecord record = new SAMRecord(header);
+            record.setReadName((String) read[0]);
+            record.setFlags((int) read[3]);
+            record.setReferenceIndex((int) read[1]);
+            record.setAlignmentStart((int) read[2]);
+            record.setCigarString((String) read[4]);
+            record.setMateReferenceIndex((int) read[5]);
+            record.setMateAlignmentStart((int) read[6]);
+            record.setMappingQuality((int) read[9]);
+            record.setReadString("ACGTACGTACACGTACGTAC".substring(0, ((String) read[4]).equals("20M") ? 20 : 10));
+            final char[] qualities = new char[record.getReadLength()];
+            Arrays.fill(qualities, (char) (33 + (int) read[7]));
+            record.setBaseQualityString(new String(qualities));
+            if (!variant.equals("no-groups")) {
+                record.setAttribute("RG", read[8]);
+            }
+            // A marking the input already carries is taken back.
+            if (read[0].equals("x:1:1101:1000:1000")) {
+                record.setAttribute("DT", "LB");
+            }
+            records.add(record);
+        }
+        final SAMRecord first = records.get(0);
+        if (variant.equals("no-read-group")) {
+            records.get(4).setAttribute("RG", null);
+        }
+        if (variant.equals("unknown-read-group")) {
+            records.get(4).setAttribute("RG", "elsewhere");
+        }
+        if (variant.equals("three")) {
+            final SAMRecord third = first.deepCopy();
+            third.setAlignmentStart(50);
+            records.add(third);
+        }
+        if (variant.equals("collision")) {
+            // One name: a read whose mate is mapped and a fragment, both answered as not duplicate.
+            final SAMRecord alone = new SAMRecord(header);
+            alone.setReadName("l:1:1101:1:1");
+            alone.setFlags(0);
+            alone.setReferenceIndex(0);
+            alone.setAlignmentStart(7850);
+            alone.setCigarString("10M");
+            alone.setMappingQuality(60);
+            alone.setReadString("ACGTACGTAC");
+            alone.setBaseQualityString("IIIIIIIIII");
+            alone.setAttribute("RG", "rg1");
+            records.add(alone);
+        }
+        final boolean scattered = variant.equals("scattered");
+        final boolean presorted = order == SAMFileHeader.SortOrder.unsorted || scattered;
+        if (scattered) {
+            // Ordered by position under a header that says grouped: a name comes back later.
+            records.sort(java.util.Comparator.comparingInt(SAMRecord::getAlignmentStart));
+        }
+        try (final SAMFileWriter writer = new SAMFileWriterFactory()
+                .setCreateIndex(order == SAMFileHeader.SortOrder.coordinate)
+                .makeBAMWriter(header, presorted, bam.toFile())) {
+            records.forEach(writer::addAlignment);
+        }
+    }
+
+    /**
+     * Fragments at one start with the ends flow mode tells apart: ends a base or two apart, clips on
+     * either side that a clipped location sees, the tm tag's A, Q and Z, homopolymers to skip, and a
+     * read in a group with no flow order.
+     */
+    static void flowMarkingFixture(final Path bam) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.queryname);
+        final SAMReadGroupRecord flow = new SAMReadGroupRecord("flow");
+        flow.setSample("sample1");
+        flow.setLibrary("lib1");
+        flow.setAttribute("FO", "TGCA");
+        header.addReadGroup(flow);
+        final SAMReadGroupRecord plain = new SAMReadGroupRecord("plain");
+        plain.setSample("sample1");
+        plain.setLibrary("lib1");
+        header.addReadGroup(plain);
+        // name, start, flags, cigar, bases, quality, tm, flow tags, group
+        final Object[][] reads = {
+                {"a:1:1:1:1", 100, 0, "12M", "AACCGGTTAACC", 30, null, true, "flow"},
+                {"a:1:1:2:2", 100, 0, "13M", "AACCGGTTAACCG", 31, null, true, "flow"},
+                {"a:1:1:3:3", 100, 0, "14M", "AACCGGTTAACCGG", 32, null, false, "flow"},
+                {"a:1:1:4:4", 100, 0, "20M", "AACCGGTTAACCGGTTAACC", 20, null, true, "flow"},
+                {"a:1:1:5:5", 100, 0, "20M", "AACCGGTTAACCGGTTAACC", 25, "Q", true, "flow"},
+                {"a:1:1:6:6", 100, 0, "20M", "AACCGGTTAACCGGTTAACC", 26, "Z", true, "flow"},
+                {"b:1:1:1:1", 200, 0, "2S12M", "TTAACCGGTTAACC", 30, null, true, "flow"},
+                {"b:1:1:2:2", 202, 0, "12M2S", "AACCGGTTAACCGG", 31, null, true, "flow"},
+                {"b:1:1:3:3", 202, 0, "12M", "AACCGGTTAACC", 32, "A", true, "flow"},
+                {"b:1:1:4:4", 200, 0, "2S12M", "TTAACCGGTTAACC", 33, "A", true, "flow"},
+                {"c:1:1:1:1", 300, 0x10, "12M", "AACCGGTTAACC", 30, null, true, "flow"},
+                {"c:1:1:2:2", 301, 0x10, "11M", "AACCGGTTAAC", 31, null, true, "flow"},
+                {"c:1:1:3:3", 296, 0x10, "4S12M", "AACCAACCGGTTAACC", 32, null, true, "flow"},
+                {"d:1:1:1:1", 400, 0, "12M", "AAAACCGGTTAA", 30, null, true, "flow"},
+                {"d:1:1:2:2", 402, 0, "10M", "AACCGGTTAA", 31, null, true, "flow"},
+                {"d:1:1:3:3", 404, 0, "8M", "CCGGTTAA", 32, null, true, "flow"},
+                {"e:1:1:1:1", 500, 0, "12M", "TTGGCCAATTGG", 30, null, false, "plain"},
+                {"e:1:1:2:2", 501, 0, "11M", "TGGCCAATTGG", 31, null, false, "plain"},
+        };
+        final List<SAMRecord> records = new ArrayList<>();
+        for (final Object[] read : reads) {
+            final SAMRecord record = new SAMRecord(header);
+            record.setReadName((String) read[0]);
+            record.setFlags((int) read[2]);
+            record.setReferenceIndex(0);
+            record.setAlignmentStart((int) read[1]);
+            record.setCigarString((String) read[3]);
+            record.setMappingQuality(60);
+            final String bases = (String) read[4];
+            record.setReadString(bases);
+            final char[] qualities = new char[bases.length()];
+            for (int index = 0; index < qualities.length; index++) {
+                qualities[index] = (char) (33 + (int) read[5] + (index % 3));
+            }
+            record.setBaseQualityString(new String(qualities));
+            if (read[6] != null) {
+                record.setAttribute("tm", read[6]);
+            }
+            if ((boolean) read[7]) {
+                record.setAttribute("tp", new byte[qualities.length]);
+            }
+            record.setAttribute("RG", read[8]);
+            records.add(record);
+        }
+        try (final SAMFileWriter writer = new SAMFileWriterFactory()
+                .makeBAMWriter(header, false, bam.toFile())) {
+            records.forEach(writer::addAlignment);
+        }
+    }
+
+    static void insertSizeFixture(final Path bam, final SAMFileHeader.SortOrder order,
+                                  final boolean away) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        dictionary.addSequence(new SAMSequenceRecord("chr2", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(order);
+        final SAMReadGroupRecord one = new SAMReadGroupRecord("rg1");
+        one.setSample("sample1");
+        one.setLibrary("lib1");
+        one.setPlatformUnit("unit1");
+        header.addReadGroup(one);
+        final SAMReadGroupRecord two = new SAMReadGroupRecord("rg2");
+        two.setSample("sample1");
+        header.addReadGroup(two);
+        // start, mate start, insert, first's flags beyond paired/first/proper, group.
+        final Object[][] pairs = {
+                {100, 190, 100, 0x20, "rg1"}, {200, 300, 110, 0x20, "rg1"},
+                {300, 390, 100, 0x20, "rg1"}, {400, 510, 120, 0x20, "rg1"},
+                {500, 620, 130, 0x20, "rg2"}, {600, 690, 100, 0x20, "rg2"},
+                {700, 5690, 5000, 0x20, "rg1"}, {800, 910, 120, 0x420, "rg1"},
+                {900, 1010, 120, 0x20, null},
+                // The reverse read first: RF, on either side of the forward mate.
+                {1100, 1050, -40, 0x10, "rg1"}, {1200, 1140, -50, 0x10, "rg2"},
+                // Both forward.
+                {1300, 1400, 110, 0, "rg1"},
+        };
+        final List<SAMRecord> records = new ArrayList<>();
+        for (int index = 0; index < pairs.length; index++) {
+            final Object[] pair = pairs[index];
+            final int flags = (int) pair[3];
+            final int start = (int) pair[0];
+            final int mate = (int) pair[1];
+            final int insert = (int) pair[2];
+            for (final boolean first : new boolean[] {true, false}) {
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("p" + index);
+                final boolean reverse = (flags & 0x10) != 0;
+                final boolean mateReverse = (flags & 0x20) != 0;
+                record.setFlags(0x1 | 0x2 | (first ? 0x40 : 0x80) | (flags & 0x400)
+                        | ((first ? reverse : mateReverse) ? 0x10 : 0)
+                        | ((first ? mateReverse : reverse) ? 0x20 : 0));
+                record.setReferenceIndex(0);
+                record.setAlignmentStart(first ? start : mate);
+                record.setMateReferenceIndex(0);
+                record.setMateAlignmentStart(first ? mate : start);
+                record.setInferredInsertSize(first ? insert : -insert);
+                record.setCigarString("10M");
+                record.setMappingQuality(60);
+                record.setReadString("ACGTACGTAC");
+                record.setBaseQualityString("IIIIIIIIII");
+                if (pair[4] != null) {
+                    record.setAttribute("RG", pair[4]);
+                }
+                records.add(record);
+            }
+        }
+        if (away) {
+            final SAMRecord other = new SAMRecord(header);
+            other.setReadName("away");
+            other.setFlags(0x1 | 0x2 | 0x40 | 0x20);
+            other.setReferenceIndex(1);
+            other.setAlignmentStart(50);
+            other.setMateReferenceIndex(0);
+            other.setMateAlignmentStart(50);
+            other.setInferredInsertSize(80);
+            other.setCigarString("10M");
+            other.setMappingQuality(60);
+            other.setReadString("ACGTACGTAC");
+            other.setBaseQualityString("IIIIIIIIII");
+            other.setAttribute("RG", "rg1");
+            records.add(other);
+        }
+        records.sort(java.util.Comparator.comparingInt(SAMRecord::getReferenceIndex)
+                .thenComparingInt(SAMRecord::getAlignmentStart));
+        try (final SAMFileWriter writer = new SAMFileWriterFactory().setCreateIndex(
+                order == SAMFileHeader.SortOrder.coordinate)
+                .makeBAMWriter(header, true, bam.toFile())) {
+            records.forEach(writer::addAlignment);
+        }
+    }
+
+    /**
      * Twelve reads in groups of the MarkDuplicates key: a1/a2, b1/b2 and c1/c2 share a start, d1 is
      * reverse and clipped, e1 sits on chr2 in a read group with no library, and u1 is unmapped.
      */
@@ -490,7 +1190,7 @@ public class SparkWalkersDump {
     /** A metrics file with the one line two runs cannot share taken out. */
     static byte[] withoutTheTime(final Path path) throws Exception {
         final byte[] bytes = Files.readAllBytes(path);
-        if (!path.toString().endsWith(".metrics")) {
+        if (!path.toString().endsWith(".metrics") && !path.toString().endsWith("Metrics.txt")) {
             return bytes;
         }
         return new String(bytes, StandardCharsets.UTF_8)

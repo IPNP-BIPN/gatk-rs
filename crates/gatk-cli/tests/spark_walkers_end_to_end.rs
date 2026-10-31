@@ -27,6 +27,12 @@
 //!  * **CompareDuplicatesSpark**, whose filter holds for the first BAM only, whose keys are looked
 //!    up in the first header for both, and whose summary comes in an order no two JVMs share, so
 //!    the dump and this test sort it;
+//!  * **CollectInsertSizeMetricsSpark**, GATK's collector and not Picard's: ten filters that keep
+//!    the first of the pair, FR, TANDEM, RF, and no file when no category passes;
+//!  * **MarkDuplicatesSpark**, whose verdict is a read name's, so that a read's company follows
+//!    it, over every record type it makes and with the finder's graph;
+//!  * **CollectMultipleMetricsSpark**, those two collectors in the order asked for, each through
+//!    its own filters, the command line's being parsed and bypassed;
 //!  * **and PileupSpark's text-file directory**, Hadoop's checksums included.
 //!
 //! # How the runs are replayed
@@ -218,7 +224,7 @@ fn every_run_replays_as_the_reference_ran_it() {
         let produced: Vec<(String, Vec<u8>)> = files_under(&out_dir)
             .into_iter()
             .map(|(name, bytes)| {
-                let bytes = if name.ends_with(".metrics") {
+                let bytes = if name.ends_with(".metrics") || name.ends_with("Metrics.txt") {
                     without_the_time(&bytes)
                 } else {
                     bytes
