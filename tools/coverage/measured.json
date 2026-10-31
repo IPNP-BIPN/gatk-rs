@@ -181,6 +181,87 @@
       "t": 2,
       "share": 1.0
     },
+    "SortSamSpark": {
+      "rows": 23,
+      "accepted": 13,
+      "rejected": 10,
+      "distinct_outputs": 9,
+      "matched": 23,
+      "t": 2,
+      "share": 1.0
+    },
+    "PrintVariantsSpark": {
+      "rows": 23,
+      "accepted": 16,
+      "rejected": 7,
+      "distinct_outputs": 4,
+      "matched": 23,
+      "t": 2,
+      "share": 1.0
+    },
+    "RevertSamSpark": {
+      "rows": 28,
+      "accepted": 20,
+      "rejected": 8,
+      "distinct_outputs": 19,
+      "matched": 28,
+      "t": 2,
+      "share": 1.0
+    },
+    "CollectInsertSizeMetricsSpark": {
+      "rows": 21,
+      "accepted": 14,
+      "rejected": 7,
+      "distinct_outputs": 14,
+      "matched": 21,
+      "t": 2,
+      "share": 1.0
+    },
+    "ExtractOriginalAlignmentRecordsByNameSpark": {
+      "rows": 22,
+      "accepted": 17,
+      "rejected": 5,
+      "distinct_outputs": 9,
+      "matched": 22,
+      "t": 2,
+      "share": 1.0
+    },
+    "MeanQualityByCycleSpark": {
+      "rows": 21,
+      "accepted": 15,
+      "rejected": 6,
+      "distinct_outputs": 15,
+      "matched": 21,
+      "t": 2,
+      "share": 1.0
+    },
+    "QualityScoreDistributionSpark": {
+      "rows": 21,
+      "accepted": 14,
+      "rejected": 7,
+      "distinct_outputs": 14,
+      "matched": 21,
+      "t": 2,
+      "share": 1.0
+    },
+    "CollectBaseDistributionByCycleSpark": {
+      "rows": 21,
+      "accepted": 15,
+      "rejected": 6,
+      "distinct_outputs": 15,
+      "matched": 21,
+      "t": 2,
+      "share": 1.0
+    },
+    "CollectQualityYieldMetricsSpark": {
+      "rows": 22,
+      "accepted": 16,
+      "rejected": 6,
+      "distinct_outputs": 16,
+      "matched": 22,
+      "t": 2,
+      "share": 1.0
+    },
     "CountBasesInReference": {
       "rows": 19,
       "accepted": 8,

@@ -6662,7 +6662,7 @@
     },
     {
       "id": "tool-argument-declarations",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "what one tool declares, and therefore which command lines it accepts",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6682,7 +6682,7 @@
         {
           "dump": "ToolArgumentDeclarationDump",
           "golden": "crates/gatk-tools/tests/data/tool_declarations.txt.gz",
-          "why": "Pending the candidate artefact of the ninth Spark brick (X.1): CollectMultipleMetricsSpark and MarkDuplicatesSpark."
+          "why": "Frozen from the candidate artefact of run 41130795850, with the ninth Spark brick (X.1): CollectMultipleMetricsSpark and MarkDuplicatesSpark."
         }
       ]
     },
@@ -6730,7 +6730,7 @@
     },
     {
       "id": "tool-argument-enums",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "the constants an enum-valued argument accepts, and what a value outside them costs",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6750,7 +6750,7 @@
         {
           "dump": "ToolArgumentEnumDump",
           "golden": "crates/gatk-tools/tests/data/tool_argument_enums.txt.gz",
-          "why": "Pending the candidate artefact of the ninth Spark brick (X.1): CollectMultipleMetricsSpark and MarkDuplicatesSpark."
+          "why": "Frozen from the candidate artefact of run 41130795850, with the ninth Spark brick (X.1): CollectMultipleMetricsSpark and MarkDuplicatesSpark."
         }
       ]
     },
@@ -8104,7 +8104,7 @@
     },
     {
       "id": "spark-walkers",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Twenty-one Spark tools end to end through Main, on one partition",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -8193,10 +8193,10 @@
       },
       "expect_rows": 792,
       "expect_contains": [
-            "revert-sam-defaults\tjava.lang.UnsupportedOperationException",
-            "revert-sam-sanitize\torg.apache.spark.SparkException:Base quality score -1 is invalid",
-            "by-group/rg1.bam.sbi",
-            "by-group/rg1.sam",
+        "revert-sam-defaults\tjava.lang.UnsupportedOperationException",
+        "revert-sam-sanitize\torg.apache.spark.SparkException:Base quality score -1 is invalid",
+        "by-group/rg1.bam.sbi",
+        "by-group/rg1.sam",
         "stdout\tcount-reads\t3\\n",
         "stdout\tcount-variants-chr1\t3\\n",
         "file\tprint-reads\tprint-reads.bam.sbi\t",
@@ -8217,7 +8217,7 @@
         {
           "dump": "SparkWalkersDump",
           "golden": "crates/gatk-tools/tests/data/spark_walkers.txt.gz",
-          "why": "Pending the candidate artefact of the ninth Spark brick (X.1): CollectMultipleMetricsSpark and MarkDuplicatesSpark. Before that, frozen from the candidate artefact of run 41067896483, in the pinned container on a real x86-64 runner, byte for byte the local dump: nineteen Spark tools, adding SortSamSpark, PrintVariantsSpark, RevertSamSpark, the name filter, five metrics and CompareDuplicatesSpark to the earlier runs. Before that, frozen from the golden-pending artefact of run 40458473356, in the pinned container on a real x86-64 runner, with BaseRecalibratorSpark, ApplyBQSRSpark and BQSRPipelineSpark, the fourth Spark brick: twenty-one runs, the first eighteen byte for byte the earlier golden. Eighteen runs over one reference, the shared eleven-read BAM and a four-record VCF, the fixtures travelling as base64. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 40318773837, and byte for byte what this laptop produced."
+          "why": "Frozen from the candidate artefact of run 41130795850, with the ninth Spark brick (X.1): CollectMultipleMetricsSpark and MarkDuplicatesSpark."
         }
       ],
       "$java_props_why": "GATK's jar carries runtimeAddOpens in its manifest, which only java -jar honours; the dump runs from the classpath, so Spark's StorageUtils needs the same opens passed by hand. Level 2 is what GATKConfig gives a real gatk invocation and instanceMain never sees (#1032)."
