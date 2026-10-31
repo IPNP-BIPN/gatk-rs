@@ -300,6 +300,8 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CountVariantsSpark" => Some(run_count_variants_spark),
         "PileupSpark" => Some(run_pileup_spark),
         "CollectAllelicCountsSpark" => Some(run_collect_allelic_counts_spark),
+        "FindBadGenomicKmersSpark" => Some(run_find_bad_genomic_kmers_spark),
+        "CalcMetadataSpark" => Some(run_calc_metadata_spark),
         "PrintReadsSpark" => Some(run_print_reads_spark),
         "BaseRecalibratorSpark" => Some(run_base_recalibrator_spark),
         "ApplyBQSRSpark" => Some(run_apply_bqsr_spark),
@@ -691,6 +693,14 @@ fn run_variant_filtration(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_collect_allelic_counts_spark(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::collect_allelic_counts_spark(&parsed("CollectAllelicCountsSpark", args)?)
+}
+
+fn run_calc_metadata_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::calc_metadata_spark(&parsed("CalcMetadataSpark", args)?)
+}
+
+fn run_find_bad_genomic_kmers_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::find_bad_genomic_kmers_spark(&parsed("FindBadGenomicKmersSpark", args)?)
 }
 
 fn run_collect_allelic_counts(args: &[String]) -> Result<Option<String>, Thrown> {
