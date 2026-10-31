@@ -1440,6 +1440,33 @@
       "matched": 38,
       "t": 2,
       "share": 1.0
+    },
+    "CollectMultipleMetricsSpark": {
+      "rows": 23,
+      "accepted": 23,
+      "rejected": 0,
+      "distinct_outputs": 23,
+      "matched": 23,
+      "t": 2,
+      "share": 1.0
+    },
+    "CompareDuplicatesSpark": {
+      "rows": 22,
+      "accepted": 17,
+      "rejected": 5,
+      "distinct_outputs": 11,
+      "matched": 22,
+      "t": 2,
+      "share": 1.0
+    },
+    "MarkDuplicatesSpark": {
+      "rows": 27,
+      "accepted": 21,
+      "rejected": 6,
+      "distinct_outputs": 21,
+      "matched": 27,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
