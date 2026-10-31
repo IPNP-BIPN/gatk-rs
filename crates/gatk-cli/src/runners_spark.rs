@@ -665,9 +665,9 @@ fn no_reads_refusal(
             .strip_prefix("local[")
             .and_then(|rest| rest.split([',', ']']).next())
             .map_or(1, |threads| {
-                threads.parse::<usize>().unwrap_or_else(|_| {
-                    std::thread::available_parallelism().map_or(1, usize::from)
-                })
+                threads
+                    .parse::<usize>()
+                    .unwrap_or_else(|_| std::thread::available_parallelism().map_or(1, usize::from))
             });
         let shards: usize = intervals
             .iter()
@@ -757,13 +757,9 @@ pub fn collect_allelic_counts_spark(parser: &Parser) -> Outcome {
             };
             // The shuffle groups reads by shard, so a shard no read reaches never exists.
             if flag(parser, "shuffle")
-                && gatk_tools::read_walker::traverse(
-                    &source,
-                    std::slice::from_ref(&shard),
-                    &filter,
-                )
-                .map_err(|error| Thrown::user(format!("{error:?}")))?
-                .is_empty()
+                && gatk_tools::read_walker::traverse(&source, std::slice::from_ref(&shard), &filter)
+                    .map_err(|error| Thrown::user(format!("{error:?}")))?
+                    .is_empty()
             {
                 continue;
             }
