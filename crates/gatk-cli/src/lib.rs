@@ -305,6 +305,13 @@ pub fn runner(name: &str) -> Option<Runner> {
         "BQSRPipelineSpark" => Some(run_bqsr_pipeline_spark),
         "SortSamSpark" => Some(run_sort_sam_spark),
         "RevertSamSpark" => Some(run_revert_sam_spark),
+        "MeanQualityByCycleSpark" => Some(run_mean_quality_by_cycle_spark),
+        "QualityScoreDistributionSpark" => Some(run_quality_score_distribution_spark),
+        "CollectBaseDistributionByCycleSpark" => Some(run_collect_base_distribution_by_cycle_spark),
+        "CollectQualityYieldMetricsSpark" => Some(run_collect_quality_yield_metrics_spark),
+        "ExtractOriginalAlignmentRecordsByNameSpark" => {
+            Some(run_extract_original_alignment_records_by_name_spark)
+        }
         "PrintVariantsSpark" => Some(run_print_variants_spark),
         "CountBasesInReference" => Some(run_count_bases_in_reference),
         "SplitIntervals" => Some(run_split_intervals),
@@ -1044,6 +1051,34 @@ fn run_apply_bqsr_spark(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_bqsr_pipeline_spark(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::bqsr_pipeline_spark(&parsed("BQSRPipelineSpark", args)?)
+}
+
+fn run_mean_quality_by_cycle_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::mean_quality_by_cycle_spark(&parsed("MeanQualityByCycleSpark", args)?)
+}
+
+fn run_quality_score_distribution_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::quality_score_distribution_spark(&parsed("QualityScoreDistributionSpark", args)?)
+}
+
+fn run_collect_base_distribution_by_cycle_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::collect_base_distribution_by_cycle_spark(&parsed(
+        "CollectBaseDistributionByCycleSpark",
+        args,
+    )?)
+}
+
+fn run_collect_quality_yield_metrics_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::collect_quality_yield_metrics_spark(&parsed("CollectQualityYieldMetricsSpark", args)?)
+}
+
+fn run_extract_original_alignment_records_by_name_spark(
+    args: &[String],
+) -> Result<Option<String>, Thrown> {
+    runners::extract_original_alignment_records_by_name_spark(&parsed(
+        "ExtractOriginalAlignmentRecordsByNameSpark",
+        args,
+    )?)
 }
 
 fn run_revert_sam_spark(args: &[String]) -> Result<Option<String>, Thrown> {

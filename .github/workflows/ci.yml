@@ -594,6 +594,9 @@ jobs:
             --tool CountVariantsSpark --tool PrintReadsSpark --tool PileupSpark \
             --tool BaseRecalibratorSpark --tool ApplyBQSRSpark --tool BQSRPipelineSpark \
             --tool SortSamSpark --tool PrintVariantsSpark --tool RevertSamSpark \
+            --tool ExtractOriginalAlignmentRecordsByNameSpark --tool MeanQualityByCycleSpark \
+            --tool QualityScoreDistributionSpark --tool CollectBaseDistributionByCycleSpark \
+            --tool CollectQualityYieldMetricsSpark \
             --tool CountBasesInReference \
             --tool SplitIntervals \
             --tool Pileup --tool PreprocessIntervals \

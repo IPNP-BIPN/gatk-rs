@@ -1171,6 +1171,162 @@ fn write_reverted(
     write_spark_partitions(parser, header, Some(sort_order), partitions, output)
 }
 
+/// `ExtractOriginalAlignmentRecordsByNameSpark.runTool`: `getUnfilteredReads`, so `--read-filter`
+/// is parsed and never applied, kept by name and written in the order read.
+pub fn extract_original_alignment_records_by_name_spark(parser: &Parser) -> Outcome {
+    let SparkStart {
+        source,
+        header,
+        intervals,
+        ..
+    } = spark_startup(parser, "ExtractOriginalAlignmentRecordsByNameSpark")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let names_file = argument(parser, "read-name-file").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument read-name-file was missing: Argument 'read-name-file' is required",
+        )
+    })?;
+    // `parseReadNames`: `^@`, then `/1$`, then `/2$`, each off the line once.
+    let text = std::fs::read_to_string(&names_file).map_err(|_| {
+        Thrown::user(format!(
+            "Couldn't read file {names_file}. Error was: {names_file} (No such file or directory)"
+        ))
+    })?;
+    let names: std::collections::HashSet<String> = text
+        .lines()
+        .map(|line| {
+            let line = line.strip_prefix('@').unwrap_or(line);
+            let line = line.strip_suffix("/1").unwrap_or(line);
+            line.strip_suffix("/2").unwrap_or(line).to_string()
+        })
+        .collect();
+    let invert = flag(parser, "invert-match");
+    let keep_all: Filter = Box::new(|_| true);
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &keep_all)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let kept: Vec<BamRecord> = records
+        .into_iter()
+        .filter(|record| names.contains(&record.read_name) != invert)
+        .collect();
+    write_spark_reads(parser, &header, &kept, &output, false)?;
+    Ok(None)
+}
+
+/// The reads and headers a Spark metrics tool aggregates, and the `-O` it saves to.
+fn spark_metric_reads(
+    parser: &Parser,
+    tool: &str,
+) -> Result<(Vec<BamRecord>, Vec<String>), Thrown> {
+    let SparkStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = spark_startup(parser, tool)?;
+    let filter = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    // `getMetricsFile`: the command line, then the time the run started.
+    let headers = vec![
+        crate::command_line::expanded(tool, parser),
+        format!("Started on: {}", java_display_now()),
+    ];
+    Ok((records, headers))
+}
+
+/// `MetricsUtils.saveMetrics`. `-O` is optional and nothing checks it: without one,
+/// `BucketUtils.createFile(null)` fails after the job has run. A `--chart` needs R, which the
+/// pinned container does not have, and the port does not draw.
+fn save_spark_metrics(parser: &Parser, text: &str) -> Result<(), Thrown> {
+    let Some(output) = argument(parser, "output") else {
+        return Err(Thrown::non_user(
+            "java.lang.IllegalArgumentException",
+            "Null object is not allowed here.",
+        ));
+    };
+    std::fs::write(&output, text).map_err(|error| {
+        Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
+    })
+}
+
+fn refuse_spark_chart(parser: &Parser) -> Result<(), Thrown> {
+    if argument(parser, "chart").is_some() {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "--chart runs R, which the port does not. This message is the port's own and not GATK's.",
+        ));
+    }
+    Ok(())
+}
+
+/// `MeanQualityByCycleSpark.runTool`.
+pub fn mean_quality_by_cycle_spark(parser: &Parser) -> Outcome {
+    let (records, headers) = spark_metric_reads(parser, "MeanQualityByCycleSpark")?;
+    refuse_spark_chart(parser)?;
+    let (pf, aligned) = (
+        flag(parser, "pfReadsOnly"),
+        flag(parser, "alignedReadsOnly"),
+    );
+    let kept = records
+        .iter()
+        .filter(|record| gatk_tools::spark_metrics::metrics_read_filter(record, pf, aligned));
+    let text = gatk_tools::spark_metrics::mean_quality_by_cycle(kept, &headers);
+    save_spark_metrics(parser, &text)?;
+    Ok(None)
+}
+
+/// `QualityScoreDistributionSpark.runTool`.
+pub fn quality_score_distribution_spark(parser: &Parser) -> Outcome {
+    let (records, headers) = spark_metric_reads(parser, "QualityScoreDistributionSpark")?;
+    refuse_spark_chart(parser)?;
+    let (pf, aligned) = (
+        flag(parser, "pfReadsOnly"),
+        flag(parser, "alignedReadsOnly"),
+    );
+    let kept = records
+        .iter()
+        .filter(|record| gatk_tools::spark_metrics::metrics_read_filter(record, pf, aligned));
+    let text = gatk_tools::spark_metrics::quality_score_distribution(
+        kept,
+        flag(parser, "includeNoCalls"),
+        &headers,
+    );
+    save_spark_metrics(parser, &text)?;
+    Ok(None)
+}
+
+/// `CollectBaseDistributionByCycleSpark.runTool`.
+pub fn collect_base_distribution_by_cycle_spark(parser: &Parser) -> Outcome {
+    let (records, headers) = spark_metric_reads(parser, "CollectBaseDistributionByCycleSpark")?;
+    refuse_spark_chart(parser)?;
+    let (pf, aligned) = (
+        flag(parser, "pf-reads-only"),
+        flag(parser, "aligned-reads-only"),
+    );
+    let kept = records
+        .iter()
+        .filter(|record| gatk_tools::spark_metrics::metrics_read_filter(record, pf, aligned));
+    let text = gatk_tools::spark_metrics::base_distribution_by_cycle(kept, &headers);
+    save_spark_metrics(parser, &text)?;
+    Ok(None)
+}
+
+/// `MetricsCollectorSparkTool.runTool` around `QualityYieldMetricsCollectorSpark`, which requires
+/// a coordinate-sorted input because the default `getExpectedSortOrder` says so and nothing it
+/// computes depends on it.
+pub fn collect_quality_yield_metrics_spark(parser: &Parser) -> Outcome {
+    let (records, headers) = spark_metric_reads(parser, "CollectQualityYieldMetricsSpark")?;
+    let text = gatk_tools::spark_metrics::quality_yield(
+        records.iter(),
+        flag(parser, "use-original-qualities"),
+        &headers,
+    );
+    save_spark_metrics(parser, &text)?;
+    Ok(None)
+}
+
 /// `GATKSparkTool.writeReads` through `ReadsSparkSink` and Disq, as described above.
 ///
 /// With `sort_to_header`, a coordinate-sorted header is sorted to first (`sortSamRecordsToMatchHeader`), over
