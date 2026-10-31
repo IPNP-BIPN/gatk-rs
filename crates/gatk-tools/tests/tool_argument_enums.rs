@@ -105,17 +105,22 @@ fn an_arguments_default_is_one_of_the_constants() {
 fn a_clp_enum_documents_its_constants() {
     let text = golden();
     let documented: Vec<String> = rows(&text, "clp");
-    // TWO types in this corpus implement it now: `Mode` was alone until `SplitIntervals` brought
-    // `IntervalListScatterMode`, whose five constants each carry a sentence of their own. Every
-    // constant of a documented type is documented, and the golden's rows are exactly those.
+    // THREE types in this corpus implement it now: `Mode` was alone until `SplitIntervals` brought
+    // `IntervalListScatterMode`, whose five constants each carry a sentence of their own, and
+    // `RevertSamSpark` brought its output `FileType`. Every constant of a documented type is
+    // documented, and the golden's rows are exactly those.
     let implementing: Vec<&str> = ENUM_TYPES
         .iter()
         .filter(|type_| !type_.docs.is_empty())
         .map(|type_| type_.name)
         .collect();
-    // In the table's own order, which is the binary names sorted: `IntervalFilteringVcfWriter`
-    // comes before `picard.util.IntervalList`, where the simple names sorted the other way.
-    assert_eq!(implementing, vec!["Mode", "IntervalListScatterMode"]);
+    // In the table's own order, which is the binary names sorted: `RevertSamSpark` and
+    // `IntervalFilteringVcfWriter` come before `picard.util.IntervalList`, where the simple names
+    // sorted the other way.
+    assert_eq!(
+        implementing,
+        vec!["FileType", "Mode", "IntervalListScatterMode"]
+    );
     let expected: usize = ENUM_TYPES
         .iter()
         .filter(|type_| !type_.docs.is_empty())

@@ -303,6 +303,9 @@ pub fn runner(name: &str) -> Option<Runner> {
         "BaseRecalibratorSpark" => Some(run_base_recalibrator_spark),
         "ApplyBQSRSpark" => Some(run_apply_bqsr_spark),
         "BQSRPipelineSpark" => Some(run_bqsr_pipeline_spark),
+        "SortSamSpark" => Some(run_sort_sam_spark),
+        "RevertSamSpark" => Some(run_revert_sam_spark),
+        "PrintVariantsSpark" => Some(run_print_variants_spark),
         "CountBasesInReference" => Some(run_count_bases_in_reference),
         "SplitIntervals" => Some(run_split_intervals),
         "PreprocessIntervals" => Some(run_preprocess_intervals),
@@ -1041,6 +1044,18 @@ fn run_apply_bqsr_spark(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_bqsr_pipeline_spark(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::bqsr_pipeline_spark(&parsed("BQSRPipelineSpark", args)?)
+}
+
+fn run_revert_sam_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::revert_sam_spark(&parsed("RevertSamSpark", args)?)
+}
+
+fn run_sort_sam_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::sort_sam_spark(&parsed("SortSamSpark", args)?)
+}
+
+fn run_print_variants_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::print_variants_spark(&parsed("PrintVariantsSpark", args)?)
 }
 
 fn run_gather_vcfs_cloud(args: &[String]) -> Result<Option<String>, Thrown> {
