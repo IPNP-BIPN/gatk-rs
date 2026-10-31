@@ -12770,6 +12770,66 @@
         "AllowAllReadsReadFilter"
       ]
     },
+    "CollectAllelicCountsSpark": {
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-50010"
+      ],
+      "--output": [
+        "/work/out/allelic.tsv",
+        "/work/out/allelic2.tsv"
+      ],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--program-name": [
+        "counts",
+        "counts2"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "chr1:1-500",
+        "<unset>"
+      ],
+      "--minimum-base-quality": [
+        "20",
+        "60"
+      ],
+      "--max-depth-per-sample": [
+        "0"
+      ],
+      "$why": [
+        "CollectAllelicCounts' values over the Spark engine's arguments. Intervals are required, so -L has no <unset>. The far window is one shard: two would fail two tasks at once on local[2], and the log line that comes first is a race."
+      ]
+    },
     "CollectInsertSizeMetricsSpark": {
       "--input": [
         "/work/fixtures/insert_pairs.bam",

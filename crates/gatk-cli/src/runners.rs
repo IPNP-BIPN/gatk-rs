@@ -4218,8 +4218,6 @@ fn filtration_record(
 /// read filter, and a locus whose reference base is not one of `ACGT` produces no row at all
 /// instead of an empty one.
 pub fn collect_allelic_counts(parser: &Parser) -> Outcome {
-    use gatk_tools::collect_allelic_counts as allelic;
-
     let ReadWalkerStart {
         source,
         header,
@@ -4269,11 +4267,25 @@ pub fn collect_allelic_counts(parser: &Parser) -> Outcome {
     )
     .map_err(locus_traversal_error)?;
 
+    allelic_counts_table(parser, &header, &mut reference, &applied, &sample, &output)
+}
+
+/// `AllelicCountCollector.collectAtLocus` over the loci, and the table written.
+fn allelic_counts_table(
+    parser: &Parser,
+    header: &SamHeader,
+    reference: &mut gatk_engine::reference::ReferenceFileSource,
+    applied: &[gatk_tools::locus_walker::Applied<'_>],
+    sample: &str,
+    output: &str,
+) -> Outcome {
+    use gatk_tools::collect_allelic_counts as allelic;
+
     // The reference's own dictionary, which is what its refusal prints.
-    let reference_sequences = gatk_tools::reference_walker::dictionary(&reference).sequences;
+    let reference_sequences = gatk_tools::reference_walker::dictionary(reference).sequences;
     let minimum_base_quality = number_or(parser, "minimum-base-quality", 20).max(0) as u8;
     let mut counts = Vec::new();
-    for one in &applied {
+    for one in applied {
         // `referenceContext.getBase()`: the one base under the locus, upper-cased and with its
         // IUPAC codes flattened like every other reference query in this engine.
         let bases = reference
@@ -4314,8 +4326,8 @@ pub fn collect_allelic_counts(parser: &Parser) -> Outcome {
         .map(|sequence| (sequence.name.clone(), sequence.length))
         .collect();
     write_file(
-        &output,
-        allelic::write(&sequences, &sample, &counts).as_bytes(),
+        output,
+        allelic::write(&sequences, sample, &counts).as_bytes(),
     )?;
     Ok(None)
 }
@@ -10199,11 +10211,12 @@ pub fn collect_read_counts(parser: &Parser) -> Outcome {
 
 /// `MetadataUtils.readSampleName`: one distinct `SM` over the read groups, or an
 /// `IllegalArgumentException` naming what it found instead.
-fn sample_name(header: &SamHeader) -> Result<String, Thrown> {
+pub(crate) fn sample_name(header: &SamHeader) -> Result<String, Thrown> {
     let refuse = |message: String| Thrown::non_user("java.lang.IllegalArgumentException", message);
     if header.read_groups.is_empty() {
         return Err(refuse(
-            "The input header does not contain any read groups.  Cannot determine a sample name."
+            "The collection is empty: The input header does not contain any read groups.  \
+             Cannot determine a sample name."
                 .to_string(),
         ));
     }
@@ -24086,7 +24099,7 @@ pub fn local_assembler(parser: &Parser) -> Outcome {
 #[path = "runners_spark.rs"]
 mod spark_runners;
 pub use spark_runners::{
-    apply_bqsr_spark, base_recalibrator_spark, bqsr_pipeline_spark,
+    apply_bqsr_spark, base_recalibrator_spark, bqsr_pipeline_spark, collect_allelic_counts_spark,
     collect_base_distribution_by_cycle_spark, collect_insert_size_metrics_spark,
     collect_multiple_metrics_spark, collect_quality_yield_metrics_spark, compare_duplicates_spark,
     count_bases_spark, count_reads_spark, count_variants_spark,

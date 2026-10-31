@@ -573,14 +573,6 @@ pub fn pileup_spark(parser: &Parser) -> Outcome {
     let filter = read_filter(parser, &filters, &header)?;
     let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
-    if records.is_empty() && !flag(parser, "shuffle") {
-        eprintln!("ERROR Executor - Exception in task 0.0 in stage 1.0 (TID 1)");
-        return Err(Thrown::non_user(
-            "java.lang.ArrayIndexOutOfBoundsException",
-            "Index -1 out of bounds for length 1",
-        ));
-    }
-
     let shard_size = number_or(parser, "read-shard-size", 10000).max(1);
     let whole: Vec<gatk_engine::interval::SimpleInterval> = if intervals.is_empty() {
         dictionary
@@ -594,6 +586,8 @@ pub fn pileup_spark(parser: &Parser) -> Outcome {
     } else {
         intervals.clone()
     };
+    no_reads_refusal(parser, &records, &whole, shard_size)?;
+    oversized_read_refusal(parser, &records, &header, shard_size)?;
     // `Shard.divideIntervalIntoShards` with no padding.
     let shards = whole.iter().flat_map(|interval| {
         (interval.start..=interval.end)
@@ -654,6 +648,143 @@ pub fn pileup_spark(parser: &Parser) -> Outcome {
         .and_then(|()| std::fs::write(directory.join("_SUCCESS"), b""))
         .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
     Ok(None)
+}
+
+/// `SparkSharder`'s overlaps partitioning, which `--shuffle` does not go through: no read leaves
+/// `computePartitionReadExtents` nothing, so the first shard's partition index is -1 in whichever
+/// task `parallelize` gave that shard. This happens while the RDD is built, before the tool runs.
+fn no_reads_refusal(
+    parser: &Parser,
+    records: &[BamRecord],
+    intervals: &[gatk_engine::interval::SimpleInterval],
+    shard_size: i32,
+) -> Result<(), Thrown> {
+    if records.is_empty() && !flag(parser, "shuffle") {
+        let master = scalar(parser, "spark-master").unwrap_or_else(|| "local[*]".to_string());
+        let slices = master
+            .strip_prefix("local[")
+            .and_then(|rest| rest.split([',', ']']).next())
+            .map_or(1, |threads| {
+                threads.parse::<usize>().unwrap_or_else(|_| {
+                    std::thread::available_parallelism().map_or(1, usize::from)
+                })
+            });
+        let shards: usize = intervals
+            .iter()
+            .map(|interval| ((interval.end - interval.start) / shard_size + 1) as usize)
+            .sum();
+        // `ParallelCollectionRDD.slice`: the slice `i` holds `i * n / p .. (i + 1) * n / p`.
+        let task = (0..slices)
+            .find(|i| i * shards / slices < (i + 1) * shards / slices)
+            .unwrap_or(0);
+        eprintln!(
+            "ERROR Executor - Exception in task {task}.0 in stage 1.0 (TID {})",
+            task + 1
+        );
+        return Err(Thrown::non_user(
+            "java.lang.ArrayIndexOutOfBoundsException",
+            "Index -1 out of bounds for length 1",
+        ));
+    }
+    Ok(())
+}
+
+/// The same partitioning filling its shards, in coordinate order and inside a task, so after
+/// anything the tool does before its first action: a read longer than a shard is refused.
+fn oversized_read_refusal(
+    parser: &Parser,
+    records: &[BamRecord],
+    header: &SamHeader,
+    shard_size: i32,
+) -> Result<(), Thrown> {
+    if flag(parser, "shuffle") {
+        return Ok(());
+    }
+    for record in records.iter().filter(|record| !record.read_unmapped()) {
+        let size = record.alignment_end() - record.alignment_start + 1;
+        if size > shard_size {
+            let contig = &header.sequences[record.reference_index as usize].name;
+            return Err(Thrown::non_user(
+                "org.apache.spark.SparkException",
+                format!(
+                    "Max size of locatable exceeded. Max size is {shard_size}, but locatable size \
+                     is {size}. Try increasing shard size and/or padding. Locatable: {} \
+                     {contig}:{}-{}",
+                    record.read_name,
+                    record.alignment_start,
+                    record.alignment_end()
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// `CollectAllelicCountsSpark.processAlignments`: `CollectAllelicCounts`' table, every locus of
+/// every interval, over `LocusWalkerSpark`'s shards as in [`pileup_spark`].
+pub fn collect_allelic_counts_spark(parser: &Parser) -> Outcome {
+    let tool = "CollectAllelicCountsSpark";
+    let SparkStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = spark_startup(parser, tool)?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let shard_size = number_or(parser, "read-shard-size", 10000).max(1);
+    no_reads_refusal(parser, &records, &intervals, shard_size)?;
+    let sample = sample_name(&header)?;
+    oversized_read_refusal(parser, &records, &header, shard_size)?;
+    let mut applied = Vec::new();
+    for interval in &intervals {
+        for start in (interval.start..=interval.end).step_by(shard_size as usize) {
+            let shard = gatk_engine::interval::SimpleInterval {
+                contig: interval.contig.clone(),
+                start,
+                end: (start + shard_size - 1).min(interval.end),
+            };
+            // The shuffle groups reads by shard, so a shard no read reaches never exists.
+            if flag(parser, "shuffle")
+                && gatk_tools::read_walker::traverse(
+                    &source,
+                    std::slice::from_ref(&shard),
+                    &filter,
+                )
+                .map_err(|error| Thrown::user(format!("{error:?}")))?
+                .is_empty()
+            {
+                continue;
+            }
+            applied.extend(
+                gatk_tools::locus_walker::traverse(
+                    &records,
+                    &header,
+                    None,
+                    Some(std::slice::from_ref(&shard)),
+                    gatk_tools::locus_walker::Options {
+                        max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
+                        emit_empty_loci: true,
+                        ..gatk_tools::locus_walker::Options::default()
+                    },
+                    &|_| true,
+                )
+                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+            );
+        }
+    }
+    allelic_counts_table(parser, &header, &mut reference, &applied, &sample, &output)
 }
 
 /// `PrintReadsSpark.runTool`: the filtered reads, unsorted, through `ReadsSparkSink` and Disq.
