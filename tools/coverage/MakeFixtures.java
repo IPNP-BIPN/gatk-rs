@@ -6216,6 +6216,338 @@ public class MakeFixtures {
         }
         Files.writeString(dir.resolve("genbank.catalog"),
                 "a\tACC_PLAIN.1\tc\td\te\tf\t9606\th\n", StandardCharsets.UTF_8);
+        pathSeqFilterReads(dir);
+        pathSeqScoreReads(dir);
+        svEvidenceReads(dir);
+    }
+
+    /**
+     * What `PathSeqScoreSpark` reads: the taxonomy of `pathseq2.fasta`, a queryname BAM of pairs on
+     * its contigs and an unsorted BAM of lone reads over another dictionary, with alternate hits on
+     * XA and SA, an accession the taxonomy does not know, and an identity that a stricter row drops.
+     */
+    /**
+     * sv_evidence.bam: FR pairs at a steady template size in two libraries, over a pile deep enough to
+     * reach the peak depth, with every kind of read ReadClassifier reports: clips with and without a
+     * good SA tag, big indels, a mate unmapped, on another contig, on the same strand, facing away or
+     * far off, and a run of long templates for the K-S test. The second BAM has other sizes, and
+     * sv_evidence_lone.bam has an unpaired read, which ReadMetadata refuses.
+     */
+    static void svEvidenceReads(final Path dir) throws Exception {
+        svEvidenceBam(dir.resolve("sv_evidence.bam"), 300, 1L, false);
+        svEvidenceBam(dir.resolve("sv_evidence2.bam"), 450, 2L, false);
+        svEvidenceBam(dir.resolve("sv_evidence_lone.bam"), 300, 3L, true);
+        java.nio.file.Files.write(dir.resolve("sv_ignore.txt"), "alt\n".getBytes());
+        java.nio.file.Files.write(dir.resolve("sv_ignore_bad.txt"), "nosuch\n".getBytes());
+    }
+
+    static void svEvidenceBam(final Path bam, final int template, final long seed, final boolean lone) {
+        final SAMFileHeader header = new SAMFileHeader();
+        header.addSequence(new SAMSequenceRecord("chr1", 30000));
+        header.addSequence(new SAMSequenceRecord("chr2", 20000));
+        header.addSequence(new SAMSequenceRecord("alt", 5000));
+        for (final String[] group : new String[][] {{"rg1", "libA"}, {"rg2", "libB"}, {"rg3", null}}) {
+            final SAMReadGroupRecord record = new SAMReadGroupRecord(group[0]);
+            record.setSample("s");
+            record.setLibrary(group[1]);
+            header.addReadGroup(record);
+        }
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final java.util.Random random = new java.util.Random(seed);
+        final java.util.List<htsjdk.samtools.SAMRecord> reads = new java.util.ArrayList<>();
+        final String[] groups = {"rg1", "rg2", "rg3"};
+        final java.util.function.BiFunction<String, Integer, htsjdk.samtools.SAMRecord> read = (name, flags) -> {
+            final htsjdk.samtools.SAMRecord record = new htsjdk.samtools.SAMRecord(header);
+            record.setReadName(name);
+            record.setFlags(flags);
+            record.setMappingQuality(60);
+            final byte[] bases = new byte[100];
+            final byte[] quals = new byte[100];
+            for (int at = 0; at < 100; at++) {
+                bases[at] = (byte) "ACGT".charAt(random.nextInt(4));
+                quals[at] = 30;
+            }
+            record.setReadBases(bases);
+            record.setBaseQualities(quals);
+            record.setAttribute("RG", groups[random.nextInt(3)]);
+            return record;
+        };
+        // One read at a place, with its mate's place and its template size.
+        final java.util.function.Consumer<Object[]> add = row -> {
+            final htsjdk.samtools.SAMRecord record = read.apply((String) row[0], (Integer) row[1]);
+            record.setReferenceName((String) row[2]);
+            record.setAlignmentStart((Integer) row[3]);
+            record.setCigarString((String) row[4]);
+            if (row[5] != null) {
+                record.setMateReferenceName((String) row[5]);
+                record.setMateAlignmentStart((Integer) row[6]);
+            }
+            record.setInferredInsertSize((Integer) row[7]);
+            for (int at = 8; at + 1 < row.length; at += 2) {
+                record.setAttribute((String) row[at], row[at + 1]);
+            }
+            reads.add(record);
+        };
+        // The steady pairs, two reads per 40 bases over both big contigs.
+        for (final String contig : new String[] {"chr1", "chr2"}) {
+            for (int start = 200; start < 15000; start += 40) {
+                final int size = template + random.nextInt(41) - 20;
+                final String name = contig + "p" + start;
+                add.accept(new Object[] {name, 99, contig, start, "100M", contig, start + size - 100, size, "MC", "100M", "MQ", 60});
+                add.accept(new Object[] {name, 147, contig, start + size - 100, "100M", contig, start, -size, "MC", "100M", "MQ", 60});
+            }
+        }
+        // A pile to the peak depth, then a shallower shoulder against it.
+        for (int copy = 0; copy < 120; copy++) {
+            add.accept(new Object[] {"pile" + copy, 99, "chr1", 8000 + copy % 7, "100M", "chr1", 8200, 300});
+        }
+        for (int copy = 0; copy < 30; copy++) {
+            add.accept(new Object[] {"shoulder" + copy, 99, "chr1", 8100 + copy, "100M", "chr1", 8300, 300});
+        }
+        // Long templates in one stretch, for the K-S windows.
+        for (int start = 16000; start < 17000; start += 10) {
+            final int size = template + 1500 + random.nextInt(50);
+            add.accept(new Object[] {"long" + start, 99, "chr1", start, "100M", "chr1", start + size - 100, size});
+        }
+        // Clips: a good SA, two of them, a poor one, one on this very spot, and clips that do not count.
+        add.accept(new Object[] {"clipA", 99, "chr1", 1000, "40S60M", "chr1", 1200, 300, "SA", "chr2,5000,+,60M40S,60,0;"});
+        add.accept(new Object[] {"clipB", 83, "chr1", 1100, "60M40S", "chr1", 900, -300, "SA", "chr2,5100,-,40S60M,60,0;"});
+        add.accept(new Object[] {"clipC", 99, "chr1", 1200, "35S65M", "chr1", 1400, 300, "SA", "chr2,5200,+,60M,60,0;alt,300,+,60M,60,0;"});
+        add.accept(new Object[] {"clipD", 99, "chr1", 1300, "35S65M", "chr1", 1500, 300, "SA", "chr2,5300,+,60M,5,0;"});
+        add.accept(new Object[] {"clipE", 99, "chr1", 1400, "35S65M", "chr1", 1600, 300, "SA", "chr1,1402,+,60M,60,0;"});
+        add.accept(new Object[] {"clipF", 99, "chr1", 1500, "20S80M", "chr1", 1700, 300});
+        add.accept(new Object[] {"clipG", 99, "chr1", 1600, "10H35S65M", "chr1", 1800, 300});
+        add.accept(new Object[] {"clipH", 99, "chr1", 1700, "65M35S5H", "chr1", 1900, 300, "SA", "alt,400,-,35M,60,0;"});
+        add.accept(new Object[] {"clipI", 99, "chr1", 1800, "32S36M32S", "chr1", 2000, 300});
+        add.accept(new Object[] {"clipJ", 2147, "chr1", 1900, "40H100M", "chr1", 2100, 300, "SA", "chr1,1000,+,40M60S,60,0;"});
+        final htsjdk.samtools.SAMRecord dull = read.apply("clipK", 99);
+        dull.setReferenceName("chr1");
+        dull.setAlignmentStart(1950);
+        dull.setCigarString("40S60M");
+        dull.setMateReferenceName("chr1");
+        dull.setMateAlignmentStart(2150);
+        dull.setInferredInsertSize(300);
+        final byte[] poor = dull.getBaseQualities();
+        java.util.Arrays.fill(poor, 12, 20, (byte) 5);
+        dull.setBaseQualities(poor);
+        reads.add(dull);
+        // Indels big and small.
+        add.accept(new Object[] {"insA", 99, "chr1", 2200, "30M50I20M", "chr1", 2400, 300});
+        add.accept(new Object[] {"delA", 99, "chr1", 2300, "50M60D50M", "chr1", 2600, 400});
+        add.accept(new Object[] {"delB", 99, "chr1", 2400, "50M20D50M", "chr1", 2700, 400});
+        add.accept(new Object[] {"insB", 99, "chr1", 2500, "20M10N30M45I5M", "chr1", 2800, 300});
+        // Discordant pairs.
+        add.accept(new Object[] {"mateOff", 73, "chr1", 3000, "100M", null, 0, 0});
+        add.accept(new Object[] {"mateOff2", 89, "chr1", 3100, "2M1I97M", null, 0, 0, "MD", "A1C97"});
+        add.accept(new Object[] {"interA", 97, "chr1", 3200, "100M", "chr2", 6000, 0, "MC", "50M50S", "MQ", 60});
+        add.accept(new Object[] {"interB", 81, "chr1", 3300, "100M", "chr2", 6100, 0, "MQ", 3});
+        add.accept(new Object[] {"interC", 97, "chr1", 3400, "100M", "alt", 700, 0});
+        add.accept(new Object[] {"interD", 97, "chr2", 15500, "100M", "chr1", 3500, 0});
+        add.accept(new Object[] {"interE", 97, "alt", 800, "100M", "chr1", 3600, 0});
+        add.accept(new Object[] {"sameA", 65, "chr1", 3700, "100M", "chr1", 4000, 400, "MD", "100"});
+        add.accept(new Object[] {"sameB", 113, "chr1", 3800, "100M", "chr1", 4100, 400, "MD", "T^AC98"});
+        add.accept(new Object[] {"outA", 97, "chr1", 4200, "100M", "chr1", 3900, -300, "MD", "97T1G0"});
+        add.accept(new Object[] {"outB", 81, "chr1", 4300, "100M", "chr1", 4600, 400});
+        add.accept(new Object[] {"farA", 99, "chr1", 4400, "100M", "chr1", 9000, 4700, "MQ", 60});
+        add.accept(new Object[] {"farB", 147, "chr1", 4500, "100M", "chr1", 100, -4500});
+        add.accept(new Object[] {"nearA", 99, "chr1", 4600, "100M", "chr1", 4610, 110});
+        add.accept(new Object[] {"second", 355, "chr1", 4700, "100M", "chr1", 4900, 300});
+        add.accept(new Object[] {"supp", 2195, "chr1", 4800, "100M", "chr1", 5000, 300});
+        add.accept(new Object[] {"dup", 1123, "chr1", 4900, "40S60M", "chr1", 5100, 300});
+        add.accept(new Object[] {"fail", 611, "chr1", 5000, "40S60M", "chr1", 5200, 300});
+        add.accept(new Object[] {"unmapped", 77, "*", 0, "*", null, 0, 0});
+        // Reads the filter's thresholds decide.
+        final htsjdk.samtools.SAMRecord low = read.apply("lowMapq", 99);
+        low.setReferenceName("chr1");
+        low.setAlignmentStart(5100);
+        low.setCigarString("40S60M");
+        low.setMateReferenceName("chr1");
+        low.setMateAlignmentStart(5300);
+        low.setInferredInsertSize(300);
+        low.setMappingQuality(30);
+        reads.add(low);
+        add.accept(new Object[] {"shortMatch", 99, "chr1", 5200, "50S50M", "chr1", 5400, 300, "SA", "chr2,5400,+,50M50S,60,0;"});
+        add.accept(new Object[] {"altClip", 99, "alt", 900, "40S60M", "alt", 1100, 300, "SA", "chr1,5500,+,60M40S,60,0;"});
+        if (lone) {
+            add.accept(new Object[] {"alone", 0, "chr1", 5500, "100M", null, 0, 0});
+        }
+        // Mapped or not, a read with no mate place has its unmapped flags right.
+        for (final htsjdk.samtools.SAMRecord record : reads) {
+            if (record.getReadUnmappedFlag()) {
+                record.setMappingQuality(0);
+            }
+            if (record.getReadPairedFlag() && record.getMateUnmappedFlag()) {
+                record.setMateReferenceName(record.getReferenceName());
+                record.setMateAlignmentStart(record.getAlignmentStart());
+            }
+        }
+        try (SAMFileWriter writer = new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, false, bam.toFile())) {
+            reads.forEach(writer::addAlignment);
+        }
+    }
+
+    static void pathSeqScoreReads(final Path dir) throws Exception {
+        new org.broadinstitute.hellbender.tools.spark.pathseq.PathSeqBuildReferenceTaxonomy().instanceMain(new String[] {
+                "-R", dir.resolve("pathseq2.fasta").toString(), "--tax-dump", dir.resolve("taxdump.tar.gz").toString(),
+                "--genbank-catalog", dir.resolve("genbank.catalog").toString(),
+                "--min-non-virus-contig-length", "0", "-O", dir.resolve("pathseq.db").toString()});
+        final String virus = "gi|9|ref|NC_BOTH.1|taxid|11234|";
+        final SAMFileHeader paired = new SAMFileHeader();
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("s");
+        paired.addReadGroup(group);
+        paired.addSequence(new htsjdk.samtools.SAMSequenceRecord("taxid|562|", 800));
+        paired.addSequence(new htsjdk.samtools.SAMSequenceRecord(virus, 700));
+        paired.addSequence(new htsjdk.samtools.SAMSequenceRecord("taxid|9606|", 600));
+        paired.addSequence(new htsjdk.samtools.SAMSequenceRecord("unknown_contig", 500));
+        paired.setSortOrder(SAMFileHeader.SortOrder.queryname);
+        final SAMFileHeader lone = new SAMFileHeader();
+        lone.addReadGroup(group);
+        lone.addSequence(new htsjdk.samtools.SAMSequenceRecord(virus, 700));
+        lone.addSequence(new htsjdk.samtools.SAMSequenceRecord("taxid|562|", 800));
+        lone.addSequence(new htsjdk.samtools.SAMSequenceRecord("extra_contig", 300));
+        lone.setSortOrder(SAMFileHeader.SortOrder.unsorted);
+        final String bases = "ACGTTGCAAGGCTTAACCGATCGATGCATCGGATTACGCTAGCTAGGATCCTAGTCCAGTTACGGATCCA";
+        final Object[][] pairs = {
+                {"p0", "taxid|562|", 0, "taxid|562|", 1, null},
+                {"p1", "taxid|562|", 0, virus, 0, null},
+                {"p2", virus, 2, null, 0, null},
+                {"p3", "taxid|9606|", 0, "taxid|9606|", 3, null},
+                {"p4", "unknown_contig", 0, "unknown_contig", 0, null},
+                {"p5", "taxid|562|", 0, "taxid|562|", 0, virus + ",+20,70M,3;taxid|9606|,-5,70M,1;"},
+        };
+        final java.util.function.Function<Object[], SAMRecord> make = row -> {
+            final SAMFileHeader header = (SAMFileHeader) row[0];
+            final SAMRecord record = new SAMRecord(header);
+            record.setReadName((String) row[1]);
+            record.setFlags((Integer) row[2] | (row[3] == null ? 0x4 : 0));
+            record.setReadString(bases);
+            final byte[] qualities = new byte[bases.length()];
+            java.util.Arrays.fill(qualities, (byte) 30);
+            record.setBaseQualities(qualities);
+            record.setAttribute("RG", "rg1");
+            if (row[3] != null) {
+                record.setReferenceName((String) row[3]);
+                record.setAlignmentStart(50);
+                record.setMappingQuality(60);
+                record.setCigarString("70M");
+                record.setAttribute("NM", row[4]);
+            }
+            return record;
+        };
+        try (final SAMFileWriter writer = new SAMFileWriterFactory()
+                .makeBAMWriter(paired, true, dir.resolve("pathseq_score_paired.bam").toFile())) {
+            for (final Object[] pair : pairs) {
+                final SAMRecord first = make.apply(new Object[] {paired, pair[0], 0x1 | 0x40 | (pair[3] == null ? 0x8 : 0), pair[1], pair[2]});
+                final SAMRecord second = make.apply(new Object[] {paired, pair[0], 0x1 | 0x80, pair[3], pair[4]});
+                if (pair[5] != null) {
+                    first.setAttribute("XA", pair[5]);
+                    second.setAttribute("XA", pair[5]);
+                }
+                writer.addAlignment(first);
+                writer.addAlignment(second);
+            }
+        }
+        try (final SAMFileWriter writer = new SAMFileWriterFactory()
+                .makeBAMWriter(lone, true, dir.resolve("pathseq_score_unpaired.bam").toFile())) {
+            writer.addAlignment(make.apply(new Object[] {lone, "u0", 0, "taxid|562|", 0}));
+            final SAMRecord withSa = make.apply(new Object[] {lone, "u1", 0, virus, 1});
+            withSa.setAttribute("SA", "taxid|562|,30,+,70M,60,2;");
+            writer.addAlignment(withSa);
+            writer.addAlignment(make.apply(new Object[] {lone, "u2", 0, virus, 40}));
+            writer.addAlignment(make.apply(new Object[] {lone, "u3", 0, "extra_contig", 0}));
+            writer.addAlignment(make.apply(new Object[] {lone, "u4", 0, null, 0}));
+        }
+    }
+
+    /**
+     * What `PathSeqFilterSpark` reads: an unaligned BAM with pairs that survive and a lone read that
+     * does, with an adapter, a repeat, a poly-A, a quality tail and a duplicate each changing what is
+     * written, and reads taken from `pathseq_kmers.fasta` for the host k-mer sets built from it. A
+     * second BAM carries the alignments and NM tags `--is-host-aligned` looks at.
+     */
+    static void pathSeqFilterReads(final Path dir) throws Exception {
+        final java.util.Random random = new java.util.Random(23);
+        final java.util.function.IntFunction<String> bases = length -> {
+            final StringBuilder text = new StringBuilder();
+            for (int i = 0; i < length; i++) {
+                text.append("ACGT".charAt(random.nextInt(4)));
+            }
+            return text.toString();
+        };
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("s");
+        header.addReadGroup(group);
+        header.setSortOrder(SAMFileHeader.SortOrder.unsorted);
+        final java.util.function.BiFunction<String, Integer, java.util.function.Function<String, SAMRecord>> read =
+                (name, flags) -> text -> {
+                    final SAMRecord record = new SAMRecord(header);
+                    record.setReadName(name);
+                    record.setFlags(flags);
+                    record.setReadString(text);
+                    final byte[] qualities = new byte[text.length()];
+                    java.util.Arrays.fill(qualities, (byte) 30);
+                    record.setBaseQualities(qualities);
+                    record.setAttribute("RG", "rg1");
+                    return record;
+                };
+        final String host = htsjdk.samtools.reference.ReferenceSequenceFileFactory
+                .getReferenceSequenceFile(dir.resolve("pathseq_kmers.fasta"), false, false)
+                .nextSequence().getBaseString();
+        final String copied = bases.apply(80);
+        final List<SAMRecord> reads = new ArrayList<>();
+        for (int i = 0; i < 12; i++) {
+            reads.add(read.apply("pair" + i + "/1", 0x1 | 0x4 | 0x8 | 0x40).apply(bases.apply(70 + i)));
+            reads.add(read.apply("pair" + i + "/2", 0x1 | 0x4 | 0x8 | 0x80).apply(bases.apply(75)));
+            reads.add(read.apply("lone" + i, 0x4).apply(bases.apply(80)));
+        }
+        reads.add(read.apply("adapter", 0x4).apply(bases.apply(50) + "AGATCGGAAGAGCTCGTATGCCGTCTTCTGCTTG"));
+        reads.add(read.apply("repeat", 0x4).apply("AT".repeat(30) + bases.apply(30)));
+        reads.add(read.apply("polya", 0x4).apply("A".repeat(90)));
+        reads.add(read.apply("dust", 0x4).apply(bases.apply(30) + "CAG".repeat(12) + bases.apply(30)));
+        reads.add(read.apply("ambiguous", 0x4).apply(bases.apply(30) + "NNN" + bases.apply(40)));
+        reads.add(read.apply("host", 0x4).apply(host.substring(100, 180)));
+        reads.add(read.apply("host-pair/1", 0x1 | 0x4 | 0x8 | 0x40).apply(host.substring(300, 380)));
+        reads.add(read.apply("host-pair/2", 0x1 | 0x4 | 0x8 | 0x80).apply(bases.apply(75)));
+        reads.add(read.apply("dup-a", 0x4).apply(copied));
+        reads.add(read.apply("dup-b", 0x4 | 0x10).apply(htsjdk.samtools.util.SequenceUtil.reverseComplement(copied)));
+        final SAMRecord tails = read.apply("tails", 0x4).apply(bases.apply(80));
+        final byte[] qualities = tails.getBaseQualities();
+        java.util.Arrays.fill(qualities, 0, 6, (byte) 3);
+        java.util.Arrays.fill(qualities, 72, 80, (byte) 2);
+        tails.setBaseQualities(qualities);
+        reads.add(tails);
+        reads.add(read.apply("second", 0x4 | 0x100).apply(bases.apply(80)));
+        try (final SAMFileWriter writer = new SAMFileWriterFactory()
+                .makeBAMWriter(header, true, dir.resolve("pathseq_filter.bam").toFile())) {
+            reads.forEach(writer::addAlignment);
+        }
+        final SAMFileHeader aligned = header.clone();
+        aligned.addSequence(new htsjdk.samtools.SAMSequenceRecord("chr1", 100000));
+        try (final SAMFileWriter writer = new SAMFileWriterFactory()
+                .makeBAMWriter(aligned, true, dir.resolve("pathseq_filter_aligned.bam").toFile())) {
+            int at = 100;
+            for (final int nm : new int[] {5, 20, 40, -1}) {
+                for (final int flags : new int[] {0, 0x10}) {
+                    final SAMRecord record = read.apply("mapped" + nm + "." + flags, flags).apply(bases.apply(80));
+                    record.setHeader(aligned);
+                    record.setReferenceName("chr1");
+                    record.setAlignmentStart(at += 100);
+                    record.setMappingQuality(60);
+                    record.setCigarString("80M");
+                    if (nm >= 0) {
+                        record.setAttribute("NM", nm);
+                    }
+                    writer.addAlignment(record);
+                }
+            }
+        }
+        for (final String[] set : new String[][] {{"pathseq_filter.hss", "0"}, {"pathseq_filter.bfi", "0.001"}}) {
+            new org.broadinstitute.hellbender.tools.spark.pathseq.PathSeqBuildKmers().instanceMain(new String[] {
+                    "-R", dir.resolve("pathseq_kmers.fasta").toString(), "--kmer-size", "31",
+                    "--bloom-false-positive-probability", set[1], "-O", dir.resolve(set[0]).toString()});
+        }
     }
 
     /**

@@ -328,6 +328,9 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         | "CollectMultipleMetricsSpark"
         | "FindBadGenomicKmersSpark"
         | "CalcMetadataSpark"
+        | "ExtractSVEvidenceSpark"
+        | "PathSeqFilterSpark"
+        | "PathSeqScoreSpark"
         | "ReadsPipelineSpark" => Some(&["WellformedReadFilter"]),
         // `PileupSpark.getDefaultReadFilters`: Pileup's five, with the wellformed filter LAST.
         // `GATKSparkTool`'s, then `CollectAllelicCounts.DEFAULT_ADDITIONAL_READ_FILTERS`.

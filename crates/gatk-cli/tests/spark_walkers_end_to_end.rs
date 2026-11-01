@@ -28,8 +28,14 @@
 //!    over one partition and over two;
 //!  * **CalcMetadataSpark**, whose `--write-as-binary` is whatever overflowed a buffer nothing
 //!    flushes;
+//!  * **ExtractSVEvidenceSpark**, each read's evidence as text, the K-S windows counted from where
+//!    the reads are, and the metadata and high-depth regions it takes on the way;
 //!  * **HaplotypeCallerSpark**, the caller run over shards of `--read-shard-size`, with no default
 //!    header lines, and what the tool refuses of the walker's outputs;
+//!  * **PathSeqScoreSpark**, the third step: the hits, the scores in their hash tables' order, what
+//!    two inputs add up to, and the reads tagged with their taxa;
+//!  * **PathSeqFilterSpark**, the first step of PathSeq up to the BWA step this port refuses: the
+//!    transformers, the host k-mer sets, the duplicate groups in Spark's table order, the metrics;
 //!  * **ReadsPipelineSpark**, the marking, the recalibration and that caller in one job: duplicates
 //!    are never removed, the optical finder is its default, and `--dbsnp` is a header line only;
 //!  * **CompareDuplicatesSpark**, whose filter holds for the first BAM only, whose keys are looked
@@ -215,6 +221,8 @@ fn every_run_replays_as_the_reference_ran_it() {
                         ran.status
                     ));
                 }
+                // The dump lists no files for a run that was refused.
+                continue;
             }
             None if ran.status != 0 => {
                 failures.push(format!("{label}: status {}: {}", ran.status, ran.stderr));

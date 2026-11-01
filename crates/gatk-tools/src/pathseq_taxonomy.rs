@@ -294,6 +294,21 @@ impl PsTree {
             .insert(id, ());
     }
 
+    /// The root's fields as a file holds them, which `addNode` refuses to set.
+    pub fn set_root(
+        &mut self,
+        name: Option<String>,
+        rank: Option<String>,
+        parent: i32,
+        length: i64,
+    ) {
+        let node = self.nodes.get_mut(&self.root).expect("the root exists");
+        node.name = name;
+        node.rank = rank;
+        node.parent = parent;
+        node.length = length;
+    }
+
     /// `getNodeIDs`, in the tree map's own order.
     pub fn node_ids(&self) -> Vec<i32> {
         self.nodes.keys().copied().collect()

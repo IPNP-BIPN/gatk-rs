@@ -245,7 +245,7 @@ jobs:
             --tool SortSamSpark --tool PrintVariantsSpark --tool RevertSamSpark \
             --tool CollectInsertSizeMetricsSpark --tool CompareDuplicatesSpark \
             --tool CollectMultipleMetricsSpark --tool MarkDuplicatesSpark --tool CollectAllelicCountsSpark \
-            --tool FindBadGenomicKmersSpark --tool CalcMetadataSpark --tool HaplotypeCallerSpark --tool ReadsPipelineSpark \
+            --tool FindBadGenomicKmersSpark --tool CalcMetadataSpark --tool ExtractSVEvidenceSpark --tool HaplotypeCallerSpark --tool ReadsPipelineSpark --tool PathSeqFilterSpark --tool PathSeqScoreSpark \
             --tool ExtractOriginalAlignmentRecordsByNameSpark --tool MeanQualityByCycleSpark \
             --tool QualityScoreDistributionSpark --tool CollectBaseDistributionByCycleSpark \
             --tool CollectQualityYieldMetricsSpark \

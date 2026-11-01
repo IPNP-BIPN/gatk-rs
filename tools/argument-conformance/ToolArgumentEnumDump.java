@@ -545,6 +545,12 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.HaplotypeCallerSpark());
         declarations("ReadsPipelineSpark",
                 new org.broadinstitute.hellbender.tools.spark.pipelines.ReadsPipelineSpark());
+        declarations("PathSeqFilterSpark",
+                new org.broadinstitute.hellbender.tools.spark.pathseq.PathSeqFilterSpark());
+        declarations("PathSeqScoreSpark",
+                new org.broadinstitute.hellbender.tools.spark.pathseq.PathSeqScoreSpark());
+        declarations("ExtractSVEvidenceSpark",
+                new org.broadinstitute.hellbender.tools.spark.sv.evidence.ExtractSVEvidenceSpark());
         declarations("FindBadGenomicKmersSpark",
                 new org.broadinstitute.hellbender.tools.spark.sv.evidence.FindBadGenomicKmersSpark());
         declarations("MarkDuplicatesSpark",
