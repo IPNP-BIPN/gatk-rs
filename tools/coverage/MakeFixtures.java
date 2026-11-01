@@ -6405,6 +6405,17 @@ public class MakeFixtures {
                 });
             }
         }
+        final SAMFileHeader singles = new SAMFileHeader();
+        singles.setSortOrder(SAMFileHeader.SortOrder.queryname);
+        final SAMReadGroupRecord singlesGroup = new SAMReadGroupRecord("rg1");
+        singlesGroup.setSample("s");
+        singlesGroup.setPlatform("ILLUMINA");
+        singles.addReadGroup(singlesGroup);
+        try (SAMFileWriter writer = new SAMFileWriterFactory().makeBAMWriter(singles, true, dir.resolve("rp_single.bam"))) {
+            for (int i = 0; i != 60; ++i) {
+                writer.addAlignment(bwaRead(singles, String.format("s%03d", i), 4, pairs.get(i)[0].substring(0, 60), true));
+            }
+        }
         Files.writeString(dir.resolve("ps_taxa.catalog"), "a\tNOTHING.1\tc\td\te\tf\t562\th\n", StandardCharsets.UTF_8);
         new org.broadinstitute.hellbender.Main().instanceMain(new String[] {"PathSeqBuildReferenceTaxonomy",
                 "-R", microbes.toString(), "--tax-dump", dir.resolve("ps_taxa.tar.gz").toString(),

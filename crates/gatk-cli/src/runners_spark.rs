@@ -215,8 +215,9 @@ pub(super) fn spark_startup(parser: &Parser, tool: &str) -> Result<SparkStart, T
         None => Vec::new(),
     };
 
-    // `ReadsPipelineSpark.validateSequenceDictionaries`: unaligned reads need no dictionary.
-    let aligning = tool == "ReadsPipelineSpark" && flag(parser, "align");
+    // The aligners' `validateSequenceDictionaries`: unaligned reads need no dictionary.
+    let aligning = matches!(tool, "BwaSpark" | "BwaAndMarkDuplicatesPipelineSpark")
+        || (tool == "ReadsPipelineSpark" && flag(parser, "align"));
     if !aligning && !flag(parser, "disable-sequence-dictionary-validation") {
         if let Some(reference) = &reference {
             validate_reference_against_reads(reference, &header)?;
@@ -1932,6 +1933,8 @@ pub fn pathseq_pipeline_spark(parser: &Parser) -> Outcome {
     if let Some(output) = argument(parser, "output") {
         let per_output = number_or(parser, "readsPerPartitionOutput", 1000000) as usize;
         let reducers = (total / per_output).max(1);
+        // The header went through a broadcast, and Kryo gives it a group order.
+        let (microbe, _) = disq_header(&microbe);
         write_pathseq_bam(parser, &microbe, &reads, &output, reducers, &[reads.len()])?;
     }
     Ok(None)
@@ -1942,11 +1945,11 @@ fn pathseq_microbe_dictionary(
     parser: &Parser,
 ) -> Result<Vec<htsjdk_bam::header::SequenceRecord>, Thrown> {
     let dictionary = argument(parser, "microbe-dict").expect("a required argument");
+    // `ReferenceUtils.loadFastaDictionary` over a `GATKPath`, whose stream names the absolute path.
     let text = std::fs::read_to_string(&dictionary).map_err(|_| {
-        Thrown::user(gatk_tools::read_walker_refusal::cannot_read(
-            &dictionary,
-            false,
-        ))
+        let absolute = std::path::absolute(&dictionary)
+            .map_or(dictionary.clone(), |path| path.display().to_string());
+        Thrown::non_user("java.lang.RuntimeException", absolute)
     })?;
     Ok(htsjdk_bam::reader::parse_header_text(&text).sequences)
 }
@@ -2284,8 +2287,22 @@ fn bwa_engine(parser: &Parser, header: &SamHeader) -> Result<(SamHeader, String)
             aligned_header.sequences = dictionary.sequences;
         }
     }
-    let image =
-        argument(parser, "bwa-mem-index-image").unwrap_or_else(|| format!("{reference}.img"));
+    let image = match argument(parser, "bwa-mem-index-image") {
+        Some(image) => image,
+        None => {
+            // `ctx.addFile`, which looks before anything runs.
+            let image = format!("{reference}.img");
+            if !std::path::Path::new(&image).exists() {
+                let absolute = std::path::absolute(&image)
+                    .map_or(image.clone(), |path| path.display().to_string());
+                return Err(Thrown::non_user(
+                    "java.io.FileNotFoundException",
+                    format!("File file:{absolute} does not exist"),
+                ));
+            }
+            image
+        }
+    };
     Ok((aligned_header, image))
 }
 
@@ -2344,12 +2361,14 @@ pub fn bwa_spark(parser: &Parser) -> Outcome {
     } else {
         aligned
     };
+    // The sink's argument after the parts directory is `shardedOutput`: a single file is not sorted,
+    // which leaves each read's primary line ahead of the supplementary one the comparator would move.
     write_spark_reads(
         parser,
         &aligned_header,
         &kept,
         &output,
-        !flag(parser, "sharded-output"),
+        flag(parser, "sharded-output"),
     )?;
     Ok(None)
 }
