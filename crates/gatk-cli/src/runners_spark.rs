@@ -193,6 +193,19 @@ pub(super) fn spark_startup(parser: &Parser, tool: &str) -> Result<SparkStart, T
     })?;
     let source = spark_reads_header(&input)?;
     let header = source.header().clone();
+    // Disq reads the header at `--read-validation-stringency`, and STRICT refuses this line.
+    if let Some(group) = header.read_groups.iter().find(|group| {
+        group.attributes.get("SM").is_none()
+            && argument(parser, "read-validation-stringency").as_deref() == Some("STRICT")
+    }) {
+        return Err(Thrown::non_user(
+            "htsjdk.samtools.SAMFormatException",
+            format!(
+                "Error parsing SAM header. @RG line missing SM tag. Line:\n@RG\tID:{}",
+                group.id
+            ),
+        ));
+    }
 
     // `initializeIntervals`, against `getBestAvailableSequenceDictionary`: the reference's, then
     // the reads'.
@@ -916,6 +929,305 @@ fn evidence_task_failure(message: &str) -> Thrown {
         "org.apache.spark.SparkException",
         format!("Job aborted due to stage failure: Task 0 in stage 0.0 failed 1 times: {message}"),
     )
+}
+
+/// `DiscoverVariantsFromContigAlignmentsSAMSpark.runTool`: the arguments, the external calls, the
+/// output's path and the sample, then [`gatk_tools::sv_discovery`] and the VCF.
+///
+/// A BAM split over several partitions keeps every answer; what would change is only the order of
+/// records that sort equal, which this port takes from one partition.
+pub fn discover_variants_from_contig_alignments_sam_spark(parser: &Parser) -> Outcome {
+    use gatk_tools::sv_discovery;
+    let tool = "DiscoverVariantsFromContigAlignmentsSAMSpark";
+    let SparkStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = spark_startup(parser, tool)?;
+    // `getOutputPathInputs`' argument is required, and read after the arguments are validated.
+    let prefix = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    // `DiscoverVariantsFromContigAlignmentsArgumentCollection.validate`.
+    for (name, field, default) in [
+        ("min-align-length", "minAlignLength", 50),
+        (
+            "assembly-imprecise-evidence-overlap-uncertainty",
+            "assemblyImpreciseEvidenceOverlapUncertainty",
+            100,
+        ),
+        (
+            "imprecise-variant-evidence-threshold",
+            "impreciseVariantEvidenceThreshold",
+            7,
+        ),
+        ("truth-interval-padding", "truthIntervalPadding", 50),
+        (
+            "max-callable-imprecise-deletion-size",
+            "maxCallableImpreciseVariantDeletionSize",
+            15000,
+        ),
+    ] {
+        let value = number_or(parser, name, default);
+        if value <= 0 {
+            return Err(Thrown::non_user(
+                "java.lang.IllegalArgumentException",
+                format!("invalid value provided to {field}: {value}"),
+            ));
+        }
+    }
+
+    let sample = sv_sample_id(&header)?;
+    let cnv_calls = match argument(parser, "cnv-calls") {
+        Some(path) => Some(load_cnv_calls(&path, &header, &sample)?),
+        None => None,
+    };
+    // `getVcfOutputPath`.
+    let output = match std::fs::metadata(&prefix) {
+        Ok(found) if found.is_dir() => format!(
+            "{prefix}{}{sample}_inv_del_ins.vcf",
+            if prefix.ends_with('/') { "" } else { "/" }
+        ),
+        Ok(_) => {
+            return Err(Thrown::user(format!(
+                "Provided prefix for output is pointing to an existing file: {prefix}"
+            )))
+        }
+        Err(_) => format!(
+            "{prefix}{}{sample}_inv_del_ins.vcf",
+            if prefix.ends_with('/') { "" } else { "_" }
+        ),
+    };
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let fasta = htsjdk_bam::fasta_index::IndexedFasta::open(std::path::Path::new(&reference_path))
+        .map_err(|error| Thrown::user(error.message()))?;
+    let mut reference = SparkReference { fasta };
+    let adjacencies = sv_discovery::adjacencies(&records, &header)
+        .map_err(|message| evidence_task_failure(&message))?;
+
+    // `evaluateIntervalsAndNarls` only logs, once it has read the truth and made its intervals.
+    if let Some(truth) = argument(parser, "truth-vcf") {
+        let padding = number_or(parser, "truth-interval-padding", 50);
+        let refused =
+            |message: String| Thrown::non_user("java.lang.IllegalArgumentException", message);
+        let file = sv_feature_file(&truth)?;
+        for record in &file.records {
+            let svtype = record
+                .attributes
+                .iter()
+                .find(|(name, _)| name == "SVTYPE")
+                .and_then(|(_, value)| value.format());
+            // `getStructuralVariantType`: nothing without the attribute, and `valueOf` with it.
+            let Some(svtype) = svtype else { continue };
+            if !header
+                .sequences
+                .iter()
+                .any(|sequence| sequence.name == record.contig)
+            {
+                return Err(Thrown::user(format!(
+                    "VCF contig {} does not appear in dictionary.",
+                    record.contig
+                )));
+            }
+            if !["BND", "CNV", "DEL", "DUP", "INS", "INV"].contains(&svtype.as_str()) {
+                return Err(refused(format!(
+                    "No enum constant htsjdk.variant.variantcontext.StructuralVariantType.{svtype}"
+                )));
+            }
+            sv_discovery::check_padded_start(record.start as i32 - padding).map_err(refused)?;
+        }
+        adjacencies
+            .check_padded_breakpoints(padding)
+            .map_err(refused)?;
+    }
+
+    let variants = adjacencies
+        .variants(&header, &mut reference, cnv_calls.as_deref())
+        .map_err(|message| evidence_task_failure(&message))?;
+
+    // `SVVCFWriter.writeVariants`.
+    let mut vcf = htsjdk_vcf::header::VcfHeader::new();
+    vcf.lines = sv_discovery::header_lines();
+    for (index, sequence) in header.sequences.iter().enumerate() {
+        vcf.lines.push(htsjdk_vcf::header::HeaderLine::contig(
+            &sequence.name,
+            sequence.length as i64,
+            index as i32,
+        ));
+    }
+    vcf.lines
+        .extend(default_tool_vcf_header_lines(parser, tool));
+    let failed = |error: String| {
+        Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
+    };
+    let mut text = vcf.write();
+    let encoder = htsjdk_vcf::encoder::VcfEncoder::new(&vcf);
+    for variant in &variants {
+        encoder
+            .encode_into(variant, &mut text)
+            .map_err(|error| failed(format!("{error:?}")))?;
+        text.push('\n');
+    }
+    std::fs::write(&output, text).map_err(|error| {
+        Thrown::user(format!(
+            "Could not create file at path:{output} due to {output} ({})",
+            java_io_reason(&error)
+        ))
+    })?;
+    Ok(None)
+}
+
+/// `new FeatureDataSource<>(path, ...)` on a VCF, whose refusal of a missing file names it as a URI.
+fn sv_feature_file(path: &str) -> Result<htsjdk_vcf::reader::VcfFile, Thrown> {
+    if !std::path::Path::new(path).exists() {
+        let absolute = std::path::absolute(path).unwrap_or_else(|_| std::path::PathBuf::from(path));
+        return Err(Thrown::user(format!(
+            "Couldn't read file file://{}. Error was: It doesn't exist.",
+            absolute.display()
+        )));
+    }
+    let (_, text) = open_feature_input(path)?;
+    htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+        failure: Failure::User,
+        exception: failure.error.class(),
+        message: Some(failure.error.message()),
+    })
+}
+
+/// `SVUtils.getSampleId`.
+fn sv_sample_id(header: &SamHeader) -> Result<String, Thrown> {
+    let mut samples: Vec<String> = Vec::new();
+    for group in &header.read_groups {
+        // A read group with no sample is `null` in the set, and in the path it builds.
+        let sample = group
+            .attributes
+            .get("SM")
+            .map_or_else(|| "null".to_string(), str::to_string);
+        if !samples.contains(&sample) {
+            samples.push(sample);
+        }
+    }
+    if samples.len() == 1 {
+        return Ok(samples.remove(0));
+    }
+    let shown = gatk_engine::java_hash::hash_set_order(&samples).unwrap_or(samples);
+    Err(Thrown::non_user(
+        "java.lang.IllegalStateException",
+        format!(
+            "Read groups must contain reads from one and only one sample, but we are finding the \
+             following ones in the given header: \t[{}]",
+            shown.join(", ")
+        ),
+    ))
+}
+
+/// `CNVInputReader.loadCNVCalls`, the tree's order being its intervals'.
+fn load_cnv_calls(
+    path: &str,
+    header: &SamHeader,
+    sample: &str,
+) -> Result<Vec<gatk_tools::sv_discovery::CnvCall>, Thrown> {
+    let state = |message: String| Thrown::non_user("java.lang.IllegalStateException", message);
+    let file = sv_feature_file(path)?;
+    if file.header.samples.len() != 1 {
+        return Err(state("CNV call VCF should be single sample".to_string()));
+    }
+    if !file.header.samples.iter().any(|name| name == sample) {
+        return Err(state(format!(
+            "CNV call VCF does not contain calls for sample {sample}"
+        )));
+    }
+    let contigs: Vec<(String, i64)> = file
+        .header
+        .lines
+        .iter()
+        .filter_map(|line| match line {
+            htsjdk_vcf::header::HeaderLine::Contig { fields, .. } => {
+                let field = |key: &str| {
+                    fields
+                        .iter()
+                        .find(|(name, _)| name == key)
+                        .map(|(_, value)| value.clone())
+                };
+                Some((
+                    field("ID")?,
+                    field("length")
+                        .and_then(|text| text.parse().ok())
+                        .unwrap_or(0),
+                ))
+            }
+            _ => None,
+        })
+        .collect();
+    if contigs.is_empty() {
+        return Err(state(
+            "CNV calls file does not have a valid sequence dictionary".to_string(),
+        ));
+    }
+    let same = contigs.len() == header.sequences.len()
+        && contigs
+            .iter()
+            .zip(&header.sequences)
+            .all(|(one, two)| one.0 == two.name && one.1 == two.length as i64);
+    if !same {
+        return Err(state(
+            "CNV calls file does not have the same sequence dictionary as the read evidence"
+                .to_string(),
+        ));
+    }
+    let mut calls: Vec<gatk_tools::sv_discovery::CnvCall> = Vec::new();
+    for record in &file.records {
+        let genotype = record
+            .genotypes
+            .iter()
+            .find(|genotype| genotype.sample_name == sample);
+        let field = |key: &str| {
+            genotype
+                .and_then(|genotype| genotype.extended.iter().find(|(name, _)| name == key))
+                .and_then(|(_, value)| value.format())
+                .unwrap_or_else(|| "null".to_string())
+        };
+        let call = gatk_tools::sv_discovery::CnvCall {
+            contig: header
+                .sequences
+                .iter()
+                .position(|sequence| sequence.name == record.contig)
+                .map_or(-1, |index| index as i32),
+            start: record.start as i32,
+            end: record.stop as i32,
+            annotation: format!("{}:{}:{}", record.id, field("CN"), field("CNQ")),
+        };
+        // `SVIntervalTree.put` replaces the value at an interval it already holds.
+        match calls
+            .iter_mut()
+            .find(|held| (held.contig, held.start, held.end) == (call.contig, call.start, call.end))
+        {
+            Some(held) => *held = call,
+            None => calls.push(call),
+        }
+    }
+    calls.sort_by_key(|call| (call.contig, call.start, call.end));
+    Ok(calls)
+}
+
+/// `ReferenceMultiSparkSource.getBases`.
+struct SparkReference {
+    fasta: htsjdk_bam::fasta_index::IndexedFasta<std::fs::File>,
+}
+
+impl gatk_tools::sv_discovery::Reference for SparkReference {
+    fn bases(&mut self, contig: &str, start: i32, end: i32) -> Result<Vec<u8>, String> {
+        self.fasta
+            .query(contig, i64::from(start), i64::from(end))
+            .map_err(|error| error.message())
+    }
 }
 
 /// `PathSeqScoreSpark`, whose reads come from its own two arguments.

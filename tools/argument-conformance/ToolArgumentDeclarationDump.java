@@ -601,6 +601,8 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.spark.pathseq.PathSeqScoreSpark());
         declarations("ExtractSVEvidenceSpark",
                 new org.broadinstitute.hellbender.tools.spark.sv.evidence.ExtractSVEvidenceSpark());
+        declarations("DiscoverVariantsFromContigAlignmentsSAMSpark",
+                new org.broadinstitute.hellbender.tools.spark.sv.discovery.DiscoverVariantsFromContigAlignmentsSAMSpark());
         declarations("FindBadGenomicKmersSpark",
                 new org.broadinstitute.hellbender.tools.spark.sv.evidence.FindBadGenomicKmersSpark());
         declarations("MarkDuplicatesSpark",

@@ -16001,6 +16001,104 @@
       "--kmers-to-ignore": [
         "kmers.txt"
       ]
+    },
+    "DiscoverVariantsFromContigAlignmentsSAMSpark": {
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr2:13000-20000"
+      ],
+      "--input": [
+        "/work/fixtures/sv_contigs.bam",
+        "/work/fixtures/sv_contigs_small.bam"
+      ],
+      "--read-index": [],
+      "--reference": [
+        "/work/fixtures/sv_contigs.fasta"
+      ],
+      "--intervals": [
+        "<unset>",
+        "chr1:1-30000"
+      ],
+      "--output": [
+        "/work/out/discovered",
+        "/work/out/"
+      ],
+      "--program-name": [
+        "discovered",
+        "discovered2"
+      ],
+      "$why": [
+        "Contigs with each signature and a smaller set; the refusals, and the contigs the interpreter cannot read, are rows of the spark-walkers golden. The interval leaves each contig whole, since a contig cut in two has no primary alignment. --add-output-vcf-command-line is held at false because its line stamps the clock."
+      ],
+      "--aligner-index-image": [
+        "image.img"
+      ],
+      "--kmers-to-ignore": [
+        "kmers.txt"
+      ],
+      "--min-align-length": [
+        "50",
+        "100"
+      ],
+      "--min-mq": [
+        "30",
+        "10"
+      ],
+      "--truth-vcf": [
+        "<unset>",
+        "/work/fixtures/sv_truth.vcf"
+      ],
+      "--truth-interval-padding": [
+        "50",
+        "1"
+      ],
+      "--assembly-imprecise-evidence-overlap-uncertainty": [
+        "100",
+        "10"
+      ],
+      "--imprecise-variant-evidence-threshold": [
+        "7",
+        "3"
+      ],
+      "--cnv-calls": [
+        "<unset>",
+        "/work/fixtures/sv_cnv.vcf"
+      ],
+      "--max-callable-imprecise-deletion-size": [
+        "15000",
+        "1000"
+      ],
+      "--debug-mode": [
+        "false",
+        "true"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ]
     }
   },
   "constraints": [

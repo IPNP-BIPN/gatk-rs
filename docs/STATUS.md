@@ -8,9 +8,9 @@ Ports vendored from main at: htsjdk-rs `821a863bfb80`, picard-rs `bd199d296c43`
 | state | tools | share |
 |---|---:|---:|
 | oracle-backed | 262 | 84.2% |
-| golden-pending | 26 | 8.4% |
+| golden-pending | 30 | 9.6% |
 | unchecked | 0 | 0.0% |
-| not started | 23 | 7.4% |
+| not started | 19 | 6.1% |
 | **total** | **311** | |
 
 `oracle-backed` means CI re-derives the tool's goldens in the pinned container on every run and compares them. It does **not** mean the tool is byte-identical over its whole argument surface: that is what the argument-coverage column is for. A t-wise array (`tools/coverage/covering.py`, sized in [what-pairwise-coverage-costs.md](what-pairwise-coverage-costs.md)) is run against the reference and the port, and the column reports the fraction of its rows on which the two answered identically, rejections included. `not measured` means the array has never been run against a port binary, which is still true of most tools here.
@@ -149,7 +149,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 
 </details>
 
-## gatk-origin tools (167 of 190 started)
+## gatk-origin tools (171 of 190 started)
 
 | tool | archetype | state | suites | cases | argument coverage | cost (cold / steady) |
 |---|---|---|---|---:|---|---|
@@ -214,11 +214,13 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `CreateSomaticPanelOfNormals` | variant-transform | oracle-backed | brent-optimizer, create-somatic-panel-of-normals | 2 | t=2, 21/21 rows (100%) | 0.003 / 0.072 |
 | `DenoiseReadCounts` | cnv-segmentation | oracle-backed | denoise-read-counts | 1 | t=2, 6/6 rows (100%) | 0.002 / 0.054 |
 | `DepthOfCoverage` | locus-walker | oracle-backed | depth-of-coverage | 1 | t=2, 20/20 rows (100%) | 0.003 / 0.067 |
+| `DiscoverVariantsFromContigAlignmentsSAMSpark` | sv-caller | golden-pending | spark-walkers | 1 | not measured | not measured |
 | `DownsampleByDuplicateSet` | unclassified | oracle-backed | downsample-by-duplicate-set | 1 | t=2, 18/18 rows (100%) | 0.003 / 0.041 |
 | `DumpTabixIndex` | reporting-walker | oracle-backed | dump-tabix-index | 1 | t=2, 7/7 rows (100%) | 0.002 / 0.064 |
 | `EvaluateInfoFieldConcordance` | variant-walker | oracle-backed | evaluate-info-field-concordance | 1 | t=2, 21/21 rows (100%) | 0.002 / 0.054 |
 | `ExampleMultiFeatureWalker` | unclassified | oracle-backed | multi-feature-walker | 1 | t=2, 16/16 rows (100%) | 0.002 / 0.057 |
 | `ExtractOriginalAlignmentRecordsByNameSpark` | record-transform | golden-pending | spark-walkers | 1 | t=2, 22/22 rows (100%) | not measured |
+| `ExtractSVEvidenceSpark` | sv-caller | golden-pending | spark-walkers | 1 | not measured | not measured |
 | `ExtractVariantAnnotations` | variant-transform | oracle-backed | extract-variant-annotations | 1 | t=2, 29/29 rows (100%) | 0.036 / 0.581 |
 | `FastaAlternateReferenceMaker` | reference-utility | oracle-backed | fasta-alternate-reference-maker | 1 | t=2, 21/21 rows (100%) | 0.007 / 0.161 |
 | `FastaReferenceMaker` | reference-utility | oracle-backed | fasta-reference-maker | 1 | t=2, 21/21 rows (100%) | 0.004 / 0.086 |
@@ -273,6 +275,8 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `NuMTFilterTool` | unclassified | oracle-backed | numt-filter | 1 | t=2, 15/15 rows (100%) | 0.002 / 0.060 |
 | `PathSeqBuildKmers` | metagenomics | oracle-backed | pathseq-build-kmers | 1 | t=2, 8/8 rows (100%) | 0.002 / 0.068 |
 | `PathSeqBuildReferenceTaxonomy` | metagenomics | oracle-backed | pathseq-build-reference-taxonomy, pathseq-taxonomy-kryo | 2 | t=2, 9/9 rows (100%) | 0.002 / 0.068 |
+| `PathSeqFilterSpark` | metagenomics | golden-pending | spark-walkers | 1 | not measured | not measured |
+| `PathSeqScoreSpark` | metagenomics | golden-pending | spark-walkers | 1 | not measured | not measured |
 | `Pileup` | locus-walker | oracle-backed | pileup-tool | 1 | t=2, 18/18 rows (100%) | 0.004 / 0.099 |
 | `PileupSpark` | locus-walker | golden-pending | spark-walkers | 1 | t=2, 22/22 rows (100%) | not measured |
 | `PostProcessReadsForRSEM` | record-transform | oracle-backed | post-process-reads-for-rsem | 1 | t=2, 20/20 rows (100%) | 0.002 / 0.029 |
@@ -321,9 +325,9 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `VariantRecalibrator` | variant-transform | oracle-backed | variant-recalibrator | 1 | t=2, 26/26 rows (100%) | 0.081 / 1.010 |
 | `VariantsToTable` | variant-walker | oracle-backed | variants-to-table | 1 | t=2, 23/23 rows (100%) | 0.002 / 0.056 |
 
-<details><summary>23 not started</summary>
+<details><summary>19 not started</summary>
 
-`BwaAndMarkDuplicatesPipelineSpark`, `BwaSpark`, `CpxVariantReInterpreterSpark`, `DetermineGermlineContigPloidy`, `DiscoverVariantsFromContigAlignmentsSAMSpark`, `ExtractSVEvidenceSpark`, `FindBreakpointEvidenceSpark`, `GenomicsDBImport`, `GermlineCNVCaller`, `HtsgetReader`, `NVScoreVariants`, `ParallelCopyGCSDirectoryIntoHDFSSpark`, `PathSeqBwaSpark`, `PathSeqFilterSpark`, `PathSeqPipelineSpark`, `PathSeqScoreSpark`, `PlotDenoisedCopyRatios`, `PlotModeledSegments`, `PostprocessGermlineCNVCalls`, `ScoreVariantAnnotations`, `StructuralVariationDiscoveryPipelineSpark`, `SvDiscoverFromLocalAssemblyContigAlignmentsSpark`, `TrainVariantAnnotationsModel`
+`BwaAndMarkDuplicatesPipelineSpark`, `BwaSpark`, `CpxVariantReInterpreterSpark`, `DetermineGermlineContigPloidy`, `FindBreakpointEvidenceSpark`, `GenomicsDBImport`, `GermlineCNVCaller`, `HtsgetReader`, `NVScoreVariants`, `ParallelCopyGCSDirectoryIntoHDFSSpark`, `PathSeqBwaSpark`, `PathSeqPipelineSpark`, `PlotDenoisedCopyRatios`, `PlotModeledSegments`, `PostprocessGermlineCNVCalls`, `ScoreVariantAnnotations`, `StructuralVariationDiscoveryPipelineSpark`, `SvDiscoverFromLocalAssemblyContigAlignmentsSpark`, `TrainVariantAnnotationsModel`
 
 </details>
 

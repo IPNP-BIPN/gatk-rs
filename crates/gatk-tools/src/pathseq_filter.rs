@@ -680,7 +680,7 @@ fn fnv_byte_array_64(bytes: &[u8]) -> i64 {
 }
 
 /// `Hashing.murmur3_32().hashInt`, which is what `AppendOnlyMap.rehash` calls.
-fn murmur3_32_int(input: i32) -> i32 {
+pub(crate) fn murmur3_32_int(input: i32) -> i32 {
     let mut k = (input as u32).wrapping_mul(0xcc9e2d51);
     k = k.rotate_left(15).wrapping_mul(0x1b873593);
     let mut h = k;
