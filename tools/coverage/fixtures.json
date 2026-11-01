@@ -16714,6 +16714,62 @@
         "false",
         "true"
       ]
+    },
+    "ParallelCopyGCSDirectoryIntoHDFSSpark": {
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0"
+      ],
+      "--bam-partition-size": [
+        "0"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--read-index": [],
+      "--intervals": [
+        "<unset>"
+      ],
+      "--exclude-intervals": [
+        "<unset>"
+      ],
+      "--read-validation-stringency": [
+        "SILENT",
+        "LENIENT"
+      ],
+      "--sharded-output": [
+        "false"
+      ],
+      "--use-jdk-deflater": [
+        "true"
+      ],
+      "$why": [
+        "Only the two refusals can be reached: past them the reference needs a Google Cloud Storage and an HDFS. Every row names one of them."
+      ],
+      "--input-gcs-path": [
+        "/work/fixtures/bwa.fasta",
+        "gs://nowhere/in"
+      ],
+      "--output-hdfs-directory": [
+        "hdfs://nowhere:1/out",
+        "/work/out/copy"
+      ],
+      "--input-file-glob": [
+        "<unset>",
+        "*.fasta"
+      ]
     }
   },
   "constraints": [
@@ -17992,6 +18048,16 @@
         "--input": "/work/fixtures/sv_assembly.bam"
       },
       "why": "A breakend's end is negative, so any CNV file fails on it before anything else is measured."
+    },
+    {
+      "tools": [
+        "ParallelCopyGCSDirectoryIntoHDFSSpark"
+      ],
+      "forbid": {
+        "--input-gcs-path": "gs://nowhere/in",
+        "--output-hdfs-directory": "hdfs://nowhere:1/out"
+      },
+      "why": "Past both refusals the reference opens an HDFS connection and the port stops."
     }
   ],
   "exclude": {
