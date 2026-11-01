@@ -8105,7 +8105,7 @@
     {
       "id": "spark-walkers",
       "status": "golden-pending",
-      "title": "Thirty-six Spark tools end to end through Main, on one partition",
+      "title": "Thirty-seven Spark tools end to end through Main, on one partition",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "CountReadsSpark",
@@ -8142,7 +8142,8 @@
         "CpxVariantReInterpreterSpark",
         "BwaSpark",
         "BwaAndMarkDuplicatesPipelineSpark",
-      "PathSeqBwaSpark",
+      "ParallelCopyGCSDirectoryIntoHDFSSpark",
+        "PathSeqBwaSpark",
       "PathSeqPipelineSpark"
       ],
       "java_props": [

@@ -557,6 +557,8 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.spark.pathseq.PathSeqBwaSpark());
         declarations("PathSeqPipelineSpark",
                 new org.broadinstitute.hellbender.tools.spark.pathseq.PathSeqPipelineSpark());
+        declarations("ParallelCopyGCSDirectoryIntoHDFSSpark",
+                new org.broadinstitute.hellbender.tools.spark.ParallelCopyGCSDirectoryIntoHDFSSpark());
         declarations("BwaSpark",
                 new org.broadinstitute.hellbender.tools.spark.bwa.BwaSpark());
         declarations("BwaAndMarkDuplicatesPipelineSpark",

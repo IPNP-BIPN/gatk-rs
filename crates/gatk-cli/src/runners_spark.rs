@@ -2473,6 +2473,27 @@ fn pathseq_used_sequences(header: &mut SamHeader, reads: &mut [BamRecord], parti
     header.sequences = used;
 }
 
+/// `ParallelCopyGCSDirectoryIntoHDFSSpark.runTool`: what a machine with neither service can see.
+pub fn parallel_copy_gcs_directory_into_hdfs_spark(parser: &Parser) -> Outcome {
+    resolve_read_filters(parser, "ParallelCopyGCSDirectoryIntoHDFSSpark")?;
+    spark_context(parser)?;
+    let input = argument(parser, "input-gcs-path").expect("a required argument");
+    if !input.starts_with("gs://") {
+        return Err(Thrown::user(format!("Input path {input} is not a GCS URI")));
+    }
+    let output = argument(parser, "output-hdfs-directory").expect("a required argument");
+    if !output.starts_with("hdfs://") {
+        return Err(Thrown::user(format!(
+            "Output directory {output} is not an HDFS URI"
+        )));
+    }
+    Err(Thrown::non_user(
+        PORT_LIMITATION,
+        "ParallelCopyGCSDirectoryIntoHDFSSpark needs a Google Cloud Storage and an HDFS, which \
+         this port does not reach. This message is the port's own and not GATK's.",
+    ))
+}
+
 /// `PathSeqBwaSpark.runTool`: each input aligned on its own and written with only the contigs its
 /// reads landed on.
 pub fn pathseq_bwa_spark(parser: &Parser) -> Outcome {

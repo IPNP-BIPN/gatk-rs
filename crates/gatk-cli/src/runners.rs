@@ -24429,10 +24429,10 @@ pub use spark_runners::{
     discover_variants_from_contig_alignments_sam_spark,
     extract_original_alignment_records_by_name_spark, extract_sv_evidence_spark,
     find_bad_genomic_kmers_spark, flag_stat_spark, mark_duplicates_spark,
-    mean_quality_by_cycle_spark, pathseq_bwa_spark, pathseq_filter_spark, pathseq_pipeline_spark,
-    pathseq_score_spark, pileup_spark, print_reads_spark, print_variants_spark,
-    quality_score_distribution_spark, revert_sam_spark, sort_sam_spark,
-    sv_discover_from_local_assembly_contig_alignments_spark,
+    mean_quality_by_cycle_spark, parallel_copy_gcs_directory_into_hdfs_spark, pathseq_bwa_spark,
+    pathseq_filter_spark, pathseq_pipeline_spark, pathseq_score_spark, pileup_spark,
+    print_reads_spark, print_variants_spark, quality_score_distribution_spark, revert_sam_spark,
+    sort_sam_spark, sv_discover_from_local_assembly_contig_alignments_spark,
 };
 
 /// `GroundTruthReadsBuilder`, in a file of its own.

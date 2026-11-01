@@ -429,6 +429,9 @@ pub fn runner(name: &str) -> Option<Runner> {
         "HtsgetReader" => Some(run_htsget_reader),
         "BwaSpark" => Some(run_bwa_spark),
         "PathSeqBwaSpark" => Some(run_pathseq_bwa_spark),
+        "ParallelCopyGCSDirectoryIntoHDFSSpark" => {
+            Some(run_parallel_copy_gcs_directory_into_hdfs_spark)
+        }
         "PathSeqPipelineSpark" => Some(run_pathseq_pipeline_spark),
         "BwaAndMarkDuplicatesPipelineSpark" => Some(run_bwa_and_mark_duplicates_pipeline_spark),
         "RevertBaseQualityScores" => Some(run_revert_base_quality_scores),
@@ -494,6 +497,15 @@ fn run_bwa_and_mark_duplicates_pipeline_spark(args: &[String]) -> Result<Option<
 
 fn run_pathseq_pipeline_spark(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::pathseq_pipeline_spark(&parsed("PathSeqPipelineSpark", args)?)
+}
+
+fn run_parallel_copy_gcs_directory_into_hdfs_spark(
+    args: &[String],
+) -> Result<Option<String>, Thrown> {
+    runners::parallel_copy_gcs_directory_into_hdfs_spark(&parsed(
+        "ParallelCopyGCSDirectoryIntoHDFSSpark",
+        args,
+    )?)
 }
 
 fn run_pathseq_bwa_spark(args: &[String]) -> Result<Option<String>, Thrown> {

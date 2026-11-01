@@ -89,7 +89,7 @@ public class SparkWalkersDump {
         PrintReadsDump.emptyDirectory(DIR);
         Files.createDirectories(DIR);
 
-        System.out.println("# SparkWalkersDump: thirty-six Spark tools through Main, --spark-master local[1]");
+        System.out.println("# SparkWalkersDump: thirty-seven Spark tools through Main, --spark-master local[1]");
 
         final Path fasta = DIR.resolve("ref.fasta");
         Files.write(fasta, ReadWalkerDump.FASTA.getBytes());
@@ -1474,6 +1474,11 @@ public class SparkWalkersDump {
             rest.addAll(Arrays.asList(one).subList(2, one.length));
             run(name, name + ".txt", "PathSeqPipelineSpark", rest.toArray(new String[0]));
         }
+        final String copy = "ParallelCopyGCSDirectoryIntoHDFSSpark";
+        run("copy-local-input", null, copy, "--input-gcs-path", DIR.resolve("bwa.fasta").toString(),
+                "--output-hdfs-directory", "hdfs://nowhere:1/out");
+        run("copy-local-output", null, copy, "--input-gcs-path", "gs://nowhere/in",
+                "--output-hdfs-directory", DIR.resolve("out").toString());
         final String bwaReference = DIR.resolve("bwa.fasta").toString();
         final String platformed = DIR.resolve("rp_reads.bam").toString();
         final String[][] readsPipeline = {
