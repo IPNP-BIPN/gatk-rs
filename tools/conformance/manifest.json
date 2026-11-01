@@ -6682,7 +6682,7 @@
         {
           "dump": "ToolArgumentDeclarationDump",
           "golden": "crates/gatk-tools/tests/data/tool_declarations.txt.gz",
-          "why": "Frozen from the candidate artefact of run 41130795850, with the ninth Spark brick (X.1): CollectMultipleMetricsSpark and MarkDuplicatesSpark."
+          "why": "Frozen from the candidate artefact of run 41201436568, with the tenth Spark brick (X.1): CollectAllelicCountsSpark."
         }
       ]
     },
@@ -6704,7 +6704,7 @@
         {
           "dump": "UsageTextDump",
           "golden": "crates/gatk-tools/tests/data/usage_text.txt.gz",
-          "why": "Frozen from the candidate artefact of run 36808605640 on main, byte for byte the local dump, with `StructuralVariantDiscoverer`, which is UNDOCUMENTED. Frozen from the candidate artefact of run 35839898955 with the twenty-seven tools of #1225, byte for byte what this laptop produced. Re-measured with `AddFlowBaseQuality`, `CRAMIssue8768Detector`, `CollectF1R2Counts` and `SplitCRAM`, all UNDOCUMENTED. Frozen from the candidate artefact of run 35812512951 with `VCFComparator` and `VariantAnnotator`, both UNDOCUMENTED. Frozen from the candidate artefact of run 35797503225 with eight more UNDOCUMENTED walkers, whose summaries only this golden carries. Frozen from the candidate artefact of run 35785932792 with seven more UNDOCUMENTED tools, the gathers and copy-number utilities, whose summaries only this golden carries. Frozen from the candidate artefact of run 35772745546 with `CondenseDepthEvidence` and `PrintSVEvidence`, both UNDOCUMENTED, so this golden is the only place their summaries come from and the declarations generator refuses them without it. Re-measured with `PrintFileDiagnostics`, which is UNDOCUMENTED and prints an EXPERIMENTAL banner above its usage line, in the pinned container on a real x86-64 runner, as the candidate artefact of run 34332537404. Re-measured with `AddOriginalAlignmentTags`, which is UNDOCUMENTED and a read walker: the inventory carries a summary only for a documented tool, so this golden is where the declarations generator reads one, and its usage is the first in this dump to print an EXPERIMENTAL banner above the usage line, which is why the summary is read from between the blank line and `Version:` and not from a fixed offset. In the pinned container on a real x86-64 runner, as the candidate artefact of run 34260197895. Re-measured with `CompareIntervalLists`, which is UNDOCUMENTED: the inventory carries a summary only for a documented tool, so this golden is where the declarations generator reads it. Three tools' whole usage text, its line count, and whether -h and --help agree."
+          "why": "Frozen from the candidate artefact of run 41201436568, with the tenth Spark brick (X.1): CollectAllelicCountsSpark, which is UNDOCUMENTED. Frozen from the candidate artefact of run 36808605640 on main, byte for byte the local dump, with `StructuralVariantDiscoverer`, which is UNDOCUMENTED. Frozen from the candidate artefact of run 35839898955 with the twenty-seven tools of #1225, byte for byte what this laptop produced. Re-measured with `AddFlowBaseQuality`, `CRAMIssue8768Detector`, `CollectF1R2Counts` and `SplitCRAM`, all UNDOCUMENTED. Frozen from the candidate artefact of run 35812512951 with `VCFComparator` and `VariantAnnotator`, both UNDOCUMENTED. Frozen from the candidate artefact of run 35797503225 with eight more UNDOCUMENTED walkers, whose summaries only this golden carries. Frozen from the candidate artefact of run 35785932792 with seven more UNDOCUMENTED tools, the gathers and copy-number utilities, whose summaries only this golden carries. Frozen from the candidate artefact of run 35772745546 with `CondenseDepthEvidence` and `PrintSVEvidence`, both UNDOCUMENTED, so this golden is the only place their summaries come from and the declarations generator refuses them without it. Re-measured with `PrintFileDiagnostics`, which is UNDOCUMENTED and prints an EXPERIMENTAL banner above its usage line, in the pinned container on a real x86-64 runner, as the candidate artefact of run 34332537404. Re-measured with `AddOriginalAlignmentTags`, which is UNDOCUMENTED and a read walker: the inventory carries a summary only for a documented tool, so this golden is where the declarations generator reads one, and its usage is the first in this dump to print an EXPERIMENTAL banner above the usage line, which is why the summary is read from between the blank line and `Version:` and not from a fixed offset. In the pinned container on a real x86-64 runner, as the candidate artefact of run 34260197895. Re-measured with `CompareIntervalLists`, which is UNDOCUMENTED: the inventory carries a summary only for a documented tool, so this golden is where the declarations generator reads it. Three tools' whole usage text, its line count, and whether -h and --help agree."
         }
       ]
     },
@@ -6750,7 +6750,7 @@
         {
           "dump": "ToolArgumentEnumDump",
           "golden": "crates/gatk-tools/tests/data/tool_argument_enums.txt.gz",
-          "why": "Frozen from the candidate artefact of run 41130795850, with the ninth Spark brick (X.1): CollectMultipleMetricsSpark and MarkDuplicatesSpark."
+          "why": "Frozen from the candidate artefact of run 41201436568, with the tenth Spark brick (X.1): CollectAllelicCountsSpark."
         }
       ]
     },
@@ -8105,7 +8105,7 @@
     {
       "id": "spark-walkers",
       "status": "oracle-backed",
-      "title": "Twenty-one Spark tools end to end through Main, on one partition",
+      "title": "Twenty-two Spark tools end to end through Main, on one partition",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "CountReadsSpark",
@@ -8126,6 +8126,7 @@
         "CollectBaseDistributionByCycleSpark",
         "CollectQualityYieldMetricsSpark",
         "CompareDuplicatesSpark",
+        "CollectAllelicCountsSpark",
         "CollectInsertSizeMetricsSpark",
         "CollectMultipleMetricsSpark",
         "MarkDuplicatesSpark"
@@ -8191,7 +8192,7 @@
       "compare": {
         "mode": "lines"
       },
-      "expect_rows": 792,
+      "expect_rows": 865,
       "expect_contains": [
         "revert-sam-defaults\tjava.lang.UnsupportedOperationException",
         "revert-sam-sanitize\torg.apache.spark.SparkException:Base quality score -1 is invalid",
@@ -8217,7 +8218,7 @@
         {
           "dump": "SparkWalkersDump",
           "golden": "crates/gatk-tools/tests/data/spark_walkers.txt.gz",
-          "why": "Frozen from the candidate artefact of run 41130795850, with the ninth Spark brick (X.1): CollectMultipleMetricsSpark and MarkDuplicatesSpark."
+          "why": "Frozen from the candidate artefact of run 41201436568, with the tenth Spark brick (X.1): CollectAllelicCountsSpark."
         }
       ],
       "$java_props_why": "GATK's jar carries runtimeAddOpens in its manifest, which only java -jar honours; the dump runs from the classpath, so Spark's StorageUtils needs the same opens passed by hand. Level 2 is what GATKConfig gives a real gatk invocation and instanceMain never sees (#1032)."

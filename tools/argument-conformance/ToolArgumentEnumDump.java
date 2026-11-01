@@ -537,6 +537,8 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.spark.pipelines.metrics.CollectInsertSizeMetricsSpark());
         declarations("CollectMultipleMetricsSpark",
                 new org.broadinstitute.hellbender.tools.spark.pipelines.metrics.CollectMultipleMetricsSpark());
+        declarations("CollectAllelicCountsSpark",
+                new org.broadinstitute.hellbender.tools.copynumber.CollectAllelicCountsSpark());
         declarations("MarkDuplicatesSpark",
                 new org.broadinstitute.hellbender.tools.spark.transforms.markduplicates.MarkDuplicatesSpark());
         declarations("MeanQualityByCycleSpark",

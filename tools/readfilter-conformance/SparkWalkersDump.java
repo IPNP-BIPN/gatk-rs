@@ -89,7 +89,7 @@ public class SparkWalkersDump {
         PrintReadsDump.emptyDirectory(DIR);
         Files.createDirectories(DIR);
 
-        System.out.println("# SparkWalkersDump: twenty-one Spark tools through Main, --spark-master local[1]");
+        System.out.println("# SparkWalkersDump: twenty-two Spark tools through Main, --spark-master local[1]");
 
         final Path fasta = DIR.resolve("ref.fasta");
         Files.write(fasta, ReadWalkerDump.FASTA.getBytes());
@@ -192,7 +192,7 @@ public class SparkWalkersDump {
                 "dup-no-group.bam", "dup-other-group.bam", "dup-fewer.bam", "pairs.bam",
                 "pairs.bai", "pairs-away.bam", "pairs-unsorted.bam", "marking.bam", "marking.bai",
                 "marking-queryname.bam", "marking-unsorted.bam", "marking-one-library.bam",
-                "marking-clean.bam", "marking-no-groups.bam", "marking-no-read-group.bam",
+                "marking-clean.bam", "marking-no-groups.bam", "marking-no-groups.bai", "marking-no-read-group.bam",
                 "marking-unknown-read-group.bam", "marking-three.bam", "marking-collision.bam",
                 "marking-scattered.bam", "marking-flow.bam", "more-queryname.bam", "more-copy.bam",
                 "more-coordinate.bam", "more-coordinate.bai", "more-unsorted.bam", "more-grouped.bam",
@@ -484,6 +484,54 @@ public class SparkWalkersDump {
                 "-O", out("pileup-chr1", "pileup-chr1"));
         run("pileup-shuffle", "pileup-shuffle", "PileupSpark", "-I", i, "-R", r, "--shuffle",
                 "true", "-O", out("pileup-shuffle", "pileup-shuffle"));
+        // COLLECTALLELICCOUNTSSPARK writes a row per locus of the intervals, reads or none.
+        final String allelic = "CollectAllelicCountsSpark";
+        final String[][] allelicRows = {
+                {"allelic-counts", "-L", "chr1:95-125"},
+                {"allelic-counts-quality", "-L", "chr1:95-125", "--minimum-base-quality", "60"},
+                {"allelic-counts-two", "-L", "chr1:95-125", "-L", "chr2:95-125"},
+                {"allelic-counts-shards", "-L", "chr1:95-125", "--read-shard-size", "7"},
+                {"allelic-counts-shuffle", "-L", "chr1:95-125", "--shuffle", "true"},
+                {"allelic-counts-no-filters", "-L", "chr1:95-125", "--disable-tool-default-read-filters", "true"},
+                {"allelic-counts-mapping", "-L", "chr1:95-125", "--minimum-mapping-quality", "0"},
+                {"allelic-counts-away", "-L", "chr2:190-200"},
+                {"allelic-counts-no-intervals"},
+        };
+        for (final String[] row : allelicRows) {
+            final List<String> argv = new ArrayList<>(Arrays.asList("-I", i, "-R", r,
+                    "-O", out(row[0], "allelic.tsv")));
+            argv.addAll(Arrays.asList(row).subList(1, row.length));
+            run(row[0], "allelic.tsv", allelic, argv.toArray(new String[0]));
+        }
+        run("allelic-counts-no-reference", null, allelic, "-I", i, "-L", "chr1:95-125",
+                "-O", out("allelic-counts-no-reference", "allelic.tsv"));
+        // marking.bam's contigs are longer than the reference's, so these turn validation off.
+        // They are the rows with reads under the loci: reads.bam's intervals above come back empty.
+        final String[][] markedRows = {
+                {"allelic-counts-other-dictionary", "marking.bam"},
+                {"allelic-marked-quality", "marking.bam", "--minimum-base-quality", "60"},
+                {"allelic-marked-no-quality", "marking.bam", "--minimum-base-quality", "0"},
+                {"allelic-marked-two", "marking.bam", "-L", "chr2:95-125"},
+                {"allelic-marked-shards", "marking.bam", "--read-shard-size", "7"},
+                {"allelic-marked-shuffle", "marking.bam", "--shuffle", "true"},
+                {"allelic-marked-shuffle-shards", "marking.bam", "--shuffle", "true", "--read-shard-size", "7"},
+                {"allelic-marked-no-filters", "marking.bam", "--disable-tool-default-read-filters", "true"},
+                {"allelic-marked-mapping", "marking.bam", "--minimum-mapping-quality", "0"},
+                {"allelic-marked-depth", "marking.bam", "--max-depth-per-sample", "1"},
+                {"allelic-counts-no-reads", "marking.bam", "--minimum-mapping-quality", "100"},
+                {"allelic-counts-no-reads-shuffle", "marking.bam", "--shuffle", "true",
+                        "--minimum-mapping-quality", "100"},
+                {"allelic-counts-no-sample", "marking-no-groups.bam"},
+                {"allelic-counts-no-sample-unfiltered", "marking-no-groups.bam",
+                        "--disable-tool-default-read-filters", "true"},
+        };
+        for (final String[] row : markedRows) {
+            final List<String> argv = new ArrayList<>(Arrays.asList("-I", DIR.resolve(row[1]).toString(),
+                    "-R", r, "-L", "chr1:95-125", "--disable-sequence-dictionary-validation", "true",
+                    "-O", out(row[0], "allelic.tsv")));
+            argv.addAll(Arrays.asList(row).subList(2, row.length));
+            run(row[0], "allelic.tsv", allelic, argv.toArray(new String[0]));
+        }
         // BQSR: the table over the indexed VCF's sites, the table applied by the next run, and the
         // two passes chained in one job with the table never written.
         final String sites = indexedVcf.toString();

@@ -299,6 +299,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "FlagStatSpark" => Some(run_flag_stat_spark),
         "CountVariantsSpark" => Some(run_count_variants_spark),
         "PileupSpark" => Some(run_pileup_spark),
+        "CollectAllelicCountsSpark" => Some(run_collect_allelic_counts_spark),
         "PrintReadsSpark" => Some(run_print_reads_spark),
         "BaseRecalibratorSpark" => Some(run_base_recalibrator_spark),
         "ApplyBQSRSpark" => Some(run_apply_bqsr_spark),
@@ -686,6 +687,10 @@ fn run_model_segments(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_variant_filtration(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::variant_filtration(&parsed("VariantFiltration", args)?)
+}
+
+fn run_collect_allelic_counts_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::collect_allelic_counts_spark(&parsed("CollectAllelicCountsSpark", args)?)
 }
 
 fn run_collect_allelic_counts(args: &[String]) -> Result<Option<String>, Thrown> {

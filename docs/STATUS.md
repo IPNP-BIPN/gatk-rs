@@ -7,10 +7,10 @@ Ports vendored from main at: htsjdk-rs `0e5afcc8f4bb`, picard-rs `d6e5de789adf`
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 283 | 91.0% |
+| oracle-backed | 284 | 91.3% |
 | golden-pending | 0 | 0.0% |
 | unchecked | 0 | 0.0% |
-| not started | 28 | 9.0% |
+| not started | 27 | 8.7% |
 | **total** | **311** | |
 
 `oracle-backed` means CI re-derives the tool's goldens in the pinned container on every run and compares them. It does **not** mean the tool is byte-identical over its whole argument surface: that is what the argument-coverage column is for. A t-wise array (`tools/coverage/covering.py`, sized in [what-pairwise-coverage-costs.md](what-pairwise-coverage-costs.md)) is run against the reference and the port, and the column reports the fraction of its rows on which the two answered identically, rejections included. `not measured` means the array has never been run against a port binary, which is still true of most tools here.
@@ -149,7 +149,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 
 </details>
 
-## gatk-origin tools (162 of 190 started)
+## gatk-origin tools (163 of 190 started)
 
 | tool | archetype | state | suites | cases | argument coverage | cost (cold / steady) |
 |---|---|---|---|---:|---|---|
@@ -182,17 +182,18 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `CheckReferenceCompatibility` | reference-utility | oracle-backed | check-reference-compatibility | 1 | t=2, 20/20 rows (100%) | 0.003 / 0.068 |
 | `ClipReads` | record-transform | oracle-backed | clip-reads | 1 | t=2, 24/24 rows (100%) | 0.003 / 0.043 |
 | `CollectAllelicCounts` | locus-walker | oracle-backed | collect-allelic-counts | 1 | t=2, 19/19 rows (100%) | 0.007 / 0.170 |
+| `CollectAllelicCountsSpark` | unclassified | oracle-backed | spark-walkers | 1 | not measured | not measured |
 | `CollectBaseDistributionByCycleSpark` | reporting-walker | oracle-backed | spark-walkers | 1 | t=2, 21/21 rows (100%) | not measured |
 | `CollectF1R2Counts` | unclassified | oracle-backed | collect-f1r2-counts | 1 | t=2, 17/17 rows (100%) | 0.027 / 0.518 |
 | `CollectInsertSizeMetricsSpark` | reporting-walker | oracle-backed | spark-walkers | 1 | t=2, 21/21 rows (100%) | not measured |
-| `CollectMultipleMetricsSpark` | reporting-walker | oracle-backed | spark-walkers | 1 | not measured | not measured |
+| `CollectMultipleMetricsSpark` | reporting-walker | oracle-backed | spark-walkers | 1 | t=2, 23/23 rows (100%) | not measured |
 | `CollectQualityYieldMetricsSpark` | reporting-walker | oracle-backed | spark-walkers | 1 | t=2, 22/22 rows (100%) | not measured |
 | `CollectReadCounts` | locus-walker | oracle-backed | collect-read-counts | 1 | t=2, 18/18 rows (100%) | 0.002 / 0.055 |
 | `CollectSVEvidence` | sv-caller | oracle-backed | collect-sv-evidence | 1 | t=2, 20/20 rows (100%) | 0.002 / 0.058 |
 | `CombineGVCFs` | assembly-caller | oracle-backed | combine-gvcfs | 1 | t=2, 26/26 rows (100%) | 0.004 / 0.079 |
 | `CombineSegmentBreakpoints` | unclassified | oracle-backed | combine-segment-breakpoints | 1 | t=2, 18/18 rows (100%) | 0.002 / 0.045 |
 | `CompareBaseQualities` | reporting-walker | oracle-backed | compare-base-qualities | 1 | t=2, 11/11 rows (100%) | 0.003 / 0.090 |
-| `CompareDuplicatesSpark` | reporting-walker | oracle-backed | spark-walkers | 1 | not measured | not measured |
+| `CompareDuplicatesSpark` | reporting-walker | oracle-backed | spark-walkers | 1 | t=2, 22/22 rows (100%) | not measured |
 | `CompareIntervalLists` | unclassified | oracle-backed | compare-interval-lists | 1 | t=2, 7/7 rows (100%), **1 distinct output** | 0.002 / 0.060 |
 | `CompareReferences` | reference-utility | oracle-backed | compare-references | 1 | t=2, 20/20 rows (100%) | 0.002 / 0.054 |
 | `ComposeSTRTableFile` | reference-utility | oracle-backed | compose-str-table-file | 1 | t=2, 22/22 rows (100%) | 0.003 / 0.073 |
@@ -257,7 +258,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `LeftAlignIndels` | record-transform | oracle-backed | left-align-indels-tool | 1 | t=2, 19/19 rows (100%) | 0.003 / 0.044 |
 | `LocalAssembler` | locus-walker | oracle-backed | local-assembler | 1 | t=2, 21/21 rows (100%) | 0.004 / 0.105 |
 | `MTLowHeteroplasmyFilterTool` | unclassified | oracle-backed | mt-low-heteroplasmy | 1 | t=2, 15/15 rows (100%) | 0.002 / 0.055 |
-| `MarkDuplicatesSpark` | record-transform | oracle-backed | spark-walkers | 1 | not measured | not measured |
+| `MarkDuplicatesSpark` | record-transform | oracle-backed | spark-walkers | 1 | t=2, 27/27 rows (100%) | not measured |
 | `MeanQualityByCycleSpark` | reporting-walker | oracle-backed | spark-walkers | 1 | t=2, 21/21 rows (100%) | not measured |
 | `MergeAnnotatedRegions` | unclassified | oracle-backed | merge-annotated-regions | 1 | t=2, 18/18 rows (100%) | 0.002 / 0.058 |
 | `MergeAnnotatedRegionsByAnnotation` | unclassified | oracle-backed | merge-annotated-regions-by-annotation | 1 | t=2, 22/22 rows (100%) | 0.002 / 0.057 |
@@ -316,9 +317,9 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `VariantRecalibrator` | variant-transform | oracle-backed | variant-recalibrator | 1 | t=2, 26/26 rows (100%) | 0.081 / 1.010 |
 | `VariantsToTable` | variant-walker | oracle-backed | variants-to-table | 1 | t=2, 23/23 rows (100%) | 0.002 / 0.056 |
 
-<details><summary>28 not started</summary>
+<details><summary>27 not started</summary>
 
-`BwaAndMarkDuplicatesPipelineSpark`, `BwaSpark`, `CalcMetadataSpark`, `CollectAllelicCountsSpark`, `CpxVariantReInterpreterSpark`, `DetermineGermlineContigPloidy`, `DiscoverVariantsFromContigAlignmentsSAMSpark`, `ExtractSVEvidenceSpark`, `FindBadGenomicKmersSpark`, `FindBreakpointEvidenceSpark`, `GenomicsDBImport`, `GermlineCNVCaller`, `HaplotypeCallerSpark`, `HtsgetReader`, `NVScoreVariants`, `ParallelCopyGCSDirectoryIntoHDFSSpark`, `PathSeqBwaSpark`, `PathSeqFilterSpark`, `PathSeqPipelineSpark`, `PathSeqScoreSpark`, `PlotDenoisedCopyRatios`, `PlotModeledSegments`, `PostprocessGermlineCNVCalls`, `ReadsPipelineSpark`, `ScoreVariantAnnotations`, `StructuralVariationDiscoveryPipelineSpark`, `SvDiscoverFromLocalAssemblyContigAlignmentsSpark`, `TrainVariantAnnotationsModel`
+`BwaAndMarkDuplicatesPipelineSpark`, `BwaSpark`, `CalcMetadataSpark`, `CpxVariantReInterpreterSpark`, `DetermineGermlineContigPloidy`, `DiscoverVariantsFromContigAlignmentsSAMSpark`, `ExtractSVEvidenceSpark`, `FindBadGenomicKmersSpark`, `FindBreakpointEvidenceSpark`, `GenomicsDBImport`, `GermlineCNVCaller`, `HaplotypeCallerSpark`, `HtsgetReader`, `NVScoreVariants`, `ParallelCopyGCSDirectoryIntoHDFSSpark`, `PathSeqBwaSpark`, `PathSeqFilterSpark`, `PathSeqPipelineSpark`, `PathSeqScoreSpark`, `PlotDenoisedCopyRatios`, `PlotModeledSegments`, `PostprocessGermlineCNVCalls`, `ReadsPipelineSpark`, `ScoreVariantAnnotations`, `StructuralVariationDiscoveryPipelineSpark`, `SvDiscoverFromLocalAssemblyContigAlignmentsSpark`, `TrainVariantAnnotationsModel`
 
 </details>
 
