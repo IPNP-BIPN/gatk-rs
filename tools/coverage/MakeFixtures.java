@@ -6220,6 +6220,239 @@ public class MakeFixtures {
         pathSeqScoreReads(dir);
         svEvidenceReads(dir);
         svContigReads(dir);
+        bwaFixtures(dir);
+    }
+
+    /**
+     * BwaSpark and its pipeline: a reference with its image, whose second contig repeats pieces of
+     * the first and holds a run of N, and reads as a sequencer would leave them, queryname sorted
+     * and unaligned. Some pairs are the same fragment twice, for the duplicate marking, and some
+     * are chimeras, junk or too short to place.
+     */
+    static void bwaFixtures(final Path dir) throws Exception {
+        final java.util.Random random = new java.util.Random(77L);
+        final java.util.function.IntFunction<String> bases = length -> {
+            final StringBuilder made = new StringBuilder(length);
+            for (int i = 0; i != length; ++i) {
+                made.append("ACGT".charAt(random.nextInt(4)));
+            }
+            return made.toString();
+        };
+        final String first = bases.apply(40000);
+        final String second = bases.apply(6000) + first.substring(1000, 3500) + "N".repeat(50) + bases.apply(4000)
+                + "R" + first.substring(9000, 11000) + bases.apply(5000);
+        final java.util.function.BiFunction<String, String, String> contig = (name, sequence) -> {
+            final StringBuilder lines = new StringBuilder(">" + name + "\n");
+            for (int at = 0; at < sequence.length(); at += 60) {
+                lines.append(sequence, at, Math.min(at + 60, sequence.length())).append('\n');
+            }
+            return lines.toString();
+        };
+        final Path fasta = dir.resolve("bwa.fasta");
+        Files.writeString(fasta, contig.apply("bwa1", first) + contig.apply("bwa2", second), StandardCharsets.UTF_8);
+        htsjdk.samtools.reference.FastaSequenceIndexCreator.create(fasta, true);
+        Files.writeString(dir.resolve("bwa.dict"), "@HD\tVN:1.6\n@SQ\tSN:bwa1\tLN:" + first.length()
+                + "\n@SQ\tSN:bwa2\tLN:" + second.length() + "\n", StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.Main().instanceMain(new String[] {"BwaMemIndexImageCreator",
+                "-I", fasta.toString(), "-O", dir.resolve("bwa.fasta.img").toString()});
+        Files.copy(dir.resolve("bwa.fasta.img"), dir.resolve("bwa_named.img"),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        Files.writeString(dir.resolve("bwa_not_image.img"), "not an image\n", StandardCharsets.UTF_8);
+        Files.copy(fasta, dir.resolve("bwa_no_image.fasta"), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        Files.copy(dir.resolve("bwa.fasta.fai"), dir.resolve("bwa_no_image.fasta.fai"),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        Files.copy(dir.resolve("bwa.dict"), dir.resolve("bwa_no_image.dict"),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+
+        final java.util.function.UnaryOperator<String> flip = sequence -> {
+            final StringBuilder flipped = new StringBuilder(sequence.length());
+            for (int at = sequence.length() - 1; at >= 0; --at) {
+                flipped.append("TGCAN".charAt(Math.max("ACGTN".indexOf(sequence.charAt(at)), 0)));
+            }
+            return flipped.toString();
+        };
+        final java.util.function.UnaryOperator<String> noisy = sequence -> {
+            final StringBuilder changed = new StringBuilder(sequence);
+            for (int at = 0; at != changed.length(); ++at) {
+                if (random.nextInt(60) == 0) {
+                    changed.setCharAt(at, "ACGT".charAt(random.nextInt(4)));
+                }
+            }
+            return changed.toString();
+        };
+        final List<String[]> pairs = new ArrayList<>();
+        String[] last = null;
+        for (int i = 0; i != 300; ++i) {
+            final String template = random.nextInt(3) == 0 ? second.replace('N', 'A').replace('R', 'A') : first;
+            final int length = 200 + random.nextInt(300);
+            final int start = random.nextInt(template.length() - length);
+            final String fragment = template.substring(start, start + length);
+            final String[] pair;
+            final int kind = random.nextInt(20);
+            if (kind == 0) {
+                pair = new String[] {bases.apply(101), bases.apply(101)};
+            } else if (kind == 1) {
+                pair = new String[] {noisy.apply(fragment.substring(0, 101)), bases.apply(101)};
+            } else if (kind == 2) {
+                final int other = random.nextInt(first.length() - 60);
+                pair = new String[] {fragment.substring(0, 50) + flip.apply(first.substring(other, other + 60)),
+                        flip.apply(fragment.substring(length - 101))};
+            } else if (kind == 3) {
+                pair = new String[] {fragment.substring(0, 15), flip.apply(fragment.substring(length - 18))};
+            } else if (kind <= 6 && last != null) {
+                pair = last;
+            } else {
+                pair = new String[] {noisy.apply(fragment.substring(0, 101)),
+                        noisy.apply(flip.apply(fragment.substring(length - 101)))};
+            }
+            pairs.add(pair);
+            last = pair;
+        }
+        bwaReadBam(dir.resolve("bwa_reads.bam"), pairs, SAMFileHeader.SortOrder.queryname, true, null);
+        bwaReadBam(dir.resolve("bwa_reads_unsorted.bam"), pairs, SAMFileHeader.SortOrder.unsorted, true, null);
+        bwaReadBam(dir.resolve("bwa_reads_no_group.bam"), pairs, SAMFileHeader.SortOrder.queryname, false, null);
+        bwaReadBam(dir.resolve("bwa_reads_dictionary.bam"), pairs, SAMFileHeader.SortOrder.queryname, true,
+                new String[] {"bwa1", String.valueOf(first.length()), "bwa2", String.valueOf(second.length())});
+        bwaReadBam(dir.resolve("bwa_reads_other_dictionary.bam"), pairs, SAMFileHeader.SortOrder.queryname, true,
+                new String[] {"bwa1", String.valueOf(first.length())});
+        bwaReadBam(dir.resolve("bwa_empty.bam"), new ArrayList<>(), SAMFileHeader.SortOrder.queryname, true, null);
+        final List<String[]> iupac = new ArrayList<>();
+        for (final String[] pair : pairs.subList(0, 40)) {
+            iupac.add(new String[] {pair[0].substring(0, 30) + "RYN" + pair[0].substring(33), pair[1]});
+        }
+        bwaReadBam(dir.resolve("bwa_iupac.bam"), iupac, SAMFileHeader.SortOrder.queryname, true, null);
+        final List<String[]> noSequence = new ArrayList<>(pairs.subList(0, 6));
+        noSequence.add(new String[] {"", pairs.get(7)[1]});
+        noSequence.addAll(pairs.subList(8, 12));
+        bwaReadBam(dir.resolve("bwa_no_sequence.bam"), noSequence, SAMFileHeader.SortOrder.queryname, true, null);
+
+        final SAMFileHeader header = new SAMFileHeader();
+        header.setSortOrder(SAMFileHeader.SortOrder.queryname);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("s");
+        header.addReadGroup(group);
+        try (SAMFileWriter writer = new SAMFileWriterFactory().makeBAMWriter(header, true, dir.resolve("bwa_odd.bam"))) {
+            for (int i = 0; i != 3; ++i) {
+                writer.addAlignment(bwaRead(header, "odd", 77, pairs.get(i)[0], true));
+            }
+        }
+        try (SAMFileWriter writer = new SAMFileWriterFactory().makeBAMWriter(header, true, dir.resolve("bwa_names.bam"))) {
+            writer.addAlignment(bwaRead(header, "a", 77, pairs.get(0)[0], true));
+            writer.addAlignment(bwaRead(header, "b", 141, pairs.get(0)[1], true));
+        }
+        try (SAMFileWriter writer = new SAMFileWriterFactory().makeBAMWriter(header, true, dir.resolve("bwa_no_qualities.bam"))) {
+            for (int i = 0; i != 10; ++i) {
+                writer.addAlignment(bwaRead(header, String.format("q%03d", i), 77, pairs.get(i)[0], false));
+                writer.addAlignment(bwaRead(header, String.format("q%03d", i), 141, pairs.get(i)[1], false));
+            }
+        }
+
+        // PathSeq's microbes are those contigs under names a taxonomy reads, one of them repeated
+        // for alternate hits and one no read can reach; its host is the second contig alone.
+        final String repeated = first.substring(20000, 24000) + bases.apply(1500);
+        final String lonely = bases.apply(1500);
+        final Path microbes = dir.resolve("ps_microbe.fasta");
+        Files.writeString(microbes, contig.apply("taxid|562|", first) + contig.apply("taxid|1280|", second)
+                + contig.apply("taxid|11234|", repeated) + contig.apply("unknown_contig", first.substring(30000, 32000))
+                + contig.apply("taxid|300|", lonely), StandardCharsets.UTF_8);
+        htsjdk.samtools.reference.FastaSequenceIndexCreator.create(microbes, true);
+        Files.writeString(dir.resolve("ps_microbe.dict"), "@HD\tVN:1.6\n@SQ\tSN:taxid|562|\tLN:" + first.length()
+                + "\n@SQ\tSN:taxid|1280|\tLN:" + second.length() + "\n@SQ\tSN:taxid|11234|\tLN:" + repeated.length()
+                + "\n@SQ\tSN:unknown_contig\tLN:2000\n@SQ\tSN:taxid|300|\tLN:" + lonely.length() + "\n",
+                StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.Main().instanceMain(new String[] {"BwaMemIndexImageCreator",
+                "-I", microbes.toString(), "-O", dir.resolve("ps_microbe.img").toString()});
+        final Path host = dir.resolve("ps_host.fasta");
+        Files.writeString(host, contig.apply("host1", second), StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.Main().instanceMain(new String[] {"BwaMemIndexImageCreator",
+                "-I", host.toString(), "-O", dir.resolve("ps_host.img").toString()});
+        final String names = String.join("\n", "1\t|\troot\t|\t\t|\tscientific name\t|",
+                "2\t|\tBacteria\t|\t\t|\tscientific name\t|", "10239\t|\tViruses\t|\t\t|\tscientific name\t|",
+                "562\t|\tEscherichia coli\t|\t\t|\tscientific name\t|", "1280\t|\tStaphylococcus aureus\t|\t\t|\tscientific name\t|",
+                "11234\t|\tMeasles morbillivirus\t|\t\t|\tscientific name\t|", "300\t|\tPseudomonas\t|\t\t|\tscientific name\t|") + "\n";
+        final String nodes = String.join("\n", "1\t|\t1\t|\tno rank\t|", "2\t|\t1\t|\tsuperkingdom\t|",
+                "10239\t|\t1\t|\tsuperkingdom\t|", "562\t|\t2\t|\tspecies\t|", "1280\t|\t2\t|\tspecies\t|",
+                "11234\t|\t10239\t|\tspecies\t|", "300\t|\t1\t|\tno rank\t|") + "\n";
+        try (final org.apache.commons.compress.archivers.tar.TarArchiveOutputStream tar =
+                     new org.apache.commons.compress.archivers.tar.TarArchiveOutputStream(
+                             new java.util.zip.GZIPOutputStream(Files.newOutputStream(dir.resolve("ps_taxa.tar.gz"))))) {
+            for (final String[] entry : new String[][] {{"names.dmp", names}, {"nodes.dmp", nodes}}) {
+                final byte[] bytes = entry[1].getBytes(StandardCharsets.UTF_8);
+                final org.apache.commons.compress.archivers.tar.TarArchiveEntry made =
+                        new org.apache.commons.compress.archivers.tar.TarArchiveEntry(entry[0]);
+                made.setSize(bytes.length);
+                made.setModTime(0L);
+                tar.putArchiveEntry(made);
+                tar.write(bytes);
+                tar.closeArchiveEntry();
+            }
+        }
+        Files.writeString(dir.resolve("rp_known.vcf"), "##fileformat=VCFv4.2\n##contig=<ID=bwa1,length=" + first.length()
+                + ">\n##contig=<ID=bwa2,length=" + second.length() + ">\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
+                + "bwa1\t5000\t.\t" + first.charAt(4999) + "\t" + (first.charAt(4999) == 'A' ? 'C' : 'A') + "\t.\t.\t.\n",
+                StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.Main().instanceMain(new String[] {"IndexFeatureFile",
+                "-I", dir.resolve("rp_known.vcf").toString()});
+        try (final htsjdk.samtools.SamReader source = htsjdk.samtools.SamReaderFactory.makeDefault()
+                .open(dir.resolve("bwa_reads.bam"))) {
+            final SAMFileHeader platform = source.getFileHeader().clone();
+            platform.getReadGroups().forEach(line -> line.setPlatform("ILLUMINA"));
+            try (SAMFileWriter writer = new SAMFileWriterFactory().makeBAMWriter(platform, true,
+                    dir.resolve("rp_reads.bam"))) {
+                source.forEach(read -> {
+                    read.setHeader(platform);
+                    writer.addAlignment(read);
+                });
+            }
+        }
+        Files.writeString(dir.resolve("ps_taxa.catalog"), "a\tNOTHING.1\tc\td\te\tf\t562\th\n", StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.Main().instanceMain(new String[] {"PathSeqBuildReferenceTaxonomy",
+                "-R", microbes.toString(), "--tax-dump", dir.resolve("ps_taxa.tar.gz").toString(),
+                "-O", dir.resolve("ps_taxa.db").toString(), "--genbank-catalog", dir.resolve("ps_taxa.catalog").toString(),
+                "--min-non-virus-contig-length", "0"});
+    }
+
+    static void bwaReadBam(final Path bam, final List<String[]> pairs, final SAMFileHeader.SortOrder order,
+                           final boolean grouped, final String[] dictionary) {
+        final SAMFileHeader header = new SAMFileHeader();
+        header.setSortOrder(order);
+        if (grouped) {
+            final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+            group.setSample("s");
+            group.setLibrary("l");
+            header.addReadGroup(group);
+        }
+        if (dictionary != null) {
+            for (int at = 0; at < dictionary.length; at += 2) {
+                header.addSequence(new SAMSequenceRecord(dictionary[at], Integer.parseInt(dictionary[at + 1])));
+            }
+        }
+        try (SAMFileWriter writer = new SAMFileWriterFactory().makeBAMWriter(header, true, bam)) {
+            for (int i = 0; i != pairs.size(); ++i) {
+                final String name = String.format("p%04d", i);
+                writer.addAlignment(bwaRead(header, name, 77, pairs.get(i)[0], true));
+                writer.addAlignment(bwaRead(header, name, 141, pairs.get(i)[1], true));
+            }
+        }
+    }
+
+    static SAMRecord bwaRead(final SAMFileHeader header, final String name, final int flags,
+                             final String sequence, final boolean qualities) {
+        final SAMRecord read = new SAMRecord(header);
+        read.setReadName(name);
+        read.setFlags(flags);
+        read.setReadString(sequence.isEmpty() ? SAMRecord.NULL_SEQUENCE_STRING : sequence);
+        if (qualities && !sequence.isEmpty()) {
+            final byte[] scores = new byte[sequence.length()];
+            for (int at = 0; at != scores.length; ++at) {
+                scores[at] = (byte) (10 + (name.hashCode() + at * 7 & 0x1F));
+            }
+            read.setBaseQualities(scores);
+        }
+        if (!header.getReadGroups().isEmpty()) {
+            read.setAttribute("RG", "rg1");
+        }
+        return read;
     }
 
     /**

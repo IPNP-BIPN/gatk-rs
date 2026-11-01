@@ -66,6 +66,9 @@ pub struct Filtered {
     pub metrics: FilterMetrics,
 }
 
+/// `PSBwaFilter.apply`, given to `do_filter` by whoever holds the image.
+pub type HostFilter<'a> = dyn Fn(Vec<BamRecord>) -> Result<Vec<BamRecord>, String> + 'a;
+
 /// `PSFilterMetrics`.
 #[derive(Debug, Clone, Default)]
 pub struct FilterMetrics {
@@ -304,6 +307,16 @@ pub fn matches_less_deletions_of(elements: &[CigarElement], nm: i32) -> i32 {
 }
 
 /// `HostAlignmentReadFilter.test`.
+/// `HostAlignmentReadFilter.test`, over a line of BWA's.
+pub fn host_alignment_keeps(line: &BamRecord, min_identity: i32) -> bool {
+    match line.tags.get(Tag::new(b"NM")) {
+        Some(TagValue::Int(nm)) => {
+            matches_less_deletions_of(&line.cigar.elements, *nm as i32) < min_identity
+        }
+        _ => true,
+    }
+}
+
 fn survives_host_alignment(
     record: &BamRecord,
     contigs: &[String],
@@ -806,6 +819,7 @@ pub fn do_filter(
     contigs: &[String],
     arguments: &FilterArguments,
     load_kmers: Option<&dyn Fn() -> Result<KmerLibrary, String>>,
+    host_filter: Option<&HostFilter<'_>>,
 ) -> Result<Filtered, String> {
     let mut metrics = FilterMetrics::default();
     let mut reads: Vec<BamRecord> = reads
@@ -886,6 +900,9 @@ pub fn do_filter(
             });
         }
     }
+    if let Some(run) = host_filter {
+        reads = run(reads)?;
+    }
     metrics.after_host = reads.len() as i64;
 
     let guess = arguments.reads_per_partition;
@@ -902,6 +919,82 @@ pub fn do_filter(
         unpaired,
         metrics,
     })
+}
+
+/// Scala's `MurmurHash3.bytesHash`.
+fn scala_bytes_hash(data: &[u8], seed: i32) -> i32 {
+    let mix_last = |hash: i32, data: i32| {
+        (hash as u32
+            ^ (data as u32)
+                .wrapping_mul(0xcc9e2d51)
+                .rotate_left(15)
+                .wrapping_mul(0x1b873593)) as i32
+    };
+    let mut hash = seed;
+    let mut chunks = data.chunks_exact(4);
+    for chunk in &mut chunks {
+        let word = i32::from_le_bytes(chunk.try_into().expect("four bytes"));
+        hash = ((mix_last(hash, word) as u32)
+            .rotate_left(13)
+            .wrapping_mul(5)
+            .wrapping_add(0xe6546b64)) as i32;
+    }
+    let mut tail = 0u32;
+    let rest = chunks.remainder();
+    for (at, byte) in rest.iter().enumerate() {
+        tail ^= u32::from(*byte) << (8 * at);
+    }
+    if !rest.is_empty() {
+        hash = mix_last(hash, tail as i32);
+    }
+    let mut last = hash as u32 ^ data.len() as u32;
+    last ^= last >> 16;
+    last = last.wrapping_mul(0x85ebca6b);
+    last ^= last >> 13;
+    last = last.wrapping_mul(0xc2b2ae35);
+    last ^= last >> 16;
+    last as i32
+}
+
+/// Where `new XORShiftRandom(index).nextInt(bound)` starts.
+fn spark_xorshift_start(index: i64, bound: i32) -> i32 {
+    let bytes = index.to_be_bytes();
+    let low = scala_bytes_hash(&bytes, 0x3c074a61);
+    let high = scala_bytes_hash(&bytes, low);
+    let mut seed = (i64::from(high) << 32) | (i64::from(low) & 0xffff_ffff);
+    let mut next = || {
+        seed ^= seed << 21;
+        seed ^= ((seed as u64) >> 35) as i64;
+        seed ^= seed << 4;
+        (seed & 0x7fff_ffff) as i32
+    };
+    // `java.util.Random.nextInt(bound)` over that `next(31)`.
+    if bound & (bound - 1) == 0 {
+        return ((i64::from(bound) * i64::from(next())) >> 31) as i32;
+    }
+    loop {
+        let bits = next();
+        let value = bits % bound;
+        if bits.wrapping_sub(value).wrapping_add(bound - 1) >= 0 {
+            return value;
+        }
+    }
+}
+
+/// `RDD.repartition` of one partition: round the new partitions from where the generator of that
+/// partition starts, each keeping the order items came in.
+pub fn spark_repartition<T>(items: Vec<T>, partitions: usize) -> Vec<Vec<T>> {
+    let mut output: Vec<Vec<T>> = (0..partitions).map(|_| Vec::new()).collect();
+    let mut position = if partitions == 1 {
+        0
+    } else {
+        spark_xorshift_start(0, partitions as i32) as usize
+    };
+    for item in items {
+        position += 1;
+        output[position % partitions].push(item);
+    }
+    output
 }
 
 #[cfg(test)]

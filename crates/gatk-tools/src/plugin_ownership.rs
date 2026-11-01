@@ -333,7 +333,12 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         | "ExtractSVEvidenceSpark"
         | "PathSeqFilterSpark"
         | "PathSeqScoreSpark"
+        | "PathSeqBwaSpark"
+        | "PathSeqPipelineSpark"
+        | "BwaAndMarkDuplicatesPipelineSpark"
         | "ReadsPipelineSpark" => Some(&["WellformedReadFilter"]),
+        // `BwaSpark.getDefaultReadFilters`.
+        "BwaSpark" => Some(&["PrimaryLineReadFilter", "SeqIsStoredReadFilter"]),
         // `DiscoverVariantsFromContigAlignmentsSAMSpark.getDefaultReadFilters`, in place of the rest.
         // And `SvDiscoverFromLocalAssemblyContigAlignmentsSpark`'s and `CpxVariantReInterpreterSpark`'s.
         "DiscoverVariantsFromContigAlignmentsSAMSpark"

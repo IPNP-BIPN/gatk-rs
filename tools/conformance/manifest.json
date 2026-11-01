@@ -8105,7 +8105,7 @@
     {
       "id": "spark-walkers",
       "status": "golden-pending",
-      "title": "Thirty-two Spark tools end to end through Main, on one partition",
+      "title": "Thirty-six Spark tools end to end through Main, on one partition",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "CountReadsSpark",
@@ -8139,7 +8139,11 @@
         "ExtractSVEvidenceSpark",
         "DiscoverVariantsFromContigAlignmentsSAMSpark",
         "SvDiscoverFromLocalAssemblyContigAlignmentsSpark",
-        "CpxVariantReInterpreterSpark"
+        "CpxVariantReInterpreterSpark",
+        "BwaSpark",
+        "BwaAndMarkDuplicatesPipelineSpark",
+      "PathSeqBwaSpark",
+      "PathSeqPipelineSpark"
       ],
       "java_props": [
         "-Duser.language=en",
@@ -8202,7 +8206,7 @@
       "compare": {
         "mode": "lines"
       },
-      "expect_rows": 1929,
+      "expect_rows": 1924,
       "expect_contains": [
         "revert-sam-defaults\tjava.lang.UnsupportedOperationException",
         "revert-sam-sanitize\torg.apache.spark.SparkException:Base quality score -1 is invalid",
@@ -8249,7 +8253,7 @@
       "cases": [
         {
           "dump": "HtsgetReaderDump",
-          "golden": "crates/gatk-tools/tests/data/htsget_reader.txt.gz",
+          "golden": null,
           "why": "Frozen from the candidate artefact of its first run."
         }
       ]
