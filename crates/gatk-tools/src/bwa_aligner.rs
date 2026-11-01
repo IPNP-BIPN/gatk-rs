@@ -136,7 +136,23 @@ pub fn alignments(
         if line.starts_with('@') {
             continue;
         }
-        let record = htsjdk_bam::text_parse::parse_line(line, resolve)
+        let mut fields: Vec<&str> = line.split('\t').collect();
+        // `applyAlignment` looks the contig up by its name, whatever the header holds.
+        if let Some(contig) = fields
+            .get(2)
+            .filter(|contig| **contig != "*" && resolve(contig).is_none())
+        {
+            return Err(format!(
+                "Reference index for '{contig}' not found in sequence dictionary."
+            ));
+        }
+        // A read of no bases is answered with nothing between the tabs.
+        for field in [9, 10] {
+            if let Some(value) = fields.get_mut(field).filter(|value| value.is_empty()) {
+                *value = "*";
+            }
+        }
+        let record = htsjdk_bam::text_parse::parse_line(&fields.join("\t"), resolve)
             .map_err(|error| format!("{error:?}"))?;
         let index = record_index(&record, paired)?;
         answers
@@ -254,7 +270,7 @@ fn record_index(record: &BamRecord, paired: bool) -> Result<usize, String> {
 
 /// `applyAlignment` over one line: the bases and qualities are the input's, turned round for a
 /// reverse strand and cut to what a supplementary line's hard clips leave.
-fn apply_alignment(read: &BamRecord, alignment: BamRecord, always_scores: bool) -> BamRecord {
+fn apply_alignment(read: &BamRecord, alignment: BamRecord, generic: bool) -> BamRecord {
     const REVERSE: u16 = 0x10;
     const SECONDARY: u16 = 0x100;
     let mut bases = read.read_bases.clone();
@@ -285,7 +301,7 @@ fn apply_alignment(read: &BamRecord, alignment: BamRecord, always_scores: bool) 
     // `createSATags` builds the list BWA wrote, and the record takes it last.
     let mut tags = Tags::new();
     if alignment.cigar.is_empty() {
-        if always_scores {
+        if generic {
             tags.insert(Tag::new(b"AS"), TagValue::Int(0));
             tags.insert(Tag::new(b"XS"), TagValue::Int(0));
         }
@@ -299,8 +315,11 @@ fn apply_alignment(read: &BamRecord, alignment: BamRecord, always_scores: bool) 
     if let Some(group) = read.tags.get(Tag::new(b"RG")) {
         tags.insert(Tag::new(b"RG"), group.clone());
     }
-    if let Some(value) = alignment.tags.get(Tag::new(b"SA")) {
-        tags.insert(Tag::new(b"SA"), value.clone());
+    // `BwaMemAlignmentUtils.makeSAMRecords` writes it, which the PathSeq aligner does not go through.
+    if generic {
+        if let Some(value) = alignment.tags.get(Tag::new(b"SA")) {
+            tags.insert(Tag::new(b"SA"), value.clone());
+        }
     }
     BamRecord {
         read_name: read.read_name.clone(),

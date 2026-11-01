@@ -232,7 +232,7 @@ public class SparkWalkersDump {
                 "sv_cpx_no_dictionary.vcf", "sv_cpx_no_dictionary_one.vcf", "sv_cpx_sparse.vcf",
                 "sv_cpx_bad_segment.vcf", "sv_cpx_whole_contig.vcf", "sv_cpx_bad_length.vcf",
                 "bwa.fasta", "bwa.fasta.fai", "bwa.dict", "bwa.fasta.img", "bwa_named.img", "bwa_not_image.img",
-                "rp_known.vcf", "rp_known.vcf.idx", "rp_reads.bam", "ps_microbe.img", "ps_microbe.dict", "ps_host.img", "ps_taxa.db", "bwa_no_image.fasta", "bwa_no_image.fasta.fai", "bwa_no_image.dict", "bwa_reads.bam",
+                "rp_known.vcf", "rp_known.vcf.idx", "rp_reads.bam", "rp_single.bam", "ps_microbe.img", "ps_microbe.dict", "ps_host.img", "ps_taxa.db", "bwa_no_image.fasta", "bwa_no_image.fasta.fai", "bwa_no_image.dict", "bwa_reads.bam",
                 "bwa_reads_unsorted.bam", "bwa_reads_no_group.bam", "bwa_reads_dictionary.bam",
                 "bwa_reads_other_dictionary.bam", "bwa_empty.bam", "bwa_iupac.bam", "bwa_no_sequence.bam",
                 "bwa_odd.bam", "bwa_names.bam", "bwa_no_qualities.bam"}) {
@@ -1459,9 +1459,6 @@ public class SparkWalkersDump {
                 {"psp-empty", DIR.resolve("bwa_empty.bam").toString()},
                 {"psp-odd", DIR.resolve("bwa_odd.bam").toString()},
                 {"psp-reducers", reads, "--num-reducers", "2"},
-                {"psp-image-missing", reads, "--microbe-bwa-image", DIR.resolve("nowhere.img").toString()},
-                {"psp-dict-missing", reads, "--microbe-dict", DIR.resolve("nowhere.dict").toString()},
-                {"psp-db-missing", reads, "--taxonomy-file", DIR.resolve("nowhere.db").toString()},
         };
         for (final String[] one : pipeline) {
             final String name = one[0];
@@ -1484,7 +1481,7 @@ public class SparkWalkersDump {
         final String[][] readsPipeline = {
                 {"rp-align", platformed},
                 {"rp-align-no-platform", reads},
-                {"rp-align-single", platformed, "--single-end-alignment"},
+                {"rp-align-single", DIR.resolve("rp_single.bam").toString(), "--single-end-alignment"},
                 {"rp-align-dictionary", DIR.resolve("bwa_reads_dictionary.bam").toString()},
                 {"rp-align-unsorted", unsorted},
                 {"rp-align-named", platformed, "--bwa-mem-index-image", DIR.resolve("bwa_named.img").toString()},
@@ -1502,6 +1499,15 @@ public class SparkWalkersDump {
                 rest.add("true");
             }
             run(name, name + ".vcf", "ReadsPipelineSpark", rest.toArray(new String[0]));
+        }
+        final String[][] missing = {
+                {"psp-image-missing", DIR.resolve("nowhere.img").toString(), microbe[3], db},
+                {"psp-dict-missing", microbe[1], DIR.resolve("nowhere.dict").toString(), db},
+                {"psp-db-missing", microbe[1], microbe[3], DIR.resolve("nowhere.db").toString()},
+        };
+        for (final String[] one : missing) {
+            run(one[0], null, "PathSeqPipelineSpark", microbe[0], one[1], microbe[2], one[2], "-I", reads,
+                    "--taxonomy-file", one[3], "--scores-output", out(one[0], "s.txt"));
         }
         run("psp-only-scores", "s.txt", "PathSeqPipelineSpark", microbe[0], microbe[1], microbe[2], microbe[3], "-I", reads,
                 "--taxonomy-file", db, "--scores-output", out("psp-only-scores", "s.txt"));
@@ -1687,6 +1693,17 @@ public class SparkWalkersDump {
                     read.setHeader(platform);
                     writer.addAlignment(read);
                 });
+            }
+        }
+        final SAMFileHeader singles = new SAMFileHeader();
+        singles.setSortOrder(SAMFileHeader.SortOrder.queryname);
+        final SAMReadGroupRecord singlesGroup = new SAMReadGroupRecord("rg1");
+        singlesGroup.setSample("s");
+        singlesGroup.setPlatform("ILLUMINA");
+        singles.addReadGroup(singlesGroup);
+        try (SAMFileWriter writer = new SAMFileWriterFactory().makeBAMWriter(singles, true, dir.resolve("rp_single.bam"))) {
+            for (int i = 0; i != 60; ++i) {
+                writer.addAlignment(bwaRead(singles, String.format("s%03d", i), 4, pairs.get(i)[0].substring(0, 60), true));
             }
         }
         Files.writeString(dir.resolve("ps_taxa.catalog"), "a\tNOTHING.1\tc\td\te\tf\t562\th\n", StandardCharsets.UTF_8);
