@@ -595,9 +595,7 @@ fn run_dust(bases: &[u8], window: i32, tscore: f64) -> Option<Vec<(i32, i32)>> {
                     }
                     if new_score >= max_score {
                         max_score = new_score;
-                        if cursor > 0 {
-                            cursor -= 1;
-                        }
+                        cursor = cursor.saturating_sub(1);
                         perfect.insert(
                             cursor,
                             Perfect {

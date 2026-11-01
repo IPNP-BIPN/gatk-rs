@@ -600,6 +600,7 @@ pub struct Scored {
 }
 
 /// `scoreReads`: each input is its own partition, and `reduceByKey` adds the two maps.
+#[allow(clippy::too_many_arguments)]
 pub fn score_reads(
     paired: Option<Vec<BamRecord>>,
     unpaired: Option<Vec<BamRecord>>,
