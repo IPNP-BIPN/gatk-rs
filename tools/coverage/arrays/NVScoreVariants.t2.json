@@ -1,0 +1,353 @@
+{
+  "tool": "NVScoreVariants",
+  "origin": "gatk",
+  "t": 2,
+  "numeric_policy": "strict",
+  "arguments_total": 21,
+  "arguments_in_array": 9,
+  "arguments_excluded": 12,
+  "excluded": [
+    {
+      "argument": "--output",
+      "type": "File",
+      "reason": "only one value available (fixture[0])",
+      "held_at": "/work/out/scored.vcf",
+      "source": "fixture"
+    },
+    {
+      "argument": "--reference",
+      "type": "File",
+      "reason": "only one value available (fixture[0])",
+      "held_at": "/work/fixtures/nothing.fasta",
+      "source": "fixture"
+    },
+    {
+      "argument": "--arguments_file",
+      "type": "File",
+      "reason": "excluded by the repository: expands into the command line itself, which is measured by the barclay-arguments-file suite instead",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gatk-config-file",
+      "type": "String",
+      "reason": "excluded by the repository: a configuration file the corpus does not carry; varying it would measure the config loader",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gcs-max-retries",
+      "type": "Integer",
+      "reason": "excluded by the repository: reaches nothing without a cloud path in the row",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gcs-project-for-requester-pays",
+      "type": "String",
+      "reason": "excluded by the repository: reaches nothing without a cloud path in the row",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--help",
+      "type": "Boolean",
+      "reason": "excluded by the repository: prints the usage and returns; the row would measure the argument parser rather than the tool",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--QUIET",
+      "type": "Boolean",
+      "reason": "excluded by the repository: suppresses the log on stderr, and what is compared is stdout and the output file",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--use-jdk-inflater",
+      "type": "Boolean",
+      "reason": "excluded by the repository: chooses an inflater, and the input is read the same way either way",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--verbosity",
+      "type": "LogLevel",
+      "reason": "excluded by the repository: log level on stderr, same reason",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--version",
+      "type": "Boolean",
+      "reason": "excluded by the repository: prints the version and returns, same reason",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--showHidden",
+      "type": "Boolean",
+      "reason": "excluded by the repository: changes the usage text only",
+      "held_at": null,
+      "source": "none"
+    }
+  ],
+  "rows": 10,
+  "tuples_total": 144,
+  "tuples_covered": 144,
+  "tuples_forbidden": 0,
+  "constraint_notes": [],
+  "coverage": 1.0,
+  "array": [
+    {
+      "row": 0,
+      "labels": {
+        "--accelerator": "fixture[0]",
+        "--batch-size": "fixture[0]",
+        "--input": "fixture[0]",
+        "--random-seed": "fixture[0]",
+        "--tensor-type": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--tmp-file": "fixture[0]",
+        "--use-jdk-deflater": "true",
+        "--variant": "fixture[0]"
+      },
+      "arguments": [
+        "--accelerator=auto",
+        "--batch-size=64",
+        "--input=null",
+        "--random-seed=724",
+        "--tensor-type=reference",
+        "--tmp-dir=/work/tmp",
+        "--tmp-file=null",
+        "--use-jdk-deflater=true",
+        "--variant=/work/fixtures/vr_calls.vcf"
+      ]
+    },
+    {
+      "row": 1,
+      "labels": {
+        "--accelerator": "fixture[0]",
+        "--batch-size": "fixture[1]",
+        "--input": "fixture[1]",
+        "--random-seed": "fixture[1]",
+        "--tensor-type": "fixture[1]",
+        "--tmp-dir": "fixture[1]",
+        "--tmp-file": "fixture[1]",
+        "--use-jdk-deflater": "false",
+        "--variant": "fixture[1]"
+      },
+      "arguments": [
+        "--accelerator=auto",
+        "--batch-size=32",
+        "--input=/work/fixtures/nothing.bam",
+        "--random-seed=1",
+        "--tensor-type=read_tensor",
+        "--tmp-dir=/work/tmp2",
+        "--tmp-file=/work/out/tmp.txt",
+        "--use-jdk-deflater=false",
+        "--variant=/work/fixtures/nothing.vcf"
+      ]
+    },
+    {
+      "row": 2,
+      "labels": {
+        "--accelerator": "fixture[1]",
+        "--batch-size": "fixture[0]",
+        "--input": "fixture[1]",
+        "--random-seed": "fixture[0]",
+        "--tensor-type": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
+        "--tmp-file": "fixture[1]",
+        "--use-jdk-deflater": "true",
+        "--variant": "fixture[1]"
+      },
+      "arguments": [
+        "--accelerator=cpu",
+        "--batch-size=64",
+        "--input=/work/fixtures/nothing.bam",
+        "--random-seed=724",
+        "--tensor-type=read_tensor",
+        "--tmp-dir=/work/tmp",
+        "--tmp-file=/work/out/tmp.txt",
+        "--use-jdk-deflater=true",
+        "--variant=/work/fixtures/nothing.vcf"
+      ]
+    },
+    {
+      "row": 3,
+      "labels": {
+        "--accelerator": "fixture[1]",
+        "--batch-size": "fixture[1]",
+        "--input": "fixture[0]",
+        "--random-seed": "fixture[1]",
+        "--tensor-type": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--tmp-file": "fixture[0]",
+        "--use-jdk-deflater": "false",
+        "--variant": "fixture[0]"
+      },
+      "arguments": [
+        "--accelerator=cpu",
+        "--batch-size=32",
+        "--input=null",
+        "--random-seed=1",
+        "--tensor-type=reference",
+        "--tmp-dir=/work/tmp2",
+        "--tmp-file=null",
+        "--use-jdk-deflater=false",
+        "--variant=/work/fixtures/vr_calls.vcf"
+      ]
+    },
+    {
+      "row": 4,
+      "labels": {
+        "--accelerator": "fixture[0]",
+        "--batch-size": "fixture[0]",
+        "--input": "fixture[1]",
+        "--random-seed": "fixture[1]",
+        "--tensor-type": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--tmp-file": "fixture[0]",
+        "--use-jdk-deflater": "false",
+        "--variant": "fixture[1]"
+      },
+      "arguments": [
+        "--accelerator=auto",
+        "--batch-size=64",
+        "--input=/work/fixtures/nothing.bam",
+        "--random-seed=1",
+        "--tensor-type=reference",
+        "--tmp-dir=/work/tmp",
+        "--tmp-file=null",
+        "--use-jdk-deflater=false",
+        "--variant=/work/fixtures/nothing.vcf"
+      ]
+    },
+    {
+      "row": 5,
+      "labels": {
+        "--accelerator": "fixture[0]",
+        "--batch-size": "fixture[1]",
+        "--input": "fixture[0]",
+        "--random-seed": "fixture[0]",
+        "--tensor-type": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--tmp-file": "fixture[1]",
+        "--use-jdk-deflater": "true",
+        "--variant": "fixture[0]"
+      },
+      "arguments": [
+        "--accelerator=auto",
+        "--batch-size=32",
+        "--input=null",
+        "--random-seed=724",
+        "--tensor-type=reference",
+        "--tmp-dir=/work/tmp",
+        "--tmp-file=/work/out/tmp.txt",
+        "--use-jdk-deflater=true",
+        "--variant=/work/fixtures/vr_calls.vcf"
+      ]
+    },
+    {
+      "row": 6,
+      "labels": {
+        "--accelerator": "fixture[0]",
+        "--batch-size": "fixture[0]",
+        "--input": "fixture[0]",
+        "--random-seed": "fixture[1]",
+        "--tensor-type": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
+        "--tmp-file": "fixture[0]",
+        "--use-jdk-deflater": "true",
+        "--variant": "fixture[0]"
+      },
+      "arguments": [
+        "--accelerator=auto",
+        "--batch-size=64",
+        "--input=null",
+        "--random-seed=1",
+        "--tensor-type=read_tensor",
+        "--tmp-dir=/work/tmp",
+        "--tmp-file=null",
+        "--use-jdk-deflater=true",
+        "--variant=/work/fixtures/vr_calls.vcf"
+      ]
+    },
+    {
+      "row": 7,
+      "labels": {
+        "--accelerator": "fixture[0]",
+        "--batch-size": "fixture[0]",
+        "--input": "fixture[1]",
+        "--random-seed": "fixture[0]",
+        "--tensor-type": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--tmp-file": "fixture[0]",
+        "--use-jdk-deflater": "true",
+        "--variant": "fixture[0]"
+      },
+      "arguments": [
+        "--accelerator=auto",
+        "--batch-size=64",
+        "--input=/work/fixtures/nothing.bam",
+        "--random-seed=724",
+        "--tensor-type=reference",
+        "--tmp-dir=/work/tmp2",
+        "--tmp-file=null",
+        "--use-jdk-deflater=true",
+        "--variant=/work/fixtures/vr_calls.vcf"
+      ]
+    },
+    {
+      "row": 8,
+      "labels": {
+        "--accelerator": "fixture[0]",
+        "--batch-size": "fixture[0]",
+        "--input": "fixture[0]",
+        "--random-seed": "fixture[0]",
+        "--tensor-type": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--tmp-file": "fixture[0]",
+        "--use-jdk-deflater": "false",
+        "--variant": "fixture[0]"
+      },
+      "arguments": [
+        "--accelerator=auto",
+        "--batch-size=64",
+        "--input=null",
+        "--random-seed=724",
+        "--tensor-type=reference",
+        "--tmp-dir=/work/tmp",
+        "--tmp-file=null",
+        "--use-jdk-deflater=false",
+        "--variant=/work/fixtures/vr_calls.vcf"
+      ]
+    },
+    {
+      "row": 9,
+      "labels": {
+        "--accelerator": "fixture[0]",
+        "--batch-size": "fixture[0]",
+        "--input": "fixture[0]",
+        "--random-seed": "fixture[0]",
+        "--tensor-type": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--tmp-file": "fixture[0]",
+        "--use-jdk-deflater": "true",
+        "--variant": "fixture[1]"
+      },
+      "arguments": [
+        "--accelerator=auto",
+        "--batch-size=64",
+        "--input=null",
+        "--random-seed=724",
+        "--tensor-type=reference",
+        "--tmp-dir=/work/tmp",
+        "--tmp-file=null",
+        "--use-jdk-deflater=true",
+        "--variant=/work/fixtures/nothing.vcf"
+      ]
+    }
+  ]
+}

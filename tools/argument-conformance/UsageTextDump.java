@@ -57,6 +57,14 @@ public class UsageTextDump {
                 new org.broadinstitute.hellbender.tools.CompareIntervalLists());
         usage("PrintBGZFBlockInformation",
                 new org.broadinstitute.hellbender.tools.PrintBGZFBlockInformation());
+        // Undocumented as well, and a BETA banner above its usage line.
+        usage("NVScoreVariants",
+                new org.broadinstitute.hellbender.tools.walkers.vqsr.NVScoreVariants());
+        // Documented, but the banner above their usage lines is only read from here.
+        usage("TrainVariantAnnotationsModel",
+                new org.broadinstitute.hellbender.tools.walkers.vqsr.scalable.TrainVariantAnnotationsModel());
+        usage("ScoreVariantAnnotations",
+                new org.broadinstitute.hellbender.tools.walkers.vqsr.scalable.ScoreVariantAnnotations());
         // Undocumented as well, a Spark tool whose declarations need the summary.
         usage("CollectAllelicCountsSpark",
                 new org.broadinstitute.hellbender.tools.copynumber.CollectAllelicCountsSpark());

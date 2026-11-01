@@ -8142,9 +8142,9 @@
         "CpxVariantReInterpreterSpark",
         "BwaSpark",
         "BwaAndMarkDuplicatesPipelineSpark",
-      "ParallelCopyGCSDirectoryIntoHDFSSpark",
+        "ParallelCopyGCSDirectoryIntoHDFSSpark",
         "PathSeqBwaSpark",
-      "PathSeqPipelineSpark"
+        "PathSeqPipelineSpark"
       ],
       "java_props": [
         "-Duser.language=en",
@@ -8253,6 +8253,33 @@
       "cases": [
         {
           "dump": "HtsgetReaderDump",
+          "golden": null,
+          "why": "Frozen from the candidate artefact of its first run."
+        }
+      ]
+    },
+    {
+      "id": "interpreter-tools",
+      "status": "golden-pending",
+      "title": "eight tools up to the interpreter the pinned image does not have",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "PlotDenoisedCopyRatios",
+        "PlotModeledSegments",
+        "DetermineGermlineContigPloidy",
+        "GermlineCNVCaller",
+        "PostprocessGermlineCNVCalls",
+        "ScoreVariantAnnotations",
+        "TrainVariantAnnotationsModel",
+        "NVScoreVariants"
+      ],
+      "why": "The image has neither Rscript nor python, so what the reference does before it reaches them is what can be observed. THE PLOTS READ AND CHECK EVERYTHING FIRST: RScriptExecutor looks for its executable only when the script runs, so the input refusals come before the missing Rscript and the output directory exists by then. THE GCNV TOOLS AND NVSCOREVARIANTS IMPORT THEIR PACKAGE IN onStartup, so only the parser can refuse ahead of the missing python, and the output directory is not made. POSTPROCESSGERMLINECNVCALLS CALLS super.onStartup() FIRST, so GATKTool's reference, reads and -L come ahead of it, and -L reads the shards' interval lists. TRAINVARIANTANNOTATIONSMODEL'S DEFAULT BACKEND READS THE FILE ONLY FOR THE UNLABELED CHECK, and JAVA_BGMM and PYTHON_SCRIPT read every matrix first. SCOREVARIANTANNOTATIONS IS A WALKER: the startup, the header, then the backend, and under PYTHON_SCRIPT a whole pass and the annotations file before the first script runs; a pass that extracts nothing runs no script and ends with a VCF. A refused run's files are listed too, because what the reference writes before it stops is the half of the answer the interpreter does not touch.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "InterpreterToolsDump",
           "golden": null,
           "why": "Frozen from the candidate artefact of its first run."
         }

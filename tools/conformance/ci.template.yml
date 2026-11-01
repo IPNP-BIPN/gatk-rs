@@ -246,6 +246,9 @@ jobs:
             --tool CollectInsertSizeMetricsSpark --tool CompareDuplicatesSpark \
             --tool CollectMultipleMetricsSpark --tool MarkDuplicatesSpark --tool CollectAllelicCountsSpark \
             --tool BwaSpark --tool BwaAndMarkDuplicatesPipelineSpark --tool ParallelCopyGCSDirectoryIntoHDFSSpark --tool PathSeqBwaSpark --tool PathSeqPipelineSpark --tool FindBadGenomicKmersSpark --tool CalcMetadataSpark --tool ExtractSVEvidenceSpark --tool DiscoverVariantsFromContigAlignmentsSAMSpark --tool SvDiscoverFromLocalAssemblyContigAlignmentsSpark --tool CpxVariantReInterpreterSpark --tool HtsgetReader --tool HaplotypeCallerSpark --tool ReadsPipelineSpark --tool PathSeqFilterSpark --tool PathSeqScoreSpark \
+            --tool PlotDenoisedCopyRatios --tool PlotModeledSegments --tool DetermineGermlineContigPloidy \
+            --tool GermlineCNVCaller --tool PostprocessGermlineCNVCalls --tool ScoreVariantAnnotations \
+            --tool TrainVariantAnnotationsModel --tool NVScoreVariants \
             --tool ExtractOriginalAlignmentRecordsByNameSpark --tool MeanQualityByCycleSpark \
             --tool QualityScoreDistributionSpark --tool CollectBaseDistributionByCycleSpark \
             --tool CollectQualityYieldMetricsSpark \
