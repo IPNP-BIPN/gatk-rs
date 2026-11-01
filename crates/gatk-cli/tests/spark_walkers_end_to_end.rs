@@ -28,6 +28,8 @@
 //!    over one partition and over two;
 //!  * **CalcMetadataSpark**, whose `--write-as-binary` is whatever overflowed a buffer nothing
 //!    flushes;
+//!  * **HaplotypeCallerSpark**, the caller run over shards of `--read-shard-size`, with no default
+//!    header lines, and what the tool refuses of the walker's outputs;
 //!  * **CompareDuplicatesSpark**, whose filter holds for the first BAM only, whose keys are looked
 //!    up in the first header for both, and whose summary comes in an order no two JVMs share, so
 //!    the dump and this test sort it;

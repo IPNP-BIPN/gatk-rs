@@ -6662,7 +6662,7 @@
     },
     {
       "id": "tool-argument-declarations",
-      "status": "oracle-backed",
+      "status": "golden-pending",
       "title": "what one tool declares, and therefore which command lines it accepts",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6730,7 +6730,7 @@
     },
     {
       "id": "tool-argument-enums",
-      "status": "oracle-backed",
+      "status": "golden-pending",
       "title": "the constants an enum-valued argument accepts, and what a value outside them costs",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -8104,8 +8104,8 @@
     },
     {
       "id": "spark-walkers",
-      "status": "oracle-backed",
-      "title": "Twenty-four Spark tools end to end through Main, on one partition",
+      "status": "golden-pending",
+      "title": "Twenty-five Spark tools end to end through Main, on one partition",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "CountReadsSpark",
@@ -8129,6 +8129,7 @@
         "CollectAllelicCountsSpark",
         "FindBadGenomicKmersSpark",
         "CalcMetadataSpark",
+        "HaplotypeCallerSpark",
         "CollectInsertSizeMetricsSpark",
         "CollectMultipleMetricsSpark",
         "MarkDuplicatesSpark"
@@ -8194,7 +8195,7 @@
       "compare": {
         "mode": "lines"
       },
-      "expect_rows": 997,
+      "expect_rows": 1067,
       "expect_contains": [
         "revert-sam-defaults\tjava.lang.UnsupportedOperationException",
         "revert-sam-sanitize\torg.apache.spark.SparkException:Base quality score -1 is invalid",

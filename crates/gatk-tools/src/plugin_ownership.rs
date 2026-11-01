@@ -34,7 +34,7 @@ pub const ANNOTATION_GROUP_SELECTOR: &str = "annotation-group";
 /// default.
 pub fn default_annotation_groups(tool: &str) -> &'static [&'static str] {
     match tool {
-        "HaplotypeCaller" | "RampedHaplotypeCaller" => {
+        "HaplotypeCaller" | "RampedHaplotypeCaller" | "HaplotypeCallerSpark" => {
             &["StandardAnnotation", "StandardHCAnnotation"]
         }
         "Mutect2" => &["StandardMutectAnnotation"],
@@ -401,7 +401,10 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         // `HaplotypeCallerEngine.makeStandardHCReadFilters`, which `HaplotypeBasedVariantRecaller`
         // returns as its own: the engine's mapping-quality floor of twenty first, the wellformed
         // filter last.
-        "HaplotypeCaller" | "RampedHaplotypeCaller" | "HaplotypeBasedVariantRecaller" => Some(&[
+        "HaplotypeCaller"
+        | "RampedHaplotypeCaller"
+        | "HaplotypeCallerSpark"
+        | "HaplotypeBasedVariantRecaller" => Some(&[
             "MappingQualityReadFilter",
             "MappingQualityAvailableReadFilter",
             "MappedReadFilter",

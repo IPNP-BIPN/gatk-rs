@@ -89,7 +89,7 @@ public class SparkWalkersDump {
         PrintReadsDump.emptyDirectory(DIR);
         Files.createDirectories(DIR);
 
-        System.out.println("# SparkWalkersDump: twenty-four Spark tools through Main, --spark-master local[1]");
+        System.out.println("# SparkWalkersDump: twenty-five Spark tools through Main, --spark-master local[1]");
 
         final Path fasta = DIR.resolve("ref.fasta");
         Files.write(fasta, ReadWalkerDump.FASTA.getBytes());
@@ -185,9 +185,11 @@ public class SparkWalkersDump {
                 false);
 
         kmerFixtures();
+        callerFixtures();
 
         // The fixtures travel, so the port runs over these bytes rather than its own rebuild.
-        for (final String name : new String[] {"kmers.fasta", "kmers.fasta.fai", "kmers.dict",
+        for (final String name : new String[] {"caller.fasta", "caller.fasta.fai", "caller.dict",
+                "caller.bam", "caller.bai", "caller-names.bam", "kmers.fasta", "kmers.fasta.fai", "kmers.dict",
                 "kmers-big.fasta", "kmers-big.fasta.fai", "kmers-big.dict", "high-copy.fasta",
                 "high-copy-blank.fasta", "high-copy.fasta.gz", "ref.fasta", "ref.fasta.fai", "ref.dict",
                 "reads.bam", "reads.bai", "plain.vcf", "genotyped.vcf", "revert.map.tsv",
@@ -509,6 +511,7 @@ public class SparkWalkersDump {
         }
 
         kmerRows();
+        callerRows();
 
         // CALCMETADATASPARK reads everything, filters nothing, and names one partition.
         final String metadata = "CalcMetadataSpark";
@@ -1327,6 +1330,95 @@ public class SparkWalkersDump {
                 Files.newOutputStream(DIR.resolve("high-copy.fasta.gz")))) {
             zipped.write(highCopy.getBytes());
         }
+    }
+
+    /** Reads over a reference no shard boundary respects: variants beside 5000 and past it. */
+    static void callerFixtures() throws Exception {
+        final java.util.Random random = new java.util.Random(4242);
+        final String bases = randomBases(random, 12000);
+        kmerReference("caller", ">chr1\n" + bases + "\n");
+        final SAMFileHeader header = new SAMFileHeader();
+        header.setSequenceDictionary(new htsjdk.samtools.SAMSequenceDictionary(
+                java.util.List.of(new htsjdk.samtools.SAMSequenceRecord("chr1", 12000))));
+        final htsjdk.samtools.SAMReadGroupRecord group = new htsjdk.samtools.SAMReadGroupRecord("rg1");
+        group.setSample("caller-sample");
+        group.setLibrary("caller-library");
+        header.addReadGroup(group);
+        final int[] snps = {300, 4985, 5040, 9000};
+        final List<SAMRecord> records = new ArrayList<>();
+        int serial = 0;
+        for (final int[] span : new int[][] {{120, 480}, {4800, 5200}, {8850, 9150}}) {
+            for (int start = span[0]; start < span[1]; start += 3) {
+                final char[] read = bases.substring(start - 1, start + 99).toCharArray();
+                for (final int snp : snps) {
+                    if (snp >= start && snp < start + 100 && (start + snp) % 2 == 0) {
+                        final int at = snp - start;
+                        read[at] = read[at] == 'A' ? 'C' : 'A';
+                    }
+                }
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("c" + serial++);
+                record.setReferenceIndex(0);
+                record.setAlignmentStart(start);
+                record.setCigarString("100M");
+                record.setMappingQuality(60);
+                record.setReadString(new String(read));
+                final byte[] qualities = new byte[100];
+                Arrays.fill(qualities, (byte) 35);
+                record.setBaseQualities(qualities);
+                record.setAttribute("RG", "rg1");
+                record.setReadNegativeStrandFlag(serial % 2 == 0);
+                records.add(record);
+            }
+        }
+        for (final String[] one : new String[][] {{"caller.bam", "coordinate"}, {"caller-names.bam", "queryname"}}) {
+            final SAMFileHeader own = header.clone();
+            own.setSortOrder(SAMFileHeader.SortOrder.valueOf(one[1]));
+            final htsjdk.samtools.SAMFileWriterFactory factory = new htsjdk.samtools.SAMFileWriterFactory()
+                    .setCreateIndex(one[1].equals("coordinate"));
+            try (final htsjdk.samtools.SAMFileWriter writer =
+                         factory.makeBAMWriter(own, false, DIR.resolve(one[0]).toFile())) {
+                records.forEach(writer::addAlignment);
+            }
+        }
+    }
+
+    /** HAPLOTYPECALLERSPARK is HaplotypeCaller's engine, shard by shard. */
+    static void callerRows() throws Exception {
+        final String tool = "HaplotypeCallerSpark";
+        final String ref = DIR.resolve("caller.fasta").toString();
+        final String bam = DIR.resolve("caller.bam").toString();
+        final String[][] runs = {
+                {"caller-default", "caller.vcf"},
+                {"caller-gz", "caller.vcf.gz", "--use-jdk-deflater", "true"},
+                {"caller-gvcf", "caller.g.vcf", "-ERC", "GVCF"},
+                {"caller-bp", "caller.g.vcf", "-ERC", "BP_RESOLUTION"},
+                {"caller-small-shards", "caller.vcf", "--read-shard-size", "1000"},
+                {"caller-no-padding", "caller.vcf", "--read-shard-padding", "0"},
+                {"caller-boundary", "caller.vcf", "--read-shard-size", "5000", "-L", "chr1:4900-5100"},
+                {"caller-interval", "caller.vcf", "-L", "chr1:8000-9500"},
+                {"caller-empty-interval", "caller.vcf", "-L", "chr1:2000-3000"},
+                {"caller-strict", "caller.vcf", "--strict"},
+                {"caller-shuffle", "caller.vcf", "--shuffle"},
+                {"caller-strict-shuffle", "caller.vcf", "--strict", "--shuffle"},
+                {"caller-no-index", "caller.vcf", "--create-output-variant-index", "false"},
+                {"caller-downsample", "caller.vcf", "--max-reads-per-alignment-start", "1"},
+                {"caller-quality", "caller.vcf", "--standard-min-confidence-threshold-for-calling", "2000"},
+                {"caller-bcf", "caller.bcf"},
+                {"caller-bamout", "caller.vcf", "-bamout",
+                        DIR.resolve("out/caller-bamout/out.bam").toString()},
+                {"caller-dbsnp", "caller.vcf", "--dbsnp", DIR.resolve("plain.vcf").toString()},
+                {"caller-comp", "caller.vcf", "--comp", DIR.resolve("plain.vcf").toString()},
+        };
+        for (final String[] one : runs) {
+            final List<String> rest = new ArrayList<>(Arrays.asList("-I", bam, "-R", ref, "-O",
+                    out(one[0], one[1])));
+            rest.addAll(Arrays.asList(one).subList(2, one.length));
+            run(one[0], one[1], tool, rest.toArray(new String[0]));
+        }
+        run("caller-names", "caller.vcf", tool, "-I", DIR.resolve("caller-names.bam").toString(),
+                "-R", ref, "-O", out("caller-names", "caller.vcf"));
+        run("caller-no-reference", null, tool, "-I", bam, "-O", out("caller-no-reference", "caller.vcf"));
     }
 
     /** FINDBADGENOMICKMERSSPARK writes what it collected, in the order its tables hold it. */

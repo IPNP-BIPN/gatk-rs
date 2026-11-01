@@ -649,12 +649,71 @@ fn limitation(what: &str) -> Thrown {
 }
 
 /// The refusal of any declared argument the port does not read.
+/// `HaplotypeCallerSpark.runTool`'s own checks, in its order.
+fn spark_refusals(parser: &Parser, header: &SamHeader) -> Result<(), Thrown> {
+    let output = argument(parser, "output").unwrap_or_default();
+    if output.ends_with(".bcf") || output.ends_with(".bcf.gz") {
+        return Err(Thrown {
+            failure: Failure::User,
+            exception:
+                "org.broadinstitute.hellbender.exceptions.UserException$UnimplementedFeature",
+            message: Some(
+                "It is currently not possible to write a BCF file on spark.  See \
+                 https://github.com/broadinstitute/gatk/issues/4303 for more details ."
+                    .to_string(),
+            ),
+        });
+    }
+    let illegal =
+        |message: &str| Thrown::non_user("java.lang.IllegalArgumentException", message.to_string());
+    if argument(parser, "dbsnp").is_some() {
+        return Err(illegal(
+            "HaplotypeCallerSpark does not yet support -D or --dbsnp arguments",
+        ));
+    }
+    if !arguments(parser, "comparison").is_empty() {
+        return Err(illegal(
+            "HaplotypeCallerSpark does not yet support -comp or --comp arguments",
+        ));
+    }
+    if argument(parser, "bam-output").is_some() {
+        return Err(illegal(
+            "HaplotypeCallerSpark does not yet support -bamout or --bamOutput",
+        ));
+    }
+    if header.attributes.get("SO") != Some("coordinate") {
+        return Err(Thrown::non_user(
+            "java.lang.IllegalStateException",
+            "The reads must be coordinate sorted.",
+        ));
+    }
+    Ok(())
+}
+
+/// The engine arguments `AssemblyRegionWalkerSpark` and `SparkCommandLineProgram` add, read by the
+/// Spark startup and not by the walker's.
+const SPARK_HONOURED: &[&str] = &[
+    "spark-master",
+    "conf",
+    "spark-verbosity",
+    "program-name",
+    "num-reducers",
+    "bam-partition-size",
+    "shuffle",
+    "strict",
+    "read-shard-size",
+    "read-shard-padding",
+    "output-shard-tmp-dir",
+    "sharded-output",
+];
+
 fn refuse_unported(parser: &Parser, tool: &str) -> Result<(), Thrown> {
     let declarations = gatk_tools::tool_declarations::declarations(tool).unwrap_or(&[]);
     for definition in parser.definitions() {
         let name = definition.long_name();
         if !definition.has_been_set()
             || HONOURED.contains(&name)
+            || (tool == "HaplotypeCallerSpark" && SPARK_HONOURED.contains(&name))
             || super::FLOW_MATRIX_ARGUMENTS.contains(&name)
             || super::PILEUP_DETECTION_ARGUMENTS.contains(&name)
         {
@@ -687,6 +746,14 @@ pub fn haplotype_caller(parser: &Parser) -> Outcome {
     run(parser, "HaplotypeCaller")
 }
 
+/// `HaplotypeCallerSpark.runTool`: the engine run shard by shard, each shard starting its activity
+/// profile afresh and seeing only the reads that overlap its padded interval, so a region cannot
+/// cross a shard boundary. `--strict` runs the band pass over the contig, which is the walker's
+/// traversal, and fills each region from the same reads.
+pub fn haplotype_caller_spark(parser: &Parser) -> Outcome {
+    run(parser, "HaplotypeCallerSpark")
+}
+
 /// `RampedHaplotypeCaller.doWork`: HaplotypeCaller with `RampedHaplotypeCallerEngine` and
 /// non-random downsampling. With no ramp the engine still differs from HaplotypeCaller's where
 /// `callRegion` measures read stubs, filters reads and realigns them.
@@ -696,6 +763,7 @@ pub fn ramped_haplotype_caller(parser: &Parser) -> Outcome {
 
 fn run(parser: &Parser, tool: &str) -> Outcome {
     let ramped = tool == "RampedHaplotypeCaller";
+    let spark = tool == "HaplotypeCallerSpark";
     refuse_unported(parser, tool)?;
     // The kernels this port carries: the Java LOGLESS_CACHING PairHMM behind the PairHMM engine.
     // FASTEST_AVAILABLE resolves to it wherever GKL's native kernel does not load, which is the
@@ -771,7 +839,20 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         header,
         intervals,
         filters,
-    } = read_walker_startup(parser, tool)?;
+    } = if spark {
+        let start = super::spark_runners::spark_startup(parser, tool)?;
+        ReadWalkerStart {
+            source: start.source,
+            header: start.header,
+            intervals: start.intervals,
+            filters: start.filters,
+        }
+    } else {
+        read_walker_startup(parser, tool)?
+    };
+    if spark {
+        spark_refusals(parser, &header)?;
+    }
     // `initializeSamples`.
     let header_samples = hc::samples_from_header(&header);
     let sample_name = match scalar(parser, "sample-name") {
@@ -845,6 +926,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             .map_err(|error| Thrown::user(format!("{error:?}")))?;
 
     // `getAllIntervalsForReference` over the reads' dictionary when no `-L` was given.
+    let has_user_intervals = !intervals.is_empty();
     let traversal: Vec<gatk_engine::interval::SimpleInterval> = if intervals.is_empty() {
         header
             .sequences
@@ -1219,16 +1301,93 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             )),
         )
     });
-    let called = hc::call_variants(
-        &reads,
-        &header,
-        &traversal,
-        &arguments,
-        &annotator,
-        &mut contig_bases,
-        &mut random,
-        assembly_variants.as_ref().map(|(_, queue)| queue),
-    );
+    let shard_size = number_or(parser, "read-shard-size", 5000).max(1);
+    let shard_padding = number_or(parser, "read-shard-padding", 100).max(0);
+    if spark {
+        // `getReads`: a `-L` is the traversal the source applies, before any padding.
+        if has_user_intervals {
+            reads.retain(|read| {
+                traversal.iter().any(|interval| {
+                    header
+                        .sequences
+                        .get(read.reference_index.max(0) as usize)
+                        .is_some_and(|sequence| sequence.name == interval.contig)
+                        && read.alignment_start <= interval.end
+                        && read.alignment_end() >= interval.start
+                })
+            });
+        }
+        super::spark_runners::no_reads_refusal(parser, &reads, &traversal, shard_size)?;
+        super::spark_runners::oversized_read_refusal(parser, &reads, &header, shard_size)?;
+    }
+    let called = if spark && !flag(parser, "strict") {
+        let mut calls = Vec::new();
+        let mut failure = None;
+        'shards: for interval in &traversal {
+            let contig_length = header
+                .sequences
+                .iter()
+                .find(|sequence| sequence.name == interval.contig)
+                .map_or(interval.end, |sequence| sequence.length);
+            for start in (interval.start..=interval.end).step_by(shard_size as usize) {
+                let shard = gatk_engine::interval::SimpleInterval {
+                    contig: interval.contig.clone(),
+                    start,
+                    end: (start + shard_size - 1).min(interval.end),
+                };
+                let padded_start = (shard.start - shard_padding).max(1);
+                let padded_end = (shard.end + shard_padding).min(contig_length);
+                let contig_index = header
+                    .sequences
+                    .iter()
+                    .position(|sequence| sequence.name == shard.contig)
+                    .map_or(-1, |index| index as i32);
+                let shard_reads: Vec<htsjdk_bam::record::BamRecord> = reads
+                    .iter()
+                    .filter(|read| {
+                        read.reference_index == contig_index
+                            && read.alignment_start <= padded_end
+                            && read.alignment_end() >= padded_start
+                    })
+                    .cloned()
+                    .collect();
+                match hc::call_variants(
+                    &shard_reads,
+                    &header,
+                    std::slice::from_ref(&shard),
+                    &arguments,
+                    &annotator,
+                    &mut contig_bases,
+                    &mut random,
+                    assembly_variants.as_ref().map(|(_, queue)| queue),
+                ) {
+                    Ok(found) => calls.extend(found),
+                    Err(mut error) => {
+                        let mut before = std::mem::take(&mut calls);
+                        before.append(&mut error.calls_before);
+                        error.calls_before = before;
+                        failure = Some(error);
+                        break 'shards;
+                    }
+                }
+            }
+        }
+        match failure {
+            Some(error) => Err(error),
+            None => Ok(calls),
+        }
+    } else {
+        hc::call_variants(
+            &reads,
+            &header,
+            &traversal,
+            &arguments,
+            &annotator,
+            &mut contig_bases,
+            &mut random,
+            assembly_variants.as_ref().map(|(_, queue)| queue),
+        )
+    };
     drop(random);
     // A failure mid-traversal still writes what came before it, and the writer's own refusal of
     // those records, raised as it closes, is what the run reports.
@@ -1264,7 +1423,12 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
                 extra: Vec::new(),
             }
         };
-    let mut lines: Vec<HeaderLine> = default_tool_vcf_header_lines(parser, tool);
+    // The Spark tool hands `makeVCFHeader` an empty set of default lines.
+    let mut lines: Vec<HeaderLine> = if spark {
+        Vec::new()
+    } else {
+        default_tool_vcf_header_lines(parser, tool)
+    };
     if arguments.calling.annotate_number_of_alleles_discovered {
         lines.push(compound(
             "INFO",
@@ -1473,6 +1637,23 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     apply_sites_only(parser, &mut vcf_header, &mut written);
     // `HaplotypeCallerEngine.makeVCFWriter`, which never allows a key the header lacks.
     let text = write_vcf_strict_or_lenient(false, &vcf_header, &written)?;
+    if spark {
+        // A task that fails writes nothing the job commits.
+        if let Some(failure) = failure {
+            return Err(failure);
+        }
+        let split = text
+            .match_indices('\n')
+            .map(|(at, _)| at + 1)
+            .find(|at| !text[*at..].starts_with('#'))
+            .unwrap_or(text.len());
+        return super::spark_runners::write_spark_vcf(
+            parser,
+            &output,
+            &text[..split],
+            &text[split..],
+        );
+    }
     // The writer is closed whether or not the traversal failed, so what came before is written.
     write_variant_output(parser, &output, &text)?;
     if let Some(failure) = failure {

@@ -23,11 +23,11 @@ const UNKNOWN_LIBRARY: &str = "Unknown Library";
 
 /// What `runPipeline` hands `runTool`: the reads, their header, the traversal intervals and the
 /// resolved filter chain.
-struct SparkStart {
-    source: ReadsDataSource,
-    header: SamHeader,
-    intervals: Vec<gatk_engine::interval::SimpleInterval>,
-    filters: Vec<gatk_tools::filter_resolution::ResolvedFilter>,
+pub(super) struct SparkStart {
+    pub(super) source: ReadsDataSource,
+    pub(super) header: SamHeader,
+    pub(super) intervals: Vec<gatk_engine::interval::SimpleInterval>,
+    pub(super) filters: Vec<gatk_tools::filter_resolution::ResolvedFilter>,
 }
 
 /// `SparkContext.parseMasterUrl`'s accepted shapes, for the masters that run in this process.
@@ -173,7 +173,7 @@ fn validate_reference_against_reads(
 }
 
 /// `SparkCommandLineProgram.doWork` up to `runTool`, for a tool that reads one input.
-fn spark_startup(parser: &Parser, tool: &str) -> Result<SparkStart, Thrown> {
+pub(super) fn spark_startup(parser: &Parser, tool: &str) -> Result<SparkStart, Thrown> {
     // The plugin descriptor validates while the command line is parsed.
     let filters = resolve_read_filters(parser, tool)?;
     spark_context(parser)?;
@@ -489,9 +489,23 @@ pub fn print_variants_spark(parser: &Parser) -> Outcome {
         records_text.push('\n');
     }
 
+    write_spark_vcf(parser, &output, &header_text, &records_text)
+}
+
+/// `VariantsSparkSink.writeVariants`: the header and the records as two parts, block compressed by
+/// name, with the index Disq finalizes.
+pub(super) fn write_spark_vcf(
+    parser: &Parser,
+    output: &str,
+    header_text: &str,
+    records_text: &str,
+) -> Outcome {
+    let failed = |error: String| {
+        Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
+    };
     let block_compressed = output.ends_with(".gz") || output.ends_with(".bgz");
     if !block_compressed {
-        std::fs::write(&output, format!("{header_text}{records_text}"))
+        std::fs::write(output, format!("{header_text}{records_text}"))
             .map_err(|error| failed(error.to_string()))?;
         return Ok(None);
     }
@@ -504,20 +518,20 @@ pub fn print_variants_spark(parser: &Parser) -> Outcome {
             .into_inner_without_terminator()
             .map_err(|error| failed(error.to_string()))
     };
-    let mut bytes = part(&header_text)?;
-    bytes.extend_from_slice(&part(&records_text)?);
+    let mut bytes = part(header_text)?;
+    bytes.extend_from_slice(&part(records_text)?);
     bytes.extend_from_slice(&htsjdk_bgzf::EMPTY_GZIP_BLOCK);
-    std::fs::write(&output, &bytes).map_err(|error| failed(error.to_string()))?;
+    std::fs::write(output, &bytes).map_err(|error| failed(error.to_string()))?;
 
     if flag(parser, "create-output-variant-index") {
         // Disq finalizes the index at the position the records end, BEFORE the terminator it
         // appends, where `IndexFeatureFile` reads the whole file and ends the last chunk after it.
-        let source = index_feature_file::Source::new(&output);
+        let source = index_feature_file::Source::new(output);
         let records_end = bytes.len() - htsjdk_bgzf::EMPTY_GZIP_BLOCK.len();
         let index = index_feature_file::build_tabix(
             &bytes[..records_end],
             &source,
-            &output,
+            output,
             deflater,
             level,
         )
@@ -653,7 +667,7 @@ pub fn pileup_spark(parser: &Parser) -> Outcome {
 /// `SparkSharder`'s overlaps partitioning, which `--shuffle` does not go through: no read leaves
 /// `computePartitionReadExtents` nothing, so the first shard's partition index is -1 in whichever
 /// task `parallelize` gave that shard. This happens while the RDD is built, before the tool runs.
-fn no_reads_refusal(
+pub(super) fn no_reads_refusal(
     parser: &Parser,
     records: &[BamRecord],
     intervals: &[gatk_engine::interval::SimpleInterval],
@@ -691,7 +705,7 @@ fn no_reads_refusal(
 
 /// The same partitioning filling its shards, in coordinate order and inside a task, so after
 /// anything the tool does before its first action: a read longer than a shard is refused.
-fn oversized_read_refusal(
+pub(super) fn oversized_read_refusal(
     parser: &Parser,
     records: &[BamRecord],
     header: &SamHeader,

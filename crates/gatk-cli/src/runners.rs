@@ -34,7 +34,9 @@ pub use funcotator::{funcotate_segments, funcotator, funcotator_data_source_down
 pub type Outcome = Result<Option<String>, Thrown>;
 
 mod haplotype_caller;
-pub use haplotype_caller::{haplotype_caller, haplotype_caller_modes, ramped_haplotype_caller};
+pub use haplotype_caller::{
+    haplotype_caller, haplotype_caller_modes, haplotype_caller_spark, ramped_haplotype_caller,
+};
 mod mutect2;
 pub use mutect2::{mutect2, mutect2_modes};
 mod joint_germline_cnv;
