@@ -1239,7 +1239,7 @@ fn validate_locations(left: &Interval, right: &Interval, header: &SamHeader) -> 
                 .to_string(),
         );
     }
-    let length = |index: i32| header.sequences[index as usize].length as i32;
+    let length = |index: i32| header.sequences[index as usize].length;
     if left.end > length(left_index) || right.end > length(right_index) {
         return Err("Inferred breakpoint beyond reference sequence length.".to_string());
     }
