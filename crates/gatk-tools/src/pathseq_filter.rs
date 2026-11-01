@@ -931,16 +931,15 @@ fn scala_bytes_hash(data: &[u8], seed: i32) -> i32 {
                 .wrapping_mul(0x1b873593)) as i32
     };
     let mut hash = seed;
-    let mut chunks = data.chunks_exact(4);
-    for chunk in &mut chunks {
-        let word = i32::from_le_bytes(chunk.try_into().expect("four bytes"));
+    let (words, rest) = data.as_chunks::<4>();
+    for word in words {
+        let word = i32::from_le_bytes(*word);
         hash = ((mix_last(hash, word) as u32)
             .rotate_left(13)
             .wrapping_mul(5)
             .wrapping_add(0xe6546b64)) as i32;
     }
     let mut tail = 0u32;
-    let rest = chunks.remainder();
     for (at, byte) in rest.iter().enumerate() {
         tail ^= u32::from(*byte) << (8 * at);
     }
