@@ -466,6 +466,11 @@ fn contamination_downsampling(
     }))
 }
 
+/// The engine a Spark task built, refusing there what the walker refuses on the driver.
+fn spark_task_failure(spark: bool, message: &str) -> bool {
+    spark && message == "Unable to perform flow based operations without the flow order"
+}
+
 /// `--ploidy-regions`, read as `HaplotypeCallerEngine` reads it: each BED feature a `SimpleCount`
 /// whose name is the ploidy, then every interval checked against the reads' dictionary. Each
 /// refusal comes once the engine has opened `--debug-assembly-region-state` and
@@ -662,6 +667,45 @@ fn unimplemented_bcf() -> Thrown {
 }
 
 /// `HaplotypeCallerSpark.runTool`'s own checks, in its order.
+/// The engine's debug files on Spark: its executor never calls `shutdown`, so what they hold is
+/// whatever their buffers happened to flush, and the port does not pretend to reproduce that.
+fn spark_debug_refusal(parser: &Parser) -> Result<(), Thrown> {
+    for name in [
+        "graph-output",
+        "debug-assembly-variants-out",
+        "haplotype-debug-histogram-output",
+        "pair-hmm-results-file",
+        "pdhmm-results-file",
+        "alm-path",
+        "debug-assembly-region-state",
+        "debug-genotyper-output",
+    ] {
+        if argument(parser, name).is_some() {
+            return Err(Thrown::non_user(
+                super::PORT_LIMITATION,
+                format!(
+                    "--{name} on a Spark tool writes what its buffers flushed before the JVM \
+                     exited, which this port does not reproduce. This message is the port's own \
+                     and not GATK's."
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Kryo reaches the annotation engine this builds when the evaluator is broadcast. The reference
+/// reports a lambda or a thread, as the traversal happens to meet one first.
+fn annotation_broadcast_refusal(parser: &Parser) -> Result<(), Thrown> {
+    if flag(parser, "enable-all-annotations") {
+        return Err(Thrown::non_user(
+            "com.esotericsoftware.kryo.KryoException",
+            "java.lang.RuntimeException: Could not serialize lambda".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 fn spark_refusals(parser: &Parser, header: &SamHeader) -> Result<(), Thrown> {
     let output = argument(parser, "output").unwrap_or_default();
     if output.ends_with(".bcf") || output.ends_with(".bcf.gz") {
@@ -684,6 +728,7 @@ fn spark_refusals(parser: &Parser, header: &SamHeader) -> Result<(), Thrown> {
             "HaplotypeCallerSpark does not yet support -bamout or --bamOutput",
         ));
     }
+    annotation_broadcast_refusal(parser)?;
     if header.attributes.get("SO") != Some("coordinate") {
         return Err(Thrown::non_user(
             "java.lang.IllegalStateException",
@@ -855,8 +900,9 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     .map_err(|error| Thrown::command_line(error.message()))?;
     pedigree_refusal(parser, &resolved)?;
     let annotation_flow_order = flow_order_for_annotations(parser, &resolved)?;
-    // `makeVariantAnnotations`: allele filtering brings its own annotation.
-    if flag(parser, "flow-filter-alleles") {
+    // `makeVariantAnnotations`: allele filtering brings its own annotation, and only the walker
+    // overrides that method, so the Spark tools' header goes without it.
+    if !spark && flag(parser, "flow-filter-alleles") {
         resolved
             .push(catalogue::entry("HaplotypeFilteringAnnotation").expect("a known annotation"));
     }
@@ -871,7 +917,9 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         Ok(())
     };
     // On Spark the engine is only built inside `runTool`, behind its own refusals.
-    if !spark {
+    if spark {
+        spark_debug_refusal(parser)?;
+    } else {
         genotype_refusal()?;
     }
     // `filterReferenceConfidenceAnnotations`: StrandBiasBySample added, the four site
@@ -912,6 +960,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         let (reads, reads_header) = super::spark_runners::reads_pipeline_reads(
             parser, &source, &header, &intervals, &filters,
         )?;
+        annotation_broadcast_refusal(parser)?;
         pipeline_reads = Some(reads);
         reads_header
     } else {
@@ -1053,7 +1102,8 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         max_assembly_region_size: number_or(parser, "max-assembly-region-size", 300),
         active_prob_threshold: double_or(parser, "active-probability-threshold", 0.002),
         max_prob_propagation_distance: number_or(parser, "max-prob-propagation-distance", 50),
-        force_active: flag(parser, "force-active"),
+        // Only `AssemblyRegionWalker` reads it, and the Spark traversal is not that walker.
+        force_active: !spark && flag(parser, "force-active"),
         assembly_region_padding: number_or(parser, "assembly-region-padding", 100),
         max_reads_per_alignment_start: number_or(parser, "max-reads-per-alignment-start", 50),
         indel_padding_for_genotyping: number_or(parser, "padding-around-indels", 75),
@@ -1104,6 +1154,12 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     } else {
         resources
     };
+    let population = population.map(|mut priors| {
+        if pipeline {
+            priors.records.clear();
+        }
+        priors
+    });
     let arguments = HaplotypeCallerArguments {
         trimmer: TrimmerArguments {
             assembly_region_padding: region.assembly_region_padding,
@@ -1119,7 +1175,8 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         region,
         assembler: assembler_arguments(parser, flag(parser, "adaptive-pruning")),
         pileup_detection: super::pileup_detection_arguments(parser),
-        given_alleles: super::given_alleles(parser)?,
+        // The pipeline hands its regions no features, so the file is read and then has nothing to say.
+        given_alleles: super::given_alleles(parser)?.filter(|_| !pipeline),
         assembly_region_out: argument(parser, "assembly-region-out").map(std::path::PathBuf::from),
         keep_rg: scalar(parser, "keep-rg"),
         just_determine_active_regions: flag(parser, "just-determine-active-regions"),
@@ -1481,9 +1538,16 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     let (mut written, failure) = match called {
         Ok(calls) => (calls, None),
         // Before the VCF writer exists: the run ends with nothing more written.
-        Err(error) if error.at_startup => {
+        Err(error) if error.at_startup && !spark_task_failure(spark, &error.message) => {
             return Err(Thrown::non_user(
                 java_class_name(&error.class),
+                error.message,
+            ));
+        }
+        Err(error) if spark_task_failure(spark, &error.message) => {
+            eprintln!("ERROR Executor - Exception in task 0.0 in stage 0.0 (TID 0)");
+            return Err(Thrown::non_user(
+                "org.apache.spark.SparkException",
                 error.message,
             ));
         }
