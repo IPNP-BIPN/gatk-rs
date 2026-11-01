@@ -225,7 +225,11 @@ public class SparkWalkersDump {
                 "sv_contigs_no_primary.bam", "sv_contigs_hard_primary.bam", "sv_contigs_no_sample.bam",
                 "sv_contigs_two_samples.bam", "sv_cnv.vcf", "sv_cnv_other_sample.vcf", "sv_cnv_no_dictionary.vcf",
                 "sv_cnv_other_dictionary.vcf", "sv_cnv_two_samples.vcf", "sv_truth.vcf", "sv_truth_near_start.vcf",
-                "sv_truth_unknown_type.vcf", "sv_truth_unknown_contig.vcf"}) {
+                "sv_truth_unknown_type.vcf", "sv_truth_unknown_contig.vcf", "sv_assembly.bam", "sv_assembly.bai",
+                "sv_assembly_too_many.bam", "sv_assembly_overlap_contained.bam", "sv_assembly_no_breakend.bam",
+                "sv_alt_tigs.txt", "sv_quality_missing.bam", "sv_cpx.vcf", "sv_cpx_empty.vcf",
+                "sv_cpx_no_dictionary.vcf", "sv_cpx_no_dictionary_one.vcf", "sv_cpx_sparse.vcf",
+                "sv_cpx_bad_segment.vcf", "sv_cpx_whole_contig.vcf", "sv_cpx_bad_length.vcf"}) {
             System.out.printf("input\t%s\t%s%n", name,
                     Base64.getEncoder().encodeToString(Files.readAllBytes(DIR.resolve(name))));
         }
@@ -537,6 +541,8 @@ public class SparkWalkersDump {
         scoreRows();
         evidenceRows();
         discoveryRows();
+        assemblyRows();
+        reinterpreterRows();
 
         // CALCMETADATASPARK reads everything, filters nothing, and names one partition.
         final String metadata = "CalcMetadataSpark";
@@ -1914,6 +1920,117 @@ public class SparkWalkersDump {
     }
 
     /**
+     * SvDiscoverFromLocalAssemblyContigAlignmentsSpark: five VCFs under the prefix, the sample's
+     * name in each, whatever the calls, and with `--write-sam` a BAM of the contigs each class
+     * could not use.
+     */
+    static void assemblyRows() throws Exception {
+        final String tool = "SvDiscoverFromLocalAssemblyContigAlignmentsSpark";
+        final String cnv = DIR.resolve("sv_cnv.vcf").toString();
+        final String truth = DIR.resolve("sv_truth.vcf").toString();
+        final String altTigs = DIR.resolve("sv_alt_tigs.txt").toString();
+        final String[][] runs = {
+                {"assembly", "sv_assembly.bam"},
+                {"assembly-contigs", "sv_contigs.bam"},
+                {"assembly-small", "sv_contigs_small.bam"},
+                {"assembly-write-sam", "sv_assembly.bam", "--write-sam", "--use-jdk-deflater", "true"},
+                {"assembly-alt-tigs", "sv_assembly.bam", "--non-canonical-contig-names-file", altTigs},
+                {"assembly-alt-tigs-missing", "sv_assembly.bam", "--non-canonical-contig-names-file",
+                        DIR.resolve("nowhere.txt").toString()},
+                {"assembly-truth", "sv_assembly.bam", "--truth-vcf", truth},
+                {"assembly-truth-near", "sv_assembly.bam", "--truth-vcf", truth, "--truth-interval-padding", "1"},
+                {"assembly-truth-missing", "sv_assembly.bam", "--truth-vcf", DIR.resolve("nowhere.vcf").toString()},
+                {"assembly-strict", "sv_assembly.bam", "--min-mq", "70", "--min-align-length", "90"},
+                {"assembly-loose", "sv_assembly.bam", "--min-mq", "10", "--min-align-length", "20"},
+                {"assembly-cnv", "sv_assembly_no_breakend.bam", "--cnv-calls", cnv},
+                {"assembly-cnv-breakend", "sv_assembly.bam", "--cnv-calls", cnv},
+                {"assembly-cnv-missing", "sv_assembly_no_breakend.bam", "--cnv-calls", DIR.resolve("nowhere.vcf").toString()},
+                {"assembly-no-breakend", "sv_assembly_no_breakend.bam"},
+                {"assembly-too-many", "sv_assembly_too_many.bam"},
+                {"assembly-overlap-contained", "sv_assembly_overlap_contained.bam"},
+                {"assembly-interval", "sv_assembly.bam", "-L", "chr1:1-30000"},
+                {"assembly-excluded", "sv_assembly.bam", "-XL", "chr2:13000-20000"},
+                {"assembly-no-default-filters", "sv_assembly.bam", "--disable-tool-default-read-filters", "true"},
+                {"assembly-no-supplementary", "sv_assembly.bam", "--read-filter", "NotSupplementaryAlignmentReadFilter"},
+                {"assembly-no-sample", "sv_contigs_no_sample.bam"},
+                {"assembly-two-samples", "sv_contigs_two_samples.bam"},
+                {"assembly-bad-length", "sv_assembly.bam", "--min-align-length", "0"},
+                {"assembly-bad-uncertainty", "sv_assembly.bam", "--assembly-imprecise-evidence-overlap-uncertainty", "0"},
+                {"assembly-bad-threshold", "sv_assembly.bam", "--imprecise-variant-evidence-threshold", "0"},
+                {"assembly-bad-padding", "sv_assembly.bam", "--truth-interval-padding", "0"},
+                {"assembly-bad-deletion", "sv_assembly.bam", "--max-callable-imprecise-deletion-size", "0"},
+        };
+        for (final String[] one : runs) {
+            final String name = one[0];
+            final List<String> rest = new ArrayList<>(Arrays.asList(
+                    "-I", DIR.resolve(one[1]).toString(), "-R", DIR.resolve("sv_contigs.fasta").toString(),
+                    "-O", out(name, "assembled"), "--add-output-vcf-command-line", "false"));
+            rest.addAll(Arrays.asList(one).subList(2, one.length));
+            run(name, "assembled", tool, rest.toArray(new String[0]));
+        }
+        // The prefix's other two shapes: a directory, and a file it will not overwrite.
+        run("assembly-directory", "assembled", tool, "-I", DIR.resolve("sv_assembly.bam").toString(),
+                "-R", DIR.resolve("sv_contigs.fasta").toString(), "--add-output-vcf-command-line", "false",
+                "-O", java.nio.file.Paths.get(out("assembly-directory", "assembled")).getParent().toString());
+        run("assembly-existing-file", "assembled", tool, "-I", DIR.resolve("sv_assembly.bam").toString(),
+                "-R", DIR.resolve("sv_contigs.fasta").toString(), "-O", DIR.resolve("sv_contigs.dict").toString());
+        // PrintReadsSpark takes GATKSparkTool's wellformed filter: the read with no qualities goes.
+        run("print-reads-no-qualities", "no-qualities.bam", "PrintReadsSpark", "-I",
+                DIR.resolve("sv_quality_missing.bam").toString(), "--use-jdk-deflater", "true",
+                "-O", out("print-reads-no-qualities", "no-qualities.bam"));
+    }
+
+    /**
+     * CpxVariantReInterpreterSpark: the assembly step's last two files, from a VCF of complex calls
+     * and the contigs that made them, under the VCF's dictionary rather than the reads'.
+     */
+    static void reinterpreterRows() throws Exception {
+        final String tool = "CpxVariantReInterpreterSpark";
+        final String altTigs = DIR.resolve("sv_alt_tigs.txt").toString();
+        final String[][] runs = {
+                {"cpx", "sv_assembly.bam", "sv_cpx.vcf"},
+                {"cpx-other-reads", "sv_contigs.bam", "sv_cpx.vcf"},
+                {"cpx-no-reads-of-its-contigs", "sv_contigs_small.bam", "sv_cpx.vcf"},
+                {"cpx-alt-tigs", "sv_assembly.bam", "sv_cpx.vcf", "--non-canonical-contig-names-file", altTigs},
+                {"cpx-alt-tigs-missing", "sv_assembly.bam", "sv_cpx.vcf", "--non-canonical-contig-names-file",
+                        DIR.resolve("nowhere.txt").toString()},
+                {"cpx-empty", "sv_assembly.bam", "sv_cpx_empty.vcf"},
+                {"cpx-sparse", "sv_assembly.bam", "sv_cpx_sparse.vcf"},
+                {"cpx-no-dictionary", "sv_assembly.bam", "sv_cpx_no_dictionary.vcf"},
+                {"cpx-no-dictionary-one", "sv_assembly.bam", "sv_cpx_no_dictionary_one.vcf"},
+                {"cpx-bad-segment", "sv_assembly.bam", "sv_cpx_bad_segment.vcf"},
+                {"cpx-whole-contig", "sv_assembly.bam", "sv_cpx_whole_contig.vcf"},
+                {"cpx-bad-length", "sv_assembly.bam", "sv_cpx_bad_length.vcf"},
+                {"cpx-missing", "sv_assembly.bam", "nowhere.vcf"},
+                {"cpx-interval-no-index", "sv_assembly.bam", "sv_cpx.vcf", "-L", "chr1:1-30000"},
+                {"cpx-no-default-filters", "sv_assembly.bam", "sv_cpx.vcf", "--disable-tool-default-read-filters", "true"},
+                {"cpx-no-supplementary", "sv_assembly.bam", "sv_cpx.vcf", "--read-filter", "NotSupplementaryAlignmentReadFilter"},
+                {"cpx-unvalidated-length", "sv_assembly.bam", "sv_cpx.vcf", "--min-align-length", "0"},
+                {"cpx-unvalidated-uncertainty", "sv_assembly.bam", "sv_cpx.vcf", "--assembly-imprecise-evidence-overlap-uncertainty", "0"},
+                {"cpx-ignored-truth", "sv_assembly.bam", "sv_cpx.vcf", "--truth-vcf", DIR.resolve("nowhere.vcf").toString()},
+                {"cpx-ignored-cnv", "sv_assembly.bam", "sv_cpx.vcf", "--cnv-calls", DIR.resolve("nowhere.vcf").toString()},
+        };
+        for (final String[] one : runs) {
+            final String name = one[0];
+            final List<String> rest = new ArrayList<>(Arrays.asList(
+                    "-I", DIR.resolve(one[1]).toString(), "-R", DIR.resolve("sv_contigs.fasta").toString(),
+                    "--cpx-vcf", DIR.resolve(one[2]).toString(),
+                    "--prefix-out-vcf", out(name, "reinterpreted"), "--add-output-vcf-command-line", "false"));
+            rest.addAll(Arrays.asList(one).subList(3, one.length));
+            run(name, "reinterpreted", tool, rest.toArray(new String[0]));
+        }
+        // A prefix whose directory is not there, and the two required arguments.
+        run("cpx-prefix-nowhere", "reinterpreted", tool, "-I", DIR.resolve("sv_assembly.bam").toString(),
+                "-R", DIR.resolve("sv_contigs.fasta").toString(), "--cpx-vcf", DIR.resolve("sv_cpx.vcf").toString(),
+                "--prefix-out-vcf", DIR.resolve("nowhere").resolve("reinterpreted").toString(),
+                "--add-output-vcf-command-line", "false");
+        run("cpx-no-vcf", "reinterpreted", tool, "-I", DIR.resolve("sv_assembly.bam").toString(),
+                "-R", DIR.resolve("sv_contigs.fasta").toString(), "--prefix-out-vcf", out("cpx-no-vcf", "reinterpreted"));
+        run("cpx-no-prefix", "reinterpreted", tool, "-I", DIR.resolve("sv_assembly.bam").toString(),
+                "-R", DIR.resolve("sv_contigs.fasta").toString(), "--cpx-vcf", DIR.resolve("sv_cpx.vcf").toString());
+    }
+
+    /**
      * What `DiscoverVariantsFromContigAlignmentsSAMSpark` reads: a reference, and assembled contigs
      * whose alignments carry each signature its interpreter tells apart.
      */
@@ -1994,6 +2111,8 @@ public class SparkWalkersDump {
             {"hard", 0, "chr1", 1000, "100M100H", 60}}, 16L);
         svContigBam(dir.resolve("sv_contigs_no_sample.bam"), sequences, null, new Object[][] {contigs[0]}, 17L);
         svContigBam(dir.resolve("sv_contigs_two_samples.bam"), sequences, "s,t", new Object[][] {contigs[0]}, 18L);
+        svAssemblyContigs(dir, sequences);
+        svComplexCalls(dir);
 
         final StringBuilder vcfHead = new StringBuilder("##fileformat=VCFv4.2\n"
                 + "##FORMAT=<ID=CN,Number=1,Type=Integer,Description=\"Copy number\">\n"
@@ -2031,8 +2150,208 @@ public class SparkWalkersDump {
                 vcfHead + truthColumns + "chr9\t100\ttruthB\tN\t<INS>\t.\t.\tEND=100;SVTYPE=INS\n", StandardCharsets.UTF_8);
     }
 
+    static void svAssemblyContigs(final Path dir, final java.util.List<SAMSequenceRecord> sequences) throws Exception {
+        final Object[][] contigs = {
+            {"cpxMapped", 0, "chr1", 1000, "100M200S", 60, 2048, "chr2", 500, "100S100M100S", 60, 2048, "chr1", 1500, "200S100M", 60},
+            {"cpxInverted", 0, "chr1", 2000, "100M200S", 60, 2064, "chr1", 2300, "100S100M100S", 60, 2048, "chr1", 2600, "200S100M", 60},
+            {"cpxDuplicated", 0, "chr1", 3000, "100M200S", 60, 2048, "chr1", 3200, "100S100M100S", 60, 2048, "chr1", 3100, "200S300M", 60},
+            {"cpxReverse", 16, "chr1", 5000, "200S100M", 60, 2064, "chr1", 4700, "100S100M100S", 60, 2064, "chr1", 4400, "100M200S", 60},
+            {"cpxReverseFlip", 16, "chr1", 5900, "200S100M", 60, 2048, "chr1", 5600, "100S100M100S", 60, 2064, "chr1", 5300, "100M200S", 60},
+            {"cpxGapped", 0, "chr1", 6000, "100M320S", 60, 2048, "chr1", 6400, "120S100M200S", 60, 2048, "chr1", 6900, "320S100M", 60},
+            {"cpxOverlap", 0, "chr1", 8000, "110M200S", 60, 2048, "chr1", 8300, "100S110M100S", 60, 2048, "chr1", 8700, "200S110M", 60},
+            {"cpxFour", 0, "chr1", 9500, "100M400S", 60, 2048, "chr1", 9800, "100S110M290S", 60, 2048, "chr1", 10200, "200S110M190S", 60, 2048, "chr1", 10800, "400S100M", 60},
+            {"cpxFourSwitch", 0, "chr1", 11000, "100M400S", 60, 2048, "chr1", 11200, "100S110M290S", 60, 2064, "chr1", 11500, "200S110M190S", 60, 2048, "chr1", 11800, "400S100M", 60},
+            {"cpxFourOther", 0, "chr1", 12000, "100M400S", 60, 2048, "chr2", 1100, "100S110M290S", 60, 2048, "chr1", 12300, "200S110M190S", 60, 2048, "chr1", 12800, "400S100M", 60},
+            {"cpxClipDeletion", 0, "chr1", 13000, "100M3D10M200S", 60, 2048, "chr1", 13400, "100S10M3I100M100S", 60, 2048, "chr1", 13800, "210S103M", 60},
+            {"cpxShared", 0, "chr1", 14000, "100M200S", 60, 2048, "chr2", 3000, "100S100M100S", 60, 2048, "chr1", 14099, "200S100M", 60},
+            {"cpxSharedFlip", 0, "chr1", 14500, "100M250S", 60, 2064, "chr2", 3400, "130S100M120S", 60, 2048, "chr1", 14599, "250S100M", 60},
+            {"cpxInvertedOne", 0, "chr1", 15000, "100M300S", 60, 2064, "chr1", 15099, "100S200M100S", 60, 2048, "chr1", 15298, "300S100M", 60},
+            {"cpxInvertedOneWide", 0, "chr1", 15600, "100M500S", 60, 2064, "chr1", 15699, "200S200M200S", 60, 2048, "chr1", 15898, "500S100M", 60},
+            {"cpxInvertedSmall", 0, "chr1", 16200, "100M240S", 60, 2064, "chr1", 16299, "100S20M220S", 60, 2048, "chr1", 16318, "240S100M", 60},
+            {"cpxAsIsWide", 0, "chr1", 16600, "100M500S", 60, 2048, "chr1", 16699, "200S200M200S", 60, 2048, "chr1", 16898, "500S100M", 60},
+            {"cpxAsIsFront", 0, "chr1", 17200, "100M400S", 60, 2048, "chr1", 17299, "200S200M100S", 60, 2048, "chr1", 17498, "400S100M", 60},
+            {"cpxAsIsRear", 0, "chr1", 17800, "100M400S", 60, 2048, "chr1", 17899, "100S200M200S", 60, 2048, "chr1", 18098, "400S100M", 60},
+            {"cpxAllAsIs", 0, "chr1", 18400, "100M700S", 60, 2048, "chr1", 18499, "200S150M450S", 60, 2048, "chr1", 18648, "350S150M300S", 60, 2048, "chr1", 18797, "600S100M100S", 60},
+            {"cpxSegmentGone", 0, "chr1", 19200, "100M200S", 60, 2048, "chr1", 19400, "100S100M100S", 60, 2048, "chr1", 19700, "200S100M", 60},
+            {"cpxLowMiddle", 0, "chr1", 20000, "100M400S", 60, 2048, "chr1", 20400, "100S200M200S", 30, 2048, "chr1", 20900, "400S100M", 60},
+            {"cpxSmallGone", 0, "chr1", 21400, "100M300S", 60, 2048, "chr2", 2500, "100S200M100S", 30, 2048, "chr1", 21510, "300S100M", 60},
+            {"cpxTiny", 0, "chr1", 21800, "100M200S", 60, 2048, "chr1", 21910, "100S100M100S", 60, 2048, "chr1", 22000, "200S100M", 60},
+            {"incompleteContig", 0, "chr1", 22200, "100M200S", 60, 2048, "chr2", 6000, "100S100M100S", 60, 2048, "chr2", 6500, "200S100M", 60},
+            {"incompleteStrand", 0, "chr1", 22400, "100M200S", 60, 2048, "chr1", 22600, "100S100M100S", 60, 2064, "chr1", 22800, "200S100M", 60},
+            {"incompleteOrder", 0, "chr1", 23200, "100M200S", 60, 2048, "chr1", 23000, "100S100M100S", 60, 2048, "chr1", 22900, "200S100M", 60},
+            {"incompleteMiddle", 0, "chr1", 23400, "100M200S", 60, 2048, "chr1", 23380, "100S100M100S", 60, 2048, "chr1", 23700, "200S100M", 60},
+            {"uninformative", 0, "chr1", 24000, "200M", 60, 2048, "chr1", 24500, "50S100M50S", 30},
+            {"ambiguous", 0, "chr1", 25000, "100M100S", 60, 2048, "chr2", 7000, "100M100S", 60, 2048, "chr1", 25500, "100S100M", 60},
+            {"altTig", 0, "chr1", 26000, "100M100S", 60, 2048, "chr1", 26500, "100S100M", 60, 2048, "chr2", 8000, "200M", 60},
+            {"manyLow", 0, "chr1", 27000, "100M1000S", 60, 2048, "chr1", 27200, "100S100M900S", 60, 2048, "chr1", 27400, "200S100M800S", 5,
+                    2048, "chr1", 27600, "300S100M700S", 60, 2048, "chr1", 27800, "400S100M600S", 5, 2048, "chr1", 28000, "500S100M500S", 60,
+                    2048, "chr1", 28200, "600S100M400S", 5, 2048, "chr1", 28400, "700S100M300S", 60, 2048, "chr1", 28600, "800S100M200S", 5,
+                    2048, "chr1", 28800, "900S100M100S", 5, 2048, "chr1", 29000, "1000S100M", 60},
+            {"gappedDropped", 0, "chr2", 1000, "100M60D100M100S", 60, 2048, "chr2", 1500, "150S50M100S", 60, 2048, "chr2", 1700, "200S100M", 60},
+            {"cpxSplit", 0, "chr2", 2000, "100M60D100M200S", 60, 2048, "chr2", 2500, "200S100M100S", 60, 2048, "chr2", 2900, "300S100M", 60},
+            {"interForward", 0, "chr1", 29200, "100M100S", 60, 2064, "chr2", 10000, "100M100S", 60},
+            {"interForwardIns", 0, "chr1", 29400, "100M130S", 60, 2064, "chr2", 10200, "100M130S", 60},
+            {"interReverse", 16, "chr1", 29600, "100S100M", 60, 2048, "chr2", 10400, "100S100M", 60},
+            {"interReverseIns", 16, "chr2", 10600, "130S100M", 60, 2048, "chr1", 29800, "130S100M", 60},
+            {"interSecond", 0, "chr2", 11000, "100M100S", 60, 2048, "chr1", 28800, "100S100M", 60},
+            {"interSecondRev", 16, "chr1", 28400, "100M100S", 60, 2064, "chr2", 11200, "100S100M", 60},
+            {"interFirstIns", 0, "chr1", 28200, "100M130S", 60, 2048, "chr2", 11400, "130S100M", 60},
+            {"swapIns", 0, "chr2", 12000, "100M130S", 60, 2048, "chr2", 11700, "130S100M", 60},
+            {"swapRev", 16, "chr2", 12300, "100M100S", 60, 2064, "chr2", 12600, "100S100M", 60},
+            {"fatInsertion", 0, "chr2", 13000, "100M160S", 60, 2048, "chr2", 13120, "160S100M", 60},
+            {"fatInsertionRev", 16, "chr2", 13400, "100M160S", 60, 2064, "chr2", 13520, "160S100M", 60},
+            {"dupWide", 0, "chr2", 14000, "100M100S", 60, 2048, "chr2", 14040, "100S100M", 60},
+            {"dupWideIns", 0, "chr2", 14300, "100M130S", 60, 2048, "chr2", 14340, "130S100M", 60},
+            {"dupComplexWide", 0, "chr2", 14600, "100M90S", 60, 2048, "chr2", 14640, "90S100M", 60},
+            {"dupComplexDown", 0, "chr2", 15000, "100M50S", 60, 2048, "chr2", 15040, "50S100M", 60},
+            {"dupComplexShort", 0, "chr2", 15300, "100M90S", 60, 2048, "chr2", 15380, "90S100M", 60},
+            {"weakPair", 0, "chr2", 16000, "100M100S", 15, 2048, "chr2", 16500, "100S100M", 60},
+            {"shortPair", 0, "chr2", 16800, "20M100S", 60, 2048, "chr2", 17000, "20S100M", 60},
+            {"lengthFiltered", 0, "chr2", 17300, "40M40S", 60, 2048, "chr2", 18000, "40S40M", 60},
+            {"qualityFiltered", 0, "chr2", 18300, "100M100S", 25, 2048, "chr2", 19000, "100S100M", 25},
+            {"normal", 0, "chr2", 19200, "100M", 60},
+        };
+        svContigBam(dir.resolve("sv_assembly.bam"), sequences, "s", contigs, 19L, true);
+        final Object[][] tooMany = new Object[1][1 + 5 * 31];
+        tooMany[0][0] = "tooMany";
+        for (int at = 0; at < 31; at++) {
+            tooMany[0][1 + 5 * at] = at == 0 ? 0 : 2048;
+            tooMany[0][2 + 5 * at] = "chr1";
+            tooMany[0][3 + 5 * at] = 100 + 300 * at;
+            tooMany[0][4 + 5 * at] = at + "S20M" + (30 - at) + "S";
+            tooMany[0][5 + 5 * at] = 60;
+        }
+        tooMany[0][4] = "20M30S";
+        tooMany[0][154] = "30S20M";
+        svContigBam(dir.resolve("sv_assembly_too_many.bam"), sequences, "s", tooMany, 20L, true);
+        svContigBam(dir.resolve("sv_assembly_overlap_contained.bam"), sequences, "s", new Object[][] {
+            {"halfOverlap", 0, "chr1", 1000, "100M400S", 60, 2048, "chr1", 1200, "90S210M200S", 60, 2048, "chr1", 1600, "200S120M180S", 60, 2048, "chr1", 2000, "400S100M", 60}}, 21L, true);
+        // No breakend among its calls, or `--cnv-calls` stops on the first one's negative end.
+        svContigBam(dir.resolve("sv_assembly_no_breakend.bam"), sequences, "s", new Object[][] {
+            {"del", 0, "chr1", 1000, "100M100S", 60, 2048, "chr1", 2000, "100S100M", 60},
+            {"ins", 0, "chr1", 10000, "100M160S", 60, 2048, "chr1", 10100, "160S100M", 60},
+            {"dup", 0, "chr1", 11000, "100M100S", 60, 2048, "chr1", 11080, "100S100M", 60},
+            {"cpxGapped", 0, "chr1", 6000, "100M320S", 60, 2048, "chr1", 6400, "120S100M200S", 60, 2048, "chr1", 6900, "320S100M", 60},
+            {"cpxOverlap", 0, "chr1", 8000, "110M200S", 60, 2048, "chr1", 8300, "100S110M100S", 60, 2048, "chr1", 8700, "200S110M", 60},
+            {"cpxFour", 0, "chr1", 12000, "100M400S", 60, 2048, "chr1", 12300, "100S110M290S", 60, 2048, "chr1", 12700, "200S110M190S", 60, 2048, "chr1", 13300, "400S100M", 60},
+            {"cpxAsIsWide", 0, "chr1", 16600, "100M500S", 60, 2048, "chr1", 16699, "200S200M200S", 60, 2048, "chr1", 16898, "500S100M", 60}}, 22L, true);
+        Files.writeString(dir.resolve("sv_alt_tigs.txt"), "chr2\n", StandardCharsets.UTF_8);
+
+        // A read with no qualities, which the wellformed filter drops, beside one it keeps.
+        final SAMFileHeader header = new SAMFileHeader();
+        sequences.forEach(header::addSequence);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("s");
+        header.addReadGroup(group);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        try (SAMFileWriter writer = new SAMFileWriterFactory().setCreateIndex(true)
+                .makeBAMWriter(header, true, dir.resolve("sv_quality_missing.bam").toFile())) {
+            for (int at = 0; at < 2; at++) {
+                final htsjdk.samtools.SAMRecord read = new htsjdk.samtools.SAMRecord(header);
+                read.setReadName("read" + at);
+                read.setReferenceName("chr1");
+                read.setAlignmentStart(100 + at);
+                read.setCigarString("4M");
+                read.setMappingQuality(60);
+                read.setReadBases("ACGT".getBytes(StandardCharsets.US_ASCII));
+                read.setBaseQualities(at == 0 ? new byte[] {30, 30, 30, 30} : htsjdk.samtools.SAMRecord.NULL_QUALS);
+                read.setAttribute("RG", "rg1");
+                writer.addAlignment(read);
+            }
+        }
+    }
+
+    /**
+     * What `CpxVariantReInterpreterSpark` reads: `sv_assembly.bam`'s complex calls as the assembly
+     * step wrote them, each haplotype reduced to its length, since the length is all it asks of one,
+     * and five records of no contig's making: none or one segment, three contigs, one contig twice.
+     */
+    static void svComplexCalls(final Path dir) throws Exception {
+        // Contig, start, end, contig names, segments, arrangement, haplotype length, qualities, longest.
+        final Object[][] calls = {
+            {"chr1", 1099, 1500, "cpxMapped", "chr1:1099-1500", "-chr2:500-599", 102, "60", 100},
+            {"chr1", 2099, 2600, "cpxInverted", "chr1:2099-2300,chr1:2300-2399,chr1:2399-2600", "-2", 102, "60", 100},
+            {"chr1", 3099, 3299, "cpxDuplicated", "chr1:3100-3200,chr1:3200-3299", "2,1,2", 301, "60", 100},
+            {"chr1", 4499, 5000, "cpxReverse", "chr1:4499-4700,chr1:4700-4799,chr1:4799-5000", "2", 102, "60", 100},
+            {"chr1", 5399, 5900, "cpxReverseFlip", "chr1:5399-5600,chr1:5600-5699,chr1:5699-5900", "-2", 102, "60", 100},
+            {"chr1", 6099, 6900, "cpxGapped", "chr1:6099-6400,chr1:6400-6499,chr1:6499-6900", "UINS-20,2,UINS-100", 222, "60", 100},
+            {"chr1", 8109, 8700, "cpxOverlap", "chr1:8109-8310,chr1:8310-8399,chr1:8399-8700", "2", 92, "60", 110},
+            {"chr1", 9599, 10800, "cpxFour", "chr1:9599-9800,chr1:9800-9899,chr1:9899-10200,chr1:10200-10309,chr1:10309-10800", "2,4,UINS-90", 302, "60", 100},
+            {"chr1", 11099, 11800, "cpxFourSwitch", "chr1:11099-11200,chr1:11200-11289,chr1:11289-11500,chr1:11500-11609,chr1:11609-11800", "2,-4,UINS-100", 302, "60", 100},
+            {"chr1", 12099, 12800, "cpxFourOther", "chr1:12099-12300,chr1:12300-12409,chr1:12409-12800", "-chr2:1100-1199,2,UINS-90", 302, "60", 100},
+            {"chr1", 13112, 13800, "cpxClipDeletion", "chr1:13112-13410,chr1:13410-13506,chr1:13506-13800", "UINS-3,2", 102, "60", 103},
+            {"chr1", 14099, 14099, "cpxShared", "chr1:14099-14099", "1,chr2:3000-3099,1", 102, "60", 100},
+            {"chr1", 14599, 14599, "cpxSharedFlip", "chr1:14599-14599", "1,UINS-20,-chr2:3400-3499,UINS-30,1", 152, "60", 100},
+            {"chr1", 15099, 15298, "cpxInvertedOne", "chr1:15099-15298", "-1", 202, "60", 100},
+            {"chr1", 15699, 15898, "cpxInvertedOneWide", "chr1:15699-15898", "UINS-100,-1,UINS-100", 402, "60", 100},
+            {"chr1", 16299, 16318, "cpxInvertedSmall", "chr1:16299-16318", "UINS-120,-1", 142, "60", 100},
+            {"chr1", 16699, 16898, "cpxAsIsWide", "chr1:16699-16898", "UINS-100,1,UINS-100", 402, "60", 100},
+            {"chr1", 17299, 17498, "cpxAsIsFront", "chr1:17299-17498", "UINS-100,1", 302, "60", 100},
+            {"chr1", 17899, 18098, "cpxAsIsRear", "chr1:17899-18098", "1,UINS-100", 302, "60", 100},
+            {"chr1", 18499, 18797, "cpxAllAsIs", "chr1:18499-18648,chr1:18648-18797", "UINS-100,1,2,UINS-100", 502, "60", 100},
+            {"chr1", 19299, 19700, "cpxSegmentGone", "chr1:19299-19400,chr1:19400-19499,chr1:19499-19700", "2", 102, "60", 100},
+            {"chr1", 20099, 20900, "cpxLowMiddle", "chr1:20099-20400,chr1:20400-20599,chr1:20599-20900", "2,UINS-100", 302, "60", 100},
+            {"chr1", 21499, 21510, "cpxSmallGone", "chr1:21499-21510", "-chr2:2500-2699", 202, "60", 100},
+            {"chr1", 21899, 22009, "cpxTiny", "chr1:21899-21910,chr1:21910-22000,chr1:22000-22009", "2,3,3", 111, "60", 100},
+            {"chr1", 25000, 25000, "zeroSegments", "", "UINS-100", 102, "60", 100},
+            {"chr1", 25200, 25200, "zeroSegmentsShort", "", "UINS-10", 12, "60", 10},
+            {"chr1", 25400, 25900, "oneSegmentDeleted", "chr1:25400-25900", "UINS-200", 200, "60", 100},
+            {"chr1", 26000, 26300, "cpxFour,cpxFourOther,nobody", "chr1:26000-26100,chr1:26100-26300", "2,1", 300, "60,50,40", 120},
+            {"chr1", 27099, 29000, "manyLow", "chr1:27099-27200,chr1:27200-27299,chr1:27299-27600,chr1:27600-27699,chr1:27699-28000,chr1:28000-28099,chr1:28099-28400,chr1:28400-28499,chr1:28499-29000", "2,UINS-100,4,UINS-100,6,UINS-100,8,UINS-200", 902, "60", 100},
+            {"chr2", 2099, 2900, "cpxSplit", "chr2:2099-2160,chr2:2160-2259,chr2:2259-2500,chr2:2500-2599,chr2:2599-2900", "2,4", 202, "60", 100},
+            {"chr2", 4000, 4600, "cpxGapped", "chr2:4000-4300,chr2:4300-4600", "-2,1", 600, "30", 80},
+        };
+        final StringBuilder lines = new StringBuilder("##fileformat=VCFv4.2\n");
+        lines.append("##INFO=<ID=ALT_ARRANGEMENT,Number=.,Type=String,Description=\"For CPX variants only; specifies how reference segments given in SEGMENTS are re-arranged\">\n");
+        lines.append("##INFO=<ID=CTG_NAMES,Number=.,Type=String,Description=\"Name of local assembly contigs supporting this variant\">\n");
+        lines.append("##INFO=<ID=END,Number=1,Type=Integer,Description=\"Stop position of the interval\">\n");
+        lines.append("##INFO=<ID=MAPPING_QUALITIES,Number=.,Type=Integer,Description=\"Mapping qualities of the contig alignments that support the variant\">\n");
+        lines.append("##INFO=<ID=MAX_ALIGN_LENGTH,Number=1,Type=Integer,Description=\"Maximum of the values listed in ALIGN_LENGTHS\">\n");
+        lines.append("##INFO=<ID=SEGMENTS,Number=.,Type=String,Description=\"For CPX variants only; segments of reference that are rearranged\">\n");
+        lines.append("##INFO=<ID=SEQ_ALT_HAPLOTYPE,Number=A,Type=Character,Description=\"Alt haplotype sequence, one per alt allele\">\n");
+        lines.append("##INFO=<ID=SVLEN,Number=.,Type=Integer,Description=\"Difference in length between REF and ALT alleles\">\n");
+        lines.append("##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">\n");
+        final String contigs = "##contig=<ID=chr1,length=30000>\n##contig=<ID=chr2,length=20000>\n";
+        final String head = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n";
+        final StringBuilder records = new StringBuilder();
+        for (final Object[] call : calls) {
+            records.append(call[0]).append('\t').append(call[1]).append('\t')
+                    .append("CPX_").append(call[0]).append(':').append(call[1]).append('-').append(call[2])
+                    .append("\tN\t<CPX>\t.\t.\tALT_ARRANGEMENT=").append(call[5])
+                    .append(";CTG_NAMES=").append(call[3]).append(";END=").append(call[2])
+                    .append(";MAPPING_QUALITIES=").append(call[7]).append(";MAX_ALIGN_LENGTH=").append(call[8]);
+            if (!((String) call[4]).isEmpty()) {
+                records.append(";SEGMENTS=").append(call[4]);
+            }
+            records.append(";SEQ_ALT_HAPLOTYPE=").append("A".repeat((Integer) call[6]))
+                    .append(";SVTYPE=CPX\n");
+        }
+        final String record = "chr1\t100\tbad\tN\t<CPX>\t.\t.\t";
+        Files.writeString(dir.resolve("sv_cpx.vcf"), lines + contigs + head + records, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cpx_empty.vcf"), lines + contigs + head, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cpx_no_dictionary.vcf"), lines + head + records, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cpx_no_dictionary_one.vcf"),
+                lines + head + records.substring(0, records.indexOf("\n") + 1), StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cpx_sparse.vcf"), lines + contigs + head + record
+                + "END=200;SEGMENTS=chr1:100-200;SVTYPE=CPX\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cpx_bad_segment.vcf"), lines + contigs + head + record
+                + "ALT_ARRANGEMENT=1;CTG_NAMES=del;END=200;SEGMENTS=chr1:x-5;SEQ_ALT_HAPLOTYPE=AAA;SVTYPE=CPX\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cpx_whole_contig.vcf"), lines + contigs + head + record
+                + "ALT_ARRANGEMENT=1;CTG_NAMES=del;END=200;SEGMENTS=chr1;SEQ_ALT_HAPLOTYPE=AAA;SVTYPE=CPX\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cpx_bad_length.vcf"), lines + contigs + head + record
+                + "ALT_ARRANGEMENT=1;CTG_NAMES=del;END=200;MAX_ALIGN_LENGTH=many;SEGMENTS=chr1:100-200;SEQ_ALT_HAPLOTYPE=AAA;SVTYPE=CPX\n",
+                StandardCharsets.UTF_8);
+    }
+
     static void svContigBam(final Path bam, final java.util.List<SAMSequenceRecord> sequences, final String sample,
                             final Object[][] contigs, final long seed) {
+        svContigBam(bam, sequences, sample, contigs, seed, false);
+    }
+
+    static void svContigBam(final Path bam, final java.util.List<SAMSequenceRecord> sequences, final String sample,
+                            final Object[][] contigs, final long seed, final boolean scoreEachAlignment) {
         final SAMFileHeader header = new SAMFileHeader();
         sequences.forEach(header::addSequence);
         final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
@@ -2068,9 +2387,9 @@ public class SparkWalkersDump {
                     read.setReadBases(bases);
                     read.setBaseQualities(qualities);
                     read.setAttribute("RG", "rg1");
-                    if (at == 1) {
+                    if (at == 1 || scoreEachAlignment) {
                         read.setAttribute("NM", 2);
-                        read.setAttribute("AS", 90);
+                        read.setAttribute("AS", scoreEachAlignment ? read.getCigar().getReferenceLength() : 90);
                     }
                     reads.add(read);
                 }

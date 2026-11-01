@@ -8105,7 +8105,7 @@
     {
       "id": "spark-walkers",
       "status": "golden-pending",
-      "title": "Thirty Spark tools end to end through Main, on one partition",
+      "title": "Thirty-two Spark tools end to end through Main, on one partition",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "CountReadsSpark",
@@ -8137,7 +8137,9 @@
         "PathSeqFilterSpark",
         "PathSeqScoreSpark",
         "ExtractSVEvidenceSpark",
-        "DiscoverVariantsFromContigAlignmentsSAMSpark"
+        "DiscoverVariantsFromContigAlignmentsSAMSpark",
+        "SvDiscoverFromLocalAssemblyContigAlignmentsSpark",
+        "CpxVariantReInterpreterSpark"
       ],
       "java_props": [
         "-Duser.language=en",
@@ -8200,7 +8202,7 @@
       "compare": {
         "mode": "lines"
       },
-      "expect_rows": 1662,
+      "expect_rows": 1929,
       "expect_contains": [
         "revert-sam-defaults\tjava.lang.UnsupportedOperationException",
         "revert-sam-sanitize\torg.apache.spark.SparkException:Base quality score -1 is invalid",
@@ -8230,6 +8232,27 @@
         }
       ],
       "$java_props_why": "GATK's jar carries runtimeAddOpens in its manifest, which only java -jar honours; the dump runs from the classpath, so Spark's StorageUtils needs the same opens passed by hand. Level 2 is what GATKConfig gives a real gatk invocation and instanceMain never sees (#1032)."
+    },
+    {
+      "id": "htsget-reader",
+      "status": "golden-pending",
+      "expect_rows": 917,
+      "title": "a file fetched over htsget, and every way the answer can be refused",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HtsgetReader"
+      ],
+      "why": "THE SCHEME IS ALWAYS HTTPS, so the dump serves TLS on a fixed port under a certificate it makes, and trusts it the way a JVM is told to. A BAM ID REFUSES EVERY --format, BAM INCLUDED, because the check's parentheses bind the format's test to .sam alone. EVERY JSON FAILURE IS AN IOEXCEPTION and reports the request. A BLOCK'S STATUS IS NEVER READ, so a 404's body is written as the data. A 5XX IS RETRIED FOUR TIMES, and a server that recovers answers. --check-md5 COMPARES AS THE CASE STANDS. A request to a port nothing answers reports the URI Jersey built, which is how the rows over --id, --url, --tag and the interval measure it.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "HtsgetReaderDump",
+          "golden": "crates/gatk-tools/tests/data/htsget_reader.txt.gz",
+          "why": "Frozen from the candidate artefact of its first run."
+        }
+      ]
     }
   ],
   "probes": []

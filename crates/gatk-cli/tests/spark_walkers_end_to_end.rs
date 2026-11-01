@@ -32,6 +32,9 @@
 //!    the reads are, and the metadata and high-depth regions it takes on the way;
 //!  * **DiscoverVariantsFromContigAlignmentsSAMSpark**, contigs' alignments read as chimeras and
 //!    the chimeras as a VCF;
+//!  * **SvDiscoverFromLocalAssemblyContigAlignmentsSpark**, the same contigs told apart by class:
+//!    the simple calls, the complex ones and their re-interpretation, five VCFs under one prefix;
+//!  * **CpxVariantReInterpreterSpark**, that re-interpretation from a VCF of complex calls;
 //!  * **HaplotypeCallerSpark**, the caller run over shards of `--read-shard-size`, with no default
 //!    header lines, and what the tool refuses of the walker's outputs;
 //!  * **PathSeqScoreSpark**, the third step: the hits, the scores in their hash tables' order, what

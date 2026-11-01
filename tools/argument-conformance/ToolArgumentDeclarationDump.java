@@ -603,6 +603,12 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.spark.sv.evidence.ExtractSVEvidenceSpark());
         declarations("DiscoverVariantsFromContigAlignmentsSAMSpark",
                 new org.broadinstitute.hellbender.tools.spark.sv.discovery.DiscoverVariantsFromContigAlignmentsSAMSpark());
+        declarations("HtsgetReader",
+                new org.broadinstitute.hellbender.tools.HtsgetReader());
+        declarations("CpxVariantReInterpreterSpark",
+                new org.broadinstitute.hellbender.tools.spark.sv.discovery.inference.CpxVariantReInterpreterSpark());
+        declarations("SvDiscoverFromLocalAssemblyContigAlignmentsSpark",
+                new org.broadinstitute.hellbender.tools.spark.sv.discovery.SvDiscoverFromLocalAssemblyContigAlignmentsSpark());
         declarations("FindBadGenomicKmersSpark",
                 new org.broadinstitute.hellbender.tools.spark.sv.evidence.FindBadGenomicKmersSpark());
         declarations("MarkDuplicatesSpark",

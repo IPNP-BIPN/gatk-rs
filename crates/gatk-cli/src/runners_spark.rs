@@ -931,6 +931,17 @@ fn evidence_task_failure(message: &str) -> Thrown {
     )
 }
 
+/// A task's failure in an assembly tool, whose contig alignments are a cached RDD: the block
+/// manager logs what stopped that one first, under the number the tool's RDDs have reached.
+fn assembly_task_failure(cached_rdd: u32, message: &str) -> Thrown {
+    if message.starts_with("no primary alignment for read") {
+        eprintln!(
+            "WARN  BlockManager - Putting block rdd_{cached_rdd}_0 failed due to exception org.broadinstitute.hellbender.exceptions.GATKException: {message}."
+        );
+    }
+    evidence_task_failure(message)
+}
+
 /// `DiscoverVariantsFromContigAlignmentsSAMSpark.runTool`: the arguments, the external calls, the
 /// output's path and the sample, then [`gatk_tools::sv_discovery`] and the VCF.
 ///
@@ -949,34 +960,7 @@ pub fn discover_variants_from_contig_alignments_sam_spark(parser: &Parser) -> Ou
     let prefix = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
-    // `DiscoverVariantsFromContigAlignmentsArgumentCollection.validate`.
-    for (name, field, default) in [
-        ("min-align-length", "minAlignLength", 50),
-        (
-            "assembly-imprecise-evidence-overlap-uncertainty",
-            "assemblyImpreciseEvidenceOverlapUncertainty",
-            100,
-        ),
-        (
-            "imprecise-variant-evidence-threshold",
-            "impreciseVariantEvidenceThreshold",
-            7,
-        ),
-        ("truth-interval-padding", "truthIntervalPadding", 50),
-        (
-            "max-callable-imprecise-deletion-size",
-            "maxCallableImpreciseVariantDeletionSize",
-            15000,
-        ),
-    ] {
-        let value = number_or(parser, name, default);
-        if value <= 0 {
-            return Err(Thrown::non_user(
-                "java.lang.IllegalArgumentException",
-                format!("invalid value provided to {field}: {value}"),
-            ));
-        }
-    }
+    validate_discover_stage(parser)?;
 
     let sample = sv_sample_id(&header)?;
     let cnv_calls = match argument(parser, "cnv-calls") {
@@ -1012,49 +996,70 @@ pub fn discover_variants_from_contig_alignments_sam_spark(parser: &Parser) -> Ou
     let adjacencies = sv_discovery::adjacencies(&records, &header)
         .map_err(|message| evidence_task_failure(&message))?;
 
-    // `evaluateIntervalsAndNarls` only logs, once it has read the truth and made its intervals.
-    if let Some(truth) = argument(parser, "truth-vcf") {
-        let padding = number_or(parser, "truth-interval-padding", 50);
-        let refused =
-            |message: String| Thrown::non_user("java.lang.IllegalArgumentException", message);
-        let file = sv_feature_file(&truth)?;
-        for record in &file.records {
-            let svtype = record
-                .attributes
-                .iter()
-                .find(|(name, _)| name == "SVTYPE")
-                .and_then(|(_, value)| value.format());
-            // `getStructuralVariantType`: nothing without the attribute, and `valueOf` with it.
-            let Some(svtype) = svtype else { continue };
-            if !header
-                .sequences
-                .iter()
-                .any(|sequence| sequence.name == record.contig)
-            {
-                return Err(Thrown::user(format!(
-                    "VCF contig {} does not appear in dictionary.",
-                    record.contig
-                )));
-            }
-            if !["BND", "CNV", "DEL", "DUP", "INS", "INV"].contains(&svtype.as_str()) {
-                return Err(refused(format!(
-                    "No enum constant htsjdk.variant.variantcontext.StructuralVariantType.{svtype}"
-                )));
-            }
-            sv_discovery::check_padded_start(record.start as i32 - padding).map_err(refused)?;
-        }
-        adjacencies
-            .check_padded_breakpoints(padding)
-            .map_err(refused)?;
-    }
+    check_sv_truth(parser, &header, |padding| {
+        adjacencies.check_padded_breakpoints(padding)
+    })?;
 
     let variants = adjacencies
         .variants(&header, &mut reference, cnv_calls.as_deref())
         .map_err(|message| evidence_task_failure(&message))?;
 
-    // `SVVCFWriter.writeVariants`.
+    write_sv_vcf(parser, tool, &header, &variants, &output)?;
+    Ok(None)
+}
+
+/// `SvDiscoveryUtils.evaluateIntervalsAndNarls`, which only logs, once it has read the truth and
+/// made its intervals.
+fn check_sv_truth(
+    parser: &Parser,
+    header: &SamHeader,
+    check_breakpoints: impl FnOnce(i32) -> Result<(), String>,
+) -> Result<(), Thrown> {
+    let Some(truth) = argument(parser, "truth-vcf") else {
+        return Ok(());
+    };
+    let padding = number_or(parser, "truth-interval-padding", 50);
+    let refused = |message: String| Thrown::non_user("java.lang.IllegalArgumentException", message);
+    let file = sv_feature_file(&truth)?;
+    for record in &file.records {
+        let svtype = record
+            .attributes
+            .iter()
+            .find(|(name, _)| name == "SVTYPE")
+            .and_then(|(_, value)| value.format());
+        // `getStructuralVariantType`: nothing without the attribute, and `valueOf` with it.
+        let Some(svtype) = svtype else { continue };
+        if !header
+            .sequences
+            .iter()
+            .any(|sequence| sequence.name == record.contig)
+        {
+            return Err(Thrown::user(format!(
+                "VCF contig {} does not appear in dictionary.",
+                record.contig
+            )));
+        }
+        if !["BND", "CNV", "DEL", "DUP", "INS", "INV"].contains(&svtype.as_str()) {
+            return Err(refused(format!(
+                "No enum constant htsjdk.variant.variantcontext.StructuralVariantType.{svtype}"
+            )));
+        }
+        gatk_tools::sv_discovery::check_padded_start(record.start as i32 - padding)
+            .map_err(refused)?;
+    }
+    check_breakpoints(padding).map_err(refused)
+}
+
+/// `SVVCFWriter.writeVariants`.
+fn write_sv_vcf(
+    parser: &Parser,
+    tool: &str,
+    header: &SamHeader,
+    variants: &[htsjdk_vcf::variant::VariantContext],
+    output: &str,
+) -> Result<(), Thrown> {
     let mut vcf = htsjdk_vcf::header::VcfHeader::new();
-    vcf.lines = sv_discovery::header_lines();
+    vcf.lines = gatk_tools::sv_discovery::header_lines();
     for (index, sequence) in header.sequences.iter().enumerate() {
         vcf.lines.push(htsjdk_vcf::header::HeaderLine::contig(
             &sequence.name,
@@ -1069,18 +1074,329 @@ pub fn discover_variants_from_contig_alignments_sam_spark(parser: &Parser) -> Ou
     };
     let mut text = vcf.write();
     let encoder = htsjdk_vcf::encoder::VcfEncoder::new(&vcf);
-    for variant in &variants {
+    for variant in variants {
         encoder
             .encode_into(variant, &mut text)
             .map_err(|error| failed(format!("{error:?}")))?;
         text.push('\n');
     }
-    std::fs::write(&output, text).map_err(|error| {
+    std::fs::write(output, text).map_err(|error| {
         Thrown::user(format!(
             "Could not create file at path:{output} due to {output} ({})",
             java_io_reason(&error)
         ))
+    })
+}
+
+/// `DiscoverVariantsFromContigAlignmentsArgumentCollection.validate`.
+fn validate_discover_stage(parser: &Parser) -> Result<(), Thrown> {
+    for (name, field, default) in [
+        ("min-align-length", "minAlignLength", 50),
+        (
+            "assembly-imprecise-evidence-overlap-uncertainty",
+            "assemblyImpreciseEvidenceOverlapUncertainty",
+            100,
+        ),
+        (
+            "imprecise-variant-evidence-threshold",
+            "impreciseVariantEvidenceThreshold",
+            7,
+        ),
+        ("truth-interval-padding", "truthIntervalPadding", 50),
+        (
+            "max-callable-imprecise-deletion-size",
+            "maxCallableImpreciseVariantDeletionSize",
+            15000,
+        ),
+    ] {
+        let value = number_or(parser, name, default);
+        if value <= 0 {
+            return Err(Thrown::non_user(
+                "java.lang.IllegalArgumentException",
+                format!("invalid value provided to {field}: {value}"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// `SvDiscoverFromLocalAssemblyContigAlignmentsSpark.runTool`.
+///
+/// A VCF that was written stays written when a later step of the job fails, as in the tool.
+pub fn sv_discover_from_local_assembly_contig_alignments_spark(parser: &Parser) -> Outcome {
+    use gatk_tools::sv_discovery::assembly;
+    let tool = "SvDiscoverFromLocalAssemblyContigAlignmentsSpark";
+    let SparkStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = spark_startup(parser, tool)?;
+    let prefix = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
+    validate_discover_stage(parser)?;
+    // `broadcastCNVCalls`, whose sample comes from the same header.
+    let cnv_calls = match argument(parser, "cnv-calls") {
+        Some(path) => {
+            let sample = sv_sample_id(&header)?;
+            Some(load_cnv_calls(&path, &header, &sample)?)
+        }
+        None => None,
+    };
+    // `getOutputPrefix`.
+    let prefix = match std::fs::metadata(&prefix) {
+        Ok(found) if found.is_dir() => format!(
+            "{prefix}{}{}_",
+            if prefix.ends_with('/') { "" } else { "/" },
+            sv_sample_id(&header)?
+        ),
+        Ok(_) => {
+            return Err(Thrown::user(format!(
+                "Provided prefix for output is pointing to an existing file: {prefix}"
+            )))
+        }
+        Err(_) => format!(
+            "{prefix}{}{}_",
+            if prefix.ends_with('/') { "" } else { "_" },
+            sv_sample_id(&header)?
+        ),
+    };
+    let canonical = sv_canonical_chromosomes(parser, &header)?;
+    sv_sample_id(&header)?;
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let fasta = htsjdk_bam::fasta_index::IndexedFasta::open(std::path::Path::new(&reference_path))
+        .map_err(|error| Thrown::user(error.message()))?;
+    let mut reference = SparkReference { fasta };
+    let in_task = |message: String| assembly_task_failure(23, &message);
+
+    let classified = assembly::preprocess(&records, &header, &canonical).map_err(in_task)?;
+
+    // `extractSimpleVariants`.
+    let simple_calls =
+        assembly::simple_calls(&classified, &header, &mut reference).map_err(in_task)?;
+    check_sv_truth(parser, &header, |padding| {
+        simple_calls.check_padded_breakpoints(padding)
+    })?;
+    let simple = simple_calls
+        .variants(&header, cnv_calls.as_deref())
+        .map_err(in_task)?;
+    let write = |name: &str, variants: &[htsjdk_vcf::variant::VariantContext]| {
+        write_sv_vcf(
+            parser,
+            tool,
+            &header,
+            &assembly::sorted(variants, &header),
+            &format!("{prefix}{name}"),
+        )
+    };
+    write("NonComplex.vcf", &simple)?;
+
+    // `extractCpxVariants`.
+    let complex = assembly::complex_calls(&classified, &header, &mut reference).map_err(in_task)?;
+    write("Complex.vcf", &assembly::complex_variants(&complex))?;
+    let one_segment =
+        assembly::zero_or_one_segment_variants(&complex, &mut reference).map_err(in_task)?;
+    let from_segments =
+        assembly::multi_segment_variants(&complex, &mut reference).map_err(in_task)?;
+    let pairs = assembly::pair_iteration_adjacencies(&complex, &records, &header, &canonical)
+        .map_err(in_task)?;
+    check_sv_truth(parser, &header, |padding| {
+        pairs.check_padded_breakpoints(padding)
+    })?;
+    let from_pairs = assembly::pair_iteration_variants(
+        &pairs,
+        &complex,
+        &header,
+        &mut reference,
+        cnv_calls.as_deref(),
+    )
+    .map_err(in_task)?;
+    let multi_segment = assembly::remove_duplicates(from_segments, from_pairs).map_err(in_task)?;
+    write("cpx_reinterpreted_simple_1_seg.vcf", &one_segment)?;
+    write("cpx_reinterpreted_simple_multi_seg.vcf", &multi_segment)?;
+
+    // `writeSAMfilesForUnknown`.
+    if flag(parser, "write-sam") {
+        let sets = classified.unknown_reads(&records).map_err(in_task)?;
+        // What reaches the writer has no other `@HD` tag, whatever the input's line carried.
+        let mut sorted_header = header.clone();
+        sorted_header.attributes = SamHeader::default().attributes;
+        sorted_header.set_group_order("none");
+        sorted_header.set_sort_order("queryname");
+        for (name, set) in ["AMBIGUOUS", "INCOMPLETE", "UNINFORMATIVE"]
+            .iter()
+            .zip(sets)
+        {
+            let path = format!("{prefix}{name}.bam");
+            let failed = |error: String| {
+                Thrown::non_user(PORT_FAILURE, format!("could not write {path}: {error}"))
+            };
+            let (level, deflater) = output_compression(parser);
+            let mut writer = htsjdk_bam::writer::BamWriter::with_compression(
+                Vec::new(),
+                &sorted_header,
+                level,
+                deflater,
+            )
+            .map_err(|error| failed(error.to_string()))?;
+            for record in set {
+                writer
+                    .write(record)
+                    .map_err(|error| failed(error.to_string()))?;
+            }
+            let bytes = writer.finish().map_err(|error| failed(error.to_string()))?;
+            std::fs::write(&path, bytes).map_err(|error| failed(error.to_string()))?;
+        }
+    }
+
+    let mut merged = simple;
+    merged.extend(one_segment);
+    merged.extend(multi_segment);
+    let filtered = assembly::filter_merged(
+        merged,
+        number_or(parser, "min-mq", 30),
+        number_or(parser, "min-align-length", 50),
+    );
+    write("merged_simple.vcf", &filtered)?;
+    Ok(None)
+}
+
+/// `SVUtils.getCanonicalChromosomes`.
+fn sv_canonical_chromosomes(parser: &Parser, header: &SamHeader) -> Result<Vec<String>, Thrown> {
+    let mut canonical: Vec<String> = header
+        .sequences
+        .iter()
+        .map(|sequence| sequence.name.clone())
+        .collect();
+    if let Some(path) = argument(parser, "non-canonical-contig-names-file") {
+        let text = std::fs::read_to_string(&path).map_err(|_| {
+            Thrown::user(format!(
+                "Can't read nonCanonicalContigNamesFile file {path}"
+            ))
+        })?;
+        for line in text.lines() {
+            canonical.retain(|name| name != line);
+        }
+    }
+    Ok(canonical)
+}
+
+/// `CpxVariantReInterpreterSpark.runTool`: the complex calls of a VCF, the reads of the contigs that
+/// made them, and the two files of simple variants the assembly step derives from its own.
+///
+/// The header's dictionary is the VCF's, not the reads', and nothing here looks at a sample.
+pub fn cpx_variant_re_interpreter_spark(parser: &Parser) -> Outcome {
+    use gatk_tools::sv_discovery::assembly;
+    let tool = "CpxVariantReInterpreterSpark";
+    let SparkStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = spark_startup(parser, tool)?;
+    let canonical = sv_canonical_chromosomes(parser, &header)?;
+    let complex_vcf = argument(parser, "cpx-vcf").ok_or_else(|| {
+        Thrown::command_line("Argument cpx-vcf was missing: Argument 'cpx-vcf' is required")
+    })?;
+    let prefix = argument(parser, "prefix-out-vcf").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument prefix-out-vcf was missing: Argument 'prefix-out-vcf' is required",
+        )
+    })?;
+    // Hadoop-BAM's input format, which reads the path before anything else does.
+    if !std::path::Path::new(&complex_vcf).exists() {
+        return Err(Thrown::non_user(
+            "java.lang.RuntimeException",
+            format!("File {complex_vcf} does not exist"),
+        ));
+    }
+    let (_, text) = open_feature_input(&complex_vcf)?;
+    let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+        failure: Failure::User,
+        exception: failure.error.class(),
+        message: Some(failure.error.message()),
+    })?;
+    let variants: Vec<_> = if intervals.is_empty() {
+        file.records
+    } else {
+        let index = if complex_vcf.ends_with(".gz") || complex_vcf.ends_with(".bgz") {
+            format!("{complex_vcf}.tbi")
+        } else {
+            format!("{complex_vcf}.idx")
+        };
+        if !std::path::Path::new(&index).exists() {
+            return Err(Thrown::non_user(
+                "java.lang.IllegalArgumentException",
+                format!("Intervals set but no index file found for {complex_vcf} at {index}"),
+            ));
+        }
+        file.records
+            .into_iter()
+            .filter(|record| {
+                intervals.iter().any(|interval| {
+                    interval.contig == record.contig
+                        && i64::from(interval.start) <= record.stop
+                        && record.start <= i64::from(interval.end)
+                })
+            })
+            .collect()
+    };
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let fasta = htsjdk_bam::fasta_index::IndexedFasta::open(std::path::Path::new(&reference_path))
+        .map_err(|error| Thrown::user(error.message()))?;
+    let mut reference = SparkReference { fasta };
+    let in_task = |message: String| assembly_task_failure(32, &message);
+
+    let complex = assembly::complex_calls_from_variants(variants).map_err(in_task)?;
+    let one_segment =
+        assembly::zero_or_one_segment_variants(&complex, &mut reference).map_err(in_task)?;
+    let from_segments =
+        assembly::multi_segment_variants(&complex, &mut reference).map_err(in_task)?;
+    let pairs = assembly::pair_iteration_adjacencies(&complex, &records, &header, &canonical)
+        .map_err(in_task)?;
+    // The pairs go through the same interpreter as the discovery's, truth and all.
+    check_sv_truth(parser, &header, |padding| {
+        pairs.check_padded_breakpoints(padding)
+    })?;
+    let from_pairs =
+        assembly::pair_iteration_variants(&pairs, &complex, &header, &mut reference, None)
+            .map_err(in_task)?;
+    let multi_segment = assembly::remove_duplicates(from_segments, from_pairs).map_err(in_task)?;
+
+    let dictionary = vcf_dictionary(&text);
+    // `getSequenceDictionary` is null with no `##contig`, and the writer refuses it however few
+    // variants there are to sort.
+    if dictionary.sequences.is_empty() {
+        return Err(Thrown::non_user(
+            "java.lang.IllegalArgumentException",
+            "Null object is not allowed here.",
+        ));
+    }
+    for (suffix, variants) in [
+        ("_1_seg.vcf", &one_segment),
+        ("_multi_seg.vcf", &multi_segment),
+    ] {
+        write_sv_vcf(
+            parser,
+            tool,
+            &dictionary,
+            &assembly::sorted(variants, &dictionary),
+            &format!("{prefix}{suffix}"),
+        )?;
+    }
     Ok(None)
 }
 
