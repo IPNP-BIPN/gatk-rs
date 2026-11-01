@@ -2224,7 +2224,10 @@ fn write_spark_partitions(
                 .encode_into(&mut encoded)
                 .map_err(|error| failed(output, format!("{error:?}")))?;
             if (index as u64).is_multiple_of(granularity) {
-                offsets.push(shift + stream.file_pointer());
+                let pointer = stream
+                    .file_pointer()
+                    .map_err(|error| failed(output, error.to_string()))?;
+                offsets.push(shift + pointer);
             }
             std::io::Write::write_all(&mut stream, &encoded)
                 .map_err(|error| failed(output, error.to_string()))?;
