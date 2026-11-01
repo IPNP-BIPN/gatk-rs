@@ -441,6 +441,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "GenotypeGVCFs" => Some(run_genotype_gvcfs),
         "HaplotypeCaller" => Some(run_haplotype_caller),
         "HaplotypeCallerSpark" => Some(run_haplotype_caller_spark),
+        "ReadsPipelineSpark" => Some(run_reads_pipeline_spark),
         "RampedHaplotypeCaller" => Some(run_ramped_haplotype_caller),
         "Mutect2" => Some(run_mutect2),
         "ReblockGVCF" => Some(run_reblock_gvcf),
@@ -567,6 +568,10 @@ fn run_ramped_haplotype_caller(args: &[String]) -> Result<Option<String>, Thrown
     let mut parser = parsed("RampedHaplotypeCaller", args)?;
     runners::haplotype_caller_modes(&mut parser, "RampedHaplotypeCaller")?;
     runners::ramped_haplotype_caller(&parser)
+}
+
+fn run_reads_pipeline_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::reads_pipeline_spark(&parsed("ReadsPipelineSpark", args)?)
 }
 
 fn run_haplotype_caller_spark(args: &[String]) -> Result<Option<String>, Thrown> {

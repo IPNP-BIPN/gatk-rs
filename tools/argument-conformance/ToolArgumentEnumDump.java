@@ -543,6 +543,8 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.spark.sv.evidence.CalcMetadataSpark());
         declarations("HaplotypeCallerSpark",
                 new org.broadinstitute.hellbender.tools.HaplotypeCallerSpark());
+        declarations("ReadsPipelineSpark",
+                new org.broadinstitute.hellbender.tools.spark.pipelines.ReadsPipelineSpark());
         declarations("FindBadGenomicKmersSpark",
                 new org.broadinstitute.hellbender.tools.spark.sv.evidence.FindBadGenomicKmersSpark());
         declarations("MarkDuplicatesSpark",

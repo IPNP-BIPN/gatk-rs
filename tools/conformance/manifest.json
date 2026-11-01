@@ -8105,7 +8105,7 @@
     {
       "id": "spark-walkers",
       "status": "golden-pending",
-      "title": "Twenty-five Spark tools end to end through Main, on one partition",
+      "title": "Twenty-six Spark tools end to end through Main, on one partition",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "CountReadsSpark",
@@ -8130,6 +8130,7 @@
         "FindBadGenomicKmersSpark",
         "CalcMetadataSpark",
         "HaplotypeCallerSpark",
+        "ReadsPipelineSpark",
         "CollectInsertSizeMetricsSpark",
         "CollectMultipleMetricsSpark",
         "MarkDuplicatesSpark"
@@ -8195,7 +8196,7 @@
       "compare": {
         "mode": "lines"
       },
-      "expect_rows": 1067,
+      "expect_rows": 1177,
       "expect_contains": [
         "revert-sam-defaults\tjava.lang.UnsupportedOperationException",
         "revert-sam-sanitize\torg.apache.spark.SparkException:Base quality score -1 is invalid",

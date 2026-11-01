@@ -89,7 +89,7 @@ public class SparkWalkersDump {
         PrintReadsDump.emptyDirectory(DIR);
         Files.createDirectories(DIR);
 
-        System.out.println("# SparkWalkersDump: twenty-five Spark tools through Main, --spark-master local[1]");
+        System.out.println("# SparkWalkersDump: twenty-six Spark tools through Main, --spark-master local[1]");
 
         final Path fasta = DIR.resolve("ref.fasta");
         Files.write(fasta, ReadWalkerDump.FASTA.getBytes());
@@ -189,7 +189,8 @@ public class SparkWalkersDump {
 
         // The fixtures travel, so the port runs over these bytes rather than its own rebuild.
         for (final String name : new String[] {"caller.fasta", "caller.fasta.fai", "caller.dict",
-                "caller.bam", "caller.bai", "caller-names.bam", "kmers.fasta", "kmers.fasta.fai", "kmers.dict",
+                "caller.bam", "caller.bai", "caller-names.bam", "caller-dups.bam", "caller-dups.bai", "caller-dups-names.bam",
+                "caller-known.vcf", "caller-known.vcf.idx", "caller-known.bed", "caller-no-groups.bam", "kmers.fasta", "kmers.fasta.fai", "kmers.dict",
                 "kmers-big.fasta", "kmers-big.fasta.fai", "kmers-big.dict", "high-copy.fasta",
                 "high-copy-blank.fasta", "high-copy.fasta.gz", "ref.fasta", "ref.fasta.fai", "ref.dict",
                 "reads.bam", "reads.bai", "plain.vcf", "genotyped.vcf", "revert.map.tsv",
@@ -512,6 +513,7 @@ public class SparkWalkersDump {
 
         kmerRows();
         callerRows();
+        pipelineRows();
 
         // CALCMETADATASPARK reads everything, filters nothing, and names one partition.
         final String metadata = "CalcMetadataSpark";
@@ -1381,6 +1383,113 @@ public class SparkWalkersDump {
                 records.forEach(writer::addAlignment);
             }
         }
+
+        // Every twentieth read again under another name and worse qualities, so the pipeline's
+        // marking has something to mark, the recalibration something to leave out and, with the
+        // second name form, an optical tile to read.
+        final List<SAMRecord> withDuplicates = new ArrayList<>();
+        int copies = 0;
+        for (final SAMRecord record : records) {
+            withDuplicates.add(record);
+            if ((record.getAlignmentStart() % 20) == 0) {
+                final SAMRecord copy = record.deepCopy();
+                copy.setReadName("H0:1:1:" + (1000 + copies) + ":1000");
+                final byte[] worse = new byte[100];
+                Arrays.fill(worse, (byte) 20);
+                copy.setBaseQualities(worse);
+                withDuplicates.add(copy);
+                copies++;
+            }
+        }
+        // The recalibration wants a platform, and `caller-names.bam`'s absence of one is its own row.
+        final SAMFileHeader dupHeader = header.clone();
+        dupHeader.getReadGroup("rg1").setPlatform("ILLUMINA");
+        dupHeader.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        try (final htsjdk.samtools.SAMFileWriter writer = new htsjdk.samtools.SAMFileWriterFactory()
+                .setCreateIndex(true).makeBAMWriter(dupHeader, false, DIR.resolve("caller-dups.bam").toFile())) {
+            withDuplicates.forEach(writer::addAlignment);
+        }
+        final SAMFileHeader dupNames = dupHeader.clone();
+        dupNames.setSortOrder(SAMFileHeader.SortOrder.queryname);
+        try (final htsjdk.samtools.SAMFileWriter writer = new htsjdk.samtools.SAMFileWriterFactory()
+                .makeBAMWriter(dupNames, false, DIR.resolve("caller-dups-names.bam").toFile())) {
+            withDuplicates.forEach(writer::addAlignment);
+        }
+        final SAMFileHeader noGroups = header.clone();
+        noGroups.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        noGroups.setReadGroups(new ArrayList<>());
+        try (final htsjdk.samtools.SAMFileWriter writer = new htsjdk.samtools.SAMFileWriterFactory()
+                .makeBAMWriter(noGroups, false, DIR.resolve("caller-no-groups.bam").toFile())) {
+            for (final SAMRecord record : records) {
+                final SAMRecord copy = record.deepCopy();
+                copy.setAttribute("RG", null);
+                copy.setHeader(noGroups);
+                writer.addAlignment(copy);
+            }
+        }
+        Files.write(DIR.resolve("caller-known.vcf"), ("##fileformat=VCFv4.2\n##contig=<ID=chr1,length=12000>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
+                + "chr1\t300\trs1\t" + bases.charAt(299) + "\t" + (bases.charAt(299) == 'A' ? 'C' : 'A') + "\t.\t.\t.\n"
+                + "chr1\t5040\trs2\t" + bases.charAt(5039) + "\t" + (bases.charAt(5039) == 'A' ? 'C' : 'A') + "\t.\t.\t.\n")
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        new Main().instanceMain(new String[] {"IndexFeatureFile", "-I", DIR.resolve("caller-known.vcf").toString()});
+        Files.write(DIR.resolve("caller-known.bed"), "chr1\t299\t300\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    /** READSPIPELINESPARK: the marking, the recalibration, then the caller's shards. */
+    static void pipelineRows() throws Exception {
+        final String tool = "ReadsPipelineSpark";
+        final String ref = DIR.resolve("caller.fasta").toString();
+        final String dups = DIR.resolve("caller-dups.bam").toString();
+        final String known = DIR.resolve("caller-known.vcf").toString();
+        final String[][] runs = {
+                {"pipeline-default", "caller.vcf"},
+                {"pipeline-gz", "caller.vcf.gz", "--use-jdk-deflater", "true"},
+                {"pipeline-bam", "caller.vcf", "--use-jdk-deflater", "true", "--output-bam", DIR.resolve("out/pipeline-bam/out.bam").toString()},
+                {"pipeline-bam-remove", "caller.vcf", "--use-jdk-deflater", "true", "--remove-all-duplicates", "--output-bam",
+                        DIR.resolve("out/pipeline-bam-remove/out.bam").toString()},
+                {"pipeline-gvcf", "caller.g.vcf", "-ERC", "GVCF"},
+                {"pipeline-interval", "caller.vcf", "-L", "chr1:8000-9500"},
+                {"pipeline-empty-interval", "caller.vcf", "-L", "chr1:2000-3000"},
+                {"pipeline-strict", "caller.vcf", "--strict"},
+                {"pipeline-small-shards", "caller.vcf", "--read-shard-size", "1000"},
+                {"pipeline-tagging", "caller.vcf", "--use-jdk-deflater", "true", "--duplicate-tagging-policy", "All", "--output-bam",
+                        DIR.resolve("out/pipeline-tagging/out.bam").toString()},
+                {"pipeline-scoring", "caller.vcf", "--duplicate-scoring-strategy", "TOTAL_MAPPED_REFERENCE_LENGTH"},
+                {"pipeline-preserve", "caller.vcf", "--preserve-qscores-less-than", "30"},
+                {"pipeline-static", "caller.vcf", "--use-jdk-deflater", "true", "--static-quantized-quals", "10", "--static-quantized-quals", "30",
+                        "--output-bam", DIR.resolve("out/pipeline-static/out.bam").toString()},
+                {"pipeline-original", "caller.vcf", "--use-jdk-deflater", "true", "--emit-original-quals", "--output-bam",
+                        DIR.resolve("out/pipeline-original/out.bam").toString()},
+                {"pipeline-indels", "caller.vcf", "--indels-context-size", "4", "--mismatches-context-size", "3"},
+                {"pipeline-baq-gap", "caller.vcf", "--bqsr-baq-gap-open-penalty", "30.0"},
+                {"pipeline-quality", "caller.vcf", "--standard-min-confidence-threshold-for-calling", "2000"},
+                {"pipeline-bcf", "caller.bcf"},
+                {"pipeline-bamout", "caller.vcf", "-bamout", DIR.resolve("out/pipeline-bamout/out.bam").toString()},
+                {"pipeline-dbsnp", "caller.vcf", "--dbsnp", known},
+                {"pipeline-comp", "caller.vcf", "--comparison:known", known},
+        };
+        for (final String[] one : runs) {
+            final List<String> rest = new ArrayList<>(Arrays.asList("-I", dups, "-R", ref, "--known-sites", known,
+                    "-O", out(one[0], one[1])));
+            rest.addAll(Arrays.asList(one).subList(2, one.length));
+            run(one[0], one[1], tool, rest.toArray(new String[0]));
+        }
+        run("pipeline-names", "caller.vcf", tool, "-I", DIR.resolve("caller-names.bam").toString(), "-R", ref,
+                "--known-sites", known, "-O", out("pipeline-names", "caller.vcf"));
+        run("pipeline-query-sorted", "caller.vcf", tool, "-I", DIR.resolve("caller-dups-names.bam").toString(), "-R", ref,
+                "--known-sites", known, "--use-jdk-deflater", "true", "--output-bam",
+                DIR.resolve("out/pipeline-query-sorted/out.bam").toString(),
+                "-O", out("pipeline-query-sorted", "caller.vcf"));
+        run("pipeline-no-groups", "caller.vcf", tool, "-I", DIR.resolve("caller-no-groups.bam").toString(), "-R", ref,
+                "--known-sites", known, "-O", out("pipeline-no-groups", "caller.vcf"));
+        run("pipeline-bed", "caller.vcf", tool, "-I", dups, "-R", ref,
+                "--known-sites", DIR.resolve("caller-known.bed").toString(), "-O", out("pipeline-bed", "caller.vcf"));
+        run("recal-no-platform", "recal.table", "BaseRecalibratorSpark", "-I", DIR.resolve("caller.bam").toString(),
+                "-R", ref, "--known-sites", known, "-O", out("recal-no-platform", "recal.table"));
+        run("pipeline-no-known", null, tool, "-I", dups, "-R", ref, "-O", out("pipeline-no-known", "caller.vcf"));
+        run("pipeline-no-reference", null, tool, "-I", dups, "--known-sites", known,
+                "-O", out("pipeline-no-reference", "caller.vcf"));
     }
 
     /** HAPLOTYPECALLERSPARK is HaplotypeCaller's engine, shard by shard. */

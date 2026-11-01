@@ -1123,6 +1123,20 @@ public class MakeFixtures {
                 }
             }
         }
+        // The same reads where the read group names a platform, which a recalibration requires.
+        final SAMFileHeader platformHeader = tumorHeader.clone();
+        platformHeader.getReadGroup("rgT").setPlatform("ILLUMINA");
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(platformHeader, true,
+                             dir.resolve("mutect_pl.bam").toFile())) {
+            for (final SAMRecord record : records) {
+                if ("rgT".equals(record.getAttribute("RG"))) {
+                    record.setHeader(platformHeader);
+                    writer.addAlignment(record);
+                    record.setHeader(header);
+                }
+            }
+        }
         // A pedigree over the two samples, for the callers' --pedigree: the normal is the tumour's
         // mother and the only founder, and with one parent there is no trio.
         Files.writeString(dir.resolve("callers.ped"), "fam1\ttumor\t0\tnormal\t2\t2\nfam1\tnormal\t0\t0\t2\t1\n");

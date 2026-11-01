@@ -649,20 +649,23 @@ fn limitation(what: &str) -> Thrown {
 }
 
 /// The refusal of any declared argument the port does not read.
+fn unimplemented_bcf() -> Thrown {
+    Thrown {
+        failure: Failure::User,
+        exception: "org.broadinstitute.hellbender.exceptions.UserException$UnimplementedFeature",
+        message: Some(
+            "It is currently not possible to write a BCF file on spark.  See \
+             https://github.com/broadinstitute/gatk/issues/4303 for more details ."
+                .to_string(),
+        ),
+    }
+}
+
 /// `HaplotypeCallerSpark.runTool`'s own checks, in its order.
 fn spark_refusals(parser: &Parser, header: &SamHeader) -> Result<(), Thrown> {
     let output = argument(parser, "output").unwrap_or_default();
     if output.ends_with(".bcf") || output.ends_with(".bcf.gz") {
-        return Err(Thrown {
-            failure: Failure::User,
-            exception:
-                "org.broadinstitute.hellbender.exceptions.UserException$UnimplementedFeature",
-            message: Some(
-                "It is currently not possible to write a BCF file on spark.  See \
-                 https://github.com/broadinstitute/gatk/issues/4303 for more details ."
-                    .to_string(),
-            ),
-        });
+        return Err(unimplemented_bcf());
     }
     let illegal =
         |message: &str| Thrown::non_user("java.lang.IllegalArgumentException", message.to_string());
@@ -707,13 +710,53 @@ const SPARK_HONOURED: &[&str] = &[
     "sharded-output",
 ];
 
+/// What `ReadsPipelineSpark` reads before the caller: the duplicate marking and BQSR arguments.
+const PIPELINE_HONOURED: &[&str] = &[
+    "align",
+    "known-sites",
+    "output-bam",
+    "allow-missing-read-group",
+    "binary-tag-name",
+    "bqsr-baq-gap-open-penalty",
+    "default-base-qualities",
+    "deletions-default-quality",
+    "do-not-mark-unmapped-mates",
+    "duplicate-scoring-strategy",
+    "duplicate-tagging-policy",
+    "emit-original-quals",
+    "flow-end-pos-uncertainty",
+    "flow-q-is-known-end",
+    "flow-quality-sum-strategy",
+    "flow-skip-start-homopolymers",
+    "flowbased",
+    "global-qscore-prior",
+    "indels-context-size",
+    "insertions-default-quality",
+    "low-quality-tail",
+    "maximum-cycle-value",
+    "mismatches-context-size",
+    "mismatches-default-quality",
+    "preserve-qscores-less-than",
+    "quantize-quals",
+    "quantizing-levels",
+    "remove-all-duplicates",
+    "remove-sequencing-duplicates",
+    "round-down-quantized",
+    "single-end-reads-clipping-is-end",
+    "single-end-reads-end-position-significant",
+    "static-quantized-quals",
+    "use-original-qualities",
+];
+
 fn refuse_unported(parser: &Parser, tool: &str) -> Result<(), Thrown> {
     let declarations = gatk_tools::tool_declarations::declarations(tool).unwrap_or(&[]);
     for definition in parser.definitions() {
         let name = definition.long_name();
         if !definition.has_been_set()
             || HONOURED.contains(&name)
-            || (tool == "HaplotypeCallerSpark" && SPARK_HONOURED.contains(&name))
+            || (matches!(tool, "HaplotypeCallerSpark" | "ReadsPipelineSpark")
+                && SPARK_HONOURED.contains(&name))
+            || (tool == "ReadsPipelineSpark" && PIPELINE_HONOURED.contains(&name))
             || super::FLOW_MATRIX_ARGUMENTS.contains(&name)
             || super::PILEUP_DETECTION_ARGUMENTS.contains(&name)
         {
@@ -754,6 +797,12 @@ pub fn haplotype_caller_spark(parser: &Parser) -> Outcome {
     run(parser, "HaplotypeCallerSpark")
 }
 
+/// `ReadsPipelineSpark.runTool`: the same caller over the reads the pipeline has finished with.
+/// `--dbsnp` and the rest of what `HaplotypeCallerSpark` refuses is not refused here.
+pub fn reads_pipeline_spark(parser: &Parser) -> Outcome {
+    run(parser, "ReadsPipelineSpark")
+}
+
 /// `RampedHaplotypeCaller.doWork`: HaplotypeCaller with `RampedHaplotypeCallerEngine` and
 /// non-random downsampling. With no ramp the engine still differs from HaplotypeCaller's where
 /// `callRegion` measures read stubs, filters reads and realigns them.
@@ -763,7 +812,8 @@ pub fn ramped_haplotype_caller(parser: &Parser) -> Outcome {
 
 fn run(parser: &Parser, tool: &str) -> Outcome {
     let ramped = tool == "RampedHaplotypeCaller";
-    let spark = tool == "HaplotypeCallerSpark";
+    let pipeline = tool == "ReadsPipelineSpark";
+    let spark = pipeline || tool == "HaplotypeCallerSpark";
     refuse_unported(parser, tool)?;
     // The kernels this port carries: the Java LOGLESS_CACHING PairHMM behind the PairHMM engine.
     // FASTEST_AVAILABLE resolves to it wherever GKL's native kernel does not load, which is the
@@ -812,10 +862,17 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     }
     let emit_mode = scalar(parser, "emit-ref-confidence").unwrap_or_else(|| "NONE".to_string());
     let emit_reference_confidence = emit_mode != "NONE";
-    if flag(parser, "dont-genotype") && emit_reference_confidence {
-        return Err(Thrown::user(
-            "You cannot request gVCF output and 'do not genotype' at the same time",
-        ));
+    let genotype_refusal = || {
+        if flag(parser, "dont-genotype") && emit_reference_confidence {
+            return Err(Thrown::user(
+                "You cannot request gVCF output and 'do not genotype' at the same time",
+            ));
+        }
+        Ok(())
+    };
+    // On Spark the engine is only built inside `runTool`, behind its own refusals.
+    if !spark {
+        genotype_refusal()?;
     }
     // `filterReferenceConfidenceAnnotations`: StrandBiasBySample added, the four site
     // annotations a GVCF cannot carry removed.
@@ -850,9 +907,20 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     } else {
         read_walker_startup(parser, tool)?
     };
-    if spark {
-        spark_refusals(parser, &header)?;
-    }
+    let mut pipeline_reads = None;
+    let header = if pipeline {
+        let (reads, reads_header) = super::spark_runners::reads_pipeline_reads(
+            parser, &source, &header, &intervals, &filters,
+        )?;
+        pipeline_reads = Some(reads);
+        reads_header
+    } else {
+        if spark {
+            spark_refusals(parser, &header)?;
+            genotype_refusal()?;
+        }
+        header
+    };
     // `initializeSamples`.
     let header_samples = hc::samples_from_header(&header);
     let sample_name = match scalar(parser, "sample-name") {
@@ -943,19 +1011,28 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     let filter = read_filter(parser, &filters, &header)?;
     let transform_mapping_quality = flag(parser, "transform-dragen-mapping-quality");
     let mut reads = Vec::new();
-    for mut read in source
-        .iter_all()
-        .map_err(|error| Thrown::user(format!("{error:?}")))?
-    {
-        hc::iupac_to_n(&mut read).map_err(Thrown::user)?;
-        if filter(&read) {
-            // `makePostReadFilterTransformer`: DRAGEN's mapping quality swap, after the filters.
-            if transform_mapping_quality {
-                gatk_engine::dragen_genotypes::transform_mapping_quality(&mut read).map_err(
-                    |message| Thrown::non_user("java.lang.IllegalArgumentException", message),
-                )?;
+    if let Some(given) = pipeline_reads {
+        reads = given;
+    } else {
+        for mut read in source
+            .iter_all()
+            .map_err(|error| Thrown::user(format!("{error:?}")))?
+        {
+            // `AssemblyRegionWalkerSpark` takes `getReads` as they are: neither transformer is
+            // the Spark tool's.
+            if !spark {
+                hc::iupac_to_n(&mut read).map_err(Thrown::user)?;
             }
-            reads.push(read);
+            if filter(&read) {
+                // `makePostReadFilterTransformer`: DRAGEN's mapping quality swap, after the
+                // filters.
+                if transform_mapping_quality && !spark {
+                    gatk_engine::dragen_genotypes::transform_mapping_quality(&mut read).map_err(
+                        |message| Thrown::non_user("java.lang.IllegalArgumentException", message),
+                    )?;
+                }
+                reads.push(read);
+            }
         }
     }
 
@@ -1020,6 +1097,13 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         }
     }
     let (overlap_names, resources, population) = super::variant_resources(parser)?;
+    // The Spark caller passes a `FeatureContext` over no features, so the lines stay and nothing
+    // on them is found.
+    let resources = if pipeline {
+        gatk_tools::hc_genotyping::VariantResources::default()
+    } else {
+        resources
+    };
     let arguments = HaplotypeCallerArguments {
         trimmer: TrimmerArguments {
             assembly_region_padding: region.assembly_region_padding,
@@ -1052,19 +1136,22 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
                 scalar(parser, "alm-interval"),
             )
         }),
-        bamout: argument(parser, "bam-output").map(|path| {
-            let (level, deflater) = super::output_compression(parser);
-            gatk_tools::haplotype_caller::BamoutArguments {
-                kind: scalar(parser, "bam-writer-type")
-                    .and_then(|name| gatk_tools::haplotype_bam_writer::WriterType::parse(&name))
-                    .unwrap_or(gatk_tools::haplotype_bam_writer::WriterType::CalledHaplotypes),
-                path: std::path::PathBuf::from(path),
-                create_index: flag(parser, "create-output-bam-index"),
-                create_md5: flag(parser, "create-output-bam-md5"),
-                level,
-                deflater,
-            }
-        }),
+        // On Spark the driver's engine opens the writer and nothing closes it: the file is empty.
+        bamout: argument(parser, "bam-output")
+            .filter(|_| !spark)
+            .map(|path| {
+                let (level, deflater) = super::output_compression(parser);
+                gatk_tools::haplotype_caller::BamoutArguments {
+                    kind: scalar(parser, "bam-writer-type")
+                        .and_then(|name| gatk_tools::haplotype_bam_writer::WriterType::parse(&name))
+                        .unwrap_or(gatk_tools::haplotype_bam_writer::WriterType::CalledHaplotypes),
+                    path: std::path::PathBuf::from(path),
+                    create_index: flag(parser, "create-output-bam-index"),
+                    create_md5: flag(parser, "create-output-bam-md5"),
+                    level,
+                    deflater,
+                }
+            }),
         pdhmm: flag(parser, "use-pdhmm").then(|| gatk_tools::haplotype_caller::PdhmmArguments {
             use_determined_haplotypes: flag(parser, "make-determined-haps-from-pd-code"),
             gga_fallback: scalar(parser, "fallback-gga-if-pdhmm-fails")
@@ -1620,7 +1707,8 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         gatk_tools::gvcf_blocks::add_ranges_to_header(&mut vcf_header, &partitions);
         let mut combiner = gatk_tools::gvcf_blocks::BlockCombiner::new(
             partitions,
-            flag(parser, "floor-blocks"),
+            // `VariantsSparkSink` builds its `GVCFWriter` without the argument.
+            !spark && flag(parser, "floor-blocks"),
             None,
         );
         let mut combined = Vec::new();
@@ -1641,6 +1729,14 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         // A task that fails writes nothing the job commits.
         if let Some(failure) = failure {
             return Err(failure);
+        }
+        if output.ends_with(".bcf") || output.ends_with(".bcf.gz") {
+            return Err(unimplemented_bcf());
+        }
+        if let Some(path) = argument(parser, "bam-output") {
+            std::fs::write(&path, b"").map_err(|error| {
+                Thrown::non_user(PORT_FAILURE, format!("could not write {path}: {error}"))
+            })?;
         }
         let split = text
             .match_indices('\n')

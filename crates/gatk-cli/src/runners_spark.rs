@@ -2395,39 +2395,17 @@ pub fn mark_duplicates_spark(parser: &Parser, mode: &Parser) -> Outcome {
     }
     drop(filter);
 
-    let mut tagging = match scalar(parser, "duplicate-tagging-policy").as_deref() {
-        Some("All") => md::Tagging::All,
-        Some("OpticalOnly") => md::Tagging::OpticalOnly,
-        _ => md::Tagging::DontTag,
-    };
     let (remove_all, remove_sequencing) = (
         flag(parser, "remove-all-duplicates"),
         flag(parser, "remove-sequencing-duplicates"),
     );
-    if remove_sequencing && tagging == md::Tagging::DontTag {
-        tagging = md::Tagging::OpticalOnly;
-    }
-    let regex = md::ReadNameRegex::from_arg(argument(parser, "read-name-regex").as_deref())
-        .map_err(|error| Thrown::non_user("java.util.regex.PatternSyntaxException", error))?;
-    let settings = md::MarkArguments {
-        scoring: match scalar(parser, "duplicate-scoring-strategy").as_deref() {
-            Some("TOTAL_MAPPED_REFERENCE_LENGTH") => md::Scoring::TotalMappedReferenceLength,
-            Some("FLOW_SUM_OF_BASE_QUALITIES") => md::Scoring::FlowSumOfBaseQualities,
-            _ => md::Scoring::SumOfBaseQualities,
-        },
-        dont_mark_unmapped_mates: flag(parser, "do-not-mark-unmapped-mates"),
-        tagging,
-        read_name_regex: regex,
-        pixel_distance: number_or(parser, "optical-duplicate-pixel-distance", 100),
-        flow: md::FlowArguments {
-            quality_sum_strategy: flag(mode, "flow-quality-sum-strategy"),
-            end_location_significant: flag(mode, "single-end-reads-end-position-significant"),
-            end_uncertainty: number_or(mode, "flow-end-pos-uncertainty", 0),
-            use_clipped_locations: flag(mode, "single-end-reads-clipping-is-end"),
-            skip_start_homopolymers: number_or(mode, "flow-skip-start-homopolymers", 0),
-            q_is_known_end: flag(mode, "flow-q-is-known-end"),
-        },
-    };
+    let settings = mark_arguments(
+        parser,
+        mode,
+        remove_sequencing,
+        argument(parser, "read-name-regex").as_deref(),
+        number_or(parser, "optical-duplicate-pixel-distance", 100),
+    )?;
 
     // `getHeaderReadGroupIndexMap`, on the driver.
     if header.read_groups.is_empty() {
@@ -2485,6 +2463,144 @@ pub fn mark_duplicates_spark(parser: &Parser, mode: &Parser) -> Outcome {
     header.set_sort_order("coordinate");
     write_spark_reads(parser, &header, &kept, &output, true)?;
     Ok(None)
+}
+
+/// `MarkDuplicatesSparkArgumentCollection`, with the optical finder's two settings as the caller's
+/// tool has them.
+fn mark_arguments(
+    parser: &Parser,
+    mode: &Parser,
+    remove_sequencing: bool,
+    read_name_regex: Option<&str>,
+    pixel_distance: i32,
+) -> Result<gatk_tools::mark_duplicates_spark::MarkArguments, Thrown> {
+    use gatk_tools::mark_duplicates_spark as md;
+    let mut tagging = match scalar(parser, "duplicate-tagging-policy").as_deref() {
+        Some("All") => md::Tagging::All,
+        Some("OpticalOnly") => md::Tagging::OpticalOnly,
+        _ => md::Tagging::DontTag,
+    };
+    if remove_sequencing && tagging == md::Tagging::DontTag {
+        tagging = md::Tagging::OpticalOnly;
+    }
+    let regex = md::ReadNameRegex::from_arg(read_name_regex)
+        .map_err(|error| Thrown::non_user("java.util.regex.PatternSyntaxException", error))?;
+    Ok(md::MarkArguments {
+        scoring: match scalar(parser, "duplicate-scoring-strategy").as_deref() {
+            Some("TOTAL_MAPPED_REFERENCE_LENGTH") => md::Scoring::TotalMappedReferenceLength,
+            Some("FLOW_SUM_OF_BASE_QUALITIES") => md::Scoring::FlowSumOfBaseQualities,
+            _ => md::Scoring::SumOfBaseQualities,
+        },
+        dont_mark_unmapped_mates: flag(parser, "do-not-mark-unmapped-mates"),
+        tagging,
+        read_name_regex: regex,
+        pixel_distance,
+        flow: md::FlowArguments {
+            quality_sum_strategy: flag(mode, "flow-quality-sum-strategy"),
+            end_location_significant: flag(mode, "single-end-reads-end-position-significant"),
+            end_uncertainty: number_or(mode, "flow-end-pos-uncertainty", 0),
+            use_clipped_locations: flag(mode, "single-end-reads-clipping-is-end"),
+            skip_start_homopolymers: number_or(mode, "flow-skip-start-homopolymers", 0),
+            q_is_known_end: flag(mode, "flow-q-is-known-end"),
+        },
+    })
+}
+
+/// `ReadsPipelineSpark.runTool` up to the caller: the reads marked, sorted, recalibrated from a
+/// table of their own, written if asked, and put through the caller's filters at their defaults.
+/// The duplicates stay: only `MarkDuplicatesSpark.runTool` removes any, and `new
+/// OpticalDuplicateFinder()` is the default regex and distance whatever the tool was given.
+pub(super) fn reads_pipeline_reads(
+    parser: &Parser,
+    source: &ReadsDataSource,
+    header: &SamHeader,
+    intervals: &[gatk_engine::interval::SimpleInterval],
+    filters: &[gatk_tools::filter_resolution::ResolvedFilter],
+) -> Result<(Vec<BamRecord>, SamHeader), Thrown> {
+    use gatk_tools::mark_duplicates_spark as md;
+    if flag(parser, "align") {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "ReadsPipelineSpark's --align runs BWA-MEM, which this port does not carry. This \
+             message is the port's own and not GATK's.",
+        ));
+    }
+    spark_known_sites(parser)?;
+    let filter = read_filter(parser, filters, header)?;
+    let mut records = gatk_tools::read_walker::traverse(source, intervals, &filter)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    drop(filter);
+    let settings = mark_arguments(
+        parser,
+        parser,
+        false,
+        Some("<optimized capture of last three ':' separated fields as numeric values>"),
+        100,
+    )?;
+    if header.read_groups.is_empty() {
+        return Err(Thrown::user(
+            "Bad input: Sam file header missing Read Group fields. MarkDuplicatesSpark currently \
+             requires reads to be labeled with read group tags, please add read groups tags to \
+             your reads",
+        ));
+    }
+    let grouped = header.attributes.get("SO") == Some("queryname")
+        || header.attributes.get("GO") == Some("query");
+    if !grouped {
+        records.sort_by(htsjdk_bam::query_name::compare);
+    }
+    let marked = md::mark(vec![records], header, &settings).map_err(|failure| {
+        eprintln!("ERROR Executor - Exception in task 0.0 in stage 1.0 (TID 1)");
+        Thrown::non_user("org.apache.spark.SparkException", failure.message)
+    })?;
+    let mut sorted = marked.reads;
+    sorted.sort_by(htsjdk_bam::coordinate::compare);
+
+    let mut for_table = Vec::new();
+    for name in [
+        "MappingQualityNotZeroReadFilter",
+        "MappingQualityAvailableReadFilter",
+        "MappedReadFilter",
+        "NotSecondaryAlignmentReadFilter",
+        "NotDuplicateReadFilter",
+        "PassesVendorQualityCheckReadFilter",
+    ] {
+        for_table.push(gatk_tools::filter_resolution::ResolvedFilter {
+            name: name.to_string(),
+            negated: false,
+        });
+    }
+    let table_filter = read_filter(parser, &for_table, header)?;
+    let table_reads: Vec<BamRecord> = sorted
+        .iter()
+        .filter(|record| table_filter(record))
+        .cloned()
+        .collect();
+    drop(table_filter);
+    let table = super::recalibration_table_over(
+        parser,
+        header,
+        super::RecalibrationReads::Chosen(&table_reads),
+    )
+    .map_err(table_task_failure)?;
+    tables_combine(header)?;
+    let finished = recalibrated(
+        header,
+        &table,
+        &super::apply_bqsr_arguments(parser),
+        &sorted,
+    )?;
+    if let Some(output_bam) = argument(parser, "output-bam") {
+        write_spark_reads(parser, header, &finished, &output_bam, true)?;
+    }
+    let caller_filter = super::standard_hc_read_filter(header)?;
+    let for_caller: Vec<BamRecord> = finished
+        .into_iter()
+        .filter(|record| caller_filter(record))
+        .collect();
+    let mut reads_header = header.clone();
+    reads_header.set_sort_order("coordinate");
+    Ok((for_caller, reads_header))
 }
 
 /// `GATKSparkTool.writeReads` through `ReadsSparkSink` and Disq, as described above.
@@ -2809,7 +2925,8 @@ pub fn base_recalibrator_spark(parser: &Parser) -> Outcome {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
     spark_known_sites(parser)?;
-    let table = super::recalibration_table(parser, &source, &header, &intervals, &filters)?;
+    let table = super::recalibration_table(parser, &source, &header, &intervals, &filters)
+        .map_err(table_task_failure)?;
     tables_combine(&header)?;
     std::fs::write(&output, table)
         .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
@@ -2875,7 +2992,8 @@ pub fn bqsr_pipeline_spark(parser: &Parser) -> Outcome {
         });
     }
     spark_known_sites(parser)?;
-    let table = super::recalibration_table(parser, &source, &header, &intervals, &for_table)?;
+    let table = super::recalibration_table(parser, &source, &header, &intervals, &for_table)
+        .map_err(table_task_failure)?;
     tables_combine(&header)?;
     let filter = read_filter(parser, &filters, &header)?;
     let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
@@ -2904,6 +3022,18 @@ fn spark_known_sites(parser: &Parser) -> Result<(), Thrown> {
         }
     }
     Ok(())
+}
+
+/// `updatePlatformForRead` throws inside the executor, so its `MalformedRead` reaches the driver as
+/// the job's failure.
+fn table_task_failure(thrown: Thrown) -> Thrown {
+    match &thrown.message {
+        Some(message) if message.contains("reads with no platform information") => {
+            eprintln!("ERROR Executor - Exception in task 0.0 in stage 0.0 (TID 0)");
+            Thrown::non_user("org.apache.spark.SparkException", message.clone())
+        }
+        _ => thrown,
+    }
 }
 
 /// `treeAggregate`'s first combine: the empty table is sized by the read groups' DISTINCT

@@ -36,6 +36,7 @@ pub type Outcome = Result<Option<String>, Thrown>;
 mod haplotype_caller;
 pub use haplotype_caller::{
     haplotype_caller, haplotype_caller_modes, haplotype_caller_spark, ramped_haplotype_caller,
+    reads_pipeline_spark,
 };
 mod mutect2;
 pub use mutect2::{mutect2, mutect2_modes};
@@ -513,6 +514,36 @@ fn read_filter<'a>(
             .iter()
             .all(|(filter, negated)| filter.decide(read).unwrap_or(false) != *negated)
     }))
+}
+
+/// `ReadFilter.fromList(HaplotypeCallerEngine.makeStandardHCReadFilters(), header)`: the engine's
+/// filters at their own defaults, whatever the command line set for filters of the same name.
+pub(crate) fn standard_hc_read_filter(
+    header: &SamHeader,
+) -> Result<impl Fn(&BamRecord) -> bool + '_, Thrown> {
+    let mut plain = Vec::new();
+    for name in [
+        "MappingQualityAvailableReadFilter",
+        "MappedReadFilter",
+        "NotSecondaryAlignmentReadFilter",
+        "NotDuplicateReadFilter",
+        "PassesVendorQualityCheckReadFilter",
+        "NonZeroReferenceLengthAlignmentReadFilter",
+        "GoodCigarReadFilter",
+    ] {
+        plain.push(gatk_readfilter::by_name(name).ok_or_else(|| {
+            Thrown::non_user(
+                PORT_LIMITATION,
+                format!("{name} is a GATK read filter that this port does not carry yet."),
+            )
+        })?);
+    }
+    let floor = gatk_readfilter::Parameterized::MappingQuality { min: 20, max: None };
+    Ok(move |read: &BamRecord| {
+        floor.decide(read).unwrap_or(false)
+            && plain.iter().all(|filter| filter(read))
+            && gatk_readfilter::with_header::wellformed(read, header)
+    })
 }
 
 /// `--read-index`: the index to use for each reads input, in place of the one the name implies.
@@ -12473,6 +12504,32 @@ pub(crate) fn recalibration_table(
     intervals: &[gatk_engine::interval::SimpleInterval],
     filters: &[gatk_tools::filter_resolution::ResolvedFilter],
 ) -> Result<String, Thrown> {
+    recalibration_table_over(
+        parser,
+        header,
+        RecalibrationReads::Traversal {
+            source,
+            intervals,
+            filters,
+        },
+    )
+}
+
+/// What the counting pass reads: the walker's own traversal, or what a pipeline already chose.
+pub(crate) enum RecalibrationReads<'a> {
+    Traversal {
+        source: &'a ReadsDataSource,
+        intervals: &'a [gatk_engine::interval::SimpleInterval],
+        filters: &'a [gatk_tools::filter_resolution::ResolvedFilter],
+    },
+    Chosen(&'a [BamRecord]),
+}
+
+pub(crate) fn recalibration_table_over(
+    parser: &Parser,
+    header: &SamHeader,
+    reads: RecalibrationReads<'_>,
+) -> Result<String, Thrown> {
     let reference_path = argument(parser, "reference").ok_or_else(|| {
         Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
     })?;
@@ -12567,16 +12624,33 @@ pub(crate) fn recalibration_table(
             .unwrap_or(-1),
         use_original_base_qualities: flag(parser, "use-original-qualities"),
     };
-    let filter = read_filter(parser, filters, header)?;
-    gatk_tools::base_recalibrator::base_recalibrator(
-        source,
-        &mut bases,
-        &known_sites,
-        &arguments_for_engine,
-        number_or(parser, "quantizing-levels", 16),
-        &filter,
-        intervals,
-    )
+    let quantizing_levels = number_or(parser, "quantizing-levels", 16);
+    match reads {
+        RecalibrationReads::Traversal {
+            source,
+            intervals,
+            filters,
+        } => {
+            let filter = read_filter(parser, filters, header)?;
+            gatk_tools::base_recalibrator::base_recalibrator(
+                source,
+                &mut bases,
+                &known_sites,
+                &arguments_for_engine,
+                quantizing_levels,
+                &filter,
+                intervals,
+            )
+        }
+        RecalibrationReads::Chosen(records) => gatk_tools::base_recalibrator::table_of_reads(
+            header,
+            records,
+            &mut bases,
+            &known_sites,
+            &arguments_for_engine,
+            quantizing_levels,
+        ),
+    }
     .map_err(|error| match error {
         // A read failure is the reference's own exception, class and all: the EOF on a record body
         // is `RuntimeEOFException` at status three, not a user banner carrying a Rust debug string.

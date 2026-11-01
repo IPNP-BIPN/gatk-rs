@@ -30,6 +30,8 @@
 //!    flushes;
 //!  * **HaplotypeCallerSpark**, the caller run over shards of `--read-shard-size`, with no default
 //!    header lines, and what the tool refuses of the walker's outputs;
+//!  * **ReadsPipelineSpark**, the marking, the recalibration and that caller in one job: duplicates
+//!    are never removed, the optical finder is its default, and `--dbsnp` is a header line only;
 //!  * **CompareDuplicatesSpark**, whose filter holds for the first BAM only, whose keys are looked
 //!    up in the first header for both, and whose summary comes in an order no two JVMs share, so
 //!    the dump and this test sort it;
