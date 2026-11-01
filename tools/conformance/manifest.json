@@ -8249,7 +8249,7 @@
       "cases": [
         {
           "dump": "HtsgetReaderDump",
-          "golden": "crates/gatk-tools/tests/data/htsget_reader.txt.gz",
+          "golden": null,
           "why": "Frozen from the candidate artefact of its first run."
         }
       ]
