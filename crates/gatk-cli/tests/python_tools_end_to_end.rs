@@ -83,6 +83,9 @@ fn replay(dump: &str, root: &Path) {
             )),
         }
     }
+    for input in ["calls.vcf", "resource.vcf"] {
+        run(&["IndexFeatureFile", "-I", input]).expect("the index");
+    }
     let seven = root.join("seven.json");
     std::fs::write(
         &seven,
