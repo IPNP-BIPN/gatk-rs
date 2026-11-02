@@ -306,6 +306,9 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CalcMetadataSpark" => Some(run_calc_metadata_spark),
         "ExtractSVEvidenceSpark" => Some(run_extract_sv_evidence_spark),
         "FindBreakpointEvidenceSpark" => Some(run_find_breakpoint_evidence_spark),
+        "StructuralVariationDiscoveryPipelineSpark" => {
+            Some(run_structural_variation_discovery_pipeline_spark)
+        }
         "DiscoverVariantsFromContigAlignmentsSAMSpark" => {
             Some(run_discover_variants_from_contig_alignments_sam_spark)
         }
@@ -770,6 +773,15 @@ fn run_extract_sv_evidence_spark(args: &[String]) -> Result<Option<String>, Thro
 
 fn run_find_breakpoint_evidence_spark(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::find_breakpoint_evidence_spark(&parsed("FindBreakpointEvidenceSpark", args)?)
+}
+
+fn run_structural_variation_discovery_pipeline_spark(
+    args: &[String],
+) -> Result<Option<String>, Thrown> {
+    runners::structural_variation_discovery_pipeline_spark(&parsed(
+        "StructuralVariationDiscoveryPipelineSpark",
+        args,
+    )?)
 }
 
 fn run_discover_variants_from_contig_alignments_sam_spark(

@@ -39,11 +39,13 @@ use htsjdk_bam::cigar::{Cigar, CigarElement, Op as CigarOp};
 use htsjdk_bam::header::SamHeader;
 use htsjdk_bam::record::BamRecord;
 use htsjdk_bam::tag::{Tag, TagValue};
+use htsjdk_vcf::allele::Allele;
+use htsjdk_vcf::variant::{Value, VariantContext};
 
 use crate::bwa_aligner::{ContigAligner, ContigAlignment};
 use crate::hopscotch::{Hopscotch, HopscotchEntry, HopscotchFailed};
 use crate::read_metadata::ReadMetadata;
-use crate::sv_discovery::append_only_group;
+use crate::sv_discovery::{append_only_group, Reference};
 use crate::sv_evidence::{
     self, contained_in_region_to_ignore, fragment_ordinal, is_mapped, is_primary_line, Evidence,
     EvidenceArguments, EvidenceKind, ReadKind, SvInterval,
@@ -2183,6 +2185,142 @@ fn apply_alignment(
         .insert(Tag::new(b"RG"), TagValue::Str(CONTIG_READ_GROUP.to_string()));
     record.read_bases = bases;
     Ok(record)
+}
+
+/// `SVInterval.midpoint`.
+fn midpoint(interval: &SvInterval) -> i32 {
+    interval.start.wrapping_add(interval.end) / 2
+}
+
+/// `SVContext.composePaddedInterval`, as the half-open `SVInterval` `getPairedStrandedIntervals`
+/// makes of it.
+fn padded(contig: i32, length: i32, start: i32, end: i32, padding: i32) -> SvInterval {
+    SvInterval {
+        contig,
+        start: (if padding > 0 { start - padding + 1 } else { start }).max(1),
+        end: end.saturating_add(padding).min(length) + 1,
+    }
+}
+
+/// `processEvidenceTargetLinks`: the tree the links make, each deletion taking the links that
+/// overlap it, then an imprecise deletion from each link left over with enough to it.
+pub fn annotate_with_links(
+    variants: Vec<VariantContext>,
+    links: &[TargetLink],
+    metadata: &ReadMetadata,
+    header: &SamHeader,
+    reference: &mut dyn Reference,
+    threshold: i32,
+    max_deletion: i32,
+) -> Result<Vec<VariantContext>, Failure> {
+    let mut tree: PairedTree<TargetLink> = PairedTree::new();
+    for link in links {
+        tree.put(link.source, link.target, link.clone());
+    }
+    let int = |value: i32| Value::Int(i64::from(value));
+    let padding = metadata
+        .libraries
+        .iter()
+        .map(|(_, statistics)| statistics.median)
+        .max()
+        .unwrap_or(0)
+        / 2;
+    let mut annotated = Vec::with_capacity(variants.len());
+    for mut variant in variants {
+        let is_deletion = variant
+            .attributes
+            .iter()
+            .any(|(name, value)| name == "SVTYPE" && *value == Value::Str("DEL".to_string()));
+        if is_deletion {
+            let contig = header
+                .sequences
+                .iter()
+                .position(|sequence| sequence.name == variant.contig)
+                .expect("a variant on the dictionary");
+            let length = header.sequences[contig].length;
+            let homology = variant
+                .attributes
+                .iter()
+                .find_map(|(name, value)| match value {
+                    Value::Int(homology) if name == "HOMLEN" => Some(*homology as i32),
+                    _ => None,
+                })
+                .unwrap_or(0);
+            let (start, end) = (variant.start as i32, variant.stop as i32);
+            let left = padded(contig as i32, length, start + 1, start + 1 + homology, padding);
+            let right = padded(contig as i32, length, end, end + homology, padding);
+            let (mut read_pairs, mut split_reads) = (0i32, 0i32);
+            for key in tree.overlappers(&(left, true), &(right, false)) {
+                if let Some((_, link)) = tree.remove(&key) {
+                    read_pairs = read_pairs.wrapping_add(link.read_pairs);
+                    split_reads = split_reads.wrapping_add(link.split_reads);
+                }
+            }
+            if read_pairs > 0 {
+                variant.attributes.push(("READ_PAIR_SUPPORT".to_string(), int(read_pairs)));
+            }
+            if split_reads > 0 {
+                variant.attributes.push(("SPLIT_READ_SUPPORT".to_string(), int(split_reads)));
+            }
+        }
+        annotated.push(variant);
+    }
+
+    // `callImpreciseDeletionFromEvidenceLinks`, over what the deletions left.
+    for (_, _, link) in tree.entries() {
+        let (left, right) = (link.source, link.target);
+        let same_contig = left.0.contig == right.0.contig;
+        let distance = if same_contig {
+            right.0.start.wrapping_sub(left.0.end)
+        } else {
+            -1
+        };
+        if !(same_contig && left.1 && !right.1)
+            || distance >= max_deletion
+            || link.read_pairs.wrapping_add(link.split_reads) <= threshold
+        {
+            continue;
+        }
+        let contig = &metadata.contigs[left.0.contig as usize];
+        let (start, end) = (midpoint(&left.0), midpoint(&right.0));
+        let bases = reference
+            .bases(contig, start, start)
+            .map_err(|message| Failure::Task(message))?;
+        let reference_allele = Allele::create(&bases, true)
+            .map_err(|error| Failure::Port(format!("{error:?}")))?;
+        let alternate =
+            Allele::from_str("<DEL>", false).map_err(|error| Failure::Port(format!("{error:?}")))?;
+        let mut variant = VariantContext::new(
+            contig,
+            i64::from(start),
+            vec![reference_allele, alternate],
+        );
+        variant.stop = i64::from(end);
+        variant.id = format!(
+            "DEL_IMPRECISE_{contig}_{}_{}_{}_{}",
+            left.0.start, left.0.end, right.0.start, right.0.end
+        );
+        for (name, value) in [
+            ("END", int(end)),
+            ("SVTYPE", Value::Str("DEL".to_string())),
+            ("SVLEN", int(start.wrapping_sub(end))),
+            ("IMPRECISE", Value::Bool(true)),
+            (
+                "CIPOS",
+                Value::Str(format!("{},{}", left.0.start - start, left.0.end - start)),
+            ),
+            (
+                "CIEND",
+                Value::Str(format!("{},{}", right.0.start - end, right.0.end - end)),
+            ),
+            ("READ_PAIR_SUPPORT", int(link.read_pairs)),
+            ("SPLIT_READ_SUPPORT", int(link.split_reads)),
+        ] {
+            variant.attributes.push((name.to_string(), value));
+        }
+        annotated.push(variant);
+    }
+    Ok(annotated)
 }
 
 /// `SVUtils.GATKSV_CONTIG_ALIGNMENTS_READ_GROUP_ID`.

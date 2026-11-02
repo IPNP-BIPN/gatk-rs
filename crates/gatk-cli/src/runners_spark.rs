@@ -1034,7 +1034,8 @@ fn external_evidence(
     metadata: &gatk_tools::read_metadata::ReadMetadata,
 ) -> Result<Vec<sv_evidence::Evidence>, Thrown> {
     use sv_evidence::{fixed_width, Evidence, EvidenceKind, SvInterval};
-    let Some(path) = argument(parser, "external-evidence") else {
+    let Some(path) = argument(parser, "external-evidence").or_else(|| argument(parser, "cnv-calls"))
+    else {
         return Ok(Vec::new());
     };
     let weight = number_or(parser, "external-evidence-weight", 10);
@@ -1184,12 +1185,12 @@ fn write_contig_alignments(
         records.sort_by(htsjdk_bam::query_name::compare);
     }
     let failed = |error: String| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}"));
-    if output.ends_with(".bam") {
+    if !output.ends_with(".sam") {
         let (level, deflater) = output_compression(parser);
         let (bytes, index) = gatk_tools::sam_output::write_records_with(
             &clean,
             &records,
-            order == "coordinate",
+            order == "coordinate" && output.ends_with(".bam"),
             level,
             deflater,
         )
@@ -1231,6 +1232,143 @@ pub fn find_breakpoint_evidence_spark(parser: &Parser) -> Outcome {
         &intervals,
         &arguments_read,
         Some(&output),
+    )?;
+    Ok(None)
+}
+
+/// `StructuralVariationDiscoveryPipelineSpark`.
+pub fn structural_variation_discovery_pipeline_spark(parser: &Parser) -> Outcome {
+    use gatk_tools::sv_discovery;
+    let tool = "StructuralVariationDiscoveryPipelineSpark";
+    let SparkStart {
+        source,
+        header,
+        intervals,
+        ..
+    } = spark_startup(parser, tool)?;
+    let variants_dir = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let contigs = argument(parser, "contig-sam-file").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument contig-sam-file was missing: Argument 'contig-sam-file' is required",
+        )
+    })?;
+    let arguments_read = breakpoint_arguments(parser)?;
+    validate_discover_stage(parser)?;
+    let cnv_path = argument(parser, "cnv-calls");
+    if argument(parser, "external-evidence").is_some() && cnv_path.is_some() {
+        return Err(Thrown::non_user(
+            "java.lang.IllegalStateException",
+            "Please only specify one of externalEvidenceFile or cnvCallsFile",
+        ));
+    }
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let (metadata, results) = gather_breakpoints(
+        parser,
+        &source,
+        &header,
+        &intervals,
+        &arguments_read,
+        Some(&contigs),
+    )?;
+    if results.assemblies.is_empty() {
+        return Ok(None);
+    }
+    let names: Vec<String> = header
+        .sequences
+        .iter()
+        .map(|sequence| sequence.name.clone())
+        .collect();
+    let raw = sv_breakpoints::contig_records(&results.assemblies, &names)
+        .map_err(breakpoint_failure)?;
+    // `filterAndConvertToAlignedContigViaSAM`, a contig's mapped lines together.
+    let mut parsed: Vec<Vec<BamRecord>> = Vec::new();
+    let mut held: Option<&str> = None;
+    for record in &raw {
+        if held != Some(record.read_name.as_str()) {
+            held = Some(record.read_name.as_str());
+            parsed.push(Vec::new());
+        }
+        if record.flags & 0x104 == 0 {
+            parsed.last_mut().expect("just pushed").push(record.clone());
+        }
+    }
+    parsed.retain(|lines| !lines.is_empty());
+    if parsed.is_empty() {
+        return Ok(None);
+    }
+
+    // `getSvDiscoveryInputData`.
+    let sample = sv_sample_id(&header)?;
+    let cnv_calls = match &cnv_path {
+        Some(path) => Some(load_cnv_calls(path, &header, &sample)?),
+        None => None,
+    };
+    if !std::path::Path::new(&variants_dir).exists() {
+        std::fs::create_dir(&variants_dir).map_err(|error| {
+            Thrown::non_user(
+                "org.broadinstitute.hellbender.exceptions.GATKException",
+                format!(
+                    "Failed to create output directory {variants_dir} though it does not yet \
+                     exist: {variants_dir}: {}",
+                    java_io_reason(&error)
+                ),
+            )
+        })?;
+    }
+    let prefix = format!(
+        "{variants_dir}{}{sample}_",
+        if variants_dir.ends_with('/') { "" } else { "/" }
+    );
+    let canonical = sv_canonical_chromosomes(argument(parser, "cross-contigs-to-ignore"), &header)?;
+    let fasta = htsjdk_bam::fasta_index::IndexedFasta::open(std::path::Path::new(&reference_path))
+        .map_err(|error| Thrown::user(error.message()))?;
+    let mut reference = SparkReference { fasta };
+
+    // `discoverVariantsFromChimeras`, whose order the links are used up in.
+    let adjacencies = sv_discovery::adjacencies_of_contigs(&parsed, &header)
+        .map_err(|message| evidence_task_failure(&message))?;
+    check_sv_truth(parser, &header, |padding| {
+        adjacencies.check_padded_breakpoints(padding)
+    })?;
+    let variants = adjacencies
+        .unsorted_variants(&header, &mut reference, cnv_calls.as_deref())
+        .map_err(|message| evidence_task_failure(&message))?;
+
+    // `processEvidenceTargetLinks`.
+    let annotated = sv_breakpoints::annotate_with_links(
+        variants,
+        &results.links,
+        &metadata,
+        &header,
+        &mut reference,
+        number_or(parser, "imprecise-variant-evidence-threshold", 7),
+        number_or(parser, "max-callable-imprecise-deletion-size", 15000),
+    )
+    .map_err(breakpoint_failure)?;
+    write_sv_vcf(
+        parser,
+        tool,
+        &header,
+        &sv_discovery::assembly::sorted(&annotated, &header),
+        &format!("{prefix}inv_del_ins.vcf"),
+    )?;
+
+    // `experimentalInterpretation`, whose `if (expInterpret != null)` asks of a `Boolean` that
+    // defaults to false: the flag is parsed and printed, and changes nothing.
+    sv_assembly_interpretation(
+        parser,
+        tool,
+        &header,
+        &raw,
+        &format!("{prefix}experimentalInterpretation_"),
+        &canonical,
+        cnv_calls.as_deref(),
+        &mut reference,
+        true,
     )?;
     Ok(None)
 }
@@ -1479,7 +1617,6 @@ fn validate_discover_stage(parser: &Parser) -> Result<(), Thrown> {
 ///
 /// A VCF that was written stays written when a later step of the job fails, as in the tool.
 pub fn sv_discover_from_local_assembly_contig_alignments_spark(parser: &Parser) -> Outcome {
-    use gatk_tools::sv_discovery::assembly;
     let tool = "SvDiscoverFromLocalAssemblyContigAlignmentsSpark";
     let SparkStart {
         source,
@@ -1517,7 +1654,8 @@ pub fn sv_discover_from_local_assembly_contig_alignments_spark(parser: &Parser) 
             sv_sample_id(&header)?
         ),
     };
-    let canonical = sv_canonical_chromosomes(parser, &header)?;
+    let canonical =
+        sv_canonical_chromosomes(argument(parser, "non-canonical-contig-names-file"), &header)?;
     sv_sample_id(&header)?;
 
     let filter = read_filter(parser, &filters, &header)?;
@@ -1529,48 +1667,76 @@ pub fn sv_discover_from_local_assembly_contig_alignments_spark(parser: &Parser) 
     let fasta = htsjdk_bam::fasta_index::IndexedFasta::open(std::path::Path::new(&reference_path))
         .map_err(|error| Thrown::user(error.message()))?;
     let mut reference = SparkReference { fasta };
+    sv_assembly_interpretation(
+        parser,
+        tool,
+        &header,
+        &records,
+        &prefix,
+        &canonical,
+        cnv_calls.as_deref(),
+        &mut reference,
+        flag(parser, "write-sam"),
+    )?;
+    Ok(None)
+}
+
+/// What `runTool` does from `preprocess` on, which the pipeline runs too under another prefix.
+#[allow(clippy::too_many_arguments)]
+fn sv_assembly_interpretation(
+    parser: &Parser,
+    tool: &str,
+    header: &SamHeader,
+    records: &[BamRecord],
+    prefix: &str,
+    canonical: &[String],
+    cnv_calls: Option<&[gatk_tools::sv_discovery::CnvCall]>,
+    reference: &mut SparkReference,
+    write_sam: bool,
+) -> Result<(), Thrown> {
+    use gatk_tools::sv_discovery::assembly;
     let in_task = |message: String| assembly_task_failure(23, &message);
 
-    let classified = assembly::preprocess(&records, &header, &canonical).map_err(in_task)?;
+    let classified = assembly::preprocess(records, header, canonical).map_err(in_task)?;
 
     // `extractSimpleVariants`.
     let simple_calls =
-        assembly::simple_calls(&classified, &header, &mut reference).map_err(in_task)?;
-    check_sv_truth(parser, &header, |padding| {
+        assembly::simple_calls(&classified, header, reference).map_err(in_task)?;
+    check_sv_truth(parser, header, |padding| {
         simple_calls.check_padded_breakpoints(padding)
     })?;
     let simple = simple_calls
-        .variants(&header, cnv_calls.as_deref())
+        .variants(header, cnv_calls)
         .map_err(in_task)?;
     let write = |name: &str, variants: &[htsjdk_vcf::variant::VariantContext]| {
         write_sv_vcf(
             parser,
             tool,
-            &header,
-            &assembly::sorted(variants, &header),
+            header,
+            &assembly::sorted(variants, header),
             &format!("{prefix}{name}"),
         )
     };
     write("NonComplex.vcf", &simple)?;
 
     // `extractCpxVariants`.
-    let complex = assembly::complex_calls(&classified, &header, &mut reference).map_err(in_task)?;
+    let complex = assembly::complex_calls(&classified, header, reference).map_err(in_task)?;
     write("Complex.vcf", &assembly::complex_variants(&complex))?;
     let one_segment =
-        assembly::zero_or_one_segment_variants(&complex, &mut reference).map_err(in_task)?;
+        assembly::zero_or_one_segment_variants(&complex, reference).map_err(in_task)?;
     let from_segments =
-        assembly::multi_segment_variants(&complex, &mut reference).map_err(in_task)?;
-    let pairs = assembly::pair_iteration_adjacencies(&complex, &records, &header, &canonical)
+        assembly::multi_segment_variants(&complex, reference).map_err(in_task)?;
+    let pairs = assembly::pair_iteration_adjacencies(&complex, records, header, canonical)
         .map_err(in_task)?;
-    check_sv_truth(parser, &header, |padding| {
+    check_sv_truth(parser, header, |padding| {
         pairs.check_padded_breakpoints(padding)
     })?;
     let from_pairs = assembly::pair_iteration_variants(
         &pairs,
         &complex,
-        &header,
-        &mut reference,
-        cnv_calls.as_deref(),
+        header,
+        reference,
+        cnv_calls,
     )
     .map_err(in_task)?;
     let multi_segment = assembly::remove_duplicates(from_segments, from_pairs).map_err(in_task)?;
@@ -1578,8 +1744,8 @@ pub fn sv_discover_from_local_assembly_contig_alignments_spark(parser: &Parser) 
     write("cpx_reinterpreted_simple_multi_seg.vcf", &multi_segment)?;
 
     // `writeSAMfilesForUnknown`.
-    if flag(parser, "write-sam") {
-        let sets = classified.unknown_reads(&records).map_err(in_task)?;
+    if write_sam {
+        let sets = classified.unknown_reads(records).map_err(in_task)?;
         // What reaches the writer has no other `@HD` tag, whatever the input's line carried.
         let mut sorted_header = header.clone();
         sorted_header.attributes = SamHeader::default().attributes;
@@ -1619,18 +1785,17 @@ pub fn sv_discover_from_local_assembly_contig_alignments_spark(parser: &Parser) 
         number_or(parser, "min-mq", 30),
         number_or(parser, "min-align-length", 50),
     );
-    write("merged_simple.vcf", &filtered)?;
-    Ok(None)
+    write("merged_simple.vcf", &filtered)
 }
 
 /// `SVUtils.getCanonicalChromosomes`.
-fn sv_canonical_chromosomes(parser: &Parser, header: &SamHeader) -> Result<Vec<String>, Thrown> {
+fn sv_canonical_chromosomes(path: Option<String>, header: &SamHeader) -> Result<Vec<String>, Thrown> {
     let mut canonical: Vec<String> = header
         .sequences
         .iter()
         .map(|sequence| sequence.name.clone())
         .collect();
-    if let Some(path) = argument(parser, "non-canonical-contig-names-file") {
+    if let Some(path) = path {
         let text = std::fs::read_to_string(&path).map_err(|_| {
             Thrown::user(format!(
                 "Can't read nonCanonicalContigNamesFile file {path}"
@@ -1656,7 +1821,8 @@ pub fn cpx_variant_re_interpreter_spark(parser: &Parser) -> Outcome {
         intervals,
         filters,
     } = spark_startup(parser, tool)?;
-    let canonical = sv_canonical_chromosomes(parser, &header)?;
+    let canonical =
+        sv_canonical_chromosomes(argument(parser, "non-canonical-contig-names-file"), &header)?;
     let complex_vcf = argument(parser, "cpx-vcf").ok_or_else(|| {
         Thrown::command_line("Argument cpx-vcf was missing: Argument 'cpx-vcf' is required")
     })?;
