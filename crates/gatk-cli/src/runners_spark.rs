@@ -215,7 +215,10 @@ pub(super) fn spark_startup(parser: &Parser, tool: &str) -> Result<SparkStart, T
         None => Vec::new(),
     };
 
-    if !flag(parser, "disable-sequence-dictionary-validation") {
+    // The aligners' `validateSequenceDictionaries`: unaligned reads need no dictionary.
+    let aligning = matches!(tool, "BwaSpark" | "BwaAndMarkDuplicatesPipelineSpark")
+        || (tool == "ReadsPipelineSpark" && flag(parser, "align"));
+    if !aligning && !flag(parser, "disable-sequence-dictionary-validation") {
         if let Some(reference) = &reference {
             validate_reference_against_reads(reference, &header)?;
         }
@@ -1604,14 +1607,7 @@ pub fn pathseq_score_spark(parser: &Parser) -> Outcome {
         (None, None) => return Err(bad_input("No headers were loaded".to_string())),
     };
     let contigs: Vec<String> = header.sequences.iter().map(|s| s.name.clone()).collect();
-    let database = argument(parser, "taxonomy-file").expect("a required argument");
-    let bytes = std::fs::read(&database).map_err(|_| {
-        Thrown::user(format!(
-            "Couldn't read file. Error was: {database} (No such file or directory)"
-        ))
-    })?;
-    let database = score::read_taxonomy_database(&bytes)
-        .map_err(|message| Thrown::non_user("com.esotericsoftware.kryo.KryoException", message))?;
+    let database = pathseq_taxonomy(parser)?;
     let write = |path: &str, text: &str| {
         std::fs::write(path, text).map_err(|error| Thrown::user(format!("{path}: {error}")))
     };
@@ -1663,73 +1659,73 @@ pub fn pathseq_score_spark(parser: &Parser) -> Outcome {
     // Not `writeReads`: the reducers are each input's own added up, this overload of the sink writes
     // both indices whatever the arguments say, and with no header merger there is no `GO` to add.
     if let Some(output) = argument(parser, "output") {
-        let sort_order = header.attributes.get("SO").map(str::to_string);
-        let compare: Option<fn(&BamRecord, &BamRecord) -> std::cmp::Ordering> =
-            match sort_order.as_deref() {
-                Some("coordinate") => Some(htsjdk_bam::coordinate::compare),
-                Some("queryname") => Some(htsjdk_bam::query_name::compare),
-                _ => None,
-            };
-        let partitions = match compare {
-            Some(compare) => {
-                let mut reducers = 0;
-                for input in ["paired-input", "unpaired-input"] {
-                    let Some(path) = argument(parser, input) else {
-                        continue;
-                    };
-                    if !std::path::Path::new(&path).exists() {
-                        continue;
-                    }
-                    let asked = number_or(parser, "num-reducers", 0).max(0) as usize;
-                    reducers += if asked != 0 {
-                        asked
-                    } else {
-                        let size = std::fs::metadata(&path).map_or(0, |data| data.len());
-                        1 + (size / (10 * 1024 * 1024)) as usize
-                    };
+        let mut reducers = 0;
+        for input in ["paired-input", "unpaired-input"] {
+            if let Some(path) = argument(parser, input) {
+                if std::path::Path::new(&path).exists() {
+                    reducers += pathseq_reducers(parser, &path);
                 }
-                let unpaired = scored.reads.len() - scored.paired;
-                range_partitions(&scored.reads, reducers, &[scored.paired, unpaired], compare)?
             }
-            None => vec![scored.reads.clone()],
-        };
-        write_spark_indexed(
+        }
+        let unpaired = scored.reads.len() - scored.paired;
+        write_pathseq_bam(
             parser,
             &header,
-            sort_order.as_deref(),
-            &partitions,
+            &scored.reads,
             &output,
-            (true, true),
+            reducers,
+            &[scored.paired, unpaired],
         )?;
     }
     Ok(None)
 }
 
-/// `PathSeqFilterSpark`, short of the BWA step this port does not carry.
-pub fn pathseq_filter_spark(parser: &Parser) -> Outcome {
-    use gatk_tools::pathseq_filter as filter;
-    let tool = "PathSeqFilterSpark";
-    let SparkStart {
-        source,
-        header,
-        intervals,
-        filters,
-    } = spark_startup(parser, tool)?;
-    if let Some(image) = argument(parser, "filter-bwa-image") {
-        if !std::path::Path::new(&image).is_file() {
-            return Err(pathseq_task_failure(format!(
-                "cannot read the image file '{image}': is empty or is not readable"
-            )));
-        }
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "--filter-bwa-image needs BWA-MEM, which this port does not carry yet. This message is \
-             the port's own and not GATK's.",
-        ));
+/// `PSUtils.pathseqGetRecommendedNumReducers`.
+fn pathseq_reducers(parser: &Parser, path: &str) -> usize {
+    let asked = number_or(parser, "num-reducers", 0).max(0) as usize;
+    if asked != 0 {
+        return asked;
     }
+    let size = std::fs::metadata(path).map_or(0, |data| data.len());
+    1 + (size / (10 * 1024 * 1024)) as usize
+}
+
+/// `ReadsSparkSink.writeReads`, sorting to the header's order and writing both indices.
+fn write_pathseq_bam(
+    parser: &Parser,
+    header: &SamHeader,
+    reads: &[BamRecord],
+    output: &str,
+    reducers: usize,
+    input_partitions: &[usize],
+) -> Result<(), Thrown> {
+    let sort_order = header.attributes.get("SO").map(str::to_string);
+    let compare: Option<fn(&BamRecord, &BamRecord) -> std::cmp::Ordering> =
+        match sort_order.as_deref() {
+            Some("coordinate") => Some(htsjdk_bam::coordinate::compare),
+            Some("queryname") => Some(htsjdk_bam::query_name::compare),
+            _ => None,
+        };
+    let partitions = match compare {
+        Some(compare) => range_partitions(reads, reducers, input_partitions, compare)?,
+        None => vec![reads.to_vec()],
+    };
+    write_spark_indexed(
+        parser,
+        header,
+        sort_order.as_deref(),
+        &partitions,
+        output,
+        (true, true),
+    )
+}
+
+/// `new PSFilter`'s arguments, over a dictionary `checkAndClearHeaderSequences` emptied.
+fn pathseq_filter_arguments(
+    parser: &Parser,
+) -> Result<gatk_tools::pathseq_filter::FilterArguments, Thrown> {
     let contigs_to_ignore = arguments(parser, "ignore-alignment-contigs");
     let aligned_input = flag(parser, "is-host-aligned");
-    // `validateFilterArguments`, against a dictionary `checkAndClearHeaderSequences` emptied.
     if aligned_input {
         if let Some(contig) = contigs_to_ignore.first() {
             return Err(bad_input(format!(
@@ -1737,7 +1733,7 @@ pub fn pathseq_filter_spark(parser: &Parser) -> Outcome {
             )));
         }
     }
-    let arguments = filter::FilterArguments {
+    Ok(gatk_tools::pathseq_filter::FilterArguments {
         aligned_input,
         contigs_to_ignore,
         min_identity: number_or(parser, "host-min-identity", 30),
@@ -1754,11 +1750,19 @@ pub fn pathseq_filter_spark(parser: &Parser) -> Outcome {
         host_kmer_threshold: number_or(parser, "host-kmer-thresh", 1),
         filter_duplicates: flag(parser, "filter-duplicates"),
         reads_per_partition: number_or(parser, "filter-reads-per-partition", 200000),
-    };
-    let filter_reads = read_filter(parser, &filters, &header)?;
-    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter_reads)
-        .map_err(|error| Thrown::user(format!("{error:?}")))?;
-    let contigs: Vec<String> = header.sequences.iter().map(|s| s.name.clone()).collect();
+    })
+}
+
+/// `PSFilter.doFilter` and `PSFilterFileLogger.close`, which the try-with-resources runs before
+/// anything is written.
+fn pathseq_run_filter(
+    parser: &Parser,
+    tool: &str,
+    records: Vec<BamRecord>,
+    contigs: &[String],
+    arguments: &gatk_tools::pathseq_filter::FilterArguments,
+) -> Result<gatk_tools::pathseq_filter::Filtered, Thrown> {
+    use gatk_tools::pathseq_filter as filter;
     let kmer_file = argument(parser, "kmer-file");
     let load_kmers = kmer_file.as_ref().map(|path| {
         let path = path.clone();
@@ -1776,10 +1780,46 @@ pub fn pathseq_filter_spark(parser: &Parser) -> Outcome {
     let load_kmers = load_kmers
         .as_ref()
         .map(|load| load as &dyn Fn() -> Result<filter::KmerLibrary, String>);
-    let filtered = filter::do_filter(records, &contigs, &arguments, load_kmers)
+    let host_image = argument(parser, "filter-bwa-image");
+    let min_identity = arguments.min_identity;
+    let seed_length = number_or(parser, "filter-bwa-seed-length", 19);
+    let host_filter = host_image.as_ref().map(|image| {
+        move |reads: Vec<BamRecord>| -> Result<Vec<BamRecord>, String> {
+            // `new PSBwaFilter`, which every partition makes whatever it holds.
+            let bytes = std::fs::read(image)
+                .ok()
+                .filter(|bytes| !bytes.is_empty())
+                .ok_or_else(|| {
+                    format!("cannot read the image file '{image}': is empty or is not readable")
+                })?;
+            if reads.is_empty() {
+                return Ok(reads);
+            }
+            let threads = std::thread::available_parallelism().map_or(1, |count| count.get());
+            // The lines name the image's contigs, which the header no longer holds.
+            let contigs = gatk_tools::bwa_aligner::image_contigs(&bytes)?;
+            let names = SamHeader {
+                sequences: contigs
+                    .iter()
+                    .map(|name| htsjdk_bam::header::SequenceRecord::new(name, 1))
+                    .collect(),
+                ..SamHeader::default()
+            };
+            gatk_tools::bwa_aligner::host_filter(
+                reads,
+                &bytes,
+                &names,
+                seed_length,
+                |line| filter::host_alignment_keeps(line, min_identity),
+                threads,
+            )
+        }
+    });
+    let host_filter = host_filter
+        .as_ref()
+        .map(|run| run as &filter::HostFilter<'_>);
+    let filtered = filter::do_filter(records, contigs, arguments, load_kmers, host_filter)
         .map_err(pathseq_task_failure)?;
-
-    // `PSFilterFileLogger.close`, which the try-with-resources runs before anything is written.
     if let Some(path) = argument(parser, "filter-metrics") {
         let headers = [
             crate::command_line::expanded(tool, parser),
@@ -1788,6 +1828,161 @@ pub fn pathseq_filter_spark(parser: &Parser) -> Outcome {
         let text = filter::metrics_file(&filtered.metrics, &headers);
         std::fs::write(&path, text).map_err(|error| Thrown::user(format!("{path}: {error}")))?;
     }
+    Ok(filtered)
+}
+
+/// `PathSeqPipelineSpark.runTool`: the filter, the microbe alignment and the scores in one run.
+pub fn pathseq_pipeline_spark(parser: &Parser) -> Outcome {
+    use gatk_tools::pathseq_filter::spark_repartition;
+    use gatk_tools::pathseq_score as score;
+    let tool = "PathSeqPipelineSpark";
+    let SparkStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = spark_startup(parser, tool)?;
+    if number_or(parser, "num-reducers", 0) > 0 {
+        return Err(bad_input(
+            "Use --readsPerPartitionOutput instead of --num-reducers.".to_string(),
+        ));
+    }
+    let filter_arguments = pathseq_filter_arguments(parser)?;
+    let filter_reads = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter_reads)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let contigs: Vec<String> = header.sequences.iter().map(|s| s.name.clone()).collect();
+    let filtered = pathseq_run_filter(parser, tool, records, &contigs, &filter_arguments)?;
+    let total = filtered.paired.len() + filtered.unpaired.len();
+
+    // `repartition`, which moves pairs as a whole.
+    let per_partition = number_or(parser, "pipeline-reads-per-partition", 5000) as usize;
+    let paired_partitions = 1 + filtered.paired.len() / per_partition;
+    let unpaired_partitions = 1 + filtered.unpaired.len() / per_partition;
+    let pairs: Vec<Vec<BamRecord>> = filtered.paired.chunks(2).map(<[_]>::to_vec).collect();
+    let paired_batches: Vec<Vec<BamRecord>> = spark_repartition(pairs, paired_partitions)
+        .into_iter()
+        .map(|pairs| pairs.into_iter().flatten().collect())
+        .collect();
+    let unpaired_batches = spark_repartition(filtered.unpaired, unpaired_partitions);
+
+    let mut microbe = header.clone();
+    microbe.sequences = pathseq_microbe_dictionary(parser)?;
+    let names: Vec<String> = microbe.sequences.iter().map(|s| s.name.clone()).collect();
+
+    let database = pathseq_taxonomy(parser)?;
+    let write = |path: &str, text: &str| {
+        std::fs::write(path, text).map_err(|error| Thrown::user(format!("{path}: {error}")))
+    };
+    if let Some(path) = argument(parser, "score-warnings") {
+        write(&path, &score::missing_accessions(&names, &database))?;
+    }
+
+    let image = argument(parser, "microbe-bwa-image").expect("a required argument");
+    let bytes = bwa_image(&image)?;
+    let options = pathseq_bwa_options(parser);
+    let threads = std::thread::available_parallelism().map_or(1, |count| count.get());
+    let align = |batches: Vec<Vec<BamRecord>>, paired: bool| -> Result<Vec<BamRecord>, Thrown> {
+        let mut aligned = Vec::new();
+        for batch in &batches {
+            aligned.extend(
+                gatk_tools::bwa_aligner::align_for_pathseq(
+                    batch, paired, &bytes, &microbe, &options, threads,
+                )
+                .map_err(pathseq_task_failure)?,
+            );
+        }
+        Ok(aligned)
+    };
+    let aligned_paired = align(paired_batches, true)?;
+    let aligned_unpaired = align(unpaired_batches, false)?;
+
+    let scored = score::score_reads(
+        Some(aligned_paired),
+        Some(aligned_unpaired),
+        &names,
+        &database,
+        double_or(parser, "min-score-identity", 0.90),
+        double_or(parser, "identity-margin", 0.02),
+        flag(parser, "divide-by-genome-length"),
+        flag(parser, "not-normalized-by-kingdom"),
+    )
+    .map_err(|error| match error {
+        score::ScoreError::BadInput(message) => {
+            pathseq_task_failure(format!("Bad input: {message}"))
+        }
+        score::ScoreError::Other { message, .. } => pathseq_task_failure(message),
+    })?;
+    write(
+        &argument(parser, "scores-output").expect("a required argument"),
+        &scored.scores,
+    )?;
+    let mut reads = scored.reads;
+    pathseq_used_sequences(
+        &mut microbe,
+        &mut reads,
+        paired_partitions + unpaired_partitions,
+    );
+    if let Some(path) = argument(parser, "score-metrics") {
+        let headers = [
+            crate::command_line::expanded(tool, parser),
+            format!("Started on: {}", java_display_now()),
+        ];
+        write(&path, &score::metrics_file(&scored.metrics, &headers))?;
+    }
+    if let Some(output) = argument(parser, "output") {
+        let per_output = number_or(parser, "readsPerPartitionOutput", 1000000) as usize;
+        let reducers = (total / per_output).max(1);
+        // The header went through a broadcast, and Kryo gives it a group order.
+        let (microbe, _) = disq_header(&microbe);
+        write_pathseq_bam(parser, &microbe, &reads, &output, reducers, &[reads.len()])?;
+    }
+    Ok(None)
+}
+
+/// `PSBwaUtils.addReferenceSequencesToHeader`'s dictionary.
+fn pathseq_microbe_dictionary(
+    parser: &Parser,
+) -> Result<Vec<htsjdk_bam::header::SequenceRecord>, Thrown> {
+    let dictionary = argument(parser, "microbe-dict").expect("a required argument");
+    // `ReferenceUtils.loadFastaDictionary` over a `GATKPath`, whose stream names the absolute path.
+    let text = std::fs::read_to_string(&dictionary).map_err(|_| {
+        let absolute = std::path::absolute(&dictionary)
+            .map_or(dictionary.clone(), |path| path.display().to_string());
+        Thrown::non_user("java.lang.RuntimeException", absolute)
+    })?;
+    Ok(htsjdk_bam::reader::parse_header_text(&text).sequences)
+}
+
+/// `PSScorer.readTaxonomyDatabase`.
+fn pathseq_taxonomy(
+    parser: &Parser,
+) -> Result<gatk_tools::pathseq_score::TaxonomyDatabase, Thrown> {
+    let database = argument(parser, "taxonomy-file").expect("a required argument");
+    let bytes = std::fs::read(&database).map_err(|_| {
+        Thrown::user(format!(
+            "Couldn't read file. Error was: {database} (No such file or directory)"
+        ))
+    })?;
+    gatk_tools::pathseq_score::read_taxonomy_database(&bytes)
+        .map_err(|message| Thrown::non_user("com.esotericsoftware.kryo.KryoException", message))
+}
+
+/// `PathSeqFilterSpark.runTool`.
+pub fn pathseq_filter_spark(parser: &Parser) -> Outcome {
+    let tool = "PathSeqFilterSpark";
+    let SparkStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = spark_startup(parser, tool)?;
+    let arguments = pathseq_filter_arguments(parser)?;
+    let filter_reads = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter_reads)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let contigs: Vec<String> = header.sequences.iter().map(|s| s.name.clone()).collect();
+    let filtered = pathseq_run_filter(parser, tool, records, &contigs, &arguments)?;
 
     let mut cleared = header.clone();
     cleared.sequences.clear();
@@ -2074,6 +2269,328 @@ pub fn print_reads_spark(parser: &Parser) -> Outcome {
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
     // `writeReads(ctx, output, reads, header, false)`: PrintReadsSpark asks for no sort.
     write_spark_reads(parser, &header, &records, &output, false)?;
+    Ok(None)
+}
+
+/// `BwaSparkEngine`: its header, and BWA over one partition of reads.
+///
+/// `header` is the reads' when it has a dictionary, otherwise the reference's, and the image is
+/// the one named, otherwise the reference's own. A paired run takes every read and refuses any
+/// order but `queryname`.
+fn bwa_engine(parser: &Parser, header: &SamHeader) -> Result<(SamHeader, String), Thrown> {
+    let reference = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let mut aligned_header = header.clone();
+    if aligned_header.sequences.is_empty() {
+        if let Some(dictionary) = reference_dictionary(parser)? {
+            aligned_header.sequences = dictionary.sequences;
+        }
+    }
+    let image = match argument(parser, "bwa-mem-index-image") {
+        Some(image) => image,
+        None => {
+            // `ctx.addFile`, which looks before anything runs.
+            let image = format!("{reference}.img");
+            if !std::path::Path::new(&image).exists() {
+                let absolute = std::path::absolute(&image)
+                    .map_or(image.clone(), |path| path.display().to_string());
+                return Err(Thrown::non_user(
+                    "java.io.FileNotFoundException",
+                    format!("File file:{absolute} does not exist"),
+                ));
+            }
+            image
+        }
+    };
+    Ok((aligned_header, image))
+}
+
+/// `ReadAligner`, past its construction.
+fn bwa_align(
+    reads: &[BamRecord],
+    paired: bool,
+    image: &str,
+    header: &SamHeader,
+) -> Result<Vec<BamRecord>, Thrown> {
+    // `BwaMemIndexCache.getInstance` comes first in the constructor, in the executor.
+    let bytes = std::fs::read(image)
+        .ok()
+        .filter(|bytes| !bytes.is_empty())
+        .ok_or_else(|| {
+            evidence_task_failure(&format!(
+                "cannot read the image file '{image}': is empty or is not readable"
+            ))
+        })?;
+    if paired && header.attributes.get("SO") != Some("queryname") {
+        return Err(evidence_task_failure(
+            "Input must be queryname sorted unless you use single-ended alignment mode.",
+        ));
+    }
+    let threads = std::thread::available_parallelism().map_or(1, |count| count.get());
+    gatk_tools::bwa_aligner::align(reads, paired, &bytes, header, threads)
+        .map_err(|message| evidence_task_failure(&message))
+}
+
+/// `BwaSpark.runTool`: BWA over the reads, in one partition, sorted back to the header.
+///
+/// Single-end alignment filters first. Paired alignment filters after, since a filter does not
+/// know about pairs, which is how a supplementary line of a pair never reaches the output.
+pub fn bwa_spark(parser: &Parser) -> Outcome {
+    let SparkStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = spark_startup(parser, "BwaSpark")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let (aligned_header, image) = bwa_engine(parser, &header)?;
+    let filter = read_filter(parser, &filters, &aligned_header)?;
+    let paired = !flag(parser, "single-end-alignment");
+    let reads = if paired {
+        gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
+    } else {
+        gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+    }
+    .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let aligned = bwa_align(&reads, paired, &image, &aligned_header)?;
+    let kept: Vec<_> = if paired {
+        aligned.into_iter().filter(|read| filter(read)).collect()
+    } else {
+        aligned
+    };
+    // The sink's argument after the parts directory is `shardedOutput`: a single file is not sorted,
+    // which leaves each read's primary line ahead of the supplementary one the comparator would move.
+    write_spark_reads(
+        parser,
+        &aligned_header,
+        &kept,
+        &output,
+        flag(parser, "sharded-output"),
+    )?;
+    Ok(None)
+}
+
+/// `BwaAndMarkDuplicatesPipelineSpark.runTool`: paired alignment, the tool's filter, and
+/// `MarkDuplicatesSpark.mark` with a default `OpticalDuplicateFinder`, written in the header's own
+/// order: this pipeline never sets it to coordinate, and removes nothing whatever it is asked.
+pub fn bwa_and_mark_duplicates_pipeline_spark(parser: &Parser) -> Outcome {
+    use gatk_tools::mark_duplicates_spark as md;
+    let SparkStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = spark_startup(parser, "BwaAndMarkDuplicatesPipelineSpark")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let (aligned_header, image) = bwa_engine(parser, &header)?;
+    let filter = read_filter(parser, &filters, &aligned_header)?;
+    let reads = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let aligned: Vec<_> = bwa_align(&reads, true, &image, &aligned_header)?
+        .into_iter()
+        .filter(|read| filter(read))
+        .collect();
+    drop(filter);
+    let settings = mark_arguments(parser, parser, false, None, 100)?;
+    if aligned_header.read_groups.is_empty() {
+        return Err(Thrown::user(
+            "Bad input: Sam file header missing Read Group fields. MarkDuplicatesSpark currently \
+             requires reads to be labeled with read group tags, please add read groups tags to \
+             your reads",
+        ));
+    }
+    let marked = md::mark(vec![aligned], &aligned_header, &settings)
+        .map_err(|failure| evidence_task_failure(&failure.message))?;
+    write_spark_reads(
+        parser,
+        &aligned_header,
+        &marked.reads,
+        &output,
+        !flag(parser, "sharded-output"),
+    )?;
+    Ok(None)
+}
+
+/// `PSBwaAligner`'s setters, as `bwa mem` spells them.
+fn pathseq_bwa_options(parser: &Parser) -> Vec<String> {
+    let hits = number_or(parser, "max-alternate-hits", 5000);
+    vec![
+        "-h".to_string(),
+        format!("{hits},{hits}"),
+        "-k".to_string(),
+        number_or(parser, "microbe-min-seed-length", 19).to_string(),
+        "-T".to_string(),
+        number_or(parser, "bwa-score-threshold", 30).to_string(),
+    ]
+}
+
+/// `BwaMemIndexCache.getInstance`, in the executor.
+fn bwa_image(image: &str) -> Result<Vec<u8>, Thrown> {
+    std::fs::read(image)
+        .ok()
+        .filter(|bytes| !bytes.is_empty())
+        .ok_or_else(|| {
+            pathseq_task_failure(format!(
+                "cannot read the image file '{image}': is empty or is not readable"
+            ))
+        })
+}
+
+/// `PSBwaUtils.removeUnmappedHeaderSequences`: the contigs some read landed on, in the order
+/// `distinct` over `partitions` partitions collects them, and the reads' indices moved to the
+/// shorter dictionary.
+fn pathseq_used_sequences(header: &mut SamHeader, reads: &mut [BamRecord], partitions: usize) {
+    let hash = |name: &String| gatk_engine::java_hash::string_hash_code(name);
+    let mut buckets: Vec<Vec<(String, ())>> = vec![Vec::new(); partitions];
+    for read in reads.iter() {
+        if gatk_engine::read::is_unmapped(read) {
+            continue;
+        }
+        let Some(sequence) = usize::try_from(read.reference_index)
+            .ok()
+            .and_then(|index| header.sequences.get(index))
+        else {
+            continue;
+        };
+        let bucket = hash(&sequence.name).rem_euclid(partitions as i32) as usize;
+        buckets[bucket].push((sequence.name.clone(), ()));
+    }
+    let reduced: Vec<String> = buckets
+        .into_iter()
+        .flat_map(|names| {
+            gatk_tools::sv_discovery::append_only_group(names, hash)
+                .into_iter()
+                .map(|(name, _)| name)
+        })
+        .collect();
+    let used: Vec<_> = reduced
+        .into_iter()
+        .filter_map(|name| {
+            header
+                .sequences
+                .iter()
+                .find(|sequence| sequence.name == name)
+                .cloned()
+        })
+        .collect();
+    let moved = |index: i32, from: &[htsjdk_bam::header::SequenceRecord]| {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| from.get(index))
+            .and_then(|sequence| used.iter().position(|kept| kept.name == sequence.name))
+            .map_or(-1, |at| at as i32)
+    };
+    for read in reads.iter_mut() {
+        read.reference_index = moved(read.reference_index, &header.sequences);
+        read.mate_reference_index = moved(read.mate_reference_index, &header.sequences);
+    }
+    header.sequences = used;
+}
+
+/// `ParallelCopyGCSDirectoryIntoHDFSSpark.runTool`: what a machine with neither service can see.
+pub fn parallel_copy_gcs_directory_into_hdfs_spark(parser: &Parser) -> Outcome {
+    resolve_read_filters(parser, "ParallelCopyGCSDirectoryIntoHDFSSpark")?;
+    spark_context(parser)?;
+    let input = argument(parser, "input-gcs-path").expect("a required argument");
+    if !input.starts_with("gs://") {
+        return Err(Thrown::user(format!("Input path {input} is not a GCS URI")));
+    }
+    let output = argument(parser, "output-hdfs-directory").expect("a required argument");
+    if !output.starts_with("hdfs://") {
+        return Err(Thrown::user(format!(
+            "Output directory {output} is not an HDFS URI"
+        )));
+    }
+    Err(Thrown::non_user(
+        PORT_LIMITATION,
+        "ParallelCopyGCSDirectoryIntoHDFSSpark needs a Google Cloud Storage and an HDFS, which \
+         this port does not reach. This message is the port's own and not GATK's.",
+    ))
+}
+
+/// `PathSeqBwaSpark.runTool`: each input aligned on its own and written with only the contigs its
+/// reads landed on.
+pub fn pathseq_bwa_spark(parser: &Parser) -> Outcome {
+    let tool = "PathSeqBwaSpark";
+    resolve_read_filters(parser, tool)?;
+    spark_context(parser)?;
+    if !arguments(parser, "input").is_empty() {
+        return Err(bad_input(
+            "Please use --paired-input or --unpaired-input instead of --input".to_string(),
+        ));
+    }
+    for output in ["paired-output", "unpaired-output"] {
+        if argument(parser, output).is_some_and(|path| !path.ends_with(".bam")) {
+            return Err(Thrown::non_user(
+                "java.lang.IllegalArgumentException",
+                "Only BAM output is supported",
+            ));
+        }
+    }
+    let image = argument(parser, "microbe-bwa-image").expect("a required argument");
+    let options = pathseq_bwa_options(parser);
+    let threads = std::thread::available_parallelism().map_or(1, |count| count.get());
+    let mut loaded = false;
+    for (input, output, paired) in [
+        ("paired-input", "paired-output", true),
+        ("unpaired-input", "unpaired-output", false),
+    ] {
+        let Some(path) = argument(parser, input) else {
+            continue;
+        };
+        if !std::path::Path::new(&path).exists() {
+            continue;
+        }
+        loaded = true;
+        let source = spark_reads_header(&path)?;
+        let mut header = source.header().clone();
+        if !header.sequences.is_empty() {
+            return Err(bad_input(
+                "Input BAM should be unaligned, but found one or more sequences in the header."
+                    .to_string(),
+            ));
+        }
+        header.sequences = pathseq_microbe_dictionary(parser)?;
+        if paired && header.attributes.get("SO") != Some("queryname") {
+            return Err(bad_input(
+                "Paired input BAM must be sorted by queryname".to_string(),
+            ));
+        }
+        let reads = gatk_tools::read_walker::traverse(&source, &[], &|_| true)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        let bytes = bwa_image(&image)?;
+        if paired && reads.len() % 2 != 0 {
+            return Err(pathseq_task_failure(
+                "Bad input: Expected paired reads but there are an odd number".to_string(),
+            ));
+        }
+        let mut aligned = gatk_tools::bwa_aligner::align_for_pathseq(
+            &reads, paired, &bytes, &header, &options, threads,
+        )
+        .map_err(pathseq_task_failure)?;
+        pathseq_used_sequences(&mut header, &mut aligned, 1);
+        let output = argument(parser, output).ok_or_else(null_pathseq_output)?;
+        let reducers = pathseq_reducers(parser, &path);
+        write_pathseq_bam(
+            parser,
+            &header,
+            &aligned,
+            &output,
+            reducers,
+            &[aligned.len()],
+        )?;
+    }
+    if !loaded {
+        return Err(bad_input(
+            "No reads were loaded. Ensure --paired-input and/or --unpaired-input are set and valid."
+                .to_string(),
+        ));
+    }
     Ok(None)
 }
 
@@ -2617,16 +3134,7 @@ fn write_reverted(
     }
     // `--sharded-output` is BAM parts under whatever the directory is called.
     let sharded = flag(parser, "sharded-output");
-    if output.ends_with(".sam") && !sharded {
-        // Disq's SAM writer: the text, whatever the partitions, and no index of any kind.
-        let records: Vec<BamRecord> = partitions.iter().flatten().cloned().collect();
-        let text = htsjdk_bam::sam_file::write_sam(header, &records)
-            .ok_or_else(|| Thrown::non_user(PORT_FAILURE, format!("could not write {output}")))?;
-        return std::fs::write(output, text).map_err(|error| {
-            Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
-        });
-    }
-    if !output.ends_with(".bam") && !sharded {
+    if !output.ends_with(".bam") && !output.ends_with(".sam") && !sharded {
         return Err(Thrown::non_user(
             PORT_LIMITATION,
             format!(
@@ -3549,17 +4057,33 @@ pub(super) fn reads_pipeline_reads(
     filters: &[gatk_tools::filter_resolution::ResolvedFilter],
 ) -> Result<(Vec<BamRecord>, SamHeader), Thrown> {
     use gatk_tools::mark_duplicates_spark as md;
-    if flag(parser, "align") {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "ReadsPipelineSpark's --align runs BWA-MEM, which this port does not carry. This \
-             message is the port's own and not GATK's.",
-        ));
-    }
     spark_known_sites(parser)?;
+    // `BwaSparkEngine`'s header is what follows the alignment.
+    let engine = if flag(parser, "align") {
+        Some(bwa_engine(parser, header)?)
+    } else {
+        None
+    };
+    let header = engine.as_ref().map_or(header, |(aligned, _)| aligned);
     let filter = read_filter(parser, filters, header)?;
-    let mut records = gatk_tools::read_walker::traverse(source, intervals, &filter)
-        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let mut records = match &engine {
+        Some((aligned, image)) if !flag(parser, "single-end-alignment") => {
+            // After alignment, since filtering does not know about pairs.
+            let reads = gatk_tools::read_walker::traverse(source, intervals, &|_| true)
+                .map_err(|error| Thrown::user(format!("{error:?}")))?;
+            bwa_align(&reads, true, image, aligned)?
+                .into_iter()
+                .filter(|read| filter(read))
+                .collect()
+        }
+        Some((aligned, image)) => {
+            let reads = gatk_tools::read_walker::traverse(source, intervals, &filter)
+                .map_err(|error| Thrown::user(format!("{error:?}")))?;
+            bwa_align(&reads, false, image, aligned)?
+        }
+        None => gatk_tools::read_walker::traverse(source, intervals, &filter)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?,
+    };
     drop(filter);
     let settings = mark_arguments(
         parser,
@@ -3723,6 +4247,14 @@ fn write_spark_indexed(
         std::fs::write(directory.join("_SUCCESS"), b"")
             .map_err(|error| failed(output, error.to_string()))?;
         return Ok(());
+    }
+
+    if output.ends_with(".sam") {
+        // Disq's SAM writer: the text, whatever the partitions, and no index of any kind.
+        let records: Vec<BamRecord> = partitions.iter().flatten().cloned().collect();
+        let text = htsjdk_bam::sam_file::write_sam(header, &records)
+            .ok_or_else(|| failed(output, "the SAM text could not be built".to_string()))?;
+        return std::fs::write(output, text).map_err(|error| failed(output, error.to_string()));
     }
 
     // The header part: a header-only BAM without its terminator.

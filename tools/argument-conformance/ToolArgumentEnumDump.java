@@ -553,6 +553,32 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.spark.sv.evidence.ExtractSVEvidenceSpark());
         declarations("DiscoverVariantsFromContigAlignmentsSAMSpark",
                 new org.broadinstitute.hellbender.tools.spark.sv.discovery.DiscoverVariantsFromContigAlignmentsSAMSpark());
+        declarations("PathSeqBwaSpark",
+                new org.broadinstitute.hellbender.tools.spark.pathseq.PathSeqBwaSpark());
+        declarations("PathSeqPipelineSpark",
+                new org.broadinstitute.hellbender.tools.spark.pathseq.PathSeqPipelineSpark());
+        declarations("ParallelCopyGCSDirectoryIntoHDFSSpark",
+                new org.broadinstitute.hellbender.tools.spark.ParallelCopyGCSDirectoryIntoHDFSSpark());
+        declarations("BwaSpark",
+                new org.broadinstitute.hellbender.tools.spark.bwa.BwaSpark());
+        declarations("BwaAndMarkDuplicatesPipelineSpark",
+                new org.broadinstitute.hellbender.tools.spark.pipelines.BwaAndMarkDuplicatesPipelineSpark());
+        declarations("PlotDenoisedCopyRatios",
+                new org.broadinstitute.hellbender.tools.copynumber.plotting.PlotDenoisedCopyRatios());
+        declarations("PlotModeledSegments",
+                new org.broadinstitute.hellbender.tools.copynumber.plotting.PlotModeledSegments());
+        declarations("DetermineGermlineContigPloidy",
+                new org.broadinstitute.hellbender.tools.copynumber.DetermineGermlineContigPloidy());
+        declarations("GermlineCNVCaller",
+                new org.broadinstitute.hellbender.tools.copynumber.GermlineCNVCaller());
+        declarations("PostprocessGermlineCNVCalls",
+                new org.broadinstitute.hellbender.tools.copynumber.PostprocessGermlineCNVCalls());
+        declarations("ScoreVariantAnnotations",
+                new org.broadinstitute.hellbender.tools.walkers.vqsr.scalable.ScoreVariantAnnotations());
+        declarations("TrainVariantAnnotationsModel",
+                new org.broadinstitute.hellbender.tools.walkers.vqsr.scalable.TrainVariantAnnotationsModel());
+        declarations("NVScoreVariants",
+                new org.broadinstitute.hellbender.tools.walkers.vqsr.NVScoreVariants());
         declarations("HtsgetReader",
                 new org.broadinstitute.hellbender.tools.HtsgetReader());
         declarations("CpxVariantReInterpreterSpark",

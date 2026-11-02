@@ -22,17 +22,19 @@ use gatk_tools::hdf5_writer::Hdf5File;
 use std::collections::BTreeSet;
 
 /// One extracted record: its alternates, type and labels, as `Triple`s per datum.
-type Metadata = Vec<extract::Extracted>;
+pub(super) type Metadata = Vec<extract::Extracted>;
 
 /// A resource: its labels and its records, each with the genotype facts the polymorphism check
 /// reads.
-struct Resource {
+pub(super) struct Resource {
+    /// The path as given, where no index stands beside it to answer a query.
+    unindexed: Option<String>,
     labels: BTreeSet<String>,
     records: Vec<(extract::Record, bool, bool)>,
 }
 
 /// The port's reduced record, from a decoded one.
-fn reduced(record: &htsjdk_vcf::variant::VariantContext) -> extract::Record {
+pub(super) fn reduced(record: &htsjdk_vcf::variant::VariantContext) -> extract::Record {
     use htsjdk_vcf::variant::Value;
     let attributes = record
         .attributes
@@ -92,9 +94,16 @@ fn matching_labels(
     alternate: Option<&str>,
     resources: &[Resource],
     arguments: &extract::Arguments,
-) -> BTreeSet<String> {
+) -> Result<BTreeSet<String>, Thrown> {
     let mut labels = BTreeSet::new();
     for resource in resources {
+        // `FeatureContext.getValues`, which is the first this run asks of the resource.
+        if let Some(path) = &resource.unindexed {
+            return Err(Thrown::user(format!(
+                "Input {path} must support random access to enable queries by interval. If it's a \
+                 file, please index it using the bundled tool IndexFeatureFile"
+            )));
+        }
         for (candidate, has_genotypes, polymorphic) in &resource.records {
             if candidate.contig != record.contig || candidate.start != record.start {
                 continue;
@@ -112,11 +121,11 @@ fn matching_labels(
             }
         }
     }
-    labels
+    Ok(labels)
 }
 
 /// `extractVariantMetadata`.
-fn metadata(
+pub(super) fn metadata(
     record: &extract::Record,
     resources: &[Resource],
     arguments: &extract::Arguments,
@@ -133,7 +142,7 @@ fn metadata(
             ));
         };
         if arguments.modes.contains(&kind) {
-            let labels = matching_labels(record, None, resources, arguments);
+            let labels = matching_labels(record, None, resources, arguments)?;
             if extract_unlabeled || !labels.is_empty() {
                 return Ok(vec![extract::Extracted {
                     alternates: record.alternates.clone(),
@@ -144,7 +153,7 @@ fn metadata(
         }
         return Ok(Vec::new());
     }
-    Ok(record
+    let extracted: Result<Metadata, Thrown> = record
         .alternates
         .iter()
         .filter(|alternate| *alternate != "*")
@@ -156,17 +165,22 @@ fn metadata(
                     alternate,
                 ))
         })
-        .map(|alternate| extract::Extracted {
-            alternates: vec![alternate.clone()],
-            variant_type: extract::allele_specific_variant_type(&record.reference, alternate),
-            labels: matching_labels(record, Some(alternate), resources, arguments),
+        .map(|alternate| {
+            Ok(extract::Extracted {
+                alternates: vec![alternate.clone()],
+                variant_type: extract::allele_specific_variant_type(&record.reference, alternate),
+                labels: matching_labels(record, Some(alternate), resources, arguments)?,
+            })
         })
+        .collect();
+    Ok(extracted?
+        .into_iter()
         .filter(|extracted| extract_unlabeled || !extracted.labels.is_empty())
         .collect())
 }
 
 /// `LabeledVariantAnnotationsData.writeHDF5`: the rows of every record, flattened in order.
-fn matrix(
+pub(super) fn matrix(
     records: &[Vec<extract::Row>],
     names: &[String],
     labels: &[String],
@@ -254,22 +268,41 @@ fn matrix(
     file.to_bytes()
 }
 
-pub fn extract_variant_annotations(parser: &Parser) -> Outcome {
-    let VariantWalkerStart {
-        input,
-        text,
-        intervals,
-        ..
-    } = variant_walker_startup(parser, "ExtractVariantAnnotations")?;
-    let prefix = argument(parser, "output").ok_or_else(|| {
-        Thrown::command_line("Argument output was missing: Argument 'output' is required")
-    })?;
-    let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
-        failure: Failure::User,
-        exception: "htsjdk.tribble.TribbleException",
-        message: Some(failure.error.message()),
-    })?;
+/// `CopyNumberArgumentValidationUtils.validateOutputFiles`: a file that does not exist needs a
+/// parent that can be written.
+pub(super) fn validate_output_files(paths: &[&str]) -> Result<(), Thrown> {
+    for path in paths {
+        let parent = std::path::Path::new(path)
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or(std::path::Path::new("."));
+        if !std::path::Path::new(path).exists() && !parent.is_dir() {
+            return Err(Thrown::user(format!(
+                "Couldn't write file {} because : The output file is not writeable.",
+                java_absolute_path(path)
+            )));
+        }
+    }
+    Ok(())
+}
 
+/// What `LabeledVariantAnnotationsWalker.onTraversalStart` settles before the VCF's header.
+pub(super) struct LabelledStart {
+    pub(super) annotations_path: String,
+    pub(super) vcf_path: String,
+    pub(super) resources: Vec<Resource>,
+    pub(super) arguments: extract::Arguments,
+    pub(super) allele_specific: bool,
+    pub(super) names: Vec<String>,
+    pub(super) sorted_labels: Vec<String>,
+}
+
+/// `LabeledVariantAnnotationsWalker.onTraversalStart`, up to the VCF's header.
+pub(super) fn labelled_walker_start(
+    parser: &Parser,
+    prefix: &str,
+    header_lines: &[htsjdk_vcf::header::HeaderLine],
+) -> Result<LabelledStart, Thrown> {
     // The resources are feature inputs, opened at startup.
     let resource_values: Vec<(String, Vec<(String, String)>)> = parser
         .definitions()
@@ -330,28 +363,19 @@ pub fn extract_variant_annotations(parser: &Parser) -> Outcome {
     let gzip = !flag(parser, "do-not-gzip-vcf-output");
     let annotations_path = format!("{prefix}{}", extract::ANNOTATIONS_HDF5_SUFFIX);
     let vcf_path = format!("{prefix}{}", if gzip { ".vcf.gz" } else { ".vcf" });
-    for path in [&annotations_path, &vcf_path] {
-        let parent = std::path::Path::new(path)
-            .parent()
-            .filter(|parent| !parent.as_os_str().is_empty())
-            .unwrap_or(std::path::Path::new("."));
-        if !parent.is_dir() {
-            return Err(Thrown::user(format!(
-                "Couldn't write file {} because The output file could not be written.",
-                java_absolute_path(path)
-            )));
-        }
-    }
+    validate_output_files(&[&annotations_path, &vcf_path])?;
     let mut labels: BTreeSet<String> = BTreeSet::new();
     let mut loaded = Vec::new();
-    for (_, attributes, resource_file) in resources {
+    for (path, attributes, resource_file) in resources {
         let own: BTreeSet<String> = attributes
             .iter()
             .filter(|(_, value)| value == "true")
             .map(|(key, _)| key.clone())
             .collect();
         labels.extend(own.iter().cloned());
+        let indexed = std::path::Path::new(&index_feature_file::default_output(&path)).is_file();
         loaded.push(Resource {
+            unindexed: (!indexed).then_some(path),
             labels: own,
             records: resource_file
                 .records
@@ -380,7 +404,7 @@ pub fn extract_variant_annotations(parser: &Parser) -> Outcome {
     }
     let mut allele_specific = false;
     for name in &distinct {
-        let line = file.header.lines.iter().find_map(|line| match line {
+        let line = header_lines.iter().find_map(|line| match line {
             htsjdk_vcf::header::HeaderLine::Compound {
                 key, id, number, ..
             } if key == "INFO" && id == name => Some(*number),
@@ -425,6 +449,42 @@ pub fn extract_variant_annotations(parser: &Parser) -> Outcome {
     };
     let names = extract::sorted_annotation_names(&requested);
     let sorted_labels: Vec<String> = labels.iter().cloned().collect();
+    Ok(LabelledStart {
+        annotations_path,
+        vcf_path,
+        resources: loaded,
+        arguments,
+        allele_specific,
+        names,
+        sorted_labels,
+    })
+}
+
+pub fn extract_variant_annotations(parser: &Parser) -> Outcome {
+    let VariantWalkerStart {
+        input,
+        text,
+        intervals,
+        ..
+    } = variant_walker_startup(parser, "ExtractVariantAnnotations")?;
+    let prefix = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+        failure: Failure::User,
+        exception: "htsjdk.tribble.TribbleException",
+        message: Some(failure.error.message()),
+    })?;
+
+    let LabelledStart {
+        annotations_path,
+        vcf_path,
+        resources: loaded,
+        arguments,
+        allele_specific,
+        names,
+        sorted_labels,
+    } = labelled_walker_start(parser, &prefix, &file.header.lines)?;
 
     // The VCF's header, written before the first record.
     use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType, VcfHeader};

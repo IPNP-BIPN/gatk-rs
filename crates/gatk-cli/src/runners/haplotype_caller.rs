@@ -758,6 +758,8 @@ const SPARK_HONOURED: &[&str] = &[
 /// What `ReadsPipelineSpark` reads before the caller: the duplicate marking and BQSR arguments.
 const PIPELINE_HONOURED: &[&str] = &[
     "align",
+    "bwa-mem-index-image",
+    "single-end-alignment",
     "known-sites",
     "output-bam",
     "allow-missing-read-group",

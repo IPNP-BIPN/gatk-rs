@@ -1,0 +1,349 @@
+{
+  "tool": "TrainVariantAnnotationsModel",
+  "origin": "gatk",
+  "t": 2,
+  "numeric_policy": "strict",
+  "arguments_total": 19,
+  "arguments_in_array": 8,
+  "arguments_excluded": 11,
+  "excluded": [
+    {
+      "argument": "--arguments_file",
+      "type": "List[File]",
+      "reason": "excluded by the repository: expands into the command line itself, which is measured by the barclay-arguments-file suite instead",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gatk-config-file",
+      "type": "String",
+      "reason": "excluded by the repository: a configuration file the corpus does not carry; varying it would measure the config loader",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gcs-max-retries",
+      "type": "int",
+      "reason": "excluded by the repository: reaches nothing without a cloud path in the row",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gcs-project-for-requester-pays",
+      "type": "String",
+      "reason": "excluded by the repository: reaches nothing without a cloud path in the row",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--help",
+      "type": "boolean",
+      "reason": "excluded by the repository: prints the usage and returns; the row would measure the argument parser rather than the tool",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--output",
+      "type": "String",
+      "reason": "only one value available (fixture[0])",
+      "held_at": "/work/out/model",
+      "source": "fixture"
+    },
+    {
+      "argument": "--QUIET",
+      "type": "Boolean",
+      "reason": "excluded by the repository: suppresses the log on stderr, and what is compared is stdout and the output file",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--showHidden",
+      "type": "boolean",
+      "reason": "excluded by the repository: changes the usage text only",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--use-jdk-inflater",
+      "type": "boolean",
+      "reason": "excluded by the repository: chooses an inflater, and the input is read the same way either way",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--verbosity",
+      "type": "LogLevel",
+      "reason": "excluded by the repository: log level on stderr, same reason",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--version",
+      "type": "boolean",
+      "reason": "excluded by the repository: prints the version and returns, same reason",
+      "held_at": null,
+      "source": "none"
+    }
+  ],
+  "rows": 11,
+  "tuples_total": 141,
+  "tuples_covered": 141,
+  "tuples_forbidden": 0,
+  "constraint_notes": [],
+  "coverage": 1.0,
+  "array": [
+    {
+      "row": 0,
+      "labels": {
+        "--annotations-hdf5": "fixture[0]",
+        "--hyperparameters-json": "fixture[0]",
+        "--mode": "fixture[0]",
+        "--model-backend": "fixture[0]",
+        "--python-script": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--unlabeled-annotations-hdf5": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--annotations-hdf5=/work/fixtures/it/extract.annot.hdf5",
+        "--hyperparameters-json=null",
+        "--mode=SNP",
+        "--model-backend=PYTHON_IFOREST",
+        "--python-script=null",
+        "--tmp-dir=/work/tmp",
+        "--unlabeled-annotations-hdf5=null",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 1,
+      "labels": {
+        "--annotations-hdf5": "fixture[0]",
+        "--hyperparameters-json": "fixture[1]",
+        "--mode": "fixture[1]",
+        "--model-backend": "fixture[1]",
+        "--python-script": "fixture[1]",
+        "--tmp-dir": "fixture[1]",
+        "--unlabeled-annotations-hdf5": "fixture[1]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--annotations-hdf5=/work/fixtures/it/extract.annot.hdf5",
+        "--hyperparameters-json=/work/fixtures/it/hyperparameters.json",
+        "--mode=INDEL",
+        "--model-backend=PYTHON_SCRIPT",
+        "--python-script=/work/fixtures/it/score.py",
+        "--tmp-dir=/work/tmp2",
+        "--unlabeled-annotations-hdf5=/work/fixtures/it/extract.unlabeled.annot.hdf5",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 2,
+      "labels": {
+        "--annotations-hdf5": "fixture[0]",
+        "--hyperparameters-json": "fixture[2]",
+        "--mode": "fixture[0]",
+        "--model-backend": "fixture[2]",
+        "--python-script": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
+        "--unlabeled-annotations-hdf5": "fixture[1]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--annotations-hdf5=/work/fixtures/it/extract.annot.hdf5",
+        "--hyperparameters-json=/work/fixtures/it/hyperparameters2.json",
+        "--mode=SNP",
+        "--model-backend=JAVA_BGMM",
+        "--python-script=/work/fixtures/it/score.py",
+        "--tmp-dir=/work/tmp",
+        "--unlabeled-annotations-hdf5=/work/fixtures/it/extract.unlabeled.annot.hdf5",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 3,
+      "labels": {
+        "--annotations-hdf5": "fixture[1]",
+        "--hyperparameters-json": "fixture[0]",
+        "--mode": "fixture[1]",
+        "--model-backend": "fixture[2]",
+        "--python-script": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--unlabeled-annotations-hdf5": "fixture[0]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--annotations-hdf5=/work/fixtures/it/hyperparameters.json",
+        "--hyperparameters-json=null",
+        "--mode=INDEL",
+        "--model-backend=JAVA_BGMM",
+        "--python-script=null",
+        "--tmp-dir=/work/tmp2",
+        "--unlabeled-annotations-hdf5=null",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 4,
+      "labels": {
+        "--annotations-hdf5": "fixture[1]",
+        "--hyperparameters-json": "fixture[1]",
+        "--mode": "fixture[0]",
+        "--model-backend": "fixture[0]",
+        "--python-script": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
+        "--unlabeled-annotations-hdf5": "fixture[0]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--annotations-hdf5=/work/fixtures/it/hyperparameters.json",
+        "--hyperparameters-json=/work/fixtures/it/hyperparameters.json",
+        "--mode=SNP",
+        "--model-backend=PYTHON_IFOREST",
+        "--python-script=/work/fixtures/it/score.py",
+        "--tmp-dir=/work/tmp",
+        "--unlabeled-annotations-hdf5=null",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 5,
+      "labels": {
+        "--annotations-hdf5": "fixture[1]",
+        "--hyperparameters-json": "fixture[2]",
+        "--mode": "fixture[1]",
+        "--model-backend": "fixture[0]",
+        "--python-script": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--unlabeled-annotations-hdf5": "fixture[1]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--annotations-hdf5=/work/fixtures/it/hyperparameters.json",
+        "--hyperparameters-json=/work/fixtures/it/hyperparameters2.json",
+        "--mode=INDEL",
+        "--model-backend=PYTHON_IFOREST",
+        "--python-script=null",
+        "--tmp-dir=/work/tmp2",
+        "--unlabeled-annotations-hdf5=/work/fixtures/it/extract.unlabeled.annot.hdf5",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 6,
+      "labels": {
+        "--annotations-hdf5": "fixture[1]",
+        "--hyperparameters-json": "fixture[0]",
+        "--mode": "fixture[0]",
+        "--model-backend": "fixture[1]",
+        "--python-script": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--unlabeled-annotations-hdf5": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--annotations-hdf5=/work/fixtures/it/hyperparameters.json",
+        "--hyperparameters-json=null",
+        "--mode=SNP",
+        "--model-backend=PYTHON_SCRIPT",
+        "--python-script=null",
+        "--tmp-dir=/work/tmp",
+        "--unlabeled-annotations-hdf5=null",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 7,
+      "labels": {
+        "--annotations-hdf5": "fixture[0]",
+        "--hyperparameters-json": "fixture[1]",
+        "--mode": "fixture[1]",
+        "--model-backend": "fixture[2]",
+        "--python-script": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--unlabeled-annotations-hdf5": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--annotations-hdf5=/work/fixtures/it/extract.annot.hdf5",
+        "--hyperparameters-json=/work/fixtures/it/hyperparameters.json",
+        "--mode=INDEL",
+        "--model-backend=JAVA_BGMM",
+        "--python-script=null",
+        "--tmp-dir=/work/tmp",
+        "--unlabeled-annotations-hdf5=null",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 8,
+      "labels": {
+        "--annotations-hdf5": "fixture[0]",
+        "--hyperparameters-json": "fixture[2]",
+        "--mode": "fixture[0]",
+        "--model-backend": "fixture[1]",
+        "--python-script": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--unlabeled-annotations-hdf5": "fixture[0]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--annotations-hdf5=/work/fixtures/it/extract.annot.hdf5",
+        "--hyperparameters-json=/work/fixtures/it/hyperparameters2.json",
+        "--mode=SNP",
+        "--model-backend=PYTHON_SCRIPT",
+        "--python-script=null",
+        "--tmp-dir=/work/tmp",
+        "--unlabeled-annotations-hdf5=null",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 9,
+      "labels": {
+        "--annotations-hdf5": "fixture[0]",
+        "--hyperparameters-json": "fixture[0]",
+        "--mode": "fixture[0]",
+        "--model-backend": "fixture[0]",
+        "--python-script": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
+        "--unlabeled-annotations-hdf5": "fixture[1]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--annotations-hdf5=/work/fixtures/it/extract.annot.hdf5",
+        "--hyperparameters-json=null",
+        "--mode=SNP",
+        "--model-backend=PYTHON_IFOREST",
+        "--python-script=/work/fixtures/it/score.py",
+        "--tmp-dir=/work/tmp",
+        "--unlabeled-annotations-hdf5=/work/fixtures/it/extract.unlabeled.annot.hdf5",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 10,
+      "labels": {
+        "--annotations-hdf5": "fixture[0]",
+        "--hyperparameters-json": "fixture[0]",
+        "--mode": "fixture[0]",
+        "--model-backend": "fixture[0]",
+        "--python-script": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--unlabeled-annotations-hdf5": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--annotations-hdf5=/work/fixtures/it/extract.annot.hdf5",
+        "--hyperparameters-json=null",
+        "--mode=SNP",
+        "--model-backend=PYTHON_IFOREST",
+        "--python-script=null",
+        "--tmp-dir=/work/tmp2",
+        "--unlabeled-annotations-hdf5=null",
+        "--use-jdk-deflater=true"
+      ]
+    }
+  ]
+}

@@ -373,6 +373,14 @@ pub fn runner(name: &str) -> Option<Runner> {
         "ApplyVQSR" => Some(run_apply_vqsr),
         "VariantRecalibrator" => Some(run_variant_recalibrator),
         "ExtractVariantAnnotations" => Some(run_extract_variant_annotations),
+        "PlotDenoisedCopyRatios" => Some(run_plot_denoised_copy_ratios),
+        "PlotModeledSegments" => Some(run_plot_modeled_segments),
+        "DetermineGermlineContigPloidy" => Some(run_determine_germline_contig_ploidy),
+        "GermlineCNVCaller" => Some(run_germline_cnv_caller),
+        "PostprocessGermlineCNVCalls" => Some(run_postprocess_germline_cnv_calls),
+        "ScoreVariantAnnotations" => Some(run_score_variant_annotations),
+        "TrainVariantAnnotationsModel" => Some(run_train_variant_annotations_model),
+        "NVScoreVariants" => Some(run_nv_score_variants),
         "FilterAlignmentArtifacts" => Some(run_filter_alignment_artifacts),
         "VCFComparator" => Some(run_vcf_comparator),
         "SVStratify" => Some(run_sv_stratify),
@@ -427,6 +435,13 @@ pub fn runner(name: &str) -> Option<Runner> {
         "FixMisencodedBaseQualityReads" => Some(run_fix_misencoded_base_quality_reads),
         "AnnotateIntervals" => Some(run_annotate_intervals),
         "HtsgetReader" => Some(run_htsget_reader),
+        "BwaSpark" => Some(run_bwa_spark),
+        "PathSeqBwaSpark" => Some(run_pathseq_bwa_spark),
+        "ParallelCopyGCSDirectoryIntoHDFSSpark" => {
+            Some(run_parallel_copy_gcs_directory_into_hdfs_spark)
+        }
+        "PathSeqPipelineSpark" => Some(run_pathseq_pipeline_spark),
+        "BwaAndMarkDuplicatesPipelineSpark" => Some(run_bwa_and_mark_duplicates_pipeline_spark),
         "RevertBaseQualityScores" => Some(run_revert_base_quality_scores),
         "AddOriginalAlignmentTags" => Some(run_add_original_alignment_tags),
         "LeftAlignIndels" => Some(run_left_align_indels),
@@ -479,6 +494,34 @@ fn run_bwa_mem_index_image_creator(args: &[String]) -> Result<Option<String>, Th
 
 fn run_apply_bqsr(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::apply_bqsr(&parsed("ApplyBQSR", args)?)
+}
+
+fn run_bwa_and_mark_duplicates_pipeline_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::bwa_and_mark_duplicates_pipeline_spark(&parsed(
+        "BwaAndMarkDuplicatesPipelineSpark",
+        args,
+    )?)
+}
+
+fn run_pathseq_pipeline_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::pathseq_pipeline_spark(&parsed("PathSeqPipelineSpark", args)?)
+}
+
+fn run_parallel_copy_gcs_directory_into_hdfs_spark(
+    args: &[String],
+) -> Result<Option<String>, Thrown> {
+    runners::parallel_copy_gcs_directory_into_hdfs_spark(&parsed(
+        "ParallelCopyGCSDirectoryIntoHDFSSpark",
+        args,
+    )?)
+}
+
+fn run_pathseq_bwa_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::pathseq_bwa_spark(&parsed("PathSeqBwaSpark", args)?)
+}
+
+fn run_bwa_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::bwa_spark(&parsed("BwaSpark", args)?)
 }
 
 fn run_htsget_reader(args: &[String]) -> Result<Option<String>, Thrown> {
@@ -797,6 +840,38 @@ fn run_apply_vqsr(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_variant_recalibrator(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::variant_recalibrator(&parsed("VariantRecalibrator", args)?)
+}
+
+fn run_plot_denoised_copy_ratios(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::plot_denoised_copy_ratios(&parsed("PlotDenoisedCopyRatios", args)?)
+}
+
+fn run_plot_modeled_segments(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::plot_modeled_segments(&parsed("PlotModeledSegments", args)?)
+}
+
+fn run_determine_germline_contig_ploidy(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::determine_germline_contig_ploidy(&parsed("DetermineGermlineContigPloidy", args)?)
+}
+
+fn run_germline_cnv_caller(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::germline_cnv_caller(&parsed("GermlineCNVCaller", args)?)
+}
+
+fn run_postprocess_germline_cnv_calls(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::postprocess_germline_cnv_calls(&parsed("PostprocessGermlineCNVCalls", args)?)
+}
+
+fn run_score_variant_annotations(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::score_variant_annotations(&parsed("ScoreVariantAnnotations", args)?)
+}
+
+fn run_train_variant_annotations_model(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::train_variant_annotations_model(&parsed("TrainVariantAnnotationsModel", args)?)
+}
+
+fn run_nv_score_variants(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::nv_score_variants(&parsed("NVScoreVariants", args)?)
 }
 
 fn run_extract_variant_annotations(args: &[String]) -> Result<Option<String>, Thrown> {

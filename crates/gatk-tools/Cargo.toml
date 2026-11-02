@@ -13,6 +13,9 @@ regex = "1"
 gatk-annotation = { path = "../gatk-annotation" }
 gatk-engine = { path = "../gatk-engine" }
 gatk-readfilter = { path = "../gatk-readfilter" }
+bwa-mem4.workspace = true
+clap.workspace = true
+tempfile = "3"
 htsjdk-bam.workspace = true
 # CheckTerminatorBlock is the tool's decision over the termination check this carries.
 htsjdk-bgzf.workspace = true

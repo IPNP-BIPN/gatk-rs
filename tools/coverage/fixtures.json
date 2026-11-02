@@ -14410,7 +14410,7 @@
       ],
       "$why": [
         "HaplotypeCallerSpark's caller values, over mutect_pl.bam: mutect_t.bam under a read group that names a platform, which the recalibration refuses to go without, and that second input stays as the refusal.",
-        "The BWA arguments are held out because the port refuses --align until BWA-MEM is decided, and the flow arguments because the marking only reads them over flow reads, which this tool would recalibrate with nothing to compare. --binary-tag-name only reaches a table this tool never writes.",
+        "--align has its own suite rows, since it asks for a fixture of unaligned reads none of these values are. The flow arguments because the marking only reads them over flow reads, which this tool would recalibrate with nothing to compare. --binary-tag-name only reaches a table this tool never writes.",
         "--enable-all-annotations stays off: the reference's Kryo cannot broadcast the annotation engine it builds, and which of two exceptions it reports (a lambda, a thread) moves from row to row. The port refuses it with the first.",
         "The engine's debug files are held out: under Spark nothing closes them, so they hold what their buffers flushed, and the port refuses them rather than write them complete."
       ],
@@ -15710,7 +15710,7 @@
       "--output-shard-tmp-dir": [],
       "--read-index": [],
       "$why": [
-        "An unaligned BAM with something for each transformer and a BAM with alignments and NM tags. --filter-bwa-image and --filter-bwa-seed-length are held out: the port refuses the first, and has no step for the second. --sharded-output and the outputs' indexes are held out as for the other tools that write one BAM, and --ignore-alignment-contigs would refuse every row it fills over --is-host-aligned, so a suite row carries it.",
+        "An unaligned BAM with something for each transformer and a BAM with alignments and NM tags. --filter-bwa-image names a host image that holds nothing of those reads, so every read goes through BWA and the rows that drop some are the suite's. --sharded-output and the outputs' indexes are held out as for the other tools that write one BAM, and --ignore-alignment-contigs would refuse every row it fills over --is-host-aligned, so a suite row carries it.",
         "STRICT is held out: these reads carry flags a validator refuses, and it refuses inside a task whatever else the row holds. --sharded-output, --num-reducers and the partition size are held out because the reference then writes one part per reducer with Hadoop checksums, which the port refuses or writes as one part."
       ],
       "--input": [
@@ -15788,8 +15788,14 @@
         "1",
         "30"
       ],
-      "--filter-bwa-image": [],
-      "--filter-bwa-seed-length": [],
+      "--filter-bwa-image": [
+        "<unset>",
+        "/work/fixtures/ps_host.img"
+      ],
+      "--filter-bwa-seed-length": [
+        "19",
+        "60"
+      ],
       "--filter-reads-per-partition": [
         "200000",
         "3"
@@ -16359,6 +16365,823 @@
       ],
       "$why": [
         "Nothing listens on the port, and the refusal is the URI the arguments built, which is what they decide. The answers and what is done with them are the htsget-reader golden's, which starts a server. The class stays body: class=header refuses every other query parameter, and that refusal is a row of the golden."
+      ]
+    },
+    "BwaSpark": {
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0"
+      ],
+      "--bam-partition-size": [
+        "0"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--read-index": [],
+      "--intervals": [
+        "<unset>"
+      ],
+      "--exclude-intervals": [
+        "<unset>"
+      ],
+      "--read-validation-stringency": [
+        "SILENT",
+        "LENIENT"
+      ],
+      "--sharded-output": [
+        "false"
+      ],
+      "--use-jdk-deflater": [
+        "true"
+      ],
+      "$why": [
+        "Reads as a sequencer leaves them, paired and single-ended, on a reference with its own image and one named by the argument. A filter that a paired run applies after alignment is the suite's, as is the non-image, which kills the reference's JVM.",
+        "--sharded-output is held out: the reference then writes one part per reducer with its Hadoop checksums, which the suite measures."
+      ],
+      "--input": [
+        "/work/fixtures/bwa_reads.bam",
+        "/work/fixtures/bwa_reads_unsorted.bam",
+        "/work/fixtures/bwa_reads_dictionary.bam"
+      ],
+      "--reference": [
+        "/work/fixtures/bwa.fasta"
+      ],
+      "--output": [
+        "/work/out/aligned.bam"
+      ],
+      "--bwa-mem-index-image": [
+        "<unset>",
+        "/work/fixtures/bwa_named.img"
+      ],
+      "--single-end-alignment": [
+        "false",
+        "true"
+      ]
+    },
+    "BwaAndMarkDuplicatesPipelineSpark": {
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0"
+      ],
+      "--bam-partition-size": [
+        "0"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--read-index": [],
+      "--intervals": [
+        "<unset>"
+      ],
+      "--exclude-intervals": [
+        "<unset>"
+      ],
+      "--read-validation-stringency": [
+        "SILENT",
+        "LENIENT"
+      ],
+      "--sharded-output": [
+        "false"
+      ],
+      "--use-jdk-deflater": [
+        "true"
+      ],
+      "$why": [
+        "The same reads with the marking over them, which is why the fixture repeats fragments. The flow arguments are held out: they read flow reads, and these are not."
+      ],
+      "--input": [
+        "/work/fixtures/bwa_reads.bam",
+        "/work/fixtures/bwa_reads_no_group.bam"
+      ],
+      "--reference": [
+        "/work/fixtures/bwa.fasta"
+      ],
+      "--output": [
+        "/work/out/aligned.bam"
+      ],
+      "--bwa-mem-index-image": [
+        "<unset>",
+        "/work/fixtures/bwa_named.img"
+      ],
+      "--duplicate-tagging-policy": [
+        "DontTag",
+        "OpticalOnly",
+        "All"
+      ],
+      "--duplicate-scoring-strategy": [
+        "SUM_OF_BASE_QUALITIES",
+        "TOTAL_MAPPED_REFERENCE_LENGTH"
+      ],
+      "--do-not-mark-unmapped-mates": [
+        "false",
+        "true"
+      ],
+      "--remove-all-duplicates": [
+        "false",
+        "true"
+      ],
+      "--remove-sequencing-duplicates": [
+        "false",
+        "true"
+      ]
+    },
+    "PathSeqBwaSpark": {
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0"
+      ],
+      "--bam-partition-size": [
+        "0"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--read-index": [],
+      "--intervals": [
+        "<unset>"
+      ],
+      "--exclude-intervals": [
+        "<unset>"
+      ],
+      "--read-validation-stringency": [
+        "SILENT",
+        "LENIENT"
+      ],
+      "--sharded-output": [
+        "false"
+      ],
+      "--use-jdk-deflater": [
+        "true"
+      ],
+      "$why": [
+        "Each input alone and both, on five contigs of which one no read reaches and one repeats another for alternate hits. --input and the other refusals are the suite's rows. --sharded-output and --num-reducers are held out as for PathSeqScoreSpark."
+      ],
+      "--paired-input": [
+        "<unset>",
+        "/work/fixtures/bwa_reads.bam",
+        "/work/fixtures/nowhere.bam"
+      ],
+      "--unpaired-input": [
+        "<unset>",
+        "/work/fixtures/bwa_reads_unsorted.bam"
+      ],
+      "--paired-output": [
+        "/work/out/paired.bam"
+      ],
+      "--unpaired-output": [
+        "/work/out/unpaired.bam"
+      ],
+      "--microbe-bwa-image": [
+        "/work/fixtures/ps_microbe.img"
+      ],
+      "--microbe-dict": [
+        "/work/fixtures/ps_microbe.dict"
+      ],
+      "--microbe-min-seed-length": [
+        "19",
+        "40"
+      ],
+      "--max-alternate-hits": [
+        "5000",
+        "0"
+      ],
+      "--bwa-score-threshold": [
+        "30",
+        "90"
+      ]
+    },
+    "PathSeqPipelineSpark": {
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0"
+      ],
+      "--bam-partition-size": [
+        "0"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--read-index": [],
+      "--intervals": [
+        "<unset>"
+      ],
+      "--exclude-intervals": [
+        "<unset>"
+      ],
+      "--read-validation-stringency": [
+        "SILENT",
+        "LENIENT"
+      ],
+      "--sharded-output": [
+        "false"
+      ],
+      "--use-jdk-deflater": [
+        "true"
+      ],
+      "$why": [
+        "The filter, the alignment and the scores over one BAM, in one batch and in several, whose order the partition size decides. --num-reducers is a refusal the suite measures."
+      ],
+      "--input": [
+        "/work/fixtures/bwa_reads.bam",
+        "/work/fixtures/bwa_reads_unsorted.bam"
+      ],
+      "--output": [
+        "/work/out/out.bam",
+        "<unset>"
+      ],
+      "--microbe-bwa-image": [
+        "/work/fixtures/ps_microbe.img"
+      ],
+      "--microbe-dict": [
+        "/work/fixtures/ps_microbe.dict"
+      ],
+      "--taxonomy-file": [
+        "/work/fixtures/ps_taxa.db"
+      ],
+      "--scores-output": [
+        "/work/out/scores.txt"
+      ],
+      "--filter-metrics": [
+        "/work/out/filterMetrics.txt",
+        "<unset>"
+      ],
+      "--score-metrics": [
+        "/work/out/scoreMetrics.txt",
+        "<unset>"
+      ],
+      "--score-warnings": [
+        "/work/out/warnings.txt",
+        "<unset>"
+      ],
+      "--filter-bwa-image": [
+        "<unset>",
+        "/work/fixtures/ps_host.img"
+      ],
+      "--filter-bwa-seed-length": [
+        "19",
+        "60"
+      ],
+      "--pipeline-reads-per-partition": [
+        "5000",
+        "100"
+      ],
+      "--readsPerPartitionOutput": [
+        "1000000",
+        "100"
+      ],
+      "--skip-quality-filters": [
+        "false",
+        "true"
+      ],
+      "--filter-duplicates": [
+        "true",
+        "false"
+      ],
+      "--microbe-min-seed-length": [
+        "19",
+        "40"
+      ],
+      "--max-alternate-hits": [
+        "5000",
+        "0"
+      ],
+      "--bwa-score-threshold": [
+        "30",
+        "90"
+      ],
+      "--min-score-identity": [
+        "0.9",
+        "0.99"
+      ],
+      "--identity-margin": [
+        "0.02",
+        "0.3"
+      ],
+      "--divide-by-genome-length": [
+        "false",
+        "true"
+      ],
+      "--not-normalized-by-kingdom": [
+        "false",
+        "true"
+      ]
+    },
+    "ParallelCopyGCSDirectoryIntoHDFSSpark": {
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0"
+      ],
+      "--bam-partition-size": [
+        "0"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--read-index": [],
+      "--intervals": [
+        "<unset>"
+      ],
+      "--exclude-intervals": [
+        "<unset>"
+      ],
+      "--read-validation-stringency": [
+        "SILENT",
+        "LENIENT"
+      ],
+      "--sharded-output": [
+        "false"
+      ],
+      "--use-jdk-deflater": [
+        "true"
+      ],
+      "$why": [
+        "Only the two refusals can be reached: past them the reference needs a Google Cloud Storage and an HDFS. Every row names one of them."
+      ],
+      "--input-gcs-path": [
+        "/work/fixtures/bwa.fasta",
+        "gs://nowhere/in"
+      ],
+      "--output-hdfs-directory": [
+        "hdfs://nowhere:1/out",
+        "/work/out/copy"
+      ],
+      "--input-file-glob": [
+        "<unset>",
+        "*.fasta"
+      ]
+    },
+    "PlotDenoisedCopyRatios": {
+      "$why": [
+        "The reference checks every input and makes the output directory, then RScriptExecutor finds no Rscript in the image,",
+        "so every accepted row ends on that user error. The second copy-ratio file has other intervals, which is the one refusal",
+        "between two tables; a dictionary of one contig still plots, and a contig length above both contigs is the threshold's refusal."
+      ],
+      "$output_on_failure": true,
+      "--standardized-copy-ratios": [
+        "/work/fixtures/it/standardized.tsv",
+        "/work/fixtures/it/denoised.tsv"
+      ],
+      "--denoised-copy-ratios": [
+        "/work/fixtures/it/denoised.tsv",
+        "/work/fixtures/it/denoised-other.tsv"
+      ],
+      "--sequence-dictionary": [
+        "/work/fixtures/it/ref.dict",
+        "/work/fixtures/it/chr1.dict"
+      ],
+      "--minimum-contig-length": [
+        "1000000",
+        "2000001"
+      ],
+      "--maximum-copy-ratio": [
+        "4.0",
+        "Infinity"
+      ],
+      "--point-size-copy-ratio": [
+        "0.2",
+        "1.0"
+      ],
+      "--output-prefix": [
+        "sample",
+        "other"
+      ],
+      "--output": [
+        "/work/out/plots",
+        "/work/out"
+      ]
+    },
+    "PlotModeledSegments": {
+      "$why": [
+        "The same stop as PlotDenoisedCopyRatios. Either input may be absent and both absent is a refusal; a segments file",
+        "claiming other point counts is the check between the tables."
+      ],
+      "$output_on_failure": true,
+      "--denoised-copy-ratios": [
+        "/work/fixtures/it/denoised.tsv",
+        "null"
+      ],
+      "--allelic-counts": [
+        "/work/fixtures/it/allelic.tsv",
+        "null"
+      ],
+      "--segments": [
+        "/work/fixtures/it/segments.seg",
+        "/work/fixtures/it/segments-wrong.seg"
+      ],
+      "--sequence-dictionary": [
+        "/work/fixtures/it/ref.dict",
+        "/work/fixtures/it/chr1.dict"
+      ],
+      "--minimum-contig-length": [
+        "1000000",
+        "2000001"
+      ],
+      "--maximum-copy-ratio": [
+        "4.0",
+        "Infinity"
+      ],
+      "--point-size-copy-ratio": [
+        "0.2",
+        "1.0"
+      ],
+      "--point-size-allele-fraction": [
+        "0.4",
+        "1.0"
+      ],
+      "--output-prefix": [
+        "sample",
+        "other"
+      ],
+      "--output": [
+        "/work/out/plots",
+        "/work/out"
+      ]
+    },
+    "NVScoreVariants": {
+      "$why": [
+        "The import in onStartup fails for want of python before doWork, so every row the parser accepts ends on the same line and",
+        "no input is opened. What the array measures is the parser over the tool's arguments, in-range values only."
+      ],
+      "--variant": [
+        "/work/fixtures/vr_calls.vcf",
+        "/work/fixtures/nothing.vcf"
+      ],
+      "--reference": [
+        "/work/fixtures/nothing.fasta"
+      ],
+      "--output": [
+        "/work/out/scored.vcf"
+      ],
+      "--input": [
+        "null",
+        "/work/fixtures/nothing.bam"
+      ],
+      "--tensor-type": [
+        "reference",
+        "read_tensor"
+      ],
+      "--batch-size": [
+        "64",
+        "32"
+      ],
+      "--random-seed": [
+        "724",
+        "1"
+      ],
+      "--tmp-file": [
+        "null",
+        "/work/out/tmp.txt"
+      ],
+      "--accelerator": [
+        "auto",
+        "cpu"
+      ]
+    },
+    "PostprocessGermlineCNVCalls": {
+      "$why": [
+        "GATKTool's startup comes first, and -L there reads the shards' interval lists for its dictionary, so a -L over a shard",
+        "directory that holds none is refused ahead of the import that otherwise ends every row. --reference, --input and the rest",
+        "of the standard arguments are held out: past that import nothing reads them."
+      ],
+      "--calls-shard-path": [
+        "/work/fixtures/it/shard",
+        "/work/fixtures/nothing"
+      ],
+      "--model-shard-path": [
+        "/work/fixtures/it/shard"
+      ],
+      "--contig-ploidy-calls": [
+        "/work/fixtures/nothing"
+      ],
+      "--sample-index": [
+        "0",
+        "1"
+      ],
+      "--autosomal-ref-copy-number": [
+        "2",
+        "1"
+      ],
+      "--allosomal-contig": [
+        "null",
+        "chr2"
+      ],
+      "--input-intervals-vcf": [
+        "null",
+        "/work/fixtures/nothing.vcf"
+      ],
+      "--clustered-breakpoints": [
+        "null",
+        "/work/fixtures/nothing.vcf"
+      ],
+      "--output-genotyped-intervals": [
+        "/work/out/intervals.vcf.gz"
+      ],
+      "--output-genotyped-segments": [
+        "/work/out/segments.vcf.gz"
+      ],
+      "--output-denoised-copy-ratios": [
+        "/work/out/ratios.tsv"
+      ],
+      "--duplication-qs-threshold": [
+        "50",
+        "10"
+      ],
+      "--het-deletion-qs-threshold": [
+        "100",
+        "10"
+      ],
+      "--hom-deletion-qs-threshold": [
+        "400",
+        "10"
+      ],
+      "--site-frequency-threshold": [
+        "0.01",
+        "0.5"
+      ],
+      "--intervals": [
+        "null",
+        "chr1"
+      ],
+      "--exclude-intervals": [
+        "null"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--reference": [],
+      "--sequence-dictionary": [],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--variant-output-filtering": []
+    },
+    "TrainVariantAnnotationsModel": {
+      "$why": [
+        "The default backend reads a file only to compare two sets of annotation names, and then imports. JAVA_BGMM is the",
+        "reference's own missing module, and PYTHON_SCRIPT reads every matrix before python is looked for. None writes a file."
+      ],
+      "--annotations-hdf5": [
+        "/work/fixtures/it/extract.annot.hdf5",
+        "/work/fixtures/it/hyperparameters.json"
+      ],
+      "--unlabeled-annotations-hdf5": [
+        "null",
+        "/work/fixtures/it/extract.unlabeled.annot.hdf5"
+      ],
+      "--model-backend": [
+        "PYTHON_IFOREST",
+        "PYTHON_SCRIPT",
+        "JAVA_BGMM"
+      ],
+      "--python-script": [
+        "null",
+        "/work/fixtures/it/score.py"
+      ],
+      "--hyperparameters-json": [
+        "null",
+        "/work/fixtures/it/hyperparameters.json",
+        "/work/fixtures/it/hyperparameters2.json"
+      ],
+      "--mode": [
+        "SNP",
+        "INDEL"
+      ],
+      "--output": [
+        "/work/out/model"
+      ]
+    },
+    "ScoreVariantAnnotations": {
+      "$why": [
+        "The variants, resources, annotations and modes are ExtractVariantAnnotations': the same walker's onTraversalStart runs,",
+        "with the reserved snp label its refusal. The header goes to a writer nothing closes, and only then the backend. PYTHON_SCRIPT",
+        "needs a scorer readable at the model prefix, runs a whole pass, writes the annotations and stops at the first script.",
+        "An interval with no variant is the one way to a finished VCF. The command line is held off because it records the date.",
+      "The two thresholds are not varied: their bounds refuse a null where the parser reads one, and a value is refused for the",
+      "calibration scores no fixture can hold, so either would stop every row before the pass. The dump covers both refusals."
+      ],
+      "$output_on_failure": true,
+      "$tagged": [
+        "--resource"
+      ],
+      "$lists": [
+        "--annotation"
+      ],
+      "--variant": [
+        "/work/fixtures/vr_calls.vcf",
+        "/work/fixtures/vr_calls2.vcf"
+      ],
+      "--resource": [
+        "train,training=true,calibration=true:/work/fixtures/vr_train.vcf",
+        "train,training=true:/work/fixtures/vr_train.vcf",
+        "typed,snp=true:/work/fixtures/vr_train.vcf"
+      ],
+      "--annotation": [
+        "QD MQ",
+        "AS_QD MQ",
+        "FS"
+      ],
+      "--mode": [
+        "SNP",
+        "INDEL"
+      ],
+      "--model-backend": [
+        "PYTHON_SCRIPT",
+        "PYTHON_IFOREST",
+        "JAVA_BGMM"
+      ],
+      "--model-prefix": [
+        "/work/fixtures/it/both",
+        "/work/fixtures/it/snp",
+        "/work/fixtures/nothing"
+      ],
+      "--python-script": [
+        "/work/fixtures/it/score.py",
+        "null"
+      ],
+      "--output": [
+        "/work/out/scored"
+      ],
+      "--do-not-gzip-vcf-output": [
+        "true"
+      ],
+      "--omit-alleles-in-hdf5": [
+        "false",
+        "true"
+      ],
+      "--snp-key": [
+        "snp",
+        "null"
+      ],
+      "--score-key": [
+        "SCORE",
+        "S"
+      ],
+      "--calibration-sensitivity-key": [
+        "CALIBRATION_SENSITIVITY",
+        "C"
+      ],
+      "--low-score-filter-name": [
+        "LOW_SCORE",
+        "L"
+      ],
+      "--double-format": [
+        "%.4f",
+        "%.2f"
+      ],
+      "--snp-calibration-sensitivity-threshold": [],
+      "--indel-calibration-sensitivity-threshold": [],
+      "--ignore-filter": [
+        "null",
+        "LowQual"
+      ],
+      "--intervals": [
+        "null",
+        "chr1",
+        "chrM"
+      ],
+      "--exclude-intervals": [
+        "null"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--reference": [],
+      "--sequence-dictionary": [],
+      "--variant-output-filtering": []
+    },
+    "DetermineGermlineContigPloidy": {
+      "--input": [
+        "/work/fixtures/nothing.tsv"
+      ],
+      "--output-prefix": [
+        "p",
+        "q"
+      ],
+      "--output": [
+        "/work/out/made"
+      ],
+      "$why": [
+        "The import in onStartup fails for want of python before doWork, so every row the parser accepts ends on the same line and",
+        "no input is opened. What the array measures is the parser over the tool's arguments, in-range values only."
+      ],
+      "--contig-ploidy-priors": [
+        "null",
+        "/work/fixtures/nothing.tsv"
+      ],
+      "--model": [
+        "null",
+        "/work/fixtures/nothing"
+      ],
+      "--intervals": [
+        "null"
+      ],
+      "--exclude-intervals": [
+        "null"
+      ]
+    },
+    "GermlineCNVCaller": {
+      "--input": [
+        "/work/fixtures/nothing.tsv"
+      ],
+      "--output-prefix": [
+        "p",
+        "q"
+      ],
+      "--output": [
+        "/work/out/made"
+      ],
+      "$why": [
+        "The import in onStartup fails for want of python before doWork, so every row the parser accepts ends on the same line and",
+        "no input is opened. What the array measures is the parser over the tool's arguments, in-range values only."
+      ],
+      "--run-mode": [
+        "COHORT",
+        "CASE"
+      ],
+      "--contig-ploidy-calls": [
+        "/work/fixtures/nothing"
+      ],
+      "--model": [
+        "null",
+        "/work/fixtures/nothing"
+      ],
+      "--annotated-intervals": [
+        "null",
+        "/work/fixtures/nothing.tsv"
+      ],
+      "--intervals": [
+        "null"
+      ],
+      "--exclude-intervals": [
+        "null"
       ]
     }
   },
@@ -17638,6 +18461,16 @@
         "--input": "/work/fixtures/sv_assembly.bam"
       },
       "why": "A breakend's end is negative, so any CNV file fails on it before anything else is measured."
+    },
+    {
+      "tools": [
+        "ParallelCopyGCSDirectoryIntoHDFSSpark"
+      ],
+      "forbid": {
+        "--input-gcs-path": "gs://nowhere/in",
+        "--output-hdfs-directory": "hdfs://nowhere:1/out"
+      },
+      "why": "Past both refusals the reference opens an HDFS connection and the port stops."
     }
   ],
   "exclude": {

@@ -245,7 +245,10 @@ jobs:
             --tool SortSamSpark --tool PrintVariantsSpark --tool RevertSamSpark \
             --tool CollectInsertSizeMetricsSpark --tool CompareDuplicatesSpark \
             --tool CollectMultipleMetricsSpark --tool MarkDuplicatesSpark --tool CollectAllelicCountsSpark \
-            --tool FindBadGenomicKmersSpark --tool CalcMetadataSpark --tool ExtractSVEvidenceSpark --tool DiscoverVariantsFromContigAlignmentsSAMSpark --tool SvDiscoverFromLocalAssemblyContigAlignmentsSpark --tool CpxVariantReInterpreterSpark --tool HtsgetReader --tool HaplotypeCallerSpark --tool ReadsPipelineSpark --tool PathSeqFilterSpark --tool PathSeqScoreSpark \
+            --tool BwaSpark --tool BwaAndMarkDuplicatesPipelineSpark --tool ParallelCopyGCSDirectoryIntoHDFSSpark --tool PathSeqBwaSpark --tool PathSeqPipelineSpark --tool FindBadGenomicKmersSpark --tool CalcMetadataSpark --tool ExtractSVEvidenceSpark --tool DiscoverVariantsFromContigAlignmentsSAMSpark --tool SvDiscoverFromLocalAssemblyContigAlignmentsSpark --tool CpxVariantReInterpreterSpark --tool HtsgetReader --tool HaplotypeCallerSpark --tool ReadsPipelineSpark --tool PathSeqFilterSpark --tool PathSeqScoreSpark \
+            --tool PlotDenoisedCopyRatios --tool PlotModeledSegments --tool DetermineGermlineContigPloidy \
+            --tool GermlineCNVCaller --tool PostprocessGermlineCNVCalls --tool ScoreVariantAnnotations \
+            --tool TrainVariantAnnotationsModel --tool NVScoreVariants \
             --tool ExtractOriginalAlignmentRecordsByNameSpark --tool MeanQualityByCycleSpark \
             --tool QualityScoreDistributionSpark --tool CollectBaseDistributionByCycleSpark \
             --tool CollectQualityYieldMetricsSpark \
@@ -363,6 +366,20 @@ jobs:
         # measurement gets into the tree at all.
         run: git --no-pager diff --stat tools/coverage/measured.json
 
+      - name: Record what the run was made of
+        # This job holds both the image and the toolchain, so it is where a third party's run can
+        # be told apart from this one: inputs' hashes, pins, container and compression provider.
+        if: always()
+        run: python3 tools/provenance/record.py --out provenance.json
+
+      - name: Publish the provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: provenance
+          path: provenance.json
+          if-no-files-found: error
+
       - name: Publish what the run measured
         # The corpus goes with the number, and not as decoration: a share of 5/6 says a row
         # diverged and says nothing about which, and the corpus is where that is read.
@@ -447,6 +464,11 @@ jobs:
         # repository checked out. Refreshing the summaries from the siblings' fetched main is
         # `--refresh`, and is a deliberate, reviewable commit.
         run: python3 tools/dashboard/generate.py --check
+
+      - name: docs/VALIDATION.md is generated, not written
+        # What each tool's state rests on, counted from the goldens and measurements committed
+        # here, so a freeze that does not regenerate it fails.
+        run: python3 tools/reports/generate.py --check
 
   coverage:
     name: Covering arrays cover what they claim
