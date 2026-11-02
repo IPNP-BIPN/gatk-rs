@@ -382,6 +382,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "DetermineGermlineContigPloidy" => Some(run_determine_germline_contig_ploidy),
         "GermlineCNVCaller" => Some(run_germline_cnv_caller),
         "PostprocessGermlineCNVCalls" => Some(run_postprocess_germline_cnv_calls),
+        "GenomicsDBImport" => Some(run_genomics_db_import),
         "ScoreVariantAnnotations" => Some(run_score_variant_annotations),
         "TrainVariantAnnotationsModel" => Some(run_train_variant_annotations_model),
         "NVScoreVariants" => Some(run_nv_score_variants),
@@ -873,6 +874,10 @@ fn run_determine_germline_contig_ploidy(args: &[String]) -> Result<Option<String
 
 fn run_germline_cnv_caller(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::germline_cnv_caller(&parsed("GermlineCNVCaller", args)?)
+}
+
+fn run_genomics_db_import(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::genomics_db_import(&parsed("GenomicsDBImport", args)?)
 }
 
 fn run_postprocess_germline_cnv_calls(args: &[String]) -> Result<Option<String>, Thrown> {

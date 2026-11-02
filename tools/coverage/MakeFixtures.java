@@ -4082,6 +4082,7 @@ public class MakeFixtures {
         pathSeqTaxonomy(dir);
         modelSegments(dir);
         interpreterTools(dir);
+        genomicsDbInputs(dir);
         funcotatorDownloaderFixtures(dir);
         funcotatorFixtures(dir);
         bwaIndexImage(dir);
@@ -7257,6 +7258,49 @@ public class MakeFixtures {
      * intervals and the sites, which multi-sample segmentation requires, and differs in its
      * values. The segments list is what --segments reads in place of the kernel segmentation.
      */
+    /**
+     * Two one-sample gVCFs for GenomicsDBImport, indexed: blocks and sites on two contigs, with the
+     * allele-specific annotations and the spanning deletion its loader treats specially.
+     */
+    static void genomicsDbInputs(final Path dir) throws Exception {
+        final String header = "##fileformat=VCFv4.2\n"
+                + "##ALT=<ID=NON_REF,Description=\"Represents any possible alternative allele\">\n"
+                + "##FILTER=<ID=PASS,Description=\"All filters passed\">\n"
+                + "##FORMAT=<ID=AD,Number=R,Type=Integer,Description=\"ad\">\n"
+                + "##FORMAT=<ID=DP,Number=1,Type=Integer,Description=\"dp\">\n"
+                + "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"gq\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"gt\">\n"
+                + "##FORMAT=<ID=MIN_DP,Number=1,Type=Integer,Description=\"min dp\">\n"
+                + "##FORMAT=<ID=PL,Number=G,Type=Integer,Description=\"pl\">\n"
+                + "##INFO=<ID=AS_RAW_MQ,Number=1,Type=String,Description=\"x\">\n"
+                + "##INFO=<ID=AS_SB_TABLE,Number=1,Type=String,Description=\"x\">\n"
+                + "##INFO=<ID=DP,Number=1,Type=Integer,Description=\"x\">\n"
+                + "##INFO=<ID=END,Number=1,Type=Integer,Description=\"x\">\n"
+                + "##contig=<ID=chr1,length=2000000>\n"
+                + "##contig=<ID=chr2,length=1500000>\n";
+        final String columns = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t";
+        final String block = "\tGT:DP:GQ:MIN_DP:PL\t0/0:10:30:9:0,30,450\n";
+        final Path a = dir.resolve("gdb_a.g.vcf");
+        final Path b = dir.resolve("gdb_b.g.vcf");
+        Files.writeString(a, header + columns + "A\n"
+                + "chr1\t1\t.\tA\t<NON_REF>\t.\t.\tEND=99" + block
+                + "chr1\t100\trs1\tC\tT,<NON_REF>\t50.64\t.\tAS_RAW_MQ=100.00|200.00|0.00;AS_SB_TABLE=1,2|3,4|0,0;DP=12"
+                + "\tGT:AD:DP:GQ:PL\t0/1:5,7,0:12:50:50,0,70,65,91,156\n"
+                + "chr1\t201\t.\tATT\tA,<NON_REF>\t99.9\t.\tDP=9\tGT:AD:DP\t0/1:1,8,0:9\n"
+                + "chr1\t202\t.\tT\t*,<NON_REF>\t.\t.\tDP=4\tGT:AD\t1/1:0,4,0\n"
+                + "chr2\t1\t.\tA\t<NON_REF>\t.\t.\tEND=500" + block, StandardCharsets.UTF_8);
+        Files.writeString(b, header + columns + "B\n"
+                + "chr1\t1\t.\tA\t<NON_REF>\t.\t.\tEND=149" + block
+                + "chr1\t150\t.\tA\t<NON_REF>\t.\t.\tEND=1000" + block
+                + "chr2\t400\t.\tA\t<NON_REF>\t.\t.\tEND=700" + block, StandardCharsets.UTF_8);
+        for (final Path path : new Path[] {a, b}) {
+            htsjdk.tribble.index.IndexFactory.createDynamicIndex(
+                            path, new htsjdk.variant.vcf.VCFCodec(),
+                            htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
+                    .write(Paths.get(path + ".idx"));
+        }
+    }
+
     /**
      * The tools that stop at an interpreter, under it/: the tables the plots read, in two contigs a
      * dictionary keeps and one it can drop, two scorers' prefixes a walker only asks can be read,

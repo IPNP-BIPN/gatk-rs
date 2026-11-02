@@ -358,6 +358,79 @@
     ]
   },
   "per_tool": {
+    "GenomicsDBImport": {
+      "$why": [
+        "gdb_a.g.vcf is a gVCF with blocks, sites, a deletion with its spanning allele and allele-specific",
+        "annotations, gdb_b.g.vcf a second sample of blocks across the same contigs. --variant is a list: both",
+        "samples, or the first alone. The two workspace paths are what lets a row notice where it was told to",
+        "write, and the fragment and row-bounds names are numbered in the comparison because they hold a UUID,",
+        "a thread id and the wall clock. The arguments held out with no value are the ones the port refuses",
+        "with its own message or that Barclay refuses beside --variant, which would measure that refusal on",
+        "every row that carries them: an update and its interval list, the sample map, --header, the feature",
+        "reader bypass, the contig merge and consolidation over batches. The refusals are in GenomicsDBImportDump."
+      ],
+      "$lists": [
+        "--variant"
+      ],
+      "--variant": [
+        "/work/fixtures/gdb_a.g.vcf /work/fixtures/gdb_b.g.vcf",
+        "/work/fixtures/gdb_a.g.vcf"
+      ],
+      "--genomicsdb-workspace-path": [
+        "/work/out/ws",
+        "/work/out/ws2"
+      ],
+      "--intervals": [
+        "chr1:1-500",
+        "chr2"
+      ],
+      "--batch-size": [
+        "0",
+        "1"
+      ],
+      "--genomicsdb-segment-size": [
+        "1048576",
+        "4096"
+      ],
+      "--genomicsdb-vcf-buffer-size": [
+        "16384",
+        "1024"
+      ],
+      "--reader-threads": [
+        "1",
+        "2"
+      ],
+      "--max-num-intervals-to-import-in-parallel": [
+        "1",
+        "2"
+      ],
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--exclude-intervals": [
+        "chr1:50-60",
+        "chr2:5-6"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--read-filter": [],
+      "--disable-read-filter": [],
+      "--genomicsdb-update-workspace-path": [],
+      "--output-interval-list-to-file": [],
+      "--sample-name-map": [],
+      "--validate-sample-name-map": [],
+      "--header": [],
+      "--bypass-feature-reader": [],
+      "--avoid-nio": [],
+      "--merge-contigs-into-num-partitions": [],
+      "--consolidate": []
+    },
     "ApplyBQSR": {
       "--input": [
         "/work/fixtures/reads.bam",

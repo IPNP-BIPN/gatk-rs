@@ -30,6 +30,8 @@ htsjdk-tribble.workspace = true
 htsjdk-vcf.workspace = true
 # The coverage filter takes a median, which is commons-math's `Median` and therefore jmath's.
 jmath.workspace = true
+# GenomicsDBImport's tiles are C zlib's deflate, which the flate2 in this workspace is not.
+libz-sys = "1"
 md-5.workspace = true
 # HtsgetReader's JSON, which is Jackson's in the reference.
 serde_json = "1"

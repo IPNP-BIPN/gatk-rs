@@ -260,6 +260,7 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         | "ApplyBQSR"
         | "SelectVariants"
         | "PostprocessGermlineCNVCalls"
+        | "GenomicsDBImport"
         | "ScoreVariantAnnotations" => Some(&["WellformedReadFilter"]),
         // `Pileup.getDefaultReadFilters` is the walker's own plus three of its own, and they are
         // not decoration: each one changes which reads reach a pileup, and therefore the depth
