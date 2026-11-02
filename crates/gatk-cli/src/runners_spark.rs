@@ -117,6 +117,12 @@ fn spark_verbosity(parser: &Parser) -> Result<(), Thrown> {
 
 /// `ReadsSparkSource.getHeader` for a local path: Disq's format by extension, then the file.
 fn spark_reads_header(input: &str) -> Result<ReadsDataSource, Thrown> {
+    spark_reads_open(input, false)
+}
+
+/// `spark_reads_header`, where the tools that take a BAM a partition at a time ask for no more of it
+/// than the header's blocks.
+fn spark_reads_open(input: &str, splits_by_itself: bool) -> Result<ReadsDataSource, Thrown> {
     let failed = |cause: String| {
         Thrown::user(format!(
             "Failed to read bam header from {input}\n Caused by:{cause}"
@@ -136,6 +142,10 @@ fn spark_reads_header(input: &str) -> Result<ReadsDataSource, Thrown> {
     let path = std::path::Path::new(input);
     if !path.exists() {
         return Err(failed(format!("File {input} does not exist")));
+    }
+    if splits_by_itself {
+        return ReadsDataSource::open_for_splits(path, None)
+            .map_err(|error| failed(format!("{error:?}")));
     }
     ReadsDataSource::open_unindexed(path).map_err(|error| failed(format!("{error:?}")))
 }
@@ -192,7 +202,11 @@ pub(super) fn spark_startup(parser: &Parser, tool: &str) -> Result<SparkStart, T
     let input = inputs.into_iter().next().ok_or_else(|| {
         Thrown::command_line("Argument input was missing: Argument 'input' is required")
     })?;
-    let source = spark_reads_header(&input)?;
+    let splits_by_itself = matches!(
+        tool,
+        "FindBreakpointEvidenceSpark" | "StructuralVariationDiscoveryPipelineSpark"
+    );
+    let source = spark_reads_open(&input, splits_by_itself)?;
     let header = source.header().clone();
     // Disq reads the header at `--read-validation-stringency`, and STRICT refuses this line.
     if let Some(group) = header.read_groups.iter().find(|group| {
@@ -225,7 +239,11 @@ pub(super) fn spark_startup(parser: &Parser, tool: &str) -> Result<SparkStart, T
         }
     }
 
-    let source = spark_traversal_source(parser, &input, source)?;
+    let source = if splits_by_itself {
+        spark_split_source(parser, &input, source)?
+    } else {
+        spark_traversal_source(parser, &input, source)?
+    };
 
     Ok(SparkStart {
         source,
@@ -235,6 +253,36 @@ pub(super) fn spark_startup(parser: &Parser, tool: &str) -> Result<SparkStart, T
     })
 }
 
+/// `getUnfilteredReads` with intervals is a Disq traversal, which needs the index beside the BAM.
+/// Without one the reference fails inside the first executor task.
+fn no_spark_index(input: &str) -> Thrown {
+    let path = std::path::Path::new(input);
+    let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    eprintln!("ERROR Executor - Exception in task 0.0 in stage 0.0 (TID 0)");
+    Thrown::non_user(
+        "org.apache.spark.SparkException",
+        format!(
+            "Intervals set but no index file found for file:{}",
+            absolute.display()
+        ),
+    )
+}
+
+/// The BAM a tool takes a partition at a time, with its index under intervals.
+fn spark_split_source(
+    parser: &Parser,
+    input: &str,
+    source: ReadsDataSource,
+) -> Result<ReadsDataSource, Thrown> {
+    if !intervals_specified(parser) {
+        return Ok(source);
+    }
+    let path = std::path::Path::new(input);
+    let index = htsjdk_bam::sam_files::find_index(path).ok_or_else(|| no_spark_index(input))?;
+    ReadsDataSource::open_for_splits(path, Some(&index))
+        .map_err(|error| Thrown::user(format!("{error:?}")))
+}
+
 /// What `getUnfilteredReads` traverses: the BAM with its index under intervals, from Disq's first
 /// record.
 fn spark_traversal_source(
@@ -242,24 +290,12 @@ fn spark_traversal_source(
     input: &str,
     source: ReadsDataSource,
 ) -> Result<ReadsDataSource, Thrown> {
-    // `getUnfilteredReads` with intervals is a Disq traversal, which needs the index beside the
-    // BAM. Without one the reference fails inside the first executor task.
     let source = if intervals_specified(parser) {
         let path = std::path::Path::new(input);
         match htsjdk_bam::sam_files::find_index(path) {
             Some(index) => ReadsDataSource::open(path, &index)
                 .map_err(|error| Thrown::user(format!("{error:?}")))?,
-            None => {
-                let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
-                eprintln!("ERROR Executor - Exception in task 0.0 in stage 0.0 (TID 0)");
-                return Err(Thrown::non_user(
-                    "org.apache.spark.SparkException",
-                    format!(
-                        "Intervals set but no index file found for file:{}",
-                        absolute.display()
-                    ),
-                ));
-            }
+            None => return Err(no_spark_index(input)),
         }
     } else {
         source
@@ -1063,16 +1099,19 @@ fn breakpoint_failure(failure: sv_breakpoints::Failure) -> Thrown {
     }
 }
 
-/// `readExternalEvidence`, of the one partition there is.
+/// `readExternalEvidence`: each feature to the partition its start falls in, and the far end of a
+/// long one to the partition its own start falls in.
 fn external_evidence(
     parser: &Parser,
     metadata: &gatk_tools::read_metadata::ReadMetadata,
-) -> Result<Vec<sv_evidence::Evidence>, Thrown> {
+) -> Result<Vec<Vec<sv_evidence::Evidence>>, Thrown> {
     use sv_evidence::{fixed_width, Evidence, EvidenceKind, SvInterval};
+    let partitions = metadata.partitions.len();
+    let mut evidence: Vec<Vec<Evidence>> = vec![Vec::new(); partitions];
     let Some(path) =
         argument(parser, "external-evidence").or_else(|| argument(parser, "cnv-calls"))
     else {
-        return Ok(Vec::new());
+        return Ok(evidence);
     };
     let weight = number_or(parser, "external-evidence-weight", 10);
     let uncertainty = number_or(parser, "external-evidence-uncertainty", 150);
@@ -1083,9 +1122,21 @@ fn external_evidence(
         kind: EvidenceKind::External,
         distal: None,
     };
+    let mut boundaries: Vec<(i32, i32)> = metadata
+        .partitions
+        .iter()
+        .map(|bounds| (bounds.first_contig, bounds.first_start))
+        .collect();
+    boundaries.push((i32::MAX, i32::MAX));
+    if boundaries.windows(2).any(|pair| pair[0] > pair[1]) {
+        return Err(Thrown::non_user(
+            "org.broadinstitute.hellbender.exceptions.GATKException",
+            "Partition boundaries are not coordinate sorted.",
+        ));
+    }
     let (codec, text) = open_feature_input(&path)?;
     let mut previous = (0, 0);
-    let mut evidence = Vec::new();
+    let mut partition = 0;
     for (feature, _) in gatk_tools::feature_codec::features(&text, codec) {
         let Some(&contig) = metadata.contig_ids.get(&feature.contig) else {
             return Err(Thrown::user(format!(
@@ -1100,14 +1151,113 @@ fn external_evidence(
             )));
         }
         previous = (contig, start);
+        while (contig, start) >= boundaries[partition + 1] {
+            partition += 1;
+        }
         if end - start <= uncertainty.wrapping_mul(2) {
-            evidence.push(external(SvInterval { contig, start, end }));
+            evidence[partition].push(external(SvInterval { contig, start, end }));
         } else {
-            evidence.push(external(fixed_width(contig, start, uncertainty)));
-            evidence.push(external(fixed_width(contig, end, uncertainty)));
+            evidence[partition].push(external(fixed_width(contig, start, uncertainty)));
+            let far = fixed_width(contig, end, uncertainty);
+            let location = (far.contig, far.start);
+            let far_partition = if location >= boundaries[partition + 1] {
+                // `Arrays.binarySearch`, whose hit on equal boundaries is the one its halving meets.
+                let (mut low, mut high) = (0i32, boundaries.len() as i32 - 1);
+                let mut found = None;
+                while low <= high {
+                    let middle = (low + high) >> 1;
+                    match boundaries[middle as usize].cmp(&location) {
+                        std::cmp::Ordering::Less => low = middle + 1,
+                        std::cmp::Ordering::Greater => high = middle - 1,
+                        std::cmp::Ordering::Equal => {
+                            found = Some(middle);
+                            break;
+                        }
+                    }
+                }
+                match found {
+                    Some(index) => index as usize,
+                    None if low > 0 => low as usize - 1,
+                    None => 0,
+                }
+            } else {
+                partition
+            };
+            evidence[far_partition].push(external(far));
         }
     }
     Ok(evidence)
+}
+
+/// `getUnfilteredReads`, as Disq cut it: what each partition's iterator returns.
+struct DisqReads<'a> {
+    source: &'a ReadsDataSource,
+    chunks: Vec<Option<gatk_engine::reads::Chunk>>,
+    intervals: &'a [gatk_engine::interval::SimpleInterval],
+}
+
+impl gatk_tools::read_metadata::ReadPartitions for DisqReads<'_> {
+    fn count(&self) -> usize {
+        self.chunks.len()
+    }
+
+    fn reads(&self, partition: usize) -> Result<Vec<BamRecord>, gatk_engine::reads::ReadsError> {
+        let Some(chunk) = &self.chunks[partition] else {
+            return Ok(Vec::new());
+        };
+        if self.intervals.is_empty() {
+            self.source.read_chunk(chunk)
+        } else {
+            self.source
+                .query_within(self.intervals, chunk.start, chunk.end)
+        }
+    }
+}
+
+/// `--bam-partition-size`, a `long` until `ReadsSparkSource` narrows it, and `--use-nio`, cut by
+/// Disq. What the port cannot follow it through is refused here.
+fn disq_reads<'a>(
+    parser: &Parser,
+    source: &'a ReadsDataSource,
+    intervals: &'a [gatk_engine::interval::SimpleInterval],
+) -> Result<DisqReads<'a>, Thrown> {
+    use gatk_engine::reads::DisqSplitError;
+    let size = scalar(parser, "bam-partition-size")
+        .and_then(|text| text.parse::<i64>().ok())
+        .unwrap_or(0);
+    let chunks = source
+        .disq_partitions(size as i32, flag(parser, "use-nio"))
+        .map_err(|error| match error {
+            DisqSplitError::Reads(error) => Thrown::user(format!("{error:?}")),
+            DisqSplitError::Sbi(message) => {
+                Thrown::non_user("htsjdk.samtools.SAMFormatException", message)
+            }
+            DisqSplitError::NotABlock(address) => Thrown::non_user(
+                PORT_LIMITATION,
+                format!(
+                    "Disq's block guesser accepted bytes at {address} that are not a BGZF block, \
+                     and this port does not read a file as if they were. This message is the \
+                     port's own and not GATK's."
+                ),
+            ),
+        })?;
+    if chunks.len() > 1
+        && arguments(parser, "intervals")
+            .iter()
+            .any(|l| l == "unmapped")
+    {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "-L unmapped over a BAM Disq cuts into several partitions adds unplaced reads to the \
+             partitions the index's last offset falls in, and this port does not follow it. This \
+             message is the port's own and not GATK's.",
+        ));
+    }
+    Ok(DisqReads {
+        source,
+        chunks,
+        intervals,
+    })
 }
 
 /// `gatherEvidenceAndWriteContigSamFile`, with the SAM file written if there is somewhere to write
@@ -1126,30 +1276,15 @@ fn gather_breakpoints(
     ),
     Thrown,
 > {
-    let input = arguments(parser, "input").remove(0);
-    let split = match number_or(parser, "bam-partition-size", 0) {
-        0 => 32 * 1024 * 1024,
-        size => i64::from(size),
-    };
-    if std::fs::metadata(&input).is_ok_and(|file| file.len() as i64 > split) {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            format!(
-                "{input} is larger than one partition, and this port assembles a single \
-                 partition's evidence. This message is the port's own and not GATK's."
-            ),
-        ));
-    }
     if header.attributes.get("SO") != Some("coordinate") {
         return Err(Thrown::non_user(
             "java.lang.IllegalStateException",
             "The reads must be coordinate sorted.",
         ));
     }
-    let records = gatk_tools::read_walker::traverse(source, intervals, &|_| true)
-        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let reads = disq_reads(parser, source, intervals)?;
     let scan = &arguments_read.evidence;
-    let metadata = sv_read_metadata(parser, header, &records, &scan.metadata)?;
+    let metadata = sv_partitioned_metadata(parser, header, &reads, &scan.metadata)?;
     let write_text = |path: &str, text: String| {
         std::fs::write(path, text).map_err(|error| {
             Thrown::user(format!(
@@ -1168,12 +1303,21 @@ fn gather_breakpoints(
         .iter()
         .map(|sequence| sequence.length)
         .collect();
-    let ignored = sv_evidence::high_coverage_intervals(&records, &metadata, &lengths, scan);
+    let mut finder = sv_evidence::CoverageFinder::new(&metadata, &lengths, scan);
+    for partition in 0..reads.chunks.len() {
+        use gatk_tools::read_metadata::ReadPartitions;
+        finder.add_partition(
+            &reads
+                .reads(partition)
+                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+        );
+    }
+    let ignored = finder.finish();
     if let Some(path) = argument(parser, "high-coverage-intervals") {
         write_text(&path, sv_evidence::high_coverage_bed(&ignored, &metadata))?;
     }
     let results = sv_breakpoints::gather(
-        &records,
+        &reads,
         arguments_read,
         &metadata,
         header,
@@ -1409,14 +1553,8 @@ pub fn structural_variation_discovery_pipeline_spark(parser: &Parser) -> Outcome
     Ok(None)
 }
 
-/// `buildMetadata` as far as the file, which each tool writes where it writes the rest.
-fn sv_read_metadata(
-    parser: &Parser,
-    header: &SamHeader,
-    records: &[BamRecord],
-    arguments_read: &gatk_tools::read_metadata::MetadataArguments,
-) -> Result<gatk_tools::read_metadata::ReadMetadata, Thrown> {
-    use gatk_tools::read_metadata::{MetadataFailure, ReadMetadata};
+/// `readCrossContigsToIgnoreFile`.
+fn cross_contigs_to_ignore(parser: &Parser, header: &SamHeader) -> Result<Vec<i32>, Thrown> {
     let mut ignored_contigs = Vec::new();
     if let Some(path) = argument(parser, "cross-contigs-to-ignore") {
         let text = std::fs::read_to_string(&path).map_err(|error| {
@@ -1440,17 +1578,52 @@ fn sv_read_metadata(
             }
         }
     }
-    ReadMetadata::with_arguments(header, records, arguments_read, ignored_contigs).map_err(
-        |failure| match failure {
-            MetadataFailure::Unpaired => evidence_task_failure(
-                "java.lang.IllegalStateException: Cannot get mate information for an unpaired read",
-            ),
-            MetadataFailure::NoReads => {
-                Thrown::non_user("java.lang.ArithmeticException", "/ by zero")
-            }
-            MetadataFailure::Order(error) => Thrown::user(format!("{error:?}")),
-        },
-    )
+    Ok(ignored_contigs)
+}
+
+fn sv_metadata_failure(failure: gatk_tools::read_metadata::MetadataFailure) -> Thrown {
+    use gatk_tools::read_metadata::MetadataFailure;
+    match failure {
+        MetadataFailure::Unpaired => evidence_task_failure(
+            "java.lang.IllegalStateException: Cannot get mate information for an unpaired read",
+        ),
+        MetadataFailure::NoReads => Thrown::non_user("java.lang.ArithmeticException", "/ by zero"),
+        MetadataFailure::Order(error) => Thrown::user(format!("{error:?}")),
+    }
+}
+
+/// `buildMetadata` as far as the file, which each tool writes where it writes the rest.
+fn sv_read_metadata(
+    parser: &Parser,
+    header: &SamHeader,
+    records: &[BamRecord],
+    arguments_read: &gatk_tools::read_metadata::MetadataArguments,
+) -> Result<gatk_tools::read_metadata::ReadMetadata, Thrown> {
+    use gatk_tools::read_metadata::ReadMetadata;
+    let ignored_contigs = cross_contigs_to_ignore(parser, header)?;
+    ReadMetadata::with_arguments(header, records, arguments_read, ignored_contigs)
+        .map_err(sv_metadata_failure)
+}
+
+/// `buildMetadata`, over as many partitions as Disq cut.
+fn sv_partitioned_metadata(
+    parser: &Parser,
+    header: &SamHeader,
+    reads: &DisqReads<'_>,
+    arguments_read: &gatk_tools::read_metadata::MetadataArguments,
+) -> Result<gatk_tools::read_metadata::ReadMetadata, Thrown> {
+    use gatk_tools::read_metadata::{MetadataBuilder, ReadPartitions};
+    let ignored_contigs = cross_contigs_to_ignore(parser, header)?;
+    let mut builder = MetadataBuilder::new(header, *arguments_read, ignored_contigs);
+    for partition in 0..reads.count() {
+        let records = reads
+            .reads(partition)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        builder
+            .add_partition(&records)
+            .map_err(sv_metadata_failure)?;
+    }
+    builder.finish().map_err(sv_metadata_failure)
 }
 
 fn evidence_task_failure(message: &str) -> Thrown {

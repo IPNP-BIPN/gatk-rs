@@ -1110,7 +1110,7 @@ The tool writes what its tables hold, so the reference that repeats and the size
 
 ### FindBreakpointEvidenceSpark
 
-Suites: `sv-evidence`.
+Suites: `sv-evidence`, `sv-partitions`.
 
 Inputs: `svbp_cross.txt`, `svbp_external.bed`, `svbp_gaps.txt`, `svbp_kill-wrong-length.txt`, `svbp_kill.txt`, `svbp_other.bam`, `svbp_reads.bam`, `svbp_shallow.bam`, `svbp_sv.fasta.img`.
 
@@ -2008,7 +2008,7 @@ svd.bam is queryname-sorted assembled contigs over svd_ref.fasta (chr1, chr2 and
 
 ### StructuralVariationDiscoveryPipelineSpark
 
-Suites: `sv-evidence`.
+Suites: `sv-evidence`, `sv-partitions`.
 
 Inputs: `svbp_cnv.vcf`, `svbp_cross.txt`, `svbp_external.bed`, `svbp_gaps.txt`, `svbp_kill-wrong-length.txt`, `svbp_kill.txt`, `svbp_other.bam`, `svbp_reads.bam`, `svbp_shallow.bam`, `svbp_sv.fasta`, `svbp_sv.fasta.img`.
 

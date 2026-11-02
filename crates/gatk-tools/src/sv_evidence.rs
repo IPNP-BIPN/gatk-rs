@@ -384,13 +384,14 @@ fn contig_id(metadata: &ReadMetadata, name: &str) -> Result<i32, EvidenceError> 
 
 /// `SplitRead`'s distal targets: one supplementary alignment or none, that is good and elsewhere.
 fn split_read_targets(
-    record: &BamRecord,
+    tag: Option<&str>,
+    primary_forward: bool,
     location: &SvInterval,
     clipped_at_start: bool,
     metadata: &ReadMetadata,
     min_mapq: i32,
 ) -> Result<Option<(SvInterval, bool)>, EvidenceError> {
-    let Some(tag) = string_tag(record, b"SA") else {
+    let Some(tag) = tag else {
         return Ok(None);
     };
     let mappings = parse_sa_tag(tag)?;
@@ -398,7 +399,6 @@ fn split_read_targets(
         return Ok(None);
     }
     let mapping = &mappings[0];
-    let primary_forward = record.flags & REVERSE == 0;
     // `calculateDistalTargetStrand(saMapping, !clippedAtStart, primaryForward)`.
     let strand = if primary_forward == !clipped_at_start {
         !mapping.forward
@@ -601,6 +601,31 @@ impl Evidence {
             }
         }
     }
+}
+
+/// What a piece of evidence is once a `collect` has brought it back through Kryo.
+///
+/// `SplitRead.serialize` writes the tag and which end was clipped, and not
+/// `primaryAlignmentForwardStrand`, whose field the private constructor leaves false. The driver's
+/// density filter looks at the distal targets that gives, and the strand of the target can differ.
+pub fn after_collect(
+    mut one: Evidence,
+    metadata: &ReadMetadata,
+    arguments: &MetadataArguments,
+) -> Result<Evidence, EvidenceError> {
+    if let EvidenceKind::Read(read) = &one.kind {
+        if let ReadKind::SplitRead { sa_tag } = &read.kind {
+            one.distal = split_read_targets(
+                sa_tag.as_deref(),
+                false,
+                &one.location,
+                !read.forward,
+                metadata,
+                i32::from(arguments.min_evidence_mapq),
+            )?;
+        }
+    }
+    Ok(one)
 }
 
 /// `ReadEvidence`'s constructor.
@@ -848,135 +873,175 @@ pub fn high_coverage_intervals(
     contig_lengths: &[i32],
     arguments: &EvidenceArguments,
 ) -> Vec<SvInterval> {
-    let mut windows = Vec::new();
-    for (contig, length) in contig_lengths.iter().enumerate() {
-        let mut start = 1;
-        while start < *length {
-            windows.push(SvInterval {
-                contig: contig as i32,
-                start,
-                end: (*length).min(start + DEPTH_WINDOW_SIZE),
-            });
-            start += DEPTH_WINDOW_SIZE;
+    let mut finder = CoverageFinder::new(metadata, contig_lengths, arguments);
+    finder.add_partition(records);
+    finder.finish()
+}
+
+/// `findGenomewideHighCoverageIntervalsToIgnore`, whose `reduceByKey` sums the arrays of a window
+/// over the partitions that reached it, and whose driver sorts what comes back, so that nothing here
+/// shows the order of the shuffle.
+pub struct CoverageFinder<'a> {
+    metadata: &'a ReadMetadata,
+    windows: Vec<SvInterval>,
+    coverage: Vec<Option<Vec<i32>>>,
+    min_flanking: i32,
+    min_peak: i32,
+}
+
+impl<'a> CoverageFinder<'a> {
+    pub fn new(
+        metadata: &'a ReadMetadata,
+        contig_lengths: &[i32],
+        arguments: &EvidenceArguments,
+    ) -> CoverageFinder<'a> {
+        let mut windows = Vec::new();
+        for (contig, length) in contig_lengths.iter().enumerate() {
+            let mut start = 1;
+            while start < *length {
+                windows.push(SvInterval {
+                    contig: contig as i32,
+                    start,
+                    end: (*length).min(start + DEPTH_WINDOW_SIZE),
+                });
+                start += DEPTH_WINDOW_SIZE;
+            }
+        }
+        CoverageFinder {
+            metadata,
+            coverage: vec![None; windows.len()],
+            windows,
+            min_flanking: (arguments.high_depth_coverage_factor as f32 * metadata.coverage) as i32,
+            min_peak: (arguments.high_depth_coverage_peak_factor as f32 * metadata.coverage) as i32,
         }
     }
-    let min_flanking = (arguments.high_depth_coverage_factor as f32 * metadata.coverage) as i32;
-    let min_peak = (arguments.high_depth_coverage_peak_factor as f32 * metadata.coverage) as i32;
 
-    // `IntervalCoverageFinder`.
-    let mut coverage: Vec<Option<Vec<i32>>> = vec![None; windows.len()];
-    let mut index = 0;
-    for record in records {
-        if !is_mapped(record) || metadata.ignore_cross_contig(record.reference_index) {
-            continue;
-        }
-        let contig = record.reference_index;
-        let start = record.alignment_start;
-        while index < windows.len() {
-            let window = &windows[index];
-            if window.contig > contig || (window.contig == contig && window.end > start) {
+    /// `IntervalCoverageFinder`, whose walk over the windows begins again with each partition.
+    pub fn add_partition(&mut self, records: &[BamRecord]) {
+        let (windows, coverage) = (&self.windows, &mut self.coverage);
+        let mut index = 0;
+        for record in records {
+            if !is_mapped(record) || self.metadata.ignore_cross_contig(record.reference_index) {
+                continue;
+            }
+            let contig = record.reference_index;
+            let start = record.alignment_start;
+            while index < windows.len() {
+                let window = &windows[index];
+                if window.contig > contig || (window.contig == contig && window.end > start) {
+                    break;
+                }
+                index += 1;
+            }
+            if index >= windows.len() {
                 break;
             }
-            index += 1;
-        }
-        if index >= windows.len() {
-            break;
-        }
-        let read = SvInterval {
-            contig,
-            start,
-            end: read_utils::end(record) + 1,
-        };
-        let mut at = index;
-        while at < windows.len() && windows[at].overlaps(&read) {
-            let window = windows[at];
-            let counts =
-                coverage[at].get_or_insert_with(|| vec![0; (window.end - window.start) as usize]);
-            for position in read.start.max(window.start)..read.end.min(window.end) {
-                counts[(position - window.start) as usize] += 1;
+            let read = SvInterval {
+                contig,
+                start,
+                end: read_utils::end(record) + 1,
+            };
+            let mut at = index;
+            while at < windows.len() && windows[at].overlaps(&read) {
+                let window = windows[at];
+                let counts = coverage[at]
+                    .get_or_insert_with(|| vec![0; (window.end - window.start) as usize]);
+                for position in read.start.max(window.start)..read.end.min(window.end) {
+                    counts[(position - window.start) as usize] += 1;
+                }
+                at += 1;
             }
-            at += 1;
         }
     }
 
-    // `getHighCoverageIntervalsInWindow`.
-    let mut candidates: Vec<(SvInterval, bool)> = Vec::new();
-    for (window, counts) in windows.iter().zip(&coverage) {
-        let Some(counts) = counts else {
-            continue;
-        };
-        let mut in_region = false;
-        let mut region_start = -1;
-        let mut found_high = false;
-        for (at, count) in counts.iter().enumerate() {
-            if *count >= min_flanking {
-                if !in_region {
-                    in_region = true;
-                    found_high = false;
-                    region_start = at as i32;
-                }
-                if *count >= min_peak {
-                    found_high = true;
-                }
-            } else {
-                if in_region && (found_high || region_start == 0) {
-                    candidates.push((
-                        SvInterval {
-                            contig: window.contig,
-                            start: window.start + region_start,
-                            end: window.start + at as i32,
-                        },
-                        found_high,
-                    ));
-                }
-                in_region = false;
-            }
-        }
-        if in_region {
-            candidates.push((
-                SvInterval {
-                    contig: window.contig,
-                    start: window.start + region_start,
-                    end: window.end,
-                },
-                found_high,
-            ));
-        }
-    }
-    candidates.sort_by_key(|(interval, _)| *interval);
+    pub fn finish(self) -> Vec<SvInterval> {
+        let CoverageFinder {
+            metadata,
+            windows,
+            coverage,
+            min_flanking,
+            min_peak,
+        } = self;
 
-    // Merge what a window boundary cut, then what a read could span.
-    let mut bounded = Vec::new();
-    let mut candidates = candidates.into_iter();
-    if let Some(mut previous) = candidates.next() {
-        for current in candidates {
-            if previous.0.gap_len(&current.0) == 0 {
-                previous = (previous.0.join(&current.0), previous.1 || current.1);
-            } else {
-                if previous.1 {
-                    bounded.push(previous.0);
+        // `getHighCoverageIntervalsInWindow`.
+        let mut candidates: Vec<(SvInterval, bool)> = Vec::new();
+        for (window, counts) in windows.iter().zip(&coverage) {
+            let Some(counts) = counts else {
+                continue;
+            };
+            let mut in_region = false;
+            let mut region_start = -1;
+            let mut found_high = false;
+            for (at, count) in counts.iter().enumerate() {
+                if *count >= min_flanking {
+                    if !in_region {
+                        in_region = true;
+                        found_high = false;
+                        region_start = at as i32;
+                    }
+                    if *count >= min_peak {
+                        found_high = true;
+                    }
+                } else {
+                    if in_region && (found_high || region_start == 0) {
+                        candidates.push((
+                            SvInterval {
+                                contig: window.contig,
+                                start: window.start + region_start,
+                                end: window.start + at as i32,
+                            },
+                            found_high,
+                        ));
+                    }
+                    in_region = false;
                 }
-                previous = current;
+            }
+            if in_region {
+                candidates.push((
+                    SvInterval {
+                        contig: window.contig,
+                        start: window.start + region_start,
+                        end: window.end,
+                    },
+                    found_high,
+                ));
             }
         }
-        if previous.1 {
-            bounded.push(previous.0);
-        }
-    }
-    let mut merged = Vec::new();
-    let mut bounded = bounded.into_iter();
-    if let Some(mut previous) = bounded.next() {
-        for current in bounded {
-            if previous.gap_len(&current) <= metadata.avg_read_len {
-                previous = previous.join(&current);
-            } else {
-                merged.push(previous);
-                previous = current;
+        candidates.sort_by_key(|(interval, _)| *interval);
+
+        // Merge what a window boundary cut, then what a read could span.
+        let mut bounded = Vec::new();
+        let mut candidates = candidates.into_iter();
+        if let Some(mut previous) = candidates.next() {
+            for current in candidates {
+                if previous.0.gap_len(&current.0) == 0 {
+                    previous = (previous.0.join(&current.0), previous.1 || current.1);
+                } else {
+                    if previous.1 {
+                        bounded.push(previous.0);
+                    }
+                    previous = current;
+                }
+            }
+            if previous.1 {
+                bounded.push(previous.0);
             }
         }
-        merged.push(previous);
+        let mut merged = Vec::new();
+        let mut bounded = bounded.into_iter();
+        if let Some(mut previous) = bounded.next() {
+            for current in bounded {
+                if previous.gap_len(&current) <= metadata.avg_read_len {
+                    previous = previous.join(&current);
+                } else {
+                    merged.push(previous);
+                    previous = current;
+                }
+            }
+            merged.push(previous);
+        }
+        merged
     }
-    merged
 }
 
 /// `--high-coverage-intervals`: a BED line per interval.
@@ -1022,12 +1087,17 @@ fn weird_template(target: SvInterval) -> ReadKind {
     ReadKind::WeirdTemplateSize { target }
 }
 
-/// `SVReadFilter.containedInRegionToIgnore`.
+/// `SVReadFilter.containedInRegionToIgnore`, over regions that are sorted and do not touch, so that
+/// only the last to begin at or before the interval can hold it.
 pub(crate) fn contained_in_region_to_ignore(interval: &SvInterval, ignored: &[SvInterval]) -> bool {
     let length = interval.end - interval.start;
-    ignored
-        .iter()
-        .any(|region| region.overlaps(interval) && region.overlap_len(interval) == length)
+    let after = ignored.partition_point(|region| {
+        (region.contig, region.start) <= (interval.contig, interval.start)
+    });
+    after > 0 && {
+        let region = &ignored[after - 1];
+        region.overlaps(interval) && region.overlap_len(interval) == length
+    }
 }
 
 /// `ReadClassifier` over one partition and its sentinel.
@@ -1071,8 +1141,15 @@ pub fn evidence(
                     read_utils::end(record)
                 };
                 let location = fixed_width(contig, offset, SPLIT_UNCERTAINTY);
-                let distal = split_read_targets(record, &location, at_start, metadata, min_mapq)?;
                 let sa_tag = string_tag(record, b"SA").map(str::to_string);
+                let distal = split_read_targets(
+                    sa_tag.as_deref(),
+                    record.flags & REVERSE == 0,
+                    &location,
+                    at_start,
+                    metadata,
+                    min_mapq,
+                )?;
                 lines.push(read_evidence(
                     record,
                     location,
