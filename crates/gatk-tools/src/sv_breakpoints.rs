@@ -709,13 +709,106 @@ fn java_round(value: f32) -> i32 {
     (f64::from(value) + 0.5).floor() as i32
 }
 
+/// `StrictMath.log1p`, which is fdlibm's `s_log1p.c`; jmath has only `FastMath`'s, a different
+/// algorithm, and the host's `ln_1p` is whichever libm it links.
+fn strict_log1p(x: f64) -> f64 {
+    const LN2_HI: f64 = 6.93147180369123816490e-01;
+    const LN2_LO: f64 = 1.90821492927058770002e-10;
+    const LP: [f64; 7] = [
+        6.666666666666735130e-01,
+        3.999999999940941908e-01,
+        2.857142874366239149e-01,
+        2.222219843214978396e-01,
+        1.818357216161805012e-01,
+        1.531383769920937332e-01,
+        1.479819860511658591e-01,
+    ];
+    let high = (x.to_bits() >> 32) as u32 as i32;
+    let abs_high = high & 0x7fff_ffff;
+    let mut k = 1;
+    let (mut f, mut hu, mut c) = (0.0, 0, 0.0);
+    if high < 0x3FDA_827A {
+        if abs_high >= 0x3ff0_0000 {
+            return if x == -1.0 {
+                f64::NEG_INFINITY
+            } else {
+                f64::NAN
+            };
+        }
+        if abs_high < 0x3e20_0000 {
+            if abs_high < 0x3c90_0000 {
+                return x;
+            }
+            return x - x * x * 0.5;
+        }
+        if high > 0 || high <= 0xbfd2_bec3_u32 as i32 {
+            k = 0;
+            f = x;
+            hu = 1;
+        }
+    }
+    if high >= 0x7ff0_0000 {
+        return x + x;
+    }
+    if k != 0 {
+        let u;
+        if high < 0x4340_0000 {
+            u = 1.0 + x;
+            hu = (u.to_bits() >> 32) as u32 as i32;
+            k = (hu >> 20) - 1023;
+            c = if k > 0 { 1.0 - (u - x) } else { x - (u - 1.0) };
+            c /= u;
+        } else {
+            u = x;
+            hu = (u.to_bits() >> 32) as u32 as i32;
+            k = (hu >> 20) - 1023;
+            c = 0.0;
+        }
+        hu &= 0x000f_ffff;
+        let low = u.to_bits() & 0xffff_ffff;
+        let u = if hu < 0x6a09e {
+            f64::from_bits(((hu | 0x3ff0_0000) as u64) << 32 | low)
+        } else {
+            k += 1;
+            let shifted = f64::from_bits(((hu | 0x3fe0_0000) as u64) << 32 | low);
+            hu = (0x0010_0000 - hu) >> 2;
+            shifted
+        };
+        f = u - 1.0;
+    }
+    let hfsq = 0.5 * f * f;
+    let scale = f64::from(k);
+    if hu == 0 {
+        if f == 0.0 {
+            if k == 0 {
+                return 0.0;
+            }
+            c += scale * LN2_LO;
+            return scale * LN2_HI + c;
+        }
+        let r = hfsq * (1.0 - 0.66666666666666666 * f);
+        if k == 0 {
+            return f - r;
+        }
+        return scale * LN2_HI - ((r - (scale * LN2_LO + c)) - f);
+    }
+    let s = f / (2.0 + f);
+    let z = s * s;
+    let r = z
+        * (LP[0] + z * (LP[1] + z * (LP[2] + z * (LP[3] + z * (LP[4] + z * (LP[5] + z * LP[6]))))));
+    if k == 0 {
+        return f - (hfsq - s * (hfsq + r));
+    }
+    scale * LN2_HI - ((hfsq - (s * (hfsq + r) + (scale * LN2_LO + c))) - f)
+}
+
 /// `ReadMetadata.getAccurateKmerCoverage`. `Math.exp` and `Math.pow` are intrinsics that can stand
 /// an ulp off `StrictMath`, which the narrowing to float hides: measured, the two forms agree at
 /// every one of 34310 points across K and mean qualities.
 fn accurate_kmer_coverage(metadata: &ReadMetadata, k: i32) -> f32 {
     let quality = f64::from(metadata.mean_base_quality);
     let error = jmath::strict_math::pow(10.0, quality / -10.0);
-    let probability = jmath::strict_math::exp(f64::from(k) * (-error).ln_1p()) as f32;
+    let probability = jmath::strict_math::exp(f64::from(k) * strict_log1p(-error)) as f32;
     metadata.coverage * probability
 }
 
