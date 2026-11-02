@@ -21007,32 +21007,15 @@ pub fn sv_concordance(parser: &Parser) -> Outcome {
     let (truth_text, truth_file) = read_vcf(&truth_path)?;
     let (eval_text, eval_file) = read_vcf(&eval_path)?;
 
-    // The engine's own validation, as `Concordance` runs it: the master against the features.
+    // The engine's own validation. The walker's two VCFs are plain strings and not `FeatureInput`s,
+    // so `FeatureManager` finds no features and neither is compared with anything here.
     let truth_dictionary = vcf_dictionary(&truth_text);
     let eval_dictionary = vcf_dictionary(&eval_text);
     let master = master_dictionary(parser)?;
     let reference = reference_dictionary(parser)?;
     if !flag(parser, "disable-sequence-dictionary-validation") {
-        if let Some(master) = &master {
-            if let Some(reference) = &reference {
-                validate_against_master(master, "reference", &reference.sequences)?;
-            }
-            validate_against_master(master, "features", &truth_dictionary.sequences)?;
-        }
-        if let Some(reference) = &reference {
-            gatk_tools::sequence_dictionary::validate(
-                "reference",
-                &reference.sequences,
-                "features",
-                &truth_dictionary.sequences,
-                false,
-                false,
-            )
-            .map_err(|refusal| Thrown {
-                failure: Failure::User,
-                exception: refusal.java_class(),
-                message: Some(refusal.message()),
-            })?;
+        if let (Some(master), Some(reference)) = (&master, &reference) {
+            validate_against_master(master, "reference", &reference.sequences)?;
         }
     }
 

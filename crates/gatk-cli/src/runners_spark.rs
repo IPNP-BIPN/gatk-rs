@@ -253,6 +253,18 @@ pub(super) fn spark_startup(parser: &Parser, tool: &str) -> Result<SparkStart, T
     })
 }
 
+/// [`spark_startup`] for a tool that needs no `--input` but is still a `GATKSparkTool`: one given is
+/// read before the tool's own arguments are looked at.
+fn spark_startup_without_reads(parser: &Parser, tool: &str) -> Result<(), Thrown> {
+    if arguments(parser, "input").is_empty() {
+        resolve_read_filters(parser, tool)?;
+        spark_context(parser)?;
+    } else {
+        spark_startup(parser, tool)?;
+    }
+    Ok(())
+}
+
 /// `getUnfilteredReads` with intervals is a Disq traversal, which needs the index beside the BAM.
 /// Without one the reference fails inside the first executor task.
 fn no_spark_index(input: &str) -> Thrown {
@@ -3085,7 +3097,7 @@ pub fn bwa_spark(parser: &Parser) -> Outcome {
     };
     // The sink's argument after the parts directory is `shardedOutput`: a single file is not sorted,
     // which leaves each read's primary line ahead of the supplementary one the comparator would move.
-    write_spark_reads(
+    write_aligned_reads(
         parser,
         &aligned_header,
         &kept,
@@ -3128,7 +3140,7 @@ pub fn bwa_and_mark_duplicates_pipeline_spark(parser: &Parser) -> Outcome {
     }
     let marked = md::mark(vec![aligned], &aligned_header, &settings)
         .map_err(|failure| evidence_task_failure(&failure.message))?;
-    write_spark_reads(
+    write_aligned_reads(
         parser,
         &aligned_header,
         &marked.reads,
@@ -3216,8 +3228,7 @@ fn pathseq_used_sequences(header: &mut SamHeader, reads: &mut [BamRecord], parti
 
 /// `ParallelCopyGCSDirectoryIntoHDFSSpark.runTool`: what a machine with neither service can see.
 pub fn parallel_copy_gcs_directory_into_hdfs_spark(parser: &Parser) -> Outcome {
-    resolve_read_filters(parser, "ParallelCopyGCSDirectoryIntoHDFSSpark")?;
-    spark_context(parser)?;
+    spark_startup_without_reads(parser, "ParallelCopyGCSDirectoryIntoHDFSSpark")?;
     let input = argument(parser, "input-gcs-path").expect("a required argument");
     if !input.starts_with("gs://") {
         return Err(Thrown::user(format!("Input path {input} is not a GCS URI")));
@@ -3239,8 +3250,7 @@ pub fn parallel_copy_gcs_directory_into_hdfs_spark(parser: &Parser) -> Outcome {
 /// reads landed on.
 pub fn pathseq_bwa_spark(parser: &Parser) -> Outcome {
     let tool = "PathSeqBwaSpark";
-    resolve_read_filters(parser, tool)?;
-    spark_context(parser)?;
+    spark_startup_without_reads(parser, tool)?;
     if !arguments(parser, "input").is_empty() {
         return Err(bad_input(
             "Please use --paired-input or --unpaired-input instead of --input".to_string(),
@@ -4900,6 +4910,32 @@ fn write_spark_reads(
         vec![records.to_vec()]
     };
     write_spark_partitions(parser, &header, sort_order.as_deref(), &partitions, output)
+}
+
+/// [`write_spark_reads`] for the aligners, which call `ReadsSparkSink.writeReads` themselves, by the
+/// overload that writes the `.bai` and the `.sbi` whatever the command line asked for.
+fn write_aligned_reads(
+    parser: &Parser,
+    header: &SamHeader,
+    records: &[BamRecord],
+    output: &str,
+    sort_to_header: bool,
+) -> Result<(), Thrown> {
+    let (header, sort_order) = disq_header(header);
+    let partitions = if sort_to_header {
+        sorted_partitions(parser, sort_order.as_deref(), records)?
+    } else {
+        vec![records.to_vec()]
+    };
+    let sort_order = sort_order.as_deref();
+    write_spark_indexed(
+        parser,
+        &header,
+        sort_order,
+        &partitions,
+        output,
+        (true, true),
+    )
 }
 
 /// The header as Disq writes it, `GO` and then `SO` moved behind what else `@HD` holds, and its order.
