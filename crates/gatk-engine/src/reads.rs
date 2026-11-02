@@ -1167,12 +1167,12 @@ fn load_sbi(bytes: &[u8]) -> Result<Vec<u64>, DisqSplitError> {
             "Invalid file header in SBI".to_string(),
         ));
     }
-    // The magic, the length, the MD5, the UUID, the record count, the granularity.
+    // The magic, the length, the MD5, the UUID, the record count, the granularity, then how many.
     let count = long(4 + 8 + 16 + 16 + 8 + 8)? as i64;
     let mut offsets = Vec::new();
     let mut previous = -1i64;
     for index in 0..count.max(0) as usize {
-        let current = long(60 + 8 * index)? as i64;
+        let current = long(68 + 8 * index)? as i64;
         if previous > current {
             return Err(DisqSplitError::Sbi(format!(
                 "Invalid SBI; offsets not in order: {previous:#x} > {current:#x}"
@@ -1411,6 +1411,16 @@ mod tests {
             disq_path_splits(11, 5, true),
             vec![(0, 5), (5, 10), (10, 11)]
         );
+    }
+
+    #[test]
+    fn an_sbi_holds_its_count_then_its_offsets() {
+        let mut bytes = b"SBI\x01".to_vec();
+        bytes.extend_from_slice(&[0; 56]);
+        bytes.extend_from_slice(&2i64.to_le_bytes());
+        bytes.extend_from_slice(&7i64.to_le_bytes());
+        bytes.extend_from_slice(&9i64.to_le_bytes());
+        assert_eq!(load_sbi(&bytes).unwrap(), vec![7, 9]);
     }
 
     #[test]

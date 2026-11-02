@@ -81,7 +81,26 @@ public class SvPartitionsDump {
         SvEvidenceDump.pipeline(label, input, rest);
     }
 
+    /**
+     * The BAMs the pipeline writes, through the JDK's deflater so that a host without GKL's level 2 can
+     * replay them. These come first, as in SvEvidenceDump: a JVM's deflater stays Intel's once a run has set it.
+     */
+    static void jdkDeflaterRows() throws Exception {
+        pipeline("split-pipeline", "reads.bam", "--use-jdk-deflater", "--bam-partition-size", "65536");
+        pipeline("split-pipeline-small", "reads.bam", "--use-jdk-deflater", "--bam-partition-size", "7000",
+                "--exp-interpret");
+        pipeline("split-pipeline-threshold", "reads.bam", "--use-jdk-deflater", "--bam-partition-size", "20000",
+                "--imprecise-variant-evidence-threshold", "1");
+        pipeline("split-pipeline-other", "other.bam", "--use-jdk-deflater", "--bam-partition-size", "65536",
+                "--exp-interpret");
+        pipeline("split-pipeline-external", "reads.bam", "--use-jdk-deflater", "--bam-partition-size", "65536",
+                "--external-evidence", at("external-long.bed"));
+        pipeline("split-pipeline-cnv", "reads.bam", "--use-jdk-deflater", "--bam-partition-size", "65536",
+                "--cnv-calls", at("cnv.vcf"));
+    }
+
     static void rows() throws Exception {
+        jdkDeflaterRows();
         for (final String size : new String[] {"131072", "65536", "20000", "7000", "1500"}) {
             find("split-" + size, "reads.bam", "--bam-partition-size", size);
         }
@@ -130,15 +149,6 @@ public class SvPartitionsDump {
         find("split-queryname", "reads.bam", "--bam-partition-size", "65536",
                 "--assembled-contigs-output-order", "queryname");
         find("split-not-sorted", "not-sorted.bam", "--bam-partition-size", "7000");
-        pipeline("split-pipeline", "reads.bam", "--bam-partition-size", "65536");
-        pipeline("split-pipeline-small", "reads.bam", "--bam-partition-size", "7000", "--exp-interpret");
-        pipeline("split-pipeline-threshold", "reads.bam", "--bam-partition-size", "20000",
-                "--imprecise-variant-evidence-threshold", "1");
-        pipeline("split-pipeline-other", "other.bam", "--bam-partition-size", "65536", "--exp-interpret");
-        pipeline("split-pipeline-external", "reads.bam", "--bam-partition-size", "65536",
-                "--external-evidence", at("external-long.bed"));
-        pipeline("split-pipeline-cnv", "reads.bam", "--bam-partition-size", "65536", "--cnv-calls", at("cnv.vcf"));
-
         // KmerCleaner's table, from twice the dictionary over the partitions, narrowed to an int.
         find("table-wide", "wide.bam");
         find("table-wide-split", "wide.bam", "--bam-partition-size", "65536");
