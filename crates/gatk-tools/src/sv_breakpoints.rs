@@ -1,13 +1,19 @@
 //! `FindBreakpointEvidenceSpark.gatherEvidenceAndWriteContigSamFile` (GATK 4.6.2.0): the evidence,
 //! its clusters, the template names and k-mers of each interval, and each interval's assembly.
 //!
-//! # One partition, and what Spark does to it
+//! # Partitions, and what Spark does to them
 //!
-//! Everything runs as the reference runs it under `--spark-master local[1]` on an input smaller than
-//! a split. `PartitionCrossingChecker` is then never on a boundary, since `PartitionBounds.UNMAPPED`
-//! is `Integer.MAX_VALUE`. The `reduceByKey`s still shuffle, and the order that leaves a shuffle is
-//! what `KmerCleaner` fills a hopscotch table with, and so what `--kmer-intervals` prints: see
-//! [`reduce_by_key`].
+//! Everything runs as the reference runs it under `--spark-master local[1]`, a partition at a time.
+//! Each stage's state begins again with each partition: the classifier's window, the walks over the
+//! intervals, the density filter's tree and the clusterer. What is near a partition's edge is passed
+//! on by [`CrossingChecker`] for the driver to look at with the rest. A BAM under one split has one
+//! partition, which is never on a boundary, since `PartitionBounds.UNMAPPED` is `Integer.MAX_VALUE`.
+//!
+//! The `reduceByKey`s shuffle into as many partitions as there are maps, and the order that leaves a
+//! shuffle is what `KmerCleaner` fills a hopscotch table with, and so what `--kmer-intervals` prints:
+//! see [`reduce_by_key`]. That order holds while nothing spills: a shuffle that outgrows the
+//! reference's memory merges what it spilled, in an order that depends on the heap, which no port of
+//! the code could reproduce.
 //!
 //! # Hopscotch all the way down
 //!
@@ -21,7 +27,8 @@
 //! In a local master `TorrentBroadcast` hands back the object it was given, so a table is not
 //! rebuilt by Kryo on its way to a task, and the cached `evidenceRDD` holds the objects the density
 //! filter sets `validated` on. A `collect` does go through Kryo, and only the target links have
-//! anything in them that shows it: see [`NameSet`].
+//! anything in them that shows it: see [`NameSet`]. So do the split reads a partition's edge sends to
+//! the driver: see [`sv_evidence::after_collect`].
 //!
 //! # What this port refuses
 //!
@@ -44,7 +51,7 @@ use htsjdk_vcf::variant::{Value, VariantContext};
 
 use crate::bwa_aligner::{ContigAligner, ContigAlignment};
 use crate::hopscotch::{Hopscotch, HopscotchEntry, HopscotchFailed};
-use crate::read_metadata::ReadMetadata;
+use crate::read_metadata::{ReadMetadata, ReadPartitions, UNMAPPED};
 use crate::sv_discovery::{append_only_group, Reference};
 use crate::sv_evidence::{
     self, contained_in_region_to_ignore, fragment_ordinal, is_mapped, is_primary_line, Evidence,
@@ -55,10 +62,6 @@ use crate::sv_kmer::{DustFilteredKmerizer, Kmerizer, SvKmerLong, SvKmerShort};
 const DUPLICATE: u16 = 0x400;
 const QC_FAIL: u16 = 0x200;
 const REVERSE: u16 = 0x10;
-
-/// The largest table this port will allocate up front. `KmerCleaner` sizes its table from twice the
-/// reference, which is the reference's choice and a dozen gigabytes on a human genome.
-const MAX_TABLE: i64 = 1 << 27;
 
 /// How a stage stops.
 #[derive(Debug)]
@@ -157,9 +160,9 @@ fn read_file(path: &str) -> Result<Vec<u8>, Failure> {
     })
 }
 
-/// `JavaRDD.saveAsTextFile` of one partition, which an existing directory refuses before anything
-/// runs.
-fn save_as_text_file(directory: &str, lines: impl Iterator<Item = String>) -> Result<(), Failure> {
+/// `JavaRDD.saveAsTextFile`, a file for each partition with nothing in it or not, which an existing
+/// directory refuses before anything runs.
+fn save_as_text_file(directory: &str, partitions: Vec<Vec<String>>) -> Result<(), Failure> {
     let path = std::path::Path::new(directory);
     if path.exists() {
         let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
@@ -171,20 +174,22 @@ fn save_as_text_file(directory: &str, lines: impl Iterator<Item = String>) -> Re
             ),
         });
     }
-    let mut text = String::new();
-    for line in lines {
-        text.push_str(&line);
-        text.push('\n');
+    let failed = |error: std::io::Error| Failure::Port(format!("{directory}: {error}"));
+    std::fs::create_dir_all(path).map_err(failed)?;
+    for (index, lines) in partitions.iter().enumerate() {
+        let mut text = String::new();
+        for line in lines {
+            text.push_str(line);
+            text.push('\n');
+        }
+        std::fs::write(path.join(format!("part-{index:05}")), &text).map_err(failed)?;
     }
-    std::fs::create_dir_all(path)
-        .and_then(|()| std::fs::write(path.join("part-00000"), &text))
-        .and_then(|()| std::fs::write(path.join("_SUCCESS"), b""))
-        .map_err(|error| Failure::Port(format!("{directory}: {error}")))
+    std::fs::write(path.join("_SUCCESS"), b"").map_err(failed)
 }
 
-/// `MurmurHash3.productHash` of Scala 2.13's `Tuple2(0, key)`, the partition being 0: the seed, the
-/// name of the product, the two elements, the arity.
-fn partitioned_key_hash(key_hash: i32) -> i32 {
+/// `MurmurHash3.productHash` of Scala 2.13's `Tuple2(partition, key)`: the seed, the name of the
+/// product, the two elements, the arity.
+fn partitioned_key_hash(partition: i32, key_hash: i32) -> i32 {
     fn mix(hash: u32, data: u32) -> u32 {
         let data = data
             .wrapping_mul(0xcc9e_2d51)
@@ -198,7 +203,7 @@ fn partitioned_key_hash(key_hash: i32) -> i32 {
     // `MurmurHash3.productSeed` and `"Tuple2".hashCode`.
     let mut hash = (-889275714i32) as u32;
     hash = mix(hash, (-1778623094i32) as u32);
-    hash = mix(hash, 0);
+    hash = mix(hash, partition as u32);
     hash = mix(hash, key_hash as u32);
     let mut hash = hash ^ 2;
     hash ^= hash >> 16;
@@ -208,30 +213,59 @@ fn partitioned_key_hash(key_hash: i32) -> i32 {
     (hash ^ (hash >> 16)) as i32
 }
 
-/// `reduceByKey` of one map partition into one reduce partition. On the map side `ExternalSorter`
-/// combines in a `PartitionedAppendOnlyMap` keyed by `(partition, key)`, walks it in slot order, and
-/// sorts stably by `key.hashCode` as a signed int; the reducer combines in an `AppendOnlyMap` keyed
-/// by the key alone and walks that in slot order.
+/// `HashPartitioner.getPartition`: `Utils.nonNegativeMod`.
+fn hash_partition(key_hash: i32, partitions: usize) -> usize {
+    i64::from(key_hash).rem_euclid(partitions as i64) as usize
+}
+
+/// `reduceByKey` with `Partitioner.defaultPartitioner`: as many reduce partitions as map partitions,
+/// each key's chosen by its hash. On the map side `ExternalSorter` combines in a
+/// `PartitionedAppendOnlyMap` keyed by `(partition, key)`, walks it in slot order, and sorts stably by
+/// the partition and then `key.hashCode` as a signed int; a reducer reads the maps in order, combines
+/// in an `AppendOnlyMap` keyed by the key alone and walks that in slot order.
 fn reduce_by_key<K: PartialEq, V>(
-    pairs: Vec<(K, V)>,
+    maps: Vec<Vec<(K, V)>>,
     hash_of: impl Fn(&K) -> i32,
     reduce: impl Fn(V, V) -> V,
-) -> Vec<(K, V)> {
+) -> Vec<Vec<(K, V)>> {
+    let partitions = maps.len();
     let combine = |values: Vec<V>| {
         values
             .into_iter()
             .reduce(&reduce)
             .expect("a group holds a value")
     };
-    let mut mapped: Vec<(K, V)> =
-        append_only_group(pairs, |key| partitioned_key_hash(hash_of(key)))
+    let mut shuffled: Vec<Vec<(K, V)>> = Vec::with_capacity(partitions);
+    shuffled.resize_with(partitions, Vec::new);
+    for pairs in maps {
+        let keyed: Vec<((i32, K), V)> = pairs
             .into_iter()
-            .map(|(key, values)| (key, combine(values)))
+            .map(|(key, value)| {
+                (
+                    (hash_partition(hash_of(&key), partitions) as i32, key),
+                    value,
+                )
+            })
             .collect();
-    mapped.sort_by_key(|(key, _)| hash_of(key));
-    append_only_group(mapped, &hash_of)
+        let mut mapped: Vec<((i32, K), V)> = append_only_group(keyed, |(partition, key)| {
+            partitioned_key_hash(*partition, hash_of(key))
+        })
         .into_iter()
         .map(|(key, values)| (key, combine(values)))
+        .collect();
+        mapped.sort_by_key(|((partition, key), _)| (*partition, hash_of(key)));
+        for ((partition, key), value) in mapped {
+            shuffled[partition as usize].push((key, value));
+        }
+    }
+    shuffled
+        .into_iter()
+        .map(|pairs| {
+            append_only_group(pairs, &hash_of)
+                .into_iter()
+                .map(|(key, values)| (key, combine(values)))
+                .collect()
+        })
         .collect()
 }
 
@@ -555,9 +589,70 @@ fn cluster_links(evidence: &[Evidence]) -> Vec<TargetLink> {
         .collect()
 }
 
-/// `BreakpointDensityFilter` run out, on no partition boundary: what passes, in tree order, with
-/// `validated` set on it.
-fn density_filter(evidence: Vec<Evidence>, min_weight: f64, min_coherent: f64) -> Vec<Evidence> {
+/// `PartitionCrossingChecker`: whether an interval is within a width of the next partition's reads
+/// or the last one's.
+#[derive(Debug, Clone, Copy)]
+struct CrossingChecker {
+    beginning_contig: i32,
+    beginning_position: i32,
+    ending_contig: i32,
+    ending_position: i32,
+}
+
+impl CrossingChecker {
+    /// The constructor that always reports false, which the driver uses.
+    fn nowhere() -> CrossingChecker {
+        CrossingChecker {
+            beginning_contig: -1,
+            beginning_position: 0,
+            ending_contig: -1,
+            ending_position: 0,
+        }
+    }
+
+    fn new(partition: usize, metadata: &ReadMetadata, width: i32) -> CrossingChecker {
+        let (beginning_contig, beginning_position) = if partition == 0 {
+            (UNMAPPED, -1)
+        } else {
+            let bounds = &metadata.partitions[partition - 1];
+            if bounds.last_contig == UNMAPPED {
+                (UNMAPPED, -1)
+            } else {
+                (bounds.last_contig, bounds.last_end.wrapping_add(width))
+            }
+        };
+        let (ending_contig, ending_position) = if partition + 1 == metadata.partitions.len() {
+            (UNMAPPED, i32::MAX)
+        } else {
+            let bounds = &metadata.partitions[partition + 1];
+            if bounds.first_contig == UNMAPPED {
+                (UNMAPPED, i32::MAX)
+            } else {
+                (bounds.first_contig, bounds.first_start.wrapping_sub(width))
+            }
+        };
+        CrossingChecker {
+            beginning_contig,
+            beginning_position,
+            ending_contig,
+            ending_position,
+        }
+    }
+
+    fn on_boundary(&self, interval: &SvInterval) -> bool {
+        (interval.contig == self.beginning_contig && interval.start < self.beginning_position)
+            || (interval.contig == self.ending_contig && interval.end >= self.ending_position)
+    }
+}
+
+/// `BreakpointDensityFilter` run out: what passes, in tree order, with `validated` set on it, and
+/// what is on a partition's boundary, with `validated` left as it was.
+fn density_filter(
+    evidence: Vec<Evidence>,
+    min_weight: f64,
+    min_coherent: f64,
+    checker: &CrossingChecker,
+) -> Vec<Evidence> {
     let mut tree: IntervalMap<Vec<Evidence>> = IntervalMap::new();
     for one in evidence {
         match tree.map.get_mut(&one.location) {
@@ -596,14 +691,29 @@ fn density_filter(evidence: Vec<Evidence>, min_weight: f64, min_coherent: f64) -
                 one.validated = true;
             }
             passed.extend(list.iter().cloned());
+        } else if checker.on_boundary(&key) {
+            passed.extend(tree.map[&key].iter().cloned());
         }
     }
     passed
 }
 
-/// `BreakpointEvidenceClusterer` over a stream and the sentinel past the last contig.
-fn cluster_evidence(evidence: &[Evidence], gap_size: i32, contigs: i32) -> Vec<Evidence> {
-    let sentinel = (
+/// `BreakpointEvidenceClusterer` over a stream and the sentinel past the last contig. What is on a
+/// boundary goes through as itself, and ends the cluster being built.
+fn cluster_evidence(
+    evidence: Vec<Evidence>,
+    gap_size: i32,
+    contigs: i32,
+    checker: &CrossingChecker,
+) -> Vec<Evidence> {
+    let cluster = |location: SvInterval, weight: i32| Evidence {
+        location,
+        weight,
+        validated: true,
+        kind: EvidenceKind::Cluster,
+        distal: None,
+    };
+    let sentinel = cluster(
         SvInterval {
             contig: contigs,
             start: 1,
@@ -613,24 +723,22 @@ fn cluster_evidence(evidence: &[Evidence], gap_size: i32, contigs: i32) -> Vec<E
     );
     let mut clusters = Vec::new();
     let mut current: Option<(SvInterval, i32)> = None;
-    for (interval, weight) in evidence
-        .iter()
-        .map(|one| (one.location, one.weight))
-        .chain(std::iter::once(sentinel))
-    {
+    for one in evidence.into_iter().chain(std::iter::once(sentinel)) {
+        if checker.on_boundary(&one.location) {
+            if let Some((held, sum)) = current.take() {
+                clusters.push(cluster(held, sum));
+            }
+            clusters.push(one);
+            continue;
+        }
+        let (interval, weight) = (one.location, one.weight);
         current = Some(match current {
             None => (interval, weight),
             Some((held, sum)) if held.gap_len(&interval) < gap_size => {
                 (held.join(&interval), sum.wrapping_add(weight))
             }
             Some((held, sum)) => {
-                clusters.push(Evidence {
-                    location: held,
-                    weight: sum,
-                    validated: true,
-                    kind: EvidenceKind::Cluster,
-                    distal: None,
-                });
+                clusters.push(cluster(held, sum));
                 (interval, weight)
             }
         });
@@ -953,7 +1061,7 @@ fn write_qnames(path: &str, table: &Hopscotch<QNameAndInterval>) -> Result<(), F
 /// `getKmerIntervals`: the k-mers of each interval's templates, cleaned, and the intervals with too
 /// few of them excused.
 fn kmer_intervals(
-    records: &[BamRecord],
+    reads: &dyn ReadPartitions,
     arguments: &Arguments,
     metadata: &ReadMetadata,
     qnames: &mut Hopscotch<QNameAndInterval>,
@@ -962,7 +1070,11 @@ fn kmer_intervals(
     dispositions: &mut Vec<(i32, Disposition)>,
 ) -> Result<Vec<KmerAndInterval>, Failure> {
     let k = arguments.k_size;
-    let kmers_per_partition = metadata.ref_bases.wrapping_mul(2) as i32;
+    // Narrowed to an `int` after the division, so that some references get a table of 251 and grow
+    // it, and the sizes reach what no `Object[]` the JVM allows can hold short of `-Xmx`: see
+    // `crate::hopscotch`.
+    let kmers_per_partition =
+        (metadata.ref_bases.wrapping_mul(2) / metadata.partitions.len() as i64) as i32;
     let diploid = accurate_kmer_coverage(metadata, k);
     let haploid = diploid / 2.0;
     let deviation = f64::from(haploid).sqrt() as f32;
@@ -973,71 +1085,75 @@ fn kmer_intervals(
     let max_kmers = java_round(arguments.cleaner_max_copy_number as f32 * diploid);
 
     // `QNameKmerizer`, read by read.
-    let mut pairs: Vec<(KmerAndInterval, i32)> = Vec::new();
-    for record in records {
-        if !not_junk(record) || !is_primary_line(record) {
-            continue;
-        }
-        let name = &record.read_name;
-        let hash = string_hash_code(name);
-        let found: Vec<i32> = qnames
-            .find_each(hash, |entry| entry.name == *name)
-            .iter()
-            .map(|entry| entry.interval)
-            .collect();
-        for interval in found {
-            if k < 4 {
-                return Err(Failure::Task(format!(
-                    "{GATK_EXCEPTION}: kmer size must be at least 4 for this filter to work \
-                     properly."
-                )));
+    let mut maps: Vec<Vec<(KmerAndInterval, i32)>> = Vec::with_capacity(reads.count());
+    for partition in 0..reads.count() {
+        let records = partition_reads(reads, partition)?;
+        let mut pairs: Vec<(KmerAndInterval, i32)> = Vec::new();
+        for record in &records {
+            if !not_junk(record) || !is_primary_line(record) {
+                continue;
             }
-            for kmer in DustFilteredKmerizer::new(&record.read_bases, k, arguments.max_dust_score) {
-                let kmer = canonical(kmer, k)?;
-                if kills.contains(kmer.hash_code(), |held| held.0 == kmer) {
-                    continue;
+            let name = &record.read_name;
+            let hash = string_hash_code(name);
+            let found: Vec<i32> = qnames
+                .find_each(hash, |entry| entry.name == *name)
+                .iter()
+                .map(|entry| entry.interval)
+                .collect();
+            for interval in found {
+                if k < 4 {
+                    return Err(Failure::Task(format!(
+                        "{GATK_EXCEPTION}: kmer size must be at least 4 for this filter to work \
+                         properly."
+                    )));
                 }
-                pairs.push((KmerAndInterval { kmer, interval }, 1));
+                for kmer in
+                    DustFilteredKmerizer::new(&record.read_bases, k, arguments.max_dust_score)
+                {
+                    let kmer = canonical(kmer, k)?;
+                    if kills.contains(kmer.hash_code(), |held| held.0 == kmer) {
+                        continue;
+                    }
+                    pairs.push((KmerAndInterval { kmer, interval }, 1));
+                }
             }
         }
+        maps.push(pairs);
     }
     let reduced = reduce_by_key(
-        pairs,
+        maps,
         |key: &KmerAndInterval| key.kmer.hash_code(),
         |one: i32, two: i32| one.wrapping_add(two),
     );
 
-    // `KmerCleaner`.
-    if i64::from(kmers_per_partition) > MAX_TABLE {
-        return Err(Failure::Limitation(format!(
-            "KmerCleaner sizes its table from the reference, here for {kmers_per_partition} \
-             entries, and this port stops short of allocating it."
-        )));
-    }
-    let mut table: Hopscotch<KmerAndInterval> = Hopscotch::new(kmers_per_partition);
-    for (key, count) in reduced {
-        if count >= min_kmers && count <= max_kmers {
-            table.add(key)?;
+    // `KmerCleaner`, one to a partition of the shuffle.
+    let mut kmer_intervals: Vec<KmerAndInterval> = Vec::new();
+    for counted in reduced {
+        let mut table: Hopscotch<KmerAndInterval> = Hopscotch::new(kmers_per_partition);
+        for (key, count) in counted {
+            if count >= min_kmers && count <= max_kmers {
+                table.add(key)?;
+            }
         }
+        let mut unique: Hopscotch<Kmer> = Hopscotch::new(table.len() as i32);
+        for entry in table.iter() {
+            unique.add(Kmer(entry.kmer))?;
+        }
+        let ubiquitous: Vec<SvKmerLong> = unique
+            .iter()
+            .filter(|kmer| {
+                table
+                    .find_each(kmer.0.hash_code(), |entry| entry.kmer == kmer.0)
+                    .len() as i64
+                    > i64::from(arguments.cleaner_max_intervals)
+            })
+            .map(|kmer| kmer.0)
+            .collect();
+        for kmer in ubiquitous {
+            table.remove_each(kmer.hash_code(), |entry| entry.kmer == kmer);
+        }
+        kmer_intervals.extend(table.iter().cloned());
     }
-    let mut unique: Hopscotch<Kmer> = Hopscotch::new(table.len() as i32);
-    for entry in table.iter() {
-        unique.add(Kmer(entry.kmer))?;
-    }
-    let ubiquitous: Vec<SvKmerLong> = unique
-        .iter()
-        .filter(|kmer| {
-            table
-                .find_each(kmer.0.hash_code(), |entry| entry.kmer == kmer.0)
-                .len() as i64
-                > i64::from(arguments.cleaner_max_intervals)
-        })
-        .map(|kmer| kmer.0)
-        .collect();
-    for kmer in ubiquitous {
-        table.remove_each(kmer.hash_code(), |entry| entry.kmer == kmer);
-    }
-    let kmer_intervals: Vec<KmerAndInterval> = table.iter().cloned().collect();
 
     let mut counts = vec![0i32; n_intervals];
     for entry in &kmer_intervals {
@@ -1070,13 +1186,13 @@ fn kmer_intervals(
 
 /// `removeUbiquitousKmers`.
 fn remove_ubiquitous_kmers(
-    records: &[BamRecord],
+    reads: &dyn ReadPartitions,
     arguments: &Arguments,
     metadata: &ReadMetadata,
     table: &mut Hopscotch<KmerAndInterval>,
 ) -> Result<(), Failure> {
     let k = arguments.k_size;
-    let span = metadata.partition.span;
+    let span = metadata.median_partition_span();
     if span == 0 {
         return Err(Failure::Thrown {
             class: "java.lang.ArithmeticException",
@@ -1091,36 +1207,42 @@ fn remove_ubiquitous_kmers(
     let max_count =
         (arguments.cleaner_max_copy_number as f32 * accurate_kmer_coverage(metadata, k)) as i32;
 
-    // `KmerCounter`.
-    let mut counts: Hopscotch<KmerAndCount> = Hopscotch::new(table.len() as i32);
-    for record in records {
-        if !not_junk(record) || !is_primary_line(record) {
-            continue;
-        }
-        for kmer in Kmerizer::new(&record.read_bases, k, 1) {
-            let kmer = canonical(kmer, k)?;
-            let hash = kmer.hash_code();
-            if !table.contains(hash, |entry| entry.kmer == kmer) {
+    // `KmerCounter`, one to a partition, sized for the whole table.
+    let mut maps: Vec<Vec<(SvKmerLong, (i32, i32))>> = Vec::with_capacity(reads.count());
+    for partition in 0..reads.count() {
+        let records = partition_reads(reads, partition)?;
+        let mut counts: Hopscotch<KmerAndCount> = Hopscotch::new(table.len() as i32);
+        for record in &records {
+            if !not_junk(record) || !is_primary_line(record) {
                 continue;
             }
-            match counts.find_mut(hash, |entry| entry.kmer == kmer) {
-                Some(entry) => entry.count = entry.count.wrapping_add(1),
-                None => {
-                    counts.add(KmerAndCount { kmer, count: 1 })?;
+            for kmer in Kmerizer::new(&record.read_bases, k, 1) {
+                let kmer = canonical(kmer, k)?;
+                let hash = kmer.hash_code();
+                if !table.contains(hash, |entry| entry.kmer == kmer) {
+                    continue;
+                }
+                match counts.find_mut(hash, |entry| entry.kmer == kmer) {
+                    Some(entry) => entry.count = entry.count.wrapping_add(1),
+                    None => {
+                        counts.add(KmerAndCount { kmer, count: 1 })?;
+                    }
                 }
             }
         }
+        maps.push(
+            counts
+                .iter()
+                .map(|entry| (entry.kmer, (1, entry.count)))
+                .collect(),
+        );
     }
-    let pairs: Vec<(SvKmerLong, (i32, i32))> = counts
-        .iter()
-        .map(|entry| (entry.kmer, (1, entry.count)))
-        .collect();
     let reduced = reduce_by_key(
-        pairs,
+        maps,
         |kmer: &SvKmerLong| kmer.hash_code(),
         |one: (i32, i32), two: (i32, i32)| (one.0.wrapping_add(two.0), one.1.wrapping_add(two.1)),
     );
-    for (kmer, (partitions, count)) in reduced {
+    for (kmer, (partitions, count)) in reduced.into_iter().flatten() {
         if partitions > max_partition_count || count > max_count {
             table.remove_each(kmer.hash_code(), |entry| entry.kmer == kmer);
         }
@@ -1878,28 +2000,53 @@ fn assemble_interval(
     })
 }
 
+/// A stage's reading of a partition, which stops as the traversal does.
+fn partition_reads(
+    reads: &dyn ReadPartitions,
+    partition: usize,
+) -> Result<Vec<BamRecord>, Failure> {
+    reads
+        .reads(partition)
+        .map_err(|error| Failure::User(format!("{error:?}")))
+}
+
 /// `getIntervalsAndEvidenceTargetLinks`.
 fn intervals_and_links(
-    records: &[BamRecord],
+    reads: &dyn ReadPartitions,
     arguments: &Arguments,
     metadata: &ReadMetadata,
-    external: Vec<Evidence>,
+    external: Vec<Vec<Evidence>>,
     ignored: &[SvInterval],
 ) -> Result<(Vec<SvInterval>, Vec<TargetLink>), Failure> {
-    let evidence = sv_evidence::evidence(records, metadata, ignored, &arguments.evidence.metadata)
-        .map_err(|message| Failure::Task(format!("{ILLEGAL_STATE}: {message}")))?;
+    let task_failure = |message: String| Failure::Task(format!("{ILLEGAL_STATE}: {message}"));
+    let mut evidence: Vec<Vec<Evidence>> = Vec::with_capacity(reads.count());
+    for partition in 0..reads.count() {
+        let records = partition_reads(reads, partition)?;
+        evidence.push(
+            sv_evidence::evidence(&records, metadata, ignored, &arguments.evidence.metadata)
+                .map_err(task_failure)?,
+        );
+    }
     if let Some(directory) = &arguments.unfiltered_evidence_dir {
-        save_as_text_file(directory, evidence.iter().map(Evidence::string_rep))?;
+        save_as_text_file(
+            directory,
+            evidence
+                .iter()
+                .map(|partition| partition.iter().map(Evidence::string_rep).collect())
+                .collect(),
+        )?;
     }
 
     let mut links = Vec::new();
-    for link in cluster_links(&evidence) {
-        if link.read_pairs >= 2 || link.split_reads >= 1 {
-            links.push(TargetLink {
-                read_pair_names: link.read_pair_names.collected()?,
-                split_read_names: link.split_read_names.collected()?,
-                ..link
-            });
+    for partition in &evidence {
+        for link in cluster_links(partition) {
+            if link.read_pairs >= 2 || link.split_reads >= 1 {
+                links.push(TargetLink {
+                    read_pair_names: link.read_pair_names.collected()?,
+                    split_read_names: link.split_read_names.collected()?,
+                    ..link
+                });
+            }
         }
     }
     if let Some(path) = &arguments.target_link_file {
@@ -1914,33 +2061,67 @@ fn intervals_and_links(
     let coverage = f64::from(metadata.coverage);
     let min_weight = arguments.min_evidence_weight_per_coverage * coverage;
     let min_coherent = arguments.min_coherent_evidence_weight_per_coverage * coverage;
-    let mut stream = evidence;
-    stream.extend(external);
-    let filtered = density_filter(stream, min_weight, min_coherent);
-    if let Some(directory) = &arguments.evidence_dir {
-        save_as_text_file(
-            directory,
-            filtered
-                .iter()
-                .filter(|one| one.validated)
-                .map(Evidence::to_text),
-        )?;
-    }
-
     let max_fragment = metadata
         .libraries
         .iter()
         .map(|(_, statistics)| statistics.median)
         .max()
         .unwrap_or(0);
-    let contigs = metadata.contigs.len() as i32;
-    let collected = cluster_evidence(&filtered, max_fragment, contigs);
-    let again = density_filter(collected, min_weight, min_coherent);
+    let filtered: Vec<Vec<Evidence>> = evidence
+        .into_iter()
+        .zip(external)
+        .enumerate()
+        .map(|(partition, (mut stream, external))| {
+            stream.extend(external);
+            density_filter(
+                stream,
+                min_weight,
+                min_coherent,
+                &CrossingChecker::new(partition, metadata, max_fragment),
+            )
+        })
+        .collect();
     if let Some(directory) = &arguments.evidence_dir {
-        // The cross-partition file, which one partition has nothing to put in.
-        write_file(&format!("{directory}/part-xxxxx"), b"")?;
+        save_as_text_file(
+            directory,
+            filtered
+                .iter()
+                .map(|partition| {
+                    partition
+                        .iter()
+                        .filter(|one| one.validated)
+                        .map(Evidence::to_text)
+                        .collect()
+                })
+                .collect(),
+        )?;
     }
-    let intervals = cluster_evidence(&again, max_fragment, contigs)
+
+    let contigs = metadata.contigs.len() as i32;
+    let mut collected = Vec::new();
+    for (partition, stream) in filtered.into_iter().enumerate() {
+        let checker = CrossingChecker::new(partition, metadata, max_fragment.wrapping_mul(2));
+        for one in cluster_evidence(stream, max_fragment, contigs, &checker) {
+            collected.push(
+                sv_evidence::after_collect(one, metadata, &arguments.evidence.metadata)
+                    .map_err(task_failure)?,
+            );
+        }
+    }
+    let nowhere = CrossingChecker::nowhere();
+    let again = density_filter(collected, min_weight, min_coherent, &nowhere);
+    if let Some(directory) = &arguments.evidence_dir {
+        // What the driver validated, among it what a partition's edge held back.
+        let mut text = String::new();
+        for one in &again {
+            if matches!(one.kind, EvidenceKind::Read(_)) {
+                text.push_str(&one.to_text());
+                text.push('\n');
+            }
+        }
+        write_file(&format!("{directory}/part-xxxxx"), text.as_bytes())?;
+    }
+    let intervals = cluster_evidence(again, max_fragment, contigs, &nowhere)
         .into_iter()
         .map(|one| one.location)
         .collect();
@@ -1977,14 +2158,14 @@ fn write_interval_file(
 /// `gatherEvidenceAndWriteContigSamFile`, past the metadata, the external evidence and the
 /// high-coverage intervals, up to the file of aligned contigs the caller writes.
 pub fn gather(
-    records: &[BamRecord],
+    reads: &dyn ReadPartitions,
     arguments: &Arguments,
     metadata: &ReadMetadata,
     header: &SamHeader,
-    external: Vec<Evidence>,
+    external: Vec<Vec<Evidence>>,
     ignored: &[SvInterval],
 ) -> Result<Results, Failure> {
-    let (intervals, links) = intervals_and_links(records, arguments, metadata, external, ignored)?;
+    let (intervals, links) = intervals_and_links(reads, arguments, metadata, external, ignored)?;
     if intervals.is_empty() {
         return Ok(Results {
             finished: false,
@@ -2005,7 +2186,11 @@ pub fn gather(
     }
     intervals.retain(|interval| !contained_in_region_to_ignore(interval, ignored));
 
-    let mapped = mapped_qnames(records, &intervals, ignored);
+    let mut mapped = Vec::new();
+    for partition in 0..reads.count() {
+        let records = partition_reads(reads, partition)?;
+        mapped.extend(mapped_qnames(&records, &intervals, ignored));
+    }
     let mut qnames: Hopscotch<QNameAndInterval> = Hopscotch::new(
         arguments
             .assembly_to_mapped_size_ratio_guess
@@ -2031,7 +2216,7 @@ pub fn gather(
     if !arguments.interval_only_assembly {
         let kills = kmer_kill_set(arguments)?;
         let kmers = kmer_intervals(
-            records,
+            reads,
             arguments,
             metadata,
             &mut qnames,
@@ -2043,8 +2228,13 @@ pub fn gather(
         for entry in kmers {
             table.add(entry)?;
         }
-        remove_ubiquitous_kmers(records, arguments, metadata, &mut table)?;
-        for entry in assembly_qnames(records, arguments.k_size, &table)? {
+        remove_ubiquitous_kmers(reads, arguments, metadata, &mut table)?;
+        let mut found = Vec::new();
+        for partition in 0..reads.count() {
+            let records = partition_reads(reads, partition)?;
+            found.extend(assembly_qnames(&records, arguments.k_size, &table)?);
+        }
+        for entry in found {
             qnames.add(entry)?;
         }
         if let Some(path) = &arguments.qnames_assembly_file {
@@ -2055,22 +2245,24 @@ pub fn gather(
     // `ReadsForQNamesFinder`, every interval's reads sharing one `FastqRead`.
     let mut interval_reads: Vec<Vec<std::rc::Rc<FastqRead>>> = Vec::new();
     interval_reads.resize_with(n_intervals, Vec::new);
-    for record in records {
-        if !is_primary_line(record) {
-            continue;
-        }
-        let name = &record.read_name;
-        let found = qnames.find_each(string_hash_code(name), |entry| entry.name == *name);
-        if found.is_empty() {
-            continue;
-        }
-        let read = std::rc::Rc::new(FastqRead::new(
-            record,
-            metadata,
-            arguments.include_mapping_location,
-        ));
-        for entry in found {
-            interval_reads[entry.interval as usize].push(read.clone());
+    for partition in 0..reads.count() {
+        for record in &partition_reads(reads, partition)? {
+            if !is_primary_line(record) {
+                continue;
+            }
+            let name = &record.read_name;
+            let found = qnames.find_each(string_hash_code(name), |entry| entry.name == *name);
+            if found.is_empty() {
+                continue;
+            }
+            let read = std::rc::Rc::new(FastqRead::new(
+                record,
+                metadata,
+                arguments.include_mapping_location,
+            ));
+            for entry in found {
+                interval_reads[entry.interval as usize].push(read.clone());
+            }
         }
     }
 
@@ -2417,16 +2609,69 @@ mod tests {
             (i32::MIN, -1466823222),
             (i32::MAX, -249071175),
         ] {
-            assert_eq!(partitioned_key_hash(key), expected);
+            assert_eq!(partitioned_key_hash(0, key), expected);
         }
     }
 
     #[test]
     fn a_shuffle_leaves_the_hash_order_of_its_slots() {
         let pairs: Vec<(i32, i32)> = (0..200).map(|key| (key % 40, 1)).collect();
-        let reduced = reduce_by_key(pairs, |key| *key, |one, two| one + two);
-        assert_eq!(reduced.len(), 40);
-        assert!(reduced.iter().all(|(_, count)| *count == 5));
+        let reduced = reduce_by_key(vec![pairs], |key| *key, |one, two| one + two);
+        assert_eq!(reduced[0].len(), 40);
+        assert!(reduced[0].iter().all(|(_, count)| *count == 5));
+    }
+
+    #[test]
+    fn a_shuffle_sends_a_key_to_the_partition_its_hash_says_from_every_map() {
+        let maps = vec![vec![(7, 1), (-1, 1)], vec![(7, 2), (2, 1)], vec![]];
+        let reduced = reduce_by_key(maps, |key| *key, |one, two| one + two);
+        assert_eq!(reduced.len(), 3);
+        assert_eq!(reduced[0], Vec::<(i32, i32)>::new());
+        assert_eq!(reduced[1], vec![(7, 3)]);
+        // A negative hash is not a negative partition.
+        let mut last = reduced[2].clone();
+        last.sort_unstable();
+        assert_eq!(last, vec![(-1, 1), (2, 1)]);
+    }
+
+    #[test]
+    fn what_is_on_a_boundary_ends_a_cluster_and_goes_through_as_itself() {
+        let one = |start, end, kind| Evidence {
+            location: SvInterval {
+                contig: 0,
+                start,
+                end,
+            },
+            weight: 1,
+            validated: false,
+            kind,
+            distal: None,
+        };
+        let checker = CrossingChecker {
+            beginning_contig: UNMAPPED,
+            beginning_position: -1,
+            ending_contig: 0,
+            ending_position: 100,
+        };
+        let clusters = cluster_evidence(
+            vec![
+                one(1, 5, EvidenceKind::External),
+                one(4, 8, EvidenceKind::External),
+                one(90, 100, EvidenceKind::External),
+                one(95, 110, EvidenceKind::External),
+            ],
+            10,
+            1,
+            &checker,
+        );
+        let got: Vec<(i32, i32, i32, bool)> = clusters
+            .iter()
+            .map(|c| (c.location.start, c.location.end, c.weight, c.validated))
+            .collect();
+        assert_eq!(
+            got,
+            vec![(1, 8, 2, true), (90, 100, 1, false), (95, 110, 1, false)]
+        );
     }
 
     #[test]
