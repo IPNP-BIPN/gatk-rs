@@ -3,15 +3,19 @@
  *
  * `CreateReadCountPanelOfNormalsDump` carries the cap and not the count, because the count is the
  * rank Spark's solver decides, and that rank answered 8, 6 and 7 on one fixture
- * (docs/a-rank-is-not-a-byte.md). Measured since (docs/spark-parallel.md): what moved it is the ORDER
- * the driver sums the Gramian in. At `local[1]` the partitions arrive in their order, the LAPACK is
- * F2J's in a strict JVM, and twelve runs of one fixture gave one set of bits; at `local[4]` twelve
- * runs gave eleven sets of bits and two ranks. So this suite runs at `local[1]` and nothing else.
+ * (docs/a-rank-is-not-a-byte.md). Measured since (docs/spark-parallel.md): what moves it is the ORDER
+ * the driver sums the Gramian in. At `local[4]` twelve runs of one fixture gave eleven sets of bits
+ * and two ranks, so this suite runs at `local[1]` and nothing else.
+ *
+ * `local[1]` is the usual order, not a promise: results reach the driver through a pool of its own,
+ * and 2 of 44 fresh runs had other bits from the rounding up, the count unmoved. So this writes the
+ * count and the values that are signal, to eleven digits, which those runs agree on, and not the bits
+ * or the noise under them, which a golden could not hold.
  *
  * Output, one row per run:
  *
  *     rank\t<label>\trequested=<r>\tsurviving=<n>\teigensamples=<e>
- *     values\t<label>\t<each singular value's bits, as sixteen hex digits, comma separated>
+ *     values\t<label>\t<each value of at least 1e-6 of the first, as %.10e, comma separated>
  *     error\t<label>\t<the first line that names what went wrong>
  *
  * Usage: PanelRankDump
@@ -132,12 +136,13 @@ public class PanelRankDump {
             final double[] values = panel.getSingularValues();
             System.out.printf("rank\t%s\trequested=%d\tsurviving=%d\teigensamples=%d%n", label, requested,
                     file.readStringArray("/panel/sample_filenames").length, panel.getNumEigensamples());
-            final StringBuilder bits = new StringBuilder();
+            final StringBuilder signal = new StringBuilder();
             for (final double value : values) {
-                bits.append(bits.length() == 0 ? "" : ",")
-                        .append(String.format("%016x", Double.doubleToRawLongBits(value)));
+                if (value >= 1e-6 * values[0]) {
+                    signal.append(signal.length() == 0 ? "" : ",").append(String.format("%.10e", value));
+                }
             }
-            System.out.printf("values\t%s\t%s%n", label, bits);
+            System.out.printf("values\t%s\t%s%n", label, signal);
         }
         Files.deleteIfExists(out);
     }

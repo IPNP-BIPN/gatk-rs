@@ -6282,12 +6282,12 @@
     {
       "id": "create-read-count-panel-rank",
       "status": "golden-pending",
-      "title": "the eigensamples a panel writes, at local[1], with the singular values' bits",
+      "title": "the eigensamples a panel writes, at local[1], with the singular values above the noise",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "CreateReadCountPanelOfNormals"
       ],
-      "why": "numEigensamples is the length of what Spark's computeSVD returns, which is lower than min(requested, surviving) when trailing values fall under rCond. On a rank-deficient panel those values are rounding noise, so the count is a function of the order the driver sums the Gramian in: measured on one fixture, twelve runs at local[1] gave one set of bits and a rank of 7, twelve at local[4] gave eleven sets of bits and ranks of 6 and 7 (docs/spark-parallel.md). So this suite runs at local[1] only. The sibling suite keeps the cap and leaves the count out, and is unchanged.",
+      "why": "numEigensamples is the length of what Spark's computeSVD returns, which is lower than min(requested, surviving) when trailing values fall under rCond. On a rank-deficient panel those values are rounding noise, so they depend on the order the driver sums the Gramian in: on one fixture twelve runs at local[4] gave eleven sets of bits and ranks of 6 and 7. At local[1] the count did not move in 44 fresh runs, while the noise did in 2 of them (docs/spark-parallel.md). So this suite runs at local[1] only and holds the count and the values above the noise, not their bits. The sibling suite keeps the cap and leaves the count out, and is unchanged.",
       "compare": {
         "mode": "lines"
       },

@@ -42,6 +42,14 @@ PARALLEL = {
 }
 
 
+# The arrays' BWA fixtures hold a few reads, too few to fill a batch per thread: this holds thousands.
+LARGER = (
+    "--input /work/fixtures/svbp_reads.bam --reference /work/fixtures/svbp_sv.fasta "
+    "--bwa-mem-index-image /work/fixtures/svbp_sv.fasta.img --output /work/out/larger.bam "
+    "--single-end-alignment true --use-jdk-deflater true --spark-master local[1]"
+)
+
+
 def spark_arrays():
     """Every array of a tool whose arguments name a Spark master, which is what a Spark tool has."""
     found = []
@@ -60,10 +68,18 @@ def sample(rows, count):
     return [rows[i * len(rows) // count] for i in range(count)]
 
 
+def digest(path):
+    """A file's digest, the wall clock a metrics file opens with taken out."""
+    raw = path.read_bytes()
+    if raw.startswith(b"## htsjdk.samtools.metrics"):
+        raw = run_array.without_start_time(raw.decode("utf-8")).encode()
+    return hashlib.sha256(raw).hexdigest()
+
+
 def tree(directory):
     """Every file under a directory, by relative name, as its digest."""
     return {
-        path.relative_to(directory).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        path.relative_to(directory).as_posix(): digest(path)
         for path in sorted(directory.rglob("*"))
         if path.is_file()
     }
@@ -153,6 +169,15 @@ def main(argv):
                 else:
                     differing.append((tool, row["row"], one, many))
             print(f"{tool}: {same}/{ran} equal at 1 and {options.threads} threads", flush=True)
+
+        if not options.tool or "BwaSpark" in options.tool:
+            one = run(binary, "BwaSpark", LARGER, 1, work, fixtures)
+            many = run(binary, "BwaSpark", LARGER, options.threads, work, fixtures)
+            total += 1
+            accepted += 1 if one[0] == 0 else 0
+            if one != many:
+                differing.append(("BwaSpark", "larger", one, many))
+            print(f"BwaSpark, larger input: exit {one[0]}, equal {one == many}", flush=True)
 
     print(f"tools rows={total} accepted={accepted} differing={len(differing)}")
     for tool, row, one, many in differing:

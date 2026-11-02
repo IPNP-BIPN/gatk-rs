@@ -568,10 +568,10 @@ pub fn solver_mode(n: usize, k: usize) -> SolverMode {
 /// `computeGramianMatrix` at `local[1]`, column major: the upper triangle summed row by row inside
 /// each of the hundred slices, and the slices folded in their order on the driver.
 ///
-/// That order is `--spark-master local[1]`'s and no one else's. `treeAggregate`'s depth is 1 up to
-/// a Gramian of 10 MB, so the driver merges each task's result as it arrives; with one thread they
-/// arrive in order, with four they do not, and a different association of the same sum moves the
-/// trailing values (docs/spark-parallel.md).
+/// That order is the usual one at `--spark-master local[1]`, and rarely at four threads.
+/// `treeAggregate`'s depth is 1 up to a Gramian of 10 MB, so the driver merges each task's result as
+/// it arrives, and a different association of the same sum moves the trailing values. Even at one
+/// thread 2 of 44 fresh runs of the reference had other bits (docs/spark-parallel.md).
 pub fn spark_gramian(panel: &Matrix) -> Vec<f64> {
     let n = panel.samples;
     let rows = panel.intervals;

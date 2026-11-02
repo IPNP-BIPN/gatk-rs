@@ -16,6 +16,7 @@ import argparse
 import concurrent.futures
 import gzip
 import hashlib
+import os
 import re
 import struct
 import subprocess
@@ -28,7 +29,7 @@ import run_array  # noqa: E402
 
 BAM = "/work/fixtures/svbp_reads.bam"
 REFERENCE = "/work/fixtures/svbp_sv.fasta"
-SMALL_SPLIT = "65536"
+SMALL_SPLIT = os.environ.get("SPARK_SPLIT", "65536")
 
 # Tool, then its arguments apart from the settings measured.
 TOOLS = {
@@ -42,21 +43,52 @@ TOOLS = {
     "QualityScoreDistributionSpark": ["--input", BAM, "--output", "/work/out/out.txt"],
     "CollectInsertSizeMetricsSpark": [
         "--input", BAM, "--output", "/work/out/out.txt",
-        "--histogram-output", "/work/out/hist.pdf", "--produce-plot", "false",
+        "--histogram-plot-file", "/work/out/hist.pdf",
     ],
     "CollectQualityYieldMetricsSpark": ["--input", BAM, "--output", "/work/out/out.txt"],
     "PileupSpark": ["--input", BAM, "--output", "/work/out/pileup", "--reference", REFERENCE],
-    "FindBadGenomicKmersSpark": ["--reference", REFERENCE, "--output", "/work/out/out.txt"],
+    "BaseRecalibratorSpark": [
+        "--input", "/work/fixtures/mutect_pl.bam", "--output", "/work/out/out.table",
+        "--reference", "/work/fixtures/mutect_ref.fasta",
+        "--known-sites", "/work/fixtures/resources.vcf",
+    ],
+    "BQSRPipelineSpark": [
+        "--input", "/work/fixtures/mutect_pl.bam", "--output", "/work/out/out.bam",
+        "--reference", "/work/fixtures/mutect_ref.fasta",
+        "--known-sites", "/work/fixtures/resources.vcf",
+    ],
+    "HaplotypeCallerSpark": [
+        "--input", "/work/fixtures/mutect_t.bam", "--output", "/work/out/out.vcf",
+        "--reference", "/work/fixtures/mutect_ref.fasta",
+    ],
+    "PrintVariantsSpark": ["--variant", "/work/fixtures/sites.vcf", "--output", "/work/out/out.vcf"],
 }
 
+# A setting, what it is compared with, and its arguments. `SPARK_SPLIT` makes the split fit a small
+# input. `local[4]` over one partition is not
+# parallel, so what says whether the threads matter is `split-local[4]` against `split`.
 SETTINGS = {
-    "local[1]-again": ["--spark-master", "local[1]"],
-    "local[4]": ["--spark-master", "local[4]"],
-    "local[4]-again": ["--spark-master", "local[4]"],
-    "split-64k": ["--spark-master", "local[1]", "--bam-partition-size", SMALL_SPLIT],
-    "split-64k-local[4]": ["--spark-master", "local[4]", "--bam-partition-size", SMALL_SPLIT],
-    "reducers-3": ["--spark-master", "local[1]", "--num-reducers", "3"],
+    "local[1]-again": ("base", ["--spark-master", "local[1]"]),
+    "local[4]": ("base", ["--spark-master", "local[4]"]),
+    "local[4]-again": ("local[4]", ["--spark-master", "local[4]"]),
+    "split": ("base", ["--spark-master", "local[1]", "--bam-partition-size", SMALL_SPLIT]),
+    "split-again": (
+        "split",
+        ["--spark-master", "local[1]", "--bam-partition-size", SMALL_SPLIT],
+    ),
+    "split-local[4]": (
+        "split",
+        ["--spark-master", "local[4]", "--bam-partition-size", SMALL_SPLIT],
+    ),
+    "split-local[4]-again": (
+        "split",
+        ["--spark-master", "local[4]", "--bam-partition-size", SMALL_SPLIT],
+    ),
+    "reducers-3": ("base", ["--spark-master", "local[1]", "--num-reducers", "3"]),
+    "reducers-3-local[4]": ("reducers-3", ["--spark-master", "local[4]", "--num-reducers", "3"]),
 }
+
+PARTITIONS = re.compile(r"with (\d+) output partitions")
 
 
 def bgzf_payload(raw):
@@ -77,18 +109,28 @@ def bgzf_payload(raw):
 
 
 def render(out_dir):
-    """Name to `(raw digest, comparable digest)`, for every file a run left."""
+    """Name to `(raw digest, comparable digest)`, for every file a run left.
+
+    Parts of a directory are one file here, since the split is what decides how many there are; a
+    line that quotes the command line goes, since the setting itself is on it.
+    """
     rendered = {}
+    parts = {}
     for path in sorted(out_dir.rglob("*")):
-        if not path.is_file() or path.name.startswith("."):
+        if not path.is_file() or path.name.startswith(".") or path.name == "_SUCCESS":
             continue
-        raw = path.read_bytes()
-        name = path.relative_to(out_dir).as_posix()
-        if path.suffix == ".bam":
+        if path.name.startswith("part-"):
+            name = path.parent.relative_to(out_dir).as_posix()
+            parts[name] = parts.get(name, b"") + path.read_bytes()
+        else:
+            parts[path.relative_to(out_dir).as_posix()] = path.read_bytes()
+    for name, raw in parts.items():
+        if name.endswith(".bam"):
             comparable = bgzf_payload(raw)
         else:
             try:
-                comparable = run_array.without_start_time(raw.decode("utf-8")).encode()
+                text = run_array.without_start_time(raw.decode("utf-8"))
+                comparable = re.sub(r"(?m)^.*--spark-master.*$", "", text).encode()
             except UnicodeDecodeError:
                 comparable = raw
         rendered[name] = (
@@ -117,7 +159,9 @@ def run(tool, arguments, fixtures, out_dir):
         capture_output=True,
         text=True,
     )
-    return result.returncode, result.stdout, render(out_dir), run_array.first_error(result.stderr)
+    partitions = max((int(n) for n in PARTITIONS.findall(result.stderr)), default=0)
+    error = run_array.first_error(result.stderr) if result.returncode else ""
+    return result.returncode, result.stdout, render(out_dir), error, partitions
 
 
 def verdict(base, other):
@@ -139,10 +183,14 @@ def verdict(base, other):
 
 def measure(tool, arguments, fixtures, scratch):
     base = run(tool, arguments + ["--spark-master", "local[1]"], fixtures, scratch / tool / "base")
-    lines = [f"{tool}\tlocal[1]\texit {base[0]}, {len(base[2])} files {base[3][:80]}"]
-    for label, setting in SETTINGS.items():
+    lines = [f"{tool}\tlocal[1]\texit {base[0]}, {len(base[2])} files, {base[4]} partitions {base[3][:80]}"]
+    runs = {"base": base}
+    for label, (against, setting) in SETTINGS.items():
         other = run(tool, arguments + setting, fixtures, scratch / tool / label.replace("[", "_"))
-        lines.append(f"{tool}\t{label}\t{verdict(base, other)}")
+        runs[label] = other
+        lines.append(
+            f"{tool}\t{label}\tvs {against}, {other[4]} partitions\t{verdict(runs[against], other)}"
+        )
     print("\n".join(lines), flush=True)
     return lines
 

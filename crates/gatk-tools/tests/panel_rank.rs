@@ -2,15 +2,16 @@
 //!
 //! Golden from `tools/readfilter-conformance/PanelRankDump.java`. The sibling suite,
 //! `create-read-count-panel-of-normals`, carries the cap and leaves the count out; this one carries
-//! the count and the values' bits, because at `local[1]` they are a function of the input and the
-//! F2J LAPACK (docs/spark-parallel.md).
+//! the count and the values above the noise. Not their bits: 2 of 44 fresh `local[1]` runs of the
+//! reference summed in another order, which moves the rounding and leaves the count
+//! (docs/spark-parallel.md).
 //!
 //! # What this suite is for
 //!
 //!  * **`numEigensamples` lower than `min(requested, surviving)`**, on panels whose trailing values
 //!    are rounding noise;
-//!  * **the values equal bit for bit** where the reference takes `dgesdd` and `dbdsqr`, up to 25
-//!    samples;
+//!  * **the values above the noise, to eleven digits**, where the reference takes `dgesdd` and
+//!    `dbdsqr`, up to 25 samples;
 //!  * **the count alone** past that, where divide and conquer or ARPACK answers and the port does
 //!    not take their path, on panels with no value near the threshold.
 
@@ -174,7 +175,7 @@ fn every_panel_writes_the_eigensamples_the_reference_writes() {
         return;
     };
     let mut eigensamples = HashMap::new();
-    let mut bits = HashMap::new();
+    let mut signal = HashMap::new();
     for line in text.lines() {
         let cells: Vec<&str> = line.split('\t').collect();
         match cells[0] {
@@ -186,7 +187,11 @@ fn every_panel_writes_the_eigensamples_the_reference_writes() {
                 eigensamples.insert(cells[1].to_string(), (count, surviving));
             }
             "values" => {
-                bits.insert(cells[1].to_string(), cells[2].to_string());
+                let values: Vec<f64> = cells[2]
+                    .split(',')
+                    .map(|value| value.parse().expect("a value"))
+                    .collect();
+                signal.insert(cells[1].to_string(), values);
             }
             _ => {}
         }
@@ -201,11 +206,20 @@ fn every_panel_writes_the_eigensamples_the_reference_writes() {
             lower += 1;
         }
         if exact(surviving, k) {
-            let produced: Vec<String> = values
+            let expected = &signal[run.label];
+            let produced: Vec<f64> = values
                 .iter()
-                .map(|value| format!("{:016x}", value.to_bits()))
+                .copied()
+                .filter(|value| *value >= 1e-6 * values[0])
                 .collect();
-            assert_eq!(produced.join(","), bits[run.label], "{}", run.label);
+            assert_eq!(produced.len(), expected.len(), "{}", run.label);
+            for (value, reference) in produced.iter().zip(expected) {
+                assert!(
+                    (value - reference).abs() <= 1e-9 * reference,
+                    "{}: {value} {reference}",
+                    run.label
+                );
+            }
         }
     }
     assert!(lower > 0, "the suite exists for a count under the request");
@@ -232,7 +246,10 @@ fn the_gramian_is_the_product_it_says_it_is() {
     for i in 0..4 {
         for j in 0..4 {
             let direct: f64 = (0..250).map(|r| counts.get(i, r) * counts.get(j, r)).sum();
-            assert!((gramian[i + j * 4] - direct).abs() < direct * 1e-12, "{i} {j}");
+            assert!(
+                (gramian[i + j * 4] - direct).abs() < direct * 1e-12,
+                "{i} {j}"
+            );
             assert_eq!(gramian[i + j * 4], gramian[j + i * 4], "symmetric");
         }
     }
