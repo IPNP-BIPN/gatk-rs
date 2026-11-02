@@ -6280,6 +6280,26 @@
       ]
     },
     {
+      "id": "create-read-count-panel-rank",
+      "status": "golden-pending",
+      "title": "the eigensamples a panel writes, at local[1], with the singular values' bits",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CreateReadCountPanelOfNormals"
+      ],
+      "why": "numEigensamples is the length of what Spark's computeSVD returns, which is lower than min(requested, surviving) when trailing values fall under rCond. On a rank-deficient panel those values are rounding noise, so the count is a function of the order the driver sums the Gramian in: measured on one fixture, twelve runs at local[1] gave one set of bits and a rank of 7, twelve at local[4] gave eleven sets of bits and ranks of 6 and 7 (docs/spark-parallel.md). So this suite runs at local[1] only. The sibling suite keeps the cap and leaves the count out, and is unchanged.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "PanelRankDump",
+          "golden": null,
+          "why": "Pending the first real x86-64 CI run."
+        }
+      ]
+    },
+    {
       "id": "ground-truth-reads-builder",
       "status": "oracle-backed",
       "title": "every read scored against the haplotype its two ancestral references give it",
