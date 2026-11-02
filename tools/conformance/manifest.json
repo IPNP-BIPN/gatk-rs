@@ -8335,7 +8335,7 @@
         {
           "dump": "RPlotsDump",
           "golden": null,
-          "why": "Not frozen: the first x86-64 run of oracle-with-r publishes the candidate. Twenty-one runs through Main and seven of the scripts on their own."
+          "why": "Not frozen: the first x86-64 run of oracle-with-r publishes the candidate. Twenty-three runs through Main and seven of the scripts on their own."
         }
       ]
     },
