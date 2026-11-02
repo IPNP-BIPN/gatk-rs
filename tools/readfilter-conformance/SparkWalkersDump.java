@@ -550,6 +550,7 @@ public class SparkWalkersDump {
         assemblyRows();
         reinterpreterRows();
         bwaRows();
+        pathSeqBwaRows();
 
         // CALCMETADATASPARK reads everything, filters nothing, and names one partition.
         final String metadata = "CalcMetadataSpark";
