@@ -95,6 +95,7 @@ pub mod gather_tranches;
 pub mod gather_vcfs;
 pub mod gatk_config;
 pub mod gene_expression_evaluation;
+pub mod genomicsdb;
 pub mod genotype_gvcfs;
 pub mod genotyping_engine;
 pub mod get_normal_artifact_data;

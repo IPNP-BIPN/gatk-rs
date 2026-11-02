@@ -25,7 +25,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | AnnotateIntervals | gatk-rs | oracle-backed | 8 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 4 | 0 | none |
 | AnnotateVcfWithBamDepth | gatk-rs | oracle-backed | 54 suite | 0 suite | 23/23 (100.0%) | 2 | not measured | 6 | 0 | none |
 | AnnotateVcfWithExpectedAlleleFraction | gatk-rs | oracle-backed | 30 suite | 0 suite | 23/23 (100.0%) | 2 | not measured | 4 | 2 | none |
-| ApplyBQSR | gatk-rs | oracle-backed | 34185 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 6 | 0 | none |
+| ApplyBQSR | gatk-rs | oracle-backed | 52 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 6 | 0 | none |
 | ApplyBQSRSpark | gatk-rs | oracle-backed | 5 | 3 | 20/20 (100.0%) | 2 | not measured | 6 | 1 | none |
 | ApplyVQSR | gatk-rs | oracle-backed | 152 suite | 0 suite | 25/25 (100.0%) | 2 | not measured | 7 | 7 | none |
 | BQSRPipelineSpark | gatk-rs | oracle-backed | 5 | 3 | 23/23 (100.0%) | 2 | not measured | 8 | 1 | none |
@@ -116,9 +116,9 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | CountBasesInReference | gatk-rs | oracle-backed | 191 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 4 | 0 | none |
 | CountBasesSpark | gatk-rs | oracle-backed | 6 | 0 | 19/19 (100.0%) | 2 | not measured | 5 | 1 | none |
 | CountFalsePositives | gatk-rs | oracle-backed | 14 suite | 0 suite | 24/24 (100.0%) | 2 | not measured | 2 | 2 | none |
-| CountReads | gatk-rs | oracle-backed | 34402 suite | 6 suite | 21/21 (100.0%) | 2 | not measured | 5 | 0 | none |
+| CountReads | gatk-rs | oracle-backed | 269 suite | 6 suite | 21/21 (100.0%) | 2 | not measured | 5 | 0 | none |
 | CountReadsSpark | gatk-rs | oracle-backed | 9 | 1 | 19/19 (100.0%) | 2 | not measured | 5 | 1 | none |
-| CountVariants | gatk-rs | oracle-backed | 34293 suite | 12 suite | 23/23 (100.0%) | 2 | not measured | 4 | 0 | none |
+| CountVariants | gatk-rs | oracle-backed | 160 suite | 12 suite | 23/23 (100.0%) | 2 | not measured | 4 | 0 | none |
 | CountVariantsSpark | gatk-rs | oracle-backed | 7 | 0 | 19/19 (100.0%) | 2 | not measured | 7 | 1 | none |
 | CpxVariantReInterpreterSpark | gatk-rs | oracle-backed | 81 | 24 | not measured | - | not measured | 8 | 5 | none |
 | CreateBafRegressMetricsFile | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -176,9 +176,9 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | GatherPileupSummaries | gatk-rs | oracle-backed | 11 suite | 0 suite | 6/6 (100.0%) | 2 | not measured | 5 | 0 | none |
 | GatherTranches | gatk-rs | oracle-backed | 11 suite | 0 suite | 8/8 (100.0%) | 2 | not measured | 4 | 0 | none |
 | GatherVcfs | gatk-rs | oracle-backed | 28 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
-| GatherVcfsCloud | gatk-rs | oracle-backed | 34296 suite | 0 suite | 11/11 (100.0%) | 2 | not measured | 2 | 0 | none |
+| GatherVcfsCloud | gatk-rs | oracle-backed | 163 suite | 0 suite | 11/11 (100.0%) | 2 | not measured | 2 | 0 | none |
 | GeneExpressionEvaluation | gatk-rs | oracle-backed | 21 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 4 | 6 | none |
-| GenomicsDBImport | - | not started | - | - | not measured | - | not measured | 0 | 0 | none |
+| GenomicsDBImport | gatk-rs | golden-pending | - | - | not measured | - | not measured | 6 | 11 | none |
 | GenotypeConcordance | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
 | GenotypeGVCFs | gatk-rs | oracle-backed | 7 suite | 0 suite | 34/34 (100.0%) | 2 | not measured | 6 | 9 | none |
 | GermlineCNVCaller | gatk-rs | oracle-backed | 18 | 0 | not measured | - | not measured | 2 | 0 | none |
@@ -198,7 +198,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | IdentifyContaminant | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
 | IlluminaBasecallsToFastq | picard-rs | oracle-backed | not vendored | not vendored | not measured | - | not measured | 0 | 0 | none |
 | IlluminaBasecallsToSam | picard-rs | oracle-backed | not vendored | not vendored | 31/31 (100.0%) | 2 | not measured | 0 | 0 | none |
-| IndexFeatureFile | gatk-rs | oracle-backed | 34265 suite | 0 suite | 8/8 (100.0%) | 2 | not measured | 0 | 0 | none |
+| IndexFeatureFile | gatk-rs | oracle-backed | 132 suite | 0 suite | 8/8 (100.0%) | 2 | not measured | 0 | 0 | none |
 | IntervalListToBed | picard-rs | oracle-backed | not vendored | not vendored | 8/8 (100.0%) | 2 | not measured | 0 | 0 | none |
 | IntervalListTools | picard-rs | oracle-backed | not vendored | not vendored | 34/34 (100.0%) | 2 | not measured | 0 | 0 | none |
 | JointGermlineCNVSegmentation | gatk-rs | oracle-backed | 12 suite | 0 suite | 22/22 (100.0%) | 2 | not measured | 6 | 8 | none |
@@ -252,7 +252,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | PrintDistantMates | gatk-rs | oracle-backed | 75 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 4 | 0 | none |
 | PrintFileDiagnostics | gatk-rs | oracle-backed | 9 suite | 0 suite | 6/6 (100.0%) | 2 | not measured | 2 | 0 | none |
 | PrintReadCounts | gatk-rs | oracle-backed | 44 suite | 0 suite | 17/17 (100.0%) | 2 | not measured | 2 | 4 | none |
-| PrintReads | gatk-rs | oracle-backed | 34171 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 5 | 0 | none |
+| PrintReads | gatk-rs | oracle-backed | 38 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 5 | 0 | none |
 | PrintReadsHeader | gatk-rs | oracle-backed | 19 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 4 | 0 | none |
 | PrintReadsSpark | gatk-rs | oracle-backed | 19 | 11 | 23/23 (100.0%) | 2 | not measured | 5 | 1 | none |
 | PrintSVEvidence | gatk-rs | oracle-backed | 27 suite | 0 suite | 17/17 (100.0%) | 2 | not measured | 5 | 7 | none |
@@ -281,7 +281,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | SamToFastqWithTags | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | none |
 | ScatterIntervalsByNs | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
 | ScoreVariantAnnotations | gatk-rs | oracle-backed | 190 | 41 | not measured | - | not measured | 6 | 7 | none |
-| SelectVariants | gatk-rs | oracle-backed | 34645 suite | 0 suite | 50/50 (100.0%) | 2 | not measured | 2 | 10 | none |
+| SelectVariants | gatk-rs | oracle-backed | 512 suite | 0 suite | 50/50 (100.0%) | 2 | not measured | 2 | 10 | none |
 | SetNmAndUqTags | gatk-rs | oracle-backed | 10 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
 | SetNmMdAndUqTags | gatk-rs | oracle-backed | 10 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
 | ShiftFasta | gatk-rs | oracle-backed | 37 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 0 | 2 | none |
@@ -1239,6 +1239,16 @@ Inputs: `genes.gff3`, `genes_noname.gff3`, `mutect_ref.fasta`, `rna.bam`.
 Held out: `--dont-require-soft-clips-both-ends`, `--exclude-intervals`, `--keep-reverse-strand-only`, `--read-filter-tag-op`, `--read-index`, `--sequence-dictionary`.
 
 rna.bam is one sample's pairs over mutect_ref.fasta with MC and MQ written, some spliced across the first gene's intron, some multi-mapped (NH 2), some at MQ 5 and some duplicates. genes.gff3 holds two stranded genes with an mRNA and exons, and an unstranded one overlapping the second; genes_noname.gff3 adds a gene with no Name, refused under the default label. --read-strands, --multi-overlap-method, --multi-map-method and --unspliced each move the counts.
+
+### GenomicsDBImport
+
+Suites: `genomicsdb-import`.
+
+Inputs: `gdb_a.g.vcf`, `gdb_b.g.vcf`, `reads.bai`, `reads.bam`, `reads2.bai`, `reads2.bam`.
+
+Held out: `--avoid-nio`, `--bypass-feature-reader`, `--consolidate`, `--disable-read-filter`, `--genomicsdb-update-workspace-path`, `--header`, `--merge-contigs-into-num-partitions`, `--output-interval-list-to-file`, `--read-filter`, `--sample-name-map`, `--validate-sample-name-map`.
+
+gdb_a.g.vcf is a gVCF with blocks, sites, a deletion with its spanning allele and allele-specific annotations, gdb_b.g.vcf a second sample of blocks across the same contigs. --variant is a list: both samples, or the first alone. The two workspace paths are what lets a row notice where it was told to write, and the fragment and row-bounds names are numbered in the comparison because they hold a UUID, a thread id and the wall clock. The arguments held out with no value are the ones the port refuses with its own message or that Barclay refuses beside --variant, which would measure that refusal on every row that carries them: an update and its interval list, the sample map, --header, the feature reader bypass, the contig merge and consolidation over batches. The refusals are in GenomicsDBImportDump.
 
 ### GenotypeGVCFs
 

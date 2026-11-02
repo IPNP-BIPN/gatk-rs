@@ -613,6 +613,8 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.spark.bwa.BwaSpark());
         declarations("BwaAndMarkDuplicatesPipelineSpark",
                 new org.broadinstitute.hellbender.tools.spark.pipelines.BwaAndMarkDuplicatesPipelineSpark());
+        declarations("GenomicsDBImport",
+                new org.broadinstitute.hellbender.tools.genomicsdb.GenomicsDBImport());
         declarations("PlotDenoisedCopyRatios",
                 new org.broadinstitute.hellbender.tools.copynumber.plotting.PlotDenoisedCopyRatios());
         declarations("PlotModeledSegments",

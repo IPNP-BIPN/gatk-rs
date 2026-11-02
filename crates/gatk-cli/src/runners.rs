@@ -24576,6 +24576,11 @@ pub fn bwa_mem_index_image_creator(parser: &Parser) -> Outcome {
 mod extract_variant_annotations_runner;
 pub use extract_variant_annotations_runner::extract_variant_annotations;
 
+/// `GenomicsDBImport`, whose workspace is written as the native library writes it.
+#[path = "runners_genomicsdb_import.rs"]
+mod genomicsdb_import_runner;
+pub use genomicsdb_import_runner::genomics_db_import;
+
 /// The tools that stop at an interpreter, each as far as a machine without one can see.
 #[path = "runners_interpreter_tools.rs"]
 mod interpreter_tools_runner;
