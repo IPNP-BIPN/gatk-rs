@@ -64,13 +64,18 @@ const MAX_TABLE: i64 = 1 << 27;
 #[derive(Debug)]
 pub enum Failure {
     /// Thrown on the driver and not a `UserException`.
-    Thrown { class: &'static str, message: String },
+    Thrown {
+        class: &'static str,
+        message: String,
+    },
     /// Thrown in a task, as `class: message`, or `class` alone where there is no message.
     Task(String),
     /// `UserException` and its subclasses.
     User(String),
     /// `BucketUtils.createFile`.
     Create { path: String, error: std::io::Error },
+    /// `BucketUtils.createFile` in a task, whose exception comes back through the stage's failure.
+    CreateInTask { path: String, error: std::io::Error },
     /// `BucketUtils.openFile`.
     Read { path: String, error: std::io::Error },
     /// The port's own, which the runner reports as one.
@@ -138,6 +143,13 @@ fn write_file(path: &str, bytes: &[u8]) -> Result<(), Failure> {
     })
 }
 
+fn write_file_in_task(path: &str, bytes: &[u8]) -> Result<(), Failure> {
+    std::fs::write(path, bytes).map_err(|error| Failure::CreateInTask {
+        path: path.to_string(),
+        error,
+    })
+}
+
 fn read_file(path: &str) -> Result<Vec<u8>, Failure> {
     std::fs::read(path).map_err(|error| Failure::Read {
         path: path.to_string(),
@@ -153,7 +165,10 @@ fn save_as_text_file(directory: &str, lines: impl Iterator<Item = String>) -> Re
         let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
         return Err(Failure::Thrown {
             class: "org.apache.hadoop.mapred.FileAlreadyExistsException",
-            message: format!("Output directory file:{} already exists", absolute.display()),
+            message: format!(
+                "Output directory file:{} already exists",
+                absolute.display()
+            ),
         });
     }
     let mut text = String::new();
@@ -208,10 +223,11 @@ fn reduce_by_key<K: PartialEq, V>(
             .reduce(&reduce)
             .expect("a group holds a value")
     };
-    let mut mapped: Vec<(K, V)> = append_only_group(pairs, |key| partitioned_key_hash(hash_of(key)))
-        .into_iter()
-        .map(|(key, values)| (key, combine(values)))
-        .collect();
+    let mut mapped: Vec<(K, V)> =
+        append_only_group(pairs, |key| partitioned_key_hash(hash_of(key)))
+            .into_iter()
+            .map(|(key, values)| (key, combine(values)))
+            .collect();
     mapped.sort_by_key(|(key, _)| hash_of(key));
     append_only_group(mapped, &hash_of)
         .into_iter()
@@ -556,7 +572,8 @@ fn density_filter(evidence: Vec<Evidence>, min_weight: f64, min_coherent: f64) -
         let mut weight = 0i32;
         for overlapper in tree.overlappers(interval) {
             let list = &tree.map[&overlapper];
-            weight = weight.wrapping_add(list.iter().fold(0, |sum, one| sum.wrapping_add(one.weight)));
+            weight =
+                weight.wrapping_add(list.iter().fold(0, |sum, one| sum.wrapping_add(one.weight)));
             if f64::from(weight) >= min_weight {
                 return true;
             }
@@ -566,9 +583,10 @@ fn density_filter(evidence: Vec<Evidence>, min_weight: f64, min_coherent: f64) -
                 }
             }
         }
-        targets.entries().iter().any(|(left, right, _)| {
-            targets.overlappers(left, right).len() as f64 >= min_coherent
-        })
+        targets
+            .entries()
+            .iter()
+            .any(|(left, right, _)| targets.overlappers(left, right).len() as f64 >= min_coherent)
     };
     for key in keys {
         let pass = tree.map[&key].iter().any(|one| one.validated) || has_enough(&tree, &key);
@@ -818,6 +836,17 @@ fn read_intervals_file(path: &str, metadata: &ReadMetadata) -> Result<Vec<SvInte
                 ),
             });
         }
+        // What the stack trace goes on to say under the message.
+        if !metadata.contig_ids.contains_key(&tokens[0].to_string()) {
+            return Err(Failure::Thrown {
+                class: GATK_EXCEPTION,
+                message: format!(
+                    "Unable to parse interval file {path} line {number}: {line}\nCaused by: \
+                     {GATK_EXCEPTION}: contig name {} not in dictionary",
+                    tokens[0]
+                ),
+            });
+        }
         let parsed = (|| {
             let contig = *metadata.contig_ids.get(&tokens[0].to_string())?;
             let start: i32 = tokens[1].parse().ok()?;
@@ -829,9 +858,7 @@ fn read_intervals_file(path: &str, metadata: &ReadMetadata) -> Result<Vec<SvInte
             None => {
                 return Err(Failure::Thrown {
                     class: GATK_EXCEPTION,
-                    message: format!(
-                        "Unable to parse interval file {path} line {number}: {line}"
-                    ),
+                    message: format!("Unable to parse interval file {path} line {number}: {line}"),
                 })
             }
         }
@@ -940,7 +967,9 @@ fn kmer_intervals(
     let haploid = diploid / 2.0;
     let deviation = f64::from(haploid).sqrt() as f32;
     let min_coverage = haploid - 3.0 * deviation;
-    let min_kmers = arguments.cleaner_min_kmer_count.max(java_round(min_coverage));
+    let min_kmers = arguments
+        .cleaner_min_kmer_count
+        .max(java_round(min_coverage));
     let max_kmers = java_round(arguments.cleaner_max_copy_number as f32 * diploid);
 
     // `QNameKmerizer`, read by read.
@@ -1089,9 +1118,7 @@ fn remove_ubiquitous_kmers(
     let reduced = reduce_by_key(
         pairs,
         |kmer: &SvKmerLong| kmer.hash_code(),
-        |one: (i32, i32), two: (i32, i32)| {
-            (one.0.wrapping_add(two.0), one.1.wrapping_add(two.1))
-        },
+        |one: (i32, i32), two: (i32, i32)| (one.0.wrapping_add(two.0), one.1.wrapping_add(two.1)),
     );
     for (kmer, (partitions, count)) in reduced {
         if partitions > max_partition_count || count > max_count {
@@ -1180,7 +1207,11 @@ fn mapping_text(record: &BamRecord, contigs: &[String]) -> String {
         "{},{},{},{},{}",
         contigs[record.reference_index as usize],
         record.alignment_start,
-        if record.flags & REVERSE != 0 { "-" } else { "+" },
+        if record.flags & REVERSE != 0 {
+            "-"
+        } else {
+            "+"
+        },
         record.cigar.to_text(),
         record.mapping_quality
     );
@@ -1251,7 +1282,7 @@ fn write_fastq(path: &str, reads: &[&FastqRead]) -> Result<(), Failure> {
         }
         bytes.push(b'\n');
     }
-    write_file(path, &bytes)
+    write_file_in_task(path, &bytes)
 }
 
 /// `FermiLiteAssembly.Connection`. Java compares these by identity, so each has an id of its own.
@@ -1278,7 +1309,13 @@ struct Graph {
 }
 
 impl Graph {
-    fn connection(&mut self, target: usize, overlap: i32, is_rc: bool, is_target_rc: bool) -> Connection {
+    fn connection(
+        &mut self,
+        target: usize,
+        overlap: i32,
+        is_rc: bool,
+        is_target_rc: bool,
+    ) -> Connection {
         self.next_connection += 1;
         Connection {
             target,
@@ -1363,7 +1400,8 @@ impl Graph {
                 let offset = offset as i32;
                 let canonical = kmer.canonical(K);
                 let is_canonical = kmer == canonical;
-                for location in map.find_each(canonical.hash_code(), |entry| entry.kmer == canonical)
+                for location in
+                    map.find_each(canonical.hash_code(), |entry| entry.kmer == canonical)
                 {
                     let other = location.contig;
                     if contig == other || to_remove.contains(&other) {
@@ -1808,7 +1846,7 @@ fn assemble_interval(
     }
     if arguments.fastq_dir.is_some() && arguments.write_gfas {
         let directory = arguments.fastq_dir.as_deref().expect("just tested");
-        write_file(
+        write_file_in_task(
             &format!("{directory}/{name}.gfa"),
             graph.gfa(&assembly)?.as_bytes(),
         )?;
@@ -1825,9 +1863,8 @@ fn assemble_interval(
                      image file '{path}': is empty or is not readable"
                 ))
             })?;
-        *aligner = Some(
-            ContigAligner::from_image(&image, arguments.z_dropoff).map_err(Failure::Port)?,
-        );
+        *aligner =
+            Some(ContigAligner::from_image(&image, arguments.z_dropoff).map_err(Failure::Port)?);
     }
     let contigs: Vec<Vec<u8>> = assembly
         .iter()
@@ -1883,7 +1920,10 @@ fn intervals_and_links(
     if let Some(directory) = &arguments.evidence_dir {
         save_as_text_file(
             directory,
-            filtered.iter().filter(|one| one.validated).map(Evidence::to_text),
+            filtered
+                .iter()
+                .filter(|one| one.validated)
+                .map(Evidence::to_text),
         )?;
     }
 
@@ -2034,10 +2074,18 @@ pub fn gather(
         }
     }
 
-    // The handler is a map over the populated intervals, whichever partition each landed in, and
-    // the driver sorts what comes back.
+    // The handler is a map over `ComplexityPartitioner`'s partitions, an interval with more names
+    // first, ties by id, and the driver sorts what comes back. Which fails first is what this order
+    // can show.
+    let mut names_of_interval = vec![0i32; n_intervals];
+    for entry in qnames.iter() {
+        names_of_interval[entry.interval as usize] += 1;
+    }
+    let mut by_complexity: Vec<usize> = (0..n_intervals).collect();
+    by_complexity.sort_by_key(|id| std::cmp::Reverse(names_of_interval[*id]));
     let mut aligner = None;
-    for (id, reads) in interval_reads.iter().enumerate() {
+    for id in by_complexity {
+        let reads = &interval_reads[id];
         if reads.is_empty() {
             continue;
         }
@@ -2077,7 +2125,13 @@ pub fn contig_records(
             let name = format!("asm{id:06}:tig{index:05}");
             let tags = sa_tags(lines, ref_names)?;
             for (line, sa) in lines.iter().zip(tags) {
-                records.push(apply_alignment(&name, &contigs[index], line, sa, ref_names)?);
+                records.push(apply_alignment(
+                    &name,
+                    &contigs[index],
+                    line,
+                    sa,
+                    ref_names,
+                )?);
             }
         }
     }
@@ -2085,10 +2139,12 @@ pub fn contig_records(
 }
 
 fn ref_name(ref_names: &[String], index: i32) -> Result<&String, Failure> {
-    ref_names.get(index as usize).ok_or_else(|| Failure::Thrown {
-        class: "java.lang.IndexOutOfBoundsException",
-        message: format!("Index {index} out of bounds for length {}", ref_names.len()),
-    })
+    ref_names
+        .get(index as usize)
+        .ok_or_else(|| Failure::Thrown {
+            class: "java.lang.IndexOutOfBoundsException",
+            message: format!("Index {index} out of bounds for length {}", ref_names.len()),
+        })
 }
 
 /// `BwaMemAlignmentUtils.createSATags`.
@@ -2157,7 +2213,9 @@ fn apply_alignment(
         if line.supplementary {
             record.flags |= 0x800;
             let clip = |element: Option<&CigarElement>| {
-                element.filter(|one| one.op == CigarOp::S).map_or(0, |one| one.length as usize)
+                element
+                    .filter(|one| one.op == CigarOp::S)
+                    .map_or(0, |one| one.length as usize)
             };
             let (from, to) = (clip(elements.first()), bases.len() - clip(elements.last()));
             bases = bases[from..to].to_vec();
@@ -2172,17 +2230,22 @@ fn apply_alignment(
         record.tags.insert(Tag::new(b"NM"), int(line.mismatches));
         record.tags.insert(Tag::new(b"AS"), int(line.score));
         record.tags.insert(Tag::new(b"XS"), int(line.suboptimal));
-        record.tags.insert(Tag::new(b"MD"), TagValue::Str(line.md.clone()));
+        record
+            .tags
+            .insert(Tag::new(b"MD"), TagValue::Str(line.md.clone()));
         if let Some(xa) = &line.xa {
-            record.tags.insert(Tag::new(b"XA"), TagValue::Str(xa.clone()));
+            record
+                .tags
+                .insert(Tag::new(b"XA"), TagValue::Str(xa.clone()));
         }
     }
     if let Some(sa) = sa {
         record.tags.insert(Tag::new(b"SA"), TagValue::Str(sa));
     }
-    record
-        .tags
-        .insert(Tag::new(b"RG"), TagValue::Str(CONTIG_READ_GROUP.to_string()));
+    record.tags.insert(
+        Tag::new(b"RG"),
+        TagValue::Str(CONTIG_READ_GROUP.to_string()),
+    );
     record.read_bases = bases;
     Ok(record)
 }
@@ -2197,7 +2260,12 @@ fn midpoint(interval: &SvInterval) -> i32 {
 fn padded(contig: i32, length: i32, start: i32, end: i32, padding: i32) -> SvInterval {
     SvInterval {
         contig,
-        start: (if padding > 0 { start - padding + 1 } else { start }).max(1),
+        start: (if padding > 0 {
+            start - padding + 1
+        } else {
+            start
+        })
+        .max(1),
         end: end.saturating_add(padding).min(length) + 1,
     }
 }
@@ -2247,7 +2315,13 @@ pub fn annotate_with_links(
                 })
                 .unwrap_or(0);
             let (start, end) = (variant.start as i32, variant.stop as i32);
-            let left = padded(contig as i32, length, start + 1, start + 1 + homology, padding);
+            let left = padded(
+                contig as i32,
+                length,
+                start + 1,
+                start + 1 + homology,
+                padding,
+            );
             let right = padded(contig as i32, length, end, end + homology, padding);
             let (mut read_pairs, mut split_reads) = (0i32, 0i32);
             for key in tree.overlappers(&(left, true), &(right, false)) {
@@ -2257,10 +2331,14 @@ pub fn annotate_with_links(
                 }
             }
             if read_pairs > 0 {
-                variant.attributes.push(("READ_PAIR_SUPPORT".to_string(), int(read_pairs)));
+                variant
+                    .attributes
+                    .push(("READ_PAIR_SUPPORT".to_string(), int(read_pairs)));
             }
             if split_reads > 0 {
-                variant.attributes.push(("SPLIT_READ_SUPPORT".to_string(), int(split_reads)));
+                variant
+                    .attributes
+                    .push(("SPLIT_READ_SUPPORT".to_string(), int(split_reads)));
             }
         }
         annotated.push(variant);
@@ -2285,16 +2363,13 @@ pub fn annotate_with_links(
         let (start, end) = (midpoint(&left.0), midpoint(&right.0));
         let bases = reference
             .bases(contig, start, start)
-            .map_err(|message| Failure::Task(message))?;
-        let reference_allele = Allele::create(&bases, true)
+            .map_err(Failure::Task)?;
+        let reference_allele =
+            Allele::create(&bases, true).map_err(|error| Failure::Port(format!("{error:?}")))?;
+        let alternate = Allele::from_str("<DEL>", false)
             .map_err(|error| Failure::Port(format!("{error:?}")))?;
-        let alternate =
-            Allele::from_str("<DEL>", false).map_err(|error| Failure::Port(format!("{error:?}")))?;
-        let mut variant = VariantContext::new(
-            contig,
-            i64::from(start),
-            vec![reference_allele, alternate],
-        );
+        let mut variant =
+            VariantContext::new(contig, i64::from(start), vec![reference_allele, alternate]);
         variant.stop = i64::from(end);
         variant.id = format!(
             "DEL_IMPRECISE_{contig}_{}_{}_{}_{}",
@@ -2422,7 +2497,10 @@ mod tests {
             .iter()
             .map(|contig| graph.contigs[*contig].sequence.as_slice())
             .collect();
-        assert_eq!(sequences, vec![&b"AAACGG"[..], &b"AAACTT"[..], &b"GGAA"[..]]);
+        assert_eq!(
+            sequences,
+            vec![&b"AAACGG"[..], &b"AAACTT"[..], &b"GGAA"[..]]
+        );
     }
 
     #[test]

@@ -461,7 +461,10 @@ impl ContigAligner {
             .iter()
             .enumerate()
             .map(|(id, contig)| {
-                let codes: Vec<u8> = contig.iter().map(|&base| bwa_mem4_core::dna::nt4(base)).collect();
+                let codes: Vec<u8> = contig
+                    .iter()
+                    .map(|&base| bwa_mem4_core::dna::nt4(base))
+                    .collect();
                 let length = codes.len() as i32;
                 let found = bwa_mem4_mem::align_read(fm, bns, options, &codes);
                 let mut regions = bwa_mem4_mem::mem_sort_dedup_patch(fm, options, &codes, found);

@@ -194,8 +194,7 @@ impl<T: HopscotchEntry> Hopscotch<T> {
                 current = remove_at;
                 previous = remove_previous;
             }
-            if current != NONE
-                && !matches(self.buckets[current as usize].as_ref().expect("a link"))
+            if current != NONE && !matches(self.buckets[current as usize].as_ref().expect("a link"))
             {
                 advance(self, &mut current, &mut previous);
             }

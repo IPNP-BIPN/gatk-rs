@@ -19,6 +19,7 @@
  *     error\t<label>\t<exception class>:<root cause's message, escaped, cwd masked>
  *     dir\t<label>\t<a directory under the run's output>
  *     file\t<label>\t<path under the run's output>\t<base64>
+ *     crc\t<label>\t<path under the run's output>\t<length>\t<CRC-32>, for a file over 16 KiB
  *
  * Usage: SvEvidenceDump
  */
@@ -50,6 +51,8 @@ public class SvEvidenceDump {
 
     static final Path DIR = Path.of("sv-evidence-dump");
     static final int READ_LENGTH = 150;
+    /** Above this a file's row is its length and CRC: the FASTQs and k-mers of 94 runs would be 100 MB. */
+    static final int WHOLE_FILE_LIMIT = 16384;
     static final String[] CONTIGS = {"chr1", "chr2"};
     static final int[] LENGTHS = {16000, 9000};
 
@@ -68,12 +71,13 @@ public class SvEvidenceDump {
         fixtures();
         for (final String name : new String[] {"sv.fasta", "sv.fasta.fai", "sv.dict", "sv.fasta.img", "reads.bam",
                 "reads.bai", "shallow.bam", "shallow.bai", "other.bam", "other.bai", "not-sorted.bam",
-                "kill.txt", "kill-wrong-length.txt", "kill-not-bases.txt", "external.bed", "external-unsorted.bed",
+                "kill.txt", "kill31.txt", "kill32.txt", "kill-wrong-length.txt", "kill-not-bases.txt", "cnv.vcf", "external.bed", "external-unsorted.bed",
                 "external-off.bed", "gaps.txt", "gaps-columns.txt", "gaps-contig.txt", "cross.txt", "cross-off.txt"}) {
             final byte[] bytes = Files.readAllBytes(DIR.resolve(name));
             System.out.printf("input\t%s\t%s%n", name, Base64.getEncoder().encodeToString(
                     name.endsWith(".img") ? withoutAddresses(bytes) : bytes));
         }
+        jdkDeflaterRows();
         findBreakpointRows();
         pipelineRows();
         System.out.flush();
@@ -338,7 +342,7 @@ public class SvEvidenceDump {
         Files.writeString(fastaPath, fasta.toString(), StandardCharsets.UTF_8);
         htsjdk.samtools.reference.FastaSequenceIndexCreator.create(fastaPath, true);
         Files.writeString(DIR.resolve("sv.dict"), dict.toString(), StandardCharsets.UTF_8);
-        new Main().instanceMain(new String[] {"BwaMemIndexImageCreator",
+        new Main().instanceMain(new String[] {"BwaMemIndexImageCreator", "--use-jdk-deflater",
                 "-I", fastaPath.toString(), "-O", at("sv.fasta.img")});
 
         final SAMFileHeader sorted = header(SAMFileHeader.SortOrder.coordinate);
@@ -352,6 +356,18 @@ public class SvEvidenceDump {
 
         final String kmer = reference[0].substring(1000, 1051);
         Files.writeString(DIR.resolve("kill.txt"), kmer + "\n" + reference[1].substring(7000, 7051) + "\n");
+        Files.writeString(DIR.resolve("kill31.txt"), reference[0].substring(1000, 1031) + "\n");
+        Files.writeString(DIR.resolve("kill32.txt"), reference[0].substring(1000, 1032) + "\n");
+        Files.writeString(DIR.resolve("cnv.vcf"), "##fileformat=VCFv4.2\n"
+                + "##ALT=<ID=DEL,Description=\"Deletion\">\n"
+                + "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End\">\n"
+                + "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type\">\n"
+                + "##INFO=<ID=SVLEN,Number=.,Type=Integer,Description=\"Length\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##FORMAT=<ID=CN,Number=1,Type=Integer,Description=\"Copies\">\n"
+                + "##contig=<ID=chr1,length=16000>\n##contig=<ID=chr2,length=9000>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsampleS\n"
+                + "chr1\t6001\tcnvDel\t" + reference[0].charAt(6000) + "\t<DEL>\t60\t.\tEND=6800;SVTYPE=DEL;SVLEN=-799\tGT:CN\t0/1:1\n");
         Files.writeString(DIR.resolve("kill-wrong-length.txt"), kmer + "\nACGT\n");
         Files.writeString(DIR.resolve("kill-not-bases.txt"), kmer + "\n" + "N".repeat(51) + "\n");
         Files.writeString(DIR.resolve("external.bed"), "chr1\t2000\t2100\nchr1\t3000\t4000\nchr2\t1000\t1100\n");
@@ -426,7 +442,18 @@ public class SvEvidenceDump {
                             .replaceAll("contigs in \\d+ secs\\.", "contigs in <S> secs.")
                             .getBytes(StandardCharsets.ISO_8859_1);
                 }
-                System.out.printf("file\t%s\t%s\t%s%n", label, relative, Base64.getEncoder().encodeToString(bytes));
+                if (name.endsWith(".vcf")) {
+                    bytes = new String(bytes, StandardCharsets.ISO_8859_1)
+                            .replaceAll("Date=\"[^\"]*\"", "Date=\"<D>\"")
+                            .getBytes(StandardCharsets.ISO_8859_1);
+                }
+                if (bytes.length > WHOLE_FILE_LIMIT) {
+                    final java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+                    crc.update(bytes);
+                    System.out.printf("crc\t%s\t%s\t%d\t%d%n", label, relative, bytes.length, crc.getValue());
+                } else {
+                    System.out.printf("file\t%s\t%s\t%s%n", label, relative, Base64.getEncoder().encodeToString(bytes));
+                }
             }
         }
     }
@@ -435,14 +462,12 @@ public class SvEvidenceDump {
         return text.replace(Path.of("").toAbsolutePath().toString(), "<cwd>");
     }
 
-    /** The tool with every debug file it has, under a directory of the run's. */
+    /** The tool with every debug file it has, under a directory of the run's. `rest` may name other k-mers or another image. */
     static String[] debug(final String label, final String input, final String... rest) throws Exception {
         final String fastq = out(label, "fastq");
         Files.createDirectories(Path.of(fastq));
         final List<String> argv = new ArrayList<>(List.of(
                 "-I", at(input),
-                "--kmers-to-ignore", at("kill.txt"),
-                "--aligner-index-image", at("sv.fasta.img"),
                 "--read-metadata", out(label, "metadata.txt"),
                 "--high-coverage-intervals", out(label, "high-coverage.bed"),
                 "--breakpoint-evidence-dir", out(label, "evidence"),
@@ -453,7 +478,14 @@ public class SvEvidenceDump {
                 "--qname-intervals-for-assembly", out(label, "qnames-assembly.txt"),
                 "--target-link-file", out(label, "links.bedpe"),
                 "--fastq-dir", fastq));
-        argv.addAll(Arrays.asList(rest));
+        final List<String> named = Arrays.asList(rest);
+        if (!named.contains("--kmers-to-ignore")) {
+            argv.addAll(List.of("--kmers-to-ignore", at("kill.txt")));
+        }
+        if (!named.contains("--aligner-index-image")) {
+            argv.addAll(List.of("--aligner-index-image", at("sv.fasta.img")));
+        }
+        argv.addAll(named);
         return argv.toArray(new String[0]);
     }
 
@@ -463,10 +495,150 @@ public class SvEvidenceDump {
         run(label, "FindBreakpointEvidenceSpark", argv.toArray(new String[0]));
     }
 
+    /** One k-mer-less refusal: the parser and `validate` come before anything is read. */
+    static void refusal(final String label, final String tool, final String... rest) throws Exception {
+        run(label, tool, rest);
+    }
+
+    /**
+     * BAMs through the JDK's deflater, for a host where GKL's level 2 is out of reach. They run
+     * first, and the image is made with the flag, because `CommandLineProgram` only ever sets the
+     * Intel factory and the JDK's is what a JVM starts with: after any run without the flag, the
+     * flag would change nothing here.
+     */
+    static void jdkDeflaterRows() throws Exception {
+        run("find-bam-jdk", "FindBreakpointEvidenceSpark", "-I", at("reads.bam"), "--kmers-to-ignore", at("kill.txt"),
+                "--aligner-index-image", at("sv.fasta.img"), "--use-jdk-deflater", "-O", out("find-bam-jdk", "contigs.bam"));
+        pipeline("pipeline-jdk-deflater", "reads.bam", "--use-jdk-deflater");
+    }
+
     static void findBreakpointRows() throws Exception {
         find("find-defaults", "reads.bam");
+        find("find-shallow", "shallow.bam");
+        find("find-other", "other.bam");
+        find("find-queryname", "reads.bam", "--assembled-contigs-output-order", "queryname");
+        find("find-gfa", "reads.bam", "--write-gfas");
+        find("find-no-mapping", "reads.bam", "--include-mapping-location", "false");
+        find("find-pop", "reads.bam", "--pop-variant-bubbles");
+        find("find-keep-shadowed", "reads.bam", "--remove-shadowed-contigs", "false");
+        find("find-no-expand", "reads.bam", "--expand-assembly-graph", "false");
+        find("find-neither", "reads.bam", "--remove-shadowed-contigs", "false", "--expand-assembly-graph", "false");
+        find("find-interval-only", "reads.bam", "--interval-only-assembly");
+        find("find-adapter", "reads.bam", "--adapter-sequence",
+                "AGATCGGAAGAGCACACGTCTGAACTCCAGTCACATCACGATCTCGTATGCCGTCTTCTGCTTG");
+        find("find-k31", "reads.bam", "--k-size", "31", "--kmers-to-ignore", at("kill31.txt"));
+        find("find-k-even", "reads.bam", "--k-size", "32", "--kmers-to-ignore", at("kill32.txt"));
+        find("find-kill-wrong-length", "reads.bam", "--kmers-to-ignore", at("kill-wrong-length.txt"));
+        find("find-kill-not-bases", "reads.bam", "--kmers-to-ignore", at("kill-not-bases.txt"));
+        find("find-kill-missing", "reads.bam", "--kmers-to-ignore", at("nowhere.txt"));
+        find("find-min-kmers", "reads.bam", "--min-kmers-per-interval", "1000000");
+        find("find-cleaner", "reads.bam", "--cleaner-max-intervals", "1", "--cleaner-min-kmer-count", "6",
+                "--cleaner-max-copy-number", "2");
+        find("find-dust", "reads.bam", "--kmer-max-dust-score", "20");
+        find("find-small-fastq", "reads.bam", "--max-fastq-size", "150000");
+        find("find-external", "reads.bam", "--external-evidence", at("external.bed"));
+        find("find-external-weight", "reads.bam", "--external-evidence", at("external.bed"),
+                "--external-evidence-weight", "3", "--external-evidence-uncertainty", "400");
+        find("find-external-unsorted", "reads.bam", "--external-evidence", at("external-unsorted.bed"));
+        find("find-external-off", "reads.bam", "--external-evidence", at("external-off.bed"));
+        find("find-external-missing", "reads.bam", "--external-evidence", at("nowhere.bed"));
+        find("find-gaps", "reads.bam", "--exclusion-intervals", at("gaps.txt"), "--exclusion-interval-padding", "200");
+        find("find-gaps-columns", "reads.bam", "--exclusion-intervals", at("gaps-columns.txt"));
+        find("find-gaps-contig", "reads.bam", "--exclusion-intervals", at("gaps-contig.txt"));
+        find("find-gaps-missing", "reads.bam", "--exclusion-intervals", at("nowhere.txt"));
+        find("find-cross", "reads.bam", "--cross-contigs-to-ignore", at("cross.txt"));
+        find("find-cross-off", "reads.bam", "--cross-contigs-to-ignore", at("cross-off.txt"));
+        find("find-evidence-weight", "reads.bam", "--min-evidence-coverage-ratio", "5.0",
+                "--min-coherent-evidence-coverage-ratio", "5.0");
+        find("find-evidence-thin", "reads.bam", "--min-evidence-coverage-ratio", "0.05",
+                "--min-coherent-evidence-coverage-ratio", "0.02");
+        find("find-mapq", "reads.bam", "--min-evidence-mapq", "61");
+        find("find-match-length", "reads.bam", "--min-evidence-match-length", "140");
+        find("find-overhang", "reads.bam", "--allowed-short-fragment-overhang", "0");
+        find("find-fragment", "reads.bam", "--max-tracked-fragment-length", "300");
+        find("find-depth", "reads.bam", "--high-depth-coverage-peak-factor", "1", "--high-depth-coverage-factor", "1");
+        find("find-ratio", "reads.bam", "--assembly-to-mapped-size-ratio-guess", "1");
+        find("find-z-drop", "reads.bam", "--z-dropoff", "1");
+        find("find-not-sorted", "not-sorted.bam");
+        // Without FASTQs: local[1] launches the next task before the failure of the one before has
+        // reached the scheduler, so how many more it writes is a race.
+        run("find-image-missing", "FindBreakpointEvidenceSpark", "-I", at("reads.bam"), "--kmers-to-ignore", at("kill.txt"),
+                "--aligner-index-image", at("nowhere.img"), "-O", out("find-image-missing", "contigs.sam"));
+        find("find-input-missing", "nowhere.bam");
+
+        final String[][] invalid = {
+                {"k-size", "0"}, {"kmer-max-dust-score", "0"}, {"min-evidence-mapq", "-1"},
+                {"min-evidence-match-length", "0"}, {"allowed-short-fragment-overhang", "-1"},
+                {"max-tracked-fragment-length", "0"}, {"high-depth-coverage-peak-factor", "0"},
+                {"min-evidence-coverage-ratio", "0"}, {"min-coherent-evidence-coverage-ratio", "-1.5"},
+                {"min-kmers-per-interval", "0"}, {"cleaner-max-intervals", "0"}, {"cleaner-min-kmer-count", "0"},
+                {"cleaner-max-copy-number", "0"}, {"assembly-to-mapped-size-ratio-guess", "0"},
+                {"max-fastq-size", "0"}, {"exclusion-interval-padding", "-1"}, {"external-evidence-weight", "0"},
+                {"external-evidence-uncertainty", "0"}, {"assembled-contigs-output-order", "unsorted"},
+                {"assembled-contigs-output-order", "bogus"}};
+        for (final String[] one : invalid) {
+            find("find-invalid-" + one[0] + "-" + one[1], "reads.bam", "--" + one[0], one[1]);
+        }
+        // The one run whose FASTQ directory nothing made first.
+        run("find-fastq-no-dir", "FindBreakpointEvidenceSpark", "-I", at("reads.bam"), "--kmers-to-ignore", at("kill.txt"),
+                "--aligner-index-image", at("sv.fasta.img"), "--fastq-dir", out("find-fastq-no-dir", "fastq"),
+                "-O", out("find-fastq-no-dir", "contigs.sam"));
+        final String label = "find-bad-output";
+        run(label, "FindBreakpointEvidenceSpark", "-I", at("reads.bam"), "--kmers-to-ignore", at("kill.txt"),
+                "--aligner-index-image", at("sv.fasta.img"), "-O", out(label, "contigs.txt"));
+        run("find-no-debug-sam", "FindBreakpointEvidenceSpark", "-I", at("reads.bam"), "--kmers-to-ignore", at("kill.txt"),
+                "--aligner-index-image", at("sv.fasta.img"), "-O", out("find-no-debug-sam", "contigs.sam"));
+        run("find-no-debug-bam", "FindBreakpointEvidenceSpark", "-I", at("reads.bam"), "--kmers-to-ignore", at("kill.txt"),
+                "--aligner-index-image", at("sv.fasta.img"), "-O", out("find-no-debug-bam", "contigs.bam"));
+        run("find-no-debug-bam-queryname", "FindBreakpointEvidenceSpark", "-I", at("reads.bam"), "--kmers-to-ignore",
+                at("kill.txt"), "--aligner-index-image", at("sv.fasta.img"),
+                "--assembled-contigs-output-order", "queryname", "-O", out("find-no-debug-bam-queryname", "contigs.bam"));
+        run("find-no-kmers", "FindBreakpointEvidenceSpark", "-I", at("reads.bam"),
+                "--aligner-index-image", at("sv.fasta.img"), "-O", out("find-no-kmers", "contigs.sam"));
+        run("find-no-image", "FindBreakpointEvidenceSpark", "-I", at("reads.bam"), "--kmers-to-ignore", at("kill.txt"),
+                "-O", out("find-no-image", "contigs.sam"));
+    }
+
+    static void pipeline(final String label, final String input, final String... rest) throws Exception {
+        final List<String> argv = new ArrayList<>(Arrays.asList(debug(label, input, rest)));
+        argv.addAll(List.of("-R", at("sv.fasta"), "--contig-sam-file", out(label, "contigs.sam"),
+                "-O", out(label, "variants")));
+        run(label, "StructuralVariationDiscoveryPipelineSpark", argv.toArray(new String[0]));
     }
 
     static void pipelineRows() throws Exception {
+        final String tool = "StructuralVariationDiscoveryPipelineSpark";
+        pipeline("pipeline-defaults", "reads.bam");
+        pipeline("pipeline-exp", "reads.bam", "--exp-interpret");
+        pipeline("pipeline-other", "other.bam");
+        pipeline("pipeline-shallow", "shallow.bam", "--exp-interpret");
+        pipeline("pipeline-threshold", "reads.bam", "--imprecise-variant-evidence-threshold", "1");
+        pipeline("pipeline-threshold-size", "reads.bam", "--imprecise-variant-evidence-threshold", "1",
+                "--max-callable-imprecise-deletion-size", "100");
+        pipeline("pipeline-external", "reads.bam", "--external-evidence", at("external.bed"));
+        pipeline("pipeline-cross", "reads.bam", "--cross-contigs-to-ignore", at("cross.txt"), "--exp-interpret");
+        pipeline("pipeline-both-external", "reads.bam", "--external-evidence", at("external.bed"),
+                "--cnv-calls", at("cnv.vcf"));
+        pipeline("pipeline-cnv", "reads.bam", "--cnv-calls", at("cnv.vcf"));
+        pipeline("pipeline-truth", "reads.bam", "--truth-vcf", at("cnv.vcf"));
+        pipeline("pipeline-min-mq", "reads.bam", "--exp-interpret", "--min-mq", "61");
+        pipeline("pipeline-min-align", "reads.bam", "--exp-interpret", "--min-align-length", "500");
+        pipeline("pipeline-too-few-kmers", "reads.bam", "--min-kmers-per-interval", "1000000");
+        pipeline("pipeline-invalid-evidence", "reads.bam", "--k-size", "0");
+        pipeline("pipeline-invalid-discover", "reads.bam", "--min-align-length", "0");
+        final String label = "pipeline-no-reference";
+        run(label, tool, "-I", at("reads.bam"), "--kmers-to-ignore", at("kill.txt"), "--aligner-index-image",
+                at("sv.fasta.img"), "--contig-sam-file", out(label, "contigs.sam"), "-O", out(label, "variants"));
+        run("pipeline-no-contig-file", tool, "-I", at("reads.bam"), "-R", at("sv.fasta"), "--kmers-to-ignore", at("kill.txt"),
+                "--aligner-index-image", at("sv.fasta.img"), "-O", out("pipeline-no-contig-file", "variants"));
+        run("pipeline-contigs-bam", tool, "-I", at("reads.bam"), "-R", at("sv.fasta"), "--kmers-to-ignore", at("kill.txt"),
+                "--aligner-index-image", at("sv.fasta.img"), "--contig-sam-file", out("pipeline-contigs-bam", "contigs.bam"),
+                "-O", out("pipeline-contigs-bam", "variants"));
+        run("pipeline-contigs-other-name", tool, "-I", at("reads.bam"), "-R", at("sv.fasta"), "--kmers-to-ignore", at("kill.txt"),
+                "--aligner-index-image", at("sv.fasta.img"), "--contig-sam-file", out("pipeline-contigs-other-name", "contigs.txt"),
+                "-O", out("pipeline-contigs-other-name", "variants"));
+        run("pipeline-nested-out", tool, "-I", at("reads.bam"), "-R", at("sv.fasta"), "--kmers-to-ignore", at("kill.txt"),
+                "--aligner-index-image", at("sv.fasta.img"), "--contig-sam-file", out("pipeline-nested-out", "contigs.sam"),
+                "-O", out("pipeline-nested-out", "a/b/variants"));
     }
 }

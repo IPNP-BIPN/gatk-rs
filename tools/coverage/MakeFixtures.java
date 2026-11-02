@@ -4677,6 +4677,7 @@ public class MakeFixtures {
         alleleFrequencyQCFixtures(dir, chr1);
         variantAnnotatorFixtures(dir);
         jointGermlineCnvFixtures(dir);
+        SvBreakpointFixtures.fixtures(dir);
     }
 
     /**
@@ -7721,6 +7722,312 @@ public class MakeFixtures {
     static String span(final char[] bases, final int start, final int end, final boolean reverse) {
         final String forward = new String(bases, start, end - start + 1);
         return reverse ? reverseComplement(forward) : forward;
+    }
+
+    /**
+     * FindBreakpointEvidenceSpark's reference and reads: the generator of
+     * `tools/readfilter-conformance/SvEvidenceDump.java`, whose rows and these arrays read one
+     * donor genome. `Main` writes the image, whose pointers nothing here prints.
+     */
+    static final class SvBreakpointFixtures {
+        static final int READ_LENGTH = 150;
+        static final String[] CONTIGS = {"chr1", "chr2"};
+        static final int[] LENGTHS = {16000, 9000};
+        static String[] reference;
+
+        /** A piece of the donor: where it is on the reference, and which way round. */
+        record Piece(int contig, int start, int length, boolean reverse) {}
+
+        /** Where a stretch of a read lands. */
+        record Hit(Piece piece, int readStart, int refStart, int length) {}
+
+
+        /** The bases of a stretch of the donor, on the reference's forward strand or against it. */
+        static byte[] bases(final Piece piece, final int from, final int length) {
+            final byte[] copied = new byte[length];
+            for (int at = 0; at < length; at++) {
+                final int offset = piece.reverse ? piece.start + piece.length - 1 - from - at : piece.start + from + at;
+                final char base = reference[piece.contig].charAt(offset);
+                copied[at] = (byte) (piece.reverse ? "TGCA".charAt("ACGT".indexOf(base)) : base);
+            }
+            return copied;
+        }
+
+        static byte[] revcomp(final byte[] bases) {
+            final byte[] flipped = new byte[bases.length];
+            for (int at = 0; at < bases.length; at++) {
+                flipped[bases.length - 1 - at] = (byte) "TGCA".charAt("ACGT".indexOf(bases[at]));
+            }
+            return flipped;
+        }
+
+        /** A stretch of the donor, cut at the joins of its pieces. */
+        static List<Hit> hits(final List<Piece> donor, final int start, final int length) {
+            final List<Hit> found = new ArrayList<>();
+            int pieceStart = 0;
+            for (final Piece piece : donor) {
+                final int from = Math.max(start, pieceStart);
+                final int to = Math.min(start + length, pieceStart + piece.length);
+                if (from < to) {
+                    final int inside = from - pieceStart;
+                    final int refStart = piece.reverse ? piece.start + piece.length - inside - (to - from) : piece.start + inside;
+                    found.add(new Hit(piece, from - start, refStart, to - from));
+                }
+                pieceStart += piece.length;
+            }
+            return found;
+        }
+
+        static List<Piece> donor() {
+            return List.of(new Piece(0, 0, 6000, false), new Piece(0, 6800, 4200, false),
+                    new Piece(1, 3000, 1500, true), new Piece(0, 11000, 5000, false),
+                    new Piece(1, 0, 3000, false), new Piece(1, 4500, 4500, false));
+        }
+
+        /** One end of a template, as records of its own reading direction. */
+        static List<SAMRecord> placed(final SAMFileHeader header, final String name, final int ordinalFlag,
+                                      final byte[] read, final byte[] quals, final List<Hit> pieces,
+                                      final boolean readAgainstDonor, final String group, final java.util.Random random) {
+            // A read kept in the order it was sequenced, whose `Hit`s run along the donor.
+            final List<SAMRecord> records = new ArrayList<>();
+            Hit primary = pieces.get(0);
+            for (final Hit hit : pieces) {
+                if (hit.length > primary.length) primary = hit;
+            }
+            final List<Hit> order = new ArrayList<>();
+            order.add(primary);
+            for (final Hit hit : pieces) {
+                if (hit != primary) order.add(hit);
+            }
+            final List<String> tags = new ArrayList<>();
+            for (final Hit hit : order) {
+                final boolean reverse = hit.piece.reverse != readAgainstDonor;
+                final int before = hit.readStart;
+                final int after = READ_LENGTH - hit.readStart - hit.length;
+                // Along the reference, a piece that runs backwards turns the clips round.
+                final int first = hit.piece.reverse ? after : before;
+                final int last = hit.piece.reverse ? before : after;
+                final char clip = hit == primary ? 'S' : 'H';
+                tags.add(CONTIGS[hit.piece.contig] + "," + (hit.refStart + 1) + "," + (reverse ? '-' : '+') + ","
+                        + cigar(first, hit.length, last, 'S') + ",60,0;");
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName(name);
+                int flags = 0x1 | ordinalFlag | (reverse ? 0x10 : 0);
+                if (hit != primary) flags |= 0x800;
+                record.setFlags(flags);
+                record.setReferenceName(CONTIGS[hit.piece.contig]);
+                record.setAlignmentStart(hit.refStart + 1);
+                record.setMappingQuality(60);
+                record.setCigarString(cigar(first, hit.length, last, clip));
+                final byte[] stored = reverse ? revcomp(read) : read;
+                final byte[] storedQuals = quals.clone();
+                if (reverse) {
+                    for (int at = 0; at < quals.length; at++) storedQuals[at] = quals[quals.length - 1 - at];
+                }
+                if (hit == primary) {
+                    record.setReadBases(stored);
+                    record.setBaseQualities(storedQuals);
+                } else {
+                    record.setReadBases(java.util.Arrays.copyOfRange(stored, first, first + hit.length));
+                    record.setBaseQualities(java.util.Arrays.copyOfRange(storedQuals, first, first + hit.length));
+                }
+                record.setAttribute("RG", group);
+                record.setAttribute("NM", 0);
+                record.setAttribute("AS", hit.length);
+                records.add(record);
+            }
+            if (records.size() > 1) {
+                for (int at = 0; at < records.size(); at++) {
+                    final StringBuilder others = new StringBuilder();
+                    for (int other = 0; other < tags.size(); other++) {
+                        if (other != at) others.append(tags.get(other));
+                    }
+                    records.get(at).setAttribute("SA", others.toString());
+                }
+            }
+            return records;
+        }
+
+        static String cigar(final int first, final int length, final int last, final char clip) {
+            return (first > 0 ? first + "" + clip : "") + length + "M" + (last > 0 ? last + "" + clip : "");
+        }
+
+        /** Both ends' mate fields, from what each ended up as. */
+        static void mates(final List<SAMRecord> ends, final SAMRecord otherPrimary, final int size) {
+            for (final SAMRecord record : ends) {
+                record.setFlags(record.getFlags() | (otherPrimary.getReadNegativeStrandFlag() ? 0x20 : 0));
+                record.setMateReferenceName(otherPrimary.getReferenceName());
+                record.setMateAlignmentStart(otherPrimary.getAlignmentStart());
+                record.setAttribute("MC", otherPrimary.getCigarString());
+                if (record.getReferenceName().equals(otherPrimary.getReferenceName())) {
+                    final int span = Math.abs(record.getAlignmentStart() - otherPrimary.getAlignmentStart());
+                    record.setInferredInsertSize(record.getAlignmentStart() <= otherPrimary.getAlignmentStart() ? span + READ_LENGTH : -span - READ_LENGTH);
+                }
+                if (size > 0 && Math.abs(record.getInferredInsertSize()) < 1000
+                        && record.getReferenceName().equals(otherPrimary.getReferenceName())
+                        && record.getReadNegativeStrandFlag() != otherPrimary.getReadNegativeStrandFlag()) {
+                    record.setFlags(record.getFlags() | 0x2);
+                }
+            }
+        }
+
+        static List<SAMRecord> simulate(final SAMFileHeader header, final List<Piece> donor, final double coverage,
+                                        final long seed) {
+            final int donorLength = donor.stream().mapToInt(Piece::length).sum();
+            final java.util.Random random = new java.util.Random(seed);
+            final int pairs = (int) (coverage * donorLength / (2 * READ_LENGTH));
+            final List<SAMRecord> reads = new ArrayList<>();
+            for (int pair = 0; pair < pairs; pair++) {
+                final int size = 380 + random.nextInt(41);
+                final int start = random.nextInt(donorLength - size);
+                final String name = "t" + pair;
+                final String group = "rg" + (1 + random.nextInt(2));
+                final byte[] forward = new byte[READ_LENGTH];
+                final byte[] backward = new byte[READ_LENGTH];
+                int filled = 0;
+                for (final Hit hit : hits(donor, start, READ_LENGTH)) {
+                    System.arraycopy(bases(hit.piece, hit.piece.reverse
+                            ? hit.piece.length - (hit.refStart - hit.piece.start) - hit.length : hit.refStart - hit.piece.start,
+                            hit.length), 0, forward, filled, hit.length);
+                    filled += hit.length;
+                }
+                filled = 0;
+                for (final Hit hit : hits(donor, start + size - READ_LENGTH, READ_LENGTH)) {
+                    System.arraycopy(bases(hit.piece, hit.piece.reverse
+                            ? hit.piece.length - (hit.refStart - hit.piece.start) - hit.length : hit.refStart - hit.piece.start,
+                            hit.length), 0, backward, filled, hit.length);
+                    filled += hit.length;
+                }
+                final byte[] quals1 = qualities(random);
+                final byte[] quals2 = qualities(random);
+                noise(forward, random);
+                noise(backward, random);
+                // The second end is read against the donor: its `Hit`s are numbered from the far end.
+                final List<Hit> far = new ArrayList<>();
+                for (final Hit hit : hits(donor, start + size - READ_LENGTH, READ_LENGTH)) {
+                    far.add(new Hit(hit.piece, READ_LENGTH - hit.readStart - hit.length, hit.refStart, hit.length));
+                }
+                final boolean firstIsFirst = random.nextBoolean();
+                final List<SAMRecord> one = placed(header, name, firstIsFirst ? 0x40 : 0x80, forward, quals1,
+                        hits(donor, start, READ_LENGTH), false, group, random);
+                final List<SAMRecord> two = placed(header, name, firstIsFirst ? 0x80 : 0x40, revcomp(backward), quals2,
+                        far, true, group, random);
+                mates(one, two.get(0), size);
+                mates(two, one.get(0), size);
+                reads.addAll(one);
+                reads.addAll(two);
+            }
+            // Some of what a run has to skip or carry: a duplicate, a failed read, unmapped mates.
+            final List<SAMRecord> extra = new ArrayList<>();
+            for (int at = 0; at < reads.size(); at += 97) {
+                final SAMRecord record = reads.get(at);
+                if ((record.getFlags() & 0x800) != 0) continue;
+                record.setFlags(record.getFlags() | (at % 2 == 0 ? 0x400 : 0x200));
+            }
+            reads.addAll(extra);
+            return reads;
+        }
+
+        static byte[] qualities(final java.util.Random random) {
+            final byte[] quals = new byte[READ_LENGTH];
+            for (int at = 0; at < READ_LENGTH; at++) {
+                quals[at] = (byte) (25 + random.nextInt(11));
+            }
+            return quals;
+        }
+
+        static void noise(final byte[] bases, final java.util.Random random) {
+            for (int at = 0; at < bases.length; at++) {
+                if (random.nextInt(500) == 0) {
+                    bases[at] = (byte) "ACGT".charAt(random.nextInt(4));
+                }
+            }
+        }
+
+        static SAMFileHeader header(final SAMFileHeader.SortOrder order) {
+            final SAMFileHeader header = new SAMFileHeader();
+            for (int contig = 0; contig < CONTIGS.length; contig++) {
+                header.addSequence(new SAMSequenceRecord(CONTIGS[contig], LENGTHS[contig]));
+            }
+            for (final String[] group : new String[][] {{"rg1", "libA"}, {"rg2", "libA"}}) {
+                final SAMReadGroupRecord record = new SAMReadGroupRecord(group[0]);
+                record.setSample("sampleS");
+                record.setLibrary(group[1]);
+                record.setPlatform("ILLUMINA");
+                header.addReadGroup(record);
+            }
+            header.setSortOrder(order);
+            return header;
+        }
+
+        static void write(final Path path, final SAMFileHeader header, final List<SAMRecord> records) {
+            final boolean sorted = header.getSortOrder() == SAMFileHeader.SortOrder.coordinate;
+            try (SAMFileWriter writer = new SAMFileWriterFactory().setCreateIndex(sorted)
+                    .makeBAMWriter(header, false, path)) {
+                records.forEach(writer::addAlignment);
+            }
+        }
+
+        static void fixtures(final Path DIR) throws Exception {
+            final java.util.Random random = new java.util.Random(20261102L);
+            reference = new String[CONTIGS.length];
+            final StringBuilder fasta = new StringBuilder();
+            final StringBuilder dict = new StringBuilder("@HD\tVN:1.6\n");
+            for (int contig = 0; contig < CONTIGS.length; contig++) {
+                final StringBuilder sequence = new StringBuilder(LENGTHS[contig]);
+                for (int at = 0; at < LENGTHS[contig]; at++) {
+                    sequence.append("ACGT".charAt(random.nextInt(4)));
+                }
+                reference[contig] = sequence.toString();
+                fasta.append('>').append(CONTIGS[contig]).append('\n');
+                for (int at = 0; at < LENGTHS[contig]; at += 60) {
+                    fasta.append(reference[contig], at, Math.min(at + 60, LENGTHS[contig])).append('\n');
+                }
+                dict.append("@SQ\tSN:").append(CONTIGS[contig]).append("\tLN:").append(LENGTHS[contig]).append('\n');
+            }
+            final Path fastaPath = DIR.resolve("svbp_sv.fasta");
+            Files.writeString(fastaPath, fasta.toString(), StandardCharsets.UTF_8);
+            htsjdk.samtools.reference.FastaSequenceIndexCreator.create(fastaPath, true);
+            Files.writeString(DIR.resolve("svbp_sv.dict"), dict.toString(), StandardCharsets.UTF_8);
+            new org.broadinstitute.hellbender.Main().instanceMain(new String[] {"BwaMemIndexImageCreator",
+                    "-I", fastaPath.toString(), "-O", DIR.resolve("svbp_sv.fasta.img").toString()});
+
+            final SAMFileHeader sorted = header(SAMFileHeader.SortOrder.coordinate);
+            write(DIR.resolve("svbp_reads.bam"), sorted, simulate(sorted, donor(), 40, 7L));
+            write(DIR.resolve("svbp_shallow.bam"), sorted, simulate(sorted, donor(), 8, 8L));
+            // The same genome with no deletion on it, whose evidence is only what chance gives.
+            write(DIR.resolve("svbp_other.bam"), sorted, simulate(sorted, List.of(new Piece(0, 0, 16000, false),
+                    new Piece(1, 0, 9000, false)), 30, 9L));
+            final SAMFileHeader unsorted = header(SAMFileHeader.SortOrder.unsorted);
+            write(DIR.resolve("svbp_not-sorted.bam"), unsorted, simulate(unsorted, donor(), 2, 10L));
+
+            final String kmer = reference[0].substring(1000, 1051);
+            Files.writeString(DIR.resolve("svbp_kill.txt"), kmer + "\n" + reference[1].substring(7000, 7051) + "\n");
+            Files.writeString(DIR.resolve("svbp_kill31.txt"), reference[0].substring(1000, 1031) + "\n");
+            Files.writeString(DIR.resolve("svbp_kill32.txt"), reference[0].substring(1000, 1032) + "\n");
+            Files.writeString(DIR.resolve("svbp_cnv.vcf"), "##fileformat=VCFv4.2\n"
+                    + "##ALT=<ID=DEL,Description=\"Deletion\">\n"
+                    + "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End\">\n"
+                    + "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type\">\n"
+                    + "##INFO=<ID=SVLEN,Number=.,Type=Integer,Description=\"Length\">\n"
+                    + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                    + "##FORMAT=<ID=CN,Number=1,Type=Integer,Description=\"Copies\">\n"
+                    + "##contig=<ID=chr1,length=16000>\n##contig=<ID=chr2,length=9000>\n"
+                    + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsampleS\n"
+                    + "chr1\t6001\tcnvDel\t" + reference[0].charAt(6000) + "\t<DEL>\t60\t.\tEND=6800;SVTYPE=DEL;SVLEN=-799\tGT:CN\t0/1:1\n");
+            Files.writeString(DIR.resolve("svbp_kill-wrong-length.txt"), kmer + "\nACGT\n");
+            Files.writeString(DIR.resolve("svbp_kill-not-bases.txt"), kmer + "\n" + "N".repeat(51) + "\n");
+            Files.writeString(DIR.resolve("svbp_external.bed"), "chr1\t2000\t2100\nchr1\t3000\t4000\nchr2\t1000\t1100\n");
+            Files.writeString(DIR.resolve("svbp_external-unsorted.bed"), "chr1\t3000\t3100\nchr1\t2000\t2100\n");
+            Files.writeString(DIR.resolve("svbp_external-off.bed"), "chrOther\t3000\t3100\n");
+            Files.writeString(DIR.resolve("svbp_gaps.txt"), "# a comment\nchr1\t5900\t5950\n");
+            Files.writeString(DIR.resolve("svbp_gaps-columns.txt"), "chr1\t5900\n");
+            Files.writeString(DIR.resolve("svbp_gaps-contig.txt"), "chrOther\t5900\t5950\n");
+            Files.writeString(DIR.resolve("svbp_cross.txt"), "chr2\n");
+            Files.writeString(DIR.resolve("svbp_cross-off.txt"), "chrOther\n");
+        }
+
+
     }
 
     /**

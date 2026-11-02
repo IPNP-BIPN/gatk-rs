@@ -913,9 +913,24 @@ fn breakpoint_arguments(parser: &Parser) -> Result<sv_breakpoints::Arguments, Th
         ("kmer-max-dust-score", "maxDUSTScore", 49, 1),
         ("min-evidence-mapq", "minEvidenceMapQ", 20, 0),
         ("min-evidence-match-length", "minEvidenceMatchLength", 45, 1),
-        ("allowed-short-fragment-overhang", "allowedShortFragmentOverhang", 10, 0),
-        ("max-tracked-fragment-length", "maxTrackedFragmentLength", 2000, 1),
-        ("high-depth-coverage-peak-factor", "highDepthCoveragePeakFactor", 7, 1),
+        (
+            "allowed-short-fragment-overhang",
+            "allowedShortFragmentOverhang",
+            10,
+            0,
+        ),
+        (
+            "max-tracked-fragment-length",
+            "maxTrackedFragmentLength",
+            2000,
+            1,
+        ),
+        (
+            "high-depth-coverage-peak-factor",
+            "highDepthCoveragePeakFactor",
+            7,
+            1,
+        ),
     ] {
         let value = int(name, default);
         if value < least {
@@ -941,11 +956,26 @@ fn breakpoint_arguments(parser: &Parser) -> Result<sv_breakpoints::Arguments, Th
         ("cleaner-max-intervals", "cleanerMaxIntervals", 3, 1),
         ("cleaner-min-kmer-count", "cleanerMinKmerCount", 4, 1),
         ("cleaner-max-copy-number", "cleanerMaxCopyNumber", 4, 1),
-        ("assembly-to-mapped-size-ratio-guess", "assemblyToMappedSizeRatioGuess", 7, 1),
+        (
+            "assembly-to-mapped-size-ratio-guess",
+            "assemblyToMappedSizeRatioGuess",
+            7,
+            1,
+        ),
         ("max-fastq-size", "maxFASTQSize", 3_000_000, 1),
-        ("exclusion-interval-padding", "exclusionIntervalPadding", 0, 0),
+        (
+            "exclusion-interval-padding",
+            "exclusionIntervalPadding",
+            0,
+            0,
+        ),
         ("external-evidence-weight", "externalEvidenceWeight", 10, 1),
-        ("external-evidence-uncertainty", "externalEvidenceUncertainty", 150, 1),
+        (
+            "external-evidence-uncertainty",
+            "externalEvidenceUncertainty",
+            150,
+            1,
+        ),
     ] {
         let value = int(name, default);
         if value < least {
@@ -1016,6 +1046,11 @@ fn breakpoint_failure(failure: sv_breakpoints::Failure) -> Thrown {
              {path} ({})",
             java_io_reason(&error)
         )),
+        Failure::CreateInTask { path, error } => evidence_task_failure(&format!(
+            "org.broadinstitute.hellbender.exceptions.UserException$CouldNotCreateOutputFile: \
+             Could not create file at path:{path} due to {path} ({})",
+            java_io_reason(&error)
+        )),
         Failure::Read { path, error } => Thrown::user(format!(
             "Couldn't read file {path}. Error was: {path} ({})",
             java_io_reason(&error)
@@ -1034,7 +1069,8 @@ fn external_evidence(
     metadata: &gatk_tools::read_metadata::ReadMetadata,
 ) -> Result<Vec<sv_evidence::Evidence>, Thrown> {
     use sv_evidence::{fixed_width, Evidence, EvidenceKind, SvInterval};
-    let Some(path) = argument(parser, "external-evidence").or_else(|| argument(parser, "cnv-calls"))
+    let Some(path) =
+        argument(parser, "external-evidence").or_else(|| argument(parser, "cnv-calls"))
     else {
         return Ok(Vec::new());
     };
@@ -1282,8 +1318,8 @@ pub fn structural_variation_discovery_pipeline_spark(parser: &Parser) -> Outcome
         .iter()
         .map(|sequence| sequence.name.clone())
         .collect();
-    let raw = sv_breakpoints::contig_records(&results.assemblies, &names)
-        .map_err(breakpoint_failure)?;
+    let raw =
+        sv_breakpoints::contig_records(&results.assemblies, &names).map_err(breakpoint_failure)?;
     // `filterAndConvertToAlignedContigViaSAM`, a contig's mapped lines together.
     let mut parsed: Vec<Vec<BamRecord>> = Vec::new();
     let mut held: Option<&str> = None;
@@ -1404,16 +1440,17 @@ fn sv_read_metadata(
             }
         }
     }
-    ReadMetadata::with_arguments(header, records, arguments_read, ignored_contigs)
-            .map_err(|failure| {
-                match failure {
-        MetadataFailure::Unpaired => evidence_task_failure(
-            "java.lang.IllegalStateException: Cannot get mate information for an unpaired read",
-        ),
-        MetadataFailure::NoReads => Thrown::non_user("java.lang.ArithmeticException", "/ by zero"),
-        MetadataFailure::Order(error) => Thrown::user(format!("{error:?}")),
-    }
-            })
+    ReadMetadata::with_arguments(header, records, arguments_read, ignored_contigs).map_err(
+        |failure| match failure {
+            MetadataFailure::Unpaired => evidence_task_failure(
+                "java.lang.IllegalStateException: Cannot get mate information for an unpaired read",
+            ),
+            MetadataFailure::NoReads => {
+                Thrown::non_user("java.lang.ArithmeticException", "/ by zero")
+            }
+            MetadataFailure::Order(error) => Thrown::user(format!("{error:?}")),
+        },
+    )
 }
 
 fn evidence_task_failure(message: &str) -> Thrown {
@@ -1700,14 +1737,11 @@ fn sv_assembly_interpretation(
     let classified = assembly::preprocess(records, header, canonical).map_err(in_task)?;
 
     // `extractSimpleVariants`.
-    let simple_calls =
-        assembly::simple_calls(&classified, header, reference).map_err(in_task)?;
+    let simple_calls = assembly::simple_calls(&classified, header, reference).map_err(in_task)?;
     check_sv_truth(parser, header, |padding| {
         simple_calls.check_padded_breakpoints(padding)
     })?;
-    let simple = simple_calls
-        .variants(header, cnv_calls)
-        .map_err(in_task)?;
+    let simple = simple_calls.variants(header, cnv_calls).map_err(in_task)?;
     let write = |name: &str, variants: &[htsjdk_vcf::variant::VariantContext]| {
         write_sv_vcf(
             parser,
@@ -1724,21 +1758,15 @@ fn sv_assembly_interpretation(
     write("Complex.vcf", &assembly::complex_variants(&complex))?;
     let one_segment =
         assembly::zero_or_one_segment_variants(&complex, reference).map_err(in_task)?;
-    let from_segments =
-        assembly::multi_segment_variants(&complex, reference).map_err(in_task)?;
+    let from_segments = assembly::multi_segment_variants(&complex, reference).map_err(in_task)?;
     let pairs = assembly::pair_iteration_adjacencies(&complex, records, header, canonical)
         .map_err(in_task)?;
     check_sv_truth(parser, header, |padding| {
         pairs.check_padded_breakpoints(padding)
     })?;
-    let from_pairs = assembly::pair_iteration_variants(
-        &pairs,
-        &complex,
-        header,
-        reference,
-        cnv_calls,
-    )
-    .map_err(in_task)?;
+    let from_pairs =
+        assembly::pair_iteration_variants(&pairs, &complex, header, reference, cnv_calls)
+            .map_err(in_task)?;
     let multi_segment = assembly::remove_duplicates(from_segments, from_pairs).map_err(in_task)?;
     write("cpx_reinterpreted_simple_1_seg.vcf", &one_segment)?;
     write("cpx_reinterpreted_simple_multi_seg.vcf", &multi_segment)?;
@@ -1789,7 +1817,10 @@ fn sv_assembly_interpretation(
 }
 
 /// `SVUtils.getCanonicalChromosomes`.
-fn sv_canonical_chromosomes(path: Option<String>, header: &SamHeader) -> Result<Vec<String>, Thrown> {
+fn sv_canonical_chromosomes(
+    path: Option<String>,
+    header: &SamHeader,
+) -> Result<Vec<String>, Thrown> {
     let mut canonical: Vec<String> = header
         .sequences
         .iter()

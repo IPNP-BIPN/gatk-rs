@@ -501,6 +501,10 @@ jobs:
             index: "71/71"
             slug: "spark-walkers-htsget-reader-interpreter-tools"
             suites: "spark-walkers htsget-reader interpreter-tools"
+          - group: golden-pending
+            index: "1/1"
+            slug: "sv-evidence"
+            suites: "sv-evidence"
     steps:
       - uses: actions/checkout@v7
 
@@ -600,6 +604,7 @@ jobs:
             --tool PlotDenoisedCopyRatios --tool PlotModeledSegments --tool DetermineGermlineContigPloidy \
             --tool GermlineCNVCaller --tool PostprocessGermlineCNVCalls --tool ScoreVariantAnnotations \
             --tool TrainVariantAnnotationsModel --tool NVScoreVariants \
+            --tool FindBreakpointEvidenceSpark --tool StructuralVariationDiscoveryPipelineSpark \
             --tool ExtractOriginalAlignmentRecordsByNameSpark --tool MeanQualityByCycleSpark \
             --tool QualityScoreDistributionSpark --tool CollectBaseDistributionByCycleSpark \
             --tool CollectQualityYieldMetricsSpark \
