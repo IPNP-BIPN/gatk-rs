@@ -157,7 +157,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `AddFlowBaseQuality` | unclassified | oracle-backed | add-flow-base-quality | 1 | t=2, 24/24 rows (100%) | 0.004 / 0.054 |
 | `AddFlowSNVQuality` | flow-based | oracle-backed | add-flow-snv-quality | 1 | t=2, 26/26 rows (100%) | 0.004 / 0.061 |
 | `AddOriginalAlignmentTags` | unclassified | oracle-backed | add-oa-tags | 1 | t=2, 18/18 rows (100%) | 0.003 / 0.044 |
-| `AlleleFrequencyQC` | unclassified | oracle-backed | allele-frequency-qc | 1 | t=2, 26/26 rows (100%) | not measured |
+| `AlleleFrequencyQC` | unclassified | oracle-backed | allele-frequency-qc, r-plots | 2 | t=2, 26/26 rows (100%) | not measured |
 | `AnalyzeCovariates` | reporting-walker | oracle-backed | analyze-covariates | 1 | t=2, 11/11 rows (100%) | 0.003 / 0.083 |
 | `AnalyzeSaturationMutagenesis` | locus-walker | oracle-backed | analyze-saturation-mutagenesis | 1 | t=2, 21/21 rows (100%) | 0.003 / 0.056 |
 | `AnnotateIntervals` | cnv-segmentation | oracle-backed | annotate-intervals | 1 | t=2, 19/19 rows (100%) | 0.003 / 0.067 |
@@ -291,8 +291,8 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `PathSeqScoreSpark` | metagenomics | oracle-backed | spark-walkers | 1 | not measured | not measured |
 | `Pileup` | locus-walker | oracle-backed | pileup-tool | 1 | t=2, 18/18 rows (100%) | 0.004 / 0.099 |
 | `PileupSpark` | locus-walker | oracle-backed | spark-walkers | 1 | t=2, 22/22 rows (100%) | not measured |
-| `PlotDenoisedCopyRatios` | cnv-segmentation | oracle-backed | interpreter-tools | 1 | not measured | not measured |
-| `PlotModeledSegments` | cnv-segmentation | oracle-backed | interpreter-tools | 1 | not measured | not measured |
+| `PlotDenoisedCopyRatios` | cnv-segmentation | oracle-backed | interpreter-tools, r-plots | 2 | not measured | not measured |
+| `PlotModeledSegments` | cnv-segmentation | oracle-backed | interpreter-tools, r-plots | 2 | not measured | not measured |
 | `PostProcessReadsForRSEM` | record-transform | oracle-backed | post-process-reads-for-rsem | 1 | t=2, 20/20 rows (100%) | 0.002 / 0.029 |
 | `PostprocessGermlineCNVCalls` | cnv-segmentation | oracle-backed | interpreter-tools | 1 | not measured | not measured |
 | `PreprocessIntervals` | interval-utility | oracle-backed | preprocess-intervals | 1 | t=2, 20/20 rows (100%) | 0.004 / 0.095 |

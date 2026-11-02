@@ -320,11 +320,7 @@ pub(super) fn plot_allele_frequency_qc(
     };
     run_r_scripts(
         &[R_BOOTSTRAP, PLOT_ALLELE_FREQUENCY_QC],
-        &[
-            report_path,
-            java_absolute_path(metrics),
-            sample.to_string(),
-        ],
+        &[report_path, java_absolute_path(metrics), sample.to_string()],
     )
 }
 
@@ -385,7 +381,11 @@ pub fn plot_denoised_copy_ratios(parser: &Parser) -> Outcome {
         ),
         format!(
             "--point_size_copy_ratio={}",
-            double_argument(parser, "point-size-copy-ratio", DEFAULT_POINT_SIZE_COPY_RATIO)
+            double_argument(
+                parser,
+                "point-size-copy-ratio",
+                DEFAULT_POINT_SIZE_COPY_RATIO
+            )
         ),
         format!("--output_dir={}/", canonical_path(&output)),
         format!("--output_prefix={prefix}"),
@@ -536,7 +536,11 @@ pub fn plot_modeled_segments(parser: &Parser) -> Outcome {
         ),
         format!(
             "--point_size_copy_ratio={}",
-            double_argument(parser, "point-size-copy-ratio", DEFAULT_POINT_SIZE_COPY_RATIO)
+            double_argument(
+                parser,
+                "point-size-copy-ratio",
+                DEFAULT_POINT_SIZE_COPY_RATIO
+            )
         ),
         format!(
             "--point_size_allele_fraction={}",

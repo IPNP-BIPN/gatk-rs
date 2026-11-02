@@ -70,7 +70,9 @@ fn manifest_path(relative: &str) -> PathBuf {
 }
 
 fn r_source(name: &str) -> String {
-    manifest_path(&format!("src/r/{name}")).display().to_string()
+    manifest_path(&format!("src/r/{name}"))
+        .display()
+        .to_string()
 }
 
 fn read_back_script() -> String {
@@ -175,7 +177,10 @@ fn files_under(dir: &Path) -> BTreeSet<String> {
 /// What a run added to the working directory, as `cwd/` rows, gone afterwards.
 fn take_working_directory() -> BTreeSet<String> {
     let mut found = BTreeSet::new();
-    for entry in std::fs::read_dir(".").expect("the scratch directory").flatten() {
+    for entry in std::fs::read_dir(".")
+        .expect("the scratch directory")
+        .flatten()
+    {
         let name = entry.file_name().to_string_lossy().to_string();
         if name != "r-plots-dump" {
             std::fs::remove_file(entry.path()).expect("a file in the scratch directory");
@@ -265,7 +270,11 @@ fn compare_outputs(text: &str, run: &Run, root: &Path, failures: &mut Vec<String
         .iter()
         .map(|row| (*row).to_string())
         .collect();
-    let exports = if succeeded { kind.exports(prefix) } else { Vec::new() };
+    let exports = if succeeded {
+        kind.exports(prefix)
+    } else {
+        Vec::new()
+    };
     expected.extend(exports.iter().cloned());
     if produced != expected {
         failures.push(format!(
@@ -307,8 +316,10 @@ fn compare_outputs(text: &str, run: &Run, root: &Path, failures: &mut Vec<String
     match read_back(kind, &frame, root) {
         Ok(ours) => {
             let ours: Vec<&str> = ours.lines().collect();
-            let reference: Vec<String> =
-                rows(text, "trace", label).iter().map(|row| unescape(row)).collect();
+            let reference: Vec<String> = rows(text, "trace", label)
+                .iter()
+                .map(|row| unescape(row))
+                .collect();
             if ours != reference {
                 failures.push(format!(
                     "{label}: the export reads back as\n{}\nand the reference plotted\n{}",
@@ -374,7 +385,9 @@ fn replay(text: &str, root: &Path, failures: &mut Vec<String>) {
         let status = match &refusal {
             None => 0,
             Some(error) => {
-                let class = error.split_once(':').map_or(error.as_str(), |(class, _)| class);
+                let class = error
+                    .split_once(':')
+                    .map_or(error.as_str(), |(class, _)| class);
                 if class.starts_with("org.broadinstitute.barclay") {
                     1
                 } else if class.contains("hellbender.exceptions.UserException") {

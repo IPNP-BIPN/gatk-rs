@@ -15761,7 +15761,10 @@ pub fn allele_frequency_qc(parser: &Parser) -> Outcome {
         &sample,
     )?;
     let (_, p_value) = qc::metrics(&bins, variance);
-    if qc::complains(p_value, double_or(parser, "threshold", qc::DEFAULT_THRESHOLD)) {
+    if qc::complains(
+        p_value,
+        double_or(parser, "threshold", qc::DEFAULT_THRESHOLD),
+    ) {
         eprintln!("ERROR AlleleFrequencyQC - {}", qc::complaint(p_value));
     }
     Ok(None)
