@@ -89,7 +89,7 @@ public class SparkWalkersDump {
         PrintReadsDump.emptyDirectory(DIR);
         Files.createDirectories(DIR);
 
-        System.out.println("# SparkWalkersDump: twenty-two Spark tools through Main, --spark-master local[1]");
+        System.out.println("# SparkWalkersDump: twenty-four Spark tools through Main, --spark-master local[1]");
 
         final Path fasta = DIR.resolve("ref.fasta");
         Files.write(fasta, ReadWalkerDump.FASTA.getBytes());
@@ -184,8 +184,12 @@ public class SparkWalkersDump {
         insertSizeFixture(DIR.resolve("pairs-unsorted.bam"), SAMFileHeader.SortOrder.unsorted,
                 false);
 
+        kmerFixtures();
+
         // The fixtures travel, so the port runs over these bytes rather than its own rebuild.
-        for (final String name : new String[] {"ref.fasta", "ref.fasta.fai", "ref.dict",
+        for (final String name : new String[] {"kmers.fasta", "kmers.fasta.fai", "kmers.dict",
+                "kmers-big.fasta", "kmers-big.fasta.fai", "kmers-big.dict", "high-copy.fasta",
+                "high-copy-blank.fasta", "high-copy.fasta.gz", "ref.fasta", "ref.fasta.fai", "ref.dict",
                 "reads.bam", "reads.bai", "plain.vcf", "genotyped.vcf", "revert.map.tsv",
                 "revert.bad-map.tsv", "names.txt", "dup-a.bam", "dup-a.bai", "dup-marks.bam",
                 "dup-marks.bai", "dup-renamed.bam", "dup-uneven.bam", "dup-moved.bam",
@@ -503,6 +507,42 @@ public class SparkWalkersDump {
             argv.addAll(Arrays.asList(row).subList(1, row.length));
             run(row[0], "allelic.tsv", allelic, argv.toArray(new String[0]));
         }
+
+        kmerRows();
+
+        // CALCMETADATASPARK reads everything, filters nothing, and names one partition.
+        final String metadata = "CalcMetadataSpark";
+        final String[][] metadataRows = {
+                {"metadata-pairs", "pairs.bam"},
+                {"metadata-pairs-binary", "pairs.bam", "--write-as-binary"},
+                {"metadata-pairs-away", "pairs-away.bam"},
+                {"metadata-pairs-unsorted", "pairs-unsorted.bam"},
+                {"metadata-pairs-interval", "pairs.bam", "-L", "chr1:1-150"},
+                {"metadata-marking", "marking.bam"},
+                {"metadata-marking-binary", "marking.bam", "--write-as-binary"},
+                {"metadata-marking-queryname", "marking-queryname.bam"},
+                {"metadata-no-groups", "marking-no-groups.bam"},
+                {"metadata-unknown-group", "marking-unknown-read-group.bam"},
+                {"metadata-one-library", "marking-one-library.bam"},
+                {"metadata-more-programs", "more-programs-a.bam"},
+                {"metadata-reads", "reads.bam"},
+                {"metadata-dup", "dup-a.bam"},
+                {"metadata-away", "marking.bam", "-L", "chr2:190-200"},
+                {"metadata-filter-ignored", "pairs.bam", "--read-filter", "ReadLengthReadFilter",
+                        "--min-read-length", "1000", "--max-read-length", "2000"},
+                {"metadata-two-inputs", "pairs.bam", "-I", DIR.resolve("pairs-away.bam").toString()},
+                {"metadata-missing", "nowhere.bam"},
+        };
+        for (final String[] row : metadataRows) {
+            final List<String> argv = new ArrayList<>(Arrays.asList(
+                    "-I", DIR.resolve(row[1]).toString(), "-O", out(row[0], "metadata.txt")));
+            argv.addAll(Arrays.asList(row).subList(2, row.length));
+            run(row[0], "metadata.txt", metadata, argv.toArray(new String[0]));
+        }
+        run("metadata-no-directory", null, metadata, "-I", DIR.resolve("pairs.bam").toString(),
+                "-O", DIR.resolve("nowhere/metadata.txt").toString());
+        run("metadata-binary-no-directory", null, metadata, "-I", DIR.resolve("pairs.bam").toString(),
+                "-O", DIR.resolve("nowhere/metadata.txt").toString(), "--write-as-binary");
         run("allelic-counts-no-reference", null, allelic, "-I", i, "-L", "chr1:95-125",
                 "-O", out("allelic-counts-no-reference", "allelic.tsv"));
         // marking.bam's contigs are longer than the reference's, so these turn validation off.
@@ -1233,6 +1273,105 @@ public class SparkWalkersDump {
             System.out.printf("file\t%s\t%s\t%s%n", label, outDir.relativize(path),
                     Base64.getEncoder().encodeToString(withoutTheTime(path)));
         }
+    }
+
+    /** A sequence of random bases that the same seed always gives. */
+    static String randomBases(final java.util.Random random, final int length) {
+        final StringBuilder bases = new StringBuilder(length);
+        for (int i = 0; i != length; ++i) {
+            bases.append("ACGT".charAt(random.nextInt(4)));
+        }
+        return bases.toString();
+    }
+
+    static void kmerReference(final String stem, final String fasta) throws Exception {
+        final Path path = DIR.resolve(stem + ".fasta");
+        Files.write(path, fasta.getBytes());
+        FastaSequenceIndexCreator.create(path, true);
+        new picard.sam.CreateSequenceDictionary().instanceMain(new String[] {
+                "R=" + path, "O=" + DIR.resolve(stem + ".dict")});
+    }
+
+    /** Repeats a few times over and many times over, either case, broken by Ns, and low complexity. */
+    static void kmerFixtures() throws Exception {
+        final java.util.Random random = new java.util.Random(8675309);
+        final String unit = randomBases(random, 300);
+        final StringBuilder first = new StringBuilder(">chr1\n");
+        for (int copy = 0; copy != 5; ++copy) {
+            first.append(copy == 2 ? unit.toLowerCase() : unit).append(randomBases(random, 40));
+        }
+        first.append("\n>chr2\n").append(unit).append('N').append(unit).append('N').append(unit)
+                .append('N').append(unit).append('\n');
+        first.append(">chr3\n");
+        for (int copy = 0; copy != 40; ++copy) {
+            first.append("AC");
+        }
+        first.append('\n');
+        kmerReference("kmers", first.toString());
+
+        // Over 104 records of 9950 bases, so two partitions, and over the maps' first sizes.
+        final String big = randomBases(random, 1500);
+        final StringBuilder second = new StringBuilder(">big\n");
+        for (int copy = 0; copy != 720; ++copy) {
+            second.append(big);
+        }
+        second.append('\n');
+        kmerReference("kmers-big", second.toString());
+
+        final String highCopy = ">one\n" + randomBases(random, 60) + "\n" + randomBases(random, 60)
+                + "\n>two\r\n" + unit.substring(0, 90) + "\r\n>three\n>four\n"
+                + unit.substring(0, 90) + "n" + randomBases(random, 30);
+        Files.write(DIR.resolve("high-copy.fasta"), highCopy.getBytes());
+        Files.write(DIR.resolve("high-copy-blank.fasta"), ">one\nACGTACGT\n\nACGT\n".getBytes());
+        try (final java.util.zip.GZIPOutputStream zipped = new java.util.zip.GZIPOutputStream(
+                Files.newOutputStream(DIR.resolve("high-copy.fasta.gz")))) {
+            zipped.write(highCopy.getBytes());
+        }
+    }
+
+    /** FINDBADGENOMICKMERSSPARK writes what it collected, in the order its tables hold it. */
+    static void kmerRows() throws Exception {
+        final String tool = "FindBadGenomicKmersSpark";
+        final String ref = DIR.resolve("kmers.fasta").toString();
+        final String[][] runs = {
+                {"kmers-default"},
+                {"kmers-21", "--k-size", "21"},
+                {"kmers-dust", "--k-size", "21", "--kmer-max-dust-score", "3"},
+                {"kmers-dust-off", "--k-size", "21", "--kmer-max-dust-score", "1000"},
+                {"kmers-odd-small", "--k-size", "5"},
+                {"kmers-long", "--k-size", "63"},
+                {"kmers-65", "--k-size", "65"},
+                {"kmers-high-copy", "--k-size", "21", "--high-copy-fasta",
+                        DIR.resolve("high-copy.fasta").toString()},
+                {"kmers-high-copy-gz", "--k-size", "21", "--high-copy-fasta",
+                        DIR.resolve("high-copy.fasta.gz").toString()},
+                {"kmers-high-copy-blank", "--high-copy-fasta",
+                        DIR.resolve("high-copy-blank.fasta").toString()},
+                {"kmers-high-copy-missing", "--high-copy-fasta",
+                        DIR.resolve("nowhere.fasta").toString()},
+                {"kmers-high-copy-even", "--k-size", "4000", "--high-copy-fasta",
+                        DIR.resolve("high-copy.fasta").toString()},
+                {"kmers-even", "--k-size", "20"},
+                {"kmers-too-small", "--k-size", "3"},
+                {"kmers-zero", "--k-size", "0"},
+                {"kmers-negative", "--k-size", "-1"},
+                {"kmers-no-dust", "--kmer-max-dust-score", "0"},
+        };
+        for (final String[] one : runs) {
+            final List<String> rest = new ArrayList<>(Arrays.asList("-R", ref, "-O",
+                    out(one[0], one[0] + ".txt")));
+            rest.addAll(Arrays.asList(one).subList(1, one.length));
+            run(one[0], one[0] + ".txt", tool, rest.toArray(new String[0]));
+        }
+        run("kmers-big", "kmers-big.txt", tool, "-R", DIR.resolve("kmers-big.fasta").toString(),
+                "-O", out("kmers-big", "kmers-big.txt"), "--k-size", "31");
+        run("kmers-reads", "kmers-reads.txt", tool, "-R", DIR.resolve("ref.fasta").toString(),
+                "-I", DIR.resolve("reads.bam").toString(), "-O", out("kmers-reads", "kmers-reads.txt"));
+        run("kmers-reads-mismatch", "kmers-reads-mismatch.txt", tool, "-R", ref,
+                "-I", DIR.resolve("reads.bam").toString(),
+                "-O", out("kmers-reads-mismatch", "kmers-reads-mismatch.txt"));
+        run("kmers-no-directory", null, tool, "-R", ref,
+                "-O", DIR.resolve("nowhere/kmers.txt").toString());
     }
 
     /** A metrics file with the one line two runs cannot share taken out. */

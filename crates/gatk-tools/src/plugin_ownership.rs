@@ -324,7 +324,9 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         | "FlagStatSpark"
         | "ApplyBQSRSpark"
         | "BQSRPipelineSpark"
-        | "CollectMultipleMetricsSpark" => Some(&["WellformedReadFilter"]),
+        | "CollectMultipleMetricsSpark"
+        | "FindBadGenomicKmersSpark"
+        | "CalcMetadataSpark" => Some(&["WellformedReadFilter"]),
         // `PileupSpark.getDefaultReadFilters`: Pileup's five, with the wellformed filter LAST.
         // `GATKSparkTool`'s, then `CollectAllelicCounts.DEFAULT_ADDITIONAL_READ_FILTERS`.
         "CollectAllelicCountsSpark" => Some(&[
