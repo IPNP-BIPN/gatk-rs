@@ -466,7 +466,9 @@ pub fn write(forest: &Forest) -> Vec<u8> {
     w.op(EMPTY_LIST);
     w.memoize();
     let features = little_ints(0..columns);
-    w.appends(forest.trees.len(), |w, _| w.array(&[columns], I8, &features));
+    w.appends(forest.trees.len(), |w, _| {
+        w.array(&[columns], I8, &features)
+    });
     w.string("_seeds");
     w.array(
         &[forest.seeds.len() as i64],
@@ -680,7 +682,9 @@ fn interpret(bytes: &[u8]) -> Option<Vec<Value>> {
             }
             BININT => {
                 let b = take(bytes, &mut at, 4)?;
-                stack.push(Value::Int(i64::from(i32::from_le_bytes(b.try_into().ok()?))));
+                stack.push(Value::Int(i64::from(i32::from_le_bytes(
+                    b.try_into().ok()?,
+                ))));
             }
             LONG1 => {
                 let n = usize::from(take(bytes, &mut at, 1)?[0]);

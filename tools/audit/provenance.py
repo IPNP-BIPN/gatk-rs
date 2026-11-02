@@ -20,6 +20,10 @@ ALLOWED = {
     # Fully-qualified class names, and the bare repository names used in module headers that
     # cite a whole file rather than one symbol.
     "htsjdk": "htsjdk, MIT",
+    # The scalable VQSR's default backend: numpy's generator and the distribution GATK calibrates
+    # with. numpy is BSD-3-Clause, Hipparchus is Apache 2.0.
+    "numpy": "numpy, BSD-3-Clause",
+    "Hipparchus": "Hipparchus, Apache 2.0",
     "picard": "Picard, MIT",
     "org.broadinstitute.hellbender": "GATK, Apache 2.0",
     # Apache Commons JEXL 2.1.1, the expression language GATK resolves for

@@ -119,8 +119,12 @@ impl Hyperparameters {
                 }
                 "n_jobs" => {
                     if !value.is_null() {
-                        out.n_jobs =
-                            Some(value.as_i64().filter(|jobs| *jobs != 0).ok_or_else(unsupported)?);
+                        out.n_jobs = Some(
+                            value
+                                .as_i64()
+                                .filter(|jobs| *jobs != 0)
+                                .ok_or_else(unsupported)?,
+                        );
                     }
                 }
                 "verbose" if value.as_i64() == Some(0) => {}
@@ -195,12 +199,16 @@ pub fn median_statistics(rows: &[Vec<f64>]) -> Result<Vec<f64>, String> {
             .filter(|value| !value.is_nan())
             .collect();
         if values.iter().any(|value| value.is_infinite()) {
-            return Err("Input X contains infinity or a value too large for dtype('float64').".to_string());
+            return Err(
+                "Input X contains infinity or a value too large for dtype('float64').".to_string(),
+            );
         }
         if values.is_empty() {
-            return Err("Shape of imputed annotations differs from shape of raw annotations; at \
+            return Err(
+                "Shape of imputed annotations differs from shape of raw annotations; at \
                  least one feature is completely missing and hence dropped during imputation."
-                .to_string());
+                    .to_string(),
+            );
         }
         values.sort_by(f64::total_cmp);
         let half = values.len() / 2;
@@ -247,75 +255,267 @@ fn average_path_length(n: i64) -> f64 {
     2.0 * (log + EULER_GAMMA) - 2.0 * (n - 1.0) / n
 }
 
-/// `numpy.log(k)` for the whole numbers `1..=256`, as bits: glibc's `log`, measured in the reference's
+/// numpy's logarithm of the whole numbers `1..=256`, as bits: glibc's `log`, measured in the reference's
 /// image. `max_samples='auto'` caps a tree at 256 samples, so nothing else is ever asked; the FMA and
 /// the SSE2 variants of glibc agree on every whole number to 200000. fdlibm does not, by one unit in
 /// the last place at 3, 48, 74 and 196 among these, and that is enough to change a scorer's bytes.
 const LOG_OF_WHOLE: [u64; 256] = [
-    0x0000000000000000, 0x3fe62e42fefa39ef, 0x3ff193ea7aad030b, 0x3ff62e42fefa39ef,
-    0x3ff9c041f7ed8d33, 0x3ffcab0bfa2a2002, 0x3fff2272ae325a57, 0x4000a2b23f3bab73,
-    0x400193ea7aad030b, 0x40026bb1bbb55516, 0x40032ee3b77f374c, 0x4003e116bcd39e7d,
-    0x400485042b318c51, 0x40051cca16d7bba7, 0x4005aa16394d481f, 0x40062e42fefa39ef,
-    0x4006aa6bc1fa7f7a, 0x40071f7b3a6b9186, 0x40078e360604b32c, 0x4007f7427b73e391,
-    0x40085b2e946faeb1, 0x4008ba74773dc5c8, 0x4009157dfdd1b3f0, 0x40096ca77c922cf9,
-    0x4009c041f7ed8d33, 0x400a1094eaf01acd, 0x400a5ddfb8038490, 0x400aa85ad6964a23,
-    0x400af038cbcdfe1f, 0x400b35a6f90bd69b, 0x400b78ce48912b5a, 0x400bb9d3beb8c86b,
-    0x400bf8d8f4d5b8d1, 0x400c35fc81b90df6, 0x400c715a530ff3c5, 0x400cab0bfa2a2002,
-    0x400ce328ee3ac7bd, 0x400d19c6c5c341a8, 0x400d4ef968880dd6, 0x400d82d33b32720d,
-    0x400db565458eac4e, 0x400de6bf542e3d2d, 0x400e16f01614ec11, 0x400e460536fc5443,
-    0x400e740b76a3c9a4, 0x400ea10ebd90426c, 0x400ecd1a2f90f0b6, 0x400ef8383c50bb75,
-    0x400f2272ae325a57, 0x400f4bd2b7ac1baf, 0x400f7460ff5100ff, 0x400f9c25aaaea949,
-    0x400fc32868223cab, 0x400fe97077c2130c, 0x4010078259bafef3, 0x401019f5cb2a6c50,
-    0x40102c15a1ad9a59, 0x40103de4c5c6464d, 0x40104f65f9c72979, 0x4010609bdc65328b,
-    0x40107188eb126c0d, 0x4010822f8427dceb, 0x40109291e8e3181b, 0x4010a2b23f3bab73,
-    0x4010b29293942975, 0x4010c234da4a23a6, 0x4010d19af128112d, 0x4010e0c6a0bbce39,
-    0x4010efb99d941abb, 0x4010fe7589674121, 0x40110cfbf424d6c9, 0x40111b4e5cf4573f,
-    0x4011296e33222fe6, 0x4011375cd6fcab1d, 0x4011451b9aa2075c, 0x401152abc2c0e812,
-    0x4011600e874c323c, 0x40116d4514234e29, 0x40117a5089afb173, 0x40118731fd788044,
-    0x401193ea7aad030b, 0x4011a07b02a69d65, 0x4011ace48d62e482, 0x4011b92809f665d4,
-    0x4011c5465ef8a30a, 0x4011d1406ae9bd46, 0x4011dd1704923fd2, 0x4011e8cafb5d7160,
-    0x4011f45d17ae8af6, 0x4011ffce1b312c10, 0x40120b1ec1255cbe, 0x4012164fbea76874,
-    0x40122161c2f3d670, 0x40122c5577a7bf99, 0x4012372b80fdbce3, 0x401241e47e07a4f8,
-    0x40124c8108e54bf8, 0x40125701b6f8746a, 0x4012616719161d2b, 0x40126bb1bbb55516,
-    0x401275e2271bba31, 0x40127ff8df87c7bd, 0x401289f6655913ec, 0x401293db35369be2,
-    0x40129da7c8333aa5, 0x4012a75c93f06593, 0x4012b0fa0abf475b, 0x4012ba809bc050c4,
-    0x4012c3f0b3015506, 0x4012cd4ab99a4631, 0x4012d68f15c8a4a1, 0x4012dfbe2b09b38d,
-    0x4012e8d85a33835c, 0x4012f1de018ce197, 0x4012facf7ce43d45, 0x401303ad25a58d8b,
-    0x40130c7752ef47ae, 0x4013152e59a670b7, 0x40131dd28c89d653, 0x401326643c4479c9,
-    0x40132ee3b77f374c, 0x401337514af1b34b, 0x40133fad417296e9, 0x401347f7e4072429,
-    0x4013503179f229e7, 0x4013585a48c25f59, 0x4013607294602e42, 0x4013687a9f1af2b1,
-    0x40137072a9b5b6cb, 0x4013785af37370b3, 0x40138033ba22c862, 0x401387fd3a296ae4,
-    0x40138fb7ae8ef02c, 0x401397635107586b, 0x40139f0059fd2595, 0x4013a68f009b1577,
-    0x4013ae0f7ad5809d, 0x4013b581fd7361f9, 0x4013bce6bc170b12, 0x4013c43de946885e,
-    0x4013cb87b673b91e, 0x4013d2c454041e07, 0x4013d9f3f15861ce, 0x4013e116bcd39e7d,
-    0x4013e82ce3e2625c, 0x4013ef3693017724, 0x4013f633f5c46dee, 0x4013fd2536dbf25a,
-    0x4014040a801be72d, 0x40140ae3fa814e9a, 0x401411b1ce380053, 0x4014187422a02f50,
-    0x40141f2b1e53c142, 0x401425d6e72b797a, 0x40142c77a243f8fa, 0x4014330d74029567,
-    0x40143998801a085c, 0x40144018e98ef8b1, 0x4014468ed2bc5f18, 0x40144cfa5d57c782,
-    0x4014535baa75708e, 0x401459b2da8c4a48, 0x401460000d79d57b, 0x401466436285e4a3,
-    0x40146c7cf8663fb5, 0x401472aced422bc0, 0x401478d35eb5d75f, 0x40147ef069d5ad12,
-    0x401485042b318c51, 0x40148b0ebed7ea48, 0x401491104058db1c, 0x40149708cac90484,
-    0x40149cf878c47a87, 0x4014a2df64718710, 0x4014a8bda7835d30, 0x4014ae935b3cb89d,
-    0x4014b46098726a3b, 0x4014ba25778dd234, 0x4014bfe2108f4858, 0x4014c5967b10734e,
-    0x4014cb42ce468f2b, 0x4014d0e72104a3fc, 0x4014d68389bdacd0, 0x4014dc181e86afb2,
-    0x4014e1a4f518c72b, 0x4014e72a22d31dae, 0x4014eca7bcbcdb63, 0x4014f21dd78706d7,
-    0x4014f78c878e58de, 0x4014fcf3e0dd0421, 0x40150253f72c70ba, 0x401507acdde6ec36,
-    0x40150cfea8294e62, 0x4015124968c49336, 0x4015178d323f6a38, 0x40151cca16d7bba7,
-    0x40152200288423c1, 0x4015272f78f56469, 0x40152c581997cd86, 0x4015317a1b949c53,
-    0x401536958fd351f0, 0x40153baa86fb016f, 0x401540b9117395a5, 0x401545c13f670efb,
-    0x40154ac320c2b974, 0x40154fbec5385b2a, 0x401554b43c3f5b7d, 0x401559a39515e320,
-    0x40155e8cdec1f53c, 0x40156370281281e3, 0x4015684d7fa071fb, 0x40156d24f3cfacd1,
-    0x401571f692d0178c, 0x401576c26a9e8e99, 0x40157b888905d955, 0x40158048fb9f9802,
-    0x40158503cfd52c43, 0x401589b912e09c44, 0x40158e68d1cd70a9, 0x4015931319798d6f,
-    0x401597b7f69605e5, 0x40159c5775a7ebdf, 0x4015a0f1a3091a36, 0x4015a5868ae8facb,
-    0x4015aa16394d481f, 0x4015aea0ba12ca9a, 0x4015b32618ee11ab, 0x4015b7a6616c28d5,
-    0x4015bc219ef348c3, 0x4015c097dcc38483, 0x4015c50925f772fe, 0x4015c9758584d4c9,
-    0x4015cddd063d365f, 0x4015d23fb2ce8eec, 0x4015d69d95c3dba8, 0x4015daf6b985b7f5,
-    0x4015df4b285af236, 0x4015e39aec691d91, 0x4015e7e60fb5209a, 0x4015ec2c9c23c107,
-    0x4015f06e9b7a2c7e, 0x4015f4ac175e7e8a, 0x4015f8e5195843cd, 0x4015fd19aad0fa89,
-    0x40160149d5149079, 0x40160575a151de27, 0x4016099d189b1fbf, 0x40160dc043e66b67,
-    0x401611df2c0e2544, 0x401615f9d9d17124, 0x40161a1055d4a1e2, 0x40161e22a8a1a697,
-    0x40162230daa8759e, 0x4016263af43f7580, 0x40162a40fda3e3cc, 0x40162e42fefa39ef,
+    0x0000000000000000,
+    0x3fe62e42fefa39ef,
+    0x3ff193ea7aad030b,
+    0x3ff62e42fefa39ef,
+    0x3ff9c041f7ed8d33,
+    0x3ffcab0bfa2a2002,
+    0x3fff2272ae325a57,
+    0x4000a2b23f3bab73,
+    0x400193ea7aad030b,
+    0x40026bb1bbb55516,
+    0x40032ee3b77f374c,
+    0x4003e116bcd39e7d,
+    0x400485042b318c51,
+    0x40051cca16d7bba7,
+    0x4005aa16394d481f,
+    0x40062e42fefa39ef,
+    0x4006aa6bc1fa7f7a,
+    0x40071f7b3a6b9186,
+    0x40078e360604b32c,
+    0x4007f7427b73e391,
+    0x40085b2e946faeb1,
+    0x4008ba74773dc5c8,
+    0x4009157dfdd1b3f0,
+    0x40096ca77c922cf9,
+    0x4009c041f7ed8d33,
+    0x400a1094eaf01acd,
+    0x400a5ddfb8038490,
+    0x400aa85ad6964a23,
+    0x400af038cbcdfe1f,
+    0x400b35a6f90bd69b,
+    0x400b78ce48912b5a,
+    0x400bb9d3beb8c86b,
+    0x400bf8d8f4d5b8d1,
+    0x400c35fc81b90df6,
+    0x400c715a530ff3c5,
+    0x400cab0bfa2a2002,
+    0x400ce328ee3ac7bd,
+    0x400d19c6c5c341a8,
+    0x400d4ef968880dd6,
+    0x400d82d33b32720d,
+    0x400db565458eac4e,
+    0x400de6bf542e3d2d,
+    0x400e16f01614ec11,
+    0x400e460536fc5443,
+    0x400e740b76a3c9a4,
+    0x400ea10ebd90426c,
+    0x400ecd1a2f90f0b6,
+    0x400ef8383c50bb75,
+    0x400f2272ae325a57,
+    0x400f4bd2b7ac1baf,
+    0x400f7460ff5100ff,
+    0x400f9c25aaaea949,
+    0x400fc32868223cab,
+    0x400fe97077c2130c,
+    0x4010078259bafef3,
+    0x401019f5cb2a6c50,
+    0x40102c15a1ad9a59,
+    0x40103de4c5c6464d,
+    0x40104f65f9c72979,
+    0x4010609bdc65328b,
+    0x40107188eb126c0d,
+    0x4010822f8427dceb,
+    0x40109291e8e3181b,
+    0x4010a2b23f3bab73,
+    0x4010b29293942975,
+    0x4010c234da4a23a6,
+    0x4010d19af128112d,
+    0x4010e0c6a0bbce39,
+    0x4010efb99d941abb,
+    0x4010fe7589674121,
+    0x40110cfbf424d6c9,
+    0x40111b4e5cf4573f,
+    0x4011296e33222fe6,
+    0x4011375cd6fcab1d,
+    0x4011451b9aa2075c,
+    0x401152abc2c0e812,
+    0x4011600e874c323c,
+    0x40116d4514234e29,
+    0x40117a5089afb173,
+    0x40118731fd788044,
+    0x401193ea7aad030b,
+    0x4011a07b02a69d65,
+    0x4011ace48d62e482,
+    0x4011b92809f665d4,
+    0x4011c5465ef8a30a,
+    0x4011d1406ae9bd46,
+    0x4011dd1704923fd2,
+    0x4011e8cafb5d7160,
+    0x4011f45d17ae8af6,
+    0x4011ffce1b312c10,
+    0x40120b1ec1255cbe,
+    0x4012164fbea76874,
+    0x40122161c2f3d670,
+    0x40122c5577a7bf99,
+    0x4012372b80fdbce3,
+    0x401241e47e07a4f8,
+    0x40124c8108e54bf8,
+    0x40125701b6f8746a,
+    0x4012616719161d2b,
+    0x40126bb1bbb55516,
+    0x401275e2271bba31,
+    0x40127ff8df87c7bd,
+    0x401289f6655913ec,
+    0x401293db35369be2,
+    0x40129da7c8333aa5,
+    0x4012a75c93f06593,
+    0x4012b0fa0abf475b,
+    0x4012ba809bc050c4,
+    0x4012c3f0b3015506,
+    0x4012cd4ab99a4631,
+    0x4012d68f15c8a4a1,
+    0x4012dfbe2b09b38d,
+    0x4012e8d85a33835c,
+    0x4012f1de018ce197,
+    0x4012facf7ce43d45,
+    0x401303ad25a58d8b,
+    0x40130c7752ef47ae,
+    0x4013152e59a670b7,
+    0x40131dd28c89d653,
+    0x401326643c4479c9,
+    0x40132ee3b77f374c,
+    0x401337514af1b34b,
+    0x40133fad417296e9,
+    0x401347f7e4072429,
+    0x4013503179f229e7,
+    0x4013585a48c25f59,
+    0x4013607294602e42,
+    0x4013687a9f1af2b1,
+    0x40137072a9b5b6cb,
+    0x4013785af37370b3,
+    0x40138033ba22c862,
+    0x401387fd3a296ae4,
+    0x40138fb7ae8ef02c,
+    0x401397635107586b,
+    0x40139f0059fd2595,
+    0x4013a68f009b1577,
+    0x4013ae0f7ad5809d,
+    0x4013b581fd7361f9,
+    0x4013bce6bc170b12,
+    0x4013c43de946885e,
+    0x4013cb87b673b91e,
+    0x4013d2c454041e07,
+    0x4013d9f3f15861ce,
+    0x4013e116bcd39e7d,
+    0x4013e82ce3e2625c,
+    0x4013ef3693017724,
+    0x4013f633f5c46dee,
+    0x4013fd2536dbf25a,
+    0x4014040a801be72d,
+    0x40140ae3fa814e9a,
+    0x401411b1ce380053,
+    0x4014187422a02f50,
+    0x40141f2b1e53c142,
+    0x401425d6e72b797a,
+    0x40142c77a243f8fa,
+    0x4014330d74029567,
+    0x40143998801a085c,
+    0x40144018e98ef8b1,
+    0x4014468ed2bc5f18,
+    0x40144cfa5d57c782,
+    0x4014535baa75708e,
+    0x401459b2da8c4a48,
+    0x401460000d79d57b,
+    0x401466436285e4a3,
+    0x40146c7cf8663fb5,
+    0x401472aced422bc0,
+    0x401478d35eb5d75f,
+    0x40147ef069d5ad12,
+    0x401485042b318c51,
+    0x40148b0ebed7ea48,
+    0x401491104058db1c,
+    0x40149708cac90484,
+    0x40149cf878c47a87,
+    0x4014a2df64718710,
+    0x4014a8bda7835d30,
+    0x4014ae935b3cb89d,
+    0x4014b46098726a3b,
+    0x4014ba25778dd234,
+    0x4014bfe2108f4858,
+    0x4014c5967b10734e,
+    0x4014cb42ce468f2b,
+    0x4014d0e72104a3fc,
+    0x4014d68389bdacd0,
+    0x4014dc181e86afb2,
+    0x4014e1a4f518c72b,
+    0x4014e72a22d31dae,
+    0x4014eca7bcbcdb63,
+    0x4014f21dd78706d7,
+    0x4014f78c878e58de,
+    0x4014fcf3e0dd0421,
+    0x40150253f72c70ba,
+    0x401507acdde6ec36,
+    0x40150cfea8294e62,
+    0x4015124968c49336,
+    0x4015178d323f6a38,
+    0x40151cca16d7bba7,
+    0x40152200288423c1,
+    0x4015272f78f56469,
+    0x40152c581997cd86,
+    0x4015317a1b949c53,
+    0x401536958fd351f0,
+    0x40153baa86fb016f,
+    0x401540b9117395a5,
+    0x401545c13f670efb,
+    0x40154ac320c2b974,
+    0x40154fbec5385b2a,
+    0x401554b43c3f5b7d,
+    0x401559a39515e320,
+    0x40155e8cdec1f53c,
+    0x40156370281281e3,
+    0x4015684d7fa071fb,
+    0x40156d24f3cfacd1,
+    0x401571f692d0178c,
+    0x401576c26a9e8e99,
+    0x40157b888905d955,
+    0x40158048fb9f9802,
+    0x40158503cfd52c43,
+    0x401589b912e09c44,
+    0x40158e68d1cd70a9,
+    0x4015931319798d6f,
+    0x401597b7f69605e5,
+    0x40159c5775a7ebdf,
+    0x4015a0f1a3091a36,
+    0x4015a5868ae8facb,
+    0x4015aa16394d481f,
+    0x4015aea0ba12ca9a,
+    0x4015b32618ee11ab,
+    0x4015b7a6616c28d5,
+    0x4015bc219ef348c3,
+    0x4015c097dcc38483,
+    0x4015c50925f772fe,
+    0x4015c9758584d4c9,
+    0x4015cddd063d365f,
+    0x4015d23fb2ce8eec,
+    0x4015d69d95c3dba8,
+    0x4015daf6b985b7f5,
+    0x4015df4b285af236,
+    0x4015e39aec691d91,
+    0x4015e7e60fb5209a,
+    0x4015ec2c9c23c107,
+    0x4015f06e9b7a2c7e,
+    0x4015f4ac175e7e8a,
+    0x4015f8e5195843cd,
+    0x4015fd19aad0fa89,
+    0x40160149d5149079,
+    0x40160575a151de27,
+    0x4016099d189b1fbf,
+    0x40160dc043e66b67,
+    0x401611df2c0e2544,
+    0x401615f9d9d17124,
+    0x40161a1055d4a1e2,
+    0x40161e22a8a1a697,
+    0x40162230daa8759e,
+    0x4016263af43f7580,
+    0x40162a40fda3e3cc,
+    0x40162e42fefa39ef,
 ];
 
 /// `our_rand_r`.
@@ -617,7 +817,13 @@ fn build_tree(
                 nodes[parent].right_child = id as i64;
             }
         }
-        let leaf_or = |number: f64| if is_leaf { TREE_UNDEFINED as f64 } else { number };
+        let leaf_or = |number: f64| {
+            if is_leaf {
+                TREE_UNDEFINED as f64
+            } else {
+                number
+            }
+        };
         nodes.push(Node {
             left_child: TREE_LEAF,
             right_child: TREE_LEAF,
@@ -690,7 +896,7 @@ pub fn fit(
 
     let max_samples = n_samples.min(256);
     let bits = max_samples.max(2);
-    // `int(ceil(log2(max_samples)))`, which is exact on the integers this can be.
+    // The base-two logarithm of `max_samples`, rounded up, which is exact on the integers this can be.
     let max_depth = i64::from(usize::BITS - (bits - 1).leading_zeros());
 
     let mut for_seeds = RandomState::new(seed);
@@ -786,9 +992,14 @@ pub fn score_samples(
             } else {
                 1.0
             };
-            crate::libm_pow_two::pow_two(-ratio).map(|score| -score).ok_or_else(|| {
-                format!("A score of 2 ** {} leaves the path of pow that is ported.", -ratio)
-            })
+            crate::libm_pow_two::pow_two(-ratio)
+                .map(|score| -score)
+                .ok_or_else(|| {
+                    format!(
+                        "A score of 2 ** {} leaves the path of pow that is ported.",
+                        -ratio
+                    )
+                })
         })
         .collect()
 }

@@ -84,7 +84,11 @@ fn replay(dump: &str, root: &Path) {
         }
     }
     let seven = root.join("seven.json");
-    std::fs::write(&seven, r#"{"random_state": 1, "n_estimators": 7, "n_jobs": 2}"#).expect("a file");
+    std::fs::write(
+        &seven,
+        r#"{"random_state": 1, "n_estimators": 7, "n_jobs": 2}"#,
+    )
+    .expect("a file");
     for tag in ["default", "seven"] {
         let dir = root.join(tag);
         std::fs::create_dir_all(&dir).expect("a directory");
@@ -181,12 +185,12 @@ fn annotations_from_a_small_vcf(root: &Path) {
             40 + i % 5
         ));
     }
-    std::fs::write(root.join("small.vcf"), &vcf).expect("a file");
-    run(&["IndexFeatureFile", "-I", "small.vcf"]).expect("an index");
+    std::fs::write(root.join("sites.vcf"), &vcf).expect("a file");
+    run(&["IndexFeatureFile", "-I", "sites.vcf"]).expect("an index");
     run(&[
         "ExtractVariantAnnotations",
         "-V",
-        "small.vcf",
+        "sites.vcf",
         "-A",
         "QD",
         "-A",
@@ -194,7 +198,7 @@ fn annotations_from_a_small_vcf(root: &Path) {
         "--mode",
         "SNP",
         "--resource:train,training=true,calibration=true",
-        "small.vcf",
+        "sites.vcf",
         "-O",
         "small",
         "--add-output-vcf-command-line",
@@ -233,8 +237,11 @@ fn refusals(root: &Path, bin: &Path) {
         train(&["--hyperparameters-json", "unseeded.json"]),
         "without a random_state",
     );
-    std::fs::write(root.join("sampled.json"), r#"{"random_state":0,"max_samples":10}"#)
-        .expect("a file");
+    std::fs::write(
+        root.join("sampled.json"),
+        r#"{"random_state":0,"max_samples":10}"#,
+    )
+    .expect("a file");
     limit(
         train(&["--hyperparameters-json", "sampled.json"]),
         "max_samples",
@@ -254,13 +261,15 @@ fn refusals(root: &Path, bin: &Path) {
     let refused = run(&[
         "ScoreVariantAnnotations",
         "-V",
-        "small.vcf",
+        "sites.vcf",
         "-A",
         "QD",
         "-A",
         "MQ",
         "--mode",
         "SNP",
+        "--resource:train,training=true,calibration=true",
+        "sites.vcf",
         "--model-prefix",
         "refused",
         "-O",
@@ -274,7 +283,10 @@ fn refusals(root: &Path, bin: &Path) {
     limit(refused, "refused.snp.scorer.pkl");
 
     // The reference's own refusal where the environment lacks a package.
-    executable(&bin.join("python"), "#!/bin/sh\ncase \"$2\" in *sklearn*) exit 1;; esac\nexit 0\n");
+    executable(
+        &bin.join("python"),
+        "#!/bin/sh\ncase \"$2\" in *sklearn*) exit 1;; esac\nexit 0\n",
+    );
     let message = train(&[]).expect_err("the missing package");
     assert!(
         message.contains("A required Python package (\"sklearn\") could not be imported"),

@@ -1910,7 +1910,7 @@ Held out: `--dont-require-soft-clips-both-ends`, `--exclude-intervals`, `--input
 
 ### ScoreVariantAnnotations
 
-Suites: `interpreter-tools`.
+Suites: `interpreter-tools`, `vets-isolation-forest`.
 
 Inputs: `both`, `nothing`, `score.py`, `snp`, `vr_calls.vcf`, `vr_calls2.vcf`.
 
@@ -2038,7 +2038,7 @@ Held out: `--dont-require-soft-clips-both-ends`, `--exclude-intervals`, `--input
 
 ### TrainVariantAnnotationsModel
 
-Suites: `interpreter-tools`.
+Suites: `interpreter-tools`, `vets-isolation-forest`.
 
 Inputs: `extract.annot.hdf5`, `extract.unlabeled.annot.hdf5`, `hyperparameters.json`, `hyperparameters2.json`, `score.py`.
 

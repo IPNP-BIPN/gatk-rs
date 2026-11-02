@@ -70,6 +70,15 @@ fn import_stop(package: &str) -> Thrown {
     stop_at("python", &format!("A Python environment with {package}"))
 }
 
+/// The import the gCNV tools start with, and why the port does not go on where it succeeds.
+fn gcnv_stop() -> Thrown {
+    stop_at(
+        "python",
+        "gcnvkernel, whose numbers come from C that pytensor rewrites and compiles for the host's \
+         CPU (docs/python-tools.md),",
+    )
+}
+
 /// A refusal in the port's words, where the reference's script would go on or fail in its own.
 fn port_limit(what: impl std::fmt::Display) -> Thrown {
     Thrown::non_user(
@@ -351,12 +360,12 @@ pub fn plot_modeled_segments(parser: &Parser) -> Outcome {
 
 /// `DetermineGermlineContigPloidy.onStartup`.
 pub fn determine_germline_contig_ploidy(_parser: &Parser) -> Outcome {
-    Err(import_stop("gcnvkernel"))
+    Err(gcnv_stop())
 }
 
 /// `GermlineCNVCaller.onStartup`.
 pub fn germline_cnv_caller(_parser: &Parser) -> Outcome {
-    Err(import_stop("gcnvkernel"))
+    Err(gcnv_stop())
 }
 
 /// `NVScoreVariants.onStartup`.
@@ -453,7 +462,7 @@ pub fn postprocess_germline_cnv_calls(parser: &Parser) -> Outcome {
         }
     }
 
-    Err(import_stop("gcnvkernel"))
+    Err(gcnv_stop())
 }
 
 /// `new HDF5File(file, READ_ONLY)`, reported as each reader of the file reports it.
@@ -816,8 +825,7 @@ fn score_variant_type(
         ))
     })?;
     let kept: Vec<Vec<f64>> = subset(names, rows, is_type)?.into_iter().cloned().collect();
-    let scored =
-        isolation_forest::score_samples(&scorer, names, &kept).map_err(port_limit)?;
+    let scored = isolation_forest::score_samples(&scorer, names, &kept).map_err(port_limit)?;
     let mut next = scored.into_iter();
     for (score, _) in scores.iter_mut().zip(is_type).filter(|(_, keep)| **keep) {
         *score = next.next().unwrap_or(f64::NAN);
@@ -1046,18 +1054,21 @@ pub fn score_variant_annotations(parser: &Parser) -> Outcome {
     }
     let snp_calibration = calibration_scores(&model_prefix, "snp")?;
     let indel_calibration = calibration_scores(&model_prefix, "indel")?;
-    let threshold = |name: &str| -> Option<f64> {
-        scalar(parser, name).and_then(|value| value.parse().ok())
-    };
+    let threshold =
+        |name: &str| -> Option<f64> { scalar(parser, name).and_then(|value| value.parse().ok()) };
     let snp_threshold = threshold("snp-calibration-sensitivity-threshold");
     let indel_threshold = threshold("indel-calibration-sensitivity-threshold");
-    if snp_calibration.is_none() && scalar(parser, "snp-calibration-sensitivity-threshold").is_some() {
+    if snp_calibration.is_none()
+        && scalar(parser, "snp-calibration-sensitivity-threshold").is_some()
+    {
         return Err(bad_input(format!(
             "The snp-calibration-sensitivity-threshold argument was specified, but no SNP \
              calibration scores were provided in the model files with the prefix {model_prefix}."
         )));
     }
-    if indel_calibration.is_none() && scalar(parser, "indel-calibration-sensitivity-threshold").is_some() {
+    if indel_calibration.is_none()
+        && scalar(parser, "indel-calibration-sensitivity-threshold").is_some()
+    {
         return Err(bad_input(format!(
             "The indel-calibration-sensitivity-threshold argument was specified, but no INDEL \
              calibration scores were provided in the model files with the prefix {model_prefix}."
@@ -1131,8 +1142,7 @@ pub fn score_variant_annotations(parser: &Parser) -> Outcome {
 
     // The second pass: `writeExtractedVariantToVCF`, and an unextracted record as it was read.
     use htsjdk_vcf::variant::Value;
-    let mut written: Vec<htsjdk_vcf::variant::VariantContext> =
-        Vec::with_capacity(traversed.len());
+    let mut written: Vec<htsjdk_vcf::variant::VariantContext> = Vec::with_capacity(traversed.len());
     for record in traversed {
         let reduced_record = reduced(record);
         let found = metadata(&reduced_record, &resources, &walker_arguments, true)?;

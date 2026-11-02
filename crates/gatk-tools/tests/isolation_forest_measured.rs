@@ -36,7 +36,8 @@ fn the_port_matches_a_measured_run() {
     let Ok(run) = std::env::var("GATK_RS_VETS_RUN") else {
         return;
     };
-    let reader = Hdf5Reader::open(std::fs::read(format!("{run}/extract.annot.hdf5")).unwrap()).unwrap();
+    let reader =
+        Hdf5Reader::open(std::fs::read(format!("{run}/extract.annot.hdf5")).unwrap()).unwrap();
     let (names, rows) = matrix(&reader);
     let label = |name: &str| reader.doubles(&format!("/labels/{name}")).unwrap().1;
     let (training, calibration, snp) = (label("training"), label("calibration"), label("snp"));
@@ -57,21 +58,32 @@ fn the_port_matches_a_measured_run() {
         let forest = fit(&names, &train, &hyper).unwrap();
 
         let reference_pickle = std::fs::read(format!("{run}/train.{tag}.scorer.pkl")).unwrap();
-        let reference_scorer = scorer_pickle::read(&reference_pickle).expect("the reference's scorer");
-        assert_eq!(reference_scorer.statistics, forest.statistics, "{tag} statistics");
+        let reference_scorer =
+            scorer_pickle::read(&reference_pickle).expect("the reference's scorer");
+        assert_eq!(
+            reference_scorer.statistics, forest.statistics,
+            "{tag} statistics"
+        );
         assert_eq!(reference_scorer.max_samples, forest.max_samples as i64);
         for (index, tree) in forest.scorer().trees.iter().enumerate() {
             assert_eq!(*tree, reference_scorer.trees[index], "{tag} tree {index}");
         }
-        assert_eq!(reference_scorer.decision_path_lengths, forest.decision_path_lengths);
-        assert_eq!(reference_scorer.average_path_lengths, forest.average_path_lengths, "{tag} paths");
+        assert_eq!(
+            reference_scorer.decision_path_lengths,
+            forest.decision_path_lengths
+        );
+        assert_eq!(
+            reference_scorer.average_path_lengths, forest.average_path_lengths,
+            "{tag} paths"
+        );
 
         let scores = score_samples(&forest.scorer(), &names, &train).unwrap();
         let file = h5py_scores::write(&scores);
         let reference = std::fs::read(format!("{run}/train.{tag}.trainingScores.hdf5")).unwrap();
         assert!(file == reference, "{tag}: training scores differ");
         let calibrated = pick(&calibration);
-        let file = h5py_scores::write(&score_samples(&reference_scorer, &names, &calibrated).unwrap());
+        let file =
+            h5py_scores::write(&score_samples(&reference_scorer, &names, &calibrated).unwrap());
         let reference = std::fs::read(format!("{run}/train.{tag}.calibrationScores.hdf5")).unwrap();
         assert!(file == reference, "{tag}: calibration scores differ");
 
@@ -117,8 +129,10 @@ fn the_port_pow_matches_a_measured_numpy() {
 /// the time and lays the file out its own way, so its values are what can be compared.
 #[test]
 fn the_port_scores_match_a_measured_run() {
-    let (Ok(run), Ok(port)) = (std::env::var("GATK_RS_VETS_RUN"), std::env::var("GATK_RS_VETS_PORT"))
-    else {
+    let (Ok(run), Ok(port)) = (
+        std::env::var("GATK_RS_VETS_RUN"),
+        std::env::var("GATK_RS_VETS_PORT"),
+    ) else {
         return;
     };
     let scores = |directory: &str| -> Vec<u64> {

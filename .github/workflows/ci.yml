@@ -503,8 +503,8 @@ jobs:
             suites: "interpreter-tools"
           - group: golden-pending
             index: "1/1"
-            slug: "tool-argument-declarations-tool-argument-enums-genomicsdb-import-sv-evidence"
-            suites: "tool-argument-declarations tool-argument-enums genomicsdb-import sv-evidence"
+            slug: "tool-argument-declarations-tool-argument-enums-genomicsdb-import-sv-evidence-vets-isolation-forest"
+            suites: "tool-argument-declarations tool-argument-enums genomicsdb-import sv-evidence vets-isolation-forest"
     steps:
       - uses: actions/checkout@v7
 
@@ -515,6 +515,10 @@ jobs:
           fail-on-cache-miss: true
 
       - run: docker load -i /tmp/oracle-image.tar
+
+      - name: Pull broadinstitute/gatk:4.6.2.0 for vets-isolation-forest
+        if: contains(matrix.suites, 'vets-isolation-forest')
+        run: docker pull --platform linux/amd64 broadinstitute/gatk:4.6.2.0
 
       - name: Regenerate and compare
         # Every rule that canonicalizes anything away is declared in tools/conformance/manifest.json
