@@ -249,6 +249,7 @@ jobs:
             --tool PlotDenoisedCopyRatios --tool PlotModeledSegments --tool DetermineGermlineContigPloidy \
             --tool GermlineCNVCaller --tool PostprocessGermlineCNVCalls --tool ScoreVariantAnnotations \
             --tool TrainVariantAnnotationsModel --tool NVScoreVariants \
+            --tool FindBreakpointEvidenceSpark --tool StructuralVariationDiscoveryPipelineSpark \
             --tool ExtractOriginalAlignmentRecordsByNameSpark --tool MeanQualityByCycleSpark \
             --tool QualityScoreDistributionSpark --tool CollectBaseDistributionByCycleSpark \
             --tool CollectQualityYieldMetricsSpark \

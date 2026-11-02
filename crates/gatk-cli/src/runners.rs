@@ -24444,6 +24444,7 @@ pub use spark_runners::{
     count_reads_spark, count_variants_spark, cpx_variant_re_interpreter_spark,
     discover_variants_from_contig_alignments_sam_spark,
     extract_original_alignment_records_by_name_spark, extract_sv_evidence_spark,
+    find_breakpoint_evidence_spark,
     find_bad_genomic_kmers_spark, flag_stat_spark, mark_duplicates_spark,
     mean_quality_by_cycle_spark, parallel_copy_gcs_directory_into_hdfs_spark, pathseq_bwa_spark,
     pathseq_filter_spark, pathseq_pipeline_spark, pathseq_score_spark, pileup_spark,

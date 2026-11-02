@@ -335,6 +335,8 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         | "FindBadGenomicKmersSpark"
         | "CalcMetadataSpark"
         | "ExtractSVEvidenceSpark"
+        | "FindBreakpointEvidenceSpark"
+        | "StructuralVariationDiscoveryPipelineSpark"
         | "PathSeqFilterSpark"
         | "PathSeqScoreSpark"
         | "PathSeqBwaSpark"

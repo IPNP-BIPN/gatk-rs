@@ -17,6 +17,7 @@
 //! * one input only, for the tools that do not merge, and `--read-index` names nothing: Disq finds
 //!   the index beside the BAM itself.
 use super::*;
+use gatk_tools::{sv_breakpoints, sv_evidence};
 
 /// `LibraryIdGenerator.UNKNOWN_LIBRARY`.
 const UNKNOWN_LIBRARY: &str = "Unknown Library";
@@ -806,8 +807,7 @@ pub fn calc_metadata_spark(parser: &Parser) -> Outcome {
 /// `ExtractSVEvidenceSpark`: the metadata and the high-coverage regions first, whatever becomes of
 /// the classification, then the evidence as a text file directory.
 pub fn extract_sv_evidence_spark(parser: &Parser) -> Outcome {
-    use gatk_tools::read_metadata::{MetadataArguments, MetadataFailure, ReadMetadata};
-    use gatk_tools::sv_evidence;
+    use gatk_tools::read_metadata::MetadataArguments;
     let SparkStart {
         source,
         header,
@@ -855,40 +855,7 @@ pub fn extract_sv_evidence_spark(parser: &Parser) -> Outcome {
     }
     let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
-    let mut ignored_contigs = Vec::new();
-    if let Some(path) = argument(parser, "cross-contigs-to-ignore") {
-        let text = std::fs::read_to_string(&path).map_err(|error| {
-            Thrown::user(format!(
-                "Couldn't read file {path}. Error was: {path} ({})",
-                java_io_reason(&error)
-            ))
-        })?;
-        for line in text.lines() {
-            match header
-                .sequences
-                .iter()
-                .position(|sequence| sequence.name == line)
-            {
-                Some(contig) => ignored_contigs.push(contig as i32),
-                None => {
-                    return Err(Thrown::user(format!(
-                        "crossContigToIgnoreFile contains an unrecognized contig name: {line}"
-                    )))
-                }
-            }
-        }
-    }
-    let metadata =
-        ReadMetadata::with_arguments(&header, &records, &arguments_read.metadata, ignored_contigs)
-            .map_err(|failure| {
-                match failure {
-        MetadataFailure::Unpaired => evidence_task_failure(
-            "java.lang.IllegalStateException: Cannot get mate information for an unpaired read",
-        ),
-        MetadataFailure::NoReads => Thrown::non_user("java.lang.ArithmeticException", "/ by zero"),
-        MetadataFailure::Order(error) => Thrown::user(format!("{error:?}")),
-    }
-            })?;
+    let metadata = sv_read_metadata(parser, &header, &records, &arguments_read.metadata)?;
     let write_text = |path: &str, text: String| {
         std::fs::write(path, text).map_err(|error| {
             Thrown::user(format!(
@@ -924,6 +891,391 @@ pub fn extract_sv_evidence_spark(parser: &Parser) -> Outcome {
         .and_then(|()| std::fs::write(directory.join("_SUCCESS"), b""))
         .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
     Ok(None)
+}
+
+/// `FindBreakpointEvidenceSparkArgumentCollection.validate`, and the arguments it validated.
+fn breakpoint_arguments(parser: &Parser) -> Result<sv_breakpoints::Arguments, Thrown> {
+    use gatk_tools::read_metadata::MetadataArguments;
+    let int = |name: &str, default: i32| number_or(parser, name, default);
+    let double = |name: &str, default: f64| {
+        scalar(parser, name)
+            .and_then(|text| text.parse().ok())
+            .unwrap_or(default)
+    };
+    let refused = |field: &str, value: String| {
+        Thrown::non_user(
+            "java.lang.IllegalArgumentException",
+            format!("invalid value provided to {field}: {value}"),
+        )
+    };
+    for (name, field, default, least) in [
+        ("k-size", "kSize", 51, 1),
+        ("kmer-max-dust-score", "maxDUSTScore", 49, 1),
+        ("min-evidence-mapq", "minEvidenceMapQ", 20, 0),
+        ("min-evidence-match-length", "minEvidenceMatchLength", 45, 1),
+        ("allowed-short-fragment-overhang", "allowedShortFragmentOverhang", 10, 0),
+        ("max-tracked-fragment-length", "maxTrackedFragmentLength", 2000, 1),
+        ("high-depth-coverage-peak-factor", "highDepthCoveragePeakFactor", 7, 1),
+    ] {
+        let value = int(name, default);
+        if value < least {
+            return Err(refused(field, value.to_string()));
+        }
+    }
+    let min_weight = double("min-evidence-coverage-ratio", 15.0 / 42.855164);
+    let min_coherent = double("min-coherent-evidence-coverage-ratio", 7.0 / 42.855164);
+    if min_weight.is_nan() || min_weight <= 0.0 {
+        return Err(refused(
+            "minEvidenceWeightPerCoverage",
+            gatk_engine::tsv_table::java_double_to_string(min_weight),
+        ));
+    }
+    if min_coherent.is_nan() || min_coherent <= 0.0 {
+        return Err(refused(
+            "minCoherentEvidenceWeightPerCoverage",
+            gatk_engine::tsv_table::java_double_to_string(min_coherent),
+        ));
+    }
+    for (name, field, default, least) in [
+        ("min-kmers-per-interval", "minKmersPerInterval", 5, 1),
+        ("cleaner-max-intervals", "cleanerMaxIntervals", 3, 1),
+        ("cleaner-min-kmer-count", "cleanerMinKmerCount", 4, 1),
+        ("cleaner-max-copy-number", "cleanerMaxCopyNumber", 4, 1),
+        ("assembly-to-mapped-size-ratio-guess", "assemblyToMappedSizeRatioGuess", 7, 1),
+        ("max-fastq-size", "maxFASTQSize", 3_000_000, 1),
+        ("exclusion-interval-padding", "exclusionIntervalPadding", 0, 0),
+        ("external-evidence-weight", "externalEvidenceWeight", 10, 1),
+        ("external-evidence-uncertainty", "externalEvidenceUncertainty", 150, 1),
+    ] {
+        let value = int(name, default);
+        if value < least {
+            return Err(refused(field, value.to_string()));
+        }
+    }
+    let order = scalar(parser, "assembled-contigs-output-order")
+        .unwrap_or_else(|| "coordinate".to_string());
+    if order != "coordinate" && order != "queryname" {
+        return Err(Thrown::user(format!(
+            "We currently support only coordinate or query name sort order for assembly alignment \
+             SAM output. User provided sort order: {order}"
+        )));
+    }
+    Ok(sv_breakpoints::Arguments {
+        evidence: sv_evidence::EvidenceArguments {
+            metadata: MetadataArguments {
+                min_evidence_mapq: int("min-evidence-mapq", 20) as u8,
+                min_evidence_match_length: i64::from(int("min-evidence-match-length", 45)),
+                allowed_short_fragment_overhang: int("allowed-short-fragment-overhang", 10),
+                max_tracked_fragment_length: int("max-tracked-fragment-length", 2000) as usize,
+            },
+            high_depth_coverage_peak_factor: int("high-depth-coverage-peak-factor", 7),
+            high_depth_coverage_factor: int("high-depth-coverage-factor", 3),
+        },
+        k_size: int("k-size", 51),
+        max_dust_score: int("kmer-max-dust-score", 49),
+        min_evidence_weight_per_coverage: min_weight,
+        min_coherent_evidence_weight_per_coverage: min_coherent,
+        min_kmers_per_interval: int("min-kmers-per-interval", 5),
+        cleaner_max_intervals: int("cleaner-max-intervals", 3),
+        cleaner_min_kmer_count: int("cleaner-min-kmer-count", 4),
+        cleaner_max_copy_number: int("cleaner-max-copy-number", 4),
+        assembly_to_mapped_size_ratio_guess: int("assembly-to-mapped-size-ratio-guess", 7),
+        max_fastq_size: int("max-fastq-size", 3_000_000),
+        exclusion_interval_padding: int("exclusion-interval-padding", 0),
+        include_mapping_location: flag(parser, "include-mapping-location"),
+        interval_only_assembly: flag(parser, "interval-only-assembly"),
+        adapter_sequence: argument(parser, "adapter-sequence"),
+        write_gfas: flag(parser, "write-gfas"),
+        pop_variant_bubbles: flag(parser, "pop-variant-bubbles"),
+        remove_shadowed_contigs: flag(parser, "remove-shadowed-contigs"),
+        expand_assembly_graph: flag(parser, "expand-assembly-graph"),
+        z_dropoff: int("z-dropoff", 20),
+        aligner_index_image: argument(parser, "aligner-index-image"),
+        evidence_dir: argument(parser, "breakpoint-evidence-dir"),
+        unfiltered_evidence_dir: argument(parser, "unfiltered-breakpoint-evidence-dir"),
+        interval_file: argument(parser, "breakpoint-intervals"),
+        qnames_mapped_file: argument(parser, "qname-intervals-mapped"),
+        kmer_file: argument(parser, "kmer-intervals"),
+        qnames_assembly_file: argument(parser, "qname-intervals-for-assembly"),
+        fastq_dir: argument(parser, "fastq-dir"),
+        target_link_file: argument(parser, "target-link-file"),
+        exclusion_intervals_file: argument(parser, "exclusion-intervals"),
+        kmers_to_ignore_file: argument(parser, "kmers-to-ignore"),
+    })
+}
+
+/// How a stage of the assembly stops, in the runner's words.
+fn breakpoint_failure(failure: sv_breakpoints::Failure) -> Thrown {
+    use sv_breakpoints::Failure;
+    match failure {
+        Failure::Thrown { class, message } => Thrown::non_user(class, message),
+        Failure::Task(message) => evidence_task_failure(&message),
+        Failure::User(message) => Thrown::user(message),
+        Failure::Create { path, error } => Thrown::user(format!(
+            "Couldn't write file {path} because Could not create file at path:{path} due to \
+             {path} ({})",
+            java_io_reason(&error)
+        )),
+        Failure::Read { path, error } => Thrown::user(format!(
+            "Couldn't read file {path}. Error was: {path} ({})",
+            java_io_reason(&error)
+        )),
+        Failure::Limitation(message) => Thrown::non_user(
+            PORT_LIMITATION,
+            format!("{message} This message is the port's own and not GATK's."),
+        ),
+        Failure::Port(message) => Thrown::non_user(PORT_FAILURE, message),
+    }
+}
+
+/// `readExternalEvidence`, of the one partition there is.
+fn external_evidence(
+    parser: &Parser,
+    metadata: &gatk_tools::read_metadata::ReadMetadata,
+) -> Result<Vec<sv_evidence::Evidence>, Thrown> {
+    use sv_evidence::{fixed_width, Evidence, EvidenceKind, SvInterval};
+    let Some(path) = argument(parser, "external-evidence") else {
+        return Ok(Vec::new());
+    };
+    let weight = number_or(parser, "external-evidence-weight", 10);
+    let uncertainty = number_or(parser, "external-evidence-uncertainty", 150);
+    let external = |location: SvInterval| Evidence {
+        location,
+        weight,
+        validated: false,
+        kind: EvidenceKind::External,
+        distal: None,
+    };
+    let (codec, text) = open_feature_input(&path)?;
+    let mut previous = (0, 0);
+    let mut evidence = Vec::new();
+    for (feature, _) in gatk_tools::feature_codec::features(&text, codec) {
+        let Some(&contig) = metadata.contig_ids.get(&feature.contig) else {
+            return Err(Thrown::user(format!(
+                "{path} contains a contig name not present in the BAM header: {}",
+                feature.contig
+            )));
+        };
+        let (start, end) = (feature.start, feature.end);
+        if previous > (contig, start) {
+            return Err(Thrown::user(format!(
+                "Features in {path} are not coordinate sorted."
+            )));
+        }
+        previous = (contig, start);
+        if end - start <= uncertainty.wrapping_mul(2) {
+            evidence.push(external(SvInterval { contig, start, end }));
+        } else {
+            evidence.push(external(fixed_width(contig, start, uncertainty)));
+            evidence.push(external(fixed_width(contig, end, uncertainty)));
+        }
+    }
+    Ok(evidence)
+}
+
+/// `gatherEvidenceAndWriteContigSamFile`, with the SAM file written if there is somewhere to write
+/// it. `getUnfilteredReads` is what it says: the tool filters reads itself.
+fn gather_breakpoints(
+    parser: &Parser,
+    source: &ReadsDataSource,
+    header: &SamHeader,
+    intervals: &[gatk_engine::interval::SimpleInterval],
+    arguments_read: &sv_breakpoints::Arguments,
+    output: Option<&str>,
+) -> Result<
+    (
+        gatk_tools::read_metadata::ReadMetadata,
+        sv_breakpoints::Results,
+    ),
+    Thrown,
+> {
+    let input = arguments(parser, "input").remove(0);
+    let split = match number_or(parser, "bam-partition-size", 0) {
+        0 => 32 * 1024 * 1024,
+        size => i64::from(size),
+    };
+    if std::fs::metadata(&input).is_ok_and(|file| file.len() as i64 > split) {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            format!(
+                "{input} is larger than one partition, and this port assembles a single \
+                 partition's evidence. This message is the port's own and not GATK's."
+            ),
+        ));
+    }
+    if header.attributes.get("SO") != Some("coordinate") {
+        return Err(Thrown::non_user(
+            "java.lang.IllegalStateException",
+            "The reads must be coordinate sorted.",
+        ));
+    }
+    let records = gatk_tools::read_walker::traverse(source, intervals, &|_| true)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let scan = &arguments_read.evidence;
+    let metadata = sv_read_metadata(parser, header, &records, &scan.metadata)?;
+    let write_text = |path: &str, text: String| {
+        std::fs::write(path, text).map_err(|error| {
+            Thrown::user(format!(
+                "Couldn't write file {path} because Could not create file at path:{path} due to \
+                 {path} ({})",
+                java_io_reason(&error)
+            ))
+        })
+    };
+    if let Some(path) = argument(parser, "read-metadata") {
+        write_text(&path, metadata.text())?;
+    }
+    let external = external_evidence(parser, &metadata)?;
+    let lengths: Vec<i32> = header
+        .sequences
+        .iter()
+        .map(|sequence| sequence.length)
+        .collect();
+    let ignored = sv_evidence::high_coverage_intervals(&records, &metadata, &lengths, scan);
+    if let Some(path) = argument(parser, "high-coverage-intervals") {
+        write_text(&path, sv_evidence::high_coverage_bed(&ignored, &metadata))?;
+    }
+    let results = sv_breakpoints::gather(
+        &records,
+        arguments_read,
+        &metadata,
+        header,
+        external,
+        &ignored,
+    )
+    .map_err(breakpoint_failure)?;
+    if !results.finished {
+        return Ok((metadata, results));
+    }
+    if let Some(output) = output {
+        write_contig_alignments(parser, header, &results, output)?;
+    }
+    Ok((metadata, results))
+}
+
+/// `AlignedAssemblyOrExcuse.writeAssemblySAMFile`.
+fn write_contig_alignments(
+    parser: &Parser,
+    header: &SamHeader,
+    results: &sv_breakpoints::Results,
+    output: &str,
+) -> Result<(), Thrown> {
+    let sample = sv_sample_id(header)?;
+    let order = scalar(parser, "assembled-contigs-output-order")
+        .unwrap_or_else(|| "coordinate".to_string());
+    let mut group = htsjdk_bam::header::ReadGroup::new(sv_breakpoints::CONTIG_READ_GROUP);
+    group.attributes.set("SM", &sample);
+    let mut clean = SamHeader {
+        sequences: header.sequences.clone(),
+        read_groups: vec![group],
+        ..SamHeader::default()
+    };
+    clean.set_sort_order(&order);
+    let names: Vec<String> = header
+        .sequences
+        .iter()
+        .map(|sequence| sequence.name.clone())
+        .collect();
+    let mut records =
+        sv_breakpoints::contig_records(&results.assemblies, &names).map_err(breakpoint_failure)?;
+    if order == "coordinate" {
+        records.sort_by(htsjdk_bam::coordinate::compare);
+    } else {
+        records.sort_by(htsjdk_bam::query_name::compare);
+    }
+    let failed = |error: String| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}"));
+    if output.ends_with(".bam") {
+        let (level, deflater) = output_compression(parser);
+        let (bytes, index) = gatk_tools::sam_output::write_records_with(
+            &clean,
+            &records,
+            order == "coordinate",
+            level,
+            deflater,
+        )
+        .map_err(|error| failed(format!("{error:?}")))?;
+        std::fs::write(output, bytes).map_err(|error| failed(error.to_string()))?;
+        if let Some(index) = index {
+            let companion = format!("{}.bai", output.strip_suffix(".bam").unwrap_or(output));
+            std::fs::write(companion, index).map_err(|error| failed(error.to_string()))?;
+        }
+    } else {
+        let text = htsjdk_bam::sam_file::write_sam(&clean, &records)
+            .ok_or_else(|| failed("a record the SAM text cannot hold".to_string()))?;
+        std::fs::write(output, text).map_err(|error| failed(error.to_string()))?;
+    }
+    Ok(())
+}
+
+/// `FindBreakpointEvidenceSpark`.
+pub fn find_breakpoint_evidence_spark(parser: &Parser) -> Outcome {
+    let SparkStart {
+        source,
+        header,
+        intervals,
+        ..
+    } = spark_startup(parser, "FindBreakpointEvidenceSpark")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    if !(output.ends_with(".bam") || output.ends_with(".sam")) {
+        return Err(Thrown::user(format!(
+            "Output assembly alignments does not end with \".bam\" or \".sam\": {output}"
+        )));
+    }
+    let arguments_read = breakpoint_arguments(parser)?;
+    gather_breakpoints(
+        parser,
+        &source,
+        &header,
+        &intervals,
+        &arguments_read,
+        Some(&output),
+    )?;
+    Ok(None)
+}
+
+/// `buildMetadata` as far as the file, which each tool writes where it writes the rest.
+fn sv_read_metadata(
+    parser: &Parser,
+    header: &SamHeader,
+    records: &[BamRecord],
+    arguments_read: &gatk_tools::read_metadata::MetadataArguments,
+) -> Result<gatk_tools::read_metadata::ReadMetadata, Thrown> {
+    use gatk_tools::read_metadata::{MetadataFailure, ReadMetadata};
+    let mut ignored_contigs = Vec::new();
+    if let Some(path) = argument(parser, "cross-contigs-to-ignore") {
+        let text = std::fs::read_to_string(&path).map_err(|error| {
+            Thrown::user(format!(
+                "Couldn't read file {path}. Error was: {path} ({})",
+                java_io_reason(&error)
+            ))
+        })?;
+        for line in text.lines() {
+            match header
+                .sequences
+                .iter()
+                .position(|sequence| sequence.name == line)
+            {
+                Some(contig) => ignored_contigs.push(contig as i32),
+                None => {
+                    return Err(Thrown::user(format!(
+                        "crossContigToIgnoreFile contains an unrecognized contig name: {line}"
+                    )))
+                }
+            }
+        }
+    }
+    ReadMetadata::with_arguments(header, records, arguments_read, ignored_contigs)
+            .map_err(|failure| {
+                match failure {
+        MetadataFailure::Unpaired => evidence_task_failure(
+            "java.lang.IllegalStateException: Cannot get mate information for an unpaired read",
+        ),
+        MetadataFailure::NoReads => Thrown::non_user("java.lang.ArithmeticException", "/ by zero"),
+        MetadataFailure::Order(error) => Thrown::user(format!("{error:?}")),
+    }
+            })
 }
 
 fn evidence_task_failure(message: &str) -> Thrown {

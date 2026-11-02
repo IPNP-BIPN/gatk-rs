@@ -165,8 +165,8 @@ fn save_as_text_file(directory: &str, lines: impl Iterator<Item = String>) -> Re
         .map_err(|error| Failure::Port(format!("{directory}: {error}")))
 }
 
-/// `SVInterval`'s `MurmurHash3.productHash` of Scala 2.13's `Tuple2(0, key)`, whose `Int` is 0: the
-/// seed, the name of the product, the two elements, the arity.
+/// `MurmurHash3.productHash` of Scala 2.13's `Tuple2(0, key)`, the partition being 0: the seed, the
+/// name of the product, the two elements, the arity.
 fn partitioned_key_hash(key_hash: i32) -> i32 {
     fn mix(hash: u32, data: u32) -> u32 {
         let data = data
@@ -1711,6 +1711,9 @@ pub enum Disposition {
 
 /// `AssembledEvidenceResults`.
 pub struct Results {
+    /// Whether `gather` got past its two early returns, which write neither the interval file nor
+    /// the contigs.
+    pub finished: bool,
     pub intervals: Vec<SvInterval>,
     pub assemblies: Vec<(i32, Disposition)>,
     pub links: Vec<TargetLink>,
@@ -1844,8 +1847,7 @@ fn intervals_and_links(
     external: Vec<Evidence>,
     ignored: &[SvInterval],
 ) -> Result<(Vec<SvInterval>, Vec<TargetLink>), Failure> {
-    let min_mapq = &arguments.evidence.metadata;
-    let evidence = sv_evidence::evidence(records, metadata, ignored, min_mapq)
+    let evidence = sv_evidence::evidence(records, metadata, ignored, &arguments.evidence.metadata)
         .map_err(|message| Failure::Task(format!("{ILLEGAL_STATE}: {message}")))?;
     if let Some(directory) = &arguments.unfiltered_evidence_dir {
         save_as_text_file(directory, evidence.iter().map(Evidence::string_rep))?;
@@ -1943,6 +1945,7 @@ pub fn gather(
     let (intervals, links) = intervals_and_links(records, arguments, metadata, external, ignored)?;
     if intervals.is_empty() {
         return Ok(Results {
+            finished: false,
             intervals,
             assemblies: Vec::new(),
             links,
@@ -1974,6 +1977,7 @@ pub fn gather(
     }
     if intervals.is_empty() {
         return Ok(Results {
+            finished: false,
             intervals,
             assemblies: Vec::new(),
             links,
@@ -2043,6 +2047,7 @@ pub fn gather(
         write_interval_file(path, &intervals, &assemblies, header)?;
     }
     Ok(Results {
+        finished: true,
         intervals,
         assemblies,
         links,
