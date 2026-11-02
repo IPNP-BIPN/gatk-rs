@@ -1,6 +1,7 @@
 /*
- * FindBreakpointEvidenceSpark and StructuralVariationDiscoveryPipelineSpark through Main, on one
- * partition, with every debug file they can write.
+ * FindBreakpointEvidenceSpark and StructuralVariationDiscoveryPipelineSpark through Main, with
+ * every debug file they can write: on one partition, and on as many as a small
+ * `--bam-partition-size` cuts the same fixtures into.
  *
  * The fixture is a reference and the reads a donor genome would give it: the donor lacks a stretch
  * of chr1 and has a stretch of chr2 inserted backwards further along, so the evidence is real, the
@@ -67,12 +68,13 @@ public class SvEvidenceDump {
     public static void main(final String[] args) throws Exception {
         PrintReadsDump.emptyDirectory(DIR);
         Files.createDirectories(DIR);
-        System.out.println("# SvEvidenceDump: the last two Spark tools through Main, on one partition");
+        System.out.println("# SvEvidenceDump: the last two Spark tools through Main, on one partition and on several");
         fixtures();
         for (final String name : new String[] {"sv.fasta", "sv.fasta.fai", "sv.dict", "sv.fasta.img", "reads.bam",
                 "reads.bai", "shallow.bam", "shallow.bai", "other.bam", "other.bai", "not-sorted.bam",
                 "kill.txt", "kill31.txt", "kill32.txt", "kill-wrong-length.txt", "kill-not-bases.txt", "cnv.vcf", "external.bed", "external-unsorted.bed",
-                "external-off.bed", "gaps.txt", "gaps-columns.txt", "gaps-contig.txt", "cross.txt", "cross-off.txt"}) {
+                "external-off.bed", "gaps.txt", "gaps-columns.txt", "gaps-contig.txt", "cross.txt", "cross-off.txt", "external-long.bed",
+                "sbi.bam", "sbi.bam.sbi", "wide.bam", "wide.bai", "wrapped.bam", "wrapped.bai"}) {
             final byte[] bytes = Files.readAllBytes(DIR.resolve(name));
             System.out.printf("input\t%s\t%s%n", name, Base64.getEncoder().encodeToString(
                     name.endsWith(".img") ? withoutAddresses(bytes) : bytes));
@@ -80,6 +82,7 @@ public class SvEvidenceDump {
         jdkDeflaterRows();
         findBreakpointRows();
         pipelineRows();
+        partitionRows();
         System.out.flush();
         // Spark's threads would keep the container up.
         System.exit(0);
@@ -378,6 +381,31 @@ public class SvEvidenceDump {
         Files.writeString(DIR.resolve("gaps-contig.txt"), "chrOther\t5900\t5950\n");
         Files.writeString(DIR.resolve("cross.txt"), "chr2\n");
         Files.writeString(DIR.resolve("cross-off.txt"), "chrOther\n");
+
+        // Features across the whole of the contigs, long ones reaching over partitions.
+        Files.writeString(DIR.resolve("external-long.bed"), "chr1\t500\t600\nchr1\t1000\t12000\n"
+                + "chr1\t13000\t13100\nchr2\t500\t8000\nchr2\t8500\t8600\n");
+        Files.copy(DIR.resolve("reads.bam"), DIR.resolve("sbi.bam"));
+        htsjdk.samtools.BAMSBIIndexer.createIndex(DIR.resolve("sbi.bam"), 4096L);
+        // The reads under a dictionary that makes KmerCleaner's table over 2^27 entries.
+        reheadered("wide.bam", 70_000_000);
+        // And one whose table size narrows to a negative int.
+        reheadered("wrapped.bam", 1_200_000_000);
+    }
+
+    static void reheadered(final String name, final int firstContigLength) throws Exception {
+        final List<SAMRecord> records = new ArrayList<>();
+        final SAMFileHeader header;
+        try (htsjdk.samtools.SamReader reader = htsjdk.samtools.SamReaderFactory.makeDefault()
+                .open(DIR.resolve("reads.bam"))) {
+            header = reader.getFileHeader().clone();
+            header.getSequence(0).setSequenceLength(firstContigLength);
+            for (final SAMRecord record : reader) {
+                record.setHeader(header);
+                records.add(record);
+            }
+        }
+        write(DIR.resolve(name), header, records);
     }
 
     /** BWA's pointers, which nothing reads back; see SparkWalkersDump. */
@@ -597,6 +625,77 @@ public class SvEvidenceDump {
                 "--aligner-index-image", at("sv.fasta.img"), "-O", out("find-no-kmers", "contigs.sam"));
         run("find-no-image", "FindBreakpointEvidenceSpark", "-I", at("reads.bam"), "--kmers-to-ignore", at("kill.txt"),
                 "-O", out("find-no-image", "contigs.sam"));
+    }
+
+    /**
+     * Forced partitions: a local file is cut at this size or at 32 MiB, whichever is less, the last
+     * split taking a tenth over. reads.bam is some 300 KiB, so these make a handful to a hundred.
+     */
+    static void partitionRows() throws Exception {
+        final String pipelineTool = "StructuralVariationDiscoveryPipelineSpark";
+        for (final String size : new String[] {"131072", "65536", "20000", "7000", "1500"}) {
+            find("split-" + size, "reads.bam", "--bam-partition-size", size);
+        }
+        // The slop: a tenth over the size is one split, and more than that is two.
+        final long bytes = Files.size(DIR.resolve("reads.bam"));
+        find("split-slop-under", "reads.bam", "--bam-partition-size", String.valueOf(bytes * 100 / 105));
+        find("split-slop-over", "reads.bam", "--bam-partition-size", String.valueOf(bytes * 100 / 115));
+        // Every 64 KiB block its own split or none, and splits with no block starting in them.
+        find("split-300", "reads.bam", "--bam-partition-size", "300");
+        // `(int) splitSize`: negative and zero leave the default, and the rest is what is left.
+        find("split-2g", "reads.bam", "--bam-partition-size", "2147483648");
+        find("split-4g", "reads.bam", "--bam-partition-size", "4294967296");
+        find("split-4g-and-64k", "reads.bam", "--bam-partition-size", "4295032832");
+        find("split-over-block", "reads.bam", "--bam-partition-size", "1073741824");
+        find("split-nio", "reads.bam", "--bam-partition-size", "65536", "--use-nio");
+        find("split-nio-small", "reads.bam", "--bam-partition-size", "7000", "--use-nio");
+        find("split-nio-default", "reads.bam", "--use-nio");
+        find("split-sbi", "sbi.bam", "--bam-partition-size", "65536");
+        find("split-sbi-small", "sbi.bam", "--bam-partition-size", "7000");
+        find("split-intervals", "reads.bam", "--bam-partition-size", "65536", "-L", "chr1:2000-12000");
+        find("split-intervals-two", "reads.bam", "--bam-partition-size", "20000", "-L", "chr1:1-9000", "-L", "chr2");
+        find("split-shallow", "shallow.bam", "--bam-partition-size", "20000");
+        find("split-other", "other.bam", "--bam-partition-size", "65536");
+        find("split-k31", "reads.bam", "--bam-partition-size", "65536", "--k-size", "31",
+                "--kmers-to-ignore", at("kill31.txt"));
+        find("split-cleaner", "reads.bam", "--bam-partition-size", "65536", "--cleaner-max-intervals", "1",
+                "--cleaner-min-kmer-count", "6", "--cleaner-max-copy-number", "2");
+        find("split-min-kmers", "reads.bam", "--bam-partition-size", "65536", "--min-kmers-per-interval", "1000000");
+        find("split-thin", "reads.bam", "--bam-partition-size", "20000", "--min-evidence-coverage-ratio", "0.05",
+                "--min-coherent-evidence-coverage-ratio", "0.02");
+        find("split-coherent", "reads.bam", "--bam-partition-size", "20000", "--min-evidence-coverage-ratio", "5.0",
+                "--min-coherent-evidence-coverage-ratio", "0.1");
+        find("split-weight", "reads.bam", "--bam-partition-size", "20000", "--min-evidence-coverage-ratio", "5.0",
+                "--min-coherent-evidence-coverage-ratio", "5.0");
+        find("split-external", "reads.bam", "--bam-partition-size", "65536", "--external-evidence", at("external.bed"));
+        find("split-external-long", "reads.bam", "--bam-partition-size", "20000",
+                "--external-evidence", at("external-long.bed"));
+        find("split-external-empty-partition", "reads.bam", "--bam-partition-size", "300",
+                "--external-evidence", at("external.bed"));
+        find("split-gaps", "reads.bam", "--bam-partition-size", "65536", "--exclusion-intervals", at("gaps.txt"),
+                "--exclusion-interval-padding", "200");
+        find("split-cross", "reads.bam", "--bam-partition-size", "65536", "--cross-contigs-to-ignore", at("cross.txt"));
+        find("split-depth", "reads.bam", "--bam-partition-size", "65536", "--high-depth-coverage-peak-factor", "1",
+                "--high-depth-coverage-factor", "1");
+        find("split-interval-only", "reads.bam", "--bam-partition-size", "65536", "--interval-only-assembly");
+        find("split-queryname", "reads.bam", "--bam-partition-size", "65536",
+                "--assembled-contigs-output-order", "queryname");
+        find("split-not-sorted", "not-sorted.bam", "--bam-partition-size", "7000");
+        pipeline("split-pipeline", "reads.bam", "--bam-partition-size", "65536");
+        pipeline("split-pipeline-small", "reads.bam", "--bam-partition-size", "7000", "--exp-interpret");
+        pipeline("split-pipeline-threshold", "reads.bam", "--bam-partition-size", "20000",
+                "--imprecise-variant-evidence-threshold", "1");
+        pipeline("split-pipeline-other", "other.bam", "--bam-partition-size", "65536", "--exp-interpret");
+        pipeline("split-pipeline-external", "reads.bam", "--bam-partition-size", "65536",
+                "--external-evidence", at("external-long.bed"));
+        pipeline("split-pipeline-cnv", "reads.bam", "--bam-partition-size", "65536", "--cnv-calls", at("cnv.vcf"));
+
+        // KmerCleaner's table, from twice the dictionary over the partitions, narrowed to an int.
+        find("table-wide", "wide.bam");
+        find("table-wide-split", "wide.bam", "--bam-partition-size", "65536");
+        find("table-wide-k31", "wide.bam", "--k-size", "31", "--kmers-to-ignore", at("kill31.txt"));
+        find("table-wrapped", "wrapped.bam");
+        find("table-wrapped-split", "wrapped.bam", "--bam-partition-size", "65536");
     }
 
     static void pipeline(final String label, final String input, final String... rest) throws Exception {

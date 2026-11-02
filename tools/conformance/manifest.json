@@ -8374,7 +8374,7 @@
         "--add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED",
         "-XX:-OmitStackTraceInFastThrow"
       ],
-      "why": "A seeded reference and the reads of a donor genome with a deletion and a backwards insertion, run on one partition with every debug file on: the metadata, the evidence before and after the density filter, the target links, the template names and k-mers of each interval, the FASTQs and GFAs, the interval file, the aligned contigs and the VCFs. FERMI-LITE AND BWA ARE THE REFERENCE'S JNI, so the assembly and alignment columns of these rows are what the ports in gatk-fermilite and bwa-mem4 have to reproduce. A file over 16 KiB is listed by length and CRC, since the FASTQs of 94 runs would be 100 MB.",
+      "why": "A seeded reference and the reads of a donor genome with a deletion and a backwards insertion, run on one partition and on as many as a small --bam-partition-size, --use-nio or a .sbi cut it into, with every debug file on: the metadata, the evidence before and after the density filter, the target links, the template names and k-mers of each interval, the FASTQs and GFAs, the interval file, the aligned contigs and the VCFs. FERMI-LITE AND BWA ARE THE REFERENCE'S JNI, so the assembly and alignment columns of these rows are what the ports in gatk-fermilite and bwa-mem4 have to reproduce. A file over 16 KiB is listed by length and CRC, since the FASTQs of these runs would be hundreds of MB. Two more dictionaries over the same reads put KmerCleaner's table over 2^27 entries and narrow its size to a negative int.",
       "compare": {
         "mode": "lines"
       },
