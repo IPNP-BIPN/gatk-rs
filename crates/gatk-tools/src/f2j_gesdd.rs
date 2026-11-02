@@ -689,14 +689,14 @@ fn dbdsqr(d: &mut [f64], e: &mut [f64], u: &mut Square) -> bool {
                     f = cosr * d!(i) + sinr * e!(i);
                     e!(i) = cosr * e!(i) - sinr * d!(i);
                     g = sinr * d!(i + 1);
-                    d!(i + 1) = cosr * d!(i + 1);
+                    d!(i + 1) *= cosr;
                     let (cosl, sinl, r) = dlartg(f, g);
                     d!(i) = r;
                     f = cosl * e!(i) + sinl * d!(i + 1);
                     d!(i + 1) = cosl * d!(i + 1) - sinl * e!(i);
                     if i < m - 1 {
                         g = sinl * e!(i + 1);
-                        e!(i + 1) = cosl * e!(i + 1);
+                        e!(i + 1) *= cosl;
                     }
                     second_c[i - ll] = cosl;
                     second_s[i - ll] = sinl;
@@ -717,14 +717,14 @@ fn dbdsqr(d: &mut [f64], e: &mut [f64], u: &mut Square) -> bool {
                     f = cosr * d!(i) + sinr * e!(i - 1);
                     e!(i - 1) = cosr * e!(i - 1) - sinr * d!(i);
                     g = sinr * d!(i - 1);
-                    d!(i - 1) = cosr * d!(i - 1);
+                    d!(i - 1) *= cosr;
                     let (cosl, sinl, r) = dlartg(f, g);
                     d!(i) = r;
                     f = cosl * e!(i - 1) + sinl * d!(i - 1);
                     d!(i - 1) = cosl * d!(i - 1) - sinl * e!(i - 1);
                     if i > ll + 1 {
                         g = sinl * e!(i - 2);
-                        e!(i - 2) = cosl * e!(i - 2);
+                        e!(i - 2) *= cosl;
                     }
                     first_c[i - ll - 1] = cosr;
                     first_s[i - ll - 1] = -sinr;
