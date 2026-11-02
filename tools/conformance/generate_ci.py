@@ -49,7 +49,9 @@ def wrap(text, indent, width=96):
 
 
 def oracle_jobs(manifest):
-    suites = manifest["suites"]
+    # A suite naming an image of its own cannot run from the shared image's cache, so it has a job
+    # of its own in ci.template.yml.
+    suites = [s for s in manifest["suites"] if not s.get("oracle")]
     probes = manifest.get("probes", [])
     oracle = manifest["oracle"]
     out = []

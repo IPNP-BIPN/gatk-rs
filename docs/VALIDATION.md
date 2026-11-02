@@ -366,7 +366,7 @@ Held out: `--dont-require-soft-clips-both-ends`, `--keep-reverse-strand-only`, `
 
 ### AlleleFrequencyQC
 
-Suites: `allele-frequency-qc`.
+Suites: `allele-frequency-qc`, `r-plots`.
 
 Inputs: `afqc_1kg.vcf`, `afqc_1kg2.vcf`, `cgv_ref.fasta`, `gg_dbsnp.vcf`, `ve_cnv.bed`, `ve_strat.bed`.
 
@@ -1658,7 +1658,7 @@ Held out: `--output-shard-tmp-dir`.
 
 ### PlotDenoisedCopyRatios
 
-Suites: `interpreter-tools`.
+Suites: `interpreter-tools`, `r-plots`.
 
 Inputs: `chr1.dict`, `denoised-other.tsv`, `denoised.tsv`, `ref.dict`, `standardized.tsv`.
 
@@ -1668,7 +1668,7 @@ The reference checks every input and makes the output directory, then RScriptExe
 
 ### PlotModeledSegments
 
-Suites: `interpreter-tools`.
+Suites: `interpreter-tools`, `r-plots`.
 
 Inputs: `allelic.tsv`, `chr1.dict`, `denoised.tsv`, `ref.dict`, `segments-wrong.seg`, `segments.seg`.
 
