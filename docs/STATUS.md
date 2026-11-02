@@ -7,8 +7,8 @@ Ports vendored from main at: htsjdk-rs `821a863bfb80`, picard-rs `bd199d296c43`
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 308 | 99.0% |
-| golden-pending | 3 | 1.0% |
+| oracle-backed | 311 | 100.0% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 0 | 0.0% |
 | not started | 0 | 0.0% |
 | **total** | **311** | |
@@ -234,7 +234,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `FilterMutectCalls` | variant-transform | oracle-backed | filter-mutect-calls | 1 | t=2, 24/24 rows (100%) | 0.003 / 0.069 |
 | `FilterVariantTranches` | variant-transform | oracle-backed | filter-variant-tranches | 1 | t=2, 15/15 rows (100%) | 0.002 / 0.053 |
 | `FindBadGenomicKmersSpark` | reference-utility | oracle-backed | spark-walkers | 1 | not measured | not measured |
-| `FindBreakpointEvidenceSpark` | sv-caller | golden-pending | sv-evidence | 1 | not measured | not measured |
+| `FindBreakpointEvidenceSpark` | sv-caller | oracle-backed | sv-evidence | 1 | not measured | not measured |
 | `FixMisencodedBaseQualityReads` | record-transform | oracle-backed | fix-misencoded | 1 | t=2, 21/21 rows (100%) | 0.003 / 0.040 |
 | `FlagStat` | reporting-walker | oracle-backed | counting-walkers | 1 | t=2, 21/21 rows (100%) | 0.003 / 0.067 |
 | `FlagStatSpark` | reporting-walker | oracle-backed | spark-walkers | 1 | t=2, 19/19 rows (100%) | not measured |
@@ -249,7 +249,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `GatherTranches` | unclassified | oracle-backed | gather-tranches | 1 | t=2, 8/8 rows (100%) | 0.002 / 0.060 |
 | `GatherVcfsCloud` | variant-transform | oracle-backed | gather-vcfs, tool-argument-declarations, tool-argument-enums, usage-text | 4 | t=2, 11/11 rows (100%) | 0.003 / 0.088 |
 | `GeneExpressionEvaluation` | locus-walker | oracle-backed | gene-expression-evaluation | 1 | t=2, 19/19 rows (100%) | 0.002 / 0.058 |
-| `GenomicsDBImport` | assembly-caller | golden-pending | genomicsdb-import | 1 | not measured | not measured |
+| `GenomicsDBImport` | assembly-caller | oracle-backed | genomicsdb-import | 1 | not measured | not measured |
 | `GenotypeGVCFs` | assembly-caller | oracle-backed | genotype-gvcfs | 1 | t=2, 34/34 rows (100%) | 0.004 / 0.074 |
 | `GermlineCNVCaller` | cnv-segmentation | oracle-backed | interpreter-tools | 1 | not measured | not measured |
 | `GetNormalArtifactData` | locus-walker | oracle-backed | normal-artifact-data | 1 | t=2, 19/19 rows (100%) | 0.002 / 0.055 |
@@ -328,7 +328,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `SplitNCigarReads` | record-transform | oracle-backed | split-n-cigar-reads | 1 | t=2, 21/21 rows (100%) | 0.003 / 0.061 |
 | `SplitReads` | record-transform | oracle-backed | split-reads | 1 | t=2, 20/20 rows (100%) | 0.004 / 0.036 |
 | `StructuralVariantDiscoverer` | unclassified | oracle-backed | structural-variant-discoverer | 1 | t=2, 23/23 rows (100%) | 0.002 / 0.056 |
-| `StructuralVariationDiscoveryPipelineSpark` | sv-caller | golden-pending | sv-evidence | 1 | not measured | not measured |
+| `StructuralVariationDiscoveryPipelineSpark` | sv-caller | oracle-backed | sv-evidence | 1 | not measured | not measured |
 | `SvDiscoverFromLocalAssemblyContigAlignmentsSpark` | sv-caller | oracle-backed | spark-walkers | 1 | not measured | not measured |
 | `TagGermlineEvents` | unclassified | oracle-backed | tag-germline-events | 1 | t=2, 17/17 rows (100%) | 0.002 / 0.054 |
 | `TrainVariantAnnotationsModel` | variant-transform | oracle-backed | interpreter-tools | 1 | not measured | not measured |
