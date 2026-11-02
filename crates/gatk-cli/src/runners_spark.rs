@@ -3134,16 +3134,7 @@ fn write_reverted(
     }
     // `--sharded-output` is BAM parts under whatever the directory is called.
     let sharded = flag(parser, "sharded-output");
-    if output.ends_with(".sam") && !sharded {
-        // Disq's SAM writer: the text, whatever the partitions, and no index of any kind.
-        let records: Vec<BamRecord> = partitions.iter().flatten().cloned().collect();
-        let text = htsjdk_bam::sam_file::write_sam(header, &records)
-            .ok_or_else(|| Thrown::non_user(PORT_FAILURE, format!("could not write {output}")))?;
-        return std::fs::write(output, text).map_err(|error| {
-            Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
-        });
-    }
-    if !output.ends_with(".bam") && !sharded {
+    if !output.ends_with(".bam") && !output.ends_with(".sam") && !sharded {
         return Err(Thrown::non_user(
             PORT_LIMITATION,
             format!(
@@ -4256,6 +4247,14 @@ fn write_spark_indexed(
         std::fs::write(directory.join("_SUCCESS"), b"")
             .map_err(|error| failed(output, error.to_string()))?;
         return Ok(());
+    }
+
+    if output.ends_with(".sam") {
+        // Disq's SAM writer: the text, whatever the partitions, and no index of any kind.
+        let records: Vec<BamRecord> = partitions.iter().flatten().cloned().collect();
+        let text = htsjdk_bam::sam_file::write_sam(header, &records)
+            .ok_or_else(|| failed(output, "the SAM text could not be built".to_string()))?;
+        return std::fs::write(output, text).map_err(|error| failed(output, error.to_string()));
     }
 
     // The header part: a header-only BAM without its terminator.
