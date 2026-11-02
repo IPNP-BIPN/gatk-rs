@@ -19,13 +19,13 @@ echo "=== ploidy $(date +%s)"
 gatk --java-options "$java_options" DetermineGermlineContigPloidy $inputs \
   -L "$fixture/intervals.interval_list" --interval-merging-rule OVERLAPPING_ONLY \
   --contig-ploidy-priors "$fixture/priors.tsv" --output ploidy --output-prefix p \
-  --max-advi-iter-first-epoch 200 --max-advi-iter-subsequent-epochs 50 \
+  --max-advi-iter-first-epoch 200 --max-advi-iter-subsequent-epochs 50 --num-thermal-advi-iters 100 \
   --max-training-epochs 3 --min-training-epochs 1 --max-calling-iters 3
 echo "=== caller $(date +%s)"
 gatk --java-options "$java_options" GermlineCNVCaller --run-mode COHORT $inputs \
   -L "$fixture/intervals.interval_list" --interval-merging-rule OVERLAPPING_ONLY \
   --contig-ploidy-calls ploidy/p-calls --output gcnv --output-prefix g \
-  --max-advi-iter-first-epoch 200 --max-advi-iter-subsequent-epochs 50 \
+  --max-advi-iter-first-epoch 200 --max-advi-iter-subsequent-epochs 50 --num-thermal-advi-iters 100 \
   --max-training-epochs 3 --min-training-epochs 1 --max-calling-iters 3
 echo "=== postprocess $(date +%s)"
 gatk --java-options "$java_options" PostprocessGermlineCNVCalls \

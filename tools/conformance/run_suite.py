@@ -85,8 +85,12 @@ def build_fixtures(manifest, into):
     ).returncode
 
 
-def docker_run(manifest, harness, cls, props, stdout, fixtures=None):
+def docker_run(manifest, harness, cls, props, stdout, fixtures=None, suite=None):
     oracle = manifest["oracle"]
+    # A suite whose reference needs what the pinned image was built without, an interpreter, names
+    # its own image and what to run in it. Its dump is written to stdout like any other.
+    image = (suite or {}).get("image", oracle["image"])
+    command = (suite or {}).get("command") or container_command(cls, props)
     mounts = ["-v", f"{REPO}/{harness}:/harness:ro"]
     if fixtures is not None:
         mounts += ["-v", f"{fixtures}:/work/fixtures:ro"]
@@ -99,8 +103,10 @@ def docker_run(manifest, harness, cls, props, stdout, fixtures=None):
         *mounts,
         "-w",
         "/work",
-        oracle["image"],
-        container_command(cls, props),
+        *(["--entrypoint", "bash"] if (suite or {}).get("command") else []),
+        image,
+        *(["-c"] if (suite or {}).get("command") else []),
+        command,
     ]
     print("+ " + " ".join(cmd[:-1]) + f" '{cmd[-1][:60]}...'", flush=True)
     with open(stdout, "w") as fh:
@@ -130,7 +136,7 @@ def run_pending(manifest, suite, workdir):
     for case in suite["cases"]:
         dump = case["dump"]
         out = PENDING_DIR / f"{suite['id']}.{dump}.txt"
-        rc = docker_run(manifest, suite["harness"], dump, props, out, fixtures)
+        rc = docker_run(manifest, suite["harness"], dump, props, out, fixtures, suite)
         rows = [l for l in open(out) if l.strip() and not l.startswith("#")]
         print(f"--- {suite['id']}/{dump}: {len(rows)} rows, nothing compared (no golden yet)")
         for line in rows:

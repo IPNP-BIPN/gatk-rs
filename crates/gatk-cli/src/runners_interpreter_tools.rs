@@ -14,18 +14,30 @@
 //! * **`PostprocessGermlineCNVCalls`** runs `GATKTool.onStartup` ahead of that import, and `-L`
 //!   there resolves against the dictionary of the shards' interval lists;
 //! * **`TrainVariantAnnotationsModel`** reads the annotation names only to compare them with the
-//!   unlabeled file's, and `JAVA_BGMM` and `PYTHON_SCRIPT` read every matrix before they fail;
+//!   unlabeled file's, and `JAVA_BGMM` and `PYTHON_SCRIPT` read every matrix before they fail. The
+//!   default backend is not a script here: see below;
 //! * **`ScoreVariantAnnotations`** is `ExtractVariantAnnotations`' walker with a backend after the
 //!   header, a pass and an annotations file before its first script, and a VCF when the pass
 //!   extracted nothing and no script is needed.
+//!
+//! `PYTHON_IFOREST`'s script is ported: the fit, the scores and the pickle are the same numbers
+//! scikit-learn 1.3.2 gets, measured in `docs/python-tools.md`. The tool still refuses as the
+//! reference does where `python` or its packages are missing, because those refusals are the
+//! reference's answer on such a machine. What the script does not get is the temporary name of
+//! its own file, so the pickle holds zeros where the reference's holds a random number.
 use super::extract_variant_annotations_runner::{
     labelled_walker_start, matrix, metadata, reduced, validate_output_files, LabelledStart,
 };
 use super::*;
+use gatk_tools::empirical_distribution::EmpiricalDistribution;
 use gatk_tools::extract_variant_annotations as extract;
+use gatk_tools::h5py_scores;
 use gatk_tools::hdf5_reader::Hdf5Reader;
+use gatk_tools::hdf5_writer::Hdf5File;
+use gatk_tools::isolation_forest::{self, Hyperparameters};
 use gatk_tools::model_segments_models::{illegal, Span};
 use gatk_tools::model_segments_tool as tables;
+use gatk_tools::scorer_pickle;
 use htsjdk_bam::header::SequenceRecord;
 
 const NOT_IMPLEMENTED: &str = "org.apache.commons.lang3.NotImplementedException";
@@ -56,6 +68,41 @@ fn stop_at(executable: &str, what_is_not_ported: &str) -> Thrown {
 /// `PythonScriptExecutor.checkPythonEnvironmentForPackage`, whose constructor is what fails.
 fn import_stop(package: &str) -> Thrown {
     stop_at("python", &format!("A Python environment with {package}"))
+}
+
+/// A refusal in the port's words, where the reference's script would go on or fail in its own.
+fn port_limit(what: impl std::fmt::Display) -> Thrown {
+    Thrown::non_user(
+        PORT_LIMITATION,
+        format!("{what} is not ported. This message is the port's own and not GATK's."),
+    )
+}
+
+/// The five `checkPythonEnvironmentForPackage` of the default backend.
+fn check_isolation_forest_packages() -> Result<(), Thrown> {
+    for package in ["argparse", "h5py", "numpy", "sklearn", "dill"] {
+        if !on_the_path("python") {
+            return Err(import_stop(package));
+        }
+        let imported = std::process::Command::new("python")
+            .args(["-c", &format!("import {package}\n")])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success());
+        if !imported {
+            return Err(Thrown::non_user(
+                "java.lang.RuntimeException",
+                format!(
+                    "A required Python package (\"{package}\") could not be imported into the \
+                     Python environment. This tool requires that the GATK Python environment is \
+                     properly established and activated. Please refer to GATK README.md file for \
+                     instructions on setting up the GATK Python environment."
+                ),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// `IOUtils.canReadFile`, which `Utils.nonNull` guards.
@@ -609,7 +656,7 @@ pub fn train_variant_annotations_model(parser: &Parser) -> Outcome {
             if hyperparameters.is_some() {
                 can_read_file(hyperparameters.as_deref())?;
             }
-            return Err(import_stop("argparse"));
+            check_isolation_forest_packages()?;
         }
     }
 
@@ -623,7 +670,7 @@ pub fn train_variant_annotations_model(parser: &Parser) -> Outcome {
         let names = read_annotation_names(&annotations)?;
         let rows = read_annotation_rows(&annotations)?;
         let is_training = read_label(&annotations, extract::TRAINING_LABEL)?;
-        let _is_calibration = read_label(&annotations, extract::CALIBRATION_LABEL)?;
+        let is_calibration = read_label(&annotations, extract::CALIBRATION_LABEL)?;
         let is_snp = read_label(&annotations, extract::SNP_LABEL)?;
         let keep: Vec<bool> = is_training
             .iter()
@@ -666,16 +713,78 @@ pub fn train_variant_annotations_model(parser: &Parser) -> Outcome {
         if backend == "JAVA_BGMM" {
             return Err(Thrown::non_user(NOT_IMPLEMENTED, BGMM_NOT_IMPLEMENTED));
         }
-        return Err(stop_at("python", "Running --python-script"));
+        if backend == "PYTHON_SCRIPT" {
+            return Err(stop_at("python", "Running --python-script"));
+        }
+        if unlabeled.is_some() {
+            // The script has no such argument: the reference ends in `argparse`'s exit status 2.
+            return Err(port_limit(
+                "Handing --unlabeled-annotations-hdf5 to the default script, which rejects it,",
+            ));
+        }
+        let keep_calibration: Vec<bool> = is_calibration
+            .iter()
+            .zip(&is_snp)
+            .map(|(calibration, snp)| *calibration && (*snp == is_snp_model))
+            .collect();
+        let calibration = if keep_calibration.iter().any(|keep| *keep) {
+            Some(subset(&names, &rows, &keep_calibration)?)
+        } else {
+            None
+        };
+        train_isolation_forest(
+            &names,
+            &training,
+            calibration.as_deref(),
+            hyperparameters.as_deref(),
+            &tagged,
+        )?;
     }
     Ok(None)
 }
 
-/// `ScoreVariantAnnotations.readCalibrationScoresAndCreateConverter`, whether there is one.
-fn calibration_exists(prefix: &str, tag: &str) -> Result<bool, Thrown> {
+/// What `isolation-forest.py` writes for one variant type, and the scores `score` then has it write.
+fn train_isolation_forest(
+    names: &[String],
+    training: &[&Vec<f64>],
+    calibration: Option<&[&Vec<f64>]>,
+    hyperparameters: Option<&str>,
+    tagged: &str,
+) -> Result<(), Thrown> {
+    let json = match hyperparameters {
+        Some(path) => std::fs::read_to_string(path).map_err(port_limit)?,
+        None => "{\"random_state\": 0}".to_string(),
+    };
+    let hyperparameters = Hyperparameters::from_json(&json).map_err(port_limit)?;
+    let owned = |rows: &[&Vec<f64>]| rows.iter().map(|row| (*row).clone()).collect::<Vec<_>>();
+    let training = owned(training);
+    let forest = isolation_forest::fit(names, &training, &hyperparameters).map_err(port_limit)?;
+    write_file(
+        &format!("{tagged}.scorer.pkl"),
+        &scorer_pickle::write(&forest),
+    )?;
+    let scorer = forest.scorer();
+    let scores = isolation_forest::score_samples(&scorer, names, &training).map_err(port_limit)?;
+    write_file(
+        &format!("{tagged}.trainingScores.hdf5"),
+        &h5py_scores::write(&scores),
+    )?;
+    if let Some(calibration) = calibration {
+        let scores = isolation_forest::score_samples(&scorer, names, &owned(calibration))
+            .map_err(port_limit)?;
+        write_file(
+            &format!("{tagged}.calibrationScores.hdf5"),
+            &h5py_scores::write(&scores),
+        )?;
+    }
+    Ok(())
+}
+
+/// `ScoreVariantAnnotations.readCalibrationScoresAndCreateConverter`, up to the distribution.
+fn calibration_scores(prefix: &str, tag: &str) -> Result<Option<Vec<f64>>, Thrown> {
     let path = format!("{prefix}.{tag}.calibrationScores.hdf5");
     if std::fs::File::open(&path).is_err() {
-        return Ok(false);
+        return Ok(None);
     }
     let reader = open_hdf5(&path, "scores")?;
     let (_, scores) = reader
@@ -684,7 +793,64 @@ fn calibration_exists(prefix: &str, tag: &str) -> Result<bool, Thrown> {
     if !scores.iter().all(|score| score.is_finite()) {
         return Err(illegal("Calibration scores must all be finite."));
     }
-    Ok(true)
+    Ok(Some(scores))
+}
+
+/// `scoreVariantTypeAndSetElementsOfAllScores`, whose script reads the scorer only here.
+fn score_variant_type(
+    model_prefix: &str,
+    tag: &str,
+    names: &[String],
+    rows: &[Vec<f64>],
+    is_type: &[bool],
+    scores: &mut [f64],
+) -> Result<(), Thrown> {
+    if !is_type.iter().any(|is_type| *is_type) {
+        return Ok(());
+    }
+    let path = format!("{model_prefix}.{tag}.scorer.pkl");
+    let bytes = std::fs::read(&path).map_err(port_limit)?;
+    let scorer = scorer_pickle::read(&bytes).ok_or_else(|| {
+        port_limit(format!(
+            "Loading {path}, which the default script at scikit-learn 1.3.2 did not write,"
+        ))
+    })?;
+    let kept: Vec<Vec<f64>> = subset(names, rows, is_type)?.into_iter().cloned().collect();
+    let scored =
+        isolation_forest::score_samples(&scorer, names, &kept).map_err(port_limit)?;
+    let mut next = scored.into_iter();
+    for (score, _) in scores.iter_mut().zip(is_type).filter(|(_, keep)| **keep) {
+        *score = next.next().unwrap_or(f64::NAN);
+    }
+    Ok(())
+}
+
+/// `String.format(doubleFormat, x)`, for the formats whose rules the port carries.
+fn format_score(format: &str, value: f64) -> Result<String, Thrown> {
+    let places = format
+        .strip_prefix("%.")
+        .and_then(|rest| rest.strip_suffix('f'))
+        .and_then(|digits| digits.parse::<usize>().ok())
+        .ok_or_else(|| port_limit(format!("--double-format {format}")))?;
+    Ok(if value.is_nan() {
+        "NaN".to_string()
+    } else if value.is_infinite() {
+        (if value > 0.0 { "Infinity" } else { "-Infinity" }).to_string()
+    } else {
+        gatk_engine::java_format::format_decimals(value, places)
+    })
+}
+
+/// `VariantContextBuilder.attribute`, which replaces.
+fn set_attribute(
+    record: &mut htsjdk_vcf::variant::VariantContext,
+    key: &str,
+    value: htsjdk_vcf::variant::Value,
+) {
+    match record.attributes.iter_mut().find(|(name, _)| name == key) {
+        Some(existing) => existing.1 = value,
+        None => record.attributes.push((key.to_string(), value)),
+    }
 }
 
 /// `ScoreVariantAnnotations.constructVCFHeader`, over the input's lines.
@@ -787,7 +953,7 @@ impl ScoreKeys {
     }
 }
 
-/// `ScoreVariantAnnotations`, up to its first script.
+/// `ScoreVariantAnnotations`.
 pub fn score_variant_annotations(parser: &Parser) -> Outcome {
     let VariantWalkerStart {
         input,
@@ -852,7 +1018,9 @@ pub fn score_variant_annotations(parser: &Parser) -> Outcome {
                     "Python script should not be provided when using PYTHON_IFOREST backend.",
                 ));
             }
-            return Err(import_stop("argparse"));
+            check_isolation_forest_packages()?;
+            snp_scorer = readable(".snp.scorer.pkl".to_string());
+            indel_scorer = readable(".indel.scorer.pkl".to_string());
         }
     }
     if !snp_scorer && !indel_scorer {
@@ -876,24 +1044,29 @@ pub fn score_variant_annotations(parser: &Parser) -> Outcome {
                 .to_string(),
         ));
     }
-    let snp_calibration = calibration_exists(&model_prefix, "snp")?;
-    let indel_calibration = calibration_exists(&model_prefix, "indel")?;
-    if !snp_calibration && scalar(parser, "snp-calibration-sensitivity-threshold").is_some() {
+    let snp_calibration = calibration_scores(&model_prefix, "snp")?;
+    let indel_calibration = calibration_scores(&model_prefix, "indel")?;
+    let threshold = |name: &str| -> Option<f64> {
+        scalar(parser, name).and_then(|value| value.parse().ok())
+    };
+    let snp_threshold = threshold("snp-calibration-sensitivity-threshold");
+    let indel_threshold = threshold("indel-calibration-sensitivity-threshold");
+    if snp_calibration.is_none() && scalar(parser, "snp-calibration-sensitivity-threshold").is_some() {
         return Err(bad_input(format!(
             "The snp-calibration-sensitivity-threshold argument was specified, but no SNP \
              calibration scores were provided in the model files with the prefix {model_prefix}."
         )));
     }
-    if !indel_calibration && scalar(parser, "indel-calibration-sensitivity-threshold").is_some() {
+    if indel_calibration.is_none() && scalar(parser, "indel-calibration-sensitivity-threshold").is_some() {
         return Err(bad_input(format!(
             "The indel-calibration-sensitivity-threshold argument was specified, but no INDEL \
              calibration scores were provided in the model files with the prefix {model_prefix}."
         )));
     }
-    validate_output_files(&[&format!("{prefix}.scores.hdf5")])?;
+    let scores_path = format!("{prefix}.scores.hdf5");
+    validate_output_files(&[&scores_path])?;
 
-    // The first pass. A pass that extracts anything needs a script to score it, and the
-    // annotations file is written before one is looked for.
+    // The first pass. The annotations file is written before anything scores it.
     let traversed = variants_in_traversal(&file.records, intervals.as_deref(), &input)?;
     let mut extracted: Vec<Vec<extract::Row>> = Vec::new();
     for record in &traversed {
@@ -919,12 +1092,110 @@ pub fn score_variant_annotations(parser: &Parser) -> Outcome {
                 flag(parser, "omit-alleles-in-hdf5"),
             ),
         )?;
-        return Err(stop_at("python", "Running --python-script"));
+        if backend == "PYTHON_SCRIPT" {
+            return Err(stop_at("python", "Running --python-script"));
+        }
     }
 
-    // The second pass: nothing was extracted, so every record goes through as it was read.
-    let written: Vec<htsjdk_vcf::variant::VariantContext> =
-        traversed.into_iter().cloned().collect();
+    // `readAnnotationsAndWriteScoresToHDF5`, from the file the pass just wrote.
+    let mut scores = Vec::new().into_iter();
+    let mut is_snp = Vec::new().into_iter();
+    if !extracted.is_empty() {
+        let names = read_annotation_names(&annotations_path)?;
+        let rows = read_annotation_rows(&annotations_path)?;
+        let snp = read_label(&annotations_path, extract::SNP_LABEL)?;
+        let mut all = vec![f64::NAN; rows.len()];
+        if wants(extract::VariantType::Snp) {
+            score_variant_type(&model_prefix, "snp", &names, &rows, &snp, &mut all)?;
+        }
+        if wants(extract::VariantType::Indel) {
+            let indel: Vec<bool> = snp.iter().map(|snp| !*snp).collect();
+            score_variant_type(&model_prefix, "indel", &names, &rows, &indel, &mut all)?;
+        }
+        let mut file = Hdf5File::new();
+        file.double_array("/data/scores", &all);
+        write_file(&scores_path, &file.to_bytes())?;
+        scores = all.into_iter();
+        is_snp = snp.into_iter();
+    }
+    let distribution = |calibration: &Option<Vec<f64>>| -> Result<_, Thrown> {
+        match calibration {
+            Some(values) if values.is_empty() => Err(port_limit("An empty calibration set")),
+            Some(values) => Ok(Some(EmpiricalDistribution::load(values))),
+            None => Ok(None),
+        }
+    };
+    let snp_converter = distribution(&snp_calibration)?;
+    let indel_converter = distribution(&indel_calibration)?;
+    let double_format = argument(parser, "double-format").unwrap_or_default();
+
+    // The second pass: `writeExtractedVariantToVCF`, and an unextracted record as it was read.
+    use htsjdk_vcf::variant::Value;
+    let mut written: Vec<htsjdk_vcf::variant::VariantContext> =
+        Vec::with_capacity(traversed.len());
+    for record in traversed {
+        let reduced_record = reduced(record);
+        let found = metadata(&reduced_record, &resources, &walker_arguments, true)?;
+        let mut out = record.clone();
+        if !found.is_empty() {
+            let labels: std::collections::BTreeSet<&String> =
+                found.iter().flat_map(|e| &e.labels).collect();
+            for label in labels {
+                set_attribute(&mut out, label, Value::Bool(true));
+            }
+            let count = if allele_specific {
+                found.iter().map(|e| e.alternates.len()).sum()
+            } else {
+                1
+            };
+            let own_scores: Vec<f64> = scores.by_ref().take(count).collect();
+            let own_snp: Vec<bool> = is_snp.by_ref().take(count).collect();
+            // `Collections.max` and `indexOf` over boxed doubles, where `NaN` is the greatest.
+            let score = own_scores
+                .iter()
+                .copied()
+                .fold(f64::NEG_INFINITY, |best, x| {
+                    if x.is_nan() || (!best.is_nan() && x > best) {
+                        x
+                    } else {
+                        best
+                    }
+                });
+            let index = own_scores
+                .iter()
+                .position(|x| x.to_bits() == score.to_bits())
+                .unwrap_or(0);
+            let snp_max = own_snp.get(index).copied().unwrap_or(false);
+            set_attribute(
+                &mut out,
+                &keys.score,
+                Value::Str(format_score(&double_format, score)?),
+            );
+            if let Some(key) = &keys.snp {
+                set_attribute(&mut out, key, Value::Bool(snp_max));
+            }
+            let (converter, threshold) = if snp_max {
+                (&snp_converter, snp_threshold)
+            } else {
+                (&indel_converter, indel_threshold)
+            };
+            if let Some(converter) = converter {
+                let sensitivity = 1.0 - converter.cumulative_probability(score);
+                set_attribute(
+                    &mut out,
+                    &keys.calibration,
+                    Value::Str(format_score(&double_format, sensitivity)?),
+                );
+                if threshold.is_some_and(|threshold| sensitivity >= threshold) {
+                    let filters = out.filters.get_or_insert_with(Vec::new);
+                    if !filters.contains(&keys.filter) {
+                        filters.push(keys.filter.clone());
+                    }
+                }
+            }
+        }
+        written.push(out);
+    }
     let vcf = htsjdk_vcf::vcf_file::write_vcf(&header, &written)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
     write_variant_output(parser, &vcf_path, &vcf)?;

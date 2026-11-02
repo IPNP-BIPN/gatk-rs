@@ -28,11 +28,6 @@ gatk --java-options "$java_options" TrainVariantAnnotationsModel \
   -O train $extra
 gatk --java-options "$java_options" ScoreVariantAnnotations -V "$fixture/calls.vcf" $annotations \
   --resource:train,training=true,calibration=true "$fixture/resource.vcf" \
-  --model-prefix train -O score \
+  --model-prefix train -O score ${SCORE_EXTRA:-} \
   --add-output-vcf-command-line false --create-output-variant-index false --do-not-gzip-vcf-output
 ls -la
-python - <<'P'
-import numpy as np, sys
-c = np.core._multiarray_umath.__cpu_features__
-print('cpu', ' '.join(k for k, v in c.items() if v))
-P
