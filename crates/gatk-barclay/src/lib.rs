@@ -160,7 +160,7 @@ pub fn java_double_to_string(value: f64) -> String {
 /// This is `getUnderlyingFieldClass()`, which boxes: a primitive `int` field reports `Integer`, so
 /// it is a `Number` for the range check even though `getUnderlyingField().getType().isPrimitive()`
 /// is what the null check asks.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum ValueClass {
     Integer,
     Double,
@@ -197,6 +197,12 @@ pub enum ValueClass {
         simple_name: &'static str,
         taggable: bool,
     },
+    /// A class whose `String` constructor refuses some strings: `URI` and `SimpleInterval`. The
+    /// test says which, and a refusal is the same "Failure constructing" as a number's.
+    Checked {
+        simple_name: &'static str,
+        accepts: fn(&str) -> bool,
+    },
 }
 
 impl ValueClass {
@@ -222,6 +228,7 @@ impl ValueClass {
             ValueClass::Long => "Long",
             ValueClass::Byte => "Byte",
             ValueClass::Constructed { simple_name, .. } => simple_name,
+            ValueClass::Checked { simple_name, .. } => simple_name,
         }
     }
 
@@ -281,6 +288,20 @@ impl ValueClass {
                     })
                 } else {
                     Ok(Value::Str(text.to_string()))
+                }
+            }
+            ValueClass::Checked {
+                simple_name,
+                accepts,
+            } => {
+                if accepts(text) {
+                    Ok(Value::Str(text.to_string()))
+                } else {
+                    Err(Error::bad_argument_value_with_message(
+                        argument_name,
+                        text,
+                        &format!("Failure constructing '{simple_name}' from the string '{text}'."),
+                    ))
                 }
             }
             ValueClass::Text => Ok(Value::Str(text.to_string())),
@@ -646,7 +667,7 @@ impl Definition {
 
     /// `isFlag()`: a boolean-valued argument, which may appear with no value at all.
     pub fn is_flag(&self) -> bool {
-        self.class == ValueClass::Boolean
+        matches!(self.class, ValueClass::Boolean)
     }
 
     /// `getHasBeenSet()`.

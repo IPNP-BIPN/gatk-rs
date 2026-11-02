@@ -57,6 +57,9 @@ public class UsageTextDump {
                 new org.broadinstitute.hellbender.tools.CompareIntervalLists());
         usage("PrintBGZFBlockInformation",
                 new org.broadinstitute.hellbender.tools.PrintBGZFBlockInformation());
+        // Undocumented as well, a Spark tool whose declarations need the summary.
+        usage("CollectAllelicCountsSpark",
+                new org.broadinstitute.hellbender.tools.copynumber.CollectAllelicCountsSpark());
         // Undocumented as well, and a read walker, so this one's usage carries the plugin
         // arguments the two above it do not.
         usage("AddOriginalAlignmentTags",

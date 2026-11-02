@@ -537,6 +537,30 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.spark.pipelines.metrics.CollectInsertSizeMetricsSpark());
         declarations("CollectMultipleMetricsSpark",
                 new org.broadinstitute.hellbender.tools.spark.pipelines.metrics.CollectMultipleMetricsSpark());
+        declarations("CollectAllelicCountsSpark",
+                new org.broadinstitute.hellbender.tools.copynumber.CollectAllelicCountsSpark());
+        declarations("CalcMetadataSpark",
+                new org.broadinstitute.hellbender.tools.spark.sv.evidence.CalcMetadataSpark());
+        declarations("HaplotypeCallerSpark",
+                new org.broadinstitute.hellbender.tools.HaplotypeCallerSpark());
+        declarations("ReadsPipelineSpark",
+                new org.broadinstitute.hellbender.tools.spark.pipelines.ReadsPipelineSpark());
+        declarations("PathSeqFilterSpark",
+                new org.broadinstitute.hellbender.tools.spark.pathseq.PathSeqFilterSpark());
+        declarations("PathSeqScoreSpark",
+                new org.broadinstitute.hellbender.tools.spark.pathseq.PathSeqScoreSpark());
+        declarations("ExtractSVEvidenceSpark",
+                new org.broadinstitute.hellbender.tools.spark.sv.evidence.ExtractSVEvidenceSpark());
+        declarations("DiscoverVariantsFromContigAlignmentsSAMSpark",
+                new org.broadinstitute.hellbender.tools.spark.sv.discovery.DiscoverVariantsFromContigAlignmentsSAMSpark());
+        declarations("HtsgetReader",
+                new org.broadinstitute.hellbender.tools.HtsgetReader());
+        declarations("CpxVariantReInterpreterSpark",
+                new org.broadinstitute.hellbender.tools.spark.sv.discovery.inference.CpxVariantReInterpreterSpark());
+        declarations("SvDiscoverFromLocalAssemblyContigAlignmentsSpark",
+                new org.broadinstitute.hellbender.tools.spark.sv.discovery.SvDiscoverFromLocalAssemblyContigAlignmentsSpark());
+        declarations("FindBadGenomicKmersSpark",
+                new org.broadinstitute.hellbender.tools.spark.sv.evidence.FindBadGenomicKmersSpark());
         declarations("MarkDuplicatesSpark",
                 new org.broadinstitute.hellbender.tools.spark.transforms.markduplicates.MarkDuplicatesSpark());
         declarations("MeanQualityByCycleSpark",

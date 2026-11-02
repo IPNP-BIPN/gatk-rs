@@ -89,7 +89,7 @@ public class SparkWalkersDump {
         PrintReadsDump.emptyDirectory(DIR);
         Files.createDirectories(DIR);
 
-        System.out.println("# SparkWalkersDump: twenty-one Spark tools through Main, --spark-master local[1]");
+        System.out.println("# SparkWalkersDump: thirty Spark tools through Main, --spark-master local[1]");
 
         final Path fasta = DIR.resolve("ref.fasta");
         Files.write(fasta, ReadWalkerDump.FASTA.getBytes());
@@ -184,22 +184,52 @@ public class SparkWalkersDump {
         insertSizeFixture(DIR.resolve("pairs-unsorted.bam"), SAMFileHeader.SortOrder.unsorted,
                 false);
 
+        kmerFixtures();
+        callerFixtures();
+        filterFixtures();
+        scoreFixtures();
+
         // The fixtures travel, so the port runs over these bytes rather than its own rebuild.
-        for (final String name : new String[] {"ref.fasta", "ref.fasta.fai", "ref.dict",
+        svEvidenceBam(DIR.resolve("sv-evidence.bam"), 300, 1L, false);
+        svEvidenceBam(DIR.resolve("sv-evidence2.bam"), 450, 2L, false);
+        svEvidenceBam(DIR.resolve("sv-evidence-lone.bam"), 300, 3L, true);
+        Files.write(DIR.resolve("sv-ignore.txt"), "alt\n".getBytes(StandardCharsets.UTF_8));
+        Files.write(DIR.resolve("sv-ignore-bad.txt"), "nosuch\n".getBytes(StandardCharsets.UTF_8));
+        svContigReads(DIR);
+        for (final String name : new String[] {"caller.fasta", "caller.fasta.fai", "caller.dict",
+                "caller.bam", "caller.bai", "caller-names.bam", "caller-dups.bam", "caller-dups.bai", "caller-dups-names.bam",
+                "caller-known.vcf", "caller-known.vcf.idx", "caller-known.bed", "caller-no-groups.bam", "kmers.fasta", "kmers.fasta.fai", "kmers.dict",
+                "kmers-big.fasta", "kmers-big.fasta.fai", "kmers-big.dict", "high-copy.fasta",
+                "high-copy-blank.fasta", "high-copy.fasta.gz", "ref.fasta", "ref.fasta.fai", "ref.dict",
                 "reads.bam", "reads.bai", "plain.vcf", "genotyped.vcf", "revert.map.tsv",
                 "revert.bad-map.tsv", "names.txt", "dup-a.bam", "dup-a.bai", "dup-marks.bam",
                 "dup-marks.bai", "dup-renamed.bam", "dup-uneven.bam", "dup-moved.bam",
                 "dup-no-group.bam", "dup-other-group.bam", "dup-fewer.bam", "pairs.bam",
                 "pairs.bai", "pairs-away.bam", "pairs-unsorted.bam", "marking.bam", "marking.bai",
                 "marking-queryname.bam", "marking-unsorted.bam", "marking-one-library.bam",
-                "marking-clean.bam", "marking-no-groups.bam", "marking-no-read-group.bam",
+                "marking-clean.bam", "marking-no-groups.bam", "marking-no-groups.bai", "marking-no-read-group.bam",
                 "marking-unknown-read-group.bam", "marking-three.bam", "marking-collision.bam",
                 "marking-scattered.bam", "marking-flow.bam", "more-queryname.bam", "more-copy.bam",
                 "more-coordinate.bam", "more-coordinate.bai", "more-unsorted.bam", "more-grouped.bam",
                 "more-scattered.bam",
                 "more-collision.bam", "more-programs-a.bam", "more-programs-b.bam",
                 "more-programs-dangling.bam", "more-contig.bam", "more-contig-place.bam",
-                "more-contig-place.bai", "more-swapped.bam", "more-header.bam"}) {
+                "more-contig-place.bai", "more-swapped.bam", "more-header.bam", "filter.bam",
+                "filter-aligned.bam", "filter-empty.bam", "host.hss", "host.bfi", "host.txt", "taxa.db",
+                "score-paired.bam", "score-unpaired.bam", "score-no-nm.bam", "score-bad-xa.bam",
+                "score-bad-nm.bam", "score-bad-cigar.bam", "score-lonely.bam", "score-not-queryname.bam",
+                "sv-evidence.bam", "sv-evidence.bai", "sv-evidence2.bam", "sv-evidence2.bai",
+                "sv-evidence-lone.bam", "sv-evidence-lone.bai", "sv-ignore.txt", "sv-ignore-bad.txt",
+                "sv_contigs.fasta", "sv_contigs.fasta.fai", "sv_contigs.dict", "sv_contigs.bam", "sv_contigs.bai",
+                "sv_contigs_small.bam", "sv_contigs_small.bai", "sv_contigs_adjacent_reverse.bam",
+                "sv_contigs_no_primary.bam", "sv_contigs_hard_primary.bam", "sv_contigs_no_sample.bam",
+                "sv_contigs_two_samples.bam", "sv_cnv.vcf", "sv_cnv_other_sample.vcf", "sv_cnv_no_dictionary.vcf",
+                "sv_cnv_other_dictionary.vcf", "sv_cnv_two_samples.vcf", "sv_truth.vcf", "sv_truth_near_start.vcf",
+                "sv_truth_unknown_type.vcf", "sv_truth_unknown_contig.vcf", "sv_assembly.bam", "sv_assembly.bai",
+                "sv_assembly_too_many.bam", "sv_assembly_overlap_contained.bam", "sv_assembly_no_breakend.bam",
+                "sv_alt_tigs.txt", "sv_quality_missing.bam", "sv_cpx.vcf", "sv_cpx_empty.vcf",
+                "sv_cpx_no_dictionary.vcf", "sv_cpx_no_dictionary_one.vcf", "sv_cpx_sparse.vcf",
+                "sv_cpx_bad_segment.vcf", "sv_cpx_whole_contig.vcf", "sv_cpx_bad_length.vcf"}) {
             System.out.printf("input\t%s\t%s%n", name,
                     Base64.getEncoder().encodeToString(Files.readAllBytes(DIR.resolve(name))));
         }
@@ -484,6 +514,98 @@ public class SparkWalkersDump {
                 "-O", out("pileup-chr1", "pileup-chr1"));
         run("pileup-shuffle", "pileup-shuffle", "PileupSpark", "-I", i, "-R", r, "--shuffle",
                 "true", "-O", out("pileup-shuffle", "pileup-shuffle"));
+        // COLLECTALLELICCOUNTSSPARK writes a row per locus of the intervals, reads or none.
+        final String allelic = "CollectAllelicCountsSpark";
+        final String[][] allelicRows = {
+                {"allelic-counts", "-L", "chr1:95-125"},
+                {"allelic-counts-quality", "-L", "chr1:95-125", "--minimum-base-quality", "60"},
+                {"allelic-counts-two", "-L", "chr1:95-125", "-L", "chr2:95-125"},
+                {"allelic-counts-shards", "-L", "chr1:95-125", "--read-shard-size", "7"},
+                {"allelic-counts-shuffle", "-L", "chr1:95-125", "--shuffle", "true"},
+                {"allelic-counts-no-filters", "-L", "chr1:95-125", "--disable-tool-default-read-filters", "true"},
+                {"allelic-counts-mapping", "-L", "chr1:95-125", "--minimum-mapping-quality", "0"},
+                {"allelic-counts-away", "-L", "chr2:190-200"},
+                {"allelic-counts-no-intervals"},
+        };
+        for (final String[] row : allelicRows) {
+            final List<String> argv = new ArrayList<>(Arrays.asList("-I", i, "-R", r,
+                    "-O", out(row[0], "allelic.tsv")));
+            argv.addAll(Arrays.asList(row).subList(1, row.length));
+            run(row[0], "allelic.tsv", allelic, argv.toArray(new String[0]));
+        }
+
+        kmerRows();
+        callerRows();
+        pipelineRows();
+        filterRows();
+        scoreRows();
+        evidenceRows();
+        discoveryRows();
+        assemblyRows();
+        reinterpreterRows();
+
+        // CALCMETADATASPARK reads everything, filters nothing, and names one partition.
+        final String metadata = "CalcMetadataSpark";
+        final String[][] metadataRows = {
+                {"metadata-pairs", "pairs.bam"},
+                {"metadata-pairs-binary", "pairs.bam", "--write-as-binary"},
+                {"metadata-pairs-away", "pairs-away.bam"},
+                {"metadata-pairs-unsorted", "pairs-unsorted.bam"},
+                {"metadata-pairs-interval", "pairs.bam", "-L", "chr1:1-150"},
+                {"metadata-marking", "marking.bam"},
+                {"metadata-marking-binary", "marking.bam", "--write-as-binary"},
+                {"metadata-marking-queryname", "marking-queryname.bam"},
+                {"metadata-no-groups", "marking-no-groups.bam"},
+                {"metadata-unknown-group", "marking-unknown-read-group.bam"},
+                {"metadata-one-library", "marking-one-library.bam"},
+                {"metadata-more-programs", "more-programs-a.bam"},
+                {"metadata-reads", "reads.bam"},
+                {"metadata-dup", "dup-a.bam"},
+                {"metadata-away", "marking.bam", "-L", "chr2:190-200"},
+                {"metadata-filter-ignored", "pairs.bam", "--read-filter", "ReadLengthReadFilter",
+                        "--min-read-length", "1000", "--max-read-length", "2000"},
+                {"metadata-two-inputs", "pairs.bam", "-I", DIR.resolve("pairs-away.bam").toString()},
+                {"metadata-missing", "nowhere.bam"},
+        };
+        for (final String[] row : metadataRows) {
+            final List<String> argv = new ArrayList<>(Arrays.asList(
+                    "-I", DIR.resolve(row[1]).toString(), "-O", out(row[0], "metadata.txt")));
+            argv.addAll(Arrays.asList(row).subList(2, row.length));
+            run(row[0], "metadata.txt", metadata, argv.toArray(new String[0]));
+        }
+        run("metadata-no-directory", null, metadata, "-I", DIR.resolve("pairs.bam").toString(),
+                "-O", DIR.resolve("nowhere/metadata.txt").toString());
+        run("metadata-binary-no-directory", null, metadata, "-I", DIR.resolve("pairs.bam").toString(),
+                "-O", DIR.resolve("nowhere/metadata.txt").toString(), "--write-as-binary");
+        run("allelic-counts-no-reference", null, allelic, "-I", i, "-L", "chr1:95-125",
+                "-O", out("allelic-counts-no-reference", "allelic.tsv"));
+        // marking.bam's contigs are longer than the reference's, so these turn validation off.
+        // They are the rows with reads under the loci: reads.bam's intervals above come back empty.
+        final String[][] markedRows = {
+                {"allelic-counts-other-dictionary", "marking.bam"},
+                {"allelic-marked-quality", "marking.bam", "--minimum-base-quality", "60"},
+                {"allelic-marked-no-quality", "marking.bam", "--minimum-base-quality", "0"},
+                {"allelic-marked-two", "marking.bam", "-L", "chr2:95-125"},
+                {"allelic-marked-shards", "marking.bam", "--read-shard-size", "7"},
+                {"allelic-marked-shuffle", "marking.bam", "--shuffle", "true"},
+                {"allelic-marked-shuffle-shards", "marking.bam", "--shuffle", "true", "--read-shard-size", "7"},
+                {"allelic-marked-no-filters", "marking.bam", "--disable-tool-default-read-filters", "true"},
+                {"allelic-marked-mapping", "marking.bam", "--minimum-mapping-quality", "0"},
+                {"allelic-marked-depth", "marking.bam", "--max-depth-per-sample", "1"},
+                {"allelic-counts-no-reads", "marking.bam", "--minimum-mapping-quality", "100"},
+                {"allelic-counts-no-reads-shuffle", "marking.bam", "--shuffle", "true",
+                        "--minimum-mapping-quality", "100"},
+                {"allelic-counts-no-sample", "marking-no-groups.bam"},
+                {"allelic-counts-no-sample-unfiltered", "marking-no-groups.bam",
+                        "--disable-tool-default-read-filters", "true"},
+        };
+        for (final String[] row : markedRows) {
+            final List<String> argv = new ArrayList<>(Arrays.asList("-I", DIR.resolve(row[1]).toString(),
+                    "-R", r, "-L", "chr1:95-125", "--disable-sequence-dictionary-validation", "true",
+                    "-O", out(row[0], "allelic.tsv")));
+            argv.addAll(Arrays.asList(row).subList(2, row.length));
+            run(row[0], "allelic.tsv", allelic, argv.toArray(new String[0]));
+        }
         // BQSR: the table over the indexed VCF's sites, the table applied by the next run, and the
         // two passes chained in one job with the table never written.
         final String sites = indexedVcf.toString();
@@ -1185,6 +1307,1398 @@ public class SparkWalkersDump {
             System.out.printf("file\t%s\t%s\t%s%n", label, outDir.relativize(path),
                     Base64.getEncoder().encodeToString(withoutTheTime(path)));
         }
+    }
+
+    /** A sequence of random bases that the same seed always gives. */
+    static String randomBases(final java.util.Random random, final int length) {
+        final StringBuilder bases = new StringBuilder(length);
+        for (int i = 0; i != length; ++i) {
+            bases.append("ACGT".charAt(random.nextInt(4)));
+        }
+        return bases.toString();
+    }
+
+    static void kmerReference(final String stem, final String fasta) throws Exception {
+        final Path path = DIR.resolve(stem + ".fasta");
+        Files.write(path, fasta.getBytes());
+        FastaSequenceIndexCreator.create(path, true);
+        new picard.sam.CreateSequenceDictionary().instanceMain(new String[] {
+                "R=" + path, "O=" + DIR.resolve(stem + ".dict")});
+    }
+
+    /** Repeats a few times over and many times over, either case, broken by Ns, and low complexity. */
+    static void kmerFixtures() throws Exception {
+        final java.util.Random random = new java.util.Random(8675309);
+        final String unit = randomBases(random, 300);
+        final StringBuilder first = new StringBuilder(">chr1\n");
+        for (int copy = 0; copy != 5; ++copy) {
+            first.append(copy == 2 ? unit.toLowerCase() : unit).append(randomBases(random, 40));
+        }
+        first.append("\n>chr2\n").append(unit).append('N').append(unit).append('N').append(unit)
+                .append('N').append(unit).append('\n');
+        first.append(">chr3\n");
+        for (int copy = 0; copy != 40; ++copy) {
+            first.append("AC");
+        }
+        first.append('\n');
+        kmerReference("kmers", first.toString());
+
+        // Over 104 records of 9950 bases, so two partitions, and over the maps' first sizes.
+        final String big = randomBases(random, 1500);
+        final StringBuilder second = new StringBuilder(">big\n");
+        for (int copy = 0; copy != 720; ++copy) {
+            second.append(big);
+        }
+        second.append('\n');
+        kmerReference("kmers-big", second.toString());
+
+        final String highCopy = ">one\n" + randomBases(random, 60) + "\n" + randomBases(random, 60)
+                + "\n>two\r\n" + unit.substring(0, 90) + "\r\n>three\n>four\n"
+                + unit.substring(0, 90) + "n" + randomBases(random, 30);
+        Files.write(DIR.resolve("high-copy.fasta"), highCopy.getBytes());
+        Files.write(DIR.resolve("high-copy-blank.fasta"), ">one\nACGTACGT\n\nACGT\n".getBytes());
+        try (final java.util.zip.GZIPOutputStream zipped = new java.util.zip.GZIPOutputStream(
+                Files.newOutputStream(DIR.resolve("high-copy.fasta.gz")))) {
+            zipped.write(highCopy.getBytes());
+        }
+    }
+
+    /** Reads over a reference no shard boundary respects: variants beside 5000 and past it. */
+    static void callerFixtures() throws Exception {
+        final java.util.Random random = new java.util.Random(4242);
+        final String bases = randomBases(random, 12000);
+        kmerReference("caller", ">chr1\n" + bases + "\n");
+        final SAMFileHeader header = new SAMFileHeader();
+        header.setSequenceDictionary(new htsjdk.samtools.SAMSequenceDictionary(
+                java.util.List.of(new htsjdk.samtools.SAMSequenceRecord("chr1", 12000))));
+        final htsjdk.samtools.SAMReadGroupRecord group = new htsjdk.samtools.SAMReadGroupRecord("rg1");
+        group.setSample("caller-sample");
+        group.setLibrary("caller-library");
+        header.addReadGroup(group);
+        final int[] snps = {300, 4985, 5040, 9000};
+        final List<SAMRecord> records = new ArrayList<>();
+        int serial = 0;
+        for (final int[] span : new int[][] {{120, 480}, {4800, 5200}, {8850, 9150}}) {
+            for (int start = span[0]; start < span[1]; start += 3) {
+                final char[] read = bases.substring(start - 1, start + 99).toCharArray();
+                for (final int snp : snps) {
+                    if (snp >= start && snp < start + 100 && (start + snp) % 2 == 0) {
+                        final int at = snp - start;
+                        read[at] = read[at] == 'A' ? 'C' : 'A';
+                    }
+                }
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("c" + serial++);
+                record.setReferenceIndex(0);
+                record.setAlignmentStart(start);
+                record.setCigarString("100M");
+                record.setMappingQuality(60);
+                record.setReadString(new String(read));
+                final byte[] qualities = new byte[100];
+                Arrays.fill(qualities, (byte) 35);
+                record.setBaseQualities(qualities);
+                record.setAttribute("RG", "rg1");
+                record.setReadNegativeStrandFlag(serial % 2 == 0);
+                records.add(record);
+            }
+        }
+        for (final String[] one : new String[][] {{"caller.bam", "coordinate"}, {"caller-names.bam", "queryname"}}) {
+            final SAMFileHeader own = header.clone();
+            own.setSortOrder(SAMFileHeader.SortOrder.valueOf(one[1]));
+            final htsjdk.samtools.SAMFileWriterFactory factory = new htsjdk.samtools.SAMFileWriterFactory()
+                    .setCreateIndex(one[1].equals("coordinate"));
+            try (final htsjdk.samtools.SAMFileWriter writer =
+                         factory.makeBAMWriter(own, false, DIR.resolve(one[0]).toFile())) {
+                records.forEach(writer::addAlignment);
+            }
+        }
+
+        // Every twentieth read again under another name and worse qualities, so the pipeline's
+        // marking has something to mark, the recalibration something to leave out and, with the
+        // second name form, an optical tile to read.
+        final List<SAMRecord> withDuplicates = new ArrayList<>();
+        int copies = 0;
+        for (final SAMRecord record : records) {
+            withDuplicates.add(record);
+            if ((record.getAlignmentStart() % 20) == 0) {
+                final SAMRecord copy = record.deepCopy();
+                copy.setReadName("H0:1:1:" + (1000 + copies) + ":1000");
+                final byte[] worse = new byte[100];
+                Arrays.fill(worse, (byte) 20);
+                copy.setBaseQualities(worse);
+                withDuplicates.add(copy);
+                copies++;
+            }
+        }
+        // The recalibration wants a platform, and `caller-names.bam`'s absence of one is its own row.
+        final SAMFileHeader dupHeader = header.clone();
+        dupHeader.getReadGroup("rg1").setPlatform("ILLUMINA");
+        dupHeader.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        try (final htsjdk.samtools.SAMFileWriter writer = new htsjdk.samtools.SAMFileWriterFactory()
+                .setCreateIndex(true).makeBAMWriter(dupHeader, false, DIR.resolve("caller-dups.bam").toFile())) {
+            withDuplicates.forEach(writer::addAlignment);
+        }
+        final SAMFileHeader dupNames = dupHeader.clone();
+        dupNames.setSortOrder(SAMFileHeader.SortOrder.queryname);
+        try (final htsjdk.samtools.SAMFileWriter writer = new htsjdk.samtools.SAMFileWriterFactory()
+                .makeBAMWriter(dupNames, false, DIR.resolve("caller-dups-names.bam").toFile())) {
+            withDuplicates.forEach(writer::addAlignment);
+        }
+        final SAMFileHeader noGroups = header.clone();
+        noGroups.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        noGroups.setReadGroups(new ArrayList<>());
+        try (final htsjdk.samtools.SAMFileWriter writer = new htsjdk.samtools.SAMFileWriterFactory()
+                .makeBAMWriter(noGroups, false, DIR.resolve("caller-no-groups.bam").toFile())) {
+            for (final SAMRecord record : records) {
+                final SAMRecord copy = record.deepCopy();
+                copy.setAttribute("RG", null);
+                copy.setHeader(noGroups);
+                writer.addAlignment(copy);
+            }
+        }
+        Files.write(DIR.resolve("caller-known.vcf"), ("##fileformat=VCFv4.2\n##contig=<ID=chr1,length=12000>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
+                + "chr1\t300\trs1\t" + bases.charAt(299) + "\t" + (bases.charAt(299) == 'A' ? 'C' : 'A') + "\t.\t.\t.\n"
+                + "chr1\t5040\trs2\t" + bases.charAt(5039) + "\t" + (bases.charAt(5039) == 'A' ? 'C' : 'A') + "\t.\t.\t.\n")
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        new Main().instanceMain(new String[] {"IndexFeatureFile", "-I", DIR.resolve("caller-known.vcf").toString()});
+        Files.write(DIR.resolve("caller-known.bed"), "chr1\t299\t300\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    /** READSPIPELINESPARK: the marking, the recalibration, then the caller's shards. */
+    static void pipelineRows() throws Exception {
+        final String tool = "ReadsPipelineSpark";
+        final String ref = DIR.resolve("caller.fasta").toString();
+        final String dups = DIR.resolve("caller-dups.bam").toString();
+        final String known = DIR.resolve("caller-known.vcf").toString();
+        final String[][] runs = {
+                {"pipeline-default", "caller.vcf"},
+                {"pipeline-gz", "caller.vcf.gz", "--use-jdk-deflater", "true"},
+                {"pipeline-bam", "caller.vcf", "--use-jdk-deflater", "true", "--output-bam", DIR.resolve("out/pipeline-bam/out.bam").toString()},
+                {"pipeline-bam-remove", "caller.vcf", "--use-jdk-deflater", "true", "--remove-all-duplicates", "--output-bam",
+                        DIR.resolve("out/pipeline-bam-remove/out.bam").toString()},
+                {"pipeline-gvcf", "caller.g.vcf", "-ERC", "GVCF"},
+                {"pipeline-interval", "caller.vcf", "-L", "chr1:8000-9500"},
+                {"pipeline-empty-interval", "caller.vcf", "-L", "chr1:2000-3000"},
+                {"pipeline-strict", "caller.vcf", "--strict"},
+                {"pipeline-small-shards", "caller.vcf", "--read-shard-size", "1000"},
+                {"pipeline-tagging", "caller.vcf", "--use-jdk-deflater", "true", "--duplicate-tagging-policy", "All", "--output-bam",
+                        DIR.resolve("out/pipeline-tagging/out.bam").toString()},
+                {"pipeline-scoring", "caller.vcf", "--duplicate-scoring-strategy", "TOTAL_MAPPED_REFERENCE_LENGTH"},
+                {"pipeline-preserve", "caller.vcf", "--preserve-qscores-less-than", "30"},
+                {"pipeline-static", "caller.vcf", "--use-jdk-deflater", "true", "--static-quantized-quals", "10", "--static-quantized-quals", "30",
+                        "--output-bam", DIR.resolve("out/pipeline-static/out.bam").toString()},
+                {"pipeline-original", "caller.vcf", "--use-jdk-deflater", "true", "--emit-original-quals", "--output-bam",
+                        DIR.resolve("out/pipeline-original/out.bam").toString()},
+                {"pipeline-indels", "caller.vcf", "--indels-context-size", "4", "--mismatches-context-size", "3"},
+                {"pipeline-baq-gap", "caller.vcf", "--bqsr-baq-gap-open-penalty", "30.0"},
+                {"pipeline-quality", "caller.vcf", "--standard-min-confidence-threshold-for-calling", "2000"},
+                {"pipeline-bcf", "caller.bcf"},
+                {"pipeline-bamout", "caller.vcf", "-bamout", DIR.resolve("out/pipeline-bamout/out.bam").toString()},
+                {"pipeline-dbsnp", "caller.vcf", "--dbsnp", known},
+                {"pipeline-comp", "caller.vcf", "--comparison:known", known},
+        };
+        for (final String[] one : runs) {
+            final List<String> rest = new ArrayList<>(Arrays.asList("-I", dups, "-R", ref, "--known-sites", known,
+                    "-O", out(one[0], one[1])));
+            rest.addAll(Arrays.asList(one).subList(2, one.length));
+            run(one[0], one[1], tool, rest.toArray(new String[0]));
+        }
+        run("pipeline-names", "caller.vcf", tool, "-I", DIR.resolve("caller-names.bam").toString(), "-R", ref,
+                "--known-sites", known, "-O", out("pipeline-names", "caller.vcf"));
+        run("pipeline-query-sorted", "caller.vcf", tool, "-I", DIR.resolve("caller-dups-names.bam").toString(), "-R", ref,
+                "--known-sites", known, "--use-jdk-deflater", "true", "--output-bam",
+                DIR.resolve("out/pipeline-query-sorted/out.bam").toString(),
+                "-O", out("pipeline-query-sorted", "caller.vcf"));
+        run("pipeline-no-groups", "caller.vcf", tool, "-I", DIR.resolve("caller-no-groups.bam").toString(), "-R", ref,
+                "--known-sites", known, "-O", out("pipeline-no-groups", "caller.vcf"));
+        run("pipeline-bed", "caller.vcf", tool, "-I", dups, "-R", ref,
+                "--known-sites", DIR.resolve("caller-known.bed").toString(), "-O", out("pipeline-bed", "caller.vcf"));
+        run("recal-no-platform", "recal.table", "BaseRecalibratorSpark", "-I", DIR.resolve("caller.bam").toString(),
+                "-R", ref, "--known-sites", known, "-O", out("recal-no-platform", "recal.table"));
+        run("pipeline-no-known", null, tool, "-I", dups, "-R", ref, "-O", out("pipeline-no-known", "caller.vcf"));
+        run("pipeline-no-reference", null, tool, "-I", dups, "--known-sites", known,
+                "-O", out("pipeline-no-reference", "caller.vcf"));
+    }
+
+    /** HAPLOTYPECALLERSPARK is HaplotypeCaller's engine, shard by shard. */
+    static void callerRows() throws Exception {
+        final String tool = "HaplotypeCallerSpark";
+        final String ref = DIR.resolve("caller.fasta").toString();
+        final String bam = DIR.resolve("caller.bam").toString();
+        final String[][] runs = {
+                {"caller-default", "caller.vcf"},
+                {"caller-gz", "caller.vcf.gz", "--use-jdk-deflater", "true"},
+                {"caller-gvcf", "caller.g.vcf", "-ERC", "GVCF"},
+                {"caller-bp", "caller.g.vcf", "-ERC", "BP_RESOLUTION"},
+                {"caller-small-shards", "caller.vcf", "--read-shard-size", "1000"},
+                {"caller-no-padding", "caller.vcf", "--read-shard-padding", "0"},
+                {"caller-boundary", "caller.vcf", "--read-shard-size", "5000", "-L", "chr1:4900-5100"},
+                {"caller-interval", "caller.vcf", "-L", "chr1:8000-9500"},
+                {"caller-empty-interval", "caller.vcf", "-L", "chr1:2000-3000"},
+                {"caller-strict", "caller.vcf", "--strict"},
+                {"caller-shuffle", "caller.vcf", "--shuffle"},
+                {"caller-strict-shuffle", "caller.vcf", "--strict", "--shuffle"},
+                {"caller-no-index", "caller.vcf", "--create-output-variant-index", "false"},
+                {"caller-downsample", "caller.vcf", "--max-reads-per-alignment-start", "1"},
+                {"caller-quality", "caller.vcf", "--standard-min-confidence-threshold-for-calling", "2000"},
+                {"caller-bcf", "caller.bcf"},
+                {"caller-bamout", "caller.vcf", "-bamout",
+                        DIR.resolve("out/caller-bamout/out.bam").toString()},
+                {"caller-dbsnp", "caller.vcf", "--dbsnp", DIR.resolve("plain.vcf").toString()},
+                {"caller-comp", "caller.vcf", "--comp", DIR.resolve("plain.vcf").toString()},
+        };
+        for (final String[] one : runs) {
+            final List<String> rest = new ArrayList<>(Arrays.asList("-I", bam, "-R", ref, "-O",
+                    out(one[0], one[1])));
+            rest.addAll(Arrays.asList(one).subList(2, one.length));
+            run(one[0], one[1], tool, rest.toArray(new String[0]));
+        }
+        run("caller-names", "caller.vcf", tool, "-I", DIR.resolve("caller-names.bam").toString(),
+                "-R", ref, "-O", out("caller-names", "caller.vcf"));
+        run("caller-no-reference", null, tool, "-I", bam, "-O", out("caller-no-reference", "caller.vcf"));
+    }
+
+    /** A read of PATHSEQFILTERSPARK's fixtures, with a tag the filter is there to drop. */
+    static SAMRecord filterRead(final SAMFileHeader header, final String name, final int flags,
+            final String bases, final int quality) {
+        final SAMRecord read = new SAMRecord(header);
+        read.setReadName(name);
+        read.setFlags(flags);
+        read.setReadString(bases);
+        final byte[] qualities = new byte[bases.length()];
+        Arrays.fill(qualities, (byte) quality);
+        read.setBaseQualities(qualities);
+        read.setAttribute("RG", "rg1");
+        read.setAttribute("XX", "dropped");
+        return read;
+    }
+
+    /** Enough of each thing the filter looks for that each transformer changes what is written. */
+    static void filterFixtures() throws Exception {
+        final java.util.Random random = new java.util.Random(11);
+        final java.util.function.IntFunction<String> sequence = length -> {
+            final StringBuilder text = new StringBuilder();
+            for (int i = 0; i < length; i++) {
+                text.append("ACGT".charAt(random.nextInt(4)));
+            }
+            return text.toString();
+        };
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("s");
+        header.addReadGroup(group);
+        header.setSortOrder(SAMFileHeader.SortOrder.unsorted);
+        final List<SAMRecord> reads = new ArrayList<>();
+        for (int i = 0; i < 90; i++) {
+            final String bases = sequence.apply(70 + i % 11);
+            reads.add(filterRead(header, "pair" + i + "/1", 0x1 | 0x4 | 0x8 | 0x40, bases, 30));
+            reads.add(filterRead(header, "pair" + i + "/2", 0x1 | 0x4 | 0x8 | 0x80, sequence.apply(75), 30));
+        }
+        for (int i = 0; i < 30; i++) {
+            reads.add(filterRead(header, "lone" + i, 0x4, sequence.apply(80), 30));
+        }
+        // Each transformer's food: an adapter, repeats, low complexity, quality tails, ambiguity.
+        reads.add(filterRead(header, "adapter", 0x4,
+                sequence.apply(50) + "AGATCGGAAGAGCTCGTATGCCGTCTTCTGCTTG", 30));
+        reads.add(filterRead(header, "adapter-mismatch", 0x4,
+                sequence.apply(50) + "AGATCGGTAGAGCACACGTCTGAACTCCAGTCAC", 30));
+        reads.add(filterRead(header, "at-rich", 0x4, "AT".repeat(30) + sequence.apply(30), 30));
+        reads.add(filterRead(header, "polya", 0x4, "A".repeat(90), 30));
+        reads.add(filterRead(header, "dust-middle", 0x4, sequence.apply(30) + "CAG".repeat(12) + sequence.apply(30), 30));
+        reads.add(filterRead(header, "with-n", 0x4, sequence.apply(30) + "N" + sequence.apply(40), 30));
+        reads.add(filterRead(header, "many-n", 0x4, sequence.apply(30) + "NNNNN" + sequence.apply(40), 30));
+        final SAMRecord tails = filterRead(header, "tails", 0x4, sequence.apply(80), 30);
+        final byte[] tailQualities = tails.getBaseQualities();
+        Arrays.fill(tailQualities, 0, 6, (byte) 3);
+        Arrays.fill(tailQualities, 72, 80, (byte) 2);
+        tailQualities[40] = 10;
+        tails.setBaseQualities(tailQualities);
+        reads.add(tails);
+        reads.add(filterRead(header, "all-low", 0x4, sequence.apply(80), 4));
+        reads.add(filterRead(header, "short", 0x4, sequence.apply(20), 30));
+        // Duplicates: the same bases, the reverse complement, an unpaired one among pairs.
+        final String copied = sequence.apply(80);
+        reads.add(filterRead(header, "dup-a", 0x4, copied, 30));
+        reads.add(filterRead(header, "dup-b", 0x4, copied, 25));
+        reads.add(filterRead(header, "dup-rc", 0x4 | 0x10,
+                htsjdk.samtools.util.SequenceUtil.reverseComplement(copied), 20));
+        final String pairedCopy = sequence.apply(80);
+        reads.add(filterRead(header, "dupp/1", 0x1 | 0x4 | 0x8 | 0x40, pairedCopy, 30));
+        reads.add(filterRead(header, "dupp/2", 0x1 | 0x4 | 0x8 | 0x80, sequence.apply(75), 30));
+        reads.add(filterRead(header, "dupq", 0x4, pairedCopy, 30));
+        // What the first pass drops.
+        reads.add(filterRead(header, "second", 0x4 | 0x100, sequence.apply(80), 30));
+        reads.add(filterRead(header, "supplement", 0x4 | 0x800, sequence.apply(80), 30));
+        writeFilterBam(header, reads, "filter.bam");
+
+        // Aligned: the host filter's three answers, a reverse strand turned around, a proper pair.
+        final SAMFileHeader aligned = header.clone();
+        aligned.addSequence(new htsjdk.samtools.SAMSequenceRecord("chr1", 100000));
+        final List<SAMRecord> mapped = new ArrayList<>();
+        final String[][] rows = {{"host", "50"}, {"host-weak", "45"}, {"no-nm", null}};
+        int at = 100;
+        for (final String[] row : rows) {
+            for (final int strand : new int[] {0, 0x10}) {
+                final SAMRecord read = filterRead(aligned, row[0] + strand, strand, sequence.apply(80), 30);
+                read.setReferenceName("chr1");
+                read.setAlignmentStart(at += 100);
+                read.setMappingQuality(60);
+                read.setCigarString("80M");
+                if (row[1] != null) {
+                    read.setAttribute("NM", 80 - Integer.parseInt(row[1]));
+                }
+                mapped.add(read);
+            }
+        }
+        final SAMRecord deleted = filterRead(aligned, "deletion", 0, sequence.apply(80), 30);
+        deleted.setReferenceName("chr1");
+        deleted.setAlignmentStart(at += 100);
+        deleted.setMappingQuality(60);
+        deleted.setCigarString("40M5D40M");
+        deleted.setAttribute("NM", 5);
+        mapped.add(deleted);
+        final SAMRecord unmapped = filterRead(aligned, "unmapped", 0x4, sequence.apply(80), 30);
+        mapped.add(unmapped);
+        final SAMRecord proper = filterRead(aligned, "proper/1", 0x1 | 0x2 | 0x20 | 0x40, sequence.apply(80), 30);
+        proper.setReferenceName("chr1");
+        proper.setAlignmentStart(at += 100);
+        proper.setMappingQuality(60);
+        proper.setCigarString("80M");
+        proper.setMateReferenceName("chr1");
+        proper.setMateAlignmentStart(at + 50);
+        proper.setAttribute("NM", 70);
+        mapped.add(proper);
+        writeFilterBam(aligned, mapped, "filter-aligned.bam");
+
+        final SAMFileHeader empty = header.clone();
+        writeFilterBam(empty, List.of(), "filter-empty.bam");
+
+        // Host k-mers, from the reference's own builder: the first lone read's and two pairs'.
+        final String host = reads.get(180).getReadString() + "\n" + reads.get(0).getReadString() + "\n"
+                + reads.get(2).getReadString();
+        final StringBuilder fasta = new StringBuilder();
+        int contig = 0;
+        for (final String line : host.split("\n")) {
+            fasta.append(">host").append(contig++).append('\n').append(line).append('\n');
+        }
+        Files.write(DIR.resolve("host.fasta"), fasta.toString().getBytes(StandardCharsets.UTF_8));
+        new Main().instanceMain(new String[] {"PathSeqBuildKmers", "-R", DIR.resolve("host.fasta").toString(),
+                "--kmer-size", "31", "--bloom-false-positive-probability", "0",
+                "-O", DIR.resolve("host.hss").toString()});
+        new Main().instanceMain(new String[] {"PathSeqBuildKmers", "-R", DIR.resolve("host.fasta").toString(),
+                "--kmer-size", "31", "--bloom-false-positive-probability", "0.001",
+                "-O", DIR.resolve("host.bfi").toString()});
+        Files.write(DIR.resolve("host.txt"), new byte[0]);
+    }
+
+    static void writeFilterBam(final SAMFileHeader header, final List<SAMRecord> reads, final String name) {
+        try (final SAMFileWriter writer = new SAMFileWriterFactory()
+                .makeBAMWriter(header, true, DIR.resolve(name).toFile())) {
+            reads.forEach(writer::addAlignment);
+        }
+    }
+
+    /** One read of PATHSEQSCORESPARK's fixtures: on a contig with an NM, or unmapped. */
+    static SAMRecord scoreRead(final SAMFileHeader header, final String name, final int flags, final String contig,
+            final int nm, final String... tags) {
+        final SAMRecord read = filterRead(header, name, flags | (contig == null ? 0x4 : 0),
+                "ACGTTGCAAGGCTTAACCGATCGATGCATCGGATTACGCTAGCTAGGATCCTAGTCCAGTTACGGATCCAATTGGC".substring(0, 70), 30);
+        read.setAttribute("XX", null);
+        if (contig != null) {
+            read.setReferenceName(contig);
+            read.setAlignmentStart(100);
+            read.setMappingQuality(60);
+            read.setCigarString("70M");
+            if (nm >= 0) {
+                read.setAttribute("NM", nm);
+            }
+        }
+        for (int i = 0; i + 1 < tags.length; i += 2) {
+            read.setAttribute(tags[i], tags[i + 1]);
+        }
+        return read;
+    }
+
+    /** A taxonomy built by the reference's own tool, and reads aligned to its contigs. */
+    static void scoreFixtures() throws Exception {
+        final String[][] contigs = {{"taxid|562|", "800"}, {"taxid|1280|", "900"}, {"taxid|11234|", "700"},
+                {"taxid|9606|", "600"}, {"unknown_contig", "500"}, {"taxid|300|", "400"}};
+        final StringBuilder fasta = new StringBuilder();
+        for (final String[] contig : contigs) {
+            fasta.append('>').append(contig[0]).append('\n').append("ACGT".repeat(Integer.parseInt(contig[1]) / 4)).append('\n');
+        }
+        kmerReference("taxa", fasta.toString());
+        final String names = String.join("\n",
+                "1\t|\troot\t|\t\t|\tscientific name\t|",
+                "2\t|\tBacteria\t|\t\t|\tscientific name\t|",
+                "10239\t|\tViruses\t|\t\t|\tscientific name\t|",
+                "2759\t|\tEukaryota\t|\t\t|\tscientific name\t|",
+                "33208\t|\tMetazoa\t|\t\t|\tscientific name\t|",
+                "562\t|\tEscherichia coli\t|\t\t|\tscientific name\t|",
+                "1280\t|\tStaphylococcus aureus\t|\t\t|\tscientific name\t|",
+                "11234\t|\tMeasles morbillivirus\t|\t\t|\tscientific name\t|",
+                "9606\t|\tHomo sapiens\t|\t\t|\tscientific name\t|",
+                "300\t|\tPseudomonas\t|\t\t|\tscientific name\t|") + "\n";
+        final String nodes = String.join("\n",
+                "1\t|\t1\t|\tno rank\t|",
+                "2\t|\t1\t|\tsuperkingdom\t|",
+                "10239\t|\t1\t|\tsuperkingdom\t|",
+                "2759\t|\t1\t|\tsuperkingdom\t|",
+                "33208\t|\t2759\t|\tkingdom\t|",
+                "562\t|\t2\t|\tspecies\t|",
+                "1280\t|\t2\t|\tspecies\t|",
+                "11234\t|\t10239\t|\tspecies\t|",
+                "9606\t|\t33208\t|\tspecies\t|",
+                "300\t|\t1\t|\tno rank\t|") + "\n";
+        try (final org.apache.commons.compress.archivers.tar.TarArchiveOutputStream tar =
+                     new org.apache.commons.compress.archivers.tar.TarArchiveOutputStream(
+                             new java.util.zip.GZIPOutputStream(Files.newOutputStream(DIR.resolve("taxa.tar.gz"))))) {
+            for (final String[] entry : new String[][] {{"names.dmp", names}, {"nodes.dmp", nodes}}) {
+                final byte[] bytes = entry[1].getBytes(StandardCharsets.UTF_8);
+                final org.apache.commons.compress.archivers.tar.TarArchiveEntry header =
+                        new org.apache.commons.compress.archivers.tar.TarArchiveEntry(entry[0]);
+                header.setSize(bytes.length);
+                header.setModTime(0L);
+                tar.putArchiveEntry(header);
+                tar.write(bytes);
+                tar.closeArchiveEntry();
+            }
+        }
+        Files.write(DIR.resolve("taxa.catalog"), "a\tNOTHING.1\tc\td\te\tf\t562\th\n".getBytes(StandardCharsets.UTF_8));
+        new Main().instanceMain(new String[] {"PathSeqBuildReferenceTaxonomy", "-R", DIR.resolve("taxa.fasta").toString(),
+                "--tax-dump", DIR.resolve("taxa.tar.gz").toString(), "-O", DIR.resolve("taxa.db").toString(),
+                "--genbank-catalog", DIR.resolve("taxa.catalog").toString(),
+                "--min-non-virus-contig-length", "0"});
+
+        final SAMFileHeader paired = new SAMFileHeader();
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("s");
+        paired.addReadGroup(group);
+        for (final String[] contig : contigs) {
+            paired.addSequence(new htsjdk.samtools.SAMSequenceRecord(contig[0], Integer.parseInt(contig[1])));
+        }
+        paired.setSortOrder(SAMFileHeader.SortOrder.queryname);
+        final String[][] pairs = {
+                // Both mates on one taxon, then on two, then disagreeing, then one unmapped.
+                {"p0", "taxid|562|", "0", "taxid|562|", "1"},
+                {"p1", "taxid|1280|", "0", "taxid|1280|", "2"},
+                {"p2", "taxid|562|", "0", "taxid|1280|", "0"},
+                {"p3", "taxid|11234|", "1", null, "0"},
+                {"p4", "taxid|9606|", "0", "taxid|9606|", "0"},
+                {"p5", "unknown_contig", "0", "unknown_contig", "0"},
+                {"p6", "taxid|300|", "0", "taxid|300|", "0"},
+        };
+        final List<SAMRecord> pairReads = new ArrayList<>();
+        for (final String[] pair : pairs) {
+            pairReads.add(scoreRead(paired, pair[0], 0x1 | 0x40 | (pair[3] == null ? 0x8 : 0), pair[1], Integer.parseInt(pair[2])));
+            pairReads.add(scoreRead(paired, pair[0], 0x1 | 0x80 | (pair[3] == null ? 0x4 : 0), pair[3], Integer.parseInt(pair[4])));
+        }
+        final String xa = "taxid|1280|,+100,70M,1;taxid|11234|,+200,70M,2;";
+        pairReads.add(scoreRead(paired, "p7", 0x1 | 0x40, "taxid|562|", 0, "XA", xa));
+        pairReads.add(scoreRead(paired, "p7", 0x1 | 0x80, "taxid|562|", 1, "XA", xa));
+        writeFilterBam(paired, pairReads, "score-paired.bam");
+
+        final SAMFileHeader unpaired = new SAMFileHeader();
+        unpaired.addReadGroup(new SAMReadGroupRecord("rg1"));
+        unpaired.addReadGroup(new SAMReadGroupRecord("rg2"));
+        unpaired.addSequence(new htsjdk.samtools.SAMSequenceRecord("taxid|1280|", 900));
+        unpaired.addSequence(new htsjdk.samtools.SAMSequenceRecord("taxid|562|", 800));
+        unpaired.addSequence(new htsjdk.samtools.SAMSequenceRecord("extra_contig", 300));
+        unpaired.setSortOrder(SAMFileHeader.SortOrder.unsorted);
+        final List<SAMRecord> single = new ArrayList<>();
+        single.add(scoreRead(unpaired, "u0", 0, "taxid|562|", 0));
+        single.add(scoreRead(unpaired, "u1", 0, "taxid|1280|", 0, "SA", "taxid|562|,50,+,70M,60,3;"));
+        single.add(scoreRead(unpaired, "u2", 0, "taxid|1280|", 30));
+        single.add(scoreRead(unpaired, "u3", 0, "extra_contig", 0));
+        single.add(scoreRead(unpaired, "u4", 0, null, 0));
+        single.add(scoreRead(unpaired, "u5", 0x100, "taxid|562|", 0));
+        single.add(scoreRead(unpaired, "u6", 0x800, "taxid|562|", 0));
+        writeFilterBam(unpaired, single, "score-unpaired.bam");
+
+        writeFilterBam(unpaired, List.of(scoreRead(unpaired, "n", 0, "taxid|562|", -1)), "score-no-nm.bam");
+        writeFilterBam(unpaired, List.of(scoreRead(unpaired, "bad", 0, "taxid|562|", 0, "XA", "a,1")), "score-bad-xa.bam");
+        writeFilterBam(unpaired, List.of(scoreRead(unpaired, "bad", 0, "taxid|562|", 0, "XA", "a,1,70M,x;")), "score-bad-nm.bam");
+        writeFilterBam(unpaired, List.of(scoreRead(unpaired, "bad", 0, "taxid|562|", 0, "XA", "a,1,7Q,1;")), "score-bad-cigar.bam");
+        final SAMFileHeader lonely = paired.clone();
+        writeFilterBam(lonely, List.of(scoreRead(lonely, "only", 0x1 | 0x40, "taxid|562|", 0)), "score-lonely.bam");
+        final SAMFileHeader coordinate = paired.clone();
+        coordinate.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        writeFilterBam(coordinate, List.of(), "score-not-queryname.bam");
+    }
+
+    /** PATHSEQSCORESPARK: the identity arguments, the normalizations and the outputs. */
+    /** EXTRACTSVEVIDENCESPARK's text, the metadata it takes on the way and its high-depth regions. */
+    static void evidenceRows() throws Exception {
+        final String tool = "ExtractSVEvidenceSpark";
+        final String ignore = DIR.resolve("sv-ignore.txt").toString();
+        final String[][] runs = {
+                {"evidence", "sv-evidence.bam"},
+                {"evidence-other-sizes", "sv-evidence2.bam"},
+                {"evidence-unpaired", "sv-evidence-lone.bam"},
+                {"evidence-ignore-alt", "sv-evidence.bam", "--cross-contigs-to-ignore", ignore},
+                {"evidence-ignore-unknown", "sv-evidence.bam", "--cross-contigs-to-ignore",
+                        DIR.resolve("sv-ignore-bad.txt").toString()},
+                {"evidence-ignore-missing", "sv-evidence.bam", "--cross-contigs-to-ignore",
+                        DIR.resolve("nowhere.txt").toString()},
+                {"evidence-strict-filter", "sv-evidence.bam", "--min-evidence-mapq", "40",
+                        "--min-evidence-match-length", "80"},
+                {"evidence-no-overhang", "sv-evidence.bam", "--allowed-short-fragment-overhang", "0",
+                        "--max-tracked-fragment-length", "500"},
+                {"evidence-low-depth", "sv-evidence2.bam", "--high-depth-coverage-factor", "1",
+                        "--high-depth-coverage-peak-factor", "2"},
+                {"evidence-interval", "sv-evidence.bam", "-L", "chr2"},
+                {"evidence-interval-pile", "sv-evidence.bam", "-L", "chr1:7000-9000"},
+                {"evidence-queryname", "marking-queryname.bam"},
+                {"evidence-pairs", "pairs.bam"},
+                {"evidence-no-reads", "sv-evidence.bam", "-L", "alt:4000-4100"},
+        };
+        for (final String[] one : runs) {
+            final String name = one[0];
+            final List<String> rest = new ArrayList<>(Arrays.asList(
+                    "-I", DIR.resolve(one[1]).toString(), "-O", out(name, "evidence"),
+                    "--aligner-index-image", "image.img", "--kmers-to-ignore", "kmers.txt",
+                    "--read-metadata", out(name, "metadata.txt"),
+                    "--high-coverage-intervals", out(name, "high.bed")));
+            rest.addAll(Arrays.asList(one).subList(2, one.length));
+            run(name, "evidence", tool, rest.toArray(new String[0]));
+        }
+    }
+
+    /** Each signature, each way a contig or an argument is refused, and what the reads are cut to. */
+    static void discoveryRows() throws Exception {
+        final String tool = "DiscoverVariantsFromContigAlignmentsSAMSpark";
+        final String cnv = DIR.resolve("sv_cnv.vcf").toString();
+        final String truth = DIR.resolve("sv_truth.vcf").toString();
+        final String[][] runs = {
+                {"discover", "sv_contigs.bam"},
+                {"discover-small", "sv_contigs_small.bam"},
+                {"discover-cnv", "sv_contigs.bam", "--cnv-calls", cnv},
+                {"discover-truth", "sv_contigs.bam", "--truth-vcf", truth},
+                {"discover-truth-near", "sv_contigs.bam", "--truth-vcf", truth, "--truth-interval-padding", "1"},
+                {"discover-interval", "sv_contigs.bam", "-L", "chr1:1-30000"},
+                {"discover-excluded", "sv_contigs.bam", "-XL", "chr2:13000-20000"},
+                {"discover-cut-contig", "sv_contigs.bam", "-L", "chr2"},
+                {"discover-no-default-filters", "sv_contigs.bam", "--disable-tool-default-read-filters", "true"},
+                {"discover-no-supplementary", "sv_contigs.bam", "--read-filter", "NotSupplementaryAlignmentReadFilter"},
+                {"discover-ignored-arguments", "sv_contigs.bam", "--min-align-length", "500", "--min-mq", "-1",
+                        "--debug-mode", "true"},
+                {"discover-adjacent-reverse", "sv_contigs_adjacent_reverse.bam"},
+                {"discover-no-primary", "sv_contigs_no_primary.bam"},
+                {"discover-hard-primary", "sv_contigs_hard_primary.bam"},
+                {"discover-no-sample", "sv_contigs_no_sample.bam"},
+                {"discover-two-samples", "sv_contigs_two_samples.bam"},
+                {"discover-bad-length", "sv_contigs.bam", "--min-align-length", "0"},
+                {"discover-bad-uncertainty", "sv_contigs.bam", "--assembly-imprecise-evidence-overlap-uncertainty", "0"},
+                {"discover-bad-threshold", "sv_contigs.bam", "--imprecise-variant-evidence-threshold", "0"},
+                {"discover-bad-padding", "sv_contigs.bam", "--truth-interval-padding", "0"},
+                {"discover-bad-deletion", "sv_contigs.bam", "--max-callable-imprecise-deletion-size", "0"},
+                {"discover-cnv-missing", "sv_contigs.bam", "--cnv-calls", DIR.resolve("nowhere.vcf").toString()},
+                {"discover-cnv-other-sample", "sv_contigs.bam", "--cnv-calls", DIR.resolve("sv_cnv_other_sample.vcf").toString()},
+                {"discover-cnv-no-dictionary", "sv_contigs.bam", "--cnv-calls", DIR.resolve("sv_cnv_no_dictionary.vcf").toString()},
+                {"discover-cnv-other-dictionary", "sv_contigs.bam", "--cnv-calls", DIR.resolve("sv_cnv_other_dictionary.vcf").toString()},
+                {"discover-cnv-two-samples", "sv_contigs.bam", "--cnv-calls", DIR.resolve("sv_cnv_two_samples.vcf").toString()},
+                {"discover-truth-missing", "sv_contigs.bam", "--truth-vcf", DIR.resolve("nowhere.vcf").toString()},
+                {"discover-truth-near-start", "sv_contigs.bam", "--truth-vcf", DIR.resolve("sv_truth_near_start.vcf").toString()},
+                {"discover-truth-unknown-type", "sv_contigs.bam", "--truth-vcf", DIR.resolve("sv_truth_unknown_type.vcf").toString()},
+                {"discover-truth-unknown-contig", "sv_contigs.bam", "--truth-vcf", DIR.resolve("sv_truth_unknown_contig.vcf").toString()},
+        };
+        for (final String[] one : runs) {
+            final String name = one[0];
+            final List<String> rest = new ArrayList<>(Arrays.asList(
+                    "-I", DIR.resolve(one[1]).toString(), "-R", DIR.resolve("sv_contigs.fasta").toString(),
+                    "-O", out(name, "discovered"), "--add-output-vcf-command-line", "false"));
+            rest.addAll(Arrays.asList(one).subList(2, one.length));
+            run(name, "discovered", tool, rest.toArray(new String[0]));
+        }
+        // The prefix's other two shapes: a directory, and a file it will not overwrite.
+        run("discover-directory", "discovered", tool, "-I", DIR.resolve("sv_contigs.bam").toString(),
+                "-R", DIR.resolve("sv_contigs.fasta").toString(), "--add-output-vcf-command-line", "false",
+                "-O", java.nio.file.Paths.get(out("discover-directory", "discovered")).getParent().toString());
+        run("discover-existing-file", "discovered", tool, "-I", DIR.resolve("sv_contigs.bam").toString(),
+                "-R", DIR.resolve("sv_contigs.fasta").toString(), "-O", DIR.resolve("sv_contigs.dict").toString());
+    }
+
+    /**
+     * SvDiscoverFromLocalAssemblyContigAlignmentsSpark: five VCFs under the prefix, the sample's
+     * name in each, whatever the calls, and with `--write-sam` a BAM of the contigs each class
+     * could not use.
+     */
+    static void assemblyRows() throws Exception {
+        final String tool = "SvDiscoverFromLocalAssemblyContigAlignmentsSpark";
+        final String cnv = DIR.resolve("sv_cnv.vcf").toString();
+        final String truth = DIR.resolve("sv_truth.vcf").toString();
+        final String altTigs = DIR.resolve("sv_alt_tigs.txt").toString();
+        final String[][] runs = {
+                {"assembly", "sv_assembly.bam"},
+                {"assembly-contigs", "sv_contigs.bam"},
+                {"assembly-small", "sv_contigs_small.bam"},
+                {"assembly-write-sam", "sv_assembly.bam", "--write-sam", "--use-jdk-deflater", "true"},
+                {"assembly-alt-tigs", "sv_assembly.bam", "--non-canonical-contig-names-file", altTigs},
+                {"assembly-alt-tigs-missing", "sv_assembly.bam", "--non-canonical-contig-names-file",
+                        DIR.resolve("nowhere.txt").toString()},
+                {"assembly-truth", "sv_assembly.bam", "--truth-vcf", truth},
+                {"assembly-truth-near", "sv_assembly.bam", "--truth-vcf", truth, "--truth-interval-padding", "1"},
+                {"assembly-truth-missing", "sv_assembly.bam", "--truth-vcf", DIR.resolve("nowhere.vcf").toString()},
+                {"assembly-strict", "sv_assembly.bam", "--min-mq", "70", "--min-align-length", "90"},
+                {"assembly-loose", "sv_assembly.bam", "--min-mq", "10", "--min-align-length", "20"},
+                {"assembly-cnv", "sv_assembly_no_breakend.bam", "--cnv-calls", cnv},
+                {"assembly-cnv-breakend", "sv_assembly.bam", "--cnv-calls", cnv},
+                {"assembly-cnv-missing", "sv_assembly_no_breakend.bam", "--cnv-calls", DIR.resolve("nowhere.vcf").toString()},
+                {"assembly-no-breakend", "sv_assembly_no_breakend.bam"},
+                {"assembly-too-many", "sv_assembly_too_many.bam"},
+                {"assembly-overlap-contained", "sv_assembly_overlap_contained.bam"},
+                {"assembly-interval", "sv_assembly.bam", "-L", "chr1:1-30000"},
+                {"assembly-excluded", "sv_assembly.bam", "-XL", "chr2:13000-20000"},
+                {"assembly-no-default-filters", "sv_assembly.bam", "--disable-tool-default-read-filters", "true"},
+                {"assembly-no-supplementary", "sv_assembly.bam", "--read-filter", "NotSupplementaryAlignmentReadFilter"},
+                {"assembly-no-sample", "sv_contigs_no_sample.bam"},
+                {"assembly-two-samples", "sv_contigs_two_samples.bam"},
+                {"assembly-bad-length", "sv_assembly.bam", "--min-align-length", "0"},
+                {"assembly-bad-uncertainty", "sv_assembly.bam", "--assembly-imprecise-evidence-overlap-uncertainty", "0"},
+                {"assembly-bad-threshold", "sv_assembly.bam", "--imprecise-variant-evidence-threshold", "0"},
+                {"assembly-bad-padding", "sv_assembly.bam", "--truth-interval-padding", "0"},
+                {"assembly-bad-deletion", "sv_assembly.bam", "--max-callable-imprecise-deletion-size", "0"},
+        };
+        for (final String[] one : runs) {
+            final String name = one[0];
+            final List<String> rest = new ArrayList<>(Arrays.asList(
+                    "-I", DIR.resolve(one[1]).toString(), "-R", DIR.resolve("sv_contigs.fasta").toString(),
+                    "-O", out(name, "assembled"), "--add-output-vcf-command-line", "false"));
+            rest.addAll(Arrays.asList(one).subList(2, one.length));
+            run(name, "assembled", tool, rest.toArray(new String[0]));
+        }
+        // The prefix's other two shapes: a directory, and a file it will not overwrite.
+        run("assembly-directory", "assembled", tool, "-I", DIR.resolve("sv_assembly.bam").toString(),
+                "-R", DIR.resolve("sv_contigs.fasta").toString(), "--add-output-vcf-command-line", "false",
+                "-O", java.nio.file.Paths.get(out("assembly-directory", "assembled")).getParent().toString());
+        run("assembly-existing-file", "assembled", tool, "-I", DIR.resolve("sv_assembly.bam").toString(),
+                "-R", DIR.resolve("sv_contigs.fasta").toString(), "-O", DIR.resolve("sv_contigs.dict").toString());
+        // PrintReadsSpark takes GATKSparkTool's wellformed filter: the read with no qualities goes.
+        run("print-reads-no-qualities", "no-qualities.bam", "PrintReadsSpark", "-I",
+                DIR.resolve("sv_quality_missing.bam").toString(), "--use-jdk-deflater", "true",
+                "-O", out("print-reads-no-qualities", "no-qualities.bam"));
+    }
+
+    /**
+     * CpxVariantReInterpreterSpark: the assembly step's last two files, from a VCF of complex calls
+     * and the contigs that made them, under the VCF's dictionary rather than the reads'.
+     */
+    static void reinterpreterRows() throws Exception {
+        final String tool = "CpxVariantReInterpreterSpark";
+        final String altTigs = DIR.resolve("sv_alt_tigs.txt").toString();
+        final String[][] runs = {
+                {"cpx", "sv_assembly.bam", "sv_cpx.vcf"},
+                {"cpx-other-reads", "sv_contigs.bam", "sv_cpx.vcf"},
+                {"cpx-no-reads-of-its-contigs", "sv_contigs_small.bam", "sv_cpx.vcf"},
+                {"cpx-alt-tigs", "sv_assembly.bam", "sv_cpx.vcf", "--non-canonical-contig-names-file", altTigs},
+                {"cpx-alt-tigs-missing", "sv_assembly.bam", "sv_cpx.vcf", "--non-canonical-contig-names-file",
+                        DIR.resolve("nowhere.txt").toString()},
+                {"cpx-empty", "sv_assembly.bam", "sv_cpx_empty.vcf"},
+                {"cpx-sparse", "sv_assembly.bam", "sv_cpx_sparse.vcf"},
+                {"cpx-no-dictionary", "sv_assembly.bam", "sv_cpx_no_dictionary.vcf"},
+                {"cpx-no-dictionary-one", "sv_assembly.bam", "sv_cpx_no_dictionary_one.vcf"},
+                {"cpx-bad-segment", "sv_assembly.bam", "sv_cpx_bad_segment.vcf"},
+                {"cpx-whole-contig", "sv_assembly.bam", "sv_cpx_whole_contig.vcf"},
+                {"cpx-bad-length", "sv_assembly.bam", "sv_cpx_bad_length.vcf"},
+                {"cpx-missing", "sv_assembly.bam", "nowhere.vcf"},
+                {"cpx-interval-no-index", "sv_assembly.bam", "sv_cpx.vcf", "-L", "chr1:1-30000"},
+                {"cpx-no-default-filters", "sv_assembly.bam", "sv_cpx.vcf", "--disable-tool-default-read-filters", "true"},
+                {"cpx-no-supplementary", "sv_assembly.bam", "sv_cpx.vcf", "--read-filter", "NotSupplementaryAlignmentReadFilter"},
+                {"cpx-unvalidated-length", "sv_assembly.bam", "sv_cpx.vcf", "--min-align-length", "0"},
+                {"cpx-unvalidated-uncertainty", "sv_assembly.bam", "sv_cpx.vcf", "--assembly-imprecise-evidence-overlap-uncertainty", "0"},
+                {"cpx-ignored-truth", "sv_assembly.bam", "sv_cpx.vcf", "--truth-vcf", DIR.resolve("nowhere.vcf").toString()},
+                {"cpx-ignored-cnv", "sv_assembly.bam", "sv_cpx.vcf", "--cnv-calls", DIR.resolve("nowhere.vcf").toString()},
+        };
+        for (final String[] one : runs) {
+            final String name = one[0];
+            final List<String> rest = new ArrayList<>(Arrays.asList(
+                    "-I", DIR.resolve(one[1]).toString(), "-R", DIR.resolve("sv_contigs.fasta").toString(),
+                    "--cpx-vcf", DIR.resolve(one[2]).toString(),
+                    "--prefix-out-vcf", out(name, "reinterpreted"), "--add-output-vcf-command-line", "false"));
+            rest.addAll(Arrays.asList(one).subList(3, one.length));
+            run(name, "reinterpreted", tool, rest.toArray(new String[0]));
+        }
+        // A prefix whose directory is not there, and the two required arguments.
+        run("cpx-prefix-nowhere", "reinterpreted", tool, "-I", DIR.resolve("sv_assembly.bam").toString(),
+                "-R", DIR.resolve("sv_contigs.fasta").toString(), "--cpx-vcf", DIR.resolve("sv_cpx.vcf").toString(),
+                "--prefix-out-vcf", DIR.resolve("nowhere").resolve("reinterpreted").toString(),
+                "--add-output-vcf-command-line", "false");
+        run("cpx-no-vcf", "reinterpreted", tool, "-I", DIR.resolve("sv_assembly.bam").toString(),
+                "-R", DIR.resolve("sv_contigs.fasta").toString(), "--prefix-out-vcf", out("cpx-no-vcf", "reinterpreted"));
+        run("cpx-no-prefix", "reinterpreted", tool, "-I", DIR.resolve("sv_assembly.bam").toString(),
+                "-R", DIR.resolve("sv_contigs.fasta").toString(), "--cpx-vcf", DIR.resolve("sv_cpx.vcf").toString());
+    }
+
+    /**
+     * What `DiscoverVariantsFromContigAlignmentsSAMSpark` reads: a reference, and assembled contigs
+     * whose alignments carry each signature its interpreter tells apart.
+     */
+    static void svContigReads(final Path dir) throws Exception {
+        final int[] lengths = {30000, 20000};
+        final String[] names = {"chr1", "chr2"};
+        final java.util.Random random = new java.util.Random(11L);
+        final StringBuilder fasta = new StringBuilder();
+        final StringBuilder index = new StringBuilder();
+        final StringBuilder dictionary = new StringBuilder("@HD\tVN:1.6\n");
+        final java.util.List<SAMSequenceRecord> sequences = new java.util.ArrayList<>();
+        for (int contig = 0; contig < names.length; contig++) {
+            final String line = ">" + names[contig] + "\n";
+            fasta.append(line);
+            index.append(names[contig]).append('\t').append(lengths[contig]).append('\t')
+                    .append(fasta.length()).append("\t60\t61\n");
+            for (int at = 0; at < lengths[contig]; at++) {
+                fasta.append("ACGT".charAt(random.nextInt(4)));
+                if (at % 60 == 59 || at == lengths[contig] - 1) {
+                    fasta.append('\n');
+                }
+            }
+            dictionary.append("@SQ\tSN:").append(names[contig]).append("\tLN:").append(lengths[contig]).append('\n');
+            sequences.add(new SAMSequenceRecord(names[contig], lengths[contig]));
+        }
+        Files.writeString(dir.resolve("sv_contigs.fasta"), fasta.toString(), StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_contigs.fasta.fai"), index.toString(), StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_contigs.dict"), dictionary.toString(), StandardCharsets.UTF_8);
+
+        // Name, then per alignment: flags, contig, start, cigar, mapping quality.
+        final Object[][] contigs = {
+            {"del", 0, "chr1", 1000, "100M100S", 60, 2048, "chr1", 2000, "100S100M", 60},
+            {"del2", 0, "chr1", 1000, "100M100S", 60, 2048, "chr1", 2000, "100H100M", 60},
+            {"delRev", 16, "chr1", 3000, "100M100S", 60, 2064, "chr1", 4000, "100S100M", 60},
+            {"delHom", 0, "chr1", 5000, "105M95S", 60, 2048, "chr1", 6000, "100S100M", 60},
+            {"delHomTie", 0, "chr1", 5000, "107M93S", 60, 2048, "chr1", 6002, "100S100M", 60},
+            {"replace", 0, "chr1", 7000, "100M160S", 60, 2048, "chr1", 8000, "160S100M", 60},
+            {"replaceShort", 0, "chr1", 9000, "100M110S", 60, 2048, "chr1", 9500, "110S100M", 60},
+            {"ins", 0, "chr1", 10000, "100M160S", 60, 2048, "chr1", 10100, "160S100M", 60},
+            {"insRev", 16, "chr1", 10500, "100M160S", 60, 2064, "chr1", 10600, "160S100M", 60},
+            {"dup", 0, "chr1", 11000, "100M100S", 60, 2048, "chr1", 11080, "100S100M", 60},
+            {"dupRev", 16, "chr1", 11500, "100M100S", 60, 2064, "chr1", 11580, "100S100M", 60},
+            {"dupIns", 0, "chr1", 12000, "100M130S", 60, 2048, "chr1", 12080, "130S100M", 60},
+            {"dupGap", 0, "chr1", 12500, "50M2I48M100S", 60, 2048, "chr1", 12580, "100S60M1D40M", 60},
+            {"contract", 0, "chr1", 13000, "100M80S", 60, 2048, "chr1", 13100, "80S100M", 60},
+            {"cpxUp", 0, "chr1", 14000, "100M90S", 60, 2048, "chr1", 14070, "90S100M", 60},
+            {"cpxUpRev", 16, "chr1", 14500, "100M90S", 60, 2064, "chr1", 14570, "90S100M", 60},
+            {"cpxDown", 0, "chr1", 15000, "100M70S", 60, 2048, "chr1", 15090, "70S100M", 60},
+            {"inv55", 0, "chr1", 16000, "100M100S", 60, 2064, "chr1", 17000, "100M100S", 60},
+            {"inv33", 16, "chr1", 18000, "100S100M", 60, 2048, "chr1", 19000, "100S100M", 60},
+            {"inv55Ins", 0, "chr1", 20000, "100M120S", 60, 2064, "chr1", 21000, "100M120S", 60},
+            {"inv33Hom", 16, "chr1", 22000, "95S105M", 60, 2048, "chr1", 23000, "100S100M", 60},
+            {"mapped", 0, "chr1", 24000, "100M200S", 60, 2048, "chr2", 500, "100S100M100S", 20, 2048, "chr1", 25000, "200S100M", 60},
+            {"threes", 0, "chr1", 26000, "100M200S", 60, 2048, "chr1", 26500, "100S100M100S", 60, 2048, "chr1", 27000, "200S100M", 60},
+            {"gapped", 0, "chr2", 1000, "100M60D100M", 60},
+            {"gappedIns", 0, "chr2", 2000, "100M60I100M", 60},
+            {"gappedSmall", 0, "chr2", 3000, "100M10D100M", 60},
+            {"gappedClip", 16, "chr2", 4000, "20S100M60D100M30S", 60},
+            {"lowFirst", 0, "chr2", 5000, "100M100S", 10, 2048, "chr2", 6000, "100S100M", 60},
+            {"lowEnd", 0, "chr2", 7000, "100M100S", 60, 2048, "chr2", 8000, "100S100M", 10},
+            {"tooShort", 0, "chr2", 9000, "30M100S", 60, 2048, "chr2", 9500, "30S100M", 60},
+            {"nextShort", 0, "chr2", 9800, "100M30S", 60, 2048, "chr2", 9950, "100S30M", 60},
+            {"inter", 0, "chr1", 28000, "100M100S", 60, 2048, "chr2", 10000, "100S100M", 60},
+            {"swap", 0, "chr2", 11000, "100M100S", 60, 2048, "chr2", 10500, "100S100M", 60},
+            {"contained", 0, "chr2", 12000, "100M100S", 60, 2048, "chr2", 12020, "100S60M40S", 60},
+            {"stitched", 0, "chr2", 13000, "100M100S", 60, 2048, "chr2", 13100, "100S100M", 60},
+            {"single", 0, "chr2", 14000, "100M", 60},
+            {"withSecondary", 0, "chr2", 15000, "100M100S", 60, 2048, "chr2", 16000, "100S100M", 60, 256, "chr2", 17000, "100M100S", 60},
+        };
+        svContigBam(dir.resolve("sv_contigs.bam"), sequences, "s", contigs, 12L);
+        svContigBam(dir.resolve("sv_contigs_small.bam"), sequences, "s", new Object[][] {contigs[0], contigs[17]}, 13L);
+        svContigBam(dir.resolve("sv_contigs_adjacent_reverse.bam"), sequences, "s", new Object[][] {
+            contigs[0],
+            {"adjacentReverse", 16, "chr2", 18000, "100M100S", 60, 2064, "chr2", 18100, "100S100M", 60}}, 14L);
+        svContigBam(dir.resolve("sv_contigs_no_primary.bam"), sequences, "s", new Object[][] {
+            {"orphan", 2048, "chr1", 1000, "100M100S", 60}}, 15L);
+        svContigBam(dir.resolve("sv_contigs_hard_primary.bam"), sequences, "s", new Object[][] {
+            {"hard", 0, "chr1", 1000, "100M100H", 60}}, 16L);
+        svContigBam(dir.resolve("sv_contigs_no_sample.bam"), sequences, null, new Object[][] {contigs[0]}, 17L);
+        svContigBam(dir.resolve("sv_contigs_two_samples.bam"), sequences, "s,t", new Object[][] {contigs[0]}, 18L);
+        svAssemblyContigs(dir, sequences);
+        svComplexCalls(dir);
+
+        final StringBuilder vcfHead = new StringBuilder("##fileformat=VCFv4.2\n"
+                + "##FORMAT=<ID=CN,Number=1,Type=Integer,Description=\"Copy number\">\n"
+                + "##FORMAT=<ID=CNQ,Number=1,Type=Float,Description=\"Copy number quality\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##INFO=<ID=END,Number=1,Type=Integer,Description=\"Stop\">\n"
+                + "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type\">\n");
+        for (int contig = 0; contig < names.length; contig++) {
+            vcfHead.append("##contig=<ID=").append(names[contig]).append(",length=").append(lengths[contig]).append(">\n");
+        }
+        final String columns = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t";
+        final String calls = "chr1\t900\tcnvA\tN\t<DEL>\t.\t.\tEND=2500;SVTYPE=DEL\tGT:CN:CNQ\t0/1:1:40\n"
+                + "chr1\t1500\tcnvB\tN\t<DEL>\t.\t.\tEND=4000;SVTYPE=DEL\tGT:CN:CNQ\t0/1:1:30.5\n"
+                + "chr2\t1\tcnvC\tN\t<DUP>\t.\t.\tEND=9000;SVTYPE=DUP\tGT:CN:CNQ\t0/1:3:20\n";
+        Files.writeString(dir.resolve("sv_cnv.vcf"), vcfHead + columns + "s\n" + calls, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cnv_other_sample.vcf"), vcfHead + columns + "t\n" + calls, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cnv_no_dictionary.vcf"),
+                vcfHead.toString().replaceAll("##contig=[^\n]*\n", "") + columns + "s\n" + calls, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cnv_other_dictionary.vcf"),
+                vcfHead.toString().replace("length=20000", "length=20001") + columns + "s\n" + calls, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cnv_two_samples.vcf"),
+                vcfHead + columns + "s\tt\n" + calls.replace("\n", "\t0/1:1:40\n"), StandardCharsets.UTF_8);
+        final String truthColumns = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n";
+        Files.writeString(dir.resolve("sv_truth.vcf"),
+                vcfHead + truthColumns
+                        + "chr1\t1100\ttruthA\tN\t<DEL>\t.\t.\tEND=2000;SVTYPE=DEL\n"
+                        + "chr2\t100\ttruthB\tN\t<INS>\t.\t.\tEND=100;SVTYPE=INS\n"
+                        + "chr2\t200\ttruthC\tN\t.\t.\t.\tEND=200\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_truth_near_start.vcf"),
+                vcfHead + truthColumns + "chr2\t1\ttruthB\tN\t<INS>\t.\t.\tEND=1;SVTYPE=INS\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_truth_unknown_type.vcf"),
+                vcfHead + truthColumns + "chr2\t100\ttruthB\tN\t<INS>\t.\t.\tEND=100;SVTYPE=ODD\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_truth_unknown_contig.vcf"),
+                vcfHead + truthColumns + "chr9\t100\ttruthB\tN\t<INS>\t.\t.\tEND=100;SVTYPE=INS\n", StandardCharsets.UTF_8);
+    }
+
+    static void svAssemblyContigs(final Path dir, final java.util.List<SAMSequenceRecord> sequences) throws Exception {
+        final Object[][] contigs = {
+            {"cpxMapped", 0, "chr1", 1000, "100M200S", 60, 2048, "chr2", 500, "100S100M100S", 60, 2048, "chr1", 1500, "200S100M", 60},
+            {"cpxInverted", 0, "chr1", 2000, "100M200S", 60, 2064, "chr1", 2300, "100S100M100S", 60, 2048, "chr1", 2600, "200S100M", 60},
+            {"cpxDuplicated", 0, "chr1", 3000, "100M200S", 60, 2048, "chr1", 3200, "100S100M100S", 60, 2048, "chr1", 3100, "200S300M", 60},
+            {"cpxReverse", 16, "chr1", 5000, "200S100M", 60, 2064, "chr1", 4700, "100S100M100S", 60, 2064, "chr1", 4400, "100M200S", 60},
+            {"cpxReverseFlip", 16, "chr1", 5900, "200S100M", 60, 2048, "chr1", 5600, "100S100M100S", 60, 2064, "chr1", 5300, "100M200S", 60},
+            {"cpxGapped", 0, "chr1", 6000, "100M320S", 60, 2048, "chr1", 6400, "120S100M200S", 60, 2048, "chr1", 6900, "320S100M", 60},
+            {"cpxOverlap", 0, "chr1", 8000, "110M200S", 60, 2048, "chr1", 8300, "100S110M100S", 60, 2048, "chr1", 8700, "200S110M", 60},
+            {"cpxFour", 0, "chr1", 9500, "100M400S", 60, 2048, "chr1", 9800, "100S110M290S", 60, 2048, "chr1", 10200, "200S110M190S", 60, 2048, "chr1", 10800, "400S100M", 60},
+            {"cpxFourSwitch", 0, "chr1", 11000, "100M400S", 60, 2048, "chr1", 11200, "100S110M290S", 60, 2064, "chr1", 11500, "200S110M190S", 60, 2048, "chr1", 11800, "400S100M", 60},
+            {"cpxFourOther", 0, "chr1", 12000, "100M400S", 60, 2048, "chr2", 1100, "100S110M290S", 60, 2048, "chr1", 12300, "200S110M190S", 60, 2048, "chr1", 12800, "400S100M", 60},
+            {"cpxClipDeletion", 0, "chr1", 13000, "100M3D10M200S", 60, 2048, "chr1", 13400, "100S10M3I100M100S", 60, 2048, "chr1", 13800, "210S103M", 60},
+            {"cpxShared", 0, "chr1", 14000, "100M200S", 60, 2048, "chr2", 3000, "100S100M100S", 60, 2048, "chr1", 14099, "200S100M", 60},
+            {"cpxSharedFlip", 0, "chr1", 14500, "100M250S", 60, 2064, "chr2", 3400, "130S100M120S", 60, 2048, "chr1", 14599, "250S100M", 60},
+            {"cpxInvertedOne", 0, "chr1", 15000, "100M300S", 60, 2064, "chr1", 15099, "100S200M100S", 60, 2048, "chr1", 15298, "300S100M", 60},
+            {"cpxInvertedOneWide", 0, "chr1", 15600, "100M500S", 60, 2064, "chr1", 15699, "200S200M200S", 60, 2048, "chr1", 15898, "500S100M", 60},
+            {"cpxInvertedSmall", 0, "chr1", 16200, "100M240S", 60, 2064, "chr1", 16299, "100S20M220S", 60, 2048, "chr1", 16318, "240S100M", 60},
+            {"cpxAsIsWide", 0, "chr1", 16600, "100M500S", 60, 2048, "chr1", 16699, "200S200M200S", 60, 2048, "chr1", 16898, "500S100M", 60},
+            {"cpxAsIsFront", 0, "chr1", 17200, "100M400S", 60, 2048, "chr1", 17299, "200S200M100S", 60, 2048, "chr1", 17498, "400S100M", 60},
+            {"cpxAsIsRear", 0, "chr1", 17800, "100M400S", 60, 2048, "chr1", 17899, "100S200M200S", 60, 2048, "chr1", 18098, "400S100M", 60},
+            {"cpxAllAsIs", 0, "chr1", 18400, "100M700S", 60, 2048, "chr1", 18499, "200S150M450S", 60, 2048, "chr1", 18648, "350S150M300S", 60, 2048, "chr1", 18797, "600S100M100S", 60},
+            {"cpxSegmentGone", 0, "chr1", 19200, "100M200S", 60, 2048, "chr1", 19400, "100S100M100S", 60, 2048, "chr1", 19700, "200S100M", 60},
+            {"cpxLowMiddle", 0, "chr1", 20000, "100M400S", 60, 2048, "chr1", 20400, "100S200M200S", 30, 2048, "chr1", 20900, "400S100M", 60},
+            {"cpxSmallGone", 0, "chr1", 21400, "100M300S", 60, 2048, "chr2", 2500, "100S200M100S", 30, 2048, "chr1", 21510, "300S100M", 60},
+            {"cpxTiny", 0, "chr1", 21800, "100M200S", 60, 2048, "chr1", 21910, "100S100M100S", 60, 2048, "chr1", 22000, "200S100M", 60},
+            {"incompleteContig", 0, "chr1", 22200, "100M200S", 60, 2048, "chr2", 6000, "100S100M100S", 60, 2048, "chr2", 6500, "200S100M", 60},
+            {"incompleteStrand", 0, "chr1", 22400, "100M200S", 60, 2048, "chr1", 22600, "100S100M100S", 60, 2064, "chr1", 22800, "200S100M", 60},
+            {"incompleteOrder", 0, "chr1", 23200, "100M200S", 60, 2048, "chr1", 23000, "100S100M100S", 60, 2048, "chr1", 22900, "200S100M", 60},
+            {"incompleteMiddle", 0, "chr1", 23400, "100M200S", 60, 2048, "chr1", 23380, "100S100M100S", 60, 2048, "chr1", 23700, "200S100M", 60},
+            {"uninformative", 0, "chr1", 24000, "200M", 60, 2048, "chr1", 24500, "50S100M50S", 30},
+            {"ambiguous", 0, "chr1", 25000, "100M100S", 60, 2048, "chr2", 7000, "100M100S", 60, 2048, "chr1", 25500, "100S100M", 60},
+            {"altTig", 0, "chr1", 26000, "100M100S", 60, 2048, "chr1", 26500, "100S100M", 60, 2048, "chr2", 8000, "200M", 60},
+            {"manyLow", 0, "chr1", 27000, "100M1000S", 60, 2048, "chr1", 27200, "100S100M900S", 60, 2048, "chr1", 27400, "200S100M800S", 5,
+                    2048, "chr1", 27600, "300S100M700S", 60, 2048, "chr1", 27800, "400S100M600S", 5, 2048, "chr1", 28000, "500S100M500S", 60,
+                    2048, "chr1", 28200, "600S100M400S", 5, 2048, "chr1", 28400, "700S100M300S", 60, 2048, "chr1", 28600, "800S100M200S", 5,
+                    2048, "chr1", 28800, "900S100M100S", 5, 2048, "chr1", 29000, "1000S100M", 60},
+            {"gappedDropped", 0, "chr2", 1000, "100M60D100M100S", 60, 2048, "chr2", 1500, "150S50M100S", 60, 2048, "chr2", 1700, "200S100M", 60},
+            {"cpxSplit", 0, "chr2", 2000, "100M60D100M200S", 60, 2048, "chr2", 2500, "200S100M100S", 60, 2048, "chr2", 2900, "300S100M", 60},
+            {"interForward", 0, "chr1", 29200, "100M100S", 60, 2064, "chr2", 10000, "100M100S", 60},
+            {"interForwardIns", 0, "chr1", 29400, "100M130S", 60, 2064, "chr2", 10200, "100M130S", 60},
+            {"interReverse", 16, "chr1", 29600, "100S100M", 60, 2048, "chr2", 10400, "100S100M", 60},
+            {"interReverseIns", 16, "chr2", 10600, "130S100M", 60, 2048, "chr1", 29800, "130S100M", 60},
+            {"interSecond", 0, "chr2", 11000, "100M100S", 60, 2048, "chr1", 28800, "100S100M", 60},
+            {"interSecondRev", 16, "chr1", 28400, "100M100S", 60, 2064, "chr2", 11200, "100S100M", 60},
+            {"interFirstIns", 0, "chr1", 28200, "100M130S", 60, 2048, "chr2", 11400, "130S100M", 60},
+            {"swapIns", 0, "chr2", 12000, "100M130S", 60, 2048, "chr2", 11700, "130S100M", 60},
+            {"swapRev", 16, "chr2", 12300, "100M100S", 60, 2064, "chr2", 12600, "100S100M", 60},
+            {"fatInsertion", 0, "chr2", 13000, "100M160S", 60, 2048, "chr2", 13120, "160S100M", 60},
+            {"fatInsertionRev", 16, "chr2", 13400, "100M160S", 60, 2064, "chr2", 13520, "160S100M", 60},
+            {"dupWide", 0, "chr2", 14000, "100M100S", 60, 2048, "chr2", 14040, "100S100M", 60},
+            {"dupWideIns", 0, "chr2", 14300, "100M130S", 60, 2048, "chr2", 14340, "130S100M", 60},
+            {"dupComplexWide", 0, "chr2", 14600, "100M90S", 60, 2048, "chr2", 14640, "90S100M", 60},
+            {"dupComplexDown", 0, "chr2", 15000, "100M50S", 60, 2048, "chr2", 15040, "50S100M", 60},
+            {"dupComplexShort", 0, "chr2", 15300, "100M90S", 60, 2048, "chr2", 15380, "90S100M", 60},
+            {"weakPair", 0, "chr2", 16000, "100M100S", 15, 2048, "chr2", 16500, "100S100M", 60},
+            {"shortPair", 0, "chr2", 16800, "20M100S", 60, 2048, "chr2", 17000, "20S100M", 60},
+            {"lengthFiltered", 0, "chr2", 17300, "40M40S", 60, 2048, "chr2", 18000, "40S40M", 60},
+            {"qualityFiltered", 0, "chr2", 18300, "100M100S", 25, 2048, "chr2", 19000, "100S100M", 25},
+            {"normal", 0, "chr2", 19200, "100M", 60},
+        };
+        svContigBam(dir.resolve("sv_assembly.bam"), sequences, "s", contigs, 19L, true);
+        final Object[][] tooMany = new Object[1][1 + 5 * 31];
+        tooMany[0][0] = "tooMany";
+        for (int at = 0; at < 31; at++) {
+            tooMany[0][1 + 5 * at] = at == 0 ? 0 : 2048;
+            tooMany[0][2 + 5 * at] = "chr1";
+            tooMany[0][3 + 5 * at] = 100 + 300 * at;
+            tooMany[0][4 + 5 * at] = at + "S20M" + (30 - at) + "S";
+            tooMany[0][5 + 5 * at] = 60;
+        }
+        tooMany[0][4] = "20M30S";
+        tooMany[0][154] = "30S20M";
+        svContigBam(dir.resolve("sv_assembly_too_many.bam"), sequences, "s", tooMany, 20L, true);
+        svContigBam(dir.resolve("sv_assembly_overlap_contained.bam"), sequences, "s", new Object[][] {
+            {"halfOverlap", 0, "chr1", 1000, "100M400S", 60, 2048, "chr1", 1200, "90S210M200S", 60, 2048, "chr1", 1600, "200S120M180S", 60, 2048, "chr1", 2000, "400S100M", 60}}, 21L, true);
+        // No breakend among its calls, or `--cnv-calls` stops on the first one's negative end.
+        svContigBam(dir.resolve("sv_assembly_no_breakend.bam"), sequences, "s", new Object[][] {
+            {"del", 0, "chr1", 1000, "100M100S", 60, 2048, "chr1", 2000, "100S100M", 60},
+            {"ins", 0, "chr1", 10000, "100M160S", 60, 2048, "chr1", 10100, "160S100M", 60},
+            {"dup", 0, "chr1", 11000, "100M100S", 60, 2048, "chr1", 11080, "100S100M", 60},
+            {"cpxGapped", 0, "chr1", 6000, "100M320S", 60, 2048, "chr1", 6400, "120S100M200S", 60, 2048, "chr1", 6900, "320S100M", 60},
+            {"cpxOverlap", 0, "chr1", 8000, "110M200S", 60, 2048, "chr1", 8300, "100S110M100S", 60, 2048, "chr1", 8700, "200S110M", 60},
+            {"cpxFour", 0, "chr1", 12000, "100M400S", 60, 2048, "chr1", 12300, "100S110M290S", 60, 2048, "chr1", 12700, "200S110M190S", 60, 2048, "chr1", 13300, "400S100M", 60},
+            {"cpxAsIsWide", 0, "chr1", 16600, "100M500S", 60, 2048, "chr1", 16699, "200S200M200S", 60, 2048, "chr1", 16898, "500S100M", 60}}, 22L, true);
+        Files.writeString(dir.resolve("sv_alt_tigs.txt"), "chr2\n", StandardCharsets.UTF_8);
+
+        // A read with no qualities, which the wellformed filter drops, beside one it keeps.
+        final SAMFileHeader header = new SAMFileHeader();
+        sequences.forEach(header::addSequence);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("s");
+        header.addReadGroup(group);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        try (SAMFileWriter writer = new SAMFileWriterFactory().setCreateIndex(true)
+                .makeBAMWriter(header, true, dir.resolve("sv_quality_missing.bam").toFile())) {
+            for (int at = 0; at < 2; at++) {
+                final htsjdk.samtools.SAMRecord read = new htsjdk.samtools.SAMRecord(header);
+                read.setReadName("read" + at);
+                read.setReferenceName("chr1");
+                read.setAlignmentStart(100 + at);
+                read.setCigarString("4M");
+                read.setMappingQuality(60);
+                read.setReadBases("ACGT".getBytes(StandardCharsets.US_ASCII));
+                read.setBaseQualities(at == 0 ? new byte[] {30, 30, 30, 30} : htsjdk.samtools.SAMRecord.NULL_QUALS);
+                read.setAttribute("RG", "rg1");
+                writer.addAlignment(read);
+            }
+        }
+    }
+
+    /**
+     * What `CpxVariantReInterpreterSpark` reads: `sv_assembly.bam`'s complex calls as the assembly
+     * step wrote them, each haplotype reduced to its length, since the length is all it asks of one,
+     * and five records of no contig's making: none or one segment, three contigs, one contig twice.
+     */
+    static void svComplexCalls(final Path dir) throws Exception {
+        // Contig, start, end, contig names, segments, arrangement, haplotype length, qualities, longest.
+        final Object[][] calls = {
+            {"chr1", 1099, 1500, "cpxMapped", "chr1:1099-1500", "-chr2:500-599", 102, "60", 100},
+            {"chr1", 2099, 2600, "cpxInverted", "chr1:2099-2300,chr1:2300-2399,chr1:2399-2600", "-2", 102, "60", 100},
+            {"chr1", 3099, 3299, "cpxDuplicated", "chr1:3100-3200,chr1:3200-3299", "2,1,2", 301, "60", 100},
+            {"chr1", 4499, 5000, "cpxReverse", "chr1:4499-4700,chr1:4700-4799,chr1:4799-5000", "2", 102, "60", 100},
+            {"chr1", 5399, 5900, "cpxReverseFlip", "chr1:5399-5600,chr1:5600-5699,chr1:5699-5900", "-2", 102, "60", 100},
+            {"chr1", 6099, 6900, "cpxGapped", "chr1:6099-6400,chr1:6400-6499,chr1:6499-6900", "UINS-20,2,UINS-100", 222, "60", 100},
+            {"chr1", 8109, 8700, "cpxOverlap", "chr1:8109-8310,chr1:8310-8399,chr1:8399-8700", "2", 92, "60", 110},
+            {"chr1", 9599, 10800, "cpxFour", "chr1:9599-9800,chr1:9800-9899,chr1:9899-10200,chr1:10200-10309,chr1:10309-10800", "2,4,UINS-90", 302, "60", 100},
+            {"chr1", 11099, 11800, "cpxFourSwitch", "chr1:11099-11200,chr1:11200-11289,chr1:11289-11500,chr1:11500-11609,chr1:11609-11800", "2,-4,UINS-100", 302, "60", 100},
+            {"chr1", 12099, 12800, "cpxFourOther", "chr1:12099-12300,chr1:12300-12409,chr1:12409-12800", "-chr2:1100-1199,2,UINS-90", 302, "60", 100},
+            {"chr1", 13112, 13800, "cpxClipDeletion", "chr1:13112-13410,chr1:13410-13506,chr1:13506-13800", "UINS-3,2", 102, "60", 103},
+            {"chr1", 14099, 14099, "cpxShared", "chr1:14099-14099", "1,chr2:3000-3099,1", 102, "60", 100},
+            {"chr1", 14599, 14599, "cpxSharedFlip", "chr1:14599-14599", "1,UINS-20,-chr2:3400-3499,UINS-30,1", 152, "60", 100},
+            {"chr1", 15099, 15298, "cpxInvertedOne", "chr1:15099-15298", "-1", 202, "60", 100},
+            {"chr1", 15699, 15898, "cpxInvertedOneWide", "chr1:15699-15898", "UINS-100,-1,UINS-100", 402, "60", 100},
+            {"chr1", 16299, 16318, "cpxInvertedSmall", "chr1:16299-16318", "UINS-120,-1", 142, "60", 100},
+            {"chr1", 16699, 16898, "cpxAsIsWide", "chr1:16699-16898", "UINS-100,1,UINS-100", 402, "60", 100},
+            {"chr1", 17299, 17498, "cpxAsIsFront", "chr1:17299-17498", "UINS-100,1", 302, "60", 100},
+            {"chr1", 17899, 18098, "cpxAsIsRear", "chr1:17899-18098", "1,UINS-100", 302, "60", 100},
+            {"chr1", 18499, 18797, "cpxAllAsIs", "chr1:18499-18648,chr1:18648-18797", "UINS-100,1,2,UINS-100", 502, "60", 100},
+            {"chr1", 19299, 19700, "cpxSegmentGone", "chr1:19299-19400,chr1:19400-19499,chr1:19499-19700", "2", 102, "60", 100},
+            {"chr1", 20099, 20900, "cpxLowMiddle", "chr1:20099-20400,chr1:20400-20599,chr1:20599-20900", "2,UINS-100", 302, "60", 100},
+            {"chr1", 21499, 21510, "cpxSmallGone", "chr1:21499-21510", "-chr2:2500-2699", 202, "60", 100},
+            {"chr1", 21899, 22009, "cpxTiny", "chr1:21899-21910,chr1:21910-22000,chr1:22000-22009", "2,3,3", 111, "60", 100},
+            {"chr1", 25000, 25000, "zeroSegments", "", "UINS-100", 102, "60", 100},
+            {"chr1", 25200, 25200, "zeroSegmentsShort", "", "UINS-10", 12, "60", 10},
+            {"chr1", 25400, 25900, "oneSegmentDeleted", "chr1:25400-25900", "UINS-200", 200, "60", 100},
+            {"chr1", 26000, 26300, "cpxFour,cpxFourOther,nobody", "chr1:26000-26100,chr1:26100-26300", "2,1", 300, "60,50,40", 120},
+            {"chr1", 27099, 29000, "manyLow", "chr1:27099-27200,chr1:27200-27299,chr1:27299-27600,chr1:27600-27699,chr1:27699-28000,chr1:28000-28099,chr1:28099-28400,chr1:28400-28499,chr1:28499-29000", "2,UINS-100,4,UINS-100,6,UINS-100,8,UINS-200", 902, "60", 100},
+            {"chr2", 2099, 2900, "cpxSplit", "chr2:2099-2160,chr2:2160-2259,chr2:2259-2500,chr2:2500-2599,chr2:2599-2900", "2,4", 202, "60", 100},
+            {"chr2", 4000, 4600, "cpxGapped", "chr2:4000-4300,chr2:4300-4600", "-2,1", 600, "30", 80},
+        };
+        final StringBuilder lines = new StringBuilder("##fileformat=VCFv4.2\n");
+        lines.append("##INFO=<ID=ALT_ARRANGEMENT,Number=.,Type=String,Description=\"For CPX variants only; specifies how reference segments given in SEGMENTS are re-arranged\">\n");
+        lines.append("##INFO=<ID=CTG_NAMES,Number=.,Type=String,Description=\"Name of local assembly contigs supporting this variant\">\n");
+        lines.append("##INFO=<ID=END,Number=1,Type=Integer,Description=\"Stop position of the interval\">\n");
+        lines.append("##INFO=<ID=MAPPING_QUALITIES,Number=.,Type=Integer,Description=\"Mapping qualities of the contig alignments that support the variant\">\n");
+        lines.append("##INFO=<ID=MAX_ALIGN_LENGTH,Number=1,Type=Integer,Description=\"Maximum of the values listed in ALIGN_LENGTHS\">\n");
+        lines.append("##INFO=<ID=SEGMENTS,Number=.,Type=String,Description=\"For CPX variants only; segments of reference that are rearranged\">\n");
+        lines.append("##INFO=<ID=SEQ_ALT_HAPLOTYPE,Number=A,Type=Character,Description=\"Alt haplotype sequence, one per alt allele\">\n");
+        lines.append("##INFO=<ID=SVLEN,Number=.,Type=Integer,Description=\"Difference in length between REF and ALT alleles\">\n");
+        lines.append("##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">\n");
+        final String contigs = "##contig=<ID=chr1,length=30000>\n##contig=<ID=chr2,length=20000>\n";
+        final String head = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n";
+        final StringBuilder records = new StringBuilder();
+        for (final Object[] call : calls) {
+            records.append(call[0]).append('\t').append(call[1]).append('\t')
+                    .append("CPX_").append(call[0]).append(':').append(call[1]).append('-').append(call[2])
+                    .append("\tN\t<CPX>\t.\t.\tALT_ARRANGEMENT=").append(call[5])
+                    .append(";CTG_NAMES=").append(call[3]).append(";END=").append(call[2])
+                    .append(";MAPPING_QUALITIES=").append(call[7]).append(";MAX_ALIGN_LENGTH=").append(call[8]);
+            if (!((String) call[4]).isEmpty()) {
+                records.append(";SEGMENTS=").append(call[4]);
+            }
+            records.append(";SEQ_ALT_HAPLOTYPE=").append("A".repeat((Integer) call[6]))
+                    .append(";SVTYPE=CPX\n");
+        }
+        final String record = "chr1\t100\tbad\tN\t<CPX>\t.\t.\t";
+        Files.writeString(dir.resolve("sv_cpx.vcf"), lines + contigs + head + records, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cpx_empty.vcf"), lines + contigs + head, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cpx_no_dictionary.vcf"), lines + head + records, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cpx_no_dictionary_one.vcf"),
+                lines + head + records.substring(0, records.indexOf("\n") + 1), StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cpx_sparse.vcf"), lines + contigs + head + record
+                + "END=200;SEGMENTS=chr1:100-200;SVTYPE=CPX\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cpx_bad_segment.vcf"), lines + contigs + head + record
+                + "ALT_ARRANGEMENT=1;CTG_NAMES=del;END=200;SEGMENTS=chr1:x-5;SEQ_ALT_HAPLOTYPE=AAA;SVTYPE=CPX\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cpx_whole_contig.vcf"), lines + contigs + head + record
+                + "ALT_ARRANGEMENT=1;CTG_NAMES=del;END=200;SEGMENTS=chr1;SEQ_ALT_HAPLOTYPE=AAA;SVTYPE=CPX\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cpx_bad_length.vcf"), lines + contigs + head + record
+                + "ALT_ARRANGEMENT=1;CTG_NAMES=del;END=200;MAX_ALIGN_LENGTH=many;SEGMENTS=chr1:100-200;SEQ_ALT_HAPLOTYPE=AAA;SVTYPE=CPX\n",
+                StandardCharsets.UTF_8);
+    }
+
+    static void svContigBam(final Path bam, final java.util.List<SAMSequenceRecord> sequences, final String sample,
+                            final Object[][] contigs, final long seed) {
+        svContigBam(bam, sequences, sample, contigs, seed, false);
+    }
+
+    static void svContigBam(final Path bam, final java.util.List<SAMSequenceRecord> sequences, final String sample,
+                            final Object[][] contigs, final long seed, final boolean scoreEachAlignment) {
+        final SAMFileHeader header = new SAMFileHeader();
+        sequences.forEach(header::addSequence);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        if (sample != null) {
+            group.setSample(sample.split(",")[0]);
+        }
+        header.addReadGroup(group);
+        if (sample != null && sample.contains(",")) {
+            final SAMReadGroupRecord second = new SAMReadGroupRecord("rg2");
+            second.setSample(sample.split(",")[1]);
+            header.addReadGroup(second);
+        }
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final java.util.Random random = new java.util.Random(seed);
+        try (SAMFileWriter writer = new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, false, bam.toFile())) {
+            final java.util.List<htsjdk.samtools.SAMRecord> reads = new java.util.ArrayList<>();
+            for (final Object[] contig : contigs) {
+                for (int at = 1; at < contig.length; at += 5) {
+                    final htsjdk.samtools.SAMRecord read = new htsjdk.samtools.SAMRecord(header);
+                    read.setReadName((String) contig[0]);
+                    read.setFlags((Integer) contig[at]);
+                    read.setReferenceName((String) contig[at + 1]);
+                    read.setAlignmentStart((Integer) contig[at + 2]);
+                    read.setCigarString((String) contig[at + 3]);
+                    read.setMappingQuality((Integer) contig[at + 4]);
+                    final int length = read.getCigar().getReadLength();
+                    final byte[] bases = new byte[length];
+                    final byte[] qualities = new byte[length];
+                    for (int base = 0; base < length; base++) {
+                        bases[base] = (byte) "ACGT".charAt(random.nextInt(4));
+                        qualities[base] = 30;
+                    }
+                    read.setReadBases(bases);
+                    read.setBaseQualities(qualities);
+                    read.setAttribute("RG", "rg1");
+                    if (at == 1 || scoreEachAlignment) {
+                        read.setAttribute("NM", 2);
+                        read.setAttribute("AS", scoreEachAlignment ? read.getCigar().getReferenceLength() : 90);
+                    }
+                    reads.add(read);
+                }
+            }
+            reads.sort(new htsjdk.samtools.SAMRecordCoordinateComparator());
+            reads.forEach(writer::addAlignment);
+        }
+    }
+
+    static void svEvidenceBam(final Path bam, final int template, final long seed, final boolean lone) {
+        final SAMFileHeader header = new SAMFileHeader();
+        header.addSequence(new SAMSequenceRecord("chr1", 30000));
+        header.addSequence(new SAMSequenceRecord("chr2", 20000));
+        header.addSequence(new SAMSequenceRecord("alt", 5000));
+        for (final String[] group : new String[][] {{"rg1", "libA"}, {"rg2", "libB"}, {"rg3", null}}) {
+            final SAMReadGroupRecord record = new SAMReadGroupRecord(group[0]);
+            record.setSample("s");
+            record.setLibrary(group[1]);
+            header.addReadGroup(record);
+        }
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final java.util.Random random = new java.util.Random(seed);
+        final java.util.List<htsjdk.samtools.SAMRecord> reads = new java.util.ArrayList<>();
+        final String[] groups = {"rg1", "rg2", "rg3"};
+        final java.util.function.BiFunction<String, Integer, htsjdk.samtools.SAMRecord> read = (name, flags) -> {
+            final htsjdk.samtools.SAMRecord record = new htsjdk.samtools.SAMRecord(header);
+            record.setReadName(name);
+            record.setFlags(flags);
+            record.setMappingQuality(60);
+            final byte[] bases = new byte[100];
+            final byte[] quals = new byte[100];
+            for (int at = 0; at < 100; at++) {
+                bases[at] = (byte) "ACGT".charAt(random.nextInt(4));
+                quals[at] = 30;
+            }
+            record.setReadBases(bases);
+            record.setBaseQualities(quals);
+            record.setAttribute("RG", groups[random.nextInt(3)]);
+            return record;
+        };
+        // One read at a place, with its mate's place and its template size.
+        final java.util.function.Consumer<Object[]> add = row -> {
+            final htsjdk.samtools.SAMRecord record = read.apply((String) row[0], (Integer) row[1]);
+            record.setReferenceName((String) row[2]);
+            record.setAlignmentStart((Integer) row[3]);
+            record.setCigarString((String) row[4]);
+            if (row[5] != null) {
+                record.setMateReferenceName((String) row[5]);
+                record.setMateAlignmentStart((Integer) row[6]);
+            }
+            record.setInferredInsertSize((Integer) row[7]);
+            for (int at = 8; at + 1 < row.length; at += 2) {
+                record.setAttribute((String) row[at], row[at + 1]);
+            }
+            reads.add(record);
+        };
+        // The steady pairs, two reads per 40 bases over both big contigs.
+        for (final String contig : new String[] {"chr1", "chr2"}) {
+            for (int start = 200; start < 15000; start += 40) {
+                final int size = template + random.nextInt(41) - 20;
+                final String name = contig + "p" + start;
+                add.accept(new Object[] {name, 99, contig, start, "100M", contig, start + size - 100, size, "MC", "100M", "MQ", 60});
+                add.accept(new Object[] {name, 147, contig, start + size - 100, "100M", contig, start, -size, "MC", "100M", "MQ", 60});
+            }
+        }
+        // A pile to the peak depth, then a shallower shoulder against it.
+        for (int copy = 0; copy < 120; copy++) {
+            add.accept(new Object[] {"pile" + copy, 99, "chr1", 8000 + copy % 7, "100M", "chr1", 8200, 300});
+        }
+        for (int copy = 0; copy < 30; copy++) {
+            add.accept(new Object[] {"shoulder" + copy, 99, "chr1", 8100 + copy, "100M", "chr1", 8300, 300});
+        }
+        // Long templates in one stretch, for the K-S windows.
+        for (int start = 16000; start < 17000; start += 10) {
+            final int size = template + 1500 + random.nextInt(50);
+            add.accept(new Object[] {"long" + start, 99, "chr1", start, "100M", "chr1", start + size - 100, size});
+        }
+        // Clips: a good SA, two of them, a poor one, one on this very spot, and clips that do not count.
+        add.accept(new Object[] {"clipA", 99, "chr1", 1000, "40S60M", "chr1", 1200, 300, "SA", "chr2,5000,+,60M40S,60,0;"});
+        add.accept(new Object[] {"clipB", 83, "chr1", 1100, "60M40S", "chr1", 900, -300, "SA", "chr2,5100,-,40S60M,60,0;"});
+        add.accept(new Object[] {"clipC", 99, "chr1", 1200, "35S65M", "chr1", 1400, 300, "SA", "chr2,5200,+,60M,60,0;alt,300,+,60M,60,0;"});
+        add.accept(new Object[] {"clipD", 99, "chr1", 1300, "35S65M", "chr1", 1500, 300, "SA", "chr2,5300,+,60M,5,0;"});
+        add.accept(new Object[] {"clipE", 99, "chr1", 1400, "35S65M", "chr1", 1600, 300, "SA", "chr1,1402,+,60M,60,0;"});
+        add.accept(new Object[] {"clipF", 99, "chr1", 1500, "20S80M", "chr1", 1700, 300});
+        add.accept(new Object[] {"clipG", 99, "chr1", 1600, "10H35S65M", "chr1", 1800, 300});
+        add.accept(new Object[] {"clipH", 99, "chr1", 1700, "65M35S5H", "chr1", 1900, 300, "SA", "alt,400,-,35M,60,0;"});
+        add.accept(new Object[] {"clipI", 99, "chr1", 1800, "32S36M32S", "chr1", 2000, 300});
+        add.accept(new Object[] {"clipJ", 2147, "chr1", 1900, "40H100M", "chr1", 2100, 300, "SA", "chr1,1000,+,40M60S,60,0;"});
+        final htsjdk.samtools.SAMRecord dull = read.apply("clipK", 99);
+        dull.setReferenceName("chr1");
+        dull.setAlignmentStart(1950);
+        dull.setCigarString("40S60M");
+        dull.setMateReferenceName("chr1");
+        dull.setMateAlignmentStart(2150);
+        dull.setInferredInsertSize(300);
+        final byte[] poor = dull.getBaseQualities();
+        java.util.Arrays.fill(poor, 12, 20, (byte) 5);
+        dull.setBaseQualities(poor);
+        reads.add(dull);
+        // Indels big and small.
+        add.accept(new Object[] {"insA", 99, "chr1", 2200, "30M50I20M", "chr1", 2400, 300});
+        add.accept(new Object[] {"delA", 99, "chr1", 2300, "50M60D50M", "chr1", 2600, 400});
+        add.accept(new Object[] {"delB", 99, "chr1", 2400, "50M20D50M", "chr1", 2700, 400});
+        add.accept(new Object[] {"insB", 99, "chr1", 2500, "20M10N30M45I5M", "chr1", 2800, 300});
+        // Discordant pairs.
+        add.accept(new Object[] {"mateOff", 73, "chr1", 3000, "100M", null, 0, 0});
+        add.accept(new Object[] {"mateOff2", 89, "chr1", 3100, "2M1I97M", null, 0, 0, "MD", "A1C97"});
+        add.accept(new Object[] {"interA", 97, "chr1", 3200, "100M", "chr2", 6000, 0, "MC", "50M50S", "MQ", 60});
+        add.accept(new Object[] {"interB", 81, "chr1", 3300, "100M", "chr2", 6100, 0, "MQ", 3});
+        add.accept(new Object[] {"interC", 97, "chr1", 3400, "100M", "alt", 700, 0});
+        add.accept(new Object[] {"interD", 97, "chr2", 15500, "100M", "chr1", 3500, 0});
+        add.accept(new Object[] {"interE", 97, "alt", 800, "100M", "chr1", 3600, 0});
+        add.accept(new Object[] {"sameA", 65, "chr1", 3700, "100M", "chr1", 4000, 400, "MD", "100"});
+        add.accept(new Object[] {"sameB", 113, "chr1", 3800, "100M", "chr1", 4100, 400, "MD", "T^AC98"});
+        add.accept(new Object[] {"outA", 97, "chr1", 4200, "100M", "chr1", 3900, -300, "MD", "97T1G0"});
+        add.accept(new Object[] {"outB", 81, "chr1", 4300, "100M", "chr1", 4600, 400});
+        add.accept(new Object[] {"farA", 99, "chr1", 4400, "100M", "chr1", 9000, 4700, "MQ", 60});
+        add.accept(new Object[] {"farB", 147, "chr1", 4500, "100M", "chr1", 100, -4500});
+        add.accept(new Object[] {"nearA", 99, "chr1", 4600, "100M", "chr1", 4610, 110});
+        add.accept(new Object[] {"second", 355, "chr1", 4700, "100M", "chr1", 4900, 300});
+        add.accept(new Object[] {"supp", 2195, "chr1", 4800, "100M", "chr1", 5000, 300});
+        add.accept(new Object[] {"dup", 1123, "chr1", 4900, "40S60M", "chr1", 5100, 300});
+        add.accept(new Object[] {"fail", 611, "chr1", 5000, "40S60M", "chr1", 5200, 300});
+        add.accept(new Object[] {"unmapped", 77, "*", 0, "*", null, 0, 0});
+        // Reads the filter's thresholds decide.
+        final htsjdk.samtools.SAMRecord low = read.apply("lowMapq", 99);
+        low.setReferenceName("chr1");
+        low.setAlignmentStart(5100);
+        low.setCigarString("40S60M");
+        low.setMateReferenceName("chr1");
+        low.setMateAlignmentStart(5300);
+        low.setInferredInsertSize(300);
+        low.setMappingQuality(30);
+        reads.add(low);
+        add.accept(new Object[] {"shortMatch", 99, "chr1", 5200, "50S50M", "chr1", 5400, 300, "SA", "chr2,5400,+,50M50S,60,0;"});
+        add.accept(new Object[] {"altClip", 99, "alt", 900, "40S60M", "alt", 1100, 300, "SA", "chr1,5500,+,60M40S,60,0;"});
+        if (lone) {
+            add.accept(new Object[] {"alone", 0, "chr1", 5500, "100M", null, 0, 0});
+        }
+        // Mapped or not, a read with no mate place has its unmapped flags right.
+        for (final htsjdk.samtools.SAMRecord record : reads) {
+            if (record.getReadUnmappedFlag()) {
+                record.setMappingQuality(0);
+            }
+            if (record.getReadPairedFlag() && record.getMateUnmappedFlag()) {
+                record.setMateReferenceName(record.getReferenceName());
+                record.setMateAlignmentStart(record.getAlignmentStart());
+            }
+        }
+        try (SAMFileWriter writer = new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, false, bam.toFile())) {
+            reads.forEach(writer::addAlignment);
+        }
+    }
+
+    static void scoreRows() throws Exception {
+        final String tool = "PathSeqScoreSpark";
+        final String db = DIR.resolve("taxa.db").toString();
+        final String pairedBam = DIR.resolve("score-paired.bam").toString();
+        final String lone = DIR.resolve("score-unpaired.bam").toString();
+        final String[][] runs = {
+                {"score-both", "--paired-input", pairedBam, "--unpaired-input", lone},
+                {"score-paired", "--paired-input", pairedBam},
+                {"score-unpaired", "--unpaired-input", lone},
+                {"score-paired-missing-other", "--paired-input", pairedBam, "--unpaired-input",
+                        DIR.resolve("nowhere.bam").toString()},
+                {"score-genome-length", "--paired-input", pairedBam, "--unpaired-input", lone,
+                        "--divide-by-genome-length", "true"},
+                {"score-no-kingdom", "--paired-input", pairedBam, "--unpaired-input", lone,
+                        "--not-normalized-by-kingdom", "true"},
+                {"score-identity", "--paired-input", pairedBam, "--unpaired-input", lone,
+                        "--min-score-identity", "0.99"},
+                {"score-identity-low", "--paired-input", pairedBam, "--unpaired-input", lone,
+                        "--min-score-identity", "0.1"},
+                {"score-margin", "--paired-input", pairedBam, "--unpaired-input", lone,
+                        "--identity-margin", "0.3"},
+                {"score-margin-zero", "--paired-input", pairedBam, "--unpaired-input", lone,
+                        "--identity-margin", "0"},
+                {"score-estimate", "--paired-input", pairedBam, "--score-reads-per-partition-estimate", "2"},
+        };
+        for (final String[] one : runs) {
+            final String name = one[0];
+            final List<String> rest = new ArrayList<>(Arrays.asList("--taxonomy-file", db, "--use-jdk-deflater", "true",
+                    "--scores-output", out(name, name + ".txt"),
+                    "--output", out(name, name + ".bam"),
+                    "--score-metrics", out(name, name + "Metrics.txt"),
+                    "--score-warnings", out(name, name + "-warnings.txt")));
+            rest.addAll(Arrays.asList(one).subList(1, one.length));
+            run(name, name + ".txt", tool, rest.toArray(new String[0]));
+        }
+        run("score-only-scores", "s.txt", tool, "--taxonomy-file", db, "--scores-output", out("score-only-scores", "s.txt"),
+                "--unpaired-input", lone);
+        final String[][] refused = {
+                {"score-input", "-I", lone},
+                {"score-no-input"},
+                {"score-all-missing", "--paired-input", DIR.resolve("nowhere.bam").toString()},
+                {"score-not-queryname", "--paired-input", DIR.resolve("score-not-queryname.bam").toString()},
+                {"score-lonely", "--paired-input", DIR.resolve("score-lonely.bam").toString()},
+                {"score-no-nm", "--unpaired-input", DIR.resolve("score-no-nm.bam").toString()},
+                {"score-bad-xa", "--unpaired-input", DIR.resolve("score-bad-xa.bam").toString()},
+                {"score-bad-nm", "--unpaired-input", DIR.resolve("score-bad-nm.bam").toString()},
+                {"score-bad-cigar", "--unpaired-input", DIR.resolve("score-bad-cigar.bam").toString()},
+        };
+        for (final String[] one : refused) {
+            final List<String> rest = new ArrayList<>(Arrays.asList("--taxonomy-file", db,
+                    "--scores-output", out(one[0], "s.txt")));
+            rest.addAll(Arrays.asList(one).subList(1, one.length));
+            run(one[0], null, tool, rest.toArray(new String[0]));
+        }
+        run("score-no-database", null, tool, "--taxonomy-file", DIR.resolve("nowhere.db").toString(),
+                "--scores-output", out("score-no-database", "s.txt"), "--unpaired-input", lone);
+    }
+
+    /** PATHSEQFILTERSPARK: each step's arguments, and the two lists it hands the writer. */
+    static void filterRows() throws Exception {
+        final String tool = "PathSeqFilterSpark";
+        final String bam = DIR.resolve("filter.bam").toString();
+        final String aligned = DIR.resolve("filter-aligned.bam").toString();
+        final String[][] runs = {
+                {"filter-default", bam},
+                {"filter-skip", bam, "--skip-quality-filters", "true"},
+                {"filter-keep-duplicates", bam, "--filter-duplicates", "false"},
+                {"filter-short-table", bam, "--filter-reads-per-partition", "3"},
+                {"filter-adapter-strict", bam, "--max-adapter-mismatches", "0"},
+                {"filter-adapter-loose", bam, "--max-adapter-mismatches", "4", "--min-adapter-length", "8"},
+                {"filter-min-length", bam, "--min-clipped-read-length", "75"},
+                {"filter-masked", bam, "--max-masked-bases", "0"},
+                {"filter-masked-many", bam, "--max-masked-bases", "40"},
+                {"filter-base-quality", bam, "--min-base-quality", "31", "--max-masked-bases", "100"},
+                {"filter-trim", bam, "--quality-threshold", "31"},
+                {"filter-dust-off", bam, "--dust-t", "1000"},
+                {"filter-dust-tight", bam, "--dust-t", "1", "--max-masked-bases", "100"},
+                {"filter-dust-window", bam, "--dust-window", "16", "--max-masked-bases", "100"},
+                {"filter-dust-quality", bam, "--dust-mask-quality", "9", "--max-masked-bases", "100",
+                        "--min-base-quality", "5"},
+                {"filter-repartition", bam, "--skip-pre-bwa-repartition", "true"},
+                {"filter-hss", bam, "--kmer-file", DIR.resolve("host.hss").toString()},
+                {"filter-bfi", bam, "--kmer-file", DIR.resolve("host.bfi").toString()},
+                {"filter-kmer-thresh", bam, "--kmer-file", DIR.resolve("host.hss").toString(),
+                        "--host-kmer-thresh", "30"},
+                {"filter-kmer-extension", bam, "--kmer-file", DIR.resolve("host.txt").toString()},
+                {"filter-kmer-missing", bam, "--kmer-file", DIR.resolve("nowhere.hss").toString()},
+                {"filter-aligned", aligned, "--is-host-aligned", "true", "--skip-quality-filters", "true"},
+                {"filter-aligned-off", aligned, "--skip-quality-filters", "true"},
+                {"filter-aligned-identity", aligned, "--is-host-aligned", "true", "--host-min-identity", "46",
+                        "--skip-quality-filters", "true"},
+                {"filter-aligned-ignored", aligned, "--is-host-aligned", "true",
+                        "--ignore-alignment-contigs", "chr1"},
+                {"filter-ignored-unaligned", aligned, "--ignore-alignment-contigs", "chr1",
+                        "--skip-quality-filters", "true"},
+                {"filter-empty", DIR.resolve("filter-empty.bam").toString()},
+        };
+        for (final String[] one : runs) {
+            final String name = one[0];
+            final List<String> rest = new ArrayList<>(Arrays.asList("-I", one[1], "--use-jdk-deflater", "true",
+                    "--paired-output", out(name, name + "-paired.bam"),
+                    "--unpaired-output", out(name, name + "-unpaired.bam"),
+                    "--filter-metrics", out(name, name + "Metrics.txt")));
+            rest.addAll(Arrays.asList(one).subList(2, one.length));
+            run(name, name + "-paired.bam", tool, rest.toArray(new String[0]));
+        }
+        run("filter-bwa", null, tool, "-I", bam, "--paired-output", out("filter-bwa", "p.bam"),
+                "--filter-bwa-image", DIR.resolve("nowhere.img").toString());
+        run("filter-no-paired", null, tool, "-I", bam, "--use-jdk-deflater", "true", "--unpaired-output", out("filter-no-paired", "u.bam"));
+        run("filter-no-unpaired", null, tool, "-I", bam, "--use-jdk-deflater", "true", "--paired-output", out("filter-no-unpaired", "p.bam"));
+    }
+
+    /** FINDBADGENOMICKMERSSPARK writes what it collected, in the order its tables hold it. */
+    static void kmerRows() throws Exception {
+        final String tool = "FindBadGenomicKmersSpark";
+        final String ref = DIR.resolve("kmers.fasta").toString();
+        final String[][] runs = {
+                {"kmers-default"},
+                {"kmers-21", "--k-size", "21"},
+                {"kmers-dust", "--k-size", "21", "--kmer-max-dust-score", "3"},
+                {"kmers-dust-off", "--k-size", "21", "--kmer-max-dust-score", "1000"},
+                {"kmers-odd-small", "--k-size", "5"},
+                {"kmers-long", "--k-size", "63"},
+                {"kmers-65", "--k-size", "65"},
+                {"kmers-high-copy", "--k-size", "21", "--high-copy-fasta",
+                        DIR.resolve("high-copy.fasta").toString()},
+                {"kmers-high-copy-gz", "--k-size", "21", "--high-copy-fasta",
+                        DIR.resolve("high-copy.fasta.gz").toString()},
+                {"kmers-high-copy-blank", "--high-copy-fasta",
+                        DIR.resolve("high-copy-blank.fasta").toString()},
+                {"kmers-high-copy-missing", "--high-copy-fasta",
+                        DIR.resolve("nowhere.fasta").toString()},
+                {"kmers-high-copy-even", "--k-size", "4000", "--high-copy-fasta",
+                        DIR.resolve("high-copy.fasta").toString()},
+                {"kmers-even", "--k-size", "20"},
+                {"kmers-too-small", "--k-size", "3"},
+                {"kmers-zero", "--k-size", "0"},
+                {"kmers-negative", "--k-size", "-1"},
+                {"kmers-no-dust", "--kmer-max-dust-score", "0"},
+        };
+        for (final String[] one : runs) {
+            final List<String> rest = new ArrayList<>(Arrays.asList("-R", ref, "-O",
+                    out(one[0], one[0] + ".txt")));
+            rest.addAll(Arrays.asList(one).subList(1, one.length));
+            run(one[0], one[0] + ".txt", tool, rest.toArray(new String[0]));
+        }
+        run("kmers-big", "kmers-big.txt", tool, "-R", DIR.resolve("kmers-big.fasta").toString(),
+                "-O", out("kmers-big", "kmers-big.txt"), "--k-size", "31");
+        run("kmers-reads", "kmers-reads.txt", tool, "-R", DIR.resolve("ref.fasta").toString(),
+                "-I", DIR.resolve("reads.bam").toString(), "-O", out("kmers-reads", "kmers-reads.txt"));
+        run("kmers-reads-mismatch", "kmers-reads-mismatch.txt", tool, "-R", ref,
+                "-I", DIR.resolve("reads.bam").toString(),
+                "-O", out("kmers-reads-mismatch", "kmers-reads-mismatch.txt"));
+        run("kmers-no-directory", null, tool, "-R", ref,
+                "-O", DIR.resolve("nowhere/kmers.txt").toString());
     }
 
     /** A metrics file with the one line two runs cannot share taken out. */

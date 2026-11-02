@@ -466,6 +466,11 @@ fn contamination_downsampling(
     }))
 }
 
+/// The engine a Spark task built, refusing there what the walker refuses on the driver.
+fn spark_task_failure(spark: bool, message: &str) -> bool {
+    spark && message == "Unable to perform flow based operations without the flow order"
+}
+
 /// `--ploidy-regions`, read as `HaplotypeCallerEngine` reads it: each BED feature a `SimpleCount`
 /// whose name is the ploidy, then every interval checked against the reads' dictionary. Each
 /// refusal comes once the engine has opened `--debug-assembly-region-state` and
@@ -649,12 +654,154 @@ fn limitation(what: &str) -> Thrown {
 }
 
 /// The refusal of any declared argument the port does not read.
+fn unimplemented_bcf() -> Thrown {
+    Thrown {
+        failure: Failure::User,
+        exception: "org.broadinstitute.hellbender.exceptions.UserException$UnimplementedFeature",
+        message: Some(
+            "It is currently not possible to write a BCF file on spark.  See \
+             https://github.com/broadinstitute/gatk/issues/4303 for more details ."
+                .to_string(),
+        ),
+    }
+}
+
+/// `HaplotypeCallerSpark.runTool`'s own checks, in its order.
+/// The engine's debug files on Spark: its executor never calls `shutdown`, so what they hold is
+/// whatever their buffers happened to flush, and the port does not pretend to reproduce that.
+fn spark_debug_refusal(parser: &Parser) -> Result<(), Thrown> {
+    for name in [
+        "graph-output",
+        "debug-assembly-variants-out",
+        "haplotype-debug-histogram-output",
+        "pair-hmm-results-file",
+        "pdhmm-results-file",
+        "alm-path",
+        "debug-assembly-region-state",
+        "debug-genotyper-output",
+    ] {
+        if argument(parser, name).is_some() {
+            return Err(Thrown::non_user(
+                super::PORT_LIMITATION,
+                format!(
+                    "--{name} on a Spark tool writes what its buffers flushed before the JVM \
+                     exited, which this port does not reproduce. This message is the port's own \
+                     and not GATK's."
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Kryo reaches the annotation engine this builds when the evaluator is broadcast. The reference
+/// reports a lambda or a thread, as the traversal happens to meet one first.
+fn annotation_broadcast_refusal(parser: &Parser) -> Result<(), Thrown> {
+    if flag(parser, "enable-all-annotations") {
+        return Err(Thrown::non_user(
+            "com.esotericsoftware.kryo.KryoException",
+            "java.lang.RuntimeException: Could not serialize lambda".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn spark_refusals(parser: &Parser, header: &SamHeader) -> Result<(), Thrown> {
+    let output = argument(parser, "output").unwrap_or_default();
+    if output.ends_with(".bcf") || output.ends_with(".bcf.gz") {
+        return Err(unimplemented_bcf());
+    }
+    let illegal =
+        |message: &str| Thrown::non_user("java.lang.IllegalArgumentException", message.to_string());
+    if argument(parser, "dbsnp").is_some() {
+        return Err(illegal(
+            "HaplotypeCallerSpark does not yet support -D or --dbsnp arguments",
+        ));
+    }
+    if !arguments(parser, "comparison").is_empty() {
+        return Err(illegal(
+            "HaplotypeCallerSpark does not yet support -comp or --comp arguments",
+        ));
+    }
+    if argument(parser, "bam-output").is_some() {
+        return Err(illegal(
+            "HaplotypeCallerSpark does not yet support -bamout or --bamOutput",
+        ));
+    }
+    annotation_broadcast_refusal(parser)?;
+    if header.attributes.get("SO") != Some("coordinate") {
+        return Err(Thrown::non_user(
+            "java.lang.IllegalStateException",
+            "The reads must be coordinate sorted.",
+        ));
+    }
+    Ok(())
+}
+
+/// The engine arguments `AssemblyRegionWalkerSpark` and `SparkCommandLineProgram` add, read by the
+/// Spark startup and not by the walker's.
+const SPARK_HONOURED: &[&str] = &[
+    "spark-master",
+    "conf",
+    "spark-verbosity",
+    "program-name",
+    "num-reducers",
+    "bam-partition-size",
+    "shuffle",
+    "strict",
+    "read-shard-size",
+    "read-shard-padding",
+    "output-shard-tmp-dir",
+    "sharded-output",
+];
+
+/// What `ReadsPipelineSpark` reads before the caller: the duplicate marking and BQSR arguments.
+const PIPELINE_HONOURED: &[&str] = &[
+    "align",
+    "known-sites",
+    "output-bam",
+    "allow-missing-read-group",
+    "binary-tag-name",
+    "bqsr-baq-gap-open-penalty",
+    "default-base-qualities",
+    "deletions-default-quality",
+    "do-not-mark-unmapped-mates",
+    "duplicate-scoring-strategy",
+    "duplicate-tagging-policy",
+    "emit-original-quals",
+    "flow-end-pos-uncertainty",
+    "flow-q-is-known-end",
+    "flow-quality-sum-strategy",
+    "flow-skip-start-homopolymers",
+    "flowbased",
+    "global-qscore-prior",
+    "indels-context-size",
+    "insertions-default-quality",
+    "low-quality-tail",
+    "maximum-cycle-value",
+    "mismatches-context-size",
+    "mismatches-default-quality",
+    "preserve-qscores-less-than",
+    "quantize-quals",
+    "quantizing-levels",
+    "remove-all-duplicates",
+    "remove-sequencing-duplicates",
+    "round-down-quantized",
+    "single-end-reads-clipping-is-end",
+    "single-end-reads-end-position-significant",
+    "static-quantized-quals",
+    "use-original-qualities",
+];
+
 fn refuse_unported(parser: &Parser, tool: &str) -> Result<(), Thrown> {
     let declarations = gatk_tools::tool_declarations::declarations(tool).unwrap_or(&[]);
     for definition in parser.definitions() {
         let name = definition.long_name();
         if !definition.has_been_set()
             || HONOURED.contains(&name)
+            || (matches!(tool, "HaplotypeCallerSpark" | "ReadsPipelineSpark")
+                && SPARK_HONOURED.contains(&name))
+            || (tool == "ReadsPipelineSpark" && PIPELINE_HONOURED.contains(&name))
             || super::FLOW_MATRIX_ARGUMENTS.contains(&name)
             || super::PILEUP_DETECTION_ARGUMENTS.contains(&name)
         {
@@ -687,6 +834,20 @@ pub fn haplotype_caller(parser: &Parser) -> Outcome {
     run(parser, "HaplotypeCaller")
 }
 
+/// `HaplotypeCallerSpark.runTool`: the engine run shard by shard, each shard starting its activity
+/// profile afresh and seeing only the reads that overlap its padded interval, so a region cannot
+/// cross a shard boundary. `--strict` runs the band pass over the contig, which is the walker's
+/// traversal, and fills each region from the same reads.
+pub fn haplotype_caller_spark(parser: &Parser) -> Outcome {
+    run(parser, "HaplotypeCallerSpark")
+}
+
+/// `ReadsPipelineSpark.runTool`: the same caller over the reads the pipeline has finished with.
+/// `--dbsnp` and the rest of what `HaplotypeCallerSpark` refuses is not refused here.
+pub fn reads_pipeline_spark(parser: &Parser) -> Outcome {
+    run(parser, "ReadsPipelineSpark")
+}
+
 /// `RampedHaplotypeCaller.doWork`: HaplotypeCaller with `RampedHaplotypeCallerEngine` and
 /// non-random downsampling. With no ramp the engine still differs from HaplotypeCaller's where
 /// `callRegion` measures read stubs, filters reads and realigns them.
@@ -696,6 +857,8 @@ pub fn ramped_haplotype_caller(parser: &Parser) -> Outcome {
 
 fn run(parser: &Parser, tool: &str) -> Outcome {
     let ramped = tool == "RampedHaplotypeCaller";
+    let pipeline = tool == "ReadsPipelineSpark";
+    let spark = pipeline || tool == "HaplotypeCallerSpark";
     refuse_unported(parser, tool)?;
     // The kernels this port carries: the Java LOGLESS_CACHING PairHMM behind the PairHMM engine.
     // FASTEST_AVAILABLE resolves to it wherever GKL's native kernel does not load, which is the
@@ -737,17 +900,27 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     .map_err(|error| Thrown::command_line(error.message()))?;
     pedigree_refusal(parser, &resolved)?;
     let annotation_flow_order = flow_order_for_annotations(parser, &resolved)?;
-    // `makeVariantAnnotations`: allele filtering brings its own annotation.
-    if flag(parser, "flow-filter-alleles") {
+    // `makeVariantAnnotations`: allele filtering brings its own annotation, and only the walker
+    // overrides that method, so the Spark tools' header goes without it.
+    if !spark && flag(parser, "flow-filter-alleles") {
         resolved
             .push(catalogue::entry("HaplotypeFilteringAnnotation").expect("a known annotation"));
     }
     let emit_mode = scalar(parser, "emit-ref-confidence").unwrap_or_else(|| "NONE".to_string());
     let emit_reference_confidence = emit_mode != "NONE";
-    if flag(parser, "dont-genotype") && emit_reference_confidence {
-        return Err(Thrown::user(
-            "You cannot request gVCF output and 'do not genotype' at the same time",
-        ));
+    let genotype_refusal = || {
+        if flag(parser, "dont-genotype") && emit_reference_confidence {
+            return Err(Thrown::user(
+                "You cannot request gVCF output and 'do not genotype' at the same time",
+            ));
+        }
+        Ok(())
+    };
+    // On Spark the engine is only built inside `runTool`, behind its own refusals.
+    if spark {
+        spark_debug_refusal(parser)?;
+    } else {
+        genotype_refusal()?;
     }
     // `filterReferenceConfidenceAnnotations`: StrandBiasBySample added, the four site
     // annotations a GVCF cannot carry removed.
@@ -771,7 +944,32 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         header,
         intervals,
         filters,
-    } = read_walker_startup(parser, tool)?;
+    } = if spark {
+        let start = super::spark_runners::spark_startup(parser, tool)?;
+        ReadWalkerStart {
+            source: start.source,
+            header: start.header,
+            intervals: start.intervals,
+            filters: start.filters,
+        }
+    } else {
+        read_walker_startup(parser, tool)?
+    };
+    let mut pipeline_reads = None;
+    let header = if pipeline {
+        let (reads, reads_header) = super::spark_runners::reads_pipeline_reads(
+            parser, &source, &header, &intervals, &filters,
+        )?;
+        annotation_broadcast_refusal(parser)?;
+        pipeline_reads = Some(reads);
+        reads_header
+    } else {
+        if spark {
+            spark_refusals(parser, &header)?;
+            genotype_refusal()?;
+        }
+        header
+    };
     // `initializeSamples`.
     let header_samples = hc::samples_from_header(&header);
     let sample_name = match scalar(parser, "sample-name") {
@@ -845,6 +1043,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             .map_err(|error| Thrown::user(format!("{error:?}")))?;
 
     // `getAllIntervalsForReference` over the reads' dictionary when no `-L` was given.
+    let has_user_intervals = !intervals.is_empty();
     let traversal: Vec<gatk_engine::interval::SimpleInterval> = if intervals.is_empty() {
         header
             .sequences
@@ -861,19 +1060,28 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     let filter = read_filter(parser, &filters, &header)?;
     let transform_mapping_quality = flag(parser, "transform-dragen-mapping-quality");
     let mut reads = Vec::new();
-    for mut read in source
-        .iter_all()
-        .map_err(|error| Thrown::user(format!("{error:?}")))?
-    {
-        hc::iupac_to_n(&mut read).map_err(Thrown::user)?;
-        if filter(&read) {
-            // `makePostReadFilterTransformer`: DRAGEN's mapping quality swap, after the filters.
-            if transform_mapping_quality {
-                gatk_engine::dragen_genotypes::transform_mapping_quality(&mut read).map_err(
-                    |message| Thrown::non_user("java.lang.IllegalArgumentException", message),
-                )?;
+    if let Some(given) = pipeline_reads {
+        reads = given;
+    } else {
+        for mut read in source
+            .iter_all()
+            .map_err(|error| Thrown::user(format!("{error:?}")))?
+        {
+            // `AssemblyRegionWalkerSpark` takes `getReads` as they are: neither transformer is
+            // the Spark tool's.
+            if !spark {
+                hc::iupac_to_n(&mut read).map_err(Thrown::user)?;
             }
-            reads.push(read);
+            if filter(&read) {
+                // `makePostReadFilterTransformer`: DRAGEN's mapping quality swap, after the
+                // filters.
+                if transform_mapping_quality && !spark {
+                    gatk_engine::dragen_genotypes::transform_mapping_quality(&mut read).map_err(
+                        |message| Thrown::non_user("java.lang.IllegalArgumentException", message),
+                    )?;
+                }
+                reads.push(read);
+            }
         }
     }
 
@@ -894,7 +1102,8 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         max_assembly_region_size: number_or(parser, "max-assembly-region-size", 300),
         active_prob_threshold: double_or(parser, "active-probability-threshold", 0.002),
         max_prob_propagation_distance: number_or(parser, "max-prob-propagation-distance", 50),
-        force_active: flag(parser, "force-active"),
+        // Only `AssemblyRegionWalker` reads it, and the Spark traversal is not that walker.
+        force_active: !spark && flag(parser, "force-active"),
         assembly_region_padding: number_or(parser, "assembly-region-padding", 100),
         max_reads_per_alignment_start: number_or(parser, "max-reads-per-alignment-start", 50),
         indel_padding_for_genotyping: number_or(parser, "padding-around-indels", 75),
@@ -938,6 +1147,19 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         }
     }
     let (overlap_names, resources, population) = super::variant_resources(parser)?;
+    // The Spark caller passes a `FeatureContext` over no features, so the lines stay and nothing
+    // on them is found.
+    let resources = if pipeline {
+        gatk_tools::hc_genotyping::VariantResources::default()
+    } else {
+        resources
+    };
+    let population = population.map(|mut priors| {
+        if pipeline {
+            priors.records.clear();
+        }
+        priors
+    });
     let arguments = HaplotypeCallerArguments {
         trimmer: TrimmerArguments {
             assembly_region_padding: region.assembly_region_padding,
@@ -953,7 +1175,8 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         region,
         assembler: assembler_arguments(parser, flag(parser, "adaptive-pruning")),
         pileup_detection: super::pileup_detection_arguments(parser),
-        given_alleles: super::given_alleles(parser)?,
+        // The pipeline hands its regions no features, so the file is read and then has nothing to say.
+        given_alleles: super::given_alleles(parser)?.filter(|_| !pipeline),
         assembly_region_out: argument(parser, "assembly-region-out").map(std::path::PathBuf::from),
         keep_rg: scalar(parser, "keep-rg"),
         just_determine_active_regions: flag(parser, "just-determine-active-regions"),
@@ -970,19 +1193,22 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
                 scalar(parser, "alm-interval"),
             )
         }),
-        bamout: argument(parser, "bam-output").map(|path| {
-            let (level, deflater) = super::output_compression(parser);
-            gatk_tools::haplotype_caller::BamoutArguments {
-                kind: scalar(parser, "bam-writer-type")
-                    .and_then(|name| gatk_tools::haplotype_bam_writer::WriterType::parse(&name))
-                    .unwrap_or(gatk_tools::haplotype_bam_writer::WriterType::CalledHaplotypes),
-                path: std::path::PathBuf::from(path),
-                create_index: flag(parser, "create-output-bam-index"),
-                create_md5: flag(parser, "create-output-bam-md5"),
-                level,
-                deflater,
-            }
-        }),
+        // On Spark the driver's engine opens the writer and nothing closes it: the file is empty.
+        bamout: argument(parser, "bam-output")
+            .filter(|_| !spark)
+            .map(|path| {
+                let (level, deflater) = super::output_compression(parser);
+                gatk_tools::haplotype_caller::BamoutArguments {
+                    kind: scalar(parser, "bam-writer-type")
+                        .and_then(|name| gatk_tools::haplotype_bam_writer::WriterType::parse(&name))
+                        .unwrap_or(gatk_tools::haplotype_bam_writer::WriterType::CalledHaplotypes),
+                    path: std::path::PathBuf::from(path),
+                    create_index: flag(parser, "create-output-bam-index"),
+                    create_md5: flag(parser, "create-output-bam-md5"),
+                    level,
+                    deflater,
+                }
+            }),
         pdhmm: flag(parser, "use-pdhmm").then(|| gatk_tools::haplotype_caller::PdhmmArguments {
             use_determined_haplotypes: flag(parser, "make-determined-haps-from-pd-code"),
             gga_fallback: scalar(parser, "fallback-gga-if-pdhmm-fails")
@@ -1219,25 +1445,109 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             )),
         )
     });
-    let called = hc::call_variants(
-        &reads,
-        &header,
-        &traversal,
-        &arguments,
-        &annotator,
-        &mut contig_bases,
-        &mut random,
-        assembly_variants.as_ref().map(|(_, queue)| queue),
-    );
+    let shard_size = number_or(parser, "read-shard-size", 5000).max(1);
+    let shard_padding = number_or(parser, "read-shard-padding", 100).max(0);
+    if spark {
+        // `getReads`: a `-L` is the traversal the source applies, before any padding.
+        if has_user_intervals {
+            reads.retain(|read| {
+                traversal.iter().any(|interval| {
+                    header
+                        .sequences
+                        .get(read.reference_index.max(0) as usize)
+                        .is_some_and(|sequence| sequence.name == interval.contig)
+                        && read.alignment_start <= interval.end
+                        && read.alignment_end() >= interval.start
+                })
+            });
+        }
+        super::spark_runners::no_reads_refusal(parser, &reads, &traversal, shard_size)?;
+        super::spark_runners::oversized_read_refusal(parser, &reads, &header, shard_size)?;
+    }
+    let called = if spark && !flag(parser, "strict") {
+        let mut calls = Vec::new();
+        let mut failure = None;
+        'shards: for interval in &traversal {
+            let contig_length = header
+                .sequences
+                .iter()
+                .find(|sequence| sequence.name == interval.contig)
+                .map_or(interval.end, |sequence| sequence.length);
+            for start in (interval.start..=interval.end).step_by(shard_size as usize) {
+                let shard = gatk_engine::interval::SimpleInterval {
+                    contig: interval.contig.clone(),
+                    start,
+                    end: (start + shard_size - 1).min(interval.end),
+                };
+                let padded_start = (shard.start - shard_padding).max(1);
+                let padded_end = (shard.end + shard_padding).min(contig_length);
+                let contig_index = header
+                    .sequences
+                    .iter()
+                    .position(|sequence| sequence.name == shard.contig)
+                    .map_or(-1, |index| index as i32);
+                let shard_reads: Vec<htsjdk_bam::record::BamRecord> = reads
+                    .iter()
+                    .filter(|read| {
+                        read.reference_index == contig_index
+                            && read.alignment_start <= padded_end
+                            && read.alignment_end() >= padded_start
+                    })
+                    .cloned()
+                    .collect();
+                match hc::call_variants(
+                    &shard_reads,
+                    &header,
+                    std::slice::from_ref(&shard),
+                    &arguments,
+                    &annotator,
+                    &mut contig_bases,
+                    &mut random,
+                    assembly_variants.as_ref().map(|(_, queue)| queue),
+                ) {
+                    Ok(found) => calls.extend(found),
+                    Err(mut error) => {
+                        let mut before = std::mem::take(&mut calls);
+                        before.append(&mut error.calls_before);
+                        error.calls_before = before;
+                        failure = Some(error);
+                        break 'shards;
+                    }
+                }
+            }
+        }
+        match failure {
+            Some(error) => Err(error),
+            None => Ok(calls),
+        }
+    } else {
+        hc::call_variants(
+            &reads,
+            &header,
+            &traversal,
+            &arguments,
+            &annotator,
+            &mut contig_bases,
+            &mut random,
+            assembly_variants.as_ref().map(|(_, queue)| queue),
+        )
+    };
     drop(random);
     // A failure mid-traversal still writes what came before it, and the writer's own refusal of
     // those records, raised as it closes, is what the run reports.
     let (mut written, failure) = match called {
         Ok(calls) => (calls, None),
         // Before the VCF writer exists: the run ends with nothing more written.
-        Err(error) if error.at_startup => {
+        Err(error) if error.at_startup && !spark_task_failure(spark, &error.message) => {
             return Err(Thrown::non_user(
                 java_class_name(&error.class),
+                error.message,
+            ));
+        }
+        Err(error) if spark_task_failure(spark, &error.message) => {
+            eprintln!("ERROR Executor - Exception in task 0.0 in stage 0.0 (TID 0)");
+            return Err(Thrown::non_user(
+                "org.apache.spark.SparkException",
                 error.message,
             ));
         }
@@ -1264,7 +1574,12 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
                 extra: Vec::new(),
             }
         };
-    let mut lines: Vec<HeaderLine> = default_tool_vcf_header_lines(parser, tool);
+    // The Spark tool hands `makeVCFHeader` an empty set of default lines.
+    let mut lines: Vec<HeaderLine> = if spark {
+        Vec::new()
+    } else {
+        default_tool_vcf_header_lines(parser, tool)
+    };
     if arguments.calling.annotate_number_of_alleles_discovered {
         lines.push(compound(
             "INFO",
@@ -1456,7 +1771,8 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         gatk_tools::gvcf_blocks::add_ranges_to_header(&mut vcf_header, &partitions);
         let mut combiner = gatk_tools::gvcf_blocks::BlockCombiner::new(
             partitions,
-            flag(parser, "floor-blocks"),
+            // `VariantsSparkSink` builds its `GVCFWriter` without the argument.
+            !spark && flag(parser, "floor-blocks"),
             None,
         );
         let mut combined = Vec::new();
@@ -1473,6 +1789,31 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     apply_sites_only(parser, &mut vcf_header, &mut written);
     // `HaplotypeCallerEngine.makeVCFWriter`, which never allows a key the header lacks.
     let text = write_vcf_strict_or_lenient(false, &vcf_header, &written)?;
+    if spark {
+        // A task that fails writes nothing the job commits.
+        if let Some(failure) = failure {
+            return Err(failure);
+        }
+        if output.ends_with(".bcf") || output.ends_with(".bcf.gz") {
+            return Err(unimplemented_bcf());
+        }
+        if let Some(path) = argument(parser, "bam-output") {
+            std::fs::write(&path, b"").map_err(|error| {
+                Thrown::non_user(PORT_FAILURE, format!("could not write {path}: {error}"))
+            })?;
+        }
+        let split = text
+            .match_indices('\n')
+            .map(|(at, _)| at + 1)
+            .find(|at| !text[*at..].starts_with('#'))
+            .unwrap_or(text.len());
+        return super::spark_runners::write_spark_vcf(
+            parser,
+            &output,
+            &text[..split],
+            &text[split..],
+        );
+    }
     // The writer is closed whether or not the traversal failed, so what came before is written.
     write_variant_output(parser, &output, &text)?;
     if let Some(failure) = failure {

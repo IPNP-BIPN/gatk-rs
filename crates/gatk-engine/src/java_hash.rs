@@ -322,6 +322,24 @@ impl<K: JavaHashCode + PartialEq + Clone, V> JavaHashMap<K, V> {
             .map(|(bucket, index)| &mut self.buckets[bucket][index].1)
     }
 
+    /// `computeIfAbsent` on a key that is absent: unlike `put`, the node goes to the HEAD of its bucket,
+    /// and the table grows on the way in rather than on the way out.
+    pub fn insert_at_head(&mut self, key: K, value: V) {
+        if self.buckets.is_empty() {
+            self.buckets = (0..self.initial_capacity).map(|_| Vec::new()).collect();
+        }
+        if self.len > self.buckets.len() * 3 / 4 {
+            self.grow();
+        }
+        let bucket = Self::bucket_of(key.java_hash_code(), self.buckets.len());
+        self.buckets[bucket].insert(0, (key, value));
+        self.len += 1;
+        let length = self.buckets[bucket].len();
+        if length >= TREEIFY_THRESHOLD && self.crowded.is_none() {
+            self.crowded = Some(HashOrderError::BucketTreeified { bucket, length });
+        }
+    }
+
     /// `put`: a new key goes to the end of its bucket, an existing one keeps its place.
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
         if let Some((bucket, index)) = self.find(&key) {

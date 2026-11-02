@@ -72,6 +72,16 @@ pub fn value_class(type_name: &str, type_class: &str) -> Option<ValueClass> {
             simple_name: "FeatureDataSource",
             taggable: false,
         }),
+        // `HtsgetReader`'s `--url` and `--intervals`, whose constructors refuse a malformed string
+        // while the command line is being read rather than when the tool asks for it.
+        "URI" => Some(ValueClass::Checked {
+            simple_name: "URI",
+            accepts: gatk_tools::htsget_reader::java_uri_parses,
+        }),
+        "SimpleInterval" => Some(ValueClass::Checked {
+            simple_name: "SimpleInterval",
+            accepts: gatk_tools::htsget_reader::java_interval_parses,
+        }),
         "Float" => Some(ValueClass::Float),
         "Long" => Some(ValueClass::Long),
         "Byte" => Some(ValueClass::Byte),
@@ -141,9 +151,10 @@ fn scalar_value(default: &str, class: &ValueClass) -> Value {
             .parse::<i8>()
             .map(|value| Value::Int(i32::from(value)))
             .unwrap_or(Value::Null),
-        ValueClass::Text | ValueClass::Tagged | ValueClass::Constructed { .. } => {
-            Value::Str(default.to_string())
-        }
+        ValueClass::Text
+        | ValueClass::Tagged
+        | ValueClass::Constructed { .. }
+        | ValueClass::Checked { .. } => Value::Str(default.to_string()),
     }
 }
 

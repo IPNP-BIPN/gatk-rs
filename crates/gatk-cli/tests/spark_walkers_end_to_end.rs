@@ -24,11 +24,31 @@
 //!    Illumina or Solexa and fails on what the offset takes below zero;
 //!  * **a filter by read name**, which parses `--read-filter` and never applies it;
 //!  * **the metrics the Spark pipelines compute themselves**, under GATK's own metric classes;
+//!  * **FindBadGenomicKmersSpark**, whose file is two hopscotch tables and a shuffle in order,
+//!    over one partition and over two;
+//!  * **CalcMetadataSpark**, whose `--write-as-binary` is whatever overflowed a buffer nothing
+//!    flushes;
+//!  * **ExtractSVEvidenceSpark**, each read's evidence as text, the K-S windows counted from where
+//!    the reads are, and the metadata and high-depth regions it takes on the way;
+//!  * **DiscoverVariantsFromContigAlignmentsSAMSpark**, contigs' alignments read as chimeras and
+//!    the chimeras as a VCF;
+//!  * **SvDiscoverFromLocalAssemblyContigAlignmentsSpark**, the same contigs told apart by class:
+//!    the simple calls, the complex ones and their re-interpretation, five VCFs under one prefix;
+//!  * **CpxVariantReInterpreterSpark**, that re-interpretation from a VCF of complex calls;
+//!  * **HaplotypeCallerSpark**, the caller run over shards of `--read-shard-size`, with no default
+//!    header lines, and what the tool refuses of the walker's outputs;
+//!  * **PathSeqScoreSpark**, the third step: the hits, the scores in their hash tables' order, what
+//!    two inputs add up to, and the reads tagged with their taxa;
+//!  * **PathSeqFilterSpark**, the first step of PathSeq up to the BWA step this port refuses: the
+//!    transformers, the host k-mer sets, the duplicate groups in Spark's table order, the metrics;
+//!  * **ReadsPipelineSpark**, the marking, the recalibration and that caller in one job: duplicates
+//!    are never removed, the optical finder is its default, and `--dbsnp` is a header line only;
 //!  * **CompareDuplicatesSpark**, whose filter holds for the first BAM only, whose keys are looked
 //!    up in the first header for both, and whose summary comes in an order no two JVMs share, so
 //!    the dump and this test sort it;
 //!  * **CollectInsertSizeMetricsSpark**, GATK's collector and not Picard's: ten filters that keep
 //!    the first of the pair, FR, TANDEM, RF, and no file when no category passes;
+//!  * **CollectAllelicCountsSpark**, `CollectAllelicCounts`' table over `LocusWalkerSpark`'s shards;
 //!  * **MarkDuplicatesSpark**, whose verdict is a read name's, so that a read's company follows
 //!    it, over every record type it makes and with the finder's graph;
 //!  * **CollectMultipleMetricsSpark**, those two collectors in the order asked for, each through
@@ -206,6 +226,8 @@ fn every_run_replays_as_the_reference_ran_it() {
                         ran.status
                     ));
                 }
+                // The dump lists no files for a run that was refused.
+                continue;
             }
             None if ran.status != 0 => {
                 failures.push(format!("{label}: status {}: {}", ran.status, ran.stderr));

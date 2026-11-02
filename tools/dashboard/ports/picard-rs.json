@@ -101,6 +101,14 @@
       "cases": 1
     },
     {
+      "id": "replacesamheader-damaged",
+      "status": "oracle-backed",
+      "tools": [
+        "ReplaceSamHeader"
+      ],
+      "cases": 1
+    },
+    {
       "id": "revertsam",
       "status": "oracle-backed",
       "tools": [
@@ -173,6 +181,14 @@
       "cases": 1
     },
     {
+      "id": "sortsam-spill",
+      "status": "oracle-backed",
+      "tools": [
+        "SortSam"
+      ],
+      "cases": 1
+    },
+    {
       "id": "setnmmduq",
       "status": "oracle-backed",
       "tools": [
@@ -236,6 +252,18 @@
         "CollectQualityYieldMetrics",
         "CollectAlignmentSummaryMetrics"
       ],
+      "cases": 1
+    },
+    {
+      "id": "commandline-declarations",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "commandline",
+      "status": "oracle-backed",
+      "tools": [],
       "cases": 1
     },
     {
@@ -567,6 +595,14 @@
       "cases": 1
     },
     {
+      "id": "variantcallingmetrics-edge",
+      "status": "oracle-backed",
+      "tools": [
+        "CollectVariantCallingMetrics"
+      ],
+      "cases": 1
+    },
+    {
       "id": "nonzerowgs",
       "status": "oracle-backed",
       "tools": [
@@ -703,6 +739,16 @@
       "cases": 1
     },
     {
+      "id": "markduplicates-noreadgroup",
+      "status": "golden-pending",
+      "tools": [
+        "MarkDuplicates",
+        "MarkDuplicatesWithMateCigar",
+        "SimpleMarkDuplicatesWithMateCigar"
+      ],
+      "cases": 1
+    },
+    {
       "id": "matecigarduplicates",
       "status": "oracle-backed",
       "tools": [
@@ -713,6 +759,14 @@
     },
     {
       "id": "umiduplicates",
+      "status": "oracle-backed",
+      "tools": [
+        "UmiAwareMarkDuplicatesWithMateCigar"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "umiduplicates-noreadgroup",
       "status": "oracle-backed",
       "tools": [
         "UmiAwareMarkDuplicatesWithMateCigar"
@@ -817,6 +871,24 @@
       "cases": 1
     },
     {
+      "id": "vcfgz",
+      "status": "oracle-backed",
+      "tools": [
+        "SortVcf",
+        "MakeSitesOnlyVcf",
+        "RenameSampleInVcf",
+        "UpdateVcfSequenceDictionary",
+        "FilterVcf",
+        "FixVcfHeader",
+        "MergeVcfs",
+        "SplitVcfs",
+        "LiftoverVcf",
+        "VcfFormatConverter",
+        "GatherVcfs"
+      ],
+      "cases": 1
+    },
+    {
       "id": "mendelianviolations",
       "status": "oracle-backed",
       "tools": [
@@ -863,10 +935,170 @@
         "CreateExtendedIlluminaManifest"
       ],
       "cases": 1
+    },
+    {
+      "id": "headerlines",
+      "status": "oracle-backed",
+      "tools": [
+        "AccumulateVariantCallingMetrics",
+        "CalculateFingerprintMetrics",
+        "CheckFingerprint",
+        "ClusterCrosscheckMetrics",
+        "CollectAlignmentSummaryMetrics",
+        "CollectArraysVariantCallingMetrics",
+        "CollectBaseDistributionByCycle",
+        "CollectDuplicateMetrics",
+        "CollectGcBiasMetrics",
+        "CollectHiSeqXPfFailMetrics",
+        "CollectIlluminaBasecallingMetrics",
+        "CollectIlluminaLaneMetrics",
+        "CollectIndependentReplicateMetrics",
+        "CollectInsertSizeMetrics",
+        "CollectJumpingLibraryMetrics",
+        "CollectMultipleMetrics",
+        "CollectOxoGMetrics",
+        "CollectQualityYieldMetrics",
+        "CollectQualityYieldMetricsFlow",
+        "CollectQualityYieldMetricsSNVQ",
+        "CollectRnaSeqMetrics",
+        "CollectRrbsMetrics",
+        "CollectSamErrorMetrics",
+        "CollectSequencingArtifactMetrics",
+        "CollectHsMetrics",
+        "CollectTargetedPcrMetrics",
+        "CollectUmiPrevalenceMetrics",
+        "CollectVariantCallingMetrics",
+        "CollectWgsMetrics",
+        "CollectRawWgsMetrics",
+        "CollectWgsMetricsWithNonZeroCoverage",
+        "CompareMetrics",
+        "CompareSAMs",
+        "ConvertSequencingArtifactToOxoG",
+        "CreateBafRegressMetricsFile",
+        "CreateVerifyIDIntensityContaminationMetricsFile",
+        "CrosscheckFingerprints",
+        "CrosscheckReadGroupFingerprints",
+        "DownsampleSam",
+        "EstimateLibraryComplexity",
+        "ExtractIlluminaBarcodes",
+        "IlluminaBasecallsToFastq",
+        "IlluminaBasecallsToSam",
+        "FindMendelianViolations",
+        "GenotypeConcordance",
+        "MarkDuplicates",
+        "MarkDuplicatesWithMateCigar",
+        "SimpleMarkDuplicatesWithMateCigar",
+        "UmiAwareMarkDuplicatesWithMateCigar",
+        "MarkIlluminaAdapters",
+        "MeanQualityByCycle",
+        "QualityScoreDistribution",
+        "PositionBasedDownsampleSam",
+        "IntervalListTools"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "bcf",
+      "status": "oracle-backed",
+      "tools": [
+        "VcfFormatConverter",
+        "SortVcf",
+        "MergeVcfs",
+        "MakeSitesOnlyVcf"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "bcf-partial",
+      "status": "oracle-backed",
+      "tools": [
+        "VcfFormatConverter"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "cram-io",
+      "status": "golden-pending",
+      "tools": [
+        "SamFormatConverter",
+        "SortSam",
+        "CollectAlignmentSummaryMetrics",
+        "SplitSamByNumberOfReads"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "strict-validation",
+      "status": "golden-pending",
+      "tools": [
+        "CollectQualityYieldMetrics",
+        "SortSam",
+        "MarkDuplicates",
+        "CleanSam"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "inputshapes",
+      "status": "oracle-backed",
+      "tools": [
+        "CleanSam",
+        "CollectSamErrorMetrics",
+        "RevertOriginalBaseQualitiesAndAddMateCigar"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "nonbamshapes",
+      "status": "oracle-backed",
+      "tools": [
+        "BaitDesigner",
+        "CheckFingerprint",
+        "CollectIndependentReplicateMetrics",
+        "CollectVariantCallingMetrics",
+        "CombineGenotypingArrayVcfs",
+        "ConvertHaplotypeDatabaseToVcf",
+        "CreateExtendedIlluminaManifest",
+        "CreateSequenceDictionary",
+        "ExtractFingerprint",
+        "ExtractIlluminaBarcodes",
+        "GtcToVcf",
+        "IdentifyContaminant",
+        "LiftoverVcf",
+        "SortVcf"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "filterandmerge",
+      "status": "golden-pending",
+      "tools": [
+        "FilterSamReads",
+        "MergeBamAlignment"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "rawrecords",
+      "status": "golden-pending",
+      "tools": [
+        "SortSam",
+        "MarkDuplicates",
+        "MergeSamFiles",
+        "SamFormatConverter",
+        "CleanSam",
+        "ReorderSam",
+        "DownsampleSam",
+        "FixMateInformation",
+        "AddOrReplaceReadGroups",
+        "SplitSamByLibrary",
+        "SplitSamByNumberOfReads"
+      ],
+      "cases": 1
     }
   ],
   "source": "picard-rs origin/main",
-  "commit": "d6e5de789adf76a4f2d25bc1e646eefd077c8b0c",
+  "commit": "bd199d296c43cb9206de1621bc8c620d8b82d0f4",
   "coverage": {
     "AccumulateQualityYieldMetrics": {
       "rows": 6,
@@ -902,29 +1134,29 @@
       "rows": 9,
       "accepted": 9,
       "rejected": 0,
-      "distinct_outputs": 2,
+      "distinct_outputs": 4,
       "distinct_rejections": 0,
       "matched": 9,
       "t": 2,
       "share": 1.0
     },
     "AddOrReplaceReadGroups": {
-      "rows": 17,
-      "accepted": 11,
-      "rejected": 6,
-      "distinct_outputs": 4,
-      "distinct_rejections": 4,
-      "matched": 17,
+      "rows": 21,
+      "accepted": 13,
+      "rejected": 8,
+      "distinct_outputs": 13,
+      "distinct_rejections": 5,
+      "matched": 21,
       "t": 2,
       "share": 1.0
     },
     "BaitDesigner": {
-      "rows": 19,
-      "accepted": 15,
+      "rows": 18,
+      "accepted": 14,
       "rejected": 4,
-      "distinct_outputs": 13,
+      "distinct_outputs": 14,
       "distinct_rejections": 1,
-      "matched": 19,
+      "matched": 18,
       "t": 2,
       "share": 1.0
     },
@@ -939,22 +1171,22 @@
       "share": 1.0
     },
     "BamToBfq": {
-      "rows": 11,
-      "accepted": 9,
-      "rejected": 2,
-      "distinct_outputs": 8,
-      "distinct_rejections": 2,
-      "matched": 11,
+      "rows": 17,
+      "accepted": 7,
+      "rejected": 10,
+      "distinct_outputs": 6,
+      "distinct_rejections": 5,
+      "matched": 17,
       "t": 2,
       "share": 1.0
     },
     "BedToIntervalList": {
-      "rows": 9,
-      "accepted": 9,
+      "rows": 10,
+      "accepted": 10,
       "rejected": 0,
       "distinct_outputs": 4,
       "distinct_rejections": 0,
-      "matched": 9,
+      "matched": 10,
       "t": 2,
       "share": 1.0
     },
@@ -1009,22 +1241,22 @@
       "share": 1.0
     },
     "CheckFingerprint": {
-      "rows": 18,
+      "rows": 19,
       "accepted": 8,
-      "rejected": 10,
+      "rejected": 11,
       "distinct_outputs": 8,
-      "distinct_rejections": 6,
-      "matched": 18,
+      "distinct_rejections": 10,
+      "matched": 19,
       "t": 2,
       "share": 1.0
     },
     "CheckIlluminaDirectory": {
-      "rows": 13,
-      "accepted": 5,
-      "rejected": 8,
-      "distinct_outputs": 2,
-      "distinct_rejections": 6,
-      "matched": 13,
+      "rows": 17,
+      "accepted": 6,
+      "rejected": 11,
+      "distinct_outputs": 1,
+      "distinct_rejections": 7,
+      "matched": 17,
       "t": 2,
       "share": 1.0
     },
@@ -1059,92 +1291,92 @@
       "share": 1.0
     },
     "CollectAlignmentSummaryMetrics": {
-      "rows": 16,
-      "accepted": 16,
+      "rows": 20,
+      "accepted": 20,
       "rejected": 0,
-      "distinct_outputs": 11,
+      "distinct_outputs": 17,
       "distinct_rejections": 0,
-      "matched": 16,
+      "matched": 20,
       "t": 2,
       "share": 1.0
     },
     "CollectArraysVariantCallingMetrics": {
-      "rows": 9,
-      "accepted": 6,
-      "rejected": 3,
-      "distinct_outputs": 3,
-      "distinct_rejections": 1,
-      "matched": 9,
-      "t": 2,
-      "share": 1.0
-    },
-    "CollectBaseDistributionByCycle": {
-      "rows": 10,
-      "accepted": 7,
-      "rejected": 3,
-      "distinct_outputs": 2,
-      "distinct_rejections": 2,
-      "matched": 10,
-      "t": 2,
-      "share": 1.0
-    },
-    "CollectDuplicateMetrics": {
-      "rows": 10,
-      "accepted": 7,
-      "rejected": 3,
-      "distinct_outputs": 1,
-      "distinct_rejections": 2,
-      "matched": 10,
-      "t": 2,
-      "share": 1.0
-    },
-    "CollectGcBiasMetrics": {
-      "rows": 24,
-      "accepted": 18,
-      "rejected": 6,
-      "distinct_outputs": 11,
-      "distinct_rejections": 3,
-      "matched": 24,
-      "t": 2,
-      "share": 1.0
-    },
-    "CollectHiSeqXPfFailMetrics": {
-      "rows": 9,
-      "accepted": 5,
-      "rejected": 4,
-      "distinct_outputs": 2,
-      "distinct_rejections": 1,
-      "matched": 9,
-      "t": 2,
-      "share": 1.0
-    },
-    "CollectHsMetrics": {
-      "rows": 18,
-      "accepted": 13,
-      "rejected": 5,
-      "distinct_outputs": 11,
-      "distinct_rejections": 1,
-      "matched": 18,
-      "t": 2,
-      "share": 1.0
-    },
-    "CollectIlluminaBasecallingMetrics": {
       "rows": 11,
-      "accepted": 9,
-      "rejected": 2,
-      "distinct_outputs": 5,
-      "distinct_rejections": 1,
+      "accepted": 6,
+      "rejected": 5,
+      "distinct_outputs": 3,
+      "distinct_rejections": 2,
       "matched": 11,
       "t": 2,
       "share": 1.0
     },
-    "CollectIlluminaLaneMetrics": {
+    "CollectBaseDistributionByCycle": {
       "rows": 12,
       "accepted": 9,
       "rejected": 3,
-      "distinct_outputs": 7,
+      "distinct_outputs": 3,
       "distinct_rejections": 2,
       "matched": 12,
+      "t": 2,
+      "share": 1.0
+    },
+    "CollectDuplicateMetrics": {
+      "rows": 9,
+      "accepted": 6,
+      "rejected": 3,
+      "distinct_outputs": 4,
+      "distinct_rejections": 2,
+      "matched": 9,
+      "t": 2,
+      "share": 1.0
+    },
+    "CollectGcBiasMetrics": {
+      "rows": 27,
+      "accepted": 22,
+      "rejected": 5,
+      "distinct_outputs": 13,
+      "distinct_rejections": 3,
+      "matched": 27,
+      "t": 2,
+      "share": 1.0
+    },
+    "CollectHiSeqXPfFailMetrics": {
+      "rows": 12,
+      "accepted": 8,
+      "rejected": 4,
+      "distinct_outputs": 4,
+      "distinct_rejections": 1,
+      "matched": 12,
+      "t": 2,
+      "share": 1.0
+    },
+    "CollectHsMetrics": {
+      "rows": 17,
+      "accepted": 10,
+      "rejected": 7,
+      "distinct_outputs": 9,
+      "distinct_rejections": 3,
+      "matched": 17,
+      "t": 2,
+      "share": 1.0
+    },
+    "CollectIlluminaBasecallingMetrics": {
+      "rows": 14,
+      "accepted": 10,
+      "rejected": 4,
+      "distinct_outputs": 8,
+      "distinct_rejections": 2,
+      "matched": 14,
+      "t": 2,
+      "share": 1.0
+    },
+    "CollectIlluminaLaneMetrics": {
+      "rows": 14,
+      "accepted": 8,
+      "rejected": 6,
+      "distinct_outputs": 5,
+      "distinct_rejections": 4,
+      "matched": 14,
       "t": 2,
       "share": 1.0
     },
@@ -1160,31 +1392,31 @@
     },
     "CollectInsertSizeMetrics": {
       "rows": 22,
-      "accepted": 13,
-      "rejected": 9,
-      "distinct_outputs": 8,
-      "distinct_rejections": 2,
+      "accepted": 12,
+      "rejected": 10,
+      "distinct_outputs": 10,
+      "distinct_rejections": 3,
       "matched": 22,
       "t": 2,
       "share": 1.0
     },
     "CollectJumpingLibraryMetrics": {
-      "rows": 9,
-      "accepted": 6,
-      "rejected": 3,
-      "distinct_outputs": 1,
+      "rows": 15,
+      "accepted": 9,
+      "rejected": 6,
+      "distinct_outputs": 6,
       "distinct_rejections": 1,
-      "matched": 9,
+      "matched": 15,
       "t": 2,
       "share": 1.0
     },
     "CollectMultipleMetrics": {
-      "rows": 18,
-      "accepted": 13,
-      "rejected": 5,
-      "distinct_outputs": 10,
-      "distinct_rejections": 2,
-      "matched": 18,
+      "rows": 16,
+      "accepted": 9,
+      "rejected": 7,
+      "distinct_outputs": 8,
+      "distinct_rejections": 3,
+      "matched": 16,
       "t": 2,
       "share": 1.0
     },
@@ -1202,7 +1434,7 @@
       "rows": 10,
       "accepted": 10,
       "rejected": 0,
-      "distinct_outputs": 4,
+      "distinct_outputs": 5,
       "distinct_rejections": 0,
       "matched": 10,
       "t": 2,
@@ -1229,20 +1461,20 @@
       "share": 1.0
     },
     "CollectRawWgsMetrics": {
-      "rows": 21,
-      "accepted": 15,
+      "rows": 22,
+      "accepted": 16,
       "rejected": 6,
-      "distinct_outputs": 15,
-      "distinct_rejections": 4,
-      "matched": 21,
+      "distinct_outputs": 14,
+      "distinct_rejections": 3,
+      "matched": 22,
       "t": 2,
       "share": 1.0
     },
     "CollectRnaSeqMetrics": {
       "rows": 27,
-      "accepted": 21,
-      "rejected": 6,
-      "distinct_outputs": 16,
+      "accepted": 18,
+      "rejected": 9,
+      "distinct_outputs": 14,
       "distinct_rejections": 4,
       "matched": 27,
       "t": 2,
@@ -1250,21 +1482,21 @@
     },
     "CollectRrbsMetrics": {
       "rows": 19,
-      "accepted": 9,
-      "rejected": 10,
-      "distinct_outputs": 7,
+      "accepted": 10,
+      "rejected": 9,
+      "distinct_outputs": 9,
       "distinct_rejections": 4,
       "matched": 19,
       "t": 2,
       "share": 1.0
     },
     "CollectSamErrorMetrics": {
-      "rows": 25,
-      "accepted": 19,
-      "rejected": 6,
-      "distinct_outputs": 19,
-      "distinct_rejections": 4,
-      "matched": 25,
+      "rows": 28,
+      "accepted": 12,
+      "rejected": 16,
+      "distinct_outputs": 11,
+      "distinct_rejections": 6,
+      "matched": 28,
       "t": 2,
       "share": 1.0
     },
@@ -1279,52 +1511,52 @@
       "share": 1.0
     },
     "CollectTargetedPcrMetrics": {
-      "rows": 16,
-      "accepted": 11,
-      "rejected": 5,
-      "distinct_outputs": 9,
-      "distinct_rejections": 1,
-      "matched": 16,
+      "rows": 18,
+      "accepted": 14,
+      "rejected": 4,
+      "distinct_outputs": 10,
+      "distinct_rejections": 2,
+      "matched": 18,
       "t": 2,
       "share": 1.0
     },
     "CollectUmiPrevalenceMetrics": {
-      "rows": 8,
-      "accepted": 8,
+      "rows": 10,
+      "accepted": 10,
       "rejected": 0,
       "distinct_outputs": 6,
       "distinct_rejections": 0,
-      "matched": 8,
+      "matched": 10,
       "t": 2,
       "share": 1.0
     },
     "CollectVariantCallingMetrics": {
-      "rows": 8,
-      "accepted": 3,
-      "rejected": 5,
+      "rows": 10,
+      "accepted": 2,
+      "rejected": 8,
       "distinct_outputs": 2,
-      "distinct_rejections": 1,
-      "matched": 8,
+      "distinct_rejections": 2,
+      "matched": 10,
       "t": 2,
       "share": 1.0
     },
     "CollectWgsMetrics": {
-      "rows": 21,
-      "accepted": 15,
+      "rows": 22,
+      "accepted": 16,
       "rejected": 6,
-      "distinct_outputs": 15,
-      "distinct_rejections": 4,
-      "matched": 21,
+      "distinct_outputs": 14,
+      "distinct_rejections": 3,
+      "matched": 22,
       "t": 2,
       "share": 1.0
     },
     "CollectWgsMetricsWithNonZeroCoverage": {
-      "rows": 21,
-      "accepted": 17,
-      "rejected": 4,
-      "distinct_outputs": 17,
+      "rows": 23,
+      "accepted": 18,
+      "rejected": 5,
+      "distinct_outputs": 18,
       "distinct_rejections": 1,
-      "matched": 21,
+      "matched": 23,
       "t": 2,
       "share": 1.0
     },
@@ -1359,12 +1591,12 @@
       "share": 1.0
     },
     "CompareSAMs": {
-      "rows": 9,
-      "accepted": 6,
-      "rejected": 3,
-      "distinct_outputs": 2,
-      "distinct_rejections": 2,
-      "matched": 9,
+      "rows": 11,
+      "accepted": 7,
+      "rejected": 4,
+      "distinct_outputs": 3,
+      "distinct_rejections": 3,
+      "matched": 11,
       "t": 2,
       "share": 1.0
     },
@@ -1399,22 +1631,22 @@
       "share": 1.0
     },
     "CreateExtendedIlluminaManifest": {
-      "rows": 10,
-      "accepted": 6,
-      "rejected": 4,
-      "distinct_outputs": 4,
-      "distinct_rejections": 3,
-      "matched": 10,
+      "rows": 13,
+      "accepted": 4,
+      "rejected": 9,
+      "distinct_outputs": 2,
+      "distinct_rejections": 5,
+      "matched": 13,
       "t": 2,
       "share": 1.0
     },
     "CreateSequenceDictionary": {
-      "rows": 7,
-      "accepted": 7,
-      "rejected": 0,
-      "distinct_outputs": 4,
-      "distinct_rejections": 0,
-      "matched": 7,
+      "rows": 10,
+      "accepted": 8,
+      "rejected": 2,
+      "distinct_outputs": 6,
+      "distinct_rejections": 1,
+      "matched": 10,
       "t": 2,
       "share": 1.0
     },
@@ -1429,42 +1661,42 @@
       "share": 1.0
     },
     "CrosscheckFingerprints": {
-      "rows": 21,
-      "accepted": 6,
+      "rows": 24,
+      "accepted": 9,
       "rejected": 15,
-      "distinct_outputs": 6,
+      "distinct_outputs": 8,
       "distinct_rejections": 14,
-      "matched": 21,
+      "matched": 24,
       "t": 2,
       "share": 1.0
     },
     "CrosscheckReadGroupFingerprints": {
-      "rows": 16,
-      "accepted": 10,
-      "rejected": 6,
-      "distinct_outputs": 9,
-      "distinct_rejections": 6,
-      "matched": 16,
+      "rows": 20,
+      "accepted": 7,
+      "rejected": 13,
+      "distinct_outputs": 6,
+      "distinct_rejections": 7,
+      "matched": 20,
       "t": 2,
       "share": 1.0
     },
     "DownsampleSam": {
-      "rows": 11,
-      "accepted": 11,
+      "rows": 13,
+      "accepted": 13,
       "rejected": 0,
-      "distinct_outputs": 5,
+      "distinct_outputs": 8,
       "distinct_rejections": 0,
-      "matched": 11,
+      "matched": 13,
       "t": 2,
       "share": 1.0
     },
     "EstimateLibraryComplexity": {
-      "rows": 10,
-      "accepted": 10,
+      "rows": 14,
+      "accepted": 14,
       "rejected": 0,
-      "distinct_outputs": 4,
+      "distinct_outputs": 9,
       "distinct_rejections": 0,
-      "matched": 10,
+      "matched": 14,
       "t": 2,
       "share": 1.0
     },
@@ -1479,12 +1711,12 @@
       "share": 1.0
     },
     "ExtractIlluminaBarcodes": {
-      "rows": 23,
-      "accepted": 18,
-      "rejected": 5,
-      "distinct_outputs": 14,
-      "distinct_rejections": 2,
-      "matched": 23,
+      "rows": 30,
+      "accepted": 17,
+      "rejected": 13,
+      "distinct_outputs": 16,
+      "distinct_rejections": 5,
+      "matched": 30,
       "t": 2,
       "share": 1.0
     },
@@ -1499,12 +1731,12 @@
       "share": 1.0
     },
     "FastqToSam": {
-      "rows": 12,
-      "accepted": 1,
-      "rejected": 11,
-      "distinct_outputs": 1,
-      "distinct_rejections": 3,
-      "matched": 12,
+      "rows": 21,
+      "accepted": 7,
+      "rejected": 14,
+      "distinct_outputs": 7,
+      "distinct_rejections": 4,
+      "matched": 21,
       "t": 2,
       "share": 1.0
     },
@@ -1519,32 +1751,32 @@
       "share": 1.0
     },
     "FilterSamReads": {
-      "rows": 25,
-      "accepted": 6,
-      "rejected": 19,
+      "rows": 26,
+      "accepted": 5,
+      "rejected": 21,
       "distinct_outputs": 4,
-      "distinct_rejections": 6,
-      "matched": 25,
+      "distinct_rejections": 18,
+      "matched": 26,
       "t": 2,
       "share": 1.0
     },
     "FilterVcf": {
-      "rows": 15,
-      "accepted": 12,
-      "rejected": 3,
-      "distinct_outputs": 9,
-      "distinct_rejections": 1,
-      "matched": 15,
+      "rows": 20,
+      "accepted": 13,
+      "rejected": 7,
+      "distinct_outputs": 12,
+      "distinct_rejections": 3,
+      "matched": 20,
       "t": 2,
       "share": 1.0
     },
     "FindMendelianViolations": {
-      "rows": 8,
-      "accepted": 8,
-      "rejected": 0,
-      "distinct_outputs": 3,
-      "distinct_rejections": 0,
-      "matched": 8,
+      "rows": 12,
+      "accepted": 5,
+      "rejected": 7,
+      "distinct_outputs": 2,
+      "distinct_rejections": 3,
+      "matched": 12,
       "t": 2,
       "share": 1.0
     },
@@ -1559,12 +1791,12 @@
       "share": 1.0
     },
     "FixVcfHeader": {
-      "rows": 20,
-      "accepted": 8,
+      "rows": 21,
+      "accepted": 9,
       "rejected": 12,
-      "distinct_outputs": 8,
+      "distinct_outputs": 9,
       "distinct_rejections": 5,
-      "matched": 20,
+      "matched": 21,
       "t": 2,
       "share": 1.0
     },
@@ -1579,32 +1811,32 @@
       "share": 1.0
     },
     "GatherVcfs": {
-      "rows": 31,
-      "accepted": 14,
+      "rows": 33,
+      "accepted": 16,
       "rejected": 17,
-      "distinct_outputs": 4,
+      "distinct_outputs": 7,
       "distinct_rejections": 7,
-      "matched": 31,
+      "matched": 33,
       "t": 2,
       "share": 1.0
     },
     "GenotypeConcordance": {
-      "rows": 10,
-      "accepted": 10,
-      "rejected": 0,
+      "rows": 12,
+      "accepted": 8,
+      "rejected": 4,
       "distinct_outputs": 6,
-      "distinct_rejections": 0,
-      "matched": 10,
+      "distinct_rejections": 1,
+      "matched": 12,
       "t": 2,
       "share": 1.0
     },
     "GtcToVcf": {
-      "rows": 14,
-      "accepted": 9,
+      "rows": 18,
+      "accepted": 13,
       "rejected": 5,
       "distinct_outputs": 9,
       "distinct_rejections": 1,
-      "matched": 14,
+      "matched": 18,
       "t": 2,
       "share": 1.0
     },
@@ -1618,83 +1850,73 @@
       "t": 2,
       "share": 1.0
     },
-    "IlluminaBasecallsToFastq": {
-      "rows": 28,
-      "accepted": 17,
-      "rejected": 11,
-      "distinct_outputs": 12,
-      "distinct_rejections": 5,
-      "matched": 28,
-      "t": 2,
-      "share": 1.0
-    },
     "IlluminaBasecallsToSam": {
-      "rows": 25,
-      "accepted": 13,
-      "rejected": 12,
-      "distinct_outputs": 10,
-      "distinct_rejections": 5,
-      "matched": 25,
+      "rows": 31,
+      "accepted": 14,
+      "rejected": 17,
+      "distinct_outputs": 12,
+      "distinct_rejections": 9,
+      "matched": 31,
       "t": 2,
       "share": 1.0
     },
     "IntervalListToBed": {
-      "rows": 7,
-      "accepted": 7,
+      "rows": 8,
+      "accepted": 8,
       "rejected": 0,
-      "distinct_outputs": 3,
+      "distinct_outputs": 5,
       "distinct_rejections": 0,
-      "matched": 7,
+      "matched": 8,
       "t": 2,
       "share": 1.0
     },
     "IntervalListTools": {
-      "rows": 33,
-      "accepted": 17,
-      "rejected": 16,
-      "distinct_outputs": 4,
-      "distinct_rejections": 3,
-      "matched": 33,
+      "rows": 34,
+      "accepted": 16,
+      "rejected": 18,
+      "distinct_outputs": 12,
+      "distinct_rejections": 8,
+      "matched": 34,
       "t": 2,
       "share": 1.0
     },
     "LiftOverHaplotypeMap": {
-      "rows": 6,
-      "accepted": 3,
+      "rows": 8,
+      "accepted": 5,
       "rejected": 3,
-      "distinct_outputs": 1,
+      "distinct_outputs": 3,
       "distinct_rejections": 1,
-      "matched": 6,
+      "matched": 8,
       "t": 2,
       "share": 1.0
     },
     "LiftOverIntervalList": {
-      "rows": 7,
-      "accepted": 5,
-      "rejected": 2,
-      "distinct_outputs": 2,
+      "rows": 10,
+      "accepted": 6,
+      "rejected": 4,
+      "distinct_outputs": 5,
       "distinct_rejections": 1,
-      "matched": 7,
+      "matched": 10,
       "t": 2,
       "share": 1.0
     },
     "LiftoverVcf": {
-      "rows": 14,
-      "accepted": 14,
-      "rejected": 0,
-      "distinct_outputs": 11,
-      "distinct_rejections": 0,
-      "matched": 14,
+      "rows": 17,
+      "accepted": 16,
+      "rejected": 1,
+      "distinct_outputs": 16,
+      "distinct_rejections": 1,
+      "matched": 17,
       "t": 2,
       "share": 1.0
     },
     "MakeSitesOnlyVcf": {
-      "rows": 10,
+      "rows": 12,
       "accepted": 8,
-      "rejected": 2,
+      "rejected": 4,
       "distinct_outputs": 5,
-      "distinct_rejections": 1,
-      "matched": 10,
+      "distinct_rejections": 2,
+      "matched": 12,
       "t": 2,
       "share": 1.0
     },
@@ -1709,52 +1931,42 @@
       "share": 1.0
     },
     "MarkDuplicates": {
-      "rows": 21,
-      "accepted": 6,
-      "rejected": 15,
-      "distinct_outputs": 6,
-      "distinct_rejections": 4,
-      "matched": 21,
+      "rows": 47,
+      "accepted": 21,
+      "rejected": 26,
+      "distinct_outputs": 19,
+      "distinct_rejections": 9,
+      "matched": 47,
       "t": 2,
       "share": 1.0
     },
     "MarkDuplicatesWithMateCigar": {
-      "rows": 18,
-      "accepted": 1,
-      "rejected": 17,
-      "distinct_outputs": 1,
+      "rows": 30,
+      "accepted": 6,
+      "rejected": 24,
+      "distinct_outputs": 5,
       "distinct_rejections": 3,
-      "matched": 18,
+      "matched": 30,
       "t": 2,
       "share": 1.0
     },
     "MarkIlluminaAdapters": {
-      "rows": 27,
-      "accepted": 27,
-      "rejected": 0,
+      "rows": 28,
+      "accepted": 16,
+      "rejected": 12,
       "distinct_outputs": 4,
-      "distinct_rejections": 0,
-      "matched": 27,
+      "distinct_rejections": 2,
+      "matched": 28,
       "t": 2,
       "share": 1.0
     },
     "MeanQualityByCycle": {
-      "rows": 10,
-      "accepted": 7,
+      "rows": 12,
+      "accepted": 9,
       "rejected": 3,
-      "distinct_outputs": 2,
+      "distinct_outputs": 3,
       "distinct_rejections": 2,
-      "matched": 10,
-      "t": 2,
-      "share": 1.0
-    },
-    "MergeBamAlignment": {
-      "rows": 24,
-      "accepted": 18,
-      "rejected": 6,
-      "distinct_outputs": 18,
-      "distinct_rejections": 1,
-      "matched": 24,
+      "matched": 12,
       "t": 2,
       "share": 1.0
     },
@@ -1769,112 +1981,112 @@
       "share": 1.0
     },
     "MergeSamFiles": {
-      "rows": 17,
-      "accepted": 2,
-      "rejected": 15,
-      "distinct_outputs": 2,
-      "distinct_rejections": 4,
-      "matched": 17,
+      "rows": 18,
+      "accepted": 1,
+      "rejected": 17,
+      "distinct_outputs": 1,
+      "distinct_rejections": 3,
+      "matched": 18,
       "t": 2,
       "share": 1.0
     },
     "MergeVcfs": {
-      "rows": 27,
-      "accepted": 16,
+      "rows": 28,
+      "accepted": 17,
       "rejected": 11,
-      "distinct_outputs": 11,
+      "distinct_outputs": 13,
       "distinct_rejections": 5,
-      "matched": 27,
+      "matched": 28,
       "t": 2,
       "share": 1.0
     },
     "NonNFastaSize": {
-      "rows": 6,
-      "accepted": 6,
-      "rejected": 0,
-      "distinct_outputs": 2,
-      "distinct_rejections": 0,
-      "matched": 6,
-      "t": 2,
-      "share": 1.0
-    },
-    "NormalizeFasta": {
       "rows": 7,
       "accepted": 7,
       "rejected": 0,
-      "distinct_outputs": 3,
+      "distinct_outputs": 2,
       "distinct_rejections": 0,
       "matched": 7,
       "t": 2,
       "share": 1.0
     },
-    "PositionBasedDownsampleSam": {
-      "rows": 9,
-      "accepted": 9,
+    "NormalizeFasta": {
+      "rows": 8,
+      "accepted": 8,
       "rejected": 0,
-      "distinct_outputs": 4,
+      "distinct_outputs": 5,
       "distinct_rejections": 0,
-      "matched": 9,
+      "matched": 8,
       "t": 2,
       "share": 1.0
     },
-    "QualityScoreDistribution": {
+    "PositionBasedDownsampleSam": {
       "rows": 12,
-      "accepted": 9,
-      "rejected": 3,
+      "accepted": 12,
+      "rejected": 0,
       "distinct_outputs": 4,
-      "distinct_rejections": 2,
+      "distinct_rejections": 0,
       "matched": 12,
       "t": 2,
       "share": 1.0
     },
-    "RenameSampleInVcf": {
-      "rows": 13,
-      "accepted": 8,
+    "QualityScoreDistribution": {
+      "rows": 15,
+      "accepted": 10,
       "rejected": 5,
-      "distinct_outputs": 5,
+      "distinct_outputs": 3,
+      "distinct_rejections": 2,
+      "matched": 15,
+      "t": 2,
+      "share": 1.0
+    },
+    "RenameSampleInVcf": {
+      "rows": 14,
+      "accepted": 8,
+      "rejected": 6,
+      "distinct_outputs": 7,
       "distinct_rejections": 3,
-      "matched": 13,
+      "matched": 14,
       "t": 2,
       "share": 1.0
     },
     "ReorderSam": {
-      "rows": 11,
-      "accepted": 11,
+      "rows": 10,
+      "accepted": 10,
       "rejected": 0,
       "distinct_outputs": 2,
       "distinct_rejections": 0,
-      "matched": 11,
+      "matched": 10,
       "t": 2,
       "share": 1.0
     },
     "ReplaceSamHeader": {
-      "rows": 9,
-      "accepted": 3,
-      "rejected": 6,
+      "rows": 10,
+      "accepted": 2,
+      "rejected": 8,
       "distinct_outputs": 1,
-      "distinct_rejections": 2,
-      "matched": 9,
+      "distinct_rejections": 3,
+      "matched": 10,
       "t": 2,
       "share": 1.0
     },
     "RevertOriginalBaseQualitiesAndAddMateCigar": {
-      "rows": 16,
-      "accepted": 14,
+      "rows": 15,
+      "accepted": 13,
       "rejected": 2,
-      "distinct_outputs": 7,
+      "distinct_outputs": 5,
       "distinct_rejections": 1,
-      "matched": 16,
+      "matched": 15,
       "t": 2,
       "share": 1.0
     },
     "RevertSam": {
-      "rows": 17,
-      "accepted": 4,
-      "rejected": 13,
-      "distinct_outputs": 4,
-      "distinct_rejections": 4,
-      "matched": 17,
+      "rows": 21,
+      "accepted": 16,
+      "rejected": 5,
+      "distinct_outputs": 14,
+      "distinct_rejections": 3,
+      "matched": 21,
       "t": 2,
       "share": 1.0
     },
@@ -1889,32 +2101,32 @@
       "share": 1.0
     },
     "SamToFastq": {
-      "rows": 10,
+      "rows": 19,
       "accepted": 3,
-      "rejected": 7,
+      "rejected": 16,
       "distinct_outputs": 3,
-      "distinct_rejections": 1,
-      "matched": 10,
+      "distinct_rejections": 7,
+      "matched": 19,
       "t": 2,
       "share": 1.0
     },
     "SamToFastqWithTags": {
-      "rows": 10,
+      "rows": 18,
       "accepted": 2,
-      "rejected": 8,
+      "rejected": 16,
       "distinct_outputs": 2,
-      "distinct_rejections": 2,
-      "matched": 10,
+      "distinct_rejections": 6,
+      "matched": 18,
       "t": 2,
       "share": 1.0
     },
     "ScatterIntervalsByNs": {
-      "rows": 9,
-      "accepted": 9,
+      "rows": 10,
+      "accepted": 10,
       "rejected": 0,
-      "distinct_outputs": 3,
+      "distinct_outputs": 6,
       "distinct_rejections": 0,
-      "matched": 9,
+      "matched": 10,
       "t": 2,
       "share": 1.0
     },
@@ -1939,12 +2151,12 @@
       "share": 1.0
     },
     "SimpleMarkDuplicatesWithMateCigar": {
-      "rows": 20,
-      "accepted": 2,
-      "rejected": 18,
-      "distinct_outputs": 2,
-      "distinct_rejections": 2,
-      "matched": 20,
+      "rows": 35,
+      "accepted": 9,
+      "rejected": 26,
+      "distinct_outputs": 7,
+      "distinct_rejections": 3,
+      "matched": 35,
       "t": 2,
       "share": 1.0
     },
@@ -1969,12 +2181,12 @@
       "share": 1.0
     },
     "SortVcf": {
-      "rows": 10,
+      "rows": 12,
       "accepted": 7,
-      "rejected": 3,
-      "distinct_outputs": 4,
+      "rejected": 5,
+      "distinct_outputs": 5,
       "distinct_rejections": 2,
-      "matched": 10,
+      "matched": 12,
       "t": 2,
       "share": 1.0
     },
@@ -1989,52 +2201,52 @@
       "share": 1.0
     },
     "SplitSamByNumberOfReads": {
-      "rows": 9,
-      "accepted": 9,
-      "rejected": 0,
-      "distinct_outputs": 5,
-      "distinct_rejections": 0,
-      "matched": 9,
+      "rows": 13,
+      "accepted": 12,
+      "rejected": 1,
+      "distinct_outputs": 9,
+      "distinct_rejections": 1,
+      "matched": 13,
       "t": 2,
       "share": 1.0
     },
     "SplitVcfs": {
-      "rows": 22,
-      "accepted": 11,
-      "rejected": 11,
-      "distinct_outputs": 7,
-      "distinct_rejections": 3,
-      "matched": 22,
+      "rows": 25,
+      "accepted": 12,
+      "rejected": 13,
+      "distinct_outputs": 12,
+      "distinct_rejections": 9,
+      "matched": 25,
       "t": 2,
       "share": 1.0
     },
     "UmiAwareMarkDuplicatesWithMateCigar": {
-      "rows": 19,
-      "accepted": 12,
-      "rejected": 7,
-      "distinct_outputs": 9,
-      "distinct_rejections": 5,
-      "matched": 19,
+      "rows": 26,
+      "accepted": 16,
+      "rejected": 10,
+      "distinct_outputs": 13,
+      "distinct_rejections": 6,
+      "matched": 26,
       "t": 2,
       "share": 1.0
     },
     "UpdateVcfSequenceDictionary": {
       "rows": 17,
-      "accepted": 14,
-      "rejected": 3,
-      "distinct_outputs": 4,
-      "distinct_rejections": 2,
+      "accepted": 11,
+      "rejected": 6,
+      "distinct_outputs": 5,
+      "distinct_rejections": 4,
       "matched": 17,
       "t": 2,
       "share": 1.0
     },
     "ValidateSamFile": {
-      "rows": 13,
-      "accepted": 5,
-      "rejected": 8,
+      "rows": 15,
+      "accepted": 8,
+      "rejected": 7,
       "distinct_outputs": 1,
-      "distinct_rejections": 5,
-      "matched": 13,
+      "distinct_rejections": 7,
+      "matched": 15,
       "t": 2,
       "share": 1.0
     },
@@ -2042,19 +2254,19 @@
       "rows": 16,
       "accepted": 7,
       "rejected": 9,
-      "distinct_outputs": 5,
+      "distinct_outputs": 6,
       "distinct_rejections": 5,
       "matched": 16,
       "t": 2,
       "share": 1.0
     },
     "VcfToAdpc": {
-      "rows": 12,
-      "accepted": 9,
+      "rows": 15,
+      "accepted": 12,
       "rejected": 3,
-      "distinct_outputs": 3,
+      "distinct_outputs": 7,
       "distinct_rejections": 1,
-      "matched": 12,
+      "matched": 15,
       "t": 2,
       "share": 1.0
     },
@@ -2070,9 +2282,9 @@
     },
     "ViewSam": {
       "rows": 14,
-      "accepted": 8,
-      "rejected": 6,
-      "distinct_outputs": 5,
+      "accepted": 5,
+      "rejected": 9,
+      "distinct_outputs": 4,
       "distinct_rejections": 1,
       "matched": 14,
       "t": 2,

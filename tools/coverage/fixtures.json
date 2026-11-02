@@ -12770,6 +12770,66 @@
         "AllowAllReadsReadFilter"
       ]
     },
+    "CollectAllelicCountsSpark": {
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-50010"
+      ],
+      "--output": [
+        "/work/out/allelic.tsv",
+        "/work/out/allelic2.tsv"
+      ],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--program-name": [
+        "counts",
+        "counts2"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "chr1:1-500",
+        "<unset>"
+      ],
+      "--minimum-base-quality": [
+        "20",
+        "60"
+      ],
+      "--max-depth-per-sample": [
+        "0"
+      ],
+      "$why": [
+        "CollectAllelicCounts' values over the Spark engine's arguments. Intervals are required, so -L has no <unset>. The far window is one shard: two would fail two tasks at once on local[2], and the log line that comes first is a race."
+      ]
+    },
     "CollectInsertSizeMetricsSpark": {
       "--input": [
         "/work/fixtures/insert_pairs.bam",
@@ -13016,18 +13076,3289 @@
         "false",
         "true"
       ],
-      "--flowbased": ["false", "true"],
-      "--flow-quality-sum-strategy": ["false", "true"],
-      "--single-end-reads-end-position-significant": ["false", "true"],
-      "--single-end-reads-clipping-is-end": ["false", "true"],
-      "--flow-q-is-known-end": ["false", "true"],
-      "--flow-skip-start-homopolymers": ["0", "2"],
+      "--flowbased": [
+        "false",
+        "true"
+      ],
+      "--flow-quality-sum-strategy": [
+        "false",
+        "true"
+      ],
+      "--single-end-reads-end-position-significant": [
+        "false",
+        "true"
+      ],
+      "--single-end-reads-clipping-is-end": [
+        "false",
+        "true"
+      ],
+      "--flow-q-is-known-end": [
+        "false",
+        "true"
+      ],
+      "--flow-skip-start-homopolymers": [
+        "0",
+        "2"
+      ],
       "--flow-end-pos-uncertainty": [
         "0",
         "3"
       ],
       "$why": [
         "Every record type the tool makes, in the three orders of header it treats apart, the one-library copy being what brings the histogram. The two removals exclude --duplicate-tagging-policy, even at false, so they are measured in the spark-walkers golden and left out here. The array keeps to a single input and to fixtures without flow tags; the golden measures several inputs and a flow-tagged fixture."
+      ]
+    },
+    "FindBadGenomicKmersSpark": {
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "chr1:1-500",
+        "<unset>"
+      ],
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "<unset>"
+      ],
+      "--read-index": [],
+      "--reference": [
+        "/work/fixtures/reference.fasta",
+        "/work/fixtures/amplicon.fasta"
+      ],
+      "--intervals": [
+        "chr1:1-1000",
+        "<unset>"
+      ],
+      "--output": [
+        "/work/out/kmers.txt",
+        "/work/out/kmers2.txt"
+      ],
+      "--program-name": [
+        "kmers",
+        "kmers2"
+      ],
+      "--k-size": [
+        "21",
+        "31",
+        "51"
+      ],
+      "--kmer-max-dust-score": [
+        "3",
+        "49"
+      ],
+      "--high-copy-fasta": [
+        "/work/fixtures/pathseq_kmers.fasta",
+        "<unset>"
+      ],
+      "$why": [
+        "The tool writes what its tables hold, so the reference that repeats and the sizes that find its repeats are what vary. The reads are optional and only their dictionary matters."
+      ]
+    },
+    "CalcMetadataSpark": {
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "chr1:1-500",
+        "<unset>"
+      ],
+      "--input": [
+        "/work/fixtures/insert_pairs.bam",
+        "/work/fixtures/insert_pairs2.bam",
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [],
+      "--reference": [],
+      "--intervals": [
+        "chr1:1-1200",
+        "chr1:600-2500",
+        "<unset>"
+      ],
+      "--output": [
+        "/work/out/metadata.txt",
+        "/work/out/metadata2.txt"
+      ],
+      "--program-name": [
+        "metadata",
+        "metadata2"
+      ],
+      "$why": [
+        "Paired reads, for the fragment sizes, and an unpaired BAM, which keeps the refusal of a read with no mate in the array."
+      ]
+    },
+    "HaplotypeCallerSpark": {
+      "$why": [
+        "The reads, the reference and the caller's own arguments are HaplotypeCaller's, for its reasons. What this tool adds is the sharding: --read-shard-size and --read-shard-padding cut the contig, --strict runs the band pass over it instead, and --shuffle moves the reads to the shards another way.",
+        "--sharded-output and the splitting index are held out: they name the output a directory of parts and an index beside a BAM this tool refuses to write. --use-nio changes only how the input is opened.",
+        "--enable-all-annotations stays off: the reference's Kryo cannot broadcast the annotation engine it builds, and which of two exceptions it reports (a lambda, a thread) moves from row to row. The port refuses it with the first.",
+        "The engine's debug files are held out: under Spark nothing closes them, so they hold what their buffers flushed, and the port refuses them rather than write them complete."
+      ],
+      "--input": [
+        "/work/fixtures/mutect_t.bam",
+        "/work/fixtures/mutect_tn.bam",
+        "/work/fixtures/flow_calls.bam"
+      ],
+      "--reference": [
+        "/work/fixtures/mutect_ref.fasta"
+      ],
+      "--output": [
+        "/work/out/out.vcf"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:900-1300"
+      ],
+      "--exclude-intervals": [
+        "null",
+        "chr1:1590-1610"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--pair-hmm-implementation": [
+        "LOGLESS_CACHING"
+      ],
+      "--smith-waterman": [
+        "JAVA"
+      ],
+      "--likelihood-calculation-engine": [
+        "PairHMM",
+        "FlowBased",
+        "FlowBasedHMM"
+      ],
+      "--smith-waterman-dangling-end-match-value": [
+        "25",
+        "26"
+      ],
+      "--smith-waterman-dangling-end-mismatch-penalty": [
+        "-50",
+        "-51"
+      ],
+      "--smith-waterman-dangling-end-gap-open-penalty": [
+        "-110",
+        "-111"
+      ],
+      "--smith-waterman-dangling-end-gap-extend-penalty": [
+        "-6",
+        "-7"
+      ],
+      "--smith-waterman-haplotype-to-reference-match-value": [
+        "200",
+        "201"
+      ],
+      "--smith-waterman-haplotype-to-reference-mismatch-penalty": [
+        "-150",
+        "-151"
+      ],
+      "--smith-waterman-haplotype-to-reference-gap-open-penalty": [
+        "-260",
+        "-261"
+      ],
+      "--smith-waterman-haplotype-to-reference-gap-extend-penalty": [
+        "-11",
+        "-12"
+      ],
+      "--smith-waterman-read-to-haplotype-match-value": [
+        "10",
+        "11"
+      ],
+      "--smith-waterman-read-to-haplotype-mismatch-penalty": [
+        "-15",
+        "-16"
+      ],
+      "--smith-waterman-read-to-haplotype-gap-open-penalty": [
+        "-30",
+        "-31"
+      ],
+      "--smith-waterman-read-to-haplotype-gap-extend-penalty": [
+        "-5",
+        "-6"
+      ],
+      "--dragen-378-concordance-mode": [],
+      "--flow-mode": [
+        "NONE",
+        "STANDARD",
+        "ADVANCED"
+      ],
+      "--flow-assembly-collapse-partial-mode": [
+        "false",
+        "true"
+      ],
+      "--flow-disallow-probs-larger-than-call": [
+        "false",
+        "true"
+      ],
+      "--flow-filter-alleles": [
+        "false",
+        "true"
+      ],
+      "--flow-filter-lone-alleles": [
+        "false",
+        "true"
+      ],
+      "--flow-lump-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-non-single-base-pair-indels": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-one-zero-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-report-insertion-or-deletion": [
+        "false",
+        "true"
+      ],
+      "--flow-retain-max-n-probs-base-format": [
+        "false",
+        "true"
+      ],
+      "--flow-symmetric-indel-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-use-t0-tag": [
+        "false",
+        "true"
+      ],
+      "--keep-boundary-flows": [
+        "false",
+        "true"
+      ],
+      "--pileup-detection": [
+        "false",
+        "true"
+      ],
+      "--use-pdhmm": [
+        "false",
+        "true"
+      ],
+      "--use-pdhmm-overlap-optimization": [
+        "false",
+        "true"
+      ],
+      "--linked-de-bruijn-graph": [
+        "false",
+        "true"
+      ],
+      "--read-index": [],
+      "--enable-all-annotations": [
+        "false"
+      ],
+      "--dragstr-params-path": [
+        "null",
+        "/work/fixtures/dragstr.txt"
+      ],
+      "--dragstr-het-hom-ratio": [
+        "2",
+        "4"
+      ],
+      "--max-effective-depth-adjustment-for-frd": [
+        "0",
+        "4"
+      ],
+      "--sample-name": [
+        "null",
+        "tumor"
+      ],
+      "--disable-optimizations": [
+        "false",
+        "true"
+      ],
+      "--pedigree": [
+        "null",
+        "/work/fixtures/callers.ped"
+      ],
+      "--founder-id": [
+        "null",
+        "normal"
+      ],
+      "--denovo-parent-gq-threshold": [
+        "20",
+        "0"
+      ],
+      "--denovo-depth-threshold": [
+        "0",
+        "30"
+      ],
+      "--disable-artificial-haplotype-recovery": [
+        "false",
+        "true"
+      ],
+      "$hidden": [
+        {
+          "name": "--flow-likelihood-parallel-threads",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-likelihood-optimized-comp",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--trim-to-haplotype",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--exact-matching",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-order-cycle-length",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "4",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-hmm-engine-min-indel-adjust",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "6",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-hmm-engine-flat-insertion-penatly",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "45",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-hmm-engine-flat-deletion-penatly",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "45",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-assembly-collapse-hmer-size",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--use-flow-aligner-for-stepwise-hc-filtering",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-enable-indel-pileup-calling",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-active-region-phred-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--num-artificial-haplotypes-to-add-per-allele",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "5",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--artifical-haplotype-filtering-kmer-size",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "10",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-snp-alt-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-indel-alt-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-absolute-alt-depth",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-snp-adjacent-to-assembled-indel-range",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "5",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-snp-basequality-filter",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "12",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-bad-read-tolerance",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-proper-pair-read-badness",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-edit-distance-read-badness-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.08",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-chimeric-read-badness",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-template-mean-badness-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-template-std-badness-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-filter-assembly-alt-bad-read-tolerance",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-edit-distance-read-badness-for-assembly-filtering-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.12",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--print-pileupcalling-status",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pdhmm-results-file",
+          "short": null,
+          "type": "GATKPath",
+          "required": false,
+          "kind": "advanced",
+          "default": "null",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--make-determined-haps-from-pd-code",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--fallback-gga-if-pdhmm-fails",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--keep-rg",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "hidden",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--just-determine-active-regions",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "hidden",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--debug-assembly-region-state",
+          "short": null,
+          "type": "GATKPath",
+          "required": false,
+          "kind": "advanced",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--debug-genotyper-output",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "advanced",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--dont-genotype",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "hidden",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--debug-graph-transformations",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "hidden",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--debug-assembly-variants-out",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "hidden",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--haplotype-debug-histogram-output",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "hidden",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--capture-assembly-failure-bam",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "hidden",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--alm-path",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "advanced",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--alm-interval",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "advanced",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--error-correct-reads",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--kmer-length-for-read-error-correction",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "25",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--min-observations-for-kmer-to-be-solid",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "20",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--error-correction-log-odds",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "-Infinity",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--dirichlet-prior-pseudo-count",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "1.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--dirichlet-keep-prior-in-count",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pseudo-count-weight-decay-rate",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "1.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--assembly-complexity-reference-mode",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--allow-old-rms-mapping-quality-annotation-data",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-filter-alleles-debug-graphs",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        }
+      ],
+      "--flow-fill-empty-bins-value": [
+        "0.001",
+        "0.0001"
+      ],
+      "--flow-quantization-bins": [
+        "121",
+        "50"
+      ],
+      "--flow-probability-scaling-factor": [
+        "10",
+        "5"
+      ],
+      "--flow-matrix-mods": [
+        "null",
+        "10,12,11,12"
+      ],
+      "--flow-filter-alleles-qual-threshold": [
+        "30",
+        "300"
+      ],
+      "--flow-filter-alleles-sor-threshold": [
+        "3",
+        "1"
+      ],
+      "--flow-order-for-annotations": [
+        "null",
+        "ACGT"
+      ],
+      "--flow-likelihood-parallel-threads": [
+        "0",
+        "2"
+      ],
+      "--flow-likelihood-optimized-comp": [
+        "false",
+        "true"
+      ],
+      "--trim-to-haplotype": [
+        "true",
+        "false"
+      ],
+      "--exact-matching": [
+        "false",
+        "true"
+      ],
+      "--flow-order-cycle-length": [
+        "4",
+        "8"
+      ],
+      "--flow-hmm-engine-min-indel-adjust": [
+        "6",
+        "20"
+      ],
+      "--flow-hmm-engine-flat-insertion-penatly": [
+        "45",
+        "30"
+      ],
+      "--flow-hmm-engine-flat-deletion-penatly": [
+        "45",
+        "35"
+      ],
+      "--flow-assembly-collapse-hmer-size": [
+        "0",
+        "4",
+        "-1"
+      ],
+      "--use-flow-aligner-for-stepwise-hc-filtering": [
+        "false",
+        "true"
+      ],
+      "--pileup-detection-enable-indel-pileup-calling": [
+        "false",
+        "true"
+      ],
+      "--pileup-detection-active-region-phred-threshold": [
+        "0.0",
+        "3.0"
+      ],
+      "--num-artificial-haplotypes-to-add-per-allele": [
+        "5",
+        "1"
+      ],
+      "--artifical-haplotype-filtering-kmer-size": [
+        "10",
+        "25"
+      ],
+      "--pileup-detection-snp-alt-threshold": [
+        "0.1",
+        "0.4"
+      ],
+      "--pileup-detection-indel-alt-threshold": [
+        "0.1",
+        "0.3"
+      ],
+      "--pileup-detection-absolute-alt-depth": [
+        "0.0",
+        "30.0"
+      ],
+      "--pileup-detection-snp-adjacent-to-assembled-indel-range": [
+        "5",
+        "250"
+      ],
+      "--pileup-detection-snp-basequality-filter": [
+        "12",
+        "25"
+      ],
+      "--pileup-detection-bad-read-tolerance": [
+        "0.0",
+        "0.4"
+      ],
+      "--pileup-detection-proper-pair-read-badness": [
+        "true",
+        "false"
+      ],
+      "--pileup-detection-edit-distance-read-badness-threshold": [
+        "0.08",
+        "0.03"
+      ],
+      "--pileup-detection-chimeric-read-badness": [
+        "true",
+        "false"
+      ],
+      "--pileup-detection-template-mean-badness-threshold": [
+        "0.0",
+        "300.0"
+      ],
+      "--pileup-detection-template-std-badness-threshold": [
+        "0.0",
+        "40.0"
+      ],
+      "--pileup-detection-filter-assembly-alt-bad-read-tolerance": [
+        "0.0",
+        "0.4"
+      ],
+      "--pileup-detection-edit-distance-read-badness-for-assembly-filtering-threshold": [
+        "0.12",
+        "0.05"
+      ],
+      "--print-pileupcalling-status": [
+        "false",
+        "true"
+      ],
+      "--pdhmm-results-file": [],
+      "--make-determined-haps-from-pd-code": [
+        "false",
+        "true"
+      ],
+      "--fallback-gga-if-pdhmm-fails": [
+        "true",
+        "false"
+      ],
+      "--alleles": [
+        "null",
+        "/work/fixtures/given_alleles.vcf"
+      ],
+      "--force-call-filtered-alleles": [
+        "false",
+        "true"
+      ],
+      "--bam-output": [
+        "null",
+        "/work/out/bamout.bam"
+      ],
+      "--bam-writer-type": [
+        "CALLED_HAPLOTYPES",
+        "ALL_POSSIBLE_HAPLOTYPES",
+        "NO_HAPLOTYPES",
+        "CALLED_HAPLOTYPES_NO_READS"
+      ],
+      "--graph-output": [],
+      "--debug-graph-transformations": [
+        "false"
+      ],
+      "--debug-assembly-variants-out": [],
+      "--haplotype-debug-histogram-output": [],
+      "--capture-assembly-failure-bam": [
+        "false",
+        "true"
+      ],
+      "--pair-hmm-results-file": [],
+      "--alm-path": [],
+      "--alm-interval": [
+        "chr1:900-1300",
+        "null"
+      ],
+      "--debug-assembly-region-state": [],
+      "--debug-genotyper-output": [],
+      "--keep-rg": [
+        "null",
+        "rgT",
+        "rgN"
+      ],
+      "--just-determine-active-regions": [
+        "false",
+        "true"
+      ],
+      "--dont-genotype": [
+        "false",
+        "true"
+      ],
+      "--error-correct-reads": [
+        "false",
+        "true"
+      ],
+      "--kmer-length-for-read-error-correction": [
+        "25",
+        "10"
+      ],
+      "--min-observations-for-kmer-to-be-solid": [
+        "20",
+        "2"
+      ],
+      "--error-correction-log-odds": [
+        "-Infinity",
+        "10.0",
+        "1000.0"
+      ],
+      "--dbsnp": [
+        "null",
+        "/work/fixtures/resources.vcf"
+      ],
+      "--comparison": [
+        "null",
+        "/work/fixtures/resources.vcf"
+      ],
+      "--population-callset": [
+        "null",
+        "/work/fixtures/resources.vcf"
+      ],
+      "--num-reference-samples-if-no-call": [
+        "0",
+        "5"
+      ],
+      "--ploidy-regions": [
+        "null",
+        "/work/fixtures/ploidy_haploid.bed",
+        "/work/fixtures/ploidy_mixed.bed"
+      ],
+      "--contamination-fraction-to-filter": [
+        "0.0",
+        "0.2",
+        "0.05"
+      ],
+      "--contamination-fraction-per-sample-file": [
+        "null",
+        "/work/fixtures/contamination.txt"
+      ],
+      "--use-filtered-reads-for-annotations": [
+        "false",
+        "true"
+      ],
+      "--dirichlet-prior-pseudo-count": [
+        "<unset>",
+        "2.0"
+      ],
+      "--dirichlet-keep-prior-in-count": [
+        "<unset>",
+        "true"
+      ],
+      "--pseudo-count-weight-decay-rate": [
+        "<unset>",
+        "0.5"
+      ],
+      "--assembly-complexity-reference-mode": [
+        "<unset>",
+        "true"
+      ],
+      "--allow-old-rms-mapping-quality-annotation-data": [
+        "false",
+        "true"
+      ],
+      "--flow-filter-alleles-debug-graphs": [
+        "false",
+        "true"
+      ],
+      "--native-pair-hmm-threads": [
+        "4",
+        "1"
+      ],
+      "--reference-model-deletion-quality": [
+        "30",
+        "20"
+      ],
+      "--annotation": [
+        "<unset>",
+        "AssemblyComplexity AllelePseudoDepth"
+      ],
+      "--annotation-group": [
+        "<unset>",
+        "StandardAnnotation"
+      ],
+      "--annotations-to-exclude": [
+        "<unset>",
+        "QualByDepth"
+      ],
+      "$lists": [
+        "--annotation",
+        "--annotation-group",
+        "--annotations-to-exclude"
+      ],
+      "--read-shard-size": [
+        "5000",
+        "1000"
+      ],
+      "--read-shard-padding": [
+        "100",
+        "0"
+      ],
+      "--strict": [
+        "false",
+        "true"
+      ],
+      "--shuffle": [
+        "false",
+        "true"
+      ],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--program-name": [
+        "caller",
+        "caller2"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--sharded-output": [],
+      "--create-output-bam-splitting-index": [],
+      "--splitting-index-granularity": [],
+      "--use-nio": []
+    },
+    "ReadsPipelineSpark": {
+      "--use-jdk-deflater": [
+        "true"
+      ],
+      "$why": [
+        "HaplotypeCallerSpark's caller values, over mutect_pl.bam: mutect_t.bam under a read group that names a platform, which the recalibration refuses to go without, and that second input stays as the refusal.",
+        "The BWA arguments are held out because the port refuses --align until BWA-MEM is decided, and the flow arguments because the marking only reads them over flow reads, which this tool would recalibrate with nothing to compare. --binary-tag-name only reaches a table this tool never writes.",
+        "--enable-all-annotations stays off: the reference's Kryo cannot broadcast the annotation engine it builds, and which of two exceptions it reports (a lambda, a thread) moves from row to row. The port refuses it with the first.",
+        "The engine's debug files are held out: under Spark nothing closes them, so they hold what their buffers flushed, and the port refuses them rather than write them complete."
+      ],
+      "--input": [
+        "/work/fixtures/mutect_pl.bam",
+        "/work/fixtures/mutect_t.bam"
+      ],
+      "--reference": [
+        "/work/fixtures/mutect_ref.fasta"
+      ],
+      "--output": [
+        "/work/out/out.vcf"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:900-1300"
+      ],
+      "--exclude-intervals": [
+        "null",
+        "chr1:1590-1610"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--pair-hmm-implementation": [
+        "LOGLESS_CACHING"
+      ],
+      "--smith-waterman": [
+        "JAVA"
+      ],
+      "--likelihood-calculation-engine": [
+        "PairHMM",
+        "FlowBased",
+        "FlowBasedHMM"
+      ],
+      "--smith-waterman-dangling-end-match-value": [
+        "25",
+        "26"
+      ],
+      "--smith-waterman-dangling-end-mismatch-penalty": [
+        "-50",
+        "-51"
+      ],
+      "--smith-waterman-dangling-end-gap-open-penalty": [
+        "-110",
+        "-111"
+      ],
+      "--smith-waterman-dangling-end-gap-extend-penalty": [
+        "-6",
+        "-7"
+      ],
+      "--smith-waterman-haplotype-to-reference-match-value": [
+        "200",
+        "201"
+      ],
+      "--smith-waterman-haplotype-to-reference-mismatch-penalty": [
+        "-150",
+        "-151"
+      ],
+      "--smith-waterman-haplotype-to-reference-gap-open-penalty": [
+        "-260",
+        "-261"
+      ],
+      "--smith-waterman-haplotype-to-reference-gap-extend-penalty": [
+        "-11",
+        "-12"
+      ],
+      "--smith-waterman-read-to-haplotype-match-value": [
+        "10",
+        "11"
+      ],
+      "--smith-waterman-read-to-haplotype-mismatch-penalty": [
+        "-15",
+        "-16"
+      ],
+      "--smith-waterman-read-to-haplotype-gap-open-penalty": [
+        "-30",
+        "-31"
+      ],
+      "--smith-waterman-read-to-haplotype-gap-extend-penalty": [
+        "-5",
+        "-6"
+      ],
+      "--dragen-378-concordance-mode": [],
+      "--flow-mode": [
+        "NONE",
+        "STANDARD",
+        "ADVANCED"
+      ],
+      "--flow-assembly-collapse-partial-mode": [
+        "false",
+        "true"
+      ],
+      "--flow-disallow-probs-larger-than-call": [
+        "false",
+        "true"
+      ],
+      "--flow-filter-alleles": [
+        "false",
+        "true"
+      ],
+      "--flow-filter-lone-alleles": [
+        "false",
+        "true"
+      ],
+      "--flow-lump-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-non-single-base-pair-indels": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-one-zero-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-report-insertion-or-deletion": [
+        "false",
+        "true"
+      ],
+      "--flow-retain-max-n-probs-base-format": [
+        "false",
+        "true"
+      ],
+      "--flow-symmetric-indel-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-use-t0-tag": [
+        "false",
+        "true"
+      ],
+      "--keep-boundary-flows": [
+        "false",
+        "true"
+      ],
+      "--pileup-detection": [
+        "false",
+        "true"
+      ],
+      "--use-pdhmm": [
+        "false",
+        "true"
+      ],
+      "--use-pdhmm-overlap-optimization": [
+        "false",
+        "true"
+      ],
+      "--linked-de-bruijn-graph": [
+        "false",
+        "true"
+      ],
+      "--read-index": [],
+      "--enable-all-annotations": [
+        "false"
+      ],
+      "--dragstr-params-path": [
+        "null",
+        "/work/fixtures/dragstr.txt"
+      ],
+      "--dragstr-het-hom-ratio": [
+        "2",
+        "4"
+      ],
+      "--max-effective-depth-adjustment-for-frd": [
+        "0",
+        "4"
+      ],
+      "--sample-name": [
+        "null",
+        "tumor"
+      ],
+      "--disable-optimizations": [
+        "false",
+        "true"
+      ],
+      "--pedigree": [
+        "null",
+        "/work/fixtures/callers.ped"
+      ],
+      "--founder-id": [
+        "null",
+        "normal"
+      ],
+      "--denovo-parent-gq-threshold": [
+        "20",
+        "0"
+      ],
+      "--denovo-depth-threshold": [
+        "0",
+        "30"
+      ],
+      "--disable-artificial-haplotype-recovery": [
+        "false",
+        "true"
+      ],
+      "$hidden": [
+        {
+          "name": "--flow-likelihood-parallel-threads",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-likelihood-optimized-comp",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--trim-to-haplotype",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--exact-matching",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-order-cycle-length",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "4",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-hmm-engine-min-indel-adjust",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "6",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-hmm-engine-flat-insertion-penatly",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "45",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-hmm-engine-flat-deletion-penatly",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "45",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-assembly-collapse-hmer-size",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--use-flow-aligner-for-stepwise-hc-filtering",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-enable-indel-pileup-calling",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-active-region-phred-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--num-artificial-haplotypes-to-add-per-allele",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "5",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--artifical-haplotype-filtering-kmer-size",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "10",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-snp-alt-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-indel-alt-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-absolute-alt-depth",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-snp-adjacent-to-assembled-indel-range",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "5",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-snp-basequality-filter",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "12",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-bad-read-tolerance",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-proper-pair-read-badness",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-edit-distance-read-badness-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.08",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-chimeric-read-badness",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-template-mean-badness-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-template-std-badness-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-filter-assembly-alt-bad-read-tolerance",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-edit-distance-read-badness-for-assembly-filtering-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.12",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--print-pileupcalling-status",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pdhmm-results-file",
+          "short": null,
+          "type": "GATKPath",
+          "required": false,
+          "kind": "advanced",
+          "default": "null",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--make-determined-haps-from-pd-code",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--fallback-gga-if-pdhmm-fails",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--keep-rg",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "hidden",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--just-determine-active-regions",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "hidden",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--debug-assembly-region-state",
+          "short": null,
+          "type": "GATKPath",
+          "required": false,
+          "kind": "advanced",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--debug-genotyper-output",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "advanced",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--dont-genotype",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "hidden",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--debug-graph-transformations",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "hidden",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--debug-assembly-variants-out",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "hidden",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--haplotype-debug-histogram-output",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "hidden",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--capture-assembly-failure-bam",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "hidden",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--alm-path",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "advanced",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--alm-interval",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "advanced",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--error-correct-reads",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--kmer-length-for-read-error-correction",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "25",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--min-observations-for-kmer-to-be-solid",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "20",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--error-correction-log-odds",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "-Infinity",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--dirichlet-prior-pseudo-count",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "1.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--dirichlet-keep-prior-in-count",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pseudo-count-weight-decay-rate",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "1.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--assembly-complexity-reference-mode",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--allow-old-rms-mapping-quality-annotation-data",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-filter-alleles-debug-graphs",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        }
+      ],
+      "--flow-fill-empty-bins-value": [
+        "0.001",
+        "0.0001"
+      ],
+      "--flow-quantization-bins": [
+        "121",
+        "50"
+      ],
+      "--flow-probability-scaling-factor": [
+        "10",
+        "5"
+      ],
+      "--flow-matrix-mods": [
+        "null",
+        "10,12,11,12"
+      ],
+      "--flow-filter-alleles-qual-threshold": [
+        "30",
+        "300"
+      ],
+      "--flow-filter-alleles-sor-threshold": [
+        "3",
+        "1"
+      ],
+      "--flow-order-for-annotations": [
+        "null",
+        "ACGT"
+      ],
+      "--flow-likelihood-parallel-threads": [
+        "0",
+        "2"
+      ],
+      "--flow-likelihood-optimized-comp": [
+        "false",
+        "true"
+      ],
+      "--trim-to-haplotype": [
+        "true",
+        "false"
+      ],
+      "--exact-matching": [
+        "false",
+        "true"
+      ],
+      "--flow-order-cycle-length": [
+        "4",
+        "8"
+      ],
+      "--flow-hmm-engine-min-indel-adjust": [
+        "6",
+        "20"
+      ],
+      "--flow-hmm-engine-flat-insertion-penatly": [
+        "45",
+        "30"
+      ],
+      "--flow-hmm-engine-flat-deletion-penatly": [
+        "45",
+        "35"
+      ],
+      "--flow-assembly-collapse-hmer-size": [
+        "0",
+        "4",
+        "-1"
+      ],
+      "--use-flow-aligner-for-stepwise-hc-filtering": [
+        "false",
+        "true"
+      ],
+      "--pileup-detection-enable-indel-pileup-calling": [
+        "false",
+        "true"
+      ],
+      "--pileup-detection-active-region-phred-threshold": [
+        "0.0",
+        "3.0"
+      ],
+      "--num-artificial-haplotypes-to-add-per-allele": [
+        "5",
+        "1"
+      ],
+      "--artifical-haplotype-filtering-kmer-size": [
+        "10",
+        "25"
+      ],
+      "--pileup-detection-snp-alt-threshold": [
+        "0.1",
+        "0.4"
+      ],
+      "--pileup-detection-indel-alt-threshold": [
+        "0.1",
+        "0.3"
+      ],
+      "--pileup-detection-absolute-alt-depth": [
+        "0.0",
+        "30.0"
+      ],
+      "--pileup-detection-snp-adjacent-to-assembled-indel-range": [
+        "5",
+        "250"
+      ],
+      "--pileup-detection-snp-basequality-filter": [
+        "12",
+        "25"
+      ],
+      "--pileup-detection-bad-read-tolerance": [
+        "0.0",
+        "0.4"
+      ],
+      "--pileup-detection-proper-pair-read-badness": [
+        "true",
+        "false"
+      ],
+      "--pileup-detection-edit-distance-read-badness-threshold": [
+        "0.08",
+        "0.03"
+      ],
+      "--pileup-detection-chimeric-read-badness": [
+        "true",
+        "false"
+      ],
+      "--pileup-detection-template-mean-badness-threshold": [
+        "0.0",
+        "300.0"
+      ],
+      "--pileup-detection-template-std-badness-threshold": [
+        "0.0",
+        "40.0"
+      ],
+      "--pileup-detection-filter-assembly-alt-bad-read-tolerance": [
+        "0.0",
+        "0.4"
+      ],
+      "--pileup-detection-edit-distance-read-badness-for-assembly-filtering-threshold": [
+        "0.12",
+        "0.05"
+      ],
+      "--print-pileupcalling-status": [
+        "false",
+        "true"
+      ],
+      "--pdhmm-results-file": [],
+      "--make-determined-haps-from-pd-code": [
+        "false",
+        "true"
+      ],
+      "--fallback-gga-if-pdhmm-fails": [
+        "true",
+        "false"
+      ],
+      "--alleles": [
+        "null",
+        "/work/fixtures/given_alleles.vcf"
+      ],
+      "--force-call-filtered-alleles": [
+        "false",
+        "true"
+      ],
+      "--bam-output": [
+        "null",
+        "/work/out/bamout.bam"
+      ],
+      "--bam-writer-type": [
+        "CALLED_HAPLOTYPES",
+        "ALL_POSSIBLE_HAPLOTYPES",
+        "NO_HAPLOTYPES",
+        "CALLED_HAPLOTYPES_NO_READS"
+      ],
+      "--graph-output": [],
+      "--debug-graph-transformations": [
+        "false"
+      ],
+      "--debug-assembly-variants-out": [],
+      "--haplotype-debug-histogram-output": [],
+      "--capture-assembly-failure-bam": [
+        "false",
+        "true"
+      ],
+      "--pair-hmm-results-file": [],
+      "--alm-path": [],
+      "--alm-interval": [
+        "chr1:900-1300",
+        "null"
+      ],
+      "--debug-assembly-region-state": [],
+      "--debug-genotyper-output": [],
+      "--keep-rg": [
+        "null",
+        "rgT",
+        "rgN"
+      ],
+      "--just-determine-active-regions": [
+        "false",
+        "true"
+      ],
+      "--dont-genotype": [
+        "false",
+        "true"
+      ],
+      "--error-correct-reads": [
+        "false",
+        "true"
+      ],
+      "--kmer-length-for-read-error-correction": [
+        "25",
+        "10"
+      ],
+      "--min-observations-for-kmer-to-be-solid": [
+        "20",
+        "2"
+      ],
+      "--error-correction-log-odds": [
+        "-Infinity",
+        "10.0",
+        "1000.0"
+      ],
+      "--dbsnp": [
+        "null",
+        "/work/fixtures/resources.vcf"
+      ],
+      "--comparison": [
+        "null",
+        "/work/fixtures/resources.vcf"
+      ],
+      "--population-callset": [
+        "null",
+        "/work/fixtures/resources.vcf"
+      ],
+      "--num-reference-samples-if-no-call": [
+        "0",
+        "5"
+      ],
+      "--ploidy-regions": [
+        "null",
+        "/work/fixtures/ploidy_haploid.bed",
+        "/work/fixtures/ploidy_mixed.bed"
+      ],
+      "--contamination-fraction-to-filter": [
+        "0.0",
+        "0.2",
+        "0.05"
+      ],
+      "--contamination-fraction-per-sample-file": [
+        "null",
+        "/work/fixtures/contamination.txt"
+      ],
+      "--use-filtered-reads-for-annotations": [
+        "false",
+        "true"
+      ],
+      "--dirichlet-prior-pseudo-count": [
+        "<unset>",
+        "2.0"
+      ],
+      "--dirichlet-keep-prior-in-count": [
+        "<unset>",
+        "true"
+      ],
+      "--pseudo-count-weight-decay-rate": [
+        "<unset>",
+        "0.5"
+      ],
+      "--assembly-complexity-reference-mode": [
+        "<unset>",
+        "true"
+      ],
+      "--allow-old-rms-mapping-quality-annotation-data": [
+        "false",
+        "true"
+      ],
+      "--flow-filter-alleles-debug-graphs": [
+        "false",
+        "true"
+      ],
+      "--native-pair-hmm-threads": [
+        "4",
+        "1"
+      ],
+      "--reference-model-deletion-quality": [
+        "30",
+        "20"
+      ],
+      "--annotation": [
+        "<unset>",
+        "AssemblyComplexity AllelePseudoDepth"
+      ],
+      "--annotation-group": [
+        "<unset>",
+        "StandardAnnotation"
+      ],
+      "--annotations-to-exclude": [
+        "<unset>",
+        "QualByDepth"
+      ],
+      "$lists": [
+        "--annotation",
+        "--annotation-group",
+        "--annotations-to-exclude"
+      ],
+      "--read-shard-size": [
+        "5000",
+        "1000"
+      ],
+      "--read-shard-padding": [
+        "100",
+        "0"
+      ],
+      "--strict": [
+        "false",
+        "true"
+      ],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--program-name": [
+        "caller",
+        "caller2"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--sharded-output": [],
+      "--create-output-bam-splitting-index": [],
+      "--splitting-index-granularity": [],
+      "--use-nio": [],
+      "--known-sites": [
+        "/work/fixtures/resources.vcf",
+        "/work/fixtures/known.bed"
+      ],
+      "--output-bam": [
+        "null",
+        "/work/out/recalibrated.bam"
+      ],
+      "--align": [],
+      "--bwa-mem-index-image": [],
+      "--single-end-alignment": [],
+      "--binary-tag-name": [],
+      "--flowbased": [],
+      "--flow-end-pos-uncertainty": [],
+      "--flow-q-is-known-end": [],
+      "--flow-quality-sum-strategy": [],
+      "--flow-skip-start-homopolymers": [],
+      "--single-end-reads-clipping-is-end": [],
+      "--single-end-reads-end-position-significant": [],
+      "--duplicate-scoring-strategy": [
+        "SUM_OF_BASE_QUALITIES",
+        "TOTAL_MAPPED_REFERENCE_LENGTH"
+      ],
+      "--duplicate-tagging-policy": [
+        "<unset>",
+        "All",
+        "OpticalOnly"
+      ],
+      "--remove-all-duplicates": [
+        "<unset>",
+        "true"
+      ],
+      "--remove-sequencing-duplicates": [
+        "<unset>",
+        "true"
+      ],
+      "--do-not-mark-unmapped-mates": [
+        "false",
+        "true"
+      ],
+      "--allow-missing-read-group": [
+        "false",
+        "true"
+      ],
+      "--bqsr-baq-gap-open-penalty": [
+        "40.0",
+        "30.0"
+      ],
+      "--default-base-qualities": [
+        "-1",
+        "20"
+      ],
+      "--deletions-default-quality": [
+        "45",
+        "30"
+      ],
+      "--insertions-default-quality": [
+        "45",
+        "30"
+      ],
+      "--mismatches-default-quality": [
+        "-1",
+        "30"
+      ],
+      "--emit-original-quals": [
+        "false",
+        "true"
+      ],
+      "--global-qscore-prior": [
+        "-1.0",
+        "20.0"
+      ],
+      "--indels-context-size": [
+        "3",
+        "4"
+      ],
+      "--mismatches-context-size": [
+        "2",
+        "3"
+      ],
+      "--low-quality-tail": [
+        "2",
+        "3"
+      ],
+      "--maximum-cycle-value": [
+        "500",
+        "200"
+      ],
+      "--preserve-qscores-less-than": [
+        "6",
+        "20"
+      ],
+      "--quantizing-levels": [
+        "16",
+        "8"
+      ],
+      "--round-down-quantized": [
+        "false",
+        "true"
+      ],
+      "--static-quantized-quals": [
+        "null",
+        "30"
+      ],
+      "--use-original-qualities": [
+        "false",
+        "true"
+      ]
+    },
+    "PathSeqFilterSpark": {
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0"
+      ],
+      "--bam-partition-size": [
+        "0"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--read-index": [],
+      "$why": [
+        "An unaligned BAM with something for each transformer and a BAM with alignments and NM tags. --filter-bwa-image and --filter-bwa-seed-length are held out: the port refuses the first, and has no step for the second. --sharded-output and the outputs' indexes are held out as for the other tools that write one BAM, and --ignore-alignment-contigs would refuse every row it fills over --is-host-aligned, so a suite row carries it.",
+        "STRICT is held out: these reads carry flags a validator refuses, and it refuses inside a task whatever else the row holds. --sharded-output, --num-reducers and the partition size are held out because the reference then writes one part per reducer with Hadoop checksums, which the port refuses or writes as one part."
+      ],
+      "--input": [
+        "/work/fixtures/pathseq_filter.bam",
+        "/work/fixtures/pathseq_filter_aligned.bam"
+      ],
+      "--reference": [],
+      "--intervals": [
+        "<unset>"
+      ],
+      "--exclude-intervals": [
+        "<unset>"
+      ],
+      "--paired-output": [
+        "/work/out/paired.bam"
+      ],
+      "--unpaired-output": [
+        "/work/out/unpaired.bam"
+      ],
+      "--filter-metrics": [
+        "/work/out/filterMetrics.txt",
+        "<unset>"
+      ],
+      "--is-host-aligned": [
+        "false",
+        "true"
+      ],
+      "--kmer-file": [
+        "<unset>",
+        "/work/fixtures/pathseq_filter.hss",
+        "/work/fixtures/pathseq_filter.bfi"
+      ],
+      "--skip-quality-filters": [
+        "false",
+        "true"
+      ],
+      "--skip-pre-bwa-repartition": [
+        "false",
+        "true"
+      ],
+      "--min-clipped-read-length": [
+        "31",
+        "60"
+      ],
+      "--max-masked-bases": [
+        "2",
+        "10"
+      ],
+      "--min-base-quality": [
+        "15",
+        "31"
+      ],
+      "--quality-threshold": [
+        "15",
+        "31"
+      ],
+      "--dust-mask-quality": [
+        "2",
+        "9"
+      ],
+      "--dust-window": [
+        "64",
+        "32"
+      ],
+      "--dust-t": [
+        "20.0",
+        "5.0"
+      ],
+      "--host-min-identity": [
+        "30",
+        "70"
+      ],
+      "--ignore-alignment-contigs": [],
+      "--host-kmer-thresh": [
+        "1",
+        "30"
+      ],
+      "--filter-bwa-image": [],
+      "--filter-bwa-seed-length": [],
+      "--filter-reads-per-partition": [
+        "200000",
+        "3"
+      ],
+      "--filter-duplicates": [
+        "true",
+        "false"
+      ],
+      "--max-adapter-mismatches": [
+        "1",
+        "4"
+      ],
+      "--min-adapter-length": [
+        "12",
+        "8"
+      ],
+      "--read-validation-stringency": [
+        "SILENT",
+        "LENIENT"
+      ],
+      "--sharded-output": [
+        "false"
+      ],
+      "--use-jdk-deflater": [
+        "true"
+      ]
+    },
+    "PathSeqScoreSpark": {
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0"
+      ],
+      "--bam-partition-size": [
+        "0"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--read-index": [],
+      "$why": [
+        "Each input alone and both, with a contig the taxonomy does not know and alternate hits on XA and SA. --input is a refusal a suite row measures, and the intervals and the reference are never read, since the tool opens its reads through its own two arguments.",
+        "STRICT is held out: these reads carry flags a validator refuses, and it refuses inside a task whatever else the row holds. --sharded-output, --num-reducers and the partition size are held out because the reference then writes one part per reducer with Hadoop checksums, which the port refuses or writes as one part."
+      ],
+      "--input": [],
+      "--reference": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--paired-input": [
+        "/work/fixtures/pathseq_score_paired.bam",
+        "<unset>"
+      ],
+      "--unpaired-input": [
+        "/work/fixtures/pathseq_score_unpaired.bam",
+        "<unset>"
+      ],
+      "--output": [
+        "/work/out/scored.bam",
+        "<unset>"
+      ],
+      "--scores-output": [
+        "/work/out/scores.txt"
+      ],
+      "--taxonomy-file": [
+        "/work/fixtures/pathseq.db"
+      ],
+      "--score-metrics": [
+        "/work/out/scoreMetrics.txt",
+        "<unset>"
+      ],
+      "--score-warnings": [
+        "/work/out/warnings.txt",
+        "<unset>"
+      ],
+      "--min-score-identity": [
+        "0.9",
+        "0.99"
+      ],
+      "--identity-margin": [
+        "0.02",
+        "0.3"
+      ],
+      "--divide-by-genome-length": [
+        "false",
+        "true"
+      ],
+      "--not-normalized-by-kingdom": [
+        "false",
+        "true"
+      ],
+      "--score-reads-per-partition-estimate": [
+        "200000",
+        "2"
+      ],
+      "--read-validation-stringency": [
+        "SILENT",
+        "LENIENT"
+      ],
+      "--sharded-output": [
+        "false"
+      ],
+      "--use-jdk-deflater": [
+        "true"
+      ]
+    },
+    "ExtractSVEvidenceSpark": {
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:1-500"
+      ],
+      "--input": [
+        "/work/fixtures/sv_evidence.bam",
+        "/work/fixtures/sv_evidence2.bam",
+        "/work/fixtures/sv_evidence_lone.bam"
+      ],
+      "--read-index": [],
+      "--reference": [],
+      "--intervals": [
+        "<unset>",
+        "chr1:1-9000",
+        "chr2"
+      ],
+      "--output": [
+        "/work/out/evidence",
+        "/work/out/evidence2"
+      ],
+      "--program-name": [
+        "evidence",
+        "evidence2"
+      ],
+      "$why": [
+        "Reads with every kind of evidence, another template size, and an unpaired read for the refusal. The aligner image and kmers are required and never opened by this tool."
+      ],
+      "--cross-contigs-to-ignore": [
+        "<unset>",
+        "/work/fixtures/sv_ignore.txt",
+        "/work/fixtures/sv_ignore_bad.txt"
+      ],
+      "--read-metadata": [
+        "<unset>",
+        "/work/out/metadata.txt"
+      ],
+      "--high-coverage-intervals": [
+        "<unset>",
+        "/work/out/high.bed"
+      ],
+      "--min-evidence-mapq": [
+        "20",
+        "40"
+      ],
+      "--min-evidence-match-length": [
+        "45",
+        "80"
+      ],
+      "--allowed-short-fragment-overhang": [
+        "10",
+        "0"
+      ],
+      "--max-tracked-fragment-length": [
+        "2000",
+        "500"
+      ],
+      "--high-depth-coverage-factor": [
+        "3",
+        "1"
+      ],
+      "--high-depth-coverage-peak-factor": [
+        "7",
+        "2"
+      ],
+      "--aligner-index-image": [
+        "image.img"
+      ],
+      "--kmers-to-ignore": [
+        "kmers.txt"
+      ]
+    },
+    "DiscoverVariantsFromContigAlignmentsSAMSpark": {
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr2:13000-20000"
+      ],
+      "--input": [
+        "/work/fixtures/sv_contigs.bam",
+        "/work/fixtures/sv_contigs_small.bam"
+      ],
+      "--read-index": [],
+      "--reference": [
+        "/work/fixtures/sv_contigs.fasta"
+      ],
+      "--intervals": [
+        "<unset>",
+        "chr1:1-30000"
+      ],
+      "--output": [
+        "/work/out/discovered",
+        "/work/out/"
+      ],
+      "--program-name": [
+        "discovered",
+        "discovered2"
+      ],
+      "$why": [
+        "Contigs with each signature and a smaller set; the refusals, and the contigs the interpreter cannot read, are rows of the spark-walkers golden. The interval leaves each contig whole, since a contig cut in two has no primary alignment. --add-output-vcf-command-line is held at false because its line stamps the clock."
+      ],
+      "--aligner-index-image": [
+        "image.img"
+      ],
+      "--kmers-to-ignore": [
+        "kmers.txt"
+      ],
+      "--min-align-length": [
+        "50",
+        "100"
+      ],
+      "--min-mq": [
+        "30",
+        "10"
+      ],
+      "--truth-vcf": [
+        "<unset>",
+        "/work/fixtures/sv_truth.vcf"
+      ],
+      "--truth-interval-padding": [
+        "50",
+        "1"
+      ],
+      "--assembly-imprecise-evidence-overlap-uncertainty": [
+        "100",
+        "10"
+      ],
+      "--imprecise-variant-evidence-threshold": [
+        "7",
+        "3"
+      ],
+      "--cnv-calls": [
+        "<unset>",
+        "/work/fixtures/sv_cnv.vcf"
+      ],
+      "--max-callable-imprecise-deletion-size": [
+        "15000",
+        "1000"
+      ],
+      "--debug-mode": [
+        "false",
+        "true"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ]
+    },
+    "SvDiscoverFromLocalAssemblyContigAlignmentsSpark": {
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr2:13000-20000"
+      ],
+      "--input": [
+        "/work/fixtures/sv_assembly_no_breakend.bam",
+        "/work/fixtures/sv_assembly.bam"
+      ],
+      "--read-index": [],
+      "--reference": [
+        "/work/fixtures/sv_contigs.fasta"
+      ],
+      "--intervals": [
+        "<unset>",
+        "chr1:1-30000"
+      ],
+      "--output": [
+        "/work/out/assembled",
+        "/work/out/"
+      ],
+      "--program-name": [
+        "assembled",
+        "assembled2"
+      ],
+      "$why": [
+        "The rich set of contigs, and one without breakends for --cnv-calls: a CNV file stops on a breakend, whose end is negative, so that pair is forbidden and is a row of the spark-walkers golden. --use-jdk-deflater is held true so --write-sam replays on a host without ISA-L, and --add-output-vcf-command-line false because its line stamps the clock."
+      ],
+      "--aligner-index-image": [
+        "image.img"
+      ],
+      "--kmers-to-ignore": [
+        "kmers.txt"
+      ],
+      "--min-align-length": [
+        "50",
+        "90"
+      ],
+      "--min-mq": [
+        "30",
+        "70"
+      ],
+      "--truth-vcf": [
+        "<unset>",
+        "/work/fixtures/sv_truth.vcf"
+      ],
+      "--truth-interval-padding": [
+        "50",
+        "1"
+      ],
+      "--assembly-imprecise-evidence-overlap-uncertainty": [
+        "100",
+        "10"
+      ],
+      "--imprecise-variant-evidence-threshold": [
+        "7",
+        "3"
+      ],
+      "--cnv-calls": [
+        "<unset>",
+        "/work/fixtures/sv_cnv.vcf"
+      ],
+      "--max-callable-imprecise-deletion-size": [
+        "15000",
+        "1000"
+      ],
+      "--debug-mode": [
+        "false",
+        "true"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--write-sam": [
+        "false",
+        "true"
+      ],
+      "--use-jdk-deflater": [
+        "true"
+      ],
+      "--non-canonical-contig-names-file": [
+        "<unset>",
+        "/work/fixtures/sv_alt_tigs.txt"
+      ]
+    },
+    "CpxVariantReInterpreterSpark": {
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "<unset>"
+      ],
+      "--input": [
+        "/work/fixtures/sv_assembly.bam",
+        "/work/fixtures/sv_contigs.bam"
+      ],
+      "--read-index": [],
+      "--reference": [
+        "/work/fixtures/sv_contigs.fasta"
+      ],
+      "--intervals": [
+        "<unset>"
+      ],
+      "--aligner-index-image": [
+        "image.img"
+      ],
+      "--kmers-to-ignore": [
+        "kmers.txt"
+      ],
+      "--min-align-length": [
+        "50",
+        "90"
+      ],
+      "--min-mq": [
+        "30",
+        "70"
+      ],
+      "--truth-vcf": [
+        "<unset>",
+        "/work/fixtures/sv_truth.vcf"
+      ],
+      "--truth-interval-padding": [
+        "50",
+        "1"
+      ],
+      "--assembly-imprecise-evidence-overlap-uncertainty": [
+        "100",
+        "10"
+      ],
+      "--imprecise-variant-evidence-threshold": [
+        "7",
+        "3"
+      ],
+      "--cnv-calls": [
+        "<unset>",
+        "/work/fixtures/sv_cnv.vcf"
+      ],
+      "--max-callable-imprecise-deletion-size": [
+        "15000",
+        "1000"
+      ],
+      "--debug-mode": [
+        "false",
+        "true"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--non-canonical-contig-names-file": [
+        "<unset>",
+        "/work/fixtures/sv_alt_tigs.txt"
+      ],
+      "--cpx-vcf": [
+        "/work/fixtures/sv_cpx.vcf",
+        "/work/fixtures/sv_cpx_empty.vcf"
+      ],
+      "--prefix-out-vcf": [
+        "/work/out/reinterpreted",
+        "/work/out/other"
+      ],
+      "--program-name": [
+        "reinterpreted",
+        "reinterpreted2"
+      ],
+      "$why": [
+        "A VCF of complex calls and one with none, over the contigs behind them and over others. The refusals are rows of the spark-walkers golden. -L and -XL are held unset because a query needs the VCF indexed; that refusal is a row. --cnv-calls and --truth-vcf are read by nothing here, which the array measures. --add-output-vcf-command-line is held false because its line stamps the clock."
+      ]
+    },
+    "HtsgetReader": {
+      "--url": [
+        "https://localhost:1/base",
+        "https://localhost:1/other/"
+      ],
+      "--id": [
+        "reads",
+        "sample.bai"
+      ],
+      "--O": [
+        "/work/out/htsget.bin"
+      ],
+      "--format": [
+        "<unset>",
+        "CRAM"
+      ],
+      "--class": [
+        "<unset>",
+        "body"
+      ],
+      "--intervals": [
+        "<unset>",
+        "chr1:5-10"
+      ],
+      "--field": [
+        "<unset>",
+        "SEQ"
+      ],
+      "--tag": [
+        "<unset>",
+        "NM"
+      ],
+      "--notag": [
+        "<unset>",
+        "AS"
+      ],
+      "--reader-threads": [
+        "1",
+        "2"
+      ],
+      "--check-md5": [
+        "false",
+        "true"
+      ],
+      "$why": [
+        "Nothing listens on the port, and the refusal is the URI the arguments built, which is what they decide. The answers and what is done with them are the htsget-reader golden's, which starts a server. The class stays body: class=header refuses every other query parameter, and that refusal is a row of the golden."
       ]
     }
   },
@@ -13377,7 +16708,9 @@
     {
       "tools": [
         "HaplotypeCaller",
-        "RampedHaplotypeCaller"
+        "RampedHaplotypeCaller",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--floor-blocks": "true",
@@ -13388,7 +16721,9 @@
     {
       "tools": [
         "HaplotypeCaller",
-        "RampedHaplotypeCaller"
+        "RampedHaplotypeCaller",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--input": "/work/fixtures/mutect_tn.bam",
@@ -13399,7 +16734,9 @@
     {
       "tools": [
         "HaplotypeCaller",
-        "RampedHaplotypeCaller"
+        "RampedHaplotypeCaller",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--input": "/work/fixtures/mutect_tn.bam",
@@ -13410,7 +16747,9 @@
     {
       "tools": [
         "HaplotypeCaller",
-        "RampedHaplotypeCaller"
+        "RampedHaplotypeCaller",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--read-filter": "MappedReadFilter",
@@ -13540,7 +16879,9 @@
     },
     {
       "tools": [
-        "HaplotypeCaller"
+        "HaplotypeCaller",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--linked-de-bruijn-graph": "true",
@@ -13570,7 +16911,9 @@
     },
     {
       "tools": [
-        "HaplotypeCaller"
+        "HaplotypeCaller",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--likelihood-calculation-engine": "FlowBased",
@@ -13580,7 +16923,9 @@
     },
     {
       "tools": [
-        "HaplotypeCaller"
+        "HaplotypeCaller",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--likelihood-calculation-engine": "FlowBasedHMM",
@@ -13590,7 +16935,9 @@
     },
     {
       "tools": [
-        "HaplotypeCaller"
+        "HaplotypeCaller",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--flow-mode": "STANDARD",
@@ -13600,7 +16947,9 @@
     },
     {
       "tools": [
-        "HaplotypeCaller"
+        "HaplotypeCaller",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--flow-mode": "ADVANCED",
@@ -13610,7 +16959,9 @@
     },
     {
       "tools": [
-        "HaplotypeCaller"
+        "HaplotypeCaller",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--likelihood-calculation-engine": "FlowBased",
@@ -13620,7 +16971,9 @@
     },
     {
       "tools": [
-        "HaplotypeCaller"
+        "HaplotypeCaller",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--likelihood-calculation-engine": "FlowBasedHMM",
@@ -13630,7 +16983,9 @@
     },
     {
       "tools": [
-        "HaplotypeCaller"
+        "HaplotypeCaller",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--flow-mode": "STANDARD",
@@ -13640,7 +16995,9 @@
     },
     {
       "tools": [
-        "HaplotypeCaller"
+        "HaplotypeCaller",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--flow-mode": "ADVANCED",
@@ -13650,7 +17007,9 @@
     },
     {
       "tools": [
-        "HaplotypeCaller"
+        "HaplotypeCaller",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--likelihood-calculation-engine": "FlowBasedHMM",
@@ -13660,7 +17019,9 @@
     },
     {
       "tools": [
-        "HaplotypeCaller"
+        "HaplotypeCaller",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--flow-order-for-annotations": "ACGT",
@@ -13670,7 +17031,9 @@
     },
     {
       "tools": [
-        "HaplotypeCaller"
+        "HaplotypeCaller",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--flow-mode": "STANDARD",
@@ -13680,7 +17043,9 @@
     },
     {
       "tools": [
-        "HaplotypeCaller"
+        "HaplotypeCaller",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--use-flow-aligner-for-stepwise-hc-filtering": "true",
@@ -13690,7 +17055,9 @@
     },
     {
       "tools": [
-        "HaplotypeCaller"
+        "HaplotypeCaller",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--flow-mode": "ADVANCED",
@@ -13700,7 +17067,9 @@
     },
     {
       "tools": [
-        "HaplotypeCaller"
+        "HaplotypeCaller",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--use-flow-aligner-for-stepwise-hc-filtering": "true",
@@ -13710,7 +17079,9 @@
     },
     {
       "tools": [
-        "HaplotypeCaller"
+        "HaplotypeCaller",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--use-flow-aligner-for-stepwise-hc-filtering": "true",
@@ -13720,7 +17091,9 @@
     },
     {
       "tools": [
-        "HaplotypeCaller"
+        "HaplotypeCaller",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--use-flow-aligner-for-stepwise-hc-filtering": "true",
@@ -14001,7 +17374,9 @@
     {
       "tools": [
         "HaplotypeCaller",
-        "RampedHaplotypeCaller"
+        "RampedHaplotypeCaller",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--dont-genotype": "true",
@@ -14012,7 +17387,9 @@
     {
       "tools": [
         "HaplotypeCaller",
-        "RampedHaplotypeCaller"
+        "RampedHaplotypeCaller",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--dont-genotype": "true",
@@ -14023,7 +17400,9 @@
     {
       "tools": [
         "HaplotypeCaller",
-        "RampedHaplotypeCaller"
+        "RampedHaplotypeCaller",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--population-callset": "/work/fixtures/resources.vcf",
@@ -14034,7 +17413,9 @@
     {
       "tools": [
         "HaplotypeCaller",
-        "RampedHaplotypeCaller"
+        "RampedHaplotypeCaller",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--population-callset": "/work/fixtures/resources.vcf",
@@ -14046,7 +17427,9 @@
       "tools": [
         "HaplotypeCaller",
         "RampedHaplotypeCaller",
-        "Mutect2"
+        "Mutect2",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--dirichlet-prior-pseudo-count": "2.0",
@@ -14058,7 +17441,9 @@
       "tools": [
         "HaplotypeCaller",
         "RampedHaplotypeCaller",
-        "Mutect2"
+        "Mutect2",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--dirichlet-keep-prior-in-count": "true",
@@ -14070,7 +17455,9 @@
       "tools": [
         "HaplotypeCaller",
         "RampedHaplotypeCaller",
-        "Mutect2"
+        "Mutect2",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--pseudo-count-weight-decay-rate": "0.5",
@@ -14082,7 +17469,9 @@
       "tools": [
         "HaplotypeCaller",
         "RampedHaplotypeCaller",
-        "Mutect2"
+        "Mutect2",
+        "HaplotypeCallerSpark",
+        "ReadsPipelineSpark"
       ],
       "forbid": {
         "--assembly-complexity-reference-mode": "true",
@@ -14189,6 +17578,66 @@
         "--input": "/work/fixtures/dup_marks.bam"
       },
       "why": "Throwing on a difference stops the row before the outputs compare; the golden measures it."
+    },
+    {
+      "tools": [
+        "ReadsPipelineSpark"
+      ],
+      "forbid": {
+        "--duplicate-tagging-policy": "All",
+        "--remove-all-duplicates": "true"
+      },
+      "why": "The marking arguments exclude each other; Barclay refuses the pair while the command line is parsed, and after the annotation plugin, so a pedigree row would report that first."
+    },
+    {
+      "tools": [
+        "ReadsPipelineSpark"
+      ],
+      "forbid": {
+        "--duplicate-tagging-policy": "All",
+        "--remove-sequencing-duplicates": "true"
+      },
+      "why": "The marking arguments exclude each other; Barclay refuses the pair while the command line is parsed, and after the annotation plugin, so a pedigree row would report that first."
+    },
+    {
+      "tools": [
+        "ReadsPipelineSpark"
+      ],
+      "forbid": {
+        "--duplicate-tagging-policy": "OpticalOnly",
+        "--remove-all-duplicates": "true"
+      },
+      "why": "The marking arguments exclude each other; Barclay refuses the pair while the command line is parsed, and after the annotation plugin, so a pedigree row would report that first."
+    },
+    {
+      "tools": [
+        "ReadsPipelineSpark"
+      ],
+      "forbid": {
+        "--duplicate-tagging-policy": "OpticalOnly",
+        "--remove-sequencing-duplicates": "true"
+      },
+      "why": "The marking arguments exclude each other; Barclay refuses the pair while the command line is parsed, and after the annotation plugin, so a pedigree row would report that first."
+    },
+    {
+      "tools": [
+        "ReadsPipelineSpark"
+      ],
+      "forbid": {
+        "--remove-all-duplicates": "true",
+        "--remove-sequencing-duplicates": "true"
+      },
+      "why": "The same mutual exclusion, between the two removals."
+    },
+    {
+      "tools": [
+        "SvDiscoverFromLocalAssemblyContigAlignmentsSpark"
+      ],
+      "forbid": {
+        "--cnv-calls": "/work/fixtures/sv_cnv.vcf",
+        "--input": "/work/fixtures/sv_assembly.bam"
+      },
+      "why": "A breakend's end is negative, so any CNV file fails on it before anything else is measured."
     }
   ],
   "exclude": {

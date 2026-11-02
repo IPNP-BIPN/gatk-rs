@@ -34,7 +34,10 @@ pub use funcotator::{funcotate_segments, funcotator, funcotator_data_source_down
 pub type Outcome = Result<Option<String>, Thrown>;
 
 mod haplotype_caller;
-pub use haplotype_caller::{haplotype_caller, haplotype_caller_modes, ramped_haplotype_caller};
+pub use haplotype_caller::{
+    haplotype_caller, haplotype_caller_modes, haplotype_caller_spark, ramped_haplotype_caller,
+    reads_pipeline_spark,
+};
 mod mutect2;
 pub use mutect2::{mutect2, mutect2_modes};
 mod joint_germline_cnv;
@@ -511,6 +514,36 @@ fn read_filter<'a>(
             .iter()
             .all(|(filter, negated)| filter.decide(read).unwrap_or(false) != *negated)
     }))
+}
+
+/// `ReadFilter.fromList(HaplotypeCallerEngine.makeStandardHCReadFilters(), header)`: the engine's
+/// filters at their own defaults, whatever the command line set for filters of the same name.
+pub(crate) fn standard_hc_read_filter(
+    header: &SamHeader,
+) -> Result<impl Fn(&BamRecord) -> bool + '_, Thrown> {
+    let mut plain = Vec::new();
+    for name in [
+        "MappingQualityAvailableReadFilter",
+        "MappedReadFilter",
+        "NotSecondaryAlignmentReadFilter",
+        "NotDuplicateReadFilter",
+        "PassesVendorQualityCheckReadFilter",
+        "NonZeroReferenceLengthAlignmentReadFilter",
+        "GoodCigarReadFilter",
+    ] {
+        plain.push(gatk_readfilter::by_name(name).ok_or_else(|| {
+            Thrown::non_user(
+                PORT_LIMITATION,
+                format!("{name} is a GATK read filter that this port does not carry yet."),
+            )
+        })?);
+    }
+    let floor = gatk_readfilter::Parameterized::MappingQuality { min: 20, max: None };
+    Ok(move |read: &BamRecord| {
+        floor.decide(read).unwrap_or(false)
+            && plain.iter().all(|filter| filter(read))
+            && gatk_readfilter::with_header::wellformed(read, header)
+    })
 }
 
 /// `--read-index`: the index to use for each reads input, in place of the one the name implies.
@@ -1005,7 +1038,8 @@ fn vcf_dictionary(text: &str) -> SamHeader {
         };
         let body = body.trim_end_matches('>');
         let mut name = None;
-        let mut length = None;
+        // `getSAMSequenceRecord`: a line without a length is `UNKNOWN_SEQUENCE_LENGTH`, which is 0.
+        let mut length = Some(0);
         for field in body.split(',') {
             match field.split_once('=') {
                 Some(("ID", value)) => name = Some(value.to_string()),
@@ -4218,8 +4252,6 @@ fn filtration_record(
 /// read filter, and a locus whose reference base is not one of `ACGT` produces no row at all
 /// instead of an empty one.
 pub fn collect_allelic_counts(parser: &Parser) -> Outcome {
-    use gatk_tools::collect_allelic_counts as allelic;
-
     let ReadWalkerStart {
         source,
         header,
@@ -4269,11 +4301,25 @@ pub fn collect_allelic_counts(parser: &Parser) -> Outcome {
     )
     .map_err(locus_traversal_error)?;
 
+    allelic_counts_table(parser, &header, &mut reference, &applied, &sample, &output)
+}
+
+/// `AllelicCountCollector.collectAtLocus` over the loci, and the table written.
+fn allelic_counts_table(
+    parser: &Parser,
+    header: &SamHeader,
+    reference: &mut gatk_engine::reference::ReferenceFileSource,
+    applied: &[gatk_tools::locus_walker::Applied<'_>],
+    sample: &str,
+    output: &str,
+) -> Outcome {
+    use gatk_tools::collect_allelic_counts as allelic;
+
     // The reference's own dictionary, which is what its refusal prints.
-    let reference_sequences = gatk_tools::reference_walker::dictionary(&reference).sequences;
+    let reference_sequences = gatk_tools::reference_walker::dictionary(reference).sequences;
     let minimum_base_quality = number_or(parser, "minimum-base-quality", 20).max(0) as u8;
     let mut counts = Vec::new();
-    for one in &applied {
+    for one in applied {
         // `referenceContext.getBase()`: the one base under the locus, upper-cased and with its
         // IUPAC codes flattened like every other reference query in this engine.
         let bases = reference
@@ -4314,8 +4360,8 @@ pub fn collect_allelic_counts(parser: &Parser) -> Outcome {
         .map(|sequence| (sequence.name.clone(), sequence.length))
         .collect();
     write_file(
-        &output,
-        allelic::write(&sequences, &sample, &counts).as_bytes(),
+        output,
+        allelic::write(&sequences, sample, &counts).as_bytes(),
     )?;
     Ok(None)
 }
@@ -10199,11 +10245,12 @@ pub fn collect_read_counts(parser: &Parser) -> Outcome {
 
 /// `MetadataUtils.readSampleName`: one distinct `SM` over the read groups, or an
 /// `IllegalArgumentException` naming what it found instead.
-fn sample_name(header: &SamHeader) -> Result<String, Thrown> {
+pub(crate) fn sample_name(header: &SamHeader) -> Result<String, Thrown> {
     let refuse = |message: String| Thrown::non_user("java.lang.IllegalArgumentException", message);
     if header.read_groups.is_empty() {
         return Err(refuse(
-            "The input header does not contain any read groups.  Cannot determine a sample name."
+            "The collection is empty: The input header does not contain any read groups.  \
+             Cannot determine a sample name."
                 .to_string(),
         ));
     }
@@ -12458,6 +12505,32 @@ pub(crate) fn recalibration_table(
     intervals: &[gatk_engine::interval::SimpleInterval],
     filters: &[gatk_tools::filter_resolution::ResolvedFilter],
 ) -> Result<String, Thrown> {
+    recalibration_table_over(
+        parser,
+        header,
+        RecalibrationReads::Traversal {
+            source,
+            intervals,
+            filters,
+        },
+    )
+}
+
+/// What the counting pass reads: the walker's own traversal, or what a pipeline already chose.
+pub(crate) enum RecalibrationReads<'a> {
+    Traversal {
+        source: &'a ReadsDataSource,
+        intervals: &'a [gatk_engine::interval::SimpleInterval],
+        filters: &'a [gatk_tools::filter_resolution::ResolvedFilter],
+    },
+    Chosen(&'a [BamRecord]),
+}
+
+pub(crate) fn recalibration_table_over(
+    parser: &Parser,
+    header: &SamHeader,
+    reads: RecalibrationReads<'_>,
+) -> Result<String, Thrown> {
     let reference_path = argument(parser, "reference").ok_or_else(|| {
         Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
     })?;
@@ -12552,16 +12625,33 @@ pub(crate) fn recalibration_table(
             .unwrap_or(-1),
         use_original_base_qualities: flag(parser, "use-original-qualities"),
     };
-    let filter = read_filter(parser, filters, header)?;
-    gatk_tools::base_recalibrator::base_recalibrator(
-        source,
-        &mut bases,
-        &known_sites,
-        &arguments_for_engine,
-        number_or(parser, "quantizing-levels", 16),
-        &filter,
-        intervals,
-    )
+    let quantizing_levels = number_or(parser, "quantizing-levels", 16);
+    match reads {
+        RecalibrationReads::Traversal {
+            source,
+            intervals,
+            filters,
+        } => {
+            let filter = read_filter(parser, filters, header)?;
+            gatk_tools::base_recalibrator::base_recalibrator(
+                source,
+                &mut bases,
+                &known_sites,
+                &arguments_for_engine,
+                quantizing_levels,
+                &filter,
+                intervals,
+            )
+        }
+        RecalibrationReads::Chosen(records) => gatk_tools::base_recalibrator::table_of_reads(
+            header,
+            records,
+            &mut bases,
+            &known_sites,
+            &arguments_for_engine,
+            quantizing_levels,
+        ),
+    }
     .map_err(|error| match error {
         // A read failure is the reference's own exception, class and all: the EOF on a record body
         // is `RuntimeEOFException` at status three, not a user banner carrying a Rust debug string.
@@ -24085,14 +24175,262 @@ pub fn local_assembler(parser: &Parser) -> Outcome {
 /// The Spark tools (X.1), whose startup is `GATKSparkTool`'s rather than a walker's.
 #[path = "runners_spark.rs"]
 mod spark_runners;
+/// `HtsgetReader.doWork`: the request, its answer, and each block of the answer in turn.
+///
+/// `HttpUtils.getClient` retries a 5xx four times, and that retry is here because a server that
+/// recovers answers differently from one that does not. Nothing else about the client shows.
+pub fn htsget_reader(parser: &Parser) -> Outcome {
+    use gatk_tools::htsget_reader::{self as htsget, Request, RequestInterval};
+
+    let required = |name: &str| {
+        argument(parser, name).ok_or_else(|| {
+            Thrown::command_line(format!(
+                "Argument {name} was missing: Argument '{name}' is required"
+            ))
+        })
+    };
+    let output = argument(parser, "O")
+        .or_else(|| argument(parser, "output"))
+        .ok_or_else(|| Thrown::command_line("Argument O was missing: Argument 'O' is required"))?;
+    let interval = match scalar(parser, "intervals") {
+        Some(text) => Some(htsget::interval(&text).map_err(Thrown::user)?),
+        None => None,
+    };
+    let request = Request {
+        endpoint: required("url")?,
+        id: required("id")?,
+        format: scalar(parser, "format"),
+        data_class: scalar(parser, "class"),
+        interval: interval.map(|(contig, start, end)| RequestInterval { contig, start, end }),
+        fields: arguments(parser, "field"),
+        tags: arguments(parser, "tag"),
+        notags: arguments(parser, "notag"),
+    };
+    request.validate().map_err(Thrown::user)?;
+    let uri = request
+        .to_uri()
+        .map_err(|failure| Thrown::non_user(failure.class, failure.message))?;
+    let threads = number_or(parser, "reader-threads", 1).max(1) as usize;
+    let check_md5 = flag(parser, "check-md5");
+
+    let io_failure = || Thrown::user(format!("IOException during htsget download for {uri}"));
+    let agent = ureq::AgentBuilder::new().redirects(50).build();
+    let answer = htsget_get(&agent, &uri, &[]).map_err(|_| io_failure())?;
+    let body = String::from_utf8_lossy(&answer.1).into_owned();
+    // `HttpEntity` is null for an answer that cannot have a body.
+    if matches!(answer.0, 204 | 205 | 304) {
+        return Err(Thrown::non_user(
+            "java.lang.NullPointerException",
+            "Cannot invoke \"org.apache.http.HttpEntity.getContentEncoding()\" because \"entity\" is null",
+        ));
+    }
+    match answer.0 {
+        400..=499 => {
+            if htsget::is_null_literal(&body) {
+                return Err(Thrown::non_user(
+                    "java.lang.NullPointerException",
+                    "Cannot invoke \"org.broadinstitute.hellbender.tools.htsgetreader.HtsgetErrorResponse.getError()\" because \"err\" is null",
+                ));
+            }
+            let error = htsget::read_error_response(&body).map_err(|_| io_failure())?;
+            let shown = |text: Option<String>| text.unwrap_or_else(|| "null".to_string());
+            Err(Thrown::user(format!(
+                "Invalid request {uri}, received error code: {}, error type: {}, message: {}",
+                answer.0,
+                shown(error.error),
+                shown(error.message)
+            )))
+        }
+        200 => {
+            if htsget::is_null_literal(&body) {
+                // `getData` makes the file before it reads the response; `getDataParallel` after.
+                if threads <= 1 {
+                    std::fs::File::create(&output).map_err(|_| {
+                        Thrown::user(format!("Could not create output file: {output}"))
+                    })?;
+                }
+                return Err(Thrown::non_user(
+                    "java.lang.NullPointerException",
+                    "Cannot invoke \"org.broadinstitute.hellbender.tools.htsgetreader.HtsgetResponse.getBlocks()\" because \"response\" is null",
+                ));
+            }
+            let response = htsget::read_response(&body).map_err(|_| io_failure())?;
+            htsget_write_blocks(&agent, response.blocks.as_deref(), &output, threads)?;
+            if check_md5 {
+                htsget_check_md5(response.md5.as_deref(), &output)?;
+            }
+            Ok(None)
+        }
+        status => Err(Thrown::user(format!(
+            "Unrecognized status code: {status} for request {uri}"
+        ))),
+    }
+}
+
+/// One GET: the status and the body, however often a 5xx took. The error is an `IOException`.
+fn htsget_get(
+    agent: &ureq::Agent,
+    uri: &str,
+    headers: &[(String, String)],
+) -> Result<(u16, Vec<u8>), String> {
+    let mut wait = 1;
+    for attempt in 1.. {
+        let mut request = agent.get(uri);
+        for (name, value) in headers {
+            request = request.set(name, value);
+        }
+        let response = match request.call() {
+            Ok(response) => response,
+            Err(ureq::Error::Status(_, response)) => response,
+            Err(error) => return Err(error.to_string()),
+        };
+        let status = response.status();
+        if (500..600).contains(&status) && attempt <= 4 {
+            std::thread::sleep(std::time::Duration::from_secs(wait));
+            wait *= 2;
+            continue;
+        }
+        let mut body = Vec::new();
+        std::io::Read::read_to_end(&mut response.into_reader(), &mut body)
+            .map_err(|error| error.to_string())?;
+        return Ok((status, body));
+    }
+    unreachable!("the loop returns by the fifth attempt")
+}
+
+/// `Block.getData`.
+fn htsget_block(
+    agent: &ureq::Agent,
+    block: &gatk_tools::htsget_reader::Block,
+) -> Result<Vec<u8>, Thrown> {
+    use gatk_tools::htsget_reader as htsget;
+    let null = |message: &str| Thrown::non_user("java.lang.NullPointerException", message);
+    let uri = block.url.as_deref().ok_or_else(|| {
+        null("Cannot invoke \"java.net.URI.getScheme()\" because the return value of \"org.broadinstitute.hellbender.tools.htsgetreader.HtsgetResponse$Block.getUri()\" is null")
+    })?;
+    let scheme = htsget::uri_scheme(uri)
+        .ok_or_else(|| null("Cannot invoke \"String.hashCode()\" because \"<local1>\" is null"))?;
+    match scheme {
+        "http" | "https" => {
+            let headers = block
+                .headers
+                .as_deref()
+                .ok_or_else(|| null("Cannot invoke \"Object.getClass()\" because \"m\" is null"))?;
+            htsget_get(agent, uri, headers)
+                .map(|answer| answer.1)
+                .map_err(|_| Thrown::user("Could not retrieve data from block"))
+        }
+        "data" => htsget::decode_data_uri(uri).map_err(|failure| match failure {
+            htsget::DataFailure::NotBase64 => {
+                Thrown::user(format!("data URI must be base64 encoded: {uri}"))
+            }
+            htsget::DataFailure::Decode(message) => {
+                Thrown::non_user("java.lang.IllegalArgumentException", message)
+            }
+        }),
+        other => Err(Thrown::user(format!(
+            "Unrecognized URI scheme in data block: {other}"
+        ))),
+    }
+}
+
+/// `getData` and `getDataParallel`. They differ in what a failure says, and in nothing they write.
+fn htsget_write_blocks(
+    agent: &ureq::Agent,
+    blocks: Option<&[gatk_tools::htsget_reader::Block]>,
+    output: &str,
+    threads: usize,
+) -> Result<(), Thrown> {
+    use std::io::Write;
+    let parallel = threads > 1;
+    let no_blocks = || {
+        Thrown::non_user(
+            "java.lang.NullPointerException",
+            "Cannot invoke \"Object.getClass()\" because \"list\" is null",
+        )
+    };
+    // `getDataParallel` asks for the list first; `getData` has already made the file.
+    if parallel && blocks.is_none() {
+        return Err(no_blocks());
+    }
+    let mut file = std::fs::File::create(output).map_err(|_| {
+        Thrown::user(if parallel {
+            "Could not create output file".to_string()
+        } else {
+            format!("Could not create output file: {output}")
+        })
+    })?;
+    let copied = |result: std::io::Result<()>| {
+        result.map_err(|_| {
+            Thrown::user(if parallel {
+                "Error while copying data block to output file"
+            } else {
+                "Failed to copy data block to output file"
+            })
+        })
+    };
+    let blocks = blocks.ok_or_else(no_blocks)?;
+    if !parallel {
+        for block in blocks {
+            copied(file.write_all(&htsget_block(agent, block)?))?;
+        }
+        return Ok(());
+    }
+    // The executor's: the blocks are all asked for at once and written back in their order.
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let answers: Vec<_> = blocks
+        .iter()
+        .map(|_| std::sync::Mutex::new(None::<Result<Vec<u8>, Thrown>>))
+        .collect();
+    std::thread::scope(|scope| {
+        for _ in 0..threads.min(blocks.len()) {
+            scope.spawn(|| loop {
+                let at = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let Some(block) = blocks.get(at) else {
+                    return;
+                };
+                *answers[at].lock().expect("no writer panics") = Some(htsget_block(agent, block));
+            });
+        }
+    });
+    for answer in answers {
+        let answer = answer.into_inner().expect("no writer panics");
+        match answer.expect("every block is answered") {
+            Ok(bytes) => copied(file.write_all(&bytes))?,
+            Err(_) => return Err(Thrown::user("Error while waiting to download block")),
+        }
+    }
+    Ok(())
+}
+
+/// `checkMd5`.
+fn htsget_check_md5(expected: Option<&str>, output: &str) -> Result<(), Thrown> {
+    let Some(expected) = expected else {
+        return Ok(());
+    };
+    let bytes =
+        std::fs::read(output).map_err(|_| Thrown::user("Unable to calculate md5 digest"))?;
+    let actual = gatk_tools::gather_bam_files::md5_file(&bytes);
+    if actual != expected {
+        return Err(Thrown::user(format!(
+            "Expected md5: {expected} did not match actual md5: {actual}"
+        )));
+    }
+    Ok(())
+}
+
 pub use spark_runners::{
-    apply_bqsr_spark, base_recalibrator_spark, bqsr_pipeline_spark,
-    collect_base_distribution_by_cycle_spark, collect_insert_size_metrics_spark,
-    collect_multiple_metrics_spark, collect_quality_yield_metrics_spark, compare_duplicates_spark,
-    count_bases_spark, count_reads_spark, count_variants_spark,
-    extract_original_alignment_records_by_name_spark, flag_stat_spark, mark_duplicates_spark,
-    mean_quality_by_cycle_spark, pileup_spark, print_reads_spark, print_variants_spark,
-    quality_score_distribution_spark, revert_sam_spark, sort_sam_spark,
+    apply_bqsr_spark, base_recalibrator_spark, bqsr_pipeline_spark, calc_metadata_spark,
+    collect_allelic_counts_spark, collect_base_distribution_by_cycle_spark,
+    collect_insert_size_metrics_spark, collect_multiple_metrics_spark,
+    collect_quality_yield_metrics_spark, compare_duplicates_spark, count_bases_spark,
+    count_reads_spark, count_variants_spark, cpx_variant_re_interpreter_spark,
+    discover_variants_from_contig_alignments_sam_spark,
+    extract_original_alignment_records_by_name_spark, extract_sv_evidence_spark,
+    find_bad_genomic_kmers_spark, flag_stat_spark, mark_duplicates_spark,
+    mean_quality_by_cycle_spark, pathseq_filter_spark, pathseq_score_spark, pileup_spark,
+    print_reads_spark, print_variants_spark, quality_score_distribution_spark, revert_sam_spark,
+    sort_sam_spark, sv_discover_from_local_assembly_contig_alignments_spark,
 };
 
 /// `GroundTruthReadsBuilder`, in a file of its own.

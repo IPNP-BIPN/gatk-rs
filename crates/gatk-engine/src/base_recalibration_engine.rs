@@ -114,6 +114,8 @@ pub enum EngineError {
     RoundToZeroPlaces,
     /// A cigar operator the counting loop does not know.
     UnsupportedCigarOperator(String),
+    /// `UserException.MalformedRead`: a read group with no platform, which nothing here defaults.
+    NoPlatform(String),
     Covariate(CovariateError),
     Nested(NestedArrayError),
     Datum(RecalDatumError),
@@ -131,6 +133,7 @@ impl EngineError {
             EngineError::UnsupportedCigarOperator(op) => {
                 format!("Unsupported cigar operator: {op}")
             }
+            EngineError::NoPlatform(message) => message.clone(),
             EngineError::Covariate(error) => error.message(),
             EngineError::Nested(error) => error.message(),
             EngineError::Datum(error) => error.message(),
@@ -404,6 +407,7 @@ impl BaseRecalibrationEngine {
             // The whole read was inside the adaptor.
             return Ok(());
         }
+        no_platform_refusal(&read, header)?;
 
         let length = read.read_bases.len();
         let mut is_snp = vec![0i32; length];
@@ -629,6 +633,31 @@ fn increment_datum(
             ));
             table.put(datum, keys).map_err(EngineError::Nested)?;
         }
+    }
+    Ok(())
+}
+
+/// `RecalUtils.updatePlatformForRead` with neither `FORCE_PLATFORM` nor `DEFAULT_PLATFORM`, which no
+/// tool here declares.
+fn no_platform_refusal(read: &BamRecord, header: &SamHeader) -> Result<(), EngineError> {
+    let group = match read.tags.get(htsjdk_bam::tag::Tag::new(b"RG")) {
+        Some(htsjdk_bam::tag::TagValue::Str(name)) => {
+            header.read_groups.iter().find(|group| group.id == *name)
+        }
+        _ => None,
+    };
+    if group.is_some_and(|group| group.attributes.get("PL").is_none()) {
+        let name = &read.read_name;
+        let contig = usize::try_from(read.reference_index)
+            .ok()
+            .and_then(|index| header.sequences.get(index))
+            .map_or("*", |sequence| sequence.name.as_str());
+        return Err(EngineError::NoPlatform(format!(
+            "Read {name} {contig}:{}-{} is malformed: The input .bam file contains reads with no \
+             platform information. First observed at read with name = {name}",
+            crate::read_utils::start(read),
+            crate::read_utils::end(read),
+        )));
     }
     Ok(())
 }

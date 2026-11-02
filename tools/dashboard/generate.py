@@ -180,11 +180,20 @@ def coverage_cell(entry, manifests):
     a high fraction over one distinct output says nothing about the port.
     """
     measured = manifests.get(entry["port"], {}).get("coverage", {}).get(entry["tool"])
+    measured_by = ""
+    if not measured:
+        # A suite here can win the row for a tool whose array only another port runs: say whose
+        # binary the fraction is about rather than report nothing.
+        for name in sorted(manifests):
+            other = manifests[name].get("coverage", {}).get(entry["tool"])
+            if other:
+                measured, measured_by = other, f", in {name}"
+                break
     if not measured:
         return "not measured"
     cell = (
         f"t={measured['t']}, {measured['matched']}/{measured['rows']} rows "
-        f"({measured['share']:.0%})"
+        f"({measured['share']:.0%}){measured_by}"
     )
     if measured["distinct_outputs"] <= 1:
         cell += ", **1 distinct output**"

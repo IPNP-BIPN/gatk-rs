@@ -1123,6 +1123,20 @@ public class MakeFixtures {
                 }
             }
         }
+        // The same reads where the read group names a platform, which a recalibration requires.
+        final SAMFileHeader platformHeader = tumorHeader.clone();
+        platformHeader.getReadGroup("rgT").setPlatform("ILLUMINA");
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(platformHeader, true,
+                             dir.resolve("mutect_pl.bam").toFile())) {
+            for (final SAMRecord record : records) {
+                if ("rgT".equals(record.getAttribute("RG"))) {
+                    record.setHeader(platformHeader);
+                    writer.addAlignment(record);
+                    record.setHeader(header);
+                }
+            }
+        }
         // A pedigree over the two samples, for the callers' --pedigree: the normal is the tumour's
         // mother and the only founder, and with one parent there is no trio.
         Files.writeString(dir.resolve("callers.ped"), "fam1\ttumor\t0\tnormal\t2\t2\nfam1\tnormal\t0\t0\t2\t1\n");
@@ -6202,6 +6216,713 @@ public class MakeFixtures {
         }
         Files.writeString(dir.resolve("genbank.catalog"),
                 "a\tACC_PLAIN.1\tc\td\te\tf\t9606\th\n", StandardCharsets.UTF_8);
+        pathSeqFilterReads(dir);
+        pathSeqScoreReads(dir);
+        svEvidenceReads(dir);
+        svContigReads(dir);
+    }
+
+    /**
+     * What `DiscoverVariantsFromContigAlignmentsSAMSpark` reads: a reference, and assembled contigs
+     * whose alignments carry each signature its interpreter tells apart.
+     */
+    static void svContigReads(final Path dir) throws Exception {
+        final int[] lengths = {30000, 20000};
+        final String[] names = {"chr1", "chr2"};
+        final java.util.Random random = new java.util.Random(11L);
+        final StringBuilder fasta = new StringBuilder();
+        final StringBuilder index = new StringBuilder();
+        final StringBuilder dictionary = new StringBuilder("@HD\tVN:1.6\n");
+        final java.util.List<SAMSequenceRecord> sequences = new java.util.ArrayList<>();
+        for (int contig = 0; contig < names.length; contig++) {
+            final String line = ">" + names[contig] + "\n";
+            fasta.append(line);
+            index.append(names[contig]).append('\t').append(lengths[contig]).append('\t')
+                    .append(fasta.length()).append("\t60\t61\n");
+            for (int at = 0; at < lengths[contig]; at++) {
+                fasta.append("ACGT".charAt(random.nextInt(4)));
+                if (at % 60 == 59 || at == lengths[contig] - 1) {
+                    fasta.append('\n');
+                }
+            }
+            dictionary.append("@SQ\tSN:").append(names[contig]).append("\tLN:").append(lengths[contig]).append('\n');
+            sequences.add(new SAMSequenceRecord(names[contig], lengths[contig]));
+        }
+        Files.writeString(dir.resolve("sv_contigs.fasta"), fasta.toString(), StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_contigs.fasta.fai"), index.toString(), StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_contigs.dict"), dictionary.toString(), StandardCharsets.UTF_8);
+
+        // Name, then per alignment: flags, contig, start, cigar, mapping quality.
+        final Object[][] contigs = {
+            {"del", 0, "chr1", 1000, "100M100S", 60, 2048, "chr1", 2000, "100S100M", 60},
+            {"del2", 0, "chr1", 1000, "100M100S", 60, 2048, "chr1", 2000, "100H100M", 60},
+            {"delRev", 16, "chr1", 3000, "100M100S", 60, 2064, "chr1", 4000, "100S100M", 60},
+            {"delHom", 0, "chr1", 5000, "105M95S", 60, 2048, "chr1", 6000, "100S100M", 60},
+            {"delHomTie", 0, "chr1", 5000, "107M93S", 60, 2048, "chr1", 6002, "100S100M", 60},
+            {"replace", 0, "chr1", 7000, "100M160S", 60, 2048, "chr1", 8000, "160S100M", 60},
+            {"replaceShort", 0, "chr1", 9000, "100M110S", 60, 2048, "chr1", 9500, "110S100M", 60},
+            {"ins", 0, "chr1", 10000, "100M160S", 60, 2048, "chr1", 10100, "160S100M", 60},
+            {"insRev", 16, "chr1", 10500, "100M160S", 60, 2064, "chr1", 10600, "160S100M", 60},
+            {"dup", 0, "chr1", 11000, "100M100S", 60, 2048, "chr1", 11080, "100S100M", 60},
+            {"dupRev", 16, "chr1", 11500, "100M100S", 60, 2064, "chr1", 11580, "100S100M", 60},
+            {"dupIns", 0, "chr1", 12000, "100M130S", 60, 2048, "chr1", 12080, "130S100M", 60},
+            {"dupGap", 0, "chr1", 12500, "50M2I48M100S", 60, 2048, "chr1", 12580, "100S60M1D40M", 60},
+            {"contract", 0, "chr1", 13000, "100M80S", 60, 2048, "chr1", 13100, "80S100M", 60},
+            {"cpxUp", 0, "chr1", 14000, "100M90S", 60, 2048, "chr1", 14070, "90S100M", 60},
+            {"cpxUpRev", 16, "chr1", 14500, "100M90S", 60, 2064, "chr1", 14570, "90S100M", 60},
+            {"cpxDown", 0, "chr1", 15000, "100M70S", 60, 2048, "chr1", 15090, "70S100M", 60},
+            {"inv55", 0, "chr1", 16000, "100M100S", 60, 2064, "chr1", 17000, "100M100S", 60},
+            {"inv33", 16, "chr1", 18000, "100S100M", 60, 2048, "chr1", 19000, "100S100M", 60},
+            {"inv55Ins", 0, "chr1", 20000, "100M120S", 60, 2064, "chr1", 21000, "100M120S", 60},
+            {"inv33Hom", 16, "chr1", 22000, "95S105M", 60, 2048, "chr1", 23000, "100S100M", 60},
+            {"mapped", 0, "chr1", 24000, "100M200S", 60, 2048, "chr2", 500, "100S100M100S", 20, 2048, "chr1", 25000, "200S100M", 60},
+            {"threes", 0, "chr1", 26000, "100M200S", 60, 2048, "chr1", 26500, "100S100M100S", 60, 2048, "chr1", 27000, "200S100M", 60},
+            {"gapped", 0, "chr2", 1000, "100M60D100M", 60},
+            {"gappedIns", 0, "chr2", 2000, "100M60I100M", 60},
+            {"gappedSmall", 0, "chr2", 3000, "100M10D100M", 60},
+            {"gappedClip", 16, "chr2", 4000, "20S100M60D100M30S", 60},
+            {"lowFirst", 0, "chr2", 5000, "100M100S", 10, 2048, "chr2", 6000, "100S100M", 60},
+            {"lowEnd", 0, "chr2", 7000, "100M100S", 60, 2048, "chr2", 8000, "100S100M", 10},
+            {"tooShort", 0, "chr2", 9000, "30M100S", 60, 2048, "chr2", 9500, "30S100M", 60},
+            {"nextShort", 0, "chr2", 9800, "100M30S", 60, 2048, "chr2", 9950, "100S30M", 60},
+            {"inter", 0, "chr1", 28000, "100M100S", 60, 2048, "chr2", 10000, "100S100M", 60},
+            {"swap", 0, "chr2", 11000, "100M100S", 60, 2048, "chr2", 10500, "100S100M", 60},
+            {"contained", 0, "chr2", 12000, "100M100S", 60, 2048, "chr2", 12020, "100S60M40S", 60},
+            {"stitched", 0, "chr2", 13000, "100M100S", 60, 2048, "chr2", 13100, "100S100M", 60},
+            {"single", 0, "chr2", 14000, "100M", 60},
+            {"withSecondary", 0, "chr2", 15000, "100M100S", 60, 2048, "chr2", 16000, "100S100M", 60, 256, "chr2", 17000, "100M100S", 60},
+        };
+        svContigBam(dir.resolve("sv_contigs.bam"), sequences, "s", contigs, 12L);
+        svContigBam(dir.resolve("sv_contigs_small.bam"), sequences, "s", new Object[][] {contigs[0], contigs[17]}, 13L);
+        svContigBam(dir.resolve("sv_contigs_adjacent_reverse.bam"), sequences, "s", new Object[][] {
+            contigs[0],
+            {"adjacentReverse", 16, "chr2", 18000, "100M100S", 60, 2064, "chr2", 18100, "100S100M", 60}}, 14L);
+        svContigBam(dir.resolve("sv_contigs_no_primary.bam"), sequences, "s", new Object[][] {
+            {"orphan", 2048, "chr1", 1000, "100M100S", 60}}, 15L);
+        svContigBam(dir.resolve("sv_contigs_hard_primary.bam"), sequences, "s", new Object[][] {
+            {"hard", 0, "chr1", 1000, "100M100H", 60}}, 16L);
+        svContigBam(dir.resolve("sv_contigs_no_sample.bam"), sequences, null, new Object[][] {contigs[0]}, 17L);
+        svContigBam(dir.resolve("sv_contigs_two_samples.bam"), sequences, "s,t", new Object[][] {contigs[0]}, 18L);
+        svAssemblyContigs(dir, sequences);
+        svComplexCalls(dir);
+
+        final StringBuilder vcfHead = new StringBuilder("##fileformat=VCFv4.2\n"
+                + "##FORMAT=<ID=CN,Number=1,Type=Integer,Description=\"Copy number\">\n"
+                + "##FORMAT=<ID=CNQ,Number=1,Type=Float,Description=\"Copy number quality\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##INFO=<ID=END,Number=1,Type=Integer,Description=\"Stop\">\n"
+                + "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type\">\n");
+        for (int contig = 0; contig < names.length; contig++) {
+            vcfHead.append("##contig=<ID=").append(names[contig]).append(",length=").append(lengths[contig]).append(">\n");
+        }
+        final String columns = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t";
+        final String calls = "chr1\t900\tcnvA\tN\t<DEL>\t.\t.\tEND=2500;SVTYPE=DEL\tGT:CN:CNQ\t0/1:1:40\n"
+                + "chr1\t1500\tcnvB\tN\t<DEL>\t.\t.\tEND=4000;SVTYPE=DEL\tGT:CN:CNQ\t0/1:1:30.5\n"
+                + "chr2\t1\tcnvC\tN\t<DUP>\t.\t.\tEND=9000;SVTYPE=DUP\tGT:CN:CNQ\t0/1:3:20\n";
+        Files.writeString(dir.resolve("sv_cnv.vcf"), vcfHead + columns + "s\n" + calls, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cnv_other_sample.vcf"), vcfHead + columns + "t\n" + calls, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cnv_no_dictionary.vcf"),
+                vcfHead.toString().replaceAll("##contig=[^\n]*\n", "") + columns + "s\n" + calls, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cnv_other_dictionary.vcf"),
+                vcfHead.toString().replace("length=20000", "length=20001") + columns + "s\n" + calls, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cnv_two_samples.vcf"),
+                vcfHead + columns + "s\tt\n" + calls.replace("\n", "\t0/1:1:40\n"), StandardCharsets.UTF_8);
+        final String truthColumns = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n";
+        Files.writeString(dir.resolve("sv_truth.vcf"),
+                vcfHead + truthColumns
+                        + "chr1\t1100\ttruthA\tN\t<DEL>\t.\t.\tEND=2000;SVTYPE=DEL\n"
+                        + "chr2\t100\ttruthB\tN\t<INS>\t.\t.\tEND=100;SVTYPE=INS\n"
+                        + "chr2\t200\ttruthC\tN\t.\t.\t.\tEND=200\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_truth_near_start.vcf"),
+                vcfHead + truthColumns + "chr2\t1\ttruthB\tN\t<INS>\t.\t.\tEND=1;SVTYPE=INS\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_truth_unknown_type.vcf"),
+                vcfHead + truthColumns + "chr2\t100\ttruthB\tN\t<INS>\t.\t.\tEND=100;SVTYPE=ODD\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_truth_unknown_contig.vcf"),
+                vcfHead + truthColumns + "chr9\t100\ttruthB\tN\t<INS>\t.\t.\tEND=100;SVTYPE=INS\n", StandardCharsets.UTF_8);
+    }
+
+    /**
+     * What `SvDiscoverFromLocalAssemblyContigAlignmentsSpark` tells apart beyond two alignments: complex
+     * contigs of zero, one and many reference segments, each kind of breakend and simple type, and the
+     * contigs it cannot use. Every alignment carries its own `AS`, which picks the configuration.
+     */
+    static void svAssemblyContigs(final Path dir, final java.util.List<SAMSequenceRecord> sequences) throws Exception {
+        final Object[][] contigs = {
+            {"cpxMapped", 0, "chr1", 1000, "100M200S", 60, 2048, "chr2", 500, "100S100M100S", 60, 2048, "chr1", 1500, "200S100M", 60},
+            {"cpxInverted", 0, "chr1", 2000, "100M200S", 60, 2064, "chr1", 2300, "100S100M100S", 60, 2048, "chr1", 2600, "200S100M", 60},
+            {"cpxDuplicated", 0, "chr1", 3000, "100M200S", 60, 2048, "chr1", 3200, "100S100M100S", 60, 2048, "chr1", 3100, "200S300M", 60},
+            {"cpxReverse", 16, "chr1", 5000, "200S100M", 60, 2064, "chr1", 4700, "100S100M100S", 60, 2064, "chr1", 4400, "100M200S", 60},
+            {"cpxReverseFlip", 16, "chr1", 5900, "200S100M", 60, 2048, "chr1", 5600, "100S100M100S", 60, 2064, "chr1", 5300, "100M200S", 60},
+            {"cpxGapped", 0, "chr1", 6000, "100M320S", 60, 2048, "chr1", 6400, "120S100M200S", 60, 2048, "chr1", 6900, "320S100M", 60},
+            {"cpxOverlap", 0, "chr1", 8000, "110M200S", 60, 2048, "chr1", 8300, "100S110M100S", 60, 2048, "chr1", 8700, "200S110M", 60},
+            {"cpxFour", 0, "chr1", 9500, "100M400S", 60, 2048, "chr1", 9800, "100S110M290S", 60, 2048, "chr1", 10200, "200S110M190S", 60, 2048, "chr1", 10800, "400S100M", 60},
+            {"cpxFourSwitch", 0, "chr1", 11000, "100M400S", 60, 2048, "chr1", 11200, "100S110M290S", 60, 2064, "chr1", 11500, "200S110M190S", 60, 2048, "chr1", 11800, "400S100M", 60},
+            {"cpxFourOther", 0, "chr1", 12000, "100M400S", 60, 2048, "chr2", 1100, "100S110M290S", 60, 2048, "chr1", 12300, "200S110M190S", 60, 2048, "chr1", 12800, "400S100M", 60},
+            {"cpxClipDeletion", 0, "chr1", 13000, "100M3D10M200S", 60, 2048, "chr1", 13400, "100S10M3I100M100S", 60, 2048, "chr1", 13800, "210S103M", 60},
+            {"cpxShared", 0, "chr1", 14000, "100M200S", 60, 2048, "chr2", 3000, "100S100M100S", 60, 2048, "chr1", 14099, "200S100M", 60},
+            {"cpxSharedFlip", 0, "chr1", 14500, "100M250S", 60, 2064, "chr2", 3400, "130S100M120S", 60, 2048, "chr1", 14599, "250S100M", 60},
+            {"cpxInvertedOne", 0, "chr1", 15000, "100M300S", 60, 2064, "chr1", 15099, "100S200M100S", 60, 2048, "chr1", 15298, "300S100M", 60},
+            {"cpxInvertedOneWide", 0, "chr1", 15600, "100M500S", 60, 2064, "chr1", 15699, "200S200M200S", 60, 2048, "chr1", 15898, "500S100M", 60},
+            {"cpxInvertedSmall", 0, "chr1", 16200, "100M240S", 60, 2064, "chr1", 16299, "100S20M220S", 60, 2048, "chr1", 16318, "240S100M", 60},
+            {"cpxAsIsWide", 0, "chr1", 16600, "100M500S", 60, 2048, "chr1", 16699, "200S200M200S", 60, 2048, "chr1", 16898, "500S100M", 60},
+            {"cpxAsIsFront", 0, "chr1", 17200, "100M400S", 60, 2048, "chr1", 17299, "200S200M100S", 60, 2048, "chr1", 17498, "400S100M", 60},
+            {"cpxAsIsRear", 0, "chr1", 17800, "100M400S", 60, 2048, "chr1", 17899, "100S200M200S", 60, 2048, "chr1", 18098, "400S100M", 60},
+            {"cpxAllAsIs", 0, "chr1", 18400, "100M700S", 60, 2048, "chr1", 18499, "200S150M450S", 60, 2048, "chr1", 18648, "350S150M300S", 60, 2048, "chr1", 18797, "600S100M100S", 60},
+            {"cpxSegmentGone", 0, "chr1", 19200, "100M200S", 60, 2048, "chr1", 19400, "100S100M100S", 60, 2048, "chr1", 19700, "200S100M", 60},
+            {"cpxLowMiddle", 0, "chr1", 20000, "100M400S", 60, 2048, "chr1", 20400, "100S200M200S", 30, 2048, "chr1", 20900, "400S100M", 60},
+            {"cpxSmallGone", 0, "chr1", 21400, "100M300S", 60, 2048, "chr2", 2500, "100S200M100S", 30, 2048, "chr1", 21510, "300S100M", 60},
+            {"cpxTiny", 0, "chr1", 21800, "100M200S", 60, 2048, "chr1", 21910, "100S100M100S", 60, 2048, "chr1", 22000, "200S100M", 60},
+            {"incompleteContig", 0, "chr1", 22200, "100M200S", 60, 2048, "chr2", 6000, "100S100M100S", 60, 2048, "chr2", 6500, "200S100M", 60},
+            {"incompleteStrand", 0, "chr1", 22400, "100M200S", 60, 2048, "chr1", 22600, "100S100M100S", 60, 2064, "chr1", 22800, "200S100M", 60},
+            {"incompleteOrder", 0, "chr1", 23200, "100M200S", 60, 2048, "chr1", 23000, "100S100M100S", 60, 2048, "chr1", 22900, "200S100M", 60},
+            {"incompleteMiddle", 0, "chr1", 23400, "100M200S", 60, 2048, "chr1", 23380, "100S100M100S", 60, 2048, "chr1", 23700, "200S100M", 60},
+            {"uninformative", 0, "chr1", 24000, "200M", 60, 2048, "chr1", 24500, "50S100M50S", 30},
+            {"ambiguous", 0, "chr1", 25000, "100M100S", 60, 2048, "chr2", 7000, "100M100S", 60, 2048, "chr1", 25500, "100S100M", 60},
+            {"altTig", 0, "chr1", 26000, "100M100S", 60, 2048, "chr1", 26500, "100S100M", 60, 2048, "chr2", 8000, "200M", 60},
+            {"manyLow", 0, "chr1", 27000, "100M1000S", 60, 2048, "chr1", 27200, "100S100M900S", 60, 2048, "chr1", 27400, "200S100M800S", 5,
+                    2048, "chr1", 27600, "300S100M700S", 60, 2048, "chr1", 27800, "400S100M600S", 5, 2048, "chr1", 28000, "500S100M500S", 60,
+                    2048, "chr1", 28200, "600S100M400S", 5, 2048, "chr1", 28400, "700S100M300S", 60, 2048, "chr1", 28600, "800S100M200S", 5,
+                    2048, "chr1", 28800, "900S100M100S", 5, 2048, "chr1", 29000, "1000S100M", 60},
+            {"gappedDropped", 0, "chr2", 1000, "100M60D100M100S", 60, 2048, "chr2", 1500, "150S50M100S", 60, 2048, "chr2", 1700, "200S100M", 60},
+            {"cpxSplit", 0, "chr2", 2000, "100M60D100M200S", 60, 2048, "chr2", 2500, "200S100M100S", 60, 2048, "chr2", 2900, "300S100M", 60},
+            {"interForward", 0, "chr1", 29200, "100M100S", 60, 2064, "chr2", 10000, "100M100S", 60},
+            {"interForwardIns", 0, "chr1", 29400, "100M130S", 60, 2064, "chr2", 10200, "100M130S", 60},
+            {"interReverse", 16, "chr1", 29600, "100S100M", 60, 2048, "chr2", 10400, "100S100M", 60},
+            {"interReverseIns", 16, "chr2", 10600, "130S100M", 60, 2048, "chr1", 29800, "130S100M", 60},
+            {"interSecond", 0, "chr2", 11000, "100M100S", 60, 2048, "chr1", 28800, "100S100M", 60},
+            {"interSecondRev", 16, "chr1", 28400, "100M100S", 60, 2064, "chr2", 11200, "100S100M", 60},
+            {"interFirstIns", 0, "chr1", 28200, "100M130S", 60, 2048, "chr2", 11400, "130S100M", 60},
+            {"swapIns", 0, "chr2", 12000, "100M130S", 60, 2048, "chr2", 11700, "130S100M", 60},
+            {"swapRev", 16, "chr2", 12300, "100M100S", 60, 2064, "chr2", 12600, "100S100M", 60},
+            {"fatInsertion", 0, "chr2", 13000, "100M160S", 60, 2048, "chr2", 13120, "160S100M", 60},
+            {"fatInsertionRev", 16, "chr2", 13400, "100M160S", 60, 2064, "chr2", 13520, "160S100M", 60},
+            {"dupWide", 0, "chr2", 14000, "100M100S", 60, 2048, "chr2", 14040, "100S100M", 60},
+            {"dupWideIns", 0, "chr2", 14300, "100M130S", 60, 2048, "chr2", 14340, "130S100M", 60},
+            {"dupComplexWide", 0, "chr2", 14600, "100M90S", 60, 2048, "chr2", 14640, "90S100M", 60},
+            {"dupComplexDown", 0, "chr2", 15000, "100M50S", 60, 2048, "chr2", 15040, "50S100M", 60},
+            {"dupComplexShort", 0, "chr2", 15300, "100M90S", 60, 2048, "chr2", 15380, "90S100M", 60},
+            {"weakPair", 0, "chr2", 16000, "100M100S", 15, 2048, "chr2", 16500, "100S100M", 60},
+            {"shortPair", 0, "chr2", 16800, "20M100S", 60, 2048, "chr2", 17000, "20S100M", 60},
+            {"lengthFiltered", 0, "chr2", 17300, "40M40S", 60, 2048, "chr2", 18000, "40S40M", 60},
+            {"qualityFiltered", 0, "chr2", 18300, "100M100S", 25, 2048, "chr2", 19000, "100S100M", 25},
+            {"normal", 0, "chr2", 19200, "100M", 60},
+        };
+        svContigBam(dir.resolve("sv_assembly.bam"), sequences, "s", contigs, 19L, true);
+        final Object[][] tooMany = new Object[1][1 + 5 * 31];
+        tooMany[0][0] = "tooMany";
+        for (int at = 0; at < 31; at++) {
+            tooMany[0][1 + 5 * at] = at == 0 ? 0 : 2048;
+            tooMany[0][2 + 5 * at] = "chr1";
+            tooMany[0][3 + 5 * at] = 100 + 300 * at;
+            tooMany[0][4 + 5 * at] = at + "S20M" + (30 - at) + "S";
+            tooMany[0][5 + 5 * at] = 60;
+        }
+        tooMany[0][4] = "20M30S";
+        tooMany[0][154] = "30S20M";
+        svContigBam(dir.resolve("sv_assembly_too_many.bam"), sequences, "s", tooMany, 20L, true);
+        svContigBam(dir.resolve("sv_assembly_overlap_contained.bam"), sequences, "s", new Object[][] {
+            {"halfOverlap", 0, "chr1", 1000, "100M400S", 60, 2048, "chr1", 1200, "90S210M200S", 60, 2048, "chr1", 1600, "200S120M180S", 60, 2048, "chr1", 2000, "400S100M", 60}}, 21L, true);
+        // No breakend among its calls, or `--cnv-calls` stops on the first one's negative end.
+        svContigBam(dir.resolve("sv_assembly_no_breakend.bam"), sequences, "s", new Object[][] {
+            {"del", 0, "chr1", 1000, "100M100S", 60, 2048, "chr1", 2000, "100S100M", 60},
+            {"ins", 0, "chr1", 10000, "100M160S", 60, 2048, "chr1", 10100, "160S100M", 60},
+            {"dup", 0, "chr1", 11000, "100M100S", 60, 2048, "chr1", 11080, "100S100M", 60},
+            {"cpxGapped", 0, "chr1", 6000, "100M320S", 60, 2048, "chr1", 6400, "120S100M200S", 60, 2048, "chr1", 6900, "320S100M", 60},
+            {"cpxOverlap", 0, "chr1", 8000, "110M200S", 60, 2048, "chr1", 8300, "100S110M100S", 60, 2048, "chr1", 8700, "200S110M", 60},
+            {"cpxFour", 0, "chr1", 12000, "100M400S", 60, 2048, "chr1", 12300, "100S110M290S", 60, 2048, "chr1", 12700, "200S110M190S", 60, 2048, "chr1", 13300, "400S100M", 60},
+            {"cpxAsIsWide", 0, "chr1", 16600, "100M500S", 60, 2048, "chr1", 16699, "200S200M200S", 60, 2048, "chr1", 16898, "500S100M", 60}}, 22L, true);
+        Files.writeString(dir.resolve("sv_alt_tigs.txt"), "chr2\n", StandardCharsets.UTF_8);
+
+        // A read with no qualities, which the wellformed filter drops, beside one it keeps.
+        final SAMFileHeader header = new SAMFileHeader();
+        sequences.forEach(header::addSequence);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("s");
+        header.addReadGroup(group);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        try (SAMFileWriter writer = new SAMFileWriterFactory().setCreateIndex(true)
+                .makeBAMWriter(header, true, dir.resolve("sv_quality_missing.bam").toFile())) {
+            for (int at = 0; at < 2; at++) {
+                final htsjdk.samtools.SAMRecord read = new htsjdk.samtools.SAMRecord(header);
+                read.setReadName("read" + at);
+                read.setReferenceName("chr1");
+                read.setAlignmentStart(100 + at);
+                read.setCigarString("4M");
+                read.setMappingQuality(60);
+                read.setReadBases("ACGT".getBytes(StandardCharsets.US_ASCII));
+                read.setBaseQualities(at == 0 ? new byte[] {30, 30, 30, 30} : htsjdk.samtools.SAMRecord.NULL_QUALS);
+                read.setAttribute("RG", "rg1");
+                writer.addAlignment(read);
+            }
+        }
+    }
+
+    /**
+     * What `CpxVariantReInterpreterSpark` reads: `sv_assembly.bam`'s complex calls as the assembly
+     * step wrote them, each haplotype reduced to its length, since the length is all it asks of one,
+     * and five records of no contig's making: none or one segment, three contigs, one contig twice.
+     */
+    static void svComplexCalls(final Path dir) throws Exception {
+        // Contig, start, end, contig names, segments, arrangement, haplotype length, qualities, longest.
+        final Object[][] calls = {
+            {"chr1", 1099, 1500, "cpxMapped", "chr1:1099-1500", "-chr2:500-599", 102, "60", 100},
+            {"chr1", 2099, 2600, "cpxInverted", "chr1:2099-2300,chr1:2300-2399,chr1:2399-2600", "-2", 102, "60", 100},
+            {"chr1", 3099, 3299, "cpxDuplicated", "chr1:3100-3200,chr1:3200-3299", "2,1,2", 301, "60", 100},
+            {"chr1", 4499, 5000, "cpxReverse", "chr1:4499-4700,chr1:4700-4799,chr1:4799-5000", "2", 102, "60", 100},
+            {"chr1", 5399, 5900, "cpxReverseFlip", "chr1:5399-5600,chr1:5600-5699,chr1:5699-5900", "-2", 102, "60", 100},
+            {"chr1", 6099, 6900, "cpxGapped", "chr1:6099-6400,chr1:6400-6499,chr1:6499-6900", "UINS-20,2,UINS-100", 222, "60", 100},
+            {"chr1", 8109, 8700, "cpxOverlap", "chr1:8109-8310,chr1:8310-8399,chr1:8399-8700", "2", 92, "60", 110},
+            {"chr1", 9599, 10800, "cpxFour", "chr1:9599-9800,chr1:9800-9899,chr1:9899-10200,chr1:10200-10309,chr1:10309-10800", "2,4,UINS-90", 302, "60", 100},
+            {"chr1", 11099, 11800, "cpxFourSwitch", "chr1:11099-11200,chr1:11200-11289,chr1:11289-11500,chr1:11500-11609,chr1:11609-11800", "2,-4,UINS-100", 302, "60", 100},
+            {"chr1", 12099, 12800, "cpxFourOther", "chr1:12099-12300,chr1:12300-12409,chr1:12409-12800", "-chr2:1100-1199,2,UINS-90", 302, "60", 100},
+            {"chr1", 13112, 13800, "cpxClipDeletion", "chr1:13112-13410,chr1:13410-13506,chr1:13506-13800", "UINS-3,2", 102, "60", 103},
+            {"chr1", 14099, 14099, "cpxShared", "chr1:14099-14099", "1,chr2:3000-3099,1", 102, "60", 100},
+            {"chr1", 14599, 14599, "cpxSharedFlip", "chr1:14599-14599", "1,UINS-20,-chr2:3400-3499,UINS-30,1", 152, "60", 100},
+            {"chr1", 15099, 15298, "cpxInvertedOne", "chr1:15099-15298", "-1", 202, "60", 100},
+            {"chr1", 15699, 15898, "cpxInvertedOneWide", "chr1:15699-15898", "UINS-100,-1,UINS-100", 402, "60", 100},
+            {"chr1", 16299, 16318, "cpxInvertedSmall", "chr1:16299-16318", "UINS-120,-1", 142, "60", 100},
+            {"chr1", 16699, 16898, "cpxAsIsWide", "chr1:16699-16898", "UINS-100,1,UINS-100", 402, "60", 100},
+            {"chr1", 17299, 17498, "cpxAsIsFront", "chr1:17299-17498", "UINS-100,1", 302, "60", 100},
+            {"chr1", 17899, 18098, "cpxAsIsRear", "chr1:17899-18098", "1,UINS-100", 302, "60", 100},
+            {"chr1", 18499, 18797, "cpxAllAsIs", "chr1:18499-18648,chr1:18648-18797", "UINS-100,1,2,UINS-100", 502, "60", 100},
+            {"chr1", 19299, 19700, "cpxSegmentGone", "chr1:19299-19400,chr1:19400-19499,chr1:19499-19700", "2", 102, "60", 100},
+            {"chr1", 20099, 20900, "cpxLowMiddle", "chr1:20099-20400,chr1:20400-20599,chr1:20599-20900", "2,UINS-100", 302, "60", 100},
+            {"chr1", 21499, 21510, "cpxSmallGone", "chr1:21499-21510", "-chr2:2500-2699", 202, "60", 100},
+            {"chr1", 21899, 22009, "cpxTiny", "chr1:21899-21910,chr1:21910-22000,chr1:22000-22009", "2,3,3", 111, "60", 100},
+            {"chr1", 25000, 25000, "zeroSegments", "", "UINS-100", 102, "60", 100},
+            {"chr1", 25200, 25200, "zeroSegmentsShort", "", "UINS-10", 12, "60", 10},
+            {"chr1", 25400, 25900, "oneSegmentDeleted", "chr1:25400-25900", "UINS-200", 200, "60", 100},
+            {"chr1", 26000, 26300, "cpxFour,cpxFourOther,nobody", "chr1:26000-26100,chr1:26100-26300", "2,1", 300, "60,50,40", 120},
+            {"chr1", 27099, 29000, "manyLow", "chr1:27099-27200,chr1:27200-27299,chr1:27299-27600,chr1:27600-27699,chr1:27699-28000,chr1:28000-28099,chr1:28099-28400,chr1:28400-28499,chr1:28499-29000", "2,UINS-100,4,UINS-100,6,UINS-100,8,UINS-200", 902, "60", 100},
+            {"chr2", 2099, 2900, "cpxSplit", "chr2:2099-2160,chr2:2160-2259,chr2:2259-2500,chr2:2500-2599,chr2:2599-2900", "2,4", 202, "60", 100},
+            {"chr2", 4000, 4600, "cpxGapped", "chr2:4000-4300,chr2:4300-4600", "-2,1", 600, "30", 80},
+        };
+        final StringBuilder lines = new StringBuilder("##fileformat=VCFv4.2\n");
+        lines.append("##INFO=<ID=ALT_ARRANGEMENT,Number=.,Type=String,Description=\"For CPX variants only; specifies how reference segments given in SEGMENTS are re-arranged\">\n");
+        lines.append("##INFO=<ID=CTG_NAMES,Number=.,Type=String,Description=\"Name of local assembly contigs supporting this variant\">\n");
+        lines.append("##INFO=<ID=END,Number=1,Type=Integer,Description=\"Stop position of the interval\">\n");
+        lines.append("##INFO=<ID=MAPPING_QUALITIES,Number=.,Type=Integer,Description=\"Mapping qualities of the contig alignments that support the variant\">\n");
+        lines.append("##INFO=<ID=MAX_ALIGN_LENGTH,Number=1,Type=Integer,Description=\"Maximum of the values listed in ALIGN_LENGTHS\">\n");
+        lines.append("##INFO=<ID=SEGMENTS,Number=.,Type=String,Description=\"For CPX variants only; segments of reference that are rearranged\">\n");
+        lines.append("##INFO=<ID=SEQ_ALT_HAPLOTYPE,Number=A,Type=Character,Description=\"Alt haplotype sequence, one per alt allele\">\n");
+        lines.append("##INFO=<ID=SVLEN,Number=.,Type=Integer,Description=\"Difference in length between REF and ALT alleles\">\n");
+        lines.append("##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">\n");
+        final String contigs = "##contig=<ID=chr1,length=30000>\n##contig=<ID=chr2,length=20000>\n";
+        final String head = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n";
+        final StringBuilder records = new StringBuilder();
+        for (final Object[] call : calls) {
+            records.append(call[0]).append('\t').append(call[1]).append('\t')
+                    .append("CPX_").append(call[0]).append(':').append(call[1]).append('-').append(call[2])
+                    .append("\tN\t<CPX>\t.\t.\tALT_ARRANGEMENT=").append(call[5])
+                    .append(";CTG_NAMES=").append(call[3]).append(";END=").append(call[2])
+                    .append(";MAPPING_QUALITIES=").append(call[7]).append(";MAX_ALIGN_LENGTH=").append(call[8]);
+            if (!((String) call[4]).isEmpty()) {
+                records.append(";SEGMENTS=").append(call[4]);
+            }
+            records.append(";SEQ_ALT_HAPLOTYPE=").append("A".repeat((Integer) call[6]))
+                    .append(";SVTYPE=CPX\n");
+        }
+        final String record = "chr1\t100\tbad\tN\t<CPX>\t.\t.\t";
+        Files.writeString(dir.resolve("sv_cpx.vcf"), lines + contigs + head + records, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cpx_empty.vcf"), lines + contigs + head, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cpx_no_dictionary.vcf"), lines + head + records, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cpx_no_dictionary_one.vcf"),
+                lines + head + records.substring(0, records.indexOf("\n") + 1), StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cpx_sparse.vcf"), lines + contigs + head + record
+                + "END=200;SEGMENTS=chr1:100-200;SVTYPE=CPX\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cpx_bad_segment.vcf"), lines + contigs + head + record
+                + "ALT_ARRANGEMENT=1;CTG_NAMES=del;END=200;SEGMENTS=chr1:x-5;SEQ_ALT_HAPLOTYPE=AAA;SVTYPE=CPX\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cpx_whole_contig.vcf"), lines + contigs + head + record
+                + "ALT_ARRANGEMENT=1;CTG_NAMES=del;END=200;SEGMENTS=chr1;SEQ_ALT_HAPLOTYPE=AAA;SVTYPE=CPX\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cpx_bad_length.vcf"), lines + contigs + head + record
+                + "ALT_ARRANGEMENT=1;CTG_NAMES=del;END=200;MAX_ALIGN_LENGTH=many;SEGMENTS=chr1:100-200;SEQ_ALT_HAPLOTYPE=AAA;SVTYPE=CPX\n",
+                StandardCharsets.UTF_8);
+    }
+
+    static void svContigBam(final Path bam, final java.util.List<SAMSequenceRecord> sequences, final String sample,
+                            final Object[][] contigs, final long seed) {
+        svContigBam(bam, sequences, sample, contigs, seed, false);
+    }
+
+    static void svContigBam(final Path bam, final java.util.List<SAMSequenceRecord> sequences, final String sample,
+                            final Object[][] contigs, final long seed, final boolean scoreEachAlignment) {
+        final SAMFileHeader header = new SAMFileHeader();
+        sequences.forEach(header::addSequence);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        if (sample != null) {
+            group.setSample(sample.split(",")[0]);
+        }
+        header.addReadGroup(group);
+        if (sample != null && sample.contains(",")) {
+            final SAMReadGroupRecord second = new SAMReadGroupRecord("rg2");
+            second.setSample(sample.split(",")[1]);
+            header.addReadGroup(second);
+        }
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final java.util.Random random = new java.util.Random(seed);
+        try (SAMFileWriter writer = new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, false, bam.toFile())) {
+            final java.util.List<htsjdk.samtools.SAMRecord> reads = new java.util.ArrayList<>();
+            for (final Object[] contig : contigs) {
+                for (int at = 1; at < contig.length; at += 5) {
+                    final htsjdk.samtools.SAMRecord read = new htsjdk.samtools.SAMRecord(header);
+                    read.setReadName((String) contig[0]);
+                    read.setFlags((Integer) contig[at]);
+                    read.setReferenceName((String) contig[at + 1]);
+                    read.setAlignmentStart((Integer) contig[at + 2]);
+                    read.setCigarString((String) contig[at + 3]);
+                    read.setMappingQuality((Integer) contig[at + 4]);
+                    final int length = read.getCigar().getReadLength();
+                    final byte[] bases = new byte[length];
+                    final byte[] qualities = new byte[length];
+                    for (int base = 0; base < length; base++) {
+                        bases[base] = (byte) "ACGT".charAt(random.nextInt(4));
+                        qualities[base] = 30;
+                    }
+                    read.setReadBases(bases);
+                    read.setBaseQualities(qualities);
+                    read.setAttribute("RG", "rg1");
+                    if (at == 1 || scoreEachAlignment) {
+                        read.setAttribute("NM", 2);
+                        read.setAttribute("AS", scoreEachAlignment ? read.getCigar().getReferenceLength() : 90);
+                    }
+                    reads.add(read);
+                }
+            }
+            reads.sort(new htsjdk.samtools.SAMRecordCoordinateComparator());
+            reads.forEach(writer::addAlignment);
+        }
+    }
+
+    /**
+     * What `PathSeqScoreSpark` reads: the taxonomy of `pathseq2.fasta`, a queryname BAM of pairs on
+     * its contigs and an unsorted BAM of lone reads over another dictionary, with alternate hits on
+     * XA and SA, an accession the taxonomy does not know, and an identity that a stricter row drops.
+     */
+    /**
+     * sv_evidence.bam: FR pairs at a steady template size in two libraries, over a pile deep enough to
+     * reach the peak depth, with every kind of read ReadClassifier reports: clips with and without a
+     * good SA tag, big indels, a mate unmapped, on another contig, on the same strand, facing away or
+     * far off, and a run of long templates for the K-S test. The second BAM has other sizes, and
+     * sv_evidence_lone.bam has an unpaired read, which ReadMetadata refuses.
+     */
+    static void svEvidenceReads(final Path dir) throws Exception {
+        svEvidenceBam(dir.resolve("sv_evidence.bam"), 300, 1L, false);
+        svEvidenceBam(dir.resolve("sv_evidence2.bam"), 450, 2L, false);
+        svEvidenceBam(dir.resolve("sv_evidence_lone.bam"), 300, 3L, true);
+        java.nio.file.Files.write(dir.resolve("sv_ignore.txt"), "alt\n".getBytes());
+        java.nio.file.Files.write(dir.resolve("sv_ignore_bad.txt"), "nosuch\n".getBytes());
+    }
+
+    static void svEvidenceBam(final Path bam, final int template, final long seed, final boolean lone) {
+        final SAMFileHeader header = new SAMFileHeader();
+        header.addSequence(new SAMSequenceRecord("chr1", 30000));
+        header.addSequence(new SAMSequenceRecord("chr2", 20000));
+        header.addSequence(new SAMSequenceRecord("alt", 5000));
+        for (final String[] group : new String[][] {{"rg1", "libA"}, {"rg2", "libB"}, {"rg3", null}}) {
+            final SAMReadGroupRecord record = new SAMReadGroupRecord(group[0]);
+            record.setSample("s");
+            record.setLibrary(group[1]);
+            header.addReadGroup(record);
+        }
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final java.util.Random random = new java.util.Random(seed);
+        final java.util.List<htsjdk.samtools.SAMRecord> reads = new java.util.ArrayList<>();
+        final String[] groups = {"rg1", "rg2", "rg3"};
+        final java.util.function.BiFunction<String, Integer, htsjdk.samtools.SAMRecord> read = (name, flags) -> {
+            final htsjdk.samtools.SAMRecord record = new htsjdk.samtools.SAMRecord(header);
+            record.setReadName(name);
+            record.setFlags(flags);
+            record.setMappingQuality(60);
+            final byte[] bases = new byte[100];
+            final byte[] quals = new byte[100];
+            for (int at = 0; at < 100; at++) {
+                bases[at] = (byte) "ACGT".charAt(random.nextInt(4));
+                quals[at] = 30;
+            }
+            record.setReadBases(bases);
+            record.setBaseQualities(quals);
+            record.setAttribute("RG", groups[random.nextInt(3)]);
+            return record;
+        };
+        // One read at a place, with its mate's place and its template size.
+        final java.util.function.Consumer<Object[]> add = row -> {
+            final htsjdk.samtools.SAMRecord record = read.apply((String) row[0], (Integer) row[1]);
+            record.setReferenceName((String) row[2]);
+            record.setAlignmentStart((Integer) row[3]);
+            record.setCigarString((String) row[4]);
+            if (row[5] != null) {
+                record.setMateReferenceName((String) row[5]);
+                record.setMateAlignmentStart((Integer) row[6]);
+            }
+            record.setInferredInsertSize((Integer) row[7]);
+            for (int at = 8; at + 1 < row.length; at += 2) {
+                record.setAttribute((String) row[at], row[at + 1]);
+            }
+            reads.add(record);
+        };
+        // The steady pairs, two reads per 40 bases over both big contigs.
+        for (final String contig : new String[] {"chr1", "chr2"}) {
+            for (int start = 200; start < 15000; start += 40) {
+                final int size = template + random.nextInt(41) - 20;
+                final String name = contig + "p" + start;
+                add.accept(new Object[] {name, 99, contig, start, "100M", contig, start + size - 100, size, "MC", "100M", "MQ", 60});
+                add.accept(new Object[] {name, 147, contig, start + size - 100, "100M", contig, start, -size, "MC", "100M", "MQ", 60});
+            }
+        }
+        // A pile to the peak depth, then a shallower shoulder against it.
+        for (int copy = 0; copy < 120; copy++) {
+            add.accept(new Object[] {"pile" + copy, 99, "chr1", 8000 + copy % 7, "100M", "chr1", 8200, 300});
+        }
+        for (int copy = 0; copy < 30; copy++) {
+            add.accept(new Object[] {"shoulder" + copy, 99, "chr1", 8100 + copy, "100M", "chr1", 8300, 300});
+        }
+        // Long templates in one stretch, for the K-S windows.
+        for (int start = 16000; start < 17000; start += 10) {
+            final int size = template + 1500 + random.nextInt(50);
+            add.accept(new Object[] {"long" + start, 99, "chr1", start, "100M", "chr1", start + size - 100, size});
+        }
+        // Clips: a good SA, two of them, a poor one, one on this very spot, and clips that do not count.
+        add.accept(new Object[] {"clipA", 99, "chr1", 1000, "40S60M", "chr1", 1200, 300, "SA", "chr2,5000,+,60M40S,60,0;"});
+        add.accept(new Object[] {"clipB", 83, "chr1", 1100, "60M40S", "chr1", 900, -300, "SA", "chr2,5100,-,40S60M,60,0;"});
+        add.accept(new Object[] {"clipC", 99, "chr1", 1200, "35S65M", "chr1", 1400, 300, "SA", "chr2,5200,+,60M,60,0;alt,300,+,60M,60,0;"});
+        add.accept(new Object[] {"clipD", 99, "chr1", 1300, "35S65M", "chr1", 1500, 300, "SA", "chr2,5300,+,60M,5,0;"});
+        add.accept(new Object[] {"clipE", 99, "chr1", 1400, "35S65M", "chr1", 1600, 300, "SA", "chr1,1402,+,60M,60,0;"});
+        add.accept(new Object[] {"clipF", 99, "chr1", 1500, "20S80M", "chr1", 1700, 300});
+        add.accept(new Object[] {"clipG", 99, "chr1", 1600, "10H35S65M", "chr1", 1800, 300});
+        add.accept(new Object[] {"clipH", 99, "chr1", 1700, "65M35S5H", "chr1", 1900, 300, "SA", "alt,400,-,35M,60,0;"});
+        add.accept(new Object[] {"clipI", 99, "chr1", 1800, "32S36M32S", "chr1", 2000, 300});
+        add.accept(new Object[] {"clipJ", 2147, "chr1", 1900, "40H100M", "chr1", 2100, 300, "SA", "chr1,1000,+,40M60S,60,0;"});
+        final htsjdk.samtools.SAMRecord dull = read.apply("clipK", 99);
+        dull.setReferenceName("chr1");
+        dull.setAlignmentStart(1950);
+        dull.setCigarString("40S60M");
+        dull.setMateReferenceName("chr1");
+        dull.setMateAlignmentStart(2150);
+        dull.setInferredInsertSize(300);
+        final byte[] poor = dull.getBaseQualities();
+        java.util.Arrays.fill(poor, 12, 20, (byte) 5);
+        dull.setBaseQualities(poor);
+        reads.add(dull);
+        // Indels big and small.
+        add.accept(new Object[] {"insA", 99, "chr1", 2200, "30M50I20M", "chr1", 2400, 300});
+        add.accept(new Object[] {"delA", 99, "chr1", 2300, "50M60D50M", "chr1", 2600, 400});
+        add.accept(new Object[] {"delB", 99, "chr1", 2400, "50M20D50M", "chr1", 2700, 400});
+        add.accept(new Object[] {"insB", 99, "chr1", 2500, "20M10N30M45I5M", "chr1", 2800, 300});
+        // Discordant pairs.
+        add.accept(new Object[] {"mateOff", 73, "chr1", 3000, "100M", null, 0, 0});
+        add.accept(new Object[] {"mateOff2", 89, "chr1", 3100, "2M1I97M", null, 0, 0, "MD", "A1C97"});
+        add.accept(new Object[] {"interA", 97, "chr1", 3200, "100M", "chr2", 6000, 0, "MC", "50M50S", "MQ", 60});
+        add.accept(new Object[] {"interB", 81, "chr1", 3300, "100M", "chr2", 6100, 0, "MQ", 3});
+        add.accept(new Object[] {"interC", 97, "chr1", 3400, "100M", "alt", 700, 0});
+        add.accept(new Object[] {"interD", 97, "chr2", 15500, "100M", "chr1", 3500, 0});
+        add.accept(new Object[] {"interE", 97, "alt", 800, "100M", "chr1", 3600, 0});
+        add.accept(new Object[] {"sameA", 65, "chr1", 3700, "100M", "chr1", 4000, 400, "MD", "100"});
+        add.accept(new Object[] {"sameB", 113, "chr1", 3800, "100M", "chr1", 4100, 400, "MD", "T^AC98"});
+        add.accept(new Object[] {"outA", 97, "chr1", 4200, "100M", "chr1", 3900, -300, "MD", "97T1G0"});
+        add.accept(new Object[] {"outB", 81, "chr1", 4300, "100M", "chr1", 4600, 400});
+        add.accept(new Object[] {"farA", 99, "chr1", 4400, "100M", "chr1", 9000, 4700, "MQ", 60});
+        add.accept(new Object[] {"farB", 147, "chr1", 4500, "100M", "chr1", 100, -4500});
+        add.accept(new Object[] {"nearA", 99, "chr1", 4600, "100M", "chr1", 4610, 110});
+        add.accept(new Object[] {"second", 355, "chr1", 4700, "100M", "chr1", 4900, 300});
+        add.accept(new Object[] {"supp", 2195, "chr1", 4800, "100M", "chr1", 5000, 300});
+        add.accept(new Object[] {"dup", 1123, "chr1", 4900, "40S60M", "chr1", 5100, 300});
+        add.accept(new Object[] {"fail", 611, "chr1", 5000, "40S60M", "chr1", 5200, 300});
+        add.accept(new Object[] {"unmapped", 77, "*", 0, "*", null, 0, 0});
+        // Reads the filter's thresholds decide.
+        final htsjdk.samtools.SAMRecord low = read.apply("lowMapq", 99);
+        low.setReferenceName("chr1");
+        low.setAlignmentStart(5100);
+        low.setCigarString("40S60M");
+        low.setMateReferenceName("chr1");
+        low.setMateAlignmentStart(5300);
+        low.setInferredInsertSize(300);
+        low.setMappingQuality(30);
+        reads.add(low);
+        add.accept(new Object[] {"shortMatch", 99, "chr1", 5200, "50S50M", "chr1", 5400, 300, "SA", "chr2,5400,+,50M50S,60,0;"});
+        add.accept(new Object[] {"altClip", 99, "alt", 900, "40S60M", "alt", 1100, 300, "SA", "chr1,5500,+,60M40S,60,0;"});
+        if (lone) {
+            add.accept(new Object[] {"alone", 0, "chr1", 5500, "100M", null, 0, 0});
+        }
+        // Mapped or not, a read with no mate place has its unmapped flags right.
+        for (final htsjdk.samtools.SAMRecord record : reads) {
+            if (record.getReadUnmappedFlag()) {
+                record.setMappingQuality(0);
+            }
+            if (record.getReadPairedFlag() && record.getMateUnmappedFlag()) {
+                record.setMateReferenceName(record.getReferenceName());
+                record.setMateAlignmentStart(record.getAlignmentStart());
+            }
+        }
+        try (SAMFileWriter writer = new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, false, bam.toFile())) {
+            reads.forEach(writer::addAlignment);
+        }
+    }
+
+    static void pathSeqScoreReads(final Path dir) throws Exception {
+        new org.broadinstitute.hellbender.tools.spark.pathseq.PathSeqBuildReferenceTaxonomy().instanceMain(new String[] {
+                "-R", dir.resolve("pathseq2.fasta").toString(), "--tax-dump", dir.resolve("taxdump.tar.gz").toString(),
+                "--genbank-catalog", dir.resolve("genbank.catalog").toString(),
+                "--min-non-virus-contig-length", "0", "-O", dir.resolve("pathseq.db").toString()});
+        final String virus = "gi|9|ref|NC_BOTH.1|taxid|11234|";
+        final SAMFileHeader paired = new SAMFileHeader();
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("s");
+        paired.addReadGroup(group);
+        paired.addSequence(new htsjdk.samtools.SAMSequenceRecord("taxid|562|", 800));
+        paired.addSequence(new htsjdk.samtools.SAMSequenceRecord(virus, 700));
+        paired.addSequence(new htsjdk.samtools.SAMSequenceRecord("taxid|9606|", 600));
+        paired.addSequence(new htsjdk.samtools.SAMSequenceRecord("unknown_contig", 500));
+        paired.setSortOrder(SAMFileHeader.SortOrder.queryname);
+        final SAMFileHeader lone = new SAMFileHeader();
+        lone.addReadGroup(group);
+        lone.addSequence(new htsjdk.samtools.SAMSequenceRecord(virus, 700));
+        lone.addSequence(new htsjdk.samtools.SAMSequenceRecord("taxid|562|", 800));
+        lone.addSequence(new htsjdk.samtools.SAMSequenceRecord("extra_contig", 300));
+        lone.setSortOrder(SAMFileHeader.SortOrder.unsorted);
+        final String bases = "ACGTTGCAAGGCTTAACCGATCGATGCATCGGATTACGCTAGCTAGGATCCTAGTCCAGTTACGGATCCA";
+        final Object[][] pairs = {
+                {"p0", "taxid|562|", 0, "taxid|562|", 1, null},
+                {"p1", "taxid|562|", 0, virus, 0, null},
+                {"p2", virus, 2, null, 0, null},
+                {"p3", "taxid|9606|", 0, "taxid|9606|", 3, null},
+                {"p4", "unknown_contig", 0, "unknown_contig", 0, null},
+                {"p5", "taxid|562|", 0, "taxid|562|", 0, virus + ",+20,70M,3;taxid|9606|,-5,70M,1;"},
+        };
+        final java.util.function.Function<Object[], SAMRecord> make = row -> {
+            final SAMFileHeader header = (SAMFileHeader) row[0];
+            final SAMRecord record = new SAMRecord(header);
+            record.setReadName((String) row[1]);
+            record.setFlags((Integer) row[2] | (row[3] == null ? 0x4 : 0));
+            record.setReadString(bases);
+            final byte[] qualities = new byte[bases.length()];
+            java.util.Arrays.fill(qualities, (byte) 30);
+            record.setBaseQualities(qualities);
+            record.setAttribute("RG", "rg1");
+            if (row[3] != null) {
+                record.setReferenceName((String) row[3]);
+                record.setAlignmentStart(50);
+                record.setMappingQuality(60);
+                record.setCigarString("70M");
+                record.setAttribute("NM", row[4]);
+            }
+            return record;
+        };
+        try (final SAMFileWriter writer = new SAMFileWriterFactory()
+                .makeBAMWriter(paired, true, dir.resolve("pathseq_score_paired.bam").toFile())) {
+            for (final Object[] pair : pairs) {
+                final SAMRecord first = make.apply(new Object[] {paired, pair[0], 0x1 | 0x40 | (pair[3] == null ? 0x8 : 0), pair[1], pair[2]});
+                final SAMRecord second = make.apply(new Object[] {paired, pair[0], 0x1 | 0x80, pair[3], pair[4]});
+                if (pair[5] != null) {
+                    first.setAttribute("XA", pair[5]);
+                    second.setAttribute("XA", pair[5]);
+                }
+                writer.addAlignment(first);
+                writer.addAlignment(second);
+            }
+        }
+        try (final SAMFileWriter writer = new SAMFileWriterFactory()
+                .makeBAMWriter(lone, true, dir.resolve("pathseq_score_unpaired.bam").toFile())) {
+            writer.addAlignment(make.apply(new Object[] {lone, "u0", 0, "taxid|562|", 0}));
+            final SAMRecord withSa = make.apply(new Object[] {lone, "u1", 0, virus, 1});
+            withSa.setAttribute("SA", "taxid|562|,30,+,70M,60,2;");
+            writer.addAlignment(withSa);
+            writer.addAlignment(make.apply(new Object[] {lone, "u2", 0, virus, 40}));
+            writer.addAlignment(make.apply(new Object[] {lone, "u3", 0, "extra_contig", 0}));
+            writer.addAlignment(make.apply(new Object[] {lone, "u4", 0, null, 0}));
+        }
+    }
+
+    /**
+     * What `PathSeqFilterSpark` reads: an unaligned BAM with pairs that survive and a lone read that
+     * does, with an adapter, a repeat, a poly-A, a quality tail and a duplicate each changing what is
+     * written, and reads taken from `pathseq_kmers.fasta` for the host k-mer sets built from it. A
+     * second BAM carries the alignments and NM tags `--is-host-aligned` looks at.
+     */
+    static void pathSeqFilterReads(final Path dir) throws Exception {
+        final java.util.Random random = new java.util.Random(23);
+        final java.util.function.IntFunction<String> bases = length -> {
+            final StringBuilder text = new StringBuilder();
+            for (int i = 0; i < length; i++) {
+                text.append("ACGT".charAt(random.nextInt(4)));
+            }
+            return text.toString();
+        };
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("s");
+        header.addReadGroup(group);
+        header.setSortOrder(SAMFileHeader.SortOrder.unsorted);
+        final java.util.function.BiFunction<String, Integer, java.util.function.Function<String, SAMRecord>> read =
+                (name, flags) -> text -> {
+                    final SAMRecord record = new SAMRecord(header);
+                    record.setReadName(name);
+                    record.setFlags(flags);
+                    record.setReadString(text);
+                    final byte[] qualities = new byte[text.length()];
+                    java.util.Arrays.fill(qualities, (byte) 30);
+                    record.setBaseQualities(qualities);
+                    record.setAttribute("RG", "rg1");
+                    return record;
+                };
+        final String host = htsjdk.samtools.reference.ReferenceSequenceFileFactory
+                .getReferenceSequenceFile(dir.resolve("pathseq_kmers.fasta"), false, false)
+                .nextSequence().getBaseString();
+        final String copied = bases.apply(80);
+        final List<SAMRecord> reads = new ArrayList<>();
+        for (int i = 0; i < 12; i++) {
+            reads.add(read.apply("pair" + i + "/1", 0x1 | 0x4 | 0x8 | 0x40).apply(bases.apply(70 + i)));
+            reads.add(read.apply("pair" + i + "/2", 0x1 | 0x4 | 0x8 | 0x80).apply(bases.apply(75)));
+            reads.add(read.apply("lone" + i, 0x4).apply(bases.apply(80)));
+        }
+        reads.add(read.apply("adapter", 0x4).apply(bases.apply(50) + "AGATCGGAAGAGCTCGTATGCCGTCTTCTGCTTG"));
+        reads.add(read.apply("repeat", 0x4).apply("AT".repeat(30) + bases.apply(30)));
+        reads.add(read.apply("polya", 0x4).apply("A".repeat(90)));
+        reads.add(read.apply("dust", 0x4).apply(bases.apply(30) + "CAG".repeat(12) + bases.apply(30)));
+        reads.add(read.apply("ambiguous", 0x4).apply(bases.apply(30) + "NNN" + bases.apply(40)));
+        reads.add(read.apply("host", 0x4).apply(host.substring(100, 180)));
+        reads.add(read.apply("host-pair/1", 0x1 | 0x4 | 0x8 | 0x40).apply(host.substring(300, 380)));
+        reads.add(read.apply("host-pair/2", 0x1 | 0x4 | 0x8 | 0x80).apply(bases.apply(75)));
+        reads.add(read.apply("dup-a", 0x4).apply(copied));
+        reads.add(read.apply("dup-b", 0x4 | 0x10).apply(htsjdk.samtools.util.SequenceUtil.reverseComplement(copied)));
+        final SAMRecord tails = read.apply("tails", 0x4).apply(bases.apply(80));
+        final byte[] qualities = tails.getBaseQualities();
+        java.util.Arrays.fill(qualities, 0, 6, (byte) 3);
+        java.util.Arrays.fill(qualities, 72, 80, (byte) 2);
+        tails.setBaseQualities(qualities);
+        reads.add(tails);
+        reads.add(read.apply("second", 0x4 | 0x100).apply(bases.apply(80)));
+        try (final SAMFileWriter writer = new SAMFileWriterFactory()
+                .makeBAMWriter(header, true, dir.resolve("pathseq_filter.bam").toFile())) {
+            reads.forEach(writer::addAlignment);
+        }
+        final SAMFileHeader aligned = header.clone();
+        aligned.addSequence(new htsjdk.samtools.SAMSequenceRecord("chr1", 100000));
+        try (final SAMFileWriter writer = new SAMFileWriterFactory()
+                .makeBAMWriter(aligned, true, dir.resolve("pathseq_filter_aligned.bam").toFile())) {
+            int at = 100;
+            for (final int nm : new int[] {5, 20, 40, -1}) {
+                for (final int flags : new int[] {0, 0x10}) {
+                    final SAMRecord record = read.apply("mapped" + nm + "." + flags, flags).apply(bases.apply(80));
+                    record.setHeader(aligned);
+                    record.setReferenceName("chr1");
+                    record.setAlignmentStart(at += 100);
+                    record.setMappingQuality(60);
+                    record.setCigarString("80M");
+                    if (nm >= 0) {
+                        record.setAttribute("NM", nm);
+                    }
+                    writer.addAlignment(record);
+                }
+            }
+        }
+        for (final String[] set : new String[][] {{"pathseq_filter.hss", "0"}, {"pathseq_filter.bfi", "0.001"}}) {
+            new org.broadinstitute.hellbender.tools.spark.pathseq.PathSeqBuildKmers().instanceMain(new String[] {
+                    "-R", dir.resolve("pathseq_kmers.fasta").toString(), "--kmer-size", "31",
+                    "--bloom-false-positive-probability", set[1], "-O", dir.resolve(set[0]).toString()});
+        }
     }
 
     /**
