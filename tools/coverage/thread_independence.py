@@ -179,6 +179,16 @@ def main(argv):
                 differing.append(("BwaSpark", "larger", one, many))
             print(f"BwaSpark, larger input: exit {one[0]}, equal {one == many}", flush=True)
 
+        # What a container wrote belongs to root, and only a container can take it away again.
+        if not (options.host and options.fixtures):
+            subprocess.run(
+                [
+                    "docker", "run", "--rm", "--platform", run_array.PLATFORM,
+                    "-v", f"{work}:/scratch", run_array.IMAGE, "rm -rf /scratch/*",
+                ],
+                capture_output=True,
+            )
+
     print(f"tools rows={total} accepted={accepted} differing={len(differing)}")
     for tool, row, one, many in differing:
         changed = sorted(
