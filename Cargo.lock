@@ -619,6 +619,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "gatk-fermilite"
+version = "0.1.0"
+
+[[package]]
 name = "gatk-readfilter"
 version = "0.1.0"
 dependencies = [
