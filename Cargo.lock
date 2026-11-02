@@ -636,10 +636,14 @@ name = "gatk-tools"
 version = "0.1.0"
 dependencies = [
  "bwa-mem4",
+ "bwa-mem4-core",
+ "bwa-mem4-index",
+ "bwa-mem4-mem",
  "clap",
  "gatk-annotation",
  "gatk-corpus",
  "gatk-engine",
+ "gatk-fermilite",
  "gatk-readfilter",
  "htsjdk-bam",
  "htsjdk-bgzf",

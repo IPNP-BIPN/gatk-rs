@@ -80,29 +80,29 @@ pub struct SvInterval {
 }
 
 impl SvInterval {
-    fn overlaps(&self, that: &SvInterval) -> bool {
+    pub fn overlaps(&self, that: &SvInterval) -> bool {
         self.contig == that.contig && self.start < that.end && that.start < self.end
     }
 
-    fn overlap_len(&self, that: &SvInterval) -> i32 {
+    pub fn overlap_len(&self, that: &SvInterval) -> i32 {
         if self.contig != that.contig {
             return 0;
         }
         (self.end.min(that.end) - self.start.max(that.start)).max(0)
     }
 
-    fn is_upstream_of(&self, that: &SvInterval) -> bool {
+    pub fn is_upstream_of(&self, that: &SvInterval) -> bool {
         self.contig < that.contig || (self.contig == that.contig && self.end <= that.start)
     }
 
-    fn gap_len(&self, that: &SvInterval) -> i32 {
+    pub fn gap_len(&self, that: &SvInterval) -> i32 {
         if self.contig != that.contig {
             return i32::MAX;
         }
         that.start - self.end
     }
 
-    fn join(&self, that: &SvInterval) -> SvInterval {
+    pub fn join(&self, that: &SvInterval) -> SvInterval {
         SvInterval {
             contig: self.contig,
             start: self.start.min(that.start),
@@ -110,19 +110,19 @@ impl SvInterval {
         }
     }
 
-    fn text(&self) -> String {
+    pub fn text(&self) -> String {
         format!("{}[{}:{}]", self.contig, self.start, self.end)
     }
 }
 
 /// `SVReadFilter.notJunk` and `isMapped`.
-fn is_mapped(record: &BamRecord) -> bool {
+pub(crate) fn is_mapped(record: &BamRecord) -> bool {
     record.flags & (DUPLICATE | QC_FAIL | UNMAPPED) == 0
         && record.reference_index >= 0
         && record.alignment_start != 0
 }
 
-fn is_primary_line(record: &BamRecord) -> bool {
+pub(crate) fn is_primary_line(record: &BamRecord) -> bool {
     record.flags & (SECONDARY | SUPPLEMENTARY) == 0
 }
 
@@ -306,7 +306,7 @@ fn rest_of_fragment(
 }
 
 /// `fixedWidthInterval`.
-fn fixed_width(contig: i32, offset: i32, uncertainty: i32) -> SvInterval {
+pub fn fixed_width(contig: i32, offset: i32, uncertainty: i32) -> SvInterval {
     let mut width = 2 * uncertainty;
     let mut start = offset - uncertainty;
     if start < 1 {
@@ -321,7 +321,7 @@ fn fixed_width(contig: i32, offset: i32, uncertainty: i32) -> SvInterval {
 }
 
 /// `TemplateFragmentOrdinal.forRead`.
-fn fragment_ordinal(record: &BamRecord) -> &'static str {
+pub(crate) fn fragment_ordinal(record: &BamRecord) -> &'static str {
     if record.flags & PAIRED == 0 {
         return "";
     }
@@ -389,7 +389,7 @@ fn split_read_targets(
     clipped_at_start: bool,
     metadata: &ReadMetadata,
     min_mapq: i32,
-) -> Result<Option<String>, EvidenceError> {
+) -> Result<Option<(SvInterval, bool)>, EvidenceError> {
     let Some(tag) = string_tag(record, b"SA") else {
         return Ok(None);
     };
@@ -425,20 +425,16 @@ fn split_read_targets(
     if !good {
         return Ok(None);
     }
-    Ok(Some(format!(
-        "{}{}",
-        interval.text(),
-        if strand { "1" } else { "0" }
-    )))
+    Ok(Some((interval, strand)))
 }
 
-/// `DiscordantReadPairEvidence`'s target and its text, from the constructor and `stringRep`.
+/// `DiscordantReadPairEvidence`'s target, and that target as a distal one if it is.
 fn discordant_pair_targets(
     record: &BamRecord,
     location: &SvInterval,
     metadata: &ReadMetadata,
     min_mapq: i32,
-) -> Result<String, EvidenceError> {
+) -> Result<(SvInterval, Option<(SvInterval, bool)>), EvidenceError> {
     let mate_reverse = record.flags & MATE_REVERSE != 0;
     let max_fragment = max_non_outlier_fragment_size(metadata, read_group(record))?;
     let mate_length = match string_tag(record, b"MC") {
@@ -471,31 +467,165 @@ fn discordant_pair_targets(
         && quality >= min_mapq
         && !target.overlaps(location)
         && !metadata.ignore_cross_contig(target.contig);
-    Ok(if distal {
-        format!("{}{}", target.text(), if mate_reverse { "0" } else { "1" })
-    } else {
-        String::new()
-    })
+    Ok((target, distal.then_some((target, !mate_reverse))))
 }
 
-/// `ReadEvidence.stringRep`.
-fn read_line(
+/// Which subclass of `ReadEvidence`, with what its `toString` adds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReadKind {
+    SplitRead { sa_tag: Option<String> },
+    LargeIndel,
+    MateUnmapped,
+    InterContigPair { target: SvInterval },
+    SameStrandPair { target: SvInterval },
+    OutiesPair { target: SvInterval },
+    WeirdTemplateSize { target: SvInterval },
+}
+
+/// What `ReadEvidence` keeps of its read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReadEvidence {
+    pub kind: ReadKind,
+    pub template_name: String,
+    pub ordinal: &'static str,
+    /// `evidenceUpstreamOfBreakpoint`.
+    pub forward: bool,
+    pub template_size: i32,
+    pub cigar: String,
+    pub mapping_quality: u8,
+}
+
+/// `BreakpointEvidence`'s class.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EvidenceKind {
+    /// `BreakpointEvidence` itself, what a cluster is replaced with.
+    Cluster,
+    External,
+    TemplateSizeAnomaly {
+        read_count: i32,
+    },
+    Read(Box<ReadEvidence>),
+}
+
+/// `BreakpointEvidence`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Evidence {
+    pub location: SvInterval,
+    pub weight: i32,
+    pub validated: bool,
+    pub kind: EvidenceKind,
+    /// `getDistalTargets(...)` where `hasDistalTargets`: the reference never finds more than one.
+    pub distal: Option<(SvInterval, bool)>,
+}
+
+impl Evidence {
+    /// `stringRep`.
+    pub fn string_rep(&self) -> String {
+        let class = match &self.kind {
+            EvidenceKind::Cluster => "BreakpointEvidence",
+            EvidenceKind::External => "ExternalEvidence",
+            EvidenceKind::TemplateSizeAnomaly { .. } => "TemplateSizeAnomaly",
+            EvidenceKind::Read(read) => match read.kind {
+                ReadKind::SplitRead { .. } => "SplitRead",
+                ReadKind::LargeIndel => "LargeIndel",
+                ReadKind::MateUnmapped => "MateUnmapped",
+                ReadKind::InterContigPair { .. } => "InterContigPair",
+                ReadKind::SameStrandPair { .. } => "SameStrandPair",
+                ReadKind::OutiesPair { .. } => "OutiesPair",
+                ReadKind::WeirdTemplateSize { .. } => "WeirdTemplateSize",
+            },
+        };
+        let distal = match &self.distal {
+            Some((interval, strand)) => {
+                format!("{}{}", interval.text(), if *strand { "1" } else { "0" })
+            }
+            None => String::new(),
+        };
+        let base = format!(
+            "{}\t{}\t{class}\t{distal}",
+            self.location.text(),
+            self.weight
+        );
+        match &self.kind {
+            EvidenceKind::Cluster | EvidenceKind::External => base,
+            EvidenceKind::TemplateSizeAnomaly { read_count } => format!("{base}\t{read_count}"),
+            EvidenceKind::Read(read) => format!(
+                "{base}\t{}{}\t{}\t{}\t{}\t{}",
+                read.template_name,
+                read.ordinal,
+                if read.forward { "1" } else { "0" },
+                read.template_size,
+                read.cigar,
+                read.mapping_quality
+            ),
+        }
+    }
+
+    /// `toString`, which is what `--breakpoint-evidence-dir` is written with.
+    pub fn to_text(&self) -> String {
+        let base = format!("{}^{}", self.location.text(), self.weight);
+        match &self.kind {
+            EvidenceKind::Cluster => base,
+            EvidenceKind::External => format!("{base}\tExternalEvidence"),
+            EvidenceKind::TemplateSizeAnomaly { read_count } => {
+                format!("{base}\tTemplateSizeAnomaly\t{read_count}")
+            }
+            EvidenceKind::Read(read) => {
+                let base = format!("{base}\t{}{}", read.template_name, read.ordinal);
+                match &read.kind {
+                    ReadKind::SplitRead { sa_tag } => format!(
+                        "{base}\tSplit\t{}\t{}",
+                        read.cigar,
+                        match sa_tag {
+                            Some(tag) => format!(" SA: {tag}"),
+                            None => " SA: None".to_string(),
+                        }
+                    ),
+                    ReadKind::LargeIndel => format!("{base}\tIndel\t{}", read.cigar),
+                    ReadKind::MateUnmapped => format!("{base}\tUnmappedMate"),
+                    ReadKind::InterContigPair { target } => {
+                        format!("{base}\tIntercontigPair\t{}", target.text())
+                    }
+                    ReadKind::OutiesPair { target } => {
+                        format!("{base}\tOutiesPair\t{}", target.text())
+                    }
+                    ReadKind::SameStrandPair { target } => {
+                        format!("{base}\tSameStrandPair\t{}", target.text())
+                    }
+                    ReadKind::WeirdTemplateSize { target } => format!(
+                        "{base}\tTemplateSize\t{}\t{}",
+                        target.text(),
+                        read.template_size
+                    ),
+                }
+            }
+        }
+    }
+}
+
+/// `ReadEvidence`'s constructor.
+fn read_evidence(
     record: &BamRecord,
-    location: &SvInterval,
-    weight_kind: &str,
-    distal: &str,
+    location: SvInterval,
+    kind: ReadKind,
+    distal: Option<(SvInterval, bool)>,
     forward: bool,
-) -> String {
-    format!(
-        "{}\t1\t{weight_kind}\t{distal}\t{}{}\t{}\t{}\t{}\t{}",
-        location.text(),
-        record.read_name,
-        fragment_ordinal(record),
-        if forward { "1" } else { "0" },
-        record.inferred_insert_size,
-        record.cigar.to_text(),
-        record.mapping_quality
-    )
+) -> Evidence {
+    Evidence {
+        location,
+        weight: 1,
+        validated: false,
+        kind: EvidenceKind::Read(Box::new(ReadEvidence {
+            kind,
+            template_name: record.read_name.clone(),
+            ordinal: fragment_ordinal(record),
+            forward,
+            template_size: record.inferred_insert_size,
+            cigar: record.cigar.to_text(),
+            mapping_quality: record.mapping_quality,
+        })),
+        distal,
+    }
 }
 
 /// `hasInitialSoftClip`.
@@ -586,7 +716,7 @@ impl<'a> KsWindowFinder<'a> {
     fn test_read(
         &mut self,
         record: &BamRecord,
-        lines: &mut Vec<String>,
+        lines: &mut Vec<Evidence>,
     ) -> Result<(), EvidenceError> {
         if !is_template_length_testable(record, &self.arguments)? {
             return Ok(());
@@ -612,7 +742,7 @@ impl<'a> KsWindowFinder<'a> {
     }
 
     /// `checkHistograms`.
-    fn check_histograms(&mut self, lines: &mut Vec<String>) {
+    fn check_histograms(&mut self, lines: &mut Vec<Evidence>) {
         let Some(contig) = self.contig else {
             return;
         };
@@ -646,11 +776,15 @@ impl<'a> KsWindowFinder<'a> {
                     .expect("the same keys")
                     .cdf;
                 if is_different_by_ks(&cdf.fractions, cdf.counts, &pair.counts[old], observed) {
-                    lines.push(format!(
-                        "{}\t{EVIDENCE_WEIGHT}\tTemplateSizeAnomaly\t\t{}",
-                        interval.text(),
-                        observed as i32
-                    ));
+                    lines.push(Evidence {
+                        location: interval,
+                        weight: EVIDENCE_WEIGHT,
+                        validated: false,
+                        kind: EvidenceKind::TemplateSizeAnomaly {
+                            read_count: observed as i32,
+                        },
+                        distal: None,
+                    });
                 }
             }
             pair.counts[old].iter_mut().for_each(|count| *count = 0);
@@ -866,6 +1000,43 @@ pub fn classify(
     ignored: &[SvInterval],
     arguments: &MetadataArguments,
 ) -> Result<Vec<String>, EvidenceError> {
+    Ok(evidence(records, metadata, ignored, arguments)?
+        .iter()
+        .map(Evidence::string_rep)
+        .collect())
+}
+
+fn inter_contig(target: SvInterval) -> ReadKind {
+    ReadKind::InterContigPair { target }
+}
+
+fn same_strand(target: SvInterval) -> ReadKind {
+    ReadKind::SameStrandPair { target }
+}
+
+fn outies(target: SvInterval) -> ReadKind {
+    ReadKind::OutiesPair { target }
+}
+
+fn weird_template(target: SvInterval) -> ReadKind {
+    ReadKind::WeirdTemplateSize { target }
+}
+
+/// `SVReadFilter.containedInRegionToIgnore`.
+pub(crate) fn contained_in_region_to_ignore(interval: &SvInterval, ignored: &[SvInterval]) -> bool {
+    let length = interval.end - interval.start;
+    ignored
+        .iter()
+        .any(|region| region.overlaps(interval) && region.overlap_len(interval) == length)
+}
+
+/// `ReadClassifier` over one partition and its sentinel.
+pub fn evidence(
+    records: &[BamRecord],
+    metadata: &ReadMetadata,
+    ignored: &[SvInterval],
+    arguments: &MetadataArguments,
+) -> Result<Vec<Evidence>, EvidenceError> {
     let mut finder = KsWindowFinder::new(metadata, *arguments);
     let mut lines = Vec::new();
     let min_mapq = i32::from(arguments.min_evidence_mapq);
@@ -881,11 +1052,7 @@ pub fn classify(
             start: record.alignment_start,
             end: read_utils::end(record),
         };
-        let length = span.end - span.start;
-        if ignored
-            .iter()
-            .any(|region| region.overlaps(&span) && region.overlap_len(&span) == length)
-        {
+        if contained_in_region_to_ignore(&span, ignored) {
             continue;
         }
         let contig = record.reference_index;
@@ -905,11 +1072,12 @@ pub fn classify(
                 };
                 let location = fixed_width(contig, offset, SPLIT_UNCERTAINTY);
                 let distal = split_read_targets(record, &location, at_start, metadata, min_mapq)?;
-                lines.push(read_line(
+                let sa_tag = string_tag(record, b"SA").map(str::to_string);
+                lines.push(read_evidence(
                     record,
-                    &location,
-                    "SplitRead",
-                    distal.as_deref().unwrap_or(""),
+                    location,
+                    ReadKind::SplitRead { sa_tag },
+                    distal,
                     !at_start,
                 ));
             }
@@ -925,7 +1093,13 @@ pub fn classify(
                 };
                 if let Some(offset) = offset {
                     let location = fixed_width(contig, offset, INDEL_UNCERTAINTY);
-                    lines.push(read_line(record, &location, "LargeIndel", "", true));
+                    lines.push(read_evidence(
+                        record,
+                        location,
+                        ReadKind::LargeIndel,
+                        None,
+                        true,
+                    ));
                 }
             }
             if element.op.consumes_reference_bases() {
@@ -937,15 +1111,21 @@ pub fn classify(
             let forward = record.flags & REVERSE == 0;
             if mate_is_unmapped(record)? {
                 let location = rest_of_fragment(record, metadata)?;
-                lines.push(read_line(record, &location, "MateUnmapped", "", forward));
+                lines.push(read_evidence(
+                    record,
+                    location,
+                    ReadKind::MateUnmapped,
+                    None,
+                    forward,
+                ));
             } else {
                 let mate_contig = record.mate_reference_index;
                 let kind = if contig != mate_contig {
                     (!metadata.ignore_cross_contig(contig)
                         && !metadata.ignore_cross_contig(mate_contig))
-                    .then_some("InterContigPair")
+                    .then_some(inter_contig as fn(SvInterval) -> ReadKind)
                 } else if forward == (record.flags & MATE_REVERSE == 0) {
-                    Some("SameStrandPair")
+                    Some(same_strand as fn(SvInterval) -> ReadKind)
                 } else if if forward {
                     record.alignment_start - arguments.allowed_short_fragment_overhang
                         > record.mate_alignment_start
@@ -953,7 +1133,7 @@ pub fn classify(
                     record.alignment_start + arguments.allowed_short_fragment_overhang
                         < record.mate_alignment_start
                 } {
-                    Some("OutiesPair")
+                    Some(outies as fn(SvInterval) -> ReadKind)
                 } else {
                     let library = library_name(metadata, read_group(record))?;
                     let statistics = metadata
@@ -962,12 +1142,19 @@ pub fn classify(
                         .ok_or_else(|| "null".to_string())?;
                     (statistics.zish_score(record.inferred_insert_size.abs())
                         > MAX_NON_OUTLIER_ZISH_SCORE)
-                        .then_some("WeirdTemplateSize")
+                        .then_some(weird_template as fn(SvInterval) -> ReadKind)
                 };
                 if let Some(kind) = kind {
                     let location = rest_of_fragment(record, metadata)?;
-                    let distal = discordant_pair_targets(record, &location, metadata, min_mapq)?;
-                    lines.push(read_line(record, &location, kind, &distal, forward));
+                    let (target, distal) =
+                        discordant_pair_targets(record, &location, metadata, min_mapq)?;
+                    lines.push(read_evidence(
+                        record,
+                        location,
+                        kind(target),
+                        distal,
+                        forward,
+                    ));
                 }
             }
         }

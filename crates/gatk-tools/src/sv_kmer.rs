@@ -136,6 +136,112 @@ impl SvKmerLong {
     }
 }
 
+/// `SVKmerizer` over `SVKmerLong`: a bad base rolls nothing in and starts the count again. The
+/// count after each k-mer is `kSize - kSpace`, so a `kSpace` of 0 gets past the test for K only
+/// with a bad base's help: the adapter sequence gives one k-mer per run of good bases.
+pub struct Kmerizer<'a> {
+    seq: &'a [u8],
+    k: i32,
+    advance: i32,
+    index: usize,
+    next: Option<SvKmerLong>,
+}
+
+impl<'a> Kmerizer<'a> {
+    pub fn new(seq: &'a [u8], k: i32, k_space: i32) -> Kmerizer<'a> {
+        let mut kmerizer = Kmerizer {
+            seq,
+            k,
+            advance: k.wrapping_sub(k_space),
+            index: 0,
+            next: None,
+        };
+        kmerizer.next = kmerizer.step(SvKmerLong::default(), 0);
+        kmerizer
+    }
+
+    fn step(&mut self, mut kmer: SvKmerLong, mut valid: i32) -> Option<SvKmerLong> {
+        while self.index < self.seq.len() {
+            match self.seq[self.index] {
+                b'a' | b'A' => kmer = kmer.successor(0, self.k),
+                b'c' | b'C' => kmer = kmer.successor(1, self.k),
+                b'g' | b'G' => kmer = kmer.successor(2, self.k),
+                b't' | b'T' => kmer = kmer.successor(3, self.k),
+                _ => valid = -1,
+            }
+            self.index += 1;
+            valid = valid.wrapping_add(1);
+            if valid == self.k {
+                return Some(kmer);
+            }
+        }
+        None
+    }
+}
+
+impl Iterator for Kmerizer<'_> {
+    type Item = SvKmerLong;
+
+    fn next(&mut self) -> Option<SvKmerLong> {
+        let result = self.next?;
+        self.next = self.step(result, self.advance);
+        Some(result)
+    }
+}
+
+/// `SVKmerShort`, for the K of 31 `FermiLiteAssemblyHandler` looks for shadowed contigs with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SvKmerShort(pub i64);
+
+impl SvKmerShort {
+    const fn mask(k: i32) -> i64 {
+        (1i64 << (k * 2)) - 1
+    }
+
+    pub fn successor(self, base: i64, k: i32) -> SvKmerShort {
+        SvKmerShort(((self.0 << 2) | (base & 3)) & Self::mask(k))
+    }
+
+    pub fn reverse_complement(self, k: i32) -> SvKmerShort {
+        SvKmerShort(reverse_complement_long(self.0 << (64 - k * 2)) & Self::mask(k))
+    }
+
+    pub fn canonical(self, k: i32) -> SvKmerShort {
+        if (self.0 >> k) & 1 == 0 {
+            self
+        } else {
+            self.reverse_complement(k)
+        }
+    }
+
+    /// `hashCode`, `SVUtils.fnvLong64(2166136261L, valLow)` cut to an int.
+    pub fn hash_code(self) -> i32 {
+        fnv_long_64(2166136261, self.0) as i32
+    }
+
+    /// `new SVKmerizer(seq, k, new SVKmerShort())` run out: the same rule as [`Kmerizer`].
+    pub fn kmers(seq: &[u8], k: i32) -> Vec<SvKmerShort> {
+        let mut kmers = Vec::new();
+        let mut kmer = SvKmerShort(0);
+        let mut valid = 0;
+        for base in seq {
+            match base {
+                b'a' | b'A' => kmer = kmer.successor(0, k),
+                b'c' | b'C' => kmer = kmer.successor(1, k),
+                b'g' | b'G' => kmer = kmer.successor(2, k),
+                b't' | b'T' => kmer = kmer.successor(3, k),
+                _ => valid = -1,
+            }
+            valid += 1;
+            if valid == k {
+                kmers.push(kmer);
+                valid = k - 1;
+            }
+        }
+        kmers
+    }
+}
+
 /// `SVDUSTFilteredKmerizer.canonicalStream`'s source, before `canonical`.
 pub struct DustFilteredKmerizer<'a> {
     seq: &'a [u8],

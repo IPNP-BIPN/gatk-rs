@@ -394,3 +394,124 @@ fn run_bwa(
     bwa_mem4::cmd_mem::run(mem.args, &argv).map_err(|error| error.to_string())?;
     std::fs::read_to_string(&sam).map_err(io)
 }
+
+/// What `BwaMemAlignment` says of one line of a contig, with the JNI's fields as `alignSeqs` fills
+/// them in. `ref_id` is -1 on the one line of a contig that did not align.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContigAlignment {
+    pub ref_id: i32,
+    pub start: i64,
+    pub reverse: bool,
+    pub supplementary: bool,
+    pub mapq: u32,
+    pub cigar: String,
+    pub mismatches: i32,
+    pub score: i32,
+    pub suboptimal: i32,
+    pub md: String,
+    pub xa: Option<String>,
+}
+
+/// `BwaMemAligner` after `setIntraCtgOptions` and `setZDropOption`, for `FindBreakpointEvidenceSpark`.
+///
+/// `setIntraCtgOptions` writes its fields into the C struct through a `ByteBuffer`, and libbwa fills
+/// its scoring matrix only once, when the options are initialized. So a mismatch still costs what
+/// the matrix says, 4, while `b` is 9 for what reads it directly, the MAPQ's identity and the
+/// near-tie window. `bwa mem -B 9` refills the matrix and could not give this, which is why this is
+/// the library and not the command.
+pub struct ContigAligner {
+    fm: bwa_index::FmIndex,
+    bns: bwa_index::BntSeq,
+    options: bwa_mem4_core::MemOpt,
+    _directory: tempfile::TempDir,
+}
+
+impl ContigAligner {
+    pub fn from_image(image: &[u8], z_dropoff: i32) -> Result<ContigAligner, String> {
+        let directory = tempfile::tempdir().map_err(|error| error.to_string())?;
+        let fasta = directory.path().join("reference.fa");
+        std::fs::write(&fasta, fasta_from_image(image)?).map_err(|error| error.to_string())?;
+        let index = IndexCommand::try_parse_from(["index", &*fasta.to_string_lossy()])
+            .map_err(|error| error.to_string())?;
+        bwa_mem4::cmd_index::run(index.args).map_err(|error| error.to_string())?;
+        let fm = bwa_index::FmIndex::load(&fasta).map_err(|error| error.to_string())?;
+        let bns = bwa_index::BntSeq::load(&fasta).map_err(|error| error.to_string())?;
+        let options = bwa_mem4_core::MemOpt {
+            o_del: 16,
+            o_ins: 16,
+            b: 9,
+            pen_clip5: 5,
+            pen_clip3: 5,
+            zdrop: z_dropoff,
+            ..bwa_mem4_core::MemOpt::default()
+        };
+        Ok(ContigAligner {
+            fm,
+            bns,
+            options,
+            _directory: directory,
+        })
+    }
+
+    /// `alignSeqs` of one assembly's contigs. A contig's number in the call breaks a score tie in
+    /// `mem_mark_primary_se`, so the call has to be one assembly's, as it is in the reference.
+    pub fn align(&self, contigs: &[Vec<u8>]) -> Vec<Vec<ContigAlignment>> {
+        let (fm, bns, options) = (&self.fm, &self.bns, &self.options);
+        contigs
+            .iter()
+            .enumerate()
+            .map(|(id, contig)| {
+                let codes: Vec<u8> = contig.iter().map(|&base| bwa_mem4_core::dna::nt4(base)).collect();
+                let length = codes.len() as i32;
+                let found = bwa_mem4_mem::align_read(fm, bns, options, &codes);
+                let mut regions = bwa_mem4_mem::mem_sort_dedup_patch(fm, options, &codes, found);
+                bwa_mem4_mem::stamp_is_alt(bns, &mut regions);
+                bwa_mem4_mem::mem_mark_primary_se(options, &mut regions, id as u64);
+                let alternates =
+                    bwa_mem4_mem::alt::mem_gen_alt(fm, bns, options, &regions, length, &codes);
+                let mut lines: Vec<ContigAlignment> = Vec::new();
+                for (region, xa) in regions.iter().zip(alternates) {
+                    if region.score < options.t || region.secondary >= 0 {
+                        continue;
+                    }
+                    let aln = bwa_mem4_mem::reg2aln(fm, bns, options, length, &codes, region);
+                    let mut mapq = bwa_mem4_mem::mem_approx_mapq_se(options, region);
+                    if let Some(first) = lines.first() {
+                        if !region.is_alt && mapq > first.mapq {
+                            mapq = first.mapq;
+                        }
+                    }
+                    lines.push(ContigAlignment {
+                        ref_id: aln.rid,
+                        start: aln.pos,
+                        reverse: aln.is_rev,
+                        supplementary: !lines.is_empty(),
+                        mapq,
+                        cigar: bwa_mem4_mem::cigar_string(&aln.cigar),
+                        mismatches: aln.nm,
+                        score: aln.score,
+                        suboptimal: aln.sub,
+                        md: aln.md,
+                        xa,
+                    });
+                }
+                if lines.is_empty() {
+                    lines.push(ContigAlignment {
+                        ref_id: -1,
+                        start: -1,
+                        reverse: false,
+                        supplementary: false,
+                        mapq: 0,
+                        cigar: String::new(),
+                        mismatches: 0,
+                        score: 0,
+                        suboptimal: 0,
+                        md: String::new(),
+                        xa: None,
+                    });
+                }
+                lines
+            })
+            .collect()
+    }
+}
