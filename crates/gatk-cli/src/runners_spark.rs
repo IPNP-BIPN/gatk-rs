@@ -1646,10 +1646,17 @@ fn evidence_task_failure(message: &str) -> Thrown {
     )
 }
 
+/// Whether a Spark `WARN` is printed, at `SparkCommandLineArgumentCollection.getSparkVerbosity`.
+fn spark_logs_warnings(parser: &Parser) -> bool {
+    let level = scalar(parser, "spark-verbosity").or_else(|| argument(parser, "verbosity"));
+    let level = level.unwrap_or_default();
+    !matches!(level.to_uppercase().as_str(), "ERROR" | "FATAL" | "OFF")
+}
+
 /// A task's failure in an assembly tool, whose contig alignments are a cached RDD: the block
 /// manager logs what stopped that one first, under the number the tool's RDDs have reached.
-fn assembly_task_failure(cached_rdd: u32, message: &str) -> Thrown {
-    if message.starts_with("no primary alignment for read") {
+fn assembly_task_failure(parser: &Parser, cached_rdd: u32, message: &str) -> Thrown {
+    if message.starts_with("no primary alignment for read") && spark_logs_warnings(parser) {
         eprintln!(
             "WARN  BlockManager - Putting block rdd_{cached_rdd}_0 failed due to exception org.broadinstitute.hellbender.exceptions.GATKException: {message}."
         );
@@ -1917,7 +1924,7 @@ fn sv_assembly_interpretation(
     write_sam: bool,
 ) -> Result<(), Thrown> {
     use gatk_tools::sv_discovery::assembly;
-    let in_task = |message: String| assembly_task_failure(23, &message);
+    let in_task = |message: String| assembly_task_failure(parser, 23, &message);
 
     let classified = assembly::preprocess(records, header, canonical).map_err(in_task)?;
 
@@ -2095,7 +2102,7 @@ pub fn cpx_variant_re_interpreter_spark(parser: &Parser) -> Outcome {
     let fasta = htsjdk_bam::fasta_index::IndexedFasta::open(std::path::Path::new(&reference_path))
         .map_err(|error| Thrown::user(error.message()))?;
     let mut reference = SparkReference { fasta };
-    let in_task = |message: String| assembly_task_failure(32, &message);
+    let in_task = |message: String| assembly_task_failure(parser, 32, &message);
 
     let complex = assembly::complex_calls_from_variants(variants).map_err(in_task)?;
     let one_segment =
