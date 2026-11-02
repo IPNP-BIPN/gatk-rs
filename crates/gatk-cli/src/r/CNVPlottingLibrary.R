@@ -3,10 +3,11 @@
 #including what looks like a mistake, and each such place says so.
 
 #The reference shells out to grep for this; dropping the '@' lines here gives fread the same text.
+#The last newline matters: an older data.table takes text with no newline in it for a file name.
 ReadTSV = function(tsv_file) {
     lines = readLines(tsv_file)
     lines = lines[!startsWith(lines, "@")]
-    return(suppressWarnings(fread(text=paste(lines, collapse="\n"), sep="\t", stringsAsFactors=FALSE, header=TRUE, check.names=FALSE, data.table=FALSE, showProgress=FALSE, verbose=FALSE)))
+    return(suppressWarnings(fread(text=paste(c(lines, ""), collapse="\n"), sep="\t", stringsAsFactors=FALSE, header=TRUE, check.names=FALSE, data.table=FALSE, showProgress=FALSE, verbose=FALSE)))
 }
 
 #The contigs along the genome, with the alternating background each one gets.
@@ -65,7 +66,9 @@ CopyRatiosAsPlotted = function(copy_ratios_df, panel, color, contig_names, conti
     return(copy_ratios_df)
 }
 
+#Only the columns it draws: ggplot2 keeps a PANEL column of its own, and with no rows ours would clash.
 PointsLayer = function(frame, y_column, point_size) {
+    frame = frame[c("GENOMIC_COORDINATE", y_column, "COLOR")]
     return(geom_point(data=frame, aes(x=GENOMIC_COORDINATE, y=.data[[y_column]], colour=COLOR),
                       shape=".", size=PointSize(point_size), na.rm=TRUE, inherit.aes=FALSE))
 }

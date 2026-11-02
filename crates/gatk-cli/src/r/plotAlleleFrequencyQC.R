@@ -38,7 +38,8 @@ make_sample_df = function(filename, sample) {
 }
 
 write_png = function(suffix, figure, width = 6) {
-    png(paste(output_basename, suffix, ".png", sep = ""), width = width, height = 6, units = 'in', res = 300)
+    # cairo by name, which is the reference's default on Linux: quartz on a Mac records no resolution.
+    png(paste(output_basename, suffix, ".png", sep = ""), width = width, height = 6, units = 'in', res = 300, type = "cairo")
     print(figure)
     dev.off()
 }
@@ -64,7 +65,7 @@ run_single_sample = function(filename, output_basename, sample) {
 
     # A third figure beside the reference's two. The grid is built with the device open, because
     # outside one its layout would open R's default device and leave an Rplots.pdf behind.
-    png(paste(output_basename, ".af_combined", ".png", sep = ""), width = 12, height = 6, units = 'in', res = 300)
+    png(paste(output_basename, ".af_combined", ".png", sep = ""), width = 12, height = 6, units = 'in', res = 300, type = "cairo")
     print(cowplot::plot_grid(af_differences, af, ncol = 2, align = "h"))
     dev.off()
 
