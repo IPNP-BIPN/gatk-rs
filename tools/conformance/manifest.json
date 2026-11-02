@@ -8385,6 +8385,27 @@
           "why": "Pending the first real x86-64 CI run."
         }
       ]
+    },
+    {
+      "id": "nvscorevariants",
+      "status": "golden-pending",
+      "title": "NVScoreVariants: the printed scores and the VCF of both models, in GATK's own image",
+      "harness": "tools/nvscorevariants",
+      "python_image": "broadinstitute/gatk:4.6.2.0",
+      "tools": [
+        "NVScoreVariants"
+      ],
+      "why": "The pinned oracle has no Python, so this runs in the image GATK publishes. WHAT IS COMPARED IS THE PRINTED SCORE AND NOT ITS BITS: the reference's own bits past dense_2 change with its thread count and its batch size while its %.3f does not, as docs/nvscorevariants.md measures. The cases include each way create_output_vcf.py ends a run early, because Tool returned 1 with a truncated VCF is the reference's answer on a symbolic allele. The port needs the two weights files, whose hashes it pins, from tools/nvscorevariants/extract_weights.py; without them it stops where interpreter-tools says it does.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "NVScoreVariantsDump",
+          "golden": null,
+          "why": "Pending the first real x86-64 CI run. The golden may only come from there: everything measured so far is under Rosetta at AVX2."
+        }
+      ]
     }
   ],
   "probes": []

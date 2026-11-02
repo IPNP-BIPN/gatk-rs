@@ -289,6 +289,69 @@ def write_symbolic(path, variants):
             out.write(line)
 
 
+def write_edges(out, contigs):
+    """A VCF for each way the reference's script ends otherwise than well, or changes what it reads.
+
+    All come after everything else, so no byte of the files above depends on them.
+    """
+    lines = open(f"{out}/variants.vcf").read().split("\n")
+    meta = [line for line in lines if line.startswith("##")]
+    columns = [line for line in lines if line.startswith("#CHROM")][0]
+    body = [line for line in lines if line and not line.startswith("#")]
+
+    def site(pos, ref, alt, info=".", contig="c1", status="PASS", layout="GT", one="0/1", two="0/1"):
+        return f"{contig}\t{pos}\t.\t{ref}\t{alt}\t50\t{status}\t{info}\t{layout}\t{one}\t{two}"
+
+    def base(pos, contig="c1"):
+        return contigs[contig][pos - 1].upper()
+
+    def write(name, records, extra=()):
+        with open(f"{out}/{name}.vcf", "w") as vcf:
+            vcf.write("\n".join(meta[:1] + list(extra) + meta[1:] + [columns] + records) + "\n")
+
+    def alt(pos):
+        return "A" if base(pos) != "A" else "C"
+
+    plain = [site(300, base(300), alt(300), "DP=10"), site(400, base(400), alt(400), "DP=11")]
+    end_line = '##INFO=<ID=END,Number=1,Type=Integer,Description="End">'
+    write("empty", [])
+    write(
+        "gatk_header",
+        plain,
+        [
+            "##source=HaplotypeCaller",
+            '##GATKCommandLine=<ID=HaplotypeCaller,CommandLine="HaplotypeCaller --x, y=1",Version="4.6.2.0">',
+        ],
+    )
+    write("breakend", plain + [site(500, base(500), f"]c1:5]{base(500)}")] + plain[:0])
+    write(
+        "end_tag",
+        [
+            site(300, base(300), alt(300), "END=310;DP=3"),
+            site(400, base(400), alt(400), "END=400"),
+            site(500, base(500), "<DEL>", "END=540"),
+            site(600, base(600), "<DEL>", "DP=4"),
+        ],
+        [end_line],
+    )
+    write("undefined_info", plain + [site(500, base(500), alt(500), "NOPE=3;DP=4")] + plain[:0])
+    write("undefined_filter", plain + [site(500, base(500), alt(500), status="NOPE")])
+    write("undefined_contig", plain + [site(90, "A", "C", contig="c9")])
+    write("undefined_format", plain + [site(500, base(500), alt(500), layout="GT:ZZ", one="0/1:3", two="0/1:4")])
+    write("not_a_number", plain + [
+        site(500, base(500), alt(500), "MQ=nan"),
+        site(510, base(510), alt(510), "FS=inf"),
+        site(520, base(520), alt(520), "MQ=."),
+    ])
+    write("window_too_long", [site(64, contigs["c1"][63:67].upper(), base(64))])
+    write("past_the_end", [site(2600, base(2600) + "A", base(2600))])
+    write("short_samples", [site(300, base(300), alt(300), layout="GT:DP:VF", one="0/1", two="0/1:7:0.12345678")])
+    write("float_annotation_tuple", [site(300, base(300), alt(300), "AF=0.5")], ['##INFO=<ID=SOR2,Number=A,Type=Float,Description="x">'])
+    write("multiple_values", [site(300, base(300), alt(300), "MQ=1,2")])
+    # Not a single line of any of them is one of the 71, which stay where they are.
+    assert body
+
+
 def main():
     out = sys.argv[1]
     os.makedirs(out, exist_ok=True)
@@ -301,6 +364,7 @@ def main():
     write_bam(f"{out}/reads.bam", contigs, rand)
     write_vcf(f"{out}/variants.vcf", contigs, rand)
     write_symbolic(f"{out}/symbolic.vcf", f"{out}/variants.vcf")
+    write_edges(out, contigs)
 
 
 if __name__ == "__main__":
