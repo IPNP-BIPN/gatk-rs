@@ -169,11 +169,11 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `BQSRPipelineSpark` | record-transform | oracle-backed | spark-walkers | 1 | t=2, 23/23 rows (100%) | not measured |
 | `BaseRecalibrator` | record-transform | oracle-backed | base-recalibrator | 1 | t=2, 21/21 rows (100%) | 0.006 / 0.127 |
 | `BaseRecalibratorSpark` | record-transform | oracle-backed | spark-walkers | 1 | t=2, 22/22 rows (100%) | not measured |
-| `BwaAndMarkDuplicatesPipelineSpark` | record-transform | oracle-backed | spark-walkers | 1 | not measured | not measured |
+| `BwaAndMarkDuplicatesPipelineSpark` | record-transform | oracle-backed | spark-walkers | 1 | t=2, 19/19 rows (100%), **1 distinct output** | not measured |
 | `BwaMemIndexImageCreator` | reference-utility | oracle-backed | bwa-index-image | 1 | t=2, 15/15 rows (100%) | 0.003 / 0.085 |
-| `BwaSpark` | record-transform | oracle-backed | spark-walkers | 1 | not measured | not measured |
+| `BwaSpark` | record-transform | oracle-backed | spark-walkers | 1 | t=2, 12/15 rows (80%) | not measured |
 | `CRAMIssue8768Detector` | unclassified | oracle-backed | cram-issue-8768-detector | 1 | t=2, 11/11 rows (100%) | 0.007 / 0.145 |
-| `CalcMetadataSpark` | reporting-walker | oracle-backed | spark-walkers | 1 | not measured | not measured |
+| `CalcMetadataSpark` | reporting-walker | oracle-backed | spark-walkers | 1 | t=2, 21/21 rows (100%) | not measured |
 | `CalculateAverageCombinedAnnotations` | unclassified | oracle-backed | calculate-average-combined-annotations | 1 | t=2, 16/16 rows (100%) | 0.003 / 0.065 |
 | `CalculateContamination` | reporting-walker | oracle-backed | calculate-contamination | 1 | t=2, 8/8 rows (100%) | 0.002 / 0.062 |
 | `CalculateGenotypePosteriors` | variant-walker | oracle-backed | calculate-genotype-posteriors, family-priors | 2 | t=2, 23/23 rows (100%) | 0.002 / 0.051 |
@@ -196,7 +196,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `CombineGVCFs` | assembly-caller | oracle-backed | combine-gvcfs | 1 | t=2, 26/26 rows (100%) | 0.004 / 0.079 |
 | `CombineSegmentBreakpoints` | unclassified | oracle-backed | combine-segment-breakpoints | 1 | t=2, 18/18 rows (100%) | 0.002 / 0.045 |
 | `CompareBaseQualities` | reporting-walker | oracle-backed | compare-base-qualities | 1 | t=2, 11/11 rows (100%) | 0.003 / 0.090 |
-| `CompareDuplicatesSpark` | reporting-walker | oracle-backed | spark-walkers | 1 | t=2, 22/22 rows (100%) | not measured |
+| `CompareDuplicatesSpark` | reporting-walker | oracle-backed | spark-walkers | 1 | t=2, 21/22 rows (96%) | not measured |
 | `CompareIntervalLists` | unclassified | oracle-backed | compare-interval-lists | 1 | t=2, 7/7 rows (100%), **1 distinct output** | 0.002 / 0.060 |
 | `CompareReferences` | reference-utility | oracle-backed | compare-references | 1 | t=2, 20/20 rows (100%) | 0.002 / 0.054 |
 | `ComposeSTRTableFile` | reference-utility | oracle-backed | compose-str-table-file | 1 | t=2, 22/22 rows (100%) | 0.003 / 0.073 |
@@ -211,20 +211,20 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `CountReadsSpark` | locus-walker | oracle-backed | spark-walkers | 1 | t=2, 19/19 rows (100%) | not measured |
 | `CountVariants` | variant-walker | oracle-backed | count-variants, interval-arguments, sequence-dictionary-validation, tool-argument-declarations, tool-argument-enums | 5 | t=2, 23/23 rows (100%) | 0.002 / 0.053 |
 | `CountVariantsSpark` | variant-walker | oracle-backed | spark-walkers | 1 | t=2, 19/19 rows (100%) | not measured |
-| `CpxVariantReInterpreterSpark` | sv-caller | oracle-backed | spark-walkers | 1 | not measured | not measured |
+| `CpxVariantReInterpreterSpark` | sv-caller | oracle-backed | spark-walkers | 1 | t=2, 19/19 rows (100%) | not measured |
 | `CreateHadoopBamSplittingIndex` | unclassified | oracle-backed | splitting-index | 1 | t=2, 11/11 rows (100%) | 0.003 / 0.084 |
 | `CreateReadCountPanelOfNormals` | cnv-segmentation | oracle-backed | create-read-count-panel-of-normals | 1 | t=2, 25/25 rows (100%) | 0.001 / 0.012 |
 | `CreateSomaticPanelOfNormals` | variant-transform | oracle-backed | brent-optimizer, create-somatic-panel-of-normals | 2 | t=2, 21/21 rows (100%) | 0.003 / 0.072 |
 | `DenoiseReadCounts` | cnv-segmentation | oracle-backed | denoise-read-counts | 1 | t=2, 6/6 rows (100%) | 0.002 / 0.054 |
 | `DepthOfCoverage` | locus-walker | oracle-backed | depth-of-coverage | 1 | t=2, 20/20 rows (100%) | 0.003 / 0.067 |
-| `DetermineGermlineContigPloidy` | cnv-segmentation | oracle-backed | interpreter-tools | 1 | not measured | not measured |
-| `DiscoverVariantsFromContigAlignmentsSAMSpark` | sv-caller | oracle-backed | spark-walkers | 1 | not measured | not measured |
+| `DetermineGermlineContigPloidy` | cnv-segmentation | oracle-backed | interpreter-tools | 1 | t=2, 32/32 rows (100%), **1 distinct output** | not measured |
+| `DiscoverVariantsFromContigAlignmentsSAMSpark` | sv-caller | oracle-backed | spark-walkers | 1 | t=2, 19/19 rows (100%) | not measured |
 | `DownsampleByDuplicateSet` | unclassified | oracle-backed | downsample-by-duplicate-set | 1 | t=2, 18/18 rows (100%) | 0.003 / 0.041 |
 | `DumpTabixIndex` | reporting-walker | oracle-backed | dump-tabix-index | 1 | t=2, 7/7 rows (100%) | 0.002 / 0.064 |
 | `EvaluateInfoFieldConcordance` | variant-walker | oracle-backed | evaluate-info-field-concordance | 1 | t=2, 21/21 rows (100%) | 0.002 / 0.054 |
 | `ExampleMultiFeatureWalker` | unclassified | oracle-backed | multi-feature-walker | 1 | t=2, 16/16 rows (100%) | 0.002 / 0.057 |
 | `ExtractOriginalAlignmentRecordsByNameSpark` | record-transform | oracle-backed | spark-walkers | 1 | t=2, 22/22 rows (100%) | not measured |
-| `ExtractSVEvidenceSpark` | sv-caller | oracle-backed | spark-walkers | 1 | not measured | not measured |
+| `ExtractSVEvidenceSpark` | sv-caller | oracle-backed | spark-walkers | 1 | t=2, 24/24 rows (100%) | not measured |
 | `ExtractVariantAnnotations` | variant-transform | oracle-backed | extract-variant-annotations | 1 | t=2, 29/29 rows (100%) | 0.036 / 0.581 |
 | `FastaAlternateReferenceMaker` | reference-utility | oracle-backed | fasta-alternate-reference-maker | 1 | t=2, 21/21 rows (100%) | 0.007 / 0.161 |
 | `FastaReferenceMaker` | reference-utility | oracle-backed | fasta-reference-maker | 1 | t=2, 21/21 rows (100%) | 0.004 / 0.086 |
@@ -233,8 +233,8 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `FilterIntervals` | cnv-segmentation | oracle-backed | filter-intervals | 1 | t=2, 11/11 rows (100%) | 0.002 / 0.059 |
 | `FilterMutectCalls` | variant-transform | oracle-backed | filter-mutect-calls | 1 | t=2, 24/24 rows (100%) | 0.003 / 0.069 |
 | `FilterVariantTranches` | variant-transform | oracle-backed | filter-variant-tranches | 1 | t=2, 15/15 rows (100%) | 0.002 / 0.053 |
-| `FindBadGenomicKmersSpark` | reference-utility | oracle-backed | spark-walkers | 1 | not measured | not measured |
-| `FindBreakpointEvidenceSpark` | sv-caller | oracle-backed | sv-evidence | 1 | not measured | not measured |
+| `FindBadGenomicKmersSpark` | reference-utility | oracle-backed | spark-walkers | 1 | t=2, 21/21 rows (100%) | not measured |
+| `FindBreakpointEvidenceSpark` | sv-caller | oracle-backed | sv-evidence | 1 | t=2, 26/26 rows (100%) | not measured |
 | `FixMisencodedBaseQualityReads` | record-transform | oracle-backed | fix-misencoded | 1 | t=2, 21/21 rows (100%) | 0.003 / 0.040 |
 | `FlagStat` | reporting-walker | oracle-backed | counting-walkers | 1 | t=2, 21/21 rows (100%) | 0.003 / 0.067 |
 | `FlagStatSpark` | reporting-walker | oracle-backed | spark-walkers | 1 | t=2, 19/19 rows (100%) | not measured |
@@ -249,9 +249,9 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `GatherTranches` | unclassified | oracle-backed | gather-tranches | 1 | t=2, 8/8 rows (100%) | 0.002 / 0.060 |
 | `GatherVcfsCloud` | variant-transform | oracle-backed | gather-vcfs, tool-argument-declarations, tool-argument-enums, usage-text | 4 | t=2, 11/11 rows (100%) | 0.003 / 0.088 |
 | `GeneExpressionEvaluation` | locus-walker | oracle-backed | gene-expression-evaluation | 1 | t=2, 19/19 rows (100%) | 0.002 / 0.058 |
-| `GenomicsDBImport` | assembly-caller | oracle-backed | genomicsdb-import | 1 | not measured | not measured |
+| `GenomicsDBImport` | assembly-caller | oracle-backed | genomicsdb-import | 1 | t=2, 2/19 rows (10%), **1 distinct output** | not measured |
 | `GenotypeGVCFs` | assembly-caller | oracle-backed | genotype-gvcfs | 1 | t=2, 34/34 rows (100%) | 0.004 / 0.074 |
-| `GermlineCNVCaller` | cnv-segmentation | oracle-backed | interpreter-tools | 1 | not measured | not measured |
+| `GermlineCNVCaller` | cnv-segmentation | oracle-backed | interpreter-tools | 1 | t=2, 46/46 rows (100%), **1 distinct output** | not measured |
 | `GetNormalArtifactData` | locus-walker | oracle-backed | normal-artifact-data | 1 | t=2, 19/19 rows (100%) | 0.002 / 0.055 |
 | `GetPileupSummaries` | locus-walker | oracle-backed | get-pileup-summaries | 1 | t=2, 19/19 rows (100%) | 0.002 / 0.054 |
 | `GetSampleName` | reporting-walker | oracle-backed | get-sample-name | 1 | t=2, 21/21 rows (100%) | 0.002 / 0.055 |
@@ -262,8 +262,8 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `GtfToBed` | assembly-caller | oracle-backed | gtf-to-bed | 1 | t=2, 20/20 rows (100%) | 0.002 / 0.054 |
 | `HaplotypeBasedVariantRecaller` | assembly-caller | oracle-backed | haplotype-based-variant-recaller | 1 | t=2, 44/44 rows (100%) | 0.054 / 0.968 |
 | `HaplotypeCaller` | assembly-caller | oracle-backed | callers-all-annotations, hc-allele-filtering, hc-allele-graphs, hc-alleles, hc-bamout, hc-contamination, hc-debug-outputs, hc-disable-optimizations, hc-dragen-end-to-end, hc-end-to-end, hc-error-correction, hc-flow, hc-gvcf-end-to-end, hc-linked-graph, hc-pdhmm, hc-pedigree, hc-pileup, hc-ploidy, hc-resources | 19 | t=2, 54/54 rows (100%) | 0.025 / 0.315 |
-| `HaplotypeCallerSpark` | assembly-caller | oracle-backed | spark-walkers | 1 | not measured | not measured |
-| `HtsgetReader` | unclassified | oracle-backed | htsget-reader | 1 | not measured | not measured |
+| `HaplotypeCallerSpark` | assembly-caller | oracle-backed | spark-walkers | 1 | t=2, 47/47 rows (100%) | not measured |
+| `HtsgetReader` | unclassified | oracle-backed | htsget-reader | 1 | t=2, 11/11 rows (100%), **1 distinct output** | not measured |
 | `IndexFeatureFile` | unclassified | oracle-backed | index-feature-file, tool-argument-declarations, tool-argument-enums, usage-text | 4 | t=2, 8/8 rows (100%) | 0.002 / 0.063 |
 | `JointGermlineCNVSegmentation` | sv-caller | oracle-backed | joint-germline-cnv-segmentation | 1 | t=2, 22/22 rows (100%) | 0.003 / 0.065 |
 | `LearnReadOrientationModel` | assembly-caller | oracle-backed | learn-read-orientation-model | 1 | t=2, 12/12 rows (100%) | 0.023 / 0.302 |
@@ -280,21 +280,21 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `MethylationTypeCaller` | record-transform | oracle-backed | methylation-type-caller | 1 | t=2, 21/21 rows (100%) | 0.003 / 0.072 |
 | `ModelSegments` | cnv-segmentation | oracle-backed | model-segments | 1 | t=2, 19/19 rows (100%) | 0.383 / 1.512 |
 | `Mutect2` | assembly-caller | oracle-backed | callers-all-annotations, hc-allele-filtering, hc-allele-graphs, hc-alleles, hc-bamout, hc-debug-outputs, hc-error-correction, hc-flow, hc-linked-graph, hc-pdhmm, hc-pedigree, hc-pileup, mutect2-dragstr, mutect2-end-to-end, mutect2-f1r2, mutect2-gvcf, mutect2-mitochondria, mutect2-permutect, mutect2-resources | 19 | t=2, 38/38 rows (100%) | 0.032 / 0.445 |
-| `NVScoreVariants` | unclassified | oracle-backed | interpreter-tools | 1 | not measured | not measured |
+| `NVScoreVariants` | unclassified | oracle-backed | interpreter-tools | 1 | t=2, 10/10 rows (100%), **1 distinct output** | not measured |
 | `NuMTFilterTool` | unclassified | oracle-backed | numt-filter | 1 | t=2, 15/15 rows (100%) | 0.002 / 0.060 |
-| `ParallelCopyGCSDirectoryIntoHDFSSpark` | unclassified | oracle-backed | spark-walkers | 1 | not measured | not measured |
+| `ParallelCopyGCSDirectoryIntoHDFSSpark` | unclassified | oracle-backed | spark-walkers | 1 | t=2, 5/16 rows (31%), **1 distinct output** | not measured |
 | `PathSeqBuildKmers` | metagenomics | oracle-backed | pathseq-build-kmers | 1 | t=2, 8/8 rows (100%) | 0.002 / 0.068 |
 | `PathSeqBuildReferenceTaxonomy` | metagenomics | oracle-backed | pathseq-build-reference-taxonomy, pathseq-taxonomy-kryo | 2 | t=2, 9/9 rows (100%) | 0.002 / 0.068 |
-| `PathSeqBwaSpark` | metagenomics | oracle-backed | spark-walkers | 1 | not measured | not measured |
-| `PathSeqFilterSpark` | metagenomics | oracle-backed | spark-walkers | 1 | not measured | not measured |
-| `PathSeqPipelineSpark` | metagenomics | oracle-backed | spark-walkers | 1 | not measured | not measured |
-| `PathSeqScoreSpark` | metagenomics | oracle-backed | spark-walkers | 1 | not measured | not measured |
+| `PathSeqBwaSpark` | metagenomics | oracle-backed | spark-walkers | 1 | t=2, 6/22 rows (27%), **1 distinct output** | not measured |
+| `PathSeqFilterSpark` | metagenomics | oracle-backed | spark-walkers | 1 | t=2, 20/20 rows (100%) | not measured |
+| `PathSeqPipelineSpark` | metagenomics | oracle-backed | spark-walkers | 1 | t=2, 25/25 rows (100%) | not measured |
+| `PathSeqScoreSpark` | metagenomics | oracle-backed | spark-walkers | 1 | t=2, 15/15 rows (100%) | not measured |
 | `Pileup` | locus-walker | oracle-backed | pileup-tool | 1 | t=2, 18/18 rows (100%) | 0.004 / 0.099 |
 | `PileupSpark` | locus-walker | oracle-backed | spark-walkers | 1 | t=2, 22/22 rows (100%) | not measured |
-| `PlotDenoisedCopyRatios` | cnv-segmentation | oracle-backed | interpreter-tools | 1 | not measured | not measured |
-| `PlotModeledSegments` | cnv-segmentation | oracle-backed | interpreter-tools | 1 | not measured | not measured |
+| `PlotDenoisedCopyRatios` | cnv-segmentation | oracle-backed | interpreter-tools | 1 | t=2, 11/11 rows (100%), **1 distinct output** | not measured |
+| `PlotModeledSegments` | cnv-segmentation | oracle-backed | interpreter-tools | 1 | t=2, 11/11 rows (100%), **1 distinct output** | not measured |
 | `PostProcessReadsForRSEM` | record-transform | oracle-backed | post-process-reads-for-rsem | 1 | t=2, 20/20 rows (100%) | 0.002 / 0.029 |
-| `PostprocessGermlineCNVCalls` | cnv-segmentation | oracle-backed | interpreter-tools | 1 | not measured | not measured |
+| `PostprocessGermlineCNVCalls` | cnv-segmentation | oracle-backed | interpreter-tools | 1 | t=2, 20/20 rows (100%), **1 distinct output** | not measured |
 | `PreprocessIntervals` | interval-utility | oracle-backed | preprocess-intervals | 1 | t=2, 20/20 rows (100%) | 0.004 / 0.095 |
 | `PrintBGZFBlockInformation` | unclassified | oracle-backed | print-bgzf-block-information | 1 | t=2, 6/6 rows (100%) | 0.002 / 0.064 |
 | `PrintDistantMates` | record-transform | oracle-backed | print-distant-mates | 1 | t=2, 19/19 rows (100%) | 0.003 / 0.044 |
@@ -304,11 +304,11 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `PrintReadsHeader` | record-transform | oracle-backed | print-reads-header | 1 | t=2, 19/19 rows (100%) | 0.003 / 0.063 |
 | `PrintReadsSpark` | record-transform | oracle-backed | spark-walkers | 1 | t=2, 23/23 rows (100%) | not measured |
 | `PrintSVEvidence` | unclassified | oracle-backed | print-sv-evidence | 1 | t=2, 17/17 rows (100%) | 0.002 / 0.051 |
-| `PrintVariantsSpark` | variant-transform | oracle-backed | spark-walkers | 1 | t=2, 23/23 rows (100%) | not measured |
+| `PrintVariantsSpark` | variant-transform | oracle-backed | spark-walkers | 1 | t=2, 22/23 rows (96%) | not measured |
 | `QualityScoreDistributionSpark` | reporting-walker | oracle-backed | spark-walkers | 1 | t=2, 21/21 rows (100%) | not measured |
 | `RampedHaplotypeCaller` | assembly-caller | oracle-backed | callers-all-annotations, hc-allele-filtering, hc-allele-graphs, hc-alleles, hc-bamout, hc-contamination, hc-debug-outputs, hc-disable-optimizations, hc-error-correction, hc-flow, hc-linked-graph, hc-pdhmm, hc-pileup, hc-ploidy, hc-resources, ramped-haplotype-caller, ramps-end-to-end | 17 | t=2, 56/56 rows (100%) | 0.024 / 0.325 |
 | `ReadAnonymizer` | unclassified | oracle-backed | read-anonymizer | 1 | t=2, 22/22 rows (100%) | 0.003 / 0.043 |
-| `ReadsPipelineSpark` | assembly-caller | oracle-backed | spark-walkers | 1 | not measured | not measured |
+| `ReadsPipelineSpark` | assembly-caller | oracle-backed | spark-walkers | 1 | t=2, 51/51 rows (100%) | not measured |
 | `ReblockGVCF` | unclassified | oracle-backed | reblock-gvcf | 1 | t=2, 56/56 rows (100%) | 0.003 / 0.053 |
 | `ReferenceBlockConcordance` | unclassified | oracle-backed | reference-block-concordance | 1 | t=2, 17/17 rows (100%) | 0.002 / 0.056 |
 | `RemoveNearbyIndels` | variant-transform | oracle-backed | remove-nearby-indels | 1 | t=2, 24/24 rows (100%) | 0.002 / 0.055 |
@@ -316,9 +316,9 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `RevertSamSpark` | record-transform | oracle-backed | spark-walkers | 1 | t=2, 28/28 rows (100%) | not measured |
 | `SVAnnotate` | sv-caller | oracle-backed | sv-annotate | 1 | t=2, 18/18 rows (100%) | 0.003 / 0.067 |
 | `SVCluster` | sv-caller | oracle-backed | sv-cluster | 1 | t=2, 24/24 rows (100%) | 0.002 / 0.048 |
-| `SVConcordance` | sv-caller | oracle-backed | sv-concordance | 1 | t=2, 19/19 rows (100%) | 0.003 / 0.064 |
+| `SVConcordance` | sv-caller | oracle-backed | sv-concordance | 1 | t=2, 18/19 rows (95%) | 0.003 / 0.064 |
 | `SVStratify` | sv-caller | oracle-backed | sv-stratify | 1 | t=2, 16/16 rows (100%) | 0.002 / 0.059 |
-| `ScoreVariantAnnotations` | variant-transform | oracle-backed | interpreter-tools | 1 | not measured | not measured |
+| `ScoreVariantAnnotations` | variant-transform | oracle-backed | interpreter-tools | 1 | t=2, 27/27 rows (100%) | not measured |
 | `SelectVariants` | variant-transform | oracle-backed | select-variants-concordance, select-variants-filters, select-variants-header, select-variants-output, select-variants-samples, select-variants-subset, tool-argument-declarations, tool-argument-enums | 8 | t=2, 50/50 rows (100%) | 0.002 / 0.055 |
 | `ShiftFasta` | reference-utility | oracle-backed | shift-fasta | 1 | t=2, 21/21 rows (100%) | 0.003 / 0.086 |
 | `SiteDepthtoBAF` | sv-caller | oracle-backed | site-depth-to-baf | 1 | t=2, 18/18 rows (100%) | 0.002 / 0.055 |
@@ -328,10 +328,10 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `SplitNCigarReads` | record-transform | oracle-backed | split-n-cigar-reads | 1 | t=2, 21/21 rows (100%) | 0.003 / 0.061 |
 | `SplitReads` | record-transform | oracle-backed | split-reads | 1 | t=2, 20/20 rows (100%) | 0.004 / 0.036 |
 | `StructuralVariantDiscoverer` | unclassified | oracle-backed | structural-variant-discoverer | 1 | t=2, 23/23 rows (100%) | 0.002 / 0.056 |
-| `StructuralVariationDiscoveryPipelineSpark` | sv-caller | oracle-backed | sv-evidence | 1 | not measured | not measured |
-| `SvDiscoverFromLocalAssemblyContigAlignmentsSpark` | sv-caller | oracle-backed | spark-walkers | 1 | not measured | not measured |
+| `StructuralVariationDiscoveryPipelineSpark` | sv-caller | oracle-backed | sv-evidence | 1 | t=2, 27/27 rows (100%) | not measured |
+| `SvDiscoverFromLocalAssemblyContigAlignmentsSpark` | sv-caller | oracle-backed | spark-walkers | 1 | t=2, 15/17 rows (88%) | not measured |
 | `TagGermlineEvents` | unclassified | oracle-backed | tag-germline-events | 1 | t=2, 17/17 rows (100%) | 0.002 / 0.054 |
-| `TrainVariantAnnotationsModel` | variant-transform | oracle-backed | interpreter-tools | 1 | not measured | not measured |
+| `TrainVariantAnnotationsModel` | variant-transform | oracle-backed | interpreter-tools | 1 | t=2, 11/11 rows (100%), **1 distinct output** | not measured |
 | `TransferReadTags` | record-transform | oracle-backed | transfer-read-tags | 1 | t=2, 19/19 rows (100%) | 0.002 / 0.035 |
 | `UnmarkDuplicates` | record-transform | oracle-backed | record-transform | 1 | t=2, 19/19 rows (100%) | 0.003 / 0.042 |
 | `UpdateVCFSequenceDictionary` | variant-transform | oracle-backed | update-vcf-sequence-dictionary | 1 | t=2, 24/24 rows (100%) | 0.002 / 0.055 |
