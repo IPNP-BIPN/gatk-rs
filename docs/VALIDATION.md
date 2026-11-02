@@ -25,23 +25,23 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | AnnotateIntervals | gatk-rs | oracle-backed | 8 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 4 | 0 | none |
 | AnnotateVcfWithBamDepth | gatk-rs | oracle-backed | 54 suite | 0 suite | 23/23 (100.0%) | 2 | not measured | 6 | 0 | none |
 | AnnotateVcfWithExpectedAlleleFraction | gatk-rs | oracle-backed | 30 suite | 0 suite | 23/23 (100.0%) | 2 | not measured | 4 | 2 | none |
-| ApplyBQSR | gatk-rs | oracle-backed | 52 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 6 | 0 | none |
-| ApplyBQSRSpark | gatk-rs | golden-pending | - | - | 20/20 (100.0%) | 2 | not measured | 6 | 1 | none |
+| ApplyBQSR | gatk-rs | oracle-backed | 33338 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 6 | 0 | none |
+| ApplyBQSRSpark | gatk-rs | oracle-backed | 5 | 3 | 20/20 (100.0%) | 2 | not measured | 6 | 1 | none |
 | ApplyVQSR | gatk-rs | oracle-backed | 152 suite | 0 suite | 25/25 (100.0%) | 2 | not measured | 7 | 7 | none |
-| BQSRPipelineSpark | gatk-rs | golden-pending | - | - | 23/23 (100.0%) | 2 | not measured | 8 | 1 | none |
+| BQSRPipelineSpark | gatk-rs | oracle-backed | 5 | 3 | 23/23 (100.0%) | 2 | not measured | 8 | 1 | none |
 | BaitDesigner | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | none |
 | BamIndexStats | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | none |
 | BamToBfq | picard-rs | oracle-backed | not vendored | not vendored | 17/17 (100.0%) | 2 | not measured | 0 | 0 | none |
 | BaseRecalibrator | gatk-rs | oracle-backed | 12 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 8 | 0 | none |
-| BaseRecalibratorSpark | gatk-rs | golden-pending | - | - | 22/22 (100.0%) | 2 | not measured | 8 | 1 | none |
+| BaseRecalibratorSpark | gatk-rs | oracle-backed | 6 | 1 | 22/22 (100.0%) | 2 | not measured | 8 | 1 | none |
 | BedToIntervalList | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
 | BpmToNormalizationManifestCsv | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
 | BuildBamIndex | gatk-rs | oracle-backed | 16 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
-| BwaAndMarkDuplicatesPipelineSpark | gatk-rs | golden-pending | - | - | not measured | - | not measured | 4 | 5 | none |
+| BwaAndMarkDuplicatesPipelineSpark | gatk-rs | oracle-backed | 30 | 12 | not measured | - | not measured | 4 | 5 | none |
 | BwaMemIndexImageCreator | gatk-rs | oracle-backed | 37 suite | 0 suite | 15/15 (100.0%) | 2 | not measured | 5 | 0 | none |
-| BwaSpark | gatk-rs | golden-pending | - | - | not measured | - | not measured | 5 | 5 | none |
+| BwaSpark | gatk-rs | oracle-backed | 93 | 37 | not measured | - | not measured | 5 | 5 | none |
 | CRAMIssue8768Detector | gatk-rs | oracle-backed | 54 suite | 0 suite | 11/11 (100.0%) | 2 | not measured | 5 | 0 | none |
-| CalcMetadataSpark | gatk-rs | golden-pending | - | - | not measured | - | not measured | 3 | 6 | none |
+| CalcMetadataSpark | gatk-rs | oracle-backed | 60 | 15 | not measured | - | not measured | 3 | 6 | none |
 | CalculateAverageCombinedAnnotations | gatk-rs | oracle-backed | 11 suite | 0 suite | 16/16 (100.0%) | 2 | not measured | 4 | 7 | none |
 | CalculateContamination | gatk-rs | oracle-backed | 42 suite | 0 suite | 8/8 (100.0%) | 2 | not measured | 2 | 0 | none |
 | CalculateFingerprintMetrics | picard-rs | oracle-backed | not vendored | not vendored | 19/19 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -62,10 +62,10 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | ClusterCrosscheckMetrics | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CollectAlignmentSummaryMetrics | picard-rs | oracle-backed | not vendored | not vendored | 20/20 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CollectAllelicCounts | gatk-rs | oracle-backed | 6 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 4 | 0 | none |
-| CollectAllelicCountsSpark | gatk-rs | golden-pending | - | - | 19/19 (100.0%) | 2 | not measured | 4 | 4 | none |
+| CollectAllelicCountsSpark | gatk-rs | oracle-backed | 72 | 11 | 19/19 (100.0%) | 2 | not measured | 4 | 4 | none |
 | CollectArraysVariantCallingMetrics | picard-rs | oracle-backed | not vendored | not vendored | 11/11 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CollectBaseDistributionByCycle | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectBaseDistributionByCycleSpark | gatk-rs | golden-pending | - | - | 21/21 (100.0%) | 2 | not measured | 4 | 2 | none |
+| CollectBaseDistributionByCycleSpark | gatk-rs | oracle-backed | 6 | 2 | 21/21 (100.0%) | 2 | not measured | 4 | 2 | none |
 | CollectDuplicateMetrics | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CollectF1R2Counts | gatk-rs | oracle-backed | 24 suite | 12 suite | 17/17 (100.0%) | 2 | not measured | 3 | 5 | none |
 | CollectGcBiasMetrics | picard-rs | oracle-backed | not vendored | not vendored | 27/27 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -75,15 +75,15 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | CollectIlluminaLaneMetrics | picard-rs | oracle-backed | not vendored | not vendored | 14/14 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CollectIndependentReplicateMetrics | picard-rs | oracle-backed | not vendored | not vendored | 14/14 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CollectInsertSizeMetrics | picard-rs | oracle-backed | not vendored | not vendored | 22/22 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectInsertSizeMetricsSpark | gatk-rs | golden-pending | - | - | 21/21 (100.0%) | 2 | not measured | 4 | 2 | none |
+| CollectInsertSizeMetricsSpark | gatk-rs | oracle-backed | 53 | 11 | 21/21 (100.0%) | 2 | not measured | 4 | 2 | none |
 | CollectJumpingLibraryMetrics | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CollectMultipleMetrics | picard-rs | oracle-backed | not vendored | not vendored | 16/16 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectMultipleMetricsSpark | gatk-rs | golden-pending | - | - | 23/23 (100.0%) | 2 | not measured | 4 | 2 | none |
+| CollectMultipleMetricsSpark | gatk-rs | oracle-backed | 58 | 18 | 23/23 (100.0%) | 2 | not measured | 4 | 2 | none |
 | CollectOxoGMetrics | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CollectQualityYieldMetrics | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CollectQualityYieldMetricsFlow | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CollectQualityYieldMetricsSNVQ | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectQualityYieldMetricsSpark | gatk-rs | golden-pending | - | - | 22/22 (100.0%) | 2 | not measured | 4 | 1 | none |
+| CollectQualityYieldMetricsSpark | gatk-rs | oracle-backed | 6 | 2 | 22/22 (100.0%) | 2 | not measured | 4 | 1 | none |
 | CollectRawWgsMetrics | picard-rs | oracle-backed | not vendored | not vendored | 22/22 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CollectReadCounts | gatk-rs | oracle-backed | 6 suite | 0 suite | 18/18 (100.0%) | 2 | not measured | 4 | 0 | none |
 | CollectRnaSeqMetrics | picard-rs | oracle-backed | not vendored | not vendored | 27/27 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -100,7 +100,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | CombineGenotypingArrayVcfs | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CombineSegmentBreakpoints | gatk-rs | oracle-backed | 12 suite | 0 suite | 18/18 (100.0%) | 2 | not measured | 5 | 8 | none |
 | CompareBaseQualities | gatk-rs | oracle-backed | 31 suite | 0 suite | 11/11 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CompareDuplicatesSpark | gatk-rs | golden-pending | - | - | 22/22 (100.0%) | 2 | not measured | 4 | 2 | none |
+| CompareDuplicatesSpark | gatk-rs | oracle-backed | 48 | 6 | 22/22 (100.0%) | 2 | not measured | 4 | 2 | none |
 | CompareGtcFiles | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CompareIntervalLists | gatk-rs | oracle-backed | 14 suite | 0 suite | 7/7 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CompareMetrics | picard-rs | oracle-backed | not vendored | not vendored | 32/32 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -114,13 +114,13 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | ConvertSequencingArtifactToOxoG | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CountBases | gatk-rs | oracle-backed | 50 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 5 | 0 | none |
 | CountBasesInReference | gatk-rs | oracle-backed | 191 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 4 | 0 | none |
-| CountBasesSpark | gatk-rs | golden-pending | - | - | 19/19 (100.0%) | 2 | not measured | 5 | 1 | none |
+| CountBasesSpark | gatk-rs | oracle-backed | 6 | 0 | 19/19 (100.0%) | 2 | not measured | 5 | 1 | none |
 | CountFalsePositives | gatk-rs | oracle-backed | 14 suite | 0 suite | 24/24 (100.0%) | 2 | not measured | 2 | 2 | none |
-| CountReads | gatk-rs | oracle-backed | 260 suite | 6 suite | 21/21 (100.0%) | 2 | not measured | 5 | 0 | none |
-| CountReadsSpark | gatk-rs | golden-pending | - | - | 19/19 (100.0%) | 2 | not measured | 5 | 1 | none |
-| CountVariants | gatk-rs | oracle-backed | 160 suite | 12 suite | 23/23 (100.0%) | 2 | not measured | 4 | 0 | none |
-| CountVariantsSpark | gatk-rs | golden-pending | - | - | 19/19 (100.0%) | 2 | not measured | 7 | 1 | none |
-| CpxVariantReInterpreterSpark | gatk-rs | golden-pending | - | - | not measured | - | not measured | 8 | 5 | none |
+| CountReads | gatk-rs | oracle-backed | 33546 suite | 6 suite | 21/21 (100.0%) | 2 | not measured | 5 | 0 | none |
+| CountReadsSpark | gatk-rs | oracle-backed | 9 | 1 | 19/19 (100.0%) | 2 | not measured | 5 | 1 | none |
+| CountVariants | gatk-rs | oracle-backed | 33446 suite | 12 suite | 23/23 (100.0%) | 2 | not measured | 4 | 0 | none |
+| CountVariantsSpark | gatk-rs | oracle-backed | 7 | 0 | 19/19 (100.0%) | 2 | not measured | 7 | 1 | none |
+| CpxVariantReInterpreterSpark | gatk-rs | oracle-backed | 81 | 24 | not measured | - | not measured | 8 | 5 | none |
 | CreateBafRegressMetricsFile | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CreateExtendedIlluminaManifest | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CreateHadoopBamSplittingIndex | gatk-rs | oracle-backed | 43 suite | 0 suite | 11/11 (100.0%) | 2 | not measured | 3 | 0 | none |
@@ -133,7 +133,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | DenoiseReadCounts | gatk-rs | oracle-backed | 13 suite | 0 suite | 6/6 (100.0%) | 2 | not measured | 1 | 3 | none |
 | DepthOfCoverage | gatk-rs | oracle-backed | 60 suite | 0 suite | 20/20 (100.0%) | 2 | not measured | 2 | 1 | none |
 | DetermineGermlineContigPloidy | - | not started | - | - | not measured | - | not measured | 0 | 0 | none |
-| DiscoverVariantsFromContigAlignmentsSAMSpark | gatk-rs | golden-pending | - | - | not measured | - | not measured | 5 | 5 | none |
+| DiscoverVariantsFromContigAlignmentsSAMSpark | gatk-rs | oracle-backed | 96 | 12 | not measured | - | not measured | 5 | 5 | none |
 | DownsampleByDuplicateSet | gatk-rs | oracle-backed | 23 suite | 0 suite | 18/18 (100.0%) | 2 | not measured | 2 | 6 | none |
 | DownsampleSam | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
 | DumpTabixIndex | gatk-rs | oracle-backed | 11 suite | 0 suite | 7/7 (100.0%) | 2 | not measured | 3 | 0 | none |
@@ -142,8 +142,8 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | ExampleMultiFeatureWalker | gatk-rs | oracle-backed | 36 suite | 0 suite | 16/16 (100.0%) | 2 | not measured | 5 | 7 | none |
 | ExtractFingerprint | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | none |
 | ExtractIlluminaBarcodes | picard-rs | oracle-backed | not vendored | not vendored | 30/30 (100.0%) | 2 | not measured | 0 | 0 | none |
-| ExtractOriginalAlignmentRecordsByNameSpark | gatk-rs | golden-pending | - | - | 22/22 (100.0%) | 2 | not measured | 6 | 1 | none |
-| ExtractSVEvidenceSpark | gatk-rs | golden-pending | - | - | not measured | - | not measured | 5 | 6 | none |
+| ExtractOriginalAlignmentRecordsByNameSpark | gatk-rs | oracle-backed | 13 | 6 | 22/22 (100.0%) | 2 | not measured | 6 | 1 | none |
+| ExtractSVEvidenceSpark | gatk-rs | oracle-backed | 69 | 36 | not measured | - | not measured | 5 | 6 | none |
 | ExtractSequences | picard-rs | oracle-backed | not vendored | not vendored | 7/7 (100.0%) | 2 | not measured | 0 | 0 | none |
 | ExtractVariantAnnotations | gatk-rs | oracle-backed | 178 suite | 0 suite | 29/29 (100.0%) | 2 | not measured | 2 | 4 | none |
 | FastaAlternateReferenceMaker | gatk-rs | oracle-backed | 13 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 7 | 0 | none |
@@ -157,14 +157,14 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | FilterSamReads | picard-rs | oracle-backed | not vendored | not vendored | 26/26 (100.0%) | 2 | not measured | 0 | 0 | none |
 | FilterVariantTranches | gatk-rs | oracle-backed | 60 suite | 0 suite | 15/15 (100.0%) | 2 | not measured | 4 | 7 | none |
 | FilterVcf | gatk-rs | oracle-backed | 20 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
-| FindBadGenomicKmersSpark | gatk-rs | golden-pending | - | - | not measured | - | not measured | 4 | 5 | none |
+| FindBadGenomicKmersSpark | gatk-rs | oracle-backed | 63 | 12 | not measured | - | not measured | 4 | 5 | none |
 | FindBreakpointEvidenceSpark | - | not started | - | - | not measured | - | not measured | 0 | 0 | none |
 | FindMendelianViolations | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
 | FixMateInformation | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
 | FixMisencodedBaseQualityReads | gatk-rs | oracle-backed | 40 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 5 | 0 | none |
 | FixVcfHeader | gatk-rs | oracle-backed | 26 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
 | FlagStat | gatk-rs | oracle-backed | 30 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 5 | 0 | none |
-| FlagStatSpark | gatk-rs | golden-pending | - | - | 19/19 (100.0%) | 2 | not measured | 5 | 1 | none |
+| FlagStatSpark | gatk-rs | oracle-backed | 5 | 1 | 19/19 (100.0%) | 2 | not measured | 5 | 1 | none |
 | FlowFeatureMapper | gatk-rs | oracle-backed | 197 suite | 0 suite | 25/25 (100.0%) | 2 | not measured | 2 | 8 | none |
 | FlowPairHMMAlignReadsToHaplotypes | gatk-rs | oracle-backed | 16 suite | 0 suite | 38/38 (100.0%) | 2 | not measured | 4 | 8 | none |
 | FuncotateSegments | gatk-rs | oracle-backed | 11 suite | 0 suite | 25/25 (100.0%) | 2 | not measured | 10 | 7 | none |
@@ -176,7 +176,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | GatherPileupSummaries | gatk-rs | oracle-backed | 11 suite | 0 suite | 6/6 (100.0%) | 2 | not measured | 5 | 0 | none |
 | GatherTranches | gatk-rs | oracle-backed | 11 suite | 0 suite | 8/8 (100.0%) | 2 | not measured | 4 | 0 | none |
 | GatherVcfs | gatk-rs | oracle-backed | 28 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
-| GatherVcfsCloud | gatk-rs | oracle-backed | 154 suite | 0 suite | 11/11 (100.0%) | 2 | not measured | 2 | 0 | none |
+| GatherVcfsCloud | gatk-rs | oracle-backed | 33440 suite | 0 suite | 11/11 (100.0%) | 2 | not measured | 2 | 0 | none |
 | GeneExpressionEvaluation | gatk-rs | oracle-backed | 21 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 4 | 6 | none |
 | GenomicsDBImport | - | not started | - | - | not measured | - | not measured | 0 | 0 | none |
 | GenotypeConcordance | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -193,12 +193,12 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | GtfToBed | gatk-rs | oracle-backed | 9 suite | 0 suite | 20/20 (100.0%) | 2 | not measured | 3 | 4 | none |
 | HaplotypeBasedVariantRecaller | gatk-rs | oracle-backed | 7 suite | 0 suite | 44/44 (100.0%) | 2 | not measured | 5 | 3 | none |
 | HaplotypeCaller | gatk-rs | oracle-backed | 587 suite | 50 suite | 54/54 (100.0%) | 2 | not measured | 11 | 3 | mask_identity_hashes, sort_segments_with |
-| HaplotypeCallerSpark | gatk-rs | golden-pending | - | - | not measured | - | not measured | 11 | 15 | none |
-| HtsgetReader | gatk-rs | golden-pending | - | - | not measured | - | not measured | 0 | 0 | none |
+| HaplotypeCallerSpark | gatk-rs | oracle-backed | 64 | 15 | not measured | - | not measured | 11 | 15 | none |
+| HtsgetReader | gatk-rs | oracle-backed | 865 | 41 | not measured | - | not measured | 0 | 0 | none |
 | IdentifyContaminant | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
 | IlluminaBasecallsToFastq | picard-rs | oracle-backed | not vendored | not vendored | not measured | - | not measured | 0 | 0 | none |
 | IlluminaBasecallsToSam | picard-rs | oracle-backed | not vendored | not vendored | 31/31 (100.0%) | 2 | not measured | 0 | 0 | none |
-| IndexFeatureFile | gatk-rs | oracle-backed | 123 suite | 0 suite | 8/8 (100.0%) | 2 | not measured | 0 | 0 | none |
+| IndexFeatureFile | gatk-rs | oracle-backed | 33409 suite | 0 suite | 8/8 (100.0%) | 2 | not measured | 0 | 0 | none |
 | IntervalListToBed | picard-rs | oracle-backed | not vendored | not vendored | 8/8 (100.0%) | 2 | not measured | 0 | 0 | none |
 | IntervalListTools | picard-rs | oracle-backed | not vendored | not vendored | 34/34 (100.0%) | 2 | not measured | 0 | 0 | none |
 | JointGermlineCNVSegmentation | gatk-rs | oracle-backed | 12 suite | 0 suite | 22/22 (100.0%) | 2 | not measured | 6 | 8 | none |
@@ -213,11 +213,11 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | MakeSitesOnlyVcf | gatk-rs | oracle-backed | 20 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
 | MakeVcfSampleNameMap | picard-rs | oracle-backed | not vendored | not vendored | 6/6 (100.0%) | 2 | not measured | 0 | 0 | none |
 | MarkDuplicates | picard-rs | oracle-backed | not vendored | not vendored | 47/47 (100.0%) | 2 | not measured | 0 | 0 | none |
-| MarkDuplicatesSpark | gatk-rs | golden-pending | - | - | 27/27 (100.0%) | 2 | not measured | 3 | 5 | none |
+| MarkDuplicatesSpark | gatk-rs | oracle-backed | 368 | 203 | 27/27 (100.0%) | 2 | not measured | 3 | 5 | none |
 | MarkDuplicatesWithMateCigar | picard-rs | oracle-backed | not vendored | not vendored | 30/30 (100.0%) | 2 | not measured | 0 | 0 | none |
 | MarkIlluminaAdapters | picard-rs | oracle-backed | not vendored | not vendored | 28/28 (100.0%) | 2 | not measured | 0 | 0 | none |
 | MeanQualityByCycle | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
-| MeanQualityByCycleSpark | gatk-rs | golden-pending | - | - | 21/21 (100.0%) | 2 | not measured | 4 | 2 | none |
+| MeanQualityByCycleSpark | gatk-rs | oracle-backed | 9 | 2 | 21/21 (100.0%) | 2 | not measured | 4 | 2 | none |
 | MergeAnnotatedRegions | gatk-rs | oracle-backed | 14 suite | 0 suite | 18/18 (100.0%) | 2 | not measured | 5 | 8 | none |
 | MergeAnnotatedRegionsByAnnotation | gatk-rs | oracle-backed | 9 suite | 0 suite | 22/22 (100.0%) | 2 | not measured | 5 | 8 | none |
 | MergeBamAlignment | picard-rs | oracle-backed | not vendored | not vendored | not measured | - | not measured | 0 | 0 | none |
@@ -233,15 +233,15 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | NonNFastaSize | picard-rs | oracle-backed | not vendored | not vendored | 7/7 (100.0%) | 2 | not measured | 0 | 0 | none |
 | NormalizeFasta | picard-rs | oracle-backed | not vendored | not vendored | 8/8 (100.0%) | 2 | not measured | 0 | 0 | none |
 | NuMTFilterTool | gatk-rs | oracle-backed | 35 suite | 0 suite | 15/15 (100.0%) | 2 | not measured | 2 | 7 | none |
-| ParallelCopyGCSDirectoryIntoHDFSSpark | gatk-rs | golden-pending | - | - | not measured | - | not measured | 1 | 5 | none |
+| ParallelCopyGCSDirectoryIntoHDFSSpark | gatk-rs | oracle-backed | 6 | 0 | not measured | - | not measured | 1 | 5 | none |
 | PathSeqBuildKmers | gatk-rs | oracle-backed | 122 suite | 0 suite | 8/8 (100.0%) | 2 | not measured | 2 | 1 | none |
 | PathSeqBuildReferenceTaxonomy | gatk-rs | oracle-backed | 161 suite | 0 suite | 9/9 (100.0%) | 2 | not measured | 6 | 0 | none |
-| PathSeqBwaSpark | gatk-rs | golden-pending | - | - | not measured | - | not measured | 5 | 5 | none |
-| PathSeqFilterSpark | gatk-rs | golden-pending | - | - | not measured | - | not measured | 5 | 7 | none |
-| PathSeqPipelineSpark | gatk-rs | golden-pending | - | - | not measured | - | not measured | 6 | 5 | none |
-| PathSeqScoreSpark | gatk-rs | golden-pending | - | - | not measured | - | not measured | 3 | 9 | none |
+| PathSeqBwaSpark | gatk-rs | oracle-backed | 92 | 32 | not measured | - | not measured | 5 | 5 | none |
+| PathSeqFilterSpark | gatk-rs | oracle-backed | 188 | 109 | not measured | - | not measured | 5 | 7 | none |
+| PathSeqPipelineSpark | gatk-rs | oracle-backed | 151 | 103 | not measured | - | not measured | 6 | 5 | none |
+| PathSeqScoreSpark | gatk-rs | oracle-backed | 110 | 56 | not measured | - | not measured | 3 | 9 | none |
 | Pileup | gatk-rs | oracle-backed | 9 suite | 0 suite | 18/18 (100.0%) | 2 | not measured | 4 | 0 | none |
-| PileupSpark | gatk-rs | golden-pending | - | - | 22/22 (100.0%) | 2 | not measured | 6 | 1 | none |
+| PileupSpark | gatk-rs | oracle-backed | 11 | 4 | 22/22 (100.0%) | 2 | not measured | 6 | 1 | none |
 | PlotDenoisedCopyRatios | - | not started | - | - | not measured | - | not measured | 0 | 0 | none |
 | PlotModeledSegments | - | not started | - | - | not measured | - | not measured | 0 | 0 | none |
 | PositionBasedDownsampleSam | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -252,16 +252,16 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | PrintDistantMates | gatk-rs | oracle-backed | 75 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 4 | 0 | none |
 | PrintFileDiagnostics | gatk-rs | oracle-backed | 9 suite | 0 suite | 6/6 (100.0%) | 2 | not measured | 2 | 0 | none |
 | PrintReadCounts | gatk-rs | oracle-backed | 44 suite | 0 suite | 17/17 (100.0%) | 2 | not measured | 2 | 4 | none |
-| PrintReads | gatk-rs | oracle-backed | 38 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 5 | 0 | none |
+| PrintReads | gatk-rs | oracle-backed | 33324 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 5 | 0 | none |
 | PrintReadsHeader | gatk-rs | oracle-backed | 19 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 4 | 0 | none |
-| PrintReadsSpark | gatk-rs | golden-pending | - | - | 23/23 (100.0%) | 2 | not measured | 5 | 1 | none |
+| PrintReadsSpark | gatk-rs | oracle-backed | 19 | 11 | 23/23 (100.0%) | 2 | not measured | 5 | 1 | none |
 | PrintSVEvidence | gatk-rs | oracle-backed | 27 suite | 0 suite | 17/17 (100.0%) | 2 | not measured | 5 | 7 | none |
-| PrintVariantsSpark | gatk-rs | golden-pending | - | - | 23/23 (100.0%) | 2 | not measured | 7 | 2 | none |
+| PrintVariantsSpark | gatk-rs | oracle-backed | 19 | 5 | 23/23 (100.0%) | 2 | not measured | 7 | 2 | none |
 | QualityScoreDistribution | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | none |
-| QualityScoreDistributionSpark | gatk-rs | golden-pending | - | - | 21/21 (100.0%) | 2 | not measured | 4 | 2 | none |
+| QualityScoreDistributionSpark | gatk-rs | oracle-backed | 6 | 2 | 21/21 (100.0%) | 2 | not measured | 4 | 2 | none |
 | RampedHaplotypeCaller | gatk-rs | oracle-backed | 576 suite | 50 suite | 56/56 (100.0%) | 2 | not measured | 13 | 3 | mask_identity_hashes, sort_segments_with |
 | ReadAnonymizer | gatk-rs | oracle-backed | 28 suite | 0 suite | 22/22 (100.0%) | 2 | not measured | 6 | 0 | none |
-| ReadsPipelineSpark | gatk-rs | golden-pending | - | - | not measured | - | not measured | 11 | 26 | none |
+| ReadsPipelineSpark | gatk-rs | oracle-backed | 133 | 48 | not measured | - | not measured | 11 | 26 | none |
 | ReblockGVCF | gatk-rs | oracle-backed | 12 suite | 0 suite | 56/56 (100.0%) | 2 | not measured | 8 | 7 | none |
 | ReferenceBlockConcordance | gatk-rs | oracle-backed | 18 suite | 0 suite | 17/17 (100.0%) | 2 | not measured | 3 | 10 | none |
 | RemoveNearbyIndels | gatk-rs | oracle-backed | 102 suite | 0 suite | 24/24 (100.0%) | 2 | not measured | 2 | 2 | none |
@@ -271,7 +271,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | RevertBaseQualityScores | gatk-rs | oracle-backed | 49 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 4 | 0 | none |
 | RevertOriginalBaseQualitiesAndAddMateCigar | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | none |
 | RevertSam | picard-rs | oracle-backed | not vendored | not vendored | 21/21 (100.0%) | 2 | not measured | 0 | 0 | none |
-| RevertSamSpark | gatk-rs | golden-pending | - | - | 28/28 (100.0%) | 2 | not measured | 4 | 3 | none |
+| RevertSamSpark | gatk-rs | oracle-backed | 67 | 21 | 28/28 (100.0%) | 2 | not measured | 4 | 3 | none |
 | SVAnnotate | gatk-rs | oracle-backed | 15 suite | 0 suite | 18/18 (100.0%) | 2 | not measured | 4 | 9 | none |
 | SVCluster | gatk-rs | oracle-backed | 11 suite | 0 suite | 24/24 (100.0%) | 2 | not measured | 5 | 8 | none |
 | SVConcordance | gatk-rs | oracle-backed | 7 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 6 | 9 | none |
@@ -281,7 +281,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | SamToFastqWithTags | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | none |
 | ScatterIntervalsByNs | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
 | ScoreVariantAnnotations | - | not started | - | - | not measured | - | not measured | 0 | 0 | none |
-| SelectVariants | gatk-rs | oracle-backed | 512 suite | 0 suite | 50/50 (100.0%) | 2 | not measured | 2 | 10 | none |
+| SelectVariants | gatk-rs | oracle-backed | 33798 suite | 0 suite | 50/50 (100.0%) | 2 | not measured | 2 | 10 | none |
 | SetNmAndUqTags | gatk-rs | oracle-backed | 10 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
 | SetNmMdAndUqTags | gatk-rs | oracle-backed | 10 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
 | ShiftFasta | gatk-rs | oracle-backed | 37 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 0 | 2 | none |
@@ -289,7 +289,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | SiteDepthtoBAF | gatk-rs | oracle-backed | 30 suite | 0 suite | 18/18 (100.0%) | 2 | not measured | 5 | 9 | none |
 | SortGff | picard-rs | oracle-backed | not vendored | not vendored | 14/14 (100.0%) | 2 | not measured | 0 | 0 | none |
 | SortSam | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
-| SortSamSpark | gatk-rs | golden-pending | - | - | 23/23 (100.0%) | 2 | not measured | 5 | 1 | none |
+| SortSamSpark | gatk-rs | oracle-backed | 21 | 10 | 23/23 (100.0%) | 2 | not measured | 5 | 1 | none |
 | SortVcf | gatk-rs | oracle-backed | 28 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
 | SplitCRAM | gatk-rs | oracle-backed | 31 suite | 0 suite | 11/11 (100.0%) | 2 | not measured | 2 | 0 | none |
 | SplitIntervals | gatk-rs | oracle-backed | 78 suite | 0 suite | 25/25 (100.0%) | 2 | not measured | 4 | 0 | none |
@@ -300,7 +300,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | SplitVcfs | gatk-rs | oracle-backed | 22 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
 | StructuralVariantDiscoverer | gatk-rs | oracle-backed | 3 suite | 0 suite | 23/23 (100.0%) | 2 | not measured | 9 | 5 | none |
 | StructuralVariationDiscoveryPipelineSpark | - | not started | - | - | not measured | - | not measured | 0 | 0 | none |
-| SvDiscoverFromLocalAssemblyContigAlignmentsSpark | gatk-rs | golden-pending | - | - | not measured | - | not measured | 6 | 5 | none |
+| SvDiscoverFromLocalAssemblyContigAlignmentsSpark | gatk-rs | oracle-backed | 161 | 88 | not measured | - | not measured | 6 | 5 | none |
 | TagGermlineEvents | gatk-rs | oracle-backed | 15 suite | 0 suite | 17/17 (100.0%) | 2 | not measured | 6 | 8 | none |
 | TrainVariantAnnotationsModel | - | not started | - | - | not measured | - | not measured | 0 | 0 | none |
 | TransferReadTags | gatk-rs | oracle-backed | 65 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 3 | 1 | none |
