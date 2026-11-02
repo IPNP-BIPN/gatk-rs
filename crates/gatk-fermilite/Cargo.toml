@@ -1,0 +1,12 @@
+[package]
+name = "gatk-fermilite"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# A port of fermi-lite (lh3/fermi-lite, MIT, Copyright (c) 2015 Broad Institute) at the commit
+# bundled in GATK 4.6.2.0's libfml.Linux.so, see src/lib.rs. No dependencies beyond std, on purpose:
+# the assembler is one self-contained stage of FindBreakpointEvidenceSpark.
+
+[dependencies]

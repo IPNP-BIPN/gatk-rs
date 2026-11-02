@@ -25,7 +25,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | AnnotateIntervals | gatk-rs | oracle-backed | 8 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 4 | 0 | none |
 | AnnotateVcfWithBamDepth | gatk-rs | oracle-backed | 54 suite | 0 suite | 23/23 (100.0%) | 2 | not measured | 6 | 0 | none |
 | AnnotateVcfWithExpectedAlleleFraction | gatk-rs | oracle-backed | 30 suite | 0 suite | 23/23 (100.0%) | 2 | not measured | 4 | 2 | none |
-| ApplyBQSR | gatk-rs | oracle-backed | 34185 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 6 | 0 | none |
+| ApplyBQSR | gatk-rs | oracle-backed | 34977 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 6 | 0 | none |
 | ApplyBQSRSpark | gatk-rs | oracle-backed | 5 | 3 | 20/20 (100.0%) | 2 | not measured | 6 | 1 | none |
 | ApplyVQSR | gatk-rs | oracle-backed | 152 suite | 0 suite | 25/25 (100.0%) | 2 | not measured | 7 | 7 | none |
 | BQSRPipelineSpark | gatk-rs | oracle-backed | 5 | 3 | 23/23 (100.0%) | 2 | not measured | 8 | 1 | none |
@@ -116,9 +116,9 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | CountBasesInReference | gatk-rs | oracle-backed | 191 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 4 | 0 | none |
 | CountBasesSpark | gatk-rs | oracle-backed | 6 | 0 | 19/19 (100.0%) | 2 | not measured | 5 | 1 | none |
 | CountFalsePositives | gatk-rs | oracle-backed | 14 suite | 0 suite | 24/24 (100.0%) | 2 | not measured | 2 | 2 | none |
-| CountReads | gatk-rs | oracle-backed | 34402 suite | 6 suite | 21/21 (100.0%) | 2 | not measured | 5 | 0 | none |
+| CountReads | gatk-rs | oracle-backed | 35200 suite | 6 suite | 21/21 (100.0%) | 2 | not measured | 5 | 0 | none |
 | CountReadsSpark | gatk-rs | oracle-backed | 9 | 1 | 19/19 (100.0%) | 2 | not measured | 5 | 1 | none |
-| CountVariants | gatk-rs | oracle-backed | 34293 suite | 12 suite | 23/23 (100.0%) | 2 | not measured | 4 | 0 | none |
+| CountVariants | gatk-rs | oracle-backed | 35085 suite | 12 suite | 23/23 (100.0%) | 2 | not measured | 4 | 0 | none |
 | CountVariantsSpark | gatk-rs | oracle-backed | 7 | 0 | 19/19 (100.0%) | 2 | not measured | 7 | 1 | none |
 | CpxVariantReInterpreterSpark | gatk-rs | oracle-backed | 81 | 24 | not measured | - | not measured | 8 | 5 | none |
 | CreateBafRegressMetricsFile | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -158,7 +158,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | FilterVariantTranches | gatk-rs | oracle-backed | 60 suite | 0 suite | 15/15 (100.0%) | 2 | not measured | 4 | 7 | none |
 | FilterVcf | gatk-rs | oracle-backed | 20 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
 | FindBadGenomicKmersSpark | gatk-rs | oracle-backed | 63 | 12 | not measured | - | not measured | 4 | 5 | none |
-| FindBreakpointEvidenceSpark | - | not started | - | - | not measured | - | not measured | 0 | 0 | none |
+| FindBreakpointEvidenceSpark | gatk-rs | oracle-backed | 916 | 340 | not measured | - | not measured | 9 | 3 | none |
 | FindMendelianViolations | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
 | FixMateInformation | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
 | FixMisencodedBaseQualityReads | gatk-rs | oracle-backed | 40 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 5 | 0 | none |
@@ -176,9 +176,9 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | GatherPileupSummaries | gatk-rs | oracle-backed | 11 suite | 0 suite | 6/6 (100.0%) | 2 | not measured | 5 | 0 | none |
 | GatherTranches | gatk-rs | oracle-backed | 11 suite | 0 suite | 8/8 (100.0%) | 2 | not measured | 4 | 0 | none |
 | GatherVcfs | gatk-rs | oracle-backed | 28 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
-| GatherVcfsCloud | gatk-rs | oracle-backed | 34296 suite | 0 suite | 11/11 (100.0%) | 2 | not measured | 2 | 0 | none |
+| GatherVcfsCloud | gatk-rs | oracle-backed | 35094 suite | 0 suite | 11/11 (100.0%) | 2 | not measured | 2 | 0 | none |
 | GeneExpressionEvaluation | gatk-rs | oracle-backed | 21 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 4 | 6 | none |
-| GenomicsDBImport | - | not started | - | - | not measured | - | not measured | 0 | 0 | none |
+| GenomicsDBImport | gatk-rs | oracle-backed | 3620 | 3341 | not measured | - | not measured | 6 | 11 | none |
 | GenotypeConcordance | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
 | GenotypeGVCFs | gatk-rs | oracle-backed | 7 suite | 0 suite | 34/34 (100.0%) | 2 | not measured | 6 | 9 | none |
 | GermlineCNVCaller | gatk-rs | oracle-backed | 18 | 0 | not measured | - | not measured | 2 | 0 | none |
@@ -198,7 +198,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | IdentifyContaminant | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
 | IlluminaBasecallsToFastq | picard-rs | oracle-backed | not vendored | not vendored | not measured | - | not measured | 0 | 0 | none |
 | IlluminaBasecallsToSam | picard-rs | oracle-backed | not vendored | not vendored | 31/31 (100.0%) | 2 | not measured | 0 | 0 | none |
-| IndexFeatureFile | gatk-rs | oracle-backed | 34265 suite | 0 suite | 8/8 (100.0%) | 2 | not measured | 0 | 0 | none |
+| IndexFeatureFile | gatk-rs | oracle-backed | 35063 suite | 0 suite | 8/8 (100.0%) | 2 | not measured | 0 | 0 | none |
 | IntervalListToBed | picard-rs | oracle-backed | not vendored | not vendored | 8/8 (100.0%) | 2 | not measured | 0 | 0 | none |
 | IntervalListTools | picard-rs | oracle-backed | not vendored | not vendored | 34/34 (100.0%) | 2 | not measured | 0 | 0 | none |
 | JointGermlineCNVSegmentation | gatk-rs | oracle-backed | 12 suite | 0 suite | 22/22 (100.0%) | 2 | not measured | 6 | 8 | none |
@@ -252,7 +252,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | PrintDistantMates | gatk-rs | oracle-backed | 75 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 4 | 0 | none |
 | PrintFileDiagnostics | gatk-rs | oracle-backed | 9 suite | 0 suite | 6/6 (100.0%) | 2 | not measured | 2 | 0 | none |
 | PrintReadCounts | gatk-rs | oracle-backed | 44 suite | 0 suite | 17/17 (100.0%) | 2 | not measured | 2 | 4 | none |
-| PrintReads | gatk-rs | oracle-backed | 34171 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 5 | 0 | none |
+| PrintReads | gatk-rs | oracle-backed | 34963 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 5 | 0 | none |
 | PrintReadsHeader | gatk-rs | oracle-backed | 19 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 4 | 0 | none |
 | PrintReadsSpark | gatk-rs | oracle-backed | 19 | 11 | 23/23 (100.0%) | 2 | not measured | 5 | 1 | none |
 | PrintSVEvidence | gatk-rs | oracle-backed | 27 suite | 0 suite | 17/17 (100.0%) | 2 | not measured | 5 | 7 | none |
@@ -281,7 +281,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | SamToFastqWithTags | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | none |
 | ScatterIntervalsByNs | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
 | ScoreVariantAnnotations | gatk-rs | oracle-backed | 190 | 41 | not measured | - | not measured | 6 | 7 | none |
-| SelectVariants | gatk-rs | oracle-backed | 34645 suite | 0 suite | 50/50 (100.0%) | 2 | not measured | 2 | 10 | none |
+| SelectVariants | gatk-rs | oracle-backed | 35437 suite | 0 suite | 50/50 (100.0%) | 2 | not measured | 2 | 10 | none |
 | SetNmAndUqTags | gatk-rs | oracle-backed | 10 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
 | SetNmMdAndUqTags | gatk-rs | oracle-backed | 10 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
 | ShiftFasta | gatk-rs | oracle-backed | 37 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 0 | 2 | none |
@@ -299,7 +299,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | SplitSamByNumberOfReads | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
 | SplitVcfs | gatk-rs | oracle-backed | 22 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
 | StructuralVariantDiscoverer | gatk-rs | oracle-backed | 3 suite | 0 suite | 23/23 (100.0%) | 2 | not measured | 9 | 5 | none |
-| StructuralVariationDiscoveryPipelineSpark | - | not started | - | - | not measured | - | not measured | 0 | 0 | none |
+| StructuralVariationDiscoveryPipelineSpark | gatk-rs | oracle-backed | 486 | 259 | not measured | - | not measured | 11 | 2 | none |
 | SvDiscoverFromLocalAssemblyContigAlignmentsSpark | gatk-rs | oracle-backed | 161 | 88 | not measured | - | not measured | 6 | 5 | none |
 | TagGermlineEvents | gatk-rs | oracle-backed | 15 suite | 0 suite | 17/17 (100.0%) | 2 | not measured | 6 | 8 | none |
 | TrainVariantAnnotationsModel | gatk-rs | oracle-backed | 111 | 0 | not measured | - | not measured | 5 | 0 | none |
@@ -1108,6 +1108,16 @@ Held out: `--dont-require-soft-clips-both-ends`, `--keep-reverse-strand-only`, `
 
 The tool writes what its tables hold, so the reference that repeats and the sizes that find its repeats are what vary. The reads are optional and only their dictionary matters.
 
+### FindBreakpointEvidenceSpark
+
+Suites: `sv-evidence`.
+
+Inputs: `svbp_cross.txt`, `svbp_external.bed`, `svbp_gaps.txt`, `svbp_kill-wrong-length.txt`, `svbp_kill.txt`, `svbp_other.bam`, `svbp_reads.bam`, `svbp_shallow.bam`, `svbp_sv.fasta.img`.
+
+Held out: `--output-shard-tmp-dir`, `--read-index`, `--reference`.
+
+Evidence directories and the interval file stay off: Hadoop leaves its checksums beside the one and the other prints a duration. The dump reads both. The command line records the date. The reads and reference of SvEvidenceDump's donor genome; the debug outputs are each on or off, and the numeric arguments each take a value that changes what a stage keeps.
+
 ### FixMisencodedBaseQualityReads
 
 Suites: `fix-misencoded`.
@@ -1239,6 +1249,16 @@ Inputs: `genes.gff3`, `genes_noname.gff3`, `mutect_ref.fasta`, `rna.bam`.
 Held out: `--dont-require-soft-clips-both-ends`, `--exclude-intervals`, `--keep-reverse-strand-only`, `--read-filter-tag-op`, `--read-index`, `--sequence-dictionary`.
 
 rna.bam is one sample's pairs over mutect_ref.fasta with MC and MQ written, some spliced across the first gene's intron, some multi-mapped (NH 2), some at MQ 5 and some duplicates. genes.gff3 holds two stranded genes with an mRNA and exons, and an unstranded one overlapping the second; genes_noname.gff3 adds a gene with no Name, refused under the default label. --read-strands, --multi-overlap-method, --multi-map-method and --unspliced each move the counts.
+
+### GenomicsDBImport
+
+Suites: `genomicsdb-import`.
+
+Inputs: `gdb_a.g.vcf`, `gdb_b.g.vcf`, `reads.bai`, `reads.bam`, `reads2.bai`, `reads2.bam`.
+
+Held out: `--avoid-nio`, `--bypass-feature-reader`, `--consolidate`, `--disable-read-filter`, `--genomicsdb-update-workspace-path`, `--header`, `--merge-contigs-into-num-partitions`, `--output-interval-list-to-file`, `--read-filter`, `--sample-name-map`, `--validate-sample-name-map`.
+
+gdb_a.g.vcf is a gVCF with blocks, sites, a deletion with its spanning allele and allele-specific annotations, gdb_b.g.vcf a second sample of blocks across the same contigs. --variant is a list: both samples, or the first alone. The two workspace paths are what lets a row notice where it was told to write, and the fragment and row-bounds names are numbered in the comparison because they hold a UUID, a thread id and the wall clock. The arguments held out with no value are the ones the port refuses with its own message or that Barclay refuses beside --variant, which would measure that refusal on every row that carries them: an update and its interval list, the sample map, --header, the feature reader bypass, the contig merge and consolidation over batches. The refusals are in GenomicsDBImportDump.
 
 ### GenotypeGVCFs
 
@@ -1985,6 +2005,16 @@ Inputs: `svd.bam`, `svd2.bam`, `svd_cnv.vcf`, `svd_coord.bam`, `svd_noncanonical
 Held out: `--dont-require-soft-clips-both-ends`, `--intervals`, `--keep-reverse-strand-only`, `--read-filter-tag-op`, `--read-index`.
 
 svd.bam is queryname-sorted assembled contigs over svd_ref.fasta (chr1, chr2 and chrUn_alt), with their primary, supplementary and secondary lines as BWA writes them: a deletion called by two contigs, an insertion, a tandem duplication, a replacement written as a linked DEL and INS, both intra-chromosome strand switches, an inter-chromosome and a reference-order-swap breakend pair, a deletion on the reverse strand, one at MQ 25 (LOW_MQ at the default --min-mq and not at 20), one inside a single gapped alignment, a tandem contraction, a small duplication with inserted bases, a deletion whose contig also maps whole to chrUn_alt, one with a secondary line, an unmapped contig and an insertion whose middle maps at MQ 5. svd2.bam is three contigs of the same sample and no breakend; svd_coord.bam is them coordinate-sorted and indexed, the queryname refusal. --disable-read-filter NotSecondaryAlignmentReadFilter lets the secondary line in, which makes its contig ambiguous and drops a call; MappedReadFilter lets the unmapped contig in, which AlignmentInterval refuses on svd.bam and not on svd2.bam, which has none. --disable-tool-default-read-filters is forbidden with svd.bam: it is the same refusal as MappedReadFilter there, and on svd2.bam it is accepted. The contig with only supplementary lines (No primary line) is reached by --inverted-read-filter NotSupplementaryAlignmentReadFilter. --read-filter MappingQualityReadFilter drops the MQ 5 line (INSSEQ_MAP disappears) and PrimaryLineReadFilter leaves only the gapped call. --non-canonical-contig-names-file svd_noncanonical.txt names chrUn_alt, which turns an ambiguous contig into a deletion annotated with CTG_GOOD_NONCANONICAL_MAPPING; the other file names contigs the dictionary lacks, which changes nothing. --cnv-calls svd_cnv.vcf annotates svd2.bam's deletion and duplication with EXTERNAL_CNV_CALLS and refuses svd.bam, whose breakends have no end (the reference's own IllegalArgumentException). svd_other.fasta cuts chr2 to 2900 bases, which the dictionary validation refuses; it is forbidden without --disable-sequence-dictionary-validation, so its rows run on a reference that still holds every base a call asks for. The validation refusal is the read walkers' startup, measured by their arrays. Refusals compared by hand against the oracle, one run each, and left out of the rows they would spend: a file with no read group (svd_norg.bam, the sample refusal), a names file that is not there, copy-number calls for another sample (svd_cnv_other.vcf), a master dictionary the reads disagree with (svd_other.dict), and -L, which every queryname-sorted file refuses for want of an index; -XL alone varies instead and is refused the same way. The SVVCFWriter builds its own writer, so --create-output-variant-index, -md5, --sites-only-vcf-output and --max-variants-per-shard vary and change nothing, and a .vcf.gz output is plain text. --add-output-vcf-command-line is held at false for the reason every variant writer holds it: the line carries the run's date. --read-index is held out: a queryname-sorted file cannot be indexed, so the one index in the corpus belongs to the refused coordinate-sorted file. --read-filter-tag-op, --keep-reverse-strand-only and --dont-require-soft-clips-both-ends belong to filters no row selects and are refused without them, as for AddOriginalAlignmentTags. The complex-event path (three or more alignments) is not in the corpus: the port refuses it as its own limitation.
+
+### StructuralVariationDiscoveryPipelineSpark
+
+Suites: `sv-evidence`.
+
+Inputs: `svbp_cnv.vcf`, `svbp_cross.txt`, `svbp_external.bed`, `svbp_gaps.txt`, `svbp_kill-wrong-length.txt`, `svbp_kill.txt`, `svbp_other.bam`, `svbp_reads.bam`, `svbp_shallow.bam`, `svbp_sv.fasta`, `svbp_sv.fasta.img`.
+
+Held out: `--output-shard-tmp-dir`, `--read-index`.
+
+Evidence directories and the interval file stay off: Hadoop leaves its checksums beside the one and the other prints a duration. The dump reads both. The command line records the date. The same donor genome, with the discovery stage's reference and thresholds.
 
 ### SvDiscoverFromLocalAssemblyContigAlignmentsSpark
 

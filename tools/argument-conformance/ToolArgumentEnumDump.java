@@ -563,6 +563,8 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.spark.bwa.BwaSpark());
         declarations("BwaAndMarkDuplicatesPipelineSpark",
                 new org.broadinstitute.hellbender.tools.spark.pipelines.BwaAndMarkDuplicatesPipelineSpark());
+        declarations("GenomicsDBImport",
+                new org.broadinstitute.hellbender.tools.genomicsdb.GenomicsDBImport());
         declarations("PlotDenoisedCopyRatios",
                 new org.broadinstitute.hellbender.tools.copynumber.plotting.PlotDenoisedCopyRatios());
         declarations("PlotModeledSegments",
@@ -577,6 +579,10 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.walkers.vqsr.scalable.ScoreVariantAnnotations());
         declarations("TrainVariantAnnotationsModel",
                 new org.broadinstitute.hellbender.tools.walkers.vqsr.scalable.TrainVariantAnnotationsModel());
+        declarations("FindBreakpointEvidenceSpark",
+                new org.broadinstitute.hellbender.tools.spark.sv.evidence.FindBreakpointEvidenceSpark());
+        declarations("StructuralVariationDiscoveryPipelineSpark",
+                new org.broadinstitute.hellbender.tools.spark.sv.StructuralVariationDiscoveryPipelineSpark());
         declarations("NVScoreVariants",
                 new org.broadinstitute.hellbender.tools.walkers.vqsr.NVScoreVariants());
         declarations("HtsgetReader",

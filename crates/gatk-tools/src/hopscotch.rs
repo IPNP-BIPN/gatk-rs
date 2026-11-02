@@ -133,6 +133,142 @@ impl<T: HopscotchEntry> Hopscotch<T> {
         order.into_iter()
     }
 
+    /// `contains`, of whatever is in the bucket for this hash.
+    pub fn contains(&self, hash: i32, matches: impl Fn(&T) -> bool) -> bool {
+        !self.find_each(hash, matches).is_empty()
+    }
+
+    /// `findEach`: what the chain holds of a key, in link order.
+    pub fn find_each(&self, hash: i32, matches: impl Fn(&T) -> bool) -> Vec<&T> {
+        let mut found = Vec::new();
+        let mut bucket = self.hash_to_index(hash);
+        if !self.is_chain_head(bucket) {
+            return found;
+        }
+        loop {
+            let entry = self.buckets[bucket as usize]
+                .as_ref()
+                .expect("a chain holds no empty bucket");
+            if matches(entry) {
+                found.push(entry);
+            }
+            let offset = self.offset(bucket);
+            if offset == 0 {
+                return found;
+            }
+            bucket = self.index(bucket, offset);
+        }
+    }
+
+    /// `removeEach`, an `ElementIterator` removing all it finds: a removal moves the chain's last
+    /// entry into the hole, so the walk backs up to look at what arrived there.
+    pub fn remove_each(&mut self, hash: i32, matches: impl Fn(&T) -> bool) -> bool {
+        const NONE: i32 = -1;
+        let bucket = self.hash_to_index(hash);
+        if !self.is_chain_head(bucket) {
+            return false;
+        }
+        let mut current = bucket;
+        let mut previous = NONE;
+        let advance = |table: &Self, current: &mut i32, previous: &mut i32| loop {
+            let offset = table.offset(*current);
+            if offset == 0 {
+                *current = NONE;
+                return;
+            }
+            *previous = *current;
+            *current = table.index(*current, offset);
+            if matches(table.buckets[*current as usize].as_ref().expect("a link")) {
+                return;
+            }
+        };
+        if !matches(self.buckets[current as usize].as_ref().expect("a head")) {
+            advance(self, &mut current, &mut previous);
+        }
+        let mut removed = false;
+        while current != NONE {
+            let (remove_at, remove_previous) = (current, previous);
+            advance(self, &mut current, &mut previous);
+            self.remove_at_index(remove_at, remove_previous);
+            if self.buckets[remove_at as usize].is_some() {
+                current = remove_at;
+                previous = remove_previous;
+            }
+            if current != NONE && !matches(self.buckets[current as usize].as_ref().expect("a link"))
+            {
+                advance(self, &mut current, &mut previous);
+            }
+            removed = true;
+        }
+        removed
+    }
+
+    /// `Collection.removeIf`, through `CompleteIterator`.
+    pub fn remove_if(&mut self, doomed: impl Fn(&T) -> bool) {
+        const NONE: i32 = -1;
+        let mut head = NONE;
+        let mut current = NONE;
+        let mut previous = NONE;
+        let next_head = |table: &Self, head: &mut i32, current: &mut i32, previous: &mut i32| {
+            *head += 1;
+            while *head < table.capacity {
+                if table.is_chain_head(*head) {
+                    *current = *head;
+                    *previous = NONE;
+                    return;
+                }
+                *head += 1;
+            }
+            *head = NONE;
+        };
+        next_head(self, &mut head, &mut current, &mut previous);
+        while head != NONE {
+            let (remove_at, remove_previous) = (current, previous);
+            let offset = self.offset(current);
+            if offset == 0 {
+                next_head(self, &mut head, &mut current, &mut previous);
+            } else {
+                previous = current;
+                current = self.index(current, offset);
+            }
+            if doomed(self.buckets[remove_at as usize].as_ref().expect("a link")) {
+                self.remove_at_index(remove_at, remove_previous);
+                if self.buckets[remove_at as usize].is_some() {
+                    current = remove_at;
+                    previous = remove_previous;
+                }
+            }
+        }
+    }
+
+    /// `removeAtIndex`.
+    fn remove_at_index(&mut self, bucket: i32, predecessor: i32) {
+        let offset = self.offset(bucket);
+        if offset == 0 {
+            self.buckets[bucket as usize] = None;
+            self.status[bucket as usize] = 0;
+            if predecessor != -1 {
+                let offset = self.offset(predecessor);
+                self.add_status(predecessor, -offset);
+            }
+        } else {
+            let mut previous = bucket;
+            let mut next = self.index(previous, offset);
+            loop {
+                let offset_to_next = self.offset(next);
+                if offset_to_next == 0 {
+                    break;
+                }
+                previous = next;
+                next = self.index(next, offset_to_next);
+            }
+            self.buckets[bucket as usize] = self.buckets[next as usize].take();
+            let offset = self.offset(previous);
+            self.add_status(previous, -offset);
+        }
+        self.size -= 1;
+    }
+
     fn hash_to_index(&self, hash: i32) -> i32 {
         let result = SPREADER.wrapping_mul(hash) % self.capacity;
         if result < 0 {

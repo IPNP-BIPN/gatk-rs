@@ -58,6 +58,10 @@ public class UsageTextDump {
         usage("PrintBGZFBlockInformation",
                 new org.broadinstitute.hellbender.tools.PrintBGZFBlockInformation());
         // Undocumented as well, and a BETA banner above its usage line.
+        usage("FindBreakpointEvidenceSpark",
+                new org.broadinstitute.hellbender.tools.spark.sv.evidence.FindBreakpointEvidenceSpark());
+        usage("StructuralVariationDiscoveryPipelineSpark",
+                new org.broadinstitute.hellbender.tools.spark.sv.StructuralVariationDiscoveryPipelineSpark());
         usage("NVScoreVariants",
                 new org.broadinstitute.hellbender.tools.walkers.vqsr.NVScoreVariants());
         // Documented, but the banner above their usage lines is only read from here.

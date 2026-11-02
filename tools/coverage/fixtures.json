@@ -358,6 +358,79 @@
     ]
   },
   "per_tool": {
+    "GenomicsDBImport": {
+      "$why": [
+        "gdb_a.g.vcf is a gVCF with blocks, sites, a deletion with its spanning allele and allele-specific",
+        "annotations, gdb_b.g.vcf a second sample of blocks across the same contigs. --variant is a list: both",
+        "samples, or the first alone. The two workspace paths are what lets a row notice where it was told to",
+        "write, and the fragment and row-bounds names are numbered in the comparison because they hold a UUID,",
+        "a thread id and the wall clock. The arguments held out with no value are the ones the port refuses",
+        "with its own message or that Barclay refuses beside --variant, which would measure that refusal on",
+        "every row that carries them: an update and its interval list, the sample map, --header, the feature",
+        "reader bypass, the contig merge and consolidation over batches. The refusals are in GenomicsDBImportDump."
+      ],
+      "$lists": [
+        "--variant"
+      ],
+      "--variant": [
+        "/work/fixtures/gdb_a.g.vcf /work/fixtures/gdb_b.g.vcf",
+        "/work/fixtures/gdb_a.g.vcf"
+      ],
+      "--genomicsdb-workspace-path": [
+        "/work/out/ws",
+        "/work/out/ws2"
+      ],
+      "--intervals": [
+        "chr1:1-500",
+        "chr2"
+      ],
+      "--batch-size": [
+        "0",
+        "1"
+      ],
+      "--genomicsdb-segment-size": [
+        "1048576",
+        "4096"
+      ],
+      "--genomicsdb-vcf-buffer-size": [
+        "16384",
+        "1024"
+      ],
+      "--reader-threads": [
+        "1",
+        "2"
+      ],
+      "--max-num-intervals-to-import-in-parallel": [
+        "1",
+        "2"
+      ],
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--exclude-intervals": [
+        "chr1:50-60",
+        "chr2:5-6"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--read-filter": [],
+      "--disable-read-filter": [],
+      "--genomicsdb-update-workspace-path": [],
+      "--output-interval-list-to-file": [],
+      "--sample-name-map": [],
+      "--validate-sample-name-map": [],
+      "--header": [],
+      "--bypass-feature-reader": [],
+      "--avoid-nio": [],
+      "--merge-contigs-into-num-partitions": [],
+      "--consolidate": []
+    },
     "ApplyBQSR": {
       "--input": [
         "/work/fixtures/reads.bam",
@@ -17182,6 +17255,422 @@
       ],
       "--exclude-intervals": [
         "null"
+      ]
+    },
+    "FindBreakpointEvidenceSpark": {
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:1-500"
+      ],
+      "--input": [
+        "/work/fixtures/svbp_reads.bam",
+        "/work/fixtures/svbp_shallow.bam",
+        "/work/fixtures/svbp_other.bam"
+      ],
+      "--read-index": [],
+      "--intervals": [
+        "<unset>",
+        "chr1:1-9000",
+        "chr2"
+      ],
+      "--program-name": [
+        "svbp",
+        "svbp2"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--kmers-to-ignore": [
+        "/work/fixtures/svbp_kill.txt",
+        "/work/fixtures/svbp_kill-wrong-length.txt"
+      ],
+      "--aligner-index-image": [
+        "/work/fixtures/svbp_sv.fasta.img"
+      ],
+      "--k-size": [
+        "51",
+        "31"
+      ],
+      "--kmer-max-dust-score": [
+        "49",
+        "20"
+      ],
+      "--min-evidence-mapq": [
+        "20",
+        "61"
+      ],
+      "--min-evidence-match-length": [
+        "45",
+        "140"
+      ],
+      "--allowed-short-fragment-overhang": [
+        "10",
+        "0"
+      ],
+      "--max-tracked-fragment-length": [
+        "2000",
+        "300"
+      ],
+      "--high-depth-coverage-peak-factor": [
+        "7",
+        "1"
+      ],
+      "--high-depth-coverage-factor": [
+        "3",
+        "1"
+      ],
+      "--min-evidence-coverage-ratio": [
+        "0.35",
+        "5.0"
+      ],
+      "--min-coherent-evidence-coverage-ratio": [
+        "0.16",
+        "5.0"
+      ],
+      "--min-kmers-per-interval": [
+        "5",
+        "1000000"
+      ],
+      "--cleaner-max-intervals": [
+        "3",
+        "1"
+      ],
+      "--cleaner-min-kmer-count": [
+        "4",
+        "6"
+      ],
+      "--cleaner-max-copy-number": [
+        "4",
+        "2"
+      ],
+      "--assembly-to-mapped-size-ratio-guess": [
+        "7",
+        "1"
+      ],
+      "--max-fastq-size": [
+        "3000000",
+        "150000"
+      ],
+      "--exclusion-interval-padding": [
+        "0",
+        "200"
+      ],
+      "--external-evidence-weight": [
+        "10",
+        "3"
+      ],
+      "--external-evidence-uncertainty": [
+        "150",
+        "400"
+      ],
+      "--adapter-sequence": [
+        "<unset>",
+        "AGATCGGAAGAGCACACGTCTGAACTCCAGTCACATCACGATCTCGTATGCCGTCTTCTGCTTG"
+      ],
+      "--z-dropoff": [
+        "20",
+        "1"
+      ],
+      "--external-evidence": [
+        "<unset>",
+        "/work/fixtures/svbp_external.bed"
+      ],
+      "--read-metadata": [
+        "<unset>",
+        "/work/out/metadata.txt"
+      ],
+      "--breakpoint-evidence-dir": [
+        "<unset>"
+      ],
+      "--unfiltered-breakpoint-evidence-dir": [
+        "<unset>"
+      ],
+      "--breakpoint-intervals": [
+        "<unset>"
+      ],
+      "--high-coverage-intervals": [
+        "<unset>",
+        "/work/out/high-coverage.bed"
+      ],
+      "--qname-intervals-mapped": [
+        "<unset>",
+        "/work/out/qnames-mapped.txt"
+      ],
+      "--kmer-intervals": [
+        "<unset>",
+        "/work/out/kmers.txt"
+      ],
+      "--qname-intervals-for-assembly": [
+        "<unset>",
+        "/work/out/qnames-assembly.txt"
+      ],
+      "--target-link-file": [
+        "<unset>",
+        "/work/out/links.bedpe"
+      ],
+      "--exclusion-intervals": [
+        "<unset>",
+        "/work/fixtures/svbp_gaps.txt"
+      ],
+      "--cross-contigs-to-ignore": [
+        "<unset>",
+        "/work/fixtures/svbp_cross.txt"
+      ],
+      "--assembled-contigs-output-order": [
+        "coordinate",
+        "queryname"
+      ],
+      "--reference": [],
+      "--output": [
+        "/work/out/contigs.sam",
+        "/work/out/contigs.bam"
+      ],
+      "$why": [
+        "Evidence directories and the interval file stay off: Hadoop leaves its checksums beside the one and the other prints a duration. The dump reads both. The command line records the date. The reads and reference of SvEvidenceDump's donor genome; the debug outputs are each on or off, and the numeric arguments each take a value that changes what a stage keeps."
+      ]
+    },
+    "StructuralVariationDiscoveryPipelineSpark": {
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:1-500"
+      ],
+      "--input": [
+        "/work/fixtures/svbp_reads.bam",
+        "/work/fixtures/svbp_shallow.bam",
+        "/work/fixtures/svbp_other.bam"
+      ],
+      "--read-index": [],
+      "--intervals": [
+        "<unset>",
+        "chr1:1-9000",
+        "chr2"
+      ],
+      "--program-name": [
+        "svbp",
+        "svbp2"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--kmers-to-ignore": [
+        "/work/fixtures/svbp_kill.txt",
+        "/work/fixtures/svbp_kill-wrong-length.txt"
+      ],
+      "--aligner-index-image": [
+        "/work/fixtures/svbp_sv.fasta.img"
+      ],
+      "--k-size": [
+        "51",
+        "31"
+      ],
+      "--kmer-max-dust-score": [
+        "49",
+        "20"
+      ],
+      "--min-evidence-mapq": [
+        "20",
+        "61"
+      ],
+      "--min-evidence-match-length": [
+        "45",
+        "140"
+      ],
+      "--allowed-short-fragment-overhang": [
+        "10",
+        "0"
+      ],
+      "--max-tracked-fragment-length": [
+        "2000",
+        "300"
+      ],
+      "--high-depth-coverage-peak-factor": [
+        "7",
+        "1"
+      ],
+      "--high-depth-coverage-factor": [
+        "3",
+        "1"
+      ],
+      "--min-evidence-coverage-ratio": [
+        "0.35",
+        "5.0"
+      ],
+      "--min-coherent-evidence-coverage-ratio": [
+        "0.16",
+        "5.0"
+      ],
+      "--min-kmers-per-interval": [
+        "5",
+        "1000000"
+      ],
+      "--cleaner-max-intervals": [
+        "3",
+        "1"
+      ],
+      "--cleaner-min-kmer-count": [
+        "4",
+        "6"
+      ],
+      "--cleaner-max-copy-number": [
+        "4",
+        "2"
+      ],
+      "--assembly-to-mapped-size-ratio-guess": [
+        "7",
+        "1"
+      ],
+      "--max-fastq-size": [
+        "3000000",
+        "150000"
+      ],
+      "--exclusion-interval-padding": [
+        "0",
+        "200"
+      ],
+      "--external-evidence-weight": [
+        "10",
+        "3"
+      ],
+      "--external-evidence-uncertainty": [
+        "150",
+        "400"
+      ],
+      "--adapter-sequence": [
+        "<unset>",
+        "AGATCGGAAGAGCACACGTCTGAACTCCAGTCACATCACGATCTCGTATGCCGTCTTCTGCTTG"
+      ],
+      "--z-dropoff": [
+        "20",
+        "1"
+      ],
+      "--external-evidence": [
+        "<unset>",
+        "/work/fixtures/svbp_external.bed"
+      ],
+      "--read-metadata": [
+        "<unset>",
+        "/work/out/metadata.txt"
+      ],
+      "--breakpoint-evidence-dir": [
+        "<unset>"
+      ],
+      "--unfiltered-breakpoint-evidence-dir": [
+        "<unset>"
+      ],
+      "--breakpoint-intervals": [
+        "<unset>"
+      ],
+      "--high-coverage-intervals": [
+        "<unset>",
+        "/work/out/high-coverage.bed"
+      ],
+      "--qname-intervals-mapped": [
+        "<unset>",
+        "/work/out/qnames-mapped.txt"
+      ],
+      "--kmer-intervals": [
+        "<unset>",
+        "/work/out/kmers.txt"
+      ],
+      "--qname-intervals-for-assembly": [
+        "<unset>",
+        "/work/out/qnames-assembly.txt"
+      ],
+      "--target-link-file": [
+        "<unset>",
+        "/work/out/links.bedpe"
+      ],
+      "--exclusion-intervals": [
+        "<unset>",
+        "/work/fixtures/svbp_gaps.txt"
+      ],
+      "--cross-contigs-to-ignore": [
+        "<unset>",
+        "/work/fixtures/svbp_cross.txt"
+      ],
+      "--assembled-contigs-output-order": [
+        "coordinate",
+        "queryname"
+      ],
+      "--reference": [
+        "/work/fixtures/svbp_sv.fasta"
+      ],
+      "--output": [
+        "/work/out/variants",
+        "/work/out/variants2"
+      ],
+      "--contig-sam-file": [
+        "/work/out/contigs.sam",
+        "/work/out/contigs.bam"
+      ],
+      "--cnv-calls": [
+        "<unset>",
+        "/work/fixtures/svbp_cnv.vcf"
+      ],
+      "--imprecise-variant-evidence-threshold": [
+        "7",
+        "1"
+      ],
+      "--assembly-imprecise-evidence-overlap-uncertainty": [
+        "100",
+        "10"
+      ],
+      "--max-callable-imprecise-deletion-size": [
+        "15000",
+        "100"
+      ],
+      "--min-align-length": [
+        "50",
+        "500"
+      ],
+      "--min-mq": [
+        "30",
+        "61"
+      ],
+      "$why": [
+        "Evidence directories and the interval file stay off: Hadoop leaves its checksums beside the one and the other prints a duration. The dump reads both. The command line records the date. The same donor genome, with the discovery stage's reference and thresholds."
       ]
     }
   },

@@ -499,8 +499,8 @@ jobs:
             suites: "mutect2-resources mutect2-f1r2 mutect2-permutect hc-allele-graphs mutect2-dragstr"
           - group: oracle-backed
             index: "71/71"
-            slug: "spark-walkers-htsget-reader-interpreter-tools"
-            suites: "spark-walkers htsget-reader interpreter-tools"
+            slug: "spark-walkers-htsget-reader-interpreter-tools-genomicsdb-import-sv-evidence"
+            suites: "spark-walkers htsget-reader interpreter-tools genomicsdb-import sv-evidence"
     steps:
       - uses: actions/checkout@v7
 
@@ -600,6 +600,8 @@ jobs:
             --tool PlotDenoisedCopyRatios --tool PlotModeledSegments --tool DetermineGermlineContigPloidy \
             --tool GermlineCNVCaller --tool PostprocessGermlineCNVCalls --tool ScoreVariantAnnotations \
             --tool TrainVariantAnnotationsModel --tool NVScoreVariants \
+            --tool FindBreakpointEvidenceSpark --tool StructuralVariationDiscoveryPipelineSpark \
+            --tool GenomicsDBImport \
             --tool ExtractOriginalAlignmentRecordsByNameSpark --tool MeanQualityByCycleSpark \
             --tool QualityScoreDistributionSpark --tool CollectBaseDistributionByCycleSpark \
             --tool CollectQualityYieldMetricsSpark \

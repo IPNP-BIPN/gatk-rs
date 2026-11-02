@@ -24444,11 +24444,13 @@ pub use spark_runners::{
     count_reads_spark, count_variants_spark, cpx_variant_re_interpreter_spark,
     discover_variants_from_contig_alignments_sam_spark,
     extract_original_alignment_records_by_name_spark, extract_sv_evidence_spark,
-    find_bad_genomic_kmers_spark, flag_stat_spark, mark_duplicates_spark,
-    mean_quality_by_cycle_spark, parallel_copy_gcs_directory_into_hdfs_spark, pathseq_bwa_spark,
-    pathseq_filter_spark, pathseq_pipeline_spark, pathseq_score_spark, pileup_spark,
-    print_reads_spark, print_variants_spark, quality_score_distribution_spark, revert_sam_spark,
-    sort_sam_spark, sv_discover_from_local_assembly_contig_alignments_spark,
+    find_bad_genomic_kmers_spark, find_breakpoint_evidence_spark, flag_stat_spark,
+    mark_duplicates_spark, mean_quality_by_cycle_spark,
+    parallel_copy_gcs_directory_into_hdfs_spark, pathseq_bwa_spark, pathseq_filter_spark,
+    pathseq_pipeline_spark, pathseq_score_spark, pileup_spark, print_reads_spark,
+    print_variants_spark, quality_score_distribution_spark, revert_sam_spark, sort_sam_spark,
+    structural_variation_discovery_pipeline_spark,
+    sv_discover_from_local_assembly_contig_alignments_spark,
 };
 
 /// `GroundTruthReadsBuilder`, in a file of its own.
@@ -24575,6 +24577,11 @@ pub fn bwa_mem_index_image_creator(parser: &Parser) -> Outcome {
 #[path = "runners_extract_variant_annotations.rs"]
 mod extract_variant_annotations_runner;
 pub use extract_variant_annotations_runner::extract_variant_annotations;
+
+/// `GenomicsDBImport`, whose workspace is written as the native library writes it.
+#[path = "runners_genomicsdb_import.rs"]
+mod genomicsdb_import_runner;
+pub use genomicsdb_import_runner::genomics_db_import;
 
 /// The tools that stop at an interpreter, each as far as a machine without one can see.
 #[path = "runners_interpreter_tools.rs"]

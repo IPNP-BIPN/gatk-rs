@@ -619,6 +619,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "gatk-fermilite"
+version = "0.1.0"
+
+[[package]]
 name = "gatk-readfilter"
 version = "0.1.0"
 dependencies = [
@@ -632,10 +636,14 @@ name = "gatk-tools"
 version = "0.1.0"
 dependencies = [
  "bwa-mem4",
+ "bwa-mem4-core",
+ "bwa-mem4-index",
+ "bwa-mem4-mem",
  "clap",
  "gatk-annotation",
  "gatk-corpus",
  "gatk-engine",
+ "gatk-fermilite",
  "gatk-readfilter",
  "htsjdk-bam",
  "htsjdk-bgzf",
@@ -643,6 +651,7 @@ dependencies = [
  "htsjdk-tribble",
  "htsjdk-vcf",
  "jmath",
+ "libz-sys",
  "md-5",
  "regex",
  "serde_json",
@@ -986,6 +995,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85bc9657773828b90eeb625adff10eeac83cc21bbfd8e23a03eaa8a33c9e28d9"
 dependencies = [
  "cc",
+ "libc",
  "pkg-config",
  "vcpkg",
 ]

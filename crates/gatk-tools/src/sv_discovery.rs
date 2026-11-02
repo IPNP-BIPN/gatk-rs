@@ -1921,6 +1921,23 @@ pub fn adjacencies(records: &[BamRecord], header: &SamHeader) -> Result<Adjacenc
     adjacencies_of(&contigs, header)
 }
 
+/// The pipeline's first job: its contigs in the order `parallelize` keeps, each one's mapped lines.
+pub fn adjacencies_of_contigs(
+    lines: &[Vec<BamRecord>],
+    header: &SamHeader,
+) -> Result<Adjacencies, Failed> {
+    let mut contigs = Vec::with_capacity(lines.len());
+    for reads in lines {
+        let reads: Vec<&BamRecord> = reads.iter().collect();
+        contigs.push(parse_contig(&reads, header, true)?);
+    }
+    let contigs: Vec<&Contig> = contigs
+        .iter()
+        .filter(|contig| contig.alignments.len() > 1)
+        .collect();
+    adjacencies_of(&contigs, header)
+}
+
 /// `ContigChimericAlignmentIterativeInterpreter.discoverVariantsFromChimeras`, up to `groupByKey`.
 fn adjacencies_of(contigs: &[&Contig], header: &SamHeader) -> Result<Adjacencies, Failed> {
     let mut found = Vec::new();
@@ -1955,13 +1972,24 @@ impl Adjacencies {
         reference: &mut dyn Reference,
         cnv_calls: Option<&[CnvCall]>,
     ) -> Result<Vec<VariantContext>, Failed> {
+        let mut variants = self.unsorted_variants(header, reference, cnv_calls)?;
+        sort_variants(&mut variants, header);
+        Ok(variants)
+    }
+
+    /// The same in the order `collect` leaves, which the pipeline annotates in.
+    pub fn unsorted_variants(
+        &self,
+        header: &SamHeader,
+        reference: &mut dyn Reference,
+        cnv_calls: Option<&[CnvCall]>,
+    ) -> Result<Vec<VariantContext>, Failed> {
         let mut variants = Vec::with_capacity(self.0.len());
         for (adjacency, evidence) in &self.0 {
             variants.push(annotated_variant(
                 adjacency, evidence, reference, header, cnv_calls,
             )?);
         }
-        sort_variants(&mut variants, header);
         Ok(variants)
     }
 }

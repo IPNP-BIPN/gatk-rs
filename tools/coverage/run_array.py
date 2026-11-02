@@ -237,10 +237,15 @@ def read_output(out_dir, row_args=()):
     produced = sorted(p for p in out_dir.rglob("*") if p.is_file())
     if not produced:
         return ""
+    fragments = genomicsdb_names(produced, out_dir)
     parts = []
     for path in produced:
         raw = path.read_bytes()
         name = path.relative_to(out_dir).as_posix()
+        if path in fragments:
+            raw, name = fragments[path]
+            parts.append(f"{name}: sha256={hashlib.sha256(raw).hexdigest()} bytes={len(raw)}")
+            continue
         if name.endswith(".tar.gz"):
             parts.append(f"{name}: {tar_gz_members(raw)}")
             continue
@@ -272,6 +277,51 @@ def read_output(out_dir, row_args=()):
             digest = hashlib.sha256(raw).hexdigest()
             parts.append(f"{name}: BINARY sha256={digest} bytes={len(raw)}")
     return "\n".join(parts)
+
+
+def genomicsdb_names(produced, out_dir):
+    """A GenomicsDB workspace's files under the names two runs share, each with its stable bytes.
+
+    A fragment is `__<uuid><thread id>_<milliseconds>` and a batch's row bounds are
+    `genomicsdb_meta_<uuid>.json`, so fragments are numbered by their timestamp and the row bounds
+    by their content. Two runs differ in those names and in the `Date` of `vcfheader.vcf`'s command
+    line, and nowhere else. `__array_schema.tdb` holds the array's absolute path, which differs
+    only between machines, and is reduced to its last component for that reason.
+    """
+    found = {}
+    workspaces = [p.parent for p in produced if p.name == "__tiledb_workspace.tdb"]
+    for workspace in workspaces:
+        for path in produced:
+            if workspace not in path.parents:
+                continue
+            raw = path.read_bytes()
+            relative = path.relative_to(out_dir).as_posix()
+            if path.name == "vcfheader.vcf":
+                found[path] = (re.sub(rb'Date="[^"]*"', b'Date="<masked>"', raw), relative)
+            elif path.name == "__array_schema.tdb":
+                length = int.from_bytes(raw[8:12], "little")
+                base = raw[12 : 12 + length].rsplit(b"/", 1)[-1]
+                found[path] = (raw[:8] + base + raw[12 + length :], relative)
+            else:
+                found[path] = (raw, relative)
+        for array in sorted(p for p in workspace.iterdir() if p.is_dir()):
+            fragments = sorted(
+                (p for p in array.iterdir() if p.is_dir() and p.name.startswith("__")),
+                key=lambda p: int(p.name.rsplit("_", 1)[1]),
+            )
+            for index, fragment in enumerate(fragments):
+                for path in produced:
+                    if path.parent == fragment:
+                        stable = path.relative_to(out_dir).as_posix().replace(fragment.name, f"fragment-{index}")
+                        found[path] = (found[path][0], stable)
+            metas = sorted(
+                (p for p in produced if p.parent == array / "genomicsdb_meta_dir" and p.name.startswith("genomicsdb_meta_")),
+                key=lambda p: p.read_bytes(),
+            )
+            for index, path in enumerate(metas):
+                stable = path.relative_to(out_dir).as_posix().replace(path.name, f"genomicsdb_meta_{index}.json")
+                found[path] = (found[path][0], stable)
+    return found
 
 
 def tribble_index_masked(raw):

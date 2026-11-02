@@ -8286,6 +8286,105 @@
           "why": "Frozen from the candidate artefact of its first run."
         }
       ]
+    },
+    {
+      "id": "genomicsdb-import",
+      "status": "oracle-backed",
+      "title": "GenomicsDBImport: its refusals and every byte of the workspace",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "GenomicsDBImport"
+      ],
+      "why": "The importer is native, but what it writes turned out to be deterministic: of two runs of the reference, only the names of the fragments and row-bounds files (UUID, thread id, wall clock) and the Date of the command line in vcfheader.vcf differ, and those are masked. The port composes htsjdk's BCF2 encoding, GenomicsDB's VCF2Binary and LoaderArrayWriter and TileDB's tile writer rather than linking them; the fragments go through C zlib because the workspace's flate2 is not byte-identical to it. What the suite cannot reach is refused by the port in its own words, and the end-to-end test checks those as well: an update of an existing workspace, the bypass of the feature reader, the contig merge, consolidation over several batches, and inputs whose values the native loader fails on.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "GenomicsDBImportDump",
+          "golden": "crates/gatk-tools/tests/data/genomicsdb_import.txt.gz",
+          "why": "Frozen from the candidate artefact of its first run."
+        }
+      ]
+    },
+    {
+      "id": "sv-evidence",
+      "status": "oracle-backed",
+      "title": "FindBreakpointEvidenceSpark and StructuralVariationDiscoveryPipelineSpark, stage by stage",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "FindBreakpointEvidenceSpark",
+        "StructuralVariationDiscoveryPipelineSpark"
+      ],
+      "java_props": [
+        "-Duser.language=en",
+        "-Duser.country=US",
+        "-Dsamjdk.use_libdeflate=false",
+        "-Dsamjdk.compression_level=2",
+        "--add-opens=java.base/java.lang=ALL-UNNAMED",
+        "--add-opens=java.base/java.lang.invoke=ALL-UNNAMED",
+        "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED",
+        "--add-opens=java.base/java.io=ALL-UNNAMED",
+        "--add-opens=java.base/java.net=ALL-UNNAMED",
+        "--add-opens=java.base/java.nio=ALL-UNNAMED",
+        "--add-opens=java.base/java.util=ALL-UNNAMED",
+        "--add-opens=java.base/java.util.concurrent=ALL-UNNAMED",
+        "--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED",
+        "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+        "--add-opens=java.base/sun.nio.cs=ALL-UNNAMED",
+        "--add-opens=java.base/sun.security.action=ALL-UNNAMED",
+        "--add-opens=java.base/sun.util.calendar=ALL-UNNAMED",
+        "--add-opens=java.base/sun.nio.fs=ALL-UNNAMED",
+        "--add-opens=java.base/java.nio.channels.spi=ALL-UNNAMED",
+        "--add-opens=java.base/jdk.internal.ref=ALL-UNNAMED",
+        "--add-opens=java.base/java.lang.ref=ALL-UNNAMED",
+        "--add-opens=java.base/java.util.zip=ALL-UNNAMED",
+        "--add-opens=java.base/java.util.jar=ALL-UNNAMED",
+        "--add-opens=java.base/java.nio.file.attribute=ALL-UNNAMED",
+        "--add-opens=java.base/jdk.internal.loader=ALL-UNNAMED",
+        "--add-opens=java.base/sun.net.www.protocol.jar=ALL-UNNAMED",
+        "--add-opens=java.base/sun.invoke.util=ALL-UNNAMED",
+        "--add-opens=java.base/java.util.concurrent.locks=ALL-UNNAMED",
+        "--add-opens=java.base/java.security=ALL-UNNAMED",
+        "--add-opens=java.base/sun.reflect.annotation=ALL-UNNAMED",
+        "--add-opens=java.base/java.text=ALL-UNNAMED",
+        "--add-opens=java.base/java.nio.charset=ALL-UNNAMED",
+        "--add-opens=java.base/sun.reflect.generics.reflectiveObjects=ALL-UNNAMED",
+        "--add-opens=java.management/com.sun.jmx.mbeanserver=ALL-UNNAMED",
+        "--add-opens=java.management/javax.management=ALL-UNNAMED",
+        "--add-opens=java.base/java.util.regex=ALL-UNNAMED",
+        "--add-opens=java.base/sun.util.locale=ALL-UNNAMED",
+        "--add-opens=java.base/jdk.internal.math=ALL-UNNAMED",
+        "--add-opens=java.xml/com.sun.xml.internal.stream.util=ALL-UNNAMED",
+        "--add-opens=java.base/java.time=ALL-UNNAMED",
+        "--add-opens=java.base/sun.reflect.generics.factory=ALL-UNNAMED",
+        "--add-opens=java.base/java.nio.channels=ALL-UNNAMED",
+        "--add-opens=java.base/sun.security.util=ALL-UNNAMED",
+        "--add-opens=java.base/java.time.zone=ALL-UNNAMED",
+        "--add-opens=java.base/sun.reflect.generics.scope=ALL-UNNAMED",
+        "--add-opens=java.base/sun.reflect.generics.tree=ALL-UNNAMED",
+        "--add-opens=java.management/com.sun.jmx.interceptor=ALL-UNNAMED",
+        "--add-opens=java.management/javax.management.openmbean=ALL-UNNAMED",
+        "--add-opens=java.management/sun.management=ALL-UNNAMED",
+        "--add-opens=jdk.management/com.sun.management.internal=ALL-UNNAMED",
+        "--add-opens=jdk.management.jfr/jdk.management.jfr=ALL-UNNAMED",
+        "--add-opens=jdk.jfr/jdk.jfr.internal.management=ALL-UNNAMED",
+        "--add-opens=java.base/jdk.internal.module=ALL-UNNAMED",
+        "--add-opens=java.base/java.lang.module=ALL-UNNAMED",
+        "--add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED",
+        "-XX:-OmitStackTraceInFastThrow"
+      ],
+      "why": "A seeded reference and the reads of a donor genome with a deletion and a backwards insertion, run on one partition with every debug file on: the metadata, the evidence before and after the density filter, the target links, the template names and k-mers of each interval, the FASTQs and GFAs, the interval file, the aligned contigs and the VCFs. FERMI-LITE AND BWA ARE THE REFERENCE'S JNI, so the assembly and alignment columns of these rows are what the ports in gatk-fermilite and bwa-mem4 have to reproduce. A file over 16 KiB is listed by length and CRC, since the FASTQs of 94 runs would be 100 MB.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "SvEvidenceDump",
+          "golden": "crates/gatk-tools/tests/data/sv_evidence.txt.gz",
+          "why": "Pending the first real x86-64 CI run."
+        }
+      ]
     }
   ],
   "probes": []
