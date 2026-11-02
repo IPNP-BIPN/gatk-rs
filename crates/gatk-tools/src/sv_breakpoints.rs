@@ -711,6 +711,7 @@ fn java_round(value: f32) -> i32 {
 
 /// `StrictMath.log1p`, which is fdlibm's `s_log1p.c`; jmath has only `FastMath`'s, a different
 /// algorithm, and the host's `ln_1p` is whichever libm it links.
+#[allow(clippy::excessive_precision)]
 fn strict_log1p(x: f64) -> f64 {
     const LN2_HI: f64 = 6.93147180369123816490e-01;
     const LN2_LO: f64 = 1.90821492927058770002e-10;
