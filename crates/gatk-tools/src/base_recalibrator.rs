@@ -89,14 +89,33 @@ pub fn base_recalibrator(
     // observations the recalibration table carried too many.
     let records = crate::read_walker::traverse(source, intervals, filter)
         .map_err(BaseRecalibratorError::Reads)?;
+    table_of_reads(
+        &header,
+        &records,
+        contig_bases,
+        known_sites,
+        arguments,
+        quantizing_levels,
+    )
+}
 
+/// The table over reads something else has already chosen, which is what a pipeline hands
+/// `BaseRecalibratorSparkFn`.
+pub fn table_of_reads(
+    header: &htsjdk_bam::header::SamHeader,
+    records: &[BamRecord],
+    contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, BaseRecalibratorError>,
+    known_sites: &[SimpleInterval],
+    arguments: &EngineArguments,
+    quantizing_levels: i32,
+) -> Result<String, BaseRecalibratorError> {
     // The bases come after the traversal, for the reason in the doc comment above, and once per
     // contig.
     let mut fetched: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
 
-    let mut engine = BaseRecalibrationEngine::new(arguments.clone(), &header)
+    let mut engine = BaseRecalibrationEngine::new(arguments.clone(), header)
         .map_err(BaseRecalibratorError::Engine)?;
-    for record in &records {
+    for record in records {
         let contig = usize::try_from(record.reference_index)
             .ok()
             .and_then(|index| header.sequences.get(index))
@@ -111,9 +130,9 @@ pub fn base_recalibrator(
             }
             None => &[],
         };
-        let overlapping = sites_overlapping(record, &header, known_sites);
+        let overlapping = sites_overlapping(record, header, known_sites);
         engine
-            .process_read(record, &header, bases, &overlapping)
+            .process_read(record, header, bases, &overlapping)
             .map_err(BaseRecalibratorError::Engine)?;
     }
     engine

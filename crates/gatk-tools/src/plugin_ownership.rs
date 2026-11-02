@@ -34,9 +34,10 @@ pub const ANNOTATION_GROUP_SELECTOR: &str = "annotation-group";
 /// default.
 pub fn default_annotation_groups(tool: &str) -> &'static [&'static str] {
     match tool {
-        "HaplotypeCaller" | "RampedHaplotypeCaller" => {
-            &["StandardAnnotation", "StandardHCAnnotation"]
-        }
+        "HaplotypeCaller"
+        | "RampedHaplotypeCaller"
+        | "HaplotypeCallerSpark"
+        | "ReadsPipelineSpark" => &["StandardAnnotation", "StandardHCAnnotation"],
         "Mutect2" => &["StandardMutectAnnotation"],
         "GenotypeGVCFs" | "CombineGVCFs" => &["StandardAnnotation"],
         "ReblockGVCF" | "VCFComparator" => &["StandardAnnotation", "AS_StandardAnnotation"],
@@ -326,7 +327,11 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         | "BQSRPipelineSpark"
         | "CollectMultipleMetricsSpark"
         | "FindBadGenomicKmersSpark"
-        | "CalcMetadataSpark" => Some(&["WellformedReadFilter"]),
+        | "CalcMetadataSpark"
+        | "ExtractSVEvidenceSpark"
+        | "PathSeqFilterSpark"
+        | "PathSeqScoreSpark"
+        | "ReadsPipelineSpark" => Some(&["WellformedReadFilter"]),
         // `PileupSpark.getDefaultReadFilters`: Pileup's five, with the wellformed filter LAST.
         // `GATKSparkTool`'s, then `CollectAllelicCounts.DEFAULT_ADDITIONAL_READ_FILTERS`.
         "CollectAllelicCountsSpark" => Some(&[
@@ -401,7 +406,10 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         // `HaplotypeCallerEngine.makeStandardHCReadFilters`, which `HaplotypeBasedVariantRecaller`
         // returns as its own: the engine's mapping-quality floor of twenty first, the wellformed
         // filter last.
-        "HaplotypeCaller" | "RampedHaplotypeCaller" | "HaplotypeBasedVariantRecaller" => Some(&[
+        "HaplotypeCaller"
+        | "RampedHaplotypeCaller"
+        | "HaplotypeCallerSpark"
+        | "HaplotypeBasedVariantRecaller" => Some(&[
             "MappingQualityReadFilter",
             "MappingQualityAvailableReadFilter",
             "MappedReadFilter",

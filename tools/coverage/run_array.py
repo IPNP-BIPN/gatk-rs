@@ -581,6 +581,8 @@ def without_start_time(text):
 
 # log4j's `%d{HH:mm:ss.SSS}` at the head of a GATK log line.
 LOG_TIME = re.compile(r"^\d\d:\d\d:\d\d\.\d\d\d ")
+# Which stage and task a Spark job had reached counts the jobs before it, not the tool's behaviour.
+SPARK_TASK = re.compile(r"Exception in task \d+\.\d+ in stage \d+\.\d+ \(TID \d+\)")
 
 
 def first_error(text):
@@ -604,7 +606,7 @@ def first_error(text):
             return LOG_TIME.sub("", line.strip())
     for line in lines:
         if "Exception" in line or line.startswith("ERROR"):
-            return LOG_TIME.sub("", line.strip())
+            return SPARK_TASK.sub("Exception in a task", LOG_TIME.sub("", line.strip()))
     return text.strip().split("\n")[-1][:200] if text.strip() else ""
 
 

@@ -43,9 +43,25 @@ pub const MAX_TRACKED_FRAGMENT_LENGTH: usize = 10000;
 
 /// `FindBreakpointEvidenceSparkArgumentCollection`'s defaults: `CalcMetadataSpark` builds one and
 /// sets nothing.
-const MIN_EVIDENCE_MAPQ: u8 = 20;
-const MIN_EVIDENCE_MATCH_LENGTH: i64 = 45;
-const ALLOWED_SHORT_FRAGMENT_OVERHANG: i32 = 10;
+/// `SVReadFilter`'s arguments and the histogram's size, whose defaults are `CalcMetadataSpark`'s.
+#[derive(Debug, Clone, Copy)]
+pub struct MetadataArguments {
+    pub min_evidence_mapq: u8,
+    pub min_evidence_match_length: i64,
+    pub allowed_short_fragment_overhang: i32,
+    pub max_tracked_fragment_length: usize,
+}
+
+impl Default for MetadataArguments {
+    fn default() -> MetadataArguments {
+        MetadataArguments {
+            min_evidence_mapq: 20,
+            min_evidence_match_length: 45,
+            allowed_short_fragment_overhang: 10,
+            max_tracked_fragment_length: MAX_TRACKED_FRAGMENT_LENGTH,
+        }
+    }
+}
 
 /// `PartitionBounds.UNMAPPED`.
 const UNMAPPED: i32 = i32::MAX;
@@ -101,7 +117,7 @@ impl Cdf {
     }
 
     /// `internalPopStat`.
-    fn pop_stat(&self, fraction: f32) -> i32 {
+    pub fn pop_stat(&self, fraction: f32) -> i32 {
         match binary_search_floats(&self.fractions, fraction) {
             index if index < 0 => -index - 1,
             index => index,
@@ -177,6 +193,7 @@ struct RawStatistics {
 
 #[derive(Debug, Clone)]
 pub struct ReadMetadata {
+    pub cross_contig_ignore: Vec<i32>,
     pub reads: i64,
     pub avg_read_len: i32,
     pub ref_bases: i64,
@@ -224,9 +241,12 @@ fn is_mapped_primary(record: &BamRecord) -> bool {
 }
 
 /// `SVReadFilter.isTemplateLenTestable`, given a mapped primary read.
-fn is_template_length_testable(record: &BamRecord) -> Result<bool, MetadataFailure> {
-    if record.mapping_quality < MIN_EVIDENCE_MAPQ
-        || aligned_bases(record) < MIN_EVIDENCE_MATCH_LENGTH
+fn is_template_length_testable(
+    record: &BamRecord,
+    arguments: &MetadataArguments,
+) -> Result<bool, MetadataFailure> {
+    if record.mapping_quality < arguments.min_evidence_mapq
+        || aligned_bases(record) < arguments.min_evidence_match_length
     {
         return Ok(false);
     }
@@ -240,12 +260,42 @@ fn is_template_length_testable(record: &BamRecord) -> Result<bool, MetadataFailu
         && record.flags & REVERSE == 0
         && record.flags & MATE_REVERSE != 0
         && record.reference_index == record.mate_reference_index
-        && record.alignment_start - ALLOWED_SHORT_FRAGMENT_OVERHANG <= record.mate_alignment_start)
+        && record.alignment_start - arguments.allowed_short_fragment_overhang
+            <= record.mate_alignment_start)
+}
+
+impl LibraryStatistics {
+    /// `getZishScore`, over a size that is not negative.
+    pub fn zish_score(&self, fragment_size: i32) -> f32 {
+        let difference = fragment_size - self.median;
+        if difference == 0 {
+            return 0.0;
+        }
+        if difference > 0 {
+            return difference as f32 / self.positive_mad;
+        }
+        difference as f32 / self.negative_mad
+    }
 }
 
 impl ReadMetadata {
+    /// `ignoreCrossContigID`.
+    pub fn ignore_cross_contig(&self, contig: i32) -> bool {
+        self.cross_contig_ignore.contains(&contig)
+    }
+
     /// The constructor, over one partition's unfiltered reads.
     pub fn new(header: &SamHeader, records: &[BamRecord]) -> Result<ReadMetadata, MetadataFailure> {
+        Self::with_arguments(header, records, &MetadataArguments::default(), Vec::new())
+    }
+
+    /// The constructor with the tool's filter, and the contigs `--cross-contigs-to-ignore` named.
+    pub fn with_arguments(
+        header: &SamHeader,
+        records: &[BamRecord],
+        arguments: &MetadataArguments,
+        cross_contig_ignore: Vec<i32>,
+    ) -> Result<ReadMetadata, MetadataFailure> {
         let mut contig_ids = JavaHashMap::with_capacity(hash_map_capacity(header.sequences.len()));
         for (id, sequence) in header.sequences.iter().enumerate() {
             contig_ids.insert(sequence.name.clone(), id as i32);
@@ -295,12 +345,12 @@ impl ReadMetadata {
                         .and_then(|id| read_group_to_library.get(&id).cloned())
                         .flatten(),
                 );
-                let testable = is_template_length_testable(record)?;
+                let testable = is_template_length_testable(record, arguments)?;
                 if !raw.contains_key(&library) {
                     raw.insert(
                         library.clone(),
                         RawStatistics {
-                            fragment_sizes: vec![0; MAX_TRACKED_FRAGMENT_LENGTH + 2],
+                            fragment_sizes: vec![0; arguments.max_tracked_fragment_length + 2],
                             observations: 0,
                             reads: 0,
                             bases: 0,
@@ -369,6 +419,7 @@ impl ReadMetadata {
         libraries.check()?;
 
         Ok(ReadMetadata {
+            cross_contig_ignore,
             reads,
             avg_read_len: (bases / reads) as i32,
             ref_bases,

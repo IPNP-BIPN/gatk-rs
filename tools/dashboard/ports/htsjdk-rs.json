@@ -229,6 +229,12 @@
       "cases": 1
     },
     {
+      "id": "vcf-deferred-genotypes",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
       "id": "vcf-read",
       "status": "oracle-backed",
       "tools": [],
@@ -236,6 +242,12 @@
     },
     {
       "id": "vcf-index-on-the-fly",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "bcf2",
       "status": "oracle-backed",
       "tools": [],
       "cases": 1
@@ -518,5 +530,5 @@
     }
   ],
   "source": "htsjdk-rs origin/main",
-  "commit": "0e5afcc8f4bb2496a92b293dcde4bccd330bcb96"
+  "commit": "821a863bfb803e099f770f17d0c77ad82b159f28"
 }

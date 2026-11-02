@@ -301,7 +301,10 @@ pub fn runner(name: &str) -> Option<Runner> {
         "PileupSpark" => Some(run_pileup_spark),
         "CollectAllelicCountsSpark" => Some(run_collect_allelic_counts_spark),
         "FindBadGenomicKmersSpark" => Some(run_find_bad_genomic_kmers_spark),
+        "PathSeqFilterSpark" => Some(run_pathseq_filter_spark),
+        "PathSeqScoreSpark" => Some(run_pathseq_score_spark),
         "CalcMetadataSpark" => Some(run_calc_metadata_spark),
+        "ExtractSVEvidenceSpark" => Some(run_extract_sv_evidence_spark),
         "PrintReadsSpark" => Some(run_print_reads_spark),
         "BaseRecalibratorSpark" => Some(run_base_recalibrator_spark),
         "ApplyBQSRSpark" => Some(run_apply_bqsr_spark),
@@ -440,6 +443,8 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CombineGVCFs" => Some(run_combine_gvcfs),
         "GenotypeGVCFs" => Some(run_genotype_gvcfs),
         "HaplotypeCaller" => Some(run_haplotype_caller),
+        "HaplotypeCallerSpark" => Some(run_haplotype_caller_spark),
+        "ReadsPipelineSpark" => Some(run_reads_pipeline_spark),
         "RampedHaplotypeCaller" => Some(run_ramped_haplotype_caller),
         "Mutect2" => Some(run_mutect2),
         "ReblockGVCF" => Some(run_reblock_gvcf),
@@ -566,6 +571,14 @@ fn run_ramped_haplotype_caller(args: &[String]) -> Result<Option<String>, Thrown
     let mut parser = parsed("RampedHaplotypeCaller", args)?;
     runners::haplotype_caller_modes(&mut parser, "RampedHaplotypeCaller")?;
     runners::ramped_haplotype_caller(&parser)
+}
+
+fn run_reads_pipeline_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::reads_pipeline_spark(&parsed("ReadsPipelineSpark", args)?)
+}
+
+fn run_haplotype_caller_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::haplotype_caller_spark(&parsed("HaplotypeCallerSpark", args)?)
 }
 
 fn run_haplotype_caller(args: &[String]) -> Result<Option<String>, Thrown> {
@@ -695,8 +708,20 @@ fn run_collect_allelic_counts_spark(args: &[String]) -> Result<Option<String>, T
     runners::collect_allelic_counts_spark(&parsed("CollectAllelicCountsSpark", args)?)
 }
 
+fn run_extract_sv_evidence_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::extract_sv_evidence_spark(&parsed("ExtractSVEvidenceSpark", args)?)
+}
+
 fn run_calc_metadata_spark(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::calc_metadata_spark(&parsed("CalcMetadataSpark", args)?)
+}
+
+fn run_pathseq_score_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::pathseq_score_spark(&parsed("PathSeqScoreSpark", args)?)
+}
+
+fn run_pathseq_filter_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::pathseq_filter_spark(&parsed("PathSeqFilterSpark", args)?)
 }
 
 fn run_find_bad_genomic_kmers_spark(args: &[String]) -> Result<Option<String>, Thrown> {

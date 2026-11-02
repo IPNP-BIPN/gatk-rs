@@ -23,11 +23,11 @@ const UNKNOWN_LIBRARY: &str = "Unknown Library";
 
 /// What `runPipeline` hands `runTool`: the reads, their header, the traversal intervals and the
 /// resolved filter chain.
-struct SparkStart {
-    source: ReadsDataSource,
-    header: SamHeader,
-    intervals: Vec<gatk_engine::interval::SimpleInterval>,
-    filters: Vec<gatk_tools::filter_resolution::ResolvedFilter>,
+pub(super) struct SparkStart {
+    pub(super) source: ReadsDataSource,
+    pub(super) header: SamHeader,
+    pub(super) intervals: Vec<gatk_engine::interval::SimpleInterval>,
+    pub(super) filters: Vec<gatk_tools::filter_resolution::ResolvedFilter>,
 }
 
 /// `SparkContext.parseMasterUrl`'s accepted shapes, for the masters that run in this process.
@@ -173,7 +173,7 @@ fn validate_reference_against_reads(
 }
 
 /// `SparkCommandLineProgram.doWork` up to `runTool`, for a tool that reads one input.
-fn spark_startup(parser: &Parser, tool: &str) -> Result<SparkStart, Thrown> {
+pub(super) fn spark_startup(parser: &Parser, tool: &str) -> Result<SparkStart, Thrown> {
     // The plugin descriptor validates while the command line is parsed.
     let filters = resolve_read_filters(parser, tool)?;
     spark_context(parser)?;
@@ -489,9 +489,23 @@ pub fn print_variants_spark(parser: &Parser) -> Outcome {
         records_text.push('\n');
     }
 
+    write_spark_vcf(parser, &output, &header_text, &records_text)
+}
+
+/// `VariantsSparkSink.writeVariants`: the header and the records as two parts, block compressed by
+/// name, with the index Disq finalizes.
+pub(super) fn write_spark_vcf(
+    parser: &Parser,
+    output: &str,
+    header_text: &str,
+    records_text: &str,
+) -> Outcome {
+    let failed = |error: String| {
+        Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
+    };
     let block_compressed = output.ends_with(".gz") || output.ends_with(".bgz");
     if !block_compressed {
-        std::fs::write(&output, format!("{header_text}{records_text}"))
+        std::fs::write(output, format!("{header_text}{records_text}"))
             .map_err(|error| failed(error.to_string()))?;
         return Ok(None);
     }
@@ -504,20 +518,20 @@ pub fn print_variants_spark(parser: &Parser) -> Outcome {
             .into_inner_without_terminator()
             .map_err(|error| failed(error.to_string()))
     };
-    let mut bytes = part(&header_text)?;
-    bytes.extend_from_slice(&part(&records_text)?);
+    let mut bytes = part(header_text)?;
+    bytes.extend_from_slice(&part(records_text)?);
     bytes.extend_from_slice(&htsjdk_bgzf::EMPTY_GZIP_BLOCK);
-    std::fs::write(&output, &bytes).map_err(|error| failed(error.to_string()))?;
+    std::fs::write(output, &bytes).map_err(|error| failed(error.to_string()))?;
 
     if flag(parser, "create-output-variant-index") {
         // Disq finalizes the index at the position the records end, BEFORE the terminator it
         // appends, where `IndexFeatureFile` reads the whole file and ends the last chunk after it.
-        let source = index_feature_file::Source::new(&output);
+        let source = index_feature_file::Source::new(output);
         let records_end = bytes.len() - htsjdk_bgzf::EMPTY_GZIP_BLOCK.len();
         let index = index_feature_file::build_tabix(
             &bytes[..records_end],
             &source,
-            &output,
+            output,
             deflater,
             level,
         )
@@ -653,7 +667,7 @@ pub fn pileup_spark(parser: &Parser) -> Outcome {
 /// `SparkSharder`'s overlaps partitioning, which `--shuffle` does not go through: no read leaves
 /// `computePartitionReadExtents` nothing, so the first shard's partition index is -1 in whichever
 /// task `parallelize` gave that shard. This happens while the RDD is built, before the tool runs.
-fn no_reads_refusal(
+pub(super) fn no_reads_refusal(
     parser: &Parser,
     records: &[BamRecord],
     intervals: &[gatk_engine::interval::SimpleInterval],
@@ -691,7 +705,7 @@ fn no_reads_refusal(
 
 /// The same partitioning filling its shards, in coordinate order and inside a task, so after
 /// anything the tool does before its first action: a read longer than a shard is refused.
-fn oversized_read_refusal(
+pub(super) fn oversized_read_refusal(
     parser: &Parser,
     records: &[BamRecord],
     header: &SamHeader,
@@ -771,6 +785,409 @@ pub fn calc_metadata_spark(parser: &Parser) -> Outcome {
         ))
     })?;
     Ok(None)
+}
+
+/// `ExtractSVEvidenceSpark`: the metadata and the high-coverage regions first, whatever becomes of
+/// the classification, then the evidence as a text file directory.
+pub fn extract_sv_evidence_spark(parser: &Parser) -> Outcome {
+    use gatk_tools::read_metadata::{MetadataArguments, MetadataFailure, ReadMetadata};
+    use gatk_tools::sv_evidence;
+    let SparkStart {
+        source,
+        header,
+        intervals,
+        ..
+    } = spark_startup(parser, "ExtractSVEvidenceSpark")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let input = arguments(parser, "input").remove(0);
+    let split = match number_or(parser, "bam-partition-size", 0) {
+        0 => 32 * 1024 * 1024,
+        size => i64::from(size),
+    };
+    if std::fs::metadata(&input).is_ok_and(|file| file.len() as i64 > split) {
+        return Err(Thrown::user(format!(
+            "{input} is larger than one partition, and this port reports a single partition's \
+             evidence."
+        )));
+    }
+    let arguments_read = sv_evidence::EvidenceArguments {
+        metadata: MetadataArguments {
+            min_evidence_mapq: number_or(parser, "min-evidence-mapq", 20) as u8,
+            min_evidence_match_length: i64::from(number_or(
+                parser,
+                "min-evidence-match-length",
+                45,
+            )),
+            allowed_short_fragment_overhang: number_or(
+                parser,
+                "allowed-short-fragment-overhang",
+                10,
+            ),
+            max_tracked_fragment_length: number_or(parser, "max-tracked-fragment-length", 2000)
+                as usize,
+        },
+        high_depth_coverage_peak_factor: number_or(parser, "high-depth-coverage-peak-factor", 7),
+        high_depth_coverage_factor: number_or(parser, "high-depth-coverage-factor", 3),
+    };
+    if header.attributes.get("SO") != Some("coordinate") {
+        return Err(Thrown::non_user(
+            "java.lang.IllegalStateException",
+            "The reads must be coordinate sorted.",
+        ));
+    }
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let mut ignored_contigs = Vec::new();
+    if let Some(path) = argument(parser, "cross-contigs-to-ignore") {
+        let text = std::fs::read_to_string(&path).map_err(|error| {
+            Thrown::user(format!(
+                "Couldn't read file {path}. Error was: {path} ({})",
+                java_io_reason(&error)
+            ))
+        })?;
+        for line in text.lines() {
+            match header
+                .sequences
+                .iter()
+                .position(|sequence| sequence.name == line)
+            {
+                Some(contig) => ignored_contigs.push(contig as i32),
+                None => {
+                    return Err(Thrown::user(format!(
+                        "crossContigToIgnoreFile contains an unrecognized contig name: {line}"
+                    )))
+                }
+            }
+        }
+    }
+    let metadata =
+        ReadMetadata::with_arguments(&header, &records, &arguments_read.metadata, ignored_contigs)
+            .map_err(|failure| {
+                match failure {
+        MetadataFailure::Unpaired => evidence_task_failure(
+            "java.lang.IllegalStateException: Cannot get mate information for an unpaired read",
+        ),
+        MetadataFailure::NoReads => Thrown::non_user("java.lang.ArithmeticException", "/ by zero"),
+        MetadataFailure::Order(error) => Thrown::user(format!("{error:?}")),
+    }
+            })?;
+    let write_text = |path: &str, text: String| {
+        std::fs::write(path, text).map_err(|error| {
+            Thrown::user(format!(
+                "Couldn't write file {path} because Could not create file at path:{path} due to \
+                 {path} ({})",
+                java_io_reason(&error)
+            ))
+        })
+    };
+    if let Some(path) = argument(parser, "read-metadata") {
+        write_text(&path, metadata.text())?;
+    }
+    let lengths: Vec<i32> = header
+        .sequences
+        .iter()
+        .map(|sequence| sequence.length)
+        .collect();
+    let ignored =
+        sv_evidence::high_coverage_intervals(&records, &metadata, &lengths, &arguments_read);
+    if let Some(path) = argument(parser, "high-coverage-intervals") {
+        write_text(&path, sv_evidence::high_coverage_bed(&ignored, &metadata))?;
+    }
+    let lines = sv_evidence::classify(&records, &metadata, &ignored, &arguments_read.metadata)
+        .map_err(|message| evidence_task_failure(&message))?;
+    let mut text = String::new();
+    for line in lines {
+        text.push_str(&line);
+        text.push('\n');
+    }
+    let directory = std::path::Path::new(&output);
+    std::fs::create_dir_all(directory)
+        .and_then(|()| std::fs::write(directory.join("part-00000"), &text))
+        .and_then(|()| std::fs::write(directory.join("_SUCCESS"), b""))
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
+    Ok(None)
+}
+
+fn evidence_task_failure(message: &str) -> Thrown {
+    eprintln!("ERROR Executor - Exception in task 0.0 in stage 0.0 (TID 0)");
+    Thrown::non_user(
+        "org.apache.spark.SparkException",
+        format!("Job aborted due to stage failure: Task 0 in stage 0.0 failed 1 times: {message}"),
+    )
+}
+
+/// `PathSeqScoreSpark`, whose reads come from its own two arguments.
+pub fn pathseq_score_spark(parser: &Parser) -> Outcome {
+    use gatk_tools::pathseq_score as score;
+    let tool = "PathSeqScoreSpark";
+    resolve_read_filters(parser, tool)?;
+    spark_context(parser)?;
+    if !arguments(parser, "input").is_empty() {
+        return Err(bad_input(
+            "Please use --paired-input or --unpaired-input instead of --input".to_string(),
+        ));
+    }
+    // `readInputWithHeader`, which skips a path that is not there.
+    let read_input = |name: &str| -> Result<Option<(Vec<BamRecord>, SamHeader)>, Thrown> {
+        let Some(path) = argument(parser, name) else {
+            return Ok(None);
+        };
+        if !std::path::Path::new(&path).exists() {
+            return Ok(None);
+        }
+        let source = spark_reads_header(&path)?;
+        let header = source.header().clone();
+        let records = gatk_tools::read_walker::traverse(&source, &[], &|_| true)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        Ok(Some((score::primary_reads(records), header)))
+    };
+    let paired = read_input("paired-input")?;
+    let unpaired = read_input("unpaired-input")?;
+    if let Some((_, header)) = &paired {
+        if header.attributes.get("SO") != Some("queryname") {
+            return Err(bad_input(
+                "Paired input BAM must be sorted by queryname".to_string(),
+            ));
+        }
+    }
+    // `joinBamHeaders`: what the unpaired input adds, unless the two are equal.
+    let header = match (&paired, &unpaired) {
+        (Some((_, first)), Some((_, second))) => {
+            let mut joined = first.clone();
+            for sequence in &second.sequences {
+                if !joined
+                    .sequences
+                    .iter()
+                    .any(|known| known.name == sequence.name)
+                {
+                    joined.sequences.push(sequence.clone());
+                }
+            }
+            for group in &second.read_groups {
+                if !joined.read_groups.iter().any(|known| known.id == group.id) {
+                    joined.read_groups.push(group.clone());
+                }
+            }
+            joined
+        }
+        (Some((_, only)), None) | (None, Some((_, only))) => only.clone(),
+        (None, None) => return Err(bad_input("No headers were loaded".to_string())),
+    };
+    let contigs: Vec<String> = header.sequences.iter().map(|s| s.name.clone()).collect();
+    let database = argument(parser, "taxonomy-file").expect("a required argument");
+    let bytes = std::fs::read(&database).map_err(|_| {
+        Thrown::user(format!(
+            "Couldn't read file. Error was: {database} (No such file or directory)"
+        ))
+    })?;
+    let database = score::read_taxonomy_database(&bytes)
+        .map_err(|message| Thrown::non_user("com.esotericsoftware.kryo.KryoException", message))?;
+    let write = |path: &str, text: &str| {
+        std::fs::write(path, text).map_err(|error| Thrown::user(format!("{path}: {error}")))
+    };
+    if let Some(path) = argument(parser, "score-warnings") {
+        write(&path, &score::missing_accessions(&contigs, &database))?;
+    }
+    // A SAMRecord finds its contig by name, so the second input's indices move to the join's.
+    let unpaired = unpaired.map(|(mut records, own)| {
+        let moved = |index: i32| {
+            usize::try_from(index)
+                .ok()
+                .and_then(|index| own.sequences.get(index))
+                .and_then(|sequence| contigs.iter().position(|name| *name == sequence.name))
+                .map_or(-1, |at| at as i32)
+        };
+        for record in &mut records {
+            record.reference_index = moved(record.reference_index);
+            record.mate_reference_index = moved(record.mate_reference_index);
+        }
+        records
+    });
+    let scored = score::score_reads(
+        paired.map(|(records, _)| records),
+        unpaired,
+        &contigs,
+        &database,
+        double_or(parser, "min-score-identity", 0.90),
+        double_or(parser, "identity-margin", 0.02),
+        flag(parser, "divide-by-genome-length"),
+        flag(parser, "not-normalized-by-kingdom"),
+    )
+    .map_err(|error| match error {
+        score::ScoreError::BadInput(message) => {
+            pathseq_task_failure(format!("Bad input: {message}"))
+        }
+        score::ScoreError::Other { message, .. } => pathseq_task_failure(message),
+    })?;
+    write(
+        &argument(parser, "scores-output").expect("a required argument"),
+        &scored.scores,
+    )?;
+    if let Some(path) = argument(parser, "score-metrics") {
+        let headers = [
+            crate::command_line::expanded(tool, parser),
+            format!("Started on: {}", java_display_now()),
+        ];
+        write(&path, &score::metrics_file(&scored.metrics, &headers))?;
+    }
+    // Not `writeReads`: the reducers are each input's own added up, this overload of the sink writes
+    // both indices whatever the arguments say, and with no header merger there is no `GO` to add.
+    if let Some(output) = argument(parser, "output") {
+        let sort_order = header.attributes.get("SO").map(str::to_string);
+        let compare: Option<fn(&BamRecord, &BamRecord) -> std::cmp::Ordering> =
+            match sort_order.as_deref() {
+                Some("coordinate") => Some(htsjdk_bam::coordinate::compare),
+                Some("queryname") => Some(htsjdk_bam::query_name::compare),
+                _ => None,
+            };
+        let partitions = match compare {
+            Some(compare) => {
+                let mut reducers = 0;
+                for input in ["paired-input", "unpaired-input"] {
+                    let Some(path) = argument(parser, input) else {
+                        continue;
+                    };
+                    if !std::path::Path::new(&path).exists() {
+                        continue;
+                    }
+                    let asked = number_or(parser, "num-reducers", 0).max(0) as usize;
+                    reducers += if asked != 0 {
+                        asked
+                    } else {
+                        let size = std::fs::metadata(&path).map_or(0, |data| data.len());
+                        1 + (size / (10 * 1024 * 1024)) as usize
+                    };
+                }
+                let unpaired = scored.reads.len() - scored.paired;
+                range_partitions(&scored.reads, reducers, &[scored.paired, unpaired], compare)?
+            }
+            None => vec![scored.reads.clone()],
+        };
+        write_spark_indexed(
+            parser,
+            &header,
+            sort_order.as_deref(),
+            &partitions,
+            &output,
+            (true, true),
+        )?;
+    }
+    Ok(None)
+}
+
+/// `PathSeqFilterSpark`, short of the BWA step this port does not carry.
+pub fn pathseq_filter_spark(parser: &Parser) -> Outcome {
+    use gatk_tools::pathseq_filter as filter;
+    let tool = "PathSeqFilterSpark";
+    let SparkStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = spark_startup(parser, tool)?;
+    if let Some(image) = argument(parser, "filter-bwa-image") {
+        if !std::path::Path::new(&image).is_file() {
+            return Err(pathseq_task_failure(format!(
+                "cannot read the image file '{image}': is empty or is not readable"
+            )));
+        }
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "--filter-bwa-image needs BWA-MEM, which this port does not carry yet. This message is \
+             the port's own and not GATK's.",
+        ));
+    }
+    let contigs_to_ignore = arguments(parser, "ignore-alignment-contigs");
+    let aligned_input = flag(parser, "is-host-aligned");
+    // `validateFilterArguments`, against a dictionary `checkAndClearHeaderSequences` emptied.
+    if aligned_input {
+        if let Some(contig) = contigs_to_ignore.first() {
+            return Err(bad_input(format!(
+                "Ignored sequence {contig} not found in input header."
+            )));
+        }
+    }
+    let arguments = filter::FilterArguments {
+        aligned_input,
+        contigs_to_ignore,
+        min_identity: number_or(parser, "host-min-identity", 30),
+        skip_filters: flag(parser, "skip-quality-filters"),
+        max_adapter_mismatches: number_or(parser, "max-adapter-mismatches", 1),
+        min_adapter_length: number_or(parser, "min-adapter-length", 12),
+        dust_mask: number_or(parser, "dust-mask-quality", 2),
+        dust_window: number_or(parser, "dust-window", 64),
+        dust_t: double_or(parser, "dust-t", 20.0),
+        read_trim_threshold: number_or(parser, "quality-threshold", 15),
+        min_read_length: number_or(parser, "min-clipped-read-length", 31),
+        quality_threshold: number_or(parser, "min-base-quality", 15),
+        max_ambiguous_bases: number_or(parser, "max-masked-bases", 2),
+        host_kmer_threshold: number_or(parser, "host-kmer-thresh", 1),
+        filter_duplicates: flag(parser, "filter-duplicates"),
+        reads_per_partition: number_or(parser, "filter-reads-per-partition", 200000),
+    };
+    let filter_reads = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter_reads)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let contigs: Vec<String> = header.sequences.iter().map(|s| s.name.clone()).collect();
+    let kmer_file = argument(parser, "kmer-file");
+    let load_kmers = kmer_file.as_ref().map(|path| {
+        let path = path.clone();
+        move || -> Result<filter::KmerLibrary, String> {
+            if !path.ends_with(".hss") && !path.ends_with(".bfi") {
+                return Err(format!(
+                    "Bad input: Unknown kmer set extension in file name {path}"
+                ));
+            }
+            let bytes =
+                std::fs::read(&path).map_err(|_| format!("{path} (No such file or directory)"))?;
+            filter::read_kmer_library(&path, &bytes)
+        }
+    });
+    let load_kmers = load_kmers
+        .as_ref()
+        .map(|load| load as &dyn Fn() -> Result<filter::KmerLibrary, String>);
+    let filtered = filter::do_filter(records, &contigs, &arguments, load_kmers)
+        .map_err(pathseq_task_failure)?;
+
+    // `PSFilterFileLogger.close`, which the try-with-resources runs before anything is written.
+    if let Some(path) = argument(parser, "filter-metrics") {
+        let headers = [
+            crate::command_line::expanded(tool, parser),
+            format!("Started on: {}", java_display_now()),
+        ];
+        let text = filter::metrics_file(&filtered.metrics, &headers);
+        std::fs::write(&path, text).map_err(|error| Thrown::user(format!("{path}: {error}")))?;
+    }
+
+    let mut cleared = header.clone();
+    cleared.sequences.clear();
+    if !filtered.paired.is_empty() {
+        cleared.set_sort_order("queryname");
+        let output = argument(parser, "paired-output").ok_or_else(null_pathseq_output)?;
+        write_spark_reads(parser, &cleared, &filtered.paired, &output, true)?;
+    }
+    if !filtered.unpaired.is_empty() {
+        cleared.set_sort_order("unsorted");
+        let output = argument(parser, "unpaired-output").ok_or_else(null_pathseq_output)?;
+        write_spark_reads(parser, &cleared, &filtered.unpaired, &output, true)?;
+    }
+    Ok(None)
+}
+
+/// A refusal inside a task, which Spark's exception carries by message.
+fn pathseq_task_failure(message: String) -> Thrown {
+    eprintln!("ERROR Executor - Exception in task 0.0 in stage 0.0 (TID 0)");
+    Thrown::non_user("org.apache.spark.SparkException", message)
+}
+
+/// `writeReads` handed the output nobody named.
+fn null_pathseq_output() -> Thrown {
+    Thrown::non_user(
+        "java.lang.IllegalArgumentException",
+        "Null object is not allowed here.".to_string(),
+    )
 }
 
 /// `FindBadGenomicKmersSpark.runTool`: no reads are needed, and the reference is read whole.
@@ -2381,39 +2798,17 @@ pub fn mark_duplicates_spark(parser: &Parser, mode: &Parser) -> Outcome {
     }
     drop(filter);
 
-    let mut tagging = match scalar(parser, "duplicate-tagging-policy").as_deref() {
-        Some("All") => md::Tagging::All,
-        Some("OpticalOnly") => md::Tagging::OpticalOnly,
-        _ => md::Tagging::DontTag,
-    };
     let (remove_all, remove_sequencing) = (
         flag(parser, "remove-all-duplicates"),
         flag(parser, "remove-sequencing-duplicates"),
     );
-    if remove_sequencing && tagging == md::Tagging::DontTag {
-        tagging = md::Tagging::OpticalOnly;
-    }
-    let regex = md::ReadNameRegex::from_arg(argument(parser, "read-name-regex").as_deref())
-        .map_err(|error| Thrown::non_user("java.util.regex.PatternSyntaxException", error))?;
-    let settings = md::MarkArguments {
-        scoring: match scalar(parser, "duplicate-scoring-strategy").as_deref() {
-            Some("TOTAL_MAPPED_REFERENCE_LENGTH") => md::Scoring::TotalMappedReferenceLength,
-            Some("FLOW_SUM_OF_BASE_QUALITIES") => md::Scoring::FlowSumOfBaseQualities,
-            _ => md::Scoring::SumOfBaseQualities,
-        },
-        dont_mark_unmapped_mates: flag(parser, "do-not-mark-unmapped-mates"),
-        tagging,
-        read_name_regex: regex,
-        pixel_distance: number_or(parser, "optical-duplicate-pixel-distance", 100),
-        flow: md::FlowArguments {
-            quality_sum_strategy: flag(mode, "flow-quality-sum-strategy"),
-            end_location_significant: flag(mode, "single-end-reads-end-position-significant"),
-            end_uncertainty: number_or(mode, "flow-end-pos-uncertainty", 0),
-            use_clipped_locations: flag(mode, "single-end-reads-clipping-is-end"),
-            skip_start_homopolymers: number_or(mode, "flow-skip-start-homopolymers", 0),
-            q_is_known_end: flag(mode, "flow-q-is-known-end"),
-        },
-    };
+    let settings = mark_arguments(
+        parser,
+        mode,
+        remove_sequencing,
+        argument(parser, "read-name-regex").as_deref(),
+        number_or(parser, "optical-duplicate-pixel-distance", 100),
+    )?;
 
     // `getHeaderReadGroupIndexMap`, on the driver.
     if header.read_groups.is_empty() {
@@ -2473,6 +2868,144 @@ pub fn mark_duplicates_spark(parser: &Parser, mode: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// `MarkDuplicatesSparkArgumentCollection`, with the optical finder's two settings as the caller's
+/// tool has them.
+fn mark_arguments(
+    parser: &Parser,
+    mode: &Parser,
+    remove_sequencing: bool,
+    read_name_regex: Option<&str>,
+    pixel_distance: i32,
+) -> Result<gatk_tools::mark_duplicates_spark::MarkArguments, Thrown> {
+    use gatk_tools::mark_duplicates_spark as md;
+    let mut tagging = match scalar(parser, "duplicate-tagging-policy").as_deref() {
+        Some("All") => md::Tagging::All,
+        Some("OpticalOnly") => md::Tagging::OpticalOnly,
+        _ => md::Tagging::DontTag,
+    };
+    if remove_sequencing && tagging == md::Tagging::DontTag {
+        tagging = md::Tagging::OpticalOnly;
+    }
+    let regex = md::ReadNameRegex::from_arg(read_name_regex)
+        .map_err(|error| Thrown::non_user("java.util.regex.PatternSyntaxException", error))?;
+    Ok(md::MarkArguments {
+        scoring: match scalar(parser, "duplicate-scoring-strategy").as_deref() {
+            Some("TOTAL_MAPPED_REFERENCE_LENGTH") => md::Scoring::TotalMappedReferenceLength,
+            Some("FLOW_SUM_OF_BASE_QUALITIES") => md::Scoring::FlowSumOfBaseQualities,
+            _ => md::Scoring::SumOfBaseQualities,
+        },
+        dont_mark_unmapped_mates: flag(parser, "do-not-mark-unmapped-mates"),
+        tagging,
+        read_name_regex: regex,
+        pixel_distance,
+        flow: md::FlowArguments {
+            quality_sum_strategy: flag(mode, "flow-quality-sum-strategy"),
+            end_location_significant: flag(mode, "single-end-reads-end-position-significant"),
+            end_uncertainty: number_or(mode, "flow-end-pos-uncertainty", 0),
+            use_clipped_locations: flag(mode, "single-end-reads-clipping-is-end"),
+            skip_start_homopolymers: number_or(mode, "flow-skip-start-homopolymers", 0),
+            q_is_known_end: flag(mode, "flow-q-is-known-end"),
+        },
+    })
+}
+
+/// `ReadsPipelineSpark.runTool` up to the caller: the reads marked, sorted, recalibrated from a
+/// table of their own, written if asked, and put through the caller's filters at their defaults.
+/// The duplicates stay: only `MarkDuplicatesSpark.runTool` removes any, and `new
+/// OpticalDuplicateFinder()` is the default regex and distance whatever the tool was given.
+pub(super) fn reads_pipeline_reads(
+    parser: &Parser,
+    source: &ReadsDataSource,
+    header: &SamHeader,
+    intervals: &[gatk_engine::interval::SimpleInterval],
+    filters: &[gatk_tools::filter_resolution::ResolvedFilter],
+) -> Result<(Vec<BamRecord>, SamHeader), Thrown> {
+    use gatk_tools::mark_duplicates_spark as md;
+    if flag(parser, "align") {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "ReadsPipelineSpark's --align runs BWA-MEM, which this port does not carry. This \
+             message is the port's own and not GATK's.",
+        ));
+    }
+    spark_known_sites(parser)?;
+    let filter = read_filter(parser, filters, header)?;
+    let mut records = gatk_tools::read_walker::traverse(source, intervals, &filter)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    drop(filter);
+    let settings = mark_arguments(
+        parser,
+        parser,
+        false,
+        Some("<optimized capture of last three ':' separated fields as numeric values>"),
+        100,
+    )?;
+    if header.read_groups.is_empty() {
+        return Err(Thrown::user(
+            "Bad input: Sam file header missing Read Group fields. MarkDuplicatesSpark currently \
+             requires reads to be labeled with read group tags, please add read groups tags to \
+             your reads",
+        ));
+    }
+    let grouped = header.attributes.get("SO") == Some("queryname")
+        || header.attributes.get("GO") == Some("query");
+    if !grouped {
+        records.sort_by(htsjdk_bam::query_name::compare);
+    }
+    let marked = md::mark(vec![records], header, &settings).map_err(|failure| {
+        eprintln!("ERROR Executor - Exception in task 0.0 in stage 1.0 (TID 1)");
+        Thrown::non_user("org.apache.spark.SparkException", failure.message)
+    })?;
+    let mut sorted = marked.reads;
+    sorted.sort_by(htsjdk_bam::coordinate::compare);
+
+    let mut for_table = Vec::new();
+    for name in [
+        "MappingQualityNotZeroReadFilter",
+        "MappingQualityAvailableReadFilter",
+        "MappedReadFilter",
+        "NotSecondaryAlignmentReadFilter",
+        "NotDuplicateReadFilter",
+        "PassesVendorQualityCheckReadFilter",
+    ] {
+        for_table.push(gatk_tools::filter_resolution::ResolvedFilter {
+            name: name.to_string(),
+            negated: false,
+        });
+    }
+    let table_filter = read_filter(parser, &for_table, header)?;
+    let table_reads: Vec<BamRecord> = sorted
+        .iter()
+        .filter(|record| table_filter(record))
+        .cloned()
+        .collect();
+    drop(table_filter);
+    let table = super::recalibration_table_over(
+        parser,
+        header,
+        super::RecalibrationReads::Chosen(&table_reads),
+    )
+    .map_err(table_task_failure)?;
+    tables_combine(header)?;
+    let finished = recalibrated(
+        header,
+        &table,
+        &super::apply_bqsr_arguments(parser),
+        &sorted,
+    )?;
+    if let Some(output_bam) = argument(parser, "output-bam") {
+        write_spark_reads(parser, header, &finished, &output_bam, true)?;
+    }
+    let caller_filter = super::standard_hc_read_filter(header)?;
+    let for_caller: Vec<BamRecord> = finished
+        .into_iter()
+        .filter(|record| caller_filter(record))
+        .collect();
+    let mut reads_header = header.clone();
+    reads_header.set_sort_order("coordinate");
+    Ok((for_caller, reads_header))
+}
+
 /// `GATKSparkTool.writeReads` through `ReadsSparkSink` and Disq, as described above.
 ///
 /// With `sort_to_header`, a coordinate-sorted header is sorted to first (`sortSamRecordsToMatchHeader`), over
@@ -2516,6 +3049,22 @@ fn write_spark_partitions(
     sort_order: Option<&str>,
     partitions: &[Vec<BamRecord>],
     output: &str,
+) -> Result<(), Thrown> {
+    let indices = (
+        flag(parser, "create-output-bam-index"),
+        flag(parser, "create-output-bam-splitting-index"),
+    );
+    write_spark_indexed(parser, header, sort_order, partitions, output, indices)
+}
+
+/// [`write_spark_partitions`], told which of the `.bai` and the `.sbi` to write.
+fn write_spark_indexed(
+    parser: &Parser,
+    header: &SamHeader,
+    sort_order: Option<&str>,
+    partitions: &[Vec<BamRecord>],
+    output: &str,
+    (write_bai, write_sbi): (bool, bool),
 ) -> Result<(), Thrown> {
     let (level, deflater) = output_compression(parser);
     let failed = |what: &str, error: String| {
@@ -2585,7 +3134,7 @@ fn write_spark_partitions(
     bam.extend_from_slice(&htsjdk_bgzf::EMPTY_GZIP_BLOCK);
     std::fs::write(output, &bam).map_err(|error| failed(output, error.to_string()))?;
 
-    if flag(parser, "create-output-bam-index") && sort_order == Some("coordinate") {
+    if write_bai && sort_order == Some("coordinate") {
         // shortcut: the index is built from the whole file; Disq merges one per part with
         // `BAMIndexMerger`, which is the same index on every array row measured so far. Port the
         // merger if a multi-partition row ever disagrees.
@@ -2594,7 +3143,7 @@ fn write_spark_partitions(
         std::fs::write(format!("{output}.bai"), bai)
             .map_err(|error| failed(&format!("{output}.bai"), error.to_string()))?;
     }
-    if flag(parser, "create-output-bam-splitting-index") {
+    if write_sbi {
         let mut sbi = htsjdk_bam::sbi::SbiIndexWriter::new(1);
         for offset in &offsets {
             sbi.process_record(*offset)
@@ -2631,9 +3180,6 @@ fn sorted_partitions(
         Some("queryname") => htsjdk_bam::query_name::compare,
         _ => return Ok(vec![records.to_vec()]),
     };
-    let mut sorted = records.to_vec();
-    sorted.sort_by(compare);
-
     // `getRecommendedNumReducers`: the argument, else one per ten megabytes of input.
     let mut reducers = number_or(parser, "num-reducers", 0).max(0) as usize;
     if reducers == 0 {
@@ -2647,7 +3193,19 @@ fn sorted_partitions(
             .sum();
         reducers = 1 + (size / (10 * 1024 * 1024)) as usize;
     }
-    let bounds = range_bounds(&sorted, reducers, compare)?;
+    range_partitions(records, reducers, &[records.len()], compare)
+}
+
+/// The sort itself: `reducers` partitions over input partitions of the sizes given.
+fn range_partitions(
+    records: &[BamRecord],
+    reducers: usize,
+    input_partitions: &[usize],
+    compare: fn(&BamRecord, &BamRecord) -> std::cmp::Ordering,
+) -> Result<Vec<Vec<BamRecord>>, Thrown> {
+    let mut sorted = records.to_vec();
+    sorted.sort_by(compare);
+    let bounds = range_bounds(&sorted, reducers, input_partitions, compare)?;
     let mut partitions: Vec<Vec<BamRecord>> = vec![Vec::new(); bounds.len() + 1];
     for record in sorted {
         // `getPartition`: the first bound the key is not greater than.
@@ -2660,22 +3218,23 @@ fn sorted_partitions(
     Ok(partitions)
 }
 
-/// `RangePartitioner`'s bounds over one input partition, the sketch taking every key: weight one
-/// each, then `determineBounds(candidates, min(partitions, candidates))`.
+/// `RangePartitioner`'s bounds, the sketch taking every key: weight one each, then
+/// `determineBounds(candidates, min(partitions, candidates))`.
 ///
-/// shortcut: one input partition holding at most `sampleSizePerPartition` keys, where the sketch is
-/// the whole partition; more is a reservoir sample the port does not draw, and is refused by name.
+/// shortcut: input partitions each holding at most `sampleSizePerPartition` keys, where the sketch
+/// is the whole partition; more is a reservoir sample the port does not draw, and is refused by name.
 fn range_bounds(
     sorted: &[BamRecord],
     partitions: usize,
+    input_partitions: &[usize],
     compare: fn(&BamRecord, &BamRecord) -> std::cmp::Ordering,
 ) -> Result<Vec<BamRecord>, Thrown> {
     if partitions <= 1 || sorted.is_empty() {
         return Ok(Vec::new());
     }
     let sample_size = (20.0 * partitions as f64).min(1e6);
-    let per_partition = (3.0 * sample_size).ceil() as usize;
-    if sorted.len() > per_partition {
+    let per_partition = (3.0 * sample_size / input_partitions.len() as f64).ceil() as usize;
+    if input_partitions.iter().any(|size| *size > per_partition) {
         return Err(Thrown::non_user(
             PORT_LIMITATION,
             format!(
@@ -2795,7 +3354,8 @@ pub fn base_recalibrator_spark(parser: &Parser) -> Outcome {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
     spark_known_sites(parser)?;
-    let table = super::recalibration_table(parser, &source, &header, &intervals, &filters)?;
+    let table = super::recalibration_table(parser, &source, &header, &intervals, &filters)
+        .map_err(table_task_failure)?;
     tables_combine(&header)?;
     std::fs::write(&output, table)
         .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
@@ -2861,7 +3421,8 @@ pub fn bqsr_pipeline_spark(parser: &Parser) -> Outcome {
         });
     }
     spark_known_sites(parser)?;
-    let table = super::recalibration_table(parser, &source, &header, &intervals, &for_table)?;
+    let table = super::recalibration_table(parser, &source, &header, &intervals, &for_table)
+        .map_err(table_task_failure)?;
     tables_combine(&header)?;
     let filter = read_filter(parser, &filters, &header)?;
     let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
@@ -2890,6 +3451,18 @@ fn spark_known_sites(parser: &Parser) -> Result<(), Thrown> {
         }
     }
     Ok(())
+}
+
+/// `updatePlatformForRead` throws inside the executor, so its `MalformedRead` reaches the driver as
+/// the job's failure.
+fn table_task_failure(thrown: Thrown) -> Thrown {
+    match &thrown.message {
+        Some(message) if message.contains("reads with no platform information") => {
+            eprintln!("ERROR Executor - Exception in task 0.0 in stage 0.0 (TID 0)");
+            Thrown::non_user("org.apache.spark.SparkException", message.clone())
+        }
+        _ => thrown,
+    }
 }
 
 /// `treeAggregate`'s first combine: the empty table is sized by the read groups' DISTINCT
