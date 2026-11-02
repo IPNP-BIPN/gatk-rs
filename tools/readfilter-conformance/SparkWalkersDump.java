@@ -236,8 +236,9 @@ public class SparkWalkersDump {
                 "bwa_reads_unsorted.bam", "bwa_reads_no_group.bam", "bwa_reads_dictionary.bam",
                 "bwa_reads_other_dictionary.bam", "bwa_empty.bam", "bwa_iupac.bam", "bwa_no_sequence.bam",
                 "bwa_odd.bam", "bwa_names.bam", "bwa_no_qualities.bam"}) {
-            System.out.printf("input\t%s\t%s%n", name,
-                    Base64.getEncoder().encodeToString(Files.readAllBytes(DIR.resolve(name))));
+            final byte[] bytes = Files.readAllBytes(DIR.resolve(name));
+            System.out.printf("input\t%s\t%s%n", name, Base64.getEncoder().encodeToString(
+                    name.endsWith(".img") && !name.equals("bwa_not_image.img") ? withoutAddresses(bytes) : bytes));
         }
 
         // COMPAREDUPLICATESSPARK prints what it found; only the second BAM skips the read filter.
@@ -1373,6 +1374,26 @@ public class SparkWalkersDump {
                 "--use-jdk-deflater", "true", "--sharded-output", "true", "-O", out("bwa-sharded", "aligned.bam"));
     }
     /**
+     * A BWA image without the addresses `bwa_idx2mem` leaves in it, which ASLR changes on every run
+     * and nothing reads back: `bwt_t.sa`, then past the BWT and the suffix array `bntseq_t.anns`,
+     * `.ambs` and `.fp_pac`, and each `bntann1_t`'s `name` and `anno`. Only the printed row is
+     * cleaned; the reference ran on the file as BWA wrote it.
+     */
+    private static byte[] withoutAddresses(final byte[] image) {
+        final byte[] cleaned = image.clone();
+        final java.nio.ByteBuffer read = java.nio.ByteBuffer.wrap(image).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        final int bwt = Math.toIntExact(1120 + read.getLong(56) * 4 + read.getLong(1104) * 8);
+        final List<Integer> addresses = new ArrayList<>(List.of(1112, bwt + 16, bwt + 32, bwt + 40));
+        final int annotations = bwt + 48 + 16 * read.getInt(bwt + 24);
+        for (int sequence = 0; sequence < read.getInt(bwt + 8); sequence++) {
+            addresses.add(annotations + 40 * sequence + 24);
+            addresses.add(annotations + 40 * sequence + 32);
+        }
+        addresses.forEach(address -> Arrays.fill(cleaned, address, address + 8, (byte) 0));
+        return cleaned;
+    }
+
+    /**
      * PathSeq with BWA: the aligner alone, the filter's host image, and the whole pipeline, whose
      * batches a small partition size makes several of.
      */
@@ -1682,6 +1703,7 @@ public class SparkWalkersDump {
                 + ">\n##contig=<ID=bwa2,length=" + second.length() + ">\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
                 + "bwa1\t5000\t.\t" + first.charAt(4999) + "\t" + (first.charAt(4999) == 'A' ? 'C' : 'A') + "\t.\t.\t.\n",
                 StandardCharsets.UTF_8);
+        Files.setLastModifiedTime(dir.resolve("rp_known.vcf"), java.nio.file.attribute.FileTime.fromMillis(0L));
         new org.broadinstitute.hellbender.Main().instanceMain(new String[] {"IndexFeatureFile",
                 "-I", dir.resolve("rp_known.vcf").toString()});
         try (final htsjdk.samtools.SamReader source = htsjdk.samtools.SamReaderFactory.makeDefault()
@@ -1909,6 +1931,8 @@ public class SparkWalkersDump {
                 + "chr1\t300\trs1\t" + bases.charAt(299) + "\t" + (bases.charAt(299) == 'A' ? 'C' : 'A') + "\t.\t.\t.\n"
                 + "chr1\t5040\trs2\t" + bases.charAt(5039) + "\t" + (bases.charAt(5039) == 'A' ? 'C' : 'A') + "\t.\t.\t.\n")
                 .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        // Tribble writes the file's time into the index, which would change the golden on every run.
+        Files.setLastModifiedTime(DIR.resolve("caller-known.vcf"), java.nio.file.attribute.FileTime.fromMillis(0L));
         new Main().instanceMain(new String[] {"IndexFeatureFile", "-I", DIR.resolve("caller-known.vcf").toString()});
         Files.write(DIR.resolve("caller-known.bed"), "chr1\t299\t300\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
