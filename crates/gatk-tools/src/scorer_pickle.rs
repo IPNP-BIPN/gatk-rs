@@ -831,15 +831,13 @@ fn interpret(bytes: &[u8]) -> Option<Vec<Value>> {
 }
 
 fn doubles_of(data: &[u8]) -> Vec<f64> {
-    data.chunks_exact(8)
-        .map(|b| f64::from_le_bytes(b.try_into().expect("eight bytes")))
-        .collect()
+    let (chunks, _) = data.as_chunks::<8>();
+    chunks.iter().map(|b| f64::from_le_bytes(*b)).collect()
 }
 
 fn ints_of(data: &[u8]) -> Vec<i64> {
-    data.chunks_exact(8)
-        .map(|b| i64::from_le_bytes(b.try_into().expect("eight bytes")))
-        .collect()
+    let (chunks, _) = data.as_chunks::<8>();
+    chunks.iter().map(|b| i64::from_le_bytes(*b)).collect()
 }
 
 /// A numpy `U` array's strings: UTF-32 at the dtype's width, padded with zeros.
@@ -849,9 +847,10 @@ fn strings_of(data: &[u8], width: usize) -> Option<Vec<String>> {
     }
     data.chunks_exact(width * 4)
         .map(|element| {
-            element
-                .chunks_exact(4)
-                .map(|b| u32::from_le_bytes(b.try_into().expect("four bytes")))
+            let (units, _) = element.as_chunks::<4>();
+            units
+                .iter()
+                .map(|b| u32::from_le_bytes(*b))
                 .take_while(|code| *code != 0)
                 .map(char::from_u32)
                 .collect()
@@ -883,8 +882,8 @@ pub fn read(bytes: &[u8]) -> Option<Scorer> {
             return None;
         }
         let column = |offset: usize| -> Vec<[u8; 8]> {
-            nodes
-                .chunks_exact(64)
+            let (rows, _) = nodes.as_chunks::<64>();
+            rows.iter()
                 .map(|node| node[offset..offset + 8].try_into().expect("eight bytes"))
                 .collect()
         };

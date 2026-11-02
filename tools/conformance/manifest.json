@@ -6662,7 +6662,7 @@
     },
     {
       "id": "tool-argument-declarations",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "what one tool declares, and therefore which command lines it accepts",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6730,7 +6730,7 @@
     },
     {
       "id": "tool-argument-enums",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "the constants an enum-valued argument accepts, and what a value outside them costs",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -8289,7 +8289,7 @@
     },
     {
       "id": "genomicsdb-import",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "GenomicsDBImport: its refusals and every byte of the workspace",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -8302,14 +8302,14 @@
       "cases": [
         {
           "dump": "GenomicsDBImportDump",
-          "golden": null,
+          "golden": "crates/gatk-tools/tests/data/genomicsdb_import.txt.gz",
           "why": "Frozen from the candidate artefact of its first run."
         }
       ]
     },
     {
       "id": "sv-evidence",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "FindBreakpointEvidenceSpark and StructuralVariationDiscoveryPipelineSpark, stage by stage",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -8381,7 +8381,7 @@
       "cases": [
         {
           "dump": "SvEvidenceDump",
-          "golden": null,
+          "golden": "crates/gatk-tools/tests/data/sv_evidence.txt.gz",
           "why": "Pending the first real x86-64 CI run."
         }
       ]

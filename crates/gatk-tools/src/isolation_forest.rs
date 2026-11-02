@@ -26,6 +26,7 @@ const RAND_R_MAX: u32 = 0x7fff_ffff;
 /// `numpy.iinfo(numpy.int32).max`, `MAX_INT` in `_bagging.py`.
 const MAX_INT: u64 = 0x7fff_ffff;
 /// `numpy.euler_gamma`.
+#[allow(clippy::approx_constant)]
 const EULER_GAMMA: f64 = 0.577_215_664_901_532_9;
 /// `numpy.finfo('double').eps`, `EPSILON` in `_tree.pyx`.
 const EPSILON: f64 = f64::EPSILON;
