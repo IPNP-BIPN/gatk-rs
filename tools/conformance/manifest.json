@@ -6662,7 +6662,7 @@
     },
     {
       "id": "tool-argument-declarations",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "what one tool declares, and therefore which command lines it accepts",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6688,7 +6688,7 @@
     },
     {
       "id": "usage-text",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "the usage text Barclay renders, which is a rendering and not prose",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6730,7 +6730,7 @@
     },
     {
       "id": "tool-argument-enums",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "the constants an enum-valued argument accepts, and what a value outside them costs",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -8261,7 +8261,7 @@
     },
     {
       "id": "interpreter-tools",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "eight tools up to the interpreter the pinned image does not have",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -8281,7 +8281,7 @@
       "cases": [
         {
           "dump": "InterpreterToolsDump",
-          "golden": null,
+          "golden": "crates/gatk-tools/tests/data/interpreter_tools.txt.gz",
           "why": "Frozen from the candidate artefact of its first run."
         }
       ]
