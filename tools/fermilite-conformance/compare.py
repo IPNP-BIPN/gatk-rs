@@ -9,7 +9,7 @@ def records(path):
     cur = None
     with open(path, "rb") as f:
         for line in f:
-            if line[:2] in (b"A ", b"X ", b"J ", b"U "):
+            if line[:2] in (b"A ", b"X ", b"J ", b"U ", b"S "):
                 if cur:
                     yield cur
                 cur = [line]

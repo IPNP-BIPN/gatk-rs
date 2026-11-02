@@ -41,7 +41,12 @@ public final class FermiLiteDump {
 
     public static void main(final String[] a) throws Exception {
         if (a.length >= 1 && a[0].equals("--worker")) {
-            worker(a[1], a[2], a[3], Long.parseLong(a[4]), Long.parseLong(a[5]), Integer.parseInt(a[6]));
+            try {
+                worker(a[1], a[2], a[3], Long.parseLong(a[4]), Long.parseLong(a[5]), Integer.parseInt(a[6]));
+            } catch (final Throwable t) {
+                t.printStackTrace();
+                System.exit(3);
+            }
         } else {
             parent(a[0], a[1], a.length > 2 ? a[2] : "0");
         }
@@ -78,12 +83,15 @@ public final class FermiLiteDump {
                     .start();
             final int rc = p.waitFor();
             if (rc == 0) break;
-            if (rc != 134) throw new IllegalStateException("worker exited with " + rc);
+            // 134 is SIGABRT from an assert or from malloc's checks. HotSpot's own crash handling, for
+            // a SIGSEGV in native code, leaves with 1 when core dumps are off. Java exceptions are 3.
+            if (rc != 134 && rc != 1) throw new IllegalStateException("worker exited with " + rc);
             final String[] f;
             try (BufferedReader r = new BufferedReader(new FileReader(progress))) { f = r.readLine().split(" "); }
             idx = Long.parseLong(f[0]) + 1;
             offset = Long.parseLong(f[1]);
-            final String line = "X " + f[0] + " " + f[2] + " flag=" + f[3] + " reads=" + f[4] + " ABORT\n";
+            final String line = (rc == 134 ? "X " : "S ") + f[0] + " " + f[2] + " flag=" + f[3] + " reads=" + f[4]
+                    + (rc == 134 ? " ABORT\n" : " SEGV\n");
             Files.write(Paths.get(dump), line.getBytes(StandardCharsets.ISO_8859_1), StandardOpenOption.APPEND);
             deaths++;
         }

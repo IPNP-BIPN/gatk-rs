@@ -32,8 +32,13 @@
 //! The JNI takes `l_seq` from the bases' `strlen` and `strdup`s the quals on their own. A NUL in the
 //! quals leaves `qual` shorter than `l_seq`. `worker_count` and `bfc_seq_conv` then read past the
 //! allocation and `bfc_ec1` writes past it, one byte per base, which is a heap overflow whose result
-//! depends on what `malloc` put after it. That is refused as [`FmlError::Undefined`]. Note that a
-//! read's qualities are not raw Phred scores here: a Phred 0 passed raw would be this NUL.
+//! depends on what `malloc` put after it. That is refused as [`FmlError::Undefined`]. Measured
+//! through the JNI, 76 assemblies with such reads: 56 died in `munmap_chunk()` or `free()`, 12 with a
+//! SIGSEGV in `bfc_ch_destroy`, and 8 returned contigs.
+//!
+//! This is not exotic. `SVFastqUtils.FastqRead` hands over `getBaseQualities()` as it is, no 33
+//! added, so a Phred 0 in a BAM is this NUL. And since `bfc` compares `qual[i] - 33` with 20, what
+//! GATK's assemblies see as high quality is Phred 53 and up, which is to say nothing.
 //!
 //! A NUL in the bases is different and entirely defined: the JNI advances `readData` by the bases'
 //! `strlen + 1` for both strings, so the parse goes out of step with the reads and carries on,
@@ -57,9 +62,16 @@
 //! call it, and nothing calls those. `qsort` is not imported at all, no `libm` function either
 //! (`M_LN2` is a constant). `fm_verbose` is never set by the JNI, so nothing is global across
 //! assemblies and there is no state to carry. No hash is iterated in an order that shows:
-//! `bfc_ch_hist` only sums. `n_threads` stays at 1 in the JNI path, GATK never calls `setNThreads`,
-//! and it would not be deterministic if it did: `bfc_kmer_bufclear` drops k-mers still buffered when
-//! a worker finishes. So the threaded paths of `kt_for` and `mr_insert_multi` are not ported.
+//! `bfc_ch_hist` only sums.
+//!
+//! # Threads change the answer, and GATK does not use them
+//!
+//! `n_threads` is 1 unless `setNThreads` is called, and `FermiLiteAssemblyHandler` calls only
+//! `setCleaningFlag`. Measured through the JNI on 300 assemblies of the corpus: with 4 threads 160
+//! differ from 1 thread, and two runs at 4 threads differ from each other on 76, starting from the
+//! contigs' order. `fml_fmi2mag_core` also asserts `mcnt[1] >= n_threads * 2`, so a few that
+//! assembled at 1 thread die at 4. `FmlOpt` has no thread count, and the threaded paths of `kt_for`
+//! and `mr_insert_multi` are not ported.
 //!
 //! The uninitialised memory that exists is not read before it is written: the `ec` and `absent` of
 //! `ecbase_t`, `dummy` and `H1` in `ksw_i16`, `ok.info` in `unitig.c`. Two reads just outside an
