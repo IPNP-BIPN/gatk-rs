@@ -602,6 +602,17 @@ fn reference_dictionary(parser: &Parser) -> Result<Option<SamHeader>, Thrown> {
     let Some(path) = argument(parser, "reference") else {
         return Ok(None);
     };
+    // `new ReferenceFileSource`, which tests that the path exists before it looks further.
+    if !std::path::Path::new(&path).exists() {
+        return Err(Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException$MissingReference",
+            message: Some(format!(
+                "The specified fasta file (file://{}) does not exist.",
+                java_absolute_path(&path)
+            )),
+        });
+    }
     let dictionary = std::path::Path::new(&path).with_extension("dict");
     let text = std::fs::read_to_string(&dictionary)
         .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&path, false)))?;
@@ -616,8 +627,10 @@ fn master_dictionary(parser: &Parser) -> Result<Option<SamHeader>, Thrown> {
     let Some(path) = argument(parser, "sequence-dictionary") else {
         return Ok(None);
     };
+    // `SAMSequenceDictionaryExtractor` wraps the missing file in a bare `RuntimeException` with the
+    // path it was given for a message.
     let text = std::fs::read_to_string(&path)
-        .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&path, false)))?;
+        .map_err(|_| Thrown::non_user("java.lang.RuntimeException", path.clone()))?;
     Ok(Some(htsjdk_bam::reader::parse_header_text(&text)))
 }
 
@@ -1151,12 +1164,10 @@ fn open_feature_input(input: &str) -> Result<(gatk_tools::feature_codec::Codec, 
         )
     })?;
     let bytes = std::fs::read(&input).map_err(|_| {
-        Thrown::user(
-            index_feature_file::Refusal::CouldNotReadInputFile {
-                path: input.clone(),
-            }
-            .message(),
-        )
+        Thrown::user(format!(
+            "Couldn't read file file://{}. Error was: It doesn't exist.",
+            java_absolute_path(&input)
+        ))
     })?;
     // A block compressed feature file is read through its own decompression, and its index is a
     // `.tbi` rather than a `.idx`; neither changes what the traversal counts.
@@ -1354,8 +1365,12 @@ fn reads_dictionary(
     path: &str,
     inputs: usize,
 ) -> Result<Vec<htsjdk_bam::header::SequenceRecord>, Thrown> {
-    let bytes = std::fs::read(path)
-        .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(path, false)))?;
+    let bytes = std::fs::read(path).map_err(|_| {
+        Thrown::user(gatk_tools::read_walker_refusal::cannot_read(
+            &java_absolute_path(path),
+            false,
+        ))
+    })?;
     let compressed = gatk_tools::read_walker_refusal::is_block_compressed(&bytes);
     let decompressed = if compressed {
         htsjdk_bgzf::read::decompress_all(&bytes).unwrap_or_default()
@@ -17614,7 +17629,8 @@ pub(crate) fn write_variant_file(
             })
             .collect()
     });
-    let mut source = index_feature_file::Source::new(output);
+    // The index records the output as `Path.toUri` prints it, which is always absolute.
+    let mut source = index_feature_file::Source::new(&java_absolute_path(output));
     source.timestamp = modified_millis(output);
     let index = match index_feature_file::index_kind(output) {
         index_feature_file::IndexKind::Tabix => {
@@ -24559,6 +24575,15 @@ pub fn bwa_mem_index_image_creator(parser: &Parser) -> Outcome {
 #[path = "runners_extract_variant_annotations.rs"]
 mod extract_variant_annotations_runner;
 pub use extract_variant_annotations_runner::extract_variant_annotations;
+
+/// The tools that stop at an interpreter, each as far as a machine without one can see.
+#[path = "runners_interpreter_tools.rs"]
+mod interpreter_tools_runner;
+pub use interpreter_tools_runner::{
+    determine_germline_contig_ploidy, germline_cnv_caller, nv_score_variants,
+    plot_denoised_copy_ratios, plot_modeled_segments, postprocess_germline_cnv_calls,
+    score_variant_annotations, train_variant_annotations_model,
+};
 
 /// `FilterAlignmentArtifacts`, whose realignment is not ported and whose walker is.
 #[path = "runners_filter_alignment_artifacts.rs"]

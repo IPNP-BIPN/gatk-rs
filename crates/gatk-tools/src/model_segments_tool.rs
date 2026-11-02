@@ -69,27 +69,35 @@ pub struct Options {
 
 /// `SampleLocatableMetadata`: a sample name and a sequence dictionary.
 #[derive(Debug, Clone, PartialEq)]
-struct Metadata {
-    sample: String,
-    dictionary: Vec<SequenceRecord>,
+pub struct Metadata {
+    pub sample: String,
+    pub dictionary: Vec<SequenceRecord>,
 }
 
 /// A copy-ratio file.
 #[derive(Debug, Clone)]
-struct CopyRatios {
-    metadata: Metadata,
-    records: Vec<(Span, f64)>,
+pub struct CopyRatios {
+    pub metadata: Metadata,
+    pub records: Vec<(Span, f64)>,
+}
+
+impl CopyRatios {
+    /// `getIntervals`.
+    pub fn spans(&self) -> Vec<Span> {
+        self.records.iter().map(|(span, _)| span.clone()).collect()
+    }
 }
 
 /// An allelic-count file, with the two nucleotides kept as `Nucleotide.name()` prints them.
 #[derive(Debug, Clone)]
-struct AllelicCounts {
-    metadata: Metadata,
-    records: Vec<(Het, String, String)>,
+pub struct AllelicCounts {
+    pub metadata: Metadata,
+    pub records: Vec<(Het, String, String)>,
 }
 
 impl AllelicCounts {
-    fn sites(&self) -> Vec<(String, i32)> {
+    /// The contig and position of every count, in order.
+    pub fn sites(&self) -> Vec<(String, i32)> {
         self.records
             .iter()
             .map(|(het, _, _)| (het.contig.clone(), het.position))
@@ -151,18 +159,117 @@ fn write(path: &str, text: &str) -> Result<(), Thrown> {
     })
 }
 
-/// A copy-number table read the way `AbstractRecordCollection` reads one: the SAM header, the
-/// column line, and the rows under it.
-struct Table {
-    header: SamHeader,
-    columns: Vec<String>,
-    rows: Vec<Vec<String>>,
+const BAD_INPUT: &str = "org.broadinstitute.hellbender.exceptions.UserException$BadInput";
+
+fn bad_input(message: String) -> Thrown {
+    Thrown {
+        failure: Failure::User,
+        exception: BAD_INPUT,
+        message: Some(format!("Bad input: {message}")),
+    }
 }
 
+/// `File.getAbsolutePath`.
+fn absolute_path(path: &str) -> String {
+    if path.starts_with('/') {
+        return path.to_string();
+    }
+    let working = std::env::current_dir()
+        .map(|directory| directory.display().to_string())
+        .unwrap_or_default();
+    if path.is_empty() {
+        working
+    } else {
+        format!("{working}/{path}")
+    }
+}
+
+/// `IOUtils.canReadFile`.
+pub fn can_read_file(path: &str) -> Result<(), Thrown> {
+    let refuse = |reason: &str| {
+        Thrown::user(format!(
+            "Couldn't read file {}. Error was: {reason}",
+            absolute_path(path)
+        ))
+    };
+    let metadata = std::fs::metadata(path).map_err(|_| refuse("The input file does not exist."))?;
+    if !metadata.is_file() {
+        return Err(refuse("The input file is not a regular file"));
+    }
+    if std::fs::File::open(path).is_err() {
+        return Err(refuse(
+            "The input file cannot be read.  Check the permissions.",
+        ));
+    }
+    Ok(())
+}
+
+/// A copy-number table read the way `AbstractRecordCollection` reads one: the SAM header, the
+/// column line, and the rows under it, each with the line it came from.
+struct Table {
+    source: String,
+    header: SamHeader,
+    columns: Vec<String>,
+    rows: Vec<(u64, Vec<String>)>,
+    /// `fetchNextRecord`'s refusal of a line of the wrong width, which only stops the read when
+    /// the decoder has taken every row ahead of it.
+    wrong_width: Option<Thrown>,
+}
+
+/// One row, as `DataLine` answers for it.
+struct Row<'a> {
+    source: &'a str,
+    number: u64,
+    columns: &'a [String],
+    values: &'a [String],
+}
+
+impl Row<'_> {
+    fn get(&self, column: usize) -> &str {
+        &self.values[column]
+    }
+
+    fn refuse(&self, column: usize) -> Thrown {
+        bad_input(format!(
+            "format error in '{}' at line {}: expected int value for column {} but found {}",
+            self.source, self.number, self.columns[column], self.values[column]
+        ))
+    }
+
+    /// `DataLine.getInt`: `Integer.parseInt`, which trims nothing.
+    fn int(&self, column: usize) -> Result<i32, Thrown> {
+        self.values[column].parse().map_err(|_| self.refuse(column))
+    }
+
+    /// `DataLine.getDouble`, whose refusal calls the value an int too.
+    fn double(&self, column: usize) -> Result<f64, Thrown> {
+        crate::variant_recalibrator_model::java_parse_double(&self.values[column])
+            .ok_or_else(|| self.refuse(column))
+    }
+}
+
+/// `new SimpleInterval(contig, start, end)`.
+fn simple_interval(contig: &str, start: i32, end: i32) -> Result<Span, Thrown> {
+    if start <= 0 || end < start {
+        return Err(illegal(format!(
+            "Invalid interval. Contig:{contig} start:{start} end:{end}"
+        )));
+    }
+    Ok(Span {
+        contig: contig.to_string(),
+        start,
+        end,
+    })
+}
+
+/// `new RecordCollectionReader(path)`, `findAndProcessHeaderLine` and the reader's lines.
 fn read_table(path: &str) -> Result<Table, Thrown> {
+    can_read_file(path)?;
     let text = std::fs::read_to_string(path).map_err(|_| {
         Thrown::user(format!(
-            "Couldn't read file {path}. Error was: The input file does not exist."
+            "Couldn't read file {}. Error was: The input file cannot be read.  Check the \
+             permissions.",
+            absolute_path(path)
         ))
     })?;
     let header = htsjdk_bam::reader::parse_header_text(
@@ -172,42 +279,101 @@ fn read_table(path: &str) -> Result<Table, Thrown> {
             .map(|line| format!("{line}\n"))
             .collect::<String>(),
     );
-    let mut lines = text
-        .lines()
-        .filter(|line| !line.starts_with('@') && !line.is_empty());
-    let columns: Vec<String> = lines
-        .next()
-        .unwrap_or_default()
-        .split('\t')
-        .map(str::to_string)
-        .collect();
-    let rows = lines
-        .map(|line| line.split('\t').map(str::to_string).collect())
-        .collect();
+    let mut columns: Option<Vec<String>> = None;
+    let mut rows = Vec::new();
+    let mut wrong_width = None;
+    let mut last = 0;
+    for (index, line) in text.lines().enumerate() {
+        let number = index as u64 + 1;
+        last = number;
+        let values = gatk_engine::tsv_table::split_line(line);
+        if values[0].starts_with('@') {
+            continue;
+        }
+        let Some(names) = &columns else {
+            // `TableColumnCollection.checkNames`.
+            for (at, name) in values.iter().enumerate() {
+                if values[..at].contains(name) {
+                    return Err(bad_input(format!(
+                        "more than one column have the same name: {name}"
+                    )));
+                }
+            }
+            columns = Some(values);
+            continue;
+        };
+        // `isHeaderLine`: the column line again is not a row.
+        if values == *names {
+            continue;
+        }
+        if values.len() != names.len() {
+            wrong_width = Some(bad_input(format!(
+                "format error in '{path}' at line {number}: mismatch between number of values in \
+                 line ({}) and number of columns ({})",
+                values.len(),
+                names.len()
+            )));
+            break;
+        }
+        rows.push((number, values));
+    }
+    let Some(columns) = columns else {
+        return Err(bad_input(format!(
+            "format error in '{path}' at line {last}: premature end of table: header line not found"
+        )));
+    };
     Ok(Table {
+        source: path.to_string(),
         header,
         columns,
         rows,
+        wrong_width,
     })
 }
 
 impl Table {
-    fn column(&self, name: &str) -> Result<usize, Thrown> {
-        self.columns
-            .iter()
-            .position(|column| column == name)
-            .ok_or_else(|| {
-                Thrown::user(format!(
-                    "Bad input: Missing mandatory column {name} in the input file."
-                ))
-            })
+    /// `TableUtils.checkMandatoryColumns`, the indices of the columns in the order asked for. The
+    /// names missing are listed in the order of the `HashSet` they are taken from.
+    fn mandatory<const N: usize>(&self, names: [&str; N]) -> Result<[usize; N], Thrown> {
+        let position = |name: &str| self.columns.iter().position(|column| column == name);
+        if names.iter().any(|name| position(name).is_none()) {
+            let names: Vec<String> = names.iter().map(|name| (*name).to_string()).collect();
+            let ordered = gatk_engine::java_hash::hash_set_order(&names).unwrap_or(names);
+            let missing: Vec<String> = ordered
+                .into_iter()
+                .filter(|name| position(name).is_none())
+                .collect();
+            return Err(bad_input(format!(
+                "Bad header in file.  Not all mandatory columns are present.  Missing: {}",
+                missing.join(", ")
+            )));
+        }
+        Ok(names.map(|name| position(name).expect("checked above")))
+    }
+
+    /// `reader.stream()`: each row through the decoder, as far as the first that fails.
+    fn decode<T>(&self, decoder: impl Fn(&Row) -> Result<T, Thrown>) -> Result<Vec<T>, Thrown> {
+        let mut records = Vec::with_capacity(self.rows.len());
+        for (number, values) in &self.rows {
+            records.push(decoder(&Row {
+                source: &self.source,
+                number: *number,
+                columns: &self.columns,
+                values,
+            })?);
+        }
+        match &self.wrong_width {
+            Some(refusal) => Err(refusal.clone()),
+            None => Ok(records),
+        }
     }
 
     /// `MetadataUtils.fromHeader(header, SAMPLE_LOCATABLE)`.
     fn metadata(&self) -> Result<Metadata, Thrown> {
         if self.header.read_groups.is_empty() {
             return Err(illegal(
-                "The input header does not contain any read groups.  Cannot determine a sample name.",
+                "The collection is empty: The input header does not contain any read groups.  \
+                 Cannot determine a sample name.",
             ));
         }
         let mut samples: Vec<String> = Vec::new();
@@ -234,49 +400,60 @@ impl Table {
     }
 }
 
-fn parse_int(text: &str) -> Result<i32, Thrown> {
-    text.trim().parse().map_err(|_| {
-        Thrown::user(format!(
-            "Bad input: Expected an integer value but found {text}"
-        ))
-    })
-}
-
-fn parse_double(text: &str) -> Result<f64, Thrown> {
-    let trimmed = text.trim();
-    match trimmed {
-        "NaN" => Ok(f64::NAN),
-        "Infinity" | "+Infinity" => Ok(f64::INFINITY),
-        "-Infinity" => Ok(f64::NEG_INFINITY),
-        _ => trimmed.parse().map_err(|_| {
-            Thrown::user(format!(
-                "Bad input: Expected a double value but found {text}"
-            ))
-        }),
+/// `CopyNumberArgumentValidationUtils.validateIntervals`, given how a record prints itself.
+fn validate_intervals(
+    dictionary: &[SequenceRecord],
+    spans: &[Span],
+    record: impl Fn(usize) -> String,
+) -> Result<(), Thrown> {
+    let index_of = |contig: &str| dictionary.iter().position(|s| s.name == contig);
+    if spans
+        .iter()
+        .any(|span| index_of(&span.contig).is_none_or(|at| span.end > dictionary[at].length))
+    {
+        return Err(illegal(
+            "Records contained at least one interval that did not validate against the sequence \
+             dictionary.",
+        ));
     }
+    let key = |span: &Span| (index_of(&span.contig), span.start, span.end);
+    if spans.windows(2).any(|pair| key(&pair[0]) >= key(&pair[1])) {
+        return Err(illegal(
+            "Records were not strictly sorted in dictionary order.",
+        ));
+    }
+    let overlapping = spans
+        .windows(2)
+        .position(|pair| pair[0].contig == pair[1].contig && pair[1].start <= pair[0].end);
+    if let Some(at) = overlapping {
+        return Err(illegal(format!(
+            "Records contain at least two overlapping intervals: {} and {}",
+            record(at),
+            record(at + 1)
+        )));
+    }
+    Ok(())
 }
 
 /// `new CopyRatioCollection(file)`.
-fn read_copy_ratios(path: &str) -> Result<CopyRatios, Thrown> {
+pub fn read_copy_ratios(path: &str) -> Result<CopyRatios, Thrown> {
     let table = read_table(path)?;
     let metadata = table.metadata()?;
-    let (contig, start, end, value) = (
-        table.column("CONTIG")?,
-        table.column("START")?,
-        table.column("END")?,
-        table.column("LOG2_COPY_RATIO")?,
-    );
-    let mut records = Vec::with_capacity(table.rows.len());
-    for fields in &table.rows {
-        records.push((
-            Span {
-                contig: fields[contig].clone(),
-                start: parse_int(&fields[start])?,
-                end: parse_int(&fields[end])?,
-            },
-            parse_double(&fields[value])?,
-        ));
-    }
+    let [contig, start, end, value] =
+        table.mandatory(["CONTIG", "START", "END", "LOG2_COPY_RATIO"])?;
+    let records = table.decode(|row| {
+        let (first, last) = (row.int(start)?, row.int(end)?);
+        let ratio = row.double(value)?;
+        Ok((simple_interval(row.get(contig), first, last)?, ratio))
+    })?;
+    let spans: Vec<Span> = records.iter().map(|(span, _)| span.clone()).collect();
+    validate_intervals(&metadata.dictionary, &spans, |at| {
+        format!(
+            "CopyRatio{{interval={}, log2CopyRatioValue={}}}",
+            records[at].0.render(),
+            gatk_engine::tsv_table::java_double_to_string(records[at].1)
+        )
+    })?;
     Ok(CopyRatios { metadata, records })
 }
 
@@ -292,31 +469,143 @@ fn nucleotide(text: &str) -> String {
 }
 
 /// `new AllelicCountCollection(file)`.
-fn read_allelic_counts(path: &str) -> Result<AllelicCounts, Thrown> {
+pub fn read_allelic_counts(path: &str) -> Result<AllelicCounts, Thrown> {
     let table = read_table(path)?;
     let metadata = table.metadata()?;
-    let (contig, position, reference, alternate, reference_base, alternate_base) = (
-        table.column("CONTIG")?,
-        table.column("POSITION")?,
-        table.column("REF_COUNT")?,
-        table.column("ALT_COUNT")?,
-        table.column("REF_NUCLEOTIDE")?,
-        table.column("ALT_NUCLEOTIDE")?,
-    );
-    let mut records = Vec::with_capacity(table.rows.len());
-    for fields in &table.rows {
-        records.push((
+    let [contig, position, reference, alternate, reference_base, alternate_base] = table
+        .mandatory([
+            "CONTIG",
+            "POSITION",
+            "REF_COUNT",
+            "ALT_COUNT",
+            "REF_NUCLEOTIDE",
+            "ALT_NUCLEOTIDE",
+        ])?;
+    let records = table.decode(|row| {
+        let site = row.int(position)?;
+        let (ref_count, alt_count) = (row.int(reference)?, row.int(alternate)?);
+        let reference_nucleotide = nucleotide(row.get(reference_base));
+        let alternate_nucleotide = nucleotide(row.get(alternate_base));
+        simple_interval(row.get(contig), site, site)?;
+        if ref_count < 0 || alt_count < 0 {
+            return Err(illegal(
+                "Can't construct AllelicCount with negative read counts.",
+            ));
+        }
+        Ok((
             Het {
-                contig: fields[contig].clone(),
-                position: parse_int(&fields[position])?,
-                ref_count: parse_int(&fields[reference])?,
-                alt_count: parse_int(&fields[alternate])?,
+                contig: row.get(contig).to_string(),
+                position: site,
+                ref_count,
+                alt_count,
             },
-            nucleotide(&fields[reference_base]),
-            nucleotide(&fields[alternate_base]),
-        ));
-    }
+            reference_nucleotide,
+            alternate_nucleotide,
+        ))
+    })?;
+    let spans: Vec<Span> = records
+        .iter()
+        .map(|(het, _, _)| Span {
+            contig: het.contig.clone(),
+            start: het.position,
+            end: het.position,
+        })
+        .collect();
+    validate_intervals(&metadata.dictionary, &spans, |at| {
+        let (het, reference_nucleotide, alternate_nucleotide) = &records[at];
+        format!(
+            "AllelicCount{{interval={}, refReadCount={}, altReadCount={}, refNucleotide={}, \
+             altNucleotide={}}}",
+            spans[at].render(),
+            het.ref_count,
+            het.alt_count,
+            reference_nucleotide,
+            alternate_nucleotide
+        )
+    })?;
     Ok(AllelicCounts { metadata, records })
+}
+
+/// One row of a modeled-segments file, the columns a reader of the file looks at.
+#[derive(Debug, Clone)]
+pub struct ModeledSegmentRow {
+    pub span: Span,
+    pub num_points_copy_ratio: i32,
+    pub num_points_allele_fraction: i32,
+}
+
+/// A modeled-segments file.
+#[derive(Debug, Clone)]
+pub struct ModeledSegments {
+    pub metadata: Metadata,
+    pub records: Vec<ModeledSegmentRow>,
+}
+
+/// `new ModeledSegmentCollection(file)`.
+pub fn read_modeled_segments(path: &str) -> Result<ModeledSegments, Thrown> {
+    let table = read_table(path)?;
+    let metadata = table.metadata()?;
+    let [contig, start, end, copy_ratio, allele_fraction, a, b, c, d, e, f] = table.mandatory([
+        "CONTIG",
+        "START",
+        "END",
+        "NUM_POINTS_COPY_RATIO",
+        "NUM_POINTS_ALLELE_FRACTION",
+        "LOG2_COPY_RATIO_POSTERIOR_10",
+        "LOG2_COPY_RATIO_POSTERIOR_50",
+        "LOG2_COPY_RATIO_POSTERIOR_90",
+        "MINOR_ALLELE_FRACTION_POSTERIOR_10",
+        "MINOR_ALLELE_FRACTION_POSTERIOR_50",
+        "MINOR_ALLELE_FRACTION_POSTERIOR_90",
+    ])?;
+    let records = table.decode(|row| {
+        let (first, last) = (row.int(start)?, row.int(end)?);
+        let num_points_copy_ratio = row.int(copy_ratio)?;
+        let num_points_allele_fraction = row.int(allele_fraction)?;
+        for column in [a, b, c, d, e, f] {
+            row.double(column)?;
+        }
+        let span = simple_interval(row.get(contig), first, last)?;
+        if num_points_copy_ratio <= 0 && num_points_allele_fraction <= 0 {
+            return Err(illegal(format!(
+                "Number of copy-ratio points or number of allele-fraction points must be \
+                 positive: {}",
+                span.render()
+            )));
+        }
+        Ok(ModeledSegmentRow {
+            span,
+            num_points_copy_ratio,
+            num_points_allele_fraction,
+        })
+    })?;
+    let spans: Vec<Span> = records.iter().map(|record| record.span.clone()).collect();
+    // `ModeledSegment` has no `toString`: the reference prints `Object`'s, with an identity hash
+    // no two of its runs share, so nothing here can match those digits.
+    validate_intervals(&metadata.dictionary, &spans, |_| {
+        "org.broadinstitute.hellbender.tools.copynumber.formats.records.ModeledSegment".to_string()
+    })?;
+    Ok(ModeledSegments { metadata, records })
+}
+
+/// `new SimpleIntervalCollection(file)`, for the dictionary its header holds.
+pub fn read_interval_collection(path: &str) -> Result<Vec<SequenceRecord>, Thrown> {
+    let table = read_table(path)?;
+    let [contig, start, end] = table.mandatory(["CONTIG", "START", "END"])?;
+    let spans = table.decode(|row| {
+        let (first, last) = (row.int(start)?, row.int(end)?);
+        simple_interval(row.get(contig), first, last)
+    })?;
+    validate_intervals(&table.header.sequences, &spans, |at| spans[at].render())?;
+    Ok(table.header.sequences)
+}
+
+fn interval_list_int(text: &str) -> Result<i32, Thrown> {
+    text.trim().parse().map_err(|_| {
+        Thrown::user(format!(
+            "Bad input: Expected an integer value but found {text}"
+        ))
+    })
 }
 
 /// `IntervalList.fromFile`: the header's dictionary and the intervals under it.
@@ -344,8 +633,8 @@ fn read_interval_list(path: &str) -> Result<(Vec<SequenceRecord>, Vec<Span>), Th
         }
         intervals.push(Span {
             contig: fields[0].to_string(),
-            start: parse_int(fields[1])?,
-            end: parse_int(fields[2])?,
+            start: interval_list_int(fields[1])?,
+            end: interval_list_int(fields[2])?,
         });
     }
     Ok((header.sequences, intervals))

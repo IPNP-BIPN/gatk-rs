@@ -267,7 +267,7 @@ pub fn quote_if_needed(value: &str) -> String {
 }
 
 /// opencsv's parser: tab-separated, with quotes and backslash escapes.
-fn split_line(line: &str) -> Vec<String> {
+pub fn split_line(line: &str) -> Vec<String> {
     let mut values = Vec::new();
     let mut current = String::new();
     let mut in_quotes = false;

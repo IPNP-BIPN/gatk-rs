@@ -115,6 +115,7 @@ pub mod haplotype_caller_engine;
 pub mod haplotype_collapsing;
 pub mod hc_genotyping;
 pub mod hc_region;
+pub mod hdf5_reader;
 pub mod hdf5_writer;
 pub mod hopscotch;
 pub mod htsget_reader;

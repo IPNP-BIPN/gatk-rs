@@ -563,6 +563,22 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.spark.bwa.BwaSpark());
         declarations("BwaAndMarkDuplicatesPipelineSpark",
                 new org.broadinstitute.hellbender.tools.spark.pipelines.BwaAndMarkDuplicatesPipelineSpark());
+        declarations("PlotDenoisedCopyRatios",
+                new org.broadinstitute.hellbender.tools.copynumber.plotting.PlotDenoisedCopyRatios());
+        declarations("PlotModeledSegments",
+                new org.broadinstitute.hellbender.tools.copynumber.plotting.PlotModeledSegments());
+        declarations("DetermineGermlineContigPloidy",
+                new org.broadinstitute.hellbender.tools.copynumber.DetermineGermlineContigPloidy());
+        declarations("GermlineCNVCaller",
+                new org.broadinstitute.hellbender.tools.copynumber.GermlineCNVCaller());
+        declarations("PostprocessGermlineCNVCalls",
+                new org.broadinstitute.hellbender.tools.copynumber.PostprocessGermlineCNVCalls());
+        declarations("ScoreVariantAnnotations",
+                new org.broadinstitute.hellbender.tools.walkers.vqsr.scalable.ScoreVariantAnnotations());
+        declarations("TrainVariantAnnotationsModel",
+                new org.broadinstitute.hellbender.tools.walkers.vqsr.scalable.TrainVariantAnnotationsModel());
+        declarations("NVScoreVariants",
+                new org.broadinstitute.hellbender.tools.walkers.vqsr.NVScoreVariants());
         declarations("HtsgetReader",
                 new org.broadinstitute.hellbender.tools.HtsgetReader());
         declarations("CpxVariantReInterpreterSpark",

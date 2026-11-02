@@ -4081,6 +4081,7 @@ public class MakeFixtures {
                 StandardCharsets.UTF_8);
         pathSeqTaxonomy(dir);
         modelSegments(dir);
+        interpreterTools(dir);
         funcotatorDownloaderFixtures(dir);
         funcotatorFixtures(dir);
         bwaIndexImage(dir);
@@ -7255,6 +7256,54 @@ public class MakeFixtures {
      * intervals and the sites, which multi-sample segmentation requires, and differs in its
      * values. The segments list is what --segments reads in place of the kernel segmentation.
      */
+    /**
+     * The tools that stop at an interpreter, under it/: the tables the plots read, in two contigs a
+     * dictionary keeps and one it can drop, two scorers' prefixes a walker only asks can be read,
+     * and an annotations file the reference writes for the trainer.
+     */
+    static void interpreterTools(final Path root) throws Exception {
+        final Path dir = root.resolve("it");
+        Files.createDirectories(dir);
+        final String sequences = "@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:2000000\n@SQ\tSN:chr2\tLN:1500000\n";
+        final String header = sequences + "@RG\tID:GATKCopyNumber\tSM:sampleA\n";
+        final String ratios = header + "CONTIG\tSTART\tEND\tLOG2_COPY_RATIO\n"
+                + "chr1\t1000\t1999\t0.5\nchr1\t2000\t2999\t-0.25\nchr2\t500\t999\t1.0\n";
+        final String columns = "CONTIG\tSTART\tEND\tNUM_POINTS_COPY_RATIO\tNUM_POINTS_ALLELE_FRACTION\t"
+                + "LOG2_COPY_RATIO_POSTERIOR_10\tLOG2_COPY_RATIO_POSTERIOR_50\tLOG2_COPY_RATIO_POSTERIOR_90\t"
+                + "MINOR_ALLELE_FRACTION_POSTERIOR_10\tMINOR_ALLELE_FRACTION_POSTERIOR_50\tMINOR_ALLELE_FRACTION_POSTERIOR_90\n";
+        final String posteriors = "\t0.1\t0.2\t0.3\t0.4\t0.45\t0.5\n";
+        Files.writeString(dir.resolve("ref.dict"), sequences, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("chr1.dict"), "@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:2000000\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("standardized.tsv"), ratios, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("denoised.tsv"), ratios.replace("0.5", "0.75"), StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("denoised-other.tsv"), ratios.replace("chr2\t500", "chr2\t600"), StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("allelic.tsv"), header + "CONTIG\tPOSITION\tREF_COUNT\tALT_COUNT\tREF_NUCLEOTIDE\tALT_NUCLEOTIDE\n"
+                + "chr1\t1500\t10\t12\tA\tC\nchr1\t2500\t8\t9\tG\tT\nchr2\t700\t4\t3\tT\tN\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("segments.seg"), header + columns
+                + "chr1\t1000\t2999\t2\t2" + posteriors + "chr2\t500\t999\t1\t1" + posteriors, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("segments-wrong.seg"), header + columns
+                + "chr1\t1000\t2999\t3\t3" + posteriors + "chr2\t500\t999\t1\t1" + posteriors, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("hyperparameters.json"), "{}\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("hyperparameters2.json"), "{\"n_estimators\": 10}\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("score.py"), "# never run: the image has no python\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("score2.py"), "# nor this one\n", StandardCharsets.UTF_8);
+        for (final String scorer : List.of("both.snp", "both.indel", "snp.snp")) {
+            Files.writeString(dir.resolve(scorer + ".scorer.pkl"), "no pickle\n", StandardCharsets.UTF_8);
+        }
+        final Path shard = dir.resolve("shard");
+        Files.createDirectories(shard);
+        Files.writeString(shard.resolve("interval_list.tsv"), sequences
+                + "CONTIG\tSTART\tEND\nchr1\t1000\t1999\nchr1\t2000\t2999\n", StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.tools.walkers.vqsr.scalable.ExtractVariantAnnotations().instanceMain(new String[] {
+                "-V", root.resolve("vr_calls.vcf").toString(),
+                "--resource:train,training=true,calibration=true", root.resolve("vr_train.vcf").toString(),
+                "-A", "QD", "-A", "MQ",
+                "-O", dir.resolve("extract").toString(),
+                "--maximum-number-of-unlabeled-variants", "100",
+                "--add-output-vcf-command-line", "false",
+                "--do-not-gzip-vcf-output", "--create-output-variant-index", "false"});
+    }
+
     static void modelSegments(final Path root) throws Exception {
         final Path dir = root.resolve("ms");
         Files.createDirectories(dir);

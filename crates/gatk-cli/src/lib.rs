@@ -373,6 +373,14 @@ pub fn runner(name: &str) -> Option<Runner> {
         "ApplyVQSR" => Some(run_apply_vqsr),
         "VariantRecalibrator" => Some(run_variant_recalibrator),
         "ExtractVariantAnnotations" => Some(run_extract_variant_annotations),
+        "PlotDenoisedCopyRatios" => Some(run_plot_denoised_copy_ratios),
+        "PlotModeledSegments" => Some(run_plot_modeled_segments),
+        "DetermineGermlineContigPloidy" => Some(run_determine_germline_contig_ploidy),
+        "GermlineCNVCaller" => Some(run_germline_cnv_caller),
+        "PostprocessGermlineCNVCalls" => Some(run_postprocess_germline_cnv_calls),
+        "ScoreVariantAnnotations" => Some(run_score_variant_annotations),
+        "TrainVariantAnnotationsModel" => Some(run_train_variant_annotations_model),
+        "NVScoreVariants" => Some(run_nv_score_variants),
         "FilterAlignmentArtifacts" => Some(run_filter_alignment_artifacts),
         "VCFComparator" => Some(run_vcf_comparator),
         "SVStratify" => Some(run_sv_stratify),
@@ -832,6 +840,38 @@ fn run_apply_vqsr(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_variant_recalibrator(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::variant_recalibrator(&parsed("VariantRecalibrator", args)?)
+}
+
+fn run_plot_denoised_copy_ratios(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::plot_denoised_copy_ratios(&parsed("PlotDenoisedCopyRatios", args)?)
+}
+
+fn run_plot_modeled_segments(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::plot_modeled_segments(&parsed("PlotModeledSegments", args)?)
+}
+
+fn run_determine_germline_contig_ploidy(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::determine_germline_contig_ploidy(&parsed("DetermineGermlineContigPloidy", args)?)
+}
+
+fn run_germline_cnv_caller(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::germline_cnv_caller(&parsed("GermlineCNVCaller", args)?)
+}
+
+fn run_postprocess_germline_cnv_calls(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::postprocess_germline_cnv_calls(&parsed("PostprocessGermlineCNVCalls", args)?)
+}
+
+fn run_score_variant_annotations(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::score_variant_annotations(&parsed("ScoreVariantAnnotations", args)?)
+}
+
+fn run_train_variant_annotations_model(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::train_variant_annotations_model(&parsed("TrainVariantAnnotationsModel", args)?)
+}
+
+fn run_nv_score_variants(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::nv_score_variants(&parsed("NVScoreVariants", args)?)
 }
 
 fn run_extract_variant_annotations(args: &[String]) -> Result<Option<String>, Thrown> {

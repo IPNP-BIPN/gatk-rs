@@ -209,7 +209,10 @@ def cross_check(tool, entries):
 
 # A tool with no @DocumentedFeature is one the inventory reads no summary for, so its annotation's
 # is written out here.
-UNDOCUMENTED_SUMMARIES = {"HtsgetReader": "Download a file using htsget"}
+UNDOCUMENTED_SUMMARIES = {
+    "HtsgetReader": "Download a file using htsget",
+    "NVScoreVariants": "Annotate a VCF with scores from a PyTorch-based Convolutional Neural Network (CNN)",
+}
 
 
 def summary_table(tools):

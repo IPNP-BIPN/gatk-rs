@@ -254,9 +254,13 @@ pub const DESCRIPTOR: &str = "readFilter";
 /// descriptor has no `--read-filter` to answer for.
 pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
     match tool {
-        "CountReads" | "CountVariants" | "PrintReads" | "ApplyBQSR" | "SelectVariants" => {
-            Some(&["WellformedReadFilter"])
-        }
+        "CountReads"
+        | "CountVariants"
+        | "PrintReads"
+        | "ApplyBQSR"
+        | "SelectVariants"
+        | "PostprocessGermlineCNVCalls"
+        | "ScoreVariantAnnotations" => Some(&["WellformedReadFilter"]),
         // `Pileup.getDefaultReadFilters` is the walker's own plus three of its own, and they are
         // not decoration: each one changes which reads reach a pileup, and therefore the depth
         // every line of the output reports.

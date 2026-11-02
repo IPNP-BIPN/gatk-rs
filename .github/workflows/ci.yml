@@ -499,8 +499,8 @@ jobs:
             suites: "mutect2-resources mutect2-f1r2 mutect2-permutect hc-allele-graphs mutect2-dragstr"
           - group: oracle-backed
             index: "71/71"
-            slug: "spark-walkers-htsget-reader"
-            suites: "spark-walkers htsget-reader"
+            slug: "spark-walkers-htsget-reader-interpreter-tools"
+            suites: "spark-walkers htsget-reader interpreter-tools"
     steps:
       - uses: actions/checkout@v7
 
@@ -597,6 +597,9 @@ jobs:
             --tool CollectInsertSizeMetricsSpark --tool CompareDuplicatesSpark \
             --tool CollectMultipleMetricsSpark --tool MarkDuplicatesSpark --tool CollectAllelicCountsSpark \
             --tool BwaSpark --tool BwaAndMarkDuplicatesPipelineSpark --tool ParallelCopyGCSDirectoryIntoHDFSSpark --tool PathSeqBwaSpark --tool PathSeqPipelineSpark --tool FindBadGenomicKmersSpark --tool CalcMetadataSpark --tool ExtractSVEvidenceSpark --tool DiscoverVariantsFromContigAlignmentsSAMSpark --tool SvDiscoverFromLocalAssemblyContigAlignmentsSpark --tool CpxVariantReInterpreterSpark --tool HtsgetReader --tool HaplotypeCallerSpark --tool ReadsPipelineSpark --tool PathSeqFilterSpark --tool PathSeqScoreSpark \
+            --tool PlotDenoisedCopyRatios --tool PlotModeledSegments --tool DetermineGermlineContigPloidy \
+            --tool GermlineCNVCaller --tool PostprocessGermlineCNVCalls --tool ScoreVariantAnnotations \
+            --tool TrainVariantAnnotationsModel --tool NVScoreVariants \
             --tool ExtractOriginalAlignmentRecordsByNameSpark --tool MeanQualityByCycleSpark \
             --tool QualityScoreDistributionSpark --tool CollectBaseDistributionByCycleSpark \
             --tool CollectQualityYieldMetricsSpark \

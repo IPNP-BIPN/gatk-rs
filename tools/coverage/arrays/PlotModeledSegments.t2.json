@@ -1,0 +1,430 @@
+{
+  "tool": "PlotModeledSegments",
+  "origin": "gatk",
+  "t": 2,
+  "numeric_policy": "strict",
+  "arguments_total": 22,
+  "arguments_in_array": 12,
+  "arguments_excluded": 10,
+  "excluded": [
+    {
+      "argument": "--arguments_file",
+      "type": "List[File]",
+      "reason": "excluded by the repository: expands into the command line itself, which is measured by the barclay-arguments-file suite instead",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gatk-config-file",
+      "type": "String",
+      "reason": "excluded by the repository: a configuration file the corpus does not carry; varying it would measure the config loader",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gcs-max-retries",
+      "type": "int",
+      "reason": "excluded by the repository: reaches nothing without a cloud path in the row",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gcs-project-for-requester-pays",
+      "type": "String",
+      "reason": "excluded by the repository: reaches nothing without a cloud path in the row",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--help",
+      "type": "boolean",
+      "reason": "excluded by the repository: prints the usage and returns; the row would measure the argument parser rather than the tool",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--QUIET",
+      "type": "Boolean",
+      "reason": "excluded by the repository: suppresses the log on stderr, and what is compared is stdout and the output file",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--showHidden",
+      "type": "boolean",
+      "reason": "excluded by the repository: changes the usage text only",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--use-jdk-inflater",
+      "type": "boolean",
+      "reason": "excluded by the repository: chooses an inflater, and the input is read the same way either way",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--verbosity",
+      "type": "LogLevel",
+      "reason": "excluded by the repository: log level on stderr, same reason",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--version",
+      "type": "boolean",
+      "reason": "excluded by the repository: prints the version and returns, same reason",
+      "held_at": null,
+      "source": "none"
+    }
+  ],
+  "rows": 11,
+  "tuples_total": 264,
+  "tuples_covered": 264,
+  "tuples_forbidden": 0,
+  "constraint_notes": [],
+  "coverage": 1.0,
+  "array": [
+    {
+      "row": 0,
+      "labels": {
+        "--allelic-counts": "fixture[0]",
+        "--denoised-copy-ratios": "fixture[0]",
+        "--maximum-copy-ratio": "fixture[0]",
+        "--minimum-contig-length": "fixture[0]",
+        "--output": "fixture[0]",
+        "--output-prefix": "fixture[0]",
+        "--point-size-allele-fraction": "fixture[0]",
+        "--point-size-copy-ratio": "fixture[0]",
+        "--segments": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--allelic-counts=/work/fixtures/it/allelic.tsv",
+        "--denoised-copy-ratios=/work/fixtures/it/denoised.tsv",
+        "--maximum-copy-ratio=4.0",
+        "--minimum-contig-length=1000000",
+        "--output=/work/out/plots",
+        "--output-prefix=sample",
+        "--point-size-allele-fraction=0.4",
+        "--point-size-copy-ratio=0.2",
+        "--segments=/work/fixtures/it/segments.seg",
+        "--sequence-dictionary=/work/fixtures/it/ref.dict",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 1,
+      "labels": {
+        "--allelic-counts": "fixture[0]",
+        "--denoised-copy-ratios": "fixture[1]",
+        "--maximum-copy-ratio": "fixture[1]",
+        "--minimum-contig-length": "fixture[1]",
+        "--output": "fixture[1]",
+        "--output-prefix": "fixture[1]",
+        "--point-size-allele-fraction": "fixture[1]",
+        "--point-size-copy-ratio": "fixture[1]",
+        "--segments": "fixture[1]",
+        "--sequence-dictionary": "fixture[1]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--allelic-counts=/work/fixtures/it/allelic.tsv",
+        "--denoised-copy-ratios=null",
+        "--maximum-copy-ratio=Infinity",
+        "--minimum-contig-length=2000001",
+        "--output=/work/out",
+        "--output-prefix=other",
+        "--point-size-allele-fraction=1.0",
+        "--point-size-copy-ratio=1.0",
+        "--segments=/work/fixtures/it/segments-wrong.seg",
+        "--sequence-dictionary=/work/fixtures/it/chr1.dict",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 2,
+      "labels": {
+        "--allelic-counts": "fixture[1]",
+        "--denoised-copy-ratios": "fixture[0]",
+        "--maximum-copy-ratio": "fixture[1]",
+        "--minimum-contig-length": "fixture[0]",
+        "--output": "fixture[1]",
+        "--output-prefix": "fixture[0]",
+        "--point-size-allele-fraction": "fixture[1]",
+        "--point-size-copy-ratio": "fixture[0]",
+        "--segments": "fixture[1]",
+        "--sequence-dictionary": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--allelic-counts=null",
+        "--denoised-copy-ratios=/work/fixtures/it/denoised.tsv",
+        "--maximum-copy-ratio=Infinity",
+        "--minimum-contig-length=1000000",
+        "--output=/work/out",
+        "--output-prefix=sample",
+        "--point-size-allele-fraction=1.0",
+        "--point-size-copy-ratio=0.2",
+        "--segments=/work/fixtures/it/segments-wrong.seg",
+        "--sequence-dictionary=/work/fixtures/it/ref.dict",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 3,
+      "labels": {
+        "--allelic-counts": "fixture[1]",
+        "--denoised-copy-ratios": "fixture[1]",
+        "--maximum-copy-ratio": "fixture[0]",
+        "--minimum-contig-length": "fixture[1]",
+        "--output": "fixture[0]",
+        "--output-prefix": "fixture[1]",
+        "--point-size-allele-fraction": "fixture[0]",
+        "--point-size-copy-ratio": "fixture[1]",
+        "--segments": "fixture[0]",
+        "--sequence-dictionary": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--allelic-counts=null",
+        "--denoised-copy-ratios=null",
+        "--maximum-copy-ratio=4.0",
+        "--minimum-contig-length=2000001",
+        "--output=/work/out/plots",
+        "--output-prefix=other",
+        "--point-size-allele-fraction=0.4",
+        "--point-size-copy-ratio=1.0",
+        "--segments=/work/fixtures/it/segments.seg",
+        "--sequence-dictionary=/work/fixtures/it/chr1.dict",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 4,
+      "labels": {
+        "--allelic-counts": "fixture[0]",
+        "--denoised-copy-ratios": "fixture[0]",
+        "--maximum-copy-ratio": "fixture[1]",
+        "--minimum-contig-length": "fixture[1]",
+        "--output": "fixture[0]",
+        "--output-prefix": "fixture[0]",
+        "--point-size-allele-fraction": "fixture[0]",
+        "--point-size-copy-ratio": "fixture[1]",
+        "--segments": "fixture[1]",
+        "--sequence-dictionary": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--allelic-counts=/work/fixtures/it/allelic.tsv",
+        "--denoised-copy-ratios=/work/fixtures/it/denoised.tsv",
+        "--maximum-copy-ratio=Infinity",
+        "--minimum-contig-length=2000001",
+        "--output=/work/out/plots",
+        "--output-prefix=sample",
+        "--point-size-allele-fraction=0.4",
+        "--point-size-copy-ratio=1.0",
+        "--segments=/work/fixtures/it/segments-wrong.seg",
+        "--sequence-dictionary=/work/fixtures/it/ref.dict",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 5,
+      "labels": {
+        "--allelic-counts": "fixture[0]",
+        "--denoised-copy-ratios": "fixture[1]",
+        "--maximum-copy-ratio": "fixture[0]",
+        "--minimum-contig-length": "fixture[0]",
+        "--output": "fixture[0]",
+        "--output-prefix": "fixture[0]",
+        "--point-size-allele-fraction": "fixture[1]",
+        "--point-size-copy-ratio": "fixture[0]",
+        "--segments": "fixture[0]",
+        "--sequence-dictionary": "fixture[1]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--allelic-counts=/work/fixtures/it/allelic.tsv",
+        "--denoised-copy-ratios=null",
+        "--maximum-copy-ratio=4.0",
+        "--minimum-contig-length=1000000",
+        "--output=/work/out/plots",
+        "--output-prefix=sample",
+        "--point-size-allele-fraction=1.0",
+        "--point-size-copy-ratio=0.2",
+        "--segments=/work/fixtures/it/segments.seg",
+        "--sequence-dictionary=/work/fixtures/it/chr1.dict",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 6,
+      "labels": {
+        "--allelic-counts": "fixture[0]",
+        "--denoised-copy-ratios": "fixture[1]",
+        "--maximum-copy-ratio": "fixture[0]",
+        "--minimum-contig-length": "fixture[1]",
+        "--output": "fixture[1]",
+        "--output-prefix": "fixture[0]",
+        "--point-size-allele-fraction": "fixture[0]",
+        "--point-size-copy-ratio": "fixture[0]",
+        "--segments": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--allelic-counts=/work/fixtures/it/allelic.tsv",
+        "--denoised-copy-ratios=null",
+        "--maximum-copy-ratio=4.0",
+        "--minimum-contig-length=2000001",
+        "--output=/work/out",
+        "--output-prefix=sample",
+        "--point-size-allele-fraction=0.4",
+        "--point-size-copy-ratio=0.2",
+        "--segments=/work/fixtures/it/segments.seg",
+        "--sequence-dictionary=/work/fixtures/it/ref.dict",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 7,
+      "labels": {
+        "--allelic-counts": "fixture[0]",
+        "--denoised-copy-ratios": "fixture[0]",
+        "--maximum-copy-ratio": "fixture[1]",
+        "--minimum-contig-length": "fixture[0]",
+        "--output": "fixture[0]",
+        "--output-prefix": "fixture[1]",
+        "--point-size-allele-fraction": "fixture[0]",
+        "--point-size-copy-ratio": "fixture[0]",
+        "--segments": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--allelic-counts=/work/fixtures/it/allelic.tsv",
+        "--denoised-copy-ratios=/work/fixtures/it/denoised.tsv",
+        "--maximum-copy-ratio=Infinity",
+        "--minimum-contig-length=1000000",
+        "--output=/work/out/plots",
+        "--output-prefix=other",
+        "--point-size-allele-fraction=0.4",
+        "--point-size-copy-ratio=0.2",
+        "--segments=/work/fixtures/it/segments.seg",
+        "--sequence-dictionary=/work/fixtures/it/ref.dict",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 8,
+      "labels": {
+        "--allelic-counts": "fixture[0]",
+        "--denoised-copy-ratios": "fixture[0]",
+        "--maximum-copy-ratio": "fixture[0]",
+        "--minimum-contig-length": "fixture[0]",
+        "--output": "fixture[0]",
+        "--output-prefix": "fixture[1]",
+        "--point-size-allele-fraction": "fixture[1]",
+        "--point-size-copy-ratio": "fixture[1]",
+        "--segments": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--allelic-counts=/work/fixtures/it/allelic.tsv",
+        "--denoised-copy-ratios=/work/fixtures/it/denoised.tsv",
+        "--maximum-copy-ratio=4.0",
+        "--minimum-contig-length=1000000",
+        "--output=/work/out/plots",
+        "--output-prefix=other",
+        "--point-size-allele-fraction=1.0",
+        "--point-size-copy-ratio=1.0",
+        "--segments=/work/fixtures/it/segments.seg",
+        "--sequence-dictionary=/work/fixtures/it/ref.dict",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 9,
+      "labels": {
+        "--allelic-counts": "fixture[0]",
+        "--denoised-copy-ratios": "fixture[0]",
+        "--maximum-copy-ratio": "fixture[0]",
+        "--minimum-contig-length": "fixture[0]",
+        "--output": "fixture[0]",
+        "--output-prefix": "fixture[0]",
+        "--point-size-allele-fraction": "fixture[0]",
+        "--point-size-copy-ratio": "fixture[0]",
+        "--segments": "fixture[1]",
+        "--sequence-dictionary": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--allelic-counts=/work/fixtures/it/allelic.tsv",
+        "--denoised-copy-ratios=/work/fixtures/it/denoised.tsv",
+        "--maximum-copy-ratio=4.0",
+        "--minimum-contig-length=1000000",
+        "--output=/work/out/plots",
+        "--output-prefix=sample",
+        "--point-size-allele-fraction=0.4",
+        "--point-size-copy-ratio=0.2",
+        "--segments=/work/fixtures/it/segments-wrong.seg",
+        "--sequence-dictionary=/work/fixtures/it/ref.dict",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 10,
+      "labels": {
+        "--allelic-counts": "fixture[0]",
+        "--denoised-copy-ratios": "fixture[0]",
+        "--maximum-copy-ratio": "fixture[0]",
+        "--minimum-contig-length": "fixture[0]",
+        "--output": "fixture[0]",
+        "--output-prefix": "fixture[0]",
+        "--point-size-allele-fraction": "fixture[0]",
+        "--point-size-copy-ratio": "fixture[0]",
+        "--segments": "fixture[0]",
+        "--sequence-dictionary": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--allelic-counts=/work/fixtures/it/allelic.tsv",
+        "--denoised-copy-ratios=/work/fixtures/it/denoised.tsv",
+        "--maximum-copy-ratio=4.0",
+        "--minimum-contig-length=1000000",
+        "--output=/work/out/plots",
+        "--output-prefix=sample",
+        "--point-size-allele-fraction=0.4",
+        "--point-size-copy-ratio=0.2",
+        "--segments=/work/fixtures/it/segments.seg",
+        "--sequence-dictionary=/work/fixtures/it/chr1.dict",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    }
+  ]
+}
