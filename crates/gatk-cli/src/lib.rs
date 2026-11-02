@@ -427,6 +427,13 @@ pub fn runner(name: &str) -> Option<Runner> {
         "FixMisencodedBaseQualityReads" => Some(run_fix_misencoded_base_quality_reads),
         "AnnotateIntervals" => Some(run_annotate_intervals),
         "HtsgetReader" => Some(run_htsget_reader),
+        "BwaSpark" => Some(run_bwa_spark),
+        "PathSeqBwaSpark" => Some(run_pathseq_bwa_spark),
+        "ParallelCopyGCSDirectoryIntoHDFSSpark" => {
+            Some(run_parallel_copy_gcs_directory_into_hdfs_spark)
+        }
+        "PathSeqPipelineSpark" => Some(run_pathseq_pipeline_spark),
+        "BwaAndMarkDuplicatesPipelineSpark" => Some(run_bwa_and_mark_duplicates_pipeline_spark),
         "RevertBaseQualityScores" => Some(run_revert_base_quality_scores),
         "AddOriginalAlignmentTags" => Some(run_add_original_alignment_tags),
         "LeftAlignIndels" => Some(run_left_align_indels),
@@ -479,6 +486,34 @@ fn run_bwa_mem_index_image_creator(args: &[String]) -> Result<Option<String>, Th
 
 fn run_apply_bqsr(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::apply_bqsr(&parsed("ApplyBQSR", args)?)
+}
+
+fn run_bwa_and_mark_duplicates_pipeline_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::bwa_and_mark_duplicates_pipeline_spark(&parsed(
+        "BwaAndMarkDuplicatesPipelineSpark",
+        args,
+    )?)
+}
+
+fn run_pathseq_pipeline_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::pathseq_pipeline_spark(&parsed("PathSeqPipelineSpark", args)?)
+}
+
+fn run_parallel_copy_gcs_directory_into_hdfs_spark(
+    args: &[String],
+) -> Result<Option<String>, Thrown> {
+    runners::parallel_copy_gcs_directory_into_hdfs_spark(&parsed(
+        "ParallelCopyGCSDirectoryIntoHDFSSpark",
+        args,
+    )?)
+}
+
+fn run_pathseq_bwa_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::pathseq_bwa_spark(&parsed("PathSeqBwaSpark", args)?)
+}
+
+fn run_bwa_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::bwa_spark(&parsed("BwaSpark", args)?)
 }
 
 fn run_htsget_reader(args: &[String]) -> Result<Option<String>, Thrown> {

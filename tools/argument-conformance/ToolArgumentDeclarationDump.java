@@ -603,6 +603,16 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.spark.sv.evidence.ExtractSVEvidenceSpark());
         declarations("DiscoverVariantsFromContigAlignmentsSAMSpark",
                 new org.broadinstitute.hellbender.tools.spark.sv.discovery.DiscoverVariantsFromContigAlignmentsSAMSpark());
+        declarations("PathSeqBwaSpark",
+                new org.broadinstitute.hellbender.tools.spark.pathseq.PathSeqBwaSpark());
+        declarations("PathSeqPipelineSpark",
+                new org.broadinstitute.hellbender.tools.spark.pathseq.PathSeqPipelineSpark());
+        declarations("ParallelCopyGCSDirectoryIntoHDFSSpark",
+                new org.broadinstitute.hellbender.tools.spark.ParallelCopyGCSDirectoryIntoHDFSSpark());
+        declarations("BwaSpark",
+                new org.broadinstitute.hellbender.tools.spark.bwa.BwaSpark());
+        declarations("BwaAndMarkDuplicatesPipelineSpark",
+                new org.broadinstitute.hellbender.tools.spark.pipelines.BwaAndMarkDuplicatesPipelineSpark());
         declarations("HtsgetReader",
                 new org.broadinstitute.hellbender.tools.HtsgetReader());
         declarations("CpxVariantReInterpreterSpark",

@@ -25,6 +25,7 @@ pub mod ase_read_counter;
 pub mod assembly_variants_out;
 pub mod base_recalibrator;
 pub mod build_bam_index;
+pub mod bwa_aligner;
 pub mod bwa_index_image;
 pub mod bwa_mem_index_image_creator;
 pub mod calculate_average_combined_annotations;

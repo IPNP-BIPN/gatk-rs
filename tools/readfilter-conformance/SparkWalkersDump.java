@@ -89,7 +89,7 @@ public class SparkWalkersDump {
         PrintReadsDump.emptyDirectory(DIR);
         Files.createDirectories(DIR);
 
-        System.out.println("# SparkWalkersDump: thirty Spark tools through Main, --spark-master local[1]");
+        System.out.println("# SparkWalkersDump: thirty-seven Spark tools through Main, --spark-master local[1]");
 
         final Path fasta = DIR.resolve("ref.fasta");
         Files.write(fasta, ReadWalkerDump.FASTA.getBytes());
@@ -188,6 +188,7 @@ public class SparkWalkersDump {
         callerFixtures();
         filterFixtures();
         scoreFixtures();
+        bwaFixtures(DIR);
 
         // The fixtures travel, so the port runs over these bytes rather than its own rebuild.
         svEvidenceBam(DIR.resolve("sv-evidence.bam"), 300, 1L, false);
@@ -229,9 +230,15 @@ public class SparkWalkersDump {
                 "sv_assembly_too_many.bam", "sv_assembly_overlap_contained.bam", "sv_assembly_no_breakend.bam",
                 "sv_alt_tigs.txt", "sv_quality_missing.bam", "sv_cpx.vcf", "sv_cpx_empty.vcf",
                 "sv_cpx_no_dictionary.vcf", "sv_cpx_no_dictionary_one.vcf", "sv_cpx_sparse.vcf",
-                "sv_cpx_bad_segment.vcf", "sv_cpx_whole_contig.vcf", "sv_cpx_bad_length.vcf"}) {
-            System.out.printf("input\t%s\t%s%n", name,
-                    Base64.getEncoder().encodeToString(Files.readAllBytes(DIR.resolve(name))));
+                "sv_cpx_bad_segment.vcf", "sv_cpx_whole_contig.vcf", "sv_cpx_bad_length.vcf",
+                "bwa.fasta", "bwa.fasta.fai", "bwa.dict", "bwa.fasta.img", "bwa_named.img", "bwa_not_image.img",
+                "rp_known.vcf", "rp_known.vcf.idx", "rp_reads.bam", "rp_single.bam", "ps_microbe.img", "ps_microbe.dict", "ps_host.img", "ps_taxa.db", "bwa_no_image.fasta", "bwa_no_image.fasta.fai", "bwa_no_image.dict", "bwa_reads.bam",
+                "bwa_reads_unsorted.bam", "bwa_reads_no_group.bam", "bwa_reads_dictionary.bam",
+                "bwa_reads_other_dictionary.bam", "bwa_empty.bam", "bwa_iupac.bam", "bwa_no_sequence.bam",
+                "bwa_odd.bam", "bwa_names.bam", "bwa_no_qualities.bam"}) {
+            final byte[] bytes = Files.readAllBytes(DIR.resolve(name));
+            System.out.printf("input\t%s\t%s%n", name, Base64.getEncoder().encodeToString(
+                    name.endsWith(".img") && !name.equals("bwa_not_image.img") ? withoutAddresses(bytes) : bytes));
         }
 
         // COMPAREDUPLICATESSPARK prints what it found; only the second BAM skips the read filter.
@@ -543,6 +550,8 @@ public class SparkWalkersDump {
         discoveryRows();
         assemblyRows();
         reinterpreterRows();
+        bwaRows();
+        pathSeqBwaRows();
 
         // CALCMETADATASPARK reads everything, filters nothing, and names one partition.
         final String metadata = "CalcMetadataSpark";
@@ -1309,6 +1318,467 @@ public class SparkWalkersDump {
         }
     }
 
+    /**
+     * BwaSpark: BWA through the JNI, the supplementary lines a paired run filters away, and the
+     * refusals of the engine. Its pipeline marks duplicates over the same alignment.
+     */
+    static void bwaRows() throws Exception {
+        final String reference = DIR.resolve("bwa.fasta").toString();
+        final String[][] runs = {
+                {"bwa-paired", "BwaSpark", "bwa_reads.bam"},
+                {"bwa-single", "BwaSpark", "bwa_reads.bam", "--single-end-alignment"},
+                {"bwa-named-image", "BwaSpark", "bwa_reads.bam", "--bwa-mem-index-image", DIR.resolve("bwa_named.img").toString()},
+                {"bwa-image-missing", "BwaSpark", "bwa_reads.bam", "--bwa-mem-index-image", DIR.resolve("nowhere.img").toString()},
+                {"bwa-unsorted", "BwaSpark", "bwa_reads_unsorted.bam"},
+                {"bwa-unsorted-single", "BwaSpark", "bwa_reads_unsorted.bam", "--single-end-alignment"},
+                {"bwa-no-group", "BwaSpark", "bwa_reads_no_group.bam"},
+                {"bwa-dictionary", "BwaSpark", "bwa_reads_dictionary.bam"},
+                {"bwa-other-dictionary", "BwaSpark", "bwa_reads_other_dictionary.bam"},
+                {"bwa-empty", "BwaSpark", "bwa_empty.bam"},
+                {"bwa-empty-single", "BwaSpark", "bwa_empty.bam", "--single-end-alignment"},
+                {"bwa-iupac", "BwaSpark", "bwa_iupac.bam"},
+                {"bwa-iupac-single", "BwaSpark", "bwa_iupac.bam", "--single-end-alignment"},
+                {"bwa-no-sequence", "BwaSpark", "bwa_no_sequence.bam"},
+                {"bwa-no-sequence-single", "BwaSpark", "bwa_no_sequence.bam", "--single-end-alignment"},
+                {"bwa-odd", "BwaSpark", "bwa_odd.bam"},
+                {"bwa-odd-single", "BwaSpark", "bwa_odd.bam", "--single-end-alignment"},
+                {"bwa-names", "BwaSpark", "bwa_names.bam"},
+                {"bwa-no-qualities", "BwaSpark", "bwa_no_qualities.bam"},
+                {"bwa-no-qualities-single", "BwaSpark", "bwa_no_qualities.bam", "--single-end-alignment"},
+                {"bwa-filter", "BwaSpark", "bwa_reads.bam", "--read-filter", "MappingQualityReadFilter",
+                        "--minimum-mapping-quality", "30"},
+                {"bwa-no-filter", "BwaSpark", "bwa_reads.bam", "--disable-tool-default-read-filters", "true"},
+                {"bwa-pipeline", "BwaAndMarkDuplicatesPipelineSpark", "bwa_reads.bam"},
+                {"bwa-pipeline-tagging", "BwaAndMarkDuplicatesPipelineSpark", "bwa_reads.bam", "--duplicate-tagging-policy", "All"},
+                {"bwa-pipeline-remove", "BwaAndMarkDuplicatesPipelineSpark", "bwa_reads.bam", "--remove-all-duplicates", "true"},
+                {"bwa-pipeline-length", "BwaAndMarkDuplicatesPipelineSpark", "bwa_reads.bam", "--duplicate-scoring-strategy",
+                        "TOTAL_MAPPED_REFERENCE_LENGTH"},
+                {"bwa-pipeline-mates", "BwaAndMarkDuplicatesPipelineSpark", "bwa_reads.bam", "--do-not-mark-unmapped-mates", "true"},
+                {"bwa-pipeline-no-group", "BwaAndMarkDuplicatesPipelineSpark", "bwa_reads_no_group.bam"},
+                {"bwa-pipeline-unsorted", "BwaAndMarkDuplicatesPipelineSpark", "bwa_reads_unsorted.bam"},
+                {"bwa-pipeline-empty", "BwaAndMarkDuplicatesPipelineSpark", "bwa_empty.bam"},
+        };
+        for (final String[] one : runs) {
+            final List<String> rest = new ArrayList<>(Arrays.asList(
+                    "-I", DIR.resolve(one[2]).toString(), "-R", reference,
+                    "--use-jdk-deflater", "true", "-O", out(one[0], "aligned.bam")));
+            rest.addAll(Arrays.asList(one).subList(3, one.length));
+            run(one[0], "aligned.bam", one[1], rest.toArray(new String[0]));
+        }
+        run("bwa-default-image-missing", "aligned.bam", "BwaSpark", "-I", DIR.resolve("bwa_reads.bam").toString(),
+                "-R", DIR.resolve("bwa_no_image.fasta").toString(), "--use-jdk-deflater", "true",
+                "-O", out("bwa-default-image-missing", "aligned.bam"));
+        run("bwa-sam", "aligned.sam", "BwaSpark", "-I", DIR.resolve("bwa_reads.bam").toString(), "-R", reference,
+                "-O", out("bwa-sam", "aligned.sam"));
+        run("bwa-sharded", "aligned.bam", "BwaSpark", "-I", DIR.resolve("bwa_reads.bam").toString(), "-R", reference,
+                "--use-jdk-deflater", "true", "--sharded-output", "true", "-O", out("bwa-sharded", "aligned.bam"));
+    }
+    /**
+     * A BWA image without the addresses `bwa_idx2mem` leaves in it, which ASLR changes on every run
+     * and nothing reads back: `bwt_t.sa`, then past the BWT and the suffix array `bntseq_t.anns`,
+     * `.ambs` and `.fp_pac`, and each `bntann1_t`'s `name` and `anno`. Only the printed row is
+     * cleaned; the reference ran on the file as BWA wrote it.
+     */
+    private static byte[] withoutAddresses(final byte[] image) {
+        final byte[] cleaned = image.clone();
+        final java.nio.ByteBuffer read = java.nio.ByteBuffer.wrap(image).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        final int bwt = Math.toIntExact(1120 + read.getLong(56) * 4 + read.getLong(1104) * 8);
+        final List<Integer> addresses = new ArrayList<>(List.of(1112, bwt + 16, bwt + 32, bwt + 40));
+        final int annotations = bwt + 48 + 16 * read.getInt(bwt + 24);
+        for (int sequence = 0; sequence < read.getInt(bwt + 8); sequence++) {
+            addresses.add(annotations + 40 * sequence + 24);
+            addresses.add(annotations + 40 * sequence + 32);
+        }
+        addresses.forEach(address -> Arrays.fill(cleaned, address, address + 8, (byte) 0));
+        return cleaned;
+    }
+
+    /**
+     * PathSeq with BWA: the aligner alone, the filter's host image, and the whole pipeline, whose
+     * batches a small partition size makes several of.
+     */
+    static void pathSeqBwaRows() throws Exception {
+        final String[] microbe = {"--microbe-bwa-image", DIR.resolve("ps_microbe.img").toString(),
+                "--microbe-dict", DIR.resolve("ps_microbe.dict").toString()};
+        final String reads = DIR.resolve("bwa_reads.bam").toString();
+        final String unsorted = DIR.resolve("bwa_reads_unsorted.bam").toString();
+        final String[][] aligner = {
+                {"psb-paired", "--paired-input", reads},
+                {"psb-unpaired", "--unpaired-input", unsorted},
+                {"psb-unpaired-queryname", "--unpaired-input", reads},
+                {"psb-both", "--paired-input", reads, "--unpaired-input", unsorted},
+                {"psb-other-missing", "--paired-input", reads, "--unpaired-input", DIR.resolve("nowhere.bam").toString()},
+                {"psb-seed", "--paired-input", reads, "--microbe-min-seed-length", "40"},
+                {"psb-seed-short", "--unpaired-input", unsorted, "--microbe-min-seed-length", "11"},
+                {"psb-score", "--paired-input", reads, "--bwa-score-threshold", "90"},
+                {"psb-score-zero", "--unpaired-input", unsorted, "--bwa-score-threshold", "0"},
+                {"psb-hits-zero", "--paired-input", reads, "--max-alternate-hits", "0"},
+                {"psb-hits", "--unpaired-input", unsorted, "--max-alternate-hits", "1"},
+                {"psb-empty", "--paired-input", DIR.resolve("bwa_empty.bam").toString()},
+                {"psb-odd", "--paired-input", DIR.resolve("bwa_odd.bam").toString()},
+                {"psb-odd-unpaired", "--unpaired-input", DIR.resolve("bwa_odd.bam").toString()},
+                {"psb-no-qualities", "--paired-input", DIR.resolve("bwa_no_qualities.bam").toString()},
+                {"psb-iupac", "--paired-input", DIR.resolve("bwa_iupac.bam").toString()},
+                {"psb-not-queryname", "--paired-input", unsorted},
+                {"psb-aligned", "--paired-input", DIR.resolve("bwa_reads_dictionary.bam").toString()},
+                {"psb-input", "-I", reads},
+                {"psb-no-inputs"},
+                {"psb-all-missing", "--paired-input", DIR.resolve("nowhere.bam").toString()},
+        };
+        for (final String[] one : aligner) {
+            final String name = one[0];
+            final List<String> rest = new ArrayList<>(Arrays.asList(microbe));
+            rest.addAll(Arrays.asList("--use-jdk-deflater", "true", "--paired-output", out(name, name + "-paired.bam"),
+                    "--unpaired-output", out(name, name + "-unpaired.bam")));
+            rest.addAll(Arrays.asList(one).subList(1, one.length));
+            run(name, name + "-paired.bam", "PathSeqBwaSpark", rest.toArray(new String[0]));
+        }
+        run("psb-no-output", null, "PathSeqBwaSpark", microbe[0], microbe[1], microbe[2], microbe[3], "--paired-input", reads);
+        run("psb-sam-output", null, "PathSeqBwaSpark", microbe[0], microbe[1], microbe[2], microbe[3], "--paired-input", reads,
+                "--paired-output", out("psb-sam-output", "p.sam"));
+        run("psb-image-missing", null, "PathSeqBwaSpark", microbe[0], DIR.resolve("nowhere.img").toString(), microbe[2], microbe[3],
+                "--paired-input", reads, "--paired-output", out("psb-image-missing", "p.bam"));
+        run("psb-dict-missing", null, "PathSeqBwaSpark", microbe[0], microbe[1], microbe[2], DIR.resolve("nowhere.dict").toString(),
+                "--paired-input", reads, "--paired-output", out("psb-dict-missing", "p.bam"));
+
+        final String[][] filter = {
+                {"psf-host"},
+                {"psf-host-skip", "--skip-quality-filters", "true"},
+                {"psf-host-seed", "--filter-bwa-seed-length", "60"},
+                {"psf-host-identity", "--host-min-identity", "95"},
+                {"psf-host-no-duplicates", "--filter-duplicates", "false"},
+                {"psf-host-missing", "--filter-bwa-image", DIR.resolve("nowhere.img").toString()},
+        };
+        for (final String[] one : filter) {
+            final String name = one[0];
+            final List<String> rest = new ArrayList<>(Arrays.asList("-I", reads, "--use-jdk-deflater", "true",
+                    "--paired-output", out(name, name + "-paired.bam"), "--unpaired-output", out(name, name + "-unpaired.bam"),
+                    "--filter-metrics", out(name, name + "Metrics.txt")));
+            if (one.length < 2 || !one[1].equals("--filter-bwa-image")) {
+                rest.addAll(Arrays.asList("--filter-bwa-image", DIR.resolve("ps_host.img").toString()));
+            }
+            rest.addAll(Arrays.asList(one).subList(1, one.length));
+            run(name, name + "-paired.bam", "PathSeqFilterSpark", rest.toArray(new String[0]));
+        }
+
+        final String db = DIR.resolve("ps_taxa.db").toString();
+        final String[][] pipeline = {
+                {"psp-default", reads},
+                {"psp-skip", reads, "--skip-quality-filters", "true"},
+                {"psp-no-duplicates", reads, "--filter-duplicates", "false", "--skip-quality-filters", "true"},
+                {"psp-host", reads, "--filter-bwa-image", DIR.resolve("ps_host.img").toString()},
+                {"psp-unsorted", unsorted},
+                {"psp-batches", reads, "--pipeline-reads-per-partition", "100", "--skip-quality-filters", "true"},
+                {"psp-batches-three", reads, "--pipeline-reads-per-partition", "256", "--skip-quality-filters", "true"},
+                {"psp-output-partition", reads, "--readsPerPartitionOutput", "100"},
+                {"psp-seed", reads, "--microbe-min-seed-length", "40"},
+                {"psp-score", reads, "--bwa-score-threshold", "90"},
+                {"psp-hits", reads, "--max-alternate-hits", "0"},
+                {"psp-identity", reads, "--min-score-identity", "0.99"},
+                {"psp-margin", reads, "--identity-margin", "0.3"},
+                {"psp-genome-length", reads, "--divide-by-genome-length", "true"},
+                {"psp-no-kingdom", reads, "--not-normalized-by-kingdom", "true"},
+                {"psp-empty", DIR.resolve("bwa_empty.bam").toString()},
+                {"psp-odd", DIR.resolve("bwa_odd.bam").toString()},
+                {"psp-reducers", reads, "--num-reducers", "2"},
+        };
+        for (final String[] one : pipeline) {
+            final String name = one[0];
+            final List<String> rest = new ArrayList<>(Arrays.asList(microbe));
+            rest.addAll(Arrays.asList("-I", one[1], "--taxonomy-file", db, "--use-jdk-deflater", "true",
+                    "--scores-output", out(name, name + ".txt"), "--output", out(name, name + ".bam"),
+                    "--filter-metrics", out(name, name + "FilterMetrics.txt"),
+                    "--score-metrics", out(name, name + "ScoreMetrics.txt"),
+                    "--score-warnings", out(name, name + "-warnings.txt")));
+            rest.addAll(Arrays.asList(one).subList(2, one.length));
+            run(name, name + ".txt", "PathSeqPipelineSpark", rest.toArray(new String[0]));
+        }
+        final String copy = "ParallelCopyGCSDirectoryIntoHDFSSpark";
+        run("copy-local-input", null, copy, "--input-gcs-path", DIR.resolve("bwa.fasta").toString(),
+                "--output-hdfs-directory", "hdfs://nowhere:1/out");
+        run("copy-local-output", null, copy, "--input-gcs-path", "gs://nowhere/in",
+                "--output-hdfs-directory", DIR.resolve("out").toString());
+        final String bwaReference = DIR.resolve("bwa.fasta").toString();
+        final String platformed = DIR.resolve("rp_reads.bam").toString();
+        final String[][] readsPipeline = {
+                {"rp-align", platformed},
+                {"rp-align-no-platform", reads},
+                {"rp-align-single", DIR.resolve("rp_single.bam").toString(), "--single-end-alignment"},
+                {"rp-align-dictionary", DIR.resolve("bwa_reads_dictionary.bam").toString()},
+                {"rp-align-unsorted", unsorted},
+                {"rp-align-named", platformed, "--bwa-mem-index-image", DIR.resolve("bwa_named.img").toString()},
+                {"rp-align-image-missing", platformed, "--bwa-mem-index-image", DIR.resolve("nowhere.img").toString()},
+                {"rp-align-no-group", DIR.resolve("bwa_reads_no_group.bam").toString()},
+                {"rp-align-empty", DIR.resolve("bwa_empty.bam").toString()},
+        };
+        for (final String[] one : readsPipeline) {
+            final String name = one[0];
+            final List<String> rest = new ArrayList<>(Arrays.asList("-I", one[1], "-R", bwaReference, "--align", "true",
+                    "--known-sites", DIR.resolve("rp_known.vcf").toString(), "--use-jdk-deflater", "true",
+                    "-O", out(name, name + ".vcf"), "--output-bam", out(name, name + ".bam")));
+            rest.addAll(Arrays.asList(one).subList(2, one.length));
+            if (rest.contains("--single-end-alignment")) {
+                rest.add("true");
+            }
+            run(name, name + ".vcf", "ReadsPipelineSpark", rest.toArray(new String[0]));
+        }
+        final String[][] missing = {
+                {"psp-image-missing", DIR.resolve("nowhere.img").toString(), microbe[3], db},
+                {"psp-dict-missing", microbe[1], DIR.resolve("nowhere.dict").toString(), db},
+                {"psp-db-missing", microbe[1], microbe[3], DIR.resolve("nowhere.db").toString()},
+        };
+        for (final String[] one : missing) {
+            run(one[0], null, "PathSeqPipelineSpark", microbe[0], one[1], microbe[2], one[2], "-I", reads,
+                    "--taxonomy-file", one[3], "--scores-output", out(one[0], "s.txt"));
+        }
+        run("psp-only-scores", "s.txt", "PathSeqPipelineSpark", microbe[0], microbe[1], microbe[2], microbe[3], "-I", reads,
+                "--taxonomy-file", db, "--scores-output", out("psp-only-scores", "s.txt"));
+    }
+
+    /**
+     * BwaSpark and its pipeline: a reference with its image, whose second contig repeats pieces of
+     * the first and holds a run of N, and reads as a sequencer would leave them, queryname sorted
+     * and unaligned. Some pairs are the same fragment twice, for the duplicate marking, and some
+     * are chimeras, junk or too short to place.
+     */
+    static void bwaFixtures(final Path dir) throws Exception {
+        final java.util.Random random = new java.util.Random(77L);
+        final java.util.function.IntFunction<String> bases = length -> {
+            final StringBuilder made = new StringBuilder(length);
+            for (int i = 0; i != length; ++i) {
+                made.append("ACGT".charAt(random.nextInt(4)));
+            }
+            return made.toString();
+        };
+        final String first = bases.apply(40000);
+        final String second = bases.apply(6000) + first.substring(1000, 3500) + "N".repeat(50) + bases.apply(4000)
+                + "R" + first.substring(9000, 11000) + bases.apply(5000);
+        final java.util.function.BiFunction<String, String, String> contig = (name, sequence) -> {
+            final StringBuilder lines = new StringBuilder(">" + name + "\n");
+            for (int at = 0; at < sequence.length(); at += 60) {
+                lines.append(sequence, at, Math.min(at + 60, sequence.length())).append('\n');
+            }
+            return lines.toString();
+        };
+        final Path fasta = dir.resolve("bwa.fasta");
+        Files.writeString(fasta, contig.apply("bwa1", first) + contig.apply("bwa2", second), StandardCharsets.UTF_8);
+        htsjdk.samtools.reference.FastaSequenceIndexCreator.create(fasta, true);
+        Files.writeString(dir.resolve("bwa.dict"), "@HD\tVN:1.6\n@SQ\tSN:bwa1\tLN:" + first.length()
+                + "\n@SQ\tSN:bwa2\tLN:" + second.length() + "\n", StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.Main().instanceMain(new String[] {"BwaMemIndexImageCreator",
+                "-I", fasta.toString(), "-O", dir.resolve("bwa.fasta.img").toString()});
+        Files.copy(dir.resolve("bwa.fasta.img"), dir.resolve("bwa_named.img"),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        Files.writeString(dir.resolve("bwa_not_image.img"), "not an image\n", StandardCharsets.UTF_8);
+        Files.copy(fasta, dir.resolve("bwa_no_image.fasta"), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        Files.copy(dir.resolve("bwa.fasta.fai"), dir.resolve("bwa_no_image.fasta.fai"),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        Files.copy(dir.resolve("bwa.dict"), dir.resolve("bwa_no_image.dict"),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+
+        final java.util.function.UnaryOperator<String> flip = sequence -> {
+            final StringBuilder flipped = new StringBuilder(sequence.length());
+            for (int at = sequence.length() - 1; at >= 0; --at) {
+                flipped.append("TGCAN".charAt(Math.max("ACGTN".indexOf(sequence.charAt(at)), 0)));
+            }
+            return flipped.toString();
+        };
+        final java.util.function.UnaryOperator<String> noisy = sequence -> {
+            final StringBuilder changed = new StringBuilder(sequence);
+            for (int at = 0; at != changed.length(); ++at) {
+                if (random.nextInt(60) == 0) {
+                    changed.setCharAt(at, "ACGT".charAt(random.nextInt(4)));
+                }
+            }
+            return changed.toString();
+        };
+        final List<String[]> pairs = new ArrayList<>();
+        String[] last = null;
+        for (int i = 0; i != 300; ++i) {
+            final String template = random.nextInt(3) == 0 ? second.replace('N', 'A').replace('R', 'A') : first;
+            final int length = 200 + random.nextInt(300);
+            final int start = random.nextInt(template.length() - length);
+            final String fragment = template.substring(start, start + length);
+            final String[] pair;
+            final int kind = random.nextInt(20);
+            if (kind == 0) {
+                pair = new String[] {bases.apply(101), bases.apply(101)};
+            } else if (kind == 1) {
+                pair = new String[] {noisy.apply(fragment.substring(0, 101)), bases.apply(101)};
+            } else if (kind == 2) {
+                final int other = random.nextInt(first.length() - 60);
+                pair = new String[] {fragment.substring(0, 50) + flip.apply(first.substring(other, other + 60)),
+                        flip.apply(fragment.substring(length - 101))};
+            } else if (kind == 3) {
+                pair = new String[] {fragment.substring(0, 15), flip.apply(fragment.substring(length - 18))};
+            } else if (kind <= 6 && last != null) {
+                pair = last;
+            } else {
+                pair = new String[] {noisy.apply(fragment.substring(0, 101)),
+                        noisy.apply(flip.apply(fragment.substring(length - 101)))};
+            }
+            pairs.add(pair);
+            last = pair;
+        }
+        bwaReadBam(dir.resolve("bwa_reads.bam"), pairs, SAMFileHeader.SortOrder.queryname, true, null);
+        bwaReadBam(dir.resolve("bwa_reads_unsorted.bam"), pairs, SAMFileHeader.SortOrder.unsorted, true, null);
+        bwaReadBam(dir.resolve("bwa_reads_no_group.bam"), pairs, SAMFileHeader.SortOrder.queryname, false, null);
+        bwaReadBam(dir.resolve("bwa_reads_dictionary.bam"), pairs, SAMFileHeader.SortOrder.queryname, true,
+                new String[] {"bwa1", String.valueOf(first.length()), "bwa2", String.valueOf(second.length())});
+        bwaReadBam(dir.resolve("bwa_reads_other_dictionary.bam"), pairs, SAMFileHeader.SortOrder.queryname, true,
+                new String[] {"bwa1", String.valueOf(first.length())});
+        bwaReadBam(dir.resolve("bwa_empty.bam"), new ArrayList<>(), SAMFileHeader.SortOrder.queryname, true, null);
+        final List<String[]> iupac = new ArrayList<>();
+        for (final String[] pair : pairs.subList(0, 40)) {
+            iupac.add(new String[] {pair[0].substring(0, 30) + "RYN" + pair[0].substring(33), pair[1]});
+        }
+        bwaReadBam(dir.resolve("bwa_iupac.bam"), iupac, SAMFileHeader.SortOrder.queryname, true, null);
+        final List<String[]> noSequence = new ArrayList<>(pairs.subList(0, 6));
+        noSequence.add(new String[] {"", pairs.get(7)[1]});
+        noSequence.addAll(pairs.subList(8, 12));
+        bwaReadBam(dir.resolve("bwa_no_sequence.bam"), noSequence, SAMFileHeader.SortOrder.queryname, true, null);
+
+        final SAMFileHeader header = new SAMFileHeader();
+        header.setSortOrder(SAMFileHeader.SortOrder.queryname);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("s");
+        header.addReadGroup(group);
+        try (SAMFileWriter writer = new SAMFileWriterFactory().makeBAMWriter(header, true, dir.resolve("bwa_odd.bam"))) {
+            for (int i = 0; i != 3; ++i) {
+                writer.addAlignment(bwaRead(header, "odd", 77, pairs.get(i)[0], true));
+            }
+        }
+        try (SAMFileWriter writer = new SAMFileWriterFactory().makeBAMWriter(header, true, dir.resolve("bwa_names.bam"))) {
+            writer.addAlignment(bwaRead(header, "a", 77, pairs.get(0)[0], true));
+            writer.addAlignment(bwaRead(header, "b", 141, pairs.get(0)[1], true));
+        }
+        try (SAMFileWriter writer = new SAMFileWriterFactory().makeBAMWriter(header, true, dir.resolve("bwa_no_qualities.bam"))) {
+            for (int i = 0; i != 10; ++i) {
+                writer.addAlignment(bwaRead(header, String.format("q%03d", i), 77, pairs.get(i)[0], false));
+                writer.addAlignment(bwaRead(header, String.format("q%03d", i), 141, pairs.get(i)[1], false));
+            }
+        }
+
+        // PathSeq's microbes are those contigs under names a taxonomy reads, one of them repeated
+        // for alternate hits and one no read can reach; its host is the second contig alone.
+        final String repeated = first.substring(20000, 24000) + bases.apply(1500);
+        final String lonely = bases.apply(1500);
+        final Path microbes = dir.resolve("ps_microbe.fasta");
+        Files.writeString(microbes, contig.apply("taxid|562|", first) + contig.apply("taxid|1280|", second)
+                + contig.apply("taxid|11234|", repeated) + contig.apply("unknown_contig", first.substring(30000, 32000))
+                + contig.apply("taxid|300|", lonely), StandardCharsets.UTF_8);
+        htsjdk.samtools.reference.FastaSequenceIndexCreator.create(microbes, true);
+        Files.writeString(dir.resolve("ps_microbe.dict"), "@HD\tVN:1.6\n@SQ\tSN:taxid|562|\tLN:" + first.length()
+                + "\n@SQ\tSN:taxid|1280|\tLN:" + second.length() + "\n@SQ\tSN:taxid|11234|\tLN:" + repeated.length()
+                + "\n@SQ\tSN:unknown_contig\tLN:2000\n@SQ\tSN:taxid|300|\tLN:" + lonely.length() + "\n",
+                StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.Main().instanceMain(new String[] {"BwaMemIndexImageCreator",
+                "-I", microbes.toString(), "-O", dir.resolve("ps_microbe.img").toString()});
+        final Path host = dir.resolve("ps_host.fasta");
+        Files.writeString(host, contig.apply("host1", second), StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.Main().instanceMain(new String[] {"BwaMemIndexImageCreator",
+                "-I", host.toString(), "-O", dir.resolve("ps_host.img").toString()});
+        final String names = String.join("\n", "1\t|\troot\t|\t\t|\tscientific name\t|",
+                "2\t|\tBacteria\t|\t\t|\tscientific name\t|", "10239\t|\tViruses\t|\t\t|\tscientific name\t|",
+                "562\t|\tEscherichia coli\t|\t\t|\tscientific name\t|", "1280\t|\tStaphylococcus aureus\t|\t\t|\tscientific name\t|",
+                "11234\t|\tMeasles morbillivirus\t|\t\t|\tscientific name\t|", "300\t|\tPseudomonas\t|\t\t|\tscientific name\t|") + "\n";
+        final String nodes = String.join("\n", "1\t|\t1\t|\tno rank\t|", "2\t|\t1\t|\tsuperkingdom\t|",
+                "10239\t|\t1\t|\tsuperkingdom\t|", "562\t|\t2\t|\tspecies\t|", "1280\t|\t2\t|\tspecies\t|",
+                "11234\t|\t10239\t|\tspecies\t|", "300\t|\t1\t|\tno rank\t|") + "\n";
+        try (final org.apache.commons.compress.archivers.tar.TarArchiveOutputStream tar =
+                     new org.apache.commons.compress.archivers.tar.TarArchiveOutputStream(
+                             new java.util.zip.GZIPOutputStream(Files.newOutputStream(dir.resolve("ps_taxa.tar.gz"))))) {
+            for (final String[] entry : new String[][] {{"names.dmp", names}, {"nodes.dmp", nodes}}) {
+                final byte[] bytes = entry[1].getBytes(StandardCharsets.UTF_8);
+                final org.apache.commons.compress.archivers.tar.TarArchiveEntry made =
+                        new org.apache.commons.compress.archivers.tar.TarArchiveEntry(entry[0]);
+                made.setSize(bytes.length);
+                made.setModTime(0L);
+                tar.putArchiveEntry(made);
+                tar.write(bytes);
+                tar.closeArchiveEntry();
+            }
+        }
+        Files.writeString(dir.resolve("rp_known.vcf"), "##fileformat=VCFv4.2\n##contig=<ID=bwa1,length=" + first.length()
+                + ">\n##contig=<ID=bwa2,length=" + second.length() + ">\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
+                + "bwa1\t5000\t.\t" + first.charAt(4999) + "\t" + (first.charAt(4999) == 'A' ? 'C' : 'A') + "\t.\t.\t.\n",
+                StandardCharsets.UTF_8);
+        Files.setLastModifiedTime(dir.resolve("rp_known.vcf"), java.nio.file.attribute.FileTime.fromMillis(0L));
+        new org.broadinstitute.hellbender.Main().instanceMain(new String[] {"IndexFeatureFile",
+                "-I", dir.resolve("rp_known.vcf").toString()});
+        try (final htsjdk.samtools.SamReader source = htsjdk.samtools.SamReaderFactory.makeDefault()
+                .open(dir.resolve("bwa_reads.bam"))) {
+            final SAMFileHeader platform = source.getFileHeader().clone();
+            platform.getReadGroups().forEach(line -> line.setPlatform("ILLUMINA"));
+            try (SAMFileWriter writer = new SAMFileWriterFactory().makeBAMWriter(platform, true,
+                    dir.resolve("rp_reads.bam"))) {
+                source.forEach(read -> {
+                    read.setHeader(platform);
+                    writer.addAlignment(read);
+                });
+            }
+        }
+        final SAMFileHeader singles = new SAMFileHeader();
+        singles.setSortOrder(SAMFileHeader.SortOrder.queryname);
+        final SAMReadGroupRecord singlesGroup = new SAMReadGroupRecord("rg1");
+        singlesGroup.setSample("s");
+        singlesGroup.setPlatform("ILLUMINA");
+        singles.addReadGroup(singlesGroup);
+        try (SAMFileWriter writer = new SAMFileWriterFactory().makeBAMWriter(singles, true, dir.resolve("rp_single.bam"))) {
+            for (int i = 0; i != 60; ++i) {
+                writer.addAlignment(bwaRead(singles, String.format("s%03d", i), 4, pairs.get(i)[0].substring(0, 60), true));
+            }
+        }
+        Files.writeString(dir.resolve("ps_taxa.catalog"), "a\tNOTHING.1\tc\td\te\tf\t562\th\n", StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.Main().instanceMain(new String[] {"PathSeqBuildReferenceTaxonomy",
+                "-R", microbes.toString(), "--tax-dump", dir.resolve("ps_taxa.tar.gz").toString(),
+                "-O", dir.resolve("ps_taxa.db").toString(), "--genbank-catalog", dir.resolve("ps_taxa.catalog").toString(),
+                "--min-non-virus-contig-length", "0"});
+    }
+
+    static void bwaReadBam(final Path bam, final List<String[]> pairs, final SAMFileHeader.SortOrder order,
+                           final boolean grouped, final String[] dictionary) {
+        final SAMFileHeader header = new SAMFileHeader();
+        header.setSortOrder(order);
+        if (grouped) {
+            final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+            group.setSample("s");
+            group.setLibrary("l");
+            header.addReadGroup(group);
+        }
+        if (dictionary != null) {
+            for (int at = 0; at < dictionary.length; at += 2) {
+                header.addSequence(new SAMSequenceRecord(dictionary[at], Integer.parseInt(dictionary[at + 1])));
+            }
+        }
+        try (SAMFileWriter writer = new SAMFileWriterFactory().makeBAMWriter(header, true, bam)) {
+            for (int i = 0; i != pairs.size(); ++i) {
+                final String name = String.format("p%04d", i);
+                writer.addAlignment(bwaRead(header, name, 77, pairs.get(i)[0], true));
+                writer.addAlignment(bwaRead(header, name, 141, pairs.get(i)[1], true));
+            }
+        }
+    }
+
+    static SAMRecord bwaRead(final SAMFileHeader header, final String name, final int flags,
+                             final String sequence, final boolean qualities) {
+        final SAMRecord read = new SAMRecord(header);
+        read.setReadName(name);
+        read.setFlags(flags);
+        read.setReadString(sequence.isEmpty() ? SAMRecord.NULL_SEQUENCE_STRING : sequence);
+        if (qualities && !sequence.isEmpty()) {
+            final byte[] scores = new byte[sequence.length()];
+            for (int at = 0; at != scores.length; ++at) {
+                scores[at] = (byte) (10 + (name.hashCode() + at * 7 & 0x1F));
+            }
+            read.setBaseQualities(scores);
+        }
+        if (!header.getReadGroups().isEmpty()) {
+            read.setAttribute("RG", "rg1");
+        }
+        return read;
+    }
+
     /** A sequence of random bases that the same seed always gives. */
     static String randomBases(final java.util.Random random, final int length) {
         final StringBuilder bases = new StringBuilder(length);
@@ -1461,6 +1931,8 @@ public class SparkWalkersDump {
                 + "chr1\t300\trs1\t" + bases.charAt(299) + "\t" + (bases.charAt(299) == 'A' ? 'C' : 'A') + "\t.\t.\t.\n"
                 + "chr1\t5040\trs2\t" + bases.charAt(5039) + "\t" + (bases.charAt(5039) == 'A' ? 'C' : 'A') + "\t.\t.\t.\n")
                 .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        // Tribble writes the file's time into the index, which would change the golden on every run.
+        Files.setLastModifiedTime(DIR.resolve("caller-known.vcf"), java.nio.file.attribute.FileTime.fromMillis(0L));
         new Main().instanceMain(new String[] {"IndexFeatureFile", "-I", DIR.resolve("caller-known.vcf").toString()});
         Files.write(DIR.resolve("caller-known.bed"), "chr1\t299\t300\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }

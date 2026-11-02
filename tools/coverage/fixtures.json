@@ -14410,7 +14410,7 @@
       ],
       "$why": [
         "HaplotypeCallerSpark's caller values, over mutect_pl.bam: mutect_t.bam under a read group that names a platform, which the recalibration refuses to go without, and that second input stays as the refusal.",
-        "The BWA arguments are held out because the port refuses --align until BWA-MEM is decided, and the flow arguments because the marking only reads them over flow reads, which this tool would recalibrate with nothing to compare. --binary-tag-name only reaches a table this tool never writes.",
+        "--align has its own suite rows, since it asks for a fixture of unaligned reads none of these values are. The flow arguments because the marking only reads them over flow reads, which this tool would recalibrate with nothing to compare. --binary-tag-name only reaches a table this tool never writes.",
         "--enable-all-annotations stays off: the reference's Kryo cannot broadcast the annotation engine it builds, and which of two exceptions it reports (a lambda, a thread) moves from row to row. The port refuses it with the first.",
         "The engine's debug files are held out: under Spark nothing closes them, so they hold what their buffers flushed, and the port refuses them rather than write them complete."
       ],
@@ -15710,7 +15710,7 @@
       "--output-shard-tmp-dir": [],
       "--read-index": [],
       "$why": [
-        "An unaligned BAM with something for each transformer and a BAM with alignments and NM tags. --filter-bwa-image and --filter-bwa-seed-length are held out: the port refuses the first, and has no step for the second. --sharded-output and the outputs' indexes are held out as for the other tools that write one BAM, and --ignore-alignment-contigs would refuse every row it fills over --is-host-aligned, so a suite row carries it.",
+        "An unaligned BAM with something for each transformer and a BAM with alignments and NM tags. --filter-bwa-image names a host image that holds nothing of those reads, so every read goes through BWA and the rows that drop some are the suite's. --sharded-output and the outputs' indexes are held out as for the other tools that write one BAM, and --ignore-alignment-contigs would refuse every row it fills over --is-host-aligned, so a suite row carries it.",
         "STRICT is held out: these reads carry flags a validator refuses, and it refuses inside a task whatever else the row holds. --sharded-output, --num-reducers and the partition size are held out because the reference then writes one part per reducer with Hadoop checksums, which the port refuses or writes as one part."
       ],
       "--input": [
@@ -15788,8 +15788,14 @@
         "1",
         "30"
       ],
-      "--filter-bwa-image": [],
-      "--filter-bwa-seed-length": [],
+      "--filter-bwa-image": [
+        "<unset>",
+        "/work/fixtures/ps_host.img"
+      ],
+      "--filter-bwa-seed-length": [
+        "19",
+        "60"
+      ],
       "--filter-reads-per-partition": [
         "200000",
         "3"
@@ -16359,6 +16365,410 @@
       ],
       "$why": [
         "Nothing listens on the port, and the refusal is the URI the arguments built, which is what they decide. The answers and what is done with them are the htsget-reader golden's, which starts a server. The class stays body: class=header refuses every other query parameter, and that refusal is a row of the golden."
+      ]
+    },
+    "BwaSpark": {
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0"
+      ],
+      "--bam-partition-size": [
+        "0"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--read-index": [],
+      "--intervals": [
+        "<unset>"
+      ],
+      "--exclude-intervals": [
+        "<unset>"
+      ],
+      "--read-validation-stringency": [
+        "SILENT",
+        "LENIENT"
+      ],
+      "--sharded-output": [
+        "false"
+      ],
+      "--use-jdk-deflater": [
+        "true"
+      ],
+      "$why": [
+        "Reads as a sequencer leaves them, paired and single-ended, on a reference with its own image and one named by the argument. A filter that a paired run applies after alignment is the suite's, as is the non-image, which kills the reference's JVM.",
+        "--sharded-output is held out: the reference then writes one part per reducer with its Hadoop checksums, which the suite measures."
+      ],
+      "--input": [
+        "/work/fixtures/bwa_reads.bam",
+        "/work/fixtures/bwa_reads_unsorted.bam",
+        "/work/fixtures/bwa_reads_dictionary.bam"
+      ],
+      "--reference": [
+        "/work/fixtures/bwa.fasta"
+      ],
+      "--output": [
+        "/work/out/aligned.bam"
+      ],
+      "--bwa-mem-index-image": [
+        "<unset>",
+        "/work/fixtures/bwa_named.img"
+      ],
+      "--single-end-alignment": [
+        "false",
+        "true"
+      ]
+    },
+    "BwaAndMarkDuplicatesPipelineSpark": {
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0"
+      ],
+      "--bam-partition-size": [
+        "0"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--read-index": [],
+      "--intervals": [
+        "<unset>"
+      ],
+      "--exclude-intervals": [
+        "<unset>"
+      ],
+      "--read-validation-stringency": [
+        "SILENT",
+        "LENIENT"
+      ],
+      "--sharded-output": [
+        "false"
+      ],
+      "--use-jdk-deflater": [
+        "true"
+      ],
+      "$why": [
+        "The same reads with the marking over them, which is why the fixture repeats fragments. The flow arguments are held out: they read flow reads, and these are not."
+      ],
+      "--input": [
+        "/work/fixtures/bwa_reads.bam",
+        "/work/fixtures/bwa_reads_no_group.bam"
+      ],
+      "--reference": [
+        "/work/fixtures/bwa.fasta"
+      ],
+      "--output": [
+        "/work/out/aligned.bam"
+      ],
+      "--bwa-mem-index-image": [
+        "<unset>",
+        "/work/fixtures/bwa_named.img"
+      ],
+      "--duplicate-tagging-policy": [
+        "DontTag",
+        "OpticalOnly",
+        "All"
+      ],
+      "--duplicate-scoring-strategy": [
+        "SUM_OF_BASE_QUALITIES",
+        "TOTAL_MAPPED_REFERENCE_LENGTH"
+      ],
+      "--do-not-mark-unmapped-mates": [
+        "false",
+        "true"
+      ],
+      "--remove-all-duplicates": [
+        "false",
+        "true"
+      ],
+      "--remove-sequencing-duplicates": [
+        "false",
+        "true"
+      ]
+    },
+    "PathSeqBwaSpark": {
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0"
+      ],
+      "--bam-partition-size": [
+        "0"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--read-index": [],
+      "--intervals": [
+        "<unset>"
+      ],
+      "--exclude-intervals": [
+        "<unset>"
+      ],
+      "--read-validation-stringency": [
+        "SILENT",
+        "LENIENT"
+      ],
+      "--sharded-output": [
+        "false"
+      ],
+      "--use-jdk-deflater": [
+        "true"
+      ],
+      "$why": [
+        "Each input alone and both, on five contigs of which one no read reaches and one repeats another for alternate hits. --input and the other refusals are the suite's rows. --sharded-output and --num-reducers are held out as for PathSeqScoreSpark."
+      ],
+      "--paired-input": [
+        "<unset>",
+        "/work/fixtures/bwa_reads.bam",
+        "/work/fixtures/nowhere.bam"
+      ],
+      "--unpaired-input": [
+        "<unset>",
+        "/work/fixtures/bwa_reads_unsorted.bam"
+      ],
+      "--paired-output": [
+        "/work/out/paired.bam"
+      ],
+      "--unpaired-output": [
+        "/work/out/unpaired.bam"
+      ],
+      "--microbe-bwa-image": [
+        "/work/fixtures/ps_microbe.img"
+      ],
+      "--microbe-dict": [
+        "/work/fixtures/ps_microbe.dict"
+      ],
+      "--microbe-min-seed-length": [
+        "19",
+        "40"
+      ],
+      "--max-alternate-hits": [
+        "5000",
+        "0"
+      ],
+      "--bwa-score-threshold": [
+        "30",
+        "90"
+      ]
+    },
+    "PathSeqPipelineSpark": {
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0"
+      ],
+      "--bam-partition-size": [
+        "0"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--read-index": [],
+      "--intervals": [
+        "<unset>"
+      ],
+      "--exclude-intervals": [
+        "<unset>"
+      ],
+      "--read-validation-stringency": [
+        "SILENT",
+        "LENIENT"
+      ],
+      "--sharded-output": [
+        "false"
+      ],
+      "--use-jdk-deflater": [
+        "true"
+      ],
+      "$why": [
+        "The filter, the alignment and the scores over one BAM, in one batch and in several, whose order the partition size decides. --num-reducers is a refusal the suite measures."
+      ],
+      "--input": [
+        "/work/fixtures/bwa_reads.bam",
+        "/work/fixtures/bwa_reads_unsorted.bam"
+      ],
+      "--output": [
+        "/work/out/out.bam",
+        "<unset>"
+      ],
+      "--microbe-bwa-image": [
+        "/work/fixtures/ps_microbe.img"
+      ],
+      "--microbe-dict": [
+        "/work/fixtures/ps_microbe.dict"
+      ],
+      "--taxonomy-file": [
+        "/work/fixtures/ps_taxa.db"
+      ],
+      "--scores-output": [
+        "/work/out/scores.txt"
+      ],
+      "--filter-metrics": [
+        "/work/out/filterMetrics.txt",
+        "<unset>"
+      ],
+      "--score-metrics": [
+        "/work/out/scoreMetrics.txt",
+        "<unset>"
+      ],
+      "--score-warnings": [
+        "/work/out/warnings.txt",
+        "<unset>"
+      ],
+      "--filter-bwa-image": [
+        "<unset>",
+        "/work/fixtures/ps_host.img"
+      ],
+      "--filter-bwa-seed-length": [
+        "19",
+        "60"
+      ],
+      "--pipeline-reads-per-partition": [
+        "5000",
+        "100"
+      ],
+      "--readsPerPartitionOutput": [
+        "1000000",
+        "100"
+      ],
+      "--skip-quality-filters": [
+        "false",
+        "true"
+      ],
+      "--filter-duplicates": [
+        "true",
+        "false"
+      ],
+      "--microbe-min-seed-length": [
+        "19",
+        "40"
+      ],
+      "--max-alternate-hits": [
+        "5000",
+        "0"
+      ],
+      "--bwa-score-threshold": [
+        "30",
+        "90"
+      ],
+      "--min-score-identity": [
+        "0.9",
+        "0.99"
+      ],
+      "--identity-margin": [
+        "0.02",
+        "0.3"
+      ],
+      "--divide-by-genome-length": [
+        "false",
+        "true"
+      ],
+      "--not-normalized-by-kingdom": [
+        "false",
+        "true"
+      ]
+    },
+    "ParallelCopyGCSDirectoryIntoHDFSSpark": {
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0"
+      ],
+      "--bam-partition-size": [
+        "0"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--read-index": [],
+      "--intervals": [
+        "<unset>"
+      ],
+      "--exclude-intervals": [
+        "<unset>"
+      ],
+      "--read-validation-stringency": [
+        "SILENT",
+        "LENIENT"
+      ],
+      "--sharded-output": [
+        "false"
+      ],
+      "--use-jdk-deflater": [
+        "true"
+      ],
+      "$why": [
+        "Only the two refusals can be reached: past them the reference needs a Google Cloud Storage and an HDFS. Every row names one of them."
+      ],
+      "--input-gcs-path": [
+        "/work/fixtures/bwa.fasta",
+        "gs://nowhere/in"
+      ],
+      "--output-hdfs-directory": [
+        "hdfs://nowhere:1/out",
+        "/work/out/copy"
+      ],
+      "--input-file-glob": [
+        "<unset>",
+        "*.fasta"
       ]
     }
   },
@@ -17638,6 +18048,16 @@
         "--input": "/work/fixtures/sv_assembly.bam"
       },
       "why": "A breakend's end is negative, so any CNV file fails on it before anything else is measured."
+    },
+    {
+      "tools": [
+        "ParallelCopyGCSDirectoryIntoHDFSSpark"
+      ],
+      "forbid": {
+        "--input-gcs-path": "gs://nowhere/in",
+        "--output-hdfs-directory": "hdfs://nowhere:1/out"
+      },
+      "why": "Past both refusals the reference opens an HDFS connection and the port stops."
     }
   ],
   "exclude": {
