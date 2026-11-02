@@ -1548,7 +1548,7 @@ mutect_tn.bam holds a tumour and a normal sample over mutect_ref.fasta, about tw
 
 ### NVScoreVariants
 
-Suites: `interpreter-tools`.
+Suites: `interpreter-tools`, `nvscorevariants`.
 
 Inputs: `nothing.bam`, `nothing.fasta`, `nothing.vcf`, `vr_calls.vcf`.
 

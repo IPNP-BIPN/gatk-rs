@@ -6,13 +6,14 @@
 //! one order among equals by accident: `dense_2` moves its last bits with the thread count in the
 //! reference itself.
 //!
-//! * **Convolutions** are oneDNN 3.1.1's `jit:avx2`: one accumulator for each output, starting from
-//!   the bias, taking `vfmadd231ps` over input channel blocks of 8, then the kernel's height and
-//!   width, then the channels of the block.
+//! * **Convolutions** in the 1D model are oneDNN 3.1.1's `jit:avx2`: one accumulator for each output,
+//!   starting from the bias, taking `vfmadd231ps` over input channel blocks of 8, then the kernel's
+//!   height and width, then the channels of the block. In the 2D model they are `brgconv:avx2`: from
+//!   zero over the kernel's height and width, then all the input channels, with the bias added last.
 //! * **Dense layers** are MKL's `SGEMM`, whose source is not public, so its order was read off from
 //!   outside by `tools/nvscorevariants/probe_gemm.py`: which terms have met before which others is
-//!   observable by adding a huge number and two ones. Terms are taken 256 at a time, and each
-//!   block's sum, started from zero, is added to the output.
+//!   observable by adding a huge number and two ones. Terms are taken 256 at a time, the last
+//!   block and a bit split in two, and each block's sum, started from zero, is added to the output.
 //! * **Batch norm** is `batch_norm_cpu_contiguous_impl`, where GCC's contraction fused both
 //!   `bias - mean * alpha` and `x * alpha + beta`.
 //! * **Softmax** is `_vec_softmax_lastdim` over SLEEF's `expf8_u10`.
@@ -77,6 +78,10 @@ pub struct ConvWeights<'a> {
     pub width: usize,
     pub weight: &'a [f32],
     pub bias: &'a [f32],
+    /// `brgconv:avx2`, which the 2D model gets, and not `jit:avx2`: from zero with every input
+    /// channel at each kernel position, and the bias added at the end. Measured on 4000 positions
+    /// of each of its layers, with no difference, by the layer test's first batch.
+    pub bias_last: bool,
 }
 
 /// `jit_avx2_convolution_fwd_t` on a NCHW tensor, stride 1 and no padding.
@@ -94,18 +99,25 @@ pub fn conv2d(src: &[f32], input: Shape, conv: &ConvWeights, threads: usize) -> 
         width: input.width + 1 - conv.width,
     };
     let mut dst = vec![0f32; out.len()];
-    let block = if conv.inputs < 8 { conv.inputs } else { 8 };
-    let padded = conv.inputs % block != 0;
+    let block = if conv.inputs < 8 || conv.bias_last {
+        conv.inputs
+    } else {
+        8
+    };
+    let padded = !conv.inputs.is_multiple_of(block);
     let plane = out.height * out.width;
     let each_channel = |batch_channel: usize, slab: &mut [f32]| {
         let batch = batch_channel / conv.outputs;
         let channel = batch_channel % conv.outputs;
         let image = &src[batch * input.channels * input.height * input.width..];
-        let weights =
-            &conv.weight[channel * conv.inputs * conv.height * conv.width..];
+        let weights = &conv.weight[channel * conv.inputs * conv.height * conv.width..];
         for y in 0..out.height {
             for x in 0..out.width {
-                let mut sum = conv.bias[channel];
+                let mut sum = if conv.bias_last {
+                    0.0
+                } else {
+                    conv.bias[channel]
+                };
                 let mut first = 0;
                 while first < conv.inputs {
                     let last = (first + block).min(conv.inputs);
@@ -116,7 +128,8 @@ pub fn conv2d(src: &[f32], input: Shape, conv: &ConvWeights, threads: usize) -> 
                             let span = input.height * input.width;
                             let span_w = conv.height * conv.width;
                             for c in first..last {
-                                sum = fused(image[c * span + at_i], weights[c * span_w + at_k], sum);
+                                sum =
+                                    fused(image[c * span + at_i], weights[c * span_w + at_k], sum);
                             }
                         }
                     }
@@ -124,6 +137,9 @@ pub fn conv2d(src: &[f32], input: Shape, conv: &ConvWeights, threads: usize) -> 
                 }
                 if padded {
                     sum += 0.0;
+                }
+                if conv.bias_last {
+                    sum += conv.bias[channel];
                 }
                 slab[y * out.width + x] = sum;
             }
@@ -308,6 +324,7 @@ pub fn linear(
 }
 
 /// SLEEF's `xexpf`, on one lane of the AVX2 build, where `vmla` is `vfmadd`.
+#[allow(clippy::excessive_precision, clippy::approx_constant)]
 pub fn sleef_expf(d: f32) -> f32 {
     const R_LN2: f32 = 1.442_695_040_888_963_4;
     const L2U: f32 = 0.693_145_751_953_125;

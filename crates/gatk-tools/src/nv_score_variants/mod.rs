@@ -14,7 +14,7 @@ pub mod model;
 pub mod vcf;
 pub mod weights;
 
-use self::encode::{ReadTensorEncoder, READ_CHANNELS, WINDOW};
+use self::encode::ReadTensorEncoder;
 use self::model::Trace;
 use self::vcf::{Header, Record};
 use self::weights::Weights;
@@ -89,7 +89,9 @@ struct Variants {
 fn read_variants(path: &str) -> Result<Variants, Stop> {
     let bytes = std::fs::read(path).map_err(|e| Stop::Python(format!("OSError: {path}: {e}")))?;
     if bytes.starts_with(b"BCF") {
-        return Err(Stop::Limitation(format!("{path} is BCF, and this port reads VCF")));
+        return Err(Stop::Limitation(format!(
+            "{path} is BCF, and this port reads VCF"
+        )));
     }
     let bytes = if bytes.starts_with(&[0x1f, 0x8b]) {
         htsjdk_bgzf::read::decompress_all(&bytes)
@@ -141,7 +143,11 @@ fn fetch(
     record: &Record,
 ) -> Result<Vec<htsjdk_bam::record::BamRecord>, Stop> {
     let (begin, end) = (record.pos - 1, record.stop());
-    let contig_exists = reads.header().sequences.iter().any(|s| s.name == record.contig);
+    let contig_exists = reads
+        .header()
+        .sequences
+        .iter()
+        .any(|s| s.name == record.contig);
     if !contig_exists {
         return Err(Stop::Python(format!(
             "ValueError: invalid contig `{}`",
@@ -189,13 +195,27 @@ pub fn score_batch(
     trace: &mut Trace,
 ) -> Vec<f32> {
     let logits = if read_tensor {
-        model::forward_2d(weights, &batch.tensor, &batch.best_practices, threads, trace)
+        model::forward_2d(
+            weights,
+            &batch.tensor,
+            &batch.best_practices,
+            threads,
+            trace,
+        )
     } else {
-        model::forward_1d(weights, &batch.tensor, &batch.best_practices, threads, trace)
+        model::forward_1d(
+            weights,
+            &batch.tensor,
+            &batch.best_practices,
+            threads,
+            trace,
+        )
     };
     let probabilities = kernels::softmax(&logits);
     if trace.keep {
-        trace.layers.insert("softmax".to_string(), probabilities.clone());
+        trace
+            .layers
+            .insert("softmax".to_string(), probabilities.clone());
     }
     let scores = kernels::scores(&probabilities, &batch.types);
     if trace.keep {
@@ -223,7 +243,9 @@ fn encode_batch(
             .extend_from_slice(&encode::annotations(record, &header.info)?);
         match encoder {
             Encoder::Reference => {
-                batch.tensor.extend(encode::reference_tensor(contigs, record)?);
+                batch
+                    .tensor
+                    .extend(encode::reference_tensor(contigs, record)?);
             }
             Encoder::Reads { reads, encoder } => {
                 let Some(reads) = reads else {
@@ -232,7 +254,9 @@ fn encode_batch(
                     ));
                 };
                 let fetched = fetch(reads, record)?;
-                batch.tensor.extend(encoder.encode(contigs, record, fetched)?);
+                batch
+                    .tensor
+                    .extend(encoder.encode(contigs, record, fetched)?);
             }
         }
     }
@@ -275,9 +299,12 @@ pub fn run(arguments: &Arguments) -> Result<(), Stop> {
     };
 
     // `get_model`, which is where the reference would load its pickle.
-    let pinned = if arguments.read_tensor { weights::TWO_D } else { weights::ONE_D };
-    let weights =
-        Weights::load(&arguments.weights_directory, pinned).map_err(Stop::Limitation)?;
+    let pinned = if arguments.read_tensor {
+        weights::TWO_D
+    } else {
+        weights::ONE_D
+    };
+    let weights = Weights::load(&arguments.weights_directory, pinned).map_err(Stop::Limitation)?;
 
     // `pl.Trainer(accelerator=...)`. The GPU backends are not ported, and on the machines this is
     // measured on they are not there for the reference either.
@@ -340,8 +367,15 @@ fn create_output_vcf(
     variants: Variants,
     printed: &[String],
 ) -> Result<(), Stop> {
-    let label = if arguments.read_tensor { "CNN_2D" } else { "CNN_1D" };
-    let Variants { mut header, records } = variants;
+    let label = if arguments.read_tensor {
+        "CNN_2D"
+    } else {
+        "CNN_1D"
+    };
+    let Variants {
+        mut header,
+        records,
+    } = variants;
     header.add_info(label, SCORE_DESCRIPTION);
     let mut text = header.format_text();
     let mut stop = None;
@@ -388,13 +422,8 @@ pub fn weights_directory() -> Option<String> {
         .then(|| directory.to_string_lossy().into_owned())
 }
 
-/// The shape of a read tensor, for those who take it apart.
-pub const READ_TENSOR_LEN: usize = WINDOW * WINDOW * READ_CHANNELS;
-
 /// `encode_batch`, for the comparison with the reference's dump.
-pub fn encode_for_comparison(
-    arguments: &Arguments,
-) -> Result<Vec<(Vec<Record>, Batch)>, Stop> {
+pub fn encode_for_comparison(arguments: &Arguments) -> Result<Vec<(Vec<Record>, Batch)>, Stop> {
     let variants = read_variants(&arguments.variant)?;
     let contigs = encode::read_fasta(&arguments.reference)?;
     let mut encoder = match (&arguments.input, arguments.read_tensor) {

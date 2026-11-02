@@ -8391,7 +8391,7 @@
       "status": "golden-pending",
       "title": "NVScoreVariants: the printed scores and the VCF of both models, in GATK's own image",
       "harness": "tools/nvscorevariants",
-      "python_image": "broadinstitute/gatk:4.6.2.0",
+      "python_image": "broadinstitute/gatk@sha256:71b17ee42d149e8ec112603f5305c873ab60d93949ef8bb62a4fff85427f56fb",
       "tools": [
         "NVScoreVariants"
       ],

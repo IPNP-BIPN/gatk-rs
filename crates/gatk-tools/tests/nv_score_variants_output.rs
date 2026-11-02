@@ -68,15 +68,14 @@ fn scores_and_vcfs_against_the_reference() {
         };
         let mut compare = |kind: &str, mine: Vec<String>| {
             let want = kinds.get(kind).cloned().unwrap_or_default();
-            let differing = mine
-                .iter()
-                .zip(&want)
-                .filter(|(a, b)| a != b)
-                .count()
+            let differing = mine.iter().zip(&want).filter(|(a, b)| a != b).count()
                 + mine.len().abs_diff(want.len());
             if differing != 0 {
                 failed += 1;
-                println!("{name} {tag} {kind}: {differing} lines differ of {}", want.len());
+                println!(
+                    "{name} {tag} {kind}: {differing} lines differ of {}",
+                    want.len()
+                );
                 let first = mine.iter().zip(&want).find(|(a, b)| a != b);
                 if let Some((a, b)) = first {
                     println!("  port      {a}");
@@ -95,6 +94,9 @@ fn scores_and_vcfs_against_the_reference() {
         compare("scores", mine_scores);
         compare("vcf", file_lines(&output).unwrap_or_else(absent));
     }
-    println!("{} cases, {score_rows} score rows, {failed} differing parts", reference.len());
+    println!(
+        "{} cases, {score_rows} score rows, {failed} differing parts",
+        reference.len()
+    );
     assert_eq!(failed, 0);
 }

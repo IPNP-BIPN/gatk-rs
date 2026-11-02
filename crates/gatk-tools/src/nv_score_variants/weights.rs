@@ -43,9 +43,14 @@ impl Weights {
     pub fn load(directory: &str, (name, expected): (&str, &str)) -> Result<Weights, String> {
         let path = format!("{directory}/{name}");
         let bytes = std::fs::read(&path).map_err(|e| format!("{path}: {e}"))?;
-        let digest: String = Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect();
+        let digest: String = Sha256::digest(&bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
         if digest != expected {
-            return Err(format!("{path} has SHA-256 {digest}, and the port is pinned to {expected}"));
+            return Err(format!(
+                "{path} has SHA-256 {digest}, and the port is pinned to {expected}"
+            ));
         }
         Weights::parse(&bytes).ok_or_else(|| format!("{path} is not a weights file"))
     }
@@ -68,8 +73,10 @@ impl Weights {
             let count: usize = shape.iter().product();
             let data = bytes
                 .get(at..at + 4 * count)?
-                .chunks_exact(4)
-                .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|b| f32::from_le_bytes(*b))
                 .collect();
             at += 4 * count;
             tensors.insert(name, (shape, data));

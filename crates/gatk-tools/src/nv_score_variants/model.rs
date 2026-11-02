@@ -32,6 +32,28 @@ fn convolution(
     shape: Shape,
     threads: usize,
 ) -> (Vec<f32>, Shape) {
+    convolve(weights, prefix, src, shape, threads, false)
+}
+
+/// The 2D model's convolutions, which oneDNN gives to a different implementation.
+fn brg_convolution(
+    weights: &Weights,
+    prefix: &str,
+    src: &[f32],
+    shape: Shape,
+    threads: usize,
+) -> (Vec<f32>, Shape) {
+    convolve(weights, prefix, src, shape, threads, true)
+}
+
+fn convolve(
+    weights: &Weights,
+    prefix: &str,
+    src: &[f32],
+    shape: Shape,
+    threads: usize,
+    bias_last: bool,
+) -> (Vec<f32>, Shape) {
     let weight_name = format!("{prefix}.weight");
     let dimensions = weights.shape(&weight_name);
     // A `Conv1d`'s weights have no height, and it runs as a convolution of height one.
@@ -46,6 +68,7 @@ fn convolution(
         width,
         weight: weights.get(&weight_name),
         bias: weights.get(&format!("{prefix}.bias")),
+        bias_last,
     };
     conv2d(src, shape, &parameters, threads)
 }
@@ -152,17 +175,35 @@ pub fn forward_1d(
     let classes = |outputs: usize, k: usize| {
         move |output: usize, column: usize| gemm_terms(outputs, batch, k, output, column)
     };
-    let mut first = dense(weights, "dense_1.0", &normalized, threads, &classes(40, BEST_PRACTICES));
+    let mut first = dense(
+        weights,
+        "dense_1.0",
+        &normalized,
+        threads,
+        &classes(40, BEST_PRACTICES),
+    );
     trace.store("dense_1.0", &first);
     relu(&mut first);
 
     let joined = concatenate(&flattened, row, &first, 40);
-    let mut second = dense(weights, "dense_2.0", &joined, threads, &classes(40, row + 40));
+    let mut second = dense(
+        weights,
+        "dense_2.0",
+        &joined,
+        threads,
+        &classes(40, row + 40),
+    );
     trace.store("dense_2.0", &second);
     relu(&mut second);
 
     let last = concatenate(&second, 40, &normalized, BEST_PRACTICES);
-    let logits = dense(weights, "dense_3", &last, threads, &classes(4, 40 + BEST_PRACTICES));
+    let logits = dense(
+        weights,
+        "dense_3",
+        &last,
+        threads,
+        &classes(4, 40 + BEST_PRACTICES),
+    );
     trace.store("dense_3", &logits);
     logits
 }
@@ -194,17 +235,17 @@ pub fn forward_2d(
         height,
         width,
     };
-    let (mut x, shape) = convolution(weights, "conv.0", &planar, shape, threads);
+    let (mut x, shape) = brg_convolution(weights, "conv.0", &planar, shape, threads);
     trace.store("conv.0", &x);
     relu(&mut x);
-    let (mut x, shape) = convolution(weights, "conv.3", &x, shape, threads);
+    let (mut x, shape) = brg_convolution(weights, "conv.3", &x, shape, threads);
     trace.store("conv.3", &x);
     relu(&mut x);
-    let (mut x, shape) = convolution(weights, "conv.6", &x, shape, threads);
+    let (mut x, shape) = brg_convolution(weights, "conv.6", &x, shape, threads);
     trace.store("conv.6", &x);
     relu(&mut x);
     let (x, shape) = max_pool_height(&x, shape, 3);
-    let (mut x, shape) = convolution(weights, "conv.10", &x, shape, threads);
+    let (mut x, shape) = brg_convolution(weights, "conv.10", &x, shape, threads);
     trace.store("conv.10", &x);
     relu(&mut x);
     let (x, shape) = max_pool_height(&x, shape, 3);
@@ -216,12 +257,24 @@ pub fn forward_2d(
     };
     let normalized = normalize(weights, "dense_1.0", best_practices, 0.001);
     trace.store("dense_1.0", &normalized);
-    let mut first = dense(weights, "dense_1.1", &normalized, threads, &classes(64, BEST_PRACTICES));
+    let mut first = dense(
+        weights,
+        "dense_1.1",
+        &normalized,
+        threads,
+        &classes(64, BEST_PRACTICES),
+    );
     trace.store("dense_1.1", &first);
     relu(&mut first);
 
     let joined = concatenate(&flattened, row, &first, 64);
-    let mut second = dense(weights, "dense_2.0", &joined, threads, &classes(24, row + 64));
+    let mut second = dense(
+        weights,
+        "dense_2.0",
+        &joined,
+        threads,
+        &classes(24, row + 64),
+    );
     trace.store("dense_2.0", &second);
     relu(&mut second);
     let logits = dense(weights, "dense_2.3", &second, threads, &classes(4, 24));

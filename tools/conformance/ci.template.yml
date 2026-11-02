@@ -411,7 +411,7 @@ jobs:
 
       - name: Weights, fixture, and the reference's dump and layers
         env:
-          IMAGE: broadinstitute/gatk:4.6.2.0
+          IMAGE: broadinstitute/gatk@sha256:71b17ee42d149e8ec112603f5305c873ab60d93949ef8bb62a4fff85427f56fb
         run: |
           mkdir -p /tmp/nv
           chmod 777 /tmp/nv

@@ -6,7 +6,6 @@
 //! place, and the largest distance outright. Without the variable this passes having compared
 //! nothing, and says so. It asserts only what is already measured to be exact, the inputs.
 
-use gatk_tools::nv_score_variants::kernels;
 use gatk_tools::nv_score_variants::model::Trace;
 use gatk_tools::nv_score_variants::weights::{self, Weights};
 use gatk_tools::nv_score_variants::{encode_for_comparison, score_batch, Arguments};
@@ -49,15 +48,19 @@ fn next_entry(file: &mut impl Read) -> Option<(String, Entry)> {
         let mut bytes = vec![0u8; count * 4];
         file.read_exact(&mut bytes).ok()?;
         entry.values = bytes
-            .chunks_exact(4)
-            .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|b| f32::from_le_bytes(*b))
             .collect();
     } else {
         let mut bytes = vec![0u8; count * 8];
         file.read_exact(&mut bytes).ok()?;
         entry.integers = bytes
-            .chunks_exact(8)
-            .map(|b| i64::from_le_bytes(b.try_into().unwrap()))
+            .as_chunks::<8>()
+            .0
+            .iter()
+            .map(|b| i64::from_le_bytes(*b))
             .collect();
     }
     Some((String::from_utf8(name).ok()?, entry))
@@ -107,7 +110,11 @@ fn layers_against_the_reference() {
         weights_directory: parts[6].to_string(),
     };
     let threads = std::thread::available_parallelism().map_or(1, |n| n.get());
-    let pinned = if read_tensor { weights::TWO_D } else { weights::ONE_D };
+    let pinned = if read_tensor {
+        weights::TWO_D
+    } else {
+        weights::ONE_D
+    };
     let model = Weights::load(&arguments.weights_directory, pinned).unwrap();
     let batches = encode_for_comparison(&arguments).unwrap();
     let mut file = std::io::BufReader::new(std::fs::File::open(parts[5]).unwrap());
@@ -169,6 +176,13 @@ fn layers_against_the_reference() {
                 };
                 if let Some(mine) = trace.layers.get(port_name) {
                     add(layer, mine.len(), distance(mine, &entry.values));
+                    // By batch too: the last batch of a file is the short one, and the short one is
+                    // where the known differences are.
+                    add(
+                        &format!("{index}/{layer}"),
+                        mine.len(),
+                        distance(mine, &entry.values),
+                    );
                     if layer == "score" {
                         for (a, b) in mine.iter().zip(&entry.values) {
                             printed_rows.0 += 1;
@@ -184,16 +198,30 @@ fn layers_against_the_reference() {
     for (name, total, differ, ulp, absolute) in &totals {
         println!("{name}\t{differ}/{total}\tmax ulp {ulp}\tmax abs {absolute:e}");
     }
-    println!("score at %.3f\t{} of {} rows differ", printed_rows.1, printed_rows.0);
-    let _ = kernels::GEMM_BLOCK;
+    println!(
+        "score at %.3f\t{} of {} rows differ",
+        printed_rows.1, printed_rows.0
+    );
 }
 
-fn report_tensor(records: &[gatk_tools::nv_score_variants::vcf::Record], want: &[f32], got: &[f32], read: bool) {
+fn report_tensor(
+    records: &[gatk_tools::nv_score_variants::vcf::Record],
+    want: &[f32],
+    got: &[f32],
+    read: bool,
+) {
     let per_row = want.len() / records.len();
     let channels = if read { 15 } else { 4 };
     for (row, record) in records.iter().enumerate() {
-        let (w, g) = (&want[row * per_row..(row + 1) * per_row], &got[row * per_row..(row + 1) * per_row]);
-        if let Some(at) = w.iter().zip(g).position(|(a, b)| a.to_bits() != b.to_bits()) {
+        let (w, g) = (
+            &want[row * per_row..(row + 1) * per_row],
+            &got[row * per_row..(row + 1) * per_row],
+        );
+        if let Some(at) = w
+            .iter()
+            .zip(g)
+            .position(|(a, b)| a.to_bits() != b.to_bits())
+        {
             let cell = at / channels;
             eprintln!(
                 "{}:{} {} {:?} first at cell {} ({} {}) channel {}: want {} got {}",

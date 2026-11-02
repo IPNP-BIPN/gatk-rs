@@ -3,7 +3,8 @@
 
 Runs inside `broadinstitute/gatk:4.6.2.0`, which is what has pysam, so the reference and the port
 read the same bytes and nothing here has to be committed. Everything comes from one linear
-congruential generator, so the same bytes come out every time.
+congruential generator, so the same text comes out every time. The BAM's bytes also carry the
+directory it was made in (two directories gave two files), which no record or tensor depends on.
 
 The cases are chosen for what `encoders.py` decides on rather than for realism: windows clipped by
 the start and the end of a contig, IUPAC codes and lower case in the reference, reads with

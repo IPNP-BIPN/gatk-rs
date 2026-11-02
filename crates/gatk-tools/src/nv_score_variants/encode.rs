@@ -149,7 +149,8 @@ pub fn annotations(
     record: &Record,
     definitions: &HashMap<String, Definition>,
 ) -> Result<[f32; 7], String> {
-    const BEST_PRACTICES: [&str; 7] = ["MQ", "DP", "SOR", "FS", "QD", "MQRankSum", "ReadPosRankSum"];
+    const BEST_PRACTICES: [&str; 7] =
+        ["MQ", "DP", "SOR", "FS", "QD", "MQRankSum", "ReadPosRankSum"];
     let mut out = [0f32; 7];
     for (slot, key) in out.iter_mut().zip(BEST_PRACTICES) {
         if let Some(entry) = record.info.iter().find(|e| e.key == key) {
@@ -219,7 +220,7 @@ impl JavaRandom {
     }
 
     fn next_int(&mut self, n: i64) -> i32 {
-        if n & -n == n {
+        if n > 0 && n.count_ones() == 1 {
             return ((n.wrapping_mul(i64::from(self.next(31)))) >> 31) as i32;
         }
         loop {
@@ -363,7 +364,10 @@ fn add_insertions<T: Clone>(
             sequence.extend(tail);
         } else if (*i as usize) < WINDOW {
             if let Some(nothing) = padded {
-                sequence.extend(std::iter::repeat_n(nothing.clone(), *i as usize - sequence.len()));
+                sequence.extend(std::iter::repeat_n(
+                    nothing.clone(),
+                    *i as usize - sequence.len(),
+                ));
             }
             sequence.extend(insertion);
         }
@@ -442,7 +446,11 @@ impl ReadTensorEncoder {
                 let slot = self.random.next_int(alignment_number);
                 if slot < READ_LIMIT as i32 {
                     // A negative slot would count from the end, as a Python index does.
-                    let at = if slot < 0 { reads.len() as i32 + slot } else { slot };
+                    let at = if slot < 0 {
+                        reads.len() as i32 + slot
+                    } else {
+                        slot
+                    };
                     reads[at as usize] = read;
                 }
             }
@@ -460,7 +468,10 @@ impl ReadTensorEncoder {
         let from = start.max(0) as usize;
         let to = ((end + i64::from(start < 0)).max(0) as usize).min(contig.len());
         let slice: Vec<u8> = if from < to {
-            contig[from..to].iter().map(u8::to_ascii_uppercase).collect()
+            contig[from..to]
+                .iter()
+                .map(u8::to_ascii_uppercase)
+                .collect()
         } else {
             Vec::new()
         };
@@ -662,7 +673,9 @@ mod tests {
     #[test]
     fn the_reservoir_answers_as_numpy_does() {
         let mut random = JavaRandom::new(47382911);
-        let answers: Vec<String> = (129..20129).map(|n| random.next_int(n).to_string()).collect();
+        let answers: Vec<String> = (129..20129)
+            .map(|n| random.next_int(n).to_string())
+            .collect();
         assert_eq!(answers[..8].join(","), "114,25,128,65,80,43,12,82");
         assert_eq!(answers[256 - 129], "54");
         let digest: String = Sha256::digest(answers.join(",").as_bytes())
@@ -683,7 +696,10 @@ mod tests {
             bytes.extend_from_slice(&p.to_le_bytes());
             bytes.extend_from_slice(&not_p.to_le_bytes());
         }
-        let digest: String = Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect();
+        let digest: String = Sha256::digest(&bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
         assert_eq!(
             digest,
             "eb86654aff4bb3bcfe0ce8957efb16ef21d264805585ba47771b8fb6608e2df9"

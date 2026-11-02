@@ -48,7 +48,9 @@ pub struct Header {
 /// One `key=value` of a structured line, with the quotes taken off.
 fn structured_field<'a>(line: &'a str, key: &str) -> Option<&'a str> {
     let open = line.find("=<")?;
-    let body = line[open + 2..].strip_suffix('>').unwrap_or(&line[open + 2..]);
+    let body = line[open + 2..]
+        .strip_suffix('>')
+        .unwrap_or(&line[open + 2..]);
     let bytes = body.as_bytes();
     let mut at = 0;
     while at < bytes.len() {
@@ -271,7 +273,11 @@ fn strtod(text: &str) -> Option<(f64, usize)> {
         ("nan", f64::NAN),
     ] {
         if lower.starts_with(word) {
-            let signed = if bytes[number_start] == b'-' { -value } else { value };
+            let signed = if bytes[number_start] == b'-' {
+                -value
+            } else {
+                value
+            };
             return Some((signed, at + word.len()));
         }
     }
@@ -330,11 +336,19 @@ fn hts_str2int(text: &str) -> Option<(i64, bool, usize)> {
     if at == digits {
         return None;
     }
-    let limit = if negative { 1u64 << 63 } else { (1u64 << 63) - 1 };
+    let limit = if negative {
+        1u64 << 63
+    } else {
+        (1u64 << 63) - 1
+    };
     if value > limit {
         overflow = true;
     }
-    let signed = if negative { value.wrapping_neg() as i64 } else { value as i64 };
+    let signed = if negative {
+        value.wrapping_neg() as i64
+    } else {
+        value as i64
+    };
     Some((signed, overflow, at))
 }
 
@@ -356,7 +370,10 @@ fn percent_g(d: f64) -> String {
     }
     let fixed = format!("{d:.*}", (5 - exponent) as usize);
     if fixed.contains('.') {
-        fixed.trim_end_matches('0').trim_end_matches('.').to_string()
+        fixed
+            .trim_end_matches('0')
+            .trim_end_matches('.')
+            .to_string()
     } else {
         fixed
     }
@@ -534,7 +551,11 @@ impl Record {
         };
         let filters: Vec<String> = match next("FILTER")? {
             "." => Vec::new(),
-            text => text.split(';').filter(|f| !f.is_empty()).map(str::to_string).collect(),
+            text => text
+                .split(';')
+                .filter(|f| !f.is_empty())
+                .map(str::to_string)
+                .collect(),
         };
         let mut undefined = None;
         if !header.contigs.contains(&contig) {
@@ -673,7 +694,10 @@ impl Record {
     /// while reading this record was never in the copy the writer has.
     pub fn format_line(&mut self, header: &Header) -> Result<String, String> {
         self.sync_end(header).map_err(|tag| {
-            format!("Invalid BCF, the INFO tag {tag} is too large at {}:{}", self.contig, self.pos)
+            format!(
+                "Invalid BCF, the INFO tag {tag} is too large at {}:{}",
+                self.contig, self.pos
+            )
         })?;
         if let Some(what) = &self.undefined {
             return Err(format!("Invalid BCF, {what} not present in the header"));
@@ -684,7 +708,10 @@ impl Record {
                 entry.key, self.contig, self.pos
             ));
         }
-        let mut line = format!("{}\t{}\t{}\t{}\t", self.contig, self.pos, self.id, self.reference);
+        let mut line = format!(
+            "{}\t{}\t{}\t{}\t",
+            self.contig, self.pos, self.id, self.reference
+        );
         if self.alternates.is_empty() {
             line.push('.');
         } else {
