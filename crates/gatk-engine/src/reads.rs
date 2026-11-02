@@ -970,7 +970,7 @@ pub fn disq_path_splits(length: i64, split_size: i32, use_nio: bool) -> Vec<(i64
     } else {
         i64::MAX
     };
-    let size = maximum.min(LOCAL_BLOCK_SIZE).max(1);
+    let size = maximum.clamp(1, LOCAL_BLOCK_SIZE);
     let mut remaining = length;
     while remaining as f64 / size as f64 > SPLIT_SLOP {
         splits.push((length - remaining, length - remaining + size));

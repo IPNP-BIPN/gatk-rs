@@ -234,7 +234,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `FilterMutectCalls` | variant-transform | oracle-backed | filter-mutect-calls | 1 | t=2, 24/24 rows (100%) | 0.003 / 0.069 |
 | `FilterVariantTranches` | variant-transform | oracle-backed | filter-variant-tranches | 1 | t=2, 15/15 rows (100%) | 0.002 / 0.053 |
 | `FindBadGenomicKmersSpark` | reference-utility | oracle-backed | spark-walkers | 1 | not measured | not measured |
-| `FindBreakpointEvidenceSpark` | sv-caller | oracle-backed | sv-evidence | 1 | not measured | not measured |
+| `FindBreakpointEvidenceSpark` | sv-caller | oracle-backed | sv-evidence, sv-partitions | 2 | not measured | not measured |
 | `FixMisencodedBaseQualityReads` | record-transform | oracle-backed | fix-misencoded | 1 | t=2, 21/21 rows (100%) | 0.003 / 0.040 |
 | `FlagStat` | reporting-walker | oracle-backed | counting-walkers | 1 | t=2, 21/21 rows (100%) | 0.003 / 0.067 |
 | `FlagStatSpark` | reporting-walker | oracle-backed | spark-walkers | 1 | t=2, 19/19 rows (100%) | not measured |
@@ -328,7 +328,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `SplitNCigarReads` | record-transform | oracle-backed | split-n-cigar-reads | 1 | t=2, 21/21 rows (100%) | 0.003 / 0.061 |
 | `SplitReads` | record-transform | oracle-backed | split-reads | 1 | t=2, 20/20 rows (100%) | 0.004 / 0.036 |
 | `StructuralVariantDiscoverer` | unclassified | oracle-backed | structural-variant-discoverer | 1 | t=2, 23/23 rows (100%) | 0.002 / 0.056 |
-| `StructuralVariationDiscoveryPipelineSpark` | sv-caller | oracle-backed | sv-evidence | 1 | not measured | not measured |
+| `StructuralVariationDiscoveryPipelineSpark` | sv-caller | oracle-backed | sv-evidence, sv-partitions | 2 | not measured | not measured |
 | `SvDiscoverFromLocalAssemblyContigAlignmentsSpark` | sv-caller | oracle-backed | spark-walkers | 1 | not measured | not measured |
 | `TagGermlineEvents` | unclassified | oracle-backed | tag-germline-events | 1 | t=2, 17/17 rows (100%) | 0.002 / 0.054 |
 | `TrainVariantAnnotationsModel` | variant-transform | oracle-backed | interpreter-tools | 1 | not measured | not measured |
