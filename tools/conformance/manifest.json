@@ -10,6 +10,14 @@
     "context": "tools/oracle",
     "platform": "linux/amd64"
   },
+  "oracle_with_r": {
+    "$why": "gatk-rs-oracle deliberately has no Rscript. A suite that needs the reference's plots to actually run names this instead with its own `oracle` key: the Broad's published image of the same release, pinned by digest, with the R and the packages that release was built with. Pulled rather than built, so it costs a job of its own and not the shared image's cache.",
+    "image": "broadinstitute/gatk@sha256:71b17ee42d149e8ec112603f5305c873ab60d93949ef8bb62a4fff85427f56fb",
+    "platform": "linux/amd64",
+    "entrypoint": "sh",
+    "timeout_seconds": 1500,
+    "classpath": "/gatk/gatk-package-4.6.2.0-local.jar"
+  },
   "ci": {
     "suites_per_job": 5,
     "$why": "Suites share a job because each job restores the oracle image once."
@@ -8304,6 +8312,30 @@
           "dump": "GenomicsDBImportDump",
           "golden": null,
           "why": "Frozen from the candidate artefact of its first run."
+        }
+      ]
+    },
+    {
+      "id": "r-plots",
+      "status": "golden-pending",
+      "oracle": "oracle_with_r",
+      "title": "the three tools that hand their work to an R script, with R there to run it",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "PlotDenoisedCopyRatios",
+        "PlotModeledSegments",
+        "AlleleFrequencyQC"
+      ],
+      "compare": {
+        "mode": "lines"
+      },
+      "why": "R stays: a Rust rewrite would mean a device-level raster of png(type=\"cairo\"), and the scripts behind the Java side are rewritten on ggplot2, so THE PNG BYTES ARE NOT COMPARED AND NOTHING HERE CLAIMS THEY ARE. What the golden holds is everything around the image: THE SIDE FILES byte for byte, THE STATUS AND THE FIRST LINE OF THE REFUSAL of each run, THE LIST OF FILES each run leaves in its output and in the working directory, the PNG's pixel size and resolution, and THE NUMBERS THE REFERENCE'S SCRIPTS HAND THEIR GRAPHICS CALLS, recorded by masking those calls ahead of the reference's own unmodified scripts. Those last rows are what the port's exported .data.rds is read back against, and they are where the running index shows: consecutive segments sharing a point, a zero-point segment skipped without advancing, and the last segment running off the table into an NA.",
+      "$compare_why": "The dump is the reference's alone, so the comparison with the port is crates/gatk-cli/tests/r_plots_end_to_end.rs, which needs an R with ggplot2 and cowplot and has a CI job of its own for it: oracle-with-r in ci.template.yml.",
+      "cases": [
+        {
+          "dump": "RPlotsDump",
+          "golden": null,
+          "why": "Not frozen: the first x86-64 run of oracle-with-r publishes the candidate. Twenty-one runs through Main and seven of the scripts on their own."
         }
       ]
     },

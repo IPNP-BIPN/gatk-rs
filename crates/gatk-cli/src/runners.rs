@@ -15722,7 +15722,7 @@ fn variant_eval_report(
 ///   one the run is a `NullPointerException` and writes nothing.
 /// * **the plot comes last and fails in an image without R**: the metrics are already written, and
 ///   the run then ends on the user error `RScriptExecutor` raises. With `Rscript` on the path the
-///   reference would draw the plot, which the port does not, so that is its limitation.
+///   port runs its own rewrite of the script.
 pub fn allele_frequency_qc(parser: &Parser) -> Outcome {
     use gatk_tools::allele_frequency_qc as qc;
 
@@ -15753,22 +15753,18 @@ pub fn allele_frequency_qc(parser: &Parser) -> Outcome {
         qc::metrics_file(&sample, &bins, variance).as_bytes(),
     )?;
 
-    // `RScriptExecutor.exec`: the executable is looked for on the path when the script runs.
-    let rscript_found = std::env::var_os("PATH").is_some_and(|path| {
-        std::env::split_paths(&path).any(|directory| directory.join("Rscript").is_file())
-    });
-    if rscript_found {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "plotAlleleFrequencyQC.R is not ported. This message is the port's own and not GATK's."
-                .to_string(),
-        ));
+    // `onTraversalSuccess`: the metrics are written by now, and the plot is what can still fail.
+    interpreter_tools_runner::plot_allele_frequency_qc(
+        &report,
+        argument(parser, "debugFile").as_deref(),
+        &metrics_output,
+        &sample,
+    )?;
+    let (_, p_value) = qc::metrics(&bins, variance);
+    if qc::complains(p_value, double_or(parser, "threshold", qc::DEFAULT_THRESHOLD)) {
+        eprintln!("ERROR AlleleFrequencyQC - {}", qc::complaint(p_value));
     }
-    Err(Thrown::user(
-        "Unable to execute Rscript command: Please add the Rscript directory to your environment \
-         ${PATH}"
-            .to_string(),
-    ))
+    Ok(None)
 }
 
 /// `VCFHeader.toString()`: the meta lines in the order they were read, each after a tab, between
