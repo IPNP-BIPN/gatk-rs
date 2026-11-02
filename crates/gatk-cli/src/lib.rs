@@ -305,6 +305,9 @@ pub fn runner(name: &str) -> Option<Runner> {
         "PathSeqScoreSpark" => Some(run_pathseq_score_spark),
         "CalcMetadataSpark" => Some(run_calc_metadata_spark),
         "ExtractSVEvidenceSpark" => Some(run_extract_sv_evidence_spark),
+        "DiscoverVariantsFromContigAlignmentsSAMSpark" => {
+            Some(run_discover_variants_from_contig_alignments_sam_spark)
+        }
         "PrintReadsSpark" => Some(run_print_reads_spark),
         "BaseRecalibratorSpark" => Some(run_base_recalibrator_spark),
         "ApplyBQSRSpark" => Some(run_apply_bqsr_spark),
@@ -710,6 +713,15 @@ fn run_collect_allelic_counts_spark(args: &[String]) -> Result<Option<String>, T
 
 fn run_extract_sv_evidence_spark(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::extract_sv_evidence_spark(&parsed("ExtractSVEvidenceSpark", args)?)
+}
+
+fn run_discover_variants_from_contig_alignments_sam_spark(
+    args: &[String],
+) -> Result<Option<String>, Thrown> {
+    runners::discover_variants_from_contig_alignments_sam_spark(&parsed(
+        "DiscoverVariantsFromContigAlignmentsSAMSpark",
+        args,
+    )?)
 }
 
 fn run_calc_metadata_spark(args: &[String]) -> Result<Option<String>, Thrown> {

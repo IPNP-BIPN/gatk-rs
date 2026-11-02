@@ -332,6 +332,8 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         | "PathSeqFilterSpark"
         | "PathSeqScoreSpark"
         | "ReadsPipelineSpark" => Some(&["WellformedReadFilter"]),
+        // `DiscoverVariantsFromContigAlignmentsSAMSpark.getDefaultReadFilters`, in place of the rest.
+        "DiscoverVariantsFromContigAlignmentsSAMSpark" => Some(&["MappedReadFilter"]),
         // `PileupSpark.getDefaultReadFilters`: Pileup's five, with the wellformed filter LAST.
         // `GATKSparkTool`'s, then `CollectAllelicCounts.DEFAULT_ADDITIONAL_READ_FILTERS`.
         "CollectAllelicCountsSpark" => Some(&[

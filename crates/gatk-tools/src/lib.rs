@@ -203,6 +203,7 @@ pub mod sv_cluster_engine;
 pub mod sv_collapser;
 pub mod sv_concordance;
 pub mod sv_contig_alignments;
+pub mod sv_discovery;
 pub mod sv_evidence;
 pub mod sv_feature_codecs;
 pub mod sv_kmer;

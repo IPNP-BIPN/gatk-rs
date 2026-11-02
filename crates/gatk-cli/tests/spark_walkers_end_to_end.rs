@@ -30,6 +30,8 @@
 //!    flushes;
 //!  * **ExtractSVEvidenceSpark**, each read's evidence as text, the K-S windows counted from where
 //!    the reads are, and the metadata and high-depth regions it takes on the way;
+//!  * **DiscoverVariantsFromContigAlignmentsSAMSpark**, contigs' alignments read as chimeras and
+//!    the chimeras as a VCF;
 //!  * **HaplotypeCallerSpark**, the caller run over shards of `--read-shard-size`, with no default
 //!    header lines, and what the tool refuses of the walker's outputs;
 //!  * **PathSeqScoreSpark**, the third step: the hits, the scores in their hash tables' order, what

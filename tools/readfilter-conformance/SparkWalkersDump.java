@@ -89,7 +89,7 @@ public class SparkWalkersDump {
         PrintReadsDump.emptyDirectory(DIR);
         Files.createDirectories(DIR);
 
-        System.out.println("# SparkWalkersDump: twenty-nine Spark tools through Main, --spark-master local[1]");
+        System.out.println("# SparkWalkersDump: thirty Spark tools through Main, --spark-master local[1]");
 
         final Path fasta = DIR.resolve("ref.fasta");
         Files.write(fasta, ReadWalkerDump.FASTA.getBytes());
@@ -195,6 +195,7 @@ public class SparkWalkersDump {
         svEvidenceBam(DIR.resolve("sv-evidence-lone.bam"), 300, 3L, true);
         Files.write(DIR.resolve("sv-ignore.txt"), "alt\n".getBytes(StandardCharsets.UTF_8));
         Files.write(DIR.resolve("sv-ignore-bad.txt"), "nosuch\n".getBytes(StandardCharsets.UTF_8));
+        svContigReads(DIR);
         for (final String name : new String[] {"caller.fasta", "caller.fasta.fai", "caller.dict",
                 "caller.bam", "caller.bai", "caller-names.bam", "caller-dups.bam", "caller-dups.bai", "caller-dups-names.bam",
                 "caller-known.vcf", "caller-known.vcf.idx", "caller-known.bed", "caller-no-groups.bam", "kmers.fasta", "kmers.fasta.fai", "kmers.dict",
@@ -218,7 +219,13 @@ public class SparkWalkersDump {
                 "score-paired.bam", "score-unpaired.bam", "score-no-nm.bam", "score-bad-xa.bam",
                 "score-bad-nm.bam", "score-bad-cigar.bam", "score-lonely.bam", "score-not-queryname.bam",
                 "sv-evidence.bam", "sv-evidence.bai", "sv-evidence2.bam", "sv-evidence2.bai",
-                "sv-evidence-lone.bam", "sv-evidence-lone.bai", "sv-ignore.txt", "sv-ignore-bad.txt"}) {
+                "sv-evidence-lone.bam", "sv-evidence-lone.bai", "sv-ignore.txt", "sv-ignore-bad.txt",
+                "sv_contigs.fasta", "sv_contigs.fasta.fai", "sv_contigs.dict", "sv_contigs.bam", "sv_contigs.bai",
+                "sv_contigs_small.bam", "sv_contigs_small.bai", "sv_contigs_adjacent_reverse.bam",
+                "sv_contigs_no_primary.bam", "sv_contigs_hard_primary.bam", "sv_contigs_no_sample.bam",
+                "sv_contigs_two_samples.bam", "sv_cnv.vcf", "sv_cnv_other_sample.vcf", "sv_cnv_no_dictionary.vcf",
+                "sv_cnv_other_dictionary.vcf", "sv_cnv_two_samples.vcf", "sv_truth.vcf", "sv_truth_near_start.vcf",
+                "sv_truth_unknown_type.vcf", "sv_truth_unknown_contig.vcf"}) {
             System.out.printf("input\t%s\t%s%n", name,
                     Base64.getEncoder().encodeToString(Files.readAllBytes(DIR.resolve(name))));
         }
@@ -529,6 +536,7 @@ public class SparkWalkersDump {
         filterRows();
         scoreRows();
         evidenceRows();
+        discoveryRows();
 
         // CALCMETADATASPARK reads everything, filters nothing, and names one partition.
         final String metadata = "CalcMetadataSpark";
@@ -1848,6 +1856,227 @@ public class SparkWalkersDump {
                     "--high-coverage-intervals", out(name, "high.bed")));
             rest.addAll(Arrays.asList(one).subList(2, one.length));
             run(name, "evidence", tool, rest.toArray(new String[0]));
+        }
+    }
+
+    /** Each signature, each way a contig or an argument is refused, and what the reads are cut to. */
+    static void discoveryRows() throws Exception {
+        final String tool = "DiscoverVariantsFromContigAlignmentsSAMSpark";
+        final String cnv = DIR.resolve("sv_cnv.vcf").toString();
+        final String truth = DIR.resolve("sv_truth.vcf").toString();
+        final String[][] runs = {
+                {"discover", "sv_contigs.bam"},
+                {"discover-small", "sv_contigs_small.bam"},
+                {"discover-cnv", "sv_contigs.bam", "--cnv-calls", cnv},
+                {"discover-truth", "sv_contigs.bam", "--truth-vcf", truth},
+                {"discover-truth-near", "sv_contigs.bam", "--truth-vcf", truth, "--truth-interval-padding", "1"},
+                {"discover-interval", "sv_contigs.bam", "-L", "chr1:1-30000"},
+                {"discover-excluded", "sv_contigs.bam", "-XL", "chr2:13000-20000"},
+                {"discover-cut-contig", "sv_contigs.bam", "-L", "chr2"},
+                {"discover-no-default-filters", "sv_contigs.bam", "--disable-tool-default-read-filters", "true"},
+                {"discover-no-supplementary", "sv_contigs.bam", "--read-filter", "NotSupplementaryAlignmentReadFilter"},
+                {"discover-ignored-arguments", "sv_contigs.bam", "--min-align-length", "500", "--min-mq", "-1",
+                        "--debug-mode", "true"},
+                {"discover-adjacent-reverse", "sv_contigs_adjacent_reverse.bam"},
+                {"discover-no-primary", "sv_contigs_no_primary.bam"},
+                {"discover-hard-primary", "sv_contigs_hard_primary.bam"},
+                {"discover-no-sample", "sv_contigs_no_sample.bam"},
+                {"discover-two-samples", "sv_contigs_two_samples.bam"},
+                {"discover-bad-length", "sv_contigs.bam", "--min-align-length", "0"},
+                {"discover-bad-uncertainty", "sv_contigs.bam", "--assembly-imprecise-evidence-overlap-uncertainty", "0"},
+                {"discover-bad-threshold", "sv_contigs.bam", "--imprecise-variant-evidence-threshold", "0"},
+                {"discover-bad-padding", "sv_contigs.bam", "--truth-interval-padding", "0"},
+                {"discover-bad-deletion", "sv_contigs.bam", "--max-callable-imprecise-deletion-size", "0"},
+                {"discover-cnv-missing", "sv_contigs.bam", "--cnv-calls", DIR.resolve("nowhere.vcf").toString()},
+                {"discover-cnv-other-sample", "sv_contigs.bam", "--cnv-calls", DIR.resolve("sv_cnv_other_sample.vcf").toString()},
+                {"discover-cnv-no-dictionary", "sv_contigs.bam", "--cnv-calls", DIR.resolve("sv_cnv_no_dictionary.vcf").toString()},
+                {"discover-cnv-other-dictionary", "sv_contigs.bam", "--cnv-calls", DIR.resolve("sv_cnv_other_dictionary.vcf").toString()},
+                {"discover-cnv-two-samples", "sv_contigs.bam", "--cnv-calls", DIR.resolve("sv_cnv_two_samples.vcf").toString()},
+                {"discover-truth-missing", "sv_contigs.bam", "--truth-vcf", DIR.resolve("nowhere.vcf").toString()},
+                {"discover-truth-near-start", "sv_contigs.bam", "--truth-vcf", DIR.resolve("sv_truth_near_start.vcf").toString()},
+                {"discover-truth-unknown-type", "sv_contigs.bam", "--truth-vcf", DIR.resolve("sv_truth_unknown_type.vcf").toString()},
+                {"discover-truth-unknown-contig", "sv_contigs.bam", "--truth-vcf", DIR.resolve("sv_truth_unknown_contig.vcf").toString()},
+        };
+        for (final String[] one : runs) {
+            final String name = one[0];
+            final List<String> rest = new ArrayList<>(Arrays.asList(
+                    "-I", DIR.resolve(one[1]).toString(), "-R", DIR.resolve("sv_contigs.fasta").toString(),
+                    "-O", out(name, "discovered"), "--add-output-vcf-command-line", "false"));
+            rest.addAll(Arrays.asList(one).subList(2, one.length));
+            run(name, "discovered", tool, rest.toArray(new String[0]));
+        }
+        // The prefix's other two shapes: a directory, and a file it will not overwrite.
+        run("discover-directory", "discovered", tool, "-I", DIR.resolve("sv_contigs.bam").toString(),
+                "-R", DIR.resolve("sv_contigs.fasta").toString(), "--add-output-vcf-command-line", "false",
+                "-O", java.nio.file.Paths.get(out("discover-directory", "discovered")).getParent().toString());
+        run("discover-existing-file", "discovered", tool, "-I", DIR.resolve("sv_contigs.bam").toString(),
+                "-R", DIR.resolve("sv_contigs.fasta").toString(), "-O", DIR.resolve("sv_contigs.dict").toString());
+    }
+
+    /**
+     * What `DiscoverVariantsFromContigAlignmentsSAMSpark` reads: a reference, and assembled contigs
+     * whose alignments carry each signature its interpreter tells apart.
+     */
+    static void svContigReads(final Path dir) throws Exception {
+        final int[] lengths = {30000, 20000};
+        final String[] names = {"chr1", "chr2"};
+        final java.util.Random random = new java.util.Random(11L);
+        final StringBuilder fasta = new StringBuilder();
+        final StringBuilder index = new StringBuilder();
+        final StringBuilder dictionary = new StringBuilder("@HD\tVN:1.6\n");
+        final java.util.List<SAMSequenceRecord> sequences = new java.util.ArrayList<>();
+        for (int contig = 0; contig < names.length; contig++) {
+            final String line = ">" + names[contig] + "\n";
+            fasta.append(line);
+            index.append(names[contig]).append('\t').append(lengths[contig]).append('\t')
+                    .append(fasta.length()).append("\t60\t61\n");
+            for (int at = 0; at < lengths[contig]; at++) {
+                fasta.append("ACGT".charAt(random.nextInt(4)));
+                if (at % 60 == 59 || at == lengths[contig] - 1) {
+                    fasta.append('\n');
+                }
+            }
+            dictionary.append("@SQ\tSN:").append(names[contig]).append("\tLN:").append(lengths[contig]).append('\n');
+            sequences.add(new SAMSequenceRecord(names[contig], lengths[contig]));
+        }
+        Files.writeString(dir.resolve("sv_contigs.fasta"), fasta.toString(), StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_contigs.fasta.fai"), index.toString(), StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_contigs.dict"), dictionary.toString(), StandardCharsets.UTF_8);
+
+        // Name, then per alignment: flags, contig, start, cigar, mapping quality.
+        final Object[][] contigs = {
+            {"del", 0, "chr1", 1000, "100M100S", 60, 2048, "chr1", 2000, "100S100M", 60},
+            {"del2", 0, "chr1", 1000, "100M100S", 60, 2048, "chr1", 2000, "100H100M", 60},
+            {"delRev", 16, "chr1", 3000, "100M100S", 60, 2064, "chr1", 4000, "100S100M", 60},
+            {"delHom", 0, "chr1", 5000, "105M95S", 60, 2048, "chr1", 6000, "100S100M", 60},
+            {"delHomTie", 0, "chr1", 5000, "107M93S", 60, 2048, "chr1", 6002, "100S100M", 60},
+            {"replace", 0, "chr1", 7000, "100M160S", 60, 2048, "chr1", 8000, "160S100M", 60},
+            {"replaceShort", 0, "chr1", 9000, "100M110S", 60, 2048, "chr1", 9500, "110S100M", 60},
+            {"ins", 0, "chr1", 10000, "100M160S", 60, 2048, "chr1", 10100, "160S100M", 60},
+            {"insRev", 16, "chr1", 10500, "100M160S", 60, 2064, "chr1", 10600, "160S100M", 60},
+            {"dup", 0, "chr1", 11000, "100M100S", 60, 2048, "chr1", 11080, "100S100M", 60},
+            {"dupRev", 16, "chr1", 11500, "100M100S", 60, 2064, "chr1", 11580, "100S100M", 60},
+            {"dupIns", 0, "chr1", 12000, "100M130S", 60, 2048, "chr1", 12080, "130S100M", 60},
+            {"dupGap", 0, "chr1", 12500, "50M2I48M100S", 60, 2048, "chr1", 12580, "100S60M1D40M", 60},
+            {"contract", 0, "chr1", 13000, "100M80S", 60, 2048, "chr1", 13100, "80S100M", 60},
+            {"cpxUp", 0, "chr1", 14000, "100M90S", 60, 2048, "chr1", 14070, "90S100M", 60},
+            {"cpxUpRev", 16, "chr1", 14500, "100M90S", 60, 2064, "chr1", 14570, "90S100M", 60},
+            {"cpxDown", 0, "chr1", 15000, "100M70S", 60, 2048, "chr1", 15090, "70S100M", 60},
+            {"inv55", 0, "chr1", 16000, "100M100S", 60, 2064, "chr1", 17000, "100M100S", 60},
+            {"inv33", 16, "chr1", 18000, "100S100M", 60, 2048, "chr1", 19000, "100S100M", 60},
+            {"inv55Ins", 0, "chr1", 20000, "100M120S", 60, 2064, "chr1", 21000, "100M120S", 60},
+            {"inv33Hom", 16, "chr1", 22000, "95S105M", 60, 2048, "chr1", 23000, "100S100M", 60},
+            {"mapped", 0, "chr1", 24000, "100M200S", 60, 2048, "chr2", 500, "100S100M100S", 20, 2048, "chr1", 25000, "200S100M", 60},
+            {"threes", 0, "chr1", 26000, "100M200S", 60, 2048, "chr1", 26500, "100S100M100S", 60, 2048, "chr1", 27000, "200S100M", 60},
+            {"gapped", 0, "chr2", 1000, "100M60D100M", 60},
+            {"gappedIns", 0, "chr2", 2000, "100M60I100M", 60},
+            {"gappedSmall", 0, "chr2", 3000, "100M10D100M", 60},
+            {"gappedClip", 16, "chr2", 4000, "20S100M60D100M30S", 60},
+            {"lowFirst", 0, "chr2", 5000, "100M100S", 10, 2048, "chr2", 6000, "100S100M", 60},
+            {"lowEnd", 0, "chr2", 7000, "100M100S", 60, 2048, "chr2", 8000, "100S100M", 10},
+            {"tooShort", 0, "chr2", 9000, "30M100S", 60, 2048, "chr2", 9500, "30S100M", 60},
+            {"nextShort", 0, "chr2", 9800, "100M30S", 60, 2048, "chr2", 9950, "100S30M", 60},
+            {"inter", 0, "chr1", 28000, "100M100S", 60, 2048, "chr2", 10000, "100S100M", 60},
+            {"swap", 0, "chr2", 11000, "100M100S", 60, 2048, "chr2", 10500, "100S100M", 60},
+            {"contained", 0, "chr2", 12000, "100M100S", 60, 2048, "chr2", 12020, "100S60M40S", 60},
+            {"stitched", 0, "chr2", 13000, "100M100S", 60, 2048, "chr2", 13100, "100S100M", 60},
+            {"single", 0, "chr2", 14000, "100M", 60},
+            {"withSecondary", 0, "chr2", 15000, "100M100S", 60, 2048, "chr2", 16000, "100S100M", 60, 256, "chr2", 17000, "100M100S", 60},
+        };
+        svContigBam(dir.resolve("sv_contigs.bam"), sequences, "s", contigs, 12L);
+        svContigBam(dir.resolve("sv_contigs_small.bam"), sequences, "s", new Object[][] {contigs[0], contigs[17]}, 13L);
+        svContigBam(dir.resolve("sv_contigs_adjacent_reverse.bam"), sequences, "s", new Object[][] {
+            contigs[0],
+            {"adjacentReverse", 16, "chr2", 18000, "100M100S", 60, 2064, "chr2", 18100, "100S100M", 60}}, 14L);
+        svContigBam(dir.resolve("sv_contigs_no_primary.bam"), sequences, "s", new Object[][] {
+            {"orphan", 2048, "chr1", 1000, "100M100S", 60}}, 15L);
+        svContigBam(dir.resolve("sv_contigs_hard_primary.bam"), sequences, "s", new Object[][] {
+            {"hard", 0, "chr1", 1000, "100M100H", 60}}, 16L);
+        svContigBam(dir.resolve("sv_contigs_no_sample.bam"), sequences, null, new Object[][] {contigs[0]}, 17L);
+        svContigBam(dir.resolve("sv_contigs_two_samples.bam"), sequences, "s,t", new Object[][] {contigs[0]}, 18L);
+
+        final StringBuilder vcfHead = new StringBuilder("##fileformat=VCFv4.2\n"
+                + "##FORMAT=<ID=CN,Number=1,Type=Integer,Description=\"Copy number\">\n"
+                + "##FORMAT=<ID=CNQ,Number=1,Type=Float,Description=\"Copy number quality\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##INFO=<ID=END,Number=1,Type=Integer,Description=\"Stop\">\n"
+                + "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type\">\n");
+        for (int contig = 0; contig < names.length; contig++) {
+            vcfHead.append("##contig=<ID=").append(names[contig]).append(",length=").append(lengths[contig]).append(">\n");
+        }
+        final String columns = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t";
+        final String calls = "chr1\t900\tcnvA\tN\t<DEL>\t.\t.\tEND=2500;SVTYPE=DEL\tGT:CN:CNQ\t0/1:1:40\n"
+                + "chr1\t1500\tcnvB\tN\t<DEL>\t.\t.\tEND=4000;SVTYPE=DEL\tGT:CN:CNQ\t0/1:1:30.5\n"
+                + "chr2\t1\tcnvC\tN\t<DUP>\t.\t.\tEND=9000;SVTYPE=DUP\tGT:CN:CNQ\t0/1:3:20\n";
+        Files.writeString(dir.resolve("sv_cnv.vcf"), vcfHead + columns + "s\n" + calls, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cnv_other_sample.vcf"), vcfHead + columns + "t\n" + calls, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cnv_no_dictionary.vcf"),
+                vcfHead.toString().replaceAll("##contig=[^\n]*\n", "") + columns + "s\n" + calls, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cnv_other_dictionary.vcf"),
+                vcfHead.toString().replace("length=20000", "length=20001") + columns + "s\n" + calls, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_cnv_two_samples.vcf"),
+                vcfHead + columns + "s\tt\n" + calls.replace("\n", "\t0/1:1:40\n"), StandardCharsets.UTF_8);
+        final String truthColumns = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n";
+        Files.writeString(dir.resolve("sv_truth.vcf"),
+                vcfHead + truthColumns
+                        + "chr1\t1100\ttruthA\tN\t<DEL>\t.\t.\tEND=2000;SVTYPE=DEL\n"
+                        + "chr2\t100\ttruthB\tN\t<INS>\t.\t.\tEND=100;SVTYPE=INS\n"
+                        + "chr2\t200\ttruthC\tN\t.\t.\t.\tEND=200\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_truth_near_start.vcf"),
+                vcfHead + truthColumns + "chr2\t1\ttruthB\tN\t<INS>\t.\t.\tEND=1;SVTYPE=INS\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_truth_unknown_type.vcf"),
+                vcfHead + truthColumns + "chr2\t100\ttruthB\tN\t<INS>\t.\t.\tEND=100;SVTYPE=ODD\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_truth_unknown_contig.vcf"),
+                vcfHead + truthColumns + "chr9\t100\ttruthB\tN\t<INS>\t.\t.\tEND=100;SVTYPE=INS\n", StandardCharsets.UTF_8);
+    }
+
+    static void svContigBam(final Path bam, final java.util.List<SAMSequenceRecord> sequences, final String sample,
+                            final Object[][] contigs, final long seed) {
+        final SAMFileHeader header = new SAMFileHeader();
+        sequences.forEach(header::addSequence);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        if (sample != null) {
+            group.setSample(sample.split(",")[0]);
+        }
+        header.addReadGroup(group);
+        if (sample != null && sample.contains(",")) {
+            final SAMReadGroupRecord second = new SAMReadGroupRecord("rg2");
+            second.setSample(sample.split(",")[1]);
+            header.addReadGroup(second);
+        }
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final java.util.Random random = new java.util.Random(seed);
+        try (SAMFileWriter writer = new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, false, bam.toFile())) {
+            final java.util.List<htsjdk.samtools.SAMRecord> reads = new java.util.ArrayList<>();
+            for (final Object[] contig : contigs) {
+                for (int at = 1; at < contig.length; at += 5) {
+                    final htsjdk.samtools.SAMRecord read = new htsjdk.samtools.SAMRecord(header);
+                    read.setReadName((String) contig[0]);
+                    read.setFlags((Integer) contig[at]);
+                    read.setReferenceName((String) contig[at + 1]);
+                    read.setAlignmentStart((Integer) contig[at + 2]);
+                    read.setCigarString((String) contig[at + 3]);
+                    read.setMappingQuality((Integer) contig[at + 4]);
+                    final int length = read.getCigar().getReadLength();
+                    final byte[] bases = new byte[length];
+                    final byte[] qualities = new byte[length];
+                    for (int base = 0; base < length; base++) {
+                        bases[base] = (byte) "ACGT".charAt(random.nextInt(4));
+                        qualities[base] = 30;
+                    }
+                    read.setReadBases(bases);
+                    read.setBaseQualities(qualities);
+                    read.setAttribute("RG", "rg1");
+                    if (at == 1) {
+                        read.setAttribute("NM", 2);
+                        read.setAttribute("AS", 90);
+                    }
+                    reads.add(read);
+                }
+            }
+            reads.sort(new htsjdk.samtools.SAMRecordCoordinateComparator());
+            reads.forEach(writer::addAlignment);
         }
     }
 
