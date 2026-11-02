@@ -1,0 +1,437 @@
+{
+  "tool": "HtsgetReader",
+  "origin": "gatk",
+  "t": 2,
+  "numeric_policy": "strict",
+  "arguments_total": 23,
+  "arguments_in_array": 12,
+  "arguments_excluded": 11,
+  "excluded": [
+    {
+      "argument": "--O",
+      "type": "File",
+      "reason": "only one value available (fixture[0])",
+      "held_at": "/work/out/htsget.bin",
+      "source": "fixture"
+    },
+    {
+      "argument": "--arguments_file",
+      "type": "File",
+      "reason": "excluded by the repository: expands into the command line itself, which is measured by the barclay-arguments-file suite instead",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gatk-config-file",
+      "type": "String",
+      "reason": "excluded by the repository: a configuration file the corpus does not carry; varying it would measure the config loader",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gcs-max-retries",
+      "type": "Integer",
+      "reason": "excluded by the repository: reaches nothing without a cloud path in the row",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gcs-project-for-requester-pays",
+      "type": "String",
+      "reason": "excluded by the repository: reaches nothing without a cloud path in the row",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--help",
+      "type": "Boolean",
+      "reason": "excluded by the repository: prints the usage and returns; the row would measure the argument parser rather than the tool",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--QUIET",
+      "type": "Boolean",
+      "reason": "excluded by the repository: suppresses the log on stderr, and what is compared is stdout and the output file",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--use-jdk-inflater",
+      "type": "Boolean",
+      "reason": "excluded by the repository: chooses an inflater, and the input is read the same way either way",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--verbosity",
+      "type": "LogLevel",
+      "reason": "excluded by the repository: log level on stderr, same reason",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--version",
+      "type": "Boolean",
+      "reason": "excluded by the repository: prints the version and returns, same reason",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--showHidden",
+      "type": "Boolean",
+      "reason": "excluded by the repository: changes the usage text only",
+      "held_at": null,
+      "source": "none"
+    }
+  ],
+  "rows": 11,
+  "tuples_total": 264,
+  "tuples_covered": 264,
+  "tuples_forbidden": 0,
+  "constraint_notes": [],
+  "coverage": 1.0,
+  "array": [
+    {
+      "row": 0,
+      "labels": {
+        "--check-md5": "fixture[0]",
+        "--class": "fixture[0]",
+        "--field": "fixture[0]",
+        "--format": "fixture[0]",
+        "--id": "fixture[0]",
+        "--intervals": "fixture[0]",
+        "--notag": "fixture[0]",
+        "--reader-threads": "fixture[0]",
+        "--tag": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--url": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--check-md5=false",
+        "--class=<unset>",
+        "--field=<unset>",
+        "--format=<unset>",
+        "--id=reads",
+        "--intervals=<unset>",
+        "--notag=<unset>",
+        "--reader-threads=1",
+        "--tag=<unset>",
+        "--tmp-dir=/work/tmp",
+        "--url=https://localhost:1/base",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 1,
+      "labels": {
+        "--check-md5": "fixture[0]",
+        "--class": "fixture[1]",
+        "--field": "fixture[1]",
+        "--format": "fixture[1]",
+        "--id": "fixture[1]",
+        "--intervals": "fixture[1]",
+        "--notag": "fixture[1]",
+        "--reader-threads": "fixture[1]",
+        "--tag": "fixture[1]",
+        "--tmp-dir": "fixture[1]",
+        "--url": "fixture[1]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--check-md5=false",
+        "--class=body",
+        "--field=SEQ",
+        "--format=CRAM",
+        "--id=sample.bai",
+        "--intervals=chr1:5-10",
+        "--notag=AS",
+        "--reader-threads=2",
+        "--tag=NM",
+        "--tmp-dir=/work/tmp2",
+        "--url=https://localhost:1/other/",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 2,
+      "labels": {
+        "--check-md5": "fixture[1]",
+        "--class": "fixture[0]",
+        "--field": "fixture[1]",
+        "--format": "fixture[0]",
+        "--id": "fixture[1]",
+        "--intervals": "fixture[0]",
+        "--notag": "fixture[1]",
+        "--reader-threads": "fixture[0]",
+        "--tag": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
+        "--url": "fixture[1]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--check-md5=true",
+        "--class=<unset>",
+        "--field=SEQ",
+        "--format=<unset>",
+        "--id=sample.bai",
+        "--intervals=<unset>",
+        "--notag=AS",
+        "--reader-threads=1",
+        "--tag=NM",
+        "--tmp-dir=/work/tmp",
+        "--url=https://localhost:1/other/",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 3,
+      "labels": {
+        "--check-md5": "fixture[1]",
+        "--class": "fixture[1]",
+        "--field": "fixture[0]",
+        "--format": "fixture[1]",
+        "--id": "fixture[0]",
+        "--intervals": "fixture[1]",
+        "--notag": "fixture[0]",
+        "--reader-threads": "fixture[1]",
+        "--tag": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--url": "fixture[0]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--check-md5=true",
+        "--class=body",
+        "--field=<unset>",
+        "--format=CRAM",
+        "--id=reads",
+        "--intervals=chr1:5-10",
+        "--notag=<unset>",
+        "--reader-threads=2",
+        "--tag=<unset>",
+        "--tmp-dir=/work/tmp2",
+        "--url=https://localhost:1/base",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 4,
+      "labels": {
+        "--check-md5": "fixture[0]",
+        "--class": "fixture[0]",
+        "--field": "fixture[1]",
+        "--format": "fixture[1]",
+        "--id": "fixture[0]",
+        "--intervals": "fixture[0]",
+        "--notag": "fixture[0]",
+        "--reader-threads": "fixture[1]",
+        "--tag": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
+        "--url": "fixture[0]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--check-md5=false",
+        "--class=<unset>",
+        "--field=SEQ",
+        "--format=CRAM",
+        "--id=reads",
+        "--intervals=<unset>",
+        "--notag=<unset>",
+        "--reader-threads=2",
+        "--tag=NM",
+        "--tmp-dir=/work/tmp",
+        "--url=https://localhost:1/base",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 5,
+      "labels": {
+        "--check-md5": "fixture[0]",
+        "--class": "fixture[1]",
+        "--field": "fixture[0]",
+        "--format": "fixture[0]",
+        "--id": "fixture[0]",
+        "--intervals": "fixture[0]",
+        "--notag": "fixture[1]",
+        "--reader-threads": "fixture[0]",
+        "--tag": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--url": "fixture[1]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--check-md5=false",
+        "--class=body",
+        "--field=<unset>",
+        "--format=<unset>",
+        "--id=reads",
+        "--intervals=<unset>",
+        "--notag=AS",
+        "--reader-threads=1",
+        "--tag=<unset>",
+        "--tmp-dir=/work/tmp2",
+        "--url=https://localhost:1/other/",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 6,
+      "labels": {
+        "--check-md5": "fixture[0]",
+        "--class": "fixture[1]",
+        "--field": "fixture[0]",
+        "--format": "fixture[1]",
+        "--id": "fixture[1]",
+        "--intervals": "fixture[0]",
+        "--notag": "fixture[0]",
+        "--reader-threads": "fixture[0]",
+        "--tag": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--url": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--check-md5=false",
+        "--class=body",
+        "--field=<unset>",
+        "--format=CRAM",
+        "--id=sample.bai",
+        "--intervals=<unset>",
+        "--notag=<unset>",
+        "--reader-threads=1",
+        "--tag=<unset>",
+        "--tmp-dir=/work/tmp",
+        "--url=https://localhost:1/base",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 7,
+      "labels": {
+        "--check-md5": "fixture[0]",
+        "--class": "fixture[0]",
+        "--field": "fixture[1]",
+        "--format": "fixture[0]",
+        "--id": "fixture[0]",
+        "--intervals": "fixture[1]",
+        "--notag": "fixture[0]",
+        "--reader-threads": "fixture[0]",
+        "--tag": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--url": "fixture[1]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--check-md5=false",
+        "--class=<unset>",
+        "--field=SEQ",
+        "--format=<unset>",
+        "--id=reads",
+        "--intervals=chr1:5-10",
+        "--notag=<unset>",
+        "--reader-threads=1",
+        "--tag=<unset>",
+        "--tmp-dir=/work/tmp",
+        "--url=https://localhost:1/other/",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 8,
+      "labels": {
+        "--check-md5": "fixture[0]",
+        "--class": "fixture[0]",
+        "--field": "fixture[0]",
+        "--format": "fixture[0]",
+        "--id": "fixture[0]",
+        "--intervals": "fixture[1]",
+        "--notag": "fixture[1]",
+        "--reader-threads": "fixture[1]",
+        "--tag": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--url": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--check-md5=false",
+        "--class=<unset>",
+        "--field=<unset>",
+        "--format=<unset>",
+        "--id=reads",
+        "--intervals=chr1:5-10",
+        "--notag=AS",
+        "--reader-threads=2",
+        "--tag=<unset>",
+        "--tmp-dir=/work/tmp",
+        "--url=https://localhost:1/base",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 9,
+      "labels": {
+        "--check-md5": "fixture[0]",
+        "--class": "fixture[0]",
+        "--field": "fixture[0]",
+        "--format": "fixture[0]",
+        "--id": "fixture[0]",
+        "--intervals": "fixture[0]",
+        "--notag": "fixture[0]",
+        "--reader-threads": "fixture[0]",
+        "--tag": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
+        "--url": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--check-md5=false",
+        "--class=<unset>",
+        "--field=<unset>",
+        "--format=<unset>",
+        "--id=reads",
+        "--intervals=<unset>",
+        "--notag=<unset>",
+        "--reader-threads=1",
+        "--tag=NM",
+        "--tmp-dir=/work/tmp",
+        "--url=https://localhost:1/base",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 10,
+      "labels": {
+        "--check-md5": "fixture[0]",
+        "--class": "fixture[0]",
+        "--field": "fixture[0]",
+        "--format": "fixture[0]",
+        "--id": "fixture[0]",
+        "--intervals": "fixture[0]",
+        "--notag": "fixture[0]",
+        "--reader-threads": "fixture[0]",
+        "--tag": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--url": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--check-md5=false",
+        "--class=<unset>",
+        "--field=<unset>",
+        "--format=<unset>",
+        "--id=reads",
+        "--intervals=<unset>",
+        "--notag=<unset>",
+        "--reader-threads=1",
+        "--tag=<unset>",
+        "--tmp-dir=/work/tmp2",
+        "--url=https://localhost:1/base",
+        "--use-jdk-deflater=true"
+      ]
+    }
+  ]
+}

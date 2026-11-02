@@ -308,6 +308,10 @@ pub fn runner(name: &str) -> Option<Runner> {
         "DiscoverVariantsFromContigAlignmentsSAMSpark" => {
             Some(run_discover_variants_from_contig_alignments_sam_spark)
         }
+        "CpxVariantReInterpreterSpark" => Some(run_cpx_variant_re_interpreter_spark),
+        "SvDiscoverFromLocalAssemblyContigAlignmentsSpark" => {
+            Some(run_sv_discover_from_local_assembly_contig_alignments_spark)
+        }
         "PrintReadsSpark" => Some(run_print_reads_spark),
         "BaseRecalibratorSpark" => Some(run_base_recalibrator_spark),
         "ApplyBQSRSpark" => Some(run_apply_bqsr_spark),
@@ -422,6 +426,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CompareIntervalLists" => Some(run_compare_interval_lists),
         "FixMisencodedBaseQualityReads" => Some(run_fix_misencoded_base_quality_reads),
         "AnnotateIntervals" => Some(run_annotate_intervals),
+        "HtsgetReader" => Some(run_htsget_reader),
         "RevertBaseQualityScores" => Some(run_revert_base_quality_scores),
         "AddOriginalAlignmentTags" => Some(run_add_original_alignment_tags),
         "LeftAlignIndels" => Some(run_left_align_indels),
@@ -474,6 +479,10 @@ fn run_bwa_mem_index_image_creator(args: &[String]) -> Result<Option<String>, Th
 
 fn run_apply_bqsr(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::apply_bqsr(&parsed("ApplyBQSR", args)?)
+}
+
+fn run_htsget_reader(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::htsget_reader(&parsed("HtsgetReader", args)?)
 }
 
 fn run_annotate_intervals(args: &[String]) -> Result<Option<String>, Thrown> {
@@ -720,6 +729,19 @@ fn run_discover_variants_from_contig_alignments_sam_spark(
 ) -> Result<Option<String>, Thrown> {
     runners::discover_variants_from_contig_alignments_sam_spark(&parsed(
         "DiscoverVariantsFromContigAlignmentsSAMSpark",
+        args,
+    )?)
+}
+
+fn run_cpx_variant_re_interpreter_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::cpx_variant_re_interpreter_spark(&parsed("CpxVariantReInterpreterSpark", args)?)
+}
+
+fn run_sv_discover_from_local_assembly_contig_alignments_spark(
+    args: &[String],
+) -> Result<Option<String>, Thrown> {
+    runners::sv_discover_from_local_assembly_contig_alignments_spark(&parsed(
+        "SvDiscoverFromLocalAssemblyContigAlignmentsSpark",
         args,
     )?)
 }

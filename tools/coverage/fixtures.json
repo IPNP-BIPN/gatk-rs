@@ -16099,6 +16099,267 @@
       "--add-output-vcf-command-line": [
         "false"
       ]
+    },
+    "SvDiscoverFromLocalAssemblyContigAlignmentsSpark": {
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr2:13000-20000"
+      ],
+      "--input": [
+        "/work/fixtures/sv_assembly_no_breakend.bam",
+        "/work/fixtures/sv_assembly.bam"
+      ],
+      "--read-index": [],
+      "--reference": [
+        "/work/fixtures/sv_contigs.fasta"
+      ],
+      "--intervals": [
+        "<unset>",
+        "chr1:1-30000"
+      ],
+      "--output": [
+        "/work/out/assembled",
+        "/work/out/"
+      ],
+      "--program-name": [
+        "assembled",
+        "assembled2"
+      ],
+      "$why": [
+        "The rich set of contigs, and one without breakends for --cnv-calls: a CNV file stops on a breakend, whose end is negative, so that pair is forbidden and is a row of the spark-walkers golden. --use-jdk-deflater is held true so --write-sam replays on a host without ISA-L, and --add-output-vcf-command-line false because its line stamps the clock."
+      ],
+      "--aligner-index-image": [
+        "image.img"
+      ],
+      "--kmers-to-ignore": [
+        "kmers.txt"
+      ],
+      "--min-align-length": [
+        "50",
+        "90"
+      ],
+      "--min-mq": [
+        "30",
+        "70"
+      ],
+      "--truth-vcf": [
+        "<unset>",
+        "/work/fixtures/sv_truth.vcf"
+      ],
+      "--truth-interval-padding": [
+        "50",
+        "1"
+      ],
+      "--assembly-imprecise-evidence-overlap-uncertainty": [
+        "100",
+        "10"
+      ],
+      "--imprecise-variant-evidence-threshold": [
+        "7",
+        "3"
+      ],
+      "--cnv-calls": [
+        "<unset>",
+        "/work/fixtures/sv_cnv.vcf"
+      ],
+      "--max-callable-imprecise-deletion-size": [
+        "15000",
+        "1000"
+      ],
+      "--debug-mode": [
+        "false",
+        "true"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--write-sam": [
+        "false",
+        "true"
+      ],
+      "--use-jdk-deflater": [
+        "true"
+      ],
+      "--non-canonical-contig-names-file": [
+        "<unset>",
+        "/work/fixtures/sv_alt_tigs.txt"
+      ]
+    },
+    "CpxVariantReInterpreterSpark": {
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "<unset>"
+      ],
+      "--input": [
+        "/work/fixtures/sv_assembly.bam",
+        "/work/fixtures/sv_contigs.bam"
+      ],
+      "--read-index": [],
+      "--reference": [
+        "/work/fixtures/sv_contigs.fasta"
+      ],
+      "--intervals": [
+        "<unset>"
+      ],
+      "--aligner-index-image": [
+        "image.img"
+      ],
+      "--kmers-to-ignore": [
+        "kmers.txt"
+      ],
+      "--min-align-length": [
+        "50",
+        "90"
+      ],
+      "--min-mq": [
+        "30",
+        "70"
+      ],
+      "--truth-vcf": [
+        "<unset>",
+        "/work/fixtures/sv_truth.vcf"
+      ],
+      "--truth-interval-padding": [
+        "50",
+        "1"
+      ],
+      "--assembly-imprecise-evidence-overlap-uncertainty": [
+        "100",
+        "10"
+      ],
+      "--imprecise-variant-evidence-threshold": [
+        "7",
+        "3"
+      ],
+      "--cnv-calls": [
+        "<unset>",
+        "/work/fixtures/sv_cnv.vcf"
+      ],
+      "--max-callable-imprecise-deletion-size": [
+        "15000",
+        "1000"
+      ],
+      "--debug-mode": [
+        "false",
+        "true"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--non-canonical-contig-names-file": [
+        "<unset>",
+        "/work/fixtures/sv_alt_tigs.txt"
+      ],
+      "--cpx-vcf": [
+        "/work/fixtures/sv_cpx.vcf",
+        "/work/fixtures/sv_cpx_empty.vcf"
+      ],
+      "--prefix-out-vcf": [
+        "/work/out/reinterpreted",
+        "/work/out/other"
+      ],
+      "--program-name": [
+        "reinterpreted",
+        "reinterpreted2"
+      ],
+      "$why": [
+        "A VCF of complex calls and one with none, over the contigs behind them and over others. The refusals are rows of the spark-walkers golden. -L and -XL are held unset because a query needs the VCF indexed; that refusal is a row. --cnv-calls and --truth-vcf are read by nothing here, which the array measures. --add-output-vcf-command-line is held false because its line stamps the clock."
+      ]
+    },
+    "HtsgetReader": {
+      "--url": [
+        "https://localhost:1/base",
+        "https://localhost:1/other/"
+      ],
+      "--id": [
+        "reads",
+        "sample.bai"
+      ],
+      "--O": [
+        "/work/out/htsget.bin"
+      ],
+      "--format": [
+        "<unset>",
+        "CRAM"
+      ],
+      "--class": [
+        "<unset>",
+        "body"
+      ],
+      "--intervals": [
+        "<unset>",
+        "chr1:5-10"
+      ],
+      "--field": [
+        "<unset>",
+        "SEQ"
+      ],
+      "--tag": [
+        "<unset>",
+        "NM"
+      ],
+      "--notag": [
+        "<unset>",
+        "AS"
+      ],
+      "--reader-threads": [
+        "1",
+        "2"
+      ],
+      "--check-md5": [
+        "false",
+        "true"
+      ],
+      "$why": [
+        "Nothing listens on the port, and the refusal is the URI the arguments built, which is what they decide. The answers and what is done with them are the htsget-reader golden's, which starts a server. The class stays body: class=header refuses every other query parameter, and that refusal is a row of the golden."
+      ]
     }
   },
   "constraints": [
@@ -17367,6 +17628,16 @@
         "--remove-sequencing-duplicates": "true"
       },
       "why": "The same mutual exclusion, between the two removals."
+    },
+    {
+      "tools": [
+        "SvDiscoverFromLocalAssemblyContigAlignmentsSpark"
+      ],
+      "forbid": {
+        "--cnv-calls": "/work/fixtures/sv_cnv.vcf",
+        "--input": "/work/fixtures/sv_assembly.bam"
+      },
+      "why": "A breakend's end is negative, so any CNV file fails on it before anything else is measured."
     }
   ],
   "exclude": {

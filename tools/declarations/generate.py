@@ -207,6 +207,11 @@ def cross_check(tool, entries):
     return len(documented)
 
 
+# A tool with no @DocumentedFeature is one the inventory reads no summary for, so its annotation's
+# is written out here.
+UNDOCUMENTED_SUMMARIES = {"HtsgetReader": "Download a file using htsget"}
+
+
 def summary_table(tools):
     """The one-line summary the usage header prints.
 
@@ -228,7 +233,11 @@ def summary_table(tools):
     from_usage = usage_summaries()
     arms = []
     for tool in tools:
-        summary = from_usage.get(tool) or by_name.get(tool, {}).get("summary")
+        summary = (
+            from_usage.get(tool)
+            or by_name.get(tool, {}).get("summary")
+            or UNDOCUMENTED_SUMMARIES.get(tool)
+        )
         if summary is None:
             sys.exit(f"{tool}: neither the usage golden nor the inventory carries a summary")
         arms.append(f'        "{tool}" => Some({literal(summary)}),')

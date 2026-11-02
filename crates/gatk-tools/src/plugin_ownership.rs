@@ -322,6 +322,8 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         | "CompareDuplicatesSpark"
         | "MarkDuplicatesSpark" => Some(&["AllowAllReadsReadFilter"]),
         "CountBasesSpark"
+        | "PrintReadsSpark"
+        | "ExtractOriginalAlignmentRecordsByNameSpark"
         | "FlagStatSpark"
         | "ApplyBQSRSpark"
         | "BQSRPipelineSpark"
@@ -333,7 +335,10 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         | "PathSeqScoreSpark"
         | "ReadsPipelineSpark" => Some(&["WellformedReadFilter"]),
         // `DiscoverVariantsFromContigAlignmentsSAMSpark.getDefaultReadFilters`, in place of the rest.
-        "DiscoverVariantsFromContigAlignmentsSAMSpark" => Some(&["MappedReadFilter"]),
+        // And `SvDiscoverFromLocalAssemblyContigAlignmentsSpark`'s and `CpxVariantReInterpreterSpark`'s.
+        "DiscoverVariantsFromContigAlignmentsSAMSpark"
+        | "SvDiscoverFromLocalAssemblyContigAlignmentsSpark"
+        | "CpxVariantReInterpreterSpark" => Some(&["MappedReadFilter"]),
         // `PileupSpark.getDefaultReadFilters`: Pileup's five, with the wellformed filter LAST.
         // `GATKSparkTool`'s, then `CollectAllelicCounts.DEFAULT_ADDITIONAL_READ_FILTERS`.
         "CollectAllelicCountsSpark" => Some(&[

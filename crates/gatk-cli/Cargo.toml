@@ -34,7 +34,14 @@ htsjdk-vcf.workspace = true
 # FuncotatorDataSourceDownloader's --validate-integrity.
 sha2.workspace = true
 
+# HtsgetReader's client: the server is always asked over TLS, and its certificate is checked against
+# the machine's own roots, as the JDK checks it against its own.
+ureq = { version = "2", default-features = false, features = ["tls", "native-certs"] }
+
 [dev-dependencies]
 gatk-corpus = { path = "../gatk-corpus" }
+# HtsgetReader's conformance serves over TLS what the dump served, under a certificate of its own.
+rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 # The off-ramp conformance reads back the zip RampedHaplotypeCaller wrote.
 zip = { version = "9", default-features = false, features = ["deflate"] }

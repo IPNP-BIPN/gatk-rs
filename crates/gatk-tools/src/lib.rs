@@ -116,6 +116,7 @@ pub mod hc_genotyping;
 pub mod hc_region;
 pub mod hdf5_writer;
 pub mod hopscotch;
+pub mod htsget_reader;
 pub mod index_feature_file;
 pub mod interval_walker;
 pub mod joint_germline_cnv_segmentation;

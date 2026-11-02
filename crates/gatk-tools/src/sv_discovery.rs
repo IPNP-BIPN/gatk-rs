@@ -14,7 +14,7 @@
 //!   inserted alignment was seen still reports it;
 //! * **only the chimeras that are complete and not translocations reach the rest**, so the inverted
 //!   duplication, the reference-order swap and the inter-chromosome paths of the classes above
-//!   cannot be taken from this tool and are not here;
+//!   cannot be taken from this tool, only from [`assembly`]'s;
 //! * **the order among records that sort equal is `AppendOnlyMap`'s**, the slot being the murmur3 of
 //!   `NovelAdjacencyAndAltHaplotype.hashCode`.
 //!
@@ -27,6 +27,8 @@ use htsjdk_bam::header::SamHeader;
 use htsjdk_bam::record::BamRecord;
 use htsjdk_vcf::allele::Allele;
 use htsjdk_vcf::variant::{Value, VariantContext};
+
+pub mod assembly;
 
 /// `DiscoverVariantsFromContigAlignmentsArgumentCollection.GAPPED_ALIGNMENT_BREAK_DEFAULT_SENSITIVITY`.
 const GAP_SENSITIVITY: i32 = 50;
@@ -120,7 +122,8 @@ struct Alignment {
     map_quality: i32,
     mismatches: i32,
     score: i32,
-    split: bool,
+    /// `alnModType`, as `toString` gives it.
+    modification: char,
 }
 
 fn is_clipping(op: Op) -> bool {
@@ -288,7 +291,7 @@ impl Alignment {
             map_quality: i32::from(record.mapping_quality),
             mismatches: optional_int(record, b"NM"),
             score: optional_int(record, b"AS"),
-            split: false,
+            modification: 'O',
         })
     }
 
@@ -303,7 +306,7 @@ impl Alignment {
             self.map_quality.to_string(),
             self.mismatches.to_string(),
             self.score.to_string(),
-            (if self.split { "S" } else { "O" }).to_string(),
+            self.modification.to_string(),
         ]
         .join("_")
     }
@@ -461,13 +464,14 @@ fn split_gaps(one: Alignment, unclipped_length: i32) -> Result<Vec<Alignment>, F
             map_quality: one.map_quality,
             mismatches: NO_VALUE,
             score: NO_VALUE,
-            split: true,
+            modification: 'S',
         });
     }
     Ok(result)
 }
 
 /// `AlignedContig`.
+#[derive(Clone)]
 struct Contig {
     name: String,
     sequence: Vec<u8>,
@@ -521,7 +525,11 @@ fn record_text(record: &BamRecord, header: &SamHeader) -> String {
 }
 
 /// `AlignedContig.parseReadsAndOptionallySplitGappedAlignments`.
-fn parse_contig(reads: &[&BamRecord], header: &SamHeader) -> Result<Contig, Failed> {
+fn parse_contig(
+    reads: &[&BamRecord],
+    header: &SamHeader,
+    split_gapped: bool,
+) -> Result<Contig, Failed> {
     let primary = reads
         .iter()
         .find(|read| read.flags & 0x800 == 0)
@@ -546,10 +554,12 @@ fn parse_contig(reads: &[&BamRecord], header: &SamHeader) -> Result<Contig, Fail
         }
         let unclipped = primary.read_bases.len() as i32;
         for read in reads {
-            alignments.extend(split_gaps(
-                Alignment::from_record(read, header)?,
-                unclipped,
-            )?);
+            let alignment = Alignment::from_record(read, header)?;
+            if split_gapped {
+                alignments.extend(split_gaps(alignment, unclipped)?);
+            } else {
+                alignments.push(alignment);
+            }
         }
     }
     // `getAlignmentIntervalComparator`, in a stable sort.
@@ -583,11 +593,17 @@ struct Chimera {
     switch: StrandSwitch,
     forward_representation: bool,
     insertion_mappings: Vec<String>,
+    /// `goodNonCanonicalMappingSATag`.
+    non_canonical: String,
 }
 
-/// `TypeInferredFromSimpleChimera`, those a complete non-translocation can be.
+/// `TypeInferredFromSimpleChimera`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ChimeraType {
+    InterChromosomeStrandSwitch,
+    InterChromosomeLeftMateFirst,
+    InterChromosomeLeftMateSecond,
+    ReferenceOrderSwap,
     StrandSwitch,
     SimpleDeletion,
     Replacement,
@@ -613,6 +629,8 @@ impl Chimera {
         higher: &Alignment,
         mappings: &[String],
         contig: &str,
+        non_canonical: &str,
+        header: &SamHeader,
     ) -> Result<Self, Failed> {
         let switch = if lower.forward == higher.forward {
             StrandSwitch::None
@@ -622,12 +640,14 @@ impl Chimera {
             StrandSwitch::ReverseToForward
         };
         let same_contig = lower.span.contig == higher.span.contig;
-        // `isForwardStrandRepresentation`; a pair across contigs is dropped by the caller, and its
-        // answer here is not read.
+        // `isForwardStrandRepresentation`.
         let forward_representation = match switch {
             StrandSwitch::None => lower.forward,
-            StrandSwitch::ForwardToReverse => same_contig && lower.span.end < higher.span.end,
-            StrandSwitch::ReverseToForward => same_contig && lower.span.start < higher.span.start,
+            _ if !same_contig => {
+                contig_index(header, &lower.span.contig) < contig_index(header, &higher.span.contig)
+            }
+            StrandSwitch::ForwardToReverse => lower.span.end < higher.span.end,
+            StrandSwitch::ReverseToForward => lower.span.start < higher.span.start,
         };
         Ok(Self {
             contig: contig.to_string(),
@@ -636,6 +656,7 @@ impl Chimera {
             switch,
             forward_representation,
             insertion_mappings: mappings.to_vec(),
+            non_canonical: non_canonical.to_string(),
         })
     }
 
@@ -653,13 +674,14 @@ impl Chimera {
             "SimpleChimera{{sourceContigName='{}', regionWithLowerCoordOnContig={}, \
              regionWithHigherCoordOnContig={}, strandSwitch={}, \
              isForwardStrandRepresentation={}, insertionMappings=[{}], \
-             goodNonCanonicalMappingSATag='NONE'}}",
+             goodNonCanonicalMappingSATag='{}'}}",
             self.contig,
             self.lower.sa_text(),
             self.higher.sa_text(),
             self.switch_name(),
             self.forward_representation,
-            self.insertion_mappings.join(", ")
+            self.insertion_mappings.join(", "),
+            self.non_canonical
         )
     }
 
@@ -691,20 +713,7 @@ impl Chimera {
 
     /// `AssemblyContigWithFineTunedAlignments.hasIncompletePictureFromTwoAlignments`.
     fn incomplete(&self) -> bool {
-        let (one, two) = (&self.lower.span, &self.higher.span);
-        if one.contig != two.contig {
-            return false;
-        }
-        if one.contains(two) || two.contains(one) {
-            return true;
-        }
-        if self.lower.forward != self.higher.forward {
-            one.overlaps(two)
-        } else if self.lower.forward {
-            one.start > two.start && one.start <= two.end
-        } else {
-            two.start > one.start && two.start <= one.end
-        }
+        incomplete_from_two(&self.lower, &self.higher)
     }
 
     /// `isCandidateSimpleTranslocation`.
@@ -743,8 +752,19 @@ impl Chimera {
         }
     }
 
-    /// `inferType`, for a complete non-translocation.
-    fn infer_type(&self) -> Result<ChimeraType, Failed> {
+    /// `inferType`.
+    fn infer_type(&self, header: &SamHeader) -> Result<ChimeraType, Failed> {
+        if self.translocation() {
+            return Ok(if self.lower.span.contig == self.higher.span.contig {
+                ChimeraType::ReferenceOrderSwap
+            } else if self.switch != StrandSwitch::None {
+                ChimeraType::InterChromosomeStrandSwitch
+            } else if self.forward_representation != self.first_after_second(header) {
+                ChimeraType::InterChromosomeLeftMateFirst
+            } else {
+                ChimeraType::InterChromosomeLeftMateSecond
+            });
+        }
         if self.switch != StrandSwitch::None {
             return Ok(ChimeraType::StrandSwitch);
         }
@@ -773,6 +793,24 @@ impl Chimera {
                 self.text()
             ));
         })
+    }
+}
+
+/// `AssemblyContigWithFineTunedAlignments.hasIncompletePictureFromTwoAlignments`.
+fn incomplete_from_two(head: &Alignment, tail: &Alignment) -> bool {
+    let (one, two) = (&head.span, &tail.span);
+    if one.contig != two.contig {
+        return false;
+    }
+    if one.contains(two) || two.contains(one) {
+        return true;
+    }
+    if head.forward != tail.forward {
+        one.overlaps(two)
+    } else if head.forward {
+        one.start > two.start && one.start <= two.end
+    } else {
+        two.start > one.start && two.start <= one.end
     }
 }
 
@@ -823,7 +861,7 @@ fn next_may_be_insertion(current: &Alignment, next: &Alignment) -> bool {
 }
 
 /// `parseOneContig`.
-fn parse_one_contig(contig: &Contig) -> Result<Vec<Chimera>, Failed> {
+fn parse_one_contig(contig: &Contig, header: &SamHeader) -> Result<Vec<Chimera>, Failed> {
     if contig.alignments.len() < 2 {
         return Ok(Vec::new());
     }
@@ -850,7 +888,7 @@ fn parse_one_contig(contig: &Contig) -> Result<Vec<Chimera>, Failed> {
             }
             break;
         }
-        let chimera = Chimera::new(current, next, &mappings, &contig.name)?;
+        let chimera = Chimera::new(current, next, &mappings, &contig.name, "NONE", header)?;
         if !chimera.incomplete() && !chimera.translocation() {
             results.push(chimera);
         }
@@ -871,10 +909,18 @@ enum Duplication {
     Imprecise { affected: Interval },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ComplicationClass {
+    SimpleOrDuplication,
+    StrandSwitch,
+    ReferenceOrderSwap,
+    InterChromosome,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Complication {
-    /// The class, which `equals` compares: the two simple classes have the same fields.
-    strand_switch_class: bool,
+    /// The class, which `equals` compares: the classes without a duplication have the same fields.
+    class: ComplicationClass,
     homology: String,
     inserted: String,
     unit: Option<Interval>,
@@ -1149,6 +1195,8 @@ struct NovelAdjacency {
     right: Interval,
     switch: StrandSwitch,
     complication: Complication,
+    /// `type`, which `equals` and `hashCode` leave out.
+    kind: ChimeraType,
     alt_haplotype: Vec<u8>,
 }
 
@@ -1253,13 +1301,15 @@ fn novel_adjacency(
     sequence: &[u8],
     header: &SamHeader,
 ) -> Result<NovelAdjacency, Failed> {
-    let kind = chimera.infer_type()?;
+    let kind = chimera.infer_type(header)?;
     let first_after = chimera.first_after_second(header);
     let (first, second) = (&chimera.lower, &chimera.higher);
     let (left_span, right_span) = chimera.sorted_spans(header);
     let reference = first.span.contig.clone();
+    let mut right_contig = reference.clone();
+    let mut left_contig = reference.clone();
     let mut complication = Complication {
-        strand_switch_class: false,
+        class: ComplicationClass::SimpleOrDuplication,
         homology: String::new(),
         inserted: String::new(),
         unit: None,
@@ -1415,8 +1465,62 @@ fn novel_adjacency(
             }
             alt_haplotype = bases;
         }
+        ChimeraType::ReferenceOrderSwap => {
+            complication.class = ComplicationClass::ReferenceOrderSwap;
+            complication.homology = infer_homology(first, second, sequence, first_after)?;
+            complication.inserted = infer_inserted(first, second, sequence, first_after)?;
+            upstream = left_span.start;
+            downstream = right_span.end - complication.homology.len() as i32;
+            alt_haplotype = Vec::new();
+        }
+        ChimeraType::InterChromosomeStrandSwitch
+        | ChimeraType::InterChromosomeLeftMateFirst
+        | ChimeraType::InterChromosomeLeftMateSecond => {
+            complication.class = ComplicationClass::InterChromosome;
+            complication.homology = infer_homology(first, second, sequence, first_after)?;
+            complication.inserted = infer_inserted(first, second, sequence, first_after)?;
+            let homology = complication.homology.len() as i32;
+            // `isFirstInPartner`.
+            let first_in_partner = match chimera.switch {
+                StrandSwitch::None => {
+                    contig_index(header, &first.span.contig)
+                        < contig_index(header, &second.span.contig)
+                }
+                _ => chimera.forward_representation,
+            };
+            let (one, two) = if first_in_partner {
+                (first, second)
+            } else {
+                (second, first)
+            };
+            left_contig = one.span.contig.clone();
+            right_contig = two.span.contig.clone();
+            (upstream, downstream) = match chimera.switch {
+                StrandSwitch::None => {
+                    // `first` always keeps the homology; which end depends on the representation.
+                    let first_end = if chimera.forward_representation {
+                        first.span.end - homology
+                    } else {
+                        first.span.start
+                    };
+                    let second_end = if chimera.forward_representation {
+                        second.span.start
+                    } else {
+                        second.span.end - homology
+                    };
+                    if first_in_partner {
+                        (first_end, second_end)
+                    } else {
+                        (second_end, first_end)
+                    }
+                }
+                StrandSwitch::ForwardToReverse => (one.span.end - homology, two.span.end),
+                StrandSwitch::ReverseToForward => (one.span.start, two.span.start + homology),
+            };
+            alt_haplotype = Vec::new();
+        }
         ChimeraType::StrandSwitch => {
-            complication.strand_switch_class = true;
+            complication.class = ComplicationClass::StrandSwitch;
             complication.homology = infer_homology(first, second, sequence, first_after)?;
             complication.inserted = infer_inserted(first, second, sequence, first_after)?;
             let homology = complication.homology.len() as i32;
@@ -1430,8 +1534,8 @@ fn novel_adjacency(
             alt_haplotype = Vec::new();
         }
     }
-    let left = Interval::new(&reference, upstream, upstream)?;
-    let right = Interval::new(&reference, downstream, downstream)?;
+    let left = Interval::new(&left_contig, upstream, upstream)?;
+    let right = Interval::new(&right_contig, downstream, downstream)?;
     if validate {
         validate_locations(&left, &right, header)?;
     }
@@ -1440,6 +1544,7 @@ fn novel_adjacency(
         right,
         switch: chimera.switch,
         complication,
+        kind,
         alt_haplotype,
     })
 }
@@ -1620,22 +1725,37 @@ fn annotated_variant(
     variant.stop = i64::from(stop);
     variant.id = id;
 
-    let set = |variant: &mut VariantContext, key: &str, value: Value| match variant
-        .attributes
-        .iter_mut()
-        .find(|(name, _)| name == key)
-    {
-        Some(slot) => slot.1 = value,
-        None => variant.attributes.push((key.to_string(), value)),
-    };
     set(&mut variant, "END", Value::Int(i64::from(stop)));
     set(&mut variant, "SVTYPE", Value::Str(svtype.to_string()));
     set(&mut variant, "SVLEN", Value::Int(i64::from(length)));
     for (key, value) in extra {
         set(&mut variant, key, value);
     }
+    annotate_from_evidence(&mut variant, adjacency, evidence, header, cnv_calls, stop)?;
+    Ok(variant)
+}
+
+/// A `VariantContextBuilder.attribute` on what is already built.
+fn set(variant: &mut VariantContext, key: &str, value: Value) {
+    match variant.attributes.iter_mut().find(|(name, _)| name == key) {
+        Some(slot) => slot.1 = value,
+        None => variant.attributes.push((key.to_string(), value)),
+    }
+}
+
+/// What `produceAnnotatedVcFromAssemblyEvidence` adds to a type's basic information.
+fn annotate_from_evidence(
+    variant: &mut VariantContext,
+    adjacency: &NovelAdjacency,
+    evidence: &[Chimera],
+    header: &SamHeader,
+    cnv_calls: Option<&[CnvCall]>,
+    stop: i32,
+) -> Result<(), Failed> {
+    let contig = variant.contig.clone();
+    let position = variant.start as i32;
     for (key, value) in adjacency.complication.attributes() {
-        set(&mut variant, key, value);
+        set(variant, key, value);
     }
 
     // `getAssemblyEvidenceRelatedAnnotations`.
@@ -1648,13 +1768,9 @@ fn annotated_variant(
             - overlap_on_contig(&chimera.lower, &chimera.higher)
     };
     let joined = |values: Vec<String>| values.join(",");
+    set(variant, "TOTAL_MAPPINGS", Value::Int(sorted.len() as i64));
     set(
-        &mut variant,
-        "TOTAL_MAPPINGS",
-        Value::Int(sorted.len() as i64),
-    );
-    set(
-        &mut variant,
+        variant,
         "HQ_MAPPINGS",
         Value::Int(
             sorted
@@ -1664,7 +1780,7 @@ fn annotated_variant(
         ),
     );
     set(
-        &mut variant,
+        variant,
         "MAPPING_QUALITIES",
         Value::Str(joined(
             sorted
@@ -1674,7 +1790,7 @@ fn annotated_variant(
         )),
     );
     set(
-        &mut variant,
+        variant,
         "ALIGN_LENGTHS",
         Value::Str(joined(
             sorted
@@ -1684,7 +1800,7 @@ fn annotated_variant(
         )),
     );
     set(
-        &mut variant,
+        variant,
         "MAX_ALIGN_LENGTH",
         Value::Int(i64::from(
             sorted
@@ -1695,7 +1811,7 @@ fn annotated_variant(
         )),
     );
     set(
-        &mut variant,
+        variant,
         "CTG_NAMES",
         Value::Str(joined(
             sorted
@@ -1710,12 +1826,24 @@ fn annotated_variant(
         .collect();
     mappings.sort();
     if !mappings.is_empty() {
-        set(&mut variant, "INSSEQ_MAP", Value::Str(mappings.join(",")));
+        set(variant, "INSSEQ_MAP", Value::Str(mappings.join(",")));
+    }
+    let good_mappings: Vec<String> = sorted
+        .iter()
+        .filter(|chimera| chimera.non_canonical != "NONE")
+        .map(|chimera| chimera.non_canonical.clone())
+        .collect();
+    if !good_mappings.is_empty() {
+        set(
+            variant,
+            "CTG_GOOD_NONCANONICAL_MAPPING",
+            Value::Str(good_mappings.join(",")),
+        );
     }
 
     if !adjacency.alt_haplotype.is_empty() {
         set(
-            &mut variant,
+            variant,
             "SEQ_ALT_HAPLOTYPE",
             Value::Str(String::from_utf8_lossy(&adjacency.alt_haplotype).into_owned()),
         );
@@ -1723,7 +1851,11 @@ fn annotated_variant(
 
     // `annotateWithExternalCNVCalls`, whose tree walks in interval order.
     if let Some(calls) = cnv_calls {
-        let index = contig_index(header, contig);
+        // A breakend has no end, and `SVInterval` is built from the -1 it says so with.
+        if stop < 0 {
+            return Err(format!("provided end is negative: {stop}"));
+        }
+        let index = contig_index(header, &contig);
         let annotation: Vec<&str> = calls
             .iter()
             .filter(|call| call.contig == index && call.start < stop && position < call.end)
@@ -1731,13 +1863,13 @@ fn annotated_variant(
             .collect();
         if !annotation.is_empty() {
             set(
-                &mut variant,
+                variant,
                 "EXTERNAL_CNV_CALLS",
                 Value::Str(annotation.join(",")),
             );
         }
     }
-    Ok(variant)
+    Ok(())
 }
 
 /// `SVVCFWriter.sortVariantsByCoordinate`, stable as `Stream.sorted` is.
@@ -1778,13 +1910,22 @@ pub fn adjacencies(records: &[BamRecord], header: &SamHeader) -> Result<Adjacenc
             .collect(),
         |name: &String| string_hash_code(name),
     );
-    let mut found = Vec::new();
+    let mut contigs = Vec::with_capacity(by_name.len());
     for (_, reads) in &by_name {
-        let contig = parse_contig(reads, header)?;
-        if contig.alignments.len() <= 1 {
-            continue;
-        }
-        for chimera in parse_one_contig(&contig)? {
+        contigs.push(parse_contig(reads, header, true)?);
+    }
+    let contigs: Vec<&Contig> = contigs
+        .iter()
+        .filter(|contig| contig.alignments.len() > 1)
+        .collect();
+    adjacencies_of(&contigs, header)
+}
+
+/// `ContigChimericAlignmentIterativeInterpreter.discoverVariantsFromChimeras`, up to `groupByKey`.
+fn adjacencies_of(contigs: &[&Contig], header: &SamHeader) -> Result<Adjacencies, Failed> {
+    let mut found = Vec::new();
+    for contig in contigs {
+        for chimera in parse_one_contig(contig, header)? {
             let adjacency = novel_adjacency(&chimera, &contig.sequence, header)?;
             found.push((adjacency, chimera));
         }

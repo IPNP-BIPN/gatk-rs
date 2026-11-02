@@ -8,9 +8,9 @@ Ports vendored from main at: htsjdk-rs `821a863bfb80`, picard-rs `bd199d296c43`
 | state | tools | share |
 |---|---:|---:|
 | oracle-backed | 262 | 84.2% |
-| golden-pending | 30 | 9.6% |
+| golden-pending | 33 | 10.6% |
 | unchecked | 0 | 0.0% |
-| not started | 19 | 6.1% |
+| not started | 16 | 5.1% |
 | **total** | **311** | |
 
 `oracle-backed` means CI re-derives the tool's goldens in the pinned container on every run and compares them. It does **not** mean the tool is byte-identical over its whole argument surface: that is what the argument-coverage column is for. A t-wise array (`tools/coverage/covering.py`, sized in [what-pairwise-coverage-costs.md](what-pairwise-coverage-costs.md)) is run against the reference and the port, and the column reports the fraction of its rows on which the two answered identically, rejections included. `not measured` means the array has never been run against a port binary, which is still true of most tools here.
@@ -149,7 +149,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 
 </details>
 
-## gatk-origin tools (171 of 190 started)
+## gatk-origin tools (174 of 190 started)
 
 | tool | archetype | state | suites | cases | argument coverage | cost (cold / steady) |
 |---|---|---|---|---:|---|---|
@@ -209,6 +209,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `CountReadsSpark` | locus-walker | golden-pending | spark-walkers | 1 | t=2, 19/19 rows (100%) | not measured |
 | `CountVariants` | variant-walker | oracle-backed | count-variants, interval-arguments, sequence-dictionary-validation, tool-argument-declarations, tool-argument-enums | 5 | t=2, 23/23 rows (100%) | 0.002 / 0.053 |
 | `CountVariantsSpark` | variant-walker | golden-pending | spark-walkers | 1 | t=2, 19/19 rows (100%) | not measured |
+| `CpxVariantReInterpreterSpark` | sv-caller | golden-pending | spark-walkers | 1 | not measured | not measured |
 | `CreateHadoopBamSplittingIndex` | unclassified | oracle-backed | splitting-index | 1 | t=2, 11/11 rows (100%) | 0.003 / 0.084 |
 | `CreateReadCountPanelOfNormals` | cnv-segmentation | oracle-backed | create-read-count-panel-of-normals | 1 | t=2, 25/25 rows (100%) | 0.001 / 0.012 |
 | `CreateSomaticPanelOfNormals` | variant-transform | oracle-backed | brent-optimizer, create-somatic-panel-of-normals | 2 | t=2, 21/21 rows (100%) | 0.003 / 0.072 |
@@ -256,6 +257,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `HaplotypeBasedVariantRecaller` | assembly-caller | oracle-backed | haplotype-based-variant-recaller | 1 | t=2, 44/44 rows (100%) | 0.054 / 0.968 |
 | `HaplotypeCaller` | assembly-caller | oracle-backed | callers-all-annotations, hc-allele-filtering, hc-allele-graphs, hc-alleles, hc-bamout, hc-contamination, hc-debug-outputs, hc-disable-optimizations, hc-dragen-end-to-end, hc-end-to-end, hc-error-correction, hc-flow, hc-gvcf-end-to-end, hc-linked-graph, hc-pdhmm, hc-pedigree, hc-pileup, hc-ploidy, hc-resources | 19 | t=2, 54/54 rows (100%) | 0.025 / 0.315 |
 | `HaplotypeCallerSpark` | assembly-caller | golden-pending | spark-walkers | 1 | not measured | not measured |
+| `HtsgetReader` | unclassified | golden-pending | htsget-reader | 1 | not measured | not measured |
 | `IndexFeatureFile` | unclassified | oracle-backed | index-feature-file, tool-argument-declarations, tool-argument-enums, usage-text | 4 | t=2, 8/8 rows (100%) | 0.002 / 0.063 |
 | `JointGermlineCNVSegmentation` | sv-caller | oracle-backed | joint-germline-cnv-segmentation | 1 | t=2, 22/22 rows (100%) | 0.003 / 0.065 |
 | `LearnReadOrientationModel` | assembly-caller | oracle-backed | learn-read-orientation-model | 1 | t=2, 12/12 rows (100%) | 0.023 / 0.302 |
@@ -312,6 +314,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `SplitNCigarReads` | record-transform | oracle-backed | split-n-cigar-reads | 1 | t=2, 21/21 rows (100%) | 0.003 / 0.061 |
 | `SplitReads` | record-transform | oracle-backed | split-reads | 1 | t=2, 20/20 rows (100%) | 0.004 / 0.036 |
 | `StructuralVariantDiscoverer` | unclassified | oracle-backed | structural-variant-discoverer | 1 | t=2, 23/23 rows (100%) | 0.002 / 0.056 |
+| `SvDiscoverFromLocalAssemblyContigAlignmentsSpark` | sv-caller | golden-pending | spark-walkers | 1 | not measured | not measured |
 | `TagGermlineEvents` | unclassified | oracle-backed | tag-germline-events | 1 | t=2, 17/17 rows (100%) | 0.002 / 0.054 |
 | `TransferReadTags` | record-transform | oracle-backed | transfer-read-tags | 1 | t=2, 19/19 rows (100%) | 0.002 / 0.035 |
 | `UnmarkDuplicates` | record-transform | oracle-backed | record-transform | 1 | t=2, 19/19 rows (100%) | 0.003 / 0.042 |
@@ -325,9 +328,9 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `VariantRecalibrator` | variant-transform | oracle-backed | variant-recalibrator | 1 | t=2, 26/26 rows (100%) | 0.081 / 1.010 |
 | `VariantsToTable` | variant-walker | oracle-backed | variants-to-table | 1 | t=2, 23/23 rows (100%) | 0.002 / 0.056 |
 
-<details><summary>19 not started</summary>
+<details><summary>16 not started</summary>
 
-`BwaAndMarkDuplicatesPipelineSpark`, `BwaSpark`, `CpxVariantReInterpreterSpark`, `DetermineGermlineContigPloidy`, `FindBreakpointEvidenceSpark`, `GenomicsDBImport`, `GermlineCNVCaller`, `HtsgetReader`, `NVScoreVariants`, `ParallelCopyGCSDirectoryIntoHDFSSpark`, `PathSeqBwaSpark`, `PathSeqPipelineSpark`, `PlotDenoisedCopyRatios`, `PlotModeledSegments`, `PostprocessGermlineCNVCalls`, `ScoreVariantAnnotations`, `StructuralVariationDiscoveryPipelineSpark`, `SvDiscoverFromLocalAssemblyContigAlignmentsSpark`, `TrainVariantAnnotationsModel`
+`BwaAndMarkDuplicatesPipelineSpark`, `BwaSpark`, `DetermineGermlineContigPloidy`, `FindBreakpointEvidenceSpark`, `GenomicsDBImport`, `GermlineCNVCaller`, `NVScoreVariants`, `ParallelCopyGCSDirectoryIntoHDFSSpark`, `PathSeqBwaSpark`, `PathSeqPipelineSpark`, `PlotDenoisedCopyRatios`, `PlotModeledSegments`, `PostprocessGermlineCNVCalls`, `ScoreVariantAnnotations`, `StructuralVariationDiscoveryPipelineSpark`, `TrainVariantAnnotationsModel`
 
 </details>
 

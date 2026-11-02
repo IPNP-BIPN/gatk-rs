@@ -499,8 +499,8 @@ jobs:
             suites: "mutect2-permutect hc-allele-graphs mutect2-dragstr"
           - group: golden-pending
             index: "1/1"
-            slug: "tool-argument-declarations-tool-argument-enums-spark-walkers"
-            suites: "tool-argument-declarations tool-argument-enums spark-walkers"
+            slug: "tool-argument-declarations-tool-argument-enums-spark-walkers-htsget-reader"
+            suites: "tool-argument-declarations tool-argument-enums spark-walkers htsget-reader"
     steps:
       - uses: actions/checkout@v7
 
@@ -596,7 +596,7 @@ jobs:
             --tool SortSamSpark --tool PrintVariantsSpark --tool RevertSamSpark \
             --tool CollectInsertSizeMetricsSpark --tool CompareDuplicatesSpark \
             --tool CollectMultipleMetricsSpark --tool MarkDuplicatesSpark --tool CollectAllelicCountsSpark \
-            --tool FindBadGenomicKmersSpark --tool CalcMetadataSpark --tool ExtractSVEvidenceSpark --tool DiscoverVariantsFromContigAlignmentsSAMSpark --tool HaplotypeCallerSpark --tool ReadsPipelineSpark --tool PathSeqFilterSpark --tool PathSeqScoreSpark \
+            --tool FindBadGenomicKmersSpark --tool CalcMetadataSpark --tool ExtractSVEvidenceSpark --tool DiscoverVariantsFromContigAlignmentsSAMSpark --tool SvDiscoverFromLocalAssemblyContigAlignmentsSpark --tool CpxVariantReInterpreterSpark --tool HtsgetReader --tool HaplotypeCallerSpark --tool ReadsPipelineSpark --tool PathSeqFilterSpark --tool PathSeqScoreSpark \
             --tool ExtractOriginalAlignmentRecordsByNameSpark --tool MeanQualityByCycleSpark \
             --tool QualityScoreDistributionSpark --tool CollectBaseDistributionByCycleSpark \
             --tool CollectQualityYieldMetricsSpark \
