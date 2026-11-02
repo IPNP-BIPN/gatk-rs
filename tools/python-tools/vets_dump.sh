@@ -4,6 +4,7 @@
 set -e
 work=$(mktemp -d)
 python3=/opt/miniconda/envs/gatk/bin/python
+mkdir -p "$work/fixture"
 $python3 /harness/make_vets_fixture.py "$work/fixture" >&2
 printf '{"random_state": 1, "n_estimators": 7, "n_jobs": 2}' > "$work/fixture/seven.json"
 SCORE_EXTRA="--snp-calibration-sensitivity-threshold 0.9 --indel-calibration-sensitivity-threshold 0.95" \
