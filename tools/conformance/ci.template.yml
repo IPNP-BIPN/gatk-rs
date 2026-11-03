@@ -424,6 +424,12 @@ jobs:
           run env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 ONEDNN_VERBOSE=1 python3 /harness/dump_layers.py reference /nv/fixture/variants.vcf /nv/fixture/reference.fasta - 64 /nv/d1d.bin /nv/d1d.scores | grep -m3 -E "onednn_verbose,(info,cpu,isa|exec,cpu,convolution)" || true
           run env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 python3 /harness/dump_layers.py read_tensor /nv/fixture/variants.vcf /nv/fixture/reference.fasta /nv/fixture/reads.bam 64 /nv/d2d.bin /nv/d2d.scores
 
+      - name: nasm, which `gkl-igzip` needs to build ISA-L's assembly
+        run: |
+          sudo apt-get update -qq || echo "apt refresh incomplete; the install below is the gate"
+          sudo apt-get install -y -qq nasm
+          nasm -v
+
       - name: The layers against the port, for the record
         env:
           NVSCORE_LAYERS_1D: reference /tmp/nv/fixture/variants.vcf /tmp/nv/fixture/reference.fasta - 64 /tmp/nv/d1d.bin /tmp/nv
