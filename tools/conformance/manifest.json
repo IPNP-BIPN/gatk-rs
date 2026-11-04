@@ -8317,7 +8317,7 @@
     },
     {
       "id": "r-plots",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "oracle": "oracle_with_r",
       "title": "the three tools that hand their work to an R script, with R there to run it",
       "harness": "tools/readfilter-conformance",
@@ -8334,8 +8334,8 @@
       "cases": [
         {
           "dump": "RPlotsDump",
-          "golden": null,
-          "why": "Not frozen: the first x86-64 run of oracle-with-r publishes the candidate. Twenty-three runs through Main and seven of the scripts on their own."
+          "golden": "crates/gatk-tools/tests/data/r_plots.txt.gz",
+          "why": "Frozen from the candidate artefact of run 41547143144, in the oracle-with-r job."
         }
       ]
     },
@@ -8420,7 +8420,7 @@
     },
     {
       "id": "sv-partitions",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "FindBreakpointEvidenceSpark and StructuralVariationDiscoveryPipelineSpark on several partitions and large k-mer tables",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -8492,8 +8492,8 @@
       "cases": [
         {
           "dump": "SvPartitionsDump",
-          "golden": null,
-          "why": "Pending the first real x86-64 CI run."
+          "golden": "crates/gatk-tools/tests/data/sv_partitions.txt.gz",
+          "why": "Frozen from the candidate artefact of run 41547143144."
         }
       ]
     }
