@@ -8388,7 +8388,7 @@
     },
     {
       "id": "nvscorevariants",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "NVScoreVariants: the printed scores and the VCF of both models, in GATK's own image",
       "harness": "tools/nvscorevariants",
       "python_image": "broadinstitute/gatk@sha256:71b17ee42d149e8ec112603f5305c873ab60d93949ef8bb62a4fff85427f56fb",
@@ -8402,8 +8402,8 @@
       "cases": [
         {
           "dump": "NVScoreVariantsDump",
-          "golden": null,
-          "why": "Pending the first real x86-64 CI run. The golden may only come from there: everything measured so far is under Rosetta at AVX2."
+          "golden": "crates/gatk-tools/tests/data/nvscorevariants.txt.gz",
+          "why": "Frozen from the candidate artefact of run 41550922972, on an Intel Xeon Platinum 8573C with AVX-512, where the port's printed scores and VCFs matched the reference's."
         }
       ]
     }
