@@ -8388,7 +8388,7 @@
     },
     {
       "id": "vets-isolation-forest",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "TrainVariantAnnotationsModel and ScoreVariantAnnotations with scikit-learn's isolation forest, past the interpreter",
       "harness": "tools/python-tools",
       "tools": [
@@ -8409,8 +8409,8 @@
       "cases": [
         {
           "dump": "VetsDump",
-          "golden": null,
-          "why": "Two passes over the seeded fixture of 2000 sites make_vets_fixture.py writes: the default hyperparameters with sensitivity thresholds on both types, and seven trees with another seed and two jobs. Nothing has been compared with a golden until CI has run this on real x86-64; tools/python-tools/compare_port.py compares a measurement by hand."
+          "golden": "crates/gatk-tools/tests/data/vets_isolation_forest.txt.gz",
+          "why": "Frozen from the candidate artefact of run 41547347944, made on a runner with AVX-512 as the dump's cpu line records."
         }
       ]
     }
