@@ -6281,7 +6281,7 @@
     },
     {
       "id": "create-read-count-panel-rank",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "the eigensamples a panel writes, at local[1], with the singular values above the noise",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -6294,8 +6294,8 @@
       "cases": [
         {
           "dump": "PanelRankDump",
-          "golden": null,
-          "why": "Pending the first real x86-64 CI run."
+          "golden": "crates/gatk-tools/tests/data/panel_rank.txt.gz",
+          "why": "Frozen from the candidate artefact of run 41548433758, at local[1]."
         }
       ]
     },
