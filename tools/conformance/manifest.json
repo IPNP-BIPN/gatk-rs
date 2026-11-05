@@ -8416,7 +8416,7 @@
     },
     {
       "id": "gcnv-frozen",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "DetermineGermlineContigPloidy, GermlineCNVCaller and PostprocessGermlineCNVCalls under a configuration meant to compute the same bits on any x86-64 CPU",
       "harness": "tools/python-tools",
       "tools": [
@@ -8441,8 +8441,8 @@
       "cases": [
         {
           "dump": "GcnvFrozenDump",
-          "golden": null,
-          "why": "golden-pending: no golden may come from a developer machine; the first CI artefact is the candidate, and a second run on another CPU family is what makes the claim."
+          "golden": "crates/gatk-tools/tests/data/gcnv_frozen.txt.gz",
+          "why": "Frozen from CI run 42048939031 (Xeon 6973P-C). The trio's 132 files have the same bytes as run 42040149376's (Xeon Platinum 8573C) and as an emulated AVX2-only run; the port's 18 Postprocess files match it byte for byte."
         }
       ]
     },

@@ -503,12 +503,8 @@ jobs:
             suites: "spark-walkers htsget-reader interpreter-tools genomicsdb-import sv-evidence"
           - group: oracle-backed
             index: "72/72"
-            slug: "vets-isolation-forest-nvscorevariants"
-            suites: "vets-isolation-forest nvscorevariants"
-          - group: golden-pending
-            index: "1/1"
-            slug: "gcnv-frozen"
-            suites: "gcnv-frozen"
+            slug: "vets-isolation-forest-gcnv-frozen-nvscorevariants"
+            suites: "vets-isolation-forest gcnv-frozen nvscorevariants"
     steps:
       - uses: actions/checkout@v7
 

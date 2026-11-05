@@ -48,11 +48,13 @@ shards for the six samples of the fixture `make_gcnv_fixture.py` writes:
 
 `glibc_libm`'s four functions match numpy in the image on 1.2 million points each.
 
-**Not proven**: anything on a real x86-64 runner. The local reference runs emulated on one machine;
-the `gcnv-frozen` suite (`golden-pending`) now also runs Postprocess on every sample and prints the
-shards' bytes, so its golden, once CI produces it on two CPU families, is what
-`gcnv_postprocess_end_to_end.rs` replays. Until then that test says it has nothing to compare. Not
-ported: `--input-intervals-vcf` and `--clustered-breakpoints` (the joint-calling path) and
+**On real x86-64**: the `gcnv-frozen` golden is CI run 42048939031's (Xeon 6973P-C). The trio's 132
+files have the same bytes there as in run 42040149376 (Xeon Platinum 8573C) and in the emulated
+AVX2-only run of [gcnv-reproducible-oracle.md](gcnv-reproducible-oracle.md), and `gcnv_postprocess_end_to_end.rs` replays its shards and gets the 18
+Postprocess files byte for byte. All three CPUs are x86-64 with or without AVX-512; an AMD runner has
+not been seen yet.
+
+Not ported: `--input-intervals-vcf` and `--clustered-breakpoints` (the joint-calling path) and
 `--reference`, which the port refuses in its own words.
 
 ## Reproducing
