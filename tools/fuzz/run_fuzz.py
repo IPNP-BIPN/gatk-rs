@@ -20,6 +20,7 @@ committed is `measured.json`, frozen from a CI run's artefact like every other m
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -135,8 +136,9 @@ def run(options):
         run_array.output_on_failure(options.tool),
     )
 
-    with tempfile.TemporaryDirectory(prefix="gatk-fuzz-", ignore_cleanup_errors=True) as tmp:
-        workdir = Path(tmp)
+    # mkdtemp, removed below, for the reason shard() gives.
+    workdir = Path(tempfile.mkdtemp(prefix="gatk-fuzz-"))
+    if True:  # keeps the body's indentation
         for name in ("out", "fuzz", "tmp"):
             (workdir / name).mkdir()
         try:
@@ -158,6 +160,7 @@ def run(options):
                             divergences.append({"arguments": minimal, "reference": ref_min, "port": ours_min})
         finally:
             run_array.empty_output_in_container(workdir)
+            shutil.rmtree(workdir, ignore_errors=True)
 
     summary = {
         "tool": options.tool,
@@ -238,7 +241,10 @@ def shard(options):
     tools = sorted(t for t in measured if (run_array.ARRAYS / f"{t}.t{options.t}.json").exists())
     mine = tools[k::n]
     failed = []
-    with tempfile.TemporaryDirectory(prefix="gatk-fuzz-fixtures-", ignore_cleanup_errors=True) as tmp:
+    # mkdtemp rather than TemporaryDirectory: the container writes the fixtures as root, and from
+    # Python 3.14 TemporaryDirectory's cleanup raises on them even with ignore_cleanup_errors.
+    tmp = tempfile.mkdtemp(prefix="gatk-fuzz-fixtures-")
+    try:
         if options.fixtures_dir is None:
             options.fixtures_dir = str(run_array.build_fixtures(Path(tmp)))
         for tool in mine:
@@ -251,6 +257,8 @@ def shard(options):
                 (FINDINGS / f"{tool}.json").write_text(json.dumps(
                     {"summary": {"tool": tool, "failed": str(error)[:500]}}, indent=1) + "\n")
                 print(f"{tool}: FAILED {error}")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
     print(f"shard {k}/{n}: {len(mine) - len(failed)} of {len(mine)} fuzzed; failed: {' '.join(failed) or 'none'}")
     return 1 if mine and len(failed) == len(mine) else 0
 
