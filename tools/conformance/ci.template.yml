@@ -80,6 +80,15 @@ jobs:
           python3 tools/audit/arithmetic.py
           python3 tools/audit/arithmetic.py --self-test
 
+      - name: Every device kernel meets the eligibility rule
+        # Milestone GPU.1 (docs/gpu/eligibility.md). A kernel is a second implementation of a
+        # byte-identical path, so it may hold no construct whose answer depends on the device: the
+        # guard refuses floating point in an integer kernel, fused and fast-math operations,
+        # width-dependent reductions and atomics, and a host that compiles with fast math on.
+        run: |
+          python3 tools/audit/gpu_kernels.py
+          python3 tools/audit/gpu_kernels.py --self-test
+
       - name: A file already explained does not lose its explanations
         # docs/COMMENTING.md. The guard is a ratchet, not a floor for the whole tree: it fails only
         # when a file on tools/audit/commented.txt drops below the density it was recorded at, so
@@ -179,6 +188,62 @@ jobs:
             | sed 's#.*/##' > /tmp/build2.txt
           diff /tmp/build1.txt /tmp/build2.txt
           cat /tmp/build1.txt
+
+  gpu:
+    name: "GPU: the same suites on the device path"
+    # Milestone GPU.3. A device run is not a separate claim but the same one on other hardware, so
+    # it runs the `test` job's suites, compared by the same assertions, with the PairHMM routed
+    # through the Metal kernel. The tests refuse to pass if GATK_RS_GPU is set and the device path
+    # did not run, so a runner without Metal fails here rather than falling back to the CPU.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          # Pinned; must match rust-toolchain.toml.
+          toolchain: "1.97.1"
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Record the device, its driver and the toolkit
+        env:
+          GATK_RS_GPU: "1"
+        run: |
+          system_profiler SPDisplaysDataType
+          python3 tools/provenance/record.py --out provenance-gpu.json
+
+      - name: Every suite on the CPU path, as this runner's own baseline
+        # The same binaries, without GATK_RS_GPU. A suite this host cannot pass on its CPU (ISA-L's
+        # igzip has no ARM path, so GKL's level 2 refuses here) is this host's limit, not the
+        # device's, and the `test` job holds the CPU claim on x86-64.
+        run: |
+          set -o pipefail
+          cargo test --workspace --release --features gatk-engine/gpu --no-fail-fast 2>&1 \
+            | tee cpu.log || true
+
+      - name: Every suite on the device path, failing exactly where the CPU path fails
+        env:
+          GATK_RS_GPU: "1"
+        run: |
+          set -o pipefail
+          cargo test --workspace --release --features gatk-engine/gpu --no-fail-fast 2>&1 \
+            | tee gpu.log || true
+          for side in cpu gpu; do
+            if grep -q "could not compile" $side.log; then echo "$side: build failed"; exit 1; fi
+            grep -E '^test .* \.\.\. FAILED$' $side.log | sort > $side-failed.txt || true
+            grep -c '^test result' $side.log > $side-binaries.txt
+          done
+          diff cpu-binaries.txt gpu-binaries.txt
+          test "$(cat gpu-binaries.txt)" -gt 0
+          echo "test binaries: $(cat gpu-binaries.txt); failing on both paths: $(wc -l < cpu-failed.txt)"
+          diff cpu-failed.txt gpu-failed.txt
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: provenance-gpu
+          path: provenance-gpu.json
 
 # {{ORACLE_JOBS}}
 
