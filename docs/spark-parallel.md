@@ -63,8 +63,15 @@ LocalLAPACK otherwise, while `n < 100` or `k > n / 2` with `n <= 15000`; DistARP
 
 **Libraries.** The image loads `Java11BLAS`, `F2jLAPACK` and `F2jARPACK` (netlib 3.0.3); no native
 library loads. So the arithmetic is Java's and is reachable. `f2j_gesdd.rs` ports `dgesdd` up to 25
-samples. Past that the reference takes divide and conquer or ARPACK and the port keeps its Jacobi
-solver, so there it has the count only where the panel is full rank.
+samples. Past that the reference takes divide and conquer or ARPACK. `f2j_arpack.rs` ports the ARPACK
+path, `symmetricEigs` over F2J's `dsaupd` and `dseupd`, with the product Spark hands it: Breeze's
+`Java11BLAS.dgemvN` (four columns, `Math.fma`) for LocalARPACK, and for DistARPACK
+`multiplyGramianMatrixBy`, whose `treeAggregate` has depth 2 and folds the hundred slices into ten by
+index mod ten before the driver folds the ten. `dgetv0`'s seed is static in F2J and starts at
+`1, 3, 5, 7` in a fresh JVM, which is the tool's one call. Against a local dump
+(`create-read-count-panel-arpack`, golden-pending) the port has every eigenvalue's bits, the vectors'
+fingerprints and the rank on eleven panels from 63 to 150 samples, two of them of rank under the
+request. Divide and conquer, 26 to 62 samples at the default request, is the Jacobi solver still.
 
 **The rank.** It comes from values under `1e-9` of the first, which are rounding noise, so it depends
 on how the Gramian's sum is associated. `treeAggregate` has depth 1 here, and the driver folds each
