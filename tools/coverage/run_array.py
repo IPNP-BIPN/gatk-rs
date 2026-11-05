@@ -238,6 +238,8 @@ def read_output(out_dir, row_args=()):
     if not produced:
         return ""
     fragments = genomicsdb_names(produced, out_dir)
+    # A fragment's name is a random uuid, so the order is the stable name's, not the file's.
+    produced.sort(key=lambda p: Path(fragments[p][1]) if p in fragments else p.relative_to(out_dir))
     parts = []
     for path in produced:
         raw = path.read_bytes()
