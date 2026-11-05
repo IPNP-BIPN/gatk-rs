@@ -229,7 +229,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | MethylationTypeCaller | gatk-rs | oracle-backed | 74 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 6 | 0 | none |
 | ModelSegments | gatk-rs | oracle-backed | 21 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 6 | 0 | none |
 | Mutect2 | gatk-rs | oracle-backed | 617 suite | 76 suite | 38/38 (100.0%) | 2 | not measured | 10 | 2 | mask_identity_hashes, sort_segments_with |
-| NVScoreVariants | gatk-rs | oracle-backed | 21 | 0 | not measured | - | not measured | 4 | 0 | none |
+| NVScoreVariants | gatk-rs | oracle-backed | 1373 suite | 0 suite | not measured | - | not measured | 4 | 0 | none |
 | NonNFastaSize | picard-rs | oracle-backed | not vendored | not vendored | 7/7 (100.0%) | 2 | not measured | 0 | 0 | none |
 | NormalizeFasta | picard-rs | oracle-backed | not vendored | not vendored | 8/8 (100.0%) | 2 | not measured | 0 | 0 | none |
 | NuMTFilterTool | gatk-rs | oracle-backed | 35 suite | 0 suite | 15/15 (100.0%) | 2 | not measured | 2 | 7 | none |
@@ -1548,7 +1548,7 @@ mutect_tn.bam holds a tumour and a normal sample over mutect_ref.fasta, about tw
 
 ### NVScoreVariants
 
-Suites: `interpreter-tools`.
+Suites: `interpreter-tools`, `nvscorevariants`.
 
 Inputs: `nothing.bam`, `nothing.fasta`, `nothing.vcf`, `vr_calls.vcf`.
 

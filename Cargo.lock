@@ -655,6 +655,7 @@ dependencies = [
  "md-5",
  "regex",
  "serde_json",
+ "sha2",
  "tempfile",
  "zip",
 ]
