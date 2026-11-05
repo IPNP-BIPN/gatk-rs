@@ -16,7 +16,7 @@ FMA and no AVX-512. Nothing here has run on real x86-64, and no golden exists ye
 | `ScoreVariantAnnotations` | **Byte-identical reachable, and landed**, for `PYTHON_IFOREST` | VCF identical; `.scores.hdf5` doubles identical (the reference's file holds the time) |
 | `DetermineGermlineContigPloidy` | **Keeps the interpreter** | Stable, but the numbers come from C compiled per host CPU from a rewritten graph |
 | `GermlineCNVCaller` | **Keeps the interpreter** | Same |
-| `PostprocessGermlineCNVCalls` | **Keeps the interpreter for segments.** Intervals VCF and denoised table are Java and reachable, not landed | Stable on fixed shards; the segmenter is the same compiled C |
+| `PostprocessGermlineCNVCalls` | **Ported against the frozen reference** ([gcnv-postprocess.md](gcnv-postprocess.md)): all three outputs byte-identical locally, CI golden pending | Stable on fixed shards; the segmenter's compiled C reproduced op by op under `gcnv_frozen_env.sh` |
 
 No tool is in the "only a stated numeric tolerance" class. A tolerance would need a reimplementation
 of the inference to measure against, and none exists.
@@ -137,18 +137,20 @@ scikit-learn's mixture would describe a model GATK does not run.
 
 ### `PostprocessGermlineCNVCalls`
 
-`GermlineCNVIntervalVariantComposer` writes the intervals VCF from the shards' posteriors in Java, and
-`concatenateDenoisedCopyRatioFiles` writes the table. Neither calls Python, so both are reachable and
-not landed. Between them `segment_gcnv_calls.py` runs the compiled forward-backward and Viterbi, and
-`GermlineCNVSegmentVariantComposer` only formats what that returned, so the segments VCF keeps the
-interpreter. The tool would still end in a refusal.
+Ported against the frozen reference (`gcnv_frozen_env.sh`), not against GATK's own configuration,
+which has no CPU-independent target: the intervals VCF and the denoised table are Java, and
+`segment_gcnv_calls.py`'s compiled forward-backward, Viterbi and qualities are reproduced op by op
+in `gatk_tools::gcnv_segments`, with glibc's SSE2 `exp`/`log`/`log1p`/`expm1` in
+`gatk_tools::glibc_libm`. `python` and `gcnvkernel` must still import, as for the reference.
+[gcnv-postprocess.md](gcnv-postprocess.md) says what is proven and how.
 
 ## What #806 can and cannot claim
 
 Can claim, **once CI confirms**: `TrainVariantAnnotationsModel` and `ScoreVariantAnnotations` reproduce
 the reference for the default backend with a seeded forest, the scorer modulo its random script name.
 
-Cannot claim: anything for the gCNV trio beyond the checks before the import, and any byte target for
+Cannot claim: anything for `DetermineGermlineContigPloidy` and `GermlineCNVCaller` beyond the checks
+before the import, `PostprocessGermlineCNVCalls` before the `gcnv-frozen` golden lands, and any byte target for
 a scorer's name or for the time inside a Java-written HDF5 file.
 
 ## What needs CI
@@ -169,3 +171,4 @@ a scorer's name or for the time inside a Java-written HDF5 file.
 `tools/python-tools/`: `make_vets_fixture.py` and `make_gcnv_fixture.py` write the fixtures,
 `measure_vets.sh`, `measure_gcnv.sh` and `measure_postprocess.sh` run inside the image,
 `compare_runs.py` compares runs, and `compare_port.py` compares the port with a run.
+`pp_trace.py` and `probe_gcnv_libm.py` trace the segmenter and glibc's libm for the Postprocess port.

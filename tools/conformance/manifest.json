@@ -8426,13 +8426,15 @@
       ],
       "image": "broadinstitute/gatk:4.6.2.0",
       "command": "bash /harness/gcnv_dump.sh",
-      "why": "A MEASUREMENT, NOT A PORT TARGET YET (docs/gcnv-reproducible-oracle.md). Under GATK's own flags pytensor compiles its C with the host's -march and -mfma, MKL picks kernels per CPU and glibc's libm takes FMA variants, and on one emulated AVX2 CPU those choices move 80 of the 132 files. gcnv_frozen_env.sh pins them: baseline x86-64 with -ffp-contract=off for pytensor, Ubuntu's reference BLAS preloaded over MKL, numpy's baseline loops, glibc's libm without FMA or AVX2. The dump is one sha256 per output file; the comment lines name the CPU. The golden is only worth something once runners of different CPU families have produced the same lines.",
+      "why": "A MEASUREMENT, NOT A PORT TARGET YET (docs/gcnv-reproducible-oracle.md). Under GATK's own flags pytensor compiles its C with the host's -march and -mfma, MKL picks kernels per CPU and glibc's libm takes FMA variants, and on one emulated AVX2 CPU those choices move 80 of the 132 files. gcnv_frozen_env.sh pins them: baseline x86-64 with -ffp-contract=off for pytensor, Ubuntu's reference BLAS preloaded over MKL, numpy's baseline loops, glibc's libm without FMA or AVX2. The dump is one sha256 per output file; the comment lines name the CPU. The golden is only worth something once runners of different CPU families have produced the same lines. It also carries PostprocessGermlineCNVCalls on every sample (post-s<i>/, plain VCFs) and the shards' bytes (`input` lines), which crates/gatk-cli/tests/gcnv_postprocess_end_to_end.rs replays through the port (docs/gcnv-postprocess.md).",
       "compare": {
         "mode": "lines"
       },
-      "expect_rows": 132,
+      "expect_rows": 279,
       "expect_contains": [
         "file\tpost.segments.vcf.gz\t",
+        "file\tpost-s5/post.segments.vcf\t",
+        "input\tgcnv/g-calls/SAMPLE_5/log_q_c_tc.tsv\t",
         "file\tgcnv/g-model/mu_W_tu.tsv\t",
         "file\tploidy/p-calls/SAMPLE_0/contig_ploidy.tsv\t"
       ],
