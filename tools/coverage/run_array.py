@@ -208,7 +208,7 @@ def run_oracle(tool, row_args, workdir, positional=(), tagged=(), lists=()):
     cli = " ".join(as_cli(row_args, positional, tagged, lists))
     # `gatk <Tool> <args>`: the tool name is the first token, which is the shape the bit-identity
     # claim is defined against, and the wrapper is what fixes the parser to Barclay.
-    command = f'rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && java {JAVA_OPENS} -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {tool} {cli}'
+    command = f'rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && java {JAVA_OPENS} -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {tool} {cli}; rc=$?; chmod -R a+rwX /work/out; exit $rc'
     result = subprocess.run(
         [
             "docker", "run", "--rm", "--platform", PLATFORM,
@@ -238,6 +238,8 @@ def read_output(out_dir, row_args=()):
     if not produced:
         return ""
     fragments = genomicsdb_names(produced, out_dir)
+    # A fragment's name is a random uuid, so the order is the stable name's, not the file's.
+    produced.sort(key=lambda p: Path(fragments[p][1]) if p in fragments else p.relative_to(out_dir))
     parts = []
     for path in produced:
         raw = path.read_bytes()
