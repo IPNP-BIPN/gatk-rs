@@ -270,6 +270,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bzip2"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3a53fac24f34a81bc9954b5d6cfce0c21e18ec6959f44f56e8e90e4bb7c346c"
+dependencies = [
+ "libbz2-rs-sys",
+]
+
+[[package]]
 name = "bzip2-sys"
 version = "0.1.13+1.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -686,8 +695,8 @@ dependencies = [
 
 [[package]]
 name = "gkl-deflate"
-version = "0.2.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=aeb8df9a8a502bbc89d252482bf3926a9e5f290d#aeb8df9a8a502bbc89d252482bf3926a9e5f290d"
+version = "0.4.0"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=821a863bfb803e099f770f17d0c77ad82b159f28#821a863bfb803e099f770f17d0c77ad82b159f28"
 dependencies = [
  "isal-sys",
 ]
@@ -718,8 +727,8 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "htsjdk-bam"
-version = "0.2.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=aeb8df9a8a502bbc89d252482bf3926a9e5f290d#aeb8df9a8a502bbc89d252482bf3926a9e5f290d"
+version = "0.4.0"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=821a863bfb803e099f770f17d0c77ad82b159f28#821a863bfb803e099f770f17d0c77ad82b159f28"
 dependencies = [
  "htsjdk-bgzf",
  "jmath",
@@ -728,47 +737,55 @@ dependencies = [
 
 [[package]]
 name = "htsjdk-bgzf"
-version = "0.2.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=aeb8df9a8a502bbc89d252482bf3926a9e5f290d#aeb8df9a8a502bbc89d252482bf3926a9e5f290d"
+version = "0.4.0"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=821a863bfb803e099f770f17d0c77ad82b159f28#821a863bfb803e099f770f17d0c77ad82b159f28"
 dependencies = [
  "flate2",
  "gkl-deflate",
+ "libdeflate-sys",
  "libz-sys",
  "md-5",
+ "rayon",
 ]
 
 [[package]]
 name = "htsjdk-cram"
-version = "0.2.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=aeb8df9a8a502bbc89d252482bf3926a9e5f290d#aeb8df9a8a502bbc89d252482bf3926a9e5f290d"
+version = "0.4.0"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=821a863bfb803e099f770f17d0c77ad82b159f28#821a863bfb803e099f770f17d0c77ad82b159f28"
 dependencies = [
+ "bzip2 0.6.1",
  "flate2",
  "htsjdk-bam",
+ "jmath",
+ "libdeflate-sys",
+ "md-5",
 ]
 
 [[package]]
 name = "htsjdk-metrics"
-version = "0.2.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=aeb8df9a8a502bbc89d252482bf3926a9e5f290d#aeb8df9a8a502bbc89d252482bf3926a9e5f290d"
+version = "0.4.0"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=821a863bfb803e099f770f17d0c77ad82b159f28#821a863bfb803e099f770f17d0c77ad82b159f28"
 dependencies = [
  "jmath",
 ]
 
 [[package]]
 name = "htsjdk-tribble"
-version = "0.2.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=aeb8df9a8a502bbc89d252482bf3926a9e5f290d#aeb8df9a8a502bbc89d252482bf3926a9e5f290d"
+version = "0.4.0"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=821a863bfb803e099f770f17d0c77ad82b159f28#821a863bfb803e099f770f17d0c77ad82b159f28"
 dependencies = [
  "flate2",
  "htsjdk-bam",
  "htsjdk-bgzf",
+ "jmath",
 ]
 
 [[package]]
 name = "htsjdk-vcf"
-version = "0.2.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=aeb8df9a8a502bbc89d252482bf3926a9e5f290d#aeb8df9a8a502bbc89d252482bf3926a9e5f290d"
+version = "0.4.0"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=821a863bfb803e099f770f17d0c77ad82b159f28#821a863bfb803e099f770f17d0c77ad82b159f28"
 dependencies = [
+ "htsjdk-bgzf",
  "htsjdk-tribble",
  "jmath",
 ]
@@ -920,8 +937,8 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "jmath"
-version = "0.2.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=aeb8df9a8a502bbc89d252482bf3926a9e5f290d#aeb8df9a8a502bbc89d252482bf3926a9e5f290d"
+version = "0.4.0"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=821a863bfb803e099f770f17d0c77ad82b159f28#821a863bfb803e099f770f17d0c77ad82b159f28"
 
 [[package]]
 name = "jobserver"
@@ -943,6 +960,12 @@ dependencies = [
  "futures-util",
  "wasm-bindgen",
 ]
+
+[[package]]
+name = "libbz2-rs-sys"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32f454fd6831a29c0e827ed075bca2a15be201bd57f4168f0fd1041124eab17e"
 
 [[package]]
 name = "libc"
@@ -1062,7 +1085,7 @@ checksum = "6aa22e1ae8bce4ecf257e2475ef2046026caea08d66b1848d073fe7bc77e4351"
 dependencies = [
  "buffer-redux",
  "bytecount",
- "bzip2",
+ "bzip2 0.4.4",
  "flate2",
  "memchr",
  "zstd",
