@@ -16,6 +16,10 @@ python3 tools/coverage/covering.py --all --t 2
 | `covering.py` | IPOG generation, exhaustive verification, per-tool and whole-inventory reports |
 | `domains.py` | turns an argument's declared schema into its value domain, or excludes it with a reason |
 
+The bundled Picard tools' arrays live in `arrays/picard/`: Picard's `UpdateVcfSequenceDictionary` and
+GATK's `UpdateVCFSequenceDictionary` differ only by case, which one folder cannot hold on a
+case-insensitive checkout. `run_array.py` matches the file name exactly in either folder.
+
 ## Fixtures
 
 Path-typed arguments (`--INPUT`, `--REFERENCE_SEQUENCE`, ...) have no domain a generator can
@@ -114,6 +118,36 @@ by spaces; `run_array.py` writes each element as its own `--name element`:
       "$lists": ["--use-annotation"],
       "--use-annotation": ["QD MQ FS SOR", "MQ SOR"]
     }
+  }
+}
+```
+
+## Inputs the tool wants writable
+
+The corpus is mounted read-only on both sides, and `AddCommentsToBam` asserts its `--INPUT` is
+writable before it reads it. A tool lists such arguments under `$writable`, and each row gets a
+private copy of the file in the container's own `/work/tmp`, which is not an output:
+
+```json
+{
+  "per_tool": {
+    "AddCommentsToBam": { "$writable": ["--INPUT"] }
+  }
+}
+```
+
+## An answer printed on stderr
+
+A row's answer is its output files and its stdout; the log on stderr is not compared.
+`CheckTerminatorBlock` writes no file and prints the termination's name to stderr, so every
+accepted row looked alike. A tool names the lines of stderr that ARE its answer with a regex under
+`$stderr_answer`, matched against whole lines; those lines are appended to stdout and nothing else
+of the log is compared:
+
+```json
+{
+  "per_tool": {
+    "CheckTerminatorBlock": { "$stderr_answer": "HAS_TERMINATOR_BLOCK|HAS_HEALTHY_LAST_BLOCK|DEFECTIVE" }
   }
 }
 ```

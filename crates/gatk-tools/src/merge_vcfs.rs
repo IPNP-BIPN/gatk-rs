@@ -168,14 +168,23 @@ pub fn merge(inputs: &[String], comments: &[String]) -> Result<String, MergeErro
         }
     }
 
-    // `COMMENT.forEach(... addMetaDataLine)` on the FIRST header only. Two comments share a key,
-    // and the merge keeps one line per key, so only the first reaches the output.
+    // `COMMENT.forEach(... addMetaDataLine)` on the FIRST header only. `addMetaDataLine` adds an
+    // unstructured line only when no line already carries its key, so of two comments the FIRST
+    // is the one kept, whatever their values sort as.
     if let Some(header) = headers.first_mut() {
         for comment in comments {
-            header.lines.push(HeaderLine::Unstructured {
-                key: COMMENT_KEY.to_string(),
-                value: comment.clone(),
+            let taken = header.lines.iter().any(|line| match line {
+                HeaderLine::Unstructured { key, .. } | HeaderLine::Structured { key, .. } => {
+                    key == COMMENT_KEY
+                }
+                _ => false,
             });
+            if !taken {
+                header.lines.push(HeaderLine::Unstructured {
+                    key: COMMENT_KEY.to_string(),
+                    value: comment.clone(),
+                });
+            }
         }
     }
 

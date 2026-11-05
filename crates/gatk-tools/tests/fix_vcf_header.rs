@@ -93,3 +93,16 @@ fn the_three_refusals_carry_the_references_messages() {
         );
     }
 }
+
+#[test]
+fn a_swapped_header_relabels_a_sorted_inputs_columns() {
+    let head = "##fileformat=VCFv4.2\n\
+        ##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n\
+        ##contig=<ID=chr1,length=1000>\n";
+    let input = format!("{head}#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ta\tb\nchr1\t10\t.\tA\tG\t.\tPASS\t.\tGT\t0/1\t1/1\n");
+    let swapped = format!("{head}#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tb\ta\n");
+    let output = fix_with_header(&input, &swapped, true).expect("fixed");
+    // htsjdk copies a sorted input's genotype text through, so the columns are renamed, not moved.
+    assert!(output.contains("FORMAT\tb\ta\n"), "{output}");
+    assert!(output.ends_with("GT\t0/1\t1/1\n"), "{output}");
+}

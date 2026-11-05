@@ -191,15 +191,25 @@ pub fn fix(input: &str, check_first_n_records: i32) -> Result<String, FixError> 
 
     let mut header = existing.clone();
     // `addStandardFormatLines(headerLines, false, PRIMARY_KEYS)`, which the file need not use.
+    // The lines go into a `HashSet`, so only an equal line is a duplicate: an input's own `DP`
+    // with another description stays beside the standard one.
     for id in PRIMARY_KEYS {
-        if !has_line(&header, "FORMAT", id) {
-            if let Some(line) = standard_format_line(id) {
+        if let Some(line) = standard_format_line(id) {
+            if !header.lines.contains(&line) {
                 header.lines.push(line);
             }
         }
     }
     header.lines.extend(added);
-    write(&header, &file, existing.samples.clone())
+    // The writer reads the file again (`reader`, not `in`), so its genotypes are still the text
+    // the scan above decoded in its own copy, and they are copied through unparsed.
+    let file = read_vcf(input).map_err(|failure| {
+        FixError::Vcf(failure.error.class().to_string(), failure.error.message())
+    })?;
+    // `getSampleNamesInOrder()` is the sorted list, whatever the input's column order.
+    let mut samples = existing.samples.clone();
+    samples.sort();
+    write(&header, &file, samples)
 }
 
 /// `doWork()` with a `HEADER`: the replacement header, and the samples one side or the other's.
@@ -234,7 +244,26 @@ pub fn fix_with_header(
                 });
             }
         }
-        input_samples
+        // `outHeader = inputHeader`: the header file itself, written in its own column order.
+        let column_order = header_file.header.samples.clone();
+        // htsjdk keeps an input's genotypes as their text only when its samples were already
+        // sorted, and then writes that text whatever the output's column order: under a header
+        // naming the same samples in another order, the columns are relabelled, not moved. So the
+        // records are written in the input's order and only the `#CHROM` line is the header's.
+        let input_sorted = file
+            .header
+            .samples
+            .windows(2)
+            .all(|pair| pair[0] <= pair[1]);
+        if input_sorted && column_order != file.header.samples {
+            let header = VcfHeader {
+                lines: header_file.header.lines.clone(),
+                samples: file.header.samples.clone(),
+            };
+            let text = write(&header, &file, file.header.samples.clone())?;
+            return Ok(relabel_columns(&text, &column_order));
+        }
+        column_order
     } else {
         // `new VCFHeader(inputHeader.getMetaDataInInputOrder(), existingHeader.getSampleNamesInOrder())`.
         reader_samples
@@ -245,6 +274,25 @@ pub fn fix_with_header(
         samples: samples.clone(),
     };
     write(&header, &file, samples)
+}
+
+/// The text with its `#CHROM` line naming `samples` instead.
+fn relabel_columns(text: &str, samples: &[String]) -> String {
+    let mut out = String::with_capacity(text.len());
+    for line in text.split_inclusive('\n') {
+        if line.starts_with("#CHROM") {
+            let fixed: Vec<&str> = line.trim_end_matches('\n').split('\t').take(9).collect();
+            out.push_str(&fixed.join("\t"));
+            for sample in samples {
+                out.push('\t');
+                out.push_str(sample);
+            }
+            out.push('\n');
+        } else {
+            out.push_str(line);
+        }
+    }
+    out
 }
 
 fn write(

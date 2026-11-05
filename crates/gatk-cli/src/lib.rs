@@ -22,6 +22,7 @@
 
 pub mod command_line;
 pub mod definitions;
+pub mod picard;
 pub mod runners;
 pub mod variant_bridge;
 
@@ -121,6 +122,9 @@ pub fn run(args: &[String]) -> Outcome {
             }
         }
         Route::Tool { name } => {
+            if let Some(outcome) = picard::run(&name, main_entry::tool_arguments(args)) {
+                return outcome;
+            }
             // The parse comes before the run, and it only happens for a tool whose whole argument
             // surface converts: a parser missing a third of its arguments would refuse a command
             // line the reference accepts, which is a worse answer than refusing to parse at all.

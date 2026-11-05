@@ -240,7 +240,13 @@
     "They HOLD `--output-shard-tmp-dir` out, because Barclay refuses it beside `--sharded-output`",
     "(a mutex), and every row sets both: the first array of nineteen rows measured that one",
     "refusal sixteen times. The boolean keeps both its values; the directory is where a sharded BAM",
-    "write would put its parts, which no counting tool does."
+    "write would put its parts, which no counting tool does.",
+    "",
+    "The Picard tools GATK bundles (AddCommentsToBam ... VcfToIntervalList) take picard-rs's own",
+    "fixtures for them, written under picard/ by MakeFixtures' Picard class, which is picard-rs's",
+    "generator for those files byte for byte. Their standard arguments get TMP_DIR's two directories,",
+    "ref.fasta held as REFERENCE_SEQUENCE where the tool reads no reference, and COMPRESSION_LEVEL 2",
+    "(GATK's configured level) and 5 (Picard's own default) for the tools that write BGZF."
   ],
   "values": {
     "--input": [
@@ -17089,8 +17095,8 @@
         "with the reserved snp label its refusal. The header goes to a writer nothing closes, and only then the backend. PYTHON_SCRIPT",
         "needs a scorer readable at the model prefix, runs a whole pass, writes the annotations and stops at the first script.",
         "An interval with no variant is the one way to a finished VCF. The command line is held off because it records the date.",
-      "The two thresholds are not varied: their bounds refuse a null where the parser reads one, and a value is refused for the",
-      "calibration scores no fixture can hold, so either would stop every row before the pass. The dump covers both refusals."
+        "The two thresholds are not varied: their bounds refuse a null where the parser reads one, and a value is refused for the",
+        "calibration scores no fixture can hold, so either would stop every row before the pass. The dump covers both refusals."
       ],
       "$output_on_failure": true,
       "$tagged": [
@@ -17671,6 +17677,689 @@
       ],
       "$why": [
         "Evidence directories and the interval file stay off: Hadoop leaves its checksums beside the one and the other prints a duration. The dump reads both. The command line records the date. The same donor genome, with the discovery stage's reference and thresholds."
+      ]
+    },
+    "AddCommentsToBam": {
+      "$why": [
+        "picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures'",
+        "Picard class writes them byte for byte as picard-rs does).",
+        "Two BAMs of different sort orders and one of one read group, which the tool copies alike, and a SAM",
+        "file it refuses by name. `$writable`: the tool asserts its input is writable before it copies a block,",
+        "so a read-only corpus refused every BAM row and the array measured one refusal; each row now gets a",
+        "private copy of its input. COMMENT is required and holds one comment per row; the values carry no",
+        "space because the oracle's command line is split by a shell.",
+        "INPUT is $writable: reheaderBamFile asserts it writable, and the corpus is mounted read-only."
+      ],
+      "--TMP_DIR": [
+        "/work/tmp",
+        "/work/tmp2"
+      ],
+      "--REFERENCE_SEQUENCE": [
+        "/work/fixtures/picard/ref.fasta"
+      ],
+      "--INPUT": [
+        "/work/fixtures/picard/small.bam",
+        "/work/fixtures/picard/queryname.bam",
+        "/work/fixtures/picard/one_read_group.bam",
+        "/work/fixtures/picard/small.sam"
+      ],
+      "--COMMENT": [
+        "reviewed_by_qc",
+        "batch:2026-09"
+      ],
+      "$writable": [
+        "--INPUT"
+      ],
+      "--OUTPUT": [
+        "/work/out/output.bam"
+      ],
+      "--COMPRESSION_LEVEL": [
+        "2",
+        "5"
+      ]
+    },
+    "BuildBamIndex": {
+      "$why": [
+        "picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures'",
+        "Picard class writes them byte for byte as picard-rs does).",
+        "Three coordinate-sorted BAMs with different contents, so the index is an answer rather than a",
+        "constant; a SAM text file, which the tool refuses by type; and a queryname-sorted and an",
+        "unsorted BAM, which it refuses by the header's SO before it reads a record."
+      ],
+      "--TMP_DIR": [
+        "/work/tmp",
+        "/work/tmp2"
+      ],
+      "--REFERENCE_SEQUENCE": [
+        "/work/fixtures/picard/ref.fasta"
+      ],
+      "--INPUT": [
+        "/work/fixtures/picard/small.bam",
+        "/work/fixtures/picard/tiled.bam",
+        "/work/fixtures/picard/mate_cigar.bam",
+        "/work/fixtures/picard/small.sam",
+        "/work/fixtures/picard/queryname.bam",
+        "/work/fixtures/picard/unmapped.bam"
+      ],
+      "--OUTPUT": [
+        "/work/out/output.bai"
+      ]
+    },
+    "CheckTerminatorBlock": {
+      "$why": [
+        "picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures'",
+        "Picard class writes them byte for byte as picard-rs does).",
+        "The tool's answer is the termination of its INPUT's last block, printed on standard error, with",
+        "exit code 100 when that is DEFECTIVE. small.bam has the terminator, no_terminator.bam is the same bytes",
+        "without it and ends in a healthy block, truncated.bam cuts that block, and small.sam is not BGZF at all.",
+        "It writes nothing: its answer is the termination's name on stderr, which $stderr_answer keeps."
+      ],
+      "--TMP_DIR": [
+        "/work/tmp",
+        "/work/tmp2"
+      ],
+      "--REFERENCE_SEQUENCE": [
+        "/work/fixtures/picard/ref.fasta"
+      ],
+      "--INPUT": [
+        "/work/fixtures/picard/small.bam",
+        "/work/fixtures/picard/no_terminator.bam",
+        "/work/fixtures/picard/truncated.bam",
+        "/work/fixtures/picard/small.sam"
+      ],
+      "$stderr_answer": "HAS_TERMINATOR_BLOCK|HAS_HEALTHY_LAST_BLOCK|DEFECTIVE"
+    },
+    "FilterVcf": {
+      "$why": [
+        "picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures'",
+        "Picard class writes them byte for byte as picard-rs does).",
+        "filter.vcf (MakeFixtures) has a site for each filter on each side of the thresholds below, and missing QD, FS,",
+        "GQ and DP, which the reference reads as their defaults (-1 for a genotype's GQ and DP, so MIN_GQ=0 still",
+        "filters a genotype without one). filter_no_contigs.vcf is refused because an output named .vcf needs a",
+        "dictionary; trio.vcf, vcf_unsorted_samples.vcf and vcf_sites_only.vcf are the corpus's other shapes. The",
+        "compared file is output.vcf; the .idx beside it records a timestamp and is not compared. JAVASCRIPT_FILE keeps",
+        "single-base sites past position 1000 (a site the script rejects is filtered under the script's base name), or",
+        "is not JavaScript at all.",
+        "OUTPUT is also a .vcf.gz, which htsjdk block-compresses with a tabix index beside it",
+        "(picard-rs#374); the .vcf.gz and its .tbi are compared byte for byte."
+      ],
+      "--TMP_DIR": [
+        "/work/tmp",
+        "/work/tmp2"
+      ],
+      "--REFERENCE_SEQUENCE": [
+        "/work/fixtures/picard/ref.fasta"
+      ],
+      "--INPUT": [
+        "/work/fixtures/picard/filter.vcf",
+        "/work/fixtures/picard/trio.vcf",
+        "/work/fixtures/picard/vcf_unsorted_samples.vcf",
+        "/work/fixtures/picard/vcf_sites_only.vcf",
+        "/work/fixtures/picard/filter_no_contigs.vcf"
+      ],
+      "--OUTPUT": [
+        "/work/out/output.vcf",
+        "/work/out/output.vcf.gz"
+      ],
+      "--MIN_AB": [
+        "0.0",
+        "0.3"
+      ],
+      "--MIN_DP": [
+        "0",
+        "9"
+      ],
+      "--MIN_GQ": [
+        "0",
+        "30"
+      ],
+      "--MAX_FS": [
+        "60.0",
+        "20.0"
+      ],
+      "--MIN_QD": [
+        "0.0",
+        "2.0"
+      ],
+      "--JAVASCRIPT_FILE": [
+        "<unset>",
+        "/work/fixtures/picard/filter_variants.js",
+        "/work/fixtures/picard/filter_broken.js"
+      ],
+      "--COMPRESSION_LEVEL": [
+        "2",
+        "5"
+      ]
+    },
+    "FixVcfHeader": {
+      "$why": [
+        "picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures'",
+        "Picard class writes them byte for byte as picard-rs does).",
+        "INPUT is fix_missing.vcf, whose records use a FILTER, INFO keys and FORMAT keys its header",
+        "does not define (at most one undefined INFO key per record, so which one the writer names",
+        "first never depends on a HashMap's order), the same under the other column order (its",
+        "genotypes are decoded, so their FORMAT keys are checked when written), vcf_sorted_samples.vcf,",
+        "whose header is complete, and vcf_no_contigs.vcf, which the always-indexing writer refuses.",
+        "HEADER is `null` (the header is rebuilt from the records), fix_header.vcf (complete),",
+        "fix_header_swapped.vcf (the same samples in the other column order, which",
+        "ENFORCE_SAME_SAMPLES lets through) and vcf_one_sample.vcf (one sample, refused unless",
+        "ENFORCE_SAME_SAMPLES is false, and then missing the definitions). CHECK_FIRST_N_RECORDS is",
+        "the default and 1, which scans one record, so a later undefined key reaches the writer, and",
+        "which beside a HEADER is the tool's own command-line refusal. OUTPUT is a .vcf: BCF writing",
+        "is not in htsjdk-rs.",
+        "OUTPUT is also a .vcf.gz, which htsjdk block-compresses with a tabix index beside it",
+        "(picard-rs#374); the .vcf.gz and its .tbi are compared byte for byte."
+      ],
+      "--TMP_DIR": [
+        "/work/tmp",
+        "/work/tmp2"
+      ],
+      "--REFERENCE_SEQUENCE": [
+        "/work/fixtures/picard/ref.fasta"
+      ],
+      "--INPUT": [
+        "/work/fixtures/picard/fix_missing.vcf",
+        "/work/fixtures/picard/fix_missing_unsorted.vcf",
+        "/work/fixtures/picard/vcf_sorted_samples.vcf",
+        "/work/fixtures/picard/vcf_no_contigs.vcf"
+      ],
+      "--OUTPUT": [
+        "/work/out/output.vcf",
+        "/work/out/output.vcf.gz"
+      ],
+      "--HEADER": [
+        "null",
+        "/work/fixtures/picard/fix_header.vcf",
+        "/work/fixtures/picard/fix_header_swapped.vcf",
+        "/work/fixtures/picard/vcf_one_sample.vcf"
+      ],
+      "--CHECK_FIRST_N_RECORDS": [
+        "-1",
+        "1"
+      ],
+      "--COMPRESSION_LEVEL": [
+        "2",
+        "5"
+      ]
+    },
+    "GatherBamFiles": {
+      "$why": [
+        "picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures'",
+        "Picard class writes them byte for byte as picard-rs does).",
+        "Two BAMs, which take the block-copying path, and a SAM, which takes gatherNormally and is",
+        "written as a BAM, because makeWriter writes SAM text only for a .sam name. One input per row:",
+        "INPUT is a list, and the array holds one of its values per row."
+      ],
+      "--TMP_DIR": [
+        "/work/tmp",
+        "/work/tmp2"
+      ],
+      "--REFERENCE_SEQUENCE": [
+        "/work/fixtures/picard/ref.fasta"
+      ],
+      "--INPUT": [
+        "/work/fixtures/picard/small.bam",
+        "/work/fixtures/picard/tiled.bam",
+        "/work/fixtures/picard/small.sam"
+      ],
+      "--OUTPUT": [
+        "/work/out/output.bam"
+      ],
+      "--COMPRESSION_LEVEL": [
+        "2",
+        "5"
+      ]
+    },
+    "GatherVcfs": {
+      "$why": [
+        "picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures'",
+        "Picard class writes them byte for byte as picard-rs does).",
+        "INPUT and COMMENT are whole lists ($lists). gather_1.vcf and gather_2.vcf are consecutive",
+        "stretches, given in order, reversed (refused unless REORDER_INPUT_BY_FIRST_VARIANT puts them",
+        "back) and around gather_empty.vcf, which has no first record and sorts last when reordered.",
+        "gather_overlap.vcf starts after gather_1 starts and before it ends, which only the gather's own",
+        "check refuses; gather_2_swapped.vcf has the samples in the other column order, refused beside",
+        "gather_1 and accepted alone (its genotypes are re-encoded in that order, where gather_1's are",
+        "copied); merge_swapped_contigs.vcf has another dictionary (an AssertionError, which escapes the",
+        "tool's catch); merge_b_no_contigs.vcf has none, refused before the catch when indexing and by",
+        "a NullPointerException inside it when not. COMMENT keeps only the first comment. OUTPUT is a",
+        ".vcf or a .vcf.gz, compared byte for byte with its .tbi (picard-rs#374). gather_1.vcf.gz and",
+        "gather_2.vcf.gz, every input compressed, beside a .vcf.gz output are the block-copying gather,",
+        "which writes no index; beside a .vcf output they are read record by record. A",
+        ".list INPUT names container paths the host port cannot open."
+      ],
+      "--TMP_DIR": [
+        "/work/tmp",
+        "/work/tmp2"
+      ],
+      "--REFERENCE_SEQUENCE": [
+        "/work/fixtures/picard/ref.fasta"
+      ],
+      "$lists": [
+        "--INPUT",
+        "--COMMENT"
+      ],
+      "--INPUT": [
+        "/work/fixtures/picard/gather_1.vcf /work/fixtures/picard/gather_2.vcf",
+        "/work/fixtures/picard/gather_1.vcf.gz /work/fixtures/picard/gather_2.vcf.gz",
+        "/work/fixtures/picard/gather_2.vcf /work/fixtures/picard/gather_1.vcf",
+        "/work/fixtures/picard/gather_empty.vcf /work/fixtures/picard/gather_2.vcf /work/fixtures/picard/gather_1.vcf",
+        "/work/fixtures/picard/gather_1.vcf /work/fixtures/picard/gather_empty.vcf /work/fixtures/picard/gather_2.vcf",
+        "/work/fixtures/picard/gather_1.vcf /work/fixtures/picard/gather_overlap.vcf",
+        "/work/fixtures/picard/gather_1.vcf /work/fixtures/picard/gather_2_swapped.vcf",
+        "/work/fixtures/picard/gather_2_swapped.vcf",
+        "/work/fixtures/picard/gather_1.vcf /work/fixtures/picard/merge_swapped_contigs.vcf",
+        "/work/fixtures/picard/merge_b_no_contigs.vcf /work/fixtures/picard/gather_1.vcf",
+        "/work/fixtures/picard/gather_1.vcf /work/fixtures/picard/merge_b_no_contigs.vcf"
+      ],
+      "--OUTPUT": [
+        "/work/out/output.vcf",
+        "/work/out/output.vcf.gz"
+      ],
+      "--COMMENT": [
+        "null",
+        "zeta alpha"
+      ],
+      "--COMPRESSION_LEVEL": [
+        "2",
+        "5"
+      ]
+    },
+    "MakeSitesOnlyVcf": {
+      "$why": [
+        "picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures'",
+        "Picard class writes them byte for byte as picard-rs does).",
+        "INPUT is a VCF, and the two orders of the same samples are two answers: in a file whose",
+        "sample names are sorted the codec keeps each genotype block lazy, and a block that is never",
+        "decoded is copied, while in the other it is decoded and re-encoded. The file without contig",
+        "lines is what CREATE_INDEX refuses. SAMPLE is the set of samples kept: `null` clears it to",
+        "the default empty set (a sites-only file), sampleA keeps one column, and sampleZ names a",
+        "sample the file does not have, which the writer still gives a column of no-calls. OUTPUT",
+        "ends in .vcf because the writer infers its format from the extension and refuses output.txt.",
+        "OUTPUT is also a .vcf.gz, which htsjdk block-compresses with a tabix index beside it",
+        "(picard-rs#374); the .vcf.gz and its .tbi are compared byte for byte."
+      ],
+      "--TMP_DIR": [
+        "/work/tmp",
+        "/work/tmp2"
+      ],
+      "--REFERENCE_SEQUENCE": [
+        "/work/fixtures/picard/ref.fasta"
+      ],
+      "--INPUT": [
+        "/work/fixtures/picard/vcf_sorted_samples.vcf",
+        "/work/fixtures/picard/vcf_unsorted_samples.vcf",
+        "/work/fixtures/picard/vcf_no_contigs.vcf"
+      ],
+      "--OUTPUT": [
+        "/work/out/output.vcf",
+        "/work/out/output.vcf.gz"
+      ],
+      "--SAMPLE": [
+        "null",
+        "sampleA",
+        "sampleZ"
+      ],
+      "--COMPRESSION_LEVEL": [
+        "2",
+        "5"
+      ]
+    },
+    "MergeVcfs": {
+      "$why": [
+        "picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures'",
+        "Picard class writes them byte for byte as picard-rs does).",
+        "INPUT and COMMENT are whole lists ($lists): what MergeVcfs does is combine several inputs, and",
+        "a row with one of them measures a copy. merge_a.vcf and merge_b.vcf are each in coordinate",
+        "order and meet at three positions, where MergingIterator's heap (not the input order) decides",
+        "which record comes first; b's samples are in the other column order, so its genotypes are",
+        "re-encoded while a's are copied, and its XC line promotes a's count to `.`. The pair is given",
+        "both ways round, and a alone. merge_b_no_contigs.vcf needs SEQUENCE_DICTIONARY (ref.dict makes",
+        "it compatible, other.dict adds chr3 and is refused), and as the FIRST input it takes that",
+        "dictionary as the one the others are checked against. merge_swapped_contigs.vcf declares the",
+        "contigs in the other order, vcf_one_sample.vcf has other samples, and vcf_sorted_samples.vcf",
+        "is out of order, which the merge refuses only when it goes backwards. COMMENT keeps only the",
+        "first comment (addMetaDataLine refuses a second line under one key). A `.list` INPUT is not",
+        "a value: the paths inside it are the container's, and the port runs on the host. OUTPUT is a",
+        ".vcf or a .vcf.gz, which htsjdk block-compresses with a tabix index beside it (picard-rs#374);",
+        "the .vcf.gz and its .tbi are compared byte for byte. BCF writing is not in htsjdk-rs."
+      ],
+      "--TMP_DIR": [
+        "/work/tmp",
+        "/work/tmp2"
+      ],
+      "--REFERENCE_SEQUENCE": [
+        "/work/fixtures/picard/ref.fasta"
+      ],
+      "$lists": [
+        "--INPUT",
+        "--COMMENT"
+      ],
+      "--INPUT": [
+        "/work/fixtures/picard/merge_a.vcf /work/fixtures/picard/merge_b.vcf",
+        "/work/fixtures/picard/merge_b.vcf /work/fixtures/picard/merge_a.vcf",
+        "/work/fixtures/picard/merge_a.vcf",
+        "/work/fixtures/picard/merge_a.vcf /work/fixtures/picard/merge_b_no_contigs.vcf",
+        "/work/fixtures/picard/merge_b_no_contigs.vcf /work/fixtures/picard/merge_a.vcf",
+        "/work/fixtures/picard/merge_a.vcf /work/fixtures/picard/merge_swapped_contigs.vcf",
+        "/work/fixtures/picard/merge_a.vcf /work/fixtures/picard/vcf_one_sample.vcf",
+        "/work/fixtures/picard/vcf_sorted_samples.vcf /work/fixtures/picard/merge_b.vcf"
+      ],
+      "--OUTPUT": [
+        "/work/out/output.vcf",
+        "/work/out/output.vcf.gz"
+      ],
+      "--SEQUENCE_DICTIONARY": [
+        "null",
+        "/work/fixtures/picard/ref.dict",
+        "/work/fixtures/picard/other.dict"
+      ],
+      "--COMMENT": [
+        "null",
+        "zeta alpha",
+        "merged"
+      ],
+      "--COMPRESSION_LEVEL": [
+        "2",
+        "5"
+      ]
+    },
+    "RenameSampleInVcf": {
+      "$why": [
+        "picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures'",
+        "Picard class writes them byte for byte as picard-rs does).",
+        "The tool accepts at most one sample, so INPUT is two one-sample files (sampleA, hand-written",
+        "so its genotype blocks are not htsjdk's own encoding, and sample1, written by htsjdk), the",
+        "sites-only file (no sample, which is accepted until OLD_SAMPLE_NAME asks for the first one),",
+        "and the two-sample file it refuses. OLD_SAMPLE_NAME is `null` (not checked) or sampleA, which",
+        "one input has and the other is refused for, naming the sample found. OUTPUT ends in .vcf for",
+        "the reason MakeSitesOnlyVcf's does.",
+        "OUTPUT is also a .vcf.gz, which htsjdk block-compresses with a tabix index beside it",
+        "(picard-rs#374); the .vcf.gz and its .tbi are compared byte for byte."
+      ],
+      "--TMP_DIR": [
+        "/work/tmp",
+        "/work/tmp2"
+      ],
+      "--REFERENCE_SEQUENCE": [
+        "/work/fixtures/picard/ref.fasta"
+      ],
+      "--INPUT": [
+        "/work/fixtures/picard/vcf_one_sample.vcf",
+        "/work/fixtures/picard/single_sample.vcf",
+        "/work/fixtures/picard/vcf_sites_only.vcf",
+        "/work/fixtures/picard/vcf_sorted_samples.vcf"
+      ],
+      "--OUTPUT": [
+        "/work/out/output.vcf",
+        "/work/out/output.vcf.gz"
+      ],
+      "--NEW_SAMPLE_NAME": [
+        "renamed",
+        "sampleA"
+      ],
+      "--OLD_SAMPLE_NAME": [
+        "null",
+        "sampleA"
+      ],
+      "--COMPRESSION_LEVEL": [
+        "2",
+        "5"
+      ]
+    },
+    "SetNmAndUqTags": {
+      "$why": [
+        "Coordinate-sorted BAMs and a SAM, and queryname.bam and unmapped.bam, which the tool refuses as not",
+        "coordinate sorted. REFERENCE_SEQUENCE is required, and is ref.fasta or masked.fasta: the same contigs",
+        "with lower-case stretches and an N run, so NM, MD and UQ differ between the two."
+      ],
+      "--TMP_DIR": [
+        "/work/tmp",
+        "/work/tmp2"
+      ],
+      "--INPUT": [
+        "/work/fixtures/picard/small.bam",
+        "/work/fixtures/picard/mate_cigar.bam",
+        "/work/fixtures/picard/small.sam",
+        "/work/fixtures/picard/queryname.bam",
+        "/work/fixtures/picard/unmapped.bam"
+      ],
+      "--OUTPUT": [
+        "/work/out/output.bam",
+        "/work/out/output.sam"
+      ],
+      "--REFERENCE_SEQUENCE": [
+        "/work/fixtures/picard/ref.fasta",
+        "/work/fixtures/picard/masked.fasta"
+      ],
+      "--COMPRESSION_LEVEL": [
+        "2",
+        "5"
+      ]
+    },
+    "SetNmMdAndUqTags": {
+      "$why": [
+        "Coordinate-sorted BAMs and a SAM, and queryname.bam and unmapped.bam, which the tool refuses as not",
+        "coordinate sorted. REFERENCE_SEQUENCE is required, and is ref.fasta or masked.fasta: the same contigs",
+        "with lower-case stretches and an N run, so NM, MD and UQ differ between the two."
+      ],
+      "--TMP_DIR": [
+        "/work/tmp",
+        "/work/tmp2"
+      ],
+      "--INPUT": [
+        "/work/fixtures/picard/small.bam",
+        "/work/fixtures/picard/mate_cigar.bam",
+        "/work/fixtures/picard/small.sam",
+        "/work/fixtures/picard/queryname.bam",
+        "/work/fixtures/picard/unmapped.bam"
+      ],
+      "--OUTPUT": [
+        "/work/out/output.bam",
+        "/work/out/output.sam"
+      ],
+      "--REFERENCE_SEQUENCE": [
+        "/work/fixtures/picard/ref.fasta",
+        "/work/fixtures/picard/masked.fasta"
+      ],
+      "--COMPRESSION_LEVEL": [
+        "2",
+        "5"
+      ]
+    },
+    "SortVcf": {
+      "$why": [
+        "picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures'",
+        "Picard class writes them byte for byte as picard-rs does).",
+        "INPUT is a VCF whose records are out of order on two contigs, under both sample orders",
+        "(the output header's samples are the SORTED names, so the second is rewritten column by",
+        "column), plus the file without contig lines, which needs SEQUENCE_DICTIONARY. That argument",
+        "is `null`, the corpus's own dictionary (which agrees with the VCFs), and other.dict, which",
+        "does not and is refused. It is read through SamReaderFactory, so it is a .dict, not the",
+        "FASTA the shared value names. INPUT is one file per row: a second input would need two",
+        "values in one row, which the harness cannot pass.",
+        "OUTPUT is also a .vcf.gz, which htsjdk block-compresses with a tabix index beside it",
+        "(picard-rs#374); the .vcf.gz and its .tbi are compared byte for byte."
+      ],
+      "--TMP_DIR": [
+        "/work/tmp",
+        "/work/tmp2"
+      ],
+      "--REFERENCE_SEQUENCE": [
+        "/work/fixtures/picard/ref.fasta"
+      ],
+      "--INPUT": [
+        "/work/fixtures/picard/vcf_sorted_samples.vcf",
+        "/work/fixtures/picard/vcf_unsorted_samples.vcf",
+        "/work/fixtures/picard/vcf_no_contigs.vcf"
+      ],
+      "--OUTPUT": [
+        "/work/out/output.vcf",
+        "/work/out/output.vcf.gz"
+      ],
+      "--SEQUENCE_DICTIONARY": [
+        "null",
+        "/work/fixtures/picard/ref.dict",
+        "/work/fixtures/picard/other.dict"
+      ],
+      "--COMPRESSION_LEVEL": [
+        "2",
+        "5"
+      ]
+    },
+    "SplitVcfs": {
+      "$why": [
+        "picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures'",
+        "Picard class writes them byte for byte as picard-rs does).",
+        "Both outputs are compared (the manifest's output_name names the two). split_types.vcf holds",
+        "every VariantContext type, its first odd one MIXED; vcf_sorted_samples.vcf's one odd record",
+        "is a symbolic deletion, and vcf_unsorted_samples.vcf is the same records with genotypes that",
+        "are re-encoded rather than copied; so STRICT decides between two refusals and two splits. gather_1.vcf (copied) and merge_b.vcf (re-encoded) hold SNPs and indels only, which STRICT accepts.",
+        "vcf_no_contigs.vcf is indexable only through SEQUENCE_DICTIONARY, which is read through",
+        "SamReaderFactory, so it is a .dict; other.dict disagrees with the VCFs and is accepted,",
+        "since it only feeds the index. vcf_sites_only.vcf has no samples. The outputs are .vcf:",
+        ".vcf.gz, which htsjdk block-compresses with a tabix index beside it (picard-rs#374); the",
+        ".vcf.gz and its .tbi are compared byte for byte, and a row may mix a .vcf.gz with a .vcf, where",
+        "htsjdk shares one tabix creator. BCF writing is not in htsjdk-rs.",
+        "BCF writing is not in htsjdk-rs."
+      ],
+      "--TMP_DIR": [
+        "/work/tmp",
+        "/work/tmp2"
+      ],
+      "--REFERENCE_SEQUENCE": [
+        "/work/fixtures/picard/ref.fasta"
+      ],
+      "--INPUT": [
+        "/work/fixtures/picard/split_types.vcf",
+        "/work/fixtures/picard/vcf_sorted_samples.vcf",
+        "/work/fixtures/picard/vcf_unsorted_samples.vcf",
+        "/work/fixtures/picard/gather_1.vcf",
+        "/work/fixtures/picard/merge_b.vcf",
+        "/work/fixtures/picard/vcf_no_contigs.vcf",
+        "/work/fixtures/picard/vcf_sites_only.vcf"
+      ],
+      "--SNP_OUTPUT": [
+        "/work/out/snp.vcf",
+        "/work/out/snp_b.vcf",
+        "/work/out/snp.vcf.gz"
+      ],
+      "--INDEL_OUTPUT": [
+        "/work/out/indel.vcf",
+        "/work/out/indel_b.vcf",
+        "/work/out/indel.vcf.gz"
+      ],
+      "--SEQUENCE_DICTIONARY": [
+        "null",
+        "/work/fixtures/picard/ref.dict",
+        "/work/fixtures/picard/other.dict"
+      ],
+      "--COMPRESSION_LEVEL": [
+        "2",
+        "5"
+      ]
+    },
+    "UpdateVcfSequenceDictionary": {
+      "$why": [
+        "picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures'",
+        "Picard class writes them byte for byte as picard-rs does).",
+        "INPUT is a VCF under both sample orders, plus the one with no contig lines to replace.",
+        "SEQUENCE_DICTIONARY goes through SAMSequenceDictionaryExtractor, which picks a reader by",
+        "extension: the FASTA (whose .dict beside it is read), a .dict that disagrees with the",
+        "corpus and carries an assembly, a VCF's contig lines, an interval list's header, and a VCF",
+        "with no contig lines, whose dictionary is null: refused by the writer when it is to index",
+        "and by setSequenceDictionary when it is not.",
+        "OUTPUT is also a .vcf.gz, which htsjdk block-compresses with a tabix index beside it",
+        "(picard-rs#374); the .vcf.gz and its .tbi are compared byte for byte."
+      ],
+      "--TMP_DIR": [
+        "/work/tmp",
+        "/work/tmp2"
+      ],
+      "--REFERENCE_SEQUENCE": [
+        "/work/fixtures/picard/ref.fasta"
+      ],
+      "--INPUT": [
+        "/work/fixtures/picard/vcf_sorted_samples.vcf",
+        "/work/fixtures/picard/vcf_unsorted_samples.vcf",
+        "/work/fixtures/picard/vcf_no_contigs.vcf"
+      ],
+      "--OUTPUT": [
+        "/work/out/output.vcf",
+        "/work/out/output.vcf.gz"
+      ],
+      "--SEQUENCE_DICTIONARY": [
+        "/work/fixtures/picard/ref.fasta",
+        "/work/fixtures/picard/other.dict",
+        "/work/fixtures/picard/variants.vcf",
+        "/work/fixtures/picard/targets.interval_list",
+        "/work/fixtures/picard/vcf_no_contigs.vcf"
+      ],
+      "--COMPRESSION_LEVEL": [
+        "2",
+        "5"
+      ]
+    },
+    "VcfFormatConverter": {
+      "$why": [
+        "picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures'",
+        "Picard class writes them byte for byte as picard-rs does).",
+        "INPUT is variants.vcf, which has its .idx, gather_1.vcf.gz, which has its .tbi,",
+        "unsorted_indexed.vcf, whose records are out of coordinate order beside a borrowed .idx (the",
+        "reader only finds and loads it), so REQUIRE_INDEX lets them through to the tabix index of a",
+        "compressed output, which refuses them; and two files with no index, which REQUIRE_INDEX",
+        "refuses: vcf_no_contigs.vcf (which CREATE_INDEX refuses) and gather_1.vcf, gather_1.vcf.gz's",
+        "own text. OUTPUT is a .vcf, a .vcf.gz (compared byte for byte) and a name the writer builder",
+        "cannot place; both output names are compared. BCF is not a value on either side: htsjdk-rs",
+        "has no BCF codec, so neither a .bcf input nor a .bcf output is ported."
+      ],
+      "--TMP_DIR": [
+        "/work/tmp",
+        "/work/tmp2"
+      ],
+      "--REFERENCE_SEQUENCE": [
+        "/work/fixtures/picard/ref.fasta"
+      ],
+      "--INPUT": [
+        "/work/fixtures/picard/variants.vcf",
+        "/work/fixtures/picard/gather_1.vcf.gz",
+        "/work/fixtures/picard/unsorted_indexed.vcf",
+        "/work/fixtures/picard/vcf_no_contigs.vcf",
+        "/work/fixtures/picard/gather_1.vcf"
+      ],
+      "--OUTPUT": [
+        "/work/out/output.vcf",
+        "/work/out/output.vcf.gz",
+        "/work/out/output.txt"
+      ],
+      "--COMPRESSION_LEVEL": [
+        "2",
+        "5"
+      ]
+    },
+    "VcfToIntervalList": {
+      "$why": [
+        "picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures'",
+        "Picard class writes them byte for byte as picard-rs does).",
+        "INPUT is a VCF. The hand-written one has filtered sites, overlapping and abutting sites,",
+        "IDs on some and not others, and a symbolic deletion with an END, so INCLUDE_FILTERED and",
+        "VARIANT_ID_METHOD both change the file; variants.vcf is the htsjdk-written one, and the",
+        "file without contig lines has no dictionary for the output header, which is a refusal."
+      ],
+      "--TMP_DIR": [
+        "/work/tmp",
+        "/work/tmp2"
+      ],
+      "--REFERENCE_SEQUENCE": [
+        "/work/fixtures/picard/ref.fasta"
+      ],
+      "--INPUT": [
+        "/work/fixtures/picard/vcf_sorted_samples.vcf",
+        "/work/fixtures/picard/variants.vcf",
+        "/work/fixtures/picard/vcf_no_contigs.vcf"
+      ],
+      "--OUTPUT": [
+        "/work/out/output.interval_list"
       ]
     }
   },
@@ -18960,6 +19649,16 @@
         "--output-hdfs-directory": "hdfs://nowhere:1/out"
       },
       "why": "Past both refusals the reference opens an HDFS connection and the port stops."
+    },
+    {
+      "tools": [
+        "RenameSampleInVcf"
+      ],
+      "forbid": {
+        "--INPUT": "/work/fixtures/picard/vcf_sorted_samples.vcf",
+        "--OLD_SAMPLE_NAME": "sampleA"
+      },
+      "why": "picard-rs's clause: the two-sample file is refused as not single-sample before OLD_SAMPLE_NAME is read, so naming an old sample beside it only repeats that refusal, which then took eight of the first twelve rows. The refusal is kept, with OLD_SAMPLE_NAME=null."
     }
   ],
   "exclude": {
@@ -18976,6 +19675,8 @@
     "--quantize-quals": "mutually exclusive with BOTH static-quantized-quals and round-down-quantized, and a covering array assigns every argument in every row: Barclay's mutex fires on an argument being SET, so even --round-down-quantized false refuses the row. Holding this one at its default is what lets the other two be varied, which is two covered arguments rather than one. The mutex message is measured by the mutex-target-names suite",
     "--metadata": "a feature source the Pileup runner does not open: it refuses the argument rather than answering without the column it asks for, so a row carrying one would measure the refusal",
     "--mappability-track": "a feature file the AnnotateIntervals runner does not open: it refuses the argument rather than writing a table without the column it asks for, so a row carrying one measures the refusal",
-    "--segmental-duplication-track": "a feature file the AnnotateIntervals runner does not open: it refuses the argument rather than writing a table without the column it asks for, so a row carrying one measures the refusal"
+    "--segmental-duplication-track": "a feature file the AnnotateIntervals runner does not open: it refuses the argument rather than writing a table without the column it asks for, so a row carrying one measures the refusal",
+    "--VERBOSITY": "log level on stderr, same reason",
+    "--USE_JDK_INFLATER": "chooses an inflater, and the input is read the same way either way"
   }
 }

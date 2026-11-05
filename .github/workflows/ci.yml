@@ -714,6 +714,11 @@ jobs:
             --tool ExtractVariantAnnotations \
             --tool FilterAlignmentArtifacts \
             --tool HaplotypeCaller --tool RampedHaplotypeCaller --tool Mutect2 \
+            --tool AddCommentsToBam --tool BuildBamIndex --tool CheckTerminatorBlock \
+            --tool FilterVcf --tool FixVcfHeader --tool GatherBamFiles --tool GatherVcfs \
+            --tool MakeSitesOnlyVcf --tool MergeVcfs --tool RenameSampleInVcf \
+            --tool SetNmAndUqTags --tool SetNmMdAndUqTags --tool SortVcf --tool SplitVcfs \
+            --tool UpdateVcfSequenceDictionary --tool VcfFormatConverter --tool VcfToIntervalList \
             --port target/release/gatk --corpus-dir /tmp/coverage-corpus
 
       - name: The committed measurement is the one this run produces

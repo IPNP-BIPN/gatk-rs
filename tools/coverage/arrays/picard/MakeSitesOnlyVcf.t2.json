@@ -1,0 +1,482 @@
+{
+  "tool": "MakeSitesOnlyVcf",
+  "origin": "picard",
+  "t": 2,
+  "numeric_policy": "strict",
+  "arguments_total": 18,
+  "arguments_in_array": 9,
+  "arguments_excluded": 9,
+  "excluded": [
+    {
+      "argument": "--arguments_file",
+      "type": "List[File]",
+      "reason": "excluded by the repository: expands into the command line itself, which is measured by the barclay-arguments-file suite instead",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--help",
+      "type": "boolean",
+      "reason": "excluded by the repository: prints the usage and returns; the row would measure the argument parser rather than the tool",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--MAX_RECORDS_IN_RAM",
+      "type": "Integer",
+      "reason": "only one value available (default)",
+      "held_at": "500000",
+      "source": "default"
+    },
+    {
+      "argument": "--QUIET",
+      "type": "Boolean",
+      "reason": "excluded by the repository: suppresses the log on stderr, and what is compared is stdout and the output file",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--REFERENCE_SEQUENCE",
+      "type": "PicardHtsPath",
+      "reason": "only one value available (fixture[0])",
+      "held_at": "/work/fixtures/picard/ref.fasta",
+      "source": "fixture"
+    },
+    {
+      "argument": "--showHidden",
+      "type": "boolean",
+      "reason": "excluded by the repository: changes the usage text only",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--USE_JDK_INFLATER",
+      "type": "Boolean",
+      "reason": "excluded by the repository: chooses an inflater, and the input is read the same way either way",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--VERBOSITY",
+      "type": "LogLevel",
+      "reason": "excluded by the repository: log level on stderr, same reason",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--version",
+      "type": "boolean",
+      "reason": "excluded by the repository: prints the version and returns, same reason",
+      "held_at": null,
+      "source": "none"
+    }
+  ],
+  "rows": 16,
+  "tuples_total": 195,
+  "tuples_covered": 195,
+  "tuples_forbidden": 0,
+  "constraint_notes": [],
+  "coverage": 1.0,
+  "array": [
+    {
+      "row": 0,
+      "labels": {
+        "--COMPRESSION_LEVEL": "fixture[0]",
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "true",
+        "--INPUT": "fixture[0]",
+        "--OUTPUT": "fixture[0]",
+        "--SAMPLE": "fixture[0]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "STRICT"
+      },
+      "arguments": [
+        "--COMPRESSION_LEVEL=2",
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=true",
+        "--INPUT=/work/fixtures/picard/vcf_sorted_samples.vcf",
+        "--OUTPUT=/work/out/output.vcf",
+        "--SAMPLE=null",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=STRICT"
+      ]
+    },
+    {
+      "row": 1,
+      "labels": {
+        "--COMPRESSION_LEVEL": "fixture[0]",
+        "--CREATE_INDEX": "false",
+        "--CREATE_MD5_FILE": "false",
+        "--INPUT": "fixture[1]",
+        "--OUTPUT": "fixture[1]",
+        "--SAMPLE": "fixture[1]",
+        "--TMP_DIR": "fixture[1]",
+        "--USE_JDK_DEFLATER": "false",
+        "--VALIDATION_STRINGENCY": "LENIENT"
+      },
+      "arguments": [
+        "--COMPRESSION_LEVEL=2",
+        "--CREATE_INDEX=false",
+        "--CREATE_MD5_FILE=false",
+        "--INPUT=/work/fixtures/picard/vcf_unsorted_samples.vcf",
+        "--OUTPUT=/work/out/output.vcf.gz",
+        "--SAMPLE=sampleA",
+        "--TMP_DIR=/work/tmp2",
+        "--USE_JDK_DEFLATER=false",
+        "--VALIDATION_STRINGENCY=LENIENT"
+      ]
+    },
+    {
+      "row": 2,
+      "labels": {
+        "--COMPRESSION_LEVEL": "fixture[1]",
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "false",
+        "--INPUT": "fixture[2]",
+        "--OUTPUT": "fixture[0]",
+        "--SAMPLE": "fixture[2]",
+        "--TMP_DIR": "fixture[1]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "SILENT"
+      },
+      "arguments": [
+        "--COMPRESSION_LEVEL=5",
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=false",
+        "--INPUT=/work/fixtures/picard/vcf_no_contigs.vcf",
+        "--OUTPUT=/work/out/output.vcf",
+        "--SAMPLE=sampleZ",
+        "--TMP_DIR=/work/tmp2",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=SILENT"
+      ]
+    },
+    {
+      "row": 3,
+      "labels": {
+        "--COMPRESSION_LEVEL": "fixture[1]",
+        "--CREATE_INDEX": "false",
+        "--CREATE_MD5_FILE": "true",
+        "--INPUT": "fixture[0]",
+        "--OUTPUT": "fixture[1]",
+        "--SAMPLE": "fixture[2]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "false",
+        "--VALIDATION_STRINGENCY": "SILENT"
+      },
+      "arguments": [
+        "--COMPRESSION_LEVEL=5",
+        "--CREATE_INDEX=false",
+        "--CREATE_MD5_FILE=true",
+        "--INPUT=/work/fixtures/picard/vcf_sorted_samples.vcf",
+        "--OUTPUT=/work/out/output.vcf.gz",
+        "--SAMPLE=sampleZ",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=false",
+        "--VALIDATION_STRINGENCY=SILENT"
+      ]
+    },
+    {
+      "row": 4,
+      "labels": {
+        "--COMPRESSION_LEVEL": "fixture[0]",
+        "--CREATE_INDEX": "false",
+        "--CREATE_MD5_FILE": "true",
+        "--INPUT": "fixture[2]",
+        "--OUTPUT": "fixture[0]",
+        "--SAMPLE": "fixture[1]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "LENIENT"
+      },
+      "arguments": [
+        "--COMPRESSION_LEVEL=2",
+        "--CREATE_INDEX=false",
+        "--CREATE_MD5_FILE=true",
+        "--INPUT=/work/fixtures/picard/vcf_no_contigs.vcf",
+        "--OUTPUT=/work/out/output.vcf",
+        "--SAMPLE=sampleA",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=LENIENT"
+      ]
+    },
+    {
+      "row": 5,
+      "labels": {
+        "--COMPRESSION_LEVEL": "fixture[1]",
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "true",
+        "--INPUT": "fixture[1]",
+        "--OUTPUT": "fixture[0]",
+        "--SAMPLE": "fixture[0]",
+        "--TMP_DIR": "fixture[1]",
+        "--USE_JDK_DEFLATER": "false",
+        "--VALIDATION_STRINGENCY": "STRICT"
+      },
+      "arguments": [
+        "--COMPRESSION_LEVEL=5",
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=true",
+        "--INPUT=/work/fixtures/picard/vcf_unsorted_samples.vcf",
+        "--OUTPUT=/work/out/output.vcf",
+        "--SAMPLE=null",
+        "--TMP_DIR=/work/tmp2",
+        "--USE_JDK_DEFLATER=false",
+        "--VALIDATION_STRINGENCY=STRICT"
+      ]
+    },
+    {
+      "row": 6,
+      "labels": {
+        "--COMPRESSION_LEVEL": "fixture[0]",
+        "--CREATE_INDEX": "false",
+        "--CREATE_MD5_FILE": "false",
+        "--INPUT": "fixture[0]",
+        "--OUTPUT": "fixture[0]",
+        "--SAMPLE": "fixture[0]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "STRICT"
+      },
+      "arguments": [
+        "--COMPRESSION_LEVEL=2",
+        "--CREATE_INDEX=false",
+        "--CREATE_MD5_FILE=false",
+        "--INPUT=/work/fixtures/picard/vcf_sorted_samples.vcf",
+        "--OUTPUT=/work/out/output.vcf",
+        "--SAMPLE=null",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=STRICT"
+      ]
+    },
+    {
+      "row": 7,
+      "labels": {
+        "--COMPRESSION_LEVEL": "fixture[0]",
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "true",
+        "--INPUT": "fixture[2]",
+        "--OUTPUT": "fixture[1]",
+        "--SAMPLE": "fixture[0]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "STRICT"
+      },
+      "arguments": [
+        "--COMPRESSION_LEVEL=2",
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=true",
+        "--INPUT=/work/fixtures/picard/vcf_no_contigs.vcf",
+        "--OUTPUT=/work/out/output.vcf.gz",
+        "--SAMPLE=null",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=STRICT"
+      ]
+    },
+    {
+      "row": 8,
+      "labels": {
+        "--COMPRESSION_LEVEL": "fixture[0]",
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "true",
+        "--INPUT": "fixture[1]",
+        "--OUTPUT": "fixture[0]",
+        "--SAMPLE": "fixture[2]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "SILENT"
+      },
+      "arguments": [
+        "--COMPRESSION_LEVEL=2",
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=true",
+        "--INPUT=/work/fixtures/picard/vcf_unsorted_samples.vcf",
+        "--OUTPUT=/work/out/output.vcf",
+        "--SAMPLE=sampleZ",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=SILENT"
+      ]
+    },
+    {
+      "row": 9,
+      "labels": {
+        "--COMPRESSION_LEVEL": "fixture[1]",
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "true",
+        "--INPUT": "fixture[0]",
+        "--OUTPUT": "fixture[0]",
+        "--SAMPLE": "fixture[1]",
+        "--TMP_DIR": "fixture[1]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "LENIENT"
+      },
+      "arguments": [
+        "--COMPRESSION_LEVEL=5",
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=true",
+        "--INPUT=/work/fixtures/picard/vcf_sorted_samples.vcf",
+        "--OUTPUT=/work/out/output.vcf",
+        "--SAMPLE=sampleA",
+        "--TMP_DIR=/work/tmp2",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=LENIENT"
+      ]
+    },
+    {
+      "row": 10,
+      "labels": {
+        "--COMPRESSION_LEVEL": "fixture[0]",
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "true",
+        "--INPUT": "fixture[2]",
+        "--OUTPUT": "fixture[0]",
+        "--SAMPLE": "fixture[1]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "false",
+        "--VALIDATION_STRINGENCY": "STRICT"
+      },
+      "arguments": [
+        "--COMPRESSION_LEVEL=2",
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=true",
+        "--INPUT=/work/fixtures/picard/vcf_no_contigs.vcf",
+        "--OUTPUT=/work/out/output.vcf",
+        "--SAMPLE=sampleA",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=false",
+        "--VALIDATION_STRINGENCY=STRICT"
+      ]
+    },
+    {
+      "row": 11,
+      "labels": {
+        "--COMPRESSION_LEVEL": "fixture[0]",
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "true",
+        "--INPUT": "fixture[0]",
+        "--OUTPUT": "fixture[0]",
+        "--SAMPLE": "fixture[0]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "LENIENT"
+      },
+      "arguments": [
+        "--COMPRESSION_LEVEL=2",
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=true",
+        "--INPUT=/work/fixtures/picard/vcf_sorted_samples.vcf",
+        "--OUTPUT=/work/out/output.vcf",
+        "--SAMPLE=null",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=LENIENT"
+      ]
+    },
+    {
+      "row": 12,
+      "labels": {
+        "--COMPRESSION_LEVEL": "fixture[0]",
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "true",
+        "--INPUT": "fixture[0]",
+        "--OUTPUT": "fixture[0]",
+        "--SAMPLE": "fixture[0]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "SILENT"
+      },
+      "arguments": [
+        "--COMPRESSION_LEVEL=2",
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=true",
+        "--INPUT=/work/fixtures/picard/vcf_sorted_samples.vcf",
+        "--OUTPUT=/work/out/output.vcf",
+        "--SAMPLE=null",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=SILENT"
+      ]
+    },
+    {
+      "row": 13,
+      "labels": {
+        "--COMPRESSION_LEVEL": "fixture[0]",
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "true",
+        "--INPUT": "fixture[0]",
+        "--OUTPUT": "fixture[0]",
+        "--SAMPLE": "fixture[1]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "SILENT"
+      },
+      "arguments": [
+        "--COMPRESSION_LEVEL=2",
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=true",
+        "--INPUT=/work/fixtures/picard/vcf_sorted_samples.vcf",
+        "--OUTPUT=/work/out/output.vcf",
+        "--SAMPLE=sampleA",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=SILENT"
+      ]
+    },
+    {
+      "row": 14,
+      "labels": {
+        "--COMPRESSION_LEVEL": "fixture[0]",
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "true",
+        "--INPUT": "fixture[0]",
+        "--OUTPUT": "fixture[0]",
+        "--SAMPLE": "fixture[2]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "STRICT"
+      },
+      "arguments": [
+        "--COMPRESSION_LEVEL=2",
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=true",
+        "--INPUT=/work/fixtures/picard/vcf_sorted_samples.vcf",
+        "--OUTPUT=/work/out/output.vcf",
+        "--SAMPLE=sampleZ",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=STRICT"
+      ]
+    },
+    {
+      "row": 15,
+      "labels": {
+        "--COMPRESSION_LEVEL": "fixture[0]",
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "true",
+        "--INPUT": "fixture[0]",
+        "--OUTPUT": "fixture[0]",
+        "--SAMPLE": "fixture[2]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "LENIENT"
+      },
+      "arguments": [
+        "--COMPRESSION_LEVEL=2",
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=true",
+        "--INPUT=/work/fixtures/picard/vcf_sorted_samples.vcf",
+        "--OUTPUT=/work/out/output.vcf",
+        "--SAMPLE=sampleZ",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=LENIENT"
+      ]
+    }
+  ]
+}

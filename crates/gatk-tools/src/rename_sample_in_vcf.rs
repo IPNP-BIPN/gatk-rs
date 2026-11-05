@@ -41,6 +41,7 @@
 //! accepted, and go into the column header as they are.
 
 use htsjdk_vcf::encoder::EncodeError;
+use htsjdk_vcf::genotypes_context::GenotypesContext;
 use htsjdk_vcf::reader::read_vcf;
 use htsjdk_vcf::vcf_file::write_vcf;
 
@@ -96,12 +97,22 @@ pub fn rename(input: &str, new_name: &str, old_name: Option<&str>) -> Result<Str
     }
     let mut header = file.header.clone();
     header.samples = vec![new_name.to_string()];
-    // The reference does this by not decoding at all; see the note above.
+    // The reference does this by not decoding at all; see the note above. A record whose genotypes
+    // are still the file's text stays lazy under the new name, so the writer copies the text
+    // (FORMAT key order included) rather than re-encoding it.
     let mut records = file.records.clone();
+    let renamed: std::sync::Arc<[String]> = std::sync::Arc::from(vec![new_name.to_string()]);
     for record in &mut records {
-        for genotype in record.genotypes.iter_mut() {
+        let context = std::mem::replace(&mut record.genotypes, GenotypesContext::new(Vec::new()));
+        let unparsed = context.unparsed().map(str::to_string);
+        let mut genotypes = context.into_vec();
+        for genotype in &mut genotypes {
             genotype.sample_name = new_name.to_string();
         }
+        record.genotypes = match unparsed {
+            Some(text) => GenotypesContext::lazy(genotypes, text, renamed.clone()),
+            None => genotypes.into(),
+        };
     }
     write_vcf(&header, &records).map_err(|error| match error {
         // The writer's own refusal, which a record using an undeclared INFO key reaches. The
