@@ -10,6 +10,14 @@
     "context": "tools/oracle",
     "platform": "linux/amd64"
   },
+  "oracle_with_r": {
+    "$why": "gatk-rs-oracle deliberately has no Rscript. A suite that needs the reference's plots to actually run names this instead with its own `oracle` key: the Broad's published image of the same release, pinned by digest, with the R and the packages that release was built with. Pulled rather than built, so it costs a job of its own and not the shared image's cache.",
+    "image": "broadinstitute/gatk@sha256:71b17ee42d149e8ec112603f5305c873ab60d93949ef8bb62a4fff85427f56fb",
+    "platform": "linux/amd64",
+    "entrypoint": "sh",
+    "timeout_seconds": 1500,
+    "classpath": "/gatk/gatk-package-4.6.2.0-local.jar"
+  },
   "ci": {
     "suites_per_job": 5,
     "$why": "Suites share a job because each job restores the oracle image once."
@@ -8308,6 +8316,30 @@
       ]
     },
     {
+      "id": "r-plots",
+      "status": "oracle-backed",
+      "oracle": "oracle_with_r",
+      "title": "the three tools that hand their work to an R script, with R there to run it",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "PlotDenoisedCopyRatios",
+        "PlotModeledSegments",
+        "AlleleFrequencyQC"
+      ],
+      "compare": {
+        "mode": "lines"
+      },
+      "why": "R stays: a Rust rewrite would mean a device-level raster of png(type=\"cairo\"), and the scripts behind the Java side are rewritten on ggplot2, so THE PNG BYTES ARE NOT COMPARED AND NOTHING HERE CLAIMS THEY ARE. What the golden holds is everything around the image: THE SIDE FILES byte for byte, THE STATUS AND THE FIRST LINE OF THE REFUSAL of each run, THE LIST OF FILES each run leaves in its output and in the working directory, the PNG's pixel size and resolution, and THE NUMBERS THE REFERENCE'S SCRIPTS HAND THEIR GRAPHICS CALLS, recorded by masking those calls ahead of the reference's own unmodified scripts. Those last rows are what the port's exported .data.rds is read back against, and they are where the running index shows: consecutive segments sharing a point, a zero-point segment skipped without advancing, and the last segment running off the table into an NA.",
+      "$compare_why": "The dump is the reference's alone, so the comparison with the port is crates/gatk-cli/tests/r_plots_end_to_end.rs, which needs an R with ggplot2 and cowplot and has a CI job of its own for it: oracle-with-r in ci.template.yml.",
+      "cases": [
+        {
+          "dump": "RPlotsDump",
+          "golden": "crates/gatk-tools/tests/data/r_plots.txt.gz",
+          "why": "Frozen from the candidate artefact of run 41547143144, in the oracle-with-r job."
+        }
+      ]
+    },
+    {
       "id": "sv-evidence",
       "status": "oracle-backed",
       "title": "FindBreakpointEvidenceSpark and StructuralVariationDiscoveryPipelineSpark, stage by stage",
@@ -8383,6 +8415,85 @@
           "dump": "SvEvidenceDump",
           "golden": "crates/gatk-tools/tests/data/sv_evidence.txt.gz",
           "why": "Pending the first real x86-64 CI run."
+        }
+      ]
+    },
+    {
+      "id": "sv-partitions",
+      "status": "oracle-backed",
+      "title": "FindBreakpointEvidenceSpark and StructuralVariationDiscoveryPipelineSpark on several partitions and large k-mer tables",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "FindBreakpointEvidenceSpark",
+        "StructuralVariationDiscoveryPipelineSpark"
+      ],
+      "java_props": [
+        "-Duser.language=en",
+        "-Duser.country=US",
+        "-Dsamjdk.use_libdeflate=false",
+        "-Dsamjdk.compression_level=2",
+        "--add-opens=java.base/java.lang=ALL-UNNAMED",
+        "--add-opens=java.base/java.lang.invoke=ALL-UNNAMED",
+        "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED",
+        "--add-opens=java.base/java.io=ALL-UNNAMED",
+        "--add-opens=java.base/java.net=ALL-UNNAMED",
+        "--add-opens=java.base/java.nio=ALL-UNNAMED",
+        "--add-opens=java.base/java.util=ALL-UNNAMED",
+        "--add-opens=java.base/java.util.concurrent=ALL-UNNAMED",
+        "--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED",
+        "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+        "--add-opens=java.base/sun.nio.cs=ALL-UNNAMED",
+        "--add-opens=java.base/sun.security.action=ALL-UNNAMED",
+        "--add-opens=java.base/sun.util.calendar=ALL-UNNAMED",
+        "--add-opens=java.base/sun.nio.fs=ALL-UNNAMED",
+        "--add-opens=java.base/java.nio.channels.spi=ALL-UNNAMED",
+        "--add-opens=java.base/jdk.internal.ref=ALL-UNNAMED",
+        "--add-opens=java.base/java.lang.ref=ALL-UNNAMED",
+        "--add-opens=java.base/java.util.zip=ALL-UNNAMED",
+        "--add-opens=java.base/java.util.jar=ALL-UNNAMED",
+        "--add-opens=java.base/java.nio.file.attribute=ALL-UNNAMED",
+        "--add-opens=java.base/jdk.internal.loader=ALL-UNNAMED",
+        "--add-opens=java.base/sun.net.www.protocol.jar=ALL-UNNAMED",
+        "--add-opens=java.base/sun.invoke.util=ALL-UNNAMED",
+        "--add-opens=java.base/java.util.concurrent.locks=ALL-UNNAMED",
+        "--add-opens=java.base/java.security=ALL-UNNAMED",
+        "--add-opens=java.base/sun.reflect.annotation=ALL-UNNAMED",
+        "--add-opens=java.base/java.text=ALL-UNNAMED",
+        "--add-opens=java.base/java.nio.charset=ALL-UNNAMED",
+        "--add-opens=java.base/sun.reflect.generics.reflectiveObjects=ALL-UNNAMED",
+        "--add-opens=java.management/com.sun.jmx.mbeanserver=ALL-UNNAMED",
+        "--add-opens=java.management/javax.management=ALL-UNNAMED",
+        "--add-opens=java.base/java.util.regex=ALL-UNNAMED",
+        "--add-opens=java.base/sun.util.locale=ALL-UNNAMED",
+        "--add-opens=java.base/jdk.internal.math=ALL-UNNAMED",
+        "--add-opens=java.xml/com.sun.xml.internal.stream.util=ALL-UNNAMED",
+        "--add-opens=java.base/java.time=ALL-UNNAMED",
+        "--add-opens=java.base/sun.reflect.generics.factory=ALL-UNNAMED",
+        "--add-opens=java.base/java.nio.channels=ALL-UNNAMED",
+        "--add-opens=java.base/sun.security.util=ALL-UNNAMED",
+        "--add-opens=java.base/java.time.zone=ALL-UNNAMED",
+        "--add-opens=java.base/sun.reflect.generics.scope=ALL-UNNAMED",
+        "--add-opens=java.base/sun.reflect.generics.tree=ALL-UNNAMED",
+        "--add-opens=java.management/com.sun.jmx.interceptor=ALL-UNNAMED",
+        "--add-opens=java.management/javax.management.openmbean=ALL-UNNAMED",
+        "--add-opens=java.management/sun.management=ALL-UNNAMED",
+        "--add-opens=jdk.management/com.sun.management.internal=ALL-UNNAMED",
+        "--add-opens=jdk.management.jfr/jdk.management.jfr=ALL-UNNAMED",
+        "--add-opens=jdk.jfr/jdk.jfr.internal.management=ALL-UNNAMED",
+        "--add-opens=java.base/jdk.internal.module=ALL-UNNAMED",
+        "--add-opens=java.base/java.lang.module=ALL-UNNAMED",
+        "--add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED",
+        "-XX:-OmitStackTraceInFastThrow"
+      ],
+      "why": "The sv-evidence fixtures with a small --bam-partition-size, --use-nio or a .sbi: Disq's splits, empty partitions, a shuffle into as many partitions as maps, what crosses a partition's edge through Kryo into the driver's density filter, and part-xxxxx. Two more dictionaries over the same reads put KmerCleaner's table over 2^27 entries and narrow its size to a negative int. A file over 16 KiB is listed by length and CRC.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "SvPartitionsDump",
+          "golden": "crates/gatk-tools/tests/data/sv_partitions.txt.gz",
+          "why": "Frozen from the candidate artefact of run 41547143144."
         }
       ]
     },
