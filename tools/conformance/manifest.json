@@ -6301,7 +6301,7 @@
     },
     {
       "id": "f2j-dgesdd",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "F2J's dgesdd('A') on Gramians of 2 to 128 samples, bit for bit, as Breeze calls it for Spark's LocalLAPACK computeSVD",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -6319,8 +6319,8 @@
       "cases": [
         {
           "dump": "DgesddDump",
-          "golden": null,
-          "why": "Pending the first real x86-64 CI run."
+          "golden": "crates/gatk-tools/tests/data/f2j_dgesdd.txt.gz",
+          "why": "Frozen from CI run 42039987892 (candidate-goldens-f2j-dgesdd) on real x86-64."
         }
       ]
     },
