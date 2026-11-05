@@ -1,0 +1,372 @@
+{
+  "tool": "VcfToIntervalList",
+  "origin": "picard",
+  "t": 2,
+  "numeric_policy": "strict",
+  "arguments_total": 19,
+  "arguments_in_array": 8,
+  "arguments_excluded": 11,
+  "excluded": [
+    {
+      "argument": "--arguments_file",
+      "type": "List[File]",
+      "reason": "excluded by the repository: expands into the command line itself, which is measured by the barclay-arguments-file suite instead",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--COMPRESSION_LEVEL",
+      "type": "int",
+      "reason": "only one value available (default)",
+      "held_at": "5",
+      "source": "default"
+    },
+    {
+      "argument": "--help",
+      "type": "boolean",
+      "reason": "excluded by the repository: prints the usage and returns; the row would measure the argument parser rather than the tool",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--MAX_RECORDS_IN_RAM",
+      "type": "Integer",
+      "reason": "only one value available (default)",
+      "held_at": "500000",
+      "source": "default"
+    },
+    {
+      "argument": "--OUTPUT",
+      "type": "File",
+      "reason": "only one value available (fixture[0])",
+      "held_at": "/work/out/output.interval_list",
+      "source": "fixture"
+    },
+    {
+      "argument": "--QUIET",
+      "type": "Boolean",
+      "reason": "excluded by the repository: suppresses the log on stderr, and what is compared is stdout and the output file",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--REFERENCE_SEQUENCE",
+      "type": "PicardHtsPath",
+      "reason": "only one value available (fixture[0])",
+      "held_at": "/work/fixtures/picard/ref.fasta",
+      "source": "fixture"
+    },
+    {
+      "argument": "--showHidden",
+      "type": "boolean",
+      "reason": "excluded by the repository: changes the usage text only",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--USE_JDK_INFLATER",
+      "type": "Boolean",
+      "reason": "excluded by the repository: chooses an inflater, and the input is read the same way either way",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--VERBOSITY",
+      "type": "LogLevel",
+      "reason": "excluded by the repository: log level on stderr, same reason",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--version",
+      "type": "boolean",
+      "reason": "excluded by the repository: prints the version and returns, same reason",
+      "held_at": null,
+      "source": "none"
+    }
+  ],
+  "rows": 12,
+  "tuples_total": 141,
+  "tuples_covered": 141,
+  "tuples_forbidden": 0,
+  "constraint_notes": [],
+  "coverage": 1.0,
+  "array": [
+    {
+      "row": 0,
+      "labels": {
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "true",
+        "--INCLUDE_FILTERED": "true",
+        "--INPUT": "fixture[0]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "STRICT",
+        "--VARIANT_ID_METHOD": "CONCAT_ALL"
+      },
+      "arguments": [
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=true",
+        "--INCLUDE_FILTERED=true",
+        "--INPUT=/work/fixtures/picard/vcf_sorted_samples.vcf",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=STRICT",
+        "--VARIANT_ID_METHOD=CONCAT_ALL"
+      ]
+    },
+    {
+      "row": 1,
+      "labels": {
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "false",
+        "--INCLUDE_FILTERED": "false",
+        "--INPUT": "fixture[1]",
+        "--TMP_DIR": "fixture[1]",
+        "--USE_JDK_DEFLATER": "false",
+        "--VALIDATION_STRINGENCY": "LENIENT",
+        "--VARIANT_ID_METHOD": "USE_FIRST"
+      },
+      "arguments": [
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=false",
+        "--INCLUDE_FILTERED=false",
+        "--INPUT=/work/fixtures/picard/variants.vcf",
+        "--TMP_DIR=/work/tmp2",
+        "--USE_JDK_DEFLATER=false",
+        "--VALIDATION_STRINGENCY=LENIENT",
+        "--VARIANT_ID_METHOD=USE_FIRST"
+      ]
+    },
+    {
+      "row": 2,
+      "labels": {
+        "--CREATE_INDEX": "false",
+        "--CREATE_MD5_FILE": "true",
+        "--INCLUDE_FILTERED": "false",
+        "--INPUT": "fixture[2]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "false",
+        "--VALIDATION_STRINGENCY": "SILENT",
+        "--VARIANT_ID_METHOD": "CONCAT_ALL"
+      },
+      "arguments": [
+        "--CREATE_INDEX=false",
+        "--CREATE_MD5_FILE=true",
+        "--INCLUDE_FILTERED=false",
+        "--INPUT=/work/fixtures/picard/vcf_no_contigs.vcf",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=false",
+        "--VALIDATION_STRINGENCY=SILENT",
+        "--VARIANT_ID_METHOD=CONCAT_ALL"
+      ]
+    },
+    {
+      "row": 3,
+      "labels": {
+        "--CREATE_INDEX": "false",
+        "--CREATE_MD5_FILE": "false",
+        "--INCLUDE_FILTERED": "true",
+        "--INPUT": "fixture[0]",
+        "--TMP_DIR": "fixture[1]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "SILENT",
+        "--VARIANT_ID_METHOD": "USE_FIRST"
+      },
+      "arguments": [
+        "--CREATE_INDEX=false",
+        "--CREATE_MD5_FILE=false",
+        "--INCLUDE_FILTERED=true",
+        "--INPUT=/work/fixtures/picard/vcf_sorted_samples.vcf",
+        "--TMP_DIR=/work/tmp2",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=SILENT",
+        "--VARIANT_ID_METHOD=USE_FIRST"
+      ]
+    },
+    {
+      "row": 4,
+      "labels": {
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "false",
+        "--INCLUDE_FILTERED": "true",
+        "--INPUT": "fixture[2]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "LENIENT",
+        "--VARIANT_ID_METHOD": "CONCAT_ALL"
+      },
+      "arguments": [
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=false",
+        "--INCLUDE_FILTERED=true",
+        "--INPUT=/work/fixtures/picard/vcf_no_contigs.vcf",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=LENIENT",
+        "--VARIANT_ID_METHOD=CONCAT_ALL"
+      ]
+    },
+    {
+      "row": 5,
+      "labels": {
+        "--CREATE_INDEX": "false",
+        "--CREATE_MD5_FILE": "true",
+        "--INCLUDE_FILTERED": "true",
+        "--INPUT": "fixture[1]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "STRICT",
+        "--VARIANT_ID_METHOD": "USE_FIRST"
+      },
+      "arguments": [
+        "--CREATE_INDEX=false",
+        "--CREATE_MD5_FILE=true",
+        "--INCLUDE_FILTERED=true",
+        "--INPUT=/work/fixtures/picard/variants.vcf",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=STRICT",
+        "--VARIANT_ID_METHOD=USE_FIRST"
+      ]
+    },
+    {
+      "row": 6,
+      "labels": {
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "false",
+        "--INCLUDE_FILTERED": "false",
+        "--INPUT": "fixture[0]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "STRICT",
+        "--VARIANT_ID_METHOD": "CONCAT_ALL"
+      },
+      "arguments": [
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=false",
+        "--INCLUDE_FILTERED=false",
+        "--INPUT=/work/fixtures/picard/vcf_sorted_samples.vcf",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=STRICT",
+        "--VARIANT_ID_METHOD=CONCAT_ALL"
+      ]
+    },
+    {
+      "row": 7,
+      "labels": {
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "true",
+        "--INCLUDE_FILTERED": "true",
+        "--INPUT": "fixture[2]",
+        "--TMP_DIR": "fixture[1]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "STRICT",
+        "--VARIANT_ID_METHOD": "CONCAT_ALL"
+      },
+      "arguments": [
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=true",
+        "--INCLUDE_FILTERED=true",
+        "--INPUT=/work/fixtures/picard/vcf_no_contigs.vcf",
+        "--TMP_DIR=/work/tmp2",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=STRICT",
+        "--VARIANT_ID_METHOD=CONCAT_ALL"
+      ]
+    },
+    {
+      "row": 8,
+      "labels": {
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "true",
+        "--INCLUDE_FILTERED": "true",
+        "--INPUT": "fixture[0]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "false",
+        "--VALIDATION_STRINGENCY": "STRICT",
+        "--VARIANT_ID_METHOD": "CONCAT_ALL"
+      },
+      "arguments": [
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=true",
+        "--INCLUDE_FILTERED=true",
+        "--INPUT=/work/fixtures/picard/vcf_sorted_samples.vcf",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=false",
+        "--VALIDATION_STRINGENCY=STRICT",
+        "--VARIANT_ID_METHOD=CONCAT_ALL"
+      ]
+    },
+    {
+      "row": 9,
+      "labels": {
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "true",
+        "--INCLUDE_FILTERED": "true",
+        "--INPUT": "fixture[1]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "SILENT",
+        "--VARIANT_ID_METHOD": "CONCAT_ALL"
+      },
+      "arguments": [
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=true",
+        "--INCLUDE_FILTERED=true",
+        "--INPUT=/work/fixtures/picard/variants.vcf",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=SILENT",
+        "--VARIANT_ID_METHOD=CONCAT_ALL"
+      ]
+    },
+    {
+      "row": 10,
+      "labels": {
+        "--CREATE_INDEX": "false",
+        "--CREATE_MD5_FILE": "true",
+        "--INCLUDE_FILTERED": "true",
+        "--INPUT": "fixture[0]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "LENIENT",
+        "--VARIANT_ID_METHOD": "CONCAT_ALL"
+      },
+      "arguments": [
+        "--CREATE_INDEX=false",
+        "--CREATE_MD5_FILE=true",
+        "--INCLUDE_FILTERED=true",
+        "--INPUT=/work/fixtures/picard/vcf_sorted_samples.vcf",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=LENIENT",
+        "--VARIANT_ID_METHOD=CONCAT_ALL"
+      ]
+    },
+    {
+      "row": 11,
+      "labels": {
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "true",
+        "--INCLUDE_FILTERED": "true",
+        "--INPUT": "fixture[2]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "STRICT",
+        "--VARIANT_ID_METHOD": "USE_FIRST"
+      },
+      "arguments": [
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=true",
+        "--INCLUDE_FILTERED=true",
+        "--INPUT=/work/fixtures/picard/vcf_no_contigs.vcf",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=STRICT",
+        "--VARIANT_ID_METHOD=USE_FIRST"
+      ]
+    }
+  ]
+}

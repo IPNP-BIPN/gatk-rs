@@ -69,6 +69,8 @@ import java.util.List;
 public class ToolArgumentDeclarationDump {
 
     public static void main(final String[] args) {
+        // What GATK's `Main` sets before anything else: Picard tools parse with Barclay.
+        System.setProperty("picard.useLegacyParser", "false");
         declarations("CountReads",
                 new org.broadinstitute.hellbender.tools.CountReads());
         declarations("CountVariants",
@@ -654,6 +656,26 @@ public class ToolArgumentDeclarationDump {
         // X.1, seventh brick: two BAMs compared by their duplicate marks.
         declarations("CompareDuplicatesSpark",
                 new org.broadinstitute.hellbender.tools.spark.validation.CompareDuplicatesSpark());
+        // The Picard tools GATK bundles and the port runs (milestone V). GATK hands them to
+        // `PicardCommandLineProgramExecutor`, which parses with Picard's own Barclay parser:
+        // Picard's standard arguments, upper-case, rather than the engine's collections.
+        declarations("AddCommentsToBam", new picard.sam.AddCommentsToBam());
+        declarations("BuildBamIndex", new picard.sam.BuildBamIndex());
+        declarations("CheckTerminatorBlock", new picard.sam.CheckTerminatorBlock());
+        declarations("FilterVcf", new picard.vcf.filter.FilterVcf());
+        declarations("FixVcfHeader", new picard.vcf.FixVcfHeader());
+        declarations("GatherBamFiles", new picard.sam.GatherBamFiles());
+        declarations("GatherVcfs", new picard.vcf.GatherVcfs());
+        declarations("MakeSitesOnlyVcf", new picard.vcf.MakeSitesOnlyVcf());
+        declarations("MergeVcfs", new picard.vcf.MergeVcfs());
+        declarations("RenameSampleInVcf", new picard.vcf.RenameSampleInVcf());
+        declarations("SetNmAndUqTags", new picard.sam.SetNmAndUqTags());
+        declarations("SetNmMdAndUqTags", new picard.sam.SetNmMdAndUqTags());
+        declarations("SortVcf", new picard.vcf.SortVcf());
+        declarations("SplitVcfs", new picard.vcf.SplitVcfs());
+        declarations("UpdateVcfSequenceDictionary", new picard.vcf.UpdateVcfSequenceDictionary());
+        declarations("VcfFormatConverter", new picard.vcf.VcfFormatConverter());
+        declarations("VcfToIntervalList", new picard.vcf.VcfToIntervalList());
 
         // A read walker: its own input, and the arguments it inherits.
         parse("CountReads", "no-arguments", new String[]{});
@@ -726,9 +748,7 @@ public class ToolArgumentDeclarationDump {
             instance = null;
         }
         final List<NamedArgumentDefinition> definitions =
-                ((CommandLineArgumentParser) ((org.broadinstitute.hellbender.cmdline
-                        .CommandLineProgram) target).getCommandLineParser())
-                        .getNamedArgumentDefinitions();
+                toolParser(target).getNamedArgumentDefinitions();
         System.out.printf("count\t%s\tinstance=%s tool=%d%n", tool,
                 instance == null ? "refused" : String.valueOf(instance.size()),
                 definitions.size());
@@ -794,6 +814,14 @@ public class ToolArgumentDeclarationDump {
     }
 
     /** The dump's own escaping, since this harness has no shared helper. */
+    /** The parser a tool hands out, whichever of the two `CommandLineProgram`s it extends. */
+    static CommandLineArgumentParser toolParser(final Object target) {
+        return (CommandLineArgumentParser) (target instanceof picard.cmdline.CommandLineProgram
+                ? ((picard.cmdline.CommandLineProgram) target).getCommandLineParser()
+                : ((org.broadinstitute.hellbender.cmdline.CommandLineProgram) target)
+                        .getCommandLineParser());
+    }
+
     static String escape(final String text) {
         return text.replace("\\", "\\\\").replace("\t", "\\t").replace("\n", "\\n");
     }

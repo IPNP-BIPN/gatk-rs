@@ -638,7 +638,7 @@ fn master_dictionary(parser: &Parser) -> Result<Option<SamHeader>, Thrown> {
 ///
 /// Java does not normalise here, and the empty path is the working directory ITSELF rather than a
 /// trailing separator on it, which is what makes `--annotated-intervals=` print `/work`.
-fn java_absolute_path(path: &str) -> String {
+pub(crate) fn java_absolute_path(path: &str) -> String {
     if path.starts_with('/') {
         return path.to_string();
     }
@@ -1418,7 +1418,7 @@ fn bad_input(message: String) -> Thrown {
 }
 
 /// Whether a BAM's header says `SO:coordinate`, which is what a `.bai` needs.
-fn is_coordinate_sorted(bam: &[u8]) -> bool {
+pub(crate) fn is_coordinate_sorted(bam: &[u8]) -> bool {
     htsjdk_bgzf::read::decompress_all(bam)
         .ok()
         .map(|bytes| {
@@ -1570,12 +1570,15 @@ pub fn create_hadoop_bam_splitting_index(parser: &Parser) -> Outcome {
 /// second, and neither is htsjdk's own default. Every file a tool writes block compressed depends
 /// on both (#1032).
 pub(crate) fn output_compression(parser: &Parser) -> (u32, htsjdk_bgzf::Deflater) {
-    let level = gatk_tools::gatk_config::compression_level(
-        std::env::var(gatk_tools::gatk_config::COMPRESSION_LEVEL)
-            .ok()
-            .as_deref(),
-    );
-    let deflater = if flag(parser, "use-jdk-deflater") {
+    // A Picard tool's `COMPRESSION_LEVEL` and `USE_JDK_DEFLATER` are the same two settings.
+    let level = crate::picard::compression_level(parser).unwrap_or_else(|| {
+        gatk_tools::gatk_config::compression_level(
+            std::env::var(gatk_tools::gatk_config::COMPRESSION_LEVEL)
+                .ok()
+                .as_deref(),
+        )
+    });
+    let deflater = if flag(parser, "use-jdk-deflater") || flag(parser, "USE_JDK_DEFLATER") {
         htsjdk_bgzf::Deflater::Jdk
     } else {
         htsjdk_bgzf::Deflater::Gkl
@@ -2913,7 +2916,7 @@ fn dictionary_path(output: &str) -> String {
     format!("{output}.dict")
 }
 
-fn write_file(path: &str, bytes: &[u8]) -> Result<(), Thrown> {
+pub(crate) fn write_file(path: &str, bytes: &[u8]) -> Result<(), Thrown> {
     std::fs::write(path, bytes)
         .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{path}: {error}")))
 }
@@ -16970,7 +16973,9 @@ pub fn update_vcf_sequence_dictionary(parser: &Parser) -> Outcome {
 /// A `.dict` and a SAM header are the same lines; a BAM carries them in its header; a VCF declares
 /// them as `##contig`; and a FASTA has none of its own, so the dictionary is the `.dict` beside it,
 /// which is what `ReferenceSequenceFileFactory` names.
-fn dictionary_from_any(path: &str) -> Result<Vec<htsjdk_bam::header::SequenceRecord>, Thrown> {
+pub(crate) fn dictionary_from_any(
+    path: &str,
+) -> Result<Vec<htsjdk_bam::header::SequenceRecord>, Thrown> {
     let lower = path.to_ascii_lowercase();
     if lower.ends_with(".vcf") || lower.ends_with(".vcf.gz") {
         let text = std::fs::read_to_string(path)
