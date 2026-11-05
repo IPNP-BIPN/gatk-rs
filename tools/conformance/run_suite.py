@@ -90,8 +90,19 @@ def oracle_of(manifest, suite):
     return manifest[suite["oracle"]] if suite.get("oracle") else manifest["oracle"]
 
 
-def docker_run(oracle, harness, cls, props, stdout, fixtures=None):
+def docker_run(oracle, harness, cls, props, stdout, fixtures=None, python_image=None):
     mounts = ["-v", f"{REPO}/{harness}:/harness:ro"]
+    if python_image is not None:
+        # The pinned oracle has no Python on purpose. A tool whose other half is a Python script
+        # has that half compared in the image GATK itself publishes, which has the script's
+        # environment and which `docker run` pulls by digest here.
+        cmd = [
+            "docker", "run", "--rm", "--platform", oracle["platform"], *mounts, "-w", "/tmp",
+            python_image, "python3", f"/harness/{cls}.py",
+        ]
+        print("+ " + " ".join(cmd), flush=True)
+        with open(stdout, "w") as fh:
+            return subprocess.run(cmd, stdout=fh).returncode
     if fixtures is not None:
         mounts += ["-v", f"{fixtures}:/work/fixtures:ro"]
     # The pinned image's entrypoint is already `sh -c` and it sets ORACLE_CP itself; the Broad's has
@@ -146,7 +157,10 @@ def run_pending(manifest, suite, workdir):
     for case in suite["cases"]:
         dump = case["dump"]
         out = PENDING_DIR / f"{suite['id']}.{dump}.txt"
-        rc = docker_run(oracle_of(manifest, suite), suite["harness"], dump, props, out, fixtures)
+        rc = docker_run(
+            oracle_of(manifest, suite), suite["harness"], dump, props, out, fixtures,
+            suite.get("python_image"),
+        )
         rows = [l for l in open(out) if l.strip() and not l.startswith("#")]
         print(f"--- {suite['id']}/{dump}: {len(rows)} rows, nothing compared (no golden yet)")
         for line in rows:
@@ -192,7 +206,10 @@ def run_suite(manifest, suite, workdir):
     for case in suite["cases"]:
         dump = case["dump"]
         out = PENDING_DIR / f"{suite['id']}.{dump}.txt"
-        rc = docker_run(oracle_of(manifest, suite), suite["harness"], dump, props, out, fixtures)
+        rc = docker_run(
+            oracle_of(manifest, suite), suite["harness"], dump, props, out, fixtures,
+            suite.get("python_image"),
+        )
         lines = sum(1 for _ in open(out))
         print(f"regenerated {dump}: {lines} lines (docker exit {rc})")
         if rc != 0 or lines == 0:

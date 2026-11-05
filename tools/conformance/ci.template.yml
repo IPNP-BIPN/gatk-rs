@@ -394,6 +394,55 @@ jobs:
             /tmp/coverage-corpus/
           if-no-files-found: ignore
 
+  nvscorevariants:
+    name: NVScoreVariants on real x86-64
+    # The one job with broadinstitute/gatk:4.6.2.0, which is a second image next to the pinned oracle
+    # because that one has no Python. Everything else about this tool is measured under Rosetta at
+    # AVX2, so this is where those measurements get checked: which CPU dispatch the reference took,
+    # how far the port's layers are from it there, and whether the printed scores still agree. The
+    # bit-level lines are printed and asserted nowhere. The printed scores are asserted.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.1"
+
+      - name: Weights, fixture, and the reference's dump and layers
+        env:
+          IMAGE: broadinstitute/gatk@sha256:71b17ee42d149e8ec112603f5305c873ab60d93949ef8bb62a4fff85427f56fb
+        run: |
+          mkdir -p /tmp/nv
+          chmod 777 /tmp/nv
+          grep -m1 "model name" /proc/cpuinfo
+          grep -m1 -o -E "avx512f|avx2" /proc/cpuinfo || true
+          run() { docker run --rm --platform linux/amd64 -v "$PWD/tools/nvscorevariants:/harness:ro" -v /tmp/nv:/nv "$IMAGE" "$@"; }
+          run python3 /harness/extract_weights.py /nv
+          run python3 /harness/make_fixture.py /nv/fixture
+          run python3 /harness/NVScoreVariantsDump.py /nv/fixture > /tmp/nv/reference.dump
+          run env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 ONEDNN_VERBOSE=1 python3 /harness/dump_layers.py reference /nv/fixture/variants.vcf /nv/fixture/reference.fasta - 64 /nv/d1d.bin /nv/d1d.scores | grep -m3 -E "onednn_verbose,(info,cpu,isa|exec,cpu,convolution)" || true
+          run env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 python3 /harness/dump_layers.py read_tensor /nv/fixture/variants.vcf /nv/fixture/reference.fasta /nv/fixture/reads.bam 64 /nv/d2d.bin /nv/d2d.scores
+
+      - name: nasm, which `gkl-igzip` needs to build ISA-L's assembly
+        run: |
+          sudo apt-get update -qq || echo "apt refresh incomplete; the install below is the gate"
+          sudo apt-get install -y -qq nasm
+          nasm -v
+
+      - name: The layers against the port, for the record
+        env:
+          NVSCORE_LAYERS_1D: reference /tmp/nv/fixture/variants.vcf /tmp/nv/fixture/reference.fasta - 64 /tmp/nv/d1d.bin /tmp/nv
+          NVSCORE_LAYERS_2D: read_tensor /tmp/nv/fixture/variants.vcf /tmp/nv/fixture/reference.fasta /tmp/nv/fixture/reads.bam 64 /tmp/nv/d2d.bin /tmp/nv
+        run: |
+          NVSCORE_LAYERS="$NVSCORE_LAYERS_1D" cargo test --release -p gatk-tools --test nv_score_variants_layers -- --nocapture
+          NVSCORE_LAYERS="$NVSCORE_LAYERS_2D" cargo test --release -p gatk-tools --test nv_score_variants_layers -- --nocapture
+
+      - name: The printed scores and every VCF against the reference
+        env:
+          NVSCORE_OUTPUT: /tmp/nv/reference.dump /tmp/nv/fixture /tmp/nv
+        run: cargo test --release -p gatk-tools --test nv_score_variants_output -- --nocapture
+
   oracle-with-r:
     name: "Oracle with R: the plots around their images"
     runs-on: ubuntu-latest

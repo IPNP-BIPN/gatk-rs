@@ -280,7 +280,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `MethylationTypeCaller` | record-transform | oracle-backed | methylation-type-caller | 1 | t=2, 21/21 rows (100%) | 0.003 / 0.072 |
 | `ModelSegments` | cnv-segmentation | oracle-backed | model-segments | 1 | t=2, 19/19 rows (100%) | 0.383 / 1.512 |
 | `Mutect2` | assembly-caller | oracle-backed | callers-all-annotations, hc-allele-filtering, hc-allele-graphs, hc-alleles, hc-bamout, hc-debug-outputs, hc-error-correction, hc-flow, hc-linked-graph, hc-pdhmm, hc-pedigree, hc-pileup, mutect2-dragstr, mutect2-end-to-end, mutect2-f1r2, mutect2-gvcf, mutect2-mitochondria, mutect2-permutect, mutect2-resources | 19 | t=2, 38/38 rows (100%) | 0.032 / 0.445 |
-| `NVScoreVariants` | unclassified | oracle-backed | interpreter-tools | 1 | t=2, 10/10 rows (100%), **1 distinct output** | not measured |
+| `NVScoreVariants` | unclassified | oracle-backed | interpreter-tools, nvscorevariants | 2 | t=2, 10/10 rows (100%), **1 distinct output** | not measured |
 | `NuMTFilterTool` | unclassified | oracle-backed | numt-filter | 1 | t=2, 15/15 rows (100%) | 0.002 / 0.060 |
 | `ParallelCopyGCSDirectoryIntoHDFSSpark` | unclassified | oracle-backed | spark-walkers | 1 | t=2, 5/16 rows (31%), **1 distinct output** | not measured |
 | `PathSeqBuildKmers` | metagenomics | oracle-backed | pathseq-build-kmers | 1 | t=2, 8/8 rows (100%) | 0.002 / 0.068 |
