@@ -195,9 +195,9 @@
       "accepted": 16,
       "rejected": 7,
       "distinct_outputs": 4,
-      "matched": 22,
+      "matched": 23,
       "t": 2,
-      "share": 0.957
+      "share": 1.0
     },
     "RevertSamSpark": {
       "rows": 28,
@@ -222,9 +222,9 @@
       "accepted": 17,
       "rejected": 5,
       "distinct_outputs": 11,
-      "matched": 21,
+      "matched": 22,
       "t": 2,
-      "share": 0.955
+      "share": 1.0
     },
     "CollectMultipleMetricsSpark": {
       "rows": 23,
@@ -258,9 +258,9 @@
       "accepted": 13,
       "rejected": 2,
       "distinct_outputs": 7,
-      "matched": 12,
+      "matched": 15,
       "t": 2,
-      "share": 0.8
+      "share": 1.0
     },
     "BwaAndMarkDuplicatesPipelineSpark": {
       "rows": 19,
@@ -276,18 +276,18 @@
       "accepted": 0,
       "rejected": 16,
       "distinct_outputs": 0,
-      "matched": 5,
+      "matched": 16,
       "t": 2,
-      "share": 0.312
+      "share": 1.0
     },
     "PathSeqBwaSpark": {
       "rows": 22,
       "accepted": 0,
       "rejected": 22,
       "distinct_outputs": 0,
-      "matched": 6,
+      "matched": 22,
       "t": 2,
-      "share": 0.273
+      "share": 1.0
     },
     "PathSeqPipelineSpark": {
       "rows": 25,
@@ -339,9 +339,9 @@
       "accepted": 11,
       "rejected": 6,
       "distinct_outputs": 7,
-      "matched": 15,
+      "matched": 17,
       "t": 2,
-      "share": 0.882
+      "share": 1.0
     },
     "CpxVariantReInterpreterSpark": {
       "rows": 19,
@@ -491,10 +491,10 @@
       "rows": 19,
       "accepted": 17,
       "rejected": 2,
-      "distinct_outputs": 1,
-      "matched": 2,
+      "distinct_outputs": 16,
+      "matched": 12,
       "t": 2,
-      "share": 0.105
+      "share": 0.632
     },
     "ExtractOriginalAlignmentRecordsByNameSpark": {
       "rows": 22,
@@ -1266,9 +1266,9 @@
       "accepted": 5,
       "rejected": 14,
       "distinct_outputs": 4,
-      "matched": 18,
+      "matched": 19,
       "t": 2,
-      "share": 0.947
+      "share": 1.0
     },
     "SVCluster": {
       "rows": 24,
