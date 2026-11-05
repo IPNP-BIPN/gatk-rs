@@ -49,7 +49,9 @@ def wrap(text, indent, width=96):
 
 
 def oracle_jobs(manifest):
-    suites = manifest["suites"]
+    # A suite naming an image of its own cannot run from the shared image's cache, so it has a job
+    # of its own in ci.template.yml.
+    suites = [s for s in manifest["suites"] if not s.get("oracle")]
     probes = manifest.get("probes", [])
     oracle = manifest["oracle"]
     out = []
@@ -101,6 +103,17 @@ def oracle_jobs(manifest):
                 f"            suites: \"{ids}\""
             )
     matrix = "\n".join(rows)
+    # An image a suite names instead of the oracle's comes from its publisher, and only the job
+    # with that suite pays for it.
+    extra_pulls = "".join(
+        f"""
+      - name: Pull {s['image']} for {s['id']}
+        if: contains(matrix.suites, '{s['id']}')
+        run: docker pull --platform {oracle['platform']} {s['image']}
+"""
+        for s in suites
+        if s.get("image")
+    )
 
     out.append(
         f"""  oracle:
@@ -124,7 +137,7 @@ def oracle_jobs(manifest):
           fail-on-cache-miss: true
 
       - run: docker load -i {IMAGE_TAR}
-
+{extra_pulls}
       - name: Regenerate and compare
         # Every rule that canonicalizes anything away is declared in tools/conformance/manifest.json
         # with the reason it is there; tools/conformance/compare.py is the only code that applies

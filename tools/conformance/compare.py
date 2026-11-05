@@ -103,7 +103,27 @@ def _sort_segments_with(payload, spec):
     return SEGMENT_SEP.join(sorted(payload.split(SEGMENT_SEP)))
 
 
+HDF5_MTIME = re.compile(r"12000800([0-9a-f]{8})01000000([0-9a-f]{8})")
+
+
+def _mask_hdf5_modification_times(payload, spec):
+    """Zero the seconds of every Object Modification Time message in a hex-dumped HDF5 file.
+
+    Java's HDF5 library stamps each object header with the clock: a version 1 message of type
+    0x0012 and size 8 (`12 00 08 00`, flags and reserved, `01 00 00 00`, then the seconds). The
+    match must start on a byte of its tab field, not inside one.
+    """
+    return "\t".join(
+        HDF5_MTIME.sub(
+            lambda m: f"12000800{m.group(1)}0100000000000000" if m.start() % 2 == 0 else m.group(0),
+            field,
+        )
+        for field in payload.split("\t")
+    )
+
+
 RULES = {
+    "mask_hdf5_modification_times": _mask_hdf5_modification_times,
     "mask_identity_hashes": _mask_identity_hashes,
     "sort_segments_with": _sort_segments_with,
     "strip_line_prefixes": _strip_line_prefixes,

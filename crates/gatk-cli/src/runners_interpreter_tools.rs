@@ -1,11 +1,16 @@
 //! The tools that stop at an interpreter: two R plots, the gCNV tools, `NVScoreVariants` and the
 //! scalable VQSR's two.
 //!
-//! The pinned image has neither `Rscript` nor `python`, so what can be measured is everything the
-//! reference does on the way there and the user error it ends on. That much is ported, in the
-//! reference's order. On a machine that has the interpreter the reference would go on to run a
-//! script this port does not carry, and the port says so in its own words rather than writing
-//! anything that could pass for the answer.
+//! The pinned image has neither `Rscript` nor `python`, so what can be measured there is everything
+//! the reference does on the way and the user error it ends on. That much is ported, in the
+//! reference's order. For python, on a machine that has the interpreter the reference would go on
+//! to run a script this port does not carry, and the port says so in its own words rather than
+//! writing anything that could pass for the answer.
+//!
+//! R stays R. A device-level raster of `png(type="cairo")` is the only thing the plots produce, so
+//! the Java side's arguments, file names and exit status are kept and the scripts behind them are
+//! rewritten on ggplot2, under `src/r/`, embedded here and run the way `RScriptExecutor` runs its
+//! own. `tools/readfilter-conformance/RPlotsDump.java` measures them against the reference's.
 //!
 //! * **the plots** check their arguments, read and cross-check every input, and only then does
 //!   `RScriptExecutor.exec` look for its executable;
@@ -14,23 +19,41 @@
 //! * **`PostprocessGermlineCNVCalls`** runs `GATKTool.onStartup` ahead of that import, and `-L`
 //!   there resolves against the dictionary of the shards' interval lists;
 //! * **`TrainVariantAnnotationsModel`** reads the annotation names only to compare them with the
-//!   unlabeled file's, and `JAVA_BGMM` and `PYTHON_SCRIPT` read every matrix before they fail;
+//!   unlabeled file's, and `JAVA_BGMM` and `PYTHON_SCRIPT` read every matrix before they fail. The
+//!   default backend is not a script here: see below;
 //! * **`ScoreVariantAnnotations`** is `ExtractVariantAnnotations`' walker with a backend after the
 //!   header, a pass and an annotations file before its first script, and a VCF when the pass
 //!   extracted nothing and no script is needed.
+//!
+//! `PYTHON_IFOREST`'s script is ported: the fit, the scores and the pickle are the same numbers
+//! scikit-learn 1.3.2 gets, measured in `docs/python-tools.md`. The tool still refuses as the
+//! reference does where `python` or its packages are missing, because those refusals are the
+//! reference's answer on such a machine. What the script does not get is the temporary name of
+//! its own file, so the pickle holds zeros where the reference's holds a random number.
 use super::extract_variant_annotations_runner::{
     labelled_walker_start, matrix, metadata, reduced, validate_output_files, LabelledStart,
 };
 use super::*;
+use gatk_tools::empirical_distribution::EmpiricalDistribution;
 use gatk_tools::extract_variant_annotations as extract;
+use gatk_tools::h5py_scores;
 use gatk_tools::hdf5_reader::Hdf5Reader;
+use gatk_tools::hdf5_writer::Hdf5File;
+use gatk_tools::isolation_forest::{self, Hyperparameters};
 use gatk_tools::model_segments_models::{illegal, Span};
 use gatk_tools::model_segments_tool as tables;
+use gatk_tools::scorer_pickle;
 use htsjdk_bam::header::SequenceRecord;
 
 const NOT_IMPLEMENTED: &str = "org.apache.commons.lang3.NotImplementedException";
 const BGMM_NOT_IMPLEMENTED: &str = "BGMM module will be implemented in separate PR.";
 const GATK_EXCEPTION: &str = "org.broadinstitute.hellbender.exceptions.GATKException";
+const R_SCRIPT_EXCEPTION: &str = "org.broadinstitute.hellbender.utils.R.RScriptExecutorException";
+
+/// `PlottingUtils`' defaults.
+const DEFAULT_MAXIMUM_COPY_RATIO: f64 = 4.0;
+const DEFAULT_POINT_SIZE_COPY_RATIO: f64 = 0.2;
+const DEFAULT_POINT_SIZE_ALLELE_FRACTION: f64 = 0.4;
 
 /// `RuntimeUtils.which`: a file of that name in any directory of the path.
 fn on_the_path(executable: &str) -> bool {
@@ -56,6 +79,50 @@ fn stop_at(executable: &str, what_is_not_ported: &str) -> Thrown {
 /// `PythonScriptExecutor.checkPythonEnvironmentForPackage`, whose constructor is what fails.
 fn import_stop(package: &str) -> Thrown {
     stop_at("python", &format!("A Python environment with {package}"))
+}
+
+/// The import the gCNV tools start with, and why the port does not go on where it succeeds.
+fn gcnv_stop() -> Thrown {
+    stop_at(
+        "python",
+        "gcnvkernel, whose numbers come from C that pytensor rewrites and compiles for the host's \
+         CPU (docs/python-tools.md),",
+    )
+}
+
+/// A refusal in the port's words, where the reference's script would go on or fail in its own.
+fn port_limit(what: impl std::fmt::Display) -> Thrown {
+    Thrown::non_user(
+        PORT_LIMITATION,
+        format!("{what} is not ported. This message is the port's own and not GATK's."),
+    )
+}
+
+/// The five `checkPythonEnvironmentForPackage` of the default backend.
+fn check_isolation_forest_packages() -> Result<(), Thrown> {
+    for package in ["argparse", "h5py", "numpy", "sklearn", "dill"] {
+        if !on_the_path("python") {
+            return Err(import_stop(package));
+        }
+        let imported = std::process::Command::new("python")
+            .args(["-c", &format!("import {package}\n")])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success());
+        if !imported {
+            return Err(Thrown::non_user(
+                "java.lang.RuntimeException",
+                format!(
+                    "A required Python package (\"{package}\") could not be imported into the \
+                     Python environment. This tool requires that the GATK Python environment is \
+                     properly established and activated. Please refer to GATK README.md file for \
+                     instructions on setting up the GATK Python environment."
+                ),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// `IOUtils.canReadFile`, which `Utils.nonNull` guards.
@@ -157,14 +224,187 @@ fn require(parser: &Parser, name: &str) -> String {
     argument(parser, name).expect("a required argument")
 }
 
+/// The bootstrap every script starts from: it installs what is missing and names what it cannot.
+const R_BOOTSTRAP: RScript = RScript {
+    name: "RPlotBootstrap.R",
+    text: include_str!("r/RPlotBootstrap.R"),
+};
+const CNV_PLOTTING_LIBRARY: RScript = RScript {
+    name: "CNVPlottingLibrary.R",
+    text: include_str!("r/CNVPlottingLibrary.R"),
+};
+const PLOT_DENOISED_COPY_RATIOS: RScript = RScript {
+    name: "PlotDenoisedCopyRatios.R",
+    text: include_str!("r/PlotDenoisedCopyRatios.R"),
+};
+const PLOT_MODELED_SEGMENTS: RScript = RScript {
+    name: "PlotModeledSegments.R",
+    text: include_str!("r/PlotModeledSegments.R"),
+};
+const PLOT_ALLELE_FREQUENCY_QC: RScript = RScript {
+    name: "plotAlleleFrequencyQC.R",
+    text: include_str!("r/plotAlleleFrequencyQC.R"),
+};
+
+/// What `ProcessSettings.setBufferSize` keeps of each stream of a script.
+const SCRIPT_OUTPUT_BUFFER: usize = 8192;
+
+/// A script the binary carries.
+struct RScript {
+    name: &'static str,
+    text: &'static str,
+}
+
+/// `CopyNumberArgumentValidationUtils.getCanonicalPath`, where a file not written yet still has
+/// one.
+fn canonical_path(path: &str) -> String {
+    let absolute = std::path::PathBuf::from(java_absolute_path(path));
+    if let Ok(canonical) = absolute.canonicalize() {
+        return canonical.display().to_string();
+    }
+    match (absolute.parent(), absolute.file_name()) {
+        (Some(parent), Some(name)) => parent
+            .canonicalize()
+            .map_or(absolute.clone(), |parent| parent.join(name))
+            .display()
+            .to_string(),
+        _ => absolute.display().to_string(),
+    }
+}
+
+/// The directory `RScriptExecutor.exec` writes a script's resources into, gone when it drops.
+struct ScriptDirectory(std::path::PathBuf);
+
+impl ScriptDirectory {
+    fn new() -> Result<Self, Thrown> {
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let directory = std::env::temp_dir().join(format!(
+            "gatk-rs-r.{}.{}",
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&directory)
+            .map_err(|error| Thrown::non_user(GATK_EXCEPTION, error.to_string()))?;
+        Ok(Self(directory))
+    }
+}
+
+impl Drop for ScriptDirectory {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// The first bytes of a stream, as `HardThresholdingOutputStream` leaves them.
+fn captured(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(&bytes[..bytes.len().min(SCRIPT_OUTPUT_BUFFER)]).to_string()
+}
+
+/// `RScriptExecutor.exec`: the scripts into temporary files, one `source` each in an `-e`, and the
+/// arguments after it. The executable is looked for here and not when the tool starts, and a
+/// script that ends with a status other than nought is the executor's exception and nothing else:
+/// the status is the only thing the Java side reads, and its output only goes into the message.
+fn run_r_scripts(scripts: &[RScript], args: &[String]) -> Result<(), Thrown> {
+    if !on_the_path("Rscript") {
+        return Err(Thrown::user(
+            "Unable to execute Rscript command: Please add the Rscript directory to your \
+             environment ${PATH}"
+                .to_string(),
+        ));
+    }
+    let directory = ScriptDirectory::new()?;
+    let mut expression = format!("tempLibDir = '{}';", directory.0.display());
+    for script in scripts {
+        let path = directory.0.join(script.name);
+        std::fs::write(&path, script.text)
+            .map_err(|error| Thrown::non_user(GATK_EXCEPTION, error.to_string()))?;
+        expression.push_str(&format!("source('{}');", path.display()));
+    }
+    let output = std::process::Command::new("Rscript")
+        .arg("-e")
+        .arg(&expression)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|error| {
+            Thrown::non_user(
+                GATK_EXCEPTION,
+                format!("Unable to run Rscript -e {expression}: {error}"),
+            )
+        })?;
+    if output.status.success() {
+        return Ok(());
+    }
+    // A signal has no code of its own, and Java reads 128 plus the signal for it.
+    let status = output.status.code().unwrap_or_else(|| {
+        128 + std::os::unix::process::ExitStatusExt::signal(&output.status).unwrap_or(0)
+    });
+    let terminated = if status == 137 {
+        "\nThe exit code indicates that the process was terminated. This may mean the process \
+         requires additional memory.\n"
+    } else {
+        ""
+    };
+    Err(Thrown::non_user(
+        R_SCRIPT_EXCEPTION,
+        format!(
+            "\nRscript exited with {status}\nCommand Line: Rscript -e {expression} {}{terminated}\nStdout: {}\nStderr: {}",
+            args.join(" "),
+            captured(&output.stdout),
+            captured(&output.stderr)
+        ),
+    ))
+}
+
+/// `AlleleFrequencyQC.onTraversalSuccess`'s executor: the report, the metrics file and the sample.
+pub(super) fn plot_allele_frequency_qc(
+    report: &str,
+    debug_file: Option<&str>,
+    metrics: &str,
+    sample: &str,
+) -> Result<(), Thrown> {
+    // With no --debug-file the report is a temporary file the run deletes.
+    let temporary = ScriptDirectory::new()?;
+    let report_path = match debug_file {
+        Some(path) => java_absolute_path(path),
+        None => {
+            let path = temporary.0.join("variant_eval.txt");
+            std::fs::write(&path, report)
+                .map_err(|error| Thrown::non_user(GATK_EXCEPTION, error.to_string()))?;
+            path.display().to_string()
+        }
+    };
+    run_r_scripts(
+        &[R_BOOTSTRAP, PLOT_ALLELE_FREQUENCY_QC],
+        &[report_path, java_absolute_path(metrics), sample.to_string()],
+    )
+}
+
+/// `CONTIG_DELIMITER`-joined, as both copy-number scripts read them.
+fn contig_arguments(map: &[(String, i32)]) -> Vec<String> {
+    let names: Vec<&str> = map.iter().map(|(name, _)| name.as_str()).collect();
+    let lengths: Vec<String> = map.iter().map(|(_, length)| length.to_string()).collect();
+    vec![
+        format!("--contig_names={}", names.join("CONTIG_DELIMITER")),
+        format!("--contig_lengths={}", lengths.join("CONTIG_DELIMITER")),
+    ]
+}
+
+/// `Double.toString`, which is how the executor's arguments carry the numbers.
+fn double_argument(parser: &Parser, name: &str, default: f64) -> String {
+    gatk_engine::tsv_table::java_double_to_string(double_or(parser, name, default))
+}
+
 /// `PlotDenoisedCopyRatios.doWork`.
 pub fn plot_denoised_copy_ratios(parser: &Parser) -> Outcome {
     let standardized = require(parser, "standardized-copy-ratios");
     let denoised = require(parser, "denoised-copy-ratios");
     let dictionary = require(parser, "sequence-dictionary");
     // `validateArguments`: a missing input passes `validateInputs` and is refused when it is read.
-    non_empty(&argument(parser, "output-prefix").unwrap_or_default())?;
-    prepare_output_directory(&require(parser, "output"))?;
+    let prefix = argument(parser, "output-prefix").unwrap_or_default();
+    non_empty(&prefix)?;
+    let output = require(parser, "output");
+    prepare_output_directory(&output)?;
 
     let standardized_ratios = tables::read_copy_ratios(&standardized)?;
     let denoised_ratios = tables::read_copy_ratios(&denoised)?;
@@ -179,7 +419,38 @@ pub fn plot_denoised_copy_ratios(parser: &Parser) -> Outcome {
     let map = contig_length_map(&to_plot, minimum_contig_length(parser))?;
     validate_contigs(&map, &standardized_ratios.spans(), &standardized)?;
     validate_contigs(&map, &denoised_ratios.spans(), &denoised)?;
-    Err(stop_at("Rscript", "PlotDenoisedCopyRatios.R"))
+
+    // `writeDenoisingPlots`. The sample is the copy ratios' own, and the directory ends in a slash.
+    let mut args = vec![
+        format!("--sample_name={}", standardized_ratios.metadata.sample),
+        format!(
+            "--standardized_copy_ratios_file={}",
+            canonical_path(&standardized)
+        ),
+        format!("--denoised_copy_ratios_file={}", canonical_path(&denoised)),
+    ];
+    args.extend(contig_arguments(&map));
+    args.extend([
+        format!(
+            "--maximum_copy_ratio={}",
+            double_argument(parser, "maximum-copy-ratio", DEFAULT_MAXIMUM_COPY_RATIO)
+        ),
+        format!(
+            "--point_size_copy_ratio={}",
+            double_argument(
+                parser,
+                "point-size-copy-ratio",
+                DEFAULT_POINT_SIZE_COPY_RATIO
+            )
+        ),
+        format!("--output_dir={}/", canonical_path(&output)),
+        format!("--output_prefix={prefix}"),
+    ]);
+    run_r_scripts(
+        &[R_BOOTSTRAP, CNV_PLOTTING_LIBRARY, PLOT_DENOISED_COPY_RATIOS],
+        &args,
+    )?;
+    Ok(None)
 }
 
 /// `PlotModeledSegments.validateNumPointsPerContig`, one kind of point: every contig the segments
@@ -222,8 +493,10 @@ pub fn plot_modeled_segments(parser: &Parser) -> Outcome {
             "Must provide at least a denoised-copy-ratios file or an allelic-counts file.",
         ));
     }
-    non_empty(&argument(parser, "output-prefix").unwrap_or_default())?;
-    prepare_output_directory(&require(parser, "output"))?;
+    let prefix = argument(parser, "output-prefix").unwrap_or_default();
+    non_empty(&prefix)?;
+    let output = require(parser, "output");
+    prepare_output_directory(&output)?;
 
     let ratios = denoised
         .as_deref()
@@ -299,17 +572,60 @@ pub fn plot_modeled_segments(parser: &Parser) -> Outcome {
     }
     let spans: Vec<Span> = modeled.records.iter().map(|r| r.span.clone()).collect();
     validate_contigs(&map, &spans, &segments)?;
-    Err(stop_at("Rscript", "PlotModeledSegments.R"))
+
+    // `writeModeledSegmentsPlot`: an input that was not given is the word `null` on the line.
+    let or_null = |path: &Option<String>| {
+        path.as_deref()
+            .map_or_else(|| "null".to_string(), canonical_path)
+    };
+    let mut args = vec![
+        format!("--sample_name={}", modeled.metadata.sample),
+        format!("--denoised_copy_ratios_file={}", or_null(&denoised)),
+        format!("--allelic_counts_file={}", or_null(&allelic)),
+        format!("--modeled_segments_file={}", canonical_path(&segments)),
+    ];
+    args.extend(contig_arguments(&map));
+    args.extend([
+        format!(
+            "--maximum_copy_ratio={}",
+            double_argument(parser, "maximum-copy-ratio", DEFAULT_MAXIMUM_COPY_RATIO)
+        ),
+        format!(
+            "--point_size_copy_ratio={}",
+            double_argument(
+                parser,
+                "point-size-copy-ratio",
+                DEFAULT_POINT_SIZE_COPY_RATIO
+            )
+        ),
+        format!(
+            "--point_size_allele_fraction={}",
+            double_argument(
+                parser,
+                "point-size-allele-fraction",
+                DEFAULT_POINT_SIZE_ALLELE_FRACTION
+            )
+        ),
+        format!(
+            "--output_file={}",
+            canonical_path(&format!("{output}/{prefix}.modeled.png"))
+        ),
+    ]);
+    run_r_scripts(
+        &[R_BOOTSTRAP, CNV_PLOTTING_LIBRARY, PLOT_MODELED_SEGMENTS],
+        &args,
+    )?;
+    Ok(None)
 }
 
 /// `DetermineGermlineContigPloidy.onStartup`.
 pub fn determine_germline_contig_ploidy(_parser: &Parser) -> Outcome {
-    Err(import_stop("gcnvkernel"))
+    Err(gcnv_stop())
 }
 
 /// `GermlineCNVCaller.onStartup`.
 pub fn germline_cnv_caller(_parser: &Parser) -> Outcome {
-    Err(import_stop("gcnvkernel"))
+    Err(gcnv_stop())
 }
 
 /// `NVScoreVariants.onStartup`.
@@ -448,7 +764,7 @@ pub fn postprocess_germline_cnv_calls(parser: &Parser) -> Outcome {
         }
     }
 
-    Err(import_stop("gcnvkernel"))
+    Err(gcnv_stop())
 }
 
 /// `new HDF5File(file, READ_ONLY)`, reported as each reader of the file reports it.
@@ -651,7 +967,7 @@ pub fn train_variant_annotations_model(parser: &Parser) -> Outcome {
             if hyperparameters.is_some() {
                 can_read_file(hyperparameters.as_deref())?;
             }
-            return Err(import_stop("argparse"));
+            check_isolation_forest_packages()?;
         }
     }
 
@@ -665,7 +981,7 @@ pub fn train_variant_annotations_model(parser: &Parser) -> Outcome {
         let names = read_annotation_names(&annotations)?;
         let rows = read_annotation_rows(&annotations)?;
         let is_training = read_label(&annotations, extract::TRAINING_LABEL)?;
-        let _is_calibration = read_label(&annotations, extract::CALIBRATION_LABEL)?;
+        let is_calibration = read_label(&annotations, extract::CALIBRATION_LABEL)?;
         let is_snp = read_label(&annotations, extract::SNP_LABEL)?;
         let keep: Vec<bool> = is_training
             .iter()
@@ -708,16 +1024,78 @@ pub fn train_variant_annotations_model(parser: &Parser) -> Outcome {
         if backend == "JAVA_BGMM" {
             return Err(Thrown::non_user(NOT_IMPLEMENTED, BGMM_NOT_IMPLEMENTED));
         }
-        return Err(stop_at("python", "Running --python-script"));
+        if backend == "PYTHON_SCRIPT" {
+            return Err(stop_at("python", "Running --python-script"));
+        }
+        if unlabeled.is_some() {
+            // The script has no such argument: the reference ends in `argparse`'s exit status 2.
+            return Err(port_limit(
+                "Handing --unlabeled-annotations-hdf5 to the default script, which rejects it,",
+            ));
+        }
+        let keep_calibration: Vec<bool> = is_calibration
+            .iter()
+            .zip(&is_snp)
+            .map(|(calibration, snp)| *calibration && (*snp == is_snp_model))
+            .collect();
+        let calibration = if keep_calibration.iter().any(|keep| *keep) {
+            Some(subset(&names, &rows, &keep_calibration)?)
+        } else {
+            None
+        };
+        train_isolation_forest(
+            &names,
+            &training,
+            calibration.as_deref(),
+            hyperparameters.as_deref(),
+            &tagged,
+        )?;
     }
     Ok(None)
 }
 
-/// `ScoreVariantAnnotations.readCalibrationScoresAndCreateConverter`, whether there is one.
-fn calibration_exists(prefix: &str, tag: &str) -> Result<bool, Thrown> {
+/// What `isolation-forest.py` writes for one variant type, and the scores `score` then has it write.
+fn train_isolation_forest(
+    names: &[String],
+    training: &[&Vec<f64>],
+    calibration: Option<&[&Vec<f64>]>,
+    hyperparameters: Option<&str>,
+    tagged: &str,
+) -> Result<(), Thrown> {
+    let json = match hyperparameters {
+        Some(path) => std::fs::read_to_string(path).map_err(port_limit)?,
+        None => "{\"random_state\": 0}".to_string(),
+    };
+    let hyperparameters = Hyperparameters::from_json(&json).map_err(port_limit)?;
+    let owned = |rows: &[&Vec<f64>]| rows.iter().map(|row| (*row).clone()).collect::<Vec<_>>();
+    let training = owned(training);
+    let forest = isolation_forest::fit(names, &training, &hyperparameters).map_err(port_limit)?;
+    write_file(
+        &format!("{tagged}.scorer.pkl"),
+        &scorer_pickle::write(&forest),
+    )?;
+    let scorer = forest.scorer();
+    let scores = isolation_forest::score_samples(&scorer, names, &training).map_err(port_limit)?;
+    write_file(
+        &format!("{tagged}.trainingScores.hdf5"),
+        &h5py_scores::write(&scores),
+    )?;
+    if let Some(calibration) = calibration {
+        let scores = isolation_forest::score_samples(&scorer, names, &owned(calibration))
+            .map_err(port_limit)?;
+        write_file(
+            &format!("{tagged}.calibrationScores.hdf5"),
+            &h5py_scores::write(&scores),
+        )?;
+    }
+    Ok(())
+}
+
+/// `ScoreVariantAnnotations.readCalibrationScoresAndCreateConverter`, up to the distribution.
+fn calibration_scores(prefix: &str, tag: &str) -> Result<Option<Vec<f64>>, Thrown> {
     let path = format!("{prefix}.{tag}.calibrationScores.hdf5");
     if std::fs::File::open(&path).is_err() {
-        return Ok(false);
+        return Ok(None);
     }
     let reader = open_hdf5(&path, "scores")?;
     let (_, scores) = reader
@@ -726,7 +1104,63 @@ fn calibration_exists(prefix: &str, tag: &str) -> Result<bool, Thrown> {
     if !scores.iter().all(|score| score.is_finite()) {
         return Err(illegal("Calibration scores must all be finite."));
     }
-    Ok(true)
+    Ok(Some(scores))
+}
+
+/// `scoreVariantTypeAndSetElementsOfAllScores`, whose script reads the scorer only here.
+fn score_variant_type(
+    model_prefix: &str,
+    tag: &str,
+    names: &[String],
+    rows: &[Vec<f64>],
+    is_type: &[bool],
+    scores: &mut [f64],
+) -> Result<(), Thrown> {
+    if !is_type.iter().any(|is_type| *is_type) {
+        return Ok(());
+    }
+    let path = format!("{model_prefix}.{tag}.scorer.pkl");
+    let bytes = std::fs::read(&path).map_err(port_limit)?;
+    let scorer = scorer_pickle::read(&bytes).ok_or_else(|| {
+        port_limit(format!(
+            "Loading {path}, which the default script at scikit-learn 1.3.2 did not write,"
+        ))
+    })?;
+    let kept: Vec<Vec<f64>> = subset(names, rows, is_type)?.into_iter().cloned().collect();
+    let scored = isolation_forest::score_samples(&scorer, names, &kept).map_err(port_limit)?;
+    let mut next = scored.into_iter();
+    for (score, _) in scores.iter_mut().zip(is_type).filter(|(_, keep)| **keep) {
+        *score = next.next().unwrap_or(f64::NAN);
+    }
+    Ok(())
+}
+
+/// `String.format(doubleFormat, x)`, for the formats whose rules the port carries.
+fn format_score(format: &str, value: f64) -> Result<String, Thrown> {
+    let places = format
+        .strip_prefix("%.")
+        .and_then(|rest| rest.strip_suffix('f'))
+        .and_then(|digits| digits.parse::<usize>().ok())
+        .ok_or_else(|| port_limit(format!("--double-format {format}")))?;
+    Ok(if value.is_nan() {
+        "NaN".to_string()
+    } else if value.is_infinite() {
+        (if value > 0.0 { "Infinity" } else { "-Infinity" }).to_string()
+    } else {
+        gatk_engine::java_format::format_decimals(value, places)
+    })
+}
+
+/// `VariantContextBuilder.attribute`, which replaces.
+fn set_attribute(
+    record: &mut htsjdk_vcf::variant::VariantContext,
+    key: &str,
+    value: htsjdk_vcf::variant::Value,
+) {
+    match record.attributes.iter_mut().find(|(name, _)| name == key) {
+        Some(existing) => existing.1 = value,
+        None => record.attributes.push((key.to_string(), value)),
+    }
 }
 
 /// `ScoreVariantAnnotations.constructVCFHeader`, over the input's lines.
@@ -829,7 +1263,7 @@ impl ScoreKeys {
     }
 }
 
-/// `ScoreVariantAnnotations`, up to its first script.
+/// `ScoreVariantAnnotations`.
 pub fn score_variant_annotations(parser: &Parser) -> Outcome {
     let VariantWalkerStart {
         input,
@@ -894,7 +1328,9 @@ pub fn score_variant_annotations(parser: &Parser) -> Outcome {
                     "Python script should not be provided when using PYTHON_IFOREST backend.",
                 ));
             }
-            return Err(import_stop("argparse"));
+            check_isolation_forest_packages()?;
+            snp_scorer = readable(".snp.scorer.pkl".to_string());
+            indel_scorer = readable(".indel.scorer.pkl".to_string());
         }
     }
     if !snp_scorer && !indel_scorer {
@@ -918,24 +1354,32 @@ pub fn score_variant_annotations(parser: &Parser) -> Outcome {
                 .to_string(),
         ));
     }
-    let snp_calibration = calibration_exists(&model_prefix, "snp")?;
-    let indel_calibration = calibration_exists(&model_prefix, "indel")?;
-    if !snp_calibration && scalar(parser, "snp-calibration-sensitivity-threshold").is_some() {
+    let snp_calibration = calibration_scores(&model_prefix, "snp")?;
+    let indel_calibration = calibration_scores(&model_prefix, "indel")?;
+    let threshold =
+        |name: &str| -> Option<f64> { scalar(parser, name).and_then(|value| value.parse().ok()) };
+    let snp_threshold = threshold("snp-calibration-sensitivity-threshold");
+    let indel_threshold = threshold("indel-calibration-sensitivity-threshold");
+    if snp_calibration.is_none()
+        && scalar(parser, "snp-calibration-sensitivity-threshold").is_some()
+    {
         return Err(bad_input(format!(
             "The snp-calibration-sensitivity-threshold argument was specified, but no SNP \
              calibration scores were provided in the model files with the prefix {model_prefix}."
         )));
     }
-    if !indel_calibration && scalar(parser, "indel-calibration-sensitivity-threshold").is_some() {
+    if indel_calibration.is_none()
+        && scalar(parser, "indel-calibration-sensitivity-threshold").is_some()
+    {
         return Err(bad_input(format!(
             "The indel-calibration-sensitivity-threshold argument was specified, but no INDEL \
              calibration scores were provided in the model files with the prefix {model_prefix}."
         )));
     }
-    validate_output_files(&[&format!("{prefix}.scores.hdf5")])?;
+    let scores_path = format!("{prefix}.scores.hdf5");
+    validate_output_files(&[&scores_path])?;
 
-    // The first pass. A pass that extracts anything needs a script to score it, and the
-    // annotations file is written before one is looked for.
+    // The first pass. The annotations file is written before anything scores it.
     let traversed = variants_in_traversal(&file.records, intervals.as_deref(), &input)?;
     let mut extracted: Vec<Vec<extract::Row>> = Vec::new();
     for record in &traversed {
@@ -961,12 +1405,109 @@ pub fn score_variant_annotations(parser: &Parser) -> Outcome {
                 flag(parser, "omit-alleles-in-hdf5"),
             ),
         )?;
-        return Err(stop_at("python", "Running --python-script"));
+        if backend == "PYTHON_SCRIPT" {
+            return Err(stop_at("python", "Running --python-script"));
+        }
     }
 
-    // The second pass: nothing was extracted, so every record goes through as it was read.
-    let written: Vec<htsjdk_vcf::variant::VariantContext> =
-        traversed.into_iter().cloned().collect();
+    // `readAnnotationsAndWriteScoresToHDF5`, from the file the pass just wrote.
+    let mut scores = Vec::new().into_iter();
+    let mut is_snp = Vec::new().into_iter();
+    if !extracted.is_empty() {
+        let names = read_annotation_names(&annotations_path)?;
+        let rows = read_annotation_rows(&annotations_path)?;
+        let snp = read_label(&annotations_path, extract::SNP_LABEL)?;
+        let mut all = vec![f64::NAN; rows.len()];
+        if wants(extract::VariantType::Snp) {
+            score_variant_type(&model_prefix, "snp", &names, &rows, &snp, &mut all)?;
+        }
+        if wants(extract::VariantType::Indel) {
+            let indel: Vec<bool> = snp.iter().map(|snp| !*snp).collect();
+            score_variant_type(&model_prefix, "indel", &names, &rows, &indel, &mut all)?;
+        }
+        let mut file = Hdf5File::new();
+        file.double_array("/data/scores", &all);
+        write_file(&scores_path, &file.to_bytes())?;
+        scores = all.into_iter();
+        is_snp = snp.into_iter();
+    }
+    let distribution = |calibration: &Option<Vec<f64>>| -> Result<_, Thrown> {
+        match calibration {
+            Some(values) if values.is_empty() => Err(port_limit("An empty calibration set")),
+            Some(values) => Ok(Some(EmpiricalDistribution::load(values))),
+            None => Ok(None),
+        }
+    };
+    let snp_converter = distribution(&snp_calibration)?;
+    let indel_converter = distribution(&indel_calibration)?;
+    let double_format = argument(parser, "double-format").unwrap_or_default();
+
+    // The second pass: `writeExtractedVariantToVCF`, and an unextracted record as it was read.
+    use htsjdk_vcf::variant::Value;
+    let mut written: Vec<htsjdk_vcf::variant::VariantContext> = Vec::with_capacity(traversed.len());
+    for record in traversed {
+        let reduced_record = reduced(record);
+        let found = metadata(&reduced_record, &resources, &walker_arguments, true)?;
+        let mut out = record.clone();
+        if !found.is_empty() {
+            let labels: std::collections::BTreeSet<&String> =
+                found.iter().flat_map(|e| &e.labels).collect();
+            for label in labels {
+                set_attribute(&mut out, label, Value::Bool(true));
+            }
+            let count = if allele_specific {
+                found.iter().map(|e| e.alternates.len()).sum()
+            } else {
+                1
+            };
+            let own_scores: Vec<f64> = scores.by_ref().take(count).collect();
+            let own_snp: Vec<bool> = is_snp.by_ref().take(count).collect();
+            // `Collections.max` and `indexOf` over boxed doubles, where `NaN` is the greatest.
+            let score = own_scores
+                .iter()
+                .copied()
+                .fold(f64::NEG_INFINITY, |best, x| {
+                    if x.is_nan() || (!best.is_nan() && x > best) {
+                        x
+                    } else {
+                        best
+                    }
+                });
+            let index = own_scores
+                .iter()
+                .position(|x| x.to_bits() == score.to_bits())
+                .unwrap_or(0);
+            let snp_max = own_snp.get(index).copied().unwrap_or(false);
+            set_attribute(
+                &mut out,
+                &keys.score,
+                Value::Str(format_score(&double_format, score)?),
+            );
+            if let Some(key) = &keys.snp {
+                set_attribute(&mut out, key, Value::Bool(snp_max));
+            }
+            let (converter, threshold) = if snp_max {
+                (&snp_converter, snp_threshold)
+            } else {
+                (&indel_converter, indel_threshold)
+            };
+            if let Some(converter) = converter {
+                let sensitivity = 1.0 - converter.cumulative_probability(score);
+                set_attribute(
+                    &mut out,
+                    &keys.calibration,
+                    Value::Str(format_score(&double_format, sensitivity)?),
+                );
+                if threshold.is_some_and(|threshold| sensitivity >= threshold) {
+                    let filters = out.filters.get_or_insert_with(Vec::new);
+                    if !filters.contains(&keys.filter) {
+                        filters.push(keys.filter.clone());
+                    }
+                }
+            }
+        }
+        written.push(out);
+    }
     let vcf = htsjdk_vcf::vcf_file::write_vcf(&header, &written)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
     write_variant_output(parser, &vcf_path, &vcf)?;
