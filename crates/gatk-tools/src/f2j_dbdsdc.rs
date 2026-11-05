@@ -623,12 +623,10 @@ fn dlamrg(n1: usize, n2: usize, a: &[f64], forward1: bool, forward2: bool, index
 /// `dlasdt`: the tree. One-based arrays of each node's centre row and the sizes on its left and
 /// right, and the number of levels.
 ///
-/// `LOG(n / 26) / LOG(2)` goes through `INT`, and Java's `Math.log` and Rust's `ln` could part only
-/// in a last bit, which moves the truncation only where `n / 26` is a power of two, and there the
-/// quotient of two logarithms of powers of two is exact on both sides.
+/// `LOG` is `Math.log`, here `jmath::math::log`.
 fn dlasdt(n: usize, msub: usize) -> (usize, usize, Vec<usize>, Vec<usize>, Vec<usize>) {
     let maxn = n.max(1);
-    let temp = (maxn as f64 / (msub + 1) as f64).ln() / 2.0f64.ln();
+    let temp = jmath::math::log(maxn as f64 / (msub + 1) as f64) / jmath::math::log(2.0);
     let lvl = temp as usize + 1;
     let mut inode = vec![0; n + 1];
     let mut ndiml = vec![0; n + 1];
@@ -660,8 +658,7 @@ fn dlasdt(n: usize, msub: usize) -> (usize, usize, Vec<usize>, Vec<usize>, Vec<u
 fn dlasd5(i: usize, d: &[f64], z: &[f64], delta: &mut [f64], rho: f64, work: &mut [f64]) -> f64 {
     let del = d[1] - d[0];
     let delsq = del * (d[1] + d[0]);
-    let tau;
-    if i == 1 {
+    let tau = if i == 1 {
         let w = 1.0
             + 4.0 * rho * (z[1] * z[1] / (d[0] + 3.0 * d[1]) - z[0] * z[0] / (3.0 * d[0] + d[1]))
                 / del;
@@ -669,7 +666,7 @@ fn dlasd5(i: usize, d: &[f64], z: &[f64], delta: &mut [f64], rho: f64, work: &mu
             let b = delsq + rho * (z[0] * z[0] + z[1] * z[1]);
             let c = rho * z[0] * z[0] * delsq;
             let t = 2.0 * c / (b + (b * b - 4.0 * c).abs().sqrt());
-            tau = t / (d[0] + (d[0] * d[0] + t).sqrt());
+            let tau = t / (d[0] + (d[0] * d[0] + t).sqrt());
             delta[0] = -tau;
             delta[1] = del - tau;
             work[0] = 2.0 * d[0] + tau;
@@ -683,7 +680,7 @@ fn dlasd5(i: usize, d: &[f64], z: &[f64], delta: &mut [f64], rho: f64, work: &mu
         } else {
             (b - (b * b + 4.0 * c).sqrt()) / 2.0
         };
-        tau = t / (d[1] + (d[1] * d[1] + t).abs().sqrt());
+        t / (d[1] + (d[1] * d[1] + t).abs().sqrt())
     } else {
         let b = -delsq + rho * (z[0] * z[0] + z[1] * z[1]);
         let c = rho * z[1] * z[1] * delsq;
@@ -692,8 +689,8 @@ fn dlasd5(i: usize, d: &[f64], z: &[f64], delta: &mut [f64], rho: f64, work: &mu
         } else {
             2.0 * c / (-b + (b * b + 4.0 * c).sqrt())
         };
-        tau = t / (d[1] + (d[1] * d[1] + t).sqrt());
-    }
+        t / (d[1] + (d[1] * d[1] + t).sqrt())
+    };
     delta[0] = -(del + tau);
     delta[1] = -tau;
     work[0] = d[0] + tau + d[1];
@@ -1959,7 +1956,7 @@ fn dlasd0(
     let (nlvl, nd, inode, ndiml, ndimr) = dlasdt(n, SMLSIZ);
     // IWORK(IDXQ), one-based.
     let mut idxq = vec![0usize; n + 1];
-    for i in (nd + 1) / 2..=nd {
+    for i in nd.div_ceil(2)..=nd {
         let ic = inode[i];
         let nl = ndiml[i];
         let nr = ndimr[i];
