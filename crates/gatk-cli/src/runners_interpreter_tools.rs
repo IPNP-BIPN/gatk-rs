@@ -367,10 +367,14 @@ pub fn plot_modeled_segments(parser: &Parser) -> Outcome {
     Err(stop_at("Rscript", "PlotModeledSegments.R"))
 }
 
-/// `DetermineGermlineContigPloidy.onStartup`.
-pub fn determine_germline_contig_ploidy(_parser: &Parser) -> Outcome {
-    Err(gcnv_stop())
+/// `DetermineGermlineContigPloidy`: `onStartup`'s import, then `doWork` (cohort mode).
+pub fn determine_germline_contig_ploidy(parser: &Parser) -> Outcome {
+    check_python_packages(&["gcnvkernel"])?;
+    ploidy::run(parser)
 }
+
+#[path = "runners_ploidy_gcnv.rs"]
+mod ploidy;
 
 /// `GermlineCNVCaller.onStartup`.
 pub fn germline_cnv_caller(_parser: &Parser) -> Outcome {
