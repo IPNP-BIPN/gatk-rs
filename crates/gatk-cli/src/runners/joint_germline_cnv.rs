@@ -41,11 +41,11 @@ enum Sex {
     Unknown,
 }
 
-fn del_allele() -> Allele {
+pub(super) fn del_allele() -> Allele {
     Allele::from_str("<DEL>", false).expect("a symbolic allele")
 }
 
-fn dup_allele() -> Allele {
+pub(super) fn dup_allele() -> Allele {
     Allele::from_str("<DUP>", false).expect("a symbolic allele")
 }
 
@@ -237,7 +237,7 @@ fn ploidy_length(ploidy: i32, allele: &Allele) -> Vec<Allele> {
 }
 
 /// `GATKSVVariantContextUtils.makeGenotypeAllelesFromCopyNumber`.
-fn alleles_from_copy_number(
+pub(super) fn alleles_from_copy_number(
     copy_number: i32,
     ref_copy_number: i32,
     reference: &Allele,

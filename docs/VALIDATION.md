@@ -132,7 +132,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | CrosscheckReadGroupFingerprints | picard-rs | oracle-backed | not vendored | not vendored | 20/20 (100.0%) | 2 | not measured | 0 | 0 | none |
 | DenoiseReadCounts | gatk-rs | oracle-backed | 13 suite | 0 suite | 6/6 (100.0%) | 2 | not measured | 1 | 3 | none |
 | DepthOfCoverage | gatk-rs | oracle-backed | 60 suite | 0 suite | 20/20 (100.0%) | 2 | not measured | 2 | 1 | none |
-| DetermineGermlineContigPloidy | gatk-rs | oracle-backed | 27 | 0 | 32/32 (100.0%) | 2 | not measured | 2 | 0 | none |
+| DetermineGermlineContigPloidy | gatk-rs | oracle-backed | 306 suite | 150 suite | 32/32 (100.0%) | 2 | not measured | 2 | 0 | none |
 | DiscoverVariantsFromContigAlignmentsSAMSpark | gatk-rs | oracle-backed | 96 | 12 | 19/19 (100.0%) | 2 | not measured | 5 | 5 | none |
 | DownsampleByDuplicateSet | gatk-rs | oracle-backed | 23 suite | 0 suite | 18/18 (100.0%) | 2 | not measured | 2 | 6 | none |
 | DownsampleSam | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -181,7 +181,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | GenomicsDBImport | gatk-rs | oracle-backed | 3620 | 3341 | 12/19 (63.2%) | 2 | not measured | 6 | 11 | none |
 | GenotypeConcordance | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
 | GenotypeGVCFs | gatk-rs | oracle-backed | 7 suite | 0 suite | 34/34 (100.0%) | 2 | not measured | 6 | 9 | none |
-| GermlineCNVCaller | gatk-rs | oracle-backed | 18 | 0 | 46/46 (100.0%) | 2 | not measured | 2 | 0 | none |
+| GermlineCNVCaller | gatk-rs | oracle-backed | 297 suite | 150 suite | 46/46 (100.0%) | 2 | not measured | 2 | 0 | none |
 | GetNormalArtifactData | gatk-rs | oracle-backed | 7 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 2 | 0 | none |
 | GetPileupSummaries | gatk-rs | oracle-backed | 8 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 6 | 0 | none |
 | GetSampleName | gatk-rs | oracle-backed | 35 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 5 | 0 | none |
@@ -246,7 +246,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | PlotModeledSegments | gatk-rs | oracle-backed | 338 | 0 | 11/11 (100.0%) | 2 | not measured | 6 | 0 | none |
 | PositionBasedDownsampleSam | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
 | PostProcessReadsForRSEM | gatk-rs | oracle-backed | 43 suite | 0 suite | 20/20 (100.0%) | 2 | not measured | 2 | 2 | none |
-| PostprocessGermlineCNVCalls | gatk-rs | oracle-backed | 54 | 0 | 20/20 (100.0%) | 2 | not measured | 3 | 5 | none |
+| PostprocessGermlineCNVCalls | gatk-rs | oracle-backed | 333 suite | 150 suite | 20/20 (100.0%) | 2 | not measured | 3 | 5 | none |
 | PreprocessIntervals | gatk-rs | oracle-backed | 21 suite | 0 suite | 20/20 (100.0%) | 2 | not measured | 4 | 0 | none |
 | PrintBGZFBlockInformation | gatk-rs | oracle-backed | 18 suite | 8 suite | 6/6 (100.0%) | 2 | not measured | 0 | 0 | none |
 | PrintDistantMates | gatk-rs | oracle-backed | 75 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 4 | 0 | none |
@@ -942,7 +942,7 @@ A SMALL window, chr1:101-200, because every base of the interval is a row whethe
 
 ### DetermineGermlineContigPloidy
 
-Suites: `interpreter-tools`.
+Suites: `interpreter-tools`, `gcnv-frozen`.
 
 Inputs: `nothing`, `nothing.tsv`.
 
@@ -1272,7 +1272,7 @@ The inputs are the CombineGVCFs corpus: cg_a.g.vcf, a diploid sample with a know
 
 ### GermlineCNVCaller
 
-Suites: `interpreter-tools`.
+Suites: `interpreter-tools`, `gcnv-frozen`.
 
 Inputs: `nothing`, `nothing.tsv`.
 
@@ -1688,7 +1688,7 @@ qname.bam holds the four answers passesRSEMFilter gives -- a proper pair of sing
 
 ### PostprocessGermlineCNVCalls
 
-Suites: `interpreter-tools`.
+Suites: `interpreter-tools`, `gcnv-frozen`.
 
 Inputs: `nothing`, `nothing.vcf`, `shard`.
 
