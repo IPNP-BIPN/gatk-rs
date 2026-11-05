@@ -593,7 +593,7 @@ fn truncated_svd_reconstructs_a_full_rank_panel() {
         vec![0.0, 1.0, 3.0, 2.0],
         vec![-2.0, 0.5, 1.0, 1.5],
     ]);
-    let svd = truncated_svd(&panel, 3);
+    let svd = truncated_svd(&panel, 3).expect("a decomposition");
     assert_eq!(svd.singular_values.len(), 3);
     assert!(svd.singular_values.windows(2).all(|w| w[0] >= w[1]));
     // U is orthonormal.

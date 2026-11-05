@@ -68,6 +68,7 @@ pub mod dump_tabix_index;
 pub mod empirical_distribution;
 pub mod evaluate_info_field_concordance;
 pub mod extract_variant_annotations;
+pub mod f2j_arpack;
 pub mod f2j_dbdsdc;
 pub mod f2j_gesdd;
 pub mod family_priors;
