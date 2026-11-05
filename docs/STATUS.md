@@ -213,7 +213,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `CountVariantsSpark` | variant-walker | oracle-backed | spark-walkers | 1 | t=2, 19/19 rows (100%) | not measured |
 | `CpxVariantReInterpreterSpark` | sv-caller | oracle-backed | spark-walkers | 1 | not measured | not measured |
 | `CreateHadoopBamSplittingIndex` | unclassified | oracle-backed | splitting-index | 1 | t=2, 11/11 rows (100%) | 0.003 / 0.084 |
-| `CreateReadCountPanelOfNormals` | cnv-segmentation | oracle-backed | create-read-count-panel-of-normals, create-read-count-panel-rank, f2j-dgesdd | 3 | t=2, 25/25 rows (100%) | 0.001 / 0.012 |
+| `CreateReadCountPanelOfNormals` | cnv-segmentation | oracle-backed | create-read-count-panel-arpack, create-read-count-panel-of-normals, create-read-count-panel-rank, f2j-dgesdd | 4 | t=2, 25/25 rows (100%) | 0.001 / 0.012 |
 | `CreateSomaticPanelOfNormals` | variant-transform | oracle-backed | brent-optimizer, create-somatic-panel-of-normals | 2 | t=2, 21/21 rows (100%) | 0.003 / 0.072 |
 | `DenoiseReadCounts` | cnv-segmentation | oracle-backed | denoise-read-counts | 1 | t=2, 6/6 rows (100%) | 0.002 / 0.054 |
 | `DepthOfCoverage` | locus-walker | oracle-backed | depth-of-coverage | 1 | t=2, 20/20 rows (100%) | 0.003 / 0.067 |

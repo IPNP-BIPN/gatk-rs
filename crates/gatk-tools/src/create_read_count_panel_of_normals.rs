@@ -630,20 +630,131 @@ pub fn spark_gramian(panel: &Matrix) -> Vec<f64> {
 /// reaches its values and so the rank bit for bit up to 128 samples. Past 25 its divide and conquer
 /// raises the noise to the epsilon, so the rank there is the request.
 ///
-/// For a request ARPACK answers, cyclic Jacobi stands in. A panel with more
-/// independent samples than it is asked for has no value near the threshold and gets the same
-/// count; a rank-deficient one is not claimed.
-pub fn truncated_svd(panel: &Matrix, k: usize) -> Decomposition {
+/// A request ARPACK answers takes F2J's ARPACK, [`crate::f2j_arpack`], over the Gramian times a
+/// vector as Spark forms it: [`breeze_gramian_times`] locally, [`spark_gramian_times`] distributed.
+///
+/// Past that, cyclic Jacobi stands in. A panel with more independent samples than it is asked for
+/// has no value near the threshold and gets the same count; a rank-deficient one is not claimed.
+pub fn truncated_svd(panel: &Matrix, k: usize) -> Result<Decomposition, String> {
     let n = panel.samples;
-    if solver_mode(n, k) == SolverMode::LocalLapack {
-        let mut gramian = spark_gramian(panel);
-        if crate::f2j_gesdd::reachable(n, &gramian) {
-            if let Some((squares, u)) = crate::f2j_gesdd::dgesdd(n, &mut gramian) {
-                return decomposition_from_gramian(panel, k, &squares, &u);
+    let arpack = match solver_mode(n, k) {
+        SolverMode::LocalLapack => {
+            let mut gramian = spark_gramian(panel);
+            if crate::f2j_gesdd::reachable(n, &gramian) {
+                if let Some((squares, u)) = crate::f2j_gesdd::dgesdd(n, &mut gramian) {
+                    return Ok(decomposition_from_gramian(panel, k, &squares, &u));
+                }
             }
+            return Ok(truncated_svd_by_jacobi(panel, k));
+        }
+        SolverMode::LocalArpack => {
+            let gramian = spark_gramian(panel);
+            crate::f2j_arpack::symmetric_eigs(n, k, &mut |x: &[f64], y: &mut [f64]| {
+                breeze_gramian_times(&gramian, x, y)
+            })
+        }
+        SolverMode::DistributedArpack => {
+            let rows = spark_rows(panel);
+            crate::f2j_arpack::symmetric_eigs(n, k, &mut |x: &[f64], y: &mut [f64]| {
+                spark_gramian_times(&rows, x, y)
+            })
+        }
+    };
+    let (squares, u) = arpack?;
+    Ok(decomposition_from_gramian(panel, k, &squares, &u))
+}
+
+/// `G * v` for LocalARPACK: Breeze's dense product is `Java11BLAS.dgemvN`, four columns at a time,
+/// each row a chain of `Math.fma` from the fourth column in. `gramian` is column major.
+pub fn breeze_gramian_times(gramian: &[f64], x: &[f64], y: &mut [f64]) {
+    let n = x.len();
+    let a = |i: usize, j: usize| gramian[i + j * n];
+    y.fill(0.0);
+    let blocked = n - n % 4;
+    for j in (0..blocked).step_by(4) {
+        let (t0, t1, t2, t3) = (x[j], x[j + 1], x[j + 2], x[j + 3]);
+        for (i, yi) in y.iter_mut().enumerate() {
+            let inner = java_fma(t3, a(i, j + 3), *yi);
+            let inner = java_fma(t2, a(i, j + 2), inner);
+            let inner = java_fma(t1, a(i, j + 1), inner);
+            *yi = java_fma(t0, a(i, j), inner);
         }
     }
-    truncated_svd_by_jacobi(panel, k)
+    for (j, xj) in x.iter().enumerate().skip(blocked) {
+        for (i, yi) in y.iter_mut().enumerate() {
+            *yi = java_fma(*xj, a(i, j), *yi);
+        }
+    }
+}
+
+/// `Math.fma`: `a * b + c` rounded once, as the reference rounds it here
+/// (`tools/audit/arithmetic.py` admits this one line).
+fn java_fma(a: f64, b: f64, c: f64) -> f64 {
+    a.mul_add(b, c)
+}
+
+/// The rows of the `RowMatrix`, one per interval, each the samples' values: row major.
+pub fn spark_rows(panel: &Matrix) -> Vec<f64> {
+    (0..panel.intervals)
+        .flat_map(|interval| (0..panel.samples).map(move |sample| panel.get(sample, interval)))
+        .collect()
+}
+
+/// `multiplyGramianMatrixBy` for DistARPACK at `local[1]`: each slice sums `(r . v) r` over its
+/// rows, the dot product Breeze's `dotProduct_Double` with eight accumulators. `treeAggregate` at
+/// its default depth of 2 takes the hundred slices to ten, slice `s` into `s % 10` in slice order,
+/// and the driver folds the ten in order, an empty slice adding nothing.
+pub fn spark_gramian_times(rows: &[f64], x: &[f64], y: &mut [f64]) {
+    let n = x.len();
+    let count = rows.len() / n;
+    let slices = NUM_SLICES_FOR_SPARK_MATRIX_CONVERSION;
+    let mut partial: Vec<Option<Vec<f64>>> = (0..slices)
+        .map(|slice| {
+            let (from, to) = (slice * count / slices, (slice + 1) * count / slices);
+            (from < to).then(|| {
+                let mut sum = vec![0.0; n];
+                for row in rows[from * n..to * n].chunks(n) {
+                    let a = breeze_dot(row, x);
+                    for (s, r) in sum.iter_mut().zip(row) {
+                        *s += a * r;
+                    }
+                }
+                sum
+            })
+        })
+        .collect();
+    let fold = |into: &mut Option<Vec<f64>>, next: Option<Vec<f64>>| match (into.as_mut(), next) {
+        (None, next) => *into = next,
+        (Some(sum), Some(next)) => sum.iter_mut().zip(next).for_each(|(s, v)| *s += v),
+        (Some(_), None) => {}
+    };
+    let groups = 10;
+    let mut total = None;
+    for group in 0..groups {
+        let mut sum = None;
+        for slice in (group..slices).step_by(groups) {
+            fold(&mut sum, partial[slice].take());
+        }
+        fold(&mut total, sum);
+    }
+    y.copy_from_slice(&total.expect("a panel has rows"));
+}
+
+/// Breeze's `dotProduct_Double`: the remainder of eight first, then eight running sums added in
+/// order.
+fn breeze_dot(a: &[f64], b: &[f64]) -> f64 {
+    let length = a.len();
+    let remainder = length % 8;
+    let mut sums = [0.0f64; 8];
+    for i in 0..remainder {
+        sums[0] += a[i] * b[i];
+    }
+    for (a, b) in a[remainder..].chunks(8).zip(b[remainder..].chunks(8)) {
+        for lane in 0..8 {
+            sums[lane] += a[lane] * b[lane];
+        }
+    }
+    sums[1..].iter().fold(sums[0], |total, sum| total + sum)
 }
 
 /// What `computeSVD` does with the Gramian's decomposition. `u` is column major.
