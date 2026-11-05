@@ -14,7 +14,7 @@ FMA and no AVX-512. Nothing here has run on real x86-64, and no golden exists ye
 | --- | --- | --- |
 | `TrainVariantAnnotationsModel` | **Byte-identical reachable, and landed**, for `PYTHON_IFOREST` with a seed | h5py score files identical; scorer identical but for its random script name |
 | `ScoreVariantAnnotations` | **Byte-identical reachable, and landed**, for `PYTHON_IFOREST` | VCF identical; `.scores.hdf5` doubles identical (the reference's file holds the time) |
-| `DetermineGermlineContigPloidy` | **Keeps the interpreter** | Stable, but the numbers come from C compiled per host CPU from a rewritten graph |
+| `DetermineGermlineContigPloidy` | **Ported against the frozen reference** ([gcnv-ploidy.md](gcnv-ploidy.md)), cohort mode with ADVI's convergence tracker out of reach: all 38 golden files byte-identical | The six compiled graphs reproduced op by op under `gcnv_frozen_env.sh`, checked call by call against a trace |
 | `GermlineCNVCaller` | **Keeps the interpreter** | Same |
 | `PostprocessGermlineCNVCalls` | **Ported against the frozen reference** ([gcnv-postprocess.md](gcnv-postprocess.md)): all three outputs byte-identical locally, CI golden pending | Stable on fixed shards; the segmenter's compiled C reproduced op by op under `gcnv_frozen_env.sh` |
 
@@ -149,8 +149,8 @@ in `gatk_tools::gcnv_segments`, with glibc's SSE2 `exp`/`log`/`log1p`/`expm1` in
 Can claim, **once CI confirms**: `TrainVariantAnnotationsModel` and `ScoreVariantAnnotations` reproduce
 the reference for the default backend with a seeded forest, the scorer modulo its random script name.
 
-Cannot claim: anything for `DetermineGermlineContigPloidy` and `GermlineCNVCaller` beyond the checks
-before the import, `PostprocessGermlineCNVCalls` before the `gcnv-frozen` golden lands, and any byte target for
+Cannot claim: anything for `GermlineCNVCaller` beyond the checks before the import,
+`DetermineGermlineContigPloidy` in case mode or where the convergence tracker could stop ADVI, `PostprocessGermlineCNVCalls` before the `gcnv-frozen` golden lands, and any byte target for
 a scorer's name or for the time inside a Java-written HDF5 file.
 
 ## What needs CI
