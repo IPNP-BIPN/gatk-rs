@@ -8517,6 +8517,43 @@
           "why": "Frozen from the candidate artefact of run 41550922972, on an Intel Xeon Platinum 8573C with AVX-512, where the port's printed scores and VCFs matched the reference's."
         }
       ]
+    },
+    {
+      "id": "vets-isolation-forest",
+      "status": "oracle-backed",
+      "title": "TrainVariantAnnotationsModel and ScoreVariantAnnotations with scikit-learn's isolation forest, past the interpreter",
+      "harness": "tools/python-tools",
+      "tools": [
+        "TrainVariantAnnotationsModel",
+        "ScoreVariantAnnotations"
+      ],
+      "image": "broadinstitute/gatk:4.6.2.0",
+      "command": "bash /harness/vets_dump.sh",
+      "why": "The pinned image has no python, so the only image in which the reference gets past its interpreter is the publisher's own. EVERY NUMBER HERE IS scikit-learn 1.3.2's AND numpy 1.26.2's: an MT19937, a tree builder over float32 with a seeded per-tree generator, and a pow and a log that are glibc's on a CPU without AVX-512. A CPU WITH AVX-512 TAKES NUMPY'S OTHER LOOPS, so the dump sets NPY_DISABLE_CPU_FEATURES to the AVX-512 family and the reference computes on any runner what it computes on an AVX2 CPU; the dump's comment line shows which features numpy kept. THE SCORER IS COMPARED WITHOUT ITS FRAMES AND ITS NAME, because the lambda's code object names the temporary file the script ran from and that is random in every run; the rest of the pickle is a function of the fit. THE SCORES JAVA WRITES HOLD THE TIME, so their doubles are what is compared.",
+      "compare": {
+        "mode": "lines",
+        "rules": [
+          {
+            "rule": "mask_hdf5_modification_times",
+            "kinds": [
+              "input"
+            ],
+            "why": "The annotations ExtractVariantAnnotations writes, which the dump hands to training as input, go through Java's HDF5 library, which stamps twelve object headers with the clock: those seconds are zeroed on both sides, and every other byte is compared."
+          }
+        ]
+      },
+      "expect_rows": 20,
+      "expect_contains": [
+        "scorer\tdefault\ttrain.snp.scorer.pkl",
+        "scores\tseven\tscore.scores.hdf5"
+      ],
+      "cases": [
+        {
+          "dump": "VetsDump",
+          "golden": "crates/gatk-tools/tests/data/vets_isolation_forest.txt.gz",
+          "why": "Frozen from the candidate artefact of run 41985302091, with AVX-512 turned off in numpy as the dump's cpu line shows. The first golden, from an AVX-512 runner, held numpy's SVML loops and the port differed on every row."
+        }
+      ]
     }
   ],
   "probes": []
