@@ -19,7 +19,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | AddOATag | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | none |
 | AddOrReplaceReadGroups | picard-rs | oracle-backed | not vendored | not vendored | 21/21 (100.0%) | 2 | not measured | 0 | 0 | none |
 | AddOriginalAlignmentTags | gatk-rs | oracle-backed | 16 suite | 0 suite | 18/18 (100.0%) | 2 | not measured | 4 | 3 | none |
-| AlleleFrequencyQC | gatk-rs | oracle-backed | 25 suite | 0 suite | 26/26 (100.0%) | 2 | not measured | 6 | 6 | none |
+| AlleleFrequencyQC | gatk-rs | oracle-backed | 165 suite | 0 suite | 26/26 (100.0%) | 2 | not measured | 6 | 6 | none |
 | AnalyzeCovariates | gatk-rs | oracle-backed | 15 suite | 0 suite | 11/11 (100.0%) | 2 | not measured | 2 | 1 | none |
 | AnalyzeSaturationMutagenesis | gatk-rs | oracle-backed | 30 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 6 | 1 | none |
 | AnnotateIntervals | gatk-rs | oracle-backed | 8 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 4 | 0 | none |
@@ -158,7 +158,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | FilterVariantTranches | gatk-rs | oracle-backed | 60 suite | 0 suite | 15/15 (100.0%) | 2 | not measured | 4 | 7 | none |
 | FilterVcf | gatk-rs | oracle-backed | 20 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
 | FindBadGenomicKmersSpark | gatk-rs | oracle-backed | 63 | 12 | 21/21 (100.0%) | 2 | not measured | 4 | 5 | none |
-| FindBreakpointEvidenceSpark | gatk-rs | oracle-backed | 916 | 340 | 26/26 (100.0%) | 2 | not measured | 9 | 3 | none |
+| FindBreakpointEvidenceSpark | gatk-rs | oracle-backed | 9344 | 8309 | 26/26 (100.0%) | 2 | not measured | 9 | 3 | none |
 | FindMendelianViolations | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
 | FixMateInformation | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
 | FixMisencodedBaseQualityReads | gatk-rs | oracle-backed | 40 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 5 | 0 | none |
@@ -242,8 +242,8 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | PathSeqScoreSpark | gatk-rs | oracle-backed | 110 | 56 | 15/15 (100.0%) | 2 | not measured | 3 | 9 | none |
 | Pileup | gatk-rs | oracle-backed | 9 suite | 0 suite | 18/18 (100.0%) | 2 | not measured | 4 | 0 | none |
 | PileupSpark | gatk-rs | oracle-backed | 11 | 4 | 22/22 (100.0%) | 2 | not measured | 6 | 1 | none |
-| PlotDenoisedCopyRatios | gatk-rs | oracle-backed | 109 | 0 | 11/11 (100.0%) | 2 | not measured | 5 | 0 | none |
-| PlotModeledSegments | gatk-rs | oracle-backed | 61 | 0 | 11/11 (100.0%) | 2 | not measured | 6 | 0 | none |
+| PlotDenoisedCopyRatios | gatk-rs | oracle-backed | 379 | 0 | 11/11 (100.0%) | 2 | not measured | 5 | 0 | none |
+| PlotModeledSegments | gatk-rs | oracle-backed | 338 | 0 | 11/11 (100.0%) | 2 | not measured | 6 | 0 | none |
 | PositionBasedDownsampleSam | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
 | PostProcessReadsForRSEM | gatk-rs | oracle-backed | 43 suite | 0 suite | 20/20 (100.0%) | 2 | not measured | 2 | 2 | none |
 | PostprocessGermlineCNVCalls | gatk-rs | oracle-backed | 54 | 0 | 20/20 (100.0%) | 2 | not measured | 3 | 5 | none |
@@ -299,7 +299,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | SplitSamByNumberOfReads | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
 | SplitVcfs | gatk-rs | oracle-backed | 22 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
 | StructuralVariantDiscoverer | gatk-rs | oracle-backed | 3 suite | 0 suite | 23/23 (100.0%) | 2 | not measured | 9 | 5 | none |
-| StructuralVariationDiscoveryPipelineSpark | gatk-rs | oracle-backed | 486 | 259 | 27/27 (100.0%) | 2 | not measured | 11 | 2 | none |
+| StructuralVariationDiscoveryPipelineSpark | gatk-rs | oracle-backed | 1037 | 733 | 27/27 (100.0%) | 2 | not measured | 11 | 2 | none |
 | SvDiscoverFromLocalAssemblyContigAlignmentsSpark | gatk-rs | oracle-backed | 161 | 88 | 15/17 (88.2%) | 2 | not measured | 6 | 5 | none |
 | TagGermlineEvents | gatk-rs | oracle-backed | 15 suite | 0 suite | 17/17 (100.0%) | 2 | not measured | 6 | 8 | none |
 | TrainVariantAnnotationsModel | gatk-rs | oracle-backed | 111 | 0 | 11/11 (100.0%) | 2 | not measured | 5 | 0 | none |
