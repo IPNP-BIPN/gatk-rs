@@ -503,8 +503,8 @@ jobs:
             suites: "mutect2-dragstr spark-walkers htsget-reader interpreter-tools genomicsdb-import"
           - group: oracle-backed
             index: "72/72"
-            slug: "sv-evidence-sv-partitions-nvscorevariants"
-            suites: "sv-evidence sv-partitions nvscorevariants"
+            slug: "sv-evidence-sv-partitions-nvscorevariants-vets-isolation-forest"
+            suites: "sv-evidence sv-partitions nvscorevariants vets-isolation-forest"
           - group: golden-pending
             index: "1/1"
             slug: "create-read-count-panel-arpack"
@@ -519,6 +519,10 @@ jobs:
           fail-on-cache-miss: true
 
       - run: docker load -i /tmp/oracle-image.tar
+
+      - name: Pull broadinstitute/gatk:4.6.2.0 for vets-isolation-forest
+        if: contains(matrix.suites, 'vets-isolation-forest')
+        run: docker pull --platform linux/amd64 broadinstitute/gatk:4.6.2.0
 
       - name: Regenerate and compare
         # Every rule that canonicalizes anything away is declared in tools/conformance/manifest.json
