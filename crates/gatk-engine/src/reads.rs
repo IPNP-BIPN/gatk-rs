@@ -402,6 +402,17 @@ impl ReadsDataSource {
             .header
             .text;
 
+        let index = Self::read_reference_indexes(bai)?;
+        Ok(ReadsDataSource {
+            compressed,
+            header,
+            path: bam.display().to_string(),
+            index,
+            split_start: 0,
+        })
+    }
+
+    fn read_reference_indexes(bai: &Path) -> Result<Vec<ReferenceIndex>, ReadsError> {
         // The `.bai` is parsed by the port's own reader rather than by a dependency. It is the
         // same file either way; what differs is who answers for it, and htsjdk-bam's `read_bai`
         // is measured by the `textual-index` suite, which parses six `.bai` files and reprints
@@ -409,7 +420,7 @@ impl ReadsDataSource {
         let bai_bytes = std::fs::read(bai).map_err(|e| ReadsError::Io(e.to_string()))?;
         let parsed = htsjdk_bam::index::read_bai(&bai_bytes)
             .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?;
-        let index = parsed
+        Ok(parsed
             .references
             .iter()
             .map(|reference| ReferenceIndex {
@@ -433,15 +444,7 @@ impl ReadsDataSource {
                     .collect(),
                 linear: reference.linear_index.clone(),
             })
-            .collect();
-
-        Ok(ReadsDataSource {
-            compressed,
-            header,
-            path: bam.display().to_string(),
-            index,
-            split_start: 0,
-        })
+            .collect())
     }
 
     /// Open a BAM with no index, which is what `new ReadsPathDataSource(path)` does.
@@ -517,6 +520,17 @@ impl ReadsDataSource {
     /// `optimizeIntervals` first, exactly as `SamReaderQueryingIterator` does, so abutting
     /// intervals merge and a read is returned once rather than once per interval.
     pub fn query(&self, intervals: &[SimpleInterval]) -> Result<Vec<BamRecord>, ReadsError> {
+        self.query_within(intervals, self.split_start, u64::MAX)
+    }
+
+    /// `query` over what `span.removeContentsBefore(splitSpan)` and `removeContentsAfter` leave of
+    /// the index's chunks, with a filter of its own: each Disq partition opens a new iterator.
+    pub fn query_within(
+        &self,
+        intervals: &[SimpleInterval],
+        from: u64,
+        to: u64,
+    ) -> Result<Vec<BamRecord>, ReadsError> {
         let converted: Result<Vec<_>, _> = intervals
             .iter()
             .map(|i| convert_simple_interval_to_query_interval(i, &self.header))
@@ -537,12 +551,13 @@ impl ReadsDataSource {
         let mut kept = Vec::new();
         'chunks: for chunk in span {
             // `removeContentsBefore(splitSpan)`: Disq's split clips the index's chunks.
-            if chunk.end <= self.split_start {
+            if chunk.end <= from || chunk.start >= to {
                 continue;
             }
-            let start = chunk.start.max(self.split_start);
+            let start = chunk.start.max(from);
+            let end = chunk.end.min(to);
             let mut cursor = BlockCursor::seek(&self.compressed, start)?;
-            while cursor.virtual_pos() < chunk.end {
+            while cursor.virtual_pos() < end {
                 let Some(record) = cursor.next_record().map_err(|e| self.name_the_file(e))? else {
                     break;
                 };
@@ -651,6 +666,106 @@ impl ReadsDataSource {
 }
 
 impl ReadsDataSource {
+    /// A BAM and, under intervals, its `.bai`, inflating the header's blocks and no others: the
+    /// whole file inflated at once is what a split exists to avoid.
+    ///
+    /// shortcut: the compressed file is still held whole, as [`ReadsDataSource`] says.
+    pub fn open_for_splits(bam: &Path, bai: Option<&Path>) -> Result<ReadsDataSource, ReadsError> {
+        let compressed = std::fs::read(bam).map_err(|e| ReadsError::Io(e.to_string()))?;
+        let mut inflated = Vec::new();
+        let mut address = 0usize;
+        let header = loop {
+            match BamReader::new(&inflated) {
+                Ok(reader) => break reader.header.text,
+                Err(htsjdk_bam::reader::ReadError::Truncated { .. }) => {}
+                Err(error) => return Err(ReadsError::Malformed(format!("{error:?}"))),
+            }
+            let mut reader = BgzfReader::new(&compressed[address.min(compressed.len())..]);
+            let Some(block) = reader
+                .next_block()
+                .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?
+            else {
+                let error = BamReader::new(&inflated).err();
+                return Err(ReadsError::Malformed(format!("{error:?}")));
+            };
+            address += block.block_compressed_size;
+            inflated.extend_from_slice(&block.data);
+        };
+        let index = match bai {
+            Some(bai) => Self::read_reference_indexes(bai)?,
+            None => Vec::new(),
+        };
+        Ok(ReadsDataSource {
+            compressed,
+            header,
+            path: bam.display().to_string(),
+            index,
+            split_start: 0,
+        })
+    }
+
+    /// `BamSource.getPathChunks`: a chunk for each split, or none for a split no record starts in,
+    /// which is still a partition, with no reads.
+    ///
+    /// With a `.sbi` beside the BAM the index says where a split's records run. Without one, the
+    /// split is its blocks, the start is the first position `BamRecordGuesser` accepts in them, and
+    /// the end is the split's own, so a record belongs to the split its block starts in, however
+    /// far it runs. A record the guesser rejects at the head of a split is in no partition at all.
+    pub fn disq_partitions(
+        &self,
+        split_size: i32,
+        use_nio: bool,
+    ) -> Result<Vec<Option<Chunk>>, DisqSplitError> {
+        let splits = disq_path_splits(self.compressed.len() as i64, split_size, use_nio);
+        let sbi_path = format!("{}.sbi", self.path);
+        if Path::new(&sbi_path).exists() {
+            let bytes = std::fs::read(&sbi_path).map_err(|e| ReadsError::Io(e.to_string()))?;
+            let offsets = load_sbi(&bytes)?;
+            return Ok(splits
+                .into_iter()
+                .map(|(start, end)| sbi_chunk(&offsets, start, end))
+                .collect());
+        }
+        let blocks = block_table(&self.compressed)?;
+        let total = blocks
+            .last()
+            .map_or(0, |block| block.linear as usize + block.size as usize);
+        let mut stream = InflatedStream {
+            data: &self.compressed,
+            blocks: &blocks,
+            total,
+            window: Vec::new(),
+            window_start: 0,
+            next_block: 0,
+        };
+        let lengths: Vec<i32> = self.header.sequences.iter().map(|s| s.length).collect();
+        let mut partitions = Vec::with_capacity(splits.len());
+        for (start, end) in splits {
+            partitions.push(first_read_in_split(
+                &self.compressed,
+                &blocks,
+                &mut stream,
+                &lengths,
+                start,
+                end,
+            )?);
+        }
+        Ok(partitions)
+    }
+
+    /// `BAMFileReader.getIterator(chunks)`: a record belongs to the chunk it starts in.
+    pub fn read_chunk(&self, chunk: &Chunk) -> Result<Vec<BamRecord>, ReadsError> {
+        let mut cursor = BlockCursor::seek(&self.compressed, chunk.start)?;
+        let mut records = Vec::new();
+        while cursor.virtual_pos() < chunk.end {
+            let Some(record) = cursor.next_record().map_err(|e| self.name_the_file(e))? else {
+                break;
+            };
+            records.push(record);
+        }
+        Ok(records)
+    }
+
     /// Disq's `BamSource.getFirstReadInPartition` with no `.sbi`: the reads start where its
     /// `BamRecordGuesser` first accepts a record, not where the header ends.
     ///
@@ -661,7 +776,7 @@ impl ReadsDataSource {
     /// the first ten million is a partition with no reads.
     ///
     /// shortcut: one partition, which is what a file under the split size gets; a larger file is
-    /// split and each split guesses its own start, which this does not do.
+    /// split and each split guesses its own start, which [`Self::disq_partitions`] does.
     pub fn with_disq_split_start(mut self) -> Result<ReadsDataSource, ReadsError> {
         let mut blocks = Vec::new();
         let mut address = 0usize;
@@ -690,7 +805,7 @@ impl ReadsDataSource {
                 if index > 10_000_000 {
                     break 'blocks;
                 }
-                if guess_chain(&flat, &lengths, linear + up) {
+                if guess_chain(&mut flat.as_slice(), &lengths, linear + up)? {
                     self.split_start = vfp::make_file_pointer(*address, up as u32)
                         .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?;
                     return Ok(self);
@@ -705,17 +820,36 @@ impl ReadsDataSource {
     }
 }
 
+/// What the guesser reads: the decompressed stream, addressed from its first byte.
+trait GuessedStream {
+    fn total(&self) -> usize;
+    fn bytes(&mut self, at: usize, length: usize) -> Result<&[u8], ReadsError>;
+}
+
+impl GuessedStream for &[u8] {
+    fn total(&self) -> usize {
+        self.len()
+    }
+    fn bytes(&mut self, at: usize, length: usize) -> Result<&[u8], ReadsError> {
+        Ok(&self[at..at + length])
+    }
+}
+
 /// `BamRecordGuesser.checkRecordStart`: ten records chaining from `at`, or the end of the
 /// stream after at least one.
-fn guess_chain(flat: &[u8], lengths: &[i32], mut at: usize) -> bool {
+fn guess_chain(
+    flat: &mut impl GuessedStream,
+    lengths: &[i32],
+    mut at: usize,
+) -> Result<bool, ReadsError> {
     for successful in 0..10 {
-        match guess_record(flat, lengths, at) {
+        match guess_record(flat, lengths, at)? {
             Guess::Start(next) => at = next,
-            Guess::NoStart => return false,
-            Guess::Eof => return successful > 0,
+            Guess::NoStart => return Ok(false),
+            Guess::Eof => return Ok(successful > 0),
         }
     }
-    true
+    Ok(true)
 }
 
 enum Guess {
@@ -725,73 +859,391 @@ enum Guess {
 }
 
 /// `BamRecordGuesser.checkRecordStartInternal`, over the decompressed stream.
-fn guess_record(flat: &[u8], lengths: &[i32], at: usize) -> Guess {
+fn guess_record(
+    flat: &mut impl GuessedStream,
+    lengths: &[i32],
+    at: usize,
+) -> Result<Guess, ReadsError> {
+    let total = flat.total();
+    if at + 36 > total {
+        return Ok(Guess::Eof);
+    }
+    let fixed: [u8; 36] = flat.bytes(at, 36)?.try_into().expect("36 bytes");
     let int = |offset: usize| {
         i32::from_le_bytes([
-            flat[offset],
-            flat[offset + 1],
-            flat[offset + 2],
-            flat[offset + 3],
+            fixed[offset],
+            fixed[offset + 1],
+            fixed[offset + 2],
+            fixed[offset + 3],
         ])
     };
-    if at + 36 > flat.len() {
-        return Guess::Eof;
-    }
     let count = lengths.len() as i32;
     let locus_ok = |id: i32, pos: i32| {
         !(id < -1 || id >= count || pos < -1 || (id >= 0 && pos > lengths[id as usize]))
     };
-    let remaining = int(at);
-    if !locus_ok(int(at + 4), int(at + 8)) || !locus_ok(int(at + 24), int(at + 28)) {
-        return Guess::NoStart;
+    let remaining = int(0);
+    if !locus_ok(int(4), int(8)) || !locus_ok(int(24), int(28)) {
+        return Ok(Guess::NoStart);
     }
-    let name_length = (int(at + 12) & 0xff) as usize;
+    let name_length = (int(12) & 0xff) as usize;
     if name_length < 2 {
-        return Guess::NoStart;
+        return Ok(Guess::NoStart);
     }
-    let flags = (int(at + 16) as u32 >> 16) as u16;
-    let cigar_ops = (int(at + 16) & 0xffff) as usize;
-    let l_seq = int(at + 20);
+    let flags = (int(16) as u32 >> 16) as u16;
+    let cigar_ops = (int(16) & 0xffff) as usize;
+    let l_seq = int(20);
     let seq_length = l_seq.wrapping_add(l_seq.wrapping_add(1) / 2);
     let mapped = flags & 0x4 == 0;
     let primary = flags & 0x100 == 0 && flags & 0x800 == 0;
     if mapped && ((seq_length == 0 && primary) || cigar_ops == 0) {
-        return Guess::NoStart;
+        return Ok(Guess::NoStart);
     }
     let name = at + 36;
-    if name + name_length > flat.len() {
-        return Guess::Eof;
+    if name + name_length > total {
+        return Ok(Guess::Eof);
     }
-    if flat[name + name_length - 1] != 0 {
-        return Guess::NoStart;
+    let bytes = flat.bytes(name, name_length)?;
+    if bytes[name_length - 1] != 0 {
+        return Ok(Guess::NoStart);
     }
     let valid = |b: u8| (b'!'..=b'?').contains(&b) || (b'A'..=b'~').contains(&b);
-    if !flat[name..name + name_length - 1].iter().all(|&b| valid(b)) {
-        return Guess::NoStart;
+    if !bytes[..name_length - 1].iter().all(|&b| valid(b)) {
+        return Ok(Guess::NoStart);
     }
     let mut cigar = name + name_length;
     for _ in 0..cigar_ops {
-        if cigar + 4 > flat.len() {
-            return Guess::Eof;
+        if cigar + 4 > total {
+            return Ok(Guess::Eof);
         }
-        let op = int(cigar);
+        let held = flat.bytes(cigar, 4)?;
+        let op = i32::from_le_bytes([held[0], held[1], held[2], held[3]]);
         if op == -1 {
-            return Guess::Eof;
+            return Ok(Guess::Eof);
         }
         if op & 0xf > 8 {
-            return Guess::NoStart;
+            return Ok(Guess::NoStart);
         }
         cigar += 4;
     }
     let zero_min = (32 + name_length as i64 + 4 * cigar_ops as i64) + seq_length as i64;
     if (remaining as i64) < zero_min {
-        return Guess::NoStart;
+        return Ok(Guess::NoStart);
     }
     let next = at + 4 + remaining as usize;
-    if next > flat.len() {
-        return Guess::Eof;
+    if next > total {
+        return Ok(Guess::Eof);
     }
-    Guess::Start(next)
+    Ok(Guess::Start(next))
+}
+
+/// `FileInputFormat.SPLIT_SLOP`: a last split may run a tenth over.
+const SPLIT_SLOP: f64 = 1.1;
+/// `fs.local.block.size`, which caps a split on a local file whatever was asked for.
+const LOCAL_BLOCK_SIZE: i64 = 32 * 1024 * 1024;
+/// `PathSplitSource`'s default when `--use-nio` is given no size.
+const NIO_SPLIT_SIZE: i64 = 128 * 1024 * 1024;
+/// `BamSource.MAX_READ_SIZE`.
+const MAX_READ_SIZE: usize = 10_000_000;
+
+/// `PathSplitSource.getPathSplits` over a file of `length` bytes, as (start, end).
+///
+/// `splitSize` reached Disq through `(int) splitSize`, and only a positive one is set on the
+/// configuration, so `2^32` asks for the default and `--bam-partition-size` above the block size
+/// changes nothing on a local file.
+pub fn disq_path_splits(length: i64, split_size: i32, use_nio: bool) -> Vec<(i64, i64)> {
+    let mut splits = Vec::new();
+    if use_nio {
+        let actual = if split_size <= 0 {
+            NIO_SPLIT_SIZE
+        } else {
+            i64::from(split_size)
+        };
+        let count = (length as f64 / actual as f64).ceil() as i64;
+        for index in 0..count {
+            let start = index * actual;
+            splits.push((start, (start + actual).min(length)));
+        }
+        return splits;
+    }
+    let maximum = if split_size > 0 {
+        i64::from(split_size)
+    } else {
+        i64::MAX
+    };
+    let size = maximum.clamp(1, LOCAL_BLOCK_SIZE);
+    let mut remaining = length;
+    while remaining as f64 / size as f64 > SPLIT_SLOP {
+        splits.push((length - remaining, length - remaining + size));
+        remaining -= size;
+    }
+    if remaining != 0 {
+        splits.push((length - remaining, length));
+    }
+    splits
+}
+
+/// What Disq's split computation can stop on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DisqSplitError {
+    Reads(ReadsError),
+    /// `BgzfBlockGuesser` accepted bytes no block starts at, which its reader would then inflate
+    /// as a block: the port's own refusal, carrying the address.
+    NotABlock(i64),
+    /// `SBIIndex.load` said no.
+    Sbi(String),
+}
+
+impl From<ReadsError> for DisqSplitError {
+    fn from(error: ReadsError) -> DisqSplitError {
+        DisqSplitError::Reads(error)
+    }
+}
+
+/// One real block of the file, and where its bytes fall in the decompressed stream.
+#[derive(Debug, Clone, Copy)]
+struct BlockEntry {
+    address: u64,
+    linear: u64,
+    size: u32,
+}
+
+/// The file's blocks, read from their headers and trailers with nothing inflated.
+fn block_table(data: &[u8]) -> Result<Vec<BlockEntry>, ReadsError> {
+    let mut blocks = Vec::new();
+    let mut address = 0usize;
+    let mut linear = 0u64;
+    let malformed = |address: usize| {
+        ReadsError::Malformed(format!("no BGZF block where one was due at {address}"))
+    };
+    while address < data.len() {
+        let head = data.get(address..address + 12).ok_or(malformed(address))?;
+        if head[..4] != [0x1f, 0x8b, 8, 4] {
+            return Err(malformed(address));
+        }
+        let extra = usize::from(u16::from_le_bytes([head[10], head[11]]));
+        let fields = data
+            .get(address + 12..address + 12 + extra)
+            .ok_or(malformed(address))?;
+        let mut at = 0;
+        let mut size = None;
+        while at + 4 <= fields.len() {
+            let length = usize::from(u16::from_le_bytes([fields[at + 2], fields[at + 3]]));
+            if fields[at..at + 2] == *b"BC" && length == 2 && at + 6 <= fields.len() {
+                size = Some(usize::from(u16::from_le_bytes([
+                    fields[at + 4],
+                    fields[at + 5],
+                ])));
+            }
+            at += 4 + length;
+        }
+        let compressed = size.ok_or(malformed(address))? + 1;
+        let trailer = data
+            .get(address + compressed - 4..address + compressed)
+            .ok_or(malformed(address))?;
+        let inflated = u32::from_le_bytes([trailer[0], trailer[1], trailer[2], trailer[3]]);
+        blocks.push(BlockEntry {
+            address: address as u64,
+            linear,
+            size: inflated,
+        });
+        linear += u64::from(inflated);
+        address += compressed;
+    }
+    Ok(blocks)
+}
+
+/// How far behind the guesser's position its window is allowed to fall.
+const WINDOW_KEPT: usize = 16 * 1024 * 1024;
+
+/// The decompressed stream, inflated as the guesser walks it, keeping a window behind.
+struct InflatedStream<'a> {
+    data: &'a [u8],
+    blocks: &'a [BlockEntry],
+    total: usize,
+    window: Vec<u8>,
+    window_start: usize,
+    next_block: usize,
+}
+
+impl GuessedStream for InflatedStream<'_> {
+    fn total(&self) -> usize {
+        self.total
+    }
+
+    fn bytes(&mut self, at: usize, length: usize) -> Result<&[u8], ReadsError> {
+        if at < self.window_start || at > self.window_start + self.window.len() + WINDOW_KEPT {
+            let block = self
+                .blocks
+                .partition_point(|block| block.linear as usize + block.size as usize <= at);
+            self.next_block = block;
+            self.window.clear();
+            self.window_start = self.blocks.get(block).map_or(at, |b| b.linear as usize);
+        } else if at > self.window_start + 2 * WINDOW_KEPT {
+            let dropped = at - WINDOW_KEPT - self.window_start;
+            self.window.drain(..dropped);
+            self.window_start += dropped;
+        }
+        while self.window_start + self.window.len() < at + length {
+            let Some(block) = self.blocks.get(self.next_block) else {
+                break;
+            };
+            let mut reader = BgzfReader::new(&self.data[block.address as usize..]);
+            let inflated = reader
+                .next_block()
+                .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?
+                .ok_or_else(|| ReadsError::Malformed("a block that is not there".to_string()))?;
+            self.window.extend_from_slice(&inflated.data);
+            self.next_block += 1;
+        }
+        let from = at - self.window_start;
+        Ok(&self.window[from..from + length])
+    }
+}
+
+/// `BgzfBlockGuesser.guessNextBGZFPos`: (pos, cSize, uSize), or null at the end or on a short read.
+fn guess_next_block(data: &[u8], mut p: i64, end: i64) -> Option<(i64, i32, i32)> {
+    const MAGIC: u32 = 0x0408_8b1f;
+    const MAGIC_SUB: u32 = 0x0002_4342;
+    let at = |p: i64, n: usize| -> Option<&[u8]> {
+        usize::try_from(p)
+            .ok()
+            .and_then(|p| data.get(p..p.checked_add(n)?))
+    };
+    let int = |p: i64| at(p, 4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]));
+    let short = |p: i64| at(p, 2).map(|b| i64::from(u16::from_le_bytes([b[0], b[1]])));
+    loop {
+        loop {
+            let n = int(p)?;
+            if n == MAGIC {
+                break;
+            }
+            if n >> 8 == MAGIC & 0x00ff_ffff {
+                p += 1;
+            } else if n >> 16 == MAGIC & 0x0000_ffff {
+                p += 2;
+            } else {
+                p += 3;
+            }
+            if p >= end {
+                return None;
+            }
+        }
+        let start = p;
+        p += 10;
+        let xlen = short(p)?;
+        p += 2;
+        let sub_end = p + xlen;
+        while p < sub_end {
+            let found = int(p)?;
+            if found != MAGIC_SUB {
+                p += 4 + i64::from(found >> 16);
+                continue;
+            }
+            let bsize = short(p + 4)?;
+            p += 6;
+            while p < sub_end {
+                p += 4 + i64::from(int(p)? >> 16);
+            }
+            if p != sub_end {
+                break;
+            }
+            p += bsize - xlen - 19 + 4;
+            let size = int(p)?;
+            return Some((start, (p + 4 - start) as i32, size as i32));
+        }
+        p = start + 4;
+    }
+}
+
+/// `SBIIndex.load`: the virtual offsets.
+fn load_sbi(bytes: &[u8]) -> Result<Vec<u64>, DisqSplitError> {
+    let eof = || DisqSplitError::Sbi("Premature EOF".to_string());
+    let long = |at: usize| -> Result<u64, DisqSplitError> {
+        let held = bytes.get(at..at + 8).ok_or_else(eof)?;
+        Ok(u64::from_le_bytes(held.try_into().expect("eight bytes")))
+    };
+    if bytes.get(..4) != Some(b"SBI\x01".as_slice()) {
+        return Err(DisqSplitError::Sbi(
+            "Invalid file header in SBI".to_string(),
+        ));
+    }
+    // The magic, the length, the MD5, the UUID, the record count, the granularity, then how many.
+    let count = long(4 + 8 + 16 + 16 + 8 + 8)? as i64;
+    let mut offsets = Vec::new();
+    let mut previous = -1i64;
+    for index in 0..count.max(0) as usize {
+        let current = long(68 + 8 * index)? as i64;
+        if previous > current {
+            return Err(DisqSplitError::Sbi(format!(
+                "Invalid SBI; offsets not in order: {previous:#x} > {current:#x}"
+            )));
+        }
+        offsets.push(current as u64);
+        previous = current;
+    }
+    if offsets.is_empty() {
+        return Err(DisqSplitError::Sbi(
+            "Invalid SBI format: should contain at least one offset".to_string(),
+        ));
+    }
+    Ok(offsets)
+}
+
+/// `SBIIndex.getChunk`.
+fn sbi_chunk(offsets: &[u64], start: i64, end: i64) -> Option<Chunk> {
+    let last = *offsets.last().expect("at least one offset");
+    let maximum = vfp::block_address(last) as i64;
+    let ceiling = |address: i64| {
+        let pointer = (address.min(maximum) as u64) << 16;
+        offsets
+            .get(offsets.partition_point(|offset| *offset < pointer))
+            .copied()
+    };
+    let (from, to) = (ceiling(start)?, ceiling(end)?);
+    (from != to).then_some(Chunk {
+        start: from,
+        end: to,
+    })
+}
+
+/// `getFirstReadInPartition`, over the blocks `BgzfBlockSource` guesses in one split.
+fn first_read_in_split(
+    data: &[u8],
+    blocks: &[BlockEntry],
+    stream: &mut InflatedStream<'_>,
+    lengths: &[i32],
+    split_start: i64,
+    split_end: i64,
+) -> Result<Option<Chunk>, DisqSplitError> {
+    let mut index = 0usize;
+    let mut start = split_start;
+    while start < split_end {
+        let Some((position, compressed, size)) = guess_next_block(data, start, split_end) else {
+            break;
+        };
+        start = position + i64::from(compressed);
+        let entry = blocks
+            .binary_search_by_key(&(position as u64), |block| block.address)
+            .map_err(|_| DisqSplitError::NotABlock(position))?;
+        let linear = blocks[entry].linear as usize;
+        for up in 0..size.max(0) as usize {
+            index += 1;
+            if index > MAX_READ_SIZE {
+                return Ok(None);
+            }
+            if guess_chain(stream, lengths, linear + up)? {
+                let pointer = |address: i64, offset: u32| {
+                    vfp::make_file_pointer(address as u64, offset)
+                        .map_err(|e| ReadsError::Malformed(format!("{e:?}")))
+                };
+                return Ok(Some(Chunk {
+                    start: pointer(position, up as u32)?,
+                    end: pointer(split_end, 0)?,
+                }));
+            }
+        }
+    }
+    Ok(None)
 }
 
 /// Reads records from an arbitrary virtual file pointer, crossing BGZF block boundaries.
@@ -942,6 +1394,44 @@ mod tests {
             start,
             end,
         }
+    }
+
+    #[test]
+    fn a_local_split_stops_at_the_block_size_and_the_slop_keeps_a_tenth() {
+        let mib = 1024 * 1024;
+        // 35 MiB over 32 is under the slop, and 36 is over it; asking for more changes nothing.
+        assert_eq!(disq_path_splits(35 * mib, 0, false), vec![(0, 35 * mib)]);
+        assert_eq!(
+            disq_path_splits(36 * mib, 64 * mib as i32, false),
+            vec![(0, 32 * mib), (32 * mib, 36 * mib)]
+        );
+        assert_eq!(disq_path_splits(0, 0, false), Vec::new());
+        // NIO has no slop and no block size.
+        assert_eq!(
+            disq_path_splits(11, 5, true),
+            vec![(0, 5), (5, 10), (10, 11)]
+        );
+    }
+
+    #[test]
+    fn an_sbi_holds_its_count_then_its_offsets() {
+        let mut bytes = b"SBI\x01".to_vec();
+        bytes.extend_from_slice(&[0; 56]);
+        bytes.extend_from_slice(&2i64.to_le_bytes());
+        bytes.extend_from_slice(&7i64.to_le_bytes());
+        bytes.extend_from_slice(&9i64.to_le_bytes());
+        assert_eq!(load_sbi(&bytes).unwrap(), vec![7, 9]);
+    }
+
+    #[test]
+    fn an_sbi_chunk_is_the_offsets_between_its_ceilings() {
+        let offsets = [1 << 16, 100 << 16, (100 << 16) + 7, 300 << 16];
+        let chunk = sbi_chunk(&offsets, 0, 200).unwrap();
+        assert_eq!((chunk.start, chunk.end), (1 << 16, 300 << 16));
+        // No offset starts between them, so the split is empty.
+        assert_eq!(sbi_chunk(&offsets, 101, 200), None);
+        // An end past the last offset's block stops at that offset.
+        assert_eq!(sbi_chunk(&offsets, 301, 400), None);
     }
 
     #[test]

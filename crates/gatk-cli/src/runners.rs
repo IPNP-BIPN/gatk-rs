@@ -15722,7 +15722,7 @@ fn variant_eval_report(
 ///   one the run is a `NullPointerException` and writes nothing.
 /// * **the plot comes last and fails in an image without R**: the metrics are already written, and
 ///   the run then ends on the user error `RScriptExecutor` raises. With `Rscript` on the path the
-///   reference would draw the plot, which the port does not, so that is its limitation.
+///   port runs its own rewrite of the script.
 pub fn allele_frequency_qc(parser: &Parser) -> Outcome {
     use gatk_tools::allele_frequency_qc as qc;
 
@@ -15753,22 +15753,21 @@ pub fn allele_frequency_qc(parser: &Parser) -> Outcome {
         qc::metrics_file(&sample, &bins, variance).as_bytes(),
     )?;
 
-    // `RScriptExecutor.exec`: the executable is looked for on the path when the script runs.
-    let rscript_found = std::env::var_os("PATH").is_some_and(|path| {
-        std::env::split_paths(&path).any(|directory| directory.join("Rscript").is_file())
-    });
-    if rscript_found {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "plotAlleleFrequencyQC.R is not ported. This message is the port's own and not GATK's."
-                .to_string(),
-        ));
+    // `onTraversalSuccess`: the metrics are written by now, and the plot is what can still fail.
+    interpreter_tools_runner::plot_allele_frequency_qc(
+        &report,
+        argument(parser, "debugFile").as_deref(),
+        &metrics_output,
+        &sample,
+    )?;
+    let (_, p_value) = qc::metrics(&bins, variance);
+    if qc::complains(
+        p_value,
+        double_or(parser, "threshold", qc::DEFAULT_THRESHOLD),
+    ) {
+        eprintln!("ERROR AlleleFrequencyQC - {}", qc::complaint(p_value));
     }
-    Err(Thrown::user(
-        "Unable to execute Rscript command: Please add the Rscript directory to your environment \
-         ${PATH}"
-            .to_string(),
-    ))
+    Ok(None)
 }
 
 /// `VCFHeader.toString()`: the meta lines in the order they were read, each after a tab, between
@@ -21008,32 +21007,15 @@ pub fn sv_concordance(parser: &Parser) -> Outcome {
     let (truth_text, truth_file) = read_vcf(&truth_path)?;
     let (eval_text, eval_file) = read_vcf(&eval_path)?;
 
-    // The engine's own validation, as `Concordance` runs it: the master against the features.
+    // The engine's own validation. The walker's two VCFs are plain strings and not `FeatureInput`s,
+    // so `FeatureManager` finds no features and neither is compared with anything here.
     let truth_dictionary = vcf_dictionary(&truth_text);
     let eval_dictionary = vcf_dictionary(&eval_text);
     let master = master_dictionary(parser)?;
     let reference = reference_dictionary(parser)?;
     if !flag(parser, "disable-sequence-dictionary-validation") {
-        if let Some(master) = &master {
-            if let Some(reference) = &reference {
-                validate_against_master(master, "reference", &reference.sequences)?;
-            }
-            validate_against_master(master, "features", &truth_dictionary.sequences)?;
-        }
-        if let Some(reference) = &reference {
-            gatk_tools::sequence_dictionary::validate(
-                "reference",
-                &reference.sequences,
-                "features",
-                &truth_dictionary.sequences,
-                false,
-                false,
-            )
-            .map_err(|refusal| Thrown {
-                failure: Failure::User,
-                exception: refusal.java_class(),
-                message: Some(refusal.message()),
-            })?;
+        if let (Some(master), Some(reference)) = (&master, &reference) {
+            validate_against_master(master, "reference", &reference.sequences)?;
         }
     }
 
