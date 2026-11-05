@@ -1169,7 +1169,9 @@ here, IPNP-BIPN/picard-rs#107). The boxes below are what it said while it was op
       `spark-threads` compares every Spark tool's bytes at one thread and at four (#1405).
       CreateReadCountPanelOfNormals' Gramian folds in arrival order even at `local[1]`, so suite
       `create-read-count-panel-rank` holds its count and its values above the noise, not the bits
-      (`docs/a-rank-is-not-a-byte.md`)
+      (`docs/a-rank-is-not-a-byte.md`). Its solvers are F2J's own, bit for bit in that fold
+      order: `dgesdd` up to 128 samples in suite `f2j-dgesdd`, and ARPACK's `symmetricEigs`,
+      local and distributed, in suite `create-read-count-panel-arpack` (#1405)
 - [x] **ML inference** (CNNScoreVariants, NVScoreVariants, relatives): reproduce the exact
       kernels and accumulation order, validated layer by layer against dumped intermediate
       tensors, weights pinned by hash, quarantined and reported as bio-identical if a model
