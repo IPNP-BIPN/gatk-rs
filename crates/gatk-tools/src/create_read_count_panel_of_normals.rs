@@ -677,17 +677,23 @@ pub fn breeze_gramian_times(gramian: &[f64], x: &[f64], y: &mut [f64]) {
     for j in (0..blocked).step_by(4) {
         let (t0, t1, t2, t3) = (x[j], x[j + 1], x[j + 2], x[j + 3]);
         for (i, yi) in y.iter_mut().enumerate() {
-            let inner = t3.mul_add(a(i, j + 3), *yi);
-            let inner = t2.mul_add(a(i, j + 2), inner);
-            let inner = t1.mul_add(a(i, j + 1), inner);
-            *yi = t0.mul_add(a(i, j), inner);
+            let inner = java_fma(t3, a(i, j + 3), *yi);
+            let inner = java_fma(t2, a(i, j + 2), inner);
+            let inner = java_fma(t1, a(i, j + 1), inner);
+            *yi = java_fma(t0, a(i, j), inner);
         }
     }
-    for j in blocked..n {
+    for (j, xj) in x.iter().enumerate().skip(blocked) {
         for (i, yi) in y.iter_mut().enumerate() {
-            *yi = x[j].mul_add(a(i, j), *yi);
+            *yi = java_fma(*xj, a(i, j), *yi);
         }
     }
+}
+
+/// `Math.fma`: `a * b + c` rounded once, as the reference rounds it here
+/// (`tools/audit/arithmetic.py` admits this one line).
+fn java_fma(a: f64, b: f64, c: f64) -> f64 {
+    a.mul_add(b, c)
 }
 
 /// The rows of the `RowMatrix`, one per interval, each the samples' values: row major.

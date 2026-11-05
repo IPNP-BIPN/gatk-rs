@@ -99,7 +99,9 @@ fn eigen(n: usize, intervals: usize, families: usize, k: usize) -> Option<(usize
         })?
     } else {
         let rows = spark_rows(&matrix);
-        symmetric_eigs(n, k, &mut |x: &[f64], y: &mut [f64]| spark_gramian_times(&rows, x, y))?
+        symmetric_eigs(n, k, &mut |x: &[f64], y: &mut [f64]| {
+            spark_gramian_times(&rows, x, y)
+        })?
     };
     let threshold = 1e-9 * values[0].sqrt();
     let rank = values
@@ -153,14 +155,21 @@ fn arpack_gives_the_reference_eigenvalues_to_the_bit() {
         ("tool-families-70-of-30", 70, 30, 120, false),
         ("tool-independent-120", 120, 120, 150, true),
     ] {
-        let mut values = preprocess(&counts(samples, families, intervals, independent), &no_filters()).values;
+        let mut values = preprocess(
+            &counts(samples, families, intervals, independent),
+            &no_filters(),
+        )
+        .values;
         standardize(&mut values).expect("positive medians");
         let k = number_of_eigensamples(20, values.samples);
         let produced = truncated_svd(&values, k).singular_values;
         let row = find("rank", label).unwrap_or_else(|| panic!("{label} is in the dump"));
-        assert_eq!(row[4], format!("eigensamples={}", produced.len()), "{label}");
-        let expected: Vec<f64> = find("values", label)
-            .expect("a values row")[2]
+        assert_eq!(
+            row[4],
+            format!("eigensamples={}", produced.len()),
+            "{label}"
+        );
+        let expected: Vec<f64> = find("values", label).expect("a values row")[2]
             .split(',')
             .map(|value| value.parse().expect("a value"))
             .collect();

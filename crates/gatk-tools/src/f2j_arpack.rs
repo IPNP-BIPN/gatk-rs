@@ -65,7 +65,15 @@ pub fn symmetric_eigs(n: usize, k: usize, op: &mut Operator) -> Option<(Vec<f64>
     let mut bounds = vec![0.0; ncv];
     let mut q = vec![0.0; ncv * ncv];
     let mut workl = vec![0.0; 3 * ncv];
-    let nconv = arpack.saup2(k, ncv - k, mxiter, &mut ritz, &mut bounds, &mut q, &mut workl)?;
+    let nconv = arpack.saup2(
+        k,
+        ncv - k,
+        mxiter,
+        &mut ritz,
+        &mut bounds,
+        &mut q,
+        &mut workl,
+    )?;
     if nconv == 0 {
         return None;
     }
@@ -109,10 +117,6 @@ struct Lanczos<'a, 'b> {
 impl Lanczos<'_, '_> {
     fn sub(&self, j: usize) -> f64 {
         self.h[j - 1]
-    }
-
-    fn diag(&self, j: usize) -> f64 {
-        self.h[self.ncv + j - 1]
     }
 
     fn column(&self, j: usize) -> std::ops::Range<usize> {
@@ -290,12 +294,10 @@ impl Lanczos<'_, '_> {
             dsgets(true, nev, np, ritz, bounds, workl);
             workl[np..np + nev].copy_from_slice(&bounds[np..np + nev]);
             let nconv = dsconv(&ritz[np..np + nev], &workl[np..np + nev]);
-            for j in 0..np {
-                if bounds[j] == 0.0 {
-                    np -= 1;
-                    nev += 1;
-                }
-            }
+            // `nptemp`: the count is taken before the loop moves `np`.
+            let zero_bounds = bounds[..np].iter().filter(|bound| **bound == 0.0).count();
+            np -= zero_bounds;
+            nev += zero_bounds;
             if nconv >= nev0 || iter > mxiter || np == 0 {
                 dsortr(Which::SmallestMagnitude, kplusp, ritz, Some(bounds));
                 for j in 0..nev0 {
@@ -335,7 +337,12 @@ impl Lanczos<'_, '_> {
     fn seigt(&self, size: usize, eig: &mut [f64], bounds: &mut [f64], workl: &mut [f64]) -> usize {
         eig[..size].copy_from_slice(&self.h[self.ncv..self.ncv + size]);
         workl[..size - 1].copy_from_slice(&self.h[1..size]);
-        let ierr = steqr(&mut eig[..size], &mut workl[..size - 1], &mut bounds[..size], 1);
+        let ierr = steqr(
+            &mut eig[..size],
+            &mut workl[..size - 1],
+            &mut bounds[..size],
+            1,
+        );
         for bound in &mut bounds[..size] {
             *bound = self.rnorm * bound.abs();
         }
@@ -395,7 +402,11 @@ impl Lanczos<'_, '_> {
                         let g = s * h[s1(i + 1)];
                         h[s1(i + 1)] *= c;
                         let (c1, s1_, r) = dlartg(f, g);
-                        let (r, c1, s1_) = if r < 0.0 { (-r, -c1, -s1_) } else { (r, c1, s1_) };
+                        let (r, c1, s1_) = if r < 0.0 {
+                            (-r, -c1, -s1_)
+                        } else {
+                            (r, c1, s1_)
+                        };
                         c = c1;
                         s = s1_;
                         h[s1(i)] = r;
@@ -424,7 +435,9 @@ impl Lanczos<'_, '_> {
                     break;
                 }
             }
-            for i in itop..kplusp {
+            // The DO loop's bounds are fixed when it starts, while `itop` moves.
+            let first = itop;
+            for i in first..kplusp {
                 if h[s1(i + 1)] > 0.0 {
                     continue 'shifts;
                 }
@@ -771,7 +784,11 @@ fn dlaev2(a: f64, b: f64, c: f64) -> (f64, f64, f64, f64) {
     } else {
         (0.5 * rt, -0.5 * rt, 1)
     };
-    let (cs, sgn2) = if df >= 0.0 { (df + rt, 1) } else { (df - rt, -1) };
+    let (cs, sgn2) = if df >= 0.0 {
+        (df + rt, 1)
+    } else {
+        (df - rt, -1)
+    };
     let acs = cs.abs();
     let (mut cs1, mut sn1);
     if acs > ab {
@@ -839,7 +856,11 @@ fn steqr(d: &mut [f64], e: &mut [f64], z: &mut [f64], rows: usize) -> usize {
     let ssfmin = safmin.sqrt() / eps2;
     for c in 0..n {
         for r in 0..rows {
-            z[r + c * rows] = if arpack { (c == n - 1) as u8 as f64 } else { (r == c) as u8 as f64 };
+            z[r + c * rows] = if arpack {
+                (c == n - 1) as u8 as f64
+            } else {
+                (r == c) as u8 as f64
+            };
         }
     }
     // One-based views: d(i), e(i), work(i).
@@ -1192,22 +1213,70 @@ fn dlarnv_uniform(seed: &mut [i32; 4], x: &mut [f64]) {
 
 /// The first 64 rows of `dlaruv`'s multipliers, all `dlarnv` asks of it.
 const MULTIPLIERS: [[i32; 4]; 64] = [
-    [494, 322, 2508, 2549], [2637, 789, 3754, 1145], [255, 1440, 1766, 2253], [2008, 752, 3572, 305],
-    [1253, 2859, 2893, 3301], [3344, 123, 307, 1065], [4084, 1848, 1297, 3133], [1739, 643, 3966, 2913],
-    [3143, 2405, 758, 3285], [3468, 2638, 2598, 1241], [688, 2344, 3406, 1197], [1657, 46, 2922, 3729],
-    [1238, 3814, 1038, 2501], [3166, 913, 2934, 1673], [1292, 3649, 2091, 541], [3422, 339, 2451, 2753],
-    [1270, 3808, 1580, 949], [2016, 822, 1958, 2361], [154, 2832, 2055, 1165], [2862, 3078, 1507, 4081],
-    [697, 3633, 1078, 2725], [1706, 2970, 3273, 3305], [491, 637, 17, 3069], [931, 2249, 854, 3617],
-    [1444, 2081, 2916, 3733], [444, 4019, 3971, 409], [3577, 1478, 2889, 2157], [3944, 242, 3831, 1361],
-    [2184, 481, 2621, 3973], [1661, 2075, 1541, 1865], [3482, 4058, 893, 2525], [657, 622, 736, 1409],
-    [3023, 3376, 3992, 3445], [3618, 812, 787, 3577], [1267, 234, 2125, 77], [1828, 641, 2364, 3761],
-    [164, 4005, 2460, 2149], [3798, 1122, 257, 1449], [3087, 3135, 1574, 3005], [2400, 2640, 3912, 225],
-    [2870, 2302, 1216, 85], [3876, 40, 3248, 3673], [1905, 1832, 3401, 3117], [1593, 2247, 2124, 3089],
-    [1797, 2034, 2762, 1349], [1234, 2637, 149, 2057], [3460, 1287, 2245, 413], [328, 1691, 166, 65],
-    [2861, 496, 466, 1845], [1950, 1597, 4018, 697], [617, 2394, 1399, 3085], [2070, 2584, 190, 3441],
-    [3331, 1843, 2879, 1573], [769, 336, 153, 3689], [1558, 1472, 2320, 2941], [2412, 2407, 18, 929],
-    [2800, 433, 712, 533], [189, 2096, 2159, 2841], [287, 1761, 2318, 4077], [2045, 2810, 2091, 721],
-    [1227, 566, 3443, 2821], [2838, 442, 1510, 2249], [209, 41, 449, 2397], [2770, 1238, 1956, 2817],
+    [494, 322, 2508, 2549],
+    [2637, 789, 3754, 1145],
+    [255, 1440, 1766, 2253],
+    [2008, 752, 3572, 305],
+    [1253, 2859, 2893, 3301],
+    [3344, 123, 307, 1065],
+    [4084, 1848, 1297, 3133],
+    [1739, 643, 3966, 2913],
+    [3143, 2405, 758, 3285],
+    [3468, 2638, 2598, 1241],
+    [688, 2344, 3406, 1197],
+    [1657, 46, 2922, 3729],
+    [1238, 3814, 1038, 2501],
+    [3166, 913, 2934, 1673],
+    [1292, 3649, 2091, 541],
+    [3422, 339, 2451, 2753],
+    [1270, 3808, 1580, 949],
+    [2016, 822, 1958, 2361],
+    [154, 2832, 2055, 1165],
+    [2862, 3078, 1507, 4081],
+    [697, 3633, 1078, 2725],
+    [1706, 2970, 3273, 3305],
+    [491, 637, 17, 3069],
+    [931, 2249, 854, 3617],
+    [1444, 2081, 2916, 3733],
+    [444, 4019, 3971, 409],
+    [3577, 1478, 2889, 2157],
+    [3944, 242, 3831, 1361],
+    [2184, 481, 2621, 3973],
+    [1661, 2075, 1541, 1865],
+    [3482, 4058, 893, 2525],
+    [657, 622, 736, 1409],
+    [3023, 3376, 3992, 3445],
+    [3618, 812, 787, 3577],
+    [1267, 234, 2125, 77],
+    [1828, 641, 2364, 3761],
+    [164, 4005, 2460, 2149],
+    [3798, 1122, 257, 1449],
+    [3087, 3135, 1574, 3005],
+    [2400, 2640, 3912, 225],
+    [2870, 2302, 1216, 85],
+    [3876, 40, 3248, 3673],
+    [1905, 1832, 3401, 3117],
+    [1593, 2247, 2124, 3089],
+    [1797, 2034, 2762, 1349],
+    [1234, 2637, 149, 2057],
+    [3460, 1287, 2245, 413],
+    [328, 1691, 166, 65],
+    [2861, 496, 466, 1845],
+    [1950, 1597, 4018, 697],
+    [617, 2394, 1399, 3085],
+    [2070, 2584, 190, 3441],
+    [3331, 1843, 2879, 1573],
+    [769, 336, 153, 3689],
+    [1558, 1472, 2320, 2941],
+    [2412, 2407, 18, 929],
+    [2800, 433, 712, 533],
+    [189, 2096, 2159, 2841],
+    [287, 1761, 2318, 4077],
+    [2045, 2810, 2091, 721],
+    [1227, 566, 3443, 2821],
+    [2838, 442, 1510, 2249],
+    [209, 41, 449, 2397],
+    [2770, 1238, 1956, 2817],
 ];
 
 /// `dlaruv`: `n` uniform values on (0, 1), at most 64, and the seed moved on.
@@ -1322,7 +1391,15 @@ fn dgeqr2(m: usize, n: usize, a: &mut [f64], lda: usize, tau: &mut [f64]) {
 
 /// `dorm2r('Right', 'Notranspose', m, n, k, a, lda, tau, c, m, work, info)`: `c` times the `k`
 /// reflectors `dgeqr2` left in `a`.
-fn dorm2r_right(m: usize, n: usize, k: usize, a: &mut [f64], lda: usize, tau: &[f64], c: &mut [f64]) {
+fn dorm2r_right(
+    m: usize,
+    n: usize,
+    k: usize,
+    a: &mut [f64],
+    lda: usize,
+    tau: &[f64],
+    c: &mut [f64],
+) {
     let mut work = vec![0.0; m];
     for i in 1..=k {
         let ni = n - i + 1;
@@ -1383,4 +1460,3 @@ mod tests {
         assert_ne!(seed, [1, 3, 5, 7]);
     }
 }
-
