@@ -509,6 +509,10 @@ jobs:
             index: "73/73"
             slug: "vets-isolation-forest"
             suites: "vets-isolation-forest"
+          - group: golden-pending
+            index: "1/1"
+            slug: "gcnv-frozen"
+            suites: "gcnv-frozen"
     steps:
       - uses: actions/checkout@v7
 
@@ -519,6 +523,10 @@ jobs:
           fail-on-cache-miss: true
 
       - run: docker load -i /tmp/oracle-image.tar
+
+      - name: Pull broadinstitute/gatk:4.6.2.0 for gcnv-frozen
+        if: contains(matrix.suites, 'gcnv-frozen')
+        run: docker pull --platform linux/amd64 broadinstitute/gatk:4.6.2.0
 
       - name: Pull broadinstitute/gatk:4.6.2.0 for vets-isolation-forest
         if: contains(matrix.suites, 'vets-isolation-forest')

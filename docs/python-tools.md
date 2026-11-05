@@ -161,6 +161,8 @@ a scorer's name or for the time inside a Java-written HDF5 file.
   computes what it computes on an AVX2 CPU on any runner, and the dump's comment line shows it.
 * **Stability on real hardware**, for both tool families.
 * **That gCNV's bytes move across CPU families**, which is inferred from compile flags and not measured.
+  [gcnv-reproducible-oracle.md](gcnv-reproducible-oracle.md) measures the knobs moving the bytes on one
+  CPU, and the `gcnv-frozen` suite pins them all for CI to compare across runners.
 
 ## Reproducing
 
