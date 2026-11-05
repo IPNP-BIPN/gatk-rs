@@ -24,6 +24,15 @@
 //!
 //! The high bit marks a chain head and the low seven the offset to the next link, and `+=` on a
 //! `byte` truncates. Hence `i8` and wrapping arithmetic throughout.
+//!
+//! # A table the size of the reference
+//!
+//! `KmerCleaner` asks for a table from twice the reference over the partition count, narrowed to an
+//! `int`, whatever will go in it. The reference's cost is the arrays, four bytes of reference and a
+//! status byte a bucket, which its heap holds or does not. Here the entries live elsewhere and a
+//! bucket holds a number with 0 for empty, so the two arrays are zeroed pages that only what is
+//! touched ever occupies. At the top of the legal sizes `bucket + offset` passes `Integer.MAX_VALUE`
+//! and comes back negative, which [`Hopscotch::index`] does as Java does.
 
 /// `SetSizeUtils.legalSizes`.
 const LEGAL_SIZES: [i32; 47] = [
@@ -50,8 +59,11 @@ pub struct HopscotchFailed(pub String);
 pub struct Hopscotch<T: HopscotchEntry> {
     capacity: i32,
     size: i32,
-    buckets: Vec<Option<T>>,
+    /// One more than the entry's place in `entries`, and 0 for an empty bucket.
+    buckets: Vec<u32>,
     status: Vec<i8>,
+    entries: Vec<Option<T>>,
+    free: Vec<u32>,
 }
 
 impl<T: HopscotchEntry> Hopscotch<T> {
@@ -61,9 +73,46 @@ impl<T: HopscotchEntry> Hopscotch<T> {
         Hopscotch {
             capacity,
             size: 0,
-            buckets: vec![None; capacity as usize],
+            buckets: vec![0; capacity as usize],
             status: vec![0; capacity as usize],
+            entries: Vec::new(),
+            free: Vec::new(),
         }
+    }
+
+    fn entry(&self, bucket: i32) -> Option<&T> {
+        match self.buckets[bucket as usize] {
+            0 => None,
+            held => self.entries[held as usize - 1].as_ref(),
+        }
+    }
+
+    fn is_empty_bucket(&self, bucket: i32) -> bool {
+        self.buckets[bucket as usize] == 0
+    }
+
+    /// An entry, under the number a bucket will hold it by.
+    fn store(&mut self, entry: T) -> u32 {
+        match self.free.pop() {
+            Some(held) => {
+                self.entries[held as usize - 1] = Some(entry);
+                held
+            }
+            None => {
+                self.entries.push(Some(entry));
+                self.entries.len() as u32
+            }
+        }
+    }
+
+    fn release(&mut self, held: u32) {
+        self.entries[held as usize - 1] = None;
+        self.free.push(held);
+    }
+
+    /// Move what a bucket holds to another, which leaves it empty.
+    fn shift(&mut self, to: i32, from: i32) {
+        self.buckets[to as usize] = std::mem::take(&mut self.buckets[from as usize]);
     }
 
     pub fn len(&self) -> usize {
@@ -84,13 +133,18 @@ impl<T: HopscotchEntry> Hopscotch<T> {
             self.resize()?;
         }
         let bucket = self.hash_to_index(entry.key_hash());
-        match self.insert(&entry, bucket, true) {
+        let held = self.store(entry);
+        let added = match self.insert(held, bucket, true) {
             Ok(added) => Ok(added),
-            Err(_) => {
-                self.resize()?;
-                self.insert(&entry, bucket, true)
-            }
+            Err(_) => match self.resize() {
+                Ok(()) => self.insert(held, bucket, true),
+                Err(failed) => Err(failed),
+            },
+        };
+        if !matches!(added, Ok(true)) {
+            self.release(held);
         }
+        added
     }
 
     /// `find`: the chain the key hashes to, and no other.
@@ -100,8 +154,9 @@ impl<T: HopscotchEntry> Hopscotch<T> {
             return None;
         }
         loop {
-            if matches(self.buckets[bucket as usize].as_ref()?) {
-                return self.buckets[bucket as usize].as_mut();
+            if matches(self.entry(bucket)?) {
+                let held = self.buckets[bucket as usize] as usize;
+                return self.entries[held - 1].as_mut();
             }
             let offset = self.offset(bucket);
             if offset == 0 {
@@ -120,7 +175,7 @@ impl<T: HopscotchEntry> Hopscotch<T> {
             }
             let mut bucket = head;
             loop {
-                if let Some(entry) = &self.buckets[bucket as usize] {
+                if let Some(entry) = self.entry(bucket) {
                     order.push(entry);
                 }
                 let offset = self.offset(bucket);
@@ -146,9 +201,7 @@ impl<T: HopscotchEntry> Hopscotch<T> {
             return found;
         }
         loop {
-            let entry = self.buckets[bucket as usize]
-                .as_ref()
-                .expect("a chain holds no empty bucket");
+            let entry = self.entry(bucket).expect("a chain holds no empty bucket");
             if matches(entry) {
                 found.push(entry);
             }
@@ -178,11 +231,11 @@ impl<T: HopscotchEntry> Hopscotch<T> {
             }
             *previous = *current;
             *current = table.index(*current, offset);
-            if matches(table.buckets[*current as usize].as_ref().expect("a link")) {
+            if matches(table.entry(*current).expect("a link")) {
                 return;
             }
         };
-        if !matches(self.buckets[current as usize].as_ref().expect("a head")) {
+        if !matches(self.entry(current).expect("a head")) {
             advance(self, &mut current, &mut previous);
         }
         let mut removed = false;
@@ -190,12 +243,11 @@ impl<T: HopscotchEntry> Hopscotch<T> {
             let (remove_at, remove_previous) = (current, previous);
             advance(self, &mut current, &mut previous);
             self.remove_at_index(remove_at, remove_previous);
-            if self.buckets[remove_at as usize].is_some() {
+            if !self.is_empty_bucket(remove_at) {
                 current = remove_at;
                 previous = remove_previous;
             }
-            if current != NONE && !matches(self.buckets[current as usize].as_ref().expect("a link"))
-            {
+            if current != NONE && !matches(self.entry(current).expect("a link")) {
                 advance(self, &mut current, &mut previous);
             }
             removed = true;
@@ -231,9 +283,9 @@ impl<T: HopscotchEntry> Hopscotch<T> {
                 previous = current;
                 current = self.index(current, offset);
             }
-            if doomed(self.buckets[remove_at as usize].as_ref().expect("a link")) {
+            if doomed(self.entry(remove_at).expect("a link")) {
                 self.remove_at_index(remove_at, remove_previous);
-                if self.buckets[remove_at as usize].is_some() {
+                if !self.is_empty_bucket(remove_at) {
                     current = remove_at;
                     previous = remove_previous;
                 }
@@ -244,8 +296,9 @@ impl<T: HopscotchEntry> Hopscotch<T> {
     /// `removeAtIndex`.
     fn remove_at_index(&mut self, bucket: i32, predecessor: i32) {
         let offset = self.offset(bucket);
+        self.release(self.buckets[bucket as usize]);
         if offset == 0 {
-            self.buckets[bucket as usize] = None;
+            self.buckets[bucket as usize] = 0;
             self.status[bucket as usize] = 0;
             if predecessor != -1 {
                 let offset = self.offset(predecessor);
@@ -262,7 +315,7 @@ impl<T: HopscotchEntry> Hopscotch<T> {
                 previous = next;
                 next = self.index(next, offset_to_next);
             }
-            self.buckets[bucket as usize] = self.buckets[next as usize].take();
+            self.shift(bucket, next);
             let offset = self.offset(previous);
             self.add_status(previous, -offset);
         }
@@ -278,24 +331,27 @@ impl<T: HopscotchEntry> Hopscotch<T> {
         }
     }
 
-    fn insert(&mut self, entry: &T, bucket: i32, test: bool) -> Result<bool, HopscotchFailed> {
-        if self.buckets[bucket as usize].is_some() && !self.is_chain_head(bucket) {
+    /// `insert`, of an entry already stored under `held`.
+    fn insert(&mut self, held: u32, bucket: i32, test: bool) -> Result<bool, HopscotchFailed> {
+        if !self.is_empty_bucket(bucket) && !self.is_chain_head(bucket) {
             self.evict(bucket)?;
         }
-        if self.buckets[bucket as usize].is_none() {
-            self.buckets[bucket as usize] = Some(entry.clone());
+        if self.is_empty_bucket(bucket) {
+            self.buckets[bucket as usize] = held;
             self.status[bucket as usize] = i8::MIN;
             self.size += 1;
             return Ok(true);
         }
         let mut end_of_chain = bucket;
         loop {
-            if test
-                && self.buckets[end_of_chain as usize]
-                    .as_ref()
-                    .is_some_and(|held| held.collides(entry))
-            {
-                return Ok(false);
+            if test {
+                let entry = self.entries[held as usize - 1].as_ref().expect("stored");
+                if self
+                    .entry(end_of_chain)
+                    .is_some_and(|in_chain| in_chain.collides(entry))
+                {
+                    return Ok(false);
+                }
             }
             let offset = self.offset(end_of_chain);
             if offset == 0 {
@@ -304,7 +360,7 @@ impl<T: HopscotchEntry> Hopscotch<T> {
             end_of_chain = self.index(end_of_chain, offset);
         }
         let empty = self.insert_into_chain(bucket, end_of_chain)?;
-        self.buckets[empty as usize] = Some(entry.clone());
+        self.buckets[empty as usize] = held;
         self.size += 1;
         Ok(true)
     }
@@ -351,10 +407,7 @@ impl<T: HopscotchEntry> Hopscotch<T> {
     }
 
     fn evict(&mut self, to_evict: i32) -> Result<(), HopscotchFailed> {
-        let hash = self.buckets[to_evict as usize]
-            .as_ref()
-            .expect("a squatter")
-            .key_hash();
+        let hash = self.entry(to_evict).expect("a squatter").key_hash();
         let bucket = self.hash_to_index(hash);
         let offset_to_evictee = self.index_diff(bucket, to_evict);
         let mut empty = self.find_empty_bucket(bucket);
@@ -379,7 +432,7 @@ impl<T: HopscotchEntry> Hopscotch<T> {
                 previous = next;
                 next = self.index(next, offset_to_next);
             }
-            self.buckets[empty as usize] = self.buckets[next as usize].take();
+            self.shift(empty, next);
             self.status[next as usize] = 0;
             let offset = self.offset(previous);
             self.add_status(previous, -offset);
@@ -390,7 +443,7 @@ impl<T: HopscotchEntry> Hopscotch<T> {
     fn find_empty_bucket(&self, mut bucket: i32) -> i32 {
         loop {
             bucket = self.index(bucket, 1);
-            if self.buckets[bucket as usize].is_none() {
+            if self.is_empty_bucket(bucket) {
                 return bucket;
             }
         }
@@ -410,8 +463,9 @@ impl<T: HopscotchEntry> Hopscotch<T> {
         *status = (*status as i32).wrapping_add(delta) as i8;
     }
 
+    /// `getIndex`, whose sum is an `int`.
     fn index(&self, bucket: i32, offset: i32) -> i32 {
-        let result = bucket + offset;
+        let result = bucket.wrapping_add(offset);
         if result >= self.capacity {
             result - self.capacity
         } else if result < 0 {
@@ -476,7 +530,7 @@ impl<T: HopscotchEntry> Hopscotch<T> {
         if next_offset != 0 {
             self.status[empty as usize] = (next_offset - to_empty) as i8;
         }
-        self.buckets[empty as usize] = self.buckets[to_move as usize].take();
+        self.shift(empty, to_move);
         self.status[to_move as usize] = 0;
     }
 
@@ -484,16 +538,18 @@ impl<T: HopscotchEntry> Hopscotch<T> {
         let old_capacity = self.capacity;
         let old_size = self.size;
         let new_capacity = legal_size_above(old_capacity);
-        let old_buckets = std::mem::replace(&mut self.buckets, vec![None; new_capacity as usize]);
+        let old_buckets = std::mem::replace(&mut self.buckets, vec![0; new_capacity as usize]);
         let old_status = std::mem::replace(&mut self.status, vec![0; new_capacity as usize]);
         self.capacity = new_capacity;
         self.size = 0;
         // Not in bucket order: a stride of 127 around the old table.
         let mut index = 0;
         loop {
-            if let Some(entry) = &old_buckets[index as usize] {
+            let held = old_buckets[index as usize];
+            if held != 0 {
+                let entry = self.entries[held as usize - 1].as_ref().expect("stored");
                 let bucket = self.hash_to_index(entry.key_hash());
-                if self.insert(entry, bucket, false).is_err() {
+                if self.insert(held, bucket, false).is_err() {
                     self.capacity = old_capacity;
                     self.size = old_size;
                     self.buckets = old_buckets;

@@ -503,8 +503,8 @@ jobs:
             suites: "mutect2-dragstr spark-walkers htsget-reader interpreter-tools genomicsdb-import"
           - group: oracle-backed
             index: "72/72"
-            slug: "sv-evidence-nvscorevariants"
-            suites: "sv-evidence nvscorevariants"
+            slug: "sv-evidence-sv-partitions-nvscorevariants"
+            suites: "sv-evidence sv-partitions nvscorevariants"
           - group: golden-pending
             index: "1/1"
             slug: "create-read-count-panel-arpack"
@@ -832,6 +832,63 @@ jobs:
         timeout-minutes: 60
         run: python3 tools/coverage/thread_independence.py --port target/release/gatk --threads 4
 
+  oracle-with-r:
+    name: "Oracle with R: the plots around their images"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Room for the Broad's image
+        # 8.5 GB unpacked, beside a release build of the workspace. The Android SDK is not ours.
+        run: |
+          sudo rm -rf /usr/local/lib/android
+          df -h /
+
+      - name: nasm, R and the packages the rewritten scripts load
+        # The distribution's packages, so that the job does not depend on CRAN and does not spend
+        # its time compiling them. The scripts' own bootstrap would otherwise install them; what it
+        # does when it cannot is checked by the test below. The refresh may fail for the reason the
+        # `test` job gives, and the install is the gate.
+        run: |
+          sudo apt-get update -qq || echo "apt refresh incomplete; the install below is the gate"
+          sudo apt-get install -y -qq --no-install-recommends nasm r-base-core r-cran-optparse \
+            r-cran-data.table r-cran-ggplot2 r-cran-cowplot r-cran-dplyr
+          Rscript -e 'for (p in c("optparse", "data.table", "ggplot2", "cowplot", "dplyr")) cat(p, as.character(packageVersion(p)), "\n"); cat(R.version.string, capabilities("cairo"), "\n")'
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          # Pinned; must match rust-toolchain.toml.
+          toolchain: "1.97.1"
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: The reference with R there to run its scripts
+        # gatk-rs-oracle has no Rscript on purpose, so this suite names the Broad's published image
+        # of the release, pinned by digest in the manifest's `oracle_with_r`. A separate image means
+        # a separate pull, about 2.4 GB, which is why it is not in the `oracle` matrix.
+        timeout-minutes: 30
+        run: |
+          docker pull "$(python3 -c 'import json; print(json.load(open("tools/conformance/manifest.json"))["oracle_with_r"]["image"])')"
+          python3 tools/conformance/run_suite.py --suites r-plots
+
+      - name: The port against what the reference just did
+        # No PNG byte is compared: see tools/conformance/manifest.json. The dump is read directly,
+        # so that this holds from the first run; freezing the candidate below changes nothing here
+        # except that the `test` job's machines without R go on skipping.
+        timeout-minutes: 30
+        env:
+          GATK_RS_REQUIRE_R: "1"
+          GATK_RS_R_PLOTS_DUMP: ${{ github.workspace }}/tools/conformance/pending/r-plots.RPlotsDump.txt
+        run: cargo test --release -p gatk-cli --test r_plots_end_to_end --test interpreter_tools_end_to_end
+
+      - name: Publish what the container produced
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: candidate-goldens-r-plots
+          path: tools/conformance/pending/
+          if-no-files-found: ignore
+
   inventory:
     name: Inventory is internally consistent
     runs-on: ubuntu-latest
@@ -973,6 +1030,7 @@ jobs:
       - argument-coverage
       - nvscorevariants
       - spark-threads
+      - oracle-with-r
       - inventory
       - dashboard
       - coverage
