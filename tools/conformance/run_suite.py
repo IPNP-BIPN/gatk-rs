@@ -85,13 +85,24 @@ def build_fixtures(manifest, into):
     ).returncode
 
 
-def docker_run(manifest, harness, cls, props, stdout, fixtures=None, suite=None):
+def docker_run(manifest, harness, cls, props, stdout, fixtures=None, python_image=None, suite=None):
     oracle = manifest["oracle"]
     # A suite whose reference needs what the pinned image was built without, an interpreter, names
     # its own image and what to run in it. Its dump is written to stdout like any other.
     image = (suite or {}).get("image", oracle["image"])
     command = (suite or {}).get("command") or container_command(cls, props)
     mounts = ["-v", f"{REPO}/{harness}:/harness:ro"]
+    if python_image is not None:
+        # The pinned oracle has no Python on purpose. A tool whose other half is a Python script
+        # has that half compared in the image GATK itself publishes, which has the script's
+        # environment and which `docker run` pulls by digest here.
+        cmd = [
+            "docker", "run", "--rm", "--platform", oracle["platform"], *mounts, "-w", "/tmp",
+            python_image, "python3", f"/harness/{cls}.py",
+        ]
+        print("+ " + " ".join(cmd), flush=True)
+        with open(stdout, "w") as fh:
+            return subprocess.run(cmd, stdout=fh).returncode
     if fixtures is not None:
         mounts += ["-v", f"{fixtures}:/work/fixtures:ro"]
     cmd = [
@@ -136,7 +147,9 @@ def run_pending(manifest, suite, workdir):
     for case in suite["cases"]:
         dump = case["dump"]
         out = PENDING_DIR / f"{suite['id']}.{dump}.txt"
-        rc = docker_run(manifest, suite["harness"], dump, props, out, fixtures, suite)
+        rc = docker_run(
+            manifest, suite["harness"], dump, props, out, fixtures, suite.get("python_image"), suite
+        )
         rows = [l for l in open(out) if l.strip() and not l.startswith("#")]
         print(f"--- {suite['id']}/{dump}: {len(rows)} rows, nothing compared (no golden yet)")
         for line in rows:
@@ -182,7 +195,9 @@ def run_suite(manifest, suite, workdir):
     for case in suite["cases"]:
         dump = case["dump"]
         out = PENDING_DIR / f"{suite['id']}.{dump}.txt"
-        rc = docker_run(manifest, suite["harness"], dump, props, out, fixtures, suite)
+        rc = docker_run(
+            manifest, suite["harness"], dump, props, out, fixtures, suite.get("python_image"), suite
+        )
         lines = sum(1 for _ in open(out))
         print(f"regenerated {dump}: {lines} lines (docker exit {rc})")
         if rc != 0 or lines == 0:

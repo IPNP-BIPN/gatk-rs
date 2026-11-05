@@ -229,7 +229,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | MethylationTypeCaller | gatk-rs | oracle-backed | 74 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 6 | 0 | none |
 | ModelSegments | gatk-rs | oracle-backed | 21 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 6 | 0 | none |
 | Mutect2 | gatk-rs | oracle-backed | 617 suite | 76 suite | 38/38 (100.0%) | 2 | not measured | 10 | 2 | mask_identity_hashes, sort_segments_with |
-| NVScoreVariants | gatk-rs | oracle-backed | 21 | 0 | not measured | - | not measured | 4 | 0 | none |
+| NVScoreVariants | gatk-rs | oracle-backed | 1373 suite | 0 suite | not measured | - | not measured | 4 | 0 | none |
 | NonNFastaSize | picard-rs | oracle-backed | not vendored | not vendored | 7/7 (100.0%) | 2 | not measured | 0 | 0 | none |
 | NormalizeFasta | picard-rs | oracle-backed | not vendored | not vendored | 8/8 (100.0%) | 2 | not measured | 0 | 0 | none |
 | NuMTFilterTool | gatk-rs | oracle-backed | 35 suite | 0 suite | 15/15 (100.0%) | 2 | not measured | 2 | 7 | none |
@@ -280,7 +280,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | SamToFastq | picard-rs | oracle-backed | not vendored | not vendored | 19/19 (100.0%) | 2 | not measured | 0 | 0 | none |
 | SamToFastqWithTags | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | none |
 | ScatterIntervalsByNs | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
-| ScoreVariantAnnotations | gatk-rs | oracle-backed | 190 | 41 | not measured | - | not measured | 6 | 7 | none |
+| ScoreVariantAnnotations | gatk-rs | oracle-backed | 210 suite | 51 suite | not measured | - | not measured | 6 | 7 | none |
 | SelectVariants | gatk-rs | oracle-backed | 35437 suite | 0 suite | 50/50 (100.0%) | 2 | not measured | 2 | 10 | none |
 | SetNmAndUqTags | gatk-rs | oracle-backed | 10 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
 | SetNmMdAndUqTags | gatk-rs | oracle-backed | 10 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
@@ -302,7 +302,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | StructuralVariationDiscoveryPipelineSpark | gatk-rs | oracle-backed | 486 | 259 | not measured | - | not measured | 11 | 2 | none |
 | SvDiscoverFromLocalAssemblyContigAlignmentsSpark | gatk-rs | oracle-backed | 161 | 88 | not measured | - | not measured | 6 | 5 | none |
 | TagGermlineEvents | gatk-rs | oracle-backed | 15 suite | 0 suite | 17/17 (100.0%) | 2 | not measured | 6 | 8 | none |
-| TrainVariantAnnotationsModel | gatk-rs | oracle-backed | 111 | 0 | not measured | - | not measured | 5 | 0 | none |
+| TrainVariantAnnotationsModel | gatk-rs | oracle-backed | 131 suite | 10 suite | not measured | - | not measured | 5 | 0 | none |
 | TransferReadTags | gatk-rs | oracle-backed | 65 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 3 | 1 | none |
 | UmiAwareMarkDuplicatesWithMateCigar | picard-rs | oracle-backed | not vendored | not vendored | 26/26 (100.0%) | 2 | not measured | 0 | 0 | none |
 | UnmarkDuplicates | gatk-rs | oracle-backed | 49 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 4 | 0 | none |
@@ -1548,7 +1548,7 @@ mutect_tn.bam holds a tumour and a normal sample over mutect_ref.fasta, about tw
 
 ### NVScoreVariants
 
-Suites: `interpreter-tools`.
+Suites: `interpreter-tools`, `nvscorevariants`.
 
 Inputs: `nothing.bam`, `nothing.fasta`, `nothing.vcf`, `vr_calls.vcf`.
 

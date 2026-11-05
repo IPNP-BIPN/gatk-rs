@@ -152,6 +152,7 @@ pub mod mutect2;
 pub mod mutect_gathers;
 pub mod numpy_random;
 pub mod numt_filter;
+pub mod nv_score_variants;
 pub mod pathseq_filter;
 pub mod pathseq_kmers;
 pub mod pathseq_kryo;

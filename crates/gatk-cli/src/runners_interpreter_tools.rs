@@ -369,8 +369,50 @@ pub fn germline_cnv_caller(_parser: &Parser) -> Outcome {
 }
 
 /// `NVScoreVariants.onStartup`.
-pub fn nv_score_variants(_parser: &Parser) -> Outcome {
-    Err(import_stop("scorevariants"))
+pub fn nv_score_variants(parser: &Parser) -> Outcome {
+    use gatk_tools::nv_score_variants as nv;
+    // Without the two weights files there is nothing to score with, and the suite above pins what
+    // the reference does without its interpreter.
+    let Some(weights_directory) = nv::weights_directory() else {
+        return Err(import_stop("scorevariants"));
+    };
+    // `doWork`.
+    let read_tensor = scalar(parser, "tensor-type").as_deref() == Some("read_tensor");
+    let input = argument(parser, "input");
+    if !read_tensor && input.is_some() {
+        return Err(Thrown::user(
+            "Bad input: --input should only be specified when running with --tensor-type read_tensor",
+        ));
+    }
+    if read_tensor && input.is_none() {
+        return Err(Thrown::user(
+            "Bad input: Need to specify a BAM file via --input when running with --tensor-type \
+             read_tensor",
+        ));
+    }
+    let arguments = nv::Arguments {
+        output: require(parser, "output"),
+        variant: require(parser, "variant"),
+        reference: require(parser, "reference"),
+        input,
+        read_tensor,
+        batch_size: scalar(parser, "batch-size").map_or(64, |size| size.parse().unwrap_or(64)),
+        tmp_file: argument(parser, "tmp-file"),
+        accelerator: scalar(parser, "accelerator").unwrap_or_else(|| "auto".to_string()),
+        weights_directory,
+    };
+    match nv::run(&arguments) {
+        Ok(()) => Ok(Some("0".to_string())),
+        // `logger.error`, and the exit value is what `doWork` returns.
+        Err(nv::Stop::Python(why)) => {
+            eprintln!("Error running NVScoreVariants Python command: {why}");
+            Ok(Some("1".to_string()))
+        }
+        Err(nv::Stop::Limitation(why)) => Err(Thrown::non_user(
+            PORT_LIMITATION,
+            format!("{why}. This message is the port's own and not GATK's."),
+        )),
+    }
 }
 
 /// `new SimpleIntervalCollection(<shard>/interval_list.tsv)`, for its dictionary.
