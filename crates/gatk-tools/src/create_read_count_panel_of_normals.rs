@@ -639,13 +639,19 @@ pub fn truncated_svd(panel: &Matrix, k: usize) -> Result<Decomposition, String> 
     let n = panel.samples;
     let arpack = match solver_mode(n, k) {
         SolverMode::LocalLapack => {
-            let mut gramian = spark_gramian(panel);
-            if crate::f2j_gesdd::reachable(n, &gramian) {
-                if let Some((squares, u)) = crate::f2j_gesdd::dgesdd(n, &mut gramian) {
-                    return Ok(decomposition_from_gramian(panel, k, &squares, &u));
-                }
+            if !(2..=crate::f2j_gesdd::LARGEST).contains(&n) {
+                return Ok(truncated_svd_by_jacobi(panel, k, plain_gramian(panel)));
             }
-            return Ok(truncated_svd_by_jacobi(panel, k));
+            let mut gramian = spark_gramian(panel);
+            if !crate::f2j_gesdd::reachable(n, &gramian) {
+                // Out of LAPACK's range: Jacobi takes the Gramian already formed, not a second one.
+                let rows = gramian.chunks(n).map(<[f64]>::to_vec).collect();
+                return Ok(truncated_svd_by_jacobi(panel, k, rows));
+            }
+            if let Some((squares, u)) = crate::f2j_gesdd::dgesdd(n, &mut gramian) {
+                return Ok(decomposition_from_gramian(panel, k, &squares, &u));
+            }
+            return Ok(truncated_svd_by_jacobi(panel, k, plain_gramian(panel)));
         }
         SolverMode::LocalArpack => {
             let gramian = spark_gramian(panel);
@@ -793,7 +799,8 @@ fn decomposition_from_gramian(
 
 /// The stand-in: the Gramian's eigendecomposition by cyclic Jacobi, which is deterministic and is
 /// not what the reference runs.
-fn truncated_svd_by_jacobi(panel: &Matrix, k: usize) -> Decomposition {
+/// The samples' dot products, row by row, for the Jacobi solver.
+fn plain_gramian(panel: &Matrix) -> Vec<Vec<f64>> {
     let n = panel.samples;
     let mut gramian = vec![vec![0.0; n]; n];
     for (i, row) in gramian.iter_mut().enumerate() {
@@ -806,6 +813,11 @@ fn truncated_svd_by_jacobi(panel: &Matrix, k: usize) -> Decomposition {
                 .sum();
         }
     }
+    gramian
+}
+
+fn truncated_svd_by_jacobi(panel: &Matrix, k: usize, gramian: Vec<Vec<f64>>) -> Decomposition {
+    let n = panel.samples;
     let (eigenvalues, eigenvectors) = symmetric_eigen(gramian);
     let mut order: Vec<usize> = (0..n).collect();
     order.sort_by(|a, b| eigenvalues[*b].total_cmp(&eigenvalues[*a]));
