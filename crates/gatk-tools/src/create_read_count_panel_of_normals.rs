@@ -634,17 +634,17 @@ pub fn spark_gramian(panel: &Matrix) -> Vec<f64> {
 ///
 /// Past that, cyclic Jacobi stands in. A panel with more independent samples than it is asked for
 /// has no value near the threshold and gets the same count; a rank-deficient one is not claimed.
-pub fn truncated_svd(panel: &Matrix, k: usize) -> Decomposition {
+pub fn truncated_svd(panel: &Matrix, k: usize) -> Result<Decomposition, String> {
     let n = panel.samples;
     let arpack = match solver_mode(n, k) {
         SolverMode::LocalLapack => {
             let mut gramian = spark_gramian(panel);
             if crate::f2j_gesdd::reachable(n, &gramian) {
                 if let Some((squares, u)) = crate::f2j_gesdd::dgesdd(n, &mut gramian) {
-                    return decomposition_from_gramian(panel, k, &squares, &u);
+                    return Ok(decomposition_from_gramian(panel, k, &squares, &u));
                 }
             }
-            None
+            return Ok(truncated_svd_by_jacobi(panel, k));
         }
         SolverMode::LocalArpack => {
             let gramian = spark_gramian(panel);
@@ -659,12 +659,8 @@ pub fn truncated_svd(panel: &Matrix, k: usize) -> Decomposition {
             })
         }
     };
-    // shortcut: where Spark throws (ARPACK's info, nothing converged) Jacobi answers instead;
-    // refuse as the reference does if a panel ever reaches it.
-    match arpack {
-        Some((squares, u)) => decomposition_from_gramian(panel, k, &squares, &u),
-        None => truncated_svd_by_jacobi(panel, k),
-    }
+    let (squares, u) = arpack?;
+    Ok(decomposition_from_gramian(panel, k, &squares, &u))
 }
 
 /// `G * v` for LocalARPACK: Breeze's dense product is `Java11BLAS.dgemvN`, four columns at a time,

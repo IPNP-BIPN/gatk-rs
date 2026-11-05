@@ -89,8 +89,13 @@ fn hex(value: f64) -> String {
     format!("{:x}", value.to_bits())
 }
 
-/// What the port answers for a case: the dump's row, or `None` where Spark throws.
-fn eigen(n: usize, intervals: usize, families: usize, k: usize) -> Option<(usize, String, String)> {
+/// What the port answers for a case: the dump's row, or the message Spark throws.
+fn eigen(
+    n: usize,
+    intervals: usize,
+    families: usize,
+    k: usize,
+) -> Result<(usize, String, String), String> {
     let matrix = panel(n, intervals, families);
     let (values, vectors) = if n < 100 {
         let gramian = spark_gramian(&matrix);
@@ -117,7 +122,7 @@ fn eigen(n: usize, intervals: usize, families: usize, k: usize) -> Option<(usize
             format!("{}:{}", hex(column[0]), hex(sum))
         })
         .collect();
-    Some((rank, bits.join(","), prints.join(",")))
+    Ok((rank, bits.join(","), prints.join(",")))
 }
 
 /// Every row of the dump, when the first x86-64 CI run has published it.
@@ -140,12 +145,18 @@ fn arpack_gives_the_reference_eigenvalues_to_the_bit() {
     for (label, n, intervals, families) in CASES {
         let port = eigen(n, intervals, families, 20);
         if let Some(error) = find("error", label) {
-            assert!(port.is_none(), "{label}: the reference threw {}", error[2]);
+            let message = port.expect_err(&format!("{label}: the reference threw {}", error[2]));
+            assert!(
+                error[2].ends_with(&message),
+                "{label}: {} against {message}",
+                error[2]
+            );
             continue;
         }
         let row = find("eigen", label).unwrap_or_else(|| panic!("{label} is in the dump"));
         let vectors = find("vectors", label).expect("a vectors row");
-        let (rank, bits, prints) = port.unwrap_or_else(|| panic!("{label}: the port threw"));
+        let (rank, bits, prints) =
+            port.unwrap_or_else(|message| panic!("{label}: the port threw {message}"));
         assert_eq!(format!("rank={rank}"), row[5], "{label}");
         assert_eq!(bits, row[6], "{label}: eigenvalues");
         assert_eq!(prints, vectors[2], "{label}: eigenvectors");
@@ -162,7 +173,9 @@ fn arpack_gives_the_reference_eigenvalues_to_the_bit() {
         .values;
         standardize(&mut values).expect("positive medians");
         let k = number_of_eigensamples(20, values.samples);
-        let produced = truncated_svd(&values, k).singular_values;
+        let produced = truncated_svd(&values, k)
+            .expect("a decomposition")
+            .singular_values;
         let row = find("rank", label).unwrap_or_else(|| panic!("{label} is in the dump"));
         assert_eq!(
             row[4],

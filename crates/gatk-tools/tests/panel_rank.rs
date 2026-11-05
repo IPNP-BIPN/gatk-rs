@@ -160,7 +160,13 @@ fn answer(run: &Run) -> (usize, usize, Vec<f64>) {
     standardize(&mut values).expect("positive medians");
     let surviving = values.samples;
     let k = number_of_eigensamples(run.arguments.number_of_eigensamples, surviving);
-    (k, surviving, truncated_svd(&values, k).singular_values)
+    (
+        k,
+        surviving,
+        truncated_svd(&values, k)
+            .expect("a decomposition")
+            .singular_values,
+    )
 }
 
 fn exact(n: usize, k: usize) -> bool {

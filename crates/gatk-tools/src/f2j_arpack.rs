@@ -44,9 +44,13 @@ const TOLERANCE: f64 = 1e-10;
 pub type Operator<'a> = dyn FnMut(&[f64], &mut [f64]) + 'a;
 
 /// `symmetricEigs(mul, n, k, 1e-10, max(300, 3k))`: the eigenvalues in Spark's descending order
-/// and their vectors, column major, `n` rows each. `None` where Spark throws: ARPACK's `info` is not
-/// zero after `dsaupd`, or nothing converged, which leaves `computeSVD` no first value to read.
-pub fn symmetric_eigs(n: usize, k: usize, op: &mut Operator) -> Option<(Vec<f64>, Vec<f64>)> {
+/// and their vectors, column major, `n` rows each. Where ARPACK's `info` is not zero after `dsaupd`,
+/// the `IllegalStateException` message Spark throws.
+pub fn symmetric_eigs(
+    n: usize,
+    k: usize,
+    op: &mut Operator,
+) -> Result<(Vec<f64>, Vec<f64>), String> {
     assert!(k > 0 && k < n, "symmetricEigs requires 0 < k < n");
     let ncv = (2 * k).min(n);
     let mxiter = 300.max(3 * k);
@@ -73,10 +77,16 @@ pub fn symmetric_eigs(n: usize, k: usize, op: &mut Operator) -> Option<(Vec<f64>
         &mut bounds,
         &mut q,
         &mut workl,
-    )?;
-    if nconv == 0 {
-        return None;
-    }
+    )
+    .map_err(|info| {
+        // The three texts in `EigenValueDecomposition$.class`.
+        let why = match info {
+            1 => "Maximum number of iterations taken. (Refer ARPACK user guide for details)",
+            3 => "No shifts could be applied. Try to increase NCV. (Refer ARPACK user guide for details)",
+            _ => "Please refer ARPACK user guide for error message.",
+        };
+        format!("ARPACK returns non-zero info = {info} {why}")
+    })?;
     let (d, z) = arpack.seupd(k, nconv, &workl);
     // `sortBy(-_._1)`: stable, under `java.lang.Double.compare`, which has one NaN.
     let key = |value: f64| {
@@ -94,7 +104,7 @@ pub fn symmetric_eigs(n: usize, k: usize, op: &mut Operator) -> Option<(Vec<f64>
         .iter()
         .flat_map(|i| z[i * n..(i + 1) * n].iter().copied())
         .collect();
-    Some((values, vectors))
+    Ok((values, vectors))
 }
 
 /// `dsaupd`'s state between calls, the parts `bmat = "I"` reads.
@@ -266,26 +276,28 @@ impl Lanczos<'_, '_> {
         bounds: &mut [f64],
         q: &mut [f64],
         workl: &mut [f64],
-    ) -> Option<usize> {
+    ) -> Result<usize, i32> {
         let n = self.n;
         let kplusp = nev0 + np0;
         let (rnorm, _) = self.getv0(1);
         self.rnorm = rnorm;
         if rnorm == 0.0 {
-            return None;
+            // `dgetv0`'s zero start: `dsaup2` sets `info` to -9.
+            return Err(-9);
         }
         if self.saitr(0, nev0) > 0 {
-            return None;
+            // No Lanczos factorization: -9999.
+            return Err(-9999);
         }
         let (mut nev, mut np) = (nev0, np0);
         let mut iter = 0;
         loop {
             iter += 1;
             if self.saitr(nev, np) > 0 {
-                return None;
+                return Err(-9999);
             }
             if self.seigt(kplusp, ritz, bounds, workl) != 0 {
-                return None;
+                return Err(-8);
             }
             workl[kplusp..2 * kplusp].copy_from_slice(&ritz[..kplusp]);
             workl[2 * kplusp..3 * kplusp].copy_from_slice(&bounds[..kplusp]);
@@ -309,11 +321,14 @@ impl Lanczos<'_, '_> {
                 }
                 dsortr(Which::LargestMagnitude, nconv, ritz, Some(bounds));
                 self.h[0] = self.rnorm;
-                if (iter > mxiter && nconv < nev) || (np == 0 && nconv < nev0) {
-                    // `info` 1 or 3, which Spark throws on.
-                    return None;
+                // `dsaup2` sets 1, then overwrites it with 2, which `dsaupd` reports as 3.
+                if np == 0 && nconv < nev0 {
+                    return Err(3);
                 }
-                return Some(nconv);
+                if iter > mxiter && nconv < nev {
+                    return Err(1);
+                }
+                return Ok(nconv);
             } else if nconv < nev {
                 let nevbef = nev;
                 nev += nconv.min(np / 2);
