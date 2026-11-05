@@ -435,80 +435,76 @@ jobs:
             suites: "variant-recalibrator haplotype-based-variant-recaller flow-feature-mapper flow-pairhmm-align-reads-to-haplotypes calibrate-dragstr-model"
           - group: oracle-backed
             index: "55/72"
-            slug: "analyze-saturation-mutagenesis-create-read-count-panel-of-normals-create-read-count-panel-rank-f2j-dgesdd-ground-truth-reads-builder"
-            suites: "analyze-saturation-mutagenesis create-read-count-panel-of-normals create-read-count-panel-rank f2j-dgesdd ground-truth-reads-builder"
+            slug: "analyze-saturation-mutagenesis-create-read-count-panel-of-normals-create-read-count-panel-rank-create-read-count-panel-arpack-f2j-dgesdd"
+            suites: "analyze-saturation-mutagenesis create-read-count-panel-of-normals create-read-count-panel-rank create-read-count-panel-arpack f2j-dgesdd"
           - group: oracle-backed
             index: "56/72"
-            slug: "ground-truth-scorer-gnarly-genotyper-model-segments-local-assembler-funcotator"
-            suites: "ground-truth-scorer gnarly-genotyper model-segments local-assembler funcotator"
+            slug: "ground-truth-reads-builder-ground-truth-scorer-gnarly-genotyper-model-segments-local-assembler"
+            suites: "ground-truth-reads-builder ground-truth-scorer gnarly-genotyper model-segments local-assembler"
           - group: oracle-backed
             index: "57/72"
-            slug: "main-dispatch-main-catalogue-gatk-config-main-usage-sequence-dictionary-validation"
-            suites: "main-dispatch main-catalogue gatk-config main-usage sequence-dictionary-validation"
+            slug: "funcotator-main-dispatch-main-catalogue-gatk-config-main-usage"
+            suites: "funcotator main-dispatch main-catalogue gatk-config main-usage"
           - group: oracle-backed
             index: "58/72"
-            slug: "interval-arguments-filter-resolution-expanded-command-line-main-non-user-main-entry"
-            suites: "interval-arguments filter-resolution expanded-command-line main-non-user main-entry"
+            slug: "sequence-dictionary-validation-interval-arguments-filter-resolution-expanded-command-line-main-non-user"
+            suites: "sequence-dictionary-validation interval-arguments filter-resolution expanded-command-line main-non-user"
           - group: oracle-backed
             index: "59/72"
-            slug: "splitting-index-allele-frequency-qc-calculate-contamination-tool-argument-declarations-usage-text"
-            suites: "splitting-index allele-frequency-qc calculate-contamination tool-argument-declarations usage-text"
+            slug: "main-entry-splitting-index-allele-frequency-qc-calculate-contamination-tool-argument-declarations"
+            suites: "main-entry splitting-index allele-frequency-qc calculate-contamination tool-argument-declarations"
           - group: oracle-backed
             index: "60/72"
-            slug: "bwa-index-image-tool-argument-enums-tool-argument-value-classes-plugin-argument-ownership-read-filter-catalogue"
-            suites: "bwa-index-image tool-argument-enums tool-argument-value-classes plugin-argument-ownership read-filter-catalogue"
+            slug: "usage-text-bwa-index-image-tool-argument-enums-tool-argument-value-classes-plugin-argument-ownership"
+            suites: "usage-text bwa-index-image tool-argument-enums tool-argument-value-classes plugin-argument-ownership"
           - group: oracle-backed
             index: "61/72"
-            slug: "mutex-target-names-count-reads-plumbing-read-walker-refusals-smith-waterman-read-threading-graph"
-            suites: "mutex-target-names count-reads-plumbing read-walker-refusals smith-waterman read-threading-graph"
+            slug: "read-filter-catalogue-mutex-target-names-count-reads-plumbing-read-walker-refusals-smith-waterman"
+            suites: "read-filter-catalogue mutex-target-names count-reads-plumbing read-walker-refusals smith-waterman"
           - group: oracle-backed
             index: "62/72"
-            slug: "chain-pruner-adaptive-chain-pruner-seq-graph-kbest-haplotype-dangling-ends"
-            suites: "chain-pruner adaptive-chain-pruner seq-graph kbest-haplotype dangling-ends"
+            slug: "read-threading-graph-chain-pruner-adaptive-chain-pruner-seq-graph-kbest-haplotype"
+            suites: "read-threading-graph chain-pruner adaptive-chain-pruner seq-graph kbest-haplotype"
           - group: oracle-backed
             index: "63/72"
-            slug: "pair-hmm-likelihood-engine-read-threading-assembler-event-map-assembly-region-trimmer-finalize-region"
-            suites: "pair-hmm-likelihood-engine read-threading-assembler event-map assembly-region-trimmer finalize-region"
+            slug: "dangling-ends-pair-hmm-likelihood-engine-read-threading-assembler-event-map-assembly-region-trimmer"
+            suites: "dangling-ends pair-hmm-likelihood-engine read-threading-assembler event-map assembly-region-trimmer"
           - group: oracle-backed
             index: "64/72"
-            slug: "assembly-complexity-allele-mapping-dragstr-likelihoods-hc-is-active-hc-genotyping"
-            suites: "assembly-complexity allele-mapping dragstr-likelihoods hc-is-active hc-genotyping"
+            slug: "finalize-region-assembly-complexity-allele-mapping-dragstr-likelihoods-hc-is-active"
+            suites: "finalize-region assembly-complexity allele-mapping dragstr-likelihoods hc-is-active"
           - group: oracle-backed
             index: "65/72"
-            slug: "dragen-genotypes-hc-annotated-calls-hc-phasing-hc-region-assembly-hc-call-region"
-            suites: "dragen-genotypes hc-annotated-calls hc-phasing hc-region-assembly hc-call-region"
+            slug: "hc-genotyping-dragen-genotypes-hc-annotated-calls-hc-phasing-hc-region-assembly"
+            suites: "hc-genotyping dragen-genotypes hc-annotated-calls hc-phasing hc-region-assembly"
           - group: oracle-backed
             index: "66/72"
-            slug: "hc-end-to-end-hc-gvcf-end-to-end-hc-dragen-end-to-end-hc-disable-optimizations-callers-all-annotations"
-            suites: "hc-end-to-end hc-gvcf-end-to-end hc-dragen-end-to-end hc-disable-optimizations callers-all-annotations"
+            slug: "hc-call-region-hc-end-to-end-hc-gvcf-end-to-end-hc-dragen-end-to-end-hc-disable-optimizations"
+            suites: "hc-call-region hc-end-to-end hc-gvcf-end-to-end hc-dragen-end-to-end hc-disable-optimizations"
           - group: oracle-backed
             index: "67/72"
-            slug: "mutect2-gvcf-mutect2-mitochondria-hc-pedigree-hc-linked-graph-hc-flow"
-            suites: "mutect2-gvcf mutect2-mitochondria hc-pedigree hc-linked-graph hc-flow"
+            slug: "callers-all-annotations-mutect2-gvcf-mutect2-mitochondria-hc-pedigree-hc-linked-graph"
+            suites: "callers-all-annotations mutect2-gvcf mutect2-mitochondria hc-pedigree hc-linked-graph"
           - group: oracle-backed
             index: "68/72"
-            slug: "hc-allele-filtering-mutect2-end-to-end-ramps-end-to-end-hc-pileup-hc-pdhmm"
-            suites: "hc-allele-filtering mutect2-end-to-end ramps-end-to-end hc-pileup hc-pdhmm"
+            slug: "hc-flow-hc-allele-filtering-mutect2-end-to-end-ramps-end-to-end-hc-pileup"
+            suites: "hc-flow hc-allele-filtering mutect2-end-to-end ramps-end-to-end hc-pileup"
           - group: oracle-backed
             index: "69/72"
-            slug: "hc-alleles-hc-bamout-hc-debug-outputs-hc-error-correction-hc-resources"
-            suites: "hc-alleles hc-bamout hc-debug-outputs hc-error-correction hc-resources"
+            slug: "hc-pdhmm-hc-alleles-hc-bamout-hc-debug-outputs-hc-error-correction"
+            suites: "hc-pdhmm hc-alleles hc-bamout hc-debug-outputs hc-error-correction"
           - group: oracle-backed
             index: "70/72"
-            slug: "hc-ploidy-hc-contamination-mutect2-resources-mutect2-f1r2-mutect2-permutect"
-            suites: "hc-ploidy hc-contamination mutect2-resources mutect2-f1r2 mutect2-permutect"
+            slug: "hc-resources-hc-ploidy-hc-contamination-mutect2-resources-mutect2-f1r2"
+            suites: "hc-resources hc-ploidy hc-contamination mutect2-resources mutect2-f1r2"
           - group: oracle-backed
             index: "71/72"
-            slug: "hc-allele-graphs-mutect2-dragstr-spark-walkers-htsget-reader-interpreter-tools"
-            suites: "hc-allele-graphs mutect2-dragstr spark-walkers htsget-reader interpreter-tools"
+            slug: "mutect2-permutect-hc-allele-graphs-mutect2-dragstr-spark-walkers-htsget-reader"
+            suites: "mutect2-permutect hc-allele-graphs mutect2-dragstr spark-walkers htsget-reader"
           - group: oracle-backed
             index: "72/72"
-            slug: "genomicsdb-import-sv-evidence-nvscorevariants"
-            suites: "genomicsdb-import sv-evidence nvscorevariants"
-          - group: golden-pending
-            index: "1/1"
-            slug: "create-read-count-panel-arpack"
-            suites: "create-read-count-panel-arpack"
+            slug: "interpreter-tools-genomicsdb-import-sv-evidence-nvscorevariants"
+            suites: "interpreter-tools genomicsdb-import sv-evidence nvscorevariants"
     steps:
       - uses: actions/checkout@v7
 

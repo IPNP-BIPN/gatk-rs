@@ -6301,7 +6301,7 @@
     },
     {
       "id": "create-read-count-panel-arpack",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "the eigenvalues Spark's ARPACK gives a panel's Gramian, to the bit, LocalARPACK and DistARPACK at local[1]",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -6325,10 +6325,11 @@
       "cases": [
         {
           "dump": "PanelArpackDump",
-          "golden": null,
-          "why": "Eleven panels from 63 to 150 samples, full rank and of fewer families than samples, two with fewer intervals than slices, and the tool on 70 and 120 samples. Pending the first CI run on x86-64."
+          "golden": "crates/gatk-tools/tests/data/panel_arpack.txt.gz",
+          "why": "Eleven panels from 63 to 150 samples, full rank and of fewer families than samples, two with fewer intervals than slices, and the tool on 70 and 120 samples. Frozen from CI run 42068896876 (candidate-goldens-create-read-count-panel-arpack) on real x86-64."
         }
-      ]
+      ],
+      "expect_rows": 28
     },
     {
       "id": "f2j-dgesdd",
