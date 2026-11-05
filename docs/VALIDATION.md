@@ -280,7 +280,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | SamToFastq | picard-rs | oracle-backed | not vendored | not vendored | 19/19 (100.0%) | 2 | not measured | 0 | 0 | none |
 | SamToFastqWithTags | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | none |
 | ScatterIntervalsByNs | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
-| ScoreVariantAnnotations | gatk-rs | oracle-backed | 210 suite | 51 suite | not measured | - | not measured | 6 | 7 | none |
+| ScoreVariantAnnotations | gatk-rs | oracle-backed | 210 suite | 51 suite | not measured | - | not measured | 6 | 7 | mask_hdf5_modification_times |
 | SelectVariants | gatk-rs | oracle-backed | 35437 suite | 0 suite | 50/50 (100.0%) | 2 | not measured | 2 | 10 | none |
 | SetNmAndUqTags | gatk-rs | oracle-backed | 10 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
 | SetNmMdAndUqTags | gatk-rs | oracle-backed | 10 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
@@ -302,7 +302,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | StructuralVariationDiscoveryPipelineSpark | gatk-rs | oracle-backed | 486 | 259 | not measured | - | not measured | 11 | 2 | none |
 | SvDiscoverFromLocalAssemblyContigAlignmentsSpark | gatk-rs | oracle-backed | 161 | 88 | not measured | - | not measured | 6 | 5 | none |
 | TagGermlineEvents | gatk-rs | oracle-backed | 15 suite | 0 suite | 17/17 (100.0%) | 2 | not measured | 6 | 8 | none |
-| TrainVariantAnnotationsModel | gatk-rs | oracle-backed | 131 suite | 10 suite | not measured | - | not measured | 5 | 0 | none |
+| TrainVariantAnnotationsModel | gatk-rs | oracle-backed | 131 suite | 10 suite | not measured | - | not measured | 5 | 0 | mask_hdf5_modification_times |
 | TransferReadTags | gatk-rs | oracle-backed | 65 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 3 | 1 | none |
 | UmiAwareMarkDuplicatesWithMateCigar | picard-rs | oracle-backed | not vendored | not vendored | 26/26 (100.0%) | 2 | not measured | 0 | 0 | none |
 | UnmarkDuplicates | gatk-rs | oracle-backed | 49 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 4 | 0 | none |
