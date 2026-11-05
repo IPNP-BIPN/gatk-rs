@@ -6288,6 +6288,83 @@
       ]
     },
     {
+      "id": "create-read-count-panel-rank",
+      "status": "oracle-backed",
+      "title": "the eigensamples a panel writes, at local[1], with the singular values above the noise",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CreateReadCountPanelOfNormals"
+      ],
+      "why": "numEigensamples is the length of what Spark's computeSVD returns, which is lower than min(requested, surviving) when trailing values fall under rCond. On a rank-deficient panel those values are rounding noise, so they depend on the order the driver sums the Gramian in: on one fixture twelve runs at local[4] gave eleven sets of bits and ranks of 6 and 7. At local[1] the count did not move in 44 fresh runs, while the noise did in 2 of them (docs/spark-parallel.md). So this suite runs at local[1] only and holds the count and the values above the noise, not their bits. The sibling suite keeps the cap and leaves the count out, and is unchanged.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "PanelRankDump",
+          "golden": "crates/gatk-tools/tests/data/panel_rank.txt.gz",
+          "why": "Frozen from the candidate artefact of run 41548433758, at local[1]."
+        }
+      ]
+    },
+    {
+      "id": "create-read-count-panel-arpack",
+      "status": "oracle-backed",
+      "title": "the eigenvalues Spark's ARPACK gives a panel's Gramian, to the bit, LocalARPACK and DistARPACK at local[1]",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CreateReadCountPanelOfNormals"
+      ],
+      "java_props": [
+        "-Duser.language=en",
+        "-Duser.country=US",
+        "-Dsamjdk.use_libdeflate=false",
+        "--add-opens=java.base/java.lang=ALL-UNNAMED",
+        "--add-opens=java.base/java.lang.invoke=ALL-UNNAMED",
+        "--add-opens=java.base/java.nio=ALL-UNNAMED",
+        "--add-opens=java.base/java.util=ALL-UNNAMED",
+        "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+        "--add-exports=java.base/sun.nio.ch=ALL-UNNAMED"
+      ],
+      "why": "From 63 samples a default request of 20 eigensamples is ARPACK's, not LAPACK's: EigenValueDecomposition.symmetricEigs drives F2J's dsaupd and dseupd over the Gramian times a vector, on the driver under a hundred samples and through multiplyGramianMatrixBy's treeAggregate from a hundred. The rank computeSVD keeps is decided on values under 1e-9 of the first, so only the same bits decide it the same way. The dump calls Spark's own code on built panels and writes every eigenvalue's raw bits, a fingerprint of the vectors and the rank, then runs the tool on three panels. The bits are the usual local[1] order's: a task result reaching the driver late moves them (docs/spark-parallel.md).",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "PanelArpackDump",
+          "golden": "crates/gatk-tools/tests/data/panel_arpack.txt.gz",
+          "why": "Eleven panels from 63 to 150 samples, full rank and of fewer families than samples, two with fewer intervals than slices, and the tool on 70 and 120 samples. Frozen from CI run 42068896876 (candidate-goldens-create-read-count-panel-arpack) on real x86-64."
+        }
+      ],
+      "expect_rows": 28
+    },
+    {
+      "id": "f2j-dgesdd",
+      "status": "oracle-backed",
+      "title": "F2J's dgesdd('A') on Gramians of 2 to 128 samples, bit for bit, as Breeze calls it for Spark's LocalLAPACK computeSVD",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CreateReadCountPanelOfNormals"
+      ],
+      "why": "The panel's eigensample count is the number of singular values Spark keeps over rCond 1e-9, and on a rank-deficient panel those values are rounding noise, so only the reference's own LAPACK in its own order reaches the same count. Past 25 samples dgesdd's bidiagonal SVD is dbdsdc's divide and conquer and past 32 the left vectors go through the blocked dormqr; this holds the values' and the vectors' bits from 2 to 128 samples, rank-deficient matrices and an exact zero sample included.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 300,
+      "expect_contains": [
+        "svd\tflat\t26\tinfo=0\trank=26",
+        "svd\tfamilies\t99\t"
+      ],
+      "cases": [
+        {
+          "dump": "DgesddDump",
+          "golden": "crates/gatk-tools/tests/data/f2j_dgesdd.txt.gz",
+          "why": "Frozen from CI run 42039987892 (candidate-goldens-f2j-dgesdd) on real x86-64."
+        }
+      ]
+    },
+    {
       "id": "ground-truth-reads-builder",
       "status": "oracle-backed",
       "title": "every read scored against the haplotype its two ancestral references give it",

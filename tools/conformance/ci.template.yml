@@ -443,6 +443,36 @@ jobs:
           NVSCORE_OUTPUT: /tmp/nv/reference.dump /tmp/nv/fixture /tmp/nv
         run: cargo test --release -p gatk-tools --test nv_score_variants_output -- --nocapture
 
+  spark-threads:
+    name: The Spark tools at one thread and at four are the same bytes
+    needs: oracle-image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache/restore@v4
+        with:
+          path: /tmp/oracle-image.tar
+          key: gatk-rs-oracle-${{ hashFiles('tools/oracle/**') }}
+          fail-on-cache-miss: true
+
+      - run: docker load -i /tmp/oracle-image.tar
+
+      - name: nasm, which is what makes GKL's igzip exact rather than merely valid
+        # As in `argument-coverage`: without it a build cannot write a block-compressed file.
+        run: |
+          sudo apt-get update -qq || echo "apt refresh incomplete; the install below is the gate"
+          sudo apt-get install -y -qq nasm
+          nasm -v
+
+      - name: Build the port binary
+        run: cargo build --release -p gatk-cli
+
+      - name: Every Spark tool's rows, at RAYON_NUM_THREADS 1 and 4
+        # #72: a parallel path has to be proved byte-equal, not concordant. docs/spark-parallel.md.
+        timeout-minutes: 60
+        run: python3 tools/coverage/thread_independence.py --port target/release/gatk --threads 4
+
   oracle-with-r:
     name: "Oracle with R: the plots around their images"
     runs-on: ubuntu-latest
