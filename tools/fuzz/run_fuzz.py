@@ -102,9 +102,10 @@ def both_sides(tool, args, port, workdir, config):
     return reference, run_array.outcome(code, text, error, keep)
 
 
-def minimize(tool, args, varied, port, workdir, config):
-    """Drop varied arguments while the divergence survives, re-running BOTH sides each step:
-    dropping an argument changes what the reference does too (picard-rs learned this the hard way).
+def minimize(tool, args, varied, port, workdir, config, original):
+    """Drop varied arguments while the divergence survives AND the reference still answers what it
+    answered on the full case, re-running both sides each step. Without the second condition
+    dropping `--input` "minimizes" every divergence into the reference's missing-input refusal.
     """
     current = list(args)
     changed = True
@@ -115,7 +116,7 @@ def minimize(tool, args, varied, port, workdir, config):
                 continue
             candidate = [a for a in current if a != arg]
             reference, ours = both_sides(tool, candidate, port, workdir, config)
-            if reference != ours:
+            if reference == original and reference != ours:
                 current, changed = candidate, True
                 break
     return current, *both_sides(tool, current, port, workdir, config)
@@ -152,8 +153,9 @@ def run(options):
                     case["matched"] = reference == ours
                     if not case["matched"]:
                         minimal, ref_min, ours_min = minimize(
-                            options.tool, case["arguments"], varied, options.port, workdir, config)
-                        divergences.append({"arguments": minimal, "reference": ref_min, "port": ours_min})
+                            options.tool, case["arguments"], varied, options.port, workdir, config, reference)
+                        if all(d["arguments"] != minimal for d in divergences):
+                            divergences.append({"arguments": minimal, "reference": ref_min, "port": ours_min})
         finally:
             run_array.empty_output_in_container(workdir)
 
@@ -169,7 +171,8 @@ def run(options):
     }
     if options.port:
         summary["replayed"] = len(kept)
-        summary["diverged"] = len(divergences)
+        summary["diverged"] = sum(not case["matched"] for case in kept)
+        summary["divergence_classes"] = len(divergences)
 
     FINDINGS.mkdir(parents=True, exist_ok=True)
     (FINDINGS / f"{options.tool}.json").write_text(json.dumps(
@@ -196,7 +199,8 @@ def merge(directory):
             "Produced by tools/fuzz/run_fuzz.py --merge from a CI run's fuzz-findings artefact.",
             "`probes_*` count the reference's JaCoCo probes reached (a proxy for branches, not a",
             "percentage); `diverged` counts kept cases on which the port, re-run out of process,",
-            "did not answer exactly as the reference did, after minimization.",
+            "did not answer exactly as the reference did; `divergence_classes` counts their distinct",
+            "minimized command lines.",
         ],
         "tools": tools,
     }, indent=1, sort_keys=True) + "\n")
