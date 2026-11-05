@@ -13,8 +13,9 @@
  * `dgetv0`'s seed is a static field that carries over from call to call in one JVM. The tool makes
  * one call per JVM, so each case here resets it to where a fresh JVM starts.
  *
- * `local[1]` is the usual summation order, not a promise (docs/spark-parallel.md): a task result
- * that reaches the driver late changes the bits.
+ * `local[1]` is the usual summation order, not a promise (docs/spark-parallel.md): the driver
+ * deserialises task results on a pool of four threads and folds them as they land, so a result that
+ * lands late changes the bits. The dump runs one result getter, which is that usual order.
  *
  * Output, one row per case:
  *
@@ -129,7 +130,9 @@ public class PanelArpackDump {
     public static void main(final String[] args) throws Exception {
         System.out.println("# PanelArpackDump: symmetricEigs on panels' Gramians, at local[1]");
         final JavaSparkContext sc = new JavaSparkContext(
-                new SparkConf().setMaster("local[1]").setAppName("PanelArpackDump").set("spark.ui.enabled", "false"));
+                new SparkConf().setMaster("local[1]").setAppName("PanelArpackDump").set("spark.ui.enabled", "false")
+                        // One result getter: the driver folds the task results in task order.
+                        .set("spark.resultGetter.threads", "1"));
         try {
             // LocalARPACK: 20 < n / 3 from 63 samples.
             run(sc, "local-63-full", 63, 300, 63, 20);

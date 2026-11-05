@@ -2,8 +2,8 @@
 //!
 //! Everything that decides what reaches the singular value decomposition is ported: the transform
 //! to fractional coverage, the four filters in the order they run, the imputation, the truncation,
-//! and the standardisation. So is the decomposition, as `--spark-master local[1]` runs it up to 25
-//! samples ([`truncated_svd`]); no port can claim it at `local[N]`, where the reference's own answer
+//! and the standardisation. So is the decomposition, as `--spark-master local[1]` runs it where Spark
+//! takes LAPACK, up to 128 samples ([`truncated_svd`]); no port can claim it at `local[N]`, where the reference's own answer
 //! moves from run to run (docs/spark-parallel.md).
 //!
 //! Ported from
@@ -627,7 +627,8 @@ pub fn spark_gramian(panel: &Matrix) -> Vec<f64> {
 /// panel is usually rank deficient, and `rCond` of 1e-9 on a square root is 1e-18 on the value,
 /// under the machine's epsilon. So it has an answer only for one summation order and one LAPACK,
 /// and at `local[1]` the reference has both: F2J's `dgesdd`, here [`crate::f2j_gesdd`], which
-/// reaches its values and so the rank bit for bit up to 25 samples.
+/// reaches its values and so the rank bit for bit up to 128 samples. Past 25 its divide and conquer
+/// raises the noise to the epsilon, so the rank there is the request.
 ///
 /// A request ARPACK answers takes F2J's ARPACK, [`crate::f2j_arpack`], over the Gramian times a
 /// vector as Spark forms it: [`breeze_gramian_times`] locally, [`spark_gramian_times`] distributed.
@@ -638,13 +639,19 @@ pub fn truncated_svd(panel: &Matrix, k: usize) -> Result<Decomposition, String> 
     let n = panel.samples;
     let arpack = match solver_mode(n, k) {
         SolverMode::LocalLapack => {
-            let mut gramian = spark_gramian(panel);
-            if crate::f2j_gesdd::reachable(n, &gramian) {
-                if let Some((squares, u)) = crate::f2j_gesdd::dgesdd(n, &mut gramian) {
-                    return Ok(decomposition_from_gramian(panel, k, &squares, &u));
-                }
+            if !(2..=crate::f2j_gesdd::LARGEST).contains(&n) {
+                return Ok(truncated_svd_by_jacobi(panel, k, plain_gramian(panel)));
             }
-            return Ok(truncated_svd_by_jacobi(panel, k));
+            let mut gramian = spark_gramian(panel);
+            if !crate::f2j_gesdd::reachable(n, &gramian) {
+                // Out of LAPACK's range: Jacobi takes the Gramian already formed, not a second one.
+                let rows = gramian.chunks(n).map(<[f64]>::to_vec).collect();
+                return Ok(truncated_svd_by_jacobi(panel, k, rows));
+            }
+            if let Some((squares, u)) = crate::f2j_gesdd::dgesdd(n, &mut gramian) {
+                return Ok(decomposition_from_gramian(panel, k, &squares, &u));
+            }
+            return Ok(truncated_svd_by_jacobi(panel, k, plain_gramian(panel)));
         }
         SolverMode::LocalArpack => {
             let gramian = spark_gramian(panel);
@@ -792,7 +799,8 @@ fn decomposition_from_gramian(
 
 /// The stand-in: the Gramian's eigendecomposition by cyclic Jacobi, which is deterministic and is
 /// not what the reference runs.
-fn truncated_svd_by_jacobi(panel: &Matrix, k: usize) -> Decomposition {
+/// The samples' dot products, row by row, for the Jacobi solver.
+fn plain_gramian(panel: &Matrix) -> Vec<Vec<f64>> {
     let n = panel.samples;
     let mut gramian = vec![vec![0.0; n]; n];
     for (i, row) in gramian.iter_mut().enumerate() {
@@ -805,6 +813,11 @@ fn truncated_svd_by_jacobi(panel: &Matrix, k: usize) -> Decomposition {
                 .sum();
         }
     }
+    gramian
+}
+
+fn truncated_svd_by_jacobi(panel: &Matrix, k: usize, gramian: Vec<Vec<f64>>) -> Decomposition {
+    let n = panel.samples;
     let (eigenvalues, eigenvectors) = symmetric_eigen(gramian);
     let mut order: Vec<usize> = (0..n).collect();
     order.sort_by(|a, b| eigenvalues[*b].total_cmp(&eigenvalues[*a]));
