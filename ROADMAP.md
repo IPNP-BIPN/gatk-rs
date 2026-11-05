@@ -1317,7 +1317,11 @@ the CPU path that already exists, and no bit-identity claim may weaken to buy a 
       covering array, mutates one argument at a time within the array's own value domains while
       JaCoCo counts the reference's probes, and replays every kept case against the port through
       `run_array.py`, minimizing a divergence on both sides. CI runs it in eight shards over the
-      measured tools; `tools/fuzz/measured.json` is frozen from those artefacts
+      measured tools; `tools/fuzz/measured.json` is frozen from run 42083100066: **190 tools
+      fuzzed, 14 with a kept case on which the port answers differently** (most of them the order
+      in which a refusal is reached, e.g. `--seconds-between-progress-updates=0` refused by the
+      reference before the port's own input checks). Each is listed in `docs/VALIDATION.md` and
+      is a finding to fix, not a quarantine
 - [x] determinism gates, in all three repositories: in gatk-rs the suites run again under
       `fr_FR.UTF-8`, another timezone, another `TMPDIR` and one test thread, and two clean builds of
       `gatk-engine` must be the same bytes (`determinism` job); htsjdk-rs and picard-rs run their
