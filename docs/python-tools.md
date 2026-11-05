@@ -156,8 +156,9 @@ a scorer's name or for the time inside a Java-written HDF5 file.
 * **That any of this holds on real x86-64.** The `vets-isolation-forest` suite is `golden-pending`, with
   `broadinstitute/gatk:4.6.2.0` as its own image, pulled in the job that runs it.
 * **AVX-512.** On an AVX-512 CPU numpy takes other loops for `power` (SVML) and `log`. The port follows
-  the path without AVX-512. A golden from one runner family may therefore not hold on the other: the
-  dump's comment line records the CPU features, so check it before freezing.
+  the path without AVX-512. A first golden made on an AVX-512 runner differed from the port on every
+  row, so `vets_dump.sh` sets `NPY_DISABLE_CPU_FEATURES` to the AVX-512 family: the reference then
+  computes what it computes on an AVX2 CPU on any runner, and the dump's comment line shows it.
 * **Stability on real hardware**, for both tool families.
 * **That gCNV's bytes move across CPU families**, which is inferred from compile flags and not measured.
 

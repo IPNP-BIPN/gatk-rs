@@ -182,7 +182,7 @@ def run_suite(manifest, suite, workdir):
     for case in suite["cases"]:
         dump = case["dump"]
         out = PENDING_DIR / f"{suite['id']}.{dump}.txt"
-        rc = docker_run(manifest, suite["harness"], dump, props, out, fixtures)
+        rc = docker_run(manifest, suite["harness"], dump, props, out, fixtures, suite)
         lines = sum(1 for _ in open(out))
         print(f"regenerated {dump}: {lines} lines (docker exit {rc})")
         if rc != 0 or lines == 0:

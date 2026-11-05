@@ -8388,7 +8388,7 @@
     },
     {
       "id": "vets-isolation-forest",
-      "status": "oracle-backed",
+      "status": "golden-pending",
       "title": "TrainVariantAnnotationsModel and ScoreVariantAnnotations with scikit-learn's isolation forest, past the interpreter",
       "harness": "tools/python-tools",
       "tools": [
@@ -8397,7 +8397,7 @@
       ],
       "image": "broadinstitute/gatk:4.6.2.0",
       "command": "bash /harness/vets_dump.sh",
-      "why": "The pinned image has no python, so the only image in which the reference gets past its interpreter is the publisher's own. EVERY NUMBER HERE IS scikit-learn 1.3.2's AND numpy 1.26.2's: an MT19937, a tree builder over float32 with a seeded per-tree generator, and a pow and a log that are glibc's on a CPU without AVX-512. A CPU WITH AVX-512 TAKES NUMPY'S OTHER LOOPS, so a golden from one family of runner may not hold on the other: the dump's comment line says which it was made on, and docs/python-tools.md has the numbers. THE SCORER IS COMPARED WITHOUT ITS FRAMES AND ITS NAME, because the lambda's code object names the temporary file the script ran from and that is random in every run; the rest of the pickle is a function of the fit. THE SCORES JAVA WRITES HOLD THE TIME, so their doubles are what is compared.",
+      "why": "The pinned image has no python, so the only image in which the reference gets past its interpreter is the publisher's own. EVERY NUMBER HERE IS scikit-learn 1.3.2's AND numpy 1.26.2's: an MT19937, a tree builder over float32 with a seeded per-tree generator, and a pow and a log that are glibc's on a CPU without AVX-512. A CPU WITH AVX-512 TAKES NUMPY'S OTHER LOOPS, so the dump sets NPY_DISABLE_CPU_FEATURES to the AVX-512 family and the reference computes on any runner what it computes on an AVX2 CPU; the dump's comment line shows which features numpy kept. THE SCORER IS COMPARED WITHOUT ITS FRAMES AND ITS NAME, because the lambda's code object names the temporary file the script ran from and that is random in every run; the rest of the pickle is a function of the fit. THE SCORES JAVA WRITES HOLD THE TIME, so their doubles are what is compared.",
       "compare": {
         "mode": "lines"
       },
@@ -8409,8 +8409,8 @@
       "cases": [
         {
           "dump": "VetsDump",
-          "golden": "crates/gatk-tools/tests/data/vets_isolation_forest.txt.gz",
-          "why": "Frozen from the candidate artefact of run 41547347944, made on a runner with AVX-512 as the dump's cpu line records."
+          "golden": null,
+          "why": "Two passes over the seeded fixture of 2000 sites make_vets_fixture.py writes: the default hyperparameters with sensitivity thresholds on both types, and seven trees with another seed and two jobs. The first golden, from an AVX-512 runner, held numpy's SVML loops and the port differed on every row, so the dump now turns AVX-512 off in numpy and the golden is pending again."
         }
       ]
     }

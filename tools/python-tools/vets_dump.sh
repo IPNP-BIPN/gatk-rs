@@ -2,6 +2,9 @@
 # The `vets-isolation-forest` suite's dump, inside broadinstitute/gatk:4.6.2.0: two passes over the
 # fixture and one line per file they wrote. `dump_vets.py` says what the lines hold.
 set -e
+# numpy takes SVML loops for power and log on AVX-512, which the port does not follow; with them off
+# the reference computes what it computes on an AVX2 CPU, whichever runner this lands on.
+export NPY_DISABLE_CPU_FEATURES="AVX512F AVX512CD AVX512_SKX AVX512_CLX AVX512_CNL AVX512_ICL AVX512_SPR"
 work=$(mktemp -d)
 python3=/opt/miniconda/envs/gatk/bin/python
 mkdir -p "$work/fixture"
