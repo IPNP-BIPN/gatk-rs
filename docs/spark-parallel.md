@@ -62,9 +62,12 @@ LocalLAPACK otherwise, while `n < 100` or `k > n / 2` with `n <= 15000`; DistARP
 `solver_mode` has this, with the integer divisions.
 
 **Libraries.** The image loads `Java11BLAS`, `F2jLAPACK` and `F2jARPACK` (netlib 3.0.3); no native
-library loads. So the arithmetic is Java's and is reachable. `f2j_gesdd.rs` ports `dgesdd` up to 25
-samples. Past that the reference takes divide and conquer or ARPACK and the port keeps its Jacobi
-solver, so there it has the count only where the panel is full rank.
+library loads. So the arithmetic is Java's and is reachable. `f2j_gesdd.rs` ports `dgesdd` up to 128
+samples, with `dbdsdc`'s divide and conquer past 25 in `f2j_dbdsdc.rs`, checked bit for bit by the
+`f2j-dgesdd` suite. Past 25 that path raises every scaled diagonal entry under the epsilon to it, so
+a value is never under `rCond` and LocalLAPACK's count is `min(k, n)`, a flat sample included. ARPACK
+answers are not ported, and there the port keeps its Jacobi solver, so it has the count only where
+the panel is full rank.
 
 **The rank.** It comes from values under `1e-9` of the first, which are rounding noise, so it depends
 on how the Gramian's sum is associated. `treeAggregate` has depth 1 here, and the driver folds each

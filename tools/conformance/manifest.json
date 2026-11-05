@@ -6300,6 +6300,31 @@
       ]
     },
     {
+      "id": "f2j-dgesdd",
+      "status": "golden-pending",
+      "title": "F2J's dgesdd('A') on Gramians of 2 to 128 samples, bit for bit, as Breeze calls it for Spark's LocalLAPACK computeSVD",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CreateReadCountPanelOfNormals"
+      ],
+      "why": "The panel's eigensample count is the number of singular values Spark keeps over rCond 1e-9, and on a rank-deficient panel those values are rounding noise, so only the reference's own LAPACK in its own order reaches the same count. Past 25 samples dgesdd's bidiagonal SVD is dbdsdc's divide and conquer and past 32 the left vectors go through the blocked dormqr; this holds the values' and the vectors' bits from 2 to 128 samples, rank-deficient matrices and an exact zero sample included.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 300,
+      "expect_contains": [
+        "svd\tflat\t26\tinfo=0\trank=26",
+        "svd\tfamilies\t99\t"
+      ],
+      "cases": [
+        {
+          "dump": "DgesddDump",
+          "golden": null,
+          "why": "Pending the first real x86-64 CI run."
+        }
+      ]
+    },
+    {
       "id": "ground-truth-reads-builder",
       "status": "oracle-backed",
       "title": "every read scored against the haplotype its two ancestral references give it",

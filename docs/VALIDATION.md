@@ -902,7 +902,7 @@ Held out: none.
 
 ### CreateReadCountPanelOfNormals
 
-Suites: `create-read-count-panel-of-normals`, `create-read-count-panel-rank`.
+Suites: `create-read-count-panel-of-normals`, `create-read-count-panel-rank`, `f2j-dgesdd`.
 
 Inputs: `pon_annotated.tsv`, `pon_s1.counts.tsv`, `pon_s4.counts.tsv`, `pon_s8.counts.tsv`, `pon_shifted.counts.tsv`.
 

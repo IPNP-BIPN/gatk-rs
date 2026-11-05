@@ -1,4 +1,4 @@
-//! `dgesdd('A', n, n, ...)` as the F2J translation of LAPACK runs it, for `n` up to 25.
+//! `dgesdd('A', n, n, ...)` as the F2J translation of LAPACK 3.1.1 runs it, for `n` up to 128.
 //!
 //! Spark's `RowMatrix.computeSVD` answers a panel of normals from `breeze.linalg.svd` over the
 //! Gramian, and in the oracle image that is `dev.ludovic.netlib.lapack.F2jLAPACK`: no native LAPACK
@@ -7,30 +7,28 @@
 //! values are rounding noise, and the noise is what `rCond` compares: only the same operations in
 //! the same order reach the same rank.
 //!
-//! The path is the one a square matrix takes up to `SMLSIZ` (25) in `dbdsdc`: `dgebd2` (`dgebrd`
-//! leaves its blocked code above `NX`, 128), then `dbdsqr`, then `dorm2r` for the left vectors
-//! (`dormqr` leaves its blocked code below `NB`, 32). A larger matrix is divide and conquer
-//! (`dlasd0` and the rest), which is not ported; the caller asks [`reachable`] first.
+//! The path is the one a square matrix takes: `dgebd2` (`dgebrd` leaves its blocked code up to
+//! `NX`, 128), then `dbdsdc` ([`crate::f2j_dbdsdc`]), then `dormqr` for the left vectors, which is
+//! `dorm2r` up to `NB` (32) reflectors and blocks of 32 past it. The vectors on the right are not
+//! accumulated: they feed nothing back into the values, and Spark throws them away.
 //!
-//! The vectors on the right are not accumulated. They feed nothing back into the values, and Spark
-//! throws them away.
-//!
-//! Ported from LAPACK 3.1.1 (`SRC/dgesdd.f`, `dgebd2.f`, `dlarfg.f`, `dlarf.f`, `dbdsdc.f`,
-//! `dbdsqr.f`, `dlasr.f`, `dlas2.f`, `dlasv2.f`, `dlartg.f`, `dlapy2.f`, `dorm2r.f`) and reference
-//! BLAS (`dnrm2.f`, `dgemv.f`, `dger.f`), BSD 3-Clause, with what F2J does to them: `x**2` is
-//! `Math.pow(x, 2)`, which HotSpot answers as `x * x`.
+//! Ported from LAPACK 3.1.1 (`SRC/dgesdd.f`, `dgebd2.f`, `dlarfg.f`, `dlarf.f`, `dlartg.f`,
+//! `dlas2.f`, `dlasv2.f`, `dlapy2.f`, `dormqr.f`, `dorm2r.f`, `dlarft.f`, `dlarfb.f`) and reference
+//! BLAS (`dnrm2.f`, `dgemv.f`, `dger.f`, `dtrmv.f`, `dtrmm.f`, `dgemm.f`), BSD 3-Clause, with what
+//! F2J does to them: `x**2` is `Math.pow(x, 2)`, which HotSpot answers as `x * x`, and `MAX` and
+//! `MIN` are `Math.max` and `Math.min`.
 
-/// `SMLSIZ`, `ilaenv(9, ...)`: the largest matrix `dbdsdc` hands to `dbdsqr`.
-pub const LARGEST: usize = 25;
+/// The largest matrix `dgebrd` leaves to `dgebd2`: `NX`, `ilaenv(3, 'DGEBRD', ...)`.
+pub const LARGEST: usize = 128;
 
 /// `dlamch('E')`: F2J's is the rounding unit.
-const EPS: f64 = f64::EPSILON / 2.0;
+pub(crate) const EPS: f64 = f64::EPSILON / 2.0;
 /// `dlamch('P')`, the epsilon times the base.
 const PRECISION: f64 = f64::EPSILON;
 /// `dlamch('S')`.
-const SAFE_MINIMUM: f64 = f64::MIN_POSITIVE;
+pub(crate) const SAFE_MINIMUM: f64 = f64::MIN_POSITIVE;
 /// `Math.pow(EPS, -0.125)`, measured on the oracle: 2^(53/8), under `dbdsqr`'s cap of a hundred.
-const TOLERANCE_MULTIPLIER: f64 = f64::from_bits(0x4058_ACE5_422A_A0DB);
+pub(crate) const TOLERANCE_MULTIPLIER: f64 = f64::from_bits(0x4058_ACE5_422A_A0DB);
 /// `SAFMN2`, `2**INT(LOG(SAFMIN / EPS) / LOG(2) / 2)`: the logarithms give -484.5, and INT truncates.
 const SAFE_MINIMUM_2: f64 = f64::from_bits((1023 - 484) << 52);
 
@@ -48,7 +46,7 @@ impl Square<'_> {
 
 /// `SIGN(a, b)`. F2J's `Util.dsign` keeps the magnitude and takes `b >= 0`, so a negative zero
 /// counts as positive.
-fn sign(a: f64, b: f64) -> f64 {
+pub(crate) fn sign(a: f64, b: f64) -> f64 {
     if b >= 0.0 {
         a.abs()
     } else {
@@ -56,26 +54,39 @@ fn sign(a: f64, b: f64) -> f64 {
     }
 }
 
-/// Fortran's `MAX`, as F2J writes it: `a >= b ? a : b` over values that are not NaN here.
-fn max(a: f64, b: f64) -> f64 {
-    if a >= b {
+/// Fortran's `MAX`, which F2J writes as `Math.max`: a negative zero is under a positive one.
+pub(crate) fn max(a: f64, b: f64) -> f64 {
+    if a.is_nan() {
+        a
+    } else if a == 0.0 && b == 0.0 && a.is_sign_negative() {
+        b
+    } else if a >= b {
         a
     } else {
         b
     }
 }
 
-/// Fortran's `MIN`.
-fn min(a: f64, b: f64) -> f64 {
-    if a <= b {
+/// Fortran's `MIN`, `Math.min`.
+pub(crate) fn min(a: f64, b: f64) -> f64 {
+    if a.is_nan() {
+        a
+    } else if a == 0.0 && b == 0.0 && b.is_sign_negative() {
+        b
+    } else if a <= b {
         a
     } else {
         b
     }
+}
+
+/// `MAX` of three, F2J's `Util.max`: `Math.max(a > b ? a : b, Math.max(b, c))`.
+pub(crate) fn max3(a: f64, b: f64, c: f64) -> f64 {
+    max(if a > b { a } else { b }, max(b, c))
 }
 
 /// `dnrm2`, the scaled sum of squares rather than a square root of a dot product.
-fn dnrm2(x: &[f64]) -> f64 {
+pub(crate) fn dnrm2(x: &[f64]) -> f64 {
     match x.len() {
         0 => 0.0,
         1 => x[0].abs(),
@@ -101,7 +112,7 @@ fn dnrm2(x: &[f64]) -> f64 {
 }
 
 /// `dlapy2`.
-fn dlapy2(x: f64, y: f64) -> f64 {
+pub(crate) fn dlapy2(x: f64, y: f64) -> f64 {
     let (xabs, yabs) = (x.abs(), y.abs());
     let w = max(xabs, yabs);
     let z = min(xabs, yabs);
@@ -256,7 +267,7 @@ fn dgebd2(a: &mut Square) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
 }
 
 /// `dlartg`: `(cs, sn, r)`.
-fn dlartg(f: f64, g: f64) -> (f64, f64, f64) {
+pub(crate) fn dlartg(f: f64, g: f64) -> (f64, f64, f64) {
     if g == 0.0 {
         return (1.0, 0.0, f);
     }
@@ -316,7 +327,7 @@ fn dlartg(f: f64, g: f64) -> (f64, f64, f64) {
 }
 
 /// `dlas2`: `(ssmin, ssmax)`.
-fn dlas2(f: f64, g: f64, h: f64) -> (f64, f64) {
+pub(crate) fn dlas2(f: f64, g: f64, h: f64) -> (f64, f64) {
     let (fa, ga, ha) = (f.abs(), g.abs(), h.abs());
     let fhmn = min(fa, ha);
     let fhmx = max(fa, ha);
@@ -352,7 +363,7 @@ fn dlas2(f: f64, g: f64, h: f64) -> (f64, f64) {
 }
 
 /// `dlasv2`: `(ssmin, ssmax, snr, csr, snl, csl)`.
-fn dlasv2(f: f64, g: f64, h: f64) -> (f64, f64, f64, f64, f64, f64) {
+pub(crate) fn dlasv2(f: f64, g: f64, h: f64) -> (f64, f64, f64, f64, f64, f64) {
     let mut ft = f;
     let mut fa = ft.abs();
     let mut ht = h;
@@ -446,323 +457,156 @@ fn dlasv2(f: f64, g: f64, h: f64) -> (f64, f64, f64, f64, f64, f64) {
     (ssmin, ssmax, snr, csr, snl, csl)
 }
 
-/// `dlasr('R', 'V', direct, n, count, c, s, u(1, first))`: rotate the columns from `first`.
-fn rotate_columns(u: &mut Square, first: usize, c: &[f64], s: &[f64], forward: bool) {
-    let n = u.n;
-    let apply = |u: &mut Square, j: usize| {
-        let (ctemp, stemp) = (c[j], s[j]);
-        if ctemp != 1.0 || stemp != 0.0 {
-            for i in 1..=n {
-                let left = u.at(i, first + j);
-                let right = u.at(i, first + j + 1);
-                let temp = u.values[right];
-                u.values[right] = ctemp * temp - stemp * u.values[left];
-                u.values[left] = stemp * temp + ctemp * u.values[left];
+/// `ilaenv(1, 'DORMQR', ...)`: past this many reflectors `dormqr` applies them in blocks.
+const DORMQR_BLOCK: usize = 32;
+
+/// `dlarft('F', 'C', rows, k, V, tau, T)`, V being `a` from `(first, first)`: the triangular
+/// factor of k reflectors, k by k.
+fn dlarft(a: &mut [f64], n: usize, first: usize, rows: usize, k: usize, tau: &[f64]) -> Vec<f64> {
+    let v = |r: usize, s: usize| (first + r - 2) + (first + s - 2) * n;
+    let at = |r: usize, s: usize| (r - 1) + (s - 1) * k;
+    let mut t = vec![0.0; k * k];
+    for i in 1..=k {
+        if tau[i - 1] == 0.0 {
+            continue;
+        }
+        let vii = a[v(i, i)];
+        a[v(i, i)] = 1.0;
+        // `dgemv('T', rows - i + 1, i - 1, -tau, V(i, 1), V(i, i), 0, T(1, i))`.
+        let alpha = -tau[i - 1];
+        for j in 1..i {
+            let mut temp = 0.0;
+            for r in i..=rows {
+                temp += a[v(r, j)] * a[v(r, i)];
+            }
+            t[at(j, i)] = 0.0;
+            t[at(j, i)] += alpha * temp;
+        }
+        a[v(i, i)] = vii;
+        // `dtrmv('U', 'N', 'N', i - 1, T, T(1, i))`.
+        for j in 1..i {
+            let temp = t[at(j, i)];
+            if temp != 0.0 {
+                for r in 1..j {
+                    t[at(r, i)] += temp * t[at(r, j)];
+                }
+                t[at(j, i)] *= t[at(j, j)];
             }
         }
-    };
-    if forward {
-        for j in 0..c.len() {
-            apply(u, j);
+        t[at(i, i)] = tau[i - 1];
+    }
+    t
+}
+
+/// `dlarfb('L', 'N', 'F', 'C', m, n, k, V, T, C)`, V being `a` from `(first, first)` and C the rows
+/// of `c` from `first`: `dtrmm`, `dgemm`, `dtrmm`, `dgemm`, `dtrmm` through the workspace.
+fn dlarfb(a: &[f64], n: usize, first: usize, m: usize, k: usize, t: &[f64], c: &mut [f64]) {
+    let v = |r: usize, s: usize| (first + r - 2) + (first + s - 2) * n;
+    let cc = |r: usize, s: usize| (first + r - 2) + (s - 1) * n;
+    let tt = |r: usize, s: usize| (r - 1) + (s - 1) * k;
+    let wa = |r: usize, s: usize| (r - 1) + (s - 1) * n;
+    let mut w = vec![0.0; n * k];
+    for j in 1..=k {
+        for r in 1..=n {
+            w[wa(r, j)] = c[cc(j, r)];
         }
-    } else {
-        for j in (0..c.len()).rev() {
-            apply(u, j);
+    }
+    // `dtrmm('R', 'L', 'N', 'U')`: W V1.
+    for j in 1..=k {
+        for l in j + 1..=k {
+            let x = a[v(l, j)];
+            if x != 0.0 {
+                for r in 1..=n {
+                    w[wa(r, j)] += x * w[wa(r, l)];
+                }
+            }
+        }
+    }
+    if m > k {
+        // `dgemm('T', 'N', n, k, m - k, 1, C2, V2, 1, W)`.
+        for j in 1..=k {
+            for r in 1..=n {
+                let mut temp = 0.0;
+                for l in k + 1..=m {
+                    temp += c[cc(l, r)] * a[v(l, j)];
+                }
+                w[wa(r, j)] = temp + w[wa(r, j)];
+            }
+        }
+    }
+    // `dtrmm('R', 'U', 'T', 'N')`: W T'.
+    for l in 1..=k {
+        for j in 1..l {
+            let x = t[tt(j, l)];
+            if x != 0.0 {
+                for r in 1..=n {
+                    w[wa(r, j)] += x * w[wa(r, l)];
+                }
+            }
+        }
+        let x = t[tt(l, l)];
+        if x != 1.0 {
+            for r in 1..=n {
+                w[wa(r, l)] *= x;
+            }
+        }
+    }
+    if m > k {
+        // `dgemm('N', 'T', m - k, n, k, -1, V2, W, 1, C2)`.
+        for j in 1..=n {
+            for l in 1..=k {
+                let x = w[wa(j, l)];
+                if x != 0.0 {
+                    let temp = -x;
+                    for r in k + 1..=m {
+                        c[cc(r, j)] += temp * a[v(r, l)];
+                    }
+                }
+            }
+        }
+    }
+    // `dtrmm('R', 'L', 'T', 'U')`: W V1'.
+    for l in (1..=k).rev() {
+        for j in l + 1..=k {
+            let x = a[v(j, l)];
+            if x != 0.0 {
+                for r in 1..=n {
+                    w[wa(r, j)] += x * w[wa(r, l)];
+                }
+            }
+        }
+    }
+    for j in 1..=k {
+        for r in 1..=n {
+            c[cc(j, r)] -= w[wa(r, j)];
         }
     }
 }
 
-/// `dbdsqr('U', n, ncvt > 0, nru = n, 0, ...)`, without accumulating the right vectors: the
-/// singular values in `d`, decreasing, and `u` rotated. `false` when it did not converge.
-fn dbdsqr(d: &mut [f64], e: &mut [f64], u: &mut Square) -> bool {
-    let n = d.len();
-    // One-based, as the Fortran's two pointers are.
-    macro_rules! d {
-        ($i:expr) => {
-            d[$i - 1]
-        };
+/// `dormqr('L', 'N', n, n, n, A, tau, C)`: the reflectors `dgebd2` left below the diagonal of `a`,
+/// last first, applied to `c`. Up to `DORMQR_BLOCK` it is `dorm2r`, one reflector at a time; past
+/// it the blocks of 32 from the last, each through `dlarft` and `dlarfb`.
+fn dormqr(n: usize, a: &mut [f64], tau: &[f64], c: &mut [f64]) {
+    if n <= DORMQR_BLOCK {
+        let matrix = Square { n, values: a };
+        let mut c = Square { n, values: c };
+        for i in (1..=n).rev() {
+            let mut v = vec![1.0];
+            v.extend((i + 1..=n).map(|r| matrix.values[matrix.at(r, i)]));
+            dlarf_left(&v, tau[i - 1], &mut c, i, 1);
+        }
+        return;
     }
-    macro_rules! e {
-        ($i:expr) => {
-            e[$i - 1]
-        };
+    let mut i = ((n - 1) / DORMQR_BLOCK) * DORMQR_BLOCK + 1;
+    loop {
+        let ib = DORMQR_BLOCK.min(n - i + 1);
+        let t = dlarft(a, n, i, n - i + 1, ib, &tau[i - 1..]);
+        dlarfb(a, n, i, n - i + 1, ib, &t, c);
+        if i == 1 {
+            break;
+        }
+        i -= DORMQR_BLOCK;
     }
-    const MAXITR: usize = 6;
-    if n > 1 {
-        let unfl = SAFE_MINIMUM;
-        let tolmul = max(10.0, min(100.0, TOLERANCE_MULTIPLIER));
-        let tol = tolmul * EPS;
-        let mut smax = 0.0;
-        for i in 1..=n {
-            smax = max(smax, d!(i).abs());
-        }
-        for i in 1..n {
-            smax = max(smax, e!(i).abs());
-        }
-        let mut sminl;
-        let mut sminoa = d!(1).abs();
-        if sminoa != 0.0 {
-            let mut mu = sminoa;
-            for i in 2..=n {
-                mu = d!(i).abs() * (mu / (mu + e!(i - 1).abs()));
-                sminoa = min(sminoa, mu);
-                if sminoa == 0.0 {
-                    break;
-                }
-            }
-        }
-        sminoa /= (n as f64).sqrt();
-        let thresh = max(tol * sminoa, (MAXITR * n * n) as f64 * unfl);
-        let maxit = MAXITR * n * n;
-        let mut iter = 0;
-        let mut oldll: isize = -1;
-        let mut oldm: isize = -1;
-        let mut idir = 0;
-        let mut m = n;
-        'main: loop {
-            if m <= 1 {
-                break;
-            }
-            if iter > maxit {
-                return false;
-            }
-            smax = d!(m).abs();
-            let mut ll = 0;
-            let mut split = false;
-            for lll in 1..m {
-                let candidate = m - lll;
-                let abss = d!(candidate).abs();
-                let abse = e!(candidate).abs();
-                if abse <= thresh {
-                    ll = candidate;
-                    split = true;
-                    break;
-                }
-                smax = max(max(smax, abss), abse);
-            }
-            if split {
-                e!(ll) = 0.0;
-                if ll == m - 1 {
-                    m -= 1;
-                    continue 'main;
-                }
-            }
-            ll += 1;
-            if ll == m - 1 {
-                let (sigmn, sigmx, _sinr, _cosr, sinl, cosl) = dlasv2(d!(m - 1), e!(m - 1), d!(m));
-                d!(m - 1) = sigmx;
-                e!(m - 1) = 0.0;
-                d!(m) = sigmn;
-                // `drot` over the two columns of U.
-                for i in 1..=n {
-                    let (x, y) = (u.at(i, m - 1), u.at(i, m));
-                    let temp = cosl * u.values[x] + sinl * u.values[y];
-                    u.values[y] = cosl * u.values[y] - sinl * u.values[x];
-                    u.values[x] = temp;
-                }
-                m -= 2;
-                continue 'main;
-            }
-            if (ll as isize) > oldm || (m as isize) < oldll {
-                idir = if d!(ll).abs() >= d!(m).abs() { 1 } else { 2 };
-            }
-            if idir == 1 {
-                if e!(m - 1).abs() <= tol.abs() * d!(m).abs() {
-                    e!(m - 1) = 0.0;
-                    continue 'main;
-                }
-                let mut mu = d!(ll).abs();
-                sminl = mu;
-                for lll in ll..m {
-                    if e!(lll).abs() <= tol * mu {
-                        e!(lll) = 0.0;
-                        continue 'main;
-                    }
-                    mu = d!(lll + 1).abs() * (mu / (mu + e!(lll).abs()));
-                    sminl = min(sminl, mu);
-                }
-            } else {
-                if e!(ll).abs() <= tol.abs() * d!(ll).abs() {
-                    e!(ll) = 0.0;
-                    continue 'main;
-                }
-                let mut mu = d!(m).abs();
-                sminl = mu;
-                for lll in (ll..m).rev() {
-                    if e!(lll).abs() <= tol * mu {
-                        e!(lll) = 0.0;
-                        continue 'main;
-                    }
-                    mu = d!(lll).abs() * (mu / (mu + e!(lll).abs()));
-                    sminl = min(sminl, mu);
-                }
-            }
-            oldll = ll as isize;
-            oldm = m as isize;
-
-            let mut shift;
-            if (n as f64) * tol * (sminl / smax) <= max(EPS, 0.01 * tol) {
-                shift = 0.0;
-            } else {
-                let sll;
-                if idir == 1 {
-                    sll = d!(ll).abs();
-                    shift = dlas2(d!(m - 1), e!(m - 1), d!(m)).0;
-                } else {
-                    sll = d!(m).abs();
-                    shift = dlas2(d!(ll), e!(ll), d!(ll + 1)).0;
-                }
-                if sll > 0.0 {
-                    let ratio = shift / sll;
-                    if ratio * ratio < EPS {
-                        shift = 0.0;
-                    }
-                }
-            }
-            iter += m - ll;
-            let count = m - ll;
-            // WORK(1..) and WORK(N..), then WORK(NM12+1..) and WORK(NM13+1..).
-            let mut first_c = vec![0.0; count];
-            let mut first_s = vec![0.0; count];
-            let mut second_c = vec![0.0; count];
-            let mut second_s = vec![0.0; count];
-            if shift == 0.0 {
-                if idir == 1 {
-                    let (mut cs, mut oldcs) = (1.0, 1.0);
-                    let mut oldsn = 0.0;
-                    for i in ll..m {
-                        let (c, sn, r) = dlartg(d!(i) * cs, e!(i));
-                        cs = c;
-                        if i > ll {
-                            e!(i - 1) = oldsn * r;
-                        }
-                        let (c, s, r2) = dlartg(oldcs * r, d!(i + 1) * sn);
-                        oldcs = c;
-                        oldsn = s;
-                        d!(i) = r2;
-                        first_c[i - ll] = cs;
-                        first_s[i - ll] = sn;
-                        second_c[i - ll] = oldcs;
-                        second_s[i - ll] = oldsn;
-                    }
-                    let h = d!(m) * cs;
-                    d!(m) = h * oldcs;
-                    e!(m - 1) = h * oldsn;
-                    rotate_columns(u, ll, &second_c, &second_s, true);
-                    if e!(m - 1).abs() <= thresh {
-                        e!(m - 1) = 0.0;
-                    }
-                } else {
-                    let (mut cs, mut oldcs) = (1.0, 1.0);
-                    let mut oldsn = 0.0;
-                    for i in (ll + 1..=m).rev() {
-                        let (c, sn, r) = dlartg(d!(i) * cs, e!(i - 1));
-                        cs = c;
-                        if i < m {
-                            e!(i) = oldsn * r;
-                        }
-                        let (c, s, r2) = dlartg(oldcs * r, d!(i - 1) * sn);
-                        oldcs = c;
-                        oldsn = s;
-                        d!(i) = r2;
-                        first_c[i - ll - 1] = cs;
-                        first_s[i - ll - 1] = -sn;
-                        second_c[i - ll - 1] = oldcs;
-                        second_s[i - ll - 1] = -oldsn;
-                    }
-                    let h = d!(ll) * cs;
-                    d!(ll) = h * oldcs;
-                    e!(ll) = h * oldsn;
-                    rotate_columns(u, ll, &first_c, &first_s, false);
-                    if e!(ll).abs() <= thresh {
-                        e!(ll) = 0.0;
-                    }
-                }
-            } else if idir == 1 {
-                let mut f = (d!(ll).abs() - shift) * (sign(1.0, d!(ll)) + shift / d!(ll));
-                let mut g = e!(ll);
-                for i in ll..m {
-                    let (cosr, sinr, r) = dlartg(f, g);
-                    if i > ll {
-                        e!(i - 1) = r;
-                    }
-                    f = cosr * d!(i) + sinr * e!(i);
-                    e!(i) = cosr * e!(i) - sinr * d!(i);
-                    g = sinr * d!(i + 1);
-                    d!(i + 1) *= cosr;
-                    let (cosl, sinl, r) = dlartg(f, g);
-                    d!(i) = r;
-                    f = cosl * e!(i) + sinl * d!(i + 1);
-                    d!(i + 1) = cosl * d!(i + 1) - sinl * e!(i);
-                    if i < m - 1 {
-                        g = sinl * e!(i + 1);
-                        e!(i + 1) *= cosl;
-                    }
-                    second_c[i - ll] = cosl;
-                    second_s[i - ll] = sinl;
-                }
-                e!(m - 1) = f;
-                rotate_columns(u, ll, &second_c, &second_s, true);
-                if e!(m - 1).abs() <= thresh {
-                    e!(m - 1) = 0.0;
-                }
-            } else {
-                let mut f = (d!(m).abs() - shift) * (sign(1.0, d!(m)) + shift / d!(m));
-                let mut g = e!(m - 1);
-                for i in (ll + 1..=m).rev() {
-                    let (cosr, sinr, r) = dlartg(f, g);
-                    if i < m {
-                        e!(i) = r;
-                    }
-                    f = cosr * d!(i) + sinr * e!(i - 1);
-                    e!(i - 1) = cosr * e!(i - 1) - sinr * d!(i);
-                    g = sinr * d!(i - 1);
-                    d!(i - 1) *= cosr;
-                    let (cosl, sinl, r) = dlartg(f, g);
-                    d!(i) = r;
-                    f = cosl * e!(i - 1) + sinl * d!(i - 1);
-                    d!(i - 1) = cosl * d!(i - 1) - sinl * e!(i - 1);
-                    if i > ll + 1 {
-                        g = sinl * e!(i - 2);
-                        e!(i - 2) *= cosl;
-                    }
-                    first_c[i - ll - 1] = cosr;
-                    first_s[i - ll - 1] = -sinr;
-                }
-                e!(ll) = f;
-                if e!(ll).abs() <= thresh {
-                    e!(ll) = 0.0;
-                }
-                rotate_columns(u, ll, &first_c, &first_s, false);
-            }
-        }
-    }
-    for value in d.iter_mut() {
-        if *value < 0.0 {
-            *value = -*value;
-        }
-    }
-    // Smallest to the end, one transposition per vector.
-    for i in 1..n {
-        let last = n + 1 - i;
-        let mut isub = 1;
-        let mut smin = d[0];
-        for j in 2..=last {
-            if d[j - 1] <= smin {
-                isub = j;
-                smin = d[j - 1];
-            }
-        }
-        if isub != last {
-            d[isub - 1] = d[last - 1];
-            d[last - 1] = smin;
-            for row in 1..=n {
-                let (x, y) = (u.at(row, isub), u.at(row, last));
-                u.values.swap(x, y);
-            }
-        }
-    }
-    true
 }
 
 /// Whether [`dgesdd`] takes this matrix down the path the reference takes: small enough, finite,
@@ -781,67 +625,18 @@ pub fn reachable(n: usize, values: &[f64]) -> bool {
 }
 
 /// The singular values, decreasing, and the left singular vectors, column major. `None` where
-/// `dbdsqr` did not converge, which is `info > 0` in the reference and a `NotConvergedException` in
+/// `dbdsdc` did not converge, which is `info > 0` in the reference and a `NotConvergedException` in
 /// Breeze. `a` is column major, and is overwritten.
 pub fn dgesdd(n: usize, a: &mut [f64]) -> Option<(Vec<f64>, Vec<f64>)> {
     let mut matrix = Square { n, values: a };
     let (mut d, mut e, tauq) = dgebd2(&mut matrix);
-    let mut u_values = vec![0.0; n * n];
-    for i in 0..n {
-        u_values[i + i * n] = 1.0;
-    }
-    let mut u = Square {
-        n,
-        values: &mut u_values,
-    };
-    if !dbdsqr(&mut d, &mut e, &mut u) {
+    let mut u = vec![0.0; n * n];
+    let mut vt = vec![0.0; n * n];
+    if crate::f2j_dbdsdc::dbdsdc(n, &mut d, &mut e, &mut u, &mut vt) != 0 {
         return None;
     }
-    let swap_columns = |u: &mut Square, a: usize, b: usize| {
-        for row in 1..=n {
-            let (x, y) = (u.at(row, a), u.at(row, b));
-            u.values.swap(x, y);
-        }
-    };
-    // `dlasdq` sorts what `dbdsqr` sorted into ascending order, and `dbdsdc` back. The values end
-    // where they were; a tie's vectors do not.
-    for i in 1..=n {
-        let mut isub = i;
-        let mut smin = d[i - 1];
-        for j in i + 1..=n {
-            if d[j - 1] < smin {
-                isub = j;
-                smin = d[j - 1];
-            }
-        }
-        if isub != i {
-            d[isub - 1] = d[i - 1];
-            d[i - 1] = smin;
-            swap_columns(&mut u, isub, i);
-        }
-    }
-    for i in 1..n {
-        let mut kk = i;
-        let mut p = d[i - 1];
-        for j in i + 1..=n {
-            if d[j - 1] > p {
-                kk = j;
-                p = d[j - 1];
-            }
-        }
-        if kk != i {
-            d[kk - 1] = d[i - 1];
-            d[i - 1] = p;
-            swap_columns(&mut u, i, kk);
-        }
-    }
-    // `dormbr('Q', 'L', 'N')` is `dorm2r` backwards, H(1) ... H(k) applied to U.
-    for i in (1..=n).rev() {
-        let mut v = vec![1.0];
-        v.extend((i + 1..=n).map(|r| matrix.values[matrix.at(r, i)]));
-        dlarf_left(&v, tauq[i - 1], &mut u, i, 1);
-    }
-    Some((d, u_values))
+    dormqr(n, matrix.values, &tauq, &mut u);
+    Some((d, u))
 }
 
 #[cfg(test)]
@@ -909,7 +704,7 @@ mod tests {
     #[test]
     fn the_range_it_does_not_scale_is_the_one_it_takes() {
         assert!(reachable(2, &[1.0, 0.0, 0.0, 1.0]));
-        assert!(!reachable(26, &[1.0]));
+        assert!(!reachable(129, &[1.0]));
         assert!(!reachable(2, &[f64::NAN, 0.0, 0.0, 1.0]));
         assert!(!reachable(2, &[1e-300, 0.0, 0.0, 1e-300]));
     }

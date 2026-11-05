@@ -2,8 +2,8 @@
 //!
 //! Everything that decides what reaches the singular value decomposition is ported: the transform
 //! to fractional coverage, the four filters in the order they run, the imputation, the truncation,
-//! and the standardisation. So is the decomposition, as `--spark-master local[1]` runs it up to 25
-//! samples ([`truncated_svd`]); no port can claim it at `local[N]`, where the reference's own answer
+//! and the standardisation. So is the decomposition, as `--spark-master local[1]` runs it where Spark
+//! takes LAPACK, up to 128 samples ([`truncated_svd`]); no port can claim it at `local[N]`, where the reference's own answer
 //! moves from run to run (docs/spark-parallel.md).
 //!
 //! Ported from
@@ -627,9 +627,10 @@ pub fn spark_gramian(panel: &Matrix) -> Vec<f64> {
 /// panel is usually rank deficient, and `rCond` of 1e-9 on a square root is 1e-18 on the value,
 /// under the machine's epsilon. So it has an answer only for one summation order and one LAPACK,
 /// and at `local[1]` the reference has both: F2J's `dgesdd`, here [`crate::f2j_gesdd`], which
-/// reaches its values and so the rank bit for bit up to 25 samples.
+/// reaches its values and so the rank bit for bit up to 128 samples. Past 25 its divide and conquer
+/// raises the noise to the epsilon, so the rank there is the request.
 ///
-/// Past that, and for a request ARPACK answers, cyclic Jacobi stands in. A panel with more
+/// For a request ARPACK answers, cyclic Jacobi stands in. A panel with more
 /// independent samples than it is asked for has no value near the threshold and gets the same
 /// count; a rank-deficient one is not claimed.
 pub fn truncated_svd(panel: &Matrix, k: usize) -> Decomposition {

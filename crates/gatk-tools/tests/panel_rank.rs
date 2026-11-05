@@ -10,10 +10,10 @@
 //!
 //!  * **`numEigensamples` lower than `min(requested, surviving)`**, on panels whose trailing values
 //!    are rounding noise;
-//!  * **the values above the noise, to eleven digits**, where the reference takes `dgesdd` and
-//!    `dbdsqr`, up to 25 samples;
-//!  * **the count alone** past that, where divide and conquer or ARPACK answers and the port does
-//!    not take their path, on panels with no value near the threshold.
+//!  * **the values above the noise, to eleven digits**, where the reference takes `dgesdd`, up to
+//!    128 samples;
+//!  * **the count alone** where ARPACK answers and the port does not take its path, on panels with
+//!    no value near the threshold.
 
 use gatk_corpus as corpus;
 use gatk_tools::create_read_count_panel_of_normals::{
@@ -164,7 +164,7 @@ fn answer(run: &Run) -> (usize, usize, Vec<f64>) {
 }
 
 fn exact(n: usize, k: usize) -> bool {
-    n <= 25 && solver_mode(n, k) == SolverMode::LocalLapack
+    n <= gatk_tools::f2j_gesdd::LARGEST && solver_mode(n, k) == SolverMode::LocalLapack
 }
 
 /// Every row of the dump, when the first x86-64 CI run has published it.
