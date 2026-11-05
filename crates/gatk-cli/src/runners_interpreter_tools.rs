@@ -1,11 +1,16 @@
 //! The tools that stop at an interpreter: two R plots, the gCNV tools, `NVScoreVariants` and the
 //! scalable VQSR's two.
 //!
-//! The pinned image has neither `Rscript` nor `python`, so what can be measured is everything the
-//! reference does on the way there and the user error it ends on. That much is ported, in the
-//! reference's order. On a machine that has the interpreter the reference would go on to run a
-//! script this port does not carry, and the port says so in its own words rather than writing
-//! anything that could pass for the answer.
+//! The pinned image has neither `Rscript` nor `python`, so what can be measured there is everything
+//! the reference does on the way and the user error it ends on. That much is ported, in the
+//! reference's order. For python, on a machine that has the interpreter the reference would go on
+//! to run a script this port does not carry, and the port says so in its own words rather than
+//! writing anything that could pass for the answer.
+//!
+//! R stays R. A device-level raster of `png(type="cairo")` is the only thing the plots produce, so
+//! the Java side's arguments, file names and exit status are kept and the scripts behind them are
+//! rewritten on ggplot2, under `src/r/`, embedded here and run the way `RScriptExecutor` runs its
+//! own. `tools/readfilter-conformance/RPlotsDump.java` measures them against the reference's.
 //!
 //! * **the plots** check their arguments, read and cross-check every input, and only then does
 //!   `RScriptExecutor.exec` look for its executable;
@@ -46,6 +51,12 @@ use htsjdk_bam::header::SequenceRecord;
 const NOT_IMPLEMENTED: &str = "org.apache.commons.lang3.NotImplementedException";
 const BGMM_NOT_IMPLEMENTED: &str = "BGMM module will be implemented in separate PR.";
 const GATK_EXCEPTION: &str = "org.broadinstitute.hellbender.exceptions.GATKException";
+const R_SCRIPT_EXCEPTION: &str = "org.broadinstitute.hellbender.utils.R.RScriptExecutorException";
+
+/// `PlottingUtils`' defaults.
+const DEFAULT_MAXIMUM_COPY_RATIO: f64 = 4.0;
+const DEFAULT_POINT_SIZE_COPY_RATIO: f64 = 0.2;
+const DEFAULT_POINT_SIZE_ALLELE_FRACTION: f64 = 0.4;
 
 /// `RuntimeUtils.which`: a file of that name in any directory of the path.
 fn on_the_path(executable: &str) -> bool {
@@ -222,14 +233,187 @@ fn require(parser: &Parser, name: &str) -> String {
     argument(parser, name).expect("a required argument")
 }
 
+/// The bootstrap every script starts from: it installs what is missing and names what it cannot.
+const R_BOOTSTRAP: RScript = RScript {
+    name: "RPlotBootstrap.R",
+    text: include_str!("r/RPlotBootstrap.R"),
+};
+const CNV_PLOTTING_LIBRARY: RScript = RScript {
+    name: "CNVPlottingLibrary.R",
+    text: include_str!("r/CNVPlottingLibrary.R"),
+};
+const PLOT_DENOISED_COPY_RATIOS: RScript = RScript {
+    name: "PlotDenoisedCopyRatios.R",
+    text: include_str!("r/PlotDenoisedCopyRatios.R"),
+};
+const PLOT_MODELED_SEGMENTS: RScript = RScript {
+    name: "PlotModeledSegments.R",
+    text: include_str!("r/PlotModeledSegments.R"),
+};
+const PLOT_ALLELE_FREQUENCY_QC: RScript = RScript {
+    name: "plotAlleleFrequencyQC.R",
+    text: include_str!("r/plotAlleleFrequencyQC.R"),
+};
+
+/// What `ProcessSettings.setBufferSize` keeps of each stream of a script.
+const SCRIPT_OUTPUT_BUFFER: usize = 8192;
+
+/// A script the binary carries.
+struct RScript {
+    name: &'static str,
+    text: &'static str,
+}
+
+/// `CopyNumberArgumentValidationUtils.getCanonicalPath`, where a file not written yet still has
+/// one.
+fn canonical_path(path: &str) -> String {
+    let absolute = std::path::PathBuf::from(java_absolute_path(path));
+    if let Ok(canonical) = absolute.canonicalize() {
+        return canonical.display().to_string();
+    }
+    match (absolute.parent(), absolute.file_name()) {
+        (Some(parent), Some(name)) => parent
+            .canonicalize()
+            .map_or(absolute.clone(), |parent| parent.join(name))
+            .display()
+            .to_string(),
+        _ => absolute.display().to_string(),
+    }
+}
+
+/// The directory `RScriptExecutor.exec` writes a script's resources into, gone when it drops.
+struct ScriptDirectory(std::path::PathBuf);
+
+impl ScriptDirectory {
+    fn new() -> Result<Self, Thrown> {
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let directory = std::env::temp_dir().join(format!(
+            "gatk-rs-r.{}.{}",
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&directory)
+            .map_err(|error| Thrown::non_user(GATK_EXCEPTION, error.to_string()))?;
+        Ok(Self(directory))
+    }
+}
+
+impl Drop for ScriptDirectory {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// The first bytes of a stream, as `HardThresholdingOutputStream` leaves them.
+fn captured(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(&bytes[..bytes.len().min(SCRIPT_OUTPUT_BUFFER)]).to_string()
+}
+
+/// `RScriptExecutor.exec`: the scripts into temporary files, one `source` each in an `-e`, and the
+/// arguments after it. The executable is looked for here and not when the tool starts, and a
+/// script that ends with a status other than nought is the executor's exception and nothing else:
+/// the status is the only thing the Java side reads, and its output only goes into the message.
+fn run_r_scripts(scripts: &[RScript], args: &[String]) -> Result<(), Thrown> {
+    if !on_the_path("Rscript") {
+        return Err(Thrown::user(
+            "Unable to execute Rscript command: Please add the Rscript directory to your \
+             environment ${PATH}"
+                .to_string(),
+        ));
+    }
+    let directory = ScriptDirectory::new()?;
+    let mut expression = format!("tempLibDir = '{}';", directory.0.display());
+    for script in scripts {
+        let path = directory.0.join(script.name);
+        std::fs::write(&path, script.text)
+            .map_err(|error| Thrown::non_user(GATK_EXCEPTION, error.to_string()))?;
+        expression.push_str(&format!("source('{}');", path.display()));
+    }
+    let output = std::process::Command::new("Rscript")
+        .arg("-e")
+        .arg(&expression)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|error| {
+            Thrown::non_user(
+                GATK_EXCEPTION,
+                format!("Unable to run Rscript -e {expression}: {error}"),
+            )
+        })?;
+    if output.status.success() {
+        return Ok(());
+    }
+    // A signal has no code of its own, and Java reads 128 plus the signal for it.
+    let status = output.status.code().unwrap_or_else(|| {
+        128 + std::os::unix::process::ExitStatusExt::signal(&output.status).unwrap_or(0)
+    });
+    let terminated = if status == 137 {
+        "\nThe exit code indicates that the process was terminated. This may mean the process \
+         requires additional memory.\n"
+    } else {
+        ""
+    };
+    Err(Thrown::non_user(
+        R_SCRIPT_EXCEPTION,
+        format!(
+            "\nRscript exited with {status}\nCommand Line: Rscript -e {expression} {}{terminated}\nStdout: {}\nStderr: {}",
+            args.join(" "),
+            captured(&output.stdout),
+            captured(&output.stderr)
+        ),
+    ))
+}
+
+/// `AlleleFrequencyQC.onTraversalSuccess`'s executor: the report, the metrics file and the sample.
+pub(super) fn plot_allele_frequency_qc(
+    report: &str,
+    debug_file: Option<&str>,
+    metrics: &str,
+    sample: &str,
+) -> Result<(), Thrown> {
+    // With no --debug-file the report is a temporary file the run deletes.
+    let temporary = ScriptDirectory::new()?;
+    let report_path = match debug_file {
+        Some(path) => java_absolute_path(path),
+        None => {
+            let path = temporary.0.join("variant_eval.txt");
+            std::fs::write(&path, report)
+                .map_err(|error| Thrown::non_user(GATK_EXCEPTION, error.to_string()))?;
+            path.display().to_string()
+        }
+    };
+    run_r_scripts(
+        &[R_BOOTSTRAP, PLOT_ALLELE_FREQUENCY_QC],
+        &[report_path, java_absolute_path(metrics), sample.to_string()],
+    )
+}
+
+/// `CONTIG_DELIMITER`-joined, as both copy-number scripts read them.
+fn contig_arguments(map: &[(String, i32)]) -> Vec<String> {
+    let names: Vec<&str> = map.iter().map(|(name, _)| name.as_str()).collect();
+    let lengths: Vec<String> = map.iter().map(|(_, length)| length.to_string()).collect();
+    vec![
+        format!("--contig_names={}", names.join("CONTIG_DELIMITER")),
+        format!("--contig_lengths={}", lengths.join("CONTIG_DELIMITER")),
+    ]
+}
+
+/// `Double.toString`, which is how the executor's arguments carry the numbers.
+fn double_argument(parser: &Parser, name: &str, default: f64) -> String {
+    gatk_engine::tsv_table::java_double_to_string(double_or(parser, name, default))
+}
+
 /// `PlotDenoisedCopyRatios.doWork`.
 pub fn plot_denoised_copy_ratios(parser: &Parser) -> Outcome {
     let standardized = require(parser, "standardized-copy-ratios");
     let denoised = require(parser, "denoised-copy-ratios");
     let dictionary = require(parser, "sequence-dictionary");
     // `validateArguments`: a missing input passes `validateInputs` and is refused when it is read.
-    non_empty(&argument(parser, "output-prefix").unwrap_or_default())?;
-    prepare_output_directory(&require(parser, "output"))?;
+    let prefix = argument(parser, "output-prefix").unwrap_or_default();
+    non_empty(&prefix)?;
+    let output = require(parser, "output");
+    prepare_output_directory(&output)?;
 
     let standardized_ratios = tables::read_copy_ratios(&standardized)?;
     let denoised_ratios = tables::read_copy_ratios(&denoised)?;
@@ -244,7 +428,38 @@ pub fn plot_denoised_copy_ratios(parser: &Parser) -> Outcome {
     let map = contig_length_map(&to_plot, minimum_contig_length(parser))?;
     validate_contigs(&map, &standardized_ratios.spans(), &standardized)?;
     validate_contigs(&map, &denoised_ratios.spans(), &denoised)?;
-    Err(stop_at("Rscript", "PlotDenoisedCopyRatios.R"))
+
+    // `writeDenoisingPlots`. The sample is the copy ratios' own, and the directory ends in a slash.
+    let mut args = vec![
+        format!("--sample_name={}", standardized_ratios.metadata.sample),
+        format!(
+            "--standardized_copy_ratios_file={}",
+            canonical_path(&standardized)
+        ),
+        format!("--denoised_copy_ratios_file={}", canonical_path(&denoised)),
+    ];
+    args.extend(contig_arguments(&map));
+    args.extend([
+        format!(
+            "--maximum_copy_ratio={}",
+            double_argument(parser, "maximum-copy-ratio", DEFAULT_MAXIMUM_COPY_RATIO)
+        ),
+        format!(
+            "--point_size_copy_ratio={}",
+            double_argument(
+                parser,
+                "point-size-copy-ratio",
+                DEFAULT_POINT_SIZE_COPY_RATIO
+            )
+        ),
+        format!("--output_dir={}/", canonical_path(&output)),
+        format!("--output_prefix={prefix}"),
+    ]);
+    run_r_scripts(
+        &[R_BOOTSTRAP, CNV_PLOTTING_LIBRARY, PLOT_DENOISED_COPY_RATIOS],
+        &args,
+    )?;
+    Ok(None)
 }
 
 /// `PlotModeledSegments.validateNumPointsPerContig`, one kind of point: every contig the segments
@@ -287,8 +502,10 @@ pub fn plot_modeled_segments(parser: &Parser) -> Outcome {
             "Must provide at least a denoised-copy-ratios file or an allelic-counts file.",
         ));
     }
-    non_empty(&argument(parser, "output-prefix").unwrap_or_default())?;
-    prepare_output_directory(&require(parser, "output"))?;
+    let prefix = argument(parser, "output-prefix").unwrap_or_default();
+    non_empty(&prefix)?;
+    let output = require(parser, "output");
+    prepare_output_directory(&output)?;
 
     let ratios = denoised
         .as_deref()
@@ -364,7 +581,50 @@ pub fn plot_modeled_segments(parser: &Parser) -> Outcome {
     }
     let spans: Vec<Span> = modeled.records.iter().map(|r| r.span.clone()).collect();
     validate_contigs(&map, &spans, &segments)?;
-    Err(stop_at("Rscript", "PlotModeledSegments.R"))
+
+    // `writeModeledSegmentsPlot`: an input that was not given is the word `null` on the line.
+    let or_null = |path: &Option<String>| {
+        path.as_deref()
+            .map_or_else(|| "null".to_string(), canonical_path)
+    };
+    let mut args = vec![
+        format!("--sample_name={}", modeled.metadata.sample),
+        format!("--denoised_copy_ratios_file={}", or_null(&denoised)),
+        format!("--allelic_counts_file={}", or_null(&allelic)),
+        format!("--modeled_segments_file={}", canonical_path(&segments)),
+    ];
+    args.extend(contig_arguments(&map));
+    args.extend([
+        format!(
+            "--maximum_copy_ratio={}",
+            double_argument(parser, "maximum-copy-ratio", DEFAULT_MAXIMUM_COPY_RATIO)
+        ),
+        format!(
+            "--point_size_copy_ratio={}",
+            double_argument(
+                parser,
+                "point-size-copy-ratio",
+                DEFAULT_POINT_SIZE_COPY_RATIO
+            )
+        ),
+        format!(
+            "--point_size_allele_fraction={}",
+            double_argument(
+                parser,
+                "point-size-allele-fraction",
+                DEFAULT_POINT_SIZE_ALLELE_FRACTION
+            )
+        ),
+        format!(
+            "--output_file={}",
+            canonical_path(&format!("{output}/{prefix}.modeled.png"))
+        ),
+    ]);
+    run_r_scripts(
+        &[R_BOOTSTRAP, CNV_PLOTTING_LIBRARY, PLOT_MODELED_SEGMENTS],
+        &args,
+    )?;
+    Ok(None)
 }
 
 /// `DetermineGermlineContigPloidy.onStartup`.

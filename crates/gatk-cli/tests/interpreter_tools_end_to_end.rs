@@ -24,7 +24,8 @@
 //! each `argv` row as it is. The HDF5 files the rows read are the port's own: the `setup-` rows
 //! make them through `ExtractVariantAnnotations`, and their contents are compared as text since
 //! two runs of the library write different bytes. `PATH` is emptied, because a machine with a
-//! python is not the machine the reference was measured on; the last check puts one on it.
+//! python or an R is not the machine the reference was measured on; the last check puts both on it.
+//! `r_plots_end_to_end.rs` is where the plots go on and run.
 
 use gatk_corpus as corpus;
 use gatk_tools::hdf5_reader::Hdf5Reader;
@@ -304,49 +305,97 @@ fn replay(text: &str, root: &std::path::Path) {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
-/// With the interpreter on the path the reference would run it, which the port does not; the
-/// message says so and is the port's own. The refusals ahead of it stay the reference's.
+/// With python on the path the reference would run a script the port does not carry, and the
+/// message says so and is the port's own. With R on the path the port runs its rewrite the way
+/// `RScriptExecutor` runs a script, and a status other than nought is that executor's exception.
+/// The refusals ahead of them stay the reference's.
 fn with_interpreters(root: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+
     let bin = root.join("bin");
     std::fs::create_dir_all(&bin).expect("a directory");
     std::fs::write(bin.join("python"), "").expect("a python");
-    std::fs::write(bin.join("Rscript"), "").expect("an Rscript");
+    let called_with = root.join("rscript-arguments");
+    let rscript = bin.join("Rscript");
+    std::fs::write(
+        &rscript,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\necho 'from the script'\nexit 7\n",
+            called_with.display()
+        ),
+    )
+    .expect("an Rscript");
+    std::fs::set_permissions(&rscript, std::fs::Permissions::from_mode(0o755))
+        .expect("an executable");
     // SAFETY: this file holds one test, so nothing else in the process reads the environment.
     unsafe { std::env::set_var("PATH", &bin) };
     let to = |list: &[&str]| -> Vec<String> { list.iter().map(|s| (*s).to_string()).collect() };
-    for argv in [
-        to(&[
-            "PlotDenoisedCopyRatios",
-            "--standardized-copy-ratios",
-            "interpreter-dump/standardized.tsv",
-            "--denoised-copy-ratios",
-            "interpreter-dump/denoised.tsv",
-            "--sequence-dictionary",
-            "interpreter-dump/ref.dict",
-            "--output-prefix",
-            "sample",
-            "--output",
-            "interpreter-dump/out/with-r",
-        ]),
-        to(&[
-            "NVScoreVariants",
-            "-V",
-            "nothing.vcf",
-            "-R",
-            "nothing.fasta",
-            "-O",
-            "out.vcf",
-        ]),
-    ] {
-        let ran = gatk_cli::run(&argv);
-        assert_ne!(ran.status, 0);
-        assert!(
-            ran.stderr
-                .contains("This message is the port's own and not GATK's."),
-            "{}",
-            ran.stderr
-        );
-    }
+
+    let ran = gatk_cli::run(&to(&[
+        "PlotDenoisedCopyRatios",
+        "--standardized-copy-ratios",
+        "interpreter-dump/standardized.tsv",
+        "--denoised-copy-ratios",
+        "interpreter-dump/denoised.tsv",
+        "--sequence-dictionary",
+        "interpreter-dump/ref.dict",
+        "--output-prefix",
+        "sample",
+        "--output",
+        "interpreter-dump/out/with-r",
+    ]));
+    assert_eq!(ran.status, 3, "{}", ran.stderr);
+    assert!(
+        ran.stderr
+            .contains("org.broadinstitute.hellbender.utils.R.RScriptExecutorException")
+            && ran.stderr.contains("Rscript exited with 7")
+            && ran.stderr.contains("Stdout: from the script"),
+        "{}",
+        ran.stderr
+    );
+    let arguments = std::fs::read_to_string(&called_with).expect("the script ran");
+    let arguments: Vec<&str> = arguments.lines().collect();
+    assert_eq!(arguments[0], "-e", "{arguments:?}");
+    assert!(
+        arguments[1].starts_with("tempLibDir = '")
+            && arguments[1].contains("RPlotBootstrap.R');source('")
+            && arguments[1].contains("CNVPlottingLibrary.R');source('")
+            && arguments[1].ends_with("PlotDenoisedCopyRatios.R');"),
+        "{arguments:?}"
+    );
+    let cwd = std::env::current_dir().expect("a cwd");
+    let cwd = cwd.canonicalize().expect("a cwd").display().to_string();
+    assert_eq!(
+        arguments[2..],
+        [
+            "--sample_name=sampleA".to_string(),
+            format!("--standardized_copy_ratios_file={cwd}/interpreter-dump/standardized.tsv"),
+            format!("--denoised_copy_ratios_file={cwd}/interpreter-dump/denoised.tsv"),
+            "--contig_names=chr1CONTIG_DELIMITERchr2".to_string(),
+            "--contig_lengths=2000000CONTIG_DELIMITER1500000".to_string(),
+            "--maximum_copy_ratio=4.0".to_string(),
+            "--point_size_copy_ratio=0.2".to_string(),
+            format!("--output_dir={cwd}/interpreter-dump/out/with-r/"),
+            "--output_prefix=sample".to_string(),
+        ]
+    );
+
+    let ran = gatk_cli::run(&to(&[
+        "NVScoreVariants",
+        "-V",
+        "nothing.vcf",
+        "-R",
+        "nothing.fasta",
+        "-O",
+        "out.vcf",
+    ]));
+    assert_ne!(ran.status, 0);
+    assert!(
+        ran.stderr
+            .contains("This message is the port's own and not GATK's."),
+        "{}",
+        ran.stderr
+    );
 }
 
 #[test]
