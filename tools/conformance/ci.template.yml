@@ -206,6 +206,9 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: autotools, which isal-sys's build script runs and the macOS image lacks
+        run: brew install autoconf automake libtool
+
       - name: Record the device, its driver and the toolkit
         env:
           GATK_RS_GPU: "1"
@@ -230,7 +233,7 @@ jobs:
           cargo test --workspace --release --features gatk-engine/gpu --no-fail-fast 2>&1 \
             | tee gpu.log || true
           for side in cpu gpu; do
-            if grep -q "could not compile" $side.log; then echo "$side: build failed"; exit 1; fi
+            if grep -qE "could not compile|failed to run custom build command" $side.log; then echo "$side: build failed"; exit 1; fi
             grep -E '^test .* \.\.\. FAILED$' $side.log | sort > $side-failed.txt || true
             grep -c '^test result' $side.log > $side-binaries.txt
           done
