@@ -14,6 +14,13 @@ htsjdk-vcf.workspace = true
 jmath.workspace = true
 # Pinned exactly, not by caret range: a byte-identity claim cannot float its dependencies.
 
+# Milestone GPU's device path, Metal only for now: Apple GPUs are the hardware this was built on.
+[target.'cfg(target_os = "macos")'.dependencies]
+metal = { version = "=0.33.0", optional = true }
+
+[features]
+gpu = ["dep:metal"]
+
 [dev-dependencies]
 flate2 = "1"
 # One corpus parser for the whole workspace: two parsers would be two corpora.

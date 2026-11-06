@@ -1202,7 +1202,9 @@ GATK, which targets concordance and says so.
 
 ### GPU.1 What makes a kernel eligible
 
-- [ ] a written eligibility rule, and a guard that enforces it per kernel:
+- [x] a written eligibility rule, and a guard that enforces it per kernel
+      (`docs/gpu/eligibility.md`, `tools/audit/gpu_kernels.py` with its self-test, in CI and
+      preflight):
   - integer and byte work with a fixed traversal order is eligible as it stands;
   - floating point is eligible only when the operation order, the rounding and the transcendental
     implementations are pinned to the CPU path's. In practice: no fast-math, no FMA contraction
@@ -1212,31 +1214,47 @@ GATK, which targets concordance and says so.
     a vendor libm is not the one jmath reproduces;
   - anything that cannot meet the above is quarantined and reported as bio-identical, exactly as a
     CPU quarantine is
-- [ ] a determinism gate across **two different GPU architectures**, not one: a reduction that is
+- [~] a determinism gate across **two different GPU architectures**, not one: a reduction that is
       deterministic at one warp size or occupancy can stop being so at another, and a single-device
-      green run does not establish that
+      green run does not establish that. Observed on one so far (Apple M4 Max,
+      `docs/gpu/devices.md`). The only kernel is integer-only and the guard refuses every
+      width-dependent construct, so the argument is structural; the CI `gpu` job adds GitHub's
+      paravirtualised macOS GPU, which is a second driver stack, not a second architecture
 
 ### GPU.2 The targets, in order of tractability
 
 - [ ] **BGZF deflate and inflate**: integer work, block-independent, and already the hottest path
       in every tool that writes a BAM. Byte-identity is decidable here because the output is
-      defined bit for bit
-- [ ] **the read filters and the pileup floor**: integer and byte predicates over many reads, no
-      floating point, and a fixed order. The cheapest place to prove the harness works end to end
-- [ ] **`PairHMM`**: the reason anyone wants a GPU here. Byte-identity against `LoglessPairHMM`
+      defined bit for bit. Lives in htsjdk-rs (`htsjdk-bgzf`, `gkl-deflate`); not started
+- [~] **the read filters and the pileup floor**: integer and byte predicates over many reads, no
+      floating point, and a fixed order. The cheapest place to prove the harness works end to end.
+      Settled as not worth a kernel (`docs/gpu/targets.md`): the host must gather every field a
+      predicate reads before the device sees it, so the host's share alone is the CPU path's cost.
+      The harness was proved end to end by `PairHMM` instead. Becomes a target if BGZF decoding
+      moves to the device
+- [x] **`PairHMM`**: the reason anyone wants a GPU here. Byte-identity against `LoglessPairHMM`
       requires reproducing the pure-Java accumulation order, which is the same constraint the CPU
-      port already carries, so the kernel is a transliteration rather than a redesign
+      port already carries, so the kernel is a transliteration rather than a redesign. Metal,
+      binary64 in software on integers because Apple GPUs have none; bit-identical on every pair
+      tested and on every suite of the workspace, and 21 to 22 times the engine's
+      single CPU thread from 8,000 pairs (`docs/gpu/targets.md`)
 - [ ] **the assembly graph and genotyping** (G3): larger, and floating point throughout
 - [ ] **CRAM codecs** (Milestone H), whose arithmetic is integral and whose output is defined
 
 ### GPU.3 How it is verified
 
-- [ ] every conformance suite runs twice in CI, CPU and GPU, and the goldens are compared with the
-      same comparator: a GPU run is not a separate claim, it is the same claim on other hardware
-- [ ] the oracle contract records the device, the driver and the toolkit version alongside the
+- [~] every conformance suite runs twice in CI, CPU and GPU, and the goldens are compared with the
+      same comparator: a GPU run is not a separate claim, it is the same claim on other hardware.
+      The `gpu` job runs the workspace on both paths on one macOS runner and requires the same
+      failures on each; locally the device path fails exactly the CPU path's three host-bound
+      tests. Not ticked until that job has run green on GitHub, whose macOS runner may expose no
+      Metal device
+- [x] the oracle contract records the device, the driver and the toolkit version alongside the
       container digest, because a kernel's result is a property of all three
-- [ ] a measured speedup per kernel, published beside its byte-equality, so an accelerated path
-      that is not faster gets deleted rather than kept
+      (`tools/provenance/record.py`, format 2, `device` on a `GATK_RS_GPU` run)
+- [x] a measured speedup per kernel, published beside its byte-equality, so an accelerated path
+      that is not faster gets deleted rather than kept (`docs/gpu/targets.md`,
+      `crates/gatk-engine/examples/gpu_speed.rs`)
 
 **Scope note.** This milestone is optional and runs in parallel: nothing in G1, G2, G3, H or P
 depends on it, and no tool's byte-identity claim may rest on a GPU path alone.
