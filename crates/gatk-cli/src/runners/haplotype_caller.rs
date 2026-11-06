@@ -1817,7 +1817,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         );
     }
     // The writer is closed whether or not the traversal failed, so what came before is written.
-    write_variant_output(parser, &output, &text)?;
+    super::write_unsharded_variant_output(parser, &output, &text)?;
     if let Some(failure) = failure {
         return Err(failure);
     }

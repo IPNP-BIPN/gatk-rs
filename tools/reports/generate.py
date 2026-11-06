@@ -15,7 +15,9 @@ Every number is read from a committed source, and a number that no source holds 
 * inputs and held-out arguments, from `tools/coverage/fixtures.json`. An argument with no values is
   one no array varies, and the entry's `$why` says why;
 * quarantined fields, from each suite's `compare` rules;
-* fuzzer branch coverage: the fuzzer does not run in CI yet (V.6), so it reads `not measured`.
+* fuzzer coverage, from `tools/fuzz/measured.json`: the reference's JaCoCo probes the covering
+  array's rows reach, how many more the fuzzer's mutants reach, and on how many kept cases the
+  port diverged.
 
     python3 tools/reports/generate.py            # writes docs/VALIDATION.md
     python3 tools/reports/generate.py --check    # fails if the committed file is stale
@@ -32,6 +34,7 @@ REPO = Path(__file__).resolve().parents[2]
 INVENTORY = REPO / "tools" / "inventory" / "generated" / "inventory.json"
 MANIFEST = REPO / "tools" / "conformance" / "manifest.json"
 MEASURED = REPO / "tools" / "coverage" / "measured.json"
+FUZZED = REPO / "tools" / "fuzz" / "measured.json"
 FIXTURES = REPO / "tools" / "coverage" / "fixtures.json"
 PORTS = REPO / "tools" / "dashboard" / "ports"
 REPORT = REPO / "docs" / "VALIDATION.md"
@@ -83,11 +86,12 @@ def gather():
     manifest = json.loads(MANIFEST.read_text())
     measured = json.loads(MEASURED.read_text()).get("tools", {})
     fixtures = json.loads(FIXTURES.read_text()).get("per_tool", {})
+    fuzzed = json.loads(FUZZED.read_text()).get("tools", {}) if FUZZED.exists() else {}
     tools = {}
     for entry in inventory["tools"]:
         name = entry["name"] if isinstance(entry, dict) else entry
         tools[name] = {"suites": [], "records": 0, "files": 0, "by_suite": False, "quarantine": set(),
-                       "port": None, "coverage": None}
+                       "port": None, "coverage": None, "fuzz": fuzzed.get(name)}
     for suite in manifest["suites"]:
         records, files, per_tool = count_suite(suite)
         for name in suite.get("tools", []):
@@ -134,6 +138,16 @@ def coverage_text(value):
     return f"{matched}/{rows} ({share:.1%})" if share is not None else f"{matched}/{rows}", str(value.get("t", "-"))
 
 
+def fuzz_text(value):
+    if not value:
+        return "not measured"
+    gained = value["probes_total"] - value["probes_from_seeds"]
+    text = f"{value['probes_total']} probes (+{gained})"
+    if "diverged" in value:
+        text += f", {value['diverged']}/{value['replayed']} diverge"
+    return text
+
+
 def fixture_summary(entry):
     """Distinct input files an array draws on, and the arguments no array varies."""
     if not entry:
@@ -162,8 +176,10 @@ def render(inventory, tools, fixtures):
         "the pinned container on every run, and the files among them, compared byte for byte. A "
         "count marked `suite` belongs to a suite the tool shares, or whose golden does not label "
         "its runs per tool. **Argument rows** are the rows of the tool's covering array whose "
-        "outcome matched the reference, at the **t** level shown. **Fuzzer branches** read `not "
-        "measured` until the fuzzer runs in CI (V.6). A sibling port's goldens are not vendored "
+        "outcome matched the reference, at the **t** level shown. **Fuzzer branches** are the reference's JaCoCo "
+        "probes reached (a proxy for branches, not a percentage), how many of them only the "
+        "fuzzer's mutants reached, and how many of the cases it kept the port answered "
+        "differently, re-run out of process (`tools/fuzz/run_fuzz.py`). A sibling port's goldens are not vendored "
         "here, so its counts read `not vendored`; its own repository holds them.",
         "",
         "Each run's inputs, toolchain and container are in the `provenance` artefact CI keeps "
@@ -194,7 +210,7 @@ def render(inventory, tools, fixtures):
         quarantine = ", ".join(sorted(tool["quarantine"])) or "none"
         lines.append(
             f"| {name} | {tool['port'] or '-'} | {state} | {records} | {files} | {covered} | {level} "
-            f"| not measured | {len(inputs)} | {len(held)} | {quarantine} |"
+            f"| {fuzz_text(tool['fuzz'])} | {len(inputs)} | {len(held)} | {quarantine} |"
         )
         entry = fixtures.get(name)
         if entry:

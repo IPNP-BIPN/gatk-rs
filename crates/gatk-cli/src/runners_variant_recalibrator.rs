@@ -552,6 +552,10 @@ pub fn variant_recalibrator(parser: &Parser) -> Outcome {
     for path in arguments(parser, "aggregate") {
         aggregates.push((path.clone(), read_feature_vcf(&path)?));
     }
+    // The end of `onStartup`: a `--variant-output-filtering` mode with no `-L` is refused.
+    // shortcut: the recal records are not passed through the filter itself; wire `keep` into
+    // `recal_file` when a row with `-L` and a mode other than ANYWHERE is measured.
+    let _keep = variant_output_filter(parser, intervals.as_deref())?;
 
     // `onTraversalStart`.
     let keys: Vec<String> = arguments(parser, "use-annotation");

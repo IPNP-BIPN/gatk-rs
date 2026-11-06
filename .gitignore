@@ -18,3 +18,6 @@ tools/conformance/pending/
 .unlazy-hook-state.json
 .claude/settings.local.json
 .claude/worktrees/
+
+# Fuzz findings are published by CI as artefacts; what is committed is tools/fuzz/measured.json.
+tools/fuzz/findings/

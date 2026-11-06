@@ -163,7 +163,10 @@ pub fn run(args: &[String]) -> Outcome {
                         status: main_entry::exit_status(Failure::User),
                     }
                 }
-                Some(runner) => match run_capturing(runner, args, &mut stdout) {
+                Some(runner) => match startup_refusal(&name, tool_args)
+                    .map(Err)
+                    .unwrap_or_else(|| run_capturing(runner, args, &mut stdout))
+                {
                     Ok(result) => {
                         if let Some(printed) = main_entry::tool_returned(result.as_deref()) {
                             stdout.push_str(&printed);
@@ -191,6 +194,20 @@ pub fn run(args: &[String]) -> Outcome {
             }
         }
     }
+}
+
+/// What a `GATKTool` refuses at the end of `onStartup`, for a tool that declares the progress meter.
+///
+/// Spark tools and plain command-line programs declare no `--seconds-between-progress-updates`
+/// and build no meter, so for them this is `None`.
+fn startup_refusal(tool: &str, args: &[String]) -> Option<Thrown> {
+    let declares = gatk_tools::tool_declarations::declarations(tool)?
+        .iter()
+        .any(|declaration| declaration.long_name == "seconds-between-progress-updates");
+    if !declares {
+        return None;
+    }
+    runners::progress_meter_refusal(&parsed(tool, args).ok()?)
 }
 
 /// Whether this port can hand a tool's command line to the ported Barclay parser at all.
