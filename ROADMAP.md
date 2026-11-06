@@ -1332,15 +1332,13 @@ the CPU path that already exists, and no bit-identity claim may weaken to buy a 
       covering array, mutates one argument at a time within the array's own value domains while
       JaCoCo counts the reference's probes, and replays every kept case against the port through
       `run_array.py`, minimizing a divergence on both sides. CI runs it in eight shards over the
-      measured tools; `tools/fuzz/measured.json` is frozen from run 42083100066: **190 tools
-      fuzzed, 14 with a kept case on which the port answers differently** (most of them the order
-      in which a refusal is reached, e.g. `--seconds-between-progress-updates=0` refused by the
-      reference before the port's own input checks). The sixteen minimized cases behind them are
-      fixed in the port: the progress-meter refusal at the end of `GATKTool.onStartup`,
-      `--max-variants-per-shard` in the shared VCF writer, `CheckPileup`'s result lost when it
-      writes to `System.out`, write failures turned into GATK's own user errors, and four refusal
-      orders of single tools. Each case was replayed against the reference's recorded answer. The
-      frozen counts stay as measured until the next freeze
+      measured tools; `tools/fuzz/measured.json` is frozen from run 42179251609: **190 tools
+      fuzzed, 2005 kept cases replayed, none on which the port answers differently**. The first
+      freeze (run 42083100066) had 14 tools with a divergence, sixteen minimized cases, and all
+      of them were fixed in the port rather than quarantined: the progress-meter refusal at the
+      end of `GATKTool.onStartup`, `--max-variants-per-shard` in the shared VCF writer,
+      `CheckPileup`'s result lost when it writes to `System.out`, write failures turned into
+      GATK's own user errors, and four refusal orders of single tools
 - [x] determinism gates, in all three repositories: in gatk-rs the suites run again under
       `fr_FR.UTF-8`, another timezone, another `TMPDIR` and one test thread, and two clean builds of
       `gatk-engine` must be the same bytes (`determinism` job); htsjdk-rs and picard-rs run their

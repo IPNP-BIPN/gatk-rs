@@ -344,8 +344,8 @@
    "timed_out": false
   },
   "CheckPileup": {
-   "diverged": 2,
-   "divergence_classes": 2,
+   "diverged": 0,
+   "divergence_classes": 0,
    "iterations": 30,
    "kept": 13,
    "probes_from_seeds": 3118,
@@ -440,8 +440,8 @@
    "timed_out": false
   },
   "CollectMultipleMetricsSpark": {
-   "diverged": 1,
-   "divergence_classes": 1,
+   "diverged": 0,
+   "divergence_classes": 0,
    "iterations": 30,
    "kept": 10,
    "probes_from_seeds": 2242,
@@ -476,8 +476,8 @@
    "timed_out": false
   },
   "CollectSVEvidence": {
-   "diverged": 1,
-   "divergence_classes": 1,
+   "diverged": 0,
+   "divergence_classes": 0,
    "iterations": 30,
    "kept": 8,
    "probes_from_seeds": 2393,
@@ -584,8 +584,8 @@
    "timed_out": false
   },
   "CondenseDepthEvidence": {
-   "diverged": 1,
-   "divergence_classes": 1,
+   "diverged": 0,
+   "divergence_classes": 0,
    "iterations": 30,
    "kept": 9,
    "probes_from_seeds": 2012,
@@ -716,8 +716,8 @@
    "timed_out": false
   },
   "CreateHadoopBamSplittingIndex": {
-   "diverged": 1,
-   "divergence_classes": 1,
+   "diverged": 0,
+   "divergence_classes": 0,
    "iterations": 30,
    "kept": 7,
    "probes_from_seeds": 1002,
@@ -1076,12 +1076,12 @@
    "timed_out": false
   },
   "FuncotatorDataSourceDownloader": {
-   "diverged": 1,
-   "divergence_classes": 1,
+   "diverged": 0,
+   "divergence_classes": 0,
    "iterations": 30,
    "kept": 4,
    "probes_from_seeds": 1282,
-   "probes_total": 1569,
+   "probes_total": 1568,
    "replayed": 4,
    "seeds": 8,
    "t": 2,
@@ -1148,8 +1148,8 @@
    "timed_out": false
   },
   "GeneExpressionEvaluation": {
-   "diverged": 1,
-   "divergence_classes": 1,
+   "diverged": 0,
+   "divergence_classes": 0,
    "iterations": 30,
    "kept": 12,
    "probes_from_seeds": 2773,
@@ -1340,8 +1340,8 @@
    "timed_out": false
   },
   "IndexFeatureFile": {
-   "diverged": 2,
-   "divergence_classes": 2,
+   "diverged": 0,
+   "divergence_classes": 0,
    "iterations": 30,
    "kept": 9,
    "probes_from_seeds": 1209,
@@ -1496,8 +1496,8 @@
    "timed_out": false
   },
   "MethylationTypeCaller": {
-   "diverged": 1,
-   "divergence_classes": 1,
+   "diverged": 0,
+   "divergence_classes": 0,
    "iterations": 30,
    "kept": 12,
    "probes_from_seeds": 2669,
@@ -1808,8 +1808,8 @@
    "timed_out": false
   },
   "PrintSVEvidence": {
-   "diverged": 1,
-   "divergence_classes": 1,
+   "diverged": 0,
+   "divergence_classes": 0,
    "iterations": 30,
    "kept": 9,
    "probes_from_seeds": 2151,
@@ -1964,8 +1964,8 @@
    "timed_out": false
   },
   "SVConcordance": {
-   "diverged": 1,
-   "divergence_classes": 1,
+   "diverged": 0,
+   "divergence_classes": 0,
    "iterations": 30,
    "kept": 8,
    "probes_from_seeds": 3008,
@@ -2132,8 +2132,8 @@
    "timed_out": false
   },
   "TagGermlineEvents": {
-   "diverged": 1,
-   "divergence_classes": 1,
+   "diverged": 0,
+   "divergence_classes": 0,
    "iterations": 30,
    "kept": 8,
    "probes_from_seeds": 2080,
@@ -2216,8 +2216,8 @@
    "timed_out": false
   },
   "ValidateVariants": {
-   "diverged": 1,
-   "divergence_classes": 1,
+   "diverged": 0,
+   "divergence_classes": 0,
    "iterations": 30,
    "kept": 15,
    "probes_from_seeds": 2606,
@@ -2264,8 +2264,8 @@
    "timed_out": false
   },
   "VariantRecalibrator": {
-   "diverged": 1,
-   "divergence_classes": 1,
+   "diverged": 0,
+   "divergence_classes": 0,
    "iterations": 30,
    "kept": 14,
    "probes_from_seeds": 4074,
