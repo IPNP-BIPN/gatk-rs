@@ -120,9 +120,9 @@ pub fn index_feature_file(parser: &Parser) -> Outcome {
         }
         _ => index_feature_file::build(&text, &source, &input).map_err(refused)?,
     };
-    std::fs::write(&name, index).map_err(|error| {
-        Thrown::non_user(PORT_FAILURE, format!("could not write {name}: {error}"))
-    })?;
+    // `index.write(indexPath)`, whose `IOException` becomes this user error.
+    std::fs::write(&name, index)
+        .map_err(|_| Thrown::user(format!("Could not write index to file {name}")))?;
     Ok(Some(name))
 }
 
@@ -1526,6 +1526,11 @@ pub fn create_hadoop_bam_splitting_index(parser: &Parser) -> Outcome {
 
     let bytes = std::fs::read(&input)
         .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&input, false)))?;
+    // The `.sbi` stream is opened before a record is read, and an `IOException` from it is this
+    // user error.
+    let output = argument(parser, "output").unwrap_or_else(|| sbi::default_output(&input));
+    let not_created = || Thrown::user("Couldn't create splitting index");
+    let mut file = std::fs::File::create(&output).map_err(|_| not_created())?;
     let (offsets, next_start) = record_offsets(&bytes)?;
     let entries = sbi::offsets(&offsets, granularity as u64, next_start);
     let index = sbi::write(
@@ -1535,10 +1540,7 @@ pub fn create_hadoop_bam_splitting_index(parser: &Parser) -> Outcome {
         &entries,
     );
 
-    let output = argument(parser, "output").unwrap_or_else(|| sbi::default_output(&input));
-    std::fs::write(&output, index).map_err(|error| {
-        Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
-    })?;
+    std::io::Write::write_all(&mut file, &index).map_err(|_| not_created())?;
 
     if flag(parser, "create-bai") {
         // Only the `.bai` path reads the records, so only it cares how they are sorted.
@@ -2697,11 +2699,12 @@ pub fn pileup(parser: &Parser) -> Outcome {
 /// walker does not have:
 ///
 ///   - the report is written to a FILE ONLY IF `--output` names one, and to stdout otherwise,
-///     because `outFile` is optional and `new PrintStream(System.out)` is what a null becomes;
+///     because `outFile` is optional and a null becomes `System.out` itself;
 ///   - a failing run still leaves the report behind: the line that explains the disagreement is
 ///     printed BEFORE the exception is thrown, and `closeTool` flushes the stream on the way out;
 ///   - and `onTraversalSuccess` returns the counters rather than writing them, so they are the
-///     tool's RESULT and a refused run never reports them at all.
+///     tool's RESULT and a refused run never reports them at all. Nor does a run with no
+///     `--output`: `closeTool` has closed `System.out` by the time the result is printed.
 ///
 /// The truth file is read whole rather than queried per locus. The reference reaches it through a
 /// `FeatureInput`, which is why the file has to be indexed for the reference to run at all; what
@@ -2815,7 +2818,11 @@ pub fn check_pileup(parser: &Parser) -> Outcome {
     }
 
     write_report(&output, &report)?;
-    Ok(Some(gatk_tools::check_pileup::summary(loci, bases)))
+    // With no `--output` the report stream IS `System.out`, and `closeTool` closes it before
+    // `handleResult` prints the result, so nothing of `Tool returned:` reaches the console.
+    Ok(output
+        .is_some()
+        .then(|| gatk_tools::check_pileup::summary(loci, bases)))
 }
 
 /// The report, to the file `--output` names or to stdout when it names none.
@@ -4738,16 +4745,6 @@ pub fn left_align_and_trim_variants(parser: &Parser) -> Outcome {
         ),
     };
     let keep_original_counts = flag(parser, "keep-original-ac");
-    // A sharded output is a WRITER, not a transformation: the reference writes
-    // `out.shard_00000.vcf.gz` and one file per shard, which is a feature of its own rather than
-    // this tool's. Refusing says so; writing one file would be a different answer.
-    if number_or(parser, "max-variants-per-shard", 0) > 0 {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "--max-variants-per-shard writes one file per shard, which this port does not write \
-             yet. This message is the port's own and not GATK's.",
-        ));
-    }
 
     // `createVCFHeaderLineList`: the input's own lines merged with themselves, the tool's default
     // lines, and the count lines the splitting adds.
@@ -6482,24 +6479,50 @@ pub fn collect_sv_evidence(parser: &Parser) -> Outcome {
     let split_file = argument(parser, "sr-file");
     let site_file = argument(parser, "sd-file");
     let depth_file = argument(parser, "depth-evidence-file");
+    // `onTraversalStart` builds the four writers in order, and each tests the name it was given
+    // BEFORE the traversal, refusing one it could not read back (the codecs' own `canDecode`). The
+    // two counters each take an input and an output, and refuse one without the other before they
+    // look at the name. A run that asks for no output at all is refused last.
+    let pairs = [
+        (
+            "sd",
+            &site_file,
+            argument(parser, "site-depth-locs-vcf"),
+            "Having specified a site-depth-locs-vcf input, you must also supply an sd-file for output.",
+            "Having specified an sd-file for output, you must also supply a site-depth-locs-vcf as input.",
+        ),
+        (
+            "rd",
+            &depth_file,
+            argument(parser, "depth-evidence-intervals"),
+            "Having specified an depth-evidence-intervals input, you must also supply a depth-evidence-file for output.",
+            "Having specified a depth-evidence-file for output, you must also supply depth-evidence-intervals as input.",
+        ),
+    ];
+    let name_check = |kind: &str, path: &Option<String>| match path {
+        Some(name) if evidence::encoding(kind, name).is_none() => {
+            Err(Thrown::user(evidence::bad_name_message(kind, name)))
+        }
+        _ => Ok(()),
+    };
+    name_check("pe", &pair_file)?;
+    name_check("sr", &split_file)?;
+    for (kind, output, input, no_output, no_input) in &pairs {
+        match (input, output) {
+            (Some(_), None) => return Err(Thrown::user(*no_output)),
+            (None, Some(_)) => return Err(Thrown::user(*no_input)),
+            _ => name_check(kind, output)?,
+        }
+    }
     if pair_file.is_none() && split_file.is_none() && site_file.is_none() && depth_file.is_none() {
         return Err(Thrown::user(evidence::NO_OUTPUT_MESSAGE));
     }
-    // Each writer tests the name it was given BEFORE the traversal, and refuses one it could not
-    // read back: which names it can is the codecs' own `canDecode`.
     let outputs = [
         ("pe", &pair_file),
         ("sr", &split_file),
         ("sd", &site_file),
         ("rd", &depth_file),
     ];
-    for (kind, path) in outputs {
-        if let Some(name) = path {
-            if evidence::encoding(kind, name).is_none() {
-                return Err(Thrown::user(evidence::bad_name_message(kind, name)));
-            }
-        }
-    }
     // A name the codecs accept can still select a writer this port does not carry: GATK writes a
     // block-compressed name through BGZF at `--compression-level` with a tabix index beside it,
     // and a `.bci` name through the binary container. Only plain text is written below, so the
@@ -11201,7 +11224,7 @@ pub fn flow_feature_mapper(parser: &Parser) -> Outcome {
     }
     apply_sites_only(parser, &mut vcf_header, &mut records);
     let text = write_vcf_honouring_lenient(parser, &vcf_header, &records)?;
-    write_variant_output(parser, &output, &text)?;
+    write_unsharded_variant_output(parser, &output, &text)?;
     Ok(None)
 }
 
@@ -12434,52 +12457,25 @@ pub fn methylation_type_caller(parser: &Parser) -> Outcome {
         &read_filter(parser, &filters, &header)?,
     )
     .map_err(|error| Thrown::user(error.message()))?;
-    std::fs::write(&output, &text).map_err(|error| {
-        Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
-    })?;
-
-    // A variant output carries the same two companions a BAM does, under their own arguments: the
-    // index the file's name implies, and the digest APPENDED to the whole name.
-    if flag(parser, "create-output-variant-index") {
-        // `getBestAvailableSequenceDictionary`, which the index's `DICT:` properties come from: a
-        // `--sequence-dictionary` OUTRANKS the reference's own. Measured on row 6 of this tool's
-        // array, where `--reference other.fasta` and `--sequence-dictionary matching.dict`
-        // disagree and the reference indexed `chr1` where the port indexed `chrOther`.
-        let master = master_dictionary(parser)?;
-        let lengths: Vec<(String, i32)> = match &master {
-            Some(header) => header
-                .sequences
-                .iter()
-                .map(|sequence| (sequence.name.clone(), sequence.length))
-                .collect(),
-            None => gatk_tools::reference_walker::dictionary(&reference)
-                .sequences
-                .iter()
-                .map(|sequence| (sequence.name.clone(), sequence.length))
-                .collect(),
+    // `getBestAvailableSequenceDictionary`, which the index's `DICT:` properties come from: a
+    // `--sequence-dictionary` OUTRANKS the reference's own. Measured on row 6 of this tool's
+    // array, where `--reference other.fasta` and `--sequence-dictionary matching.dict` disagree
+    // and the reference indexed `chr1` where the port indexed `chrOther`.
+    let dictionary = if flag(parser, "create-output-variant-index") {
+        let best = match master_dictionary(parser)? {
+            Some(header) => header,
+            None => gatk_tools::reference_walker::dictionary(&reference),
         };
-        let index = on_the_fly_index(
-            &text,
-            &lengths,
-            &output,
-            text.len() as i64,
-            modified_millis(&output),
-        );
-        let name = format!("{output}.idx");
-        std::fs::write(&name, index).map_err(|error| {
-            Thrown::non_user(PORT_FAILURE, format!("could not write {name}: {error}"))
-        })?;
-    }
-    if flag(parser, "create-output-variant-md5") {
-        let digest = format!("{output}.md5");
-        std::fs::write(
-            &digest,
-            gatk_tools::gather_bam_files::md5_file(text.as_bytes()),
+        Some(
+            best.sequences
+                .iter()
+                .map(|sequence| (sequence.name.clone(), sequence.length))
+                .collect(),
         )
-        .map_err(|error| {
-            Thrown::non_user(PORT_FAILURE, format!("could not write {digest}: {error}"))
-        })?;
-    }
+    } else {
+        None
+    };
+    write_variant_output_indexed_by(parser, &output, &text, dictionary)?;
     Ok(None)
 }
 
@@ -16793,6 +16789,40 @@ fn variant_output_filter<'a>(
     }))
 }
 
+/// The end of `GATKTool.onStartup`, for a run that `new ProgressMeter` refuses.
+///
+/// A `--seconds-between-progress-updates` of zero or less, or NaN, is an `IllegalArgumentException`
+/// thrown at the very end of startup. The `-L` check that `--variant-output-filtering` needs comes
+/// just before it, so when both apply that check is the refusal. A run with a valid interval gets
+/// `None` and its runner is untouched.
+///
+/// shortcut: the dispatcher calls this before the runner, so a run that the reference refuses
+/// EARLIER in `onStartup` (an unreadable input, incompatible dictionaries, a tool requirement)
+/// gets this refusal instead. Move the call into the runner's own startup when the fuzzer finds
+/// such a pair.
+pub fn progress_meter_refusal(parser: &Parser) -> Option<Thrown> {
+    let seconds: f64 = scalar(parser, "seconds-between-progress-updates")?
+        .parse()
+        .ok()?;
+    if seconds > 0.0 {
+        return None;
+    }
+    let filtered =
+        scalar(parser, "variant-output-filtering").is_some_and(|mode| mode != "ANYWHERE");
+    let intervals = !arguments(parser, "intervals").is_empty()
+        || !arguments(parser, "exclude-intervals").is_empty();
+    if filtered && !intervals {
+        return Some(Thrown::command_line(
+            "Argument -L or -XL was missing: Intervals are required if --variant-output-filtering \
+             was specified or if the tool uses interval filtering.",
+        ));
+    }
+    Some(Thrown::non_user(
+        "java.lang.IllegalArgumentException",
+        "secondsBetweenUpdates must be > 0.0",
+    ))
+}
+
 /// `--sites-only-vcf-output`, which builds the writer with `DO_NOT_WRITE_GENOTYPES`.
 ///
 /// A header with no samples is what that writes: the `#CHROM` line stops at INFO and no record
@@ -17564,7 +17594,58 @@ fn display_date_time() -> String {
 
 /// The VCF a variant-writing tool leaves behind: the text, block compressed where the name says so,
 /// with the index the arguments ask for beside it.
+///
+/// This is `GATKTool.createVCFWriter`, so `--max-variants-per-shard` splits it the way
+/// `ShardingVCFWriter` does: the output's VCF extension is dropped, each shard is
+/// `<base>.shard_NNNNN.vcf.gz` whatever the output was called, each one carries the whole header,
+/// and a new shard is opened only when a record arrives for it, so a run with no record writes
+/// shard zero alone. Every shard gets its own index and MD5.
 fn write_variant_output(parser: &Parser, output: &str, text: &str) -> Result<(), Thrown> {
+    write_variant_output_indexed_by(parser, output, text, None)
+}
+
+/// [`write_variant_output`] with the dictionary an on-the-fly index records, where the tool's
+/// best available one is not the header's `##contig` lines.
+fn write_variant_output_indexed_by(
+    parser: &Parser,
+    output: &str,
+    text: &str,
+    dictionary: Option<Vec<(String, i32)>>,
+) -> Result<(), Thrown> {
+    let index = flag(parser, "create-output-variant-index");
+    let md5 = flag(parser, "create-output-variant-md5");
+    let per_shard = number_or(parser, "max-variants-per-shard", 0);
+    if per_shard <= 0 {
+        return write_variant_file(parser, output, text, index, md5, dictionary);
+    }
+    let split = text
+        .match_indices('\n')
+        .map(|(at, _)| at + 1)
+        .find(|at| !text[*at..].starts_with('#'))
+        .unwrap_or(text.len());
+    let (header, body) = text.split_at(split);
+    let records: Vec<&str> = body.split_inclusive('\n').collect();
+    // `IOUtils.removeExtension` over `VCF_LIST`, in its order.
+    let base = [".vcf", ".vcf.gz", ".vcf.bgz", ".bcf"]
+        .iter()
+        .find_map(|extension| output.strip_suffix(extension))
+        .unwrap_or(output);
+    let mut shards: Vec<&[&str]> = records.chunks(per_shard as usize).collect();
+    if shards.is_empty() {
+        shards.push(&[]);
+    }
+    for (shard, chunk) in shards.iter().enumerate() {
+        let name = format!("{base}.shard_{shard:05}.vcf.gz");
+        let shard_text = format!("{header}{}", chunk.concat());
+        write_variant_file(parser, &name, &shard_text, index, md5, dictionary.clone())?;
+    }
+    Ok(())
+}
+
+/// [`write_variant_output`] for a tool that builds its writer with
+/// `GATKVariantContextUtils.createVCFWriter`, which knows nothing of `--max-variants-per-shard`:
+/// `HaplotypeCallerEngine.makeVCFWriter` and `FlowFeatureMapper` both do.
+fn write_unsharded_variant_output(parser: &Parser, output: &str, text: &str) -> Result<(), Thrown> {
     write_variant_file(
         parser,
         output,
@@ -18103,7 +18184,8 @@ pub fn condense_depth_evidence(parser: &Parser) -> Outcome {
     // read filters resolve while the command line is parsed, and `onStartup` loads a master
     // dictionary before it opens anything else.
     let _ = resolve_read_filters(parser, "CondenseDepthEvidence")?;
-    let _ = master_dictionary(parser)?;
+    let master = master_dictionary(parser)?;
+    let reference = reference_dictionary(parser)?;
     // `getCodecForFile` tests that the path is readable before it asks a codec anything.
     let bytes = std::fs::read(&input).map_err(|_| {
         Thrown::user(
@@ -18141,6 +18223,13 @@ pub fn condense_depth_evidence(parser: &Parser) -> Outcome {
                     "no SV evidence codec reads {input}, and the engine's others are not ported"
                 ),
             ));
+        }
+    }
+    // `validateSequenceDictionaries`, once the input is open: the text codec carries no
+    // dictionary, so the master against the reference is the one pair there is.
+    if !flag(parser, "disable-sequence-dictionary-validation") {
+        if let (Some(master), Some(reference)) = (&master, &reference) {
+            validate_against_master(master, "reference", &reference.sequences)?;
         }
     }
     let text = String::from_utf8_lossy(&bytes);
