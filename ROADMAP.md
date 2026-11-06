@@ -1161,14 +1161,29 @@ here, IPNP-BIPN/picard-rs#107). The boxes below are what it said while it was op
 
 ## Milestone X: the four hard problems
 
-- [ ] **Spark** (39 tools): establish bit-identity against the `--spark-master local[1]`
-      single-partition oracle first, then prove any parallel path byte-equal to it in CI
-- [ ] **ML inference** (CNNScoreVariants, NVScoreVariants, relatives): reproduce the exact
+- [x] **Spark** (39 tools): establish bit-identity against the `--spark-master local[1]`
+      single-partition oracle first, then prove any parallel path byte-equal to it in CI.
+      Thirty-seven tools go through Main at `local[1]` in suite `spark-walkers`, and the last two,
+      FindBreakpointEvidenceSpark and StructuralVariationDiscoveryPipelineSpark, in `sv-partitions`
+      on several partitions (#1403). The only parallel path is bwa-mem4's pool, and job
+      `spark-threads` compares every Spark tool's bytes at one thread and at four (#1405).
+      CreateReadCountPanelOfNormals' Gramian folds in arrival order even at `local[1]`, so suite
+      `create-read-count-panel-rank` holds its count and its values above the noise, not the bits
+      (`docs/a-rank-is-not-a-byte.md`). Its solvers are F2J's own, bit for bit in that fold
+      order: `dgesdd` up to 128 samples in suite `f2j-dgesdd`, and ARPACK's `symmetricEigs`,
+      local and distributed, in suite `create-read-count-panel-arpack` (#1405)
+- [x] **ML inference** (CNNScoreVariants, NVScoreVariants, relatives): reproduce the exact
       kernels and accumulation order, validated layer by layer against dumped intermediate
       tensors, weights pinned by hash, quarantined and reported as bio-identical if a model
-      proves intractable
-- [ ] **CRAM**, if not closed under H
-- [ ] **GKL-exact deflate**, if not closed under H
+      proves intractable. CNNScoreVariants is gone from 4.6.2.0
+      (`docs/the-ml-surface-cannot-be-bit-identical.md`). NVScoreVariants runs both models
+      without torch, weights pinned by SHA-256, its printed scores and VCFs byte-identical on an
+      AVX-512 runner in suite `nvscorevariants` (#1406); its bits past the dense layers move with
+      the reference's own threads and batch size, so only the printed score is claimed.
+      TrainVariantAnnotationsModel and ScoreVariantAnnotations' isolation forest runs natively in
+      suite `vets-isolation-forest` (#1404)
+- [x] **CRAM**, closed under H.3
+- [x] **GKL-exact deflate**, closed under H
 
 ---
 

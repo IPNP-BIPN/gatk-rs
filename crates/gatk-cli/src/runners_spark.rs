@@ -31,6 +31,17 @@ pub(super) struct SparkStart {
     pub(super) filters: Vec<gatk_tools::filter_resolution::ResolvedFilter>,
 }
 
+/// The threads BWA gets: the one parallel path a Spark tool has here. `RAYON_NUM_THREADS` is the
+/// knob that governs the rest of bwa-mem4's pool, so one variable moves all of it, which is what
+/// `tools/coverage/thread_independence.py` turns to show the output does not move with it.
+fn bwa_threads() -> usize {
+    std::env::var("RAYON_NUM_THREADS")
+        .ok()
+        .and_then(|text| text.parse().ok())
+        .filter(|threads| *threads > 0)
+        .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |count| count.get()))
+}
+
 /// `SparkContext.parseMasterUrl`'s accepted shapes, for the masters that run in this process.
 ///
 /// `local`, `local[N]`, `local[*]`, `local[N,F]` and `local[*,F]` all run the tool here, and the
@@ -2553,7 +2564,7 @@ fn pathseq_run_filter(
             if reads.is_empty() {
                 return Ok(reads);
             }
-            let threads = std::thread::available_parallelism().map_or(1, |count| count.get());
+            let threads = bwa_threads();
             // The lines name the image's contigs, which the header no longer holds.
             let contigs = gatk_tools::bwa_aligner::image_contigs(&bytes)?;
             let names = SamHeader {
@@ -2639,7 +2650,7 @@ pub fn pathseq_pipeline_spark(parser: &Parser) -> Outcome {
     let image = argument(parser, "microbe-bwa-image").expect("a required argument");
     let bytes = bwa_image(&image)?;
     let options = pathseq_bwa_options(parser);
-    let threads = std::thread::available_parallelism().map_or(1, |count| count.get());
+    let threads = bwa_threads();
     let align = |batches: Vec<Vec<BamRecord>>, paired: bool| -> Result<Vec<BamRecord>, Thrown> {
         let mut aligned = Vec::new();
         for batch in &batches {
@@ -3085,7 +3096,7 @@ fn bwa_align(
             "Input must be queryname sorted unless you use single-ended alignment mode.",
         ));
     }
-    let threads = std::thread::available_parallelism().map_or(1, |count| count.get());
+    let threads = bwa_threads();
     gatk_tools::bwa_aligner::align(reads, paired, &bytes, header, threads)
         .map_err(|message| evidence_task_failure(&message))
 }
@@ -3290,7 +3301,7 @@ pub fn pathseq_bwa_spark(parser: &Parser) -> Outcome {
     }
     let image = argument(parser, "microbe-bwa-image").expect("a required argument");
     let options = pathseq_bwa_options(parser);
-    let threads = std::thread::available_parallelism().map_or(1, |count| count.get());
+    let threads = bwa_threads();
     let mut loaded = false;
     for (input, output, paired) in [
         ("paired-input", "paired-output", true),

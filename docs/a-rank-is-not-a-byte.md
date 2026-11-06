@@ -44,3 +44,7 @@ A number a golden holds has to be a count of something the input decides, or a v
 computes by a path that has no tolerance in it. A rank, a cluster count, an iteration count and a
 convergence flag are none of those. Where one of them is the interesting fact, measure the BOUND it
 is taken under and the branch it selects, and say in the dump why the number itself is absent.
+
+The exception since measured is `create-read-count-panel-rank`, which pins the count at `local[1]`
+only, where it did not move in 44 fresh runs; [spark-parallel.md](spark-parallel.md) has the numbers,
+and the bits under the count, which did move, stay out of its golden too.

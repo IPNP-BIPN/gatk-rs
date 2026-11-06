@@ -268,7 +268,12 @@ pub fn create_read_count_panel_of_normals(parser: &Parser) -> Outcome {
     let panel_samples = standardized.samples;
     let k = pon::number_of_eigensamples(arguments_used.number_of_eigensamples, panel_samples);
     let decomposition = if panel_samples > 1 && k > 0 {
-        let decomposition = pon::truncated_svd(&standardized, k);
+        let decomposition = pon::truncated_svd(&standardized, k).map_err(|message| {
+            creation_failure(
+                &format!("java.lang.IllegalStateException: {message}"),
+                &output,
+            )
+        })?;
         if !decomposition
             .singular_values
             .iter()
