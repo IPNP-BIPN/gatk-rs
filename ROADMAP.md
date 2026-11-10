@@ -1334,8 +1334,14 @@ the CPU path that already exists, and no bit-identity claim may weaken to buy a 
       state)
 - [ ] per-tool validation reports (inputs, records, byte-equal file count, argument coverage, t
       level, fuzzer branch coverage, quarantined fields)
-- [ ] the reference version moves to GATK 4.7.0.0, htsjdk 5.0.0 and Picard 3.5.0, once G2 and P
-      are closed (see below)
+- [~] the reference version moves to GATK 4.7.0.0, htsjdk 5.0.0 and Picard 3.5.0, once G2 and P
+      are closed (see below). **The bill is measured**
+      ([docs/the-move-to-4.7.0.0-measured.md](docs/the-move-to-4.7.0.0-measured.md)): of 362
+      oracle-backed suites run under a 4.7.0.0 oracle, 316 are identical, 27 differ by the stamp
+      only (the version and the new `--output-cram-version 3.1` in every command line), 7 by
+      the dumps' own SAM text, now fixed, 6 by what the ground truth gains (`ConvertCountsToDepthFile`
+      and the new arguments), and 5 by behaviour: SVConcordance, SVStratify, GroupedSVCluster's
+      message order, one Spark exception class and CRAM 3.1 by default
 
 ---
 
