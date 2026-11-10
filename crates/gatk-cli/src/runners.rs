@@ -20914,10 +20914,11 @@ pub fn sv_stratify(parser: &Parser) -> Outcome {
     let file = htsjdk_vcf::reader::read_vcf(&text)
         .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
     let mut header = file.header.clone();
+    // `VCFHeaderLineCount.UNBOUNDED` since 4.7.0.0, which made `STRAT` the list of every match.
     let strat_line = htsjdk_vcf::header::HeaderLine::Compound {
         key: "INFO".to_string(),
         id: "STRAT".to_string(),
-        number: htsjdk_vcf::header::Cardinality::Fixed(1),
+        number: htsjdk_vcf::header::Cardinality::Unbounded,
         line_type: htsjdk_vcf::header::LineType::String,
         description: "Stratum ID".to_string(),
         extra: Vec::new(),

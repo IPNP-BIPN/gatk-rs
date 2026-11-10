@@ -232,24 +232,23 @@ fn every_written_record_matches_the_golden() {
     assert_eq!(compared, 3, "the runs that wrote records");
 }
 
-/// A record matching two strata is written twice into ONE file, because the writer is chosen by
-/// the default group unless the output is split.
+/// A record matching two strata is written ONCE, its `STRAT` naming both, sorted: since 4.7.0.0
+/// only a split output writes a record more than once.
 #[test]
-fn two_matches_are_written_twice_into_one_file() {
+fn two_matches_are_written_once_with_both_names() {
     let text = golden();
     let rows = written(&text, "multiple-allowed", "multiple-allowed.vcf");
     let small: Vec<&(String, String)> =
         rows.iter().filter(|(id, _)| id == "del_small_rm").collect();
-    assert_eq!(small.len(), 2, "the same record, twice");
-    assert_eq!(small[0].1, "DEL_small_both");
-    assert_eq!(small[1].1, "DEL_small_RM");
+    assert_eq!(small.len(), 1, "the record, once");
+    assert_eq!(small[0].1, "DEL_small_RM,DEL_small_both");
     assert_eq!(produced(&text, defaults(), true, false), rows);
 }
 
-/// The configuration declares `DEL_small_RM` first and the engine reports `DEL_small_both` first,
-/// because the strata are a `java.util.HashMap` keyed by name.
+/// The engine walks the strata in the order the configuration declares them: a `LinkedHashMap`
+/// since 4.7.0.0, where 4.6.2.0's `HashMap` put `DEL_small_both` before `DEL_small_RM`.
 #[test]
-fn the_strata_come_back_in_hash_map_order() {
+fn the_strata_come_back_in_the_configurations_order() {
     let text = golden();
     let names = vec!["RM".to_string(), "SD".to_string()];
     let declared: Vec<String> = strata(&text, "main", &names)
@@ -262,30 +261,8 @@ fn the_strata_come_back_in_hash_map_order() {
         .iter()
         .map(|stratum| stratum.name.clone())
         .collect();
-    assert_ne!(declared, walked, "the map does not keep the file's order");
-    assert_eq!(
-        declared
-            .iter()
-            .position(|name| name == "DEL_small_RM")
-            .expect("declared"),
-        0
-    );
-    assert!(
-        walked.iter().position(|name| name == "DEL_small_both")
-            < walked.iter().position(|name| name == "DEL_small_RM")
-    );
-
-    // The refusal lists them in that same order.
-    let error = StratifyError::MultipleMatches {
-        id: "del_small_rm".to_string(),
-        names: vec!["DEL_small_both".to_string(), "DEL_small_RM".to_string()],
-    };
-    assert!(refusal(&text, "multiple-refused").ends_with(&error.message()));
-
-    // And so does the order the split-output files are created in, after the default group.
-    let files = split_output_files(&engine(&text), "strat");
-    assert_eq!(files[0], "strat.default.vcf.gz");
-    assert_eq!(files.len(), walked.len() + 1);
+    assert_eq!(declared, walked);
+    assert_eq!(walked[0], "DEL_small_RM");
 }
 
 /// An insertion asks for one end in a track whatever the arguments said, so raising the fraction
