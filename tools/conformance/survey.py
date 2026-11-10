@@ -45,7 +45,7 @@ def rewrite(path, was, now):
     return out
 
 
-def survey_suite(manifest, suite, workdir, was, now, fixtures):
+def survey_suite(manifest, suite, workdir, was, now, fixtures, keep=None):
     """Run one suite under the overridden oracle and say which bucket it falls in."""
     props = suite.get("java_props", manifest.get("default_java_props", []))
     if suite.get("oracle"):
@@ -78,6 +78,9 @@ def survey_suite(manifest, suite, workdir, was, now, fixtures):
             continue
         verdict = "behaviour"
         notes.append(f"{dump}: " + "; ".join(messages[:3]))
+        if keep:
+            Path(keep).mkdir(parents=True, exist_ok=True)
+            (Path(keep) / real.name).write_text(real.read_text())
     return verdict, notes
 
 
@@ -90,6 +93,7 @@ def main(argv):
     ap.add_argument("--suites", help="space separated ids; default is every oracle-backed suite")
     ap.add_argument("--shard", help="k/n: survey only every n-th suite, starting at the k-th (1-based)")
     ap.add_argument("--json", help="also write the buckets and notes to this file")
+    ap.add_argument("--keep", help="copy the regenerated dump of every suite that moved here")
     args = ap.parse_args(argv)
 
     manifest = comparator.load_manifest(args.manifest)
@@ -122,7 +126,7 @@ def main(argv):
         for suite_id in ids:
             suite = comparator.suite_by_id(manifest, suite_id)
             verdict, notes = survey_suite(
-                manifest, suite, workdir, args.version_was, args.version_now, fixtures
+                manifest, suite, workdir, args.version_was, args.version_now, fixtures, args.keep
             )
             buckets[verdict].append(suite_id)
             all_notes[suite_id] = notes

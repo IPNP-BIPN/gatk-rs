@@ -82,13 +82,21 @@ jobs:
         run: |
           python3 tools/conformance/survey.py --oracle-image gatk-rs-oracle:$VERSION_NOW \
             --version-was $VERSION_WAS --version-now $VERSION_NOW \
-            --shard ${{ matrix.shard }}/36 --json survey-${{ matrix.shard }}.json || true
+            --shard ${{ matrix.shard }}/36 --json survey-${{ matrix.shard }}.json \
+            --keep moved-${{ matrix.shard }} || true
           test -s survey-${{ matrix.shard }}.json
 
       - uses: actions/upload-artifact@v7
         with:
           name: survey-${{ matrix.shard }}
           path: survey-${{ matrix.shard }}.json
+
+      - name: What the 4.7.0.0 oracle wrote, for every suite that moved
+        uses: actions/upload-artifact@v7
+        with:
+          name: moved-${{ matrix.shard }}
+          path: moved-${{ matrix.shard }}/
+          if-no-files-found: ignore
 
   summary:
     name: The bill
