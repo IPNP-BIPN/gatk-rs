@@ -103,6 +103,8 @@ fn records(text: &str) -> Vec<CallRecord> {
                 .map(str::to_string)
                 .collect(),
             carriers,
+            cpx_subtype: None,
+            cpx_intervals: Vec::new(),
         });
     }
     out
