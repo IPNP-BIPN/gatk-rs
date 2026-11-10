@@ -18274,6 +18274,165 @@ pub fn condense_depth_evidence(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// `ConvertCountsToDepthFile` (GATK 4.7.0.0): a counts file rewritten as one-sample depth
+/// evidence.
+///
+/// The conversion, the header refusals and the block-compressed bytes are
+/// [`gatk_tools::convert_counts_to_depth_file`], where a golden measures them. What the runner adds
+/// is the order, which is `onStartup`'s and then the tool's:
+///
+/// * **the input is opened at startup**: a missing file, then another feature type, then a header
+///   the counts codec refuses, which `FeatureDataSource` wraps in a `GATKException`;
+/// * **then the intervals**, which need `--sequence-dictionary`: the counts header's dictionary is
+///   not one the engine consults;
+/// * **then `onTraversalStart`**: no codec for the output's name, then a codec for another type.
+///
+/// Refusals of the port's own: a `.counts.tsv.gz` input, a `.bci` output, an input of a type the
+/// SV evidence codecs do not name, and a malformed record, which Tribble wraps in a message naming
+/// an iterator by its identity hash.
+pub fn convert_counts_to_depth_file(parser: &Parser) -> Outcome {
+    use gatk_tools::convert_counts_to_depth_file as convert;
+    use gatk_tools::sv_feature_codecs::{self as codecs, Encoding};
+
+    let input = argument(parser, "counts-filename").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument counts-filename was missing: Argument 'counts-filename' is required",
+        )
+    })?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let _ = resolve_read_filters(parser, "ConvertCountsToDepthFile")?;
+    let master = master_dictionary(parser)?;
+
+    let text = std::fs::read_to_string(&input).map_err(|_| {
+        Thrown::user(format!(
+            "Couldn't read file file://{}. Error was: It doesn't exist.",
+            java_absolute_path(&input)
+        ))
+    })?;
+    if !input.ends_with(".counts.tsv") {
+        return Err(match codecs::find(&input) {
+            Some(codec) => Thrown {
+                failure: Failure::User,
+                exception:
+                    "org.broadinstitute.hellbender.exceptions.UserException$WrongFeatureType",
+                message: Some(format!(
+                    "File file://{} is of the wrong type. It should contain Features of type \
+                     SimpleCount, but instead contains Features of type(s): [{}]",
+                    java_absolute_path(&input),
+                    codec.feature_type
+                )),
+            },
+            None => Thrown::non_user(
+                PORT_LIMITATION,
+                format!(
+                    "{input} is not a plain .counts.tsv, and no other codec that could read it is \
+                     ported"
+                ),
+            ),
+        });
+    }
+    let counts = match convert::read_counts(&text) {
+        Ok(counts) => counts,
+        Err(Ok(header)) => {
+            let (_, message) = convert::header_error_chain(&input, &header).remove(0);
+            return Err(Thrown::non_user(
+                "org.broadinstitute.hellbender.exceptions.GATKException",
+                message,
+            ));
+        }
+        Err(Err(line)) => {
+            return Err(Thrown::non_user(
+                PORT_LIMITATION,
+                format!(
+                    "{input} has a record the counts codec refuses ({line:?}), which Tribble wraps"
+                ),
+            ));
+        }
+    };
+
+    let intervals = match &master {
+        Some(header) => interval_arguments(parser, header)?.map(|parameters| parameters.intervals),
+        None if !arguments(parser, "intervals").is_empty()
+            || !arguments(parser, "exclude-intervals").is_empty() =>
+        {
+            return Err(Thrown::user(
+                "We require a sequence dictionary from a reference, a source of reads, or a source \
+                 of variants to process intervals.  Since reference and reads files generally \
+                 contain sequence dictionaries, this error most commonly occurs for VariantWalkers \
+                 that do not require a reference or reads.  You can fix the problem by passing a \
+                 reference file with a sequence dictionary via the -R argument or you can run the \
+                 tool UpdateVCFSequenceDictionary on your vcf.",
+            ));
+        }
+        None => None,
+    };
+
+    let encoding =
+        convert::check_output(&output, &format!("file://{}", java_absolute_path(&output)))
+            .map_err(|error| Thrown {
+                failure: Failure::User,
+                exception: error.java_class(),
+                message: Some(error.message()),
+            })?;
+    let sample = argument(parser, "sample-name").unwrap_or(counts.sample);
+    let records: Vec<_> = counts
+        .records
+        .iter()
+        // `FeatureIntervalIterator` skips a feature the previous interval already returned, so a
+        // count overlapping several is written once and the filter is an overlap test.
+        .filter(|count| {
+            intervals.as_ref().is_none_or(|intervals| {
+                intervals.iter().any(|interval| {
+                    interval.contig == count.contig
+                        && interval.start <= count.end
+                        && count.start <= interval.end
+                })
+            })
+        })
+        .map(convert::to_depth)
+        .collect();
+    match encoding {
+        Encoding::Text {
+            block_compressed: false,
+        } => write_file(&output, convert::write_text(&sample, &records).as_bytes())?,
+        Encoding::Text {
+            block_compressed: true,
+        } => {
+            // `new BlockCompressedOutputStream(path, compressionLevel)`: the tool's level and
+            // GATK's deflater; the index takes the static level, which a real run sets from
+            // GATKConfig.
+            let (index_level, deflater) = output_compression(parser);
+            let (data, index) = convert::write_block_compressed(
+                &sample,
+                &records,
+                &counts.header.sequences,
+                number_or(parser, "compression-level", 4) as u32,
+                index_level,
+                deflater,
+            )
+            .map_err(|error| match error {
+                convert::BlockError::Tabix(error) => {
+                    Thrown::non_user(error.java_class(), error.message())
+                }
+                convert::BlockError::Deflate(error) => {
+                    Thrown::non_user(PORT_LIMITATION, error.to_string())
+                }
+            })?;
+            write_file(&output, &data)?;
+            write_file(&format!("{output}.tbi"), &index)?;
+        }
+        Encoding::Bci => {
+            return Err(Thrown::non_user(
+                PORT_LIMITATION,
+                "ConvertCountsToDepthFile writes a .bci depth-evidence file, which is not ported",
+            ));
+        }
+    }
+    Ok(None)
+}
+
 /// `PrintSVEvidence`, for depth evidence: several files merged into one, rewritten against one
 /// sample list.
 ///
