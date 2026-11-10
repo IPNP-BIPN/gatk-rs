@@ -124,7 +124,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | CreateBafRegressMetricsFile | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CreateExtendedIlluminaManifest | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CreateHadoopBamSplittingIndex | gatk-rs | oracle-backed | 43 suite | 0 suite | 11/11 (100.0%) | 2 | not measured | 3 | 0 | none |
-| CreateReadCountPanelOfNormals | gatk-rs | oracle-backed | 79 suite | 0 suite | 25/25 (100.0%) | 2 | not measured | 5 | 0 | none |
+| CreateReadCountPanelOfNormals | gatk-rs | oracle-backed | 445 suite | 0 suite | 25/25 (100.0%) | 2 | not measured | 5 | 0 | none |
 | CreateSequenceDictionary | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CreateSomaticPanelOfNormals | gatk-rs | oracle-backed | 29 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 3 | 8 | none |
 | CreateVerifyIDIntensityContaminationMetricsFile | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -280,7 +280,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | SamToFastq | picard-rs | oracle-backed | not vendored | not vendored | 19/19 (100.0%) | 2 | not measured | 0 | 0 | none |
 | SamToFastqWithTags | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | none |
 | ScatterIntervalsByNs | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
-| ScoreVariantAnnotations | gatk-rs | oracle-backed | 190 | 41 | 27/27 (100.0%) | 2 | not measured | 6 | 7 | none |
+| ScoreVariantAnnotations | gatk-rs | oracle-backed | 210 suite | 51 suite | 27/27 (100.0%) | 2 | not measured | 6 | 7 | mask_hdf5_modification_times |
 | SelectVariants | gatk-rs | oracle-backed | 35437 suite | 0 suite | 50/50 (100.0%) | 2 | not measured | 2 | 10 | none |
 | SetNmAndUqTags | gatk-rs | oracle-backed | 10 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
 | SetNmMdAndUqTags | gatk-rs | oracle-backed | 10 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
@@ -302,7 +302,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | StructuralVariationDiscoveryPipelineSpark | gatk-rs | oracle-backed | 1037 | 733 | 27/27 (100.0%) | 2 | not measured | 11 | 2 | none |
 | SvDiscoverFromLocalAssemblyContigAlignmentsSpark | gatk-rs | oracle-backed | 161 | 88 | 17/17 (100.0%) | 2 | not measured | 6 | 5 | none |
 | TagGermlineEvents | gatk-rs | oracle-backed | 15 suite | 0 suite | 17/17 (100.0%) | 2 | not measured | 6 | 8 | none |
-| TrainVariantAnnotationsModel | gatk-rs | oracle-backed | 111 | 0 | 11/11 (100.0%) | 2 | not measured | 5 | 0 | none |
+| TrainVariantAnnotationsModel | gatk-rs | oracle-backed | 131 suite | 10 suite | 11/11 (100.0%) | 2 | not measured | 5 | 0 | mask_hdf5_modification_times |
 | TransferReadTags | gatk-rs | oracle-backed | 65 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 3 | 1 | none |
 | UmiAwareMarkDuplicatesWithMateCigar | picard-rs | oracle-backed | not vendored | not vendored | 26/26 (100.0%) | 2 | not measured | 0 | 0 | none |
 | UnmarkDuplicates | gatk-rs | oracle-backed | 49 suite | 0 suite | 19/19 (100.0%) | 2 | not measured | 4 | 0 | none |
@@ -902,7 +902,7 @@ Held out: none.
 
 ### CreateReadCountPanelOfNormals
 
-Suites: `create-read-count-panel-of-normals`.
+Suites: `create-read-count-panel-of-normals`, `create-read-count-panel-rank`, `create-read-count-panel-arpack`, `f2j-dgesdd`.
 
 Inputs: `pon_annotated.tsv`, `pon_s1.counts.tsv`, `pon_s4.counts.tsv`, `pon_s8.counts.tsv`, `pon_shifted.counts.tsv`.
 
@@ -1910,7 +1910,7 @@ Held out: `--dont-require-soft-clips-both-ends`, `--exclude-intervals`, `--input
 
 ### ScoreVariantAnnotations
 
-Suites: `interpreter-tools`.
+Suites: `interpreter-tools`, `vets-isolation-forest`.
 
 Inputs: `both`, `nothing`, `score.py`, `snp`, `vr_calls.vcf`, `vr_calls2.vcf`.
 
@@ -2038,7 +2038,7 @@ Held out: `--dont-require-soft-clips-both-ends`, `--exclude-intervals`, `--input
 
 ### TrainVariantAnnotationsModel
 
-Suites: `interpreter-tools`.
+Suites: `interpreter-tools`, `vets-isolation-forest`.
 
 Inputs: `extract.annot.hdf5`, `extract.unlabeled.annot.hdf5`, `hyperparameters.json`, `hyperparameters2.json`, `score.py`.
 

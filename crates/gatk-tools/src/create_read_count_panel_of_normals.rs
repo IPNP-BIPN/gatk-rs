@@ -1,8 +1,10 @@
 //! `CreateReadCountPanelOfNormals`: which intervals and which samples reach the panel.
 //!
-//! The singular value decomposition is a distributed solver's and is not ported. What is ported is
-//! everything that decides what reaches it: the transform to fractional coverage, the four
-//! filters in the order they run, the imputation, the truncation, and the standardisation.
+//! Everything that decides what reaches the singular value decomposition is ported: the transform
+//! to fractional coverage, the four filters in the order they run, the imputation, the truncation,
+//! and the standardisation. So is the decomposition, as `--spark-master local[1]` runs it where Spark
+//! takes LAPACK, up to 128 samples ([`truncated_svd`]); no port can claim it at `local[N]`, where the reference's own answer
+//! moves from run to run (docs/spark-parallel.md).
 //!
 //! Ported from
 //! `org.broadinstitute.hellbender.tools.copynumber.denoising.SVDDenoisingUtils` and
@@ -455,9 +457,9 @@ const INV_LOG_2: f64 = 1.0 / std::f64::consts::LN_2;
 /// a value just above the floor is not nudged and a value at the floor exactly is not floored.
 pub fn safe_log2(x: f64) -> f64 {
     if x < EPSILON {
-        EPSILON.ln() * INV_LOG_2
+        jmath::math::log(EPSILON) * INV_LOG_2
     } else {
-        x.ln() * INV_LOG_2
+        jmath::math::log(x) * INV_LOG_2
     }
 }
 
@@ -499,11 +501,11 @@ pub fn standardize(values: &mut Matrix) -> Result<(), String> {
     Ok(())
 }
 
-/// The number of eigensamples the panel ends up with.
+/// The number of eigensamples the panel asks the solver for.
 ///
 /// It is capped at the number of samples that SURVIVED, not at the number given, so a panel that
-/// filtered one sample out of nine has eight however many were asked for. A panel of one sample
-/// has none at all.
+/// filtered one sample out of nine asks for eight however many were asked for. What the panel ends
+/// up with is what [`truncated_svd`] returns, which may be fewer.
 pub fn number_of_eigensamples(requested: usize, surviving_samples: usize) -> usize {
     requested.min(surviving_samples)
 }
@@ -536,18 +538,269 @@ pub struct Decomposition {
     pub eigensample_vectors: Vec<Vec<f64>>,
 }
 
-/// `RowMatrix.computeSVD(k, true, 1e-9)` over the panel transposed to intervals by samples.
+/// `SparkSingularValueDecomposer`'s and the panel's slices: the rows go into this many partitions.
+const NUM_SLICES_FOR_SPARK_MATRIX_CONVERSION: usize = 100;
+
+/// How `RowMatrix.computeSVD`'s `auto` answers a request of `k` values over `n` columns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SolverMode {
+    /// The Gramian's whole SVD, from F2J's LAPACK.
+    LocalLapack,
+    /// The Gramian's top eigenvalues, from F2J's ARPACK.
+    LocalArpack,
+    /// ARPACK, with the Gramian multiplied by across the partitions.
+    DistributedArpack,
+}
+
+/// `computeMode`, in Spark 3.5.0. `n / 3` and `n / 2` are integer divisions.
+pub fn solver_mode(n: usize, k: usize) -> SolverMode {
+    if n < 100 || (k > n / 2 && n <= 15000) {
+        if k < n / 3 {
+            SolverMode::LocalArpack
+        } else {
+            SolverMode::LocalLapack
+        }
+    } else {
+        SolverMode::DistributedArpack
+    }
+}
+
+/// `computeGramianMatrix` at `local[1]`, column major: the upper triangle summed row by row inside
+/// each of the hundred slices, and the slices folded in their order on the driver.
 ///
-/// A panel has fewer than a hundred samples in every case this port meets, which is where Spark
-/// takes its local path: the samples-by-samples Gramian, its eigendecomposition, the square roots
-/// as singular values, kept while at least `rCond` times the first, and U as A V S^-1.
+/// That order is the usual one at `--spark-master local[1]`, and rarely at four threads.
+/// `treeAggregate`'s depth is 1 up to a Gramian of 10 MB, so the driver merges each task's result as
+/// it arrives, and a different association of the same sum moves the trailing values. Even at one
+/// thread 2 of 44 fresh runs of the reference had other bits (docs/spark-parallel.md).
+pub fn spark_gramian(panel: &Matrix) -> Vec<f64> {
+    let n = panel.samples;
+    let rows = panel.intervals;
+    let slices = NUM_SLICES_FOR_SPARK_MATRIX_CONVERSION;
+    let mut total: Option<Vec<f64>> = None;
+    for slice in 0..slices {
+        // `ParallelCollectionRDD.slice`.
+        let (from, to) = (slice * rows / slices, (slice + 1) * rows / slices);
+        if from == to {
+            continue;
+        }
+        let mut upper = vec![0.0; n * (n + 1) / 2];
+        for row in from..to {
+            // `dspr('U', n, 1.0, x, 1, upper)`.
+            let mut at = 0;
+            for j in 0..n {
+                let temp = panel.get(j, row);
+                if temp != 0.0 {
+                    for i in 0..=j {
+                        upper[at + i] += panel.get(i, row) * temp;
+                    }
+                }
+                at += j + 1;
+            }
+        }
+        match &mut total {
+            None => total = Some(upper),
+            Some(sum) => {
+                for (x, y) in sum.iter_mut().zip(&upper) {
+                    *x += y;
+                }
+            }
+        }
+    }
+    let upper = total.unwrap_or_else(|| vec![0.0; n * (n + 1) / 2]);
+    let mut full = vec![0.0; n * n];
+    let mut at = 0;
+    for j in 0..n {
+        for i in 0..=j {
+            full[i + j * n] = upper[at];
+            full[j + i * n] = upper[at];
+            at += 1;
+        }
+    }
+    full
+}
+
+/// `RowMatrix.computeSVD(k, true, 1e-9)` over the panel transposed to intervals by samples: the
+/// samples-by-samples Gramian, its decomposition, the square roots as singular values, kept while
+/// at least `rCond` times the first, and U as A V S^-1.
 ///
-/// Which of those values survive is not a property of the input. The Gramian of a standardised
-/// panel is rank deficient, its trailing eigenvalues are rounding noise, and whether their roots
-/// clear the threshold moves with the order a cluster sums in: the reference itself answered 8,
-/// 6 and 7 on one fixture (docs/a-rank-is-not-a-byte.md). This solver is cyclic Jacobi, which is
-/// deterministic; the coverage harness compares the bound and the branch, not these values.
-pub fn truncated_svd(panel: &Matrix, k: usize) -> Decomposition {
+/// Which of those values survive is a question about rounding noise. The Gramian of a standardised
+/// panel is usually rank deficient, and `rCond` of 1e-9 on a square root is 1e-18 on the value,
+/// under the machine's epsilon. So it has an answer only for one summation order and one LAPACK,
+/// and at `local[1]` the reference has both: F2J's `dgesdd`, here [`crate::f2j_gesdd`], which
+/// reaches its values and so the rank bit for bit up to 128 samples. Past 25 its divide and conquer
+/// raises the noise to the epsilon, so the rank there is the request.
+///
+/// A request ARPACK answers takes F2J's ARPACK, [`crate::f2j_arpack`], over the Gramian times a
+/// vector as Spark forms it: [`breeze_gramian_times`] locally, [`spark_gramian_times`] distributed.
+///
+/// Past that, cyclic Jacobi stands in. A panel with more independent samples than it is asked for
+/// has no value near the threshold and gets the same count; a rank-deficient one is not claimed.
+pub fn truncated_svd(panel: &Matrix, k: usize) -> Result<Decomposition, String> {
+    let n = panel.samples;
+    let arpack = match solver_mode(n, k) {
+        SolverMode::LocalLapack => {
+            if !(2..=crate::f2j_gesdd::LARGEST).contains(&n) {
+                return Ok(truncated_svd_by_jacobi(panel, k, plain_gramian(panel)));
+            }
+            let mut gramian = spark_gramian(panel);
+            if !crate::f2j_gesdd::reachable(n, &gramian) {
+                // Out of LAPACK's range: Jacobi takes the Gramian already formed, not a second one.
+                let rows = gramian.chunks(n).map(<[f64]>::to_vec).collect();
+                return Ok(truncated_svd_by_jacobi(panel, k, rows));
+            }
+            if let Some((squares, u)) = crate::f2j_gesdd::dgesdd(n, &mut gramian) {
+                return Ok(decomposition_from_gramian(panel, k, &squares, &u));
+            }
+            return Ok(truncated_svd_by_jacobi(panel, k, plain_gramian(panel)));
+        }
+        SolverMode::LocalArpack => {
+            let gramian = spark_gramian(panel);
+            crate::f2j_arpack::symmetric_eigs(n, k, &mut |x: &[f64], y: &mut [f64]| {
+                breeze_gramian_times(&gramian, x, y)
+            })
+        }
+        SolverMode::DistributedArpack => {
+            let rows = spark_rows(panel);
+            crate::f2j_arpack::symmetric_eigs(n, k, &mut |x: &[f64], y: &mut [f64]| {
+                spark_gramian_times(&rows, x, y)
+            })
+        }
+    };
+    let (squares, u) = arpack?;
+    Ok(decomposition_from_gramian(panel, k, &squares, &u))
+}
+
+/// `G * v` for LocalARPACK: Breeze's dense product is `Java11BLAS.dgemvN`, four columns at a time,
+/// each row a chain of `Math.fma` from the fourth column in. `gramian` is column major.
+pub fn breeze_gramian_times(gramian: &[f64], x: &[f64], y: &mut [f64]) {
+    let n = x.len();
+    let a = |i: usize, j: usize| gramian[i + j * n];
+    y.fill(0.0);
+    let blocked = n - n % 4;
+    for j in (0..blocked).step_by(4) {
+        let (t0, t1, t2, t3) = (x[j], x[j + 1], x[j + 2], x[j + 3]);
+        for (i, yi) in y.iter_mut().enumerate() {
+            let inner = java_fma(t3, a(i, j + 3), *yi);
+            let inner = java_fma(t2, a(i, j + 2), inner);
+            let inner = java_fma(t1, a(i, j + 1), inner);
+            *yi = java_fma(t0, a(i, j), inner);
+        }
+    }
+    for (j, xj) in x.iter().enumerate().skip(blocked) {
+        for (i, yi) in y.iter_mut().enumerate() {
+            *yi = java_fma(*xj, a(i, j), *yi);
+        }
+    }
+}
+
+/// `Math.fma`: `a * b + c` rounded once, as the reference rounds it here
+/// (`tools/audit/arithmetic.py` admits this one line).
+fn java_fma(a: f64, b: f64, c: f64) -> f64 {
+    a.mul_add(b, c)
+}
+
+/// The rows of the `RowMatrix`, one per interval, each the samples' values: row major.
+pub fn spark_rows(panel: &Matrix) -> Vec<f64> {
+    (0..panel.intervals)
+        .flat_map(|interval| (0..panel.samples).map(move |sample| panel.get(sample, interval)))
+        .collect()
+}
+
+/// `multiplyGramianMatrixBy` for DistARPACK at `local[1]`: each slice sums `(r . v) r` over its
+/// rows, the dot product Breeze's `dotProduct_Double` with eight accumulators. `treeAggregate` at
+/// its default depth of 2 takes the hundred slices to ten, slice `s` into `s % 10` in slice order,
+/// and the driver folds the ten in order, an empty slice adding nothing.
+pub fn spark_gramian_times(rows: &[f64], x: &[f64], y: &mut [f64]) {
+    let n = x.len();
+    let count = rows.len() / n;
+    let slices = NUM_SLICES_FOR_SPARK_MATRIX_CONVERSION;
+    let mut partial: Vec<Option<Vec<f64>>> = (0..slices)
+        .map(|slice| {
+            let (from, to) = (slice * count / slices, (slice + 1) * count / slices);
+            (from < to).then(|| {
+                let mut sum = vec![0.0; n];
+                for row in rows[from * n..to * n].chunks(n) {
+                    let a = breeze_dot(row, x);
+                    for (s, r) in sum.iter_mut().zip(row) {
+                        *s += a * r;
+                    }
+                }
+                sum
+            })
+        })
+        .collect();
+    let fold = |into: &mut Option<Vec<f64>>, next: Option<Vec<f64>>| match (into.as_mut(), next) {
+        (None, next) => *into = next,
+        (Some(sum), Some(next)) => sum.iter_mut().zip(next).for_each(|(s, v)| *s += v),
+        (Some(_), None) => {}
+    };
+    let groups = 10;
+    let mut total = None;
+    for group in 0..groups {
+        let mut sum = None;
+        for slice in (group..slices).step_by(groups) {
+            fold(&mut sum, partial[slice].take());
+        }
+        fold(&mut total, sum);
+    }
+    y.copy_from_slice(&total.expect("a panel has rows"));
+}
+
+/// Breeze's `dotProduct_Double`: the remainder of eight first, then eight running sums added in
+/// order.
+fn breeze_dot(a: &[f64], b: &[f64]) -> f64 {
+    let length = a.len();
+    let remainder = length % 8;
+    let mut sums = [0.0f64; 8];
+    for i in 0..remainder {
+        sums[0] += a[i] * b[i];
+    }
+    for (a, b) in a[remainder..].chunks(8).zip(b[remainder..].chunks(8)) {
+        for lane in 0..8 {
+            sums[lane] += a[lane] * b[lane];
+        }
+    }
+    sums[1..].iter().fold(sums[0], |total, sum| total + sum)
+}
+
+/// What `computeSVD` does with the Gramian's decomposition. `u` is column major.
+fn decomposition_from_gramian(
+    panel: &Matrix,
+    k: usize,
+    squares: &[f64],
+    u: &[f64],
+) -> Decomposition {
+    let n = panel.samples;
+    let sigmas: Vec<f64> = squares.iter().map(|square| square.sqrt()).collect();
+    let threshold = SVD_EPSILON * sigmas[0];
+    let kept = sigmas
+        .iter()
+        .take(k)
+        .take_while(|sigma| **sigma >= threshold)
+        .count();
+    let eigensample_vectors = (0..panel.intervals)
+        .map(|interval| {
+            (0..kept)
+                .map(|column| {
+                    (0..n)
+                        .map(|sample| {
+                            panel.get(sample, interval) * (u[sample + column * n] / sigmas[column])
+                        })
+                        .sum()
+                })
+                .collect()
+        })
+        .collect();
+    Decomposition {
+        singular_values: sigmas[..kept].to_vec(),
+        eigensample_vectors,
+    }
+}
+
+/// The stand-in: the Gramian's eigendecomposition by cyclic Jacobi, which is deterministic and is
+/// not what the reference runs.
+/// The samples' dot products, row by row, for the Jacobi solver.
+fn plain_gramian(panel: &Matrix) -> Vec<Vec<f64>> {
     let n = panel.samples;
     let mut gramian = vec![vec![0.0; n]; n];
     for (i, row) in gramian.iter_mut().enumerate() {
@@ -560,6 +813,11 @@ pub fn truncated_svd(panel: &Matrix, k: usize) -> Decomposition {
                 .sum();
         }
     }
+    gramian
+}
+
+fn truncated_svd_by_jacobi(panel: &Matrix, k: usize, gramian: Vec<Vec<f64>>) -> Decomposition {
+    let n = panel.samples;
     let (eigenvalues, eigenvectors) = symmetric_eigen(gramian);
     let mut order: Vec<usize> = (0..n).collect();
     order.sort_by(|a, b| eigenvalues[*b].total_cmp(&eigenvalues[*a]));

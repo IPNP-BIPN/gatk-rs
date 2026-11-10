@@ -213,7 +213,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `CountVariantsSpark` | variant-walker | oracle-backed | spark-walkers | 1 | t=2, 19/19 rows (100%) | not measured |
 | `CpxVariantReInterpreterSpark` | sv-caller | oracle-backed | spark-walkers | 1 | t=2, 19/19 rows (100%) | not measured |
 | `CreateHadoopBamSplittingIndex` | unclassified | oracle-backed | splitting-index | 1 | t=2, 11/11 rows (100%) | 0.003 / 0.084 |
-| `CreateReadCountPanelOfNormals` | cnv-segmentation | oracle-backed | create-read-count-panel-of-normals | 1 | t=2, 25/25 rows (100%) | 0.001 / 0.012 |
+| `CreateReadCountPanelOfNormals` | cnv-segmentation | oracle-backed | create-read-count-panel-arpack, create-read-count-panel-of-normals, create-read-count-panel-rank, f2j-dgesdd | 4 | t=2, 25/25 rows (100%) | 0.001 / 0.012 |
 | `CreateSomaticPanelOfNormals` | variant-transform | oracle-backed | brent-optimizer, create-somatic-panel-of-normals | 2 | t=2, 21/21 rows (100%) | 0.003 / 0.072 |
 | `DenoiseReadCounts` | cnv-segmentation | oracle-backed | denoise-read-counts | 1 | t=2, 6/6 rows (100%) | 0.002 / 0.054 |
 | `DepthOfCoverage` | locus-walker | oracle-backed | depth-of-coverage | 1 | t=2, 20/20 rows (100%) | 0.003 / 0.067 |
@@ -318,7 +318,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `SVCluster` | sv-caller | oracle-backed | sv-cluster | 1 | t=2, 24/24 rows (100%) | 0.002 / 0.048 |
 | `SVConcordance` | sv-caller | oracle-backed | sv-concordance | 1 | t=2, 19/19 rows (100%) | 0.003 / 0.064 |
 | `SVStratify` | sv-caller | oracle-backed | sv-stratify | 1 | t=2, 16/16 rows (100%) | 0.002 / 0.059 |
-| `ScoreVariantAnnotations` | variant-transform | oracle-backed | interpreter-tools | 1 | t=2, 27/27 rows (100%) | not measured |
+| `ScoreVariantAnnotations` | variant-transform | oracle-backed | interpreter-tools, vets-isolation-forest | 2 | t=2, 27/27 rows (100%) | not measured |
 | `SelectVariants` | variant-transform | oracle-backed | select-variants-concordance, select-variants-filters, select-variants-header, select-variants-output, select-variants-samples, select-variants-subset, tool-argument-declarations, tool-argument-enums | 8 | t=2, 50/50 rows (100%) | 0.002 / 0.055 |
 | `ShiftFasta` | reference-utility | oracle-backed | shift-fasta | 1 | t=2, 21/21 rows (100%) | 0.003 / 0.086 |
 | `SiteDepthtoBAF` | sv-caller | oracle-backed | site-depth-to-baf | 1 | t=2, 18/18 rows (100%) | 0.002 / 0.055 |
@@ -331,7 +331,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `StructuralVariationDiscoveryPipelineSpark` | sv-caller | oracle-backed | sv-evidence, sv-partitions | 2 | t=2, 27/27 rows (100%) | not measured |
 | `SvDiscoverFromLocalAssemblyContigAlignmentsSpark` | sv-caller | oracle-backed | spark-walkers | 1 | t=2, 17/17 rows (100%) | not measured |
 | `TagGermlineEvents` | unclassified | oracle-backed | tag-germline-events | 1 | t=2, 17/17 rows (100%) | 0.002 / 0.054 |
-| `TrainVariantAnnotationsModel` | variant-transform | oracle-backed | interpreter-tools | 1 | t=2, 11/11 rows (100%), **1 distinct output** | not measured |
+| `TrainVariantAnnotationsModel` | variant-transform | oracle-backed | interpreter-tools, vets-isolation-forest | 2 | t=2, 11/11 rows (100%), **1 distinct output** | not measured |
 | `TransferReadTags` | record-transform | oracle-backed | transfer-read-tags | 1 | t=2, 19/19 rows (100%) | 0.002 / 0.035 |
 | `UnmarkDuplicates` | record-transform | oracle-backed | record-transform | 1 | t=2, 19/19 rows (100%) | 0.003 / 0.042 |
 | `UpdateVCFSequenceDictionary` | variant-transform | oracle-backed | update-vcf-sequence-dictionary | 1 | t=2, 24/24 rows (100%) | 0.002 / 0.055 |
