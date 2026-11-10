@@ -33,6 +33,13 @@ const HONOURED: &[&str] = &[
     "recover-dangling-heads",
     "use-new-qual-calculator",
     "native-pair-hmm-threads",
+    // The native PDHMM's own settings (4.7.0.0), read by no Java kernel; and the ALT weighting of
+    // the active-region likelihoods.
+    "native-dragen-pd-pair-hmm-threads",
+    "native-dragen-pd-pair-avx-level",
+    "native-dragen-pd-pair-memory-limit",
+    "native-dragen-pd-pair-open-mp-settings",
+    "activeregion-alt-multiplier",
     // The annotation plugin's own arguments, handed to the annotations' instances;
     // --allow-old-rms-mapping-quality-annotation-data only reaches raw MQ read from a VCF, which
     // a caller never reads.
@@ -237,6 +244,7 @@ const HONOURED: &[&str] = &[
     "debug-assembly",
     // The implementations, refused below when they name a kernel this port does not carry.
     "pair-hmm-implementation",
+    "dragen-pd-pair-hmm-implementation",
     "smith-waterman",
     "likelihood-calculation-engine",
     // RampedHaplotypeCaller's own: the off ramp is written, the on ramp read, and the two debug
@@ -881,6 +889,15 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             )))
         }
     }
+    // FASTEST_AVAILABLE falls back to the Java kernel where GKL's native PDHMM does not load.
+    match scalar(parser, "dragen-pd-pair-hmm-implementation").as_deref() {
+        None | Some("LOGLESS_CACHING") | Some("FASTEST_AVAILABLE") => {}
+        Some(other) => {
+            return Err(limitation(&format!(
+                "the {other} PDPairHMM is not ported; only LOGLESS_CACHING is."
+            )))
+        }
+    }
     let output_mode =
         scalar(parser, "output-mode").unwrap_or_else(|| "EMIT_VARIANTS_ONLY".to_string());
     let assignment_method = SubsetMethod::from_name(
@@ -1230,6 +1247,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             ref_model_deletion_quality: number_or(parser, "reference-model-deletion-quality", 30)
                 as u8,
             flow_based_model: flow_based_model(parser),
+            active_region_alt_multiplier: double_or(parser, "activeregion-alt-multiplier", 1.0),
         },
         assembly: RegionAssemblyArguments {
             min_base_quality_score: min_base_quality,

@@ -27,6 +27,11 @@ const HONOURED: &[&str] = &[
     // that reads --reference-model-deletion-quality.
     "native-pair-hmm-threads",
     "reference-model-deletion-quality",
+    // The native PDHMM's own settings (4.7.0.0), read by no Java kernel.
+    "native-dragen-pd-pair-hmm-threads",
+    "native-dragen-pd-pair-avx-level",
+    "native-dragen-pd-pair-memory-limit",
+    "native-dragen-pd-pair-open-mp-settings",
     // DRAGstr's PairHMM gap penalties; the het-hom ratio is read by HaplotypeCaller's genotyping
     // priors alone.
     "dragstr-params-path",
@@ -231,6 +236,7 @@ const HONOURED: &[&str] = &[
     "dont-use-dragstr-pair-hmm-scores",
     // The implementations, refused below when they name a kernel this port does not carry.
     "pair-hmm-implementation",
+    "dragen-pd-pair-hmm-implementation",
     "smith-waterman",
     "likelihood-calculation-engine",
 ];
@@ -344,6 +350,15 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         Some(other) => {
             return Err(limitation(&format!(
                 "the {other} PairHMM is not ported; only LOGLESS_CACHING is."
+            )))
+        }
+    }
+    // FASTEST_AVAILABLE falls back to the Java kernel where GKL's native PDHMM does not load.
+    match scalar(parser, "dragen-pd-pair-hmm-implementation").as_deref() {
+        None | Some("LOGLESS_CACHING") | Some("FASTEST_AVAILABLE") => {}
+        Some(other) => {
+            return Err(limitation(&format!(
+                "the {other} PDPairHMM is not ported; only LOGLESS_CACHING is."
             )))
         }
     }
