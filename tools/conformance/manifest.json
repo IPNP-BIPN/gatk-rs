@@ -6767,7 +6767,7 @@
         {
           "dump": "ToolArgumentDeclarationDump",
           "golden": "crates/gatk-tools/tests/data/tool_declarations.txt.gz",
-          "why": "Frozen from the candidate artefact of run 41352770492, with the fourteenth Spark brick (X.1): the discovery and assembly tools, HtsgetReader, BWA and PathSeq."
+          "why": "Identical to the candidate artefact of run 42795659080, with the 17 Picard tools GATK bundles (#1415)."
         }
       ]
     },
@@ -6835,7 +6835,7 @@
         {
           "dump": "ToolArgumentEnumDump",
           "golden": "crates/gatk-tools/tests/data/tool_argument_enums.txt.gz",
-          "why": "Frozen from the candidate artefact of run 41352770492, with the fourteenth Spark brick (X.1): the discovery and assembly tools, HtsgetReader, BWA and PathSeq."
+          "why": "Identical to the candidate artefact of run 42795659080, with the 17 Picard tools GATK bundles (#1415)."
         }
       ]
     },
