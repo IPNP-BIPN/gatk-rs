@@ -47,9 +47,11 @@ three filter instances and, in `CountingFilterDump`, one composition:
 - `PlatformUnitReadFilter` (1): no read carrying its own PU.
 - The counting summary (1): no nested tree whose left child rejects nothing.
 
-The corpus is shared, so the records also reach `ReadCoordinateDump` (1,074 lines to 1,401) and
-`ReadClipperDump` (3,211 to 4,189). The port agreed with the oracle on every new line the first
-time, in all four goldens: these were gaps in the evidence, not bugs.
+The corpus is shared, so the records also reach `ReadCoordinateDump` (1,074 lines to 1,401),
+`ReadClipperDump` (3,211 to 4,189), `AssemblyRegionDump` (4,058 to 6,650) and `CovariatesDump`
+(2,903 to 3,632). The port agreed with the oracle on every new line the first time, in all six
+goldens: these were gaps in the evidence, not bugs. The one test that needed a change was the
+covariates one, which read the dump's `empty` marker for a read with no bases as an exception.
 
 **16 were dead code**, removed rather than tested. `with_header::header_declares_read_group` had
 no caller. The JEXL filter's read path (`attribute_as_string`, `format_java_float`,
