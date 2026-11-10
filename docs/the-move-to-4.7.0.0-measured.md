@@ -7,7 +7,9 @@ re-opens and why. `tools/conformance/survey.py` regenerates every oracle-backed 
 `.github/workflows/survey.yml` runs it in 36 shards on any `survey/**` branch. The fixtures are
 still built by the 4.6.2.0 image, so the inputs stay fixed and only the reference moves.
 
-Measured on runs 42827131133 and 42833576338, which agree suite for suite.
+Measured on runs 42827131133 and 42833576338, which agree suite for suite. Run 42839254388, with
+the stamp taken out and the dumps' SAM text fixed, sorts them itself: 323 identical, 27 the stamp
+only, 11 moved, 1 not surveyed.
 
 ## 362 suites
 
