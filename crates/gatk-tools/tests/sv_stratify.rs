@@ -13,9 +13,8 @@
 
 use gatk_corpus as corpus;
 use gatk_tools::sv_stratify::{
-    apply, check_columns, parse_integer_maybe_null, parse_track_string, split_output_files,
-    CallRecord, Engine, Interval, StratifyError, Stratum, SvType, Thresholds, Tracks,
-    DEFAULT_STRATUM,
+    apply, check_columns, parse_integer_maybe_null, parse_track_string, CallRecord, Engine,
+    Interval, StratifyError, Stratum, SvType, Thresholds, Tracks, DEFAULT_STRATUM,
 };
 
 fn golden() -> String {
