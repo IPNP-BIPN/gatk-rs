@@ -397,6 +397,10 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.sv.PrintSVEvidence());
         declarations("SiteDepthtoBAF",
                 new org.broadinstitute.hellbender.tools.sv.SiteDepthtoBAF());
+        // New in GATK 4.7.0.0 (#811), a `FeatureWalker` like `CondenseDepthEvidence` whose driving
+        // file is `--counts-filename`, and whose `--compression-level` declares a range.
+        declarations("ConvertCountsToDepthFile",
+                new org.broadinstitute.hellbender.tools.sv.ConvertCountsToDepthFile());
         // Eight tools whose ports are oracle-backed and whose inputs are tables rather than reads.
         // `GatherTranches` gathers VQSR tranches and declares `--mode`, the
         // `VariantRecalibratorArgumentCollection$Mode` enum the class-name key was made for. The

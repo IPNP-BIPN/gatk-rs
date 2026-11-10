@@ -381,6 +381,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "PathSeqBuildReferenceTaxonomy" => Some(run_path_seq_build_reference_taxonomy),
         "PathSeqBuildKmers" => Some(run_path_seq_build_kmers),
         "CondenseDepthEvidence" => Some(run_condense_depth_evidence),
+        "ConvertCountsToDepthFile" => Some(run_convert_counts_to_depth_file),
         "PrintSVEvidence" => Some(run_print_sv_evidence),
         "SiteDepthtoBAF" => Some(run_site_depth_to_baf),
         "MergeMutectStats" => Some(run_merge_mutect_stats),
@@ -1045,6 +1046,10 @@ fn run_print_sv_evidence(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_condense_depth_evidence(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::condense_depth_evidence(&parsed("CondenseDepthEvidence", args)?)
+}
+
+fn run_convert_counts_to_depth_file(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::convert_counts_to_depth_file(&parsed("ConvertCountsToDepthFile", args)?)
 }
 
 fn run_path_seq_build_kmers(args: &[String]) -> Result<Option<String>, Thrown> {

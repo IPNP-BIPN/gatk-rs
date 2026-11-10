@@ -5210,6 +5210,31 @@
       ]
     },
     {
+      "id": "convert-counts-to-depth-file",
+      "status": "golden-pending",
+      "title": "A counts file rewritten as depth evidence",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "ConvertCountsToDepthFile"
+      ],
+      "why": "New in GATK 4.7.0.0 (#811). THE COORDINATES CHANGE BASE, a one-based count written zero-based. THE HEADER IS ONE COLUMN LINE NAMING ONE SAMPLE, --sample-name or -n when given and the read group's SM otherwise. THE TOOL'S OWN 'Sample name is not provided' IS UNREACHABLE: the counts codec refuses a header without a sample while the reader is opened, wrapped twice, and --sample-name cannot rescue it; NO READ GROUP IS REFUSED THE SAME WAY. A .gz NAME IS BGZF AT --compression-level WITH A TABIX INDEX over the counts header's dictionary, and a plain name ignores the level. THE LEVEL IS RANGE-CHECKED BY THE PARSER. AN OUTPUT NAME NO CODEC CLAIMS IS THE FINDER'S REFUSAL, AND ONE CLAIMED BY ANOTHER FEATURE TYPE IS THE TOOL'S OWN BadInput. -L SUBSETS THE RECORDS AND NEEDS --sequence-dictionary, the counts header's dictionary being one the engine never consults. AND ANOTHER FEATURE TYPE, OR A MISSING INPUT, IS REFUSED BEFORE THE TOOL RUNS.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "out\tplain=#Chr\\tStart\\tEnd\\tgamma\\nchr1\\t0\\t100\\t31",
+        "tbi\tgz=",
+        "error\twrong-output-type\t"
+      ],
+      "cases": [
+        {
+          "dump": "ConvertCountsToDepthFileDump",
+          "golden": null,
+          "why": "Nineteen runs over one counts file of four counts on two contigs, its header carrying a read group with SM, a @PG and a @CO: a text output plain, with --sample-name, with -n, with a level it never reads, and from a file of no counts; a .gz output at the default level, at 1, at 9 and empty, each with its tabix index; a level of 10; -L without --sequence-dictionary, and three intervals with it, two of which one count overlaps; a read group with no SM, with and without --sample-name, and no read group at all; an output named for another feature type and one no codec claims; and an .rd.txt input and a missing one."
+        }
+      ]
+    },
+    {
       "id": "site-depth-to-baf",
       "status": "oracle-backed",
       "title": "Allele depths turned into B-allele fractions",
