@@ -8962,9 +8962,11 @@ public class MakeFixtures {
         // The unsorted records under an index the reader only needs to find and load, so
         // REQUIRE_INDEX lets them through to a compressed output, whose tabix index refuses them.
         java.nio.file.Files.copy(new File(dir, "vcf_unsorted_samples.vcf").toPath(),
-                new File(dir, "unsorted_indexed.vcf").toPath());
+                new File(dir, "unsorted_indexed.vcf").toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         java.nio.file.Files.copy(new File(dir, "variants.vcf.idx").toPath(),
-                new File(dir, "unsorted_indexed.vcf.idx").toPath());
+                new File(dir, "unsorted_indexed.vcf.idx").toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         // gather_2.vcf.gz is GatherVcfs's: with every input compressed and a .vcf.gz output the
         // gather copies blocks instead of records, which only this pair reaches.
         for (String name : new String[] {"gather_1", "gather_2"}) {
