@@ -210,9 +210,26 @@ pub(super) fn spark_startup(parser: &Parser, tool: &str) -> Result<SparkStart, T
             "Sorry, we only support a single reads input for for this spark tool.",
         ));
     }
-    let input = inputs.into_iter().next().ok_or_else(|| {
-        Thrown::command_line("Argument input was missing: Argument 'input' is required")
-    })?;
+    let Some(input) = inputs.into_iter().next() else {
+        // The reads are optional to the parser, so with none `initializeIntervals` still runs:
+        // with no reference either, `-L` has no dictionary to resolve against.
+        if intervals_specified(parser) {
+            match &reference {
+                Some(reference) => {
+                    interval_arguments(parser, reference)?;
+                }
+                None => {
+                    return Err(Thrown::user(
+                        "We require at least one input source that has a sequence dictionary \
+                         (reference or reads) when intervals are specified",
+                    ))
+                }
+            }
+        }
+        return Err(Thrown::command_line(
+            "Argument input was missing: Argument 'input' is required",
+        ));
+    };
     let splits_by_itself = matches!(
         tool,
         "FindBreakpointEvidenceSpark" | "StructuralVariationDiscoveryPipelineSpark"

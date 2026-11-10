@@ -139,14 +139,28 @@ pub fn funcotator_data_source_downloader(parser: &Parser) -> Outcome {
             )),
         });
     }
-    if in_bucket(&source) {
-        return Err(bucket_refusal());
-    }
     let copy_refusal = || {
         Thrown::user(format!(
             "Could not copy file: {source_uri} -> {destination_uri}"
         ))
     };
+    if in_bucket(&source) {
+        // `doCopy` opens the source and then the destination, and either failure is this one
+        // refusal. A destination this port cannot open is refused the same way whether or not the
+        // reference could reach the bucket. The probe neither truncates an existing file nor leaves
+        // a new one behind.
+        let existed = std::path::Path::new(&destination).exists();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&destination)
+            .map_err(|_| copy_refusal())?;
+        if !existed {
+            let _ = std::fs::remove_file(&destination);
+        }
+        return Err(bucket_refusal());
+    }
     // The source is opened before the destination, so a missing source leaves nothing behind.
     let bytes = std::fs::read(&source).map_err(|_| copy_refusal())?;
     std::fs::write(&destination, &bytes).map_err(|_| copy_refusal())?;

@@ -762,6 +762,57 @@ jobs:
             /tmp/coverage-corpus/
           if-no-files-found: ignore
 
+  fuzz:
+    name: "Differential fuzzing, seeded from the covering arrays (shard ${{ matrix.shard }}/8)"
+    # V.6. The arrays cover pairs of argument values; this measures which of the reference's
+    # branches those pairs reach, mutates one argument at a time to reach more, and replays every
+    # case it keeps against the port. The number goes to tools/fuzz/measured.json, frozen from this
+    # job's artefacts like every other measurement; a divergence is evidence for a finding, not a
+    # red build, so the job fails only when the harness cannot fuzz anything at all.
+    needs: oracle-image
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/cache/restore@v6
+        with:
+          path: /tmp/oracle-image.tar
+          key: gatk-rs-oracle-${{ hashFiles('tools/oracle/**') }}
+          fail-on-cache-miss: true
+
+      - run: docker load -i /tmp/oracle-image.tar
+
+      - name: nasm, which gkl-igzip needs to build
+        run: |
+          sudo apt-get update -qq || echo "apt refresh incomplete; the install below is the gate"
+          sudo apt-get install -y -qq nasm python3-h5py
+          nasm -v
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.1"
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo build --release -p gatk-cli
+
+      - name: Fuzz the reference and replay against the port
+        run: |
+          python3 tools/fuzz/run_fuzz.py --shard ${{ matrix.shard }}/8 --iterations 30 \
+            --port target/release/gatk
+
+      - name: Publish the findings
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-findings-${{ matrix.shard }}
+          path: tools/fuzz/findings/
+          if-no-files-found: ignore
+
   nvscorevariants:
     name: NVScoreVariants on real x86-64
     # The one job with broadinstitute/gatk:4.6.2.0, which is a second image next to the pinned oracle
@@ -1037,6 +1088,7 @@ jobs:
       - oracle-image
       - oracle
       - argument-coverage
+      - fuzz
       - nvscorevariants
       - spark-threads
       - oracle-with-r
