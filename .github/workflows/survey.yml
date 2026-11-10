@@ -13,10 +13,13 @@ on:
     branches: ['survey/**']
   workflow_dispatch:
 
+# The move to 4.7.0.0 was surveyed from 4.6.2.0 with this file (runs 42827131133, 42833576338,
+# 42839254388). The next move names its release and checksum here; until then a survey has nothing
+# to compare and the "now" build refuses.
 env:
-  VERSION_WAS: "4.6.2.0"
-  VERSION_NOW: "4.7.0.0"
-  GATK_SHA256_NOW: d093d2693b1626361a413ca59d6d4a0bf968717f280a8fd9ce060b25eb2ed1db
+  VERSION_WAS: "4.7.0.0"
+  VERSION_NOW: ""
+  GATK_SHA256_NOW: ""
 
 jobs:
   images:

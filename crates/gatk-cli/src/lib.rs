@@ -30,9 +30,9 @@ use gatk_tools::main_entry::{self, Failure, Route, Stream, Thrown};
 
 /// The reference's own pins, which `printVersionInfo` reads off the jar's manifest.
 pub const TOOLKIT_NAME: &str = "The Genome Analysis Toolkit (GATK)";
-pub const TOOLKIT_VERSION: &str = "4.6.2.0";
-pub const HTSJDK_VERSION: &str = "4.2.0";
-pub const PICARD_VERSION: &str = "3.4.0";
+pub const TOOLKIT_VERSION: &str = "4.7.0.0";
+pub const HTSJDK_VERSION: &str = "5.0.0";
+pub const PICARD_VERSION: &str = "3.5.0";
 
 /// `getCommandLineName()`, which GATK leaves empty: the first line of the usage therefore reads
 /// `USAGE:  <program name>`, with two spaces where a toolkit's name would have been.

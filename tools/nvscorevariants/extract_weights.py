@@ -15,7 +15,7 @@ SHA-256 in `crates/gatk-tools/src/nv_score_variants/weights.rs`, and this script
 along with the hash of the model it read, so a file that moved is refused rather than scored with.
 
     docker run --rm --platform linux/amd64 -v "$PWD/tools/nvscorevariants:/tool:ro" -v "$OUT:/out" \\
-        broadinstitute/gatk:4.6.2.0 python3 /tool/extract_weights.py /out
+        broadinstitute/gatk:4.7.0.0 python3 /tool/extract_weights.py /out
 """
 
 import hashlib
@@ -26,7 +26,7 @@ import zipfile
 
 import torch
 
-JAR = "/gatk/gatk-package-4.6.2.0-local.jar"
+JAR = "/gatk/gatk-package-4.7.0.0-local.jar"
 MODELS = {
     "1d_cnn_mix_train_full_bn.pt": "nvscore-1d.weights",
     "small_2d.pt": "nvscore-2d.weights",

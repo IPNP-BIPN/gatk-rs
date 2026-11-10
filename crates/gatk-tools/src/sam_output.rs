@@ -58,7 +58,7 @@ impl Default for Options<'_> {
             create_output_bam_index: true,
             add_output_sam_program_record: true,
             command_line: "",
-            version: "4.6.2.0",
+            version: "4.7.0.0",
         }
     }
 }

@@ -34,7 +34,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 ARRAYS = REPO / "tools" / "coverage" / "arrays"
-IMAGE = "gatk-rs-oracle:4.6.2.0"
+IMAGE = "gatk-rs-oracle:4.7.0.0"
 PLATFORM = "linux/amd64"
 
 # The `Add-Opens` of the GATK jar's own manifest. `java -jar` applies them and `java -cp` does not,

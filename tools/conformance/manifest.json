@@ -6,17 +6,17 @@
     "CI step re-derives is not evidence."
   ],
   "oracle": {
-    "image": "gatk-rs-oracle:4.6.2.0",
+    "image": "gatk-rs-oracle:4.7.0.0",
     "context": "tools/oracle",
     "platform": "linux/amd64"
   },
   "oracle_with_r": {
     "$why": "gatk-rs-oracle deliberately has no Rscript. A suite that needs the reference's plots to actually run names this instead with its own `oracle` key: the Broad's published image of the same release, pinned by digest, with the R and the packages that release was built with. Pulled rather than built, so it costs a job of its own and not the shared image's cache.",
-    "image": "broadinstitute/gatk@sha256:71b17ee42d149e8ec112603f5305c873ab60d93949ef8bb62a4fff85427f56fb",
+    "image": "broadinstitute/gatk@sha256:7da5cf586e1c463f0c72908f9ac7dec8c29e37912c82d6e7b3c250f27fcb3891",
     "platform": "linux/amd64",
     "entrypoint": "sh",
     "timeout_seconds": 1500,
-    "classpath": "/gatk/gatk-package-4.6.2.0-local.jar"
+    "classpath": "/gatk/gatk-package-4.7.0.0-local.jar"
   },
   "ci": {
     "suites_per_job": 5,
@@ -8579,7 +8579,7 @@
       "status": "oracle-backed",
       "title": "NVScoreVariants: the printed scores and the VCF of both models, in GATK's own image",
       "harness": "tools/nvscorevariants",
-      "python_image": "broadinstitute/gatk@sha256:71b17ee42d149e8ec112603f5305c873ab60d93949ef8bb62a4fff85427f56fb",
+      "python_image": "broadinstitute/gatk@sha256:7da5cf586e1c463f0c72908f9ac7dec8c29e37912c82d6e7b3c250f27fcb3891",
       "tools": [
         "NVScoreVariants"
       ],
@@ -8604,7 +8604,7 @@
         "TrainVariantAnnotationsModel",
         "ScoreVariantAnnotations"
       ],
-      "image": "broadinstitute/gatk:4.6.2.0",
+      "image": "broadinstitute/gatk:4.7.0.0",
       "command": "bash /harness/vets_dump.sh",
       "why": "The pinned image has no python, so the only image in which the reference gets past its interpreter is the publisher's own. EVERY NUMBER HERE IS scikit-learn 1.3.2's AND numpy 1.26.2's: an MT19937, a tree builder over float32 with a seeded per-tree generator, and a pow and a log that are glibc's on a CPU without AVX-512. A CPU WITH AVX-512 TAKES NUMPY'S OTHER LOOPS, so the dump sets NPY_DISABLE_CPU_FEATURES to the AVX-512 family and the reference computes on any runner what it computes on an AVX2 CPU; the dump's comment line shows which features numpy kept. THE SCORER IS COMPARED WITHOUT ITS FRAMES AND ITS NAME, because the lambda's code object names the temporary file the script ran from and that is random in every run; the rest of the pickle is a function of the fit. THE SCORES JAVA WRITES HOLD THE TIME, so their doubles are what is compared.",
       "compare": {

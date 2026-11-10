@@ -452,7 +452,7 @@ jobs:
 
   nvscorevariants:
     name: NVScoreVariants on real x86-64
-    # The one job with broadinstitute/gatk:4.6.2.0, which is a second image next to the pinned oracle
+    # The one job with broadinstitute/gatk:4.7.0.0, which is a second image next to the pinned oracle
     # because that one has no Python. Everything else about this tool is measured under Rosetta at
     # AVX2, so this is where those measurements get checked: which CPU dispatch the reference took,
     # how far the port's layers are from it there, and whether the printed scores still agree. The
@@ -467,7 +467,7 @@ jobs:
 
       - name: Weights, fixture, and the reference's dump and layers
         env:
-          IMAGE: broadinstitute/gatk@sha256:71b17ee42d149e8ec112603f5305c873ab60d93949ef8bb62a4fff85427f56fb
+          IMAGE: broadinstitute/gatk@sha256:7da5cf586e1c463f0c72908f9ac7dec8c29e37912c82d6e7b3c250f27fcb3891
         run: |
           mkdir -p /tmp/nv
           chmod 777 /tmp/nv

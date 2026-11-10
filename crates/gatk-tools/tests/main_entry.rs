@@ -1,4 +1,4 @@
-//! Conformance for `Main`'s entry against GATK 4.6.2.0, compared as the stream each path writes
+//! Conformance for `Main`'s entry against GATK 4.7.0.0, compared as the stream each path writes
 //! to, the exit status each exception carries, and what the two handlers print.
 //!
 //! Golden from `tools/readfilter-conformance/MainEntryDump.java`. `mainEntry` ends in
@@ -171,18 +171,18 @@ fn the_version_is_torn_in_half_by_a_stream_that_is_not_stdout() {
     let text = golden();
     let first = field(&text, "out", "version-to-stdout").expect("the first line");
     let rest = field(&text, "out", "version-to-elsewhere").expect("the rest");
-    assert_eq!(first, "The Genome Analysis Toolkit (GATK) v4.6.2.0\n");
+    assert_eq!(first, "The Genome Analysis Toolkit (GATK) v4.7.0.0\n");
     assert_eq!(rest, "HTSJDK Version: 4.2.0\nPicard Version: 3.4.0\n");
     let (ours_first, ours_rest) = version_lines(
         "The Genome Analysis Toolkit (GATK)",
-        "4.6.2.0",
-        "4.2.0",
-        "3.4.0",
+        "4.7.0.0",
+        "5.0.0",
+        "3.5.0",
     );
     assert_eq!(ours_first, first);
     assert_eq!(ours_rest, rest);
     // The three versions are the reference's own pins, which is what the golden holds them for.
-    assert!(rest.contains("4.2.0") && rest.contains("3.4.0"));
+    assert!(rest.contains("5.0.0") && rest.contains("3.5.0"));
 }
 
 /// An unknown name prints the same usage to stderr and then refuses.

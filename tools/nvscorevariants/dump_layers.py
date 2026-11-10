@@ -28,7 +28,7 @@ from scorevariants.dataset import ReferenceDataset
 from scorevariants.models.common import predictions_to_score
 from scorevariants.readers import ReferenceTensorReader, TensorReader
 
-JAR = "/gatk/gatk-package-4.6.2.0-local.jar"
+JAR = "/gatk/gatk-package-4.7.0.0-local.jar"
 
 
 def write_tensor(out, name, tensor):
