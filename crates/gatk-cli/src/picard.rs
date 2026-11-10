@@ -357,6 +357,18 @@ pub(crate) fn write_vcf(
     text: &str,
     index: bool,
 ) -> Result<(), Thrown> {
+    write_vcf_with_dictionary(parser, output, text, index, None)
+}
+
+/// `write_vcf` for a writer built with `setReferenceDictionary(dictionary)`: the Tribble index
+/// takes its `DICT:` properties from that dictionary rather than from the header's contig lines.
+pub(crate) fn write_vcf_with_dictionary(
+    parser: &Parser,
+    output: &str,
+    text: &str,
+    index: bool,
+    dictionary: Option<&[htsjdk_bam::header::SequenceRecord]>,
+) -> Result<(), Thrown> {
     let block_compressed = output.ends_with(".gz") || output.ends_with(".bgz");
     let has_dictionary = text
         .lines()
@@ -382,7 +394,13 @@ pub(crate) fn write_vcf(
             return Err(refusal);
         }
     }
-    crate::runners::write_variant_file(parser, output, text, index, false, None)
+    let dictionary = dictionary.map(|sequences| {
+        sequences
+            .iter()
+            .map(|sequence| (sequence.name.clone(), sequence.length))
+            .collect()
+    });
+    crate::runners::write_variant_file(parser, output, text, index, false, dictionary)
 }
 
 /// `TabixIndexCreator.addFeature`'s order checks, which the on-the-fly index makes as the writer

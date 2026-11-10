@@ -11,7 +11,10 @@ use gatk_barclay::Parser;
 use gatk_tools::main_entry::Thrown;
 use gatk_tools::merge_vcfs::{merge, MergeError};
 
-use super::{absolute, assert_readable, thrown, unroll_paths, vcf_text, with_contigs, write_vcf};
+use super::{
+    absolute, assert_readable, thrown, unroll_paths, vcf_text, with_contigs,
+    write_vcf_with_dictionary,
+};
 use crate::runners::{argument, arguments, dictionary_from_any, flag};
 
 pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> {
@@ -59,7 +62,15 @@ pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> 
                 .unwrap_or_else(|| thrown(error.java_class(), error.message())))
         }
     };
-    write_vcf(parser, &output, &merged, flag(parser, "CREATE_INDEX"))?;
+    // `setReferenceDictionary(sequenceDictionary)`: SEQUENCE_DICTIONARY when given, which is what
+    // the index's DICT properties list even where the merged header's contigs differ.
+    write_vcf_with_dictionary(
+        parser,
+        &output,
+        &merged,
+        flag(parser, "CREATE_INDEX"),
+        dictionary.as_deref(),
+    )?;
     Ok(0)
 }
 

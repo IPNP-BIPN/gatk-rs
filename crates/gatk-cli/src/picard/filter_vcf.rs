@@ -3,6 +3,7 @@
 use gatk_barclay::Parser;
 use gatk_tools::filter_vcf::{filter_to, Thresholds};
 use gatk_tools::main_entry::{Thrown, PORT_LIMITATION};
+use htsjdk_vcf::reader::{read_vcf, ReadError, ReadFailure};
 
 use super::fix_vcf_header::write_indexed_vcf;
 use super::vcf_format_converter::{is_bcf, output_type};
@@ -37,16 +38,26 @@ pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> 
     if is_bcf(&output) {
         return Err(super::vcf_format_converter::bcf_limitation());
     }
-    let filtered = filter_to(&vcf_text(&input)?, &thresholds, vcf_or_bcf)
-        .map_err(|error| thrown(error.java_class(), error.message()))?;
-    // Built before the dictionary check in Java; refusing after it keeps that refusal first.
-    if argument(parser, "JAVASCRIPT_FILE").is_some_and(|file| file != "null") {
+    let text = vcf_text(&input)?;
+    // The script filter is built once `new VCFFileReader` has read the header, before the first
+    // record is read and before the dictionary check: only a header failure comes first.
+    if argument(parser, "JAVASCRIPT_FILE").is_some_and(|file| file != "null")
+        && !matches!(
+            read_vcf(&text),
+            Err(ReadFailure {
+                error: ReadError::Header(_) | ReadError::HeaderLine(_),
+                ..
+            })
+        )
+    {
         return Err(Thrown::non_user(
             PORT_LIMITATION,
             "FilterVcf's JAVASCRIPT_FILE runs a Nashorn script, which this port does not. This \
              message is the port's own and not GATK's.",
         ));
     }
+    let filtered = filter_to(&text, &thresholds, vcf_or_bcf)
+        .map_err(|error| thrown(error.java_class(), error.message()))?;
     output_type(&output)?;
     // `new VariantContextWriterBuilder()` keeps the default `INDEX_ON_THE_FLY`.
     write_indexed_vcf(parser, &output, &filtered)?;
