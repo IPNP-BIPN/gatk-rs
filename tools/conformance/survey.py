@@ -25,6 +25,7 @@ runs wherever it is invoked.
 """
 
 import argparse
+import json
 import subprocess
 import sys
 import tempfile
@@ -44,25 +45,32 @@ def rewrite(path, was, now):
     return out
 
 
-def survey_suite(manifest, suite, workdir, was, now):
+def survey_suite(manifest, suite, workdir, was, now, fixtures):
     """Run one suite under the overridden oracle and say which bucket it falls in."""
     props = suite.get("java_props", manifest.get("default_java_props", []))
-    fixtures = None
-    if suite.get("needs_fixtures"):
-        fixtures = Path(workdir) / f"fixtures-{suite['id']}"
-        if run_suite.build_fixtures(manifest, fixtures) != 0:
-            return "error", ["could not build the fixtures"]
+    if suite.get("oracle"):
+        # It names an image of its own, which the override does not reach.
+        return "error", [f"runs in its own image ({manifest[suite['oracle']]['image']}), not surveyed"]
+    if not suite.get("needs_fixtures"):
+        fixtures = None
+    elif fixtures is None:
+        return "error", ["could not build the fixtures"]
     verdict, notes = "identical", []
     for case in suite["cases"]:
         dump = case["dump"]
         real = Path(workdir) / f"{suite['id']}.{dump}.txt"
-        if run_suite.docker_run(manifest, suite["harness"], dump, props, real, fixtures) != 0:
+        rc = run_suite.docker_run(
+            manifest["oracle"], suite["harness"], dump, props, real, fixtures,
+            suite.get("python_image"), suite,
+        )
+        if rc != 0:
             return "error", [f"{dump}: the dump did not run under this oracle"]
-        ok, _, messages = comparator.compare_case(real, case["golden"], suite["compare"])
+        golden = REPO / case["golden"]
+        ok, _, messages = comparator.compare_case(real, golden, suite["compare"])
         if ok:
             continue
         ok, _, messages = comparator.compare_case(
-            rewrite(real, was, now), case["golden"], suite["compare"]
+            rewrite(real, was, now), golden, suite["compare"]
         )
         if ok:
             verdict = "version" if verdict != "behaviour" else verdict
@@ -80,9 +88,14 @@ def main(argv):
     ap.add_argument("--version-was", required=True)
     ap.add_argument("--version-now", required=True)
     ap.add_argument("--suites", help="space separated ids; default is every oracle-backed suite")
+    ap.add_argument("--shard", help="k/n: survey only every n-th suite, starting at the k-th (1-based)")
+    ap.add_argument("--json", help="also write the buckets and notes to this file")
     args = ap.parse_args(argv)
 
     manifest = comparator.load_manifest(args.manifest)
+    # The fixtures are inputs, so they come from the manifest's own image: htsjdk 5.0.0 deflates
+    # with libdeflate by default, and fixtures it wrote would move the inputs along with the tool.
+    pinned = dict(manifest)
     print(
         f"!! surveying against {args.oracle_image}, not {manifest['oracle']['image']}.\n"
         f"!! Nothing produced here may be committed as a golden.",
@@ -95,12 +108,24 @@ def main(argv):
         if args.suites
         else [s["id"] for s in manifest["suites"] if s["status"] == "oracle-backed"]
     )
+    if args.shard:
+        k, n = (int(x) for x in args.shard.split("/"))
+        ids = ids[k - 1 :: n]
     buckets = {"identical": [], "version": [], "behaviour": [], "error": []}
+    all_notes = {}
     with tempfile.TemporaryDirectory() as workdir:
+        fixtures = None
+        if any(comparator.suite_by_id(manifest, i).get("needs_fixtures") for i in ids):
+            fixtures = Path(workdir) / "fixtures"
+            if run_suite.build_fixtures(pinned, fixtures) != 0:
+                fixtures = None
         for suite_id in ids:
             suite = comparator.suite_by_id(manifest, suite_id)
-            verdict, notes = survey_suite(manifest, suite, workdir, args.version_was, args.version_now)
+            verdict, notes = survey_suite(
+                manifest, suite, workdir, args.version_was, args.version_now, fixtures
+            )
             buckets[verdict].append(suite_id)
+            all_notes[suite_id] = notes
             print(f"{verdict:10} {suite_id}", flush=True)
             for note in notes:
                 print(f"           {note}", flush=True)
@@ -116,6 +141,8 @@ def main(argv):
         if name in ("behaviour", "error") and buckets[name]:
             for suite_id in buckets[name]:
                 print(f"        {suite_id}")
+    if args.json:
+        Path(args.json).write_text(json.dumps({"buckets": buckets, "notes": all_notes}, indent=1))
     return 1 if buckets["behaviour"] or buckets["error"] else 0
 
 
