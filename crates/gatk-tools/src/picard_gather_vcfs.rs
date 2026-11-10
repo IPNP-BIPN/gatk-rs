@@ -37,7 +37,7 @@
 
 use htsjdk_vcf::comparator::VariantContextComparator;
 use htsjdk_vcf::header::{HeaderLine, VcfHeader};
-use htsjdk_vcf::reader::read_vcf;
+use htsjdk_vcf::reader::{read_vcf_with, GenotypeParsing};
 use htsjdk_vcf::variant::VariantContext;
 use htsjdk_vcf::vcf_file::write_vcf;
 
@@ -274,7 +274,8 @@ struct Shard {
 }
 
 fn read_shard(input: &Input) -> Result<Shard, Failure> {
-    match read_vcf(input.text) {
+    // Gathering never looks at a sample column, so it never parses one, as `VCFFileReader` does.
+    match read_vcf_with(input.text, GenotypeParsing::Deferred) {
         Ok(file) => Ok(Shard {
             path: input.path.to_string(),
             header: file.header,

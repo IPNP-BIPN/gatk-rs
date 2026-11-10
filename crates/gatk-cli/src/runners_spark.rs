@@ -2307,7 +2307,7 @@ fn load_cnv_calls(
 
 /// `ReferenceMultiSparkSource.getBases`.
 struct SparkReference {
-    fasta: htsjdk_bam::fasta_index::IndexedFasta<std::fs::File>,
+    fasta: htsjdk_bam::fasta_index::IndexedFasta<htsjdk_bam::fasta_index::PositionalFile>,
 }
 
 impl gatk_tools::sv_discovery::Reference for SparkReference {
@@ -5073,7 +5073,10 @@ fn write_spark_indexed(
                 .encode_into(&mut encoded)
                 .map_err(|error| failed(output, format!("{error:?}")))?;
             if (index as u64).is_multiple_of(granularity) {
-                offsets.push(shift + stream.file_pointer());
+                let pointer = stream
+                    .file_pointer()
+                    .map_err(|error| failed(output, error.to_string()))?;
+                offsets.push(shift + pointer);
             }
             std::io::Write::write_all(&mut stream, &encoded)
                 .map_err(|error| failed(output, error.to_string()))?;
