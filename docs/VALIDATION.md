@@ -13,7 +13,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | ASEReadCounter | gatk-rs | oracle-backed | 10 suite | 0 suite | 20/20 (100.0%) | 2 | 2762 probes (+5), 0/13 diverge | 4 | 6 | none |
 | AccumulateQualityYieldMetrics | picard-rs | oracle-backed | not vendored | not vendored | 6/6 (100.0%) | 2 | not measured | 0 | 0 | none |
 | AccumulateVariantCallingMetrics | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | none |
-| AddCommentsToBam | gatk-rs | oracle-backed | 21 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
+| AddCommentsToBam | gatk-rs | oracle-backed | 21 suite | 0 suite | 14/14 (100.0%) | 2 | not measured | 5 | 0 | none |
 | AddFlowBaseQuality | gatk-rs | oracle-backed | 121 suite | 0 suite | 24/24 (100.0%) | 2 | 2528 probes (+1), 0/10 diverge | 2 | 6 | none |
 | AddFlowSNVQuality | gatk-rs | oracle-backed | 319 suite | 0 suite | 26/26 (100.0%) | 2 | 2631 probes (+1), 0/11 diverge | 2 | 8 | none |
 | AddOATag | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -25,7 +25,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | AnnotateIntervals | gatk-rs | oracle-backed | 8 suite | 0 suite | 19/19 (100.0%) | 2 | 2268 probes (+54), 0/11 diverge | 4 | 0 | none |
 | AnnotateVcfWithBamDepth | gatk-rs | oracle-backed | 54 suite | 0 suite | 23/23 (100.0%) | 2 | 2535 probes (+5), 0/11 diverge | 6 | 0 | none |
 | AnnotateVcfWithExpectedAlleleFraction | gatk-rs | oracle-backed | 30 suite | 0 suite | 23/23 (100.0%) | 2 | 2436 probes (+2), 0/13 diverge | 4 | 2 | none |
-| ApplyBQSR | gatk-rs | oracle-backed | 34977 suite | 0 suite | 21/21 (100.0%) | 2 | 3123 probes (+8), 0/12 diverge | 6 | 0 | none |
+| ApplyBQSR | gatk-rs | oracle-backed | 35664 suite | 0 suite | 21/21 (100.0%) | 2 | 3123 probes (+8), 0/12 diverge | 6 | 0 | none |
 | ApplyBQSRSpark | gatk-rs | oracle-backed | 5 | 3 | 20/20 (100.0%) | 2 | 3051 probes (+7), 0/12 diverge | 6 | 1 | none |
 | ApplyVQSR | gatk-rs | oracle-backed | 152 suite | 0 suite | 25/25 (100.0%) | 2 | 2638 probes (+13), 0/17 diverge | 7 | 7 | none |
 | BQSRPipelineSpark | gatk-rs | oracle-backed | 5 | 3 | 23/23 (100.0%) | 2 | 4150 probes (+0), 0/14 diverge | 8 | 1 | none |
@@ -36,7 +36,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | BaseRecalibratorSpark | gatk-rs | oracle-backed | 6 | 1 | 22/22 (100.0%) | 2 | 3906 probes (+2), 0/13 diverge | 8 | 1 | none |
 | BedToIntervalList | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
 | BpmToNormalizationManifestCsv | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
-| BuildBamIndex | gatk-rs | oracle-backed | 16 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
+| BuildBamIndex | gatk-rs | oracle-backed | 16 suite | 0 suite | 18/18 (100.0%) | 2 | not measured | 7 | 0 | none |
 | BwaAndMarkDuplicatesPipelineSpark | gatk-rs | oracle-backed | 30 | 12 | 19/19 (100.0%) | 2 | 496 probes (+0), 0/4 diverge | 4 | 5 | none |
 | BwaMemIndexImageCreator | gatk-rs | oracle-backed | 37 suite | 0 suite | 15/15 (100.0%) | 2 | 1038 probes (+2), 0/8 diverge | 5 | 0 | none |
 | BwaSpark | gatk-rs | oracle-backed | 93 | 37 | 15/15 (100.0%) | 2 | 2200 probes (+2), 0/8 diverge | 5 | 5 | none |
@@ -56,7 +56,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | CheckIlluminaDirectory | picard-rs | oracle-backed | not vendored | not vendored | 17/17 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CheckPileup | gatk-rs | oracle-backed | 33 suite | 0 suite | 21/21 (100.0%) | 2 | 3151 probes (+33), 0/13 diverge | 6 | 0 | none |
 | CheckReferenceCompatibility | gatk-rs | oracle-backed | 25 suite | 0 suite | 20/20 (100.0%) | 2 | 2065 probes (+18), 0/10 diverge | 4 | 2 | none |
-| CheckTerminatorBlock | gatk-rs | oracle-backed | 27 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
+| CheckTerminatorBlock | gatk-rs | oracle-backed | 27 suite | 0 suite | 12/12 (100.0%) | 2 | not measured | 5 | 0 | none |
 | CleanSam | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | none |
 | ClipReads | gatk-rs | oracle-backed | 170 suite | 0 suite | 24/24 (100.0%) | 2 | 2506 probes (+2), 0/13 diverge | 5 | 0 | none |
 | ClusterCrosscheckMetrics | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -116,9 +116,9 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | CountBasesInReference | gatk-rs | oracle-backed | 191 suite | 0 suite | 19/19 (100.0%) | 2 | 2046 probes (+0), 0/6 diverge | 4 | 0 | none |
 | CountBasesSpark | gatk-rs | oracle-backed | 6 | 0 | 19/19 (100.0%) | 2 | 1989 probes (+4), 0/11 diverge | 5 | 1 | none |
 | CountFalsePositives | gatk-rs | oracle-backed | 14 suite | 0 suite | 24/24 (100.0%) | 2 | 2273 probes (+30), 0/7 diverge | 2 | 2 | none |
-| CountReads | gatk-rs | oracle-backed | 35200 suite | 6 suite | 21/21 (100.0%) | 2 | 2110 probes (+25), 0/12 diverge | 5 | 0 | none |
+| CountReads | gatk-rs | oracle-backed | 35887 suite | 6 suite | 21/21 (100.0%) | 2 | 2110 probes (+25), 0/12 diverge | 5 | 0 | none |
 | CountReadsSpark | gatk-rs | oracle-backed | 9 | 1 | 19/19 (100.0%) | 2 | 2017 probes (+4), 0/11 diverge | 5 | 1 | none |
-| CountVariants | gatk-rs | oracle-backed | 35085 suite | 12 suite | 23/23 (100.0%) | 2 | 2356 probes (+4), 0/10 diverge | 4 | 0 | none |
+| CountVariants | gatk-rs | oracle-backed | 35772 suite | 12 suite | 23/23 (100.0%) | 2 | 2356 probes (+4), 0/10 diverge | 4 | 0 | none |
 | CountVariantsSpark | gatk-rs | oracle-backed | 7 | 0 | 19/19 (100.0%) | 2 | 1682 probes (+8), 0/11 diverge | 7 | 1 | none |
 | CpxVariantReInterpreterSpark | gatk-rs | oracle-backed | 81 | 24 | 19/19 (100.0%) | 2 | 3828 probes (+5), 0/12 diverge | 8 | 5 | none |
 | CreateBafRegressMetricsFile | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -156,13 +156,13 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | FilterMutectCalls | gatk-rs | oracle-backed | 320 suite | 0 suite | 24/24 (100.0%) | 2 | 3736 probes (+5), 0/13 diverge | 5 | 10 | none |
 | FilterSamReads | picard-rs | oracle-backed | not vendored | not vendored | 26/26 (100.0%) | 2 | not measured | 0 | 0 | none |
 | FilterVariantTranches | gatk-rs | oracle-backed | 60 suite | 0 suite | 15/15 (100.0%) | 2 | 2161 probes (+5), 0/10 diverge | 4 | 7 | none |
-| FilterVcf | gatk-rs | oracle-backed | 20 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
+| FilterVcf | gatk-rs | oracle-backed | 20 suite | 0 suite | 7/20 (35.0%) | 2 | not measured | 8 | 0 | none |
 | FindBadGenomicKmersSpark | gatk-rs | oracle-backed | 63 | 12 | 21/21 (100.0%) | 2 | 2120 probes (+4), 0/12 diverge | 4 | 5 | none |
 | FindBreakpointEvidenceSpark | gatk-rs | oracle-backed | 9344 | 8309 | 26/26 (100.0%) | 2 | 5309 probes (+20), 0/14 diverge | 9 | 3 | none |
 | FindMendelianViolations | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
 | FixMateInformation | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
 | FixMisencodedBaseQualityReads | gatk-rs | oracle-backed | 40 suite | 0 suite | 21/21 (100.0%) | 2 | 2155 probes (+25), 0/12 diverge | 5 | 0 | none |
-| FixVcfHeader | gatk-rs | oracle-backed | 26 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
+| FixVcfHeader | gatk-rs | oracle-backed | 26 suite | 0 suite | 20/21 (95.2%) | 2 | not measured | 8 | 0 | none |
 | FlagStat | gatk-rs | oracle-backed | 30 suite | 0 suite | 21/21 (100.0%) | 2 | 2124 probes (+25), 0/12 diverge | 5 | 0 | none |
 | FlagStatSpark | gatk-rs | oracle-backed | 5 | 1 | 19/19 (100.0%) | 2 | 2008 probes (+4), 0/11 diverge | 5 | 1 | none |
 | FlowFeatureMapper | gatk-rs | oracle-backed | 197 suite | 0 suite | 25/25 (100.0%) | 2 | 3066 probes (+11), 0/15 diverge | 2 | 8 | none |
@@ -171,14 +171,14 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | Funcotator | gatk-rs | oracle-backed | 15 suite | 0 suite | 31/31 (100.0%) | 2 | 5849 probes (+20), 0/24 diverge | 9 | 6 | none |
 | FuncotatorDataSourceDownloader | gatk-rs | oracle-backed | 54 suite | 10 suite | 8/8 (100.0%) | 2 | 1568 probes (+286), 0/4 diverge | 2 | 2 | none |
 | GatherBQSRReports | gatk-rs | oracle-backed | 9 suite | 0 suite | 6/6 (100.0%) | 2 | 1907 probes (+0), 0/3 diverge | 2 | 0 | none |
-| GatherBamFiles | gatk-rs | oracle-backed | 28 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
+| GatherBamFiles | gatk-rs | oracle-backed | 28 suite | 0 suite | 11/11 (100.0%) | 2 | not measured | 4 | 0 | none |
 | GatherNormalArtifactData | gatk-rs | oracle-backed | 11 suite | 0 suite | 6/6 (100.0%) | 2 | 1106 probes (+0), 0/3 diverge | 2 | 0 | none |
 | GatherPileupSummaries | gatk-rs | oracle-backed | 11 suite | 0 suite | 6/6 (100.0%) | 2 | 1199 probes (+2), 0/6 diverge | 5 | 0 | none |
 | GatherTranches | gatk-rs | oracle-backed | 11 suite | 0 suite | 8/8 (100.0%) | 2 | 1113 probes (+2), 0/7 diverge | 4 | 0 | none |
-| GatherVcfs | gatk-rs | oracle-backed | 28 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
-| GatherVcfsCloud | gatk-rs | oracle-backed | 35094 suite | 0 suite | 11/11 (100.0%) | 2 | 1047 probes (+2), 0/5 diverge | 2 | 0 | none |
+| GatherVcfs | gatk-rs | oracle-backed | 28 suite | 0 suite | 34/34 (100.0%) | 2 | not measured | 8 | 0 | none |
+| GatherVcfsCloud | gatk-rs | oracle-backed | 35781 suite | 0 suite | 11/11 (100.0%) | 2 | 1047 probes (+2), 0/5 diverge | 2 | 0 | none |
 | GeneExpressionEvaluation | gatk-rs | oracle-backed | 21 suite | 0 suite | 19/19 (100.0%) | 2 | 2777 probes (+4), 0/12 diverge | 4 | 6 | none |
-| GenomicsDBImport | gatk-rs | oracle-backed | 3620 | 3341 | 12/19 (63.2%) | 2 | 2174 probes (+48), 0/9 diverge | 6 | 11 | none |
+| GenomicsDBImport | gatk-rs | oracle-backed | 3620 | 3341 | 19/19 (100.0%) | 2 | 2174 probes (+48), 0/9 diverge | 6 | 11 | none |
 | GenotypeConcordance | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
 | GenotypeGVCFs | gatk-rs | oracle-backed | 7 suite | 0 suite | 34/34 (100.0%) | 2 | 5528 probes (+6), 0/19 diverge | 6 | 9 | none |
 | GermlineCNVCaller | gatk-rs | oracle-backed | 18 | 0 | 46/46 (100.0%) | 2 | 1062 probes (+0), 0/3 diverge | 2 | 0 | none |
@@ -198,7 +198,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | IdentifyContaminant | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
 | IlluminaBasecallsToFastq | picard-rs | oracle-backed | not vendored | not vendored | not measured | - | not measured | 0 | 0 | none |
 | IlluminaBasecallsToSam | picard-rs | oracle-backed | not vendored | not vendored | 31/31 (100.0%) | 2 | not measured | 0 | 0 | none |
-| IndexFeatureFile | gatk-rs | oracle-backed | 35063 suite | 0 suite | 8/8 (100.0%) | 2 | 1219 probes (+10), 0/9 diverge | 0 | 0 | none |
+| IndexFeatureFile | gatk-rs | oracle-backed | 35750 suite | 0 suite | 8/8 (100.0%) | 2 | 1219 probes (+10), 0/9 diverge | 0 | 0 | none |
 | IntervalListToBed | picard-rs | oracle-backed | not vendored | not vendored | 8/8 (100.0%) | 2 | not measured | 0 | 0 | none |
 | IntervalListTools | picard-rs | oracle-backed | not vendored | not vendored | 34/34 (100.0%) | 2 | not measured | 0 | 0 | none |
 | JointGermlineCNVSegmentation | gatk-rs | oracle-backed | 12 suite | 0 suite | 22/22 (100.0%) | 2 | 4190 probes (+0), 0/10 diverge | 6 | 8 | none |
@@ -210,7 +210,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | LiftoverVcf | picard-rs | oracle-backed | not vendored | not vendored | 17/17 (100.0%) | 2 | not measured | 0 | 0 | none |
 | LocalAssembler | gatk-rs | oracle-backed | 30 suite | 0 suite | 21/21 (100.0%) | 2 | 3269 probes (+3), 0/12 diverge | 5 | 1 | none |
 | MTLowHeteroplasmyFilterTool | gatk-rs | oracle-backed | 24 suite | 0 suite | 15/15 (100.0%) | 2 | 2224 probes (+0), 0/10 diverge | 2 | 7 | none |
-| MakeSitesOnlyVcf | gatk-rs | oracle-backed | 20 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
+| MakeSitesOnlyVcf | gatk-rs | oracle-backed | 20 suite | 0 suite | 7/16 (43.8%) | 2 | not measured | 4 | 0 | none |
 | MakeVcfSampleNameMap | picard-rs | oracle-backed | not vendored | not vendored | 6/6 (100.0%) | 2 | not measured | 0 | 0 | none |
 | MarkDuplicates | picard-rs | oracle-backed | not vendored | not vendored | 47/47 (100.0%) | 2 | not measured | 0 | 0 | none |
 | MarkDuplicatesSpark | gatk-rs | oracle-backed | 368 | 203 | 27/27 (100.0%) | 2 | 3023 probes (+2), 0/12 diverge | 3 | 5 | none |
@@ -225,7 +225,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | MergeMutectStats | gatk-rs | oracle-backed | 11 suite | 0 suite | 7/7 (100.0%) | 2 | 1126 probes (+2), 0/5 diverge | 3 | 0 | none |
 | MergePedIntoVcf | picard-rs | oracle-backed | not vendored | not vendored | 19/19 (100.0%) | 2 | not measured | 0 | 0 | none |
 | MergeSamFiles | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | none |
-| MergeVcfs | gatk-rs | oracle-backed | 38 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
+| MergeVcfs | gatk-rs | oracle-backed | 38 suite | 0 suite | 27/27 (100.0%) | 2 | not measured | 8 | 0 | none |
 | MethylationTypeCaller | gatk-rs | oracle-backed | 74 suite | 0 suite | 21/21 (100.0%) | 2 | 2711 probes (+42), 0/12 diverge | 6 | 0 | none |
 | ModelSegments | gatk-rs | oracle-backed | 21 suite | 0 suite | 19/19 (100.0%) | 2 | 3526 probes (+1), 0/15 diverge | 6 | 0 | none |
 | Mutect2 | gatk-rs | oracle-backed | 617 suite | 76 suite | 38/38 (100.0%) | 2 | 14428 probes (+0), 0/26 diverge | 10 | 2 | mask_identity_hashes, sort_segments_with |
@@ -252,7 +252,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | PrintDistantMates | gatk-rs | oracle-backed | 75 suite | 0 suite | 19/19 (100.0%) | 2 | 2221 probes (+0), 0/9 diverge | 4 | 0 | none |
 | PrintFileDiagnostics | gatk-rs | oracle-backed | 9 suite | 0 suite | 6/6 (100.0%) | 2 | 968 probes (+0), 0/4 diverge | 2 | 0 | none |
 | PrintReadCounts | gatk-rs | oracle-backed | 44 suite | 0 suite | 17/17 (100.0%) | 2 | 1940 probes (+0), 0/7 diverge | 2 | 4 | none |
-| PrintReads | gatk-rs | oracle-backed | 34963 suite | 0 suite | 21/21 (100.0%) | 2 | 2140 probes (+25), 0/12 diverge | 5 | 0 | none |
+| PrintReads | gatk-rs | oracle-backed | 35650 suite | 0 suite | 21/21 (100.0%) | 2 | 2140 probes (+25), 0/12 diverge | 5 | 0 | none |
 | PrintReadsHeader | gatk-rs | oracle-backed | 19 suite | 0 suite | 19/19 (100.0%) | 2 | 1810 probes (+0), 0/6 diverge | 4 | 0 | none |
 | PrintReadsSpark | gatk-rs | oracle-backed | 19 | 11 | 23/23 (100.0%) | 2 | 2169 probes (+8), 0/14 diverge | 5 | 1 | none |
 | PrintSVEvidence | gatk-rs | oracle-backed | 27 suite | 0 suite | 17/17 (100.0%) | 2 | 2156 probes (+5), 0/9 diverge | 5 | 7 | none |
@@ -265,7 +265,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | ReblockGVCF | gatk-rs | oracle-backed | 12 suite | 0 suite | 56/56 (100.0%) | 2 | 4880 probes (+0), 0/17 diverge | 8 | 7 | none |
 | ReferenceBlockConcordance | gatk-rs | oracle-backed | 18 suite | 0 suite | 17/17 (100.0%) | 2 | 1764 probes (+0), 0/5 diverge | 3 | 10 | none |
 | RemoveNearbyIndels | gatk-rs | oracle-backed | 102 suite | 0 suite | 24/24 (100.0%) | 2 | 2303 probes (+0), 0/14 diverge | 2 | 2 | none |
-| RenameSampleInVcf | gatk-rs | oracle-backed | 20 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
+| RenameSampleInVcf | gatk-rs | oracle-backed | 20 suite | 0 suite | 11/15 (73.3%) | 2 | not measured | 5 | 0 | none |
 | ReorderSam | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
 | ReplaceSamHeader | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
 | RevertBaseQualityScores | gatk-rs | oracle-backed | 49 suite | 0 suite | 19/19 (100.0%) | 2 | 2187 probes (+0), 0/7 diverge | 4 | 0 | none |
@@ -281,23 +281,23 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | SamToFastqWithTags | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | none |
 | ScatterIntervalsByNs | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
 | ScoreVariantAnnotations | gatk-rs | oracle-backed | 210 suite | 51 suite | 27/27 (100.0%) | 2 | 2639 probes (+2), 0/14 diverge | 6 | 7 | mask_hdf5_modification_times |
-| SelectVariants | gatk-rs | oracle-backed | 35437 suite | 0 suite | 50/50 (100.0%) | 2 | 2736 probes (+5), 0/14 diverge | 2 | 10 | none |
-| SetNmAndUqTags | gatk-rs | oracle-backed | 10 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
-| SetNmMdAndUqTags | gatk-rs | oracle-backed | 10 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
+| SelectVariants | gatk-rs | oracle-backed | 36124 suite | 0 suite | 50/50 (100.0%) | 2 | 2736 probes (+5), 0/14 diverge | 2 | 10 | none |
+| SetNmAndUqTags | gatk-rs | oracle-backed | 10 suite | 0 suite | 16/16 (100.0%) | 2 | not measured | 7 | 0 | none |
+| SetNmMdAndUqTags | gatk-rs | oracle-backed | 10 suite | 0 suite | 16/16 (100.0%) | 2 | not measured | 7 | 0 | none |
 | ShiftFasta | gatk-rs | oracle-backed | 37 suite | 0 suite | 21/21 (100.0%) | 2 | 1855 probes (+2), 0/9 diverge | 0 | 2 | none |
 | SimpleMarkDuplicatesWithMateCigar | picard-rs | oracle-backed | not vendored | not vendored | 35/35 (100.0%) | 2 | not measured | 0 | 0 | none |
 | SiteDepthtoBAF | gatk-rs | oracle-backed | 30 suite | 0 suite | 18/18 (100.0%) | 2 | 2082 probes (+0), 0/7 diverge | 5 | 9 | none |
 | SortGff | picard-rs | oracle-backed | not vendored | not vendored | 14/14 (100.0%) | 2 | not measured | 0 | 0 | none |
 | SortSam | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
 | SortSamSpark | gatk-rs | oracle-backed | 21 | 10 | 23/23 (100.0%) | 2 | 2176 probes (+11), 0/13 diverge | 5 | 1 | none |
-| SortVcf | gatk-rs | oracle-backed | 28 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
+| SortVcf | gatk-rs | oracle-backed | 28 suite | 0 suite | 16/16 (100.0%) | 2 | not measured | 6 | 0 | none |
 | SplitCRAM | gatk-rs | oracle-backed | 31 suite | 0 suite | 11/11 (100.0%) | 2 | 983 probes (+2), 0/7 diverge | 2 | 0 | none |
 | SplitIntervals | gatk-rs | oracle-backed | 78 suite | 0 suite | 25/25 (100.0%) | 2 | 1923 probes (+6), 0/12 diverge | 4 | 0 | none |
 | SplitNCigarReads | gatk-rs | oracle-backed | 114 suite | 0 suite | 21/21 (100.0%) | 2 | 2769 probes (+4), 0/11 diverge | 6 | 0 | none |
 | SplitReads | gatk-rs | oracle-backed | 77 suite | 0 suite | 20/20 (100.0%) | 2 | 2173 probes (+3), 0/9 diverge | 4 | 0 | none |
 | SplitSamByLibrary | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | none |
 | SplitSamByNumberOfReads | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
-| SplitVcfs | gatk-rs | oracle-backed | 22 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
+| SplitVcfs | gatk-rs | oracle-backed | 22 suite | 0 suite | 21/26 (80.8%) | 2 | not measured | 10 | 0 | none |
 | StructuralVariantDiscoverer | gatk-rs | oracle-backed | 3 suite | 0 suite | 23/23 (100.0%) | 2 | 3778 probes (+0), 0/14 diverge | 9 | 5 | none |
 | StructuralVariationDiscoveryPipelineSpark | gatk-rs | oracle-backed | 1037 | 733 | 27/27 (100.0%) | 2 | 7002 probes (+3), 0/19 diverge | 11 | 2 | none |
 | SvDiscoverFromLocalAssemblyContigAlignmentsSpark | gatk-rs | oracle-backed | 161 | 88 | 17/17 (100.0%) | 2 | 5831 probes (+5), 0/9 diverge | 6 | 5 | none |
@@ -307,7 +307,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | UmiAwareMarkDuplicatesWithMateCigar | picard-rs | oracle-backed | not vendored | not vendored | 26/26 (100.0%) | 2 | not measured | 0 | 0 | none |
 | UnmarkDuplicates | gatk-rs | oracle-backed | 49 suite | 0 suite | 19/19 (100.0%) | 2 | 2171 probes (+0), 0/8 diverge | 4 | 0 | none |
 | UpdateVCFSequenceDictionary | gatk-rs | oracle-backed | 71 suite | 0 suite | 24/24 (100.0%) | 2 | 2247 probes (+0), 0/9 diverge | 4 | 3 | none |
-| UpdateVcfSequenceDictionary | gatk-rs | oracle-backed | 24 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
+| UpdateVcfSequenceDictionary | gatk-rs | oracle-backed | 24 suite | 0 suite | 8/18 (44.4%) | 2 | not measured | 7 | 0 | none |
 | VCFComparator | gatk-rs | oracle-backed | 36 suite | 0 suite | 40/40 (100.0%) | 2 | 3370 probes (+6), 0/17 diverge | 0 | 13 | none |
 | ValidateBasicSomaticShortMutations | gatk-rs | oracle-backed | 171 suite | 0 suite | 22/22 (100.0%) | 2 | 3108 probes (+3), 0/11 diverge | 3 | 0 | none |
 | ValidateSamFile | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -317,9 +317,9 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | VariantFiltration | gatk-rs | oracle-backed | 227 suite | 0 suite | 24/24 (100.0%) | 2 | 2470 probes (+0), 0/9 diverge | 3 | 2 | none |
 | VariantRecalibrator | gatk-rs | oracle-backed | 27 suite | 0 suite | 26/26 (100.0%) | 2 | 4076 probes (+2), 0/14 diverge | 4 | 4 | none |
 | VariantsToTable | gatk-rs | oracle-backed | 75 suite | 0 suite | 23/23 (100.0%) | 2 | 2355 probes (+5), 0/12 diverge | 2 | 2 | none |
-| VcfFormatConverter | gatk-rs | oracle-backed | 13 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
+| VcfFormatConverter | gatk-rs | oracle-backed | 13 suite | 0 suite | 16/17 (94.1%) | 2 | not measured | 6 | 0 | none |
 | VcfToAdpc | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | none |
-| VcfToIntervalList | gatk-rs | oracle-backed | 12 suite | 0 suite | not measured | - | not measured | 0 | 0 | none |
+| VcfToIntervalList | gatk-rs | oracle-backed | 12 suite | 0 suite | 12/12 (100.0%) | 2 | not measured | 4 | 0 | none |
 | ViewSam | picard-rs | oracle-backed | not vendored | not vendored | 14/14 (100.0%) | 2 | not measured | 0 | 0 | none |
 
 ## What each array draws on and leaves out
@@ -333,6 +333,16 @@ Inputs: `ase.bam`, `ase_sites.vcf`, `ase_sites_unindexed.vcf`, `reference.fasta`
 Held out: `--dont-require-soft-clips-both-ends`, `--exclude-intervals`, `--intervals`, `--keep-reverse-strand-only`, `--read-filter-tag-op`, `--read-index`.
 
 --input is ase.bam, reads over four sites of reference.fasta: at 1001 two A and two G, one A at mapping quality 10, one G at base quality 2, a C that is neither allele, a pair whose mates agree, a pair whose mates disagree (which the three overlap handlings treat three ways) and an improper pair; 1102 three reads; 1203 multiallelic and 1304 homozygous in the VCF, both skipped. --variant is ase_sites.vcf, indexed, and the same file unindexed, which the locus query refuses. --reference is reference.fasta or null, and without one the first locus indexes an empty array. --min-mapping-quality and --min-base-quality are 0 and 20, --min-depth-of-non-filtered-base -1 and 3; --output is a file or null, the second writing to stdout, which the array compares. --read-index, --intervals and --exclude-intervals are held out, and the three read-filter arguments whose filters no row selects, as for CondenseDepthEvidence.
+
+### AddCommentsToBam
+
+Suites: `add-comments-to-bam`.
+
+Inputs: `one_read_group.bam`, `queryname.bam`, `ref.fasta`, `small.bam`, `small.sam`.
+
+Held out: none.
+
+picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures' Picard class writes them byte for byte as picard-rs does). Two BAMs of different sort orders and one of one read group, which the tool copies alike, and a SAM file it refuses by name. `$writable`: the tool asserts its input is writable before it copies a block, so a read-only corpus refused every BAM row and the array measured one refusal; each row now gets a private copy of its input. COMMENT is required and holds one comment per row; the values carry no space because the oracle's command line is split by a shell. INPUT is $writable: reheaderBamFile asserts it writable, and the corpus is mounted read-only.
 
 ### AddFlowBaseQuality
 
@@ -480,6 +490,16 @@ Held out: `--output-shard-tmp-dir`.
 
 BaseRecalibrator's fixtures and PrintReadsSpark's Spark arguments: one partition is the walker's engine, so its values are the ones the twin's table was measured over, and -L takes <unset> so rows read the whole file through Disq's guessed start.
 
+### BuildBamIndex
+
+Suites: `build-bam-index`.
+
+Inputs: `mate_cigar.bam`, `queryname.bam`, `ref.fasta`, `small.bam`, `small.sam`, `tiled.bam`, `unmapped.bam`.
+
+Held out: none.
+
+picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures' Picard class writes them byte for byte as picard-rs does). Three coordinate-sorted BAMs with different contents, so the index is an answer rather than a constant; a SAM text file, which the tool refuses by type; and a queryname-sorted and an unsorted BAM, which it refuses by the header's SO before it reads a record.
+
 ### BwaAndMarkDuplicatesPipelineSpark
 
 Suites: `spark-walkers`.
@@ -617,6 +637,16 @@ Inputs: `md5header.bam`, `other.fasta`, `reads.bam`, `reference.fasta`.
 Held out: `--read-index`, `--variant`.
 
 --input carries md5header.bam and reads.bam, which is the whole point of this tool's array: one property of the input decides the algorithm. md5header.bam is the corpus's only reads file whose @SQ line carries an M5, so it takes the MD5 path and compares bases through CompareReferences' table; reads.bam has none, so it compares names and lengths alone and says so in every summary it writes. --references-to-compare carries reference.fasta, whose dictionary md5header.bam's was copied from, and other.fasta, which shares no contig with either input and whose hand-written dict has no M5 at all. Between them the rows reach COMPATIBLE, NOT_COMPATIBLE and the USE_DICT refusal that a reference with no M5 produces once the input has one. --variant is held out. The tool refuses a command line naming both a BAM and a VCF, and every row carries every argument in the domain, so an array holding both would measure that one refusal twenty times. The VCF path is measured by the tool's suite, which has five VCF runs including one whose M5 is a lie. --read-index is held out: it is counted against the reads inputs and refuses on a mismatch, which is a refusal the read walkers' arrays already measure.
+
+### CheckTerminatorBlock
+
+Suites: `check-terminator-block`.
+
+Inputs: `no_terminator.bam`, `ref.fasta`, `small.bam`, `small.sam`, `truncated.bam`.
+
+Held out: none.
+
+picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures' Picard class writes them byte for byte as picard-rs does). The tool's answer is the termination of its INPUT's last block, printed on standard error, with exit code 100 when that is DEFECTIVE. small.bam has the terminator, no_terminator.bam is the same bytes without it and ends in a healthy block, truncated.bam cuts that block, and small.sam is not BGZF at all. It writes nothing: its answer is the termination's name on stderr, which $stderr_answer keeps.
 
 ### ClipReads
 
@@ -1098,6 +1128,16 @@ Held out: `--dont-require-soft-clips-both-ends`, `--exclude-intervals`, `--input
 
 --variant is cnn.vcf: SNPs and indels scored in CNN_2D, one unscored, one already filtered. --resource is snp_truth.vcf and truth.list, which adds indel_truth.vcf, whose deletion is spelled with a longer reference so the match extends the shorter one. Without the indel resource the two scored indels have nothing to match and the tool refuses. --snp-tranche is the default 99.95 and a .list of 99.0, 90.0 and 99.0 again, deduplicated and sorted; --indel-tranche is 99.4 and 50.0. --info-key is CNN_2D and CNN_1D, which the header does not declare. --invalidate-previous-filters drops LowQual and its header line. The index and the output filtering mode are held for the reasons NuMTFilterTool gives, --add-output-vcf-command-line at false since it writes the run's own time into the header, and the engine's read arguments are held out likewise.
 
+### FilterVcf
+
+Suites: `filter-vcf`.
+
+Inputs: `filter.vcf`, `filter_broken.js`, `filter_no_contigs.vcf`, `filter_variants.js`, `ref.fasta`, `trio.vcf`, `vcf_sites_only.vcf`, `vcf_unsorted_samples.vcf`.
+
+Held out: none.
+
+picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures' Picard class writes them byte for byte as picard-rs does). filter.vcf (MakeFixtures) has a site for each filter on each side of the thresholds below, and missing QD, FS, GQ and DP, which the reference reads as their defaults (-1 for a genotype's GQ and DP, so MIN_GQ=0 still filters a genotype without one). filter_no_contigs.vcf is refused because an output named .vcf needs a dictionary; trio.vcf, vcf_unsorted_samples.vcf and vcf_sites_only.vcf are the corpus's other shapes. The compared file is output.vcf; the .idx beside it records a timestamp and is not compared. JAVASCRIPT_FILE keeps single-base sites past position 1000 (a site the script rejects is filtered under the script's base name), or is not JavaScript at all. OUTPUT is also a .vcf.gz, which htsjdk block-compresses with a tabix index beside it (picard-rs#374); the .vcf.gz and its .tbi are compared byte for byte.
+
 ### FindBadGenomicKmersSpark
 
 Suites: `spark-walkers`.
@@ -1125,6 +1165,16 @@ Suites: `fix-misencoded`.
 Inputs: `reads.bai`, `reads.bam`, `reads.vcf`, `reads2.bai`, `reads2.bam`.
 
 Held out: none.
+
+### FixVcfHeader
+
+Suites: `fix-vcf-header`.
+
+Inputs: `fix_header.vcf`, `fix_header_swapped.vcf`, `fix_missing.vcf`, `fix_missing_unsorted.vcf`, `ref.fasta`, `vcf_no_contigs.vcf`, `vcf_one_sample.vcf`, `vcf_sorted_samples.vcf`.
+
+Held out: none.
+
+picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures' Picard class writes them byte for byte as picard-rs does). INPUT is fix_missing.vcf, whose records use a FILTER, INFO keys and FORMAT keys its header does not define (at most one undefined INFO key per record, so which one the writer names first never depends on a HashMap's order), the same under the other column order (its genotypes are decoded, so their FORMAT keys are checked when written), vcf_sorted_samples.vcf, whose header is complete, and vcf_no_contigs.vcf, which the always-indexing writer refuses. HEADER is `null` (the header is rebuilt from the records), fix_header.vcf (complete), fix_header_swapped.vcf (the same samples in the other column order, which ENFORCE_SAME_SAMPLES lets through) and vcf_one_sample.vcf (one sample, refused unless ENFORCE_SAME_SAMPLES is false, and then missing the definitions). CHECK_FIRST_N_RECORDS is the default and 1, which scans one record, so a later undefined key reaches the writer, and which beside a HEADER is the tool's own command-line refusal. OUTPUT is a .vcf: BCF writing is not in htsjdk-rs. OUTPUT is also a .vcf.gz, which htsjdk block-compresses with a tabix index beside it (picard-rs#374); the .vcf.gz and its .tbi are compared byte for byte.
 
 ### FlagStat
 
@@ -1202,6 +1252,16 @@ Held out: none.
 
 recal.table and recal2.table, both written by the REFERENCE's own BaseRecalibrator over the corpus's two BAMs: the gather's input is another tool's output, which is what makes this the third chain in the corpus. Each row gathers ONE report, because a covering array assigns one value per argument and --input is the only source. That is not a gather of nothing: the reduce still recomputes the empirical qualities and the quantization at the first report's level count, so a single-report row measures everything but the sum. The sum itself is measured by the gather suite's golden, which carries the two-shard case. --output carries two paths and nothing else: this tool has no other file to write.
 
+### GatherBamFiles
+
+Suites: `gather-bam-files`.
+
+Inputs: `ref.fasta`, `small.bam`, `small.sam`, `tiled.bam`.
+
+Held out: none.
+
+picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures' Picard class writes them byte for byte as picard-rs does). Two BAMs, which take the block-copying path, and a SAM, which takes gatherNormally and is written as a BAM, because makeWriter writes SAM text only for a .sam name. One input per row: INPUT is a list, and the array holds one of its values per row.
+
 ### GatherNormalArtifactData
 
 Suites: `mutect-gathers`.
@@ -1231,6 +1291,16 @@ Inputs: `levels.list`, `old.tranches`, `shard1.tranches`, `tranches.list`.
 Held out: none.
 
 --input is one shard, tranches.list naming three shards (two at the same four levels and one with a level they lack, so the TreeMap pools them and the Ti/Tv of a pooled level is a ratio of sums), and a shard of version 5, which the reader refuses. --truth-sensitivity-tranche is 99.0 alone and levels.list naming three levels out of order, which the tool sorts in place. --mode is SNP and INDEL, which names the tranches' filters.
+
+### GatherVcfs
+
+Suites: `picard-gather-vcfs`.
+
+Inputs: `gather_1.vcf`, `gather_2.vcf`, `gather_2.vcf.gz`, `gather_2_swapped.vcf`, `gather_overlap.vcf`, `merge_b_no_contigs.vcf`, `merge_swapped_contigs.vcf`, `ref.fasta`.
+
+Held out: none.
+
+picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures' Picard class writes them byte for byte as picard-rs does). INPUT and COMMENT are whole lists ($lists). gather_1.vcf and gather_2.vcf are consecutive stretches, given in order, reversed (refused unless REORDER_INPUT_BY_FIRST_VARIANT puts them back) and around gather_empty.vcf, which has no first record and sorts last when reordered. gather_overlap.vcf starts after gather_1 starts and before it ends, which only the gather's own check refuses; gather_2_swapped.vcf has the samples in the other column order, refused beside gather_1 and accepted alone (its genotypes are re-encoded in that order, where gather_1's are copied); merge_swapped_contigs.vcf has another dictionary (an AssertionError, which escapes the tool's catch); merge_b_no_contigs.vcf has none, refused before the catch when indexing and by a NullPointerException inside it when not. COMMENT keeps only the first comment. OUTPUT is a .vcf or a .vcf.gz, compared byte for byte with its .tbi (picard-rs#374). gather_1.vcf.gz and gather_2.vcf.gz, every input compressed, beside a .vcf.gz output are the block-copying gather, which writes no index; beside a .vcf output they are read record by record. A .list INPUT names container paths the host port cannot open.
 
 ### GatherVcfsCloud
 
@@ -1456,6 +1526,16 @@ Held out: `--dont-require-soft-clips-both-ends`, `--exclude-intervals`, `--input
 
 --variant is mito.vcf, whose five unfiltered sites below 0.1 are past the default allowance of three, and mito_plain.vcf, the same calls without AS_FilterStatus, whose merge the filter refuses once the file fails. --max-allowed-low-hets is 3 and 10, which the five sites do not reach, so the file comes out untouched. --low-het-threshold is 0.1 and 0.6 and changes nothing: the field is a private final with a constant initialiser, so javac folded every read of it. --create-output-variant-index is held at false and --variant-output-filtering at ANYWHERE for the reasons NuMTFilterTool gives, and the engine's read arguments are held out likewise.
 
+### MakeSitesOnlyVcf
+
+Suites: `make-sites-only-vcf`.
+
+Inputs: `ref.fasta`, `vcf_no_contigs.vcf`, `vcf_sorted_samples.vcf`, `vcf_unsorted_samples.vcf`.
+
+Held out: none.
+
+picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures' Picard class writes them byte for byte as picard-rs does). INPUT is a VCF, and the two orders of the same samples are two answers: in a file whose sample names are sorted the codec keeps each genotype block lazy, and a block that is never decoded is copied, while in the other it is decoded and re-encoded. The file without contig lines is what CREATE_INDEX refuses. SAMPLE is the set of samples kept: `null` clears it to the default empty set (a sites-only file), sampleA keeps one column, and sampleZ names a sample the file does not have, which the writer still gives a column of no-calls. OUTPUT ends in .vcf because the writer infers its format from the extension and refuses output.txt. OUTPUT is also a .vcf.gz, which htsjdk block-compresses with a tabix index beside it (picard-rs#374); the .vcf.gz and its .tbi are compared byte for byte.
+
 ### MarkDuplicatesSpark
 
 Suites: `spark-walkers`.
@@ -1515,6 +1595,16 @@ Inputs: `a.stats`, `odd_stats.list`, `stats.list`.
 Held out: none.
 
 --stats is one shard, stats.list naming a.stats, b.stats and a.stats again, which the tool's LinkedHashSet reads once, and odd_stats.list, whose second shard carries a statistic the aggregation map does not hold: the IllegalStateException the suite also measures. The sum is a double written as one, so 1000.0 and 2.5E7 come back as 2.5001E7.
+
+### MergeVcfs
+
+Suites: `merge-vcfs`.
+
+Inputs: `merge_a.vcf`, `merge_b.vcf`, `merge_b_no_contigs.vcf`, `merge_swapped_contigs.vcf`, `other.dict`, `ref.dict`, `ref.fasta`, `vcf_one_sample.vcf`.
+
+Held out: none.
+
+picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures' Picard class writes them byte for byte as picard-rs does). INPUT and COMMENT are whole lists ($lists): what MergeVcfs does is combine several inputs, and a row with one of them measures a copy. merge_a.vcf and merge_b.vcf are each in coordinate order and meet at three positions, where MergingIterator's heap (not the input order) decides which record comes first; b's samples are in the other column order, so its genotypes are re-encoded while a's are copied, and its XC line promotes a's count to `.`. The pair is given both ways round, and a alone. merge_b_no_contigs.vcf needs SEQUENCE_DICTIONARY (ref.dict makes it compatible, other.dict adds chr3 and is refused), and as the FIRST input it takes that dictionary as the one the others are checked against. merge_swapped_contigs.vcf declares the contigs in the other order, vcf_one_sample.vcf has other samples, and vcf_sorted_samples.vcf is out of order, which the merge refuses only when it goes backwards. COMMENT keeps only the first comment (addMetaDataLine refuses a second line under one key). A `.list` INPUT is not a value: the paths inside it are the container's, and the port runs on the host. OUTPUT is a .vcf or a .vcf.gz, which htsjdk block-compresses with a tabix index beside it (picard-rs#374); the .vcf.gz and its .tbi are compared byte for byte. BCF writing is not in htsjdk-rs.
 
 ### MethylationTypeCaller
 
@@ -1848,6 +1938,16 @@ Held out: `--input`, `--read-index`.
 
 indels.vcf is the file this tool needs, and it is written for it: the corpus's other VCFs hold SNPs alone, and a run over those emits every record whatever the spacing is. It carries pairs at several distances, a run of three, and non-indels between them, so a spacing of 10 and one of 200 keep different sets. --min-indel-spacing is REQUIRED on this tool, which is why it carries values here rather than sitting at its declared default: a row without it is refused by the parser. --input and --read-index are held out. This tool reads no reads, and the corpus's shared value for --input is a VCF, whose refusal as a reads source is measured by CountVariants.
 
+### RenameSampleInVcf
+
+Suites: `rename-sample-in-vcf`.
+
+Inputs: `ref.fasta`, `single_sample.vcf`, `vcf_one_sample.vcf`, `vcf_sites_only.vcf`, `vcf_sorted_samples.vcf`.
+
+Held out: none.
+
+picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures' Picard class writes them byte for byte as picard-rs does). The tool accepts at most one sample, so INPUT is two one-sample files (sampleA, hand-written so its genotype blocks are not htsjdk's own encoding, and sample1, written by htsjdk), the sites-only file (no sample, which is accepted until OLD_SAMPLE_NAME asks for the first one), and the two-sample file it refuses. OLD_SAMPLE_NAME is `null` (not checked) or sampleA, which one input has and the other is refused for, naming the sample found. OUTPUT ends in .vcf for the reason MakeSitesOnlyVcf's does. OUTPUT is also a .vcf.gz, which htsjdk block-compresses with a tabix index beside it (picard-rs#374); the .vcf.gz and its .tbi are compared byte for byte.
+
 ### RevertBaseQualityScores
 
 Suites: `record-transform`.
@@ -1928,6 +2028,26 @@ Held out: `--call-genotypes`, `--concordance`, `--discordance`, `--input`, `--in
 
 indexed.vcf is the corpus's one-sample VCF and population.vcf the one with an INFO field and no samples at all, which is what makes the sample arguments and the JEXL expressions reach different branches: -sn over a file with a sample subsets and rewrites, and the same argument over a file with none is the refusal that names it. the JEXL path is measured rather than merely present. Six arguments are held out because this port refuses them rather than answering: --pedigree and its two Mendelian flags, the two random fractions, --call-genotypes, and the two concordance tracks. A row carrying one measures the port's own refusal, which is a message no golden holds and which would be the same on every row that carries it. --add-output-vcf-command-line is held at FALSE. Its ##GATKCommandLine line carries the run's own wall-clock time, and the reference and the port run minutes apart. --create-output-variant-index is held at FALSE for the reason every other variant writer holds it: the index a tool builds for its own output records that file's last-modified time. --input and --read-index are held out: this tool reads no reads, and the corpus's shared --input value is a VCF, whose refusal as a reads source is measured by CountVariants. command line, so `QUAL > 50` arrived as `--select QUAL` with the rest eaten by the shell. JEXL reads the no-space form the same way, and the second value is the bare `QUAL`, which is a Double where the reference casts to Boolean: the ClassCastException that produces is the tool's answer and is now the port's. -select carries an INTEGER literal and a real one, which take two different paths through commons-jexl's arithmetic: an integer literal sends the comparison down Integer.parseInt and a real one down the double path. Both answer now that the context is typed (#1142); before that the integer literal refused, because a rendered string reached parseInt where the reference had a Double.
 
+### SetNmAndUqTags
+
+Suites: `set-nm-md-uq-tags`.
+
+Inputs: `masked.fasta`, `mate_cigar.bam`, `queryname.bam`, `ref.fasta`, `small.bam`, `small.sam`, `unmapped.bam`.
+
+Held out: none.
+
+Coordinate-sorted BAMs and a SAM, and queryname.bam and unmapped.bam, which the tool refuses as not coordinate sorted. REFERENCE_SEQUENCE is required, and is ref.fasta or masked.fasta: the same contigs with lower-case stretches and an N run, so NM, MD and UQ differ between the two.
+
+### SetNmMdAndUqTags
+
+Suites: `set-nm-md-uq-tags`.
+
+Inputs: `masked.fasta`, `mate_cigar.bam`, `queryname.bam`, `ref.fasta`, `small.bam`, `small.sam`, `unmapped.bam`.
+
+Held out: none.
+
+Coordinate-sorted BAMs and a SAM, and queryname.bam and unmapped.bam, which the tool refuses as not coordinate sorted. REFERENCE_SEQUENCE is required, and is ref.fasta or masked.fasta: the same contigs with lower-case stretches and an N run, so NM, MD and UQ differ between the two.
+
 ### ShiftFasta
 
 Suites: `shift-fasta`.
@@ -1957,6 +2077,16 @@ Inputs: `reads.bai`, `reads.bam`, `reads.vcf`, `reads2.bai`, `reads2.bam`.
 Held out: `--output-shard-tmp-dir`.
 
 PrintReadsSpark's values: SortSamSpark is its writer asked to sort to the header, so the same inputs and Spark arguments measure the sort, both orders coming from the enum itself.
+
+### SortVcf
+
+Suites: `sort-vcf`.
+
+Inputs: `other.dict`, `ref.dict`, `ref.fasta`, `vcf_no_contigs.vcf`, `vcf_sorted_samples.vcf`, `vcf_unsorted_samples.vcf`.
+
+Held out: none.
+
+picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures' Picard class writes them byte for byte as picard-rs does). INPUT is a VCF whose records are out of order on two contigs, under both sample orders (the output header's samples are the SORTED names, so the second is rewritten column by column), plus the file without contig lines, which needs SEQUENCE_DICTIONARY. That argument is `null`, the corpus's own dictionary (which agrees with the VCFs), and other.dict, which does not and is refused. It is read through SamReaderFactory, so it is a .dict, not the FASTA the shared value names. INPUT is one file per row: a second input would need two values in one row, which the harness cannot pass. OUTPUT is also a .vcf.gz, which htsjdk block-compresses with a tabix index beside it (picard-rs#374); the .vcf.gz and its .tbi are compared byte for byte.
 
 ### SplitCRAM
 
@@ -1995,6 +2125,16 @@ Inputs: `groups.bai`, `groups.bam`, `reads.bai`, `reads.bam`.
 Held out: none.
 
 groups.bam carries two read groups differing in sample and library, so each splitter writes two files with different keys; reads.bam has one group, so the same row over it writes one. --output is the output DIRECTORY itself, which is what this tool's argument names: the file names are the tool's own, built from the input's base name and the key.
+
+### SplitVcfs
+
+Suites: `split-vcfs`.
+
+Inputs: `gather_1.vcf`, `merge_b.vcf`, `other.dict`, `ref.dict`, `ref.fasta`, `split_types.vcf`, `vcf_no_contigs.vcf`, `vcf_sites_only.vcf`, `vcf_sorted_samples.vcf`, `vcf_unsorted_samples.vcf`.
+
+Held out: none.
+
+picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures' Picard class writes them byte for byte as picard-rs does). Both outputs are compared (the manifest's output_name names the two). split_types.vcf holds every VariantContext type, its first odd one MIXED; vcf_sorted_samples.vcf's one odd record is a symbolic deletion, and vcf_unsorted_samples.vcf is the same records with genotypes that are re-encoded rather than copied; so STRICT decides between two refusals and two splits. gather_1.vcf (copied) and merge_b.vcf (re-encoded) hold SNPs and indels only, which STRICT accepts. vcf_no_contigs.vcf is indexable only through SEQUENCE_DICTIONARY, which is read through SamReaderFactory, so it is a .dict; other.dict disagrees with the VCFs and is accepted, since it only feeds the index. vcf_sites_only.vcf has no samples. The outputs are .vcf: .vcf.gz, which htsjdk block-compresses with a tabix index beside it (picard-rs#374); the .vcf.gz and its .tbi are compared byte for byte, and a row may mix a .vcf.gz with a .vcf, where htsjdk shares one tabix creator. BCF writing is not in htsjdk-rs. BCF writing is not in htsjdk-rs.
 
 ### StructuralVariantDiscoverer
 
@@ -2073,6 +2213,16 @@ Inputs: `indexed.vcf`, `matching.dict`, `reads.bam`, `reads.vcf`.
 Held out: `--input`, `--read-index`, `--sequence-dictionary`.
 
 --source-dictionary takes a dictionary out of four kinds of file, so it carries two of them: a `.dict` and a BAM. matching.dict agrees with the corpus's contig and reads.bam carries the same one in its header, which is what makes the two rows differ in the SOURCE rather than in the answer. indexed.vcf already declares a ##contig line, so every row needs --replace to get past onTraversalStart; reads.vcf declares none, which is the case the tool exists for. The pair is what makes the check observable. --add-output-vcf-command-line and --create-output-variant-index are held at false for the reason MethylationTypeCaller holds them: the first writes the run's own DATE into the header, and the second writes an index carrying the output file's last-modified time, so two runs minutes apart differ for a reason that is not the tool's. --input and --read-index are held out, as for RemoveNearbyIndels. --sequence-dictionary is held out, and the first measurement is why: all twenty-four rows were refused. Every row carries every argument in the domain, and this tool refuses the pair --sequence-dictionary and --source-dictionary outright, so an array holding both measures that one refusal and nothing else. The refusal itself is measured by the runner's own check and by the golden; what the array is for is the four kinds of source and the records they accept.
+
+### UpdateVcfSequenceDictionary
+
+Suites: `picard-update-vcf-dictionary`.
+
+Inputs: `other.dict`, `ref.fasta`, `targets.interval_list`, `variants.vcf`, `vcf_no_contigs.vcf`, `vcf_sorted_samples.vcf`, `vcf_unsorted_samples.vcf`.
+
+Held out: none.
+
+picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures' Picard class writes them byte for byte as picard-rs does). INPUT is a VCF under both sample orders, plus the one with no contig lines to replace. SEQUENCE_DICTIONARY goes through SAMSequenceDictionaryExtractor, which picks a reader by extension: the FASTA (whose .dict beside it is read), a .dict that disagrees with the corpus and carries an assembly, a VCF's contig lines, an interval list's header, and a VCF with no contig lines, whose dictionary is null: refused by the writer when it is to index and by setSequenceDictionary when it is not. OUTPUT is also a .vcf.gz, which htsjdk block-compresses with a tabix index beside it (picard-rs#374); the .vcf.gz and its .tbi are compared byte for byte.
 
 ### VCFComparator
 
@@ -2153,3 +2303,23 @@ Inputs: `indexed.vcf`, `population.vcf`.
 Held out: `--input`, `--read-index`.
 
 population.vcf is the corpus's only VCF with an INFO field, and it has no genotype columns at all; indexed.vcf is the other way round, one sample and a GT and no INFO. Between them every branch of onTraversalStart is reachable: the default column set differs, a field asked for by name is present in one file and missing in the other, and a genotype field asked for of a file with no samples is the run that empties the sample set and refuses when nothing else was asked for. AF is the field to ask for because population.vcf's last record carries TWO values for it, which is what --split-multi-allelic splits and what -ASF reads differently. --input and --read-index are held out. This tool reads no reads, and the corpus's shared value for --input is a VCF, which a reads source opens as a stream with no dictionary: the refusal that produces is measured by CountVariants, which shares this startup.
+
+### VcfFormatConverter
+
+Suites: `vcf-format-converter`.
+
+Inputs: `gather_1.vcf`, `gather_1.vcf.gz`, `ref.fasta`, `unsorted_indexed.vcf`, `variants.vcf`, `vcf_no_contigs.vcf`.
+
+Held out: none.
+
+picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures' Picard class writes them byte for byte as picard-rs does). INPUT is variants.vcf, which has its .idx, gather_1.vcf.gz, which has its .tbi, unsorted_indexed.vcf, whose records are out of coordinate order beside a borrowed .idx (the reader only finds and loads it), so REQUIRE_INDEX lets them through to the tabix index of a compressed output, which refuses them; and two files with no index, which REQUIRE_INDEX refuses: vcf_no_contigs.vcf (which CREATE_INDEX refuses) and gather_1.vcf, gather_1.vcf.gz's own text. OUTPUT is a .vcf, a .vcf.gz (compared byte for byte) and a name the writer builder cannot place; both output names are compared. BCF is not a value on either side: htsjdk-rs has no BCF codec, so neither a .bcf input nor a .bcf output is ported.
+
+### VcfToIntervalList
+
+Suites: `vcf-to-interval-list`.
+
+Inputs: `ref.fasta`, `variants.vcf`, `vcf_no_contigs.vcf`, `vcf_sorted_samples.vcf`.
+
+Held out: none.
+
+picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures' Picard class writes them byte for byte as picard-rs does). INPUT is a VCF. The hand-written one has filtered sites, overlapping and abutting sites, IDs on some and not others, and a symbolic deletion with an END, so INCLUDE_FILTERED and VARIANT_ID_METHOD both change the file; variants.vcf is the htsjdk-written one, and the file without contig lines has no dictionary for the output header, which is a refusal.

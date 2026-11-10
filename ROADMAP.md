@@ -1320,13 +1320,22 @@ the CPU path that already exists, and no bit-identity claim may weaken to buy a 
 - [x] the golden audit: every committed golden is declared, every declared golden exists, and a
       keyed suite whose golden collapses is refused
 - [x] the provenance guard (decision 0014), running in all three repositories
-- [~] covering arrays generated **and run** per tool. **163 gatk-rs tools** are measured against
-      both the reference and the port on every CI run, every one at 1.000 at t=2
-      (`tools/coverage/measured.json`, printed per tool in `docs/VALIDATION.md`); 27 more, the
-      Spark SV, PathSeq, gCNV and Python-backed tools, are measured in #1403. What remains is the
-      17 Picard tools GATK bundles (`SortVcf`, `MergeVcfs`, `GatherVcfs`, `FilterVcf`,
-      `BuildBamIndex`, ...): they are ported and oracle-backed at the library level, but the `gatk`
-      binary does not dispatch them, so no array can run against the port (Milestone C)
+- [x] covering arrays generated **and run** per tool. **207 gatk-rs tools** are measured against
+      both the reference and the port on every CI run at t=2 (`tools/coverage/measured.json`,
+      frozen from run 42795659080, printed per tool in `docs/VALIDATION.md`), **200 of them at
+      1.000**, including the Spark SV, PathSeq, gCNV and Python-backed tools (#1403) and the 17
+      Picard tools GATK bundles, which the `gatk` binary now dispatches (#1415). The 7 below
+      1.000 are all Picard VCF tools, and every row they miss has one of four known causes:
+      - 28 rows: a `.idx` whose contig comes back after another (chr1, chr2, chr1). htsjdk's
+        `LinkedHashMap` keeps one entry at the first place holding the last run. Fixed in
+        htsjdk-rs (branch `fix/index-reappearing-contig`); it reaches gatk-rs with the pin bump
+        that follows #1388
+      - 11 rows: `FilterVcf --JAVASCRIPT_FILE` runs a Nashorn script, which the port refuses as a
+        port limitation, at the point where Picard builds the filter
+      - 3 rows: `SplitVcfs` with an indexed `.vcf.gz` SNP output beside a text INDEL output, where
+        htsjdk hands one tabix index to both writers
+      - 1 row: `SplitVcfs` splits the whole file before writing, so a tabix out-of-order refusal
+        that Picard raises while streaming arrives after the port's SYMBOLIC refusal
 - [x] the coverage-guided differential fuzzer, in all three repositories: picard-rs fuzzes its
       tools, htsjdk-rs its byte-level parsers, and gatk-rs (`tools/fuzz/`) seeds from each tool's
       covering array, mutates one argument at a time within the array's own value domains while

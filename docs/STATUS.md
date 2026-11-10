@@ -23,7 +23,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 |---|---|---|---|---:|---|---|
 | `AccumulateQualityYieldMetrics` | reporting-walker | oracle-backed | accumulatequalityyield | 1 | t=2, 6/6 rows (100%) | not measured |
 | `AccumulateVariantCallingMetrics` | reporting-walker | oracle-backed | accumulatevcm, headerlines | 2 | t=2, 15/15 rows (100%) | not measured |
-| `AddCommentsToBam` | record-transform | oracle-backed | add-comments-to-bam | 1 | t=2, 13/13 rows (100%), in picard-rs | not measured |
+| `AddCommentsToBam` | record-transform | oracle-backed | add-comments-to-bam | 1 | t=2, 14/14 rows (100%) | not measured |
 | `AddOATag` | record-transform | oracle-backed | addoatag, addoatag-bam | 2 | t=2, 9/9 rows (100%) | not measured |
 | `AddOrReplaceReadGroups` | record-transform | oracle-backed | addreplacerg, rawrecords | 2 | t=2, 21/21 rows (100%) | not measured |
 | `BaitDesigner` | reference-utility | oracle-backed | baitdesigner, nonbamshapes | 2 | t=2, 18/18 rows (100%) | not measured |
@@ -31,13 +31,13 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `BamToBfq` | record-transform | oracle-backed | bamtobfq | 1 | t=2, 17/17 rows (100%) | not measured |
 | `BedToIntervalList` | interval-utility | oracle-backed | bedtointervallist | 1 | t=2, 10/10 rows (100%) | not measured |
 | `BpmToNormalizationManifestCsv` | array-utility | oracle-backed | bpmtocsv | 1 | t=2, 10/10 rows (100%) | not measured |
-| `BuildBamIndex` | record-transform | oracle-backed | build-bam-index | 1 | t=2, 18/18 rows (100%), in picard-rs | not measured |
+| `BuildBamIndex` | record-transform | oracle-backed | build-bam-index | 1 | t=2, 18/18 rows (100%) | not measured |
 | `CalculateFingerprintMetrics` | reporting-walker | oracle-backed | fingerprintmetrics, headerlines | 2 | t=2, 19/19 rows (100%) | not measured |
 | `CalculateReadGroupChecksum` | reporting-walker | oracle-backed | rgchecksum | 1 | t=2, 6/6 rows (100%) | not measured |
 | `CheckDuplicateMarking` | unclassified | oracle-backed | checkdupmarking | 1 | t=2, 13/13 rows (100%), **1 distinct output** | not measured |
 | `CheckFingerprint` | reporting-walker | oracle-backed | checkfingerprint, headerlines, nonbamshapes | 3 | t=2, 19/19 rows (100%) | not measured |
 | `CheckIlluminaDirectory` | base-calling | oracle-backed | checkilluminadirectory | 1 | t=2, 17/17 rows (100%), **1 distinct output** | not measured |
-| `CheckTerminatorBlock` | reporting-walker | oracle-backed | check-terminator-block | 1 | t=2, 12/12 rows (100%), in picard-rs | not measured |
+| `CheckTerminatorBlock` | reporting-walker | oracle-backed | check-terminator-block | 1 | t=2, 12/12 rows (100%) | not measured |
 | `CleanSam` | record-transform | oracle-backed | cleansam, inputshapes, rawrecords, strict-validation | 4 | t=2, 9/9 rows (100%) | not measured |
 | `ClusterCrosscheckMetrics` | reporting-walker | oracle-backed | clustercrosscheck, headerlines | 2 | t=2, 10/10 rows (100%) | not measured |
 | `CollectAlignmentSummaryMetrics` | reporting-walker | oracle-backed | cram-io, headerlines, metrics, rejections | 7 | t=2, 20/20 rows (100%) | not measured |
@@ -91,7 +91,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `FindMendelianViolations` | variant-walker | oracle-backed | headerlines, mendelianviolations | 2 | t=2, 12/12 rows (100%) | not measured |
 | `FixMateInformation` | record-transform | oracle-backed | fixmate, rawrecords | 2 | t=2, 12/12 rows (100%) | not measured |
 | `FixVcfHeader` | variant-transform | oracle-backed | fix-vcf-header, vcfgz | 2 | t=2, 21/21 rows (100%) | not measured |
-| `GatherBamFiles` | record-transform | oracle-backed | gather-bam-files | 1 | t=2, 9/9 rows (100%), in picard-rs | not measured |
+| `GatherBamFiles` | record-transform | oracle-backed | gather-bam-files | 1 | t=2, 11/11 rows (100%) | not measured |
 | `GatherVcfs` | variant-transform | oracle-backed | picard-gather-vcfs, vcfgz | 2 | t=2, 33/33 rows (100%) | not measured |
 | `GenotypeConcordance` | variant-walker | oracle-backed | genotypeconcordance, headerlines | 2 | t=2, 12/12 rows (100%) | not measured |
 | `GtcToVcf` | array-utility | oracle-backed | gtctovcf, nonbamshapes | 2 | t=2, 18/18 rows (100%) | not measured |
@@ -126,7 +126,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `SamToFastq` | record-transform | oracle-backed | samtofastq | 1 | t=2, 19/19 rows (100%) | not measured |
 | `SamToFastqWithTags` | unclassified | oracle-backed | samtofastqwithtags | 1 | t=2, 18/18 rows (100%) | not measured |
 | `ScatterIntervalsByNs` | reference-utility | oracle-backed | scatterintervalsbyns | 1 | t=2, 10/10 rows (100%) | not measured |
-| `SetNmAndUqTags` | record-transform | oracle-backed | set-nm-md-uq-tags | 1 | t=2, 11/11 rows (100%), in picard-rs | not measured |
+| `SetNmAndUqTags` | record-transform | oracle-backed | set-nm-md-uq-tags | 1 | t=2, 16/16 rows (100%) | not measured |
 | `SetNmMdAndUqTags` | record-transform | oracle-backed | set-nm-md-uq-tags, setnmmduq | 2 | t=2, 11/11 rows (100%) | not measured |
 | `SimpleMarkDuplicatesWithMateCigar` | record-transform | oracle-backed | headerlines, markduplicates-noreadgroup, matecigarduplicates | 3 | t=2, 35/35 rows (100%) | not measured |
 | `SortGff` | unclassified | oracle-backed | sortgff | 1 | t=2, 14/14 rows (100%) | not measured |
@@ -140,7 +140,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `ValidateSamFile` | reporting-walker | oracle-backed | validatesam | 6 | t=2, 15/15 rows (100%), **1 distinct output** | not measured |
 | `VcfFormatConverter` | variant-transform | oracle-backed | bcf, bcf-partial, vcf-format-converter, vcfgz | 4 | t=2, 16/16 rows (100%) | not measured |
 | `VcfToAdpc` | array-utility | oracle-backed | vcftoadpc | 1 | t=2, 15/15 rows (100%) | not measured |
-| `VcfToIntervalList` | variant-transform | oracle-backed | vcf-to-interval-list | 1 | t=2, 11/11 rows (100%), in picard-rs | not measured |
+| `VcfToIntervalList` | variant-transform | oracle-backed | vcf-to-interval-list | 1 | t=2, 12/12 rows (100%) | not measured |
 | `ViewSam` | reporting-walker | oracle-backed | viewsam | 1 | t=2, 14/14 rows (100%) | not measured |
 
 <details><summary>0 not started</summary>
@@ -249,7 +249,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `GatherTranches` | unclassified | oracle-backed | gather-tranches | 1 | t=2, 8/8 rows (100%) | 0.002 / 0.060 |
 | `GatherVcfsCloud` | variant-transform | oracle-backed | gather-vcfs, tool-argument-declarations, tool-argument-enums, usage-text | 4 | t=2, 11/11 rows (100%) | 0.003 / 0.088 |
 | `GeneExpressionEvaluation` | locus-walker | oracle-backed | gene-expression-evaluation | 1 | t=2, 19/19 rows (100%) | 0.002 / 0.058 |
-| `GenomicsDBImport` | assembly-caller | oracle-backed | genomicsdb-import | 1 | t=2, 12/19 rows (63%) | not measured |
+| `GenomicsDBImport` | assembly-caller | oracle-backed | genomicsdb-import | 1 | t=2, 19/19 rows (100%) | not measured |
 | `GenotypeGVCFs` | assembly-caller | oracle-backed | genotype-gvcfs | 1 | t=2, 34/34 rows (100%) | 0.004 / 0.074 |
 | `GermlineCNVCaller` | cnv-segmentation | oracle-backed | interpreter-tools | 1 | t=2, 46/46 rows (100%), **1 distinct output** | not measured |
 | `GetNormalArtifactData` | locus-walker | oracle-backed | normal-artifact-data | 1 | t=2, 19/19 rows (100%) | 0.002 / 0.055 |
