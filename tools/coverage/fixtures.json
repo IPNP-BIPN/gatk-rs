@@ -1340,6 +1340,36 @@
         "/work/fixtures/matching.dict"
       ]
     },
+    "ConvertCountsToDepthFile": {
+      "$why": [
+        "sv.counts.tsv is the table the REFERENCE's own CollectReadCounts wrote, under the name the",
+        "codec recognises, and counts.tsv is the corpus's own, which no codec claims: the",
+        "no-suitable-codec refusal. --output is a plain name and a block-compressed one, which is",
+        "BGZF at --compression-level with a tabix index beside it. --sample-name replaces the read",
+        "group's SM in the one-column header. --input and --read-index are held out, since the tool",
+        "reads no reads, and -L/-XL are held out, since a bounded traversal of a text counts table",
+        "needs an index it does not have."
+      ],
+      "--counts-filename": [
+        "/work/fixtures/sv.counts.tsv",
+        "/work/fixtures/counts.tsv"
+      ],
+      "--output": [
+        "/work/out/depth.rd.txt",
+        "/work/out/depth.rd.txt.gz"
+      ],
+      "--sample-name": [
+        "s1",
+        "renamed"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--max-variants-per-shard": [
+        "0"
+      ]
+    },
     "PrintReadCounts": {
       "$why": [
         "sv.counts.tsv is the table the REFERENCE's own CollectReadCounts wrote, under the name",
@@ -3743,8 +3773,10 @@
         "and is refused unwrapped. The interval-overlap and window arguments carry their defaults and a",
         "value that breaks one pairing each; the sample-overlap ones are held at 0, since a truth genotype",
         "is stripped of its ECN and any positive threshold refuses the first comparison.",
-        "--sequence-dictionary is held at sv.dict, --do-not-sort at false, and the reference and the",
-        "engine's read and interval arguments are held out."
+        "--sequence-dictionary is held at sv.dict, and the reference and the",
+        "engine's read and interval arguments are held out.",
+        "--stratify-config, --clustering-config and --track-intervals have no fixture, so the three",
+        "--stratify-* thresholds they would use are varied without a stratification to reach."
       ],
       "--evaluation": [
         "/work/fixtures/sv_eval.vcf",
@@ -3761,9 +3793,6 @@
       ],
       "--sequence-dictionary": [
         "/work/fixtures/sv.dict"
-      ],
-      "--do-not-sort": [
-        "false"
       ],
       "--depth-interval-overlap": [
         "0.8",

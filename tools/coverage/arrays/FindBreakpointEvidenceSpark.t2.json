@@ -3,9 +3,9 @@
   "origin": "gatk",
   "t": 2,
   "numeric_policy": "strict",
-  "arguments_total": 91,
+  "arguments_total": 92,
   "arguments_in_array": 68,
-  "arguments_excluded": 23,
+  "arguments_excluded": 24,
   "excluded": [
     {
       "argument": "--add-output-vcf-command-line",
@@ -76,6 +76,13 @@
       "reason": "excluded by the repository: prints the usage and returns; the row would measure the argument parser rather than the tool",
       "held_at": null,
       "source": "none"
+    },
+    {
+      "argument": "--output-cram-version",
+      "type": "String",
+      "reason": "only one value available (default)",
+      "held_at": "3.1",
+      "source": "default"
     },
     {
       "argument": "--output-shard-tmp-dir",

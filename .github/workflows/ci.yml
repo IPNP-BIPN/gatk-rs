@@ -661,7 +661,7 @@ jobs:
             --tool DenoiseReadCounts \
             --tool ModelSegments \
             --tool ValidateBasicSomaticShortMutations \
-            --tool PrintReadCounts \
+            --tool ConvertCountsToDepthFile --tool PrintReadCounts \
             --tool CollectSVEvidence \
             --tool FastaAlternateReferenceMaker \
             --tool CompareReferences \
