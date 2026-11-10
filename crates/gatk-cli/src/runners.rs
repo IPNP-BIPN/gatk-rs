@@ -20893,7 +20893,7 @@ pub fn sv_stratify(parser: &Parser) -> Outcome {
         .map(|sequence| (sequence.name.clone(), sequence.length))
         .collect();
 
-    let engine = load_stratification_engine(parser, &config, &dictionary)?;
+    let engine = load_stratification_engine(parser, Some(&config), &dictionary)?;
 
     // `initializeWriters`.
     let prefix = if split_output {
@@ -21045,14 +21045,20 @@ struct SvConcordanceItem {
 /// * **the two files are walked by [`gatk_engine::concordance_walker`]** with every pair counted
 ///   concordant and no truth filter, and each step adds its truth record before its eval one;
 /// * **a truth record is rebuilt with a dictionary**, so its breakpoints are validated where an
-///   eval record's are not, and its genotypes keep only their alleles and `CN`;
-/// * **the finder is flushed at each new contig**, every eval record taking the closest truth record
-///   of the contig the linkage allows, and the output is sorted by `compareCalls`;
+///   eval record's are not, and its genotypes keep only their alleles, `CN` and `ECN`;
+/// * **`--stratify-config` and `--clustering-config` come together or not at all**, and an eval
+///   record is matched in every stratum it falls in and in the default group
+///   ([`gatk_tools::sv_concordance::Engine`]): the highest group that matched is written, with
+///   `STRAT` naming every group and the linkage's measurements as the `TRUTH_*` fields;
+/// * **the records are held until the walk ends**, in the order they finished, and then sorted by
+///   the eval header's contig order and the start, stably;
 /// * **the record written is `getVariantBuilder`'s**, not the input line: the fields the record owns
 ///   are written again, a passing record comes out unfiltered, and a null annotation is absent.
 ///
 /// Nothing inside `apply` is wrapped: `AbstractConcordanceWalker.traverse` calls it bare, so a record
-/// the conversion refuses reaches the user as the conversion's own exception.
+/// the conversion refuses reaches the user as the conversion's own exception. The header is written
+/// before the configurations are read, and the records only on success, so every refusal after the
+/// dictionaries leaves a file holding the header alone.
 pub fn sv_concordance(parser: &Parser) -> Outcome {
     use gatk_tools::sv_call_record as svr;
     use gatk_tools::sv_concordance as conc;
@@ -21136,36 +21142,10 @@ pub fn sv_concordance(parser: &Parser) -> Outcome {
         .iter()
         .map(|sequence| (sequence.name.clone(), sequence.length))
         .collect();
-    let parameter = |name: &str, default: f64| -> f64 {
-        scalar(parser, name)
-            .and_then(|value| value.parse().ok())
-            .unwrap_or(default)
-    };
-    let window = |name: &str, default: i32| -> i32 {
-        scalar(parser, name)
-            .and_then(|value| value.parse().ok())
-            .unwrap_or(default)
-    };
+    // `SVConcordanceLinkage` takes no `--enable-cnv`.
     let linkage = gatk_tools::sv_cluster::Linkage {
-        depth: gatk_tools::sv_cluster::ClusteringParameters::depth(
-            parameter("depth-interval-overlap", 0.8),
-            parameter("depth-size-similarity", 0.0),
-            window("depth-breakend-window", 10_000_000),
-            parameter("depth-sample-overlap", 0.0),
-        ),
-        mixed: gatk_tools::sv_cluster::ClusteringParameters::mixed(
-            parameter("mixed-interval-overlap", 0.8),
-            parameter("mixed-size-similarity", 0.0),
-            window("mixed-breakend-window", 1000),
-            parameter("mixed-sample-overlap", 0.0),
-        ),
-        pesr: gatk_tools::sv_cluster::ClusteringParameters::pesr(
-            parameter("pesr-interval-overlap", 0.5),
-            parameter("pesr-size-similarity", 0.0),
-            window("pesr-breakend-window", 500),
-            parameter("pesr-sample-overlap", 0.0),
-        ),
         cluster_del_with_dup: false,
+        ..sv_cluster_linkage(parser)
     };
     let common: Vec<String> = eval_file
         .header
@@ -21310,6 +21290,34 @@ pub fn sv_concordance(parser: &Parser) -> Outcome {
         ),
         compound(
             "INFO",
+            "TRUTH_RECIPROCAL_OVERLAP",
+            one,
+            LineType::Float,
+            "Reciprocal overlap with truth variant",
+        ),
+        compound(
+            "INFO",
+            "TRUTH_SIZE_SIMILARITY",
+            one,
+            LineType::Float,
+            "Size similarity with truth variant",
+        ),
+        compound(
+            "INFO",
+            "TRUTH_DISTANCE_START",
+            one,
+            LineType::Integer,
+            "Start coordinate distance in bp to truth variant's start",
+        ),
+        compound(
+            "INFO",
+            "TRUTH_DISTANCE_END",
+            one,
+            LineType::Integer,
+            "End coordinate distance in bp to truth variant's end",
+        ),
+        compound(
+            "INFO",
             "AF",
             Cardinality::A,
             LineType::Float,
@@ -21329,6 +21337,14 @@ pub fn sv_concordance(parser: &Parser) -> Outcome {
             LineType::Integer,
             "Total number of alleles in called genotypes",
         ),
+        // `SVStratify.addStratifyMetadata`.
+        compound(
+            "INFO",
+            "STRAT",
+            Cardinality::Unbounded,
+            LineType::String,
+            "Stratum ID",
+        ),
     ];
     for line in added {
         if !header
@@ -21339,6 +21355,82 @@ pub fn sv_concordance(parser: &Parser) -> Outcome {
             header.lines.push(line);
         }
     }
+
+    // The writer has its header from here on, so every refusal below leaves a file holding it.
+    let finish = |written: &[htsjdk_vcf::variant::VariantContext]| -> Result<(), Thrown> {
+        let mut header = header.clone();
+        let mut records = written.to_vec();
+        apply_sites_only(parser, &mut header, &mut records);
+        let out = htsjdk_vcf::vcf_file::write_vcf(&header, &records)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        write_variant_output(parser, &output, &out)
+    };
+    let refuse = |error: Thrown| -> Outcome {
+        finish(&[])?;
+        Err(error)
+    };
+    // `SortingCollection.newInstance`.
+    let in_ram: i32 = scalar(parser, "max-records-in-ram")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(1000);
+    if in_ram <= 0 {
+        return refuse(Thrown::non_user(
+            "java.lang.IllegalArgumentException",
+            "maxRecordsInRam must be > 0",
+        ));
+    }
+    let stratify_config = argument(parser, "stratify-config");
+    let clustering_config = argument(parser, "clustering-config");
+    if stratify_config.is_some() != clustering_config.is_some() {
+        return refuse(Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException$BadInput",
+            message: Some(
+                "Bad input: Both --stratify-config and --clustering-config must be used together, but only one was specified."
+                    .to_string(),
+            ),
+        });
+    }
+    let groups = match clustering_config.as_deref().map(read_clustering_config) {
+        None => Vec::new(),
+        Some(Ok(parameters)) => gatk_tools::grouped_sv_cluster::Engines::new(&parameters)
+            .entries
+            .iter()
+            .map(|(name, parameters)| {
+                (
+                    name.clone(),
+                    gatk_tools::grouped_sv_cluster::linkage_for(parameters, false),
+                )
+            })
+            .collect(),
+        Some(Err(error)) => return refuse(error),
+    };
+    let strata = match load_stratification_engine(parser, stratify_config.as_deref(), &dictionary) {
+        Ok(strata) => strata,
+        Err(error) => return refuse(error),
+    };
+    // The constructor's two checks, both `Utils.validate`.
+    let illegal_state =
+        |message: String| Thrown::non_user("java.lang.IllegalStateException", message);
+    if strata.strata.len() != groups.len() {
+        return refuse(illegal_state(
+            gatk_tools::grouped_sv_cluster::GroupedError::GroupCountMismatch.message(),
+        ));
+    }
+    if let Some(stratum) = strata
+        .strata
+        .iter()
+        .find(|stratum| !groups.iter().any(|(name, _)| *name == stratum.name))
+    {
+        return refuse(illegal_state(
+            gatk_tools::grouped_sv_cluster::GroupedError::GroupNotFound {
+                name: stratum.name.clone(),
+            }
+            .message(),
+        ));
+    }
+    let thresholds = stratification_thresholds(parser);
+    let mut engine = conc::Engine::new(&groups, linkage, &sequences);
 
     // The walk.
     let truth: Vec<ConcordanceLocus> = truth_file
@@ -21380,10 +21472,11 @@ pub fn sv_concordance(parser: &Parser) -> Outcome {
         exception: error.class(),
         message: Some(error.message()),
     };
+    let engine_error =
+        |error: conc::ConcordanceError| Thrown::non_user(error.class(), error.message());
     // The concordance side of a record: the call the linkage reads and the genotypes as indices.
     let item = |variant: &htsjdk_vcf::variant::VariantContext,
-                call: gatk_tools::sv_call_record::SvCallRecord,
-                keep_counts: bool|
+                call: gatk_tools::sv_call_record::SvCallRecord|
      -> SvConcordanceItem {
         let genotypes = variant
             .genotypes
@@ -21422,18 +21515,14 @@ pub fn sv_concordance(parser: &Parser) -> Outcome {
                     other => other.format(),
                 })
         };
-        let allele_counts = if keep_counts {
-            match (text("AC"), text("AF"), text("AN")) {
-                (Some(ac), Some(af), Some(an)) => Some(conc::AlleleCounts {
-                    count: Vec::new(),
-                    frequency: Vec::new(),
-                    number: 0,
-                    verbatim: Some((ac, af, an)),
-                }),
-                _ => None,
-            }
-        } else {
-            None
+        let allele_counts = match (text("AC"), text("AF"), text("AN")) {
+            (Some(ac), Some(af), Some(an)) => Some(conc::AlleleCounts {
+                count: Vec::new(),
+                frequency: Vec::new(),
+                number: 0,
+                verbatim: Some((ac, af, an)),
+            }),
+            _ => None,
         };
         let record = conc::Record {
             call: gatk_tools::sv_cluster::CallRecord {
@@ -21448,6 +21537,8 @@ pub fn sv_concordance(parser: &Parser) -> Outcome {
                 length: call.length,
                 algorithms: call.algorithms.clone(),
                 carriers: Vec::new(),
+                cpx_subtype: call.cpx_subtype.clone(),
+                cpx_intervals: call.cpx_intervals.clone(),
             },
             genotypes,
             allele_counts,
@@ -21459,37 +21550,10 @@ pub fn sv_concordance(parser: &Parser) -> Outcome {
         }
     };
 
-    let mut written: Vec<htsjdk_vcf::variant::VariantContext> = Vec::new();
-    let mut truth_items: Vec<SvConcordanceItem> = Vec::new();
-    let mut eval_items: Vec<SvConcordanceItem> = Vec::new();
-    let mut current: Option<String> = None;
-    let finish = |written: &[htsjdk_vcf::variant::VariantContext]| -> Result<(), Thrown> {
-        let mut header = header.clone();
-        let mut records = written.to_vec();
-        apply_sites_only(parser, &mut header, &mut records);
-        let out = htsjdk_vcf::vcf_file::write_vcf(&header, &records)
-            .map_err(|error| Thrown::user(format!("{error:?}")))?;
-        write_variant_output(parser, &output, &out)
-    };
-    let flush = |truth_items: &mut Vec<SvConcordanceItem>,
-                 eval_items: &mut Vec<SvConcordanceItem>,
-                 written: &mut Vec<htsjdk_vcf::variant::VariantContext>| {
-        let truths: Vec<conc::Record> =
-            truth_items.iter().map(|item| item.record.clone()).collect();
-        let mut annotated: Vec<(
-            gatk_tools::sv_call_record::SvCallRecord,
-            htsjdk_vcf::variant::VariantContext,
-        )> = Vec::new();
-        for item in eval_items.iter() {
-            let closest = conc::closest(&linkage, &item.record, &truths);
-            let annotation = conc::annotate(&item.record, closest, &common);
-            annotated.push(sv_concordance_output(item, &annotation, &common));
-        }
-        annotated.sort_by(|a, b| svr::compare_calls(&a.0, &b.0, &sequences));
-        written.extend(annotated.into_iter().map(|(_, variant)| variant));
-        truth_items.clear();
-        eval_items.clear();
-    };
+    // Every record added, numbered as the engine numbers them, and the eval records in the order
+    // they finished, which is the sorting buffer's.
+    let mut items: Vec<SvConcordanceItem> = Vec::new();
+    let mut finished: Vec<conc::Finished> = Vec::new();
     for step in steps {
         let mut add = |index: usize, is_truth: bool| -> Result<(), Thrown> {
             let variant = if is_truth {
@@ -21498,13 +21562,9 @@ pub fn sv_concordance(parser: &Parser) -> Outcome {
                 &eval_file.records[index]
             };
             let call = svr::create(variant, &sequences).map_err(refused)?;
-            if current.as_deref() != Some(call.contig_a.as_str()) {
-                flush(&mut truth_items, &mut eval_items, &mut written);
-                current = Some(call.contig_a.clone());
-            }
             if is_truth {
                 // `minimizeTruthFootprint`: rebuilt WITH the dictionary, genotypes cut to
-                // alleles and `CN`.
+                // alleles, `CN` and `ECN`.
                 svr::validate_coordinates(&call, &sequences).map_err(refused)?;
                 let mut stripped = variant.clone();
                 let genotypes: Vec<htsjdk_vcf::variant::Genotype> = variant
@@ -21518,29 +21578,76 @@ pub fn sv_concordance(parser: &Parser) -> Outcome {
                         kept.extended = genotype
                             .extended
                             .iter()
-                            .filter(|(key, _)| key == "CN")
+                            .filter(|(key, _)| key == "CN" || key == "ECN")
                             .cloned()
                             .collect();
                         kept
                     })
                     .collect();
                 stripped.genotypes = genotypes.into();
-                truth_items.push(item(&stripped, call, true));
+                let truth = item(&stripped, call);
+                engine
+                    .add_truth(truth.record.clone())
+                    .map_err(engine_error)?;
+                items.push(truth);
             } else {
-                eval_items.push(item(variant, call, true));
+                // `getMatches` is not wrapped either, so its own refusal reaches the user.
+                let matched: Vec<String> = strata
+                    .matches(&call.stratify_record(), thresholds)
+                    .map_err(|error| illegal_state(error.message()))?
+                    .iter()
+                    .map(|stratum| stratum.name.clone())
+                    .collect();
+                let eval = item(variant, call);
+                engine
+                    .add_eval(eval.record.clone(), &matched)
+                    .map_err(engine_error)?;
+                items.push(eval);
             }
             Ok(())
         };
         let outcome = step
             .truth
             .map_or(Ok(()), |index| add(index, true))
-            .and_then(|()| step.eval.map_or(Ok(()), |index| add(index, false)));
-        if let Err(error) = outcome {
-            finish(&written)?;
-            return Err(error);
+            .and_then(|()| step.eval.map_or(Ok(()), |index| add(index, false)))
+            .and_then(|()| engine.flush(false).map_err(engine_error));
+        match outcome {
+            Ok(done) => finished.extend(done),
+            // The sorting buffer is only written on success, so the file holds the header alone.
+            Err(error) => return refuse(error),
         }
     }
-    flush(&mut truth_items, &mut eval_items, &mut written);
+    match engine.flush(true) {
+        Ok(done) => finished.extend(done),
+        Err(error) => return refuse(engine_error(error)),
+    }
+
+    // `SortingCollection` over `getVCFRecordComparator`: by the eval header's contig order and
+    // the start, stably, so two records that start together keep the order they finished in.
+    let contig_index = |contig: &str| {
+        eval_dictionary
+            .sequences
+            .iter()
+            .position(|sequence| sequence.name == contig)
+            .unwrap_or(usize::MAX)
+    };
+    let mut written: Vec<(
+        gatk_tools::sv_call_record::SvCallRecord,
+        htsjdk_vcf::variant::VariantContext,
+    )> = finished
+        .iter()
+        .map(|done| {
+            let eval = &items[done.id as usize];
+            let matched = done
+                .truth
+                .map(|(id, result)| (&items[id as usize].record, result));
+            let annotation = conc::annotate(&eval.record, matched, &common);
+            sv_concordance_output(eval, &annotation, &common, &done.strata)
+        })
+        .collect();
+    written.sort_by_key(|(call, _)| (contig_index(&call.contig_a), call.position_a));
+    let written: Vec<htsjdk_vcf::variant::VariantContext> =
+        written.into_iter().map(|(_, variant)| variant).collect();
     finish(&written)?;
     // `onTraversalSuccess` returns null, so `handleResult` prints nothing.
     Ok(None)
@@ -21551,6 +21658,7 @@ fn sv_concordance_output(
     item: &SvConcordanceItem,
     annotation: &gatk_tools::sv_concordance::Annotation,
     common: &[String],
+    strata: &[String],
 ) -> (
     gatk_tools::sv_call_record::SvCallRecord,
     htsjdk_vcf::variant::VariantContext,
@@ -21603,6 +21711,29 @@ fn sv_concordance_output(
         annotation.truth_variant_id.clone().map(Value::Str),
     );
     put("STATUS", Some(Value::Str(annotation.status.to_string())));
+    // A null measurement is put as null, which the builder drops.
+    if let Some(linkage) = &annotation.truth_linkage {
+        put(
+            "TRUTH_RECIPROCAL_OVERLAP",
+            linkage.reciprocal_overlap.map(Value::Double),
+        );
+        put(
+            "TRUTH_SIZE_SIMILARITY",
+            linkage.size_similarity.map(Value::Double),
+        );
+        put(
+            "TRUTH_DISTANCE_START",
+            linkage
+                .breakpoint_distance_1
+                .map(|distance| Value::Int(i64::from(distance))),
+        );
+        put(
+            "TRUTH_DISTANCE_END",
+            linkage
+                .breakpoint_distance_2
+                .map(|distance| Value::Int(i64::from(distance))),
+        );
+    }
     if is_cnv {
         put(
             "CNV_CONCORDANCE",
@@ -21660,6 +21791,12 @@ fn sv_concordance_output(
             }
         }
     }
+    put(
+        "STRAT",
+        Some(Value::List(
+            strata.iter().map(|name| Value::Str(name.clone())).collect(),
+        )),
+    );
     let filters = item.variant.filters.clone().unwrap_or_default();
     let variant = gatk_tools::sv_call_record::to_variant(
         &call,
@@ -21888,7 +22025,7 @@ pub fn grouped_sv_cluster(parser: &Parser) -> Outcome {
     let illegal_state =
         |message: String| Thrown::non_user("java.lang.IllegalStateException", message);
 
-    let engine = match load_stratification_engine(parser, &config, &walker.dictionary) {
+    let engine = match load_stratification_engine(parser, Some(&config), &walker.dictionary) {
         Ok(engine) => engine,
         Err(error) => return walker.refuse(error),
     };
@@ -22386,6 +22523,8 @@ impl<'p> SvClusterWalker<'p> {
                     length: member.call.length,
                     algorithms: member.call.algorithms.clone(),
                     carriers,
+                    cpx_subtype: member.call.cpx_subtype.clone(),
+                    cpx_intervals: member.call.cpx_intervals.clone(),
                 }
             })
             .collect();
@@ -22655,11 +22794,12 @@ fn stratification_thresholds(parser: &Parser) -> gatk_tools::sv_stratify::Thresh
 /// loaded through the interval arguments and refused for a name given twice after its file was read,
 /// then the table, checked for its columns at its header line and parsed row by row.
 ///
-/// `dictionary` is the tool's: the master one for `SVStratify`, the reference's for
-/// `GroupedSVCluster`.
+/// `dictionary` is the tool's: the master one for `SVStratify` and `SVConcordance`, the
+/// reference's for `GroupedSVCluster`. With no table, which only `SVConcordance` allows, the
+/// tracks are still loaded and checked, and the engine holds no strata.
 fn load_stratification_engine(
     parser: &Parser,
-    config: &str,
+    config: Option<&str>,
     dictionary: &SamHeader,
 ) -> Result<gatk_tools::sv_stratify::Engine, Thrown> {
     use gatk_tools::sv_stratify as stratify;
@@ -22720,6 +22860,10 @@ fn load_stratification_engine(
     }
     let tracks =
         stratify::Tracks::new(&names, &loaded).map_err(|error| bad_input(error.message()))?;
+    let Some(config) = config else {
+        return stratify::Engine::new(Vec::new(), tracks)
+            .map_err(|error| bad_input(error.message()));
+    };
 
     let table_text = std::fs::read_to_string(config)
         .map_err(|_| gatk("IO error while reading config table".to_string()))?;

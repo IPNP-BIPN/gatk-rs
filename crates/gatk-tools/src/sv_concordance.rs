@@ -4,9 +4,15 @@
 //! Not the clustering of [`crate::sv_cluster`]. Each eval record takes ONE truth record, the
 //! closest by total breakend distance, under a linkage whose single override is asymmetric.
 //!
-//! Reading and writing the VCFs, the streaming flush that keeps the finder's memory bounded and
-//! the output sort are not ported. Which truth record each eval record takes, and every value the
-//! annotator writes on it, are.
+//! Reading and writing the VCFs and the output sort are the runner's. Which truth record each eval
+//! record takes, in which group, the order the records finish in, and every value the annotator
+//! writes on them, are here.
+//!
+//! Since 4.7.0.0 the records are stratified: each eval record is matched once per stratum it falls
+//! in and once in the default group, each under its group's linkage, and the highest group that
+//! found a match is the one written. Which records two groups finish when is what the output's
+//! sort by position keeps between two records that start together, so the streaming flush is
+//! ported as the reference has it.
 //!
 //! The per-sample contingency string and the per-record metrics come from two DIFFERENT schemes:
 //! `SVConcordanceAnnotator` uses its own cut-down table for the string, and
@@ -14,7 +20,7 @@
 //! numbers. The two agree on every cell this tool can reach, so the split is not observable here;
 //! both are ported because only one of them is the one being read at a time.
 
-use crate::sv_cluster::{CallRecord, Linkage};
+use crate::sv_cluster::{CallRecord, Linkage, LinkageResult};
 use crate::sv_stratify::SvType;
 
 /// `GenotypeConcordanceStates.TruthState`.
@@ -731,13 +737,13 @@ impl Record {
 /// `(aType == CNV || bType != CNV) && aType != bType`, only refuses the pair when the CNV is the
 /// EVAL record: with a non-CNV eval and a CNV truth both halves of the disjunction are false, and
 /// the pair falls through to the base linkage. The asymmetry is the behaviour, not the comment.
-pub fn are_clusterable(linkage: &Linkage, eval: &CallRecord, truth: &CallRecord) -> bool {
+pub fn are_clusterable(linkage: &Linkage, eval: &CallRecord, truth: &CallRecord) -> LinkageResult {
     if (eval.sv_type == SvType::Cnv || truth.sv_type != SvType::Cnv)
         && eval.sv_type != truth.sv_type
     {
-        return false;
+        return LinkageResult::default();
     }
-    linkage.are_clusterable(eval, truth)
+    linkage.linkage(eval, truth)
 }
 
 /// `totalDistance`: the sum of both ends.
@@ -765,29 +771,38 @@ pub fn genotype_distance(a: &Record, b: &Record) -> i32 {
     -matches
 }
 
-/// `getClosestItem`: the whole comparator chain, in order. The last two exist only so that a tie
-/// resolves the same way twice: a candidate whose id equals the eval record's wins, and after that
-/// the smaller id does.
-pub fn closest<'a>(
+/// The comparator chain `getClosestItem` and `ActiveClosestPair.update` share, in order. The last
+/// two exist only so that a tie resolves the same way twice: a candidate whose id equals the eval
+/// record's wins, and after that the smaller id does.
+fn closeness<'a>(eval: &Record, truth: &'a Record) -> (i32, i32, i32, bool, &'a str) {
+    (
+        total_distance(&eval.call, &truth.call),
+        min_distance(&eval.call, &truth.call),
+        genotype_distance(eval, truth),
+        truth.call.id != eval.call.id,
+        &truth.call.id,
+    )
+}
+
+/// `getClosestItem`: the closest candidate the linkage allows, keyed by whatever the caller keys
+/// them by, the first of two equal ones in the order given.
+pub fn closest<'a, K>(
     linkage: &Linkage,
     eval: &Record,
-    candidates: &'a [Record],
-) -> Option<&'a Record> {
+    candidates: impl IntoIterator<Item = (K, &'a Record)>,
+) -> Option<(K, LinkageResult)> {
     candidates
-        .iter()
-        .filter(|other| are_clusterable(linkage, &eval.call, &other.call))
-        .min_by(|left, right| {
-            let key = |record: &Record| {
-                (
-                    total_distance(&eval.call, &record.call),
-                    min_distance(&eval.call, &record.call),
-                    genotype_distance(eval, record),
-                    record.call.id != eval.call.id,
-                    record.call.id.clone(),
-                )
-            };
-            key(left).cmp(&key(right))
+        .into_iter()
+        .map(|(key, truth)| {
+            (
+                key,
+                truth,
+                are_clusterable(linkage, &eval.call, &truth.call),
+            )
         })
+        .filter(|(_, _, result)| result.result)
+        .min_by(|left, right| closeness(eval, left.1).cmp(&closeness(eval, right.1)))
+        .map(|(key, _, result)| (key, result))
 }
 
 /// `ConcordanceState`, as the two abbreviations that reach the output.
@@ -808,6 +823,9 @@ pub struct Annotation {
     pub metrics: Option<SummaryMetrics>,
     pub allele_counts: Option<AlleleCounts>,
     pub truth_allele_counts: Option<AlleleCounts>,
+    /// What the linkage measured against the truth record, written as the four `TRUTH_*`
+    /// measurements; each is absent when it was not measured.
+    pub truth_linkage: Option<LinkageResult>,
 }
 
 /// `copyNumbersMatch`: null unless BOTH sides carry a copy number.
@@ -822,7 +840,12 @@ pub fn copy_numbers_match(sample: &str, eval: &Record, truth: Option<&Record>) -
 ///
 /// `common` is the intersection of the two VCFs' sample sets: a sample outside it is annotated on
 /// neither side, and is not counted either.
-pub fn annotate(eval: &Record, truth: Option<&Record>, common: &[String]) -> Annotation {
+pub fn annotate(
+    eval: &Record,
+    matched: Option<(&Record, LinkageResult)>,
+    common: &[String],
+) -> Annotation {
+    let truth = matched.map(|(record, _)| record);
     let is_cnv = eval.is_cnv();
     let mut counts = Counts::default();
     let mut contingency = Vec::new();
@@ -909,17 +932,408 @@ pub fn annotate(eval: &Record, truth: Option<&Record>, common: &[String]) -> Ann
         metrics,
         allele_counts,
         truth_allele_counts,
+        truth_linkage: matched.map(|(_, linkage)| linkage),
     }
 }
 
-/// The whole run: each eval record against the truth records it can reach.
-pub fn run(
-    linkage: &Linkage,
-    eval: &[Record],
-    truth: &[Record],
-    common: &[String],
-) -> Vec<Annotation> {
-    eval.iter()
-        .map(|record| annotate(record, closest(linkage, record, truth), common))
-        .collect()
+/// What the engine refuses, each reaching the user as the reference's own exception, unwrapped.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConcordanceError {
+    /// `ClosestSVFinder.add`: a record starting before the last one its group was given.
+    Unsorted,
+    /// `flushEngineToBuffer`: an eval record finished by its group before the engine registered
+    /// it, which only one reaching no further than its own start can be.
+    Unregistered { id: u64 },
+}
+
+impl ConcordanceError {
+    pub fn class(&self) -> &'static str {
+        match self {
+            ConcordanceError::Unsorted => "java.lang.IllegalArgumentException",
+            ConcordanceError::Unregistered { .. } => "java.lang.IllegalStateException",
+        }
+    }
+
+    pub fn message(&self) -> String {
+        match self {
+            ConcordanceError::Unsorted => {
+                "Items must be added in dictionary-sorted order".to_string()
+            }
+            ConcordanceError::Unregistered { id } => format!("Unregistered variant id: {id}"),
+        }
+    }
+}
+
+/// A `java.util.HashMap<Long, _>`, kept for the order it iterates in: the buckets in turn, each in
+/// insertion order. A bucket is `(h ^ h >>> 16) & (n - 1)` for a table of `n`, which starts at
+/// sixteen, doubles when the size passes three quarters of it or when a bucket reaches nine
+/// entries below sixty-four, and never shrinks, `clear` included.
+///
+/// shortcut: a bucket of nine or more on a table of sixty-four or more is a tree whose iteration
+/// order this does not follow; upgrade if a group ever holds that many colliding records at once.
+#[derive(Debug, Clone)]
+struct LongMap<T> {
+    capacity: usize,
+    entries: Vec<(u64, T)>,
+}
+
+impl<T> LongMap<T> {
+    fn new() -> Self {
+        LongMap {
+            capacity: 16,
+            entries: Vec::new(),
+        }
+    }
+
+    fn bucket(&self, key: u64) -> usize {
+        let hash = (key ^ (key >> 32)) as u32;
+        (hash ^ (hash >> 16)) as usize & (self.capacity - 1)
+    }
+
+    fn insert(&mut self, key: u64, value: T) {
+        self.entries.push((key, value));
+        let bucket = self.bucket(key);
+        // `treeifyBin` resizes a table under sixty-four instead of building the tree.
+        if self.capacity < 64
+            && self
+                .entries
+                .iter()
+                .filter(|(other, _)| self.bucket(*other) == bucket)
+                .count()
+                > 8
+        {
+            self.capacity *= 2;
+        }
+        if self.entries.len() > self.capacity * 3 / 4 {
+            self.capacity *= 2;
+        }
+    }
+
+    /// The positions in `entries`, in the map's iteration order.
+    fn order(&self) -> Vec<usize> {
+        let mut order: Vec<usize> = (0..self.entries.len()).collect();
+        order.sort_by_key(|&index| self.bucket(self.entries[index].0));
+        order
+    }
+}
+
+/// One eval record waiting in a group: how far it reaches, and the closest truth record so far.
+#[derive(Debug, Clone, Copy)]
+struct Active {
+    max_start: i32,
+    closest: Option<(u64, LinkageResult)>,
+}
+
+/// `ClosestSVFinder`, unsorted, as every group of `StratifiedConcordanceEngine` builds it.
+#[derive(Debug, Clone)]
+struct Finder {
+    linkage: Linkage,
+    /// `truthIdToItemMap`, each truth record with how far it reaches.
+    truth: LongMap<i32>,
+    /// `idToClusterMap`.
+    active: LongMap<Active>,
+    last_contig: Option<String>,
+    last_start: Option<i32>,
+}
+
+impl Finder {
+    fn new(linkage: Linkage) -> Finder {
+        Finder {
+            linkage,
+            truth: LongMap::new(),
+            active: LongMap::new(),
+            last_contig: None,
+            last_start: None,
+        }
+    }
+
+    /// `add`: a truth record updates every eval record waiting, an eval record takes the closest
+    /// truth record already held.
+    fn add(
+        &mut self,
+        id: u64,
+        is_truth: bool,
+        items: &[Record],
+        sequences: &[(String, i32)],
+    ) -> Result<(), ConcordanceError> {
+        let item = &items[id as usize];
+        if self
+            .last_start
+            .is_some_and(|start| start > item.call.position_a)
+        {
+            return Err(ConcordanceError::Unsorted);
+        }
+        self.last_contig = Some(item.call.contig_a.clone());
+        self.last_start = Some(item.call.position_a);
+        let length = sequences
+            .iter()
+            .find(|(name, _)| *name == item.call.contig_a)
+            .map_or(0, |(_, length)| *length);
+        let reach = self.linkage.max_clusterable_start(&item.call, length);
+        if is_truth {
+            self.truth.insert(id, reach);
+            for (eval_id, active) in &mut self.active.entries {
+                let eval = &items[*eval_id as usize];
+                let result = are_clusterable(&self.linkage, &eval.call, &item.call);
+                if result.result {
+                    // `update`: the new one only when it is strictly closer.
+                    let replaces = active.closest.is_none_or(|(current, _)| {
+                        closeness(eval, item) < closeness(eval, &items[current as usize])
+                    });
+                    if replaces {
+                        active.closest = Some((id, result));
+                    }
+                }
+            }
+        } else {
+            let order = self.truth.order();
+            let candidates = order.iter().map(|&index| {
+                let truth_id = self.truth.entries[index].0;
+                (truth_id, &items[truth_id as usize])
+            });
+            let closest = closest(&self.linkage, item, candidates);
+            self.active.insert(
+                id,
+                Active {
+                    max_start: reach,
+                    closest,
+                },
+            );
+        }
+        Ok(())
+    }
+
+    /// `flush` through `flushClusters`: every eval record no later record can reach, or all of
+    /// them, in the map's order.
+    fn flush(&mut self, force: bool) -> Vec<(u64, Option<(u64, LinkageResult)>)> {
+        let order = self.active.order();
+        let take: Vec<usize> = if force {
+            order
+        } else {
+            let Some(last) = self.last_start else {
+                return Vec::new();
+            };
+            self.truth.entries.retain(|(_, reach)| *reach >= last);
+            order
+                .into_iter()
+                .filter(|&index| self.active.entries[index].1.max_start < last)
+                .collect()
+        };
+        let out = take
+            .iter()
+            .map(|&index| {
+                let (id, active) = self.active.entries[index];
+                (id, active.closest)
+            })
+            .collect();
+        if force {
+            self.truth.entries.clear();
+            self.active.entries.clear();
+            self.last_contig = None;
+            self.last_start = None;
+        } else {
+            let mut index = 0;
+            self.active.entries.retain(|_| {
+                index += 1;
+                !take.contains(&(index - 1))
+            });
+        }
+        out
+    }
+}
+
+/// `StratifiedConcordanceEngine.ItemTracker`: the groups one eval record went to, and the answer
+/// kept so far.
+#[derive(Debug, Clone)]
+struct Tracker {
+    /// In priority order: the strata as the configuration lists them, then the default.
+    groups: Vec<String>,
+    pending: Vec<String>,
+    out: Option<(usize, Option<(u64, LinkageResult)>)>,
+}
+
+impl Tracker {
+    /// `eject`. The first answer is kept whatever it is, and a match replaces it when it comes from
+    /// a higher group or the answer kept is no match; so the highest group that matched wins, and
+    /// an eval record nothing matched is the same false positive from every group.
+    fn eject(&mut self, name: &str, answer: Option<(u64, LinkageResult)>) {
+        self.pending.retain(|group| group != name);
+        let priority = self
+            .groups
+            .iter()
+            .position(|group| group == name)
+            .expect("a registered group");
+        let replaces = match &self.out {
+            None => true,
+            Some((kept, kept_answer)) => {
+                answer.is_some()
+                    && (priority < *kept || (priority > *kept && kept_answer.is_none()))
+            }
+        };
+        if replaces {
+            self.out = Some((priority, answer));
+        }
+    }
+}
+
+/// One eval record finished by every group it went to.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Finished {
+    /// The eval record, by the order it was added among every record.
+    pub id: u64,
+    /// The truth record the winning group matched, by the same numbering, with its measurements.
+    pub truth: Option<(u64, LinkageResult)>,
+    /// `STRAT`: every group it went to, sorted, `default` included.
+    pub strata: Vec<String>,
+}
+
+/// `StratifiedConcordanceEngine`: one finder per stratum and one for the default group, a truth
+/// record given to all of them and an eval record to the strata it matched and the default.
+///
+/// The groups are walked in the clustering configuration's `HashMap` order and the default last,
+/// and every add flushes the group it went to. The order records finish in is therefore the
+/// groups' and the maps' own, and it is what the output's stable sort by position keeps between
+/// two records that start together.
+#[derive(Debug, Clone)]
+pub struct Engine {
+    /// Every record added, numbered by `nextItemId`.
+    items: Vec<Record>,
+    groups: Vec<(String, Finder)>,
+    default: Finder,
+    trackers: std::collections::HashMap<u64, Tracker>,
+    finished: Vec<Finished>,
+    sequences: Vec<(String, i32)>,
+}
+
+impl Engine {
+    /// `groups` are the clustering configuration's distinct names in the order they were first
+    /// read, each with the linkage of its last row, as `HashMap.put` leaves them.
+    pub fn new(
+        groups: &[(String, Linkage)],
+        default: Linkage,
+        sequences: &[(String, i32)],
+    ) -> Self {
+        let names: Vec<String> = groups.iter().map(|(name, _)| name.clone()).collect();
+        let groups = crate::local_assembler_engine::java_hash_map_order(&names)
+            .into_iter()
+            .map(|index| (groups[index].0.clone(), Finder::new(groups[index].1)))
+            .collect();
+        Engine {
+            items: Vec::new(),
+            groups,
+            default: Finder::new(default),
+            trackers: std::collections::HashMap::new(),
+            finished: Vec::new(),
+            sequences: sequences.to_vec(),
+        }
+    }
+
+    /// The record numbered `id`.
+    pub fn item(&self, id: u64) -> &Record {
+        &self.items[id as usize]
+    }
+
+    /// `addTruthVariant`: matched in every group.
+    pub fn add_truth(&mut self, record: Record) -> Result<(), ConcordanceError> {
+        let id = self.items.len() as u64;
+        self.items.push(record);
+        for index in 0..self.groups.len() {
+            self.add_to(Some(index), id, true)?;
+        }
+        self.add_to(None, id, true)
+    }
+
+    /// `addEvalVariant`, with the names of the strata it matched in the stratification's order.
+    pub fn add_eval(&mut self, record: Record, strata: &[String]) -> Result<(), ConcordanceError> {
+        let id = self.items.len() as u64;
+        self.items.push(record);
+        for stratum in strata {
+            let index = self
+                .groups
+                .iter()
+                .position(|(name, _)| name == stratum)
+                .expect("a validated stratum");
+            self.add_to(Some(index), id, false)?;
+        }
+        self.add_to(None, id, false)?;
+        let mut groups = strata.to_vec();
+        groups.push(crate::sv_stratify::DEFAULT_STRATUM.to_string());
+        self.trackers.insert(
+            id,
+            Tracker {
+                pending: groups.clone(),
+                groups,
+                out: None,
+            },
+        );
+        Ok(())
+    }
+
+    /// `flush`: every group in turn, then the default, and what finished since the last call.
+    pub fn flush(&mut self, force: bool) -> Result<Vec<Finished>, ConcordanceError> {
+        for index in 0..self.groups.len() {
+            self.flush_group(Some(index), force)?;
+        }
+        self.flush_group(None, force)?;
+        Ok(std::mem::take(&mut self.finished))
+    }
+
+    /// `addToEngine`: a record on a new contig first flushes the group of everything it holds.
+    fn add_to(
+        &mut self,
+        group: Option<usize>,
+        id: u64,
+        is_truth: bool,
+    ) -> Result<(), ConcordanceError> {
+        let contig = &self.items[id as usize].call.contig_a;
+        let finder = match group {
+            Some(index) => &self.groups[index].1,
+            None => &self.default,
+        };
+        if finder
+            .last_contig
+            .as_ref()
+            .is_some_and(|last| last != contig)
+        {
+            self.flush_group(group, true)?;
+        }
+        let finder = match group {
+            Some(index) => &mut self.groups[index].1,
+            None => &mut self.default,
+        };
+        finder.add(id, is_truth, &self.items, &self.sequences)?;
+        self.flush_group(group, false)
+    }
+
+    /// `flushEngineToBuffer`.
+    fn flush_group(&mut self, group: Option<usize>, force: bool) -> Result<(), ConcordanceError> {
+        let (name, finder) = match group {
+            Some(index) => {
+                let (name, finder) = &mut self.groups[index];
+                (name.clone(), finder)
+            }
+            None => (
+                crate::sv_stratify::DEFAULT_STRATUM.to_string(),
+                &mut self.default,
+            ),
+        };
+        for (id, answer) in finder.flush(force) {
+            let tracker = self
+                .trackers
+                .get_mut(&id)
+                .ok_or(ConcordanceError::Unregistered { id })?;
+            tracker.eject(&name, answer);
+            if tracker.pending.is_empty() {
+                let tracker = self.trackers.remove(&id).expect("just found");
+                let mut strata = tracker.groups;
+                strata.sort();
+                self.finished.push(Finished {
+                    id,
+                    truth: tracker.out.and_then(|(_, answer)| answer),
+                    strata,
+                });
+            }
+        }
+        Ok(())
+    }
 }
