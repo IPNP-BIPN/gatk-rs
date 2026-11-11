@@ -18304,6 +18304,9 @@ pub fn convert_counts_to_depth_file(parser: &Parser) -> Outcome {
     })?;
     let _ = resolve_read_filters(parser, "ConvertCountsToDepthFile")?;
     let master = master_dictionary(parser)?;
+    // `initializeReference` comes before `initializeFeatures`, so a missing reference is refused
+    // before the counts are opened.
+    let reference = reference_dictionary(parser)?;
 
     let text = std::fs::read_to_string(&input).map_err(|_| {
         Thrown::user(format!(
@@ -18322,6 +18325,17 @@ pub fn convert_counts_to_depth_file(parser: &Parser) -> Outcome {
                      SimpleCount, but instead contains Features of type(s): [{}]",
                     java_absolute_path(&input),
                     codec.feature_type
+                )),
+            },
+            // No codec answers to a bare `.tsv`: the annotated-interval one wants `.seg` or `.maf`
+            // and the xsv one a `.config`, so `FeatureManager` finds none. Measured on two rows.
+            None if input.ends_with(".tsv") => Thrown {
+                failure: Failure::User,
+                exception:
+                    "org.broadinstitute.hellbender.exceptions.UserException$NoSuitableCodecs",
+                message: Some(format!(
+                    "Cannot read file://{} because no suitable codecs found",
+                    java_absolute_path(&input)
                 )),
             },
             None => Thrown::non_user(
@@ -18351,6 +18365,14 @@ pub fn convert_counts_to_depth_file(parser: &Parser) -> Outcome {
             ));
         }
     };
+
+    // `validateSequenceDictionaries`, after the features are initialized: the master against the
+    // reference. The counts header's dictionary is not one the engine collects.
+    if !flag(parser, "disable-sequence-dictionary-validation") {
+        if let (Some(master), Some(reference)) = (&master, &reference) {
+            validate_against_master(master, "reference", &reference.sequences)?;
+        }
+    }
 
     let intervals = match &master {
         Some(header) => interval_arguments(parser, header)?.map(|parameters| parameters.intervals),
