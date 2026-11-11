@@ -22161,10 +22161,11 @@ pub fn grouped_sv_cluster(parser: &Parser) -> Outcome {
     use gatk_tools::grouped_sv_cluster as grouped;
     use htsjdk_vcf::variant::Value;
 
+    // `SVStratify.addStratifyMetadata`, shared with SVStratify: `UNBOUNDED` since 4.7.0.0.
     let strat_line = htsjdk_vcf::header::HeaderLine::Compound {
         key: "INFO".to_string(),
         id: "STRAT".to_string(),
-        number: htsjdk_vcf::header::Cardinality::Fixed(1),
+        number: htsjdk_vcf::header::Cardinality::Unbounded,
         line_type: htsjdk_vcf::header::LineType::String,
         description: "Stratum ID".to_string(),
         extra: Vec::new(),
@@ -22275,7 +22276,17 @@ pub fn grouped_sv_cluster(parser: &Parser) -> Outcome {
             _ => return walker.refuse(walker.wrapped(record, true)),
         }
     }
-    for (name, _, members) in &mut buckets {
+    // `onTraversalSuccess` flushes `clusterEngineMap.values()`: a HashMap filled in the clustering
+    // configuration's order, not the stratification engine's, and the IDs are handed out in it.
+    let hashed: Vec<(String, i32)> = parameters
+        .iter()
+        .map(|row| (row.name.clone(), gatk_engine::java_hash::string_hash_code(&row.name)))
+        .collect();
+    let order = gatk_engine::java_hash::hash_map_order(&hashed).expect("a hashable stratum set");
+    for flushed in order {
+        let Some((name, _, members)) = buckets.iter_mut().find(|(name, _, _)| *name == flushed) else {
+            continue;
+        };
         if let Err(error) = walker.cluster_and_build(members, &linkage_of(name)) {
             return walker.refuse(error);
         }
