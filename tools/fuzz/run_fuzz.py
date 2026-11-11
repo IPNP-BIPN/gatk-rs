@@ -9,6 +9,9 @@
 3. **Replay** every kept case on both sides out of process, through run_array.py, so a case is
    compared with the same canonicalization as a covering-array row. A divergence is **minimized**:
    arguments the array varies are dropped one at a time while both sides, re-run, still disagree.
+   Only the first MINIMIZE_PER_TOOL divergences of a tool are: each costs dozens of container
+   runs, and under GATK 4.7.0.0 the unminimized ones pushed three shards past the six-hour job
+   limit. The rest are kept with their full command lines.
 
     python3 tools/fuzz/run_fuzz.py --tool CountReads --iterations 60
     python3 tools/fuzz/run_fuzz.py --tool CountReads --iterations 60 --port target/release/gatk
@@ -35,6 +38,7 @@ MEASURED = REPO / "tools" / "fuzz" / "measured.json"
 # Only the reference's own code is counted; htsjdk is measured by its own repository.
 INCLUDES = "org.broadinstitute.hellbender.*:picard.*"
 RNG_SEED = 20261105
+MINIMIZE_PER_TOOL = 1
 
 
 def seed_file(tool, array, path):
@@ -149,13 +153,18 @@ def run(options):
             fields, kept = fuzz(options.tool, workdir, options.iterations, options.timeout)
 
             divergences = []
+            minimized = 0
             if options.port:
                 for case in kept:
                     reference, ours = both_sides(options.tool, case["arguments"], options.port, workdir, config)
                     case["matched"] = reference == ours
                     if not case["matched"]:
-                        minimal, ref_min, ours_min = minimize(
-                            options.tool, case["arguments"], varied, options.port, workdir, config, reference)
+                        if minimized < MINIMIZE_PER_TOOL:
+                            minimized += 1
+                            minimal, ref_min, ours_min = minimize(
+                                options.tool, case["arguments"], varied, options.port, workdir, config, reference)
+                        else:
+                            minimal, ref_min, ours_min = case["arguments"], reference, ours
                         if all(d["arguments"] != minimal for d in divergences):
                             divergences.append({"arguments": minimal, "reference": ref_min, "port": ours_min})
         finally:
@@ -176,6 +185,7 @@ def run(options):
         summary["replayed"] = len(kept)
         summary["diverged"] = sum(not case["matched"] for case in kept)
         summary["divergence_classes"] = len(divergences)
+        summary["minimized"] = minimized
 
     FINDINGS.mkdir(parents=True, exist_ok=True)
     (FINDINGS / f"{options.tool}.json").write_text(json.dumps(
@@ -203,7 +213,7 @@ def merge(directory):
             "`probes_*` count the reference's JaCoCo probes reached (a proxy for branches, not a",
             "percentage); `diverged` counts kept cases on which the port, re-run out of process,",
             "did not answer exactly as the reference did; `divergence_classes` counts their distinct",
-            "minimized command lines.",
+            "command lines, minimized for the first `minimized` of them only.",
         ],
         "tools": tools,
     }, indent=1, sort_keys=True) + "\n")
