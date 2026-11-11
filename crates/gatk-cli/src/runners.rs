@@ -22280,11 +22280,17 @@ pub fn grouped_sv_cluster(parser: &Parser) -> Outcome {
     // configuration's order, not the stratification engine's, and the IDs are handed out in it.
     let hashed: Vec<(String, i32)> = parameters
         .iter()
-        .map(|row| (row.name.clone(), gatk_engine::java_hash::string_hash_code(&row.name)))
+        .map(|row| {
+            (
+                row.name.clone(),
+                gatk_engine::java_hash::string_hash_code(&row.name),
+            )
+        })
         .collect();
     let order = gatk_engine::java_hash::hash_map_order(&hashed).expect("a hashable stratum set");
     for flushed in order {
-        let Some((name, _, members)) = buckets.iter_mut().find(|(name, _, _)| *name == flushed) else {
+        let Some((name, _, members)) = buckets.iter_mut().find(|(name, _, _)| *name == flushed)
+        else {
             continue;
         };
         if let Err(error) = walker.cluster_and_build(members, &linkage_of(name)) {
