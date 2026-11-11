@@ -66,7 +66,11 @@ ADD_OPENS = (
     "java.base/jdk.internal.module", "java.base/java.lang.module",
     "java.security.jgss/sun.security.krb5",
 )
-JAVA_OPENS = " ".join(f"--add-opens={module}=ALL-UNNAMED" for module in ADD_OPENS)
+# The properties every conformance suite runs under, so a row is measured under the same
+# configuration as a golden. Without -Dsamjdk.use_libdeflate=false, htsjdk 5.0.0 compresses with
+# libdeflate and every BGZF output (BAM, BAI, VCF.GZ, TBI) differs from the JDK deflater's bytes.
+JAVA_PROPS = json.loads((REPO / "tools" / "conformance" / "manifest.json").read_text())["default_java_props"]
+JAVA_OPENS = " ".join([*(f"--add-opens={module}=ALL-UNNAMED" for module in ADD_OPENS), *JAVA_PROPS])
 
 # Values that mean "the argument is absent", so a held-at value carrying one must not be passed.
 ABSENT = {"None", "null", "[]", ""}
