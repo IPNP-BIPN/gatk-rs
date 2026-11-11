@@ -172,7 +172,7 @@ fn the_version_is_torn_in_half_by_a_stream_that_is_not_stdout() {
     let first = field(&text, "out", "version-to-stdout").expect("the first line");
     let rest = field(&text, "out", "version-to-elsewhere").expect("the rest");
     assert_eq!(first, "The Genome Analysis Toolkit (GATK) v4.7.0.0\n");
-    assert_eq!(rest, "HTSJDK Version: 4.2.0\nPicard Version: 3.4.0\n");
+    assert_eq!(rest, "HTSJDK Version: 5.0.0\nPicard Version: 3.5.0\n");
     let (ours_first, ours_rest) = version_lines(
         "The Genome Analysis Toolkit (GATK)",
         "4.7.0.0",

@@ -7,8 +7,8 @@ Ports vendored from main at: htsjdk-rs `821a863bfb80`, picard-rs `bd199d296c43`
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 311 | 99.7% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 312 | 100.0% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 0 | 0.0% |
 | not started | 0 | 0.0% |
 | **total** | **312** | |
@@ -202,7 +202,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `ComposeSTRTableFile` | reference-utility | oracle-backed | compose-str-table-file | 1 | t=2, 22/22 rows (100%) | 0.003 / 0.073 |
 | `Concordance` | variant-walker | oracle-backed | concordance-annotated-vcfs, concordance-filter-analysis, concordance-summary | 3 | t=2, 16/16 rows (100%) | 0.002 / 0.055 |
 | `CondenseDepthEvidence` | unclassified | oracle-backed | condense-depth-evidence | 1 | t=2, 18/18 rows (100%) | 0.002 / 0.055 |
-| `ConvertCountsToDepthFile` | sv-caller | golden-pending | convert-counts-to-depth-file | 1 | not measured | not measured |
+| `ConvertCountsToDepthFile` | sv-caller | oracle-backed | convert-counts-to-depth-file | 1 | not measured | not measured |
 | `ConvertHeaderlessHadoopBamShardToBam` | record-transform | oracle-backed | convert-headerless-shard | 1 | t=2, 12/12 rows (100%) | 0.003 / 0.087 |
 | `CountBases` | locus-walker | oracle-backed | count-reads-and-bases, counting-walkers | 2 | t=2, 21/21 rows (100%) | 0.002 / 0.047 |
 | `CountBasesInReference` | reference-utility | oracle-backed | reference-walker | 1 | t=2, 19/19 rows (100%) | 0.007 / 0.167 |
