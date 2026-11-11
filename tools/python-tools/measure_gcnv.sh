@@ -1,6 +1,6 @@
 #!/bin/bash
 # One pass of DetermineGermlineContigPloidy, GermlineCNVCaller and PostprocessGermlineCNVCalls on
-# the fixture, as `gatk` runs them inside broadinstitute/gatk:4.6.2.0, with few iterations.
+# the fixture, as `gatk` runs them inside broadinstitute/gatk:4.7.0.0, with few iterations.
 #
 # Usage: measure_gcnv.sh <fixture directory> <output directory> [samples]
 set -e

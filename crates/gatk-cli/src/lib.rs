@@ -22,6 +22,7 @@
 
 pub mod command_line;
 pub mod definitions;
+pub mod picard;
 pub mod runners;
 pub mod variant_bridge;
 
@@ -29,9 +30,9 @@ use gatk_tools::main_entry::{self, Failure, Route, Stream, Thrown};
 
 /// The reference's own pins, which `printVersionInfo` reads off the jar's manifest.
 pub const TOOLKIT_NAME: &str = "The Genome Analysis Toolkit (GATK)";
-pub const TOOLKIT_VERSION: &str = "4.6.2.0";
-pub const HTSJDK_VERSION: &str = "4.2.0";
-pub const PICARD_VERSION: &str = "3.4.0";
+pub const TOOLKIT_VERSION: &str = "4.7.0.0";
+pub const HTSJDK_VERSION: &str = "5.0.0";
+pub const PICARD_VERSION: &str = "3.5.0";
 
 /// `getCommandLineName()`, which GATK leaves empty: the first line of the usage therefore reads
 /// `USAGE:  <program name>`, with two spaces where a toolkit's name would have been.
@@ -121,6 +122,9 @@ pub fn run(args: &[String]) -> Outcome {
             }
         }
         Route::Tool { name } => {
+            if let Some(outcome) = picard::run(&name, main_entry::tool_arguments(args)) {
+                return outcome;
+            }
             // The parse comes before the run, and it only happens for a tool whose whole argument
             // surface converts: a parser missing a third of its arguments would refuse a command
             // line the reference accepts, which is a worse answer than refusing to parse at all.
@@ -163,7 +167,10 @@ pub fn run(args: &[String]) -> Outcome {
                         status: main_entry::exit_status(Failure::User),
                     }
                 }
-                Some(runner) => match run_capturing(runner, args, &mut stdout) {
+                Some(runner) => match startup_refusal(&name, tool_args)
+                    .map(Err)
+                    .unwrap_or_else(|| run_capturing(runner, args, &mut stdout))
+                {
                     Ok(result) => {
                         if let Some(printed) = main_entry::tool_returned(result.as_deref()) {
                             stdout.push_str(&printed);
@@ -191,6 +198,20 @@ pub fn run(args: &[String]) -> Outcome {
             }
         }
     }
+}
+
+/// What a `GATKTool` refuses at the end of `onStartup`, for a tool that declares the progress meter.
+///
+/// Spark tools and plain command-line programs declare no `--seconds-between-progress-updates`
+/// and build no meter, so for them this is `None`.
+fn startup_refusal(tool: &str, args: &[String]) -> Option<Thrown> {
+    let declares = gatk_tools::tool_declarations::declarations(tool)?
+        .iter()
+        .any(|declaration| declaration.long_name == "seconds-between-progress-updates");
+    if !declares {
+        return None;
+    }
+    runners::progress_meter_refusal(&parsed(tool, args).ok()?)
 }
 
 /// Whether this port can hand a tool's command line to the ported Barclay parser at all.
@@ -360,6 +381,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "PathSeqBuildReferenceTaxonomy" => Some(run_path_seq_build_reference_taxonomy),
         "PathSeqBuildKmers" => Some(run_path_seq_build_kmers),
         "CondenseDepthEvidence" => Some(run_condense_depth_evidence),
+        "ConvertCountsToDepthFile" => Some(run_convert_counts_to_depth_file),
         "PrintSVEvidence" => Some(run_print_sv_evidence),
         "SiteDepthtoBAF" => Some(run_site_depth_to_baf),
         "MergeMutectStats" => Some(run_merge_mutect_stats),
@@ -1024,6 +1046,10 @@ fn run_print_sv_evidence(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_condense_depth_evidence(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::condense_depth_evidence(&parsed("CondenseDepthEvidence", args)?)
+}
+
+fn run_convert_counts_to_depth_file(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::convert_counts_to_depth_file(&parsed("ConvertCountsToDepthFile", args)?)
 }
 
 fn run_path_seq_build_kmers(args: &[String]) -> Result<Option<String>, Thrown> {

@@ -6,17 +6,17 @@
     "CI step re-derives is not evidence."
   ],
   "oracle": {
-    "image": "gatk-rs-oracle:4.6.2.0",
+    "image": "gatk-rs-oracle:4.7.0.0",
     "context": "tools/oracle",
     "platform": "linux/amd64"
   },
   "oracle_with_r": {
     "$why": "gatk-rs-oracle deliberately has no Rscript. A suite that needs the reference's plots to actually run names this instead with its own `oracle` key: the Broad's published image of the same release, pinned by digest, with the R and the packages that release was built with. Pulled rather than built, so it costs a job of its own and not the shared image's cache.",
-    "image": "broadinstitute/gatk@sha256:71b17ee42d149e8ec112603f5305c873ab60d93949ef8bb62a4fff85427f56fb",
+    "image": "broadinstitute/gatk@sha256:7da5cf586e1c463f0c72908f9ac7dec8c29e37912c82d6e7b3c250f27fcb3891",
     "platform": "linux/amd64",
     "entrypoint": "sh",
     "timeout_seconds": 1500,
-    "classpath": "/gatk/gatk-package-4.6.2.0-local.jar"
+    "classpath": "/gatk/gatk-package-4.7.0.0-local.jar"
   },
   "ci": {
     "suites_per_job": 5,
@@ -574,7 +574,7 @@
         {
           "dump": "PrintReadsDump",
           "golden": "crates/gatk-tools/tests/data/print_reads.txt.gz",
-          "why": "From the pinned container on a real x86-64 runner. Six output BAMs and five indexes, byte for byte, with the deflater that produced them named in the file."
+          "why": "From the pinned container on a real x86-64 runner. Six output BAMs and five indexes, byte for byte, with the deflater that produced them named in the file. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -595,7 +595,7 @@
         {
           "dump": "RecordTransformDump",
           "golden": "crates/gatk-tools/tests/data/record_transform.txt.gz",
-          "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite. 49 rows, no corrections, and byte-identical to the same container on Apple Silicon. Twelve output BAMs and eleven indexes byte for byte, three input fixtures with their indexes, and the two runs that abort with the class and message the reference throws."
+          "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite. 49 rows, no corrections, and byte-identical to the same container on Apple Silicon. Twelve output BAMs and eleven indexes byte for byte, three input fixtures with their indexes, and the two runs that abort with the class and message the reference throws. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -616,7 +616,7 @@
         {
           "dump": "FixMisencodedDump",
           "golden": "crates/gatk-tools/tests/data/fix_misencoded.txt.gz",
-          "why": "40 rows: three fixtures with their indexes, eight runs whose output BAM and index travel in full, and one refusal with the class and message the reference throws. The fixtures differ only in their qualities, which is what every case turns on. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31230160751, and byte for byte what an Apple Silicon laptop produced, the output BAMs included."
+          "why": "40 rows: three fixtures with their indexes, eight runs whose output BAM and index travel in full, and one refusal with the class and message the reference throws. The fixtures differ only in their qualities, which is what every case turns on. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31230160751, and byte for byte what an Apple Silicon laptop produced, the output BAMs included. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -637,7 +637,7 @@
         {
           "dump": "AddOriginalAlignmentTagsDump",
           "golden": "crates/gatk-tools/tests/data/add_original_alignment_tags.txt.gz",
-          "why": "16 rows: one fixture with its index, four runs of which three abort, the one output BAM and its index in full, five tag rows read back off that output, and the sequence-name refusal that makes the comma branch dead. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31254191005, and byte for byte what an Apple Silicon laptop produced."
+          "why": "16 rows: one fixture with its index, four runs of which three abort, the one output BAM and its index in full, five tag rows read back off that output, and the sequence-name refusal that makes the comma branch dead. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31254191005, and byte for byte what an Apple Silicon laptop produced. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -662,7 +662,7 @@
         {
           "dump": "PrintDistantMatesDump",
           "golden": "crates/gatk-tools/tests/data/print_distant_mates.txt.gz",
-          "why": "75 rows: the two filter lists, one fixture with its index, six runs with their headers, command lines, output BAMs and indexes in full, the reads read back off every output in the order they were written, the round trip over every fixture read, and undo's refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31512787457, and byte for byte what an Apple Silicon laptop produced."
+          "why": "75 rows: the two filter lists, one fixture with its index, six runs with their headers, command lines, output BAMs and indexes in full, the reads read back off every output in the order they were written, the round trip over every fixture read, and undo's refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31512787457, and byte for byte what an Apple Silicon laptop produced. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -690,7 +690,7 @@
         {
           "dump": "SplitReadsDump",
           "golden": "crates/gatk-tools/tests/data/split_reads.txt.gz",
-          "why": "77 rows: two fixtures with their indexes, ten runs of which three abort, and every file each finishing run left in its output directory in full, indexes and @PG lists included, because which files exist is the measurement. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31514597878, and byte for byte what an Apple Silicon laptop produced twice."
+          "why": "77 rows: two fixtures with their indexes, ten runs of which three abort, and every file each finishing run left in its output directory in full, indexes and @PG lists included, because which files exist is the measurement. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31514597878, and byte for byte what an Apple Silicon laptop produced twice. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -741,7 +741,7 @@
         {
           "dump": "LeftAlignIndelsToolDump",
           "golden": "crates/gatk-tools/tests/data/left_align_indels_tool.txt.gz",
-          "why": "The reference and its index, one fixture with its index, the reference window handed to every read, five runs of which one is refused, the output BAMs and their indexes in full, and every read read back off two of them. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31519030504, and byte for byte what an Apple Silicon laptop produced."
+          "why": "The reference and its index, one fixture with its index, the reference window handed to every read, five runs of which one is refused, the output BAMs and their indexes in full, and every read read back off two of them. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31519030504, and byte for byte what an Apple Silicon laptop produced. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -768,7 +768,7 @@
         {
           "dump": "ClipReadsDump",
           "golden": "crates/gatk-tools/tests/data/clip_reads.txt.gz",
-          "why": "One fixture with its index, fifteen runs covering the three clippers alone and together, all six clipping representations, the adapter tags, the --read filter that names nothing, the length filter and a run with no clipping argument at all. Each run travels as its output BAM and index in full, its header and @PG command line, its statistics file as escaped text, and every read read back off it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31525426341, and byte for byte what an Apple Silicon laptop produced."
+          "why": "One fixture with its index, fifteen runs covering the three clippers alone and together, all six clipping representations, the adapter tags, the --read filter that names nothing, the length filter and a run with no clipping argument at all. Each run travels as its output BAM and index in full, its header and @PG command line, its statistics file as escaped text, and every read read back off it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31525426341, and byte for byte what an Apple Silicon laptop produced. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -796,7 +796,7 @@
         {
           "dump": "TransferReadTagsDump",
           "golden": "crates/gatk-tools/tests/data/transfer_read_tags.txt.gz",
-          "why": "Ten fixtures with no index between them, twelve runs of which six are refused, the output BAMs in full, the header and @PG command line of each, and every read read back off both the inputs and the outputs with the Java class of every tag value beside it, because the finding is a type change that the characters do not show. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31526755049, and byte for byte what an Apple Silicon laptop produced."
+          "why": "Ten fixtures with no index between them, twelve runs of which six are refused, the output BAMs in full, the header and @PG command line of each, and every read read back off both the inputs and the outputs with the Java class of every tag value beside it, because the finding is a type change that the characters do not show. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31526755049, and byte for byte what an Apple Silicon laptop produced. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -852,7 +852,7 @@
         {
           "dump": "PostProcessReadsForRSEMDump",
           "golden": "crates/gatk-tools/tests/data/post_process_reads_for_rsem.txt.gz",
-          "why": "Five fixtures with no index between them, five runs of which four crash or refuse, the surviving output BAM in full with its header and @PG command line, and every read read back off both the input and the output so the reordering and the eight dropped reads are visible as a difference rather than as a state. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31539861672, and byte for byte what an Apple Silicon laptop produced."
+          "why": "Five fixtures with no index between them, five runs of which four crash or refuse, the surviving output BAM in full with its header and @PG command line, and every read read back off both the input and the output so the reordering and the eight dropped reads are visible as a difference rather than as a state. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31539861672, and byte for byte what an Apple Silicon laptop produced. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -1132,7 +1132,7 @@
         {
           "dump": "ApplyBqsrDump",
           "golden": "crates/gatk-tools/tests/data/apply_bqsr.txt.gz",
-          "why": "52 rows: twelve runs of the tool, eleven of which finish, each with its output BAM and its index in full, plus the two input fixtures with their indexes and the two recalibration tables as text, so the port opens the same bytes rather than a rebuilt lookalike. The working directory is relative because the string handed to -I and -O is recorded inside the output BAM's own @PG, where canonicalisation cannot reach; the dump is byte-identical across two runs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31577801679, and byte for byte what an Apple Silicon laptop produced."
+          "why": "52 rows: twelve runs of the tool, eleven of which finish, each with its output BAM and its index in full, plus the two input fixtures with their indexes and the two recalibration tables as text, so the port opens the same bytes rather than a rebuilt lookalike. The working directory is relative because the string handed to -I and -O is recorded inside the output BAM's own @PG, where canonicalisation cannot reach; the dump is byte-identical across two runs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31577801679, and byte for byte what an Apple Silicon laptop produced. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -1239,7 +1239,7 @@
         {
           "dump": "ReadAnonymizerDump",
           "golden": "crates/gatk-tools/tests/data/read_anonymizer.txt.gz",
-          "why": "28 rows: the input BAM with its index, the reference, and seven runs of which six finish, each with its output BAM, its index and its header. The twelve reads cover a deletion that lengthens the read, an insertion that shortens it, a leading and a trailing insertion, a soft clip, an explicit X, an already-= cigar, tags the transform clears, and two reads the default filters drop. The seventh run asks for a reference quality above sixty, which the argument parser refuses. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31591376340, and byte for byte what an Apple Silicon laptop produced."
+          "why": "28 rows: the input BAM with its index, the reference, and seven runs of which six finish, each with its output BAM, its index and its header. The twelve reads cover a deletion that lengthens the read, an insertion that shortens it, a leading and a trailing insertion, a soft clip, an explicit X, an already-= cigar, tags the transform clears, and two reads the default filters drop. The seventh run asks for a reference quality above sixty, which the argument parser refuses. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31591376340, and byte for byte what an Apple Silicon laptop produced. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -2212,7 +2212,7 @@
         {
           "dump": "SplitNCigarReadsDump",
           "golden": "crates/gatk-tools/tests/data/split_n_cigar_reads.txt.gz",
-          "why": "114 rows: seven cigars through the NDN refactor, five input BAMs with their indexes, and ten runs of which nine finish, each with its header, its command line, its output BAM, its index and every record it wrote. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31599678016, and byte for byte what an Apple Silicon laptop produced."
+          "why": "114 rows: seven cigars through the NDN refactor, five input BAMs with their indexes, and ten runs of which nine finish, each with its header, its command line, its output BAM, its index and every record it wrote. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31599678016, and byte for byte what an Apple Silicon laptop produced. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -2237,7 +2237,7 @@
         {
           "dump": "MethylationTypeCallerDump",
           "golden": "crates/gatk-tools/tests/data/methylation_type_caller.txt.gz",
-          "why": "74 rows: two input BAMs with their indexes, the reference bases, and four runs of which three are comparable line by line while the fourth contributes only its masked command-line header. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31601435587, and byte for byte what an Apple Silicon laptop produced."
+          "why": "74 rows: two input BAMs with their indexes, the reference bases, and four runs of which three are comparable line by line while the fourth contributes only its masked command-line header. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31601435587, and byte for byte what an Apple Silicon laptop produced. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -2514,7 +2514,7 @@
         {
           "dump": "RemoveNearbyIndelsDump",
           "golden": "crates/gatk-tools/tests/data/remove_nearby_indels.txt.gz",
-          "why": "102 rows: eight input vcfs and eleven runs of the tool over them, including the same file at the spacing that keeps a pair and the one that drops it, a chain of three indels, a contig boundary, a file ending on an indel, two multi-allelic sites of which one is MIXED and therefore not an indel, and one file where every record is dropped. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31637109094, and byte for byte what an Apple Silicon laptop produced."
+          "why": "102 rows: eight input vcfs and eleven runs of the tool over them, including the same file at the spacing that keeps a pair and the one that drops it, a chain of three indels, a contig boundary, a file ending on an indel, two multi-allelic sites of which one is MIXED and therefore not an indel, and one file where every record is dropped. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31637109094, and byte for byte what an Apple Silicon laptop produced. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -2540,7 +2540,7 @@
         {
           "dump": "UpdateVCFSequenceDictionaryDump",
           "golden": "crates/gatk-tools/tests/data/update_vcf_sequence_dictionary.txt.gz",
-          "why": "71 rows: five input vcfs, four dictionary sources, and eleven runs, of which three write a file and eight refuse, four of those after the header and some records are already on disk. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31681979381, and byte for byte what an Apple Silicon laptop produced."
+          "why": "71 rows: five input vcfs, four dictionary sources, and eleven runs, of which three write a file and eight refuse, four of those after the header and some records are already on disk. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31681979381, and byte for byte what an Apple Silicon laptop produced. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -2638,7 +2638,7 @@
         {
           "dump": "LeftAlignAndTrimVariantsDump",
           "golden": "crates/gatk-tools/tests/data/left_align_and_trim_variants.txt.gz",
-          "why": "128 rows: the two reference contigs, seven input vcfs over a two-contig reference and thirteen runs of the tool, covering the bound between records, a contig boundary, an indel skipped for its length and the same one aligned, splitting, trimming turned off, and two windows too narrow to finish. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31688879823, and byte for byte what an Apple Silicon laptop produced."
+          "why": "128 rows: the two reference contigs, seven input vcfs over a two-contig reference and thirteen runs of the tool, covering the bound between records, a contig boundary, an indel skipped for its length and the same one aligned, splitting, trimming turned off, and two windows too narrow to finish. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31688879823, and byte for byte what an Apple Silicon laptop produced. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -2760,7 +2760,7 @@
         {
           "dump": "VariantFiltrationDump",
           "golden": "crates/gatk-tools/tests/data/variant_filtration.txt.gz",
-          "why": "227 rows: three input vcfs and thirteen runs, covering a site expression and its inversion, two expressions at once, the missing-value flag, genotype filters with and without the no-call replacement, the cluster test at three window sizes, the mask both ways round, and the two different ways an empty filter set is written. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31731234951, and byte for byte what an Apple Silicon laptop produced."
+          "why": "227 rows: three input vcfs and thirteen runs, covering a site expression and its inversion, two expressions at once, the missing-value flag, genotype filters with and without the no-call replacement, the cluster test at three window sizes, the mask both ways round, and the two different ways an empty filter set is written. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31731234951, and byte for byte what an Apple Silicon laptop produced. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -2950,7 +2950,7 @@
         {
           "dump": "SelectVariantsHeaderDump",
           "golden": "crates/gatk-tools/tests/data/select_variants_header.txt.gz",
-          "why": "163 rows: one input over eleven runs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33705117850, and byte for byte what an Apple Silicon laptop produced apart from the one line the dump elides."
+          "why": "163 rows: one input over eleven runs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33705117850, and byte for byte what an Apple Silicon laptop produced apart from the one line the dump elides. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ],
       "expect_rows": 163
@@ -3151,7 +3151,7 @@
         {
           "dump": "AnnotateVcfWithBamDepthDump",
           "golden": "crates/gatk-tools/tests/data/annotate_vcf_with_bam_depth.txt.gz",
-          "why": "54 rows: one BAM with its index, one input VCF and four runs, each output written out line by line with the GATKCommandLine's date masked. The BAM carries four reads over the first site of which one is a duplicate and one vendor-failed, a one-base read on the second, a read covering the first base of a four-base deletion beside one covering all of it, and a read at the block that carries END. The VCF carries a record already declaring BAM_DEPTH, in both its header and its INFO column. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31782370221."
+          "why": "54 rows: one BAM with its index, one input VCF and four runs, each output written out line by line with the GATKCommandLine's date masked. The BAM carries four reads over the first site of which one is a duplicate and one vendor-failed, a one-base read on the second, a read covering the first base of a four-base deletion beside one covering all of it, and a read at the block that carries END. The VCF carries a record already declaring BAM_DEPTH, in both its header and its INFO column. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31782370221. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -3323,7 +3323,7 @@
         {
           "dump": "ConcordanceAnnotatedVcfsDump",
           "golden": "crates/gatk-tools/tests/data/concordance_annotated_vcfs.txt.gz",
-          "why": "58 rows: two VCFs and three runs. The inputs carry one record of every state that writes anything, each pair differing in its ID, its QUAL and its INFO so that which side reached which file is visible, and the two headers differ in their sample and in the one INFO key each declares. The first run asks for all three outputs and the other two ask for one each, which is what shows that the two header-building orders produce the same lines. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31812968769."
+          "why": "58 rows: two VCFs and three runs. The inputs carry one record of every state that writes anything, each pair differing in its ID, its QUAL and its INFO so that which side reached which file is visible, and the two headers differ in their sample and in the one INFO key each declares. The first run asks for all three outputs and the other two ask for one each, which is what shows that the two header-building orders produce the same lines. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31812968769. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -5210,6 +5210,31 @@
       ]
     },
     {
+      "id": "convert-counts-to-depth-file",
+      "status": "oracle-backed",
+      "title": "A counts file rewritten as depth evidence",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "ConvertCountsToDepthFile"
+      ],
+      "why": "New in GATK 4.7.0.0 (#811). THE COORDINATES CHANGE BASE, a one-based count written zero-based. THE HEADER IS ONE COLUMN LINE NAMING ONE SAMPLE, --sample-name or -n when given and the read group's SM otherwise. THE TOOL'S OWN 'Sample name is not provided' IS UNREACHABLE: the counts codec refuses a header without a sample while the reader is opened, wrapped twice, and --sample-name cannot rescue it; NO READ GROUP IS REFUSED THE SAME WAY. A .gz NAME IS BGZF AT --compression-level WITH A TABIX INDEX over the counts header's dictionary, and a plain name ignores the level. THE LEVEL IS RANGE-CHECKED BY THE PARSER. AN OUTPUT NAME NO CODEC CLAIMS IS THE FINDER'S REFUSAL, AND ONE CLAIMED BY ANOTHER FEATURE TYPE IS THE TOOL'S OWN BadInput. -L SUBSETS THE RECORDS AND NEEDS --sequence-dictionary, the counts header's dictionary being one the engine never consults. AND ANOTHER FEATURE TYPE, OR A MISSING INPUT, IS REFUSED BEFORE THE TOOL RUNS.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "out\tplain=#Chr\\tStart\\tEnd\\tgamma\\nchr1\\t0\\t100\\t31",
+        "tbi\tgz=",
+        "error\twrong-output-type\t"
+      ],
+      "cases": [
+        {
+          "dump": "ConvertCountsToDepthFileDump",
+          "golden": "crates/gatk-tools/tests/data/convert_counts_to_depth_file.txt.gz",
+          "why": "Nineteen runs over one counts file of four counts on two contigs, its header carrying a read group with SM, a @PG and a @CO: a text output plain, with --sample-name, with -n, with a level it never reads, and from a file of no counts; a .gz output at the default level, at 1, at 9 and empty, each with its tabix index; a level of 10; -L without --sequence-dictionary, and three intervals with it, two of which one count overlaps; a read group with no SM, with and without --sample-name, and no read group at all; an output named for another feature type and one no codec claims; and an .rd.txt input and a missing one. Frozen from the candidate artefact of run 42922912931."
+        }
+      ]
+    },
+    {
       "id": "site-depth-to-baf",
       "status": "oracle-backed",
       "title": "Allele depths turned into B-allele fractions",
@@ -5543,7 +5568,7 @@
         {
           "dump": "ComposeSTRTableFileDump",
           "golden": "crates/gatk-tools/tests/data/compose_str_table.txt.gz",
-          "why": "Five runs over two contigs carrying a homopolymer, a dinucleotide repeat, a trinucleotide repeat, an N, a second homopolymer, a four-base repeat and a tail: the default decimation table, no decimation at all, a maximum period of two, a maximum repeat of three, and an interval that starts and ends inside repeats. Each run is reported by its whole sites table and its whole summary. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32665939992, and byte for byte what this laptop produced."
+          "why": "Five runs over two contigs carrying a homopolymer, a dinucleotide repeat, a trinucleotide repeat, an N, a second homopolymer, a four-base repeat and a tail: the default decimation table, no decimation at all, a maximum period of two, a maximum repeat of three, and an interval that starts and ends inside repeats. Each run is reported by its whole sites table and its whole summary. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32665939992, and byte for byte what this laptop produced. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -5563,7 +5588,7 @@
         {
           "dump": "CRAMIssue8768DetectorDump",
           "golden": "crates/gatk-tools/tests/data/cram_issue_8768.txt.gz",
-          "why": "Nine runs over four CRAMs written three reads to a container: the default report, the TSV, --verbose, a threshold under and over the measured bad rate, --echo-to-stdout, a CRAM no container of which opens at position 1, a two-slice container the tool calls foreign, and a CRAM holding nothing but its EOF container. Every container's metadata and its base and mismatch counts are reported beside the reports, so the port reproduces the report from what the analyzer had in hand rather than from CRAM bytes. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32947717580, and byte for byte what this laptop produced."
+          "why": "Nine runs over four CRAMs written three reads to a container: the default report, the TSV, --verbose, a threshold under and over the measured bad rate, --echo-to-stdout, a CRAM no container of which opens at position 1, a two-slice container the tool calls foreign, and a CRAM holding nothing but its EOF container. Every container's metadata and its base and mismatch counts are reported beside the reports, so the port reproduces the report from what the analyzer had in hand rather than from CRAM bytes. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32947717580, and byte for byte what this laptop produced. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -5643,7 +5668,7 @@
         {
           "dump": "SVStratifyDump",
           "golden": "crates/gatk-tools/tests/data/sv_stratify.txt.gz",
-          "why": "Seven structural variants over two reference tracks and six strata, run nine ways and refused eleven: the default, two overlap fractions, two required breakpoints, multiple matches allowed and refused, split output both ways, and every configuration and argument refusal the engine has. The tracks, the configuration tables and the whole input VCF are reported beside the outputs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32981957600, and byte for byte what this laptop produced."
+          "why": "Seven structural variants over two reference tracks and six strata, run nine ways and refused eleven: the default, two overlap fractions, two required breakpoints, multiple matches allowed and refused, split output both ways, and every configuration and argument refusal the engine has. The tracks, the configuration tables and the whole input VCF are reported beside the outputs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32981957600, and byte for byte what this laptop produced. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -5743,7 +5768,7 @@
         {
           "dump": "GroupedSVClusterDump",
           "golden": "crates/gatk-tools/tests/data/grouped_sv_cluster.txt.gz",
-          "why": "Seven records over three strata, run two ways and refused five: the two algorithms, a clustering table with a row too few, one whose row is renamed, an empty stratification table, two strata a single record matches, and a clustering table with an extra column. Both configuration tables and the whole input VCF are reported beside the outputs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33021085864, and byte for byte what this laptop produced."
+          "why": "Seven records over three strata, run two ways and refused five: the two algorithms, a clustering table with a row too few, one whose row is renamed, an empty stratification table, two strata a single record matches, and a clustering table with an extra column. Both configuration tables and the whole input VCF are reported beside the outputs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33021085864, and byte for byte what this laptop produced. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -5755,7 +5780,7 @@
       "tools": [
         "SVConcordance"
       ],
-      "why": "EACH EVAL RECORD TAKES ONE TRUTH RECORD rather than a cluster, the closest by total breakend distance, and THE TIEBREAKER IS THE CLOSEST SINGLE BREAKEND: two truth records at the same total distance are separated by the smaller of their two ends. THE CNV OVERRIDE IS ASYMMETRIC: its comment says CNV/DEL matching is not allowed, and `(aType == CNV || bType != CNV) && aType != bType` only refuses it when the CNV is the EVAL record, so an eval DEL against a truth CNV falls through to the base linkage and matches. AN UNMATCHED EVAL RECORD IS STILL WRITTEN, as a false positive with its truth allele counts set to nothing. A MULTIALLELIC CNV IS SCORED ON COPY STATE INSTEAD and gets no genotype concordance at all. CONCORDANCE IS COMPUTED ON THE COMMON SAMPLES ONLY. A TRUTH RECORD CARRYING AC/AF/AN HAS THEM COPIED, and one without has them RECOUNTED FROM THE EVAL RECORD'S ALT ALLELES over the truth genotypes. --do-not-sort CHANGES NOTHING FOR AN IN-ORDER INPUT, because the buffer it removes sorts by position and the records complete in the order they were added, so the flag is a memory setting rather than a behaviour. AND THE SEQUENCE DICTIONARY IS REQUIRED FROM THE ARGUMENT rather than from either VCF, because the VCFs' own dictionaries are sometimes out of order.",
+      "why": "EACH EVAL RECORD TAKES ONE TRUTH RECORD rather than a cluster, the closest by total breakend distance, and THE TIEBREAKER IS THE CLOSEST SINGLE BREAKEND: two truth records at the same total distance are separated by the smaller of their two ends. THE CNV OVERRIDE IS ASYMMETRIC: its comment says CNV/DEL matching is not allowed, and `(aType == CNV || bType != CNV) && aType != bType` only refuses it when the CNV is the EVAL record, so an eval DEL against a truth CNV falls through to the base linkage and matches. AN UNMATCHED EVAL RECORD IS STILL WRITTEN, as a false positive with its truth allele counts set to nothing. A MULTIALLELIC CNV IS SCORED ON COPY STATE INSTEAD and gets no genotype concordance at all. CONCORDANCE IS COMPUTED ON THE COMMON SAMPLES ONLY. A TRUTH RECORD CARRYING AC/AF/AN HAS THEM COPIED, and one without has them RECOUNTED FROM THE EVAL RECORD'S ALT ALLELES over the truth genotypes. --do-not-sort IS GONE SINCE 4.7.0.0 and refused as an unknown option: the output is always sorted, by a SortingCollection. A STRATUM THAT FINDS A MATCH IS WRITTEN OVER THE DEFAULT GROUP, one that finds none gives way to it, and STRAT names every group either way; --stratify-config and --clustering-config come together or not at all. AND THE SEQUENCE DICTIONARY IS REQUIRED FROM THE ARGUMENT rather than from either VCF, because the VCFs' own dictionaries are sometimes out of order.",
       "compare": {
         "mode": "lines"
       },
@@ -5763,7 +5788,7 @@
         {
           "dump": "SVConcordanceDump",
           "golden": "crates/gatk-tools/tests/data/sv_concordance.txt.gz",
-          "why": "Nine eval records against nine truth records over one contig, with one eval-only and one truth-only sample so the common set is smaller than either, run three ways and refused twice: the default, --do-not-sort, a reciprocal overlap of 0.999 that breaks exactly one match, a run with no --sequence-dictionary, and an eval VCF out of position order. Both input VCFs are reported beside the outputs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33023371845, and byte for byte what this laptop produced."
+          "why": "Nine eval records against nine truth records over one contig, with one eval-only and one truth-only sample so the common set is smaller than either, run three ways and refused twice: the default, --do-not-sort, a reciprocal overlap of 0.999 that breaks exactly one match, a run with no --sequence-dictionary, and an eval VCF out of position order. Both input VCFs are reported beside the outputs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33023371845, and byte for byte what this laptop produced. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42922912931."
         }
       ]
     },
@@ -6243,7 +6268,7 @@
         {
           "dump": "CalibrateDragstrModelDump",
           "golden": "crates/gatk-tools/tests/data/calibrate_dragstr_model.txt.gz",
-          "why": "Ten runs over one reference of sixty repeat blocks: the estimation forced and not, two table shapes, two hyper-parameters, the parallel path, both arguments with a minimum, and an STR table composed for another reference."
+          "why": "Ten runs over one reference of sixty repeat blocks: the estimation forced and not, two table shapes, two hyper-parameters, the parallel path, both arguments with a minimum, and an STR table composed for another reference. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -6520,7 +6545,7 @@
         {
           "dump": "MainCatalogueDump",
           "golden": "crates/gatk-tools/tests/data/main_catalogue.txt.gz",
-          "why": "The whole catalogue, sorted, plus ten queries over it: four near misses, two prefixes, a substring, a name far from everything, a deprecated name and a Picard tool."
+          "why": "The whole catalogue, sorted, plus ten queries over it: four near misses, two prefixes, a substring, a name far from everything, a deprecated name and a Picard tool. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -6560,7 +6585,7 @@
         {
           "dump": "MainUsageDump",
           "golden": "crates/gatk-tools/tests/data/main_usage.txt.gz",
-          "why": "Two runs, four streams: the listing on stdout with the other stream empty, and the listing on stderr with stdout empty."
+          "why": "Two runs, four streams: the listing on stdout with the other stream empty, and the listing on stderr with stdout empty. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -6641,7 +6666,7 @@
         {
           "dump": "ExpandedCommandLineDump",
           "golden": "crates/gatk-cli/tests/data/expanded_command_line.txt.gz",
-          "why": "Seven command lines over PrintReads covering each rule, and one over each of the other four declared tools so the opening name and the defaults behind it are measured rather than assumed to follow one pattern."
+          "why": "Seven command lines over PrintReads covering each rule, and one over each of the other four declared tools so the opening name and the defaults behind it are measured rather than assumed to follow one pattern. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -6681,7 +6706,7 @@
         {
           "dump": "MainEntryDump",
           "golden": "crates/gatk-tools/tests/data/main_entry.txt.gz",
-          "why": "Thirteen cases: no arguments, `-h`, `--help`, a tool followed by `-h`, three spellings of the version, an unknown name, a deprecated one, a GATK tool and a Picard tool each given nothing, the two handlers on their own, and the version printed to a stream that is not System.out."
+          "why": "Thirteen cases: no arguments, `-h`, `--help`, a tool followed by `-h`, three spellings of the version, an unknown name, a deprecated one, a GATK tool and a Picard tool each given nothing, the two handlers on their own, and the version printed to a stream that is not System.out. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -6767,7 +6792,7 @@
         {
           "dump": "ToolArgumentDeclarationDump",
           "golden": "crates/gatk-tools/tests/data/tool_declarations.txt.gz",
-          "why": "Frozen from the candidate artefact of run 41352770492, with the fourteenth Spark brick (X.1): the discovery and assembly tools, HtsgetReader, BWA and PathSeq."
+          "why": "Identical to the candidate artefact of run 42795659080, with the 17 Picard tools GATK bundles (#1415). Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42922912931."
         }
       ]
     },
@@ -6789,7 +6814,7 @@
         {
           "dump": "UsageTextDump",
           "golden": "crates/gatk-tools/tests/data/usage_text.txt.gz",
-          "why": "Frozen from the candidate artefact of run 41201436568, with the tenth Spark brick (X.1): CollectAllelicCountsSpark, which is UNDOCUMENTED. Frozen from the candidate artefact of run 36808605640 on main, byte for byte the local dump, with `StructuralVariantDiscoverer`, which is UNDOCUMENTED. Frozen from the candidate artefact of run 35839898955 with the twenty-seven tools of #1225, byte for byte what this laptop produced. Re-measured with `AddFlowBaseQuality`, `CRAMIssue8768Detector`, `CollectF1R2Counts` and `SplitCRAM`, all UNDOCUMENTED. Frozen from the candidate artefact of run 35812512951 with `VCFComparator` and `VariantAnnotator`, both UNDOCUMENTED. Frozen from the candidate artefact of run 35797503225 with eight more UNDOCUMENTED walkers, whose summaries only this golden carries. Frozen from the candidate artefact of run 35785932792 with seven more UNDOCUMENTED tools, the gathers and copy-number utilities, whose summaries only this golden carries. Frozen from the candidate artefact of run 35772745546 with `CondenseDepthEvidence` and `PrintSVEvidence`, both UNDOCUMENTED, so this golden is the only place their summaries come from and the declarations generator refuses them without it. Re-measured with `PrintFileDiagnostics`, which is UNDOCUMENTED and prints an EXPERIMENTAL banner above its usage line, in the pinned container on a real x86-64 runner, as the candidate artefact of run 34332537404. Re-measured with `AddOriginalAlignmentTags`, which is UNDOCUMENTED and a read walker: the inventory carries a summary only for a documented tool, so this golden is where the declarations generator reads one, and its usage is the first in this dump to print an EXPERIMENTAL banner above the usage line, which is why the summary is read from between the blank line and `Version:` and not from a fixed offset. In the pinned container on a real x86-64 runner, as the candidate artefact of run 34260197895. Re-measured with `CompareIntervalLists`, which is UNDOCUMENTED: the inventory carries a summary only for a documented tool, so this golden is where the declarations generator reads it. Three tools' whole usage text, its line count, and whether -h and --help agree."
+          "why": "Frozen from the candidate artefact of run 41201436568, with the tenth Spark brick (X.1): CollectAllelicCountsSpark, which is UNDOCUMENTED. Frozen from the candidate artefact of run 36808605640 on main, byte for byte the local dump, with `StructuralVariantDiscoverer`, which is UNDOCUMENTED. Frozen from the candidate artefact of run 35839898955 with the twenty-seven tools of #1225, byte for byte what this laptop produced. Re-measured with `AddFlowBaseQuality`, `CRAMIssue8768Detector`, `CollectF1R2Counts` and `SplitCRAM`, all UNDOCUMENTED. Frozen from the candidate artefact of run 35812512951 with `VCFComparator` and `VariantAnnotator`, both UNDOCUMENTED. Frozen from the candidate artefact of run 35797503225 with eight more UNDOCUMENTED walkers, whose summaries only this golden carries. Frozen from the candidate artefact of run 35785932792 with seven more UNDOCUMENTED tools, the gathers and copy-number utilities, whose summaries only this golden carries. Frozen from the candidate artefact of run 35772745546 with `CondenseDepthEvidence` and `PrintSVEvidence`, both UNDOCUMENTED, so this golden is the only place their summaries come from and the declarations generator refuses them without it. Re-measured with `PrintFileDiagnostics`, which is UNDOCUMENTED and prints an EXPERIMENTAL banner above its usage line, in the pinned container on a real x86-64 runner, as the candidate artefact of run 34332537404. Re-measured with `AddOriginalAlignmentTags`, which is UNDOCUMENTED and a read walker: the inventory carries a summary only for a documented tool, so this golden is where the declarations generator reads one, and its usage is the first in this dump to print an EXPERIMENTAL banner above the usage line, which is why the summary is read from between the blank line and `Version:` and not from a fixed offset. In the pinned container on a real x86-64 runner, as the candidate artefact of run 34260197895. Re-measured with `CompareIntervalLists`, which is UNDOCUMENTED: the inventory carries a summary only for a documented tool, so this golden is where the declarations generator reads it. Three tools' whole usage text, its line count, and whether -h and --help agree. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42922912931."
         }
       ]
     },
@@ -6835,7 +6860,7 @@
         {
           "dump": "ToolArgumentEnumDump",
           "golden": "crates/gatk-tools/tests/data/tool_argument_enums.txt.gz",
-          "why": "Frozen from the candidate artefact of run 41352770492, with the fourteenth Spark brick (X.1): the discovery and assembly tools, HtsgetReader, BWA and PathSeq."
+          "why": "Identical to the candidate artefact of run 42795659080, with the 17 Picard tools GATK bundles (#1415). Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42922912931."
         }
       ]
     },
@@ -8319,7 +8344,7 @@
         {
           "dump": "SparkWalkersDump",
           "golden": "crates/gatk-tools/tests/data/spark_walkers.txt.gz",
-          "why": "Frozen from the candidate artefact of run 41352770492, with the fourteenth Spark brick (X.1): the discovery and assembly tools, HtsgetReader, BWA and PathSeq."
+          "why": "Frozen from the candidate artefact of run 41352770492, with the fourteenth Spark brick (X.1): the discovery and assembly tools, HtsgetReader, BWA and PathSeq. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ],
       "$java_props_why": "GATK's jar carries runtimeAddOpens in its manifest, which only java -jar honours; the dump runs from the classpath, so Spark's StorageUtils needs the same opens passed by hand. Level 2 is what GATKConfig gives a real gatk invocation and instanceMain never sees (#1032)."
@@ -8388,7 +8413,7 @@
         {
           "dump": "GenomicsDBImportDump",
           "golden": "crates/gatk-tools/tests/data/genomicsdb_import.txt.gz",
-          "why": "Frozen from the candidate artefact of its first run."
+          "why": "Frozen from the candidate artefact of its first run. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -8491,7 +8516,7 @@
         {
           "dump": "SvEvidenceDump",
           "golden": "crates/gatk-tools/tests/data/sv_evidence.txt.gz",
-          "why": "Pending the first real x86-64 CI run."
+          "why": "Pending the first real x86-64 CI run. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -8570,7 +8595,7 @@
         {
           "dump": "SvPartitionsDump",
           "golden": "crates/gatk-tools/tests/data/sv_partitions.txt.gz",
-          "why": "Frozen from the candidate artefact of run 41547143144."
+          "why": "Frozen from the candidate artefact of run 41547143144. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42877040393."
         }
       ]
     },
@@ -8579,7 +8604,7 @@
       "status": "oracle-backed",
       "title": "NVScoreVariants: the printed scores and the VCF of both models, in GATK's own image",
       "harness": "tools/nvscorevariants",
-      "python_image": "broadinstitute/gatk@sha256:71b17ee42d149e8ec112603f5305c873ab60d93949ef8bb62a4fff85427f56fb",
+      "python_image": "broadinstitute/gatk@sha256:7da5cf586e1c463f0c72908f9ac7dec8c29e37912c82d6e7b3c250f27fcb3891",
       "tools": [
         "NVScoreVariants"
       ],
@@ -8604,7 +8629,7 @@
         "TrainVariantAnnotationsModel",
         "ScoreVariantAnnotations"
       ],
-      "image": "broadinstitute/gatk:4.6.2.0",
+      "image": "broadinstitute/gatk:4.7.0.0",
       "command": "bash /harness/vets_dump.sh",
       "why": "The pinned image has no python, so the only image in which the reference gets past its interpreter is the publisher's own. EVERY NUMBER HERE IS scikit-learn 1.3.2's AND numpy 1.26.2's: an MT19937, a tree builder over float32 with a seeded per-tree generator, and a pow and a log that are glibc's on a CPU without AVX-512. A CPU WITH AVX-512 TAKES NUMPY'S OTHER LOOPS, so the dump sets NPY_DISABLE_CPU_FEATURES to the AVX-512 family and the reference computes on any runner what it computes on an AVX2 CPU; the dump's comment line shows which features numpy kept. THE SCORER IS COMPARED WITHOUT ITS FRAMES AND ITS NAME, because the lambda's code object names the temporary file the script ran from and that is random in every run; the rest of the pickle is a function of the fit. THE SCORES JAVA WRITES HOLD THE TIME, so their doubles are what is compared.",
       "compare": {

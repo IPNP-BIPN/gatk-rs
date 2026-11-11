@@ -5,7 +5,7 @@
  * The match is not the clustering of SVCluster: it is a single closest truth record per eval
  * record, chosen by a chain of tiebreakers, under a linkage whose one override is asymmetric.
  *
- * Nine behaviours this is built to catch.
+ * Ten behaviours this is built to catch.
  *
  *   - EACH EVAL RECORD TAKES ONE TRUTH RECORD, not a cluster, and the one it takes is the closest
  *     by TOTAL breakend distance;
@@ -23,9 +23,11 @@
  *     the other is annotated on neither side;
  *   - A TRUTH RECORD THAT CARRIES AC/AF/AN HAS THEM COPIED, and one that does not has them
  *     RECOUNTED FROM THE EVAL RECORD'S ALT ALLELES over the truth genotypes;
- *   - --do-not-sort CHANGES NOTHING FOR AN IN-ORDER INPUT: the output buffer it removes sorts by
- *     position, and the records complete in the order they were added, so the flag only drops the
- *     index. It is measured here as the control that shows that;
+ *   - --do-not-sort IS GONE since 4.7.0.0, refused as an unknown option: the output is always
+ *     sorted, by a SortingCollection;
+ *   - A STRATUM THAT FINDS A MATCH IS WRITTEN OVER THE DEFAULT GROUP, one that finds none gives way
+ *     to it, and STRAT names every group either way. The two configurations come together or not
+ *     at all;
  *   - AND THE SEQUENCE DICTIONARY IS REQUIRED, from --sequence-dictionary rather than from either
  *     VCF, because the VCFs' own dictionaries are sometimes out of order.
  *
@@ -182,6 +184,27 @@ public class SVConcordanceDump {
                 "--eval", evalPath.toString(),
                 "--truth", truthPath.toString(),
                 "-O", dir.resolve("out-no-dictionary.vcf").toString()));
+
+        // Every deletion in one stratum whose own linkage asks for 0.999 overlap, as overlap-high
+        // does: the tie finds nothing there and is written with the default group's match, and
+        // every other record with its stratum's, which is the same truth record.
+        final Path strata = write(dir, "strata.tsv", String.join("\n",
+                "NAME\tSVTYPE\tMIN_SIZE\tMAX_SIZE\tTRACKS",
+                "DEL_tight\tDEL\t-1\t-1\tNULL",
+                ""));
+        final Path clustering = write(dir, "clustering.tsv", String.join("\n",
+                "NAME\tRECIPROCAL_OVERLAP\tSIZE_SIMILARITY\tBREAKEND_WINDOW\tSAMPLE_OVERLAP",
+                "DEL_tight\t0.999\t0\t500\t0",
+                ""));
+        run(dir, "stratified", evalPath, truthPath, dict, List.of(
+                "--stratify-config", strata.toString(),
+                "--clustering-config", clustering.toString()));
+        // One configuration without the other.
+        run(dir, "stratify-alone", evalPath, truthPath, dict, List.of(
+                "--stratify-config", strata.toString()));
+        // The sorting buffer refuses to hold nothing in memory.
+        run(dir, "no-records-in-ram", evalPath, truthPath, dict, List.of(
+                "--max-records-in-ram", "0"));
 
         // An eval VCF whose records are not in position order, which the finder refuses.
         final List<String> unsortedLines = header(EVAL_SAMPLES);

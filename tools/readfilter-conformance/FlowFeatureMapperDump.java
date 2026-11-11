@@ -215,7 +215,7 @@ public class FlowFeatureMapperDump {
         try (final htsjdk.samtools.SamReader reader =
                      htsjdk.samtools.SamReaderFactory.makeDefault().open(bam.toFile())) {
             for (final SAMRecord record : reader) {
-                text.append(record.getSAMString());
+                text.append(PrintReadsDump.samLine(record));
             }
         }
         return text.toString();

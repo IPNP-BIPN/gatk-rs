@@ -492,9 +492,9 @@
       "accepted": 17,
       "rejected": 2,
       "distinct_outputs": 16,
-      "matched": 12,
+      "matched": 19,
       "t": 2,
-      "share": 0.632
+      "share": 1.0
     },
     "ExtractOriginalAlignmentRecordsByNameSpark": {
       "rows": 22,
@@ -1717,6 +1717,159 @@
       "rejected": 13,
       "distinct_outputs": 24,
       "matched": 38,
+      "t": 2,
+      "share": 1.0
+    },
+    "AddCommentsToBam": {
+      "rows": 14,
+      "accepted": 11,
+      "rejected": 3,
+      "distinct_outputs": 9,
+      "matched": 14,
+      "t": 2,
+      "share": 1.0
+    },
+    "BuildBamIndex": {
+      "rows": 18,
+      "accepted": 9,
+      "rejected": 9,
+      "distinct_outputs": 3,
+      "matched": 18,
+      "t": 2,
+      "share": 1.0
+    },
+    "CheckTerminatorBlock": {
+      "rows": 12,
+      "accepted": 6,
+      "rejected": 6,
+      "distinct_outputs": 2,
+      "matched": 12,
+      "t": 2,
+      "share": 1.0
+    },
+    "FilterVcf": {
+      "rows": 20,
+      "accepted": 12,
+      "rejected": 8,
+      "distinct_outputs": 11,
+      "matched": 7,
+      "t": 2,
+      "share": 0.35
+    },
+    "FixVcfHeader": {
+      "rows": 21,
+      "accepted": 9,
+      "rejected": 12,
+      "distinct_outputs": 7,
+      "matched": 20,
+      "t": 2,
+      "share": 0.952
+    },
+    "GatherBamFiles": {
+      "rows": 11,
+      "accepted": 11,
+      "rejected": 0,
+      "distinct_outputs": 8,
+      "matched": 11,
+      "t": 2,
+      "share": 1.0
+    },
+    "GatherVcfs": {
+      "rows": 34,
+      "accepted": 16,
+      "rejected": 18,
+      "distinct_outputs": 10,
+      "matched": 34,
+      "t": 2,
+      "share": 1.0
+    },
+    "MakeSitesOnlyVcf": {
+      "rows": 16,
+      "accepted": 13,
+      "rejected": 3,
+      "distinct_outputs": 7,
+      "matched": 7,
+      "t": 2,
+      "share": 0.438
+    },
+    "MergeVcfs": {
+      "rows": 27,
+      "accepted": 14,
+      "rejected": 13,
+      "distinct_outputs": 13,
+      "matched": 27,
+      "t": 2,
+      "share": 1.0
+    },
+    "RenameSampleInVcf": {
+      "rows": 15,
+      "accepted": 8,
+      "rejected": 7,
+      "distinct_outputs": 4,
+      "matched": 11,
+      "t": 2,
+      "share": 0.733
+    },
+    "SetNmAndUqTags": {
+      "rows": 16,
+      "accepted": 10,
+      "rejected": 6,
+      "distinct_outputs": 9,
+      "matched": 16,
+      "t": 2,
+      "share": 1.0
+    },
+    "SetNmMdAndUqTags": {
+      "rows": 16,
+      "accepted": 10,
+      "rejected": 6,
+      "distinct_outputs": 9,
+      "matched": 16,
+      "t": 2,
+      "share": 1.0
+    },
+    "SortVcf": {
+      "rows": 16,
+      "accepted": 11,
+      "rejected": 5,
+      "distinct_outputs": 7,
+      "matched": 16,
+      "t": 2,
+      "share": 1.0
+    },
+    "SplitVcfs": {
+      "rows": 26,
+      "accepted": 11,
+      "rejected": 15,
+      "distinct_outputs": 11,
+      "matched": 21,
+      "t": 2,
+      "share": 0.808
+    },
+    "UpdateVcfSequenceDictionary": {
+      "rows": 18,
+      "accepted": 14,
+      "rejected": 4,
+      "distinct_outputs": 8,
+      "matched": 8,
+      "t": 2,
+      "share": 0.444
+    },
+    "VcfFormatConverter": {
+      "rows": 17,
+      "accepted": 8,
+      "rejected": 9,
+      "distinct_outputs": 7,
+      "matched": 16,
+      "t": 2,
+      "share": 0.941
+    },
+    "VcfToIntervalList": {
+      "rows": 12,
+      "accepted": 8,
+      "rejected": 4,
+      "distinct_outputs": 5,
+      "matched": 12,
       "t": 2,
       "share": 1.0
     }

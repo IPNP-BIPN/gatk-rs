@@ -3,9 +3,9 @@
   "origin": "gatk",
   "t": 2,
   "numeric_policy": "strict",
-  "arguments_total": 64,
+  "arguments_total": 65,
   "arguments_in_array": 41,
-  "arguments_excluded": 23,
+  "arguments_excluded": 24,
   "excluded": [
     {
       "argument": "--arguments_file",
@@ -76,6 +76,13 @@
       "reason": "only one value available (fixture[0])",
       "held_at": "0",
       "source": "fixture"
+    },
+    {
+      "argument": "--output-cram-version",
+      "type": "String",
+      "reason": "only one value available (default)",
+      "held_at": "3.1",
+      "source": "default"
     },
     {
       "argument": "--output-shard-tmp-dir",

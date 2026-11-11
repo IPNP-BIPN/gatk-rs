@@ -33,8 +33,8 @@ jobs:
       - name: Build the oracle image
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
-          docker build --platform linux/amd64 -t gatk-rs-oracle:4.6.2.0 tools/oracle
-          docker save gatk-rs-oracle:4.6.2.0 -o /tmp/oracle-image.tar
+          docker build --platform linux/amd64 -t gatk-rs-oracle:4.7.0.0 tools/oracle
+          docker save gatk-rs-oracle:4.7.0.0 -o /tmp/oracle-image.tar
 
   measure:
     name: "measure ${{ matrix.shard }}/8"

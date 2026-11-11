@@ -37,7 +37,7 @@
 
 use htsjdk_vcf::comparator::VariantContextComparator;
 use htsjdk_vcf::header::{HeaderLine, VcfHeader};
-use htsjdk_vcf::reader::read_vcf;
+use htsjdk_vcf::reader::{read_vcf_with, GenotypeParsing};
 use htsjdk_vcf::variant::VariantContext;
 use htsjdk_vcf::vcf_file::write_vcf;
 
@@ -274,7 +274,8 @@ struct Shard {
 }
 
 fn read_shard(input: &Input) -> Result<Shard, Failure> {
-    match read_vcf(input.text) {
+    // Gathering never looks at a sample column, so it never parses one, as `VCFFileReader` does.
+    match read_vcf_with(input.text, GenotypeParsing::Deferred) {
         Ok(file) => Ok(Shard {
             path: input.path.to_string(),
             header: file.header,
@@ -318,11 +319,13 @@ fn check_and_reorder(shards: Vec<Shard>, args: &Arguments) -> Result<Vec<Shard>,
     let mut last: Option<(&VariantContext, &str)> = None;
     for shard in &shards {
         match dictionary(&shard.header) {
+            // `assertSameDictionary(null)` dereferences `that.mSequences`: a `RuntimeException`,
+            // which the try catches.
             None => {
-                return Err(Failure::Thrown {
-                    class: "java.lang.AssertionError".to_string(),
-                    message: assert_same_dictionary(&expected_dictionary, &[])
-                        .expect_err("a dictionary against nothing"),
+                return Err(Failure::Exit {
+                    class: "java.lang.NullPointerException".to_string(),
+                    message: "Cannot read field \"mSequences\" because \"that\" is null"
+                        .to_string(),
                 })
             }
             Some(found) => {
@@ -445,4 +448,18 @@ pub fn gather(inputs: &[Input], args: &Arguments) -> Result<String, Failure> {
 
     let shards = check_and_reorder(shards, args)?;
     gather_conventionally(&shards, args)
+}
+
+/// `assertSameSamplesAndValidOrdering` alone: the paths in the order they will be gathered, for
+/// the block copying path, which checks the inputs exactly as the conventional one does and then
+/// copies their bytes rather than their records.
+pub fn checked_order(inputs: &[Input], args: &Arguments) -> Result<Vec<String>, Failure> {
+    let shards: Vec<Shard> = inputs
+        .iter()
+        .map(read_shard)
+        .collect::<Result<Vec<Shard>, Failure>>()?;
+    Ok(check_and_reorder(shards, args)?
+        .into_iter()
+        .map(|shard| shard.path)
+        .collect())
 }

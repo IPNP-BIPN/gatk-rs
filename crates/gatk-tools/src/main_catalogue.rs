@@ -5,14 +5,14 @@
 //! `org.broadinstitute.hellbender` and `picard` packages, keeping the instantiable classes that
 //! carry the annotation and dropping the two the reference excludes by name.
 //!
-//! There are 331 of them, where the CLI documents 311 tools: twenty names resolve that no
+//! There are 332 of them, where the CLI documents 312 tools: twenty names resolve that no
 //! inventory of the documentation names. A deprecated tool is not here at all, which is why its
 //! name reaches the suggestion search and the deprecation registry has to answer first.
 //!
-//! Ported from `org.broadinstitute.hellbender.Main` in GATK 4.6.2.0.
+//! Ported from `org.broadinstitute.hellbender.Main` in GATK 4.7.0.0.
 
 /// Every name the dispatcher resolves, sorted.
-pub const CATALOGUE: [&str; 331] = [
+pub const CATALOGUE: [&str; 332] = [
     "ASEReadCounter",
     "AccumulateQualityYieldMetrics",
     "AccumulateVariantCallingMetrics",
@@ -112,6 +112,7 @@ pub const CATALOGUE: [&str; 331] = [
     "ComposeSTRTableFile",
     "Concordance",
     "CondenseDepthEvidence",
+    "ConvertCountsToDepthFile",
     "ConvertHaplotypeDatabaseToVcf",
     "ConvertHeaderlessHadoopBamShardToBam",
     "ConvertSequencingArtifactToOxoG",

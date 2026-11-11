@@ -120,9 +120,9 @@ pub fn index_feature_file(parser: &Parser) -> Outcome {
         }
         _ => index_feature_file::build(&text, &source, &input).map_err(refused)?,
     };
-    std::fs::write(&name, index).map_err(|error| {
-        Thrown::non_user(PORT_FAILURE, format!("could not write {name}: {error}"))
-    })?;
+    // `index.write(indexPath)`, whose `IOException` becomes this user error.
+    std::fs::write(&name, index)
+        .map_err(|_| Thrown::user(format!("Could not write index to file {name}")))?;
     Ok(Some(name))
 }
 
@@ -638,7 +638,7 @@ fn master_dictionary(parser: &Parser) -> Result<Option<SamHeader>, Thrown> {
 ///
 /// Java does not normalise here, and the empty path is the working directory ITSELF rather than a
 /// trailing separator on it, which is what makes `--annotated-intervals=` print `/work`.
-fn java_absolute_path(path: &str) -> String {
+pub(crate) fn java_absolute_path(path: &str) -> String {
     if path.starts_with('/') {
         return path.to_string();
     }
@@ -1418,7 +1418,7 @@ fn bad_input(message: String) -> Thrown {
 }
 
 /// Whether a BAM's header says `SO:coordinate`, which is what a `.bai` needs.
-fn is_coordinate_sorted(bam: &[u8]) -> bool {
+pub(crate) fn is_coordinate_sorted(bam: &[u8]) -> bool {
     htsjdk_bgzf::read::decompress_all(bam)
         .ok()
         .map(|bytes| {
@@ -1526,6 +1526,11 @@ pub fn create_hadoop_bam_splitting_index(parser: &Parser) -> Outcome {
 
     let bytes = std::fs::read(&input)
         .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&input, false)))?;
+    // The `.sbi` stream is opened before a record is read, and an `IOException` from it is this
+    // user error.
+    let output = argument(parser, "output").unwrap_or_else(|| sbi::default_output(&input));
+    let not_created = || Thrown::user("Couldn't create splitting index");
+    let mut file = std::fs::File::create(&output).map_err(|_| not_created())?;
     let (offsets, next_start) = record_offsets(&bytes)?;
     let entries = sbi::offsets(&offsets, granularity as u64, next_start);
     let index = sbi::write(
@@ -1535,10 +1540,7 @@ pub fn create_hadoop_bam_splitting_index(parser: &Parser) -> Outcome {
         &entries,
     );
 
-    let output = argument(parser, "output").unwrap_or_else(|| sbi::default_output(&input));
-    std::fs::write(&output, index).map_err(|error| {
-        Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
-    })?;
+    std::io::Write::write_all(&mut file, &index).map_err(|_| not_created())?;
 
     if flag(parser, "create-bai") {
         // Only the `.bai` path reads the records, so only it cares how they are sorted.
@@ -1570,12 +1572,15 @@ pub fn create_hadoop_bam_splitting_index(parser: &Parser) -> Outcome {
 /// second, and neither is htsjdk's own default. Every file a tool writes block compressed depends
 /// on both (#1032).
 pub(crate) fn output_compression(parser: &Parser) -> (u32, htsjdk_bgzf::Deflater) {
-    let level = gatk_tools::gatk_config::compression_level(
-        std::env::var(gatk_tools::gatk_config::COMPRESSION_LEVEL)
-            .ok()
-            .as_deref(),
-    );
-    let deflater = if flag(parser, "use-jdk-deflater") {
+    // A Picard tool's `COMPRESSION_LEVEL` and `USE_JDK_DEFLATER` are the same two settings.
+    let level = crate::picard::compression_level(parser).unwrap_or_else(|| {
+        gatk_tools::gatk_config::compression_level(
+            std::env::var(gatk_tools::gatk_config::COMPRESSION_LEVEL)
+                .ok()
+                .as_deref(),
+        )
+    });
+    let deflater = if flag(parser, "use-jdk-deflater") || flag(parser, "USE_JDK_DEFLATER") {
         htsjdk_bgzf::Deflater::Jdk
     } else {
         htsjdk_bgzf::Deflater::Gkl
@@ -2697,11 +2702,12 @@ pub fn pileup(parser: &Parser) -> Outcome {
 /// walker does not have:
 ///
 ///   - the report is written to a FILE ONLY IF `--output` names one, and to stdout otherwise,
-///     because `outFile` is optional and `new PrintStream(System.out)` is what a null becomes;
+///     because `outFile` is optional and a null becomes `System.out` itself;
 ///   - a failing run still leaves the report behind: the line that explains the disagreement is
 ///     printed BEFORE the exception is thrown, and `closeTool` flushes the stream on the way out;
 ///   - and `onTraversalSuccess` returns the counters rather than writing them, so they are the
-///     tool's RESULT and a refused run never reports them at all.
+///     tool's RESULT and a refused run never reports them at all. Nor does a run with no
+///     `--output`: `closeTool` has closed `System.out` by the time the result is printed.
 ///
 /// The truth file is read whole rather than queried per locus. The reference reaches it through a
 /// `FeatureInput`, which is why the file has to be indexed for the reference to run at all; what
@@ -2815,7 +2821,11 @@ pub fn check_pileup(parser: &Parser) -> Outcome {
     }
 
     write_report(&output, &report)?;
-    Ok(Some(gatk_tools::check_pileup::summary(loci, bases)))
+    // With no `--output` the report stream IS `System.out`, and `closeTool` closes it before
+    // `handleResult` prints the result, so nothing of `Tool returned:` reaches the console.
+    Ok(output
+        .is_some()
+        .then(|| gatk_tools::check_pileup::summary(loci, bases)))
 }
 
 /// The report, to the file `--output` names or to stdout when it names none.
@@ -2913,7 +2923,7 @@ fn dictionary_path(output: &str) -> String {
     format!("{output}.dict")
 }
 
-fn write_file(path: &str, bytes: &[u8]) -> Result<(), Thrown> {
+pub(crate) fn write_file(path: &str, bytes: &[u8]) -> Result<(), Thrown> {
     std::fs::write(path, bytes)
         .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{path}: {error}")))
 }
@@ -4738,16 +4748,6 @@ pub fn left_align_and_trim_variants(parser: &Parser) -> Outcome {
         ),
     };
     let keep_original_counts = flag(parser, "keep-original-ac");
-    // A sharded output is a WRITER, not a transformation: the reference writes
-    // `out.shard_00000.vcf.gz` and one file per shard, which is a feature of its own rather than
-    // this tool's. Refusing says so; writing one file would be a different answer.
-    if number_or(parser, "max-variants-per-shard", 0) > 0 {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "--max-variants-per-shard writes one file per shard, which this port does not write \
-             yet. This message is the port's own and not GATK's.",
-        ));
-    }
 
     // `createVCFHeaderLineList`: the input's own lines merged with themselves, the tool's default
     // lines, and the count lines the splitting adds.
@@ -6482,24 +6482,50 @@ pub fn collect_sv_evidence(parser: &Parser) -> Outcome {
     let split_file = argument(parser, "sr-file");
     let site_file = argument(parser, "sd-file");
     let depth_file = argument(parser, "depth-evidence-file");
+    // `onTraversalStart` builds the four writers in order, and each tests the name it was given
+    // BEFORE the traversal, refusing one it could not read back (the codecs' own `canDecode`). The
+    // two counters each take an input and an output, and refuse one without the other before they
+    // look at the name. A run that asks for no output at all is refused last.
+    let pairs = [
+        (
+            "sd",
+            &site_file,
+            argument(parser, "site-depth-locs-vcf"),
+            "Having specified a site-depth-locs-vcf input, you must also supply an sd-file for output.",
+            "Having specified an sd-file for output, you must also supply a site-depth-locs-vcf as input.",
+        ),
+        (
+            "rd",
+            &depth_file,
+            argument(parser, "depth-evidence-intervals"),
+            "Having specified an depth-evidence-intervals input, you must also supply a depth-evidence-file for output.",
+            "Having specified a depth-evidence-file for output, you must also supply depth-evidence-intervals as input.",
+        ),
+    ];
+    let name_check = |kind: &str, path: &Option<String>| match path {
+        Some(name) if evidence::encoding(kind, name).is_none() => {
+            Err(Thrown::user(evidence::bad_name_message(kind, name)))
+        }
+        _ => Ok(()),
+    };
+    name_check("pe", &pair_file)?;
+    name_check("sr", &split_file)?;
+    for (kind, output, input, no_output, no_input) in &pairs {
+        match (input, output) {
+            (Some(_), None) => return Err(Thrown::user(*no_output)),
+            (None, Some(_)) => return Err(Thrown::user(*no_input)),
+            _ => name_check(kind, output)?,
+        }
+    }
     if pair_file.is_none() && split_file.is_none() && site_file.is_none() && depth_file.is_none() {
         return Err(Thrown::user(evidence::NO_OUTPUT_MESSAGE));
     }
-    // Each writer tests the name it was given BEFORE the traversal, and refuses one it could not
-    // read back: which names it can is the codecs' own `canDecode`.
     let outputs = [
         ("pe", &pair_file),
         ("sr", &split_file),
         ("sd", &site_file),
         ("rd", &depth_file),
     ];
-    for (kind, path) in outputs {
-        if let Some(name) = path {
-            if evidence::encoding(kind, name).is_none() {
-                return Err(Thrown::user(evidence::bad_name_message(kind, name)));
-            }
-        }
-    }
     // A name the codecs accept can still select a writer this port does not carry: GATK writes a
     // block-compressed name through BGZF at `--compression-level` with a tabix index beside it,
     // and a `.bci` name through the binary container. Only plain text is written below, so the
@@ -11201,7 +11227,7 @@ pub fn flow_feature_mapper(parser: &Parser) -> Outcome {
     }
     apply_sites_only(parser, &mut vcf_header, &mut records);
     let text = write_vcf_honouring_lenient(parser, &vcf_header, &records)?;
-    write_variant_output(parser, &output, &text)?;
+    write_unsharded_variant_output(parser, &output, &text)?;
     Ok(None)
 }
 
@@ -12434,52 +12460,25 @@ pub fn methylation_type_caller(parser: &Parser) -> Outcome {
         &read_filter(parser, &filters, &header)?,
     )
     .map_err(|error| Thrown::user(error.message()))?;
-    std::fs::write(&output, &text).map_err(|error| {
-        Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
-    })?;
-
-    // A variant output carries the same two companions a BAM does, under their own arguments: the
-    // index the file's name implies, and the digest APPENDED to the whole name.
-    if flag(parser, "create-output-variant-index") {
-        // `getBestAvailableSequenceDictionary`, which the index's `DICT:` properties come from: a
-        // `--sequence-dictionary` OUTRANKS the reference's own. Measured on row 6 of this tool's
-        // array, where `--reference other.fasta` and `--sequence-dictionary matching.dict`
-        // disagree and the reference indexed `chr1` where the port indexed `chrOther`.
-        let master = master_dictionary(parser)?;
-        let lengths: Vec<(String, i32)> = match &master {
-            Some(header) => header
-                .sequences
-                .iter()
-                .map(|sequence| (sequence.name.clone(), sequence.length))
-                .collect(),
-            None => gatk_tools::reference_walker::dictionary(&reference)
-                .sequences
-                .iter()
-                .map(|sequence| (sequence.name.clone(), sequence.length))
-                .collect(),
+    // `getBestAvailableSequenceDictionary`, which the index's `DICT:` properties come from: a
+    // `--sequence-dictionary` OUTRANKS the reference's own. Measured on row 6 of this tool's
+    // array, where `--reference other.fasta` and `--sequence-dictionary matching.dict` disagree
+    // and the reference indexed `chr1` where the port indexed `chrOther`.
+    let dictionary = if flag(parser, "create-output-variant-index") {
+        let best = match master_dictionary(parser)? {
+            Some(header) => header,
+            None => gatk_tools::reference_walker::dictionary(&reference),
         };
-        let index = on_the_fly_index(
-            &text,
-            &lengths,
-            &output,
-            text.len() as i64,
-            modified_millis(&output),
-        );
-        let name = format!("{output}.idx");
-        std::fs::write(&name, index).map_err(|error| {
-            Thrown::non_user(PORT_FAILURE, format!("could not write {name}: {error}"))
-        })?;
-    }
-    if flag(parser, "create-output-variant-md5") {
-        let digest = format!("{output}.md5");
-        std::fs::write(
-            &digest,
-            gatk_tools::gather_bam_files::md5_file(text.as_bytes()),
+        Some(
+            best.sequences
+                .iter()
+                .map(|sequence| (sequence.name.clone(), sequence.length))
+                .collect(),
         )
-        .map_err(|error| {
-            Thrown::non_user(PORT_FAILURE, format!("could not write {digest}: {error}"))
-        })?;
-    }
+    } else {
+        None
+    };
+    write_variant_output_indexed_by(parser, &output, &text, dictionary)?;
     Ok(None)
 }
 
@@ -16793,6 +16792,40 @@ fn variant_output_filter<'a>(
     }))
 }
 
+/// The end of `GATKTool.onStartup`, for a run that `new ProgressMeter` refuses.
+///
+/// A `--seconds-between-progress-updates` of zero or less, or NaN, is an `IllegalArgumentException`
+/// thrown at the very end of startup. The `-L` check that `--variant-output-filtering` needs comes
+/// just before it, so when both apply that check is the refusal. A run with a valid interval gets
+/// `None` and its runner is untouched.
+///
+/// shortcut: the dispatcher calls this before the runner, so a run that the reference refuses
+/// EARLIER in `onStartup` (an unreadable input, incompatible dictionaries, a tool requirement)
+/// gets this refusal instead. Move the call into the runner's own startup when the fuzzer finds
+/// such a pair.
+pub fn progress_meter_refusal(parser: &Parser) -> Option<Thrown> {
+    let seconds: f64 = scalar(parser, "seconds-between-progress-updates")?
+        .parse()
+        .ok()?;
+    if seconds > 0.0 {
+        return None;
+    }
+    let filtered =
+        scalar(parser, "variant-output-filtering").is_some_and(|mode| mode != "ANYWHERE");
+    let intervals = !arguments(parser, "intervals").is_empty()
+        || !arguments(parser, "exclude-intervals").is_empty();
+    if filtered && !intervals {
+        return Some(Thrown::command_line(
+            "Argument -L or -XL was missing: Intervals are required if --variant-output-filtering \
+             was specified or if the tool uses interval filtering.",
+        ));
+    }
+    Some(Thrown::non_user(
+        "java.lang.IllegalArgumentException",
+        "secondsBetweenUpdates must be > 0.0",
+    ))
+}
+
 /// `--sites-only-vcf-output`, which builds the writer with `DO_NOT_WRITE_GENOTYPES`.
 ///
 /// A header with no samples is what that writes: the `#CHROM` line stops at INFO and no record
@@ -16970,7 +17003,9 @@ pub fn update_vcf_sequence_dictionary(parser: &Parser) -> Outcome {
 /// A `.dict` and a SAM header are the same lines; a BAM carries them in its header; a VCF declares
 /// them as `##contig`; and a FASTA has none of its own, so the dictionary is the `.dict` beside it,
 /// which is what `ReferenceSequenceFileFactory` names.
-fn dictionary_from_any(path: &str) -> Result<Vec<htsjdk_bam::header::SequenceRecord>, Thrown> {
+pub(crate) fn dictionary_from_any(
+    path: &str,
+) -> Result<Vec<htsjdk_bam::header::SequenceRecord>, Thrown> {
     let lower = path.to_ascii_lowercase();
     if lower.ends_with(".vcf") || lower.ends_with(".vcf.gz") {
         let text = std::fs::read_to_string(path)
@@ -17564,7 +17599,58 @@ fn display_date_time() -> String {
 
 /// The VCF a variant-writing tool leaves behind: the text, block compressed where the name says so,
 /// with the index the arguments ask for beside it.
+///
+/// This is `GATKTool.createVCFWriter`, so `--max-variants-per-shard` splits it the way
+/// `ShardingVCFWriter` does: the output's VCF extension is dropped, each shard is
+/// `<base>.shard_NNNNN.vcf.gz` whatever the output was called, each one carries the whole header,
+/// and a new shard is opened only when a record arrives for it, so a run with no record writes
+/// shard zero alone. Every shard gets its own index and MD5.
 fn write_variant_output(parser: &Parser, output: &str, text: &str) -> Result<(), Thrown> {
+    write_variant_output_indexed_by(parser, output, text, None)
+}
+
+/// [`write_variant_output`] with the dictionary an on-the-fly index records, where the tool's
+/// best available one is not the header's `##contig` lines.
+fn write_variant_output_indexed_by(
+    parser: &Parser,
+    output: &str,
+    text: &str,
+    dictionary: Option<Vec<(String, i32)>>,
+) -> Result<(), Thrown> {
+    let index = flag(parser, "create-output-variant-index");
+    let md5 = flag(parser, "create-output-variant-md5");
+    let per_shard = number_or(parser, "max-variants-per-shard", 0);
+    if per_shard <= 0 {
+        return write_variant_file(parser, output, text, index, md5, dictionary);
+    }
+    let split = text
+        .match_indices('\n')
+        .map(|(at, _)| at + 1)
+        .find(|at| !text[*at..].starts_with('#'))
+        .unwrap_or(text.len());
+    let (header, body) = text.split_at(split);
+    let records: Vec<&str> = body.split_inclusive('\n').collect();
+    // `IOUtils.removeExtension` over `VCF_LIST`, in its order.
+    let base = [".vcf", ".vcf.gz", ".vcf.bgz", ".bcf"]
+        .iter()
+        .find_map(|extension| output.strip_suffix(extension))
+        .unwrap_or(output);
+    let mut shards: Vec<&[&str]> = records.chunks(per_shard as usize).collect();
+    if shards.is_empty() {
+        shards.push(&[]);
+    }
+    for (shard, chunk) in shards.iter().enumerate() {
+        let name = format!("{base}.shard_{shard:05}.vcf.gz");
+        let shard_text = format!("{header}{}", chunk.concat());
+        write_variant_file(parser, &name, &shard_text, index, md5, dictionary.clone())?;
+    }
+    Ok(())
+}
+
+/// [`write_variant_output`] for a tool that builds its writer with
+/// `GATKVariantContextUtils.createVCFWriter`, which knows nothing of `--max-variants-per-shard`:
+/// `HaplotypeCallerEngine.makeVCFWriter` and `FlowFeatureMapper` both do.
+fn write_unsharded_variant_output(parser: &Parser, output: &str, text: &str) -> Result<(), Thrown> {
     write_variant_file(
         parser,
         output,
@@ -18103,7 +18189,8 @@ pub fn condense_depth_evidence(parser: &Parser) -> Outcome {
     // read filters resolve while the command line is parsed, and `onStartup` loads a master
     // dictionary before it opens anything else.
     let _ = resolve_read_filters(parser, "CondenseDepthEvidence")?;
-    let _ = master_dictionary(parser)?;
+    let master = master_dictionary(parser)?;
+    let reference = reference_dictionary(parser)?;
     // `getCodecForFile` tests that the path is readable before it asks a codec anything.
     let bytes = std::fs::read(&input).map_err(|_| {
         Thrown::user(
@@ -18143,6 +18230,13 @@ pub fn condense_depth_evidence(parser: &Parser) -> Outcome {
             ));
         }
     }
+    // `validateSequenceDictionaries`, once the input is open: the text codec carries no
+    // dictionary, so the master against the reference is the one pair there is.
+    if !flag(parser, "disable-sequence-dictionary-validation") {
+        if let (Some(master), Some(reference)) = (&master, &reference) {
+            validate_against_master(master, "reference", &reference.sequences)?;
+        }
+    }
     let text = String::from_utf8_lossy(&bytes);
     let (samples, records) = condense::read(&text).map_err(|problem| {
         Thrown::non_user(
@@ -18177,6 +18271,187 @@ pub fn condense_depth_evidence(parser: &Parser) -> Outcome {
         }
     };
     write_file(&output, condense::write(&samples, &merged).as_bytes())?;
+    Ok(None)
+}
+
+/// `ConvertCountsToDepthFile` (GATK 4.7.0.0): a counts file rewritten as one-sample depth
+/// evidence.
+///
+/// The conversion, the header refusals and the block-compressed bytes are
+/// [`gatk_tools::convert_counts_to_depth_file`], where a golden measures them. What the runner adds
+/// is the order, which is `onStartup`'s and then the tool's:
+///
+/// * **the input is opened at startup**: a missing file, then another feature type, then a header
+///   the counts codec refuses, which `FeatureDataSource` wraps in a `GATKException`;
+/// * **then the intervals**, which need `--sequence-dictionary`: the counts header's dictionary is
+///   not one the engine consults;
+/// * **then `onTraversalStart`**: no codec for the output's name, then a codec for another type.
+///
+/// Refusals of the port's own: a `.counts.tsv.gz` input, a `.bci` output, an input of a type the
+/// SV evidence codecs do not name, and a malformed record, which Tribble wraps in a message naming
+/// an iterator by its identity hash.
+pub fn convert_counts_to_depth_file(parser: &Parser) -> Outcome {
+    use gatk_tools::convert_counts_to_depth_file as convert;
+    use gatk_tools::sv_feature_codecs::{self as codecs, Encoding};
+
+    let input = argument(parser, "counts-filename").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument counts-filename was missing: Argument 'counts-filename' is required",
+        )
+    })?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let _ = resolve_read_filters(parser, "ConvertCountsToDepthFile")?;
+    let master = master_dictionary(parser)?;
+    // `initializeReference` comes before `initializeFeatures`, so a missing reference is refused
+    // before the counts are opened.
+    let reference = reference_dictionary(parser)?;
+
+    let text = std::fs::read_to_string(&input).map_err(|_| {
+        Thrown::user(format!(
+            "Couldn't read file file://{}. Error was: It doesn't exist.",
+            java_absolute_path(&input)
+        ))
+    })?;
+    if !input.ends_with(".counts.tsv") {
+        return Err(match codecs::find(&input) {
+            Some(codec) => Thrown {
+                failure: Failure::User,
+                exception:
+                    "org.broadinstitute.hellbender.exceptions.UserException$WrongFeatureType",
+                message: Some(format!(
+                    "File file://{} is of the wrong type. It should contain Features of type \
+                     SimpleCount, but instead contains Features of type(s): [{}]",
+                    java_absolute_path(&input),
+                    codec.feature_type
+                )),
+            },
+            // No codec answers to a bare `.tsv`: the annotated-interval one wants `.seg` or `.maf`
+            // and the xsv one a `.config`, so `FeatureManager` finds none. Measured on two rows.
+            None if input.ends_with(".tsv") => Thrown {
+                failure: Failure::User,
+                exception:
+                    "org.broadinstitute.hellbender.exceptions.UserException$NoSuitableCodecs",
+                message: Some(format!(
+                    "Cannot read file://{} because no suitable codecs found",
+                    java_absolute_path(&input)
+                )),
+            },
+            None => Thrown::non_user(
+                PORT_LIMITATION,
+                format!(
+                    "{input} is not a plain .counts.tsv, and no other codec that could read it is \
+                     ported"
+                ),
+            ),
+        });
+    }
+    let counts = match convert::read_counts(&text) {
+        Ok(counts) => counts,
+        Err(Ok(header)) => {
+            let (_, message) = convert::header_error_chain(&input, &header).remove(0);
+            return Err(Thrown::non_user(
+                "org.broadinstitute.hellbender.exceptions.GATKException",
+                message,
+            ));
+        }
+        Err(Err(line)) => {
+            return Err(Thrown::non_user(
+                PORT_LIMITATION,
+                format!(
+                    "{input} has a record the counts codec refuses ({line:?}), which Tribble wraps"
+                ),
+            ));
+        }
+    };
+
+    // `validateSequenceDictionaries`, after the features are initialized: the master against the
+    // reference. The counts header's dictionary is not one the engine collects.
+    if !flag(parser, "disable-sequence-dictionary-validation") {
+        if let (Some(master), Some(reference)) = (&master, &reference) {
+            validate_against_master(master, "reference", &reference.sequences)?;
+        }
+    }
+
+    let intervals = match &master {
+        Some(header) => interval_arguments(parser, header)?.map(|parameters| parameters.intervals),
+        None if !arguments(parser, "intervals").is_empty()
+            || !arguments(parser, "exclude-intervals").is_empty() =>
+        {
+            return Err(Thrown::user(
+                "We require a sequence dictionary from a reference, a source of reads, or a source \
+                 of variants to process intervals.  Since reference and reads files generally \
+                 contain sequence dictionaries, this error most commonly occurs for VariantWalkers \
+                 that do not require a reference or reads.  You can fix the problem by passing a \
+                 reference file with a sequence dictionary via the -R argument or you can run the \
+                 tool UpdateVCFSequenceDictionary on your vcf.",
+            ));
+        }
+        None => None,
+    };
+
+    let encoding =
+        convert::check_output(&output, &format!("file://{}", java_absolute_path(&output)))
+            .map_err(|error| Thrown {
+                failure: Failure::User,
+                exception: error.java_class(),
+                message: Some(error.message()),
+            })?;
+    let sample = argument(parser, "sample-name").unwrap_or(counts.sample);
+    let records: Vec<_> = counts
+        .records
+        .iter()
+        // `FeatureIntervalIterator` skips a feature the previous interval already returned, so a
+        // count overlapping several is written once and the filter is an overlap test.
+        .filter(|count| {
+            intervals.as_ref().is_none_or(|intervals| {
+                intervals.iter().any(|interval| {
+                    interval.contig == count.contig
+                        && interval.start <= count.end
+                        && count.start <= interval.end
+                })
+            })
+        })
+        .map(convert::to_depth)
+        .collect();
+    match encoding {
+        Encoding::Text {
+            block_compressed: false,
+        } => write_file(&output, convert::write_text(&sample, &records).as_bytes())?,
+        Encoding::Text {
+            block_compressed: true,
+        } => {
+            // `new BlockCompressedOutputStream(path, compressionLevel)`: the tool's level and
+            // GATK's deflater; the index takes the static level, which a real run sets from
+            // GATKConfig.
+            let (index_level, deflater) = output_compression(parser);
+            let (data, index) = convert::write_block_compressed(
+                &sample,
+                &records,
+                &counts.header.sequences,
+                number_or(parser, "compression-level", 4) as u32,
+                index_level,
+                deflater,
+            )
+            .map_err(|error| match error {
+                convert::BlockError::Tabix(error) => {
+                    Thrown::non_user(error.java_class(), error.message())
+                }
+                convert::BlockError::Deflate(error) => {
+                    Thrown::non_user(PORT_LIMITATION, error.to_string())
+                }
+            })?;
+            write_file(&output, &data)?;
+            write_file(&format!("{output}.tbi"), &index)?;
+        }
+        Encoding::Bci => {
+            return Err(Thrown::non_user(
+                PORT_LIMITATION,
+                "ConvertCountsToDepthFile writes a .bci depth-evidence file, which is not ported",
+            ));
+        }
+    }
     Ok(None)
 }
 
@@ -20799,7 +21074,7 @@ pub fn sv_stratify(parser: &Parser) -> Outcome {
         .map(|sequence| (sequence.name.clone(), sequence.length))
         .collect();
 
-    let engine = load_stratification_engine(parser, &config, &dictionary)?;
+    let engine = load_stratification_engine(parser, Some(&config), &dictionary)?;
 
     // `initializeWriters`.
     let prefix = if split_output {
@@ -20820,10 +21095,11 @@ pub fn sv_stratify(parser: &Parser) -> Outcome {
     let file = htsjdk_vcf::reader::read_vcf(&text)
         .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
     let mut header = file.header.clone();
+    // `VCFHeaderLineCount.UNBOUNDED` since 4.7.0.0, which made `STRAT` the list of every match.
     let strat_line = htsjdk_vcf::header::HeaderLine::Compound {
         key: "INFO".to_string(),
         id: "STRAT".to_string(),
-        number: htsjdk_vcf::header::Cardinality::Fixed(1),
+        number: htsjdk_vcf::header::Cardinality::Unbounded,
         line_type: htsjdk_vcf::header::LineType::String,
         description: "Stratum ID".to_string(),
         extra: Vec::new(),
@@ -20950,14 +21226,20 @@ struct SvConcordanceItem {
 /// * **the two files are walked by [`gatk_engine::concordance_walker`]** with every pair counted
 ///   concordant and no truth filter, and each step adds its truth record before its eval one;
 /// * **a truth record is rebuilt with a dictionary**, so its breakpoints are validated where an
-///   eval record's are not, and its genotypes keep only their alleles and `CN`;
-/// * **the finder is flushed at each new contig**, every eval record taking the closest truth record
-///   of the contig the linkage allows, and the output is sorted by `compareCalls`;
+///   eval record's are not, and its genotypes keep only their alleles, `CN` and `ECN`;
+/// * **`--stratify-config` and `--clustering-config` come together or not at all**, and an eval
+///   record is matched in every stratum it falls in and in the default group
+///   ([`gatk_tools::sv_concordance::Engine`]): the highest group that matched is written, with
+///   `STRAT` naming every group and the linkage's measurements as the `TRUTH_*` fields;
+/// * **the records are held until the walk ends**, in the order they finished, and then sorted by
+///   the eval header's contig order and the start, stably;
 /// * **the record written is `getVariantBuilder`'s**, not the input line: the fields the record owns
 ///   are written again, a passing record comes out unfiltered, and a null annotation is absent.
 ///
 /// Nothing inside `apply` is wrapped: `AbstractConcordanceWalker.traverse` calls it bare, so a record
-/// the conversion refuses reaches the user as the conversion's own exception.
+/// the conversion refuses reaches the user as the conversion's own exception. The header is written
+/// before the configurations are read, and the records only on success, so every refusal after the
+/// dictionaries leaves a file holding the header alone.
 pub fn sv_concordance(parser: &Parser) -> Outcome {
     use gatk_tools::sv_call_record as svr;
     use gatk_tools::sv_concordance as conc;
@@ -21041,36 +21323,10 @@ pub fn sv_concordance(parser: &Parser) -> Outcome {
         .iter()
         .map(|sequence| (sequence.name.clone(), sequence.length))
         .collect();
-    let parameter = |name: &str, default: f64| -> f64 {
-        scalar(parser, name)
-            .and_then(|value| value.parse().ok())
-            .unwrap_or(default)
-    };
-    let window = |name: &str, default: i32| -> i32 {
-        scalar(parser, name)
-            .and_then(|value| value.parse().ok())
-            .unwrap_or(default)
-    };
+    // `SVConcordanceLinkage` takes no `--enable-cnv`.
     let linkage = gatk_tools::sv_cluster::Linkage {
-        depth: gatk_tools::sv_cluster::ClusteringParameters::depth(
-            parameter("depth-interval-overlap", 0.8),
-            parameter("depth-size-similarity", 0.0),
-            window("depth-breakend-window", 10_000_000),
-            parameter("depth-sample-overlap", 0.0),
-        ),
-        mixed: gatk_tools::sv_cluster::ClusteringParameters::mixed(
-            parameter("mixed-interval-overlap", 0.8),
-            parameter("mixed-size-similarity", 0.0),
-            window("mixed-breakend-window", 1000),
-            parameter("mixed-sample-overlap", 0.0),
-        ),
-        pesr: gatk_tools::sv_cluster::ClusteringParameters::pesr(
-            parameter("pesr-interval-overlap", 0.5),
-            parameter("pesr-size-similarity", 0.0),
-            window("pesr-breakend-window", 500),
-            parameter("pesr-sample-overlap", 0.0),
-        ),
         cluster_del_with_dup: false,
+        ..sv_cluster_linkage(parser)
     };
     let common: Vec<String> = eval_file
         .header
@@ -21215,6 +21471,34 @@ pub fn sv_concordance(parser: &Parser) -> Outcome {
         ),
         compound(
             "INFO",
+            "TRUTH_RECIPROCAL_OVERLAP",
+            one,
+            LineType::Float,
+            "Reciprocal overlap with truth variant",
+        ),
+        compound(
+            "INFO",
+            "TRUTH_SIZE_SIMILARITY",
+            one,
+            LineType::Float,
+            "Size similarity with truth variant",
+        ),
+        compound(
+            "INFO",
+            "TRUTH_DISTANCE_START",
+            one,
+            LineType::Integer,
+            "Start coordinate distance in bp to truth variant's start",
+        ),
+        compound(
+            "INFO",
+            "TRUTH_DISTANCE_END",
+            one,
+            LineType::Integer,
+            "End coordinate distance in bp to truth variant's end",
+        ),
+        compound(
+            "INFO",
             "AF",
             Cardinality::A,
             LineType::Float,
@@ -21234,6 +21518,14 @@ pub fn sv_concordance(parser: &Parser) -> Outcome {
             LineType::Integer,
             "Total number of alleles in called genotypes",
         ),
+        // `SVStratify.addStratifyMetadata`.
+        compound(
+            "INFO",
+            "STRAT",
+            Cardinality::Unbounded,
+            LineType::String,
+            "Stratum ID",
+        ),
     ];
     for line in added {
         if !header
@@ -21244,6 +21536,82 @@ pub fn sv_concordance(parser: &Parser) -> Outcome {
             header.lines.push(line);
         }
     }
+
+    // The writer has its header from here on, so every refusal below leaves a file holding it.
+    let finish = |written: &[htsjdk_vcf::variant::VariantContext]| -> Result<(), Thrown> {
+        let mut header = header.clone();
+        let mut records = written.to_vec();
+        apply_sites_only(parser, &mut header, &mut records);
+        let out = htsjdk_vcf::vcf_file::write_vcf(&header, &records)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        write_variant_output(parser, &output, &out)
+    };
+    let refuse = |error: Thrown| -> Outcome {
+        finish(&[])?;
+        Err(error)
+    };
+    // `SortingCollection.newInstance`.
+    let in_ram: i32 = scalar(parser, "max-records-in-ram")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(1000);
+    if in_ram <= 0 {
+        return refuse(Thrown::non_user(
+            "java.lang.IllegalArgumentException",
+            "maxRecordsInRam must be > 0",
+        ));
+    }
+    let stratify_config = argument(parser, "stratify-config");
+    let clustering_config = argument(parser, "clustering-config");
+    if stratify_config.is_some() != clustering_config.is_some() {
+        return refuse(Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException$BadInput",
+            message: Some(
+                "Bad input: Both --stratify-config and --clustering-config must be used together, but only one was specified."
+                    .to_string(),
+            ),
+        });
+    }
+    let groups = match clustering_config.as_deref().map(read_clustering_config) {
+        None => Vec::new(),
+        Some(Ok(parameters)) => gatk_tools::grouped_sv_cluster::Engines::new(&parameters)
+            .entries
+            .iter()
+            .map(|(name, parameters)| {
+                (
+                    name.clone(),
+                    gatk_tools::grouped_sv_cluster::linkage_for(parameters, false),
+                )
+            })
+            .collect(),
+        Some(Err(error)) => return refuse(error),
+    };
+    let strata = match load_stratification_engine(parser, stratify_config.as_deref(), &dictionary) {
+        Ok(strata) => strata,
+        Err(error) => return refuse(error),
+    };
+    // The constructor's two checks, both `Utils.validate`.
+    let illegal_state =
+        |message: String| Thrown::non_user("java.lang.IllegalStateException", message);
+    if strata.strata.len() != groups.len() {
+        return refuse(illegal_state(
+            gatk_tools::grouped_sv_cluster::GroupedError::GroupCountMismatch.message(),
+        ));
+    }
+    if let Some(stratum) = strata
+        .strata
+        .iter()
+        .find(|stratum| !groups.iter().any(|(name, _)| *name == stratum.name))
+    {
+        return refuse(illegal_state(
+            gatk_tools::grouped_sv_cluster::GroupedError::GroupNotFound {
+                name: stratum.name.clone(),
+            }
+            .message(),
+        ));
+    }
+    let thresholds = stratification_thresholds(parser);
+    let mut engine = conc::Engine::new(&groups, linkage, &sequences);
 
     // The walk.
     let truth: Vec<ConcordanceLocus> = truth_file
@@ -21285,10 +21653,11 @@ pub fn sv_concordance(parser: &Parser) -> Outcome {
         exception: error.class(),
         message: Some(error.message()),
     };
+    let engine_error =
+        |error: conc::ConcordanceError| Thrown::non_user(error.class(), error.message());
     // The concordance side of a record: the call the linkage reads and the genotypes as indices.
     let item = |variant: &htsjdk_vcf::variant::VariantContext,
-                call: gatk_tools::sv_call_record::SvCallRecord,
-                keep_counts: bool|
+                call: gatk_tools::sv_call_record::SvCallRecord|
      -> SvConcordanceItem {
         let genotypes = variant
             .genotypes
@@ -21327,18 +21696,14 @@ pub fn sv_concordance(parser: &Parser) -> Outcome {
                     other => other.format(),
                 })
         };
-        let allele_counts = if keep_counts {
-            match (text("AC"), text("AF"), text("AN")) {
-                (Some(ac), Some(af), Some(an)) => Some(conc::AlleleCounts {
-                    count: Vec::new(),
-                    frequency: Vec::new(),
-                    number: 0,
-                    verbatim: Some((ac, af, an)),
-                }),
-                _ => None,
-            }
-        } else {
-            None
+        let allele_counts = match (text("AC"), text("AF"), text("AN")) {
+            (Some(ac), Some(af), Some(an)) => Some(conc::AlleleCounts {
+                count: Vec::new(),
+                frequency: Vec::new(),
+                number: 0,
+                verbatim: Some((ac, af, an)),
+            }),
+            _ => None,
         };
         let record = conc::Record {
             call: gatk_tools::sv_cluster::CallRecord {
@@ -21353,6 +21718,8 @@ pub fn sv_concordance(parser: &Parser) -> Outcome {
                 length: call.length,
                 algorithms: call.algorithms.clone(),
                 carriers: Vec::new(),
+                cpx_subtype: call.cpx_subtype.clone(),
+                cpx_intervals: call.cpx_intervals.clone(),
             },
             genotypes,
             allele_counts,
@@ -21364,37 +21731,10 @@ pub fn sv_concordance(parser: &Parser) -> Outcome {
         }
     };
 
-    let mut written: Vec<htsjdk_vcf::variant::VariantContext> = Vec::new();
-    let mut truth_items: Vec<SvConcordanceItem> = Vec::new();
-    let mut eval_items: Vec<SvConcordanceItem> = Vec::new();
-    let mut current: Option<String> = None;
-    let finish = |written: &[htsjdk_vcf::variant::VariantContext]| -> Result<(), Thrown> {
-        let mut header = header.clone();
-        let mut records = written.to_vec();
-        apply_sites_only(parser, &mut header, &mut records);
-        let out = htsjdk_vcf::vcf_file::write_vcf(&header, &records)
-            .map_err(|error| Thrown::user(format!("{error:?}")))?;
-        write_variant_output(parser, &output, &out)
-    };
-    let flush = |truth_items: &mut Vec<SvConcordanceItem>,
-                 eval_items: &mut Vec<SvConcordanceItem>,
-                 written: &mut Vec<htsjdk_vcf::variant::VariantContext>| {
-        let truths: Vec<conc::Record> =
-            truth_items.iter().map(|item| item.record.clone()).collect();
-        let mut annotated: Vec<(
-            gatk_tools::sv_call_record::SvCallRecord,
-            htsjdk_vcf::variant::VariantContext,
-        )> = Vec::new();
-        for item in eval_items.iter() {
-            let closest = conc::closest(&linkage, &item.record, &truths);
-            let annotation = conc::annotate(&item.record, closest, &common);
-            annotated.push(sv_concordance_output(item, &annotation, &common));
-        }
-        annotated.sort_by(|a, b| svr::compare_calls(&a.0, &b.0, &sequences));
-        written.extend(annotated.into_iter().map(|(_, variant)| variant));
-        truth_items.clear();
-        eval_items.clear();
-    };
+    // Every record added, numbered as the engine numbers them, and the eval records in the order
+    // they finished, which is the sorting buffer's.
+    let mut items: Vec<SvConcordanceItem> = Vec::new();
+    let mut finished: Vec<conc::Finished> = Vec::new();
     for step in steps {
         let mut add = |index: usize, is_truth: bool| -> Result<(), Thrown> {
             let variant = if is_truth {
@@ -21403,13 +21743,9 @@ pub fn sv_concordance(parser: &Parser) -> Outcome {
                 &eval_file.records[index]
             };
             let call = svr::create(variant, &sequences).map_err(refused)?;
-            if current.as_deref() != Some(call.contig_a.as_str()) {
-                flush(&mut truth_items, &mut eval_items, &mut written);
-                current = Some(call.contig_a.clone());
-            }
             if is_truth {
                 // `minimizeTruthFootprint`: rebuilt WITH the dictionary, genotypes cut to
-                // alleles and `CN`.
+                // alleles, `CN` and `ECN`.
                 svr::validate_coordinates(&call, &sequences).map_err(refused)?;
                 let mut stripped = variant.clone();
                 let genotypes: Vec<htsjdk_vcf::variant::Genotype> = variant
@@ -21423,29 +21759,76 @@ pub fn sv_concordance(parser: &Parser) -> Outcome {
                         kept.extended = genotype
                             .extended
                             .iter()
-                            .filter(|(key, _)| key == "CN")
+                            .filter(|(key, _)| key == "CN" || key == "ECN")
                             .cloned()
                             .collect();
                         kept
                     })
                     .collect();
                 stripped.genotypes = genotypes.into();
-                truth_items.push(item(&stripped, call, true));
+                let truth = item(&stripped, call);
+                engine
+                    .add_truth(truth.record.clone())
+                    .map_err(engine_error)?;
+                items.push(truth);
             } else {
-                eval_items.push(item(variant, call, true));
+                // `getMatches` is not wrapped either, so its own refusal reaches the user.
+                let matched: Vec<String> = strata
+                    .matches(&call.stratify_record(), thresholds)
+                    .map_err(|error| illegal_state(error.message()))?
+                    .iter()
+                    .map(|stratum| stratum.name.clone())
+                    .collect();
+                let eval = item(variant, call);
+                engine
+                    .add_eval(eval.record.clone(), &matched)
+                    .map_err(engine_error)?;
+                items.push(eval);
             }
             Ok(())
         };
         let outcome = step
             .truth
             .map_or(Ok(()), |index| add(index, true))
-            .and_then(|()| step.eval.map_or(Ok(()), |index| add(index, false)));
-        if let Err(error) = outcome {
-            finish(&written)?;
-            return Err(error);
+            .and_then(|()| step.eval.map_or(Ok(()), |index| add(index, false)))
+            .and_then(|()| engine.flush(false).map_err(engine_error));
+        match outcome {
+            Ok(done) => finished.extend(done),
+            // The sorting buffer is only written on success, so the file holds the header alone.
+            Err(error) => return refuse(error),
         }
     }
-    flush(&mut truth_items, &mut eval_items, &mut written);
+    match engine.flush(true) {
+        Ok(done) => finished.extend(done),
+        Err(error) => return refuse(engine_error(error)),
+    }
+
+    // `SortingCollection` over `getVCFRecordComparator`: by the eval header's contig order and
+    // the start, stably, so two records that start together keep the order they finished in.
+    let contig_index = |contig: &str| {
+        eval_dictionary
+            .sequences
+            .iter()
+            .position(|sequence| sequence.name == contig)
+            .unwrap_or(usize::MAX)
+    };
+    let mut written: Vec<(
+        gatk_tools::sv_call_record::SvCallRecord,
+        htsjdk_vcf::variant::VariantContext,
+    )> = finished
+        .iter()
+        .map(|done| {
+            let eval = &items[done.id as usize];
+            let matched = done
+                .truth
+                .map(|(id, result)| (&items[id as usize].record, result));
+            let annotation = conc::annotate(&eval.record, matched, &common);
+            sv_concordance_output(eval, &annotation, &common, &done.strata)
+        })
+        .collect();
+    written.sort_by_key(|(call, _)| (contig_index(&call.contig_a), call.position_a));
+    let written: Vec<htsjdk_vcf::variant::VariantContext> =
+        written.into_iter().map(|(_, variant)| variant).collect();
     finish(&written)?;
     // `onTraversalSuccess` returns null, so `handleResult` prints nothing.
     Ok(None)
@@ -21456,6 +21839,7 @@ fn sv_concordance_output(
     item: &SvConcordanceItem,
     annotation: &gatk_tools::sv_concordance::Annotation,
     common: &[String],
+    strata: &[String],
 ) -> (
     gatk_tools::sv_call_record::SvCallRecord,
     htsjdk_vcf::variant::VariantContext,
@@ -21508,6 +21892,29 @@ fn sv_concordance_output(
         annotation.truth_variant_id.clone().map(Value::Str),
     );
     put("STATUS", Some(Value::Str(annotation.status.to_string())));
+    // A null measurement is put as null, which the builder drops.
+    if let Some(linkage) = &annotation.truth_linkage {
+        put(
+            "TRUTH_RECIPROCAL_OVERLAP",
+            linkage.reciprocal_overlap.map(Value::Double),
+        );
+        put(
+            "TRUTH_SIZE_SIMILARITY",
+            linkage.size_similarity.map(Value::Double),
+        );
+        put(
+            "TRUTH_DISTANCE_START",
+            linkage
+                .breakpoint_distance_1
+                .map(|distance| Value::Int(i64::from(distance))),
+        );
+        put(
+            "TRUTH_DISTANCE_END",
+            linkage
+                .breakpoint_distance_2
+                .map(|distance| Value::Int(i64::from(distance))),
+        );
+    }
     if is_cnv {
         put(
             "CNV_CONCORDANCE",
@@ -21565,6 +21972,12 @@ fn sv_concordance_output(
             }
         }
     }
+    put(
+        "STRAT",
+        Some(Value::List(
+            strata.iter().map(|name| Value::Str(name.clone())).collect(),
+        )),
+    );
     let filters = item.variant.filters.clone().unwrap_or_default();
     let variant = gatk_tools::sv_call_record::to_variant(
         &call,
@@ -21770,10 +22183,11 @@ pub fn grouped_sv_cluster(parser: &Parser) -> Outcome {
     use gatk_tools::grouped_sv_cluster as grouped;
     use htsjdk_vcf::variant::Value;
 
+    // `SVStratify.addStratifyMetadata`, shared with SVStratify: `UNBOUNDED` since 4.7.0.0.
     let strat_line = htsjdk_vcf::header::HeaderLine::Compound {
         key: "INFO".to_string(),
         id: "STRAT".to_string(),
-        number: htsjdk_vcf::header::Cardinality::Fixed(1),
+        number: htsjdk_vcf::header::Cardinality::Unbounded,
         line_type: htsjdk_vcf::header::LineType::String,
         description: "Stratum ID".to_string(),
         extra: Vec::new(),
@@ -21793,7 +22207,7 @@ pub fn grouped_sv_cluster(parser: &Parser) -> Outcome {
     let illegal_state =
         |message: String| Thrown::non_user("java.lang.IllegalStateException", message);
 
-    let engine = match load_stratification_engine(parser, &config, &walker.dictionary) {
+    let engine = match load_stratification_engine(parser, Some(&config), &walker.dictionary) {
         Ok(engine) => engine,
         Err(error) => return walker.refuse(error),
     };
@@ -21884,7 +22298,23 @@ pub fn grouped_sv_cluster(parser: &Parser) -> Outcome {
             _ => return walker.refuse(walker.wrapped(record, true)),
         }
     }
-    for (name, _, members) in &mut buckets {
+    // `onTraversalSuccess` flushes `clusterEngineMap.values()`: a HashMap filled in the clustering
+    // configuration's order, not the stratification engine's, and the IDs are handed out in it.
+    let hashed: Vec<(String, i32)> = parameters
+        .iter()
+        .map(|row| {
+            (
+                row.name.clone(),
+                gatk_engine::java_hash::string_hash_code(&row.name),
+            )
+        })
+        .collect();
+    let order = gatk_engine::java_hash::hash_map_order(&hashed).expect("a hashable stratum set");
+    for flushed in order {
+        let Some((name, _, members)) = buckets.iter_mut().find(|(name, _, _)| *name == flushed)
+        else {
+            continue;
+        };
         if let Err(error) = walker.cluster_and_build(members, &linkage_of(name)) {
             return walker.refuse(error);
         }
@@ -22291,6 +22721,8 @@ impl<'p> SvClusterWalker<'p> {
                     length: member.call.length,
                     algorithms: member.call.algorithms.clone(),
                     carriers,
+                    cpx_subtype: member.call.cpx_subtype.clone(),
+                    cpx_intervals: member.call.cpx_intervals.clone(),
                 }
             })
             .collect();
@@ -22560,11 +22992,12 @@ fn stratification_thresholds(parser: &Parser) -> gatk_tools::sv_stratify::Thresh
 /// loaded through the interval arguments and refused for a name given twice after its file was read,
 /// then the table, checked for its columns at its header line and parsed row by row.
 ///
-/// `dictionary` is the tool's: the master one for `SVStratify`, the reference's for
-/// `GroupedSVCluster`.
+/// `dictionary` is the tool's: the master one for `SVStratify` and `SVConcordance`, the
+/// reference's for `GroupedSVCluster`. With no table, which only `SVConcordance` allows, the
+/// tracks are still loaded and checked, and the engine holds no strata.
 fn load_stratification_engine(
     parser: &Parser,
-    config: &str,
+    config: Option<&str>,
     dictionary: &SamHeader,
 ) -> Result<gatk_tools::sv_stratify::Engine, Thrown> {
     use gatk_tools::sv_stratify as stratify;
@@ -22625,6 +23058,10 @@ fn load_stratification_engine(
     }
     let tracks =
         stratify::Tracks::new(&names, &loaded).map_err(|error| bad_input(error.message()))?;
+    let Some(config) = config else {
+        return stratify::Engine::new(Vec::new(), tracks)
+            .map_err(|error| bad_input(error.message()));
+    };
 
     let table_text = std::fs::read_to_string(config)
         .map_err(|_| gatk("IO error while reading config table".to_string()))?;

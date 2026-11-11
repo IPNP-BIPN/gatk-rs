@@ -88,6 +88,8 @@ public class UsageTextDump {
         // plugin arguments.
         usage("CondenseDepthEvidence",
                 new org.broadinstitute.hellbender.tools.sv.CondenseDepthEvidence());
+        usage("ConvertCountsToDepthFile",
+                new org.broadinstitute.hellbender.tools.sv.ConvertCountsToDepthFile());
         usage("PrintSVEvidence",
                 new org.broadinstitute.hellbender.tools.sv.PrintSVEvidence());
         // Seven more undocumented tools, whose summaries only this golden carries.

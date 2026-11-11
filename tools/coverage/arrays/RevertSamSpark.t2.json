@@ -3,9 +3,9 @@
   "origin": "gatk",
   "t": 2,
   "numeric_policy": "strict",
-  "arguments_total": 55,
+  "arguments_total": 56,
   "arguments_in_array": 42,
-  "arguments_excluded": 13,
+  "arguments_excluded": 14,
   "excluded": [
     {
       "argument": "--arguments_file",
@@ -41,6 +41,13 @@
       "reason": "excluded by the repository: prints the usage and returns; the row would measure the argument parser rather than the tool",
       "held_at": null,
       "source": "none"
+    },
+    {
+      "argument": "--output-cram-version",
+      "type": "String",
+      "reason": "only one value available (default)",
+      "held_at": "3.1",
+      "source": "default"
     },
     {
       "argument": "--output-map",

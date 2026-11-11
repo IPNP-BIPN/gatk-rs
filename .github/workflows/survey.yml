@@ -1,0 +1,139 @@
+# V.10 (#810): what moving the reference to GATK 4.7.0.0 costs, measured before anything moves.
+#
+# Every oracle-backed suite is regenerated under a 4.7.0.0 oracle and compared with the 4.6.2.0
+# golden it already has (tools/conformance/survey.py). The fixtures are still built by the 4.6.2.0
+# image, so the inputs stay fixed and only the reference moves. A difference here is a measurement,
+# never a regression, and nothing this workflow produces may be committed as a golden.
+#
+# It runs on a `survey/**` branch or by hand, never on a pull request: the gate stays ci.yml.
+name: Survey a candidate reference
+
+on:
+  push:
+    branches: ['survey/**']
+  workflow_dispatch:
+
+# The move to 4.7.0.0 was surveyed from 4.6.2.0 with this file (runs 42827131133, 42833576338,
+# 42839254388). The next move names its release and checksum here; until then a survey has nothing
+# to compare and the "now" build refuses.
+env:
+  VERSION_WAS: "4.7.0.0"
+  VERSION_NOW: ""
+  GATK_SHA256_NOW: ""
+
+jobs:
+  images:
+    name: Build both oracle images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: was
+        uses: actions/cache@v6
+        with:
+          path: /tmp/oracle-image.tar
+          key: gatk-rs-oracle-${{ hashFiles('tools/oracle/**') }}
+
+      - if: steps.was.outputs.cache-hit != 'true'
+        run: |
+          docker build --platform linux/amd64 -t gatk-rs-oracle:$VERSION_WAS tools/oracle
+          docker save gatk-rs-oracle:$VERSION_WAS -o /tmp/oracle-image.tar
+
+      - id: now
+        uses: actions/cache@v6
+        with:
+          path: /tmp/oracle-image-now.tar
+          key: gatk-rs-oracle-${{ env.VERSION_NOW }}-${{ hashFiles('tools/oracle/**') }}
+
+      - if: steps.now.outputs.cache-hit != 'true'
+        run: |
+          docker build --platform linux/amd64 -t gatk-rs-oracle:$VERSION_NOW \
+            --build-arg GATK_VERSION=$VERSION_NOW --build-arg GATK_SHA256=$GATK_SHA256_NOW \
+            tools/oracle
+          docker save gatk-rs-oracle:$VERSION_NOW -o /tmp/oracle-image-now.tar
+
+  survey:
+    name: "survey ${{ matrix.shard }}/36"
+    needs: images
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+                19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/cache/restore@v6
+        with:
+          path: /tmp/oracle-image.tar
+          key: gatk-rs-oracle-${{ hashFiles('tools/oracle/**') }}
+          fail-on-cache-miss: true
+
+      - uses: actions/cache/restore@v6
+        with:
+          path: /tmp/oracle-image-now.tar
+          key: gatk-rs-oracle-${{ env.VERSION_NOW }}-${{ hashFiles('tools/oracle/**') }}
+          fail-on-cache-miss: true
+
+      - run: |
+          docker load -i /tmp/oracle-image.tar
+          docker load -i /tmp/oracle-image-now.tar
+
+      - name: Survey
+        # A suite that moved makes survey.py exit 1; that is the answer, not a failure of the job.
+        run: |
+          python3 tools/conformance/survey.py --oracle-image gatk-rs-oracle:$VERSION_NOW \
+            --version-was $VERSION_WAS --version-now $VERSION_NOW \
+            --shard ${{ matrix.shard }}/36 --json survey-${{ matrix.shard }}.json \
+            --keep moved-${{ matrix.shard }} || true
+          test -s survey-${{ matrix.shard }}.json
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: survey-${{ matrix.shard }}
+          path: survey-${{ matrix.shard }}.json
+
+      - name: What the 4.7.0.0 oracle wrote, for every suite that moved
+        uses: actions/upload-artifact@v7
+        with:
+          name: moved-${{ matrix.shard }}
+          path: moved-${{ matrix.shard }}/
+          if-no-files-found: ignore
+
+  summary:
+    name: The bill
+    needs: survey
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: survey-*
+          merge-multiple: true
+
+      - name: Merge the shards
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          import glob, json
+          buckets, notes = {}, {}
+          for path in sorted(glob.glob("survey-*.json")):
+              part = json.load(open(path))
+              for name, ids in part["buckets"].items():
+                  buckets.setdefault(name, []).extend(ids)
+              notes.update(part["notes"])
+          json.dump({"buckets": buckets, "notes": notes}, open("survey.json", "w"), indent=1)
+          print(f"## {sum(map(len, buckets.values()))} suites under GATK 4.7.0.0\n")
+          for name in ["identical", "version", "behaviour", "error"]:
+              print(f"- **{name}**: {len(buckets.get(name, []))}")
+          for name in ["behaviour", "error"]:
+              if buckets.get(name):
+                  print(f"\n### {name}\n")
+                  for suite in sorted(buckets[name]):
+                      print(f"- `{suite}`: " + " / ".join(notes[suite])[:400])
+          EOF
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: survey
+          path: survey.json
