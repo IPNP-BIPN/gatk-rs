@@ -953,16 +953,6 @@ pub mod with_header {
     /// `ReadUtils.getSAMReadGroupRecord`, ported once in gatk-engine and re-exported here.
     pub use gatk_engine::read_group::{attribute, resolve as read_group};
 
-    /// Whether the header declares the read's group.
-    ///
-    /// **Not** `HasReadGroupReadFilter`, which tests the tag alone and keeps a read naming a group
-    /// the header does not declare. This is the resolution the library, sample and platform
-    /// filters perform before they can answer, and it is exposed separately so the difference
-    /// between "the record mentions a group" and "the header knows it" stays visible.
-    pub fn header_declares_read_group(read: &BamRecord, header: &SamHeader) -> bool {
-        read_group(read, header).is_some()
-    }
-
     /// `LibraryReadFilter`: keep reads whose `@RG` `LB` is in the set.
     pub fn library(read: &BamRecord, header: &SamHeader, keep: &[String]) -> bool {
         match attribute(read, header, "LB") {
@@ -1477,12 +1467,14 @@ mod tests {
 ///
 /// Expressions are ANDed, and the reference evaluates them in order, so the first one to throw is
 /// the one that surfaces.
+///
+/// Only the decision over a context is here. Building that context from a read
+/// (`getAttributeAsString`) is not ported: no runner wires this filter, and the rendering that
+/// was here diverged from the adapter's on array tags and went untested (#1392).
 pub mod jexl_filter {
-    use gatk_engine::jexl::{self, Context, Expression, JexlError, Value};
-    use htsjdk_bam::record::BamRecord;
-    use htsjdk_bam::tag::{Tag, TagValue};
+    use gatk_engine::jexl::{Context, Expression, JexlError, Value};
 
-    /// What `test` can answer, including the two ways it can fail.
+    /// What the filter can answer, including the two ways it can fail.
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub enum Decision {
         Keep,
@@ -1493,68 +1485,8 @@ pub mod jexl_filter {
         Failed(JexlError),
     }
 
-    /// `GATKRead.getAttributeAsString`: the tag rendered the way the adapter renders it.
-    ///
-    /// The rendering matters, because it is what the expression compares against. An integer tag
-    /// becomes its decimal text, a character tag becomes a one-character string, and a byte-array
-    /// tag becomes the array's own `toString`, which is why array tags are not usefully
-    /// comparable.
-    pub fn attribute_as_string(read: &BamRecord, name: &str) -> Option<String> {
-        let bytes = name.as_bytes();
-        if bytes.len() != 2 {
-            return None;
-        }
-        let tag = Tag::new(&[bytes[0], bytes[1]]);
-        match read.tags.get(tag)? {
-            TagValue::Str(text) => Some(text.clone()),
-            TagValue::Char(c) => Some((*c as char).to_string()),
-            TagValue::Int(i) => Some(i.to_string()),
-            TagValue::Float(f) => Some(format_java_float(*f)),
-            other => Some(format!("{other:?}")),
-        }
-    }
-
-    /// `Float.toString`, which always prints a decimal point.
-    fn format_java_float(value: f32) -> String {
-        if value == value.trunc() && value.is_finite() && value.abs() < 1e7 {
-            format!("{value:.1}")
-        } else {
-            format!("{value}")
-        }
-    }
-
-    /// The context one read presents to the engine.
-    pub fn context_for(read: &BamRecord, names: &[String]) -> Context {
-        let mut context = Context::new();
-        for name in names {
-            if let Some(value) = attribute_as_string(read, name) {
-                // A read tag stays a STRING here, which is what `attribute_as_string` renders and
-                // what the golden's 186 evaluations were measured against. The typed context of
-                // #1142 is the VARIANT one: this filter's names are tags, and the reference hands
-                // JEXL the tag's own object, which for every tag the suite carries is text.
-                context.insert(name.clone(), Value::Str(value));
-            }
-        }
-        context
-    }
-
-    /// `JexlEngine.createExpression` over each `--read-filter-expression`.
-    pub fn compile(expressions: &[String]) -> Result<Vec<Expression>, JexlError> {
-        expressions
-            .iter()
-            .map(|e| jexl::create_expression(e))
-            .collect()
-    }
-
-    /// `test`: every expression must evaluate to `Boolean.TRUE`.
-    pub fn test(read: &BamRecord, expressions: &[Expression], names: &[String]) -> Decision {
-        let context = context_for(read, names);
-        test_context(&context, expressions, names)
-    }
-
-    /// The same, over a context built elsewhere. The conformance suite uses this, because the
-    /// strings the reference's context handed over travel in its golden and rebuilding them here
-    /// would compare two renderings rather than the reference's.
+    /// `test`, over the context the reference built. The conformance suite feeds it the strings
+    /// the reference's context handed over, which travel in its golden.
     pub fn test_context(
         context: &Context,
         expressions: &[Expression],
