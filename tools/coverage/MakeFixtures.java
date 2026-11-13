@@ -4097,6 +4097,8 @@ public class MakeFixtures {
         bwaIndexImage(dir);
         structuralVariantDiscovererFixtures(dir);
         System.out.println("wrote " + dir);
+        // GenomicsDBImport leaves threads behind that instanceMain, unlike main, does not exit past.
+        System.exit(0);
     }
 
     /**
@@ -4659,6 +4661,15 @@ public class MakeFixtures {
                 "-R", dir.resolve("cgv_ref.fasta").toString(),
                 "-O", dir.resolve("cg_combined.g.vcf").toString(),
                 "--add-output-vcf-command-line", "false"});
+        // The same three imported, which the three callers that read GenomicsDB take as
+        // `gendb:///work/fixtures/cg_ws`. The import's command line in its header records this
+        // directory and the time, and both sides of a row read the one copy.
+        new org.broadinstitute.hellbender.Main().instanceMain(new String[] {"GenomicsDBImport",
+                "-V", dir.resolve("cg_a.g.vcf").toString(),
+                "-V", dir.resolve("cg_b.g.vcf").toString(),
+                "-V", dir.resolve("cg_c.g.vcf").toString(),
+                "-L", "chr1", "-L", "chr2",
+                "--genomicsdb-workspace-path", dir.resolve("cg_ws").toString()});
         // The `--dbsnp` of `GenotypeGVCFs`, at the sites it calls on cg_combined: at chr1:100
         // (GGCT to GT,G) the pair its split trims to GGC>G, and the untrimmed GGCT>GT, which
         // matches nothing; two records at chr1:102, one without an ID; a two-alternate record at

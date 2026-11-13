@@ -251,12 +251,12 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `GatherVcfsCloud` | variant-transform | oracle-backed | gather-vcfs, tool-argument-declarations, tool-argument-enums, usage-text | 4 | t=2, 11/11 rows (100%) | 0.003 / 0.088 |
 | `GeneExpressionEvaluation` | locus-walker | oracle-backed | gene-expression-evaluation | 1 | t=2, 19/19 rows (100%) | 0.002 / 0.058 |
 | `GenomicsDBImport` | assembly-caller | oracle-backed | genomicsdb-import | 1 | t=2, 19/19 rows (100%) | not measured |
-| `GenotypeGVCFs` | assembly-caller | oracle-backed | genotype-gvcfs | 1 | t=2, 34/34 rows (100%) | 0.004 / 0.074 |
+| `GenotypeGVCFs` | assembly-caller | oracle-backed | genomicsdb-query, genotype-gvcfs | 2 | t=2, 34/34 rows (100%) | 0.004 / 0.074 |
 | `GermlineCNVCaller` | cnv-segmentation | oracle-backed | interpreter-tools | 1 | t=2, 46/46 rows (100%), **1 distinct output** | not measured |
 | `GetNormalArtifactData` | locus-walker | oracle-backed | normal-artifact-data | 1 | t=2, 19/19 rows (100%) | 0.002 / 0.055 |
 | `GetPileupSummaries` | locus-walker | oracle-backed | get-pileup-summaries | 1 | t=2, 19/19 rows (100%) | 0.002 / 0.054 |
 | `GetSampleName` | reporting-walker | oracle-backed | get-sample-name | 1 | t=2, 21/21 rows (100%) | 0.002 / 0.055 |
-| `GnarlyGenotyper` | assembly-caller | oracle-backed | gnarly-genotyper | 1 | t=2, 27/27 rows (100%) | 0.003 / 0.042 |
+| `GnarlyGenotyper` | assembly-caller | oracle-backed | genomicsdb-query, gnarly-genotyper | 2 | t=2, 27/27 rows (100%) | 0.003 / 0.042 |
 | `GroundTruthReadsBuilder` | flow-based | oracle-backed | ground-truth-reads-builder | 1 | t=2, 29/29 rows (100%) | 0.003 / 0.071 |
 | `GroundTruthScorer` | flow-based | oracle-backed | ground-truth-scorer, series-stats | 2 | t=2, 25/25 rows (100%) | 0.004 / 0.089 |
 | `GroupedSVCluster` | sv-caller | oracle-backed | grouped-sv-cluster | 1 | t=2, 23/23 rows (100%) | 0.002 / 0.054 |
@@ -320,7 +320,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `SVConcordance` | sv-caller | oracle-backed | sv-concordance | 1 | t=2, 19/19 rows (100%) | 0.003 / 0.064 |
 | `SVStratify` | sv-caller | oracle-backed | sv-stratify | 1 | t=2, 16/16 rows (100%) | 0.002 / 0.059 |
 | `ScoreVariantAnnotations` | variant-transform | oracle-backed | interpreter-tools, vets-isolation-forest | 2 | t=2, 27/27 rows (100%) | not measured |
-| `SelectVariants` | variant-transform | oracle-backed | select-variants-concordance, select-variants-filters, select-variants-header, select-variants-output, select-variants-samples, select-variants-subset, tool-argument-declarations, tool-argument-enums | 8 | t=2, 50/50 rows (100%) | 0.002 / 0.055 |
+| `SelectVariants` | variant-transform | oracle-backed | genomicsdb-query, select-variants-concordance, select-variants-filters, select-variants-header, select-variants-output, select-variants-samples, select-variants-subset, tool-argument-declarations, tool-argument-enums | 9 | t=2, 50/50 rows (100%) | 0.002 / 0.055 |
 | `ShiftFasta` | reference-utility | oracle-backed | shift-fasta | 1 | t=2, 21/21 rows (100%) | 0.003 / 0.086 |
 | `SiteDepthtoBAF` | sv-caller | oracle-backed | site-depth-to-baf | 1 | t=2, 18/18 rows (100%) | 0.002 / 0.055 |
 | `SortSamSpark` | record-transform | oracle-backed | spark-walkers | 1 | t=2, 23/23 rows (100%) | not measured |

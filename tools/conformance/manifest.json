@@ -8418,6 +8418,36 @@
       ]
     },
     {
+      "id": "genomicsdb-query",
+      "status": "golden-pending",
+      "title": "GenotypeGVCFs, GnarlyGenotyper and SelectVariants over a gendb:// workspace",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "GenotypeGVCFs",
+        "GnarlyGenotyper",
+        "SelectVariants"
+      ],
+      "needs_fixtures": true,
+      "why": "GenomicsDB's query is native: scan_and_operate cuts the cells into gVCF intervals, BroadCombinedGVCFOperator merges each one and htslib prints it as VCF text, which htsjdk's VCFCodec reads. The port composes those three rather than linking them, so the cases are the places that text differs from a CombineGVCFs output: a spanning deletion's allele first, IDs merged in libstdc++'s hash order, the allele-specific raw annotations combined, FORMAT DP last, an empty sample written '.' in every field, and a query clipping its blocks to the interval. The workspace is imported in the run from the shared corpus's cg_a, cg_b and cg_c, and the Date of the import's command line, which reaches every output's header, is masked.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "out\tselect\t",
+        "out\tgenotype\t",
+        "out\tgnarly\t",
+        "*,T,<NON_REF>",
+        "rs102;rs100"
+      ],
+      "cases": [
+        {
+          "dump": "GenomicsDBQueryDump",
+          "golden": null,
+          "why": "Golden pending: frozen from the candidate artefact of the first CI run."
+        }
+      ]
+    },
+    {
       "id": "r-plots",
       "status": "oracle-backed",
       "oracle": "oracle_with_r",
