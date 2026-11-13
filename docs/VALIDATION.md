@@ -383,7 +383,7 @@ Inputs: `afqc_1kg.vcf`, `afqc_1kg2.vcf`, `cgv_ref.fasta`, `gg_dbsnp.vcf`, `ve_cn
 
 Held out: `--ancestral-alignments`, `--input`, `--pedigree`, `--read-index`, `--sequence-dictionary`, `--variant-output-filtering`.
 
-AlleleFrequencyQC is VariantEval with its modules and stratifiers preset, so every VariantEval argument is still declared and still parsed, and --eval-module, --stratification-module and the two do-not-use flags are varied to show that the presets override them. -O is the metrics file; --debugFile is where the report goes, and null sends it to a temporary file nothing compares. --eval is tagged: the Thousand Genomes set is given again as a second eval track, which is what puts two rows in each allele-frequency bin, in either order; the call set alone leaves one row per bin and a statistic of nought; afqc_eval_noalias.vcf has no ##sampleAlias line and is the NullPointerException the tool raises before VariantEval starts. --comparison null leaves the comp-AF stratifier without a comp. Every run that gets as far as the plot ends on the Rscript user error, since the image carries no R, after the metrics are written. --pedigree, --ancestral-alignments and --list are held out as for VariantEval.
+AlleleFrequencyQC is VariantEval with its modules and stratifiers preset, so every VariantEval argument is still declared and still parsed, and --eval-module, --stratification-module and the two do-not-use flags are varied to show that the presets override them. -O is the metrics file; --debugFile is where the report goes, and null sends it to a temporary file nothing compares. --eval is tagged: the Thousand Genomes set is given again as a second eval track, which is what puts two rows in each allele-frequency bin, in either order; the call set alone leaves one row per bin and a statistic of nought; afqc_eval_noalias.vcf has no ##sampleAlias line and is the NullPointerException the tool raises before VariantEval starts. --comparison null leaves the comp-AF stratifier without a comp. The reference runs in the Broad's image and the port in one with R ($past_the_interpreter), so a run that gets as far as the plot draws it: the PNGs are compared by pixel size and resolution, and the combined figure the port adds is not. --pedigree, --ancestral-alignments and --list are held out as for VariantEval.
 
 ### AnalyzeCovariates
 
@@ -1765,7 +1765,7 @@ Inputs: `chr1.dict`, `denoised-other.tsv`, `denoised.tsv`, `ref.dict`, `standard
 
 Held out: none.
 
-The reference checks every input and makes the output directory, then RScriptExecutor finds no Rscript in the image, so every accepted row ends on that user error. The second copy-ratio file has other intervals, which is the one refusal between two tables; a dictionary of one contig still plots, and a contig length above both contigs is the threshold's refusal.
+The reference runs in the Broad's image and the port in one with R ($past_the_interpreter), so an accepted row draws its plot: the four MAD files are compared byte for byte, the PNG by pixel size and resolution, and the port's .rds exports are not (suite r-plots reads them back). The second copy-ratio file has other intervals, which is the one refusal between two tables; a dictionary of one contig still plots, and a contig length above both contigs is the threshold's refusal.
 
 ### PlotModeledSegments
 
@@ -1775,7 +1775,7 @@ Inputs: `allelic.tsv`, `chr1.dict`, `denoised.tsv`, `ref.dict`, `segments-wrong.
 
 Held out: none.
 
-The same stop as PlotDenoisedCopyRatios. Either input may be absent and both absent is a refusal; a segments file claiming other point counts is the check between the tables.
+Past R as PlotDenoisedCopyRatios is, with the PNG the only file. Either input may be absent and both absent is a refusal; a segments file claiming other point counts is the check between the tables.
 
 ### PostProcessReadsForRSEM
 
