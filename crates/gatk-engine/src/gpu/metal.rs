@@ -1,6 +1,8 @@
 //! The Metal host side of [`super`]: compiles `kernels.metal` once per thread, packs the inputs
 //! and reads the bits back.
 
+use std::io::Write;
+
 use metal::objc::rc::autoreleasepool;
 use metal::objc::runtime::Object;
 use metal::objc::{msg_send, sel, sel_impl};
@@ -128,7 +130,10 @@ fn run(
     if command.status() == MTLCommandBufferStatus::Completed {
         return Some(());
     }
-    eprintln!(
+    // Straight to stderr rather than `eprintln!`, which libtest captures in a passing test, so
+    // the `gpu` job can count these.
+    let _ = writeln!(
+        std::io::stderr(),
         "gatk-rs: a Metal command ended {:?} ({}); this call runs on the CPU path",
         command.status(),
         failure(command)
