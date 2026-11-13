@@ -210,9 +210,26 @@ pub(super) fn spark_startup(parser: &Parser, tool: &str) -> Result<SparkStart, T
             "Sorry, we only support a single reads input for for this spark tool.",
         ));
     }
-    let input = inputs.into_iter().next().ok_or_else(|| {
-        Thrown::command_line("Argument input was missing: Argument 'input' is required")
-    })?;
+    let Some(input) = inputs.into_iter().next() else {
+        // The reads are optional to the parser, so with none `initializeIntervals` still runs:
+        // with no reference either, `-L` has no dictionary to resolve against.
+        if intervals_specified(parser) {
+            match &reference {
+                Some(reference) => {
+                    interval_arguments(parser, reference)?;
+                }
+                None => {
+                    return Err(Thrown::user(
+                        "We require at least one input source that has a sequence dictionary \
+                         (reference or reads) when intervals are specified",
+                    ))
+                }
+            }
+        }
+        return Err(Thrown::command_line(
+            "Argument input was missing: Argument 'input' is required",
+        ));
+    };
     let splits_by_itself = matches!(
         tool,
         "FindBreakpointEvidenceSpark" | "StructuralVariationDiscoveryPipelineSpark"
@@ -2290,7 +2307,7 @@ fn load_cnv_calls(
 
 /// `ReferenceMultiSparkSource.getBases`.
 struct SparkReference {
-    fasta: htsjdk_bam::fasta_index::IndexedFasta<std::fs::File>,
+    fasta: htsjdk_bam::fasta_index::IndexedFasta<htsjdk_bam::fasta_index::PositionalFile>,
 }
 
 impl gatk_tools::sv_discovery::Reference for SparkReference {
@@ -2740,12 +2757,12 @@ pub fn pathseq_filter_spark(parser: &Parser) -> Outcome {
     cleared.sequences.clear();
     if !filtered.paired.is_empty() {
         cleared.set_sort_order("queryname");
-        let output = argument(parser, "paired-output").ok_or_else(null_pathseq_output)?;
+        let output = argument(parser, "paired-output").ok_or_else(null_spark_tool_output)?;
         write_spark_reads(parser, &cleared, &filtered.paired, &output, true)?;
     }
     if !filtered.unpaired.is_empty() {
         cleared.set_sort_order("unsorted");
-        let output = argument(parser, "unpaired-output").ok_or_else(null_pathseq_output)?;
+        let output = argument(parser, "unpaired-output").ok_or_else(null_spark_tool_output)?;
         write_spark_reads(parser, &cleared, &filtered.unpaired, &output, true)?;
     }
     Ok(None)
@@ -2757,7 +2774,40 @@ fn pathseq_task_failure(message: String) -> Thrown {
     Thrown::non_user("org.apache.spark.SparkException", message)
 }
 
-/// `writeReads` handed the output nobody named.
+/// The check `GATKSparkTool.writeReads` opens with since 4.7.0.0: Disq writes only CRAM 3.1, so a
+/// `.cram` output asking for 3.0 is refused, and `getCRAMVersion` refuses any other value first.
+fn refuse_spark_cram_3_0(parser: &Parser, output: &str) -> Result<(), Thrown> {
+    if !output.ends_with(".cram") {
+        return Ok(());
+    }
+    let version = argument(parser, "output-cram-version").unwrap_or_else(|| "3.1".to_string());
+    match version.trim() {
+        "3.1" => Ok(()),
+        "3.0" => Err(Thrown::user(
+            "CRAM 3.0 output is not supported by GATK Spark tools.\n\
+             The Spark CRAM writer can only produce CRAM 3.1, but '3.0' was requested via \
+             --output-cram-version.\n\
+             To write CRAM 3.0, use the equivalent non-Spark tool (e.g. PrintReads instead of \
+             PrintReadsSpark); otherwise omit --output-cram-version (or set it to 3.1) to write \
+             CRAM 3.1."
+                .to_string(),
+        )),
+        _ => Err(Thrown::user(format!(
+            "Bad input: Unsupported CRAM version '{version}'. Supported values are '3.0' and '3.1'."
+        ))),
+    }
+}
+
+/// `GATKSparkTool.writeReads` handed the output nobody named: since 4.7.0.0 its first line asks
+/// that output whether it ends in `.cram`.
+fn null_spark_tool_output() -> Thrown {
+    Thrown::non_user(
+        "java.lang.NullPointerException",
+        "Cannot invoke \"String.endsWith(String)\" because \"outputFile\" is null".to_string(),
+    )
+}
+
+/// `ReadsSparkSink.writeReads` handed the output nobody named.
 fn null_pathseq_output() -> Thrown {
     Thrown::non_user(
         "java.lang.IllegalArgumentException",
@@ -3877,6 +3927,7 @@ fn write_reverted(
     partitions: &[Vec<BamRecord>],
     output: &str,
 ) -> Result<(), Thrown> {
+    refuse_spark_cram_3_0(parser, output)?;
     if let Some(parent) = std::path::Path::new(output).parent() {
         std::fs::create_dir_all(parent).map_err(|error| {
             Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
@@ -4921,6 +4972,7 @@ fn write_spark_reads(
     output: &str,
     sort_to_header: bool,
 ) -> Result<(), Thrown> {
+    refuse_spark_cram_3_0(parser, output)?;
     let (header, sort_order) = disq_header(header);
     let partitions = if sort_to_header {
         sorted_partitions(parser, sort_order.as_deref(), records)?
@@ -5056,7 +5108,10 @@ fn write_spark_indexed(
                 .encode_into(&mut encoded)
                 .map_err(|error| failed(output, format!("{error:?}")))?;
             if (index as u64).is_multiple_of(granularity) {
-                offsets.push(shift + stream.file_pointer());
+                let pointer = stream
+                    .file_pointer()
+                    .map_err(|error| failed(output, error.to_string()))?;
+                offsets.push(shift + pointer);
             }
             std::io::Write::write_all(&mut stream, &encoded)
                 .map_err(|error| failed(output, error.to_string()))?;

@@ -55,6 +55,17 @@ pub fn value_class(type_name: &str, type_class: &str) -> Option<ValueClass> {
             simple_name: "File",
             taggable: false,
         }),
+        // Picard's `REFERENCE_SEQUENCE` and some `INPUT`s: an `HtsPath`, which is no
+        // `TaggedArgument`.
+        "PicardHtsPath" => Some(ValueClass::Constructed {
+            simple_name: "PicardHtsPath",
+            taggable: false,
+        }),
+        // Picard `GatherVcfs`' `INPUT`: htsjdk's own `HtsPath`, no `TaggedArgument` either.
+        "HtsPath" => Some(ValueClass::Constructed {
+            simple_name: "HtsPath",
+            taggable: false,
+        }),
         // `ComposeSTRTableFile`'s `--decimation`, built through its `String` constructor like a
         // `File`, and no more taggable than one.
         "STRDecimationTable" => Some(ValueClass::Constructed {

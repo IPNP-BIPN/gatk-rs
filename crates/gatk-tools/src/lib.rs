@@ -51,6 +51,7 @@ pub mod compare_references;
 pub mod compose_str_table;
 pub mod concordance;
 pub mod condense_depth_evidence;
+pub mod convert_counts_to_depth_file;
 pub mod convert_headerless_shard;
 pub mod count_bases_in_reference;
 pub mod count_false_positives;

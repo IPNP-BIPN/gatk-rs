@@ -116,3 +116,27 @@ fn a_header_with_no_contigs_is_the_one_refusal() {
         refusal(&text, "no-contigs")
     );
 }
+
+#[test]
+fn all_gts_filtered_counts_only_variant_genotypes() {
+    let input = "##fileformat=VCFv4.2\n\
+        ##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n\
+        ##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype quality\">\n\
+        ##FORMAT=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">\n\
+        ##contig=<ID=chr1,length=1000>\n\
+        #CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ta\tb\n\
+        chr1\t10\t.\tA\tG\t.\tPASS\t.\tGT:GQ:DP\t0/0:5:5\t0/0:5:5\n\
+        chr1\t20\t.\tA\tG\t.\tPASS\t.\tGT:GQ:DP\t0/1:5:5\t0/0:50:50\n";
+    let thresholds = Thresholds {
+        min_gq: 30,
+        ..Thresholds::default()
+    };
+    let output = filter(input, &thresholds).expect("filtered");
+    let sites: Vec<&str> = output
+        .lines()
+        .filter(|line| !line.starts_with('#'))
+        .map(|line| line.split('\t').nth(6).unwrap())
+        .collect();
+    // Every hom-ref genotype filtered is not a filtered site; the one het filtered is.
+    assert_eq!(sites, ["PASS", "AllGtsFiltered"]);
+}

@@ -1,6 +1,6 @@
 //! The segmenter's intermediates against the frozen reference's, bit for bit.
 //!
-//! `tools/python-tools/pp_trace.py` runs `segment_gcnv_calls.py` in `broadinstitute/gatk:4.6.2.0`
+//! `tools/python-tools/pp_trace.py` runs `segment_gcnv_calls.py` in `broadinstitute/gatk:4.7.0.0`
 //! under `gcnv_frozen_env.sh` and writes every call of every compiled pytensor function, inputs and
 //! outputs, and every segment quality, as raw float64 bits. `GCNV_PP_TRACE` names the directory
 //! holding `s<index>/trace.tsv`, `GCNV_PP_RUN` the run whose shards it read. Without them the test

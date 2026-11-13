@@ -1,7 +1,7 @@
 //! `PostprocessGermlineCNVCalls` past the interpreter, against the frozen reference.
 //!
 //! The dump comes from `tools/python-tools/gcnv_dump.sh`, which runs the gCNV trio in
-//! `broadinstitute/gatk:4.6.2.0` under `gcnv_frozen_env.sh`, then the postprocessing of every
+//! `broadinstitute/gatk:4.7.0.0` under `gcnv_frozen_env.sh`, then the postprocessing of every
 //! sample, and prints the shards' bytes (`input` rows) and every output's sha256 (`file` rows). Its
 //! golden is frozen from a CI artefact like every other; until then the replay reads
 //! `GATK_RS_GCNV_DUMP`, or says it has nothing to compare (docs/gcnv-postprocess.md).

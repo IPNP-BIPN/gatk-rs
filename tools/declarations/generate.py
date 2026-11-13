@@ -347,6 +347,21 @@ def enum_table():
     )
 
 
+def constant_name(tool):
+    """The tool's constant. GATK's `UpdateVCFSequenceDictionary` and Picard's
+    `UpdateVcfSequenceDictionary` are one name upper-cased, so a Picard tool's carries a prefix."""
+    return ("PICARD_" if tool in PICARD_TOOLS else "") + tool.upper()
+
+
+# The Picard tools the dump declares, whose names can collide with a GATK tool's.
+PICARD_TOOLS = {
+    "AddCommentsToBam", "BuildBamIndex", "CheckTerminatorBlock", "FilterVcf", "FixVcfHeader",
+    "GatherBamFiles", "GatherVcfs", "MakeSitesOnlyVcf", "MergeVcfs", "RenameSampleInVcf",
+    "SetNmAndUqTags", "SetNmMdAndUqTags", "SortVcf", "SplitVcfs", "UpdateVcfSequenceDictionary",
+    "VcfFormatConverter", "VcfToIntervalList",
+}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true",
@@ -361,7 +376,7 @@ def main():
             tools.append(line.split("\t")[1])
     out = [HEADER]
     for tool in tools:
-        constant = tool.upper()
+        constant = constant_name(tool)
         parsed = []
         entries = []
         docs = {}
@@ -422,7 +437,7 @@ def main():
         )
     out.append(summary_table(tools))
     out.append(enum_table())
-    arms = "\n".join(f'        "{tool}" => Some({tool.upper()}),' for tool in tools)
+    arms = "\n".join(f'        "{tool}" => Some({constant_name(tool)}),' for tool in tools)
     out.append(
         "/// The declarations of one tool, by the name `gatk <Tool>` resolves.\n"
         "pub fn declarations(tool: &str) -> Option<&'static [Declaration]> {\n"

@@ -1,6 +1,6 @@
 # PostprocessGermlineCNVCalls against the frozen reference
 
-Part of #549. The target is GATK 4.6.2.0 in `broadinstitute/gatk:4.6.2.0` **under
+Part of #549. The target is GATK 4.7.0.0 in `broadinstitute/gatk:4.7.0.0` **under
 `tools/python-tools/gcnv_frozen_env.sh`** ([gcnv-reproducible-oracle.md](gcnv-reproducible-oracle.md)):
 pytensor's C at baseline x86-64 with `-ffp-contract=off` and no OpenMP, Ubuntu's reference BLAS over
 MKL, numpy's baseline loops, glibc's libm without FMA or AVX2. Under GATK's own configuration the
@@ -59,7 +59,7 @@ Not ported: `--input-intervals-vcf` and `--clustered-breakpoints` (the joint-cal
 
 ## Reproducing
 
-Inside `broadinstitute/gatk:4.6.2.0` with `tools/python-tools` at `/harness`, after
+Inside `broadinstitute/gatk:4.7.0.0` with `tools/python-tools` at `/harness`, after
 `. /harness/gcnv_frozen_env.sh`:
 
 ```

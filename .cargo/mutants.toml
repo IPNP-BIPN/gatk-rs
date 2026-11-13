@@ -1,0 +1,26 @@
+# cargo-mutants (#1392): where the goldens do not look. docs/mutants.md has the counts and how
+# to run it. Each exclusion below is a mutant no input can tell from the port, with the reason;
+# a real gap gets a corpus record from the oracle instead, never an entry here.
+exclude_re = [
+    # `GATKRead.isUnmapped` already holds every read whose start is 0, and a start cannot be
+    # negative, so ValidAlignmentStartReadFilter is true on every read the adapter can present.
+    'replace valid_alignment_start -> bool with true',
+    'replace > with >= in valid_alignment_start',
+    # `end - start + 1` is the cigar's reference length, never negative: the reference's
+    # ValidAlignmentEndReadFilter is just as vacuous, and so is every variant of the subtraction.
+    'replace valid_alignment_end -> bool with true',
+    'in valid_alignment_end$',
+    # P is the only operator that is neither a clip nor real, so "is padding" answering true
+    # changes no branch the earlier tests have not already taken.
+    'replace cigar::is_padding -> bool with true',
+    # These change `is_valid` only on cigars holding two indels in a row, which
+    # `has_consecutive_indels` rejects anyway, and `is_valid` has no caller but `is_good`.
+    # Pinned by line: if the code moves, the mutants reappear as survivors rather than hide.
+    'lib.rs:112:46: replace && with \|\| in cigar::is_valid',
+    'lib.rs:112:49: delete ! in cigar::is_valid',
+    'lib.rs:115:46: replace && with \|\| in cigar::is_valid',
+    'lib.rs:115:57: replace == with != in cigar::is_valid',
+    # Caught, but by gatk-tools/tests/multi_pass.rs, which a run scoped to gatk-readfilter does
+    # not build (checked by hand: both make it fail).
+    'replace Counting::filtered_count -> u64 with [01]$',
+]

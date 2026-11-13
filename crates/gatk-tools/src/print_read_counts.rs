@@ -198,8 +198,11 @@ impl PrintError {
                 "No dictionary available.  Supply one with --sequence-dictonary.".to_string()
             }
             PrintError::NoHeader => "Input file has no header.".to_string(),
+            // `Utils.nonEmpty(collection, message)` prefixes its own words, measured by
+            // ConvertCountsToDepthFileDump's no-read-groups run.
             PrintError::NoReadGroups => {
-                "The input header does not contain any read groups.  Cannot determine a sample name."
+                "The collection is empty: The input header does not contain any read groups.  \
+                 Cannot determine a sample name."
                     .to_string()
             }
             // StringUtils.join renders a null element as nothing at all.

@@ -48,7 +48,7 @@ public class OracleProbe {
      */
     private static final String EXPECTED_GATK_VERSION =
             System.getenv("ORACLE_GATK_VERSION") == null
-                    ? "4.6.2.0" : System.getenv("ORACLE_GATK_VERSION");
+                    ? "4.7.0.0" : System.getenv("ORACLE_GATK_VERSION");
 
     /**
      * htsjdk-rs decision 0011: FormatUtil reaches NumberFormat.getNumberInstance(), which takes the

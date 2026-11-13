@@ -23,6 +23,7 @@ Two modes, and the difference is the whole point of Milestone C:
 import argparse
 import hashlib
 import json
+import os
 import re
 import shlex
 import shutil
@@ -33,7 +34,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 ARRAYS = REPO / "tools" / "coverage" / "arrays"
-IMAGE = "gatk-rs-oracle:4.6.2.0"
+IMAGE = "gatk-rs-oracle:4.7.0.0"
 PLATFORM = "linux/amd64"
 
 # The `Add-Opens` of the GATK jar's own manifest. `java -jar` applies them and `java -cp` does not,
@@ -65,7 +66,11 @@ ADD_OPENS = (
     "java.base/jdk.internal.module", "java.base/java.lang.module",
     "java.security.jgss/sun.security.krb5",
 )
-JAVA_OPENS = " ".join(f"--add-opens={module}=ALL-UNNAMED" for module in ADD_OPENS)
+# The properties every conformance suite runs under, so a row is measured under the same
+# configuration as a golden. Without -Dsamjdk.use_libdeflate=false, htsjdk 5.0.0 compresses with
+# libdeflate and every BGZF output (BAM, BAI, VCF.GZ, TBI) differs from the JDK deflater's bytes.
+JAVA_PROPS = json.loads((REPO / "tools" / "conformance" / "manifest.json").read_text())["default_java_props"]
+JAVA_OPENS = " ".join([*(f"--add-opens={module}=ALL-UNNAMED" for module in ADD_OPENS), *JAVA_PROPS])
 
 # Values that mean "the argument is absent", so a held-at value carrying one must not be passed.
 ABSENT = {"None", "null", "[]", ""}
@@ -205,10 +210,11 @@ def run_oracle(tool, row_args, workdir, positional=(), tagged=(), lists=()):
     out_dir.mkdir(exist_ok=True)
     clear(out_dir)
 
+    copies, row_args = writable_copies(tool, row_args)
     cli = " ".join(as_cli(row_args, positional, tagged, lists))
     # `gatk <Tool> <args>`: the tool name is the first token, which is the shape the bit-identity
     # claim is defined against, and the wrapper is what fixes the parser to Barclay.
-    command = f'rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && java {JAVA_OPENS} -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {tool} {cli}; rc=$?; chmod -R a+rwX /work/out; exit $rc'
+    command = f'rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && {copies}java {JAVA_OPENS} -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {tool} {cli}; rc=$?; chmod -R a+rwX /work/out; exit $rc'
     result = subprocess.run(
         [
             "docker", "run", "--rm", "--platform", PLATFORM,
@@ -221,7 +227,7 @@ def run_oracle(tool, row_args, workdir, positional=(), tagged=(), lists=()):
     )
     return (
         result.returncode,
-        with_stdout(read_output(out_dir, row_args), result.stdout),
+        with_stdout(read_output(out_dir, row_args), result.stdout + stderr_answer(tool, result.stderr)),
         first_error(result.stderr or result.stdout),
     )
 
@@ -633,6 +639,8 @@ def without_start_time(text):
 
 # log4j's `%d{HH:mm:ss.SSS}` at the head of a GATK log line.
 LOG_TIME = re.compile(r"^\d\d:\d\d:\d\d\.\d\d\d ")
+# htsjdk's `Log`: level, then `yyyy-MM-dd HH:mm:ss`, tab separated.
+PICARD_LOG_TIME = re.compile(r"^(ERROR|WARNING|INFO|DEBUG)\t\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\t")
 # Which stage and task a Spark job had reached counts the jobs before it, not the tool's behaviour.
 SPARK_TASK = re.compile(r"Exception in task \d+\.\d+ in stage \d+\.\d+ \(TID \d+\)")
 
@@ -651,6 +659,10 @@ def first_error(text):
     The user error is looked for first: a Spark thread stopped by that same refusal can log an
     `InterruptedException` ahead of it, on some runs and not others, and that line is the
     scheduler's rather than the tool's. `ApplyBQSRSpark` measured 19 of 20 on it in run 40928504522.
+
+    A Picard tool logs through htsjdk's `Log` instead, whose date sits in the second column:
+    `GatherVcfs` catches its own refusal and logs it as `ERROR\t<date>\tGatherVcfs\t...` before
+    returning 1, so the date is masked there for the same reason.
     """
     lines = text.split("\n")
     for line in lines:
@@ -658,7 +670,8 @@ def first_error(text):
             return LOG_TIME.sub("", line.strip())
     for line in lines:
         if "Exception" in line or line.startswith("ERROR"):
-            return SPARK_TASK.sub("Exception in a task", LOG_TIME.sub("", line.strip()))
+            line = PICARD_LOG_TIME.sub(r"\1\t<time>\t", LOG_TIME.sub("", line.strip()))
+            return SPARK_TASK.sub("Exception in a task", line)
     return text.strip().split("\n")[-1][:200] if text.strip() else ""
 
 
@@ -681,8 +694,9 @@ def run_port(binary, tool, row_args, workdir, positional=(), tagged=(), lists=()
     clear(out_dir)
 
     binary = Path(binary).resolve()
+    copies, row_args = writable_copies(tool, row_args)
     cli = " ".join(as_cli(row_args, positional, tagged, lists))
-    command = f"rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && /work/port-binary/{binary.name} {tool} {cli}"
+    command = f"rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && {copies}/work/port-binary/{binary.name} {tool} {cli}"
     result = subprocess.run(
         [
             "docker", "run", "--rm", "--platform", PLATFORM,
@@ -696,9 +710,26 @@ def run_port(binary, tool, row_args, workdir, positional=(), tagged=(), lists=()
     )
     return (
         result.returncode,
-        with_stdout(read_output(out_dir, row_args), result.stdout),
+        with_stdout(read_output(out_dir, row_args), result.stdout + stderr_answer(tool, result.stderr)),
         first_error(result.stderr or result.stdout),
     )
+
+
+def stderr_answer(tool, stderr):
+    """The lines of stderr a tool prints its ANSWER on, per tool under `$stderr_answer` (a regex).
+
+    `CheckTerminatorBlock` writes nothing and prints the termination's name to stderr, among the
+    log, so every accepted row looked alike. Only the lines the pattern matches are kept, so the
+    log around them is still not compared.
+    """
+    path = REPO / "tools" / "coverage" / "fixtures.json"
+    pattern = (
+        json.loads(path.read_text()).get("per_tool", {}).get(tool, {}).get("$stderr_answer")
+        if path.exists() else None
+    )
+    if not pattern or not stderr:
+        return ""
+    return "".join(line + "\n" for line in stderr.split("\n") if re.fullmatch(pattern, line))
 
 
 def with_stdout(text, stdout):
@@ -747,9 +778,9 @@ def main(argv):
     global FIXTURES_DIR
     FIXTURES_DIR = options.fixtures_dir
 
-    array_path = ARRAYS / f"{options.tool}.t{options.t}.json"
-    if not array_path.exists():
-        raise SystemExit(f"no array at {array_path}; generate it with covering.py")
+    array_path = array_file(options.tool, options.t)
+    if array_path is None:
+        raise SystemExit(f"no array for {options.tool}; generate it with covering.py")
     array = json.loads(array_path.read_text())
     held = array.get("excluded", [])
 
@@ -830,6 +861,44 @@ def tagged_arguments(tool):
         return ()
     fixtures = json.loads(path.read_text())
     return tuple(fixtures.get("per_tool", {}).get(tool, {}).get("$tagged", []))
+
+
+def array_file(tool, t):
+    """The tool's array, its name matched exactly.
+
+    Picard's arrays sit under `arrays/picard/`: its `UpdateVcfSequenceDictionary` and GATK's
+    `UpdateVCFSequenceDictionary` differ only by case, which a case-insensitive checkout cannot hold
+    in one folder, and `Path.exists` there would answer for either.
+    """
+    name = f"{tool}.t{t}.json"
+    for folder in (ARRAYS, ARRAYS / "picard"):
+        if folder.is_dir() and name in os.listdir(folder):
+            return folder / name
+    return None
+
+
+def writable_copies(tool, row_args):
+    """A private, writable copy of each input listed under the tool's `$writable`.
+
+    The corpus is mounted read-only on both sides, and `AddCommentsToBam` asserts its INPUT is
+    writable before it reads it (`BamFileIoUtils.reheaderBamFile`), so every row would measure that
+    refusal. Each such value is copied into the container's own `/work/tmp` first, which is not an
+    output, and the row names the copy. Returns the shell prefix and the rewritten assignments.
+    """
+    path = REPO / "tools" / "coverage" / "fixtures.json"
+    names = (
+        json.loads(path.read_text()).get("per_tool", {}).get(tool, {}).get("$writable", [])
+        if path.exists() else []
+    )
+    prefix, rewritten = "", []
+    for pair in row_args:
+        name, _, value = pair.partition("=")
+        if name in names and value.startswith("/work/fixtures/"):
+            copy = f"/work/tmp/inputs/{Path(value).name}"
+            prefix += f"mkdir -p /work/tmp/inputs && cp {value} {copy} && chmod u+w {copy} && "
+            pair = f"{name}={copy}"
+        rewritten.append(pair)
+    return prefix, rewritten
 
 
 def list_arguments(tool):
