@@ -922,6 +922,16 @@ fn read_walker_startup_with(
     };
     let source = if deferred_parse_refusal.is_some() {
         None
+    } else if let (Some(bytes), true, Some(inflated)) = (bytes, compressed, decompressed) {
+        // The file read and inflated above, rather than once more each by `open` and by
+        // `open_unindexed`. The answer is `open`'s or its fallback's: a header that does not
+        // parse is the fallback's refusal, and an index that does not parse is no index.
+        let mut source = ReadsDataSource::from_inflated(path, bytes, inflated)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        if let Some(index) = &index {
+            let _ = source.load_index(index);
+        }
+        Some(source)
     } else {
         Some(match &index {
             // An index that does not parse is not refused here: htsjdk opens it lazily, so the

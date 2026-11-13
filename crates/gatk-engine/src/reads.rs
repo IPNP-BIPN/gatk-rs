@@ -375,6 +375,9 @@ pub fn minimum_offset(linear_index: &[u64], start_pos: i32) -> u64 {
 /// query semantics.
 pub struct ReadsDataSource {
     compressed: Vec<u8>,
+    /// `compressed` inflated, when opening already inflated it: inflating a BAM again costs as
+    /// much as the first time, and `decompress_all` gives the same bytes for the same input.
+    inflated: Option<Vec<u8>>,
     header: SamHeader,
     /// The path the BAM was opened from, which a `RuntimeEOFException` names.
     path: String,
@@ -405,6 +408,7 @@ impl ReadsDataSource {
         let index = Self::read_reference_indexes(bai)?;
         Ok(ReadsDataSource {
             compressed,
+            inflated: Some(decompressed),
             header,
             path: bam.display().to_string(),
             index,
@@ -459,17 +463,44 @@ impl ReadsDataSource {
         let compressed = std::fs::read(bam).map_err(|e| ReadsError::Io(e.to_string()))?;
         let decompressed = htsjdk_bgzf::read::decompress_all(&compressed)
             .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?;
-        let header = BamReader::new(&decompressed)
+        Self::from_inflated(bam, compressed, decompressed)
+    }
+
+    /// [`Self::open_unindexed`] for a caller that has already read the file and inflated it
+    /// whole, so that it is not inflated a second time.
+    pub fn from_inflated(
+        bam: &Path,
+        compressed: Vec<u8>,
+        inflated: Vec<u8>,
+    ) -> Result<ReadsDataSource, ReadsError> {
+        let header = BamReader::new(&inflated)
             .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?
             .header
             .text;
         Ok(ReadsDataSource {
             compressed,
+            inflated: Some(inflated),
             header,
             path: bam.display().to_string(),
             index: Vec::new(),
             split_start: 0,
         })
+    }
+
+    /// The `.bai` [`Self::open`] reads. On a refusal the source stays unindexed.
+    pub fn load_index(&mut self, bai: &Path) -> Result<(), ReadsError> {
+        self.index = Self::read_reference_indexes(bai)?;
+        Ok(())
+    }
+
+    /// The whole file inflated: the copy opening kept, or a fresh inflate.
+    fn inflated(&self) -> Result<std::borrow::Cow<'_, [u8]>, ReadsError> {
+        match &self.inflated {
+            Some(inflated) => Ok(std::borrow::Cow::Borrowed(inflated)),
+            None => htsjdk_bgzf::read::decompress_all(&self.compressed)
+                .map(std::borrow::Cow::Owned)
+                .map_err(|e| ReadsError::Malformed(format!("{e:?}"))),
+        }
     }
 
     pub fn header(&self) -> &SamHeader {
@@ -618,8 +649,7 @@ impl ReadsDataSource {
     /// The header can span BGZF blocks, so this walks blocks counting decompressed bytes rather
     /// than assuming the records start in the first one.
     fn first_record_pointer(&self) -> Result<u64, ReadsError> {
-        let decompressed = htsjdk_bgzf::read::decompress_all(&self.compressed)
-            .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?;
+        let decompressed = self.inflated()?;
         let header_end = BamReader::new(&decompressed)
             .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?
             .records_start();
@@ -655,8 +685,7 @@ impl ReadsDataSource {
             }
             return Ok(records);
         }
-        let decompressed = htsjdk_bgzf::read::decompress_all(&self.compressed)
-            .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?;
+        let decompressed = self.inflated()?;
         let reader =
             BamReader::new(&decompressed).map_err(|e| ReadsError::Malformed(format!("{e:?}")))?;
         reader
@@ -697,6 +726,8 @@ impl ReadsDataSource {
         };
         Ok(ReadsDataSource {
             compressed,
+            // A split source inflates what it reads, not the whole file.
+            inflated: None,
             header,
             path: bam.display().to_string(),
             index,
