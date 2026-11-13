@@ -497,7 +497,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -654,6 +654,7 @@ dependencies = [
  "gatk-engine",
  "gatk-fermilite",
  "gatk-readfilter",
+ "hdf5-pure",
  "htsjdk-bam",
  "htsjdk-bgzf",
  "htsjdk-metrics",
@@ -718,6 +719,52 @@ name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
+
+[[package]]
+name = "hdf5-pure"
+version = "0.48.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70485cc6c7ae0829c1b702454c1159b887fa36324cc728b5a950cba4039ee2d6"
+dependencies = [
+ "hdf5-pure-core",
+ "hdf5-pure-filter",
+ "hdf5-pure-format",
+ "hdf5-pure-space",
+]
+
+[[package]]
+name = "hdf5-pure-core"
+version = "0.48.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2be8b744ebcbbb06399f515fd545bfda0befdc84d7aa8191403868126b02156c"
+
+[[package]]
+name = "hdf5-pure-filter"
+version = "0.48.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "356a1b586a0af9acbf57ddfde1907c83a16adb053a258d165d4632e6d4029ac5"
+dependencies = [
+ "hdf5-pure-core",
+]
+
+[[package]]
+name = "hdf5-pure-format"
+version = "0.48.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92c76b7b4f591755c8b87911f48ba5fe32014739f309ea4d599857639f662083"
+dependencies = [
+ "byteorder",
+ "hdf5-pure-core",
+]
+
+[[package]]
+name = "hdf5-pure-space"
+version = "0.48.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72ecfd5315cd3f684fb3714353b8e4c0fa7ac0d97b098f00c8622733f5e5f643"
+dependencies = [
+ "hdf5-pure-core",
+]
 
 [[package]]
 name = "heck"
@@ -1325,7 +1372,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1571,7 +1618,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1838,7 +1885,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
