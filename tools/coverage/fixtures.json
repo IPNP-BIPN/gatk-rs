@@ -17149,12 +17149,14 @@
     "ScoreVariantAnnotations": {
       "$why": [
         "The variants, resources, annotations and modes are ExtractVariantAnnotations': the same walker's onTraversalStart runs,",
-        "with the reserved snp label its refusal. The header goes to a writer nothing closes, and only then the backend. PYTHON_SCRIPT",
-        "needs a scorer readable at the model prefix, runs a whole pass, writes the annotations and stops at the first script.",
-        "An interval with no variant is the one way to a finished VCF. The command line is held off because it records the date.",
-        "The two thresholds are not varied: their bounds refuse a null where the parser reads one, and a value is refused for the",
-        "calibration scores no fixture can hold, so either would stop every row before the pass. The dump covers both refusals."
+        "with the reserved snp label its refusal. The header goes to a writer nothing closes, and only then the backend. The",
+        "reference runs in the Broad's image, so past the import, and the port behind a stand-in python ($past_the_interpreter);",
+        "it/both and it/snp then hold scorers the reference trained before the rows (run_array.train_scorers), and nothing holds",
+        "none. PYTHON_SCRIPT runs a script that does nothing, which the port refuses in its own words: those rows differ.",
+        "The command line is held off because it records the date. The two thresholds are not varied: their bounds refuse a null",
+        "where the parser reads one, so a row without them would stop before the pass. The dump covers their refusals."
       ],
+      "$past_the_interpreter": true,
       "$output_on_failure": true,
       "$tagged": [
         "--resource"
