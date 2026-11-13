@@ -113,3 +113,7 @@ For #1021 and #250: no `tch` or runtime is needed, so that evaluation can stop a
 is speed, because the sums are scalar software FMA: on this machine, under load from other jobs and so
 only roughly, the port took 3.5 s for the 71 rows in 1D and 45 s in 2D. No exclusive timing of port and
 reference has been taken. That is the next thing #1021 would want.
+
+#1021 has since been measured (`docs/gpu/targets.md`, §1b): encoding is under 0.1% of the tool and
+inference 86%, and the convolutions now also run on Metal, bit-identical to the CPU path above and
+so to the reference's layers, at about 4 times the CPU path on every core.

@@ -1238,6 +1238,10 @@ GATK, which targets concordance and says so.
       binary64 in software on integers because Apple GPUs have none; bit-identical on every pair
       tested and on every suite of the workspace, and 21 to 22 times the engine's
       single CPU thread from 8,000 pairs (`docs/gpu/targets.md`)
+- [x] **NVScoreVariants' convolutions** (GPU.4, #1021): inference is 86% of the tool, so a device
+      can pay. Every convolution of both models on Metal, oneDNN's order in software binary32 on
+      integers; bit-identical to the CPU path, and the printed scores and VCFs to the reference's,
+      at 3.7 to 3.9 times the CPU path on every core (`docs/gpu/targets.md`)
 - [ ] **the assembly graph and genotyping** (G3): larger, and floating point throughout
 - [ ] **CRAM codecs** (Milestone H), whose arithmetic is integral and whose output is defined
 
