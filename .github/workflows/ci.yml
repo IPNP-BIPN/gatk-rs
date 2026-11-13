@@ -207,8 +207,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: autotools, which isal-sys's build script runs, and an assembler that reads ISA-L's ARM
-        # Xcode 16.4's assembler rejects ISA-L's `movk x, <.equ constant>, lsl 16` (run
-        # 42178742672); a current LLVM accepts it. Scoped to the target so rustc's own linker stays Xcode's.
+        # Xcode 16.4's assembler rejects ISA-L's `movk x, <.equ constant>, lsl 16` (run 42178742672);
+        # a current LLVM accepts it. Scoped to the target, so rustc's linker stays Xcode's.
         run: |
           brew install autoconf automake libtool llvm
           echo "CC_aarch64_apple_darwin=$(brew --prefix llvm)/bin/clang" >> "$GITHUB_ENV"
