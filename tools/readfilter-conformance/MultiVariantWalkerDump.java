@@ -163,6 +163,7 @@ public class MultiVariantWalkerDump {
         probe("header-type-conflict", new Probe(), List.of("-V", samplesB, "-V", samplesC));
         probe("duplicate-input", new Probe(), List.of("-V", a, "-V", a));
         probe("same-file-two-tags", new Probe(), List.of("-V:one", a, "-V:two", a));
+        probe("two-files-one-tag", new Probe(), List.of("-V:same", a, "-V:same", b));
         probe("throws-in-apply", new Throwing(), List.of("-V", a, "-V", b));
 
         // ---- grouped on start ------------------------------------------------------------------

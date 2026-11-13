@@ -63,6 +63,14 @@ pub enum Refusal {
     Incompatible(String),
     /// More than one input and no dictionary anywhere.
     NoDictionary,
+    /// `getSortedSamples` collects the headers with `Collectors.toMap` by input name, so two
+    /// inputs sharing a name are an `IllegalStateException` whose message prints both headers,
+    /// which the caller renders: the indexes are the first input of that name and the second.
+    DuplicateName {
+        name: String,
+        first: usize,
+        second: usize,
+    },
     /// Anything else, by the class the reference throws.
     Other { class: String, message: String },
 }
@@ -75,13 +83,14 @@ impl Refusal {
                 "org.broadinstitute.hellbender.exceptions.UserException$IncompatibleSequenceDictionaries"
             }
             Refusal::NoDictionary => "org.broadinstitute.hellbender.exceptions.UserException",
+            Refusal::DuplicateName { .. } => "java.lang.IllegalStateException",
             Refusal::Other { class, .. } => class,
         }
     }
 
     /// Whether the reference reports it as a user error.
     pub fn is_user(&self) -> bool {
-        !matches!(self, Refusal::Other { .. })
+        !matches!(self, Refusal::Other { .. } | Refusal::DuplicateName { .. })
     }
 
     pub fn message(&self) -> String {
@@ -92,6 +101,7 @@ impl Refusal {
                 multiple inputs, at least one input must have a sequence dictionary, or an index \
                 from which a sequence dictionary can be derived."
                 .to_string(),
+            Refusal::DuplicateName { name, .. } => format!("Duplicate key {name}"),
             Refusal::Other { message, .. } => message.clone(),
         }
     }
@@ -196,16 +206,18 @@ pub fn cross_validate(sources: &[(String, Option<Vec<Contig>>)]) -> Result<(), R
             // `sequenceRecordsAreEquivalent`: the same name, and the same length unless either is
             // unknown. The md5 arm after it never fires for a VCF, whose records carry none.
             if contig.length != target.length && contig.length != 0 && target.length != 0 {
-                return Err(Refusal::Incompatible(sequence_dictionary::incompatible_message(
-                    &format!(
-                        "Incompatible sequences found ({}: {}) and ({}: {})",
-                        contig.name, contig.length, target.name, target.length
+                return Err(Refusal::Incompatible(
+                    sequence_dictionary::incompatible_message(
+                        &format!(
+                            "Incompatible sequences found ({}: {}) and ({}: {})",
+                            contig.name, contig.length, target.name, target.length
+                        ),
+                        name,
+                        &as_records(dictionary),
+                        previous_name,
+                        &as_records(previous_dictionary),
                     ),
-                    name,
-                    &as_records(dictionary),
-                    previous_name,
-                    &as_records(previous_dictionary),
-                )));
+                ));
             }
         }
     }
@@ -214,6 +226,8 @@ pub fn cross_validate(sources: &[(String, Option<Vec<Contig>>)]) -> Result<(), R
 
 /// One input's header as the data source holds it.
 pub struct Source<'a> {
+    /// `FeatureDataSource.getName()`, which is the input's.
+    pub name: &'a str,
     pub header: &'a VcfHeader,
     /// `getVCFHeaderVersion()`.
     pub version: Option<&'a str>,
@@ -306,6 +320,18 @@ pub fn merge(sources: &[Source]) -> Result<Merged, Refusal> {
             .map(|header| header.lines)
             .unwrap_or_default()
     };
+    for (second, source) in sources.iter().enumerate() {
+        if let Some(first) = sources[..second]
+            .iter()
+            .position(|other| other.name == source.name)
+        {
+            return Err(Refusal::DuplicateName {
+                name: source.name.to_string(),
+                first,
+                second,
+            });
+        }
+    }
     let dictionary = dictionary_of(&lines);
     let dictionary = (!dictionary.is_empty()).then_some(dictionary);
     if dictionary.is_none() && sources.len() > 1 {
@@ -660,7 +686,12 @@ mod tests {
     fn overlap_keeps_the_furthest_end_across_groups() {
         let mut grouping = GroupedByOverlap::default();
         let mut groups: Vec<Vec<i64>> = Vec::new();
-        for at in [At("c", 100, 109), At("c", 105, 105), At("c", 110, 110), At("c", 111, 111)] {
+        for at in [
+            At("c", 100, 109),
+            At("c", 105, 105),
+            At("c", 110, 110),
+            At("c", 111, 111),
+        ] {
             if let Some(group) = grouping.accept(at) {
                 groups.push(group.iter().map(|a| a.1).collect());
             }

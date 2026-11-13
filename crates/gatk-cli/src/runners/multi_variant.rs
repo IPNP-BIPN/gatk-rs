@@ -37,6 +37,7 @@ pub fn thrown(refusal: Refusal) -> Thrown {
             "org.broadinstitute.hellbender.exceptions.UserException$IncompatibleSequenceDictionaries"
         }
         Refusal::NoDictionary => "org.broadinstitute.hellbender.exceptions.UserException",
+        Refusal::DuplicateName { .. } => "java.lang.IllegalStateException",
         Refusal::Other { class, .. } => super::java_class_name(class),
     };
     Thrown {
@@ -79,6 +80,15 @@ pub fn feature_inputs(parser: &Parser) -> Vec<FeatureInput> {
 /// repeats, opened, their dictionaries cross-checked unless `cross_validate` is off, and merged.
 pub fn open(inputs: Vec<FeatureInput>, cross_validate: bool) -> Result<DrivingVariants, Thrown> {
     engine::require_unique(&inputs).map_err(thrown)?;
+    open_unchecked(inputs, cross_validate)
+}
+
+/// [`open`] without the repeat check, which a tool that fills the driving inputs itself instead of
+/// through `--variant` (VariantEval) never reaches.
+pub fn open_unchecked(
+    inputs: Vec<FeatureInput>,
+    cross_validate: bool,
+) -> Result<DrivingVariants, Thrown> {
     let mut opened = Vec::with_capacity(inputs.len());
     for input in inputs {
         let path = input.raw.clone();
@@ -109,6 +119,7 @@ pub fn open(inputs: Vec<FeatureInput>, cross_validate: bool) -> Result<DrivingVa
         .iter()
         .zip(&versions)
         .map(|(driving, version)| engine::Source {
+            name: driving.input.name(),
             header: &driving.file.header,
             version: version.as_deref(),
             index_contigs: super::index_dictionary(&driving.path).map(|dictionary| {
@@ -128,7 +139,21 @@ pub fn open(inputs: Vec<FeatureInput>, cross_validate: bool) -> Result<DrivingVa
             .collect();
         engine::cross_validate(&dictionaries).map_err(thrown)?;
     }
-    let merged = engine::merge(&sources).map_err(thrown)?;
+    let merged = engine::merge(&sources).map_err(|refusal| match refusal {
+        Refusal::DuplicateName {
+            name,
+            first,
+            second,
+        } => Thrown::non_user(
+            "java.lang.IllegalStateException",
+            format!(
+                "Duplicate key {name} (attempted merging values {} and {})",
+                super::java_vcf_header_string(&opened[first].text),
+                super::java_vcf_header_string(&opened[second].text)
+            ),
+        ),
+        other => thrown(other),
+    })?;
     Ok(DrivingVariants {
         inputs: opened,
         merged,
@@ -165,13 +190,36 @@ impl DrivingVariants {
         let mut header = SamHeader::default();
         if any_own {
             for contig in self.merged.dictionary.iter().flatten() {
-                header.sequences.push(htsjdk_bam::header::SequenceRecord::new(
-                    &contig.name,
-                    contig.length as i32,
-                ));
+                header
+                    .sequences
+                    .push(htsjdk_bam::header::SequenceRecord::new(
+                        &contig.name,
+                        contig.length as i32,
+                    ));
             }
         }
         header
+    }
+
+    /// A variant walker's startup validation over the merged inputs: the first input stands for
+    /// the driving file and the merged dictionary for its dictionary.
+    pub(super) fn startup(&self, parser: &Parser) -> Result<super::VariantWalkerStart, Thrown> {
+        let first = &self.inputs[0];
+        super::variant_walker_validation(
+            parser,
+            first.path.clone(),
+            first.text.clone(),
+            first.codec,
+            self.dictionary(),
+        )
+    }
+
+    /// The merged header, samples included, as a writer starts from it.
+    pub fn header(&self) -> htsjdk_vcf::header::VcfHeader {
+        htsjdk_vcf::header::VcfHeader {
+            lines: self.header_lines(),
+            samples: self.merged.samples.clone(),
+        }
     }
 
     /// The merged header's lines as a writer emits them.
@@ -179,25 +227,50 @@ impl DrivingVariants {
         engine::written_lines(&self.merged.lines)
     }
 
-    /// Every record the traversal reaches, as `(input, record)`, in the merge's order: each input
-    /// restricted to `spans` first, as each data source is, then merged. A refusal from the merge
-    /// arrives after the records handed out before it.
-    pub fn merged(
+    /// Each input's records the traversal reaches, input by input: each restricted to `-L`, as
+    /// each data source is. `-L` queries every input by interval, so each needs an index before a
+    /// record is read.
+    pub fn reached(
         &self,
-        spans: Option<&[gatk_engine::interval::SimpleInterval]>,
-    ) -> (Vec<(usize, &VariantContext)>, Option<Thrown>) {
-        let reached: Vec<Vec<&VariantContext>> = self
+        intervals: Option<&[gatk_engine::interval::SimpleInterval]>,
+    ) -> Result<Vec<Vec<&VariantContext>>, Thrown> {
+        let spans = gatk_engine::variant_source::intervals_for_traversal(intervals);
+        if spans.is_some() {
+            if let Some(driving) = self
+                .inputs
+                .iter()
+                .find(|driving| !super::has_feature_index(&driving.path))
+            {
+                return Err(Thrown::user(
+                    gatk_tools::count_variants::CountVariantsError::IntervalsWithoutRandomAccess {
+                        path: driving.path.clone(),
+                    }
+                    .message(),
+                ));
+            }
+        }
+        Ok(self
             .inputs
             .iter()
             .map(|driving| {
-                let records = &driving.file.records;
-                let loci: Vec<Spanned> = records.iter().map(Spanned).collect();
+                let loci: Vec<Spanned> = driving.file.records.iter().map(Spanned).collect();
                 gatk_engine::variant_source::traverse(&loci, spans)
                     .into_iter()
                     .map(|spanned| spanned.0)
                     .collect()
             })
-            .collect();
+            .collect())
+    }
+
+    /// Every record the traversal reaches, as `(input, record)`, in the merge's order: the
+    /// [`reached`](Self::reached) records of every input, merged. A refusal from the merge
+    /// arrives after the records handed out before it.
+    #[allow(clippy::type_complexity)]
+    pub fn merged(
+        &self,
+        intervals: Option<&[gatk_engine::interval::SimpleInterval]>,
+    ) -> Result<(Vec<(usize, &VariantContext)>, Option<Thrown>), Thrown> {
+        let reached = self.reached(intervals)?;
         let contigs = self.merged.contigs();
         let keys: Vec<Vec<engine::Key>> = reached
             .iter()
@@ -214,7 +287,7 @@ impl DrivingVariants {
             .into_iter()
             .map(|(input, index)| (input, reached[input][index]))
             .collect();
-        (order, merge.failure.map(thrown))
+        Ok((order, merge.failure.map(thrown)))
     }
 
     /// `MultiVariantWalker.traverse`'s wrapper around a failure inside `apply`.

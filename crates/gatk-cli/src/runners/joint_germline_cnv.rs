@@ -626,22 +626,17 @@ pub fn joint_germline_cnv_segmentation(parser: &Parser) -> Outcome {
     use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType};
 
     let _ = resolve_read_filters(parser, TOOL)?;
-    let inputs = arguments(parser, "variant");
-    if inputs.len() > 1 {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "More than one --variant is a GATK feature that this port does not carry yet. This message is the port's own and not GATK's.",
+    let inputs = multi_variant::feature_inputs(parser);
+    if inputs.is_empty() {
+        return Err(Thrown::command_line(
+            "Argument variant was missing: Argument 'variant' is required",
         ));
     }
-    let input = inputs.into_iter().next().ok_or_else(|| {
-        Thrown::command_line("Argument variant was missing: Argument 'variant' is required")
-    })?;
-    let VariantWalkerStart {
-        input,
-        text,
-        intervals,
-        ..
-    } = variant_walker_startup_over(parser, input)?;
+    let driving = multi_variant::open(
+        inputs,
+        !flag(parser, "disable-sequence-dictionary-validation"),
+    )?;
+    let VariantWalkerStart { intervals, .. } = driving.startup(parser)?;
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
@@ -665,11 +660,8 @@ pub fn joint_germline_cnv_segmentation(parser: &Parser) -> Outcome {
         .iter()
         .map(|sequence| (sequence.name.clone(), sequence.length))
         .collect();
-    let file = htsjdk_vcf::reader::read_vcf(&text)
-        .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
-    let mut samples = file.header.samples.clone();
-    samples.sort();
-    samples.dedup();
+    // `MultiVariantDataSource.getSamples`: every input's, sorted, each once.
+    let samples = driving.merged.samples.clone();
 
     // `onTraversalStart`: the pedigree, validated strictly, then the model's intervals.
     let pedigree = read_pedigree(&pedigree_path)?;
@@ -730,7 +722,7 @@ pub fn joint_germline_cnv_segmentation(parser: &Parser) -> Outcome {
     );
 
     // `getVCFWriter`: the input's lines, the tool's own, and the samples sorted.
-    let mut header = file.header.clone();
+    let mut header = driving.header();
     header.samples = samples.clone();
     let compound =
         |id: &str, number: Cardinality, line_type: LineType, text: &str| HeaderLine::Compound {
@@ -781,7 +773,7 @@ pub fn joint_germline_cnv_segmentation(parser: &Parser) -> Outcome {
     }
 
     let multi_sample = samples.len() != 1;
-    let records = variants_in_traversal(&file.records, intervals.as_deref(), &input)?;
+    let (records, failure) = driving.merged(intervals.as_deref())?;
     let only_starting_inside = flag(parser, "ignore-variants-starting-outside-interval");
     let mut traversal = Traversal {
         settings: &settings,
@@ -793,20 +785,10 @@ pub fn joint_germline_cnv_segmentation(parser: &Parser) -> Outcome {
         clustered: Vec::new(),
         written: Vec::new(),
     };
-    let wrapped = |record: &VariantContext| {
-        Thrown::non_user(
-            "org.broadinstitute.hellbender.exceptions.GATKException",
-            format!(
-                "Exception thrown at {}:{} {}",
-                record.contig,
-                record.start,
-                java_variant_context_string(record, &input)
-            ),
-        )
-    };
     let result = (|| -> Result<(), Thrown> {
         let mut current: Option<String> = None;
-        for record in records {
+        for (input, record) in records {
+            let wrapped = |record: &VariantContext| driving.apply_failure(input, record);
             if only_starting_inside {
                 if let Some(intervals) = intervals.as_deref() {
                     let start = record.start as i32;
@@ -840,6 +822,9 @@ pub fn joint_germline_cnv_segmentation(parser: &Parser) -> Outcome {
                     .map_err(engine_error)?;
                 traversal.defragment(groups)?;
             }
+        }
+        if let Some(failure) = failure {
+            return Err(failure);
         }
         traversal.process_clusters()
     })();
