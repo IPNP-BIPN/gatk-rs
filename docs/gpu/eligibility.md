@@ -45,7 +45,8 @@ Apple GPUs, the first hardware this milestone runs on, have no binary64 unit, an
 is binary64 throughout. A `float` kernel would be a different function. So `kernels.metal` carries
 every double as the `ulong` holding its IEEE 754 bits and implements addition and multiplication
 on integers: rounded to nearest-even, subnormals kept, NaNs propagated in AArch64's order. That
-turns the one floating-point target of GPU.2 into an `integer` kernel, which is the strongest of
+turns the floating-point targets of GPU.2 into `integer` kernels (NVScoreVariants' binary32
+convolutions go through the same binary64, then round once to binary32), which is the strongest of
 the three classes rather than the weakest: there is no floating-point unit left for a second
 device to disagree with.
 

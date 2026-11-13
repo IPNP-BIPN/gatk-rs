@@ -6,7 +6,7 @@ use metal::{
     Buffer, CommandQueue, CompileOptions, ComputePipelineState, Device, MTLResourceOptions, MTLSize,
 };
 
-use super::ReadInputs;
+use super::{ConvShape, ReadInputs};
 use crate::pair_hmm::{initial_condition, initial_condition_log10, prior, qual_to_trans_probs};
 
 const SOURCE: &str = include_str!("kernels.metal");
@@ -18,6 +18,8 @@ struct Context {
     queue: CommandQueue,
     f64_ops: ComputePipelineState,
     pair_hmm: ComputePipelineState,
+    f32_ops: ComputePipelineState,
+    conv2d_fused: ComputePipelineState,
 }
 
 thread_local! {
@@ -31,7 +33,10 @@ fn build() -> Option<Context> {
     // Fast math would license reassociation and contraction. The kernels hold no floating point
     // for it to touch, and tools/audit/gpu_kernels.py keeps both facts true.
     options.set_fast_math_enabled(false);
-    let library = device.new_library_with_source(SOURCE, &options).ok()?;
+    let library = device
+        .new_library_with_source(SOURCE, &options)
+        .map_err(|e| eprintln!("kernels.metal does not compile: {e}"))
+        .ok()?;
     let pipeline = |name: &str| {
         let function = library.get_function(name, None).ok()?;
         device
@@ -41,6 +46,8 @@ fn build() -> Option<Context> {
     Some(Context {
         f64_ops: pipeline("f64_ops")?,
         pair_hmm: pipeline("pair_hmm")?,
+        f32_ops: pipeline("f32_ops")?,
+        conv2d_fused: pipeline("conv2d_fused")?,
         queue: device.new_command_queue(),
         device,
     })
@@ -67,10 +74,10 @@ fn buffer<T: Copy>(device: &Device, data: &[T]) -> Buffer {
     )
 }
 
-fn read_back(buffer: &Buffer, count: usize) -> Vec<u64> {
-    // SAFETY: the buffer is shared storage of at least `count` words, and the command that wrote
-    // it has completed.
-    unsafe { std::slice::from_raw_parts(buffer.contents() as *const u64, count).to_vec() }
+fn read_back<T: Copy>(buffer: &Buffer, count: usize) -> Vec<T> {
+    // SAFETY: the buffer is shared storage of at least `count` values of `T`, and the command that
+    // wrote it has completed.
+    unsafe { std::slice::from_raw_parts(buffer.contents() as *const T, count).to_vec() }
 }
 
 fn run(
@@ -181,11 +188,80 @@ pub fn pair_hmm_log10(haplotypes: &[Vec<u8>], reads: &[ReadInputs]) -> Option<Ve
                 &[chunk.len() as u32, stride as u32],
                 chunk.len(),
             );
-            totals.extend(read_back(&out, chunk.len()));
+            totals.extend(read_back::<u64>(&out, chunk.len()));
         }
         totals
             .into_iter()
             .map(|bits| jmath::math::log10(f64::from_bits(bits)) - offset)
             .collect()
+    })
+}
+
+pub fn f32_ops(operation: u32, a: &[u32], b: &[u32], c: &[u32]) -> Option<Vec<u32>> {
+    assert!(a.len() == b.len() && b.len() == c.len());
+    let n = a.len();
+    with_context(|context| {
+        let out = buffer(&context.device, &vec![0u32; n]);
+        if n > 0 {
+            let d = &context.device;
+            let (a, b, c) = (buffer(d, a), buffer(d, b), buffer(d, c));
+            run(
+                context,
+                &context.f32_ops,
+                &[&a, &b, &c, &out],
+                &[operation, n as u32],
+                n,
+            );
+        }
+        read_back(&out, n)
+    })
+}
+
+/// The outputs one dispatch computes, so no command buffer runs long enough for the watchdog.
+const CONV_OUTPUTS_PER_DISPATCH: usize = 1 << 18;
+
+pub fn conv2d_fused(
+    src: &[f32],
+    weight: &[f32],
+    bias: &[f32],
+    shape: &ConvShape,
+) -> Option<Vec<f32>> {
+    let total = shape.batch
+        * shape.outputs
+        * (shape.height + 1 - shape.kernel_height)
+        * (shape.width + 1 - shape.kernel_width);
+    let word = |v: usize| u32::try_from(v).expect("a convolution past 2^32 elements");
+    with_context(|c| {
+        let d = &c.device;
+        let (src, weight, bias) = (buffer(d, src), buffer(d, weight), buffer(d, bias));
+        let mut dst = Vec::with_capacity(total);
+        for first in (0..total).step_by(CONV_OUTPUTS_PER_DISPATCH) {
+            let count = CONV_OUTPUTS_PER_DISPATCH.min(total - first);
+            let words = [
+                shape.batch,
+                shape.inputs,
+                shape.height,
+                shape.width,
+                shape.outputs,
+                shape.kernel_height,
+                shape.kernel_width,
+                shape.block,
+                usize::from(shape.bias_last),
+                usize::from(shape.padded),
+                first,
+            ]
+            .map(word);
+            let words = buffer(d, &words);
+            let out = buffer(d, &vec![0u32; count]);
+            run(
+                c,
+                &c.conv2d_fused,
+                &[&src, &weight, &bias, &out, &words],
+                &[word(count)],
+                count,
+            );
+            dst.extend(read_back::<f32>(&out, count));
+        }
+        dst
     })
 }
