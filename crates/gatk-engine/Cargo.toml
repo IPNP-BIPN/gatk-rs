@@ -6,6 +6,8 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+fgkl-pairhmm.workspace = true
+fgkl-smithwaterman.workspace = true
 htsjdk-bam.workspace = true
 htsjdk-bgzf.workspace = true
 # The allele and sample axes of a likelihood matrix are defined over htsjdk alleles.

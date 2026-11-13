@@ -291,6 +291,20 @@ fn align_matches_the_golden_on_every_pair_parameter_set_and_strategy() {
                     Err(error) => format!("-\t{}", exception(&error)),
                 };
                 assert_eq!(ours, expected, "{label} {parameter_name} {strategy_name}");
+                // The transcription fgkl replaced stays held to the same rows.
+                let port = SmithWatermanJavaAligner.port_align(
+                    reference.as_bytes(),
+                    alternate.as_bytes(),
+                    parameters,
+                    *strategy,
+                );
+                let fgkl = SmithWatermanJavaAligner.align(
+                    reference.as_bytes(),
+                    alternate.as_bytes(),
+                    parameters,
+                    *strategy,
+                );
+                assert_eq!(port, fgkl, "{label} {parameter_name} {strategy_name}");
                 compared += 1;
             }
         }
