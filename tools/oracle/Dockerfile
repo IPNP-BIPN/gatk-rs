@@ -5,28 +5,28 @@
 # environment cannot produce an image, let alone a golden.
 #
 # The GATK release zip is taken rather than a hand-assembled classpath. It carries the local jar
-# with Picard 3.4.0, htsjdk 4.2.0, Barclay 5.0.0 and Intel GKL 0.8.11 exactly as build.gradle at
-# tag 4.6.2.0 pins them, and it carries the `gatk` wrapper script, which is the entry point the
-# bit-identity claim is defined against: `gatk <Tool>` fixes the argument parser to Barclay
-# (`--INPUT`) rather than Picard's legacy syntax.
+# with Picard 3.5.0, htsjdk 5.0.0 and Intel GKL 0.9.1 exactly as build.gradle at tag 4.7.0.0 pins
+# them, and it carries the `gatk` wrapper script, which is the entry point the bit-identity claim is
+# defined against: `gatk <Tool>` fixes the argument parser to Barclay (`--INPUT`) rather than
+# Picard's legacy syntax.
 #
 # The version is an argument so a second oracle can be built beside the first rather than in place
-# of it. The move to 4.7.0.0 is not a matter of editing this file: it is a matter of building both
-# images and re-running every suite against the new one, so the two have to coexist.
+# of it: the 4.6.2.0 one, which every golden was measured against until V.10, stays buildable for
+# `tools/conformance/survey.py`.
 #
-#     docker build --platform linux/amd64 -t gatk-rs-oracle:4.6.2.0 tools/oracle
-#     docker build --platform linux/amd64 -t gatk-rs-oracle:4.7.0.0 \
-#       --build-arg GATK_VERSION=4.7.0.0 \
-#       --build-arg GATK_SHA256=d093d2693b1626361a413ca59d6d4a0bf968717f280a8fd9ce060b25eb2ed1db \
+#     docker build --platform linux/amd64 -t gatk-rs-oracle:4.7.0.0 tools/oracle
+#     docker build --platform linux/amd64 -t gatk-rs-oracle:4.6.2.0 \
+#       --build-arg GATK_VERSION=4.6.2.0 \
+#       --build-arg GATK_SHA256=32d2f90bf13fcb3a8ac765bb2cb8ec1fc9a6cc447055d0156bd1db2092d4e3e8 \
 #       tools/oracle
 #
-# The checksum is an argument too, defaulting to 4.6.2.0's, so naming a new version without also
+# The checksum is an argument too, defaulting to 4.7.0.0's, so naming a new version without also
 # naming its checksum fails at `sha256sum -c` rather than producing an unverified image.
 
 FROM eclipse-temurin@sha256:068a8f9ae4b74d9a20de3ecca771ba1a6437f1d7a8a8ad6deaf9dbdd2274397a
 
-ARG GATK_VERSION=4.6.2.0
-ARG GATK_SHA256=32d2f90bf13fcb3a8ac765bb2cb8ec1fc9a6cc447055d0156bd1db2092d4e3e8
+ARG GATK_VERSION=4.7.0.0
+ARG GATK_SHA256=d093d2693b1626361a413ca59d6d4a0bf968717f280a8fd9ce060b25eb2ed1db
 
 # python3 is not optional: the `gatk` wrapper is a Python script, so without it the entry point the
 # claim is defined against cannot run at all.

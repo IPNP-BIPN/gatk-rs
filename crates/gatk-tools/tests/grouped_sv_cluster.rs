@@ -159,6 +159,8 @@ fn records(text: &str) -> Vec<CallRecord> {
                 .map(str::to_string)
                 .collect(),
             carriers,
+            cpx_subtype: None,
+            cpx_intervals: Vec::new(),
         });
     }
     out
@@ -326,8 +328,8 @@ fn a_record_matching_two_strata_is_refused_outright() {
     .expect_err("two strata match");
     assert_eq!(produced.message(), message);
     assert!(
-        matches!(&produced, GroupedError::MultipleMatches { names, .. } if names == &["DEL_b", "DEL_a"]),
-        "the HashMap order over the names"
+        matches!(&produced, GroupedError::MultipleMatches { names, .. } if names == &["DEL_a", "DEL_b"]),
+        "the configuration's order, a LinkedHashMap since 4.7.0.0"
     );
     assert!(!message.contains("--allow-multiple-matches"), "not a flag");
 }

@@ -17,10 +17,15 @@ import htsjdk.samtools.SAMReadGroupRecord;
 import htsjdk.samtools.SAMRecord;
 import htsjdk.samtools.SAMSequenceDictionary;
 import htsjdk.samtools.SAMSequenceRecord;
+import htsjdk.samtools.SAMRecordCoordinateComparator;
+import htsjdk.samtools.SAMRecordQueryNameComparator;
+import htsjdk.samtools.SamPairUtil;
 import htsjdk.samtools.util.BlockCompressedOutputStream;
 import htsjdk.samtools.util.zip.DeflaterFactory;
 
 import java.io.OutputStream;
+import java.io.PrintWriter;
+import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -28,6 +33,7 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Random;
 
 public class MakeFixtures {
 
@@ -3159,6 +3165,9 @@ public class MakeFixtures {
         BlockCompressedOutputStream.setDefaultDeflaterFactory(new DeflaterFactory());
         final Path dir = Paths.get(args[0]);
         Files.createDirectories(dir);
+        // First, while htsjdk's defaults are still its own: the tools run in-process further down
+        // set the BGZF level and deflater globally, and picard-rs builds these files without them.
+        Picard.write(dir.resolve("picard").toFile());
         Files.writeString(dir.resolve("reads.vcf"), vcf(), StandardCharsets.UTF_8);
         Files.writeString(dir.resolve("regions.bed"), bed(), StandardCharsets.UTF_8);
         try (final OutputStream out =
@@ -8183,4 +8192,883 @@ public class MakeFixtures {
         }
         Files.writeString(dir.resolve("jgcs_bins.interval_list"), bins.toString(), StandardCharsets.UTF_8);
     }
+
+    /**
+     * The corpus of the Picard tools GATK bundles, from picard-rs's own MakeFixtures, byte for
+     * byte: the per-tool fixtures in fixtures.json are picard-rs's, so the files are too. Kept in a
+     * class of its own, under `picard/`, because its two-contig reference and its BAMs are not
+     * this corpus's `reference.fasta` and `reads.bam`, and some of its names would collide.
+     */
+    static class Picard {
+
+    static final int CHR1 = 2_000;
+    static final int CHR2 = 1_000;
+    static final int READS = 400;
+    static final int READ_LENGTH = 50;
+
+    static void write(File dir) throws Exception {
+        dir.mkdirs();
+        String chr1 = reference(CHR1, 20260729L);
+        String chr2 = reference(CHR2, 20260730L);
+
+        writeFasta(new File(dir, "ref.fasta"), chr1, chr2);
+        writeFai(new File(dir, "ref.fasta.fai"), chr1, chr2);
+
+        SAMFileHeader header = header(SAMFileHeader.SortOrder.coordinate);
+        writeBam(new File(dir, "small.bam"), header, reads(header, true), true);
+        writeSam(new File(dir, "small.sam"), header, reads(header, true));
+
+        SAMFileHeader queryname = header(SAMFileHeader.SortOrder.queryname);
+        writeBam(new File(dir, "queryname.bam"), queryname, reads(queryname, false), false);
+
+        // FilterVcf: a site per filter, so each threshold the array varies moves some line. QD and FS
+        // are present, missing and on both sides of each threshold; the hets have balanced and
+        // unbalanced AD, two het genotype types at one multi-allelic site, and one without AD; GQ
+        // and DP are missing on some genotypes, which the reference reads as -1; one site is all
+        // hom-ref, one comes with filters and an FT column already set, and one has no FORMAT
+        // fields but GT. filter_no_contigs.vcf is the same records without a dictionary.
+        for (String name : new String[] {"filter.vcf", "filter_no_contigs.vcf"}) {
+            try (PrintWriter p = new PrintWriter(new File(dir, name), "UTF-8")) {
+                p.print("##fileformat=VCFv4.2\n");
+                p.print("##FILTER=<ID=q10,Description=\"Quality below 10\">\n");
+                p.print("##FORMAT=<ID=AD,Number=R,Type=Integer,Description=\"Allele depths\">\n");
+                p.print("##FORMAT=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">\n");
+                p.print("##FORMAT=<ID=FT,Number=.,Type=String,Description=\"Genotype filters\">\n");
+                p.print("##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype quality\">\n");
+                p.print("##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n");
+                p.print("##INFO=<ID=FS,Number=1,Type=Float,Description=\"Fisher strand\">\n");
+                p.print("##INFO=<ID=QD,Number=1,Type=Float,Description=\"Quality by depth\">\n");
+                if (name.equals("filter.vcf")) {
+                    p.print("##contig=<ID=chr1,length=" + chr1.length() + ">\n");
+                    p.print("##contig=<ID=chr2,length=" + chr2.length() + ">\n");
+                }
+                p.print("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ts1\ts2\ts3\n");
+                p.print("chr1\t100\t.\tA\tC\t50\t.\tQD=1.5;FS=10.0\tGT:AD:DP:GQ\t0/1:9,1:10:40\t0/0:10,0:10:40\t0/1:5,5:10:40\n");
+                p.print("chr1\t200\t.\tG\tT\t60\tq10\tQD=8.0;FS=70.0\tGT:AD:DP:GQ\t0/1:4,6:12:20\t1/1:0,12:12:35\t./.:.:.:.\n");
+                p.print("chr1\t300\t.\tC\tA,G\t70\tPASS\tQD=3.0\tGT:AD:DP:GQ\t0/1:6,4,0:10:50\t0/2:7,0,3:10:50\t1/2:0,5,5:10:50\n");
+                p.print("chr1\t400\t.\tT\tC\t.\t.\t.\tGT:AD:DP:GQ\t0/0:8,0:8:25\t0/0:9,0:9:.\t0/0:7,0:.:30\n");
+                p.print("chr1\t500\t.\tA\tG\t40\t.\tQD=0.5;FS=35.5\tGT:DP:GQ\t0/1:5:15\t1/1:6:10\t0/0:30:99\n");
+                p.print("chr1\t600\t.\tG\tA\t45\t.\tFS=5.0\tGT:AD:DP:GQ:FT\t0|1:3,7:10:60:PASS\t1|0:8,2:10:60:LowQ\t0/1:5,5:9:29:PASS\n");
+                p.print("chr2\t100\t.\tC\tT\t80\t.\tQD=12.0;FS=0.0\tGT:AD:DP:GQ\t0/1:2,8:10:99\t0/1:8,2:10:99\t0/0:10,0:10:99\n");
+                p.print("chr2\t200\t.\tAT\tA\t30\t.\tQD=2.5\tGT:AD:DP:GQ\t1:0,4:4:12\t0/1:1,9:10:5\t.:.:.:.\n");
+                p.print("chr2\t300\t.\tG\tC\t20\t.\tQD=1.0;FS=61.0\tGT\t0/1\t0/0\t1/1\n");
+            }
+        }
+
+        // CheckTerminatorBlock's three answers: small.bam ends in the empty terminator block, the
+        // same bytes without it end in a healthy data block, and five more bytes off cut that block.
+        byte[] whole = java.nio.file.Files.readAllBytes(new File(dir, "small.bam").toPath());
+        java.nio.file.Files.write(new File(dir, "no_terminator.bam").toPath(),
+                java.util.Arrays.copyOf(whole, whole.length - 28));
+        java.nio.file.Files.write(new File(dir, "truncated.bam").toPath(),
+                java.util.Arrays.copyOf(whole, whole.length - 33));
+
+        SAMFileHeader oneGroup = header(SAMFileHeader.SortOrder.coordinate);
+        oneGroup.setReadGroups(java.util.Collections.singletonList(oneGroup.getReadGroup("rg1")));
+        java.util.List<SAMRecord> oneGroupReads = reads(oneGroup, true);
+        for (SAMRecord r : oneGroupReads) r.setAttribute("RG", "rg1");
+        writeBam(new File(dir, "one_read_group.bam"), oneGroup, oneGroupReads, false);
+
+        // Illumina-style read names, for the tools that read a physical location out of one.
+        // `PositionBasedDownsampleSam` keeps reads by where they sit on the flowcell, and the
+        // names everywhere else in this corpus (`read0314`) carry no location at all: the parser
+        // refuses them, every read lands on the same defaulted tile, and the mask becomes
+        // all-or-nothing. These names give it tiles and coordinates to work on, in a file of its
+        // own so that no existing fixture's bytes move.
+        SAMFileHeader tiled = header(SAMFileHeader.SortOrder.coordinate);
+        java.util.List<SAMRecord> tiledReads = reads(tiled, true);
+        for (SAMRecord r : tiledReads) {
+            // The new name is derived from the old one, so the two ends of a pair still share it:
+            // `read0314` gives 314, and both mates carry that number.
+            int n = Integer.parseInt(r.getReadName().replaceAll("[^0-9]", ""));
+            int tile = 1101 + (n % 4);
+            int x = 1000 + ((n * 137) % 20000);
+            int y = 1000 + ((n * 251) % 20000);
+            r.setReadName(String.format("INST:1:FLOWCELL:1:%d:%d:%d", tile, x, y));
+        }
+        writeBam(new File(dir, "tiled.bam"), tiled, tiledReads, false);
+
+        // Reads carrying `MC`, for the duplicate markers that read the mate's cigar instead of
+        // waiting for the mate. Without the tag `SimpleMarkDuplicatesWithMateCigar` refuses every
+        // file outright and `MarkDuplicatesWithMateCigar` skips every pair, so a corpus without it
+        // measures the refusal and nothing else. `SamPairUtil.setMateInformation` writes the tag
+        // the same way `FixMateInformation --ADD_MATE_CIGAR` does; the file is new, so no existing
+        // fixture's bytes move.
+        SAMFileHeader mateCigarHeader = header(SAMFileHeader.SortOrder.coordinate);
+        java.util.List<SAMRecord> mateCigarReads = reads(mateCigarHeader, true);
+        java.util.Map<String, java.util.List<SAMRecord>> byName = new java.util.LinkedHashMap<>();
+        for (SAMRecord r : mateCigarReads) {
+            byName.computeIfAbsent(r.getReadName(), k -> new java.util.ArrayList<>()).add(r);
+        }
+        for (java.util.List<SAMRecord> template : byName.values()) {
+            if (template.size() == 2) {
+                htsjdk.samtools.SamPairUtil.setMateInfo(template.get(0), template.get(1), true);
+            }
+        }
+        writeBam(new File(dir, "mate_cigar.bam"), mateCigarHeader, mateCigarReads, true);
+
+        try (PrintWriter out = new PrintWriter(new File(dir, "filter_variants.js"), "UTF-8")) {
+            out.print("variant.isSNP() && variant.getStart() > 1000;\n");
+        }
+        try (PrintWriter out = new PrintWriter(new File(dir, "filter_broken.js"), "UTF-8")) {
+            out.print("record.getReadName( ;\n");
+        }
+
+        SAMFileHeader unmappedHeader = header(SAMFileHeader.SortOrder.unsorted);
+        writeBam(new File(dir, "unmapped.bam"), unmappedHeader, unmapped(unmappedHeader), false);
+
+        writeVcf(new File(dir, "variants.vcf"), chr1, chr2, true);
+        writeVcf(new File(dir, "single_sample.vcf"), chr1, chr2, true, 1);
+
+        writeTrioVcf(new File(dir, "trio.vcf"), chr1);
+        writeIntervals(new File(dir, "targets.interval_list"));
+        writeDict(new File(dir, "ref.dict"), chr1, chr2);
+
+        // A reference with masked stretches and an N run, so SetNmMdAndUqTags has a second
+        // reference whose NM, MD and UQ differ from ref.fasta's.
+        StringBuilder maskedChr1 = new StringBuilder(chr1);
+        for (int i = 179; i < 230; i++) maskedChr1.setCharAt(i, Character.toLowerCase(chr1.charAt(i)));
+        for (int i = 819; i < 860; i++) maskedChr1.setCharAt(i, Character.toLowerCase(chr1.charAt(i)));
+        for (int i = 999; i < 1010; i++) maskedChr1.setCharAt(i, 'N');
+        StringBuilder maskedChr2 = new StringBuilder(chr2);
+        for (int i = 99; i < 140; i++) maskedChr2.setCharAt(i, Character.toLowerCase(chr2.charAt(i)));
+        writeFasta(new File(dir, "masked.fasta"), maskedChr1.toString(), maskedChr2.toString());
+        writeFai(new File(dir, "masked.fasta.fai"), maskedChr1.toString(), maskedChr2.toString());
+        writeDict(new File(dir, "masked.dict"), maskedChr1.toString(), maskedChr2.toString());
+
+        writeVcfUtilityFixtures(dir);
+        writeVcfMergeFixtures(dir);
+        writeVcfGatherFixtures(dir);
+        writeVcfSplitFixture(dir);
+        writeVcfConverterFixture(dir);
+        writeVcfFixHeaderFixtures(dir);
+    }
+
+    /** A reference with a fixed but non-uniform base composition, so GC-dependent tools vary. */
+    static String reference(int length, long seed) {
+        Random rng = new Random(seed);
+        char[] bases = new char[length];
+        String alphabet = "ACGT";
+        for (int i = 0; i < length; i++) {
+            // A GC-rich stretch in the middle, and a run of Ns, so the reference is not featureless.
+            if (i > length / 2 && i < length / 2 + 100) bases[i] = (i % 2 == 0) ? 'G' : 'C';
+            else if (i > length - 60 && i < length - 40) bases[i] = 'N';
+            else bases[i] = alphabet.charAt(rng.nextInt(4));
+        }
+        return new String(bases);
+    }
+
+    static void writeFasta(File f, String chr1, String chr2) throws Exception {
+        try (PrintWriter p = new PrintWriter(f)) {
+            writeContig(p, "chr1", chr1);
+            writeContig(p, "chr2", chr2);
+        }
+    }
+
+    static void writeContig(PrintWriter p, String name, String bases) {
+        p.println(">" + name);
+        for (int i = 0; i < bases.length(); i += 60) {
+            p.println(bases.substring(i, Math.min(i + 60, bases.length())));
+        }
+    }
+
+    /**
+     * The FASTA index, whose offsets have to be the file's real ones.
+     *
+     * The byte length of a contig is its bases plus one newline per line, and the last line is
+     * short: `ceil(len / 60) * 61` over-counts it by `60 - (len % 60)`. chr1 is 2000 bases, so the
+     * old arithmetic put chr2's offset 40 bytes past where chr2 begins.
+     *
+     * Nothing noticed until a tool took the indexed path. `ReferenceSequenceFileFactory` opens
+     * `IndexedFastaSequenceFile` only when the caller asks for names truncated at whitespace
+     * ("Using faidx requires truncateNamesAtWhitespace"), so NormalizeFasta read this index only
+     * with TRUNCATE_SEQUENCE_NAMES_AT_WHITESPACE=true, and then sliced chr2 from the wrong byte:
+     * its output carried the file's own line terminators as if they were bases, one of them
+     * producing an empty line. The covering array is what ran that combination.
+     */
+    static void writeFai(File f, String chr1, String chr2) throws Exception {
+        try (PrintWriter p = new PrintWriter(f)) {
+            int lineWidth = 60, lineBytes = 61;
+            long offset1 = ">chr1\n".length();
+            long chr1Bytes = bytesOnDisk(chr1.length(), lineWidth);
+            long offset2 = offset1 + chr1Bytes + ">chr2\n".length();
+            p.printf("chr1\t%d\t%d\t%d\t%d%n", chr1.length(), offset1, lineWidth, lineBytes);
+            p.printf("chr2\t%d\t%d\t%d\t%d%n", chr2.length(), offset2, lineWidth, lineBytes);
+        }
+    }
+
+    static SAMFileHeader header(SAMFileHeader.SortOrder order) {
+        SAMFileHeader h = new SAMFileHeader();
+        SAMSequenceDictionary d = new SAMSequenceDictionary();
+        d.addSequence(new SAMSequenceRecord("chr1", CHR1));
+        d.addSequence(new SAMSequenceRecord("chr2", CHR2));
+        h.setSequenceDictionary(d);
+        h.setSortOrder(order);
+        // Two read groups in two libraries: the multi-level collectors have a LIBRARY and a
+        // READ_GROUP accumulation level, and one read group would leave both untested.
+        for (String[] rg : new String[][] {{"rg1", "lib1", "sample1"}, {"rg2", "lib2", "sample2"}}) {
+            SAMReadGroupRecord r = new SAMReadGroupRecord(rg[0]);
+            r.setLibrary(rg[1]);
+            r.setSample(rg[2]);
+            r.setPlatform("ILLUMINA");
+            r.setPlatformUnit("unit-" + rg[0]);
+            h.addReadGroup(r);
+        }
+        return h;
+    }
+
+    static java.util.List<SAMRecord> reads(SAMFileHeader header, boolean coordinateSorted) {
+        Random rng = new Random(20260729L);
+        java.util.List<SAMRecord> out = new java.util.ArrayList<>();
+        String alphabet = "ACGT";
+
+        for (int i = 0; i < READS; i += 2) {
+            String name = String.format("read%04d", i);
+            boolean chr2 = i % 8 == 0;
+            int contig = chr2 ? 1 : 0;
+            int limit = (chr2 ? CHR2 : CHR1) - READ_LENGTH - 10;
+            int start = 1 + rng.nextInt(limit);
+
+            SAMRecord first = new SAMRecord(header);
+            SAMRecord second = new SAMRecord(header);
+            for (SAMRecord r : new SAMRecord[] {first, second}) {
+                byte[] bases = new byte[READ_LENGTH];
+                byte[] quals = new byte[READ_LENGTH];
+                for (int b = 0; b < READ_LENGTH; b++) {
+                    bases[b] = (byte) alphabet.charAt(rng.nextInt(4));
+                    // Qualities span the CollectQualityYieldMetrics thresholds (Q20, Q30) rather
+                    // than sitting above both, which would make those counters constant.
+                    quals[b] = (byte) (2 + rng.nextInt(38));
+                }
+                // A no-call every so often, so the base-distribution and N-handling paths run.
+                if (i % 10 == 0) bases[3] = 'N';
+                r.setReadName(name);
+                r.setReadBases(bases);
+                r.setBaseQualities(quals);
+                r.setReferenceIndex(contig);
+                r.setMappingQuality(i % 12 == 0 ? 0 : 20 + rng.nextInt(40));
+                r.setAttribute("RG", i % 4 == 0 ? "rg2" : "rg1");
+            }
+
+            first.setAlignmentStart(start);
+            second.setAlignmentStart(start + 100 <= limit ? start + 100 : start);
+            first.setCigarString(cigarFor(i));
+            second.setCigarString(READ_LENGTH + "M");
+            first.setReadPairedFlag(true);
+            second.setReadPairedFlag(true);
+            first.setFirstOfPairFlag(true);
+            second.setSecondOfPairFlag(true);
+            first.setReadNegativeStrandFlag(i % 3 == 0);
+            second.setReadNegativeStrandFlag(!first.getReadNegativeStrandFlag());
+            first.setProperPairFlag(i % 5 != 0);
+            second.setProperPairFlag(i % 5 != 0);
+            first.setDuplicateReadFlag(i % 14 == 0);
+            second.setDuplicateReadFlag(i % 14 == 0);
+            // Secondary and supplementary are properties of an *alignment*, so htsjdk's validation
+            // rejects them on an unmapped read ("Supplementary alignment flag should not be set for
+            // unaligned read"). The first covering-array run hit that: nine of eleven rows failed,
+            // and one class of failure was this fixture rather than the argument under test. A
+            // corpus that is invalid under STRICT tests the validator, not the tool.
+            boolean secondUnmapped = i % 20 == 0;
+            if (i % 16 == 0) first.setNotPrimaryAlignmentFlag(true);
+            if (i % 18 == 0 && !secondUnmapped) second.setSupplementaryAlignmentFlag(true);
+
+            // One pair in twenty has an unmapped mate: the paired-metrics and mate-info paths
+            // behave differently there, and a corpus of clean pairs never reaches them.
+            if (secondUnmapped) {
+                second.setReadUnmappedFlag(true);
+                second.setAlignmentStart(first.getAlignmentStart());
+                second.setCigarString("*");
+                second.setMappingQuality(0);
+                first.setMateUnmappedFlag(true);
+            }
+            SamPairUtil.setMateInfo(first, second, false);
+            out.add(first);
+            out.add(second);
+        }
+
+        if (coordinateSorted) {
+            out.sort(new SAMRecordCoordinateComparator());
+        } else {
+            out.sort(new SAMRecordQueryNameComparator());
+        }
+        return out;
+    }
+
+    /** Soft clips, an insertion and a deletion, so cigar-walking tools take more than one branch. */
+    static String cigarFor(int i) {
+        switch (i % 6) {
+            case 0: return READ_LENGTH + "M";
+            case 1: return "5S" + (READ_LENGTH - 5) + "M";
+            case 2: return (READ_LENGTH - 8) + "M8S";
+            case 3: return "20M2I" + (READ_LENGTH - 22) + "M";
+            case 4: return "20M3D" + (READ_LENGTH - 20) + "M";
+            default: return "10M5N" + (READ_LENGTH - 10) + "M";
+        }
+    }
+
+    static java.util.List<SAMRecord> unmapped(SAMFileHeader header) {
+        java.util.List<SAMRecord> out = new java.util.ArrayList<>();
+        Random rng = new Random(20260731L);
+        for (int i = 0; i < 40; i += 2) {
+            SAMRecord first = new SAMRecord(header);
+            SAMRecord second = new SAMRecord(header);
+            for (SAMRecord r : new SAMRecord[] {first, second}) {
+                byte[] bases = new byte[READ_LENGTH];
+                byte[] quals = new byte[READ_LENGTH];
+                for (int b = 0; b < READ_LENGTH; b++) {
+                    bases[b] = (byte) "ACGT".charAt(rng.nextInt(4));
+                    quals[b] = (byte) (2 + rng.nextInt(38));
+                }
+                r.setReadName(String.format("unmapped%04d", i));
+                r.setReadBases(bases);
+                r.setBaseQualities(quals);
+                r.setReadUnmappedFlag(true);
+                r.setReferenceIndex(SAMRecord.NO_ALIGNMENT_REFERENCE_INDEX);
+                r.setAlignmentStart(SAMRecord.NO_ALIGNMENT_START);
+                r.setMappingQuality(0);
+                r.setAttribute("RG", "rg1");
+                r.setReadPairedFlag(true);
+                r.setMateUnmappedFlag(true);
+            }
+            first.setFirstOfPairFlag(true);
+            second.setSecondOfPairFlag(true);
+            out.add(first);
+            out.add(second);
+        }
+        return out;
+    }
+
+    /**
+     * The caller passes -Dsamjdk.try_use_intel_deflater=false: the fixture must be
+     * byte-reproducible, and the GKL deflater emits different bytes than zlib for the same input.
+     * The oracle contract pins the JDK deflater for the same reason.
+     *
+     * Only the coordinate-sorted BAM is indexed; indexing a queryname-sorted or unsorted file is
+     * an error, not an option.
+     */
+    static void writeBam(File f, SAMFileHeader header, java.util.List<SAMRecord> records,
+                         boolean index) {
+        SAMFileWriterFactory factory = new SAMFileWriterFactory().setUseAsyncIo(false);
+        factory.setCreateIndex(index);
+        try (SAMFileWriter w = factory.makeBAMWriter(header, true, f)) {
+            for (SAMRecord r : records) w.addAlignment(r);
+        }
+    }
+
+    static void writeSam(File f, SAMFileHeader header, java.util.List<SAMRecord> records) {
+        try (SAMFileWriter w = new SAMFileWriterFactory().makeSAMWriter(header, true, f)) {
+            for (SAMRecord r : records) w.addAlignment(r);
+        }
+    }
+
+    static void writeIntervals(File f) throws Exception {
+        try (PrintWriter p = new PrintWriter(f)) {
+            p.println("@HD\tVN:1.6");
+            p.printf("@SQ\tSN:chr1\tLN:%d%n", CHR1);
+            p.printf("@SQ\tSN:chr2\tLN:%d%n", CHR2);
+            p.println("chr1\t100\t400\t+\ttarget1");
+            p.println("chr1\t900\t1200\t+\ttarget2");
+            p.println("chr2\t50\t200\t-\ttarget3");
+        }
+    }
+
+    static void writeTrioVcf(File f, String chr1) throws Exception {
+        htsjdk.samtools.SAMSequenceDictionary dict = new htsjdk.samtools.SAMSequenceDictionary();
+        dict.addSequence(new SAMSequenceRecord("chr1", chr1.length()));
+        dict.addSequence(new SAMSequenceRecord("chr2", CHR2));
+
+        java.util.Set<htsjdk.variant.vcf.VCFHeaderLine> lines = new java.util.LinkedHashSet<>();
+        lines.add(new htsjdk.variant.vcf.VCFFormatHeaderLine(
+                "GT", 1, htsjdk.variant.vcf.VCFHeaderLineType.String, "Genotype"));
+        lines.add(new htsjdk.variant.vcf.VCFFormatHeaderLine(
+                "GQ", 1, htsjdk.variant.vcf.VCFHeaderLineType.Integer, "Genotype quality"));
+        lines.add(new htsjdk.variant.vcf.VCFFormatHeaderLine(
+                "DP", 1, htsjdk.variant.vcf.VCFHeaderLineType.Integer, "Depth"));
+        lines.add(new htsjdk.variant.vcf.VCFFormatHeaderLine(
+                "AD", htsjdk.variant.vcf.VCFHeaderLineCount.R,
+                htsjdk.variant.vcf.VCFHeaderLineType.Integer, "Allele depths"));
+        lines.add(new htsjdk.variant.vcf.VCFFormatHeaderLine(
+                "PL", htsjdk.variant.vcf.VCFHeaderLineCount.G,
+                htsjdk.variant.vcf.VCFHeaderLineType.Integer, "Phred-scaled likelihoods"));
+
+        htsjdk.variant.vcf.VCFHeader header = new htsjdk.variant.vcf.VCFHeader(
+                lines, java.util.Arrays.asList("father", "mother", "child"));
+        header.setSequenceDictionary(dict);
+
+        // position, father, mother, child, child's allele depths, genotype quality
+        int[][] rows = {
+                //   pos  fa fa  mo mo  ch ch   AD0 AD1  GQ
+                {  100,  0, 0,   0, 0,   0, 1,   6,  6,  40 },  // de novo het
+                {  200,  1, 1,   1, 1,   0, 1,   6,  6,  40 },  // het from two hom-var parents
+                {  300,  0, 0,   1, 1,   0, 0,   9,  0,  40 },  // hom from ref x hom-var
+                {  400,  0, 0,   0, 1,   1, 1,   0,  9,  40 },  // hom-var from ref x het
+                {  500,  0, 1,   0, 1,   0, 1,   6,  6,  40 },  // inherited, no violation
+                {  600,  0, 1,   0, 0,   0, 1,   6,  6,  40 },  // inherited, no violation
+                {  700,  0, 0,   0, 0,   0, 1,   6,  6,  20 },  // de novo, under the default MIN_GQ
+                {  800,  0, 0,   0, 0,   0, 1,  10,  1,  40 },  // de novo, too lopsided to judge
+                {  900,  1, 1,   0, 0,   0, 1,   6,  6,  40 },  // inherited, no violation
+                { 1000,  0, 0,   0, 0,   0, 0,   9,  0,  40 },  // not variant at all
+        };
+
+        try (htsjdk.variant.variantcontext.writer.VariantContextWriter writer =
+                     new htsjdk.variant.variantcontext.writer.VariantContextWriterBuilder()
+                             .setOutputFile(f)
+                             .setReferenceDictionary(dict)
+                             .setOptions(java.util.EnumSet.of(
+                                     htsjdk.variant.variantcontext.writer.Options.INDEX_ON_THE_FLY))
+                             .build()) {
+            writer.writeHeader(header);
+            for (int[] row : rows) {
+                int pos = row[0];
+                htsjdk.variant.variantcontext.Allele ref =
+                        htsjdk.variant.variantcontext.Allele.create(
+                                chr1.substring(pos - 1, pos), true);
+                String altBase = chr1.charAt(pos - 1) == 'A' ? "C" : "A";
+                htsjdk.variant.variantcontext.Allele alt =
+                        htsjdk.variant.variantcontext.Allele.create(altBase, false);
+                java.util.List<htsjdk.variant.variantcontext.Allele> alleles =
+                        java.util.Arrays.asList(ref, alt);
+
+                java.util.List<htsjdk.variant.variantcontext.Genotype> genotypes =
+                        new java.util.ArrayList<>();
+                String[] names = {"father", "mother", "child"};
+                for (int sample = 0; sample < 3; sample++) {
+                    int first = row[1 + sample * 2];
+                    int second = row[2 + sample * 2];
+                    htsjdk.variant.variantcontext.GenotypeBuilder gb =
+                            new htsjdk.variant.variantcontext.GenotypeBuilder(names[sample],
+                                    java.util.Arrays.asList(
+                                            first == 0 ? ref : alt, second == 0 ? ref : alt));
+                    gb.GQ(sample == 2 ? row[9] : 40);
+                    // Two sites are shallower than the others, so MIN_DP decides something short
+                    // of deciding everything: at ten they drop out and the rest stay.
+                    gb.DP(sample == 2 && (pos == 500 || pos == 900) ? 8 : 12);
+                    gb.AD(sample == 2 ? new int[] {row[7], row[8]} : new int[] {6, 6});
+                    // `MendelianViolationDetector.accumulate` reads PL without checking for it,
+                    // so a genotype without one is a NullPointerException rather than a call the
+                    // tool skips: every genotype here carries the three likelihoods of a diploid
+                    // biallelic site, zero for the call that was made.
+                    // The likelihoods carry the same contrast as the declared quality, because
+                    // the detector reads the quality out of them: a PL that disagreed with GQ
+                    // would make MIN_GQ decide nothing at all.
+                    int called = first + second;
+                    int contrast = sample == 2 ? row[9] : 40;
+                    int[] pl = {called == 0 ? 0 : contrast,
+                                called == 1 ? 0 : contrast,
+                                called == 2 ? 0 : contrast};
+                    gb.PL(pl);
+                    genotypes.add(gb.make());
+                }
+                writer.add(new htsjdk.variant.variantcontext.VariantContextBuilder(
+                        "fixture", "chr1", pos, pos, alleles).genotypes(genotypes).make());
+            }
+        }
+    }
+
+    static void writeVcf(File f, String chr1, String chr2, boolean withGenotypes) throws Exception {
+        writeVcf(f, chr1, chr2, withGenotypes, 2);
+    }
+
+    static void writeVcf(File f, String chr1, String chr2, boolean withGenotypes, int sampleCount)
+            throws Exception {
+        writeVcf(f, chr1, chr2, withGenotypes, sampleCount, new int[] {0, 1, 2, 3, 4, 5});
+    }
+
+    /**
+     * The same writer over a chosen list of SITES, by index into the positions below. Indices 0 to
+     * 5 are the six sites every variant fixture shares; 6 and 7 exist only for a file that has to
+     * hold a site the others do not.
+     */
+    static void writeVcf(File f, String chr1, String chr2, boolean withGenotypes, int sampleCount,
+            int[] sites) throws Exception {
+        htsjdk.samtools.SAMSequenceDictionary dict = new htsjdk.samtools.SAMSequenceDictionary();
+        dict.addSequence(new SAMSequenceRecord("chr1", chr1.length()));
+        dict.addSequence(new SAMSequenceRecord("chr2", chr2.length()));
+
+        java.util.Set<htsjdk.variant.vcf.VCFHeaderLine> lines = new java.util.LinkedHashSet<>();
+        lines.add(new htsjdk.variant.vcf.VCFFormatHeaderLine(
+                "GT", 1, htsjdk.variant.vcf.VCFHeaderLineType.String, "Genotype"));
+        lines.add(new htsjdk.variant.vcf.VCFFormatHeaderLine(
+                "GQ", 1, htsjdk.variant.vcf.VCFHeaderLineType.Integer, "Genotype quality"));
+        lines.add(new htsjdk.variant.vcf.VCFFormatHeaderLine(
+                "DP", 1, htsjdk.variant.vcf.VCFHeaderLineType.Integer, "Depth"));
+        lines.add(new htsjdk.variant.vcf.VCFInfoHeaderLine(
+                "AC", 1, htsjdk.variant.vcf.VCFHeaderLineType.Integer, "Allele count"));
+        lines.add(new htsjdk.variant.vcf.VCFFilterHeaderLine("LowQual", "Low quality"));
+
+        java.util.List<String> samples = new java.util.ArrayList<>();
+        if (withGenotypes) {
+            for (int i = 1; i <= sampleCount; i++) samples.add("sample" + i);
+        }
+        htsjdk.variant.vcf.VCFHeader header = new htsjdk.variant.vcf.VCFHeader(lines, samples);
+        header.setSequenceDictionary(dict);
+
+        try (htsjdk.variant.variantcontext.writer.VariantContextWriter writer =
+                     new htsjdk.variant.variantcontext.writer.VariantContextWriterBuilder()
+                             .setOutputFile(f)
+                             .setReferenceDictionary(dict)
+                             .setOption(htsjdk.variant.variantcontext.writer.Options.INDEX_ON_THE_FLY)
+                             .build()) {
+            writer.writeHeader(header);
+            // The first four are on chr1 (2,000 bases), the next two on chr2 (1,000), and the two
+            // extra sites one on each.
+            int[] positions = {100, 300, 500, 700, 200, 600, 900, 800};
+            boolean[] onChr1 = {true, true, true, true, false, false, true, false};
+            for (int i : sites) {
+                // The sites-only file keeps every other variant, so half of the full file is known.
+                if (!withGenotypes && i % 2 == 1) continue;
+                String contig = onChr1[i] ? "chr1" : "chr2";
+                int position = positions[i];
+                String reference = String.valueOf((onChr1[i] ? chr1 : chr2).charAt(position - 1));
+                boolean indel = i == 3;
+                htsjdk.variant.variantcontext.Allele ref = htsjdk.variant.variantcontext.Allele
+                        .create(indel ? reference + "AT" : reference, true);
+                htsjdk.variant.variantcontext.Allele alt = htsjdk.variant.variantcontext.Allele
+                        .create(indel ? reference : (reference.equals("A") ? "G" : "A"), false);
+                htsjdk.variant.variantcontext.VariantContextBuilder builder =
+                        new htsjdk.variant.variantcontext.VariantContextBuilder()
+                                .chr(contig)
+                                .start(position)
+                                .stop(position + ref.length() - 1)
+                                .alleles(java.util.Arrays.asList(ref, alt))
+                                .attribute("AC", 1 + (i % 2));
+                if (i == 5) builder.filter("LowQual");
+                if (withGenotypes) {
+                    java.util.List<htsjdk.variant.variantcontext.Genotype> genotypes =
+                            new java.util.ArrayList<>();
+                    for (int g = 0; g < samples.size(); g++) {
+                        java.util.List<htsjdk.variant.variantcontext.Allele> called = (i + g) % 3 == 0
+                                ? java.util.Arrays.asList(ref, ref)
+                                : ((i + g) % 3 == 1
+                                        ? java.util.Arrays.asList(ref, alt)
+                                        : java.util.Arrays.asList(alt, alt));
+                        genotypes.add(new htsjdk.variant.variantcontext.GenotypeBuilder(
+                                samples.get(g), called)
+                                .GQ(20 + 7 * ((i + g) % 5))
+                                .DP(10 + ((i + g) % 4))
+                                .make());
+                    }
+                    builder.genotypes(genotypes);
+                }
+                writer.add(builder.make());
+            }
+        }
+    }
+
+    /**
+     * The corpus of the picard.vcf manipulation tools.
+     *
+     * `vcf_sorted_samples.vcf` and `vcf_unsorted_samples.vcf` are the same nine records under the
+     * two sample orders. The records are out of coordinate order and on both contigs, so SortVcf
+     * has work to do; two of them are filtered, so VcfToIntervalList's INCLUDE_FILTERED decides
+     * something; they overlap and abut, so its merge does; some have IDs (one of them two) and
+     * some do not, so VARIANT_ID_METHOD does; and one is a symbolic deletion whose END is the
+     * interval's end. `vcf_no_contigs.vcf` is the first file without its contig lines, which is
+     * what the tools that need a sequence dictionary refuse. `vcf_one_sample.vcf` is the one
+     * sample RenameSampleInVcf accepts and `vcf_sites_only.vcf` the none it also accepts.
+     * The two `##source` lines are two lines to every tool but SortVcf, whose header goes
+     * through `VCFUtils.smartMergeHeaders`: that keys an unstructured line by its key alone and
+     * keeps the first in sorted order, so one of them is dropped.
+     * `other.dict` disagrees with the corpus on chr2's length and adds a contig, and carries an
+     * assembly, so a header rebuilt from it is visibly a different header.
+     */
+    static void writeVcfUtilityFixtures(File dir) throws Exception {
+        String meta = String.join("\n",
+                "##fileformat=VCFv4.2",
+                "##FILTER=<ID=LowQual,Description=\"Low quality\">",
+                "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">",
+                "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype quality\">",
+                "##FORMAT=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">",
+                "##INFO=<ID=AC,Number=A,Type=Integer,Description=\"Allele count\">",
+                "##INFO=<ID=DB,Number=0,Type=Flag,Description=\"dbSNP membership\">",
+                "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position\">",
+                "##ALT=<ID=DEL,Description=\"Deletion\">",
+                "##source=handwritten",
+                "##source=a second source line") + "\n";
+        String contigs = "##contig=<ID=chr1,length=" + CHR1 + ">\n"
+                + "##contig=<ID=chr2,length=" + CHR2 + ",assembly=test>\n";
+        String[] records = {
+            "chr2\t300\trs5\tG\tT\t12.5\tPASS\tAC=1\tGT:GQ:DP\t0/1:30:8\t0/0:.:.",
+            "chr1\t700\t.\tC\tT\t.\tLowQual\tAC=2\tGT:GQ:DP\t1/1:12:3\t./.:.:.",
+            "chr1\t100\trs1\tA\tG\t50\tPASS\tAC=1;DB\tGT:GQ:DP\t0/1:30:8\t0/0:.:.",
+            "chr1\t101\t.\tT\tC\t40\t.\tAC=1\tGT:GQ:DP\t0/1:25:9\t0|1:20:7",
+            "chr1\t200\trs2;rs3\tACGT\tA\t30\tPASS\tAC=1\tGT:GQ:DP\t0/1:.:4\t1/1:9:.",
+            "chr1\t202\t.\tG\tA,C\t.\tPASS\tAC=1,1\tGT:GQ:DP\t1/2:5:5\t0/0:5:5",
+            "chr1\t500\t.\tN\t<DEL>\t.\t.\tEND=560;AC=1\tGT\t0/1\t0/0",
+            "chr1\t550\trs4\tA\tT\t.\t.\tAC=0\tGT:GQ:DP\t0/0:50:20\t0/0:40:20",
+            "chr2\t100\t.\tA\tG\t.\tLowQual\tAC=1\tGT:GQ:DP\t0/1:30:8\t./.:.:.",
+        };
+        String columns = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO";
+        writeVcfText(new File(dir, "vcf_sorted_samples.vcf"), meta + contigs,
+                columns + "\tFORMAT\tsampleA\tsampleB", records, 11);
+        writeVcfText(new File(dir, "vcf_unsorted_samples.vcf"), meta + contigs,
+                columns + "\tFORMAT\tsampleB\tsampleA", records, 11);
+        writeVcfText(new File(dir, "vcf_no_contigs.vcf"), meta,
+                columns + "\tFORMAT\tsampleA\tsampleB", records, 11);
+        writeVcfText(new File(dir, "vcf_one_sample.vcf"), meta + contigs,
+                columns + "\tFORMAT\tsampleA", records, 10);
+        writeVcfText(new File(dir, "vcf_sites_only.vcf"), meta + contigs, columns, records, 8);
+
+        try (PrintWriter p = new PrintWriter(new File(dir, "other.dict"), "UTF-8")) {
+            p.print("@HD\tVN:1.6\n");
+            p.print("@SQ\tSN:chr1\tLN:" + CHR1 + "\tAS:other\tM5:0123456789abcdef0123456789abcdef\n");
+            p.print("@SQ\tSN:chr2\tLN:" + (CHR2 + 500) + "\n");
+            p.print("@SQ\tSN:chr3\tLN:300\tSP:test\n");
+        }
+    }
+
+    /**
+     * The corpus of MergeVcfs: two files whose records are each in coordinate order and meet at
+     * three positions (chr1:100, chr1:550, chr2:100), which is where the PriorityQueue inside
+     * htsjdk's MergingIterator decides the order and the input order does not.
+     *
+     * `merge_a.vcf` has its samples in sorted order, so its genotype blocks are copied; `merge_b.vcf`
+     * has them reversed, so its are decoded and re-encoded in the sorted order. The two disagree on
+     * XC's Number, which smartMergeHeaders promotes to `.` (AC would not do: it is a standard line,
+     * which the reader repairs to Number=A before the merge sees it), and b adds an INFO line.
+     * `merge_b_no_contigs.vcf` is b without contig lines, which needs SEQUENCE_DICTIONARY, and
+     * `merge_swapped_contigs.vcf` declares the same contigs in the other order, which the
+     * comparator refuses as incompatible.
+     */
+    static void writeVcfMergeFixtures(File dir) throws Exception {
+        String common = String.join("\n",
+                "##fileformat=VCFv4.2",
+                "##FILTER=<ID=LowQual,Description=\"Low quality\">",
+                "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">",
+                "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype quality\">",
+                "##FORMAT=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">",
+                "##INFO=<ID=DB,Number=0,Type=Flag,Description=\"dbSNP membership\">") + "\n";
+        String metaA = common
+                + "##INFO=<ID=AC,Number=A,Type=Integer,Description=\"Allele count\">\n"
+                + "##INFO=<ID=XC,Number=2,Type=Integer,Description=\"Two counts\">\n"
+                + "##source=merge_a\n";
+        String metaB = common
+                + "##INFO=<ID=AC,Number=1,Type=Integer,Description=\"Allele count in b\">\n"
+                + "##INFO=<ID=XB,Number=1,Type=Float,Description=\"Only in b\">\n"
+                + "##INFO=<ID=XC,Number=3,Type=Integer,Description=\"Three counts\">\n"
+                + "##source=merge_b\n";
+        String contigs = "##contig=<ID=chr1,length=" + CHR1 + ">\n"
+                + "##contig=<ID=chr2,length=" + CHR2 + ",assembly=test>\n";
+        String swapped = "##contig=<ID=chr2,length=" + CHR2 + ",assembly=test>\n"
+                + "##contig=<ID=chr1,length=" + CHR1 + ">\n";
+        String columns = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT";
+        String[] recordsA = {
+            "chr1\t100\trs1\tA\tG\t50\tPASS\tAC=1;DB\tGT:GQ:DP\t0/1:30:8\t0/0:.:.",
+            "chr1\t200\t.\tACGT\tA\t30\tPASS\tAC=1\tGT:GQ:DP\t0/1:.:4\t1/1:9:.",
+            "chr1\t550\trs4\tA\tT\t.\t.\tAC=0\tGT:GQ:DP\t0/0:50:20\t0/0:40:20",
+            "chr2\t100\t.\tA\tG\t.\tLowQual\tAC=1\tGT:GQ:DP\t0/1:30:8\t./.:.:.",
+        };
+        // Columns in b's own order, sampleB first.
+        String[] recordsB = {
+            "chr1\t100\t.\tA\tC\t20\tPASS\tAC=1;XB=0.5\tGT:DP:GQ\t0/0:.:.\t0/1:7:22",
+            "chr1\t150\trs9\tC\tCT\t.\tPASS\tAC=2\tGT:GQ\t1/1:15\t0/1:.",
+            "chr1\t550\t.\tA\tC\t15\tLowQual\tXB=2\tGT:GQ:DP\t0/1:5:.\t0/0:.:3",
+            "chr1\t700\t.\tC\tT\t.\t.\tAC=1\tGT:GQ:DP\t./.:.:.\t0/1:12:3",
+            "chr2\t50\t.\tT\tA\t8\tPASS\t.\tGT\t0|1\t1|0",
+            "chr2\t100\trs7\tA\tT\t.\tPASS\tAC=1\tGT:GQ:DP\t0/1:10:10\t0/0:10:10",
+        };
+        writeVcfText(new File(dir, "merge_a.vcf"), metaA + contigs,
+                columns + "\tsampleA\tsampleB", recordsA, 11);
+        writeVcfText(new File(dir, "merge_b.vcf"), metaB + contigs,
+                columns + "\tsampleB\tsampleA", recordsB, 11);
+        writeVcfText(new File(dir, "merge_b_no_contigs.vcf"), metaB,
+                columns + "\tsampleB\tsampleA", recordsB, 11);
+        writeVcfText(new File(dir, "merge_swapped_contigs.vcf"), metaB + swapped,
+                columns + "\tsampleB\tsampleA", recordsB, 11);
+    }
+
+    /**
+     * The corpus of GatherVcfs: `gather_1.vcf` and `gather_2.vcf` are two consecutive stretches of
+     * one call set, `gather_empty.vcf` has the header and no records, `gather_overlap.vcf` starts
+     * after gather_1 starts but before it ends (the first-record check passes and the gather's own
+     * check does not), and `gather_2_swapped.vcf` is gather_2 with its sample columns in the
+     * other order, which GatherVcfs compares as a list and refuses beside the others. Alone it is
+     * accepted, and its output keeps its own column order with every genotype re-encoded, where
+     * the other files' sorted columns are copied.
+     */
+    static void writeVcfGatherFixtures(File dir) throws Exception {
+        String meta = String.join("\n",
+                "##fileformat=VCFv4.2",
+                "##FILTER=<ID=LowQual,Description=\"Low quality\">",
+                "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">",
+                "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype quality\">",
+                "##FORMAT=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">",
+                "##INFO=<ID=AC,Number=A,Type=Integer,Description=\"Allele count\">",
+                "##source=gather",
+                "##source=a second source line",
+                "##contig=<ID=chr1,length=" + CHR1 + ">",
+                "##contig=<ID=chr2,length=" + CHR2 + ",assembly=test>") + "\n";
+        String columns = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT";
+        String sorted = columns + "\tsampleA\tsampleB";
+        String unsorted = columns + "\tsampleB\tsampleA";
+        String[] first = {
+            "chr1\t100\trs1\tA\tG\t50\tPASS\tAC=1\tGT:GQ:DP\t0/1:30:8\t0/0:.:.",
+            "chr1\t200\t.\tACGT\tA\t30\tPASS\tAC=1\tGT:GQ:DP\t0/1:.:4\t1/1:9:.",
+            "chr1\t550\trs4\tA\tT\t.\t.\tAC=0\tGT:DP:GQ\t0/0:20:50\t0/0:20:.",
+        };
+        String[] second = {
+            "chr1\t700\t.\tC\tT\t.\tLowQual\tAC=1\tGT:GQ:DP\t./.:.:.\t0/1:12:3",
+            "chr2\t50\t.\tT\tA\t8\tPASS\t.\tGT\t0|1\t1|0",
+            "chr2\t100\trs7\tA\tT\t.\tPASS\tAC=1\tGT:GQ:DP\t0/1:10:10\t0/0:10:.",
+        };
+        String[] overlap = {
+            "chr1\t300\t.\tG\tC\t9\tPASS\tAC=1\tGT:GQ\t0/1:9\t0/0:.",
+            "chr1\t800\t.\tT\tG\t9\tPASS\tAC=1\tGT:GQ\t0/1:9\t0/0:.",
+        };
+        writeVcfText(new File(dir, "gather_1.vcf"), meta, sorted, first, 11);
+        writeVcfText(new File(dir, "gather_2.vcf"), meta, sorted, second, 11);
+        writeVcfText(new File(dir, "gather_empty.vcf"), meta, sorted, new String[0], 11);
+        writeVcfText(new File(dir, "gather_overlap.vcf"), meta, sorted, overlap, 11);
+        writeVcfText(new File(dir, "gather_2_swapped.vcf"), meta, unsorted, second, 11);
+    }
+
+    /**
+     * The corpus of SplitVcfs beside vcf_sorted_samples.vcf (whose one odd record is SYMBOLIC):
+     * every VariantContext type in one file, in coordinate order. The first record that is
+     * neither a SNP nor an indel is a MIXED site, which is the type STRICT names; the multiallelic
+     * SNP, the MNP, the site with no ALT (NO_VARIATION) and the insertion come after it.
+     */
+    static void writeVcfSplitFixture(File dir) throws Exception {
+        String meta = String.join("\n",
+                "##fileformat=VCFv4.2",
+                "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">",
+                "##FORMAT=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">",
+                "##INFO=<ID=DP,Number=1,Type=Integer,Description=\"Total depth\">",
+                "##contig=<ID=chr1,length=" + CHR1 + ">",
+                "##contig=<ID=chr2,length=" + CHR2 + ">") + "\n";
+        String[] records = {
+            "chr1\t10\t.\tA\tG\t.\t.\tDP=5\tGT:DP\t0/1:5",
+            "chr1\t20\t.\tAC\tA\t.\t.\t.\tGT:DP\t1/1:.",
+            "chr1\t30\t.\tA\tG,AT\t.\t.\t.\tGT\t1/2",
+            "chr1\t40\t.\tC\tA,T\t9\tPASS\tDP=3\tGT:DP\t1/2:3",
+            "chr1\t50\t.\tAC\tGT\t.\t.\t.\tGT\t0/1",
+            "chr1\t60\t.\tT\t.\t.\t.\t.\tGT\t0/0",
+            "chr2\t5\trs5\tG\tGTT\t.\tPASS\t.\tGT:DP\t0|1:7",
+            "chr2\t9\t.\tC\tT\t.\t.\t.\tGT:DP\t./.:.",
+        };
+        writeVcfText(new File(dir, "split_types.vcf"), meta,
+                "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsampleA", records, 10);
+    }
+
+    /**
+     * The corpus of VcfFormatConverter beside variants.vcf (which has its .idx): gather_1.vcf as
+     * a block-compressed file with its tabix index, written by htsjdk's own writer, so the one
+     * compressed input the tool reads with REQUIRE_INDEX has the index it looks for (and
+     * gather_2.vcf the same, so GatherVcfs has two compressed inputs to copy blocks from); and
+     * `unsorted_indexed.vcf`, the out-of-order records beside a borrowed `.idx`.
+     */
+    static void writeVcfConverterFixture(File dir) throws Exception {
+        // The unsorted records under an index the reader only needs to find and load, so
+        // REQUIRE_INDEX lets them through to a compressed output, whose tabix index refuses them.
+        java.nio.file.Files.copy(new File(dir, "vcf_unsorted_samples.vcf").toPath(),
+                new File(dir, "unsorted_indexed.vcf").toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        java.nio.file.Files.copy(new File(dir, "variants.vcf.idx").toPath(),
+                new File(dir, "unsorted_indexed.vcf.idx").toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        // gather_2.vcf.gz is GatherVcfs's: with every input compressed and a .vcf.gz output the
+        // gather copies blocks instead of records, which only this pair reaches.
+        for (String name : new String[] {"gather_1", "gather_2"}) {
+            try (htsjdk.variant.vcf.VCFFileReader in =
+                         new htsjdk.variant.vcf.VCFFileReader(new File(dir, name + ".vcf"), false);
+                 htsjdk.variant.variantcontext.writer.VariantContextWriter out =
+                         new htsjdk.variant.variantcontext.writer.VariantContextWriterBuilder()
+                                 .setOutputFile(new File(dir, name + ".vcf.gz"))
+                                 .setReferenceDictionary(in.getFileHeader().getSequenceDictionary())
+                                 .setOption(htsjdk.variant.variantcontext.writer.Options.INDEX_ON_THE_FLY)
+                                 .build()) {
+                out.writeHeader(in.getFileHeader());
+                for (htsjdk.variant.variantcontext.VariantContext vc : in) {
+                    out.add(vc);
+                }
+            }
+        }
+    }
+
+    /**
+     * The corpus of FixVcfHeader. `fix_missing.vcf` uses a FILTER, three INFO keys (one a flag)
+     * and three FORMAT keys (one of them GQ, a standard key) that its header does not define, at
+     * most one undefined INFO key per record, so which one the writer names first never depends on
+     * a HashMap's order. `fix_missing_unsorted.vcf` is the same under the other column order, so
+     * its genotypes are decoded and their FORMAT keys checked. `fix_header.vcf` is a header
+     * defining all of them, with no records, for HEADER, and `fix_header_swapped.vcf` the same
+     * with its sample columns in the other order, which ENFORCE_SAME_SAMPLES lets through.
+     */
+    static void writeVcfFixHeaderFixtures(File dir) throws Exception {
+        String contigs = "##contig=<ID=chr1,length=" + CHR1 + ">\n"
+                + "##contig=<ID=chr2,length=" + CHR2 + ">\n";
+        String meta = String.join("\n",
+                "##fileformat=VCFv4.2",
+                "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">",
+                "##FORMAT=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">",
+                "##INFO=<ID=DP,Number=1,Type=Integer,Description=\"Total depth\">",
+                "##source=fix") + "\n" + contigs;
+        String full = String.join("\n",
+                "##fileformat=VCFv4.2",
+                "##FILTER=<ID=q10,Description=\"Quality below 10\">",
+                "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">",
+                "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype quality\">",
+                "##FORMAT=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">",
+                "##FORMAT=<ID=XF,Number=1,Type=String,Description=\"A string\">",
+                "##FORMAT=<ID=XG,Number=1,Type=Integer,Description=\"An integer\">",
+                "##INFO=<ID=DP,Number=1,Type=Integer,Description=\"Total depth\">",
+                "##INFO=<ID=XA,Number=1,Type=Integer,Description=\"One\">",
+                "##INFO=<ID=XB,Number=2,Type=Integer,Description=\"Two\">",
+                "##INFO=<ID=FLAGX,Number=0,Type=Flag,Description=\"A flag\">",
+                "##source=the replacement header") + "\n" + contigs;
+        String columns = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT";
+        String[] records = {
+            "chr1\t100\t.\tA\tG\t50\tPASS\tDP=10;XA=1\tGT:GQ:XF\t0/1:30:a\t0/0:.:.",
+            "chr1\t200\t.\tC\tT\t.\tq10\tDP=5;FLAGX\tGT:DP\t1/1:3\t0/1:2",
+            "chr2\t50\t.\tG\tA\t.\tPASS\tXB=2,3\tGT:XG\t0|1:7\t1|1:8",
+        };
+        // The same records with their two sample columns swapped, for the other column order.
+        String[] swapped = new String[records.length];
+        for (int i = 0; i < records.length; i++) {
+            String[] f = records[i].split("\t");
+            String t = f[9];
+            f[9] = f[10];
+            f[10] = t;
+            swapped[i] = String.join("\t", f);
+        }
+        writeVcfText(new File(dir, "fix_missing.vcf"), meta,
+                columns + "\tsampleA\tsampleB", records, 11);
+        writeVcfText(new File(dir, "fix_missing_unsorted.vcf"), meta,
+                columns + "\tsampleB\tsampleA", swapped, 11);
+        writeVcfText(new File(dir, "fix_header.vcf"), full,
+                columns + "\tsampleA\tsampleB", new String[0], 11);
+        writeVcfText(new File(dir, "fix_header_swapped.vcf"), full,
+                columns + "\tsampleB\tsampleA", new String[0], 11);
+    }
+
+    /** A VCF as text: the meta lines, the column line, and each record cut to its first columns. */
+    static void writeVcfText(File f, String meta, String columns, String[] records, int keep)
+            throws Exception {
+        try (PrintWriter p = new PrintWriter(f, "UTF-8")) {
+            p.print(meta);
+            p.print(columns + "\n");
+            for (String record : records) {
+                String[] fields = record.split("\t");
+                p.print(String.join("\t", java.util.Arrays.copyOf(fields, keep)) + "\n");
+            }
+        }
+    }
+
+    static void writeDict(File f, String chr1, String chr2) throws Exception {
+        try (PrintWriter p = new PrintWriter(f)) {
+            p.println("@HD\tVN:1.6\tSO:unsorted");
+            p.printf("@SQ\tSN:chr1\tLN:%d%n", chr1.length());
+            p.printf("@SQ\tSN:chr2\tLN:%d%n", chr2.length());
+        }
+    }
+
+    /** A contig's bytes in the file: its bases, plus the newline that ends each line. */
+    static long bytesOnDisk(int bases, int lineWidth) {
+        long lines = (bases + lineWidth - 1) / lineWidth;
+        return bases + lines;
+    }
+
+    }
+
 }

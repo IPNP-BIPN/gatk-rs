@@ -16,8 +16,9 @@
 //!
 //! # `AllGtsFiltered` is a site filter the genotypes set
 //!
-//! A record every one of whose genotypes was filtered is itself filtered, and that replaces the
-//! `PASS` the three site filters would otherwise have left.
+//! A record whose every called, non-hom-ref genotype was filtered is itself filtered, and that
+//! replaces the `PASS` the three site filters would otherwise have left. Hom-ref and no-call
+//! genotypes do not count either way, and a record with no variant genotype is never filtered.
 //!
 //! # Two thresholds are tested against a default that means "absent"
 //!
@@ -229,8 +230,13 @@ pub fn filter_record(record: &VariantContext, thresholds: &Thresholds) -> Varian
     }
 
     let mut genotypes = Vec::new();
-    let mut all_filtered = !record.genotypes.is_empty();
+    // `variantSamples`: only a called, non-hom-ref genotype counts, and a record with none is
+    // never `AllGtsFiltered` however many hom-ref genotypes were filtered.
+    let mut any_variant = false;
+    let mut all_variants_filtered = true;
     for genotype in &record.genotypes {
+        let variant = genotype.is_called() && !genotype.is_hom_ref();
+        any_variant |= variant;
         let mut own: Vec<String> = Vec::new();
         // `getGQ()` and `getDP()` are -1 when absent.
         if genotype.gq.unwrap_or(-1) < thresholds.min_gq {
@@ -241,7 +247,7 @@ pub fn filter_record(record: &VariantContext, thresholds: &Thresholds) -> Varian
         }
         let mut copy = genotype.clone();
         if own.is_empty() {
-            all_filtered = false;
+            all_variants_filtered &= !variant;
             // The iterator sets `FT=PASS` and htsjdk's writer drops a passing FT, so the field
             // never reaches the file. Carrying `None` here is the same bytes and says why.
             copy.filters = None;
@@ -251,7 +257,7 @@ pub fn filter_record(record: &VariantContext, thresholds: &Thresholds) -> Varian
         }
         genotypes.push(copy);
     }
-    if all_filtered {
+    if any_variant && all_variants_filtered {
         filters.push(ALL_GTS_FILTERED.to_string());
     }
 
@@ -263,8 +269,18 @@ pub fn filter_record(record: &VariantContext, thresholds: &Thresholds) -> Varian
     out
 }
 
-/// `doWork()`: the whole run.
+/// `doWork()`: the whole run, to a `.vcf` or `.bcf` output.
 pub fn filter(input: &str, thresholds: &Thresholds) -> Result<String, FilterError> {
+    filter_to(input, thresholds, true)
+}
+
+/// `doWork()`: the whole run. Only an output named `.vcf` or `.bcf` (`isVcfOrBcf`) needs the
+/// input's sequence dictionary; a `.vcf.gz` one does not.
+pub fn filter_to(
+    input: &str,
+    thresholds: &Thresholds,
+    vcf_or_bcf_output: bool,
+) -> Result<String, FilterError> {
     let file = read_vcf(input).map_err(|failure| {
         FilterError::Vcf(failure.error.class().to_string(), failure.error.message())
     })?;
@@ -273,7 +289,7 @@ pub fn filter(input: &str, thresholds: &Thresholds) -> Result<String, FilterErro
         .lines
         .iter()
         .any(|line| matches!(line, HeaderLine::Contig { .. }));
-    if !has_dictionary {
+    if vcf_or_bcf_output && !has_dictionary {
         return Err(FilterError::NoSequenceDictionary);
     }
 
@@ -282,8 +298,19 @@ pub fn filter(input: &str, thresholds: &Thresholds) -> Result<String, FilterErro
         lines: file.header.lines.clone(),
         samples: file.header.samples.clone(),
     };
+    // `VCFHeader.addMetaDataLine` keeps the line already there under the same key and ID, so an
+    // input's own `FT` or `LowQD` line, whatever its description, is the one written.
+    let id_of = |line: &HeaderLine| match line {
+        HeaderLine::Filter { id, .. } => Some(("FILTER".to_string(), id.clone())),
+        HeaderLine::Compound { key, id, .. } => Some((key.clone(), id.clone())),
+        _ => None,
+    };
     for line in added_header_lines() {
-        if !header.lines.contains(&line) {
+        if !header
+            .lines
+            .iter()
+            .any(|existing| id_of(existing) == id_of(&line))
+        {
             header.lines.push(line);
         }
     }

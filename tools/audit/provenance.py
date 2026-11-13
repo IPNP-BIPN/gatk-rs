@@ -20,6 +20,10 @@ ALLOWED = {
     # Fully-qualified class names, and the bare repository names used in module headers that
     # cite a whole file rather than one symbol.
     "htsjdk": "htsjdk, MIT",
+    # The scalable VQSR's default backend: numpy's generator and the distribution GATK calibrates
+    # with. numpy is BSD-3-Clause, Hipparchus is Apache 2.0.
+    "numpy": "numpy, BSD-3-Clause",
+    "Hipparchus": "Hipparchus, Apache 2.0",
     "picard": "Picard, MIT",
     "org.broadinstitute.hellbender": "GATK, Apache 2.0",
     # Apache Commons JEXL 2.1.1, the expression language GATK resolves for
@@ -27,6 +31,13 @@ ALLOWED = {
     # licence header of the sources jar in the resolved dependency, not from its documentation.
     # gatk-rs is Apache 2.0, so this is the same licence rather than a compatible one.
     "org.apache.commons.jexl2": "Apache Commons JEXL, Apache 2.0",
+    # Netlib's LAPACK 3.1.1 and reference BLAS, which F2J translated into what Spark calls in the
+    # oracle image. Modified BSD, verified from the COPYING file of the 3.1.1 source tarball.
+    "LAPACK": "LAPACK, BSD 3-Clause",
+    # ARPACK as the initial import of arpack-ng carries it, which F2J translated into the
+    # org.netlib.arpack that Spark's symmetricEigs calls in the oracle image. BSD 3-Clause, verified
+    # from arpack-ng's COPYING ("Copyright (c) 1996-2008 Rice University").
+    "ARPACK": "ARPACK, BSD 3-Clause",
     # Apache Commons Math 3.5, which carries the second of GATK's two static random streams:
     # Utils.getRandomDataGenerator() is a RandomDataGenerator over a Well19937c. Apache 2.0,
     # verified from the licence header of the sources jar in the resolved dependency.

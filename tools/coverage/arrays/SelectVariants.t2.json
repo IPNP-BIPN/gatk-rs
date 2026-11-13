@@ -3,9 +3,9 @@
   "origin": "gatk",
   "t": 2,
   "numeric_policy": "strict",
-  "arguments_total": 88,
+  "arguments_total": 89,
   "arguments_in_array": 48,
-  "arguments_excluded": 40,
+  "arguments_excluded": 41,
   "excluded": [
     {
       "argument": "--add-output-vcf-command-line",
@@ -208,6 +208,13 @@
       "type": "int",
       "reason": "only one value available (default)",
       "held_at": "0",
+      "source": "default"
+    },
+    {
+      "argument": "--output-cram-version",
+      "type": "String",
+      "reason": "only one value available (default)",
+      "held_at": "3.1",
       "source": "default"
     },
     {

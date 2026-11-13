@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The reference's NVScoreVariants over the fixture, as text, inside `broadinstitute/gatk:4.6.2.0`.
+"""The reference's NVScoreVariants over the fixture, as text, inside `broadinstitute/gatk:4.7.0.0`.
 
 For each VCF of `make_fixture.py` and each model: the exit code of the process, what the tool
 returned, the score file and the output VCF, or that there is none. Each line says what it belongs

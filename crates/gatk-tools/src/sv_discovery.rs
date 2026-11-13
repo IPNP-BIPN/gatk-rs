@@ -497,31 +497,20 @@ fn reverse_complement(bases: &[u8]) -> Vec<u8> {
         .collect()
 }
 
-/// `SAMRecord.toString`.
+/// `SAMRecord.toString`, which since htsjdk 5.0.0 is `getSAMString`: the SAM line, no newline.
 fn record_text(record: &BamRecord, header: &SamHeader) -> String {
-    let mut text = record.read_name.clone();
-    if record.flags & 0x1 != 0 {
-        text.push_str(if record.flags & 0x40 != 0 {
-            " 1/2"
-        } else {
-            " 2/2"
-        });
-    }
-    text.push_str(&format!(" {}b", record.read_bases.len()));
-    if record.flags & 0x4 != 0 {
-        text.push_str(" unmapped read.");
-    } else {
-        let contig = header
-            .sequences
-            .get(record.reference_index as usize)
-            .map_or("*", |sequence| sequence.name.as_str());
-        let end = record.alignment_start + reference_length(&record.cigar.elements) - 1;
-        text.push_str(&format!(
-            " aligned to {contig}:{}-{end}.",
-            record.alignment_start
-        ));
-    }
-    text
+    let name = |index: i32| {
+        usize::try_from(index)
+            .ok()
+            .and_then(|i| header.sequences.get(i))
+            .map_or("*", |sequence| sequence.name.as_str())
+    };
+    htsjdk_bam::text::write_alignment(
+        record,
+        name(record.reference_index),
+        name(record.mate_reference_index),
+    )
+    .unwrap_or_default()
 }
 
 /// `AlignedContig.parseReadsAndOptionallySplitGappedAlignments`.

@@ -612,31 +612,8 @@ impl CanonicalLinkage {
             length: member.call.length,
             algorithms: member.call.algorithms.clone(),
             carriers: Vec::new(),
-        }
-    }
-
-    fn max_with(
-        &self,
-        record: &CallRecord,
-        parameters: &crate::sv_cluster::ClusteringParameters,
-    ) -> i32 {
-        let length = contig_length(&self.dictionary, &record.contig_a);
-        let by_window = record
-            .position_a
-            .wrapping_add(parameters.window)
-            .min(length);
-        if !record.is_intrachromosomal() {
-            return by_window;
-        }
-        let assumed = record.length_for(crate::sv_cluster::INSERTION_ASSUMED_LENGTH_FOR_OVERLAP);
-        let by_overlap = ((f64::from(record.position_a)
-            + (1.0 - parameters.reciprocal_overlap) * f64::from(assumed))
-            as i32)
-            .min(length);
-        if parameters.requires_overlap_and_proximity {
-            by_overlap.min(by_window)
-        } else {
-            by_overlap.max(by_window)
+            cpx_subtype: member.call.cpx_subtype.clone(),
+            cpx_intervals: member.call.cpx_intervals.clone(),
         }
     }
 }
@@ -650,13 +627,7 @@ impl EngineLinkage for CanonicalLinkage {
 
     fn max_clusterable_start(&self, item: &Member) -> Result<i32, EngineError> {
         let record = Self::record(item);
-        let own = if record.is_depth_only() {
-            self.linkage.depth
-        } else {
-            self.linkage.pesr
-        };
-        Ok(self
-            .max_with(&record, &own)
-            .max(self.max_with(&record, &self.linkage.mixed)))
+        let length = contig_length(&self.dictionary, &record.contig_a);
+        Ok(self.linkage.max_clusterable_start(&record, length))
     }
 }

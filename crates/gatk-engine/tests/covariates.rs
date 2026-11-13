@@ -212,6 +212,24 @@ fn every_key_of_every_read_is_the_reference() {
                 .collect();
             assert!(!expected.is_empty(), "{label}: no rows for read {index}");
 
+            // `empty` is the dump's own marker, not an outcome of the reference: CovariatesDump
+            // does not run GATK on a read without bases, so the only claim is "no cell at all".
+            if expected.len() == 1 && expected[0][4] == "empty" {
+                assert!(
+                    record.read_bases.is_empty(),
+                    "{label}/{index}: `empty` for a read with bases"
+                );
+                let matrix = matrix_for(&covariates, &header, record, record_indel_values)
+                    .unwrap_or_else(|error| panic!("{label}/{index}: {error:?} on no bases"));
+                for event in ["M", "I", "D"] {
+                    assert!(
+                        matrix.matrix_for_error_model(event_from(event)).is_empty(),
+                        "{label}/{index}/{event}: cells for a read with no bases"
+                    );
+                }
+                continue;
+            }
+
             match matrix_for(&covariates, &header, record, record_indel_values) {
                 Ok(matrix) => {
                     for row in expected {

@@ -105,7 +105,7 @@ def main():
     # having done nothing.
     step("MakeFixtures.java compiles against the oracle's classpath",
          'out=$(mktemp -d) && docker run --rm --platform linux/amd64 '
-         '-v "$PWD/tools/coverage:/harness:ro" -v "$out:/out" -w /work gatk-rs-oracle:4.6.2.0 '
+         '-v "$PWD/tools/coverage:/harness:ro" -v "$out:/out" -w /work gatk-rs-oracle:4.7.0.0 '
          '\'javac -cp "$ORACLE_CP" -d /out /harness/MakeFixtures.java\' '
          '&& test -f "$out/MakeFixtures.class"', shell=True)
 

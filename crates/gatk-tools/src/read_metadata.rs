@@ -1,11 +1,14 @@
 //! `ReadMetadata`, `LibraryStatistics` and `IntHistogram.CDF` (GATK 4.6.2.0): what
 //! `CalcMetadataSpark` computes, the first step of the SV pipeline.
 //!
-//! # One partition
+//! # A partition at a time
 //!
-//! The file names partitions, and the reference has as many as Disq cut the BAM into. This port runs
-//! what a single partition observes, which is X.1's claim everywhere else, so [`ReadMetadata`] holds
-//! one [`PartitionBounds`] and the caller refuses a BAM that Disq would have cut.
+//! The file names partitions, and the reference has as many as Disq cut the BAM into, empty ones
+//! included. [`MetadataBuilder`] takes them in order, and what crosses from one to the next is what
+//! the reference's `collect` and `combineMaps` carry: each partition's map comes back through Kryo
+//! into a table sized for it, and is poured into one accumulator, whose order is what the library
+//! lines are printed in. `CalcMetadataSpark` still reports a single partition and its runner refuses
+//! a BAM Disq would have cut.
 //!
 //! # Every read is reached through the unpaired trap
 //!
@@ -33,6 +36,7 @@
 
 use gatk_engine::java_hash::{HashOrderError, JavaHashCode, JavaHashMap};
 use gatk_engine::kryo::Output;
+use gatk_engine::reads::ReadsError;
 use htsjdk_bam::cigar::Op;
 use htsjdk_bam::header::SamHeader;
 use htsjdk_bam::record::BamRecord;
@@ -64,7 +68,14 @@ impl Default for MetadataArguments {
 }
 
 /// `PartitionBounds.UNMAPPED`.
-const UNMAPPED: i32 = i32::MAX;
+pub const UNMAPPED: i32 = i32::MAX;
+
+/// The partitions Disq cut a BAM into, each read as often as a stage asks for it, since holding them
+/// all is what a split exists to avoid.
+pub trait ReadPartitions {
+    fn count(&self) -> usize;
+    fn reads(&self, partition: usize) -> Result<Vec<BamRecord>, ReadsError>;
+}
 
 const MIN_COVERAGE: f32 = 10.0;
 
@@ -183,6 +194,7 @@ impl JavaHashCode for LibraryName {
     }
 }
 
+#[derive(Clone)]
 struct RawStatistics {
     fragment_sizes: Vec<i64>,
     observations: i64,
@@ -200,7 +212,7 @@ pub struct ReadMetadata {
     pub max_reads_in_partition: i64,
     pub coverage: f32,
     pub mean_base_quality: f32,
-    pub partition: PartitionBounds,
+    pub partitions: Vec<PartitionBounds>,
     pub contigs: Vec<String>,
     pub contig_ids: JavaHashMap<String, i32>,
     pub read_group_to_library: JavaHashMap<String, Option<String>>,
@@ -289,20 +301,146 @@ impl ReadMetadata {
         Self::with_arguments(header, records, &MetadataArguments::default(), Vec::new())
     }
 
-    /// The constructor with the tool's filter, and the contigs `--cross-contigs-to-ignore` named.
+    /// The constructor with the tool's filter over a single partition, and the contigs
+    /// `--cross-contigs-to-ignore` named.
     pub fn with_arguments(
         header: &SamHeader,
         records: &[BamRecord],
         arguments: &MetadataArguments,
         cross_contig_ignore: Vec<i32>,
     ) -> Result<ReadMetadata, MetadataFailure> {
+        let mut builder = MetadataBuilder::new(header, *arguments, cross_contig_ignore);
+        builder.add_partition(records)?;
+        builder.finish()
+    }
+
+    /// `getMedianPartitionSpan`.
+    pub fn median_partition_span(&self) -> i32 {
+        let mut spans: Vec<i32> = self.partitions.iter().map(|bounds| bounds.span).collect();
+        spans.sort_unstable();
+        spans[spans.len() / 2]
+    }
+
+    /// `ReadMetadata.writeMetadata`.
+    pub fn text(&self) -> String {
+        use jmath::to_string::float_to_string as float;
+        let mut text = format!(
+            "#reads:\t{}\n#partitions:\t{}\nmax reads/partition:\t{}\ncoverage:\t{}\nmeanQ:\t{}\n",
+            self.reads,
+            self.partitions.len(),
+            self.max_reads_in_partition,
+            float(self.coverage),
+            float(self.mean_base_quality)
+        );
+        text.push_str("\nLibrary Statistics\n");
+        for (name, stats) in self.libraries.iter() {
+            text.push_str(&format!(
+                "{}:\t{}-{}+{}\t{}\t{}\t{}\t{}\n",
+                name.0.as_deref().unwrap_or("NoGroup"),
+                stats.median,
+                float(stats.negative_mad),
+                float(stats.positive_mad),
+                float(stats.coverage),
+                float(stats.mean_base_quality),
+                stats.reads,
+                float(stats.read_start_frequency)
+            ));
+            text.push_str("template size cumulative counts:");
+            for fraction in &stats.cdf.fractions {
+                // A float times a long is a float, and `Math.round(float)` is an int.
+                let cumulative = fraction * stats.cdf.counts as f32;
+                text.push_str(&format!(
+                    "\t{}",
+                    (f64::from(cumulative) + 0.5).floor() as i32
+                ));
+            }
+            text.push('\n');
+        }
+        text.push_str("\nPartition Boundaries\n");
+        for (index, bounds) in self.partitions.iter().enumerate() {
+            text.push_str(&format!(
+                "{index}\t{}\t{}\t{}\t{}\n",
+                bounds.first_contig, bounds.first_start, bounds.last_contig, bounds.last_end
+            ));
+        }
+        text.push_str("contigs map:\n");
+        for (id, name) in self.contigs.iter().enumerate() {
+            text.push_str(&format!("{id}:{name}\n"));
+        }
+        text
+    }
+
+    /// `Serializer.write` through an `Output` nothing flushes.
+    pub fn flushed_binary(&self) -> Vec<u8> {
+        let mut output = FlushedOutput::default();
+        output.write_int(0); // The cross-contig ignore set, which is empty here.
+        output.write_int(self.read_group_to_library.len() as i32);
+        for (group, library) in self.read_group_to_library.iter() {
+            output.write_string(Some(group));
+            output.write_string(library.as_deref());
+        }
+        output.write_int(self.contig_ids.len() as i32);
+        for (name, id) in self.contig_ids.iter() {
+            output.write_string(Some(name));
+            output.write_int(*id);
+        }
+        output.write_long(self.reads);
+        output.write_int(self.avg_read_len);
+        output.write_long(self.ref_bases);
+        output.write_long(self.max_reads_in_partition);
+        output.write_float(self.coverage);
+        output.write_float(self.mean_base_quality);
+        output.write_int(self.partitions.len() as i32);
+        for bounds in &self.partitions {
+            for value in [
+                bounds.first_contig,
+                bounds.first_start,
+                bounds.last_contig,
+                bounds.last_end,
+                bounds.span,
+            ] {
+                output.write_int(value);
+            }
+        }
+        output.write_int(self.libraries.len() as i32);
+        for (name, stats) in self.libraries.iter() {
+            output.write_string(name.0.as_deref());
+            output.write_int(stats.cdf.fractions.len() as i32);
+            for fraction in &stats.cdf.fractions {
+                output.write_float(*fraction);
+            }
+            output.write_long(stats.cdf.counts);
+            output.write_float(stats.coverage);
+            output.write_float(stats.mean_base_quality);
+            output.write_long(stats.reads);
+            output.write_float(stats.read_start_frequency);
+        }
+        output.flushed()
+    }
+}
+
+/// The constructor, whose `mapPartitions` is the caller's loop.
+pub struct MetadataBuilder<'a> {
+    header: &'a SamHeader,
+    arguments: MetadataArguments,
+    cross_contig_ignore: Vec<i32>,
+    contig_ids: JavaHashMap<String, i32>,
+    read_group_to_library: JavaHashMap<String, Option<String>>,
+    partitions: Vec<PartitionBounds>,
+    max_reads_in_partition: i64,
+    /// `combineMaps`' accumulator, a plain `new HashMap<>()`.
+    combined: JavaHashMap<LibraryName, RawStatistics>,
+}
+
+impl<'a> MetadataBuilder<'a> {
+    pub fn new(
+        header: &'a SamHeader,
+        arguments: MetadataArguments,
+        cross_contig_ignore: Vec<i32>,
+    ) -> MetadataBuilder<'a> {
         let mut contig_ids = JavaHashMap::with_capacity(hash_map_capacity(header.sequences.len()));
         for (id, sequence) in header.sequences.iter().enumerate() {
             contig_ids.insert(sequence.name.clone(), id as i32);
-        }
-        let mut contigs = vec![String::new(); contig_ids.len()];
-        for (name, id) in contig_ids.iter() {
-            contigs[*id as usize] = name.clone();
         }
         let mut read_group_to_library =
             JavaHashMap::with_capacity(hash_map_capacity(header.read_groups.len()));
@@ -312,8 +450,22 @@ impl ReadMetadata {
                 group.attributes.get("LB").map(str::to_string),
             );
         }
+        MetadataBuilder {
+            header,
+            arguments,
+            cross_contig_ignore,
+            contig_ids,
+            read_group_to_library,
+            partitions: Vec::new(),
+            max_reads_in_partition: 0,
+            combined: JavaHashMap::new(),
+        }
+    }
 
-        // `PartitionStatistics`: its map is a plain `new HashMap<>()`.
+    /// `PartitionStatistics`, then its way through `collect` and into the accumulator.
+    pub fn add_partition(&mut self, records: &[BamRecord]) -> Result<(), MetadataFailure> {
+        let arguments = &self.arguments;
+        // Its map is a plain `new HashMap<>()`.
         let mut raw: JavaHashMap<LibraryName, RawStatistics> = JavaHashMap::new();
         let mapped: Vec<&BamRecord> = records
             .iter()
@@ -342,7 +494,7 @@ impl ReadMetadata {
                 };
                 let library = LibraryName(
                     group
-                        .and_then(|id| read_group_to_library.get(&id).cloned())
+                        .and_then(|id| self.read_group_to_library.get(&id).cloned())
                         .flatten(),
                 );
                 let testable = is_template_length_testable(record, arguments)?;
@@ -384,7 +536,53 @@ impl ReadMetadata {
             };
         }
         raw.check()?;
+        self.partitions.push(partition);
+        let reads: i64 = raw.iter().map(|(_, stats)| stats.reads).sum();
+        self.max_reads_in_partition = self.max_reads_in_partition.max(reads);
 
+        // The private constructor `collect`'s Kryo reaches: re-inserted in iteration order.
+        let mut collected = JavaHashMap::with_capacity(hash_map_capacity(raw.len()));
+        for (name, stats) in raw.iter() {
+            collected.insert(name.clone(), stats.clone());
+        }
+        collected.check()?;
+        for (name, stats) in collected.iter() {
+            match self.combined.get_mut(name) {
+                None => {
+                    self.combined.insert(name.clone(), stats.clone());
+                }
+                // `LibraryRawStatistics.reduce`.
+                Some(held) => {
+                    for (sum, count) in held.fragment_sizes.iter_mut().zip(&stats.fragment_sizes) {
+                        *sum += count;
+                    }
+                    held.observations += stats.observations;
+                    held.reads += stats.reads;
+                    held.bases += stats.bases;
+                    held.total_base_quality += stats.total_base_quality;
+                }
+            }
+        }
+        self.combined.check()?;
+        Ok(())
+    }
+
+    /// The constructor past its `collect`.
+    pub fn finish(self) -> Result<ReadMetadata, MetadataFailure> {
+        let MetadataBuilder {
+            header,
+            cross_contig_ignore,
+            contig_ids,
+            read_group_to_library,
+            partitions,
+            max_reads_in_partition,
+            combined: raw,
+            ..
+        } = self;
+        let mut contigs = vec![String::new(); contig_ids.len()];
+        for (name, id) in contig_ids.iter() {
+            contigs[*id as usize] = name.clone();
+        }
         let reads: i64 = raw.iter().map(|(_, stats)| stats.reads).sum();
         let bases: i64 = raw.iter().map(|(_, stats)| stats.bases).sum();
         if reads == 0 {
@@ -423,113 +621,19 @@ impl ReadMetadata {
             reads,
             avg_read_len: (bases / reads) as i32,
             ref_bases,
-            max_reads_in_partition: reads,
+            max_reads_in_partition,
             coverage: if coverage >= MIN_COVERAGE {
                 coverage
             } else {
                 MIN_COVERAGE
             },
             mean_base_quality: total_quality as f32 / bases as f32,
-            partition,
+            partitions,
             contigs,
             contig_ids,
             read_group_to_library,
             libraries,
         })
-    }
-
-    /// `ReadMetadata.writeMetadata`.
-    pub fn text(&self) -> String {
-        use jmath::to_string::float_to_string as float;
-        let mut text = format!(
-            "#reads:\t{}\n#partitions:\t1\nmax reads/partition:\t{}\ncoverage:\t{}\nmeanQ:\t{}\n",
-            self.reads,
-            self.max_reads_in_partition,
-            float(self.coverage),
-            float(self.mean_base_quality)
-        );
-        text.push_str("\nLibrary Statistics\n");
-        for (name, stats) in self.libraries.iter() {
-            text.push_str(&format!(
-                "{}:\t{}-{}+{}\t{}\t{}\t{}\t{}\n",
-                name.0.as_deref().unwrap_or("NoGroup"),
-                stats.median,
-                float(stats.negative_mad),
-                float(stats.positive_mad),
-                float(stats.coverage),
-                float(stats.mean_base_quality),
-                stats.reads,
-                float(stats.read_start_frequency)
-            ));
-            text.push_str("template size cumulative counts:");
-            for fraction in &stats.cdf.fractions {
-                // A float times a long is a float, and `Math.round(float)` is an int.
-                let cumulative = fraction * stats.cdf.counts as f32;
-                text.push_str(&format!(
-                    "\t{}",
-                    (f64::from(cumulative) + 0.5).floor() as i32
-                ));
-            }
-            text.push('\n');
-        }
-        text.push_str("\nPartition Boundaries\n");
-        let bounds = &self.partition;
-        text.push_str(&format!(
-            "0\t{}\t{}\t{}\t{}\n",
-            bounds.first_contig, bounds.first_start, bounds.last_contig, bounds.last_end
-        ));
-        text.push_str("contigs map:\n");
-        for (id, name) in self.contigs.iter().enumerate() {
-            text.push_str(&format!("{id}:{name}\n"));
-        }
-        text
-    }
-
-    /// `Serializer.write` through an `Output` nothing flushes.
-    pub fn flushed_binary(&self) -> Vec<u8> {
-        let mut output = FlushedOutput::default();
-        output.write_int(0); // The cross-contig ignore set, which is empty here.
-        output.write_int(self.read_group_to_library.len() as i32);
-        for (group, library) in self.read_group_to_library.iter() {
-            output.write_string(Some(group));
-            output.write_string(library.as_deref());
-        }
-        output.write_int(self.contig_ids.len() as i32);
-        for (name, id) in self.contig_ids.iter() {
-            output.write_string(Some(name));
-            output.write_int(*id);
-        }
-        output.write_long(self.reads);
-        output.write_int(self.avg_read_len);
-        output.write_long(self.ref_bases);
-        output.write_long(self.max_reads_in_partition);
-        output.write_float(self.coverage);
-        output.write_float(self.mean_base_quality);
-        output.write_int(1);
-        let bounds = &self.partition;
-        for value in [
-            bounds.first_contig,
-            bounds.first_start,
-            bounds.last_contig,
-            bounds.last_end,
-            bounds.span,
-        ] {
-            output.write_int(value);
-        }
-        output.write_int(self.libraries.len() as i32);
-        for (name, stats) in self.libraries.iter() {
-            output.write_string(name.0.as_deref());
-            output.write_int(stats.cdf.fractions.len() as i32);
-            for fraction in &stats.cdf.fractions {
-                output.write_float(*fraction);
-            }
-            output.write_long(stats.cdf.counts);
-            output.write_float(stats.coverage);
-            output.write_float(stats.mean_base_quality);
-            output.write_long(stats.reads);
-            output.write_float(stats.read_start_frequency);
-        }
-        output.flushed()
     }
 }
 

@@ -42,7 +42,9 @@ INPUT_GLOBS = [
     "tools/conformance/manifest.json",
     "tools/coverage/fixtures.json",
     "tools/coverage/MakeFixtures.java",
-    "tools/coverage/arrays/*.json",
+    "tools/coverage/arrays/**/*.json",
+    "tools/fuzz/FuzzDriver.java",
+    "tools/fuzz/run_fuzz.py",
 ]
 
 

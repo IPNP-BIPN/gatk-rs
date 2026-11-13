@@ -134,7 +134,7 @@ pub const GROUPS: &[Group] = &[
     },
 ];
 
-/// The 311 tools, sorted by display name as the golden carries them.
+/// The 312 tools, sorted by display name as the golden carries them.
 pub const TOOLS: &[Tool] = &[
     Tool {
         display_name: "ASEReadCounter",
@@ -830,6 +830,13 @@ pub const TOOLS: &[Tool] = &[
         group: "org.broadinstitute.hellbender.cmdline.programgroups.StructuralVariantDiscoveryProgramGroup",
         maturity: Maturity::Experimental,
         one_line_summary: "Merges adjacent DepthEvidence records.",
+    },
+    Tool {
+        display_name: "ConvertCountsToDepthFile",
+        simple_name: "ConvertCountsToDepthFile",
+        group: "org.broadinstitute.hellbender.cmdline.programgroups.StructuralVariantDiscoveryProgramGroup",
+        maturity: Maturity::Experimental,
+        one_line_summary: "Converts *.counts.tsv to .rd.txt",
     },
     Tool {
         display_name: "ConvertHaplotypeDatabaseToVcf (Picard)",

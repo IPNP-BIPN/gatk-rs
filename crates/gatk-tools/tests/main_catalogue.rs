@@ -58,8 +58,8 @@ fn suggests(text: &str, query: &str) -> Option<Vec<String>> {
 fn the_catalogue_is_the_references() {
     let text = golden();
     let theirs = catalogue(&text);
-    assert_eq!(theirs.len(), 331);
-    assert_eq!(field(&text, "count", "catalogue").as_deref(), Some("331"));
+    assert_eq!(theirs.len(), 332);
+    assert_eq!(field(&text, "count", "catalogue").as_deref(), Some("332"));
     assert_eq!(CATALOGUE.to_vec(), theirs);
     // Sorted, which is what makes the lookup a binary search.
     let mut sorted = theirs.clone();
@@ -67,11 +67,11 @@ fn the_catalogue_is_the_references() {
     assert_eq!(theirs, sorted);
 }
 
-/// It is bigger than the documented tool list: the CLI reports 311 tools and the scan finds 331.
+/// It is bigger than the documented tool list: the CLI reports 312 tools and the scan finds 332.
 #[test]
 fn the_catalogue_is_bigger_than_the_documentation() {
-    assert_eq!(CATALOGUE.len(), 331);
-    assert!(CATALOGUE.len() > 311);
+    assert_eq!(CATALOGUE.len(), 332);
+    assert!(CATALOGUE.len() > 312);
 }
 
 /// The names the golden asked about are present or absent as it says.

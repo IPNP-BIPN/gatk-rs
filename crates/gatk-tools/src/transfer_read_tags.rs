@@ -26,11 +26,9 @@
 //! characters are the same and the type is not, which is why the golden prints the Java class of
 //! every tag value beside it: nothing else in the row would show it.
 //!
-//! [`attribute_as_string`] is local rather than shared with
-//! `gatk_readfilter::jexl_filter::attribute_as_string`, which claims the same reference method: that
-//! one renders an array tag as the Rust enum's debug form, and the adapter decodes a `byte[]` as
-//! UTF-8. The two agree on every scalar type. The divergence is on the array branch, which no
-//! golden here or there covers, and it is recorded rather than propagated.
+//! [`attribute_as_string`] is the repository's only port of `getAttributeAsString`. A second one,
+//! in `gatk_readfilter::jexl_filter`, rendered an array tag as the Rust enum's debug form where the
+//! adapter decodes a `byte[]` as UTF-8; no runner reached it, and it was removed (#1392).
 //!
 //! # An aligned read past the end of the unmapped file is silently dropped
 //!
