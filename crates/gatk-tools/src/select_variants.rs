@@ -899,13 +899,15 @@ pub fn keeps_after_subset(
         // `isPolymorphicInSamples`: some genotype calls an alternate. `isSpanningDeletionOnly`
         // takes the other half: a record whose only alternate is `*` is not a variant either.
         // `getCalledChrCount` skips a filtered genotype, so a record whose only carriers are
-        // filtered is not polymorphic.
-        let polymorphic = subset
-            .variant
-            .genotypes
-            .iter()
-            .filter(|genotype| !is_filtered(genotype))
-            .any(|genotype| genotype.alleles.iter().flatten().any(|allele| *allele > 0));
+        // filtered is not polymorphic. The count is only asked when `hasGenotypes()`: a variant
+        // with no genotypes at all, as in a sites-only file, is polymorphic.
+        let genotypes = &subset.variant.genotypes;
+        let polymorphic = subset.variant.alleles.len() > 1
+            && (genotypes.is_empty()
+                || genotypes
+                    .iter()
+                    .filter(|genotype| !is_filtered(genotype))
+                    .any(|genotype| genotype.alleles.iter().flatten().any(|allele| *allele > 0)));
         let spanning_only =
             subset.variant.alleles.len() == 2 && subset.variant.alleles[1].is_span_del();
         if !polymorphic || spanning_only {
