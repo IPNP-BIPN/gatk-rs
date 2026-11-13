@@ -154,7 +154,7 @@ static TABLES: std::sync::LazyLock<Tables> = std::sync::LazyLock::new(|| {
     let error = std::array::from_fn(|q| qual_to_error_prob(q as f64));
     let mismatch = std::array::from_fn(|q| qual_to_error_prob(q as f64) / TRISTATE_CORRECTION);
     let match_to_match = (0..256 * 256)
-        .map(|k| match_to_match_prob(k as i32 / 256, k as i32 % 256))
+        .map(|k: i32| match_to_match_prob(k / 256, k % 256))
         .collect();
     Tables {
         prob,
