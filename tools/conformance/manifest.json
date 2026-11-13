@@ -5300,7 +5300,7 @@
       "cases": [
         {
           "dump": "MultiVariantWalkerDump",
-          "golden": "crates/gatk-cli/tests/data/multi_variant_walker.txt.gz",
+          "golden": null,
           "why": "Thirty-six runs over hand-written VCFs, indexed or not, through three probe walkers that print the merged dictionary, samples and header and every record or group they are handed: interleaved and tied loci over one, two and three inputs, -L, dictionaries that union, reorder or disagree in length or md5, inputs with no ##contig line beside and without others, an unknown contig, an unsorted input, sample sets, a header type conflict, repeated inputs and tags, a throwing apply, and both grouping walkers under their distance, padding, interval and reference-block arguments."
         }
       ]

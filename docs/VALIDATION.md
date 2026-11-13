@@ -377,7 +377,7 @@ Held out: `--dont-require-soft-clips-both-ends`, `--keep-reverse-strand-only`, `
 
 ### AlleleFrequencyQC
 
-Suites: `allele-frequency-qc`, `r-plots`.
+Suites: `multi-variant-walker`, `allele-frequency-qc`, `r-plots`.
 
 Inputs: `afqc_1kg.vcf`, `afqc_1kg2.vcf`, `cgv_ref.fasta`, `gg_dbsnp.vcf`, `ve_cnv.bed`, `ve_strat.bed`.
 
@@ -453,7 +453,7 @@ ApplyBQSR's fixtures and PrintReadsSpark's Spark arguments; the output is PrintR
 
 ### ApplyVQSR
 
-Suites: `apply-vqsr-tranches`, `apply-vqsr-site-filtering`, `apply-vqsr-allele-specific`, `apply-vqsr-two-modes`.
+Suites: `apply-vqsr-tranches`, `apply-vqsr-site-filtering`, `apply-vqsr-allele-specific`, `apply-vqsr-two-modes`, `multi-variant-walker`.
 
 Inputs: `indel.tranches`, `snp.tranches`, `vqsr_alleles.recal.vcf`, `vqsr_input.vcf`, `vqsr_sites.recal.vcf`, `vqsr_snp_applied.vcf`, `vqsr_unindexed.recal.vcf`.
 
@@ -749,7 +749,7 @@ pairs.bam, whose reads are PAIRED: the discordant-pair and split-read evidence b
 
 ### CombineGVCFs
 
-Suites: `combine-gvcfs`.
+Suites: `multi-variant-walker`, `combine-gvcfs`.
 
 Inputs: `cg_ab.list`, `cg_abc.list`, `cg_bc.list`, `cg_dbsnp.vcf`, `cg_mnp_pair.list`, `cg_nonref_pair.list`, `cgv_ref.fasta`.
 
@@ -1091,7 +1091,7 @@ Held out: none.
 
 ### FilterAlignmentArtifacts
 
-Suites: `filter-alignment-artifacts`.
+Suites: `multi-variant-walker`, `filter-alignment-artifacts`.
 
 Inputs: `faa.bam`, `faa.img`, `faa.vcf`, `faa2.bam`, `faa2.vcf`, `faa_ref.fasta`.
 
@@ -1419,7 +1419,7 @@ gt.bam is the tool's own corpus: substitutions at shared sites, an insertion and
 
 ### GroupedSVCluster
 
-Suites: `grouped-sv-cluster`.
+Suites: `multi-variant-walker`, `grouped-sv-cluster`.
 
 Inputs: `sv_calls.vcf`, `sv_cluster_input.vcf`, `sv_grp_clustering.tsv`, `sv_grp_clustering_short.tsv`, `sv_grp_strata.tsv`, `sv_grp_track.bed`, `sv_ploidy.tsv`, `sv_ploidy_haploid.tsv`, `sv_reference.fasta`.
 
@@ -1479,7 +1479,7 @@ Nothing listens on the port, and the refusal is the URI the arguments built, whi
 
 ### JointGermlineCNVSegmentation
 
-Suites: `joint-germline-cnv-segmentation`.
+Suites: `multi-variant-walker`, `joint-germline-cnv-segmentation`.
 
 Inputs: `jgcs.ped`, `jgcs_bins.interval_list`, `jgcs_cohort.vcf`, `jgcs_male1.vcf`, `jgcs_ref.fasta`, `jgcs_swapped.ped`.
 
@@ -1921,7 +1921,7 @@ HaplotypeCallerSpark's caller values, over mutect_pl.bam: mutect_t.bam under a r
 
 ### ReblockGVCF
 
-Suites: `reblock-gvcf`.
+Suites: `multi-variant-walker`, `reblock-gvcf`.
 
 Inputs: `cg_a.g.vcf`, `cg_ab.list`, `cg_c.g.vcf`, `cg_dbsnp.vcf`, `cgv_ref.fasta`, `rb_missing.g.vcf`, `rb_s.g.vcf`, `rb_shards.list`.
 
@@ -1991,7 +1991,7 @@ Held out: `--dont-require-soft-clips-both-ends`, `--exclude-intervals`, `--input
 
 ### SVCluster
 
-Suites: `sv-cluster`.
+Suites: `multi-variant-walker`, `sv-cluster`.
 
 Inputs: `sv_calls.vcf`, `sv_cluster_input.vcf`, `sv_ploidy.tsv`, `sv_ploidy_haploid.tsv`, `sv_reference.fasta`.
 
@@ -2011,7 +2011,7 @@ Held out: `--confidence`, `--dont-require-soft-clips-both-ends`, `--exclude-inte
 
 ### SVStratify
 
-Suites: `sv-stratify`.
+Suites: `multi-variant-walker`, `sv-stratify`.
 
 Inputs: `sv.dict`, `sv_bad.vcf`, `sv_calls.vcf`, `sv_overlap.tsv`, `sv_rm.bed`, `sv_strata.tsv`, `sv_track_files.list`, `sv_track_names.list`.
 
@@ -2237,7 +2237,7 @@ picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFi
 
 ### VCFComparator
 
-Suites: `vcf-comparator`.
+Suites: `multi-variant-walker`, `vcf-comparator`.
 
 Inputs: none.
 
@@ -2277,7 +2277,7 @@ va.vcf is three samples written out of order over va_ref.fasta (an AC repeat at 
 
 ### VariantEval
 
-Suites: `variant-eval`.
+Suites: `multi-variant-walker`, `variant-eval`.
 
 Inputs: `cgv_ref.fasta`, `gg_dbsnp.vcf`, `ve_cnv.bed`, `ve_eval.vcf`, `ve_eval2.vcf`, `ve_strat.bed`, `ve_strat_noidx.bed`.
 
@@ -2297,7 +2297,7 @@ indexed.vcf and population.vcf: the first has a sample and a GT, the second an I
 
 ### VariantRecalibrator
 
-Suites: `variant-recalibrator`.
+Suites: `multi-variant-walker`, `variant-recalibrator`.
 
 Inputs: `vr_aggregate.vcf`, `vr_calls.vcf`, `vr_calls2.vcf`, `vr_model.report`.
 
