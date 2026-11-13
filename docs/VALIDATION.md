@@ -282,7 +282,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | SamToFastqWithTags | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | none |
 | ScatterIntervalsByNs | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
 | ScoreVariantAnnotations | gatk-rs | oracle-backed | 210 suite | 51 suite | 27/27 (100.0%) | 2 | 2639 probes (+2), 0/14 diverge | 6 | 7 | mask_hdf5_modification_times |
-| SelectVariants | gatk-rs | oracle-backed | 36766 suite | 0 suite | 50/50 (100.0%) | 2 | 2736 probes (+5), 0/14 diverge | 2 | 10 | none |
+| SelectVariants | gatk-rs | oracle-backed | 36810 suite | 0 suite | 50/50 (100.0%) | 2 | 2736 probes (+5), 0/14 diverge | 2 | 10 | none |
 | SetNmAndUqTags | gatk-rs | oracle-backed | 10 suite | 0 suite | 16/16 (100.0%) | 2 | not measured | 7 | 0 | none |
 | SetNmMdAndUqTags | gatk-rs | oracle-backed | 10 suite | 0 suite | 16/16 (100.0%) | 2 | not measured | 7 | 0 | none |
 | ShiftFasta | gatk-rs | oracle-backed | 37 suite | 0 suite | 21/21 (100.0%) | 2 | 1855 probes (+2), 0/9 diverge | 0 | 2 | none |
