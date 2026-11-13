@@ -294,7 +294,7 @@ jobs:
             --tool DenoiseReadCounts \
             --tool ModelSegments \
             --tool ValidateBasicSomaticShortMutations \
-            --tool PrintReadCounts \
+            --tool ConvertCountsToDepthFile --tool PrintReadCounts \
             --tool CollectSVEvidence \
             --tool FastaAlternateReferenceMaker \
             --tool CompareReferences \
@@ -359,6 +359,11 @@ jobs:
             --tool ExtractVariantAnnotations \
             --tool FilterAlignmentArtifacts \
             --tool HaplotypeCaller --tool RampedHaplotypeCaller --tool Mutect2 \
+            --tool AddCommentsToBam --tool BuildBamIndex --tool CheckTerminatorBlock \
+            --tool FilterVcf --tool FixVcfHeader --tool GatherBamFiles --tool GatherVcfs \
+            --tool MakeSitesOnlyVcf --tool MergeVcfs --tool RenameSampleInVcf \
+            --tool SetNmAndUqTags --tool SetNmMdAndUqTags --tool SortVcf --tool SplitVcfs \
+            --tool UpdateVcfSequenceDictionary --tool VcfFormatConverter --tool VcfToIntervalList \
             --port target/release/gatk --corpus-dir /tmp/coverage-corpus
 
       - name: The committed measurement is the one this run produces
@@ -394,9 +399,60 @@ jobs:
             /tmp/coverage-corpus/
           if-no-files-found: ignore
 
+  fuzz:
+    name: "Differential fuzzing, seeded from the covering arrays (shard ${{ matrix.shard }}/8)"
+    # V.6. The arrays cover pairs of argument values; this measures which of the reference's
+    # branches those pairs reach, mutates one argument at a time to reach more, and replays every
+    # case it keeps against the port. The number goes to tools/fuzz/measured.json, frozen from this
+    # job's artefacts like every other measurement; a divergence is evidence for a finding, not a
+    # red build, so the job fails only when the harness cannot fuzz anything at all.
+    needs: oracle-image
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/cache/restore@v6
+        with:
+          path: /tmp/oracle-image.tar
+          key: gatk-rs-oracle-${{ hashFiles('tools/oracle/**') }}
+          fail-on-cache-miss: true
+
+      - run: docker load -i /tmp/oracle-image.tar
+
+      - name: nasm, which gkl-igzip needs to build
+        run: |
+          sudo apt-get update -qq || echo "apt refresh incomplete; the install below is the gate"
+          sudo apt-get install -y -qq nasm python3-h5py
+          nasm -v
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.1"
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo build --release -p gatk-cli
+
+      - name: Fuzz the reference and replay against the port
+        run: |
+          python3 tools/fuzz/run_fuzz.py --shard ${{ matrix.shard }}/8 --iterations 30 \
+            --port target/release/gatk
+
+      - name: Publish the findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-findings-${{ matrix.shard }}
+          path: tools/fuzz/findings/
+          if-no-files-found: ignore
+
   nvscorevariants:
     name: NVScoreVariants on real x86-64
-    # The one job with broadinstitute/gatk:4.6.2.0, which is a second image next to the pinned oracle
+    # The one job with broadinstitute/gatk:4.7.0.0, which is a second image next to the pinned oracle
     # because that one has no Python. Everything else about this tool is measured under Rosetta at
     # AVX2, so this is where those measurements get checked: which CPU dispatch the reference took,
     # how far the port's layers are from it there, and whether the printed scores still agree. The
@@ -411,7 +467,7 @@ jobs:
 
       - name: Weights, fixture, and the reference's dump and layers
         env:
-          IMAGE: broadinstitute/gatk@sha256:71b17ee42d149e8ec112603f5305c873ab60d93949ef8bb62a4fff85427f56fb
+          IMAGE: broadinstitute/gatk@sha256:7da5cf586e1c463f0c72908f9ac7dec8c29e37912c82d6e7b3c250f27fcb3891
         run: |
           mkdir -p /tmp/nv
           chmod 777 /tmp/nv
@@ -652,7 +708,7 @@ jobs:
         # document is stale, and a stale number in a sizing document is how a plan drifts.
         run: |
           python3 tools/coverage/covering.py --all --t 2 | tee /tmp/all.txt
-          grep -q "oracle runs=19454" /tmp/all.txt || {
+          grep -q "oracle runs=19189" /tmp/all.txt || {
             echo "pairwise sizing changed; update docs/what-pairwise-coverage-costs.md"
             exit 1
           }

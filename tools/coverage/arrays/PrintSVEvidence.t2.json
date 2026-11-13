@@ -3,20 +3,20 @@
   "origin": "gatk",
   "t": 2,
   "numeric_policy": "strict",
-  "arguments_total": 73,
+  "arguments_total": 46,
   "arguments_in_array": 30,
-  "arguments_excluded": 43,
+  "arguments_excluded": 16,
   "excluded": [
     {
       "argument": "--arguments_file",
-      "type": "File",
+      "type": "List[File]",
       "reason": "excluded by the repository: expands into the command line itself, which is measured by the barclay-arguments-file suite instead",
       "held_at": null,
       "source": "none"
     },
     {
       "argument": "--exclude-intervals",
-      "type": "String",
+      "type": "List[String]",
       "reason": "excluded by the repository: no value is declared for this tool",
       "held_at": null,
       "source": "none"
@@ -30,7 +30,7 @@
     },
     {
       "argument": "--gcs-max-retries",
-      "type": "Integer",
+      "type": "int",
       "reason": "excluded by the repository: reaches nothing without a cloud path in the row",
       "held_at": null,
       "source": "none"
@@ -44,31 +44,38 @@
     },
     {
       "argument": "--help",
-      "type": "Boolean",
+      "type": "boolean",
       "reason": "excluded by the repository: prints the usage and returns; the row would measure the argument parser rather than the tool",
       "held_at": null,
       "source": "none"
     },
     {
       "argument": "--input",
-      "type": "GATKPath",
+      "type": "List[GATKPath]",
       "reason": "excluded by the repository: no value is declared for this tool",
       "held_at": null,
       "source": "none"
     },
     {
       "argument": "--intervals",
-      "type": "String",
+      "type": "List[String]",
       "reason": "excluded by the repository: no value is declared for this tool",
       "held_at": null,
       "source": "none"
     },
     {
       "argument": "--max-variants-per-shard",
-      "type": "Integer",
+      "type": "int",
       "reason": "only one value available (fixture[0])",
       "held_at": "0",
       "source": "fixture"
+    },
+    {
+      "argument": "--output-cram-version",
+      "type": "String",
+      "reason": "only one value available (default)",
+      "held_at": "3.1",
+      "source": "default"
     },
     {
       "argument": "--QUIET",
@@ -79,14 +86,21 @@
     },
     {
       "argument": "--read-index",
-      "type": "GATKPath",
+      "type": "List[GATKPath]",
       "reason": "excluded by the repository: no value is declared for this tool",
       "held_at": null,
       "source": "none"
     },
     {
+      "argument": "--showHidden",
+      "type": "boolean",
+      "reason": "excluded by the repository: changes the usage text only",
+      "held_at": null,
+      "source": "none"
+    },
+    {
       "argument": "--use-jdk-inflater",
-      "type": "Boolean",
+      "type": "boolean",
       "reason": "excluded by the repository: chooses an inflater, and the input is read the same way either way",
       "held_at": null,
       "source": "none"
@@ -100,211 +114,8 @@
     },
     {
       "argument": "--version",
-      "type": "Boolean",
+      "type": "boolean",
       "reason": "excluded by the repository: prints the version and returns, same reason",
-      "held_at": null,
-      "source": "none"
-    },
-    {
-      "argument": "--showHidden",
-      "type": "Boolean",
-      "reason": "excluded by the repository: changes the usage text only",
-      "held_at": null,
-      "source": "none"
-    },
-    {
-      "argument": "--ambig-filter-bases",
-      "type": "Integer",
-      "reason": "numeric with no declared bounds and no default: any value would be invented, and an invented value covers nothing",
-      "held_at": null,
-      "source": "none"
-    },
-    {
-      "argument": "--ambig-filter-frac",
-      "type": "Double",
-      "reason": "only one value available (default)",
-      "held_at": "0.05",
-      "source": "default"
-    },
-    {
-      "argument": "--max-clipped-bases",
-      "type": "Integer",
-      "reason": "only one value available (default)",
-      "held_at": "1000",
-      "source": "default"
-    },
-    {
-      "argument": "--read-filter-max-hmer",
-      "type": "Integer",
-      "reason": "only one value available (default)",
-      "held_at": "12",
-      "source": "default"
-    },
-    {
-      "argument": "--max-fragment-length",
-      "type": "Integer",
-      "reason": "only one value available (default)",
-      "held_at": "1000000",
-      "source": "default"
-    },
-    {
-      "argument": "--min-fragment-length",
-      "type": "Integer",
-      "reason": "only one value available (default)",
-      "held_at": "0",
-      "source": "default"
-    },
-    {
-      "argument": "--keep-intervals",
-      "type": "String",
-      "reason": "free-form string with no default: a fixture must supply the values",
-      "held_at": null,
-      "source": "none"
-    },
-    {
-      "argument": "--read-filter-expression",
-      "type": "String",
-      "reason": "free-form string with no default: a fixture must supply the values",
-      "held_at": null,
-      "source": "none"
-    },
-    {
-      "argument": "--library",
-      "type": "String",
-      "reason": "free-form string with no default: a fixture must supply the values",
-      "held_at": null,
-      "source": "none"
-    },
-    {
-      "argument": "--maximum-mapping-quality",
-      "type": "Integer",
-      "reason": "numeric with no declared bounds and no default: any value would be invented, and an invented value covers nothing",
-      "held_at": null,
-      "source": "none"
-    },
-    {
-      "argument": "--minimum-mapping-quality",
-      "type": "Integer",
-      "reason": "only one value available (default)",
-      "held_at": "10",
-      "source": "default"
-    },
-    {
-      "argument": "--mate-too-distant-length",
-      "type": "Integer",
-      "reason": "only one value available (default)",
-      "held_at": "1000",
-      "source": "default"
-    },
-    {
-      "argument": "--dont-require-soft-clips-both-ends",
-      "type": "Boolean",
-      "reason": "excluded by the repository: no value is declared for this tool",
-      "held_at": null,
-      "source": "none"
-    },
-    {
-      "argument": "--filter-too-short",
-      "type": "Integer",
-      "reason": "only one value available (default)",
-      "held_at": "30",
-      "source": "default"
-    },
-    {
-      "argument": "--platform-filter-name",
-      "type": "String",
-      "reason": "free-form string with no default: a fixture must supply the values",
-      "held_at": null,
-      "source": "none"
-    },
-    {
-      "argument": "--black-listed-lanes",
-      "type": "String",
-      "reason": "free-form string with no default: a fixture must supply the values",
-      "held_at": null,
-      "source": "none"
-    },
-    {
-      "argument": "--read-group-black-list",
-      "type": "String",
-      "reason": "free-form string with no default: a fixture must supply the values",
-      "held_at": null,
-      "source": "none"
-    },
-    {
-      "argument": "--keep-read-group",
-      "type": "String",
-      "reason": "free-form string with no default: a fixture must supply the values",
-      "held_at": null,
-      "source": "none"
-    },
-    {
-      "argument": "--max-read-length",
-      "type": "Integer",
-      "reason": "numeric with no declared bounds and no default: any value would be invented, and an invented value covers nothing",
-      "held_at": null,
-      "source": "none"
-    },
-    {
-      "argument": "--min-read-length",
-      "type": "Integer",
-      "reason": "only one value available (default)",
-      "held_at": "1",
-      "source": "default"
-    },
-    {
-      "argument": "--read-name",
-      "type": "String",
-      "reason": "free-form string with no default: a fixture must supply the values",
-      "held_at": null,
-      "source": "none"
-    },
-    {
-      "argument": "--keep-reverse-strand-only",
-      "type": "Boolean",
-      "reason": "excluded by the repository: no value is declared for this tool",
-      "held_at": null,
-      "source": "none"
-    },
-    {
-      "argument": "--read-filter-tag",
-      "type": "String",
-      "reason": "free-form string with no default: a fixture must supply the values",
-      "held_at": null,
-      "source": "none"
-    },
-    {
-      "argument": "--read-filter-tag-comp",
-      "type": "Float",
-      "reason": "only one value available (default)",
-      "held_at": "0.0",
-      "source": "default"
-    },
-    {
-      "argument": "--read-filter-tag-op",
-      "type": "Operator",
-      "reason": "excluded by the repository: no value is declared for this tool",
-      "held_at": null,
-      "source": "none"
-    },
-    {
-      "argument": "--sample",
-      "type": "String",
-      "reason": "free-form string with no default: a fixture must supply the values",
-      "held_at": null,
-      "source": "none"
-    },
-    {
-      "argument": "--max-soft-clipped-leading-trailing-ratio",
-      "type": "Double",
-      "reason": "numeric with no declared bounds and no default: any value would be invented, and an invented value covers nothing",
-      "held_at": null,
-      "source": "none"
-    },
-    {
-      "argument": "--max-soft-clipped-ratio",
-      "type": "Double",
-      "reason": "numeric with no declared bounds and no default: any value would be invented, and an invented value covers nothing",
       "held_at": null,
       "source": "none"
     }

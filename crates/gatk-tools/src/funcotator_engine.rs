@@ -733,6 +733,8 @@ pub struct GencodeFuncotation {
     pub appris_rank: Option<usize>,
     pub transcript_length: Option<i32>,
     pub gene_transcript_type: Option<String>,
+    /// `isManeTranscript`, set since 4.7.0.0 on every funcotation built from a transcript.
+    pub is_mane: bool,
     /// Overrides, by short field name.
     pub overrides: BTreeMap<String, String>,
 }
@@ -768,6 +770,7 @@ impl GencodeFuncotation {
             appris_rank: None,
             transcript_length: None,
             gene_transcript_type: None,
+            is_mane: false,
             overrides: BTreeMap::new(),
         }
     }
@@ -907,6 +910,7 @@ pub enum TranscriptSelectionMode {
 /// The chained comparators the two modes build, over the RAW user transcript set.
 fn compare_funcotations(
     mode: TranscriptSelectionMode,
+    prefer_mane: bool,
     user: &[String],
     severities: &Severities,
     a: &GencodeFuncotation,
@@ -934,6 +938,17 @@ fn compare_funcotations(
         _ => Ordering::Equal,
     };
     let by_classification = || a.severity(severities).cmp(&b.severity(severities));
+    // `ComparatorByManeStatus`, chained only when MANE transcripts are preferred (4.7.0.0).
+    let by_mane = || {
+        if !prefer_mane {
+            return Ordering::Equal;
+        }
+        match (a.is_mane, b.is_mane) {
+            (true, false) => Ordering::Less,
+            (false, true) => Ordering::Greater,
+            _ => Ordering::Equal,
+        }
+    };
     let coding =
         |f: &GencodeFuncotation| f.gene_transcript_type.as_deref() == Some("protein_coding");
     let by_coding = || match (coding(a), coding(b)) {
@@ -969,12 +984,14 @@ fn compare_funcotations(
         TranscriptSelectionMode::BestEffect => by_user()
             .then_with(by_igr)
             .then_with(by_classification)
+            .then_with(by_mane)
             .then_with(by_coding)
             .then_with(by_level)
             .then_with(by_appris)
             .then_with(by_length)
             .then_with(by_name),
         _ => by_user()
+            .then_with(by_mane)
             .then_with(by_coding)
             .then_with(by_level)
             .then_with(by_appris)
@@ -1209,7 +1226,14 @@ impl Factory {
 
     fn sort(&self, list: &mut [GencodeFuncotation]) {
         list.sort_by(|a, b| {
-            compare_funcotations(self.mode, &self.user_transcripts, &self.severities, a, b)
+            compare_funcotations(
+                self.mode,
+                self.prefer_mane,
+                &self.user_transcripts,
+                &self.severities,
+                a,
+                b,
+            )
         });
     }
 
@@ -1224,7 +1248,7 @@ impl Factory {
         let mut list = Vec::new();
         for gene in genes {
             let transcripts: Vec<&Transcript> = if self.prefer_mane {
-                mane_transcripts(&gene.transcripts)
+                mane_and_basic_transcripts(variant, &gene.transcripts)
             } else {
                 gene.transcripts.iter().filter(|t| is_basic(t)).collect()
             };
@@ -1273,11 +1297,15 @@ impl Factory {
         for transcript in transcripts {
             match self.single_transcript(variant, alternate, reference, transcript) {
                 Ok(Some(f)) => out.push(f),
-                Ok(None) => {}
+                Ok(None) => continue,
                 Err(Failure::Coding) => {
                     out.push(self.problem(variant, alternate, reference, transcript))
                 }
                 Err(Failure::Engine(error)) => return Err(error),
+            }
+            // Every builder path sets it from the transcript's own tags.
+            if let Some(f) = out.last_mut() {
+                f.is_mane = is_mane(transcript);
             }
         }
         Ok(out)
@@ -1926,23 +1954,30 @@ fn is_basic(transcript: &Transcript) -> bool {
     transcript.tags.iter().any(|tag| tag == "basic")
 }
 
-/// `retreiveMANESelectModeTranscriptsCriteria`.
-fn mane_transcripts(transcripts: &[Transcript]) -> Vec<&Transcript> {
-    let plus: Vec<&Transcript> = transcripts
+/// `MANE_Select` or `MANE_Plus_Clinical`.
+fn is_mane(transcript: &Transcript) -> bool {
+    transcript
+        .tags
         .iter()
-        .filter(|t| t.tags.iter().any(|tag| tag == "MANE_Plus_Clinical"))
-        .collect();
-    if !plus.is_empty() {
-        return plus;
+        .any(|tag| tag == "MANE_Select" || tag == "MANE_Plus_Clinical")
+}
+
+/// `retrieveMANEAndBasicTranscripts` (4.7.0.0): the basic transcripts, then every MANE one that
+/// contains the variant and is not already among them. The comparator does the preferring.
+fn mane_and_basic_transcripts<'a>(
+    variant: &Variant,
+    transcripts: &'a [Transcript],
+) -> Vec<&'a Transcript> {
+    let mut out: Vec<&Transcript> = transcripts.iter().filter(|t| is_basic(t)).collect();
+    for transcript in transcripts {
+        let contains = transcript.contig == variant.contig
+            && transcript.span.start <= variant.start
+            && variant.end <= transcript.span.end;
+        if is_mane(transcript) && contains && !out.iter().any(|t| std::ptr::eq(*t, transcript)) {
+            out.push(transcript);
+        }
     }
-    let select: Vec<&Transcript> = transcripts
-        .iter()
-        .filter(|t| t.tags.iter().any(|tag| tag == "MANE_Select"))
-        .collect();
-    if !select.is_empty() {
-        return select;
-    }
-    transcripts.iter().filter(|t| is_basic(t)).collect()
+    out
 }
 
 /// `condenseGencodeFuncotation`.

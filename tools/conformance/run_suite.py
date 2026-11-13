@@ -73,7 +73,7 @@ def build_fixtures(manifest, into):
         # subdirectories (gtrb/, gtrb_late/) when the temporary directory is cleaned up.
         '&& chmod -R a+rwX /out'
     )
-    return subprocess.run(
+    result = subprocess.run(
         [
             "docker", "run", "--rm", "--platform", oracle["platform"],
             "-v", f"{REPO}/tools/coverage:/harness:ro",
@@ -82,7 +82,10 @@ def build_fixtures(manifest, into):
         ],
         capture_output=True,
         text=True,
-    ).returncode
+    )
+    if result.returncode != 0:
+        print(result.stderr[-2000:])
+    return result.returncode
 
 
 def oracle_of(manifest, suite):

@@ -36,7 +36,7 @@
 use htsjdk_vcf::comparator::VariantContextComparator;
 use htsjdk_vcf::header::{HeaderLine, VcfHeader};
 use htsjdk_vcf::merge::{smart_merge_headers, Source};
-use htsjdk_vcf::reader::read_vcf;
+use htsjdk_vcf::reader::{read_vcf_with, GenotypeParsing};
 use htsjdk_vcf::variant::VariantContext;
 use htsjdk_vcf::vcf_file::write_vcf;
 
@@ -137,7 +137,8 @@ pub fn merge(inputs: &[String], comments: &[String]) -> Result<String, MergeErro
     let mut first_contigs: Option<Vec<(String, i32)>> = None;
 
     for input in inputs {
-        let file = read_vcf(input).map_err(|failure| {
+        // `MergeVcfs` never looks at a sample column, so it never parses one, as `VCFFileReader` does.
+        let file = read_vcf_with(input, GenotypeParsing::Deferred).map_err(|failure| {
             MergeError::Vcf(failure.error.class().to_string(), failure.error.message())
         })?;
         let contigs = contig_lines(&file.header);
@@ -160,7 +161,7 @@ pub fn merge(inputs: &[String], comments: &[String]) -> Result<String, MergeErro
             Some(first) if *first != names => return Err(MergeError::DifferentSamples),
             Some(_) => {}
         }
-        streams.push(file.records.clone());
+        streams.push(file.records);
         // `new LinkedHashSet<>(...)`: an input whose header is one the run already has adds
         // nothing to the merge.
         if !headers.contains(&file.header) {
@@ -168,14 +169,23 @@ pub fn merge(inputs: &[String], comments: &[String]) -> Result<String, MergeErro
         }
     }
 
-    // `COMMENT.forEach(... addMetaDataLine)` on the FIRST header only. Two comments share a key,
-    // and the merge keeps one line per key, so only the first reaches the output.
+    // `COMMENT.forEach(... addMetaDataLine)` on the FIRST header only. `addMetaDataLine` adds an
+    // unstructured line only when no line already carries its key, so of two comments the FIRST
+    // is the one kept, whatever their values sort as.
     if let Some(header) = headers.first_mut() {
         for comment in comments {
-            header.lines.push(HeaderLine::Unstructured {
-                key: COMMENT_KEY.to_string(),
-                value: comment.clone(),
+            let taken = header.lines.iter().any(|line| match line {
+                HeaderLine::Unstructured { key, .. } | HeaderLine::Structured { key, .. } => {
+                    key == COMMENT_KEY
+                }
+                _ => false,
             });
+            if !taken {
+                header.lines.push(HeaderLine::Unstructured {
+                    key: COMMENT_KEY.to_string(),
+                    value: comment.clone(),
+                });
+            }
         }
     }
 
@@ -214,14 +224,14 @@ pub fn merge(inputs: &[String], comments: &[String]) -> Result<String, MergeErro
     // written out rather than replaced by a stable merge.
     let mut positions = vec![0usize; streams.len()];
     let mut heap: Vec<usize> = Vec::new();
-    let head = |stream: usize, positions: &[usize]| -> Option<VariantContext> {
-        streams[stream].get(positions[stream]).cloned()
+    let head = |stream: usize, positions: &[usize]| -> Option<&VariantContext> {
+        streams[stream].get(positions[stream])
     };
     let order = |left: usize, right: usize, positions: &[usize]| -> Result<i32, MergeError> {
         let first = head(left, positions).expect("a live stream");
         let second = head(right, positions).expect("a live stream");
         comparator
-            .compare(&first, &second)
+            .compare(first, second)
             .map_err(|_| MergeError::UnsortedInput)
     };
 

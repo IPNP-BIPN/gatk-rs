@@ -1,4 +1,4 @@
-//! Conformance for the usage text against GATK 4.6.2.0 and Barclay 5.0.0.
+//! Conformance for the usage text against GATK 4.7.0.0 and Barclay 5.0.0.
 //!
 //! Golden from `tools/argument-conformance/UsageTextDump.java`, which holds three tools' whole
 //! usage. The test takes each entry apart at the column boundary, hands the pieces back to the
@@ -312,9 +312,9 @@ fn the_sections_and_the_header() {
     let lines = usage(&text, "CountReads");
     let (head, sections, conditional) = parse(&lines);
     assert_eq!(head[0], "USAGE: CountReads [arguments]");
-    assert_eq!(head[3], "Version:4.6.2.0");
+    assert_eq!(head[3], "Version:4.7.0.0");
     assert_eq!(
-        header("CountReads", &head[2], "4.6.2.0", Maturity::Released),
+        header("CountReads", &head[2], "4.7.0.0", Maturity::Released),
         head
     );
     // A tool whose one-line summary is not one line keeps its own line breaks.
@@ -328,7 +328,7 @@ fn the_sections_and_the_header() {
         header(
             "GatherVcfsCloud",
             &other[2..version_at].join("\n"),
-            "4.6.2.0",
+            "4.7.0.0",
             Maturity::Released
         ),
         other
@@ -389,7 +389,7 @@ fn a_tools_usage_is_composed_from_its_declarations() {
     let written = render(
         "IndexFeatureFile",
         gatk_tools::tool_declarations::summary("IndexFeatureFile").expect("a summary"),
-        "4.6.2.0",
+        "4.7.0.0",
         gatk_tools::tool_declarations::maturity("IndexFeatureFile"),
         &required,
         &optional,
@@ -421,7 +421,7 @@ fn the_runnable_tools_usages_are_composed_the_same_way() {
         let written = render(
             tool,
             summary(tool).unwrap_or_else(|| panic!("{tool}")),
-            "4.6.2.0",
+            "4.7.0.0",
             maturity(tool),
             &required,
             &optional,

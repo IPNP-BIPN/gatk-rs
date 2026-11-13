@@ -18,8 +18,9 @@ use gatk_tools::cram_issue_8768::{
     analyse, report, tsv, ContainerMeta, CramHeaderInfo, RefContext,
 };
 
-/// Every CRAM here was written by the same htsjdk, which stamps this version.
-const CRAM_VERSION: &str = "3.0";
+/// Every CRAM here was written by the same htsjdk, which stamps this version: 3.1 since htsjdk
+/// 5.0.0 made it the default.
+const CRAM_VERSION: &str = "3.1";
 
 fn golden() -> String {
     corpus::read_golden(

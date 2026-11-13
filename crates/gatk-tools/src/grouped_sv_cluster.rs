@@ -10,9 +10,7 @@
 //! guaranteed, so what is compared here is which records ended up together and under which stratum.
 
 use crate::sv_cluster::{cluster, Algorithm, CallRecord, ClusteringParameters, Linkage};
-use crate::sv_stratify::{
-    apply as stratify_apply, Engine, StratifyError, Thresholds, DEFAULT_STRATUM,
-};
+use crate::sv_stratify::{Engine, StratifyError, Thresholds, DEFAULT_STRATUM};
 
 /// The columns of the clustering configuration, in the order `ImmutableSet.of` keeps them, which is
 /// the order a missing one is reported in.
@@ -206,14 +204,12 @@ pub fn run(
             position_b: record.position_b,
             length: record.length,
         };
-        // `getMatches` is asked for every match, and more than one is refused here rather than
-        // allowed behind a flag, so the stratification tool's own flag is passed as true.
-        let matches = stratify_apply(engine, &stratified, thresholds, true, false)
-            .map_err(GroupedError::Stratify)?;
-        let names: Vec<String> = matches
-            .iter()
-            .map(|written| written.stratum.clone())
-            .filter(|name| name != DEFAULT_STRATUM)
+        // `getMatches`, in the engine's order, which is the configuration's since 4.7.0.0.
+        let names: Vec<String> = engine
+            .matches(&stratified, thresholds)
+            .map_err(GroupedError::Stratify)?
+            .into_iter()
+            .map(|stratum| stratum.name.clone())
             .collect();
         match names.len() {
             0 => unmatched.push(Cluster {
@@ -236,8 +232,21 @@ pub fn run(
         }
     }
 
+    // `onTraversalSuccess` flushes `clusterEngineMap.values()`, a HashMap over the names, whatever
+    // order the stratification engine keeps.
+    let entries: Vec<(&crate::sv_stratify::Stratum, i32)> = engine
+        .strata
+        .iter()
+        .map(|stratum| {
+            (
+                stratum,
+                gatk_engine::java_hash::string_hash_code(&stratum.name),
+            )
+        })
+        .collect();
+    let flushed = gatk_engine::java_hash::hash_map_order(&entries).expect("a hashable stratum set");
     let mut out = Vec::new();
-    for stratum in &engine.strata {
+    for stratum in flushed {
         let Some((_, members)) = grouped.iter().find(|(key, _)| *key == stratum.name) else {
             continue;
         };

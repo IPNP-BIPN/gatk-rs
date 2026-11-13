@@ -1,27 +1,29 @@
-//! `SVStratify` and `SVStatificationEngine`, ported from GATK 4.6.2.0.
+//! `SVStratify` and `SVStratificationEngine`, ported from GATK 4.6.2.0 and moved to 4.7.0.0.
 //!
 //! Structural variants sorted into groups by type, size and reference-track overlap. Reading the
 //! VCF is not ported; deciding which strata a record belongs to, and what each refusal says, is.
 //!
-//! # The strata live in a HashMap, so the configuration's order is not the output's
+//! # The strata keep the configuration's order
 //!
 //! ```java
-//! strata = new HashMap<>();
+//! strata = new LinkedHashMap<>();
 //! ```
 //!
 //! `getMatches` walks `strata.values()`, so the order a record's matches come back in, the order
-//! the refusal message lists them, and the order the split-output files are created are all
-//! `java.util.HashMap` iteration order over the stratum NAMES. A configuration declaring
-//! `DEL_small_RM` before `DEL_small_both` is reported the other way round.
+//! the refusal message lists them, and the order the split-output files are created are all the
+//! order the configuration declares them in. Up to 4.6.2.0 this was a `HashMap`, and that order
+//! was `java.util.HashMap` iteration over the stratum NAMES.
 //!
-//! # Without split output every stratum writes to the same file
+//! # A record is written once per file, with every stratum it matched
 //!
 //! ```java
-//! final VariantContextWriter writer = splitOutput ? writers.get(stratum.getName()) : writers.get(DEFAULT_STRATUM);
+//! final List<String> stratumNames = ...map(Stratum::getName).sorted()...;
 //! ```
 //!
-//! So a record matching two strata under `--allow-multiple-matches` is written TWICE into one
-//! file, same position and same ID, with two different `STRAT` values.
+//! Since 4.7.0.0 `STRAT` is a list (`Number=.`) holding every match, sorted, and only a split
+//! output refuses a second match. Up to 4.6.2.0 a record matching two strata under
+//! `--allow-multiple-matches` was written twice into one file, one `STRAT` value each, and the
+//! refusal applied without split output too.
 //!
 //! # An insertion ignores both thresholds
 //!
@@ -53,8 +55,6 @@
 //!
 //! Both halves read the same value, so an extra column is reported as `Expected 6 columns but
 //! found 6`.
-
-use gatk_engine::java_hash::{hash_map_order, string_hash_code};
 
 /// `SVStratify.DEFAULT_STRATUM`.
 pub const DEFAULT_STRATUM: &str = "default";
@@ -505,32 +505,21 @@ fn count_any_track_overlap(stratum: &Stratum, tracks: &Tracks, interval: &Interv
     0
 }
 
-/// The strata a run holds, in the order a `java.util.HashMap` gives them back.
+/// The strata a run holds, in the configuration's order.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Engine {
-    /// Already in HashMap iteration order.
+    /// In the configuration's order (`LinkedHashMap`).
     pub strata: Vec<Stratum>,
     pub tracks: Tracks,
 }
 
 impl Engine {
-    /// The strata as `strata.values()` walks them, which is a HashMap over the NAMES.
+    /// The strata as `strata.values()` walks them, a `LinkedHashMap` since 4.7.0.0.
     pub fn new(strata: Vec<Stratum>, tracks: Tracks) -> Result<Engine, StratifyError> {
         if strata.iter().any(|stratum| stratum.name == DEFAULT_STRATUM) {
             return Err(StratifyError::ReservedName);
         }
-        let entries: Vec<(Stratum, i32)> = strata
-            .into_iter()
-            .map(|stratum| {
-                let hash = string_hash_code(&stratum.name);
-                (stratum, hash)
-            })
-            .collect();
-        let ordered = hash_map_order(&entries).expect("a hashable stratum set");
-        Ok(Engine {
-            strata: ordered,
-            tracks,
-        })
+        Ok(Engine { strata, tracks })
     }
 
     /// `getMatches`, in that same order.
@@ -557,11 +546,12 @@ impl Engine {
 pub struct Written {
     /// The file, which is `DEFAULT_STRATUM` for every record unless the output is split.
     pub file: String,
+    /// `STRAT`: every stratum the record matched, sorted and joined as a list attribute prints.
     pub stratum: String,
 }
 
-/// `apply`: the record goes to the default group when nothing matched, and once per stratum when
-/// something did.
+/// `apply`: the record goes to the default group when nothing matched; otherwise once to the
+/// default file, or once to each matching file when the output is split.
 pub fn apply(
     engine: &Engine,
     record: &CallRecord,
@@ -576,21 +566,28 @@ pub fn apply(
             stratum: DEFAULT_STRATUM.to_string(),
         }]);
     }
+    // Since 4.7.0.0 a record is written once per file with every name it matched, sorted, and only
+    // a split output refuses more than one.
+    let mut names: Vec<String> = matches.iter().map(|s| s.name.clone()).collect();
+    names.sort();
+    let joined = names.join(",");
+    if !split_output {
+        return Ok(vec![Written {
+            file: DEFAULT_STRATUM.to_string(),
+            stratum: joined,
+        }]);
+    }
     if !allow_multiple_matches && matches.len() > 1 {
         return Err(StratifyError::MultipleMatches {
             id: record.id.clone(),
-            names: matches.iter().map(|s| s.name.clone()).collect(),
+            names,
         });
     }
     Ok(matches
         .into_iter()
         .map(|stratum| Written {
-            file: if split_output {
-                stratum.name.clone()
-            } else {
-                DEFAULT_STRATUM.to_string()
-            },
-            stratum: stratum.name.clone(),
+            file: stratum.name.clone(),
+            stratum: joined.clone(),
         })
         .collect())
 }

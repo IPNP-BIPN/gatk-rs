@@ -1,7 +1,9 @@
 # A reproducible gCNV reference, and what porting against it would take
 
-Part of #806, following [python-tools.md](python-tools.md). Reference: `broadinstitute/gatk:4.6.2.0`
+Part of #806, following [python-tools.md](python-tools.md). Reference: `broadinstitute/gatk:4.7.0.0`
 (gcnvkernel 0.9, pymc 5.10.1, pytensor 2.18.3, numpy 1.26.2, MKL 2022.2.1, glibc 2.35, g++ 12.4.0).
+The measurements were made under 4.6.2.0; 4.7.0.0 ships the same stack, its `gcnvkernel` sources
+hash identically (sha256 of the sorted `*.py` sums) and the same reference BLAS sits at the same path.
 
 **Everything here was measured under amd64 emulation (Rosetta) on an arm64 Mac, whose emulated CPU
 reports AVX2 and FMA and no AVX-512. Whether the frozen configuration gives the same bits on another
@@ -199,7 +201,7 @@ decision for #806.
 
 ## Reproducing
 
-All inside `broadinstitute/gatk:4.6.2.0`, with `tools/python-tools` at `/harness`:
+All inside `broadinstitute/gatk:4.7.0.0`, with `tools/python-tools` at `/harness`:
 
 ```
 bash /harness/probe_fp.sh                 # each knob alone, hashes
