@@ -244,6 +244,13 @@ jobs:
           diff cpu-binaries.txt gpu-binaries.txt
           test "$(cat gpu-binaries.txt)" -gt 0
           echo "test binaries: $(cat gpu-binaries.txt); failing on both paths: $(wc -l < cpu-failed.txt)"
+          # A failed Metal command falls back to the CPU path for that call, which keeps the bytes
+          # but means the device did not run it: say how often, where the run is read.
+          fallbacks=$(grep -c "gatk-rs: a Metal command ended" gpu.log || true)
+          if [ "$fallbacks" -gt 0 ]; then
+            echo "::warning::$fallbacks device call(s) failed and ran on the CPU path instead"
+            grep -m5 "gatk-rs: a Metal command ended" gpu.log
+          fi
           diff cpu-failed.txt gpu-failed.txt
 
       - uses: actions/upload-artifact@v7

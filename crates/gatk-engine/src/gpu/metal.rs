@@ -2,8 +2,11 @@
 //! and reads the bits back.
 
 use metal::objc::rc::autoreleasepool;
+use metal::objc::runtime::Object;
+use metal::objc::{msg_send, sel, sel_impl};
 use metal::{
-    Buffer, CommandQueue, CompileOptions, ComputePipelineState, Device, MTLResourceOptions, MTLSize,
+    Buffer, CommandBufferRef, CommandQueue, CompileOptions, ComputePipelineState, Device,
+    MTLCommandBufferStatus, MTLResourceOptions, MTLSize,
 };
 
 use super::{ConvShape, ReadInputs};
@@ -53,12 +56,31 @@ fn build() -> Option<Context> {
     })
 }
 
-fn with_context<T>(run: impl FnOnce(&Context) -> T) -> Option<T> {
-    CONTEXT.with(|context| context.as_ref().map(|c| autoreleasepool(|| run(c))))
+fn with_context<T>(run: impl FnOnce(&Context) -> Option<T>) -> Option<T> {
+    CONTEXT.with(|context| context.as_ref().and_then(|c| autoreleasepool(|| run(c))))
+}
+
+/// Why a command buffer ended in error, in Metal's words.
+// `msg_send!` tests a `cargo-clippy` feature this crate does not declare.
+#[allow(unexpected_cfgs)]
+fn failure(command: &CommandBufferRef) -> String {
+    // SAFETY: `error` and `localizedDescription` are NSError and NSString accessors that return
+    // nil or an object the autorelease pool owns; `UTF8String` is valid while that object is.
+    unsafe {
+        let error: *mut Object = msg_send![command, error];
+        if error.is_null() {
+            return "no error given".to_string();
+        }
+        let description: *mut Object = msg_send![error, localizedDescription];
+        let text: *const std::os::raw::c_char = msg_send![description, UTF8String];
+        std::ffi::CStr::from_ptr(text)
+            .to_string_lossy()
+            .into_owned()
+    }
 }
 
 pub fn device_name() -> Option<String> {
-    with_context(|c| c.device.name().to_string())
+    with_context(|c| Some(c.device.name().to_string()))
 }
 
 fn buffer<T: Copy>(device: &Device, data: &[T]) -> Buffer {
@@ -86,7 +108,7 @@ fn run(
     buffers: &[&Buffer],
     words: &[u32],
     threads: usize,
-) {
+) -> Option<()> {
     let command = context.queue.new_command_buffer();
     let encoder = command.new_compute_command_encoder();
     encoder.set_compute_pipeline_state(pipeline);
@@ -108,6 +130,17 @@ fn run(
     encoder.end_encoding();
     command.commit();
     command.wait_until_completed();
+    // A command that fails leaves its output as it was allocated, zeros, which would read back as
+    // likelihoods of zero. The caller then answers `None` and the CPU path runs instead.
+    if command.status() == MTLCommandBufferStatus::Completed {
+        return Some(());
+    }
+    eprintln!(
+        "gatk-rs: a Metal command ended {:?} ({}); this call runs on the CPU path",
+        command.status(),
+        failure(command)
+    );
+    None
 }
 
 pub fn f64_ops(operation: u32, a: &[u64], b: &[u64]) -> Option<Vec<u64>> {
@@ -117,9 +150,9 @@ pub fn f64_ops(operation: u32, a: &[u64], b: &[u64]) -> Option<Vec<u64>> {
         let out = buffer(&c.device, &vec![0u64; n]);
         if n > 0 {
             let (a, b) = (buffer(&c.device, a), buffer(&c.device, b));
-            run(c, &c.f64_ops, &[&a, &b, &out], &[operation, n as u32], n);
+            run(c, &c.f64_ops, &[&a, &b, &out], &[operation, n as u32], n)?;
         }
-        read_back(&out, n)
+        Some(read_back(&out, n))
     })
 }
 
@@ -187,13 +220,15 @@ pub fn pair_hmm_log10(haplotypes: &[Vec<u8>], reads: &[ReadInputs]) -> Option<Ve
                 &bound,
                 &[chunk.len() as u32, stride as u32],
                 chunk.len(),
-            );
+            )?;
             totals.extend(read_back::<u64>(&out, chunk.len()));
         }
-        totals
-            .into_iter()
-            .map(|bits| jmath::math::log10(f64::from_bits(bits)) - offset)
-            .collect()
+        Some(
+            totals
+                .into_iter()
+                .map(|bits| jmath::math::log10(f64::from_bits(bits)) - offset)
+                .collect(),
+        )
     })
 }
 
@@ -211,9 +246,9 @@ pub fn f32_ops(operation: u32, a: &[u32], b: &[u32], c: &[u32]) -> Option<Vec<u3
                 &[&a, &b, &c, &out],
                 &[operation, n as u32],
                 n,
-            );
+            )?;
         }
-        read_back(&out, n)
+        Some(read_back(&out, n))
     })
 }
 
@@ -259,9 +294,9 @@ pub fn conv2d_fused(
                 &[&src, &weight, &bias, &out, &words],
                 &[word(count)],
                 count,
-            );
+            )?;
             dst.extend(read_back::<f32>(&out, count));
         }
-        dst
+        Some(dst)
     })
 }
