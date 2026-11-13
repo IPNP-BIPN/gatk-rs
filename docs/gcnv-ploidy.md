@@ -1,6 +1,6 @@
 # DetermineGermlineContigPloidy against the frozen reference
 
-Part of #549, outside milestone X. The target is GATK 4.6.2.0 in `broadinstitute/gatk:4.6.2.0`
+Part of #549, outside milestone X. The target is GATK 4.7.0.0 in `broadinstitute/gatk:4.7.0.0`
 **under `tools/python-tools/gcnv_frozen_env.sh`** ([gcnv-reproducible-oracle.md](gcnv-reproducible-oracle.md)),
 as for [PostprocessGermlineCNVCalls](gcnv-postprocess.md). Cohort mode only.
 

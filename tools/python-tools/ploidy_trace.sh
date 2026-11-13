@@ -1,6 +1,6 @@
 #!/bin/bash
 # DetermineGermlineContigPloidy on the gcnv-frozen fixture, traced for the port (ploidy_trace/).
-# Inside broadinstitute/gatk:4.6.2.0 with tools/python-tools at /harness. Usage: ploidy_trace.sh <out>
+# Inside broadinstitute/gatk:4.7.0.0 with tools/python-tools at /harness. Usage: ploidy_trace.sh <out>
 set -e
 . /harness/gcnv_frozen_env.sh
 . /opt/miniconda/etc/profile.d/conda.sh
