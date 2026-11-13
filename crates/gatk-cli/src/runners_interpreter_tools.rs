@@ -1298,7 +1298,7 @@ pub fn score_variant_annotations(parser: &Parser) -> Outcome {
     // `createVCFWriter` opens the file, and `writeHeader` leaves its bytes in the writer's buffer.
     write_file(&vcf_path, b"")?;
     let keys = ScoreKeys::of(parser)?;
-    let header = scored_header(parser, &file.header, &sorted_labels, &keys);
+    let mut header = scored_header(parser, &file.header, &sorted_labels, &keys);
 
     // `afterOnTraversalStart`, whose other three `Utils.nonNull` the header has answered.
     if argument(parser, "double-format").is_none() {
@@ -1516,6 +1516,7 @@ pub fn score_variant_annotations(parser: &Parser) -> Outcome {
         }
         written.push(out);
     }
+    apply_sites_only(parser, &mut header, &mut written);
     let vcf = htsjdk_vcf::vcf_file::write_vcf(&header, &written)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
     write_variant_output(parser, &vcf_path, &vcf)?;

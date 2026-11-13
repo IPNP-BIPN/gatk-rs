@@ -125,6 +125,41 @@ def build_fixtures(workdir):
     return fixtures
 
 
+# The scorers MakeFixtures.java leaves as placeholders, since the pinned image cannot train one.
+SCORERS = {"it/both": ("SNP", "INDEL"), "it/snp": ("SNP",)}
+
+
+def train_scorers(fixtures):
+    """Real scorers at the corpus's model prefixes, trained by the reference in the Broad's image.
+
+    `ScoreVariantAnnotations` past the interpreter unpickles its scorer, and a placeholder would
+    measure nothing but the refusal to read it. Done once, before the rows, while the corpus is
+    still writable; a corpus that already holds them is left alone.
+    """
+    if (fixtures / "it" / "both.snp.scorer.pkl").read_bytes() != b"no pickle\n":
+        return
+    train = " && ".join(
+        f'java -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main TrainVariantAnnotationsModel '
+        f"--annotations-hdf5 /work/fixtures/it/extract.annot.hdf5 --mode {mode} --output /work/fixtures/{prefix}"
+        for prefix, modes in SCORERS.items()
+        for mode in modes
+    )
+    result = subprocess.run(
+        [
+            "docker", "run", "--rm", "--platform", PLATFORM,
+            "-v", f"{fixtures}:/work/fixtures",
+            "-e", f"ORACLE_CP={BROAD['classpath']}", "-e", f"NPY_DISABLE_CPU_FEATURES={NUMPY_WITHOUT_AVX512}",
+            "-w", "/work", "--entrypoint", "sh", BROAD["image"], "-c",
+            f"{train}; rc=$?; chmod -R a+rwX /work/fixtures/it; exit $rc",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(result.stdout[-2000:])
+        raise SystemExit("could not train the scorers")
+
+
 def row_arguments(row, held):
     """The row's own assignments, plus the fixture values it cannot run without.
 
@@ -689,6 +724,9 @@ LOG_TIME = re.compile(r"^\d\d:\d\d:\d\d\.\d\d\d ")
 PICARD_LOG_TIME = re.compile(r"^(ERROR|WARNING|INFO|DEBUG)\t\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\t")
 # Which stage and task a Spark job had reached counts the jobs before it, not the tool's behaviour.
 SPARK_TASK = re.compile(r"Exception in task \d+\.\d+ in stage \d+\.\d+ \(TID \d+\)")
+# `File.createTempFile`'s random digits: ScoreVariantAnnotations under PYTHON_SCRIPT names the
+# scores file its script was to write, and a script that wrote none is refused under that name.
+TEMP_FILE = re.compile(r"/temp\d+\.")
 
 
 def first_error(text):
@@ -717,7 +755,7 @@ def first_error(text):
     for line in lines:
         if "Exception" in line or line.startswith("ERROR"):
             line = PICARD_LOG_TIME.sub(r"\1\t<time>\t", LOG_TIME.sub("", line.strip()))
-            return SPARK_TASK.sub("Exception in a task", line)
+            return TEMP_FILE.sub("/temp<n>.", SPARK_TASK.sub("Exception in a task", line))
     return text.strip().split("\n")[-1][:200] if text.strip() else ""
 
 
@@ -982,6 +1020,8 @@ def run_rows(options, array, held, workdir):
     if True:  # keeps the body's indentation while it lives in its own function
         if FIXTURES_DIR is None:
             build_fixtures(workdir)
+        if past_the_interpreter(options.tool):
+            train_scorers(fixtures_of(workdir))
         (workdir / "tmp").mkdir(exist_ok=True)
         for row in array["array"]:
             args = row_arguments(row, held)

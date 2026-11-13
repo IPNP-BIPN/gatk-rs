@@ -76,6 +76,9 @@ def main(argv):
     import run_array
 
     fixtures = run_array.build_fixtures(Path(shared.name))
+    # Before the tools run side by side, so that no two of them train into the corpus at once.
+    if any(run_array.past_the_interpreter(tool) for tool in options.tool):
+        run_array.train_scorers(fixtures)
 
     def measure_one(tool):
         command = [

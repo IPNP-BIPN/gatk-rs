@@ -161,8 +161,10 @@ a scorer's name or for the time inside a Java-written HDF5 file.
   reference in the Broad's image and the port behind a stand-in `python` (`$past_the_interpreter` in
   `tools/coverage/fixtures.json`), so its rows reach the fit instead of stopping at the import. That
   turned up one divergence, now fixed: the scorer names the script under `--tmp-dir`, which the port
-  had written as `/tmp` whatever the argument said. `ScoreVariantAnnotations` still stops at the
-  import, because its array needs scorers that a run of the reference has trained as fixtures.
+  had written as `/tmp` whatever the argument said. `ScoreVariantAnnotations` does the same, over
+  scorers the reference trains into the corpus before the rows (`run_array.train_scorers`), and
+  turned up a second divergence, now fixed: the port wrote the genotypes under
+  `--sites-only-vcf-output`. Its `PYTHON_SCRIPT` rows still differ, as the port's own refusal.
 * **AVX-512.** On an AVX-512 CPU numpy takes other loops for `power` (SVML) and `log`. The port follows
   the path without AVX-512. A first golden made on an AVX-512 runner differed from the port on every
   row, so `vets_dump.sh` sets `NPY_DISABLE_CPU_FEATURES` to the AVX-512 family: the reference then
