@@ -17,8 +17,8 @@ software binary64 on integers (docs/gpu/eligibility.md); the parallelism is betw
 inside one, so no sum is regrouped. `PairHMMLikelihoodCalculationEngine.computeReadLikelihoods`
 takes the device's values when `GATK_RS_GPU` is set and its own otherwise, and raises a DRAGstr
 imputation refusal at the same read, after the same results-file lines, either way. A Metal command
-that ends in error (run 43382302494 lost one sample's reads on GitHub's paravirtualised GPU when the
-host did not look) makes the call answer `None`, so the CPU path computes it, and says so on stderr;
+that ends in error (in run 43382302494, on GitHub's paravirtualised GPU, one sample came back with no
+reads, which is what an output left at zero gives; the host did not look then) makes the call answer `None`, so the CPU path computes it, and says so on stderr;
 the `gpu` job counts those calls.
 
 **The tests that prove it.** `crates/gatk-engine/tests/gpu.rs`: 800,648 additions and
