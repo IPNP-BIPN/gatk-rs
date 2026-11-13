@@ -40,7 +40,7 @@ fn build() -> Option<Context> {
     options.set_fast_math_enabled(false);
     let library = device
         .new_library_with_source(SOURCE, &options)
-        .map_err(|e| eprintln!("kernels.metal does not compile: {e}"))
+        .map_err(|e| writeln!(std::io::stderr(), "kernels.metal does not compile: {e}"))
         .ok()?;
     let pipeline = |name: &str| {
         let function = library.get_function(name, None).ok()?;
