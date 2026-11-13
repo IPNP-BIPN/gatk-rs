@@ -58,7 +58,7 @@
 use gatk_engine::genotype_index::GenotypeIndexError;
 use gatk_engine::java_hash::compare_strings;
 use gatk_engine::java_regex::{self, PatternSyntaxError};
-use gatk_engine::jexl::{create_expression, Value as JexlValue};
+use gatk_engine::jexl::{create_expression, JexlError, Value as JexlValue};
 use gatk_engine::subset_alleles::{subset_alleles, AssignmentMethod, Genotype};
 use gatk_engine::variant_context_utils::{trim_alleles, Allele, Variant};
 
@@ -738,16 +738,25 @@ pub struct FilterRecord {
     pub genotype_fields: Vec<gatk_engine::jexl::Context>,
 }
 
-/// `GenotypeJEXLContext.get` for one genotype: its fixed map first, then the genotype's attributes.
+/// `GenotypeJEXLContext.get` for one genotype, in its order: the fixed map, then
+/// `getAnyAttribute`, then a name the genotype's filters contain. What none of them knows falls
+/// through to the variant's context, which [`passes_jexl_filters`] lays underneath.
 ///
-/// `FT` is the filter text or `PASS`, and `isPassFT` is `"0"` or `"1"`, so a genotype with no FT
-/// at all passes both `FT == "PASS"` and `isPassFT == "1"`. `isFiltered()` is asked rather than
-/// `filters` read, because htsjdk-rs holds a genotype `FT=PASS` as `Some("")` where htsjdk holds
-/// null. `GQ` is `getGQ()`, an `Integer`; `DP` is not in that map, so it resolves through the
-/// extended attributes, where the codec left it as text.
+/// The fixed map is `"1"`/`"0"` text for every `is*` name, `GT` as `getGenotypeString()`, `FT` as
+/// the filter text or `PASS`, and `GQ` as `getGQ()`, an `Integer` that is -1 when there is none.
+/// `isFiltered()` is asked rather than `filters` read, because htsjdk-rs holds a genotype
+/// `FT=PASS` as `Some("")` where htsjdk holds null. `getAnyAttribute` makes `DP` an `Integer` and
+/// `AD`/`PL` lists, which an expression sees as their `toString`; the rest are the codec's text.
+/// `g`, the Genotype object itself, is not here: its only use is a method call, which the engine
+/// refuses.
 pub fn genotype_jexl_context(
     genotype: &htsjdk_vcf::variant::Genotype,
 ) -> gatk_engine::jexl::Context {
+    let flag = |value: bool| JexlValue::Str(if value { "1" } else { "0" }.to_string());
+    let java_list = |values: &Vec<i32>| {
+        let items: Vec<String> = values.iter().map(|value| value.to_string()).collect();
+        JexlValue::Str(format!("[{}]", items.join(", ")))
+    };
     let mut fields: gatk_engine::jexl::Context = genotype
         .extended
         .iter()
@@ -758,23 +767,74 @@ pub fn genotype_jexl_context(
             )
         })
         .collect();
-    let filtered = genotype.is_filtered();
-    fields.insert(
-        "FT".to_string(),
-        JexlValue::Str(match &genotype.filters {
-            Some(filters) if filtered => filters.clone(),
-            _ => "PASS".to_string(),
-        }),
-    );
-    fields.insert(
-        "isPassFT".to_string(),
-        JexlValue::Str(if filtered { "0" } else { "1" }.to_string()),
-    );
-    if let Some(gq) = genotype.gq {
-        fields.insert("GQ".to_string(), JexlValue::Int(gq));
-    }
     if let Some(dp) = genotype.dp {
-        fields.insert("DP".to_string(), JexlValue::Str(dp.to_string()));
+        fields.insert("DP".to_string(), JexlValue::Int(dp));
+    }
+    if let Some(ad) = &genotype.ad {
+        fields.insert("AD".to_string(), java_list(ad));
+    }
+    if let Some(pl) = &genotype.pl {
+        fields.insert("PL".to_string(), java_list(pl));
+    }
+    let filtered = genotype.is_filtered();
+    // `getFilters()`: `GenotypeBuilder.filters(List)` sorts two or more names before joining them,
+    // where htsjdk-rs keeps the order the FT field was written in.
+    let filters = genotype
+        .filters
+        .as_ref()
+        .filter(|_| filtered)
+        .map(|filters| {
+            let mut names: Vec<&str> = filters.split(';').collect();
+            names.sort_unstable();
+            names.join(";")
+        });
+    let separator = if genotype.phased { "|" } else { "/" };
+    let alleles: Vec<String> = genotype
+        .alleles
+        .iter()
+        .map(|allele| allele.base_string())
+        .collect();
+    let fixed = [
+        (
+            "GT",
+            JexlValue::Str(if alleles.is_empty() {
+                "NA".to_string()
+            } else {
+                alleles.join(separator)
+            }),
+        ),
+        ("isHom", flag(genotype.is_hom())),
+        ("isHomRef", flag(genotype.is_hom_ref())),
+        ("isHet", flag(genotype.is_het())),
+        ("isHomVar", flag(genotype.is_hom_var())),
+        ("isCalled", flag(genotype.is_called())),
+        ("isNoCall", flag(genotype.is_no_call())),
+        ("isMixed", flag(genotype.is_mixed())),
+        ("isAvailable", flag(genotype.is_available())),
+        ("isPassFT", flag(!filtered)),
+        (
+            "FT",
+            JexlValue::Str(filters.clone().unwrap_or_else(|| "PASS".to_string())),
+        ),
+        ("GQ", JexlValue::Int(genotype.gq.unwrap_or(-1))),
+    ];
+    for (name, value) in fixed {
+        fields.insert(name.to_string(), value);
+    }
+    // `getFilters().contains(name)`: String.contains, so every substring of the filter text is a
+    // name that resolves to "1", and `LowQD` answers for `QD` before the INFO field can.
+    // shortcut: every substring is a key, quadratic in the FT length; fine for filter names, and
+    // a lookup hook in the engine is the upgrade if one ever runs long.
+    if let Some(filters) = &filters {
+        for start in 0..filters.len() {
+            for end in start + 1..=filters.len() {
+                if let Some(name) = filters.get(start..end) {
+                    fields
+                        .entry(name.to_string())
+                        .or_insert_with(|| JexlValue::Str("1".to_string()));
+                }
+            }
+        }
     }
     fields
 }
@@ -937,6 +997,10 @@ fn passes_jexl_filters(
         })?;
         let matched = match expression.evaluate(&record.info) {
             Ok(JexlValue::Bool(value)) => value,
+            // `JEXLMap.evaluateExpression` catches `JexlException.Variable` and a null result and
+            // answers with the default `TREAT_AS_MISMATCH`, so a name nothing resolves is a false,
+            // which `--invert-select` then turns into a true like any other false.
+            Ok(JexlValue::Null) | Err(JexlError::UndefinedVariable(_)) => false,
             // `(Boolean) filter.evaluate(...)`: a value of any other class is a failed CAST and not
             // a false. Measured on rows of this tool's array where `--select QUAL` reaches a Double.
             Ok(other) => {
@@ -964,8 +1028,17 @@ fn passes_jexl_filters(
         })?;
         // Any genotype matching is enough, and the result joins the or above rather than an and.
         for fields in &record.genotype_fields {
-            let matched = match expression.evaluate(fields) {
+            // `GenotypeJEXLContext extends VariantJEXLContext`: what the genotype does not know,
+            // the variant's context answers.
+            let mut context = record.info.clone();
+            context.extend(
+                fields
+                    .iter()
+                    .map(|(key, value)| (key.clone(), value.clone())),
+            );
+            let matched = match expression.evaluate(&context) {
                 Ok(JexlValue::Bool(value)) => value,
+                Ok(JexlValue::Null) | Err(JexlError::UndefinedVariable(_)) => false,
                 Ok(other) => {
                     return Err(SelectError::NotBoolean {
                         class: jexl_value_class(&other),
