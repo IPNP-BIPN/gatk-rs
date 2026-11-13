@@ -294,7 +294,6 @@ pub fn reads_likelihoods_given_haplotype_log10(
     out: &mut [f64],
 ) {
     assert_eq!(reads.len(), out.len(), "one answer per read");
-    let tables = &*TABLES;
     let width = haplotype.len() + 1;
     let initial = initial_condition() / haplotype.len() as f64;
     let mut order: Vec<usize> = (0..reads.len()).collect();
@@ -313,8 +312,42 @@ pub fn reads_likelihoods_given_haplotype_log10(
         .collect();
     let mut priors = vec![[0.0f64; LANES]; distinct.len()];
 
-    let mut previous = vec![ZERO; width];
-    let mut current = vec![ZERO; width];
+    thread_local! {
+        // The two rows, kept between calls: allocating them per haplotype was a tenth of a call.
+        static ROWS: std::cell::RefCell<(Vec<Cell>, Vec<Cell>)> =
+            const { std::cell::RefCell::new((Vec::new(), Vec::new())) };
+    }
+    ROWS.with_borrow_mut(|(previous, current)| {
+        previous.resize(width, ZERO);
+        current.resize(width, ZERO);
+        sweep(
+            reads,
+            out,
+            &order,
+            &codes,
+            &distinct,
+            &mut priors,
+            &mut previous[..width],
+            &mut current[..width],
+            initial,
+        );
+    });
+}
+
+/// The rows of [`reads_likelihoods_given_haplotype_log10`], [`LANES`] reads at a time.
+#[allow(clippy::too_many_arguments)]
+fn sweep<'a>(
+    reads: &[HmmRead<'_>],
+    out: &mut [f64],
+    order: &[usize],
+    codes: &[u8],
+    distinct: &[u8],
+    priors: &mut [Lanes],
+    mut previous: &'a mut [Cell],
+    mut current: &'a mut [Cell],
+    initial: f64,
+) {
+    let tables = &*TABLES;
 
     // The last row's match and insertion terms, summed in the reference's order.
     let answer = |row: &[Cell], lane: usize| -> f64 {
@@ -332,7 +365,7 @@ pub fn reads_likelihoods_given_haplotype_log10(
         });
         for (lane, &r) in chunk.iter().enumerate() {
             if reads[r].bases.is_empty() {
-                out[r] = answer(&previous, lane);
+                out[r] = answer(previous, lane);
             }
         }
 
@@ -366,7 +399,7 @@ pub fn reads_likelihoods_given_haplotype_log10(
                 match_to_deletion[lane] = tables.error[deletion];
                 // `prior`, for each haplotype byte.
                 let read_base = read.bases[i];
-                for (prior, &base) in priors.iter_mut().zip(&distinct) {
+                for (prior, &base) in priors.iter_mut().zip(distinct) {
                     prior[lane] = if read_base == base || read_base == b'N' || base == b'N' {
                         tables.prob[quality]
                     } else {
@@ -379,7 +412,7 @@ pub fn reads_likelihoods_given_haplotype_log10(
             current[0] = ZERO;
             let mut left = ZERO;
             for ((cell, window), &code) in
-                current[1..].iter_mut().zip(previous.windows(2)).zip(&codes)
+                current[1..].iter_mut().zip(previous.windows(2)).zip(codes)
             {
                 let (diagonal, up) = (&window[0], &window[1]);
                 let p = &priors[usize::from(code)];
@@ -400,7 +433,7 @@ pub fn reads_likelihoods_given_haplotype_log10(
             std::mem::swap(&mut previous, &mut current);
             for (lane, &r) in chunk.iter().enumerate() {
                 if reads[r].bases.len() == i + 1 {
-                    out[r] = answer(&previous, lane);
+                    out[r] = answer(previous, lane);
                 }
             }
         }
