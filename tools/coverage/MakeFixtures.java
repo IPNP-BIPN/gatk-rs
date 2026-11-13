@@ -4663,12 +4663,14 @@ public class MakeFixtures {
                 "--add-output-vcf-command-line", "false"});
         // The same three imported, which the three callers that read GenomicsDB take as
         // `gendb:///work/fixtures/cg_ws`. The import's command line in its header records this
-        // directory and the time, and both sides of a row read the one copy.
+        // directory and the time, and both sides of a row read the one copy. A shard rebuilds the
+        // fixtures into the same directory for each suite that needs them, hence the overwrite.
         new org.broadinstitute.hellbender.Main().instanceMain(new String[] {"GenomicsDBImport",
                 "-V", dir.resolve("cg_a.g.vcf").toString(),
                 "-V", dir.resolve("cg_b.g.vcf").toString(),
                 "-V", dir.resolve("cg_c.g.vcf").toString(),
                 "-L", "chr1", "-L", "chr2",
+                "--overwrite-existing-genomicsdb-workspace", "true",
                 "--genomicsdb-workspace-path", dir.resolve("cg_ws").toString()});
         // The `--dbsnp` of `GenotypeGVCFs`, at the sites it calls on cg_combined: at chr1:100
         // (GGCT to GT,G) the pair its split trims to GGC>G, and the untrimmed GGCT>GT, which
