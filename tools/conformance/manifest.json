@@ -2903,7 +2903,7 @@
         {
           "dump": "SelectVariantsFiltersDump",
           "golden": "crates/gatk-tools/tests/data/select_variants_filters.txt.gz",
-          "why": "199 rows: two inputs, one of ten records and one sites-only of three, and thirty-two runs, one per gate and one per flag that moves a gate. The records are built so that each gate has something to catch: two indels of very different length, a MIXED multi-allelic, a spanning deletion alone, a record only the unselected samples vary at, one with two filtered genotypes, one whose genotypes are all filtered and one with three no-calls. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31756512742, and byte for byte what an Apple Silicon laptop produced."
+          "why": "199 rows: two inputs, one of ten records and one sites-only of three, and thirty-two runs, one per gate and one per flag that moves a gate. The records are built so that each gate has something to catch: two indels of very different length, a MIXED multi-allelic, a spanning deletion alone, a record only the unselected samples vary at, one with two filtered genotypes, one whose genotypes are all filtered and one with three no-calls. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 43400064217."
         }
       ]
     },
