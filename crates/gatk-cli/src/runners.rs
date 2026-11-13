@@ -41,6 +41,7 @@ pub use haplotype_caller::{
 mod mutect2;
 pub use mutect2::{mutect2, mutect2_modes};
 mod joint_germline_cnv;
+pub mod multi_variant;
 pub use joint_germline_cnv::joint_germline_cnv_segmentation;
 
 /// The value of one named argument, as the parser left it.

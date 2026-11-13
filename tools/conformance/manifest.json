@@ -5275,6 +5275,36 @@
       ]
     },
     {
+      "id": "multi-variant-walker",
+      "status": "golden-pending",
+      "title": "Several VCFs merged into one stream, and the two ways of grouping it",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CombineGVCFs",
+        "ReblockGVCF",
+        "VariantEval",
+        "ApplyVQSR",
+        "VariantRecalibrator",
+        "FilterAlignmentArtifacts",
+        "VCFComparator",
+        "SVStratify",
+        "SVCluster",
+        "GroupedSVCluster",
+        "JointGermlineCNVSegmentation"
+      ],
+      "why": "G1.6: MultiVariantWalker, MultiVariantDataSource, MultiVariantWalkerGroupedOnStart and MultiVariantWalkerGroupedByOverlap, the engine under eleven tools, measured through three probe walkers that print what the engine hands them.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "MultiVariantWalkerDump",
+          "golden": "crates/gatk-cli/tests/data/multi_variant_walker.txt.gz",
+          "why": "Hand-written VCFs run through a plain probe, a grouped-on-start probe and a grouped-by-overlap probe."
+        }
+      ]
+    },
+    {
       "id": "numt-filter",
       "status": "oracle-backed",
       "title": "Mitochondrial calls filtered by a Poisson depth cutoff",

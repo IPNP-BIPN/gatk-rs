@@ -262,13 +262,24 @@ fn incompatible(
     b: &[SequenceRecord],
 ) -> DictionaryRefusal {
     DictionaryRefusal::Incompatible {
-        message: format!(
-            "Input files {name1} and {name2} have incompatible contigs: {reason}.\n  \
-             {name1} contigs = {}\n  {name2} contigs = {}",
-            pretty_print(a),
-            pretty_print(b)
-        ),
+        message: incompatible_message(reason, name1, a, name2, b),
     }
+}
+
+/// The message of `UserException.IncompatibleSequenceDictionaries`.
+pub fn incompatible_message(
+    reason: &str,
+    name1: &str,
+    a: &[SequenceRecord],
+    name2: &str,
+    b: &[SequenceRecord],
+) -> String {
+    format!(
+        "Input files {name1} and {name2} have incompatible contigs: {reason}.\n  \
+         {name1} contigs = {}\n  {name2} contigs = {}",
+        pretty_print(a),
+        pretty_print(b)
+    )
 }
 
 /// `validateDictionaries`: `Ok` where the reference returns, and the refusal where it throws.
