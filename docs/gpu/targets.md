@@ -59,13 +59,46 @@ element of an array the host has just built. GPU.3 deletes an accelerated path t
 this one is recorded instead of written. It becomes a target only if decoding itself moves to the
 device, which is the BGZF entry below.
 
-## 3. BGZF inflate and deflate: open, in htsjdk-rs
+## 3. BGZF inflate: not built, because it cannot pay here; deflate: open, in htsjdk-rs
 
 `htsjdk-bgzf` and the GKL-exact deflate (`gkl-deflate`) live in IPNP-BIPN/htsjdk-rs, pinned here by
-revision. Inflate is decidable (any correct decoder gives the bytes) and block-independent; deflate
-must reproduce GKL's choice per level (zlib's for most, ISA-L igzip's at level 2, which is
-GATKConfig's), so the device kernel would be a transliteration of each matcher, one block per
-thread. Neither is built yet.
+revision.
+
+**Inflate** is decidable (any correct decoder gives the bytes) and block-independent, so a kernel
+would be easy to hold to the CPU path. The question is what it could save, and that can be bounded
+without writing one: run a read-bound tool on a BAM, then on the same BAM with stored blocks,
+whose inflate is a copy. The difference is the most any inflater, on any device, at any speed and
+with no transfer cost, could take off the tool. `tools/speed/bgzf_inflate_bound.py` does that.
+With CountReads, the most read-bound tool there is, on 531,540 reads (`snvq_metrics_test.bam`'s
+records 20 times, 894 MB inflated, 193 MB at level 5), on the M4 Max with other work on it (load
+average 17), best of three:
+
+| BAM | 1 thread, wall | 1 thread, CPU | 16 threads, wall | 16 threads, CPU |
+|---|---:|---:|---:|---:|
+| level 5 | 5.54 s | 4.91 s | 1.77 s | 4.07 s |
+| stored | 1.73 s | 1.26 s | 1.69 s | 1.34 s |
+
+On one thread, inflate is 69% of the tool. But the port already inflates on every core
+(`decompress_all` on rayon), and at 16 threads it is 0.08 s of 1.77 s, 4.5%: the record decoding
+that follows is what the wall clock waits for. A device inflater would save at most that 4.5%, under
+the 10% #1021 set as the bar for a GPU path. So it is recorded instead of built, like the read
+filters. It becomes worth measuring on a host with few cores and a large GPU, or if record decoding
+also moves to the device.
+
+One CPU-side finding on the way: inside the tool, inflate costs 2.6 s of CPU where one pass of
+`decompress_all` over the same bytes costs 0.87 s. The inflater is not the cause: a read walker
+inflates the whole BAM three times, once to sniff it at startup (`read_walker_startup_with` in
+`crates/gatk-cli/src/runners.rs`), once for the header (`ReadsDataSource::open_unindexed` in
+`crates/gatk-engine/src/reads.rs`) and once for the records (`iter_all`), and 3 x 0.87 s is the
+gap. Inflating once and handing the buffer on belongs to Milestone S; it also shrinks the bound
+above, since a single pass is a third of what stored blocks saved here.
+
+**Deflate** must reproduce GKL's choice per level (zlib's for most, ISA-L igzip's at level 2, which
+is GATKConfig's), so a kernel would transliterate each matcher, one block per thread. Deflate is
+several times inflate's cost, so it is the side that could pay. It cannot be measured on this host
+yet: level 2 needs ISA-L igzip, which has no ARM build here (`PrintReads` refuses with "GKL routes
+level 2 through ISA-L igzip, which this build cannot reach"). The pure-Rust igzip port in
+htsjdk-rs is what would make it measurable.
 
 ## 4. The assembly graph and genotyping: open
 

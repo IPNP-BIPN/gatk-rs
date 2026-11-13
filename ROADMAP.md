@@ -1223,9 +1223,12 @@ GATK, which targets concordance and says so.
 
 ### GPU.2 The targets, in order of tractability
 
-- [ ] **BGZF deflate and inflate**: integer work, block-independent, and already the hottest path
+- [~] **BGZF deflate and inflate**: integer work, block-independent, and already the hottest path
       in every tool that writes a BAM. Byte-identity is decidable here because the output is
-      defined bit for bit. Lives in htsjdk-rs (`htsjdk-bgzf`, `gkl-deflate`); not started
+      defined bit for bit. Lives in htsjdk-rs (`htsjdk-bgzf`, `gkl-deflate`). Inflate is settled as
+      not worth a kernel: with the port already inflating on every core, a free inflater would save
+      CountReads 4.5% at 16 threads (`tools/speed/bgzf_inflate_bound.py`, `docs/gpu/targets.md`).
+      Deflate is open, and not measurable on ARM until level 2's igzip has a pure-Rust build
 - [~] **the read filters and the pileup floor**: integer and byte predicates over many reads, no
       floating point, and a fixed order. The cheapest place to prove the harness works end to end.
       Settled as not worth a kernel (`docs/gpu/targets.md`): the host must gather every field a
