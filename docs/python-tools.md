@@ -1,11 +1,13 @@
 # The tools that run their arithmetic in Python
 
-Issues #806 and #1394. Reference: `broadinstitute/gatk:4.6.2.0` (Python 3.10.13, numpy 1.26.2,
-scikit-learn 1.3.2, h5py 3.10.0, dill 0.3.7, pymc 5.10.1, pytensor 2.18.3). The pinned oracle image
-has no `python`, so every number here comes from the publisher's image.
+Issues #806 and #1394. Reference: `broadinstitute/gatk:4.7.0.0`, whose environment is 4.6.2.0's
+package for package (Python 3.10.13, numpy 1.26.2, scikit-learn 1.3.2, h5py 3.10.0, dill 0.3.7,
+pymc 5.10.1, pytensor 2.18.3). The pinned oracle image has no `python`, so every number here comes
+from the publisher's image.
 
-**All of it was measured under amd64 emulation on an arm64 Mac, whose emulated CPU reports AVX2 and
-FMA and no AVX-512. Nothing here has run on real x86-64, and no golden exists yet.** See
+The measurements below were made under amd64 emulation on an arm64 Mac, whose emulated CPU reports
+AVX2 and FMA and no AVX-512, against 4.6.2.0. CI has since re-derived them on real x86-64: suite
+`vets-isolation-forest` is oracle-backed and held through the move to 4.7.0.0 unchanged. See
 [What needs CI](#what-needs-ci).
 
 ## One line per tool
@@ -153,8 +155,14 @@ a scorer's name or for the time inside a Java-written HDF5 file.
 
 ## What needs CI
 
-* **That any of this holds on real x86-64.** The `vets-isolation-forest` suite is `golden-pending`, with
-  `broadinstitute/gatk:4.6.2.0` as its own image, pulled in the job that runs it.
+* ~~That any of this holds on real x86-64.~~ Done: `vets-isolation-forest` is oracle-backed, in
+  `broadinstitute/gatk:4.7.0.0` pulled by the job that runs it.
+* **The arguments past the interpreter.** `TrainVariantAnnotationsModel`'s covering array runs its
+  reference in the Broad's image and the port behind a stand-in `python` (`$past_the_interpreter` in
+  `tools/coverage/fixtures.json`), so its rows reach the fit instead of stopping at the import. That
+  turned up one divergence, now fixed: the scorer names the script under `--tmp-dir`, which the port
+  had written as `/tmp` whatever the argument said. `ScoreVariantAnnotations` still stops at the
+  import, because its array needs scorers that a run of the reference has trained as fixtures.
 * **AVX-512.** On an AVX-512 CPU numpy takes other loops for `power` (SVML) and `log`. The port follows
   the path without AVX-512. A first golden made on an AVX-512 runner differed from the port on every
   row, so `vets_dump.sh` sets `NPY_DISABLE_CPU_FEATURES` to the AVX-512 family: the reference then

@@ -929,6 +929,12 @@ pub fn train_variant_annotations_model(parser: &Parser) -> Outcome {
     let script = argument(parser, "python-script");
     let hyperparameters = argument(parser, "hyperparameters-json");
     let backend = backend_of(parser);
+    // `java.io.tmpdir`, which the script's name in the scorer is under.
+    let tmp_dir = match argument(parser, "tmp-dir") {
+        Some(dir) => std::path::absolute(&dir).map_or(dir, |path| path.display().to_string()),
+        None => "/tmp".to_string(),
+    };
+    let script_name = scorer_pickle::script_name(&tmp_dir);
 
     // `validateArgumentsAndSetModes`.
     can_read_file(Some(&annotations))?;
@@ -1049,6 +1055,7 @@ pub fn train_variant_annotations_model(parser: &Parser) -> Outcome {
             calibration.as_deref(),
             hyperparameters.as_deref(),
             &tagged,
+            &script_name,
         )?;
     }
     Ok(None)
@@ -1061,6 +1068,7 @@ fn train_isolation_forest(
     calibration: Option<&[&Vec<f64>]>,
     hyperparameters: Option<&str>,
     tagged: &str,
+    script_name: &str,
 ) -> Result<(), Thrown> {
     let json = match hyperparameters {
         Some(path) => std::fs::read_to_string(path).map_err(port_limit)?,
@@ -1072,7 +1080,7 @@ fn train_isolation_forest(
     let forest = isolation_forest::fit(names, &training, &hyperparameters).map_err(port_limit)?;
     write_file(
         &format!("{tagged}.scorer.pkl"),
-        &scorer_pickle::write(&forest),
+        &scorer_pickle::write(&forest, script_name),
     )?;
     let scorer = forest.scorer();
     let scores = isolation_forest::score_samples(&scorer, names, &training).map_err(port_limit)?;
