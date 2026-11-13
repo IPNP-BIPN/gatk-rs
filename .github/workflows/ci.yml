@@ -561,9 +561,11 @@ jobs:
       - run: docker load -i /tmp/oracle-image.tar
 
       - name: The Broad's image, where a tool under `$past_the_interpreter` runs its reference
-        # The pinned image has no python, so TrainVariantAnnotationsModel's array stopped at the
-        # import on every row. The Broad's image of the same release, pinned by digest in the
-        # manifest's `oracle_with_r`, gets the reference past it (tools/coverage/run_array.py).
+        # The pinned image has neither python nor Rscript, so the arrays of the variant-annotation
+        # models and the plots stopped at the interpreter on every row. The Broad's image of the
+        # same release, pinned by digest in the manifest's `oracle_with_r`, gets the reference past
+        # it (tools/coverage/run_array.py); measure.py builds the port's side for the plots,
+        # tools/coverage/port-with-r, on top of the pinned image.
         # 8.5 GB unpacked; the Android SDK is not ours.
         run: |
           sudo rm -rf /usr/local/lib/android
