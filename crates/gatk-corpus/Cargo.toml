@@ -8,3 +8,11 @@ repository.workspace = true
 [dependencies]
 htsjdk-bam.workspace = true
 flate2 = "1"
+
+[dev-dependencies]
+# IPNP-BIPN/gatk-rs#1393: a second reader, written by someone else, of every BAM, BGZF, index and
+# VCF the goldens carry. Test-only on purpose: reading a file is a decision the port makes for
+# itself (docs/when-a-dependency-is-cheaper-than-a-port.md), and this only checks that decision.
+noodles = { version = "0.119.0", features = ["bam", "bgzf", "core", "csi", "sam", "tabix", "vcf"] }
+htsjdk-bgzf.workspace = true
+htsjdk-vcf.workspace = true
