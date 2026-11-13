@@ -250,3 +250,159 @@ pub fn read_likelihood_given_haplotype_log10(
     }
     jmath::math::log10(total) - initial_condition_log10()
 }
+
+/// One read's bases and its four quality arrays, all of the same length, as
+/// [`read_likelihood_given_haplotype_log10`] takes them.
+#[derive(Debug, Clone, Copy)]
+pub struct HmmRead<'a> {
+    pub bases: &'a [u8],
+    pub quals: &'a [u8],
+    pub insertion_quals: &'a [u8],
+    pub deletion_quals: &'a [u8],
+    pub gap_continuation: &'a [u8],
+}
+
+/// Reads computed side by side. Each lane is one read and does that read's own multiplies and
+/// adds, never fused, so vectorising across lanes cannot move a bit.
+const LANES: usize = 4;
+type Lanes = [f64; LANES];
+
+/// One column of a row: the match, insertion and deletion values of every lane, side by side.
+#[derive(Clone, Copy)]
+struct Cell {
+    m: Lanes,
+    x: Lanes,
+    y: Lanes,
+}
+
+const ZERO: Cell = Cell {
+    m: [0.0; LANES],
+    x: [0.0; LANES],
+    y: [0.0; LANES],
+};
+
+/// [`read_likelihood_given_haplotype_log10`] for every read of `reads` against one haplotype,
+/// into `out` in read order, with the same bits.
+///
+/// Reads are taken in order of length, [`LANES`] at a time, so a lane rarely idles. A lane whose
+/// read has ended runs on zero transitions and priors, and its answer was taken at its last row.
+/// The prior is looked up, not chosen: each distinct haplotype byte gets a code, and every row
+/// holds the prior of each code for each lane, which keeps the inner loop free of branches.
+pub fn reads_likelihoods_given_haplotype_log10(
+    haplotype: &[u8],
+    reads: &[HmmRead<'_>],
+    out: &mut [f64],
+) {
+    assert_eq!(reads.len(), out.len(), "one answer per read");
+    let tables = &*TABLES;
+    let width = haplotype.len() + 1;
+    let initial = initial_condition() / haplotype.len() as f64;
+    let mut order: Vec<usize> = (0..reads.len()).collect();
+    order.sort_by_key(|&r| reads[r].bases.len());
+
+    let mut distinct: Vec<u8> = Vec::new();
+    let codes: Vec<u8> = haplotype
+        .iter()
+        .map(|&base| match distinct.iter().position(|&d| d == base) {
+            Some(code) => code as u8,
+            None => {
+                distinct.push(base);
+                (distinct.len() - 1) as u8
+            }
+        })
+        .collect();
+    let mut priors = vec![[0.0f64; LANES]; distinct.len()];
+
+    let mut previous = vec![ZERO; width];
+    let mut current = vec![ZERO; width];
+
+    // The last row's match and insertion terms, summed in the reference's order.
+    let answer = |row: &[Cell], lane: usize| -> f64 {
+        let mut total = 0.0;
+        for cell in &row[1..] {
+            total += cell.m[lane] + cell.x[lane];
+        }
+        jmath::math::log10(total) - initial_condition_log10()
+    };
+
+    for chunk in order.chunks(LANES) {
+        previous.fill(Cell {
+            y: [initial; LANES],
+            ..ZERO
+        });
+        for (lane, &r) in chunk.iter().enumerate() {
+            if reads[r].bases.is_empty() {
+                out[r] = answer(&previous, lane);
+            }
+        }
+
+        let longest = chunk
+            .iter()
+            .map(|&r| reads[r].bases.len())
+            .max()
+            .unwrap_or(0);
+        for i in 0..longest {
+            let mut match_to_match = [0.0; LANES];
+            let mut indel_to_match = [0.0; LANES];
+            let mut match_to_insertion = [0.0; LANES];
+            let mut insertion_to_insertion = [0.0; LANES];
+            let mut match_to_deletion = [0.0; LANES];
+            for prior in priors.iter_mut() {
+                *prior = [0.0; LANES];
+            }
+            for (lane, &r) in chunk.iter().enumerate() {
+                let read = &reads[r];
+                if i >= read.bases.len() {
+                    continue;
+                }
+                let insertion = usize::from(read.insertion_quals[i]);
+                let deletion = usize::from(read.deletion_quals[i]);
+                let gap = usize::from(read.gap_continuation[i]);
+                let quality = usize::from(read.quals[i]);
+                match_to_match[lane] = tables.match_to_match[insertion * 256 + deletion];
+                indel_to_match[lane] = tables.prob[gap];
+                match_to_insertion[lane] = tables.error[insertion];
+                insertion_to_insertion[lane] = tables.error[gap];
+                match_to_deletion[lane] = tables.error[deletion];
+                // `prior`, for each haplotype byte.
+                let read_base = read.bases[i];
+                for (prior, &base) in priors.iter_mut().zip(&distinct) {
+                    prior[lane] = if read_base == base || read_base == b'N' || base == b'N' {
+                        tables.prob[quality]
+                    } else {
+                        tables.mismatch[quality]
+                    };
+                }
+            }
+            let deletion_to_deletion = insertion_to_insertion;
+
+            current[0] = ZERO;
+            let mut left = ZERO;
+            for ((cell, window), &code) in
+                current[1..].iter_mut().zip(previous.windows(2)).zip(&codes)
+            {
+                let (diagonal, up) = (&window[0], &window[1]);
+                let p = &priors[usize::from(code)];
+                let mut next = ZERO;
+                for lane in 0..LANES {
+                    next.m[lane] = p[lane]
+                        * (diagonal.m[lane] * match_to_match[lane]
+                            + diagonal.x[lane] * indel_to_match[lane]
+                            + diagonal.y[lane] * indel_to_match[lane]);
+                    next.x[lane] = up.m[lane] * match_to_insertion[lane]
+                        + up.x[lane] * insertion_to_insertion[lane];
+                    next.y[lane] = left.m[lane] * match_to_deletion[lane]
+                        + left.y[lane] * deletion_to_deletion[lane];
+                }
+                *cell = next;
+                left = next;
+            }
+            std::mem::swap(&mut previous, &mut current);
+            for (lane, &r) in chunk.iter().enumerate() {
+                if reads[r].bases.len() == i + 1 {
+                    out[r] = answer(&previous, lane);
+                }
+            }
+        }
+    }
+}
