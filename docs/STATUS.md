@@ -208,7 +208,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `CountBasesInReference` | reference-utility | oracle-backed | reference-walker | 1 | t=2, 19/19 rows (100%) | 0.007 / 0.167 |
 | `CountBasesSpark` | locus-walker | oracle-backed | spark-walkers | 1 | t=2, 19/19 rows (100%) | not measured |
 | `CountFalsePositives` | variant-walker | oracle-backed | count-false-positives | 1 | t=2, 24/24 rows (100%) | 0.002 / 0.052 |
-| `CountReads` | locus-walker | oracle-backed | count-reads-and-bases, count-reads-plumbing, counting-walkers, filter-resolution, interval-arguments, read-walker-refusals, tool-argument-declarations, tool-argument-enums, usage-text | 9 | t=2, 21/21 rows (100%) | 0.002 / 0.054 |
+| `CountReads` | locus-walker | oracle-backed | count-reads-and-bases, count-reads-plumbing, counting-walkers, filter-resolution, interval-arguments, read-walker-refusals, tool-argument-declarations, tool-argument-enums | 8 | t=2, 21/21 rows (100%) | 0.002 / 0.054 |
 | `CountReadsSpark` | locus-walker | oracle-backed | spark-walkers | 1 | t=2, 19/19 rows (100%) | not measured |
 | `CountVariants` | variant-walker | oracle-backed | count-variants, interval-arguments, sequence-dictionary-validation, tool-argument-declarations, tool-argument-enums | 5 | t=2, 23/23 rows (100%) | 0.002 / 0.053 |
 | `CountVariantsSpark` | variant-walker | oracle-backed | spark-walkers | 1 | t=2, 19/19 rows (100%) | not measured |
@@ -248,7 +248,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `GatherNormalArtifactData` | unclassified | oracle-backed | mutect-gathers | 1 | t=2, 6/6 rows (100%) | 0.002 / 0.066 |
 | `GatherPileupSummaries` | unclassified | oracle-backed | mutect-gathers | 1 | t=2, 6/6 rows (100%) | 0.003 / 0.080 |
 | `GatherTranches` | unclassified | oracle-backed | gather-tranches | 1 | t=2, 8/8 rows (100%) | 0.002 / 0.060 |
-| `GatherVcfsCloud` | variant-transform | oracle-backed | gather-vcfs, tool-argument-declarations, tool-argument-enums, usage-text | 4 | t=2, 11/11 rows (100%) | 0.003 / 0.088 |
+| `GatherVcfsCloud` | variant-transform | oracle-backed | gather-vcfs, tool-argument-declarations, tool-argument-enums | 3 | t=2, 11/11 rows (100%) | 0.003 / 0.088 |
 | `GeneExpressionEvaluation` | locus-walker | oracle-backed | gene-expression-evaluation | 1 | t=2, 19/19 rows (100%) | 0.002 / 0.058 |
 | `GenomicsDBImport` | assembly-caller | oracle-backed | genomicsdb-import | 1 | t=2, 19/19 rows (100%) | not measured |
 | `GenotypeGVCFs` | assembly-caller | oracle-backed | genotype-gvcfs | 1 | t=2, 34/34 rows (100%) | 0.004 / 0.074 |
@@ -265,7 +265,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `HaplotypeCaller` | assembly-caller | oracle-backed | callers-all-annotations, hc-allele-filtering, hc-allele-graphs, hc-alleles, hc-bamout, hc-contamination, hc-debug-outputs, hc-disable-optimizations, hc-dragen-end-to-end, hc-end-to-end, hc-error-correction, hc-flow, hc-gvcf-end-to-end, hc-linked-graph, hc-pdhmm, hc-pedigree, hc-pileup, hc-ploidy, hc-resources | 19 | t=2, 54/54 rows (100%) | 0.025 / 0.315 |
 | `HaplotypeCallerSpark` | assembly-caller | oracle-backed | spark-walkers | 1 | t=2, 47/47 rows (100%) | not measured |
 | `HtsgetReader` | unclassified | oracle-backed | htsget-reader | 1 | t=2, 11/11 rows (100%), **1 distinct output** | not measured |
-| `IndexFeatureFile` | unclassified | oracle-backed | index-feature-file, tool-argument-declarations, tool-argument-enums, usage-text | 4 | t=2, 8/8 rows (100%) | 0.002 / 0.063 |
+| `IndexFeatureFile` | unclassified | oracle-backed | index-feature-file, tool-argument-declarations, tool-argument-enums | 3 | t=2, 8/8 rows (100%) | 0.002 / 0.063 |
 | `JointGermlineCNVSegmentation` | sv-caller | oracle-backed | joint-germline-cnv-segmentation | 1 | t=2, 22/22 rows (100%) | 0.003 / 0.065 |
 | `LearnReadOrientationModel` | assembly-caller | oracle-backed | learn-read-orientation-model | 1 | t=2, 12/12 rows (100%) | 0.023 / 0.302 |
 | `LeftAlignAndTrimVariants` | variant-transform | oracle-backed | left-align-and-trim-variants | 1 | t=2, 22/22 rows (100%) | 0.004 / 0.091 |

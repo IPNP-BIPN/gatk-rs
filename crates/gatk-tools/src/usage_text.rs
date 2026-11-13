@@ -19,7 +19,8 @@ pub const DESCRIPTION_COLUMN_WIDTH: usize = 90;
 /// The heading of the block a plugin descriptor's conditional arguments sit under.
 pub const CONDITIONAL_TITLE_PREFIX: &str = "Conditional Arguments for ";
 
-/// The three section titles, in the order they are printed.
+/// The section titles, in the order they are printed.
+pub const POSITIONAL_TITLE: &str = "Positional Arguments:";
 pub const REQUIRED_TITLE: &str = "Required Arguments:";
 pub const OPTIONAL_TITLE: &str = "Optional Arguments:";
 pub const ADVANCED_TITLE: &str = "Advanced Arguments:";
@@ -117,6 +118,14 @@ pub fn name_column(entry: &Entry) -> String {
 /// trailer sentence sits behind) leaves one of the two at the end of the line it broke on. That is
 /// why a required argument's first line ends `format ` and its second reads `Required. `.
 pub fn wrap(text: &str, width: usize) -> Vec<String> {
+    // A line break in the description starts a paragraph of its own, which is how a `ClpEnum`'s
+    // constants come out one per line.
+    text.split('\n')
+        .flat_map(|paragraph| wrap_paragraph(paragraph, width))
+        .collect()
+}
+
+fn wrap_paragraph(text: &str, width: usize) -> Vec<String> {
     let mut lines = Vec::new();
     let mut line = String::new();
     for token in text.split(' ') {
@@ -227,38 +236,71 @@ pub fn entry_for(declaration: &Declaration, all: &[Declaration]) -> Entry {
     entry_for_in(declaration, all, None)
 }
 
-/// The same, for a tool whose plugin descriptor answers for two of its arguments.
+/// The same, for a named tool, whose plugin descriptors answer for some of its arguments and
+/// which may deprecate some.
 ///
 /// `--read-filter` and `--disable-read-filter` are `String`s with no enum behind them, and their
 /// possible values come from the descriptor: the whole catalogue for the first and the TOOL'S OWN
-/// DEFAULTS for the second. Both are measured in the `read-filter-catalogue` golden, and a tool
-/// that builds no descriptor has neither argument to print.
+/// DEFAULTS for the second; the annotation descriptor's three the same way. All of them, and the
+/// deprecations, are measured per tool in the `usage-text` golden.
 pub fn entry_for_in(declaration: &Declaration, all: &[Declaration], tool: Option<&str>) -> Entry {
-    let descriptor_values: Option<&[&str]> = tool.and_then(|tool| {
-        crate::plugin_ownership::default_filters(tool).and_then(|defaults| {
-            match declaration.long_name {
-                "read-filter" => Some(&crate::plugin_ownership::CATALOGUE[..]),
-                "disable-read-filter" => Some(defaults),
-                _ => None,
-            }
-        })
-    });
-    let constants = descriptor_values.or_else(|| {
-        crate::tool_declarations::enum_type(declaration.type_class).map(|type_| type_.constants)
-    });
+    // `--read-filter`, `--disable-read-filter`, `--annotation` and their siblings are `String`s
+    // with no enum behind them: their possible values are the descriptor's, per tool.
+    let descriptor_values = tool
+        .and_then(|tool| crate::tool_declarations::descriptor_values(tool, declaration.long_name));
+    let enum_type = crate::tool_declarations::enum_type(declaration.type_class);
+    let values = match (descriptor_values, enum_type) {
+        // A descriptor that lists nothing, `--annotations-to-exclude` with no default annotation,
+        // allows anything, and says so with no trailing space.
+        (Some([]), _) => Some("Any value allowed".to_string()),
+        (Some(values), _) => possible_values(declaration.type_name, Some(values)),
+        // A `ClpEnum` documents each constant, and prints one per line with no `Possible values`
+        // and no trailing space, so a mutex sentence follows the last constant on its line.
+        (None, Some(type_)) if !type_.docs.is_empty() => Some(
+            type_
+                .docs
+                .iter()
+                .map(|(constant, doc)| format!("{constant} ({doc})"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        ),
+        (None, type_) => possible_values(declaration.type_name, type_.map(|type_| type_.constants)),
+    };
     let mutex: Vec<(&str, &str)> = declaration
         .mutex
         .iter()
         .map(|name| {
             let other = all.iter().find(|other| other.long_name == *name);
-            let short = other.and_then(short_name).unwrap_or("");
+            // Unlike the name column, the sentence prints the short name even when it repeats
+            // the long one: `DO_NOT_VALIDATE_FILTERED (do-not-validate-filtered-records)`.
+            let short = match other.map(|other| (other.aliases, other.long_name)) {
+                Some(([short, long], name)) if *long == name => *short,
+                _ => "",
+            };
             // The sentence names the target's FIELD, which is the long name only where the field
-            // is named after the argument. The four that are not are a read filter's, and they are
-            // measured in `mutex-target-names`.
+            // is named after the argument.
             let printed = crate::plugin_ownership::mutex_field_name(name).unwrap_or(name);
             (printed, short)
         })
         .collect();
+    // A deprecated argument says so in front of its documentation, with the reason; which ones
+    // are is the tool's and is measured in the usage golden.
+    let doc = match tool
+        .and_then(|tool| crate::tool_declarations::deprecation(tool, declaration.long_name))
+    {
+        Some(detail) => format!(
+            "This argument is DEPRECATED ({detail}). {}",
+            declaration.doc
+        ),
+        None => declaration.doc.to_string(),
+    };
+    // `COMPRESSION_LEVEL`'s default is htsjdk's `Defaults.COMPRESSION_LEVEL`, read from
+    // `samjdk.compression_level`, which `Main` has set from `GATKConfig` before the tool exists.
+    let default = match declaration.long_name {
+        "COMPRESSION_LEVEL" => crate::gatk_config::default(crate::gatk_config::COMPRESSION_LEVEL),
+        _ => declaration.default,
+    }
+    .unwrap_or("null");
     Entry {
         long_name: declaration.long_name.to_string(),
         short_names: short_name(declaration)
@@ -267,11 +309,11 @@ pub fn entry_for_in(declaration: &Declaration, all: &[Declaration], tool: Option
             .collect(),
         type_name: declaration.type_name.to_string(),
         description: description(
-            declaration.doc,
+            &doc,
             declaration.collection,
             !declaration.required,
-            declaration.default.unwrap_or("null"),
-            possible_values(declaration.type_name, constants).as_deref(),
+            default,
+            values.as_deref(),
             &mutex,
         ),
     }
@@ -335,10 +377,39 @@ pub struct Conditional {
 
 /// The conditional blocks a tool's controlled arguments fall into, one group per plugin.
 ///
-/// The groups are in the ownership table's order, which is the golden's: by the owner's class name
-/// and then by the argument's long name. A plugin that declares no argument has no group, which is
-/// why fifty-six filters make twenty-two blocks.
+/// One block per descriptor, `annotation` before `readFilter`. The read filters' groups are in the
+/// ownership table's order, which is the golden's: by the owner's class name and then by the
+/// argument's long name. A plugin that declares no argument has no group, which is why fifty-six
+/// filters make twenty-two blocks.
 pub fn conditionals(list: &[Declaration]) -> Vec<Conditional> {
+    let mut blocks = Vec::new();
+    // The descriptors are in the order of their names, which puts `annotation` before
+    // `readFilter`. An annotation's arguments are grouped by the annotation that declares them,
+    // the annotations and the arguments under each in the order of their names.
+    let mut annotations: Vec<(&str, &Declaration)> = list
+        .iter()
+        .filter(|declaration| !declaration.hidden)
+        .filter_map(|declaration| {
+            crate::plugin_ownership::annotation_owner(declaration.long_name)
+                .filter(|_| declaration.controlled_by == Some(ANNOTATION_DESCRIPTOR_CLASS))
+                .map(|owner| (owner, declaration))
+        })
+        .collect();
+    annotations.sort_by(|a, b| (a.0, a.1.long_name).cmp(&(b.0, b.1.long_name)));
+    let mut groups: Vec<(String, Vec<Entry>)> = Vec::new();
+    for (owner, declaration) in annotations {
+        let rendered = entry_for(declaration, list);
+        match groups.last_mut() {
+            Some((last, entries)) if last == owner => entries.push(rendered),
+            _ => groups.push((owner.to_string(), vec![rendered])),
+        }
+    }
+    if !groups.is_empty() {
+        blocks.push(Conditional {
+            descriptor: ANNOTATION_DESCRIPTOR.to_string(),
+            groups,
+        });
+    }
     let mut groups: Vec<(String, Vec<Entry>)> = Vec::new();
     for entry in crate::plugin_ownership::OWNERSHIP.iter() {
         let Some(declaration) = list
@@ -347,7 +418,8 @@ pub fn conditionals(list: &[Declaration]) -> Vec<Conditional> {
         else {
             continue;
         };
-        if declaration.hidden {
+        // `VariantEval` declares a `--sample` of its own, which is not `SampleReadFilter`'s.
+        if declaration.hidden || declaration.controlled_by.is_none() {
             continue;
         }
         let rendered = entry_for(declaration, list);
@@ -356,14 +428,18 @@ pub fn conditionals(list: &[Declaration]) -> Vec<Conditional> {
             None => groups.push((entry.owner.to_string(), vec![rendered])),
         }
     }
-    if groups.is_empty() {
-        return Vec::new();
+    if !groups.is_empty() {
+        blocks.push(Conditional {
+            descriptor: crate::plugin_ownership::DESCRIPTOR.to_string(),
+            groups,
+        });
     }
-    vec![Conditional {
-        descriptor: crate::plugin_ownership::DESCRIPTOR.to_string(),
-        groups,
-    }]
+    blocks
 }
+
+/// The annotation descriptor, by the class a declaration names and the name a heading prints.
+pub const ANNOTATION_DESCRIPTOR_CLASS: &str = "GATKAnnotationPluginDescriptor";
+pub const ANNOTATION_DESCRIPTOR: &str = "annotation";
 
 /// `Valid only if "<plugin>" is specified:`, the line each group opens on.
 pub fn conditional_predicate(plugin: &str) -> String {
@@ -387,8 +463,41 @@ pub fn render(
     advanced: &[Entry],
     conditional: &[Conditional],
 ) -> String {
+    render_with_positional(
+        tool,
+        summary,
+        version,
+        maturity,
+        &[],
+        required,
+        optional,
+        advanced,
+        conditional,
+    )
+}
+
+/// The same, with the positional arguments a tool declares in a section of their own, first.
+///
+/// The header's second blank line opens the first of the positional and the required sections;
+/// a tool with neither goes straight from one blank line to its optional arguments.
+#[allow(clippy::too_many_arguments)]
+pub fn render_with_positional(
+    tool: &str,
+    summary: &str,
+    version: &str,
+    maturity: Maturity,
+    positional: &[Entry],
+    required: &[Entry],
+    optional: &[Entry],
+    advanced: &[Entry],
+    conditional: &[Conditional],
+) -> String {
     let mut lines = header(tool, summary, version, maturity);
+    if positional.is_empty() && required.is_empty() {
+        lines.pop();
+    }
     for (title, entries) in [
+        (POSITIONAL_TITLE, positional),
         (REQUIRED_TITLE, required),
         (OPTIONAL_TITLE, optional),
         (ADVANCED_TITLE, advanced),

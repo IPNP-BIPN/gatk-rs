@@ -463,9 +463,16 @@ copy, which is a worse position than reading the source rather than a better one
 - [ ] `reporting-walker` (56 tools)
 - [ ] reference, interval, coverage, CNV/SV and genotyping-array utilities
 - [ ] full parameter coverage per tool (covering arrays plus fuzzing), not the default path
-- [ ] the **usage text** (`CommandLineArgumentParser.usage`), moved here from G1.8: it is help
+- [x] the **usage text** (`CommandLineArgumentParser.usage`), moved here from G1.8: it is help
       output rather than the argument model, no covering-array vector reads it, and it is printed
-      by the tools rather than by the layer underneath them
+      by the tools rather than by the layer underneath them. `usage-text` now measures what `Main`
+      writes to stderr for `<Tool> --help` and `-h` for all 312 tools it names, and `gatk-rs <Tool>
+      --help` prints it byte for byte for the 208 the port declares and runs (191 GATK, 17
+      Picard). Beside each text the golden records what it is composed from and no declaration
+      carries: each descriptor's possible values per tool, the mutex targets' field names and the
+      deprecations; the annotation descriptor's block, the BETA/EXPERIMENTAL banners, documented
+      enums and `CompareBaseQualities`' positional section are composed. The 104 Picard tools the
+      port neither declares nor runs are measured and not compared
 
 ---
 
