@@ -193,37 +193,3 @@ pub fn read_likelihood_given_haplotype_log10(
     }
     jmath::math::log10(total) - initial_condition_log10()
 }
-
-/// The reads fgkl's tables give this port's answer for: non-empty, and no quality past
-/// `MAX_QUAL`, which fgkl clamps where [`match_to_match_prob`] and [`prior`] compute the value.
-pub fn fgkl_computes(read: &fgkl_pairhmm::ReadRef<'_>) -> bool {
-    !read.is_empty()
-        && [read.quals, read.ins_gop, read.del_gop, read.gcp]
-            .iter()
-            .all(|quals| quals.iter().all(|&q| usize::from(q) <= MAX_QUAL))
-}
-
-/// [`read_likelihood_given_haplotype_log10`] for every read of `reads` against one haplotype, by
-/// fgkl's kernel, into `out` in read order. Every read must pass [`fgkl_computes`] and the
-/// haplotype must not be empty.
-///
-/// Scalar, double and without suffix sharing, one haplotype per call: the only configuration that
-/// gave the oracle's bits on every pair measured (docs/fgkl-and-lorikeet.md). The SIMD backends
-/// fuse multiply-adds, and several haplotypes per call rescale the prefix they share.
-pub fn fgkl_likelihoods_given_haplotype_log10(
-    haplotype: &[u8],
-    reads: &[fgkl_pairhmm::ReadRef<'_>],
-    out: &mut [f64],
-) {
-    static HMM: std::sync::LazyLock<fgkl_pairhmm::PairHmm> = std::sync::LazyLock::new(|| {
-        fgkl_pairhmm::PairHmm::new(&fgkl_pairhmm::Config {
-            precision: fgkl_pairhmm::Precision::Double,
-            backend: Some(fgkl_pairhmm::Backend::Scalar),
-            double_fallback: true,
-            share_suffixes: false,
-        })
-        .expect("the scalar backend runs everywhere")
-    });
-    HMM.compute_log10_likelihoods(reads, &[haplotype], out)
-        .expect("reads and haplotype checked by the caller");
-}

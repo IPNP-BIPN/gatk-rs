@@ -507,11 +507,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
-name = "fgkl-pairhmm"
-version = "0.2.0"
-source = "git+https://github.com/IPNP-BIPN/fgkl?rev=417c476c9edbf1d01d67be282b0ae94661c7bda7#417c476c9edbf1d01d67be282b0ae94661c7bda7"
-
-[[package]]
 name = "fgkl-smithwaterman"
 version = "0.2.0"
 source = "git+https://github.com/fulcrumgenomics/fgkl?rev=b31732cf33220231f2cdf3eea6b99cb40258045c#b31732cf33220231f2cdf3eea6b99cb40258045c"
@@ -628,7 +623,6 @@ dependencies = [
 name = "gatk-engine"
 version = "0.1.0"
 dependencies = [
- "fgkl-pairhmm",
  "fgkl-smithwaterman",
  "flate2",
  "gatk-corpus",

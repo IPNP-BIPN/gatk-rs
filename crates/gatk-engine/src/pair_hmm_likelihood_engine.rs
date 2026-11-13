@@ -34,10 +34,7 @@ use crate::allele_list::{AlleleList, SampleList};
 use crate::clipping::{hard_clip_soft_clipped_bases, ClipError};
 use crate::dragstr::{dragstr_impute, DragstrError, DragstrParams};
 use crate::haplotype::Haplotype;
-use crate::pair_hmm::{
-    fast_round, fgkl_computes, fgkl_likelihoods_given_haplotype_log10,
-    read_likelihood_given_haplotype_log10,
-};
+use crate::pair_hmm::{fast_round, read_likelihood_given_haplotype_log10};
 use crate::read_utils::{base_deletion_qualities, base_insertion_qualities};
 use crate::tsv_table::java_double_to_string;
 
@@ -299,74 +296,30 @@ impl PairHmmLikelihoodEngine {
             let processed = self.modify_read_qualities(sample_reads)?;
             Self::print_processed(&processed, sample_reads, None);
             let mut sample_values = vec![vec![0.0; processed.len()]; haplotypes.len()];
-            // `inputScoreImputator.impute(read)`: the read's own indel qualities and a constant
-            // continuation penalty, or the DRAGstr penalties of its sequence. A failure stops at
-            // that read, after the reads before it have been computed and written.
-            let mut imputed = Vec::with_capacity(processed.len());
-            let mut impute_error = None;
-            for read in &processed {
-                match &self.arguments.dragstr_params {
-                    Some(params) => match dragstr_impute(params, &read.bases) {
-                        Ok((gop, gcp)) => imputed.push((gop.clone(), gop, gcp)),
-                        Err(error) => {
-                            impute_error = Some(LikelihoodEngineError::Dragstr(error));
-                            break;
-                        }
-                    },
-                    None => imputed.push((
+            for (r, read) in processed.iter().enumerate() {
+                // `inputScoreImputator.impute(read)`: the read's own indel qualities and a constant
+                // continuation penalty, or the DRAGstr penalties of its sequence.
+                let (insertion, deletion, gap_continuation) = match &self.arguments.dragstr_params {
+                    Some(params) => {
+                        let (gop, gcp) = dragstr_impute(params, &read.bases)
+                            .map_err(LikelihoodEngineError::Dragstr)?;
+                        (gop.clone(), gop, gcp)
+                    }
+                    None => (
                         read.insertion_qualities.clone(),
                         read.deletion_qualities.clone(),
                         vec![self.arguments.gap_continuation_penalty as u8; read.bases.len()],
-                    )),
-                }
-            }
-            let read_refs: Vec<fgkl_pairhmm::ReadRef<'_>> = processed
-                .iter()
-                .zip(&imputed)
-                .map(
-                    |(read, (insertion, deletion, gap_continuation))| fgkl_pairhmm::ReadRef {
-                        bases: &read.bases,
-                        quals: &read.qualities,
-                        ins_gop: insertion,
-                        del_gop: deletion,
-                        gcp: gap_continuation,
-                    },
-                )
-                .collect();
-            // fgkl takes one haplotype per call with every read it computes; the port's kernel
-            // takes the rest.
-            let by_fgkl: Vec<bool> = read_refs.iter().map(fgkl_computes).collect();
-            let fgkl_reads: Vec<fgkl_pairhmm::ReadRef<'_>> = read_refs
-                .iter()
-                .zip(&by_fgkl)
-                .filter(|(_, &fast)| fast)
-                .map(|(read, _)| *read)
-                .collect();
-            let mut fgkl_values = vec![0.0; fgkl_reads.len()];
-            for (a, haplotype) in haplotype_bases.iter().enumerate() {
-                if haplotype.is_empty() || fgkl_reads.is_empty() {
-                    continue;
-                }
-                fgkl_likelihoods_given_haplotype_log10(haplotype, &fgkl_reads, &mut fgkl_values);
-                let mut values = fgkl_values.iter();
-                for (r, _) in by_fgkl.iter().enumerate().filter(|(_, &fast)| fast) {
-                    sample_values[a][r] = *values.next().expect("one value per fgkl read");
-                }
-            }
-            for (r, read) in read_refs.iter().enumerate() {
+                    ),
+                };
                 for (a, haplotype) in haplotype_bases.iter().enumerate() {
-                    let likelihood = if by_fgkl[r] && !haplotype.is_empty() {
-                        sample_values[a][r]
-                    } else {
-                        read_likelihood_given_haplotype_log10(
-                            haplotype,
-                            read.bases,
-                            read.quals,
-                            read.ins_gop,
-                            read.del_gop,
-                            read.gcp,
-                        )
-                    };
+                    let likelihood = read_likelihood_given_haplotype_log10(
+                        haplotype,
+                        &read.bases,
+                        &read.qualities,
+                        &insertion,
+                        &deletion,
+                        &gap_continuation,
+                    );
                     if likelihood > 0.0 || likelihood.is_nan() {
                         return Err(LikelihoodEngineError::InvalidLikelihood(likelihood));
                     }
@@ -379,11 +332,11 @@ impl PairHmmLikelihoodEngine {
                         let line = format!(
                             "\n{} {} {} {} {} {} {}",
                             String::from_utf8_lossy(haplotype),
-                            String::from_utf8_lossy(read.bases),
-                            fastq(read.quals),
-                            fastq(read.ins_gop),
-                            fastq(read.del_gop),
-                            fastq(read.gcp),
+                            String::from_utf8_lossy(&read.bases),
+                            fastq(&read.qualities),
+                            fastq(&insertion),
+                            fastq(&deletion),
+                            fastq(&gap_continuation),
                             java_scientific(likelihood),
                         );
                         if let Ok(mut file) = std::fs::OpenOptions::new().append(true).open(path) {
@@ -391,9 +344,6 @@ impl PairHmmLikelihoodEngine {
                         }
                     }
                 }
-            }
-            if let Some(error) = impute_error {
-                return Err(error);
             }
             hmm_qualities.push(processed.into_iter().map(|p| p.qualities).collect());
             values.push(sample_values);

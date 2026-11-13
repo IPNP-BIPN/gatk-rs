@@ -15,10 +15,9 @@
 
 use gatk_corpus as corpus;
 use gatk_engine::pair_hmm::{
-    approximate_log10_sum_log10, fgkl_computes, fgkl_likelihoods_given_haplotype_log10,
-    initial_condition, initial_condition_log10, match_to_match_prob, prior, qual_to_trans_probs,
-    read_likelihood_given_haplotype_log10, INDEL_TO_MATCH, MATCH_TO_DELETION, MATCH_TO_INSERTION,
-    MATCH_TO_MATCH, TRISTATE_CORRECTION,
+    approximate_log10_sum_log10, initial_condition, initial_condition_log10, match_to_match_prob,
+    prior, qual_to_trans_probs, read_likelihood_given_haplotype_log10, INDEL_TO_MATCH,
+    MATCH_TO_DELETION, MATCH_TO_INSERTION, MATCH_TO_MATCH, TRISTATE_CORRECTION,
 };
 
 fn golden() -> String {
@@ -189,30 +188,6 @@ fn every_likelihood_matches_the_golden() {
             "{}: {ours} against the golden's own",
             pair.label
         );
-    }
-}
-
-/// fgkl's kernel, which the callers use, gives the same twelve bits.
-#[test]
-fn fgkl_matches_the_golden() {
-    let text = golden();
-    for pair in &PAIRS {
-        let read = pair.read.as_bytes();
-        let quals = vec![pair.base; read.len()];
-        let insertions = vec![pair.insertion; read.len()];
-        let deletions = vec![pair.deletion; read.len()];
-        let gaps = vec![pair.gap; read.len()];
-        let reads = [fgkl_pairhmm::ReadRef {
-            bases: read,
-            quals: &quals,
-            ins_gop: &insertions,
-            del_gop: &deletions,
-            gcp: &gaps,
-        }];
-        assert!(fgkl_computes(&reads[0]));
-        let mut out = [0.0];
-        fgkl_likelihoods_given_haplotype_log10(pair.haplotype.as_bytes(), &reads, &mut out);
-        assert_eq!(out[0].to_bits(), bits(&text, pair.label), "{}", pair.label);
     }
 }
 

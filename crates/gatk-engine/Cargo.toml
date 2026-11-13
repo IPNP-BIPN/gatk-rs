@@ -6,7 +6,6 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-fgkl-pairhmm.workspace = true
 fgkl-smithwaterman.workspace = true
 htsjdk-bam.workspace = true
 htsjdk-bgzf.workspace = true
