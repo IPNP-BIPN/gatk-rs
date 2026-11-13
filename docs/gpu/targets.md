@@ -85,9 +85,13 @@ the 10% #1021 set as the bar for a GPU path. So it is recorded instead of built,
 filters. It becomes worth measuring on a host with few cores and a large GPU, or if record decoding
 also moves to the device.
 
-One CPU-side finding on the way: inside the tool, inflate costs 3.6 s of CPU (4.91 - 1.26 s), where
-`htsjdk-bgzf`'s `inflate_speed` example inflates the same bytes in about 0.95 s. That gap is the
-reader's, not the decoder's, and belongs to Milestone S.
+One CPU-side finding on the way: inside the tool, inflate costs 2.6 s of CPU where one pass of
+`decompress_all` over the same bytes costs 0.87 s. The inflater is not the cause: a read walker
+inflates the whole BAM three times, once to sniff it at startup (`read_walker_startup_with` in
+`crates/gatk-cli/src/runners.rs`), once for the header (`ReadsDataSource::open_unindexed` in
+`crates/gatk-engine/src/reads.rs`) and once for the records (`iter_all`), and 3 x 0.87 s is the
+gap. Inflating once and handing the buffer on belongs to Milestone S; it also shrinks the bound
+above, since a single pass is a third of what stored blocks saved here.
 
 **Deflate** must reproduce GKL's choice per level (zlib's for most, ISA-L igzip's at level 2, which
 is GATKConfig's), so a kernel would transliterate each matcher, one block per thread. Deflate is
