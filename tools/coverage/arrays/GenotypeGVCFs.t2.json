@@ -3,9 +3,9 @@
   "origin": "gatk",
   "t": 2,
   "numeric_policy": "strict",
-  "arguments_total": 81,
+  "arguments_total": 83,
   "arguments_in_array": 47,
-  "arguments_excluded": 34,
+  "arguments_excluded": 36,
   "excluded": [
     {
       "argument": "--add-output-vcf-command-line",
@@ -155,6 +155,13 @@
       "source": "fixture"
     },
     {
+      "argument": "--output-cram-version",
+      "type": "String",
+      "reason": "only one value available (default)",
+      "held_at": "3.1",
+      "source": "default"
+    },
+    {
       "argument": "--pedigree",
       "type": "GATKPath",
       "reason": "excluded by the repository: no value is declared for this tool",
@@ -202,6 +209,13 @@
       "reason": "excluded by the repository: changes the usage text only",
       "held_at": null,
       "source": "none"
+    },
+    {
+      "argument": "--somatic-quality-threshold",
+      "type": "double",
+      "reason": "only one value available (default)",
+      "held_at": "3.0",
+      "source": "default"
     },
     {
       "argument": "--tumor-lod-to-emit",

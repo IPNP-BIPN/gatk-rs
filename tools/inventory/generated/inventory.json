@@ -1,28 +1,28 @@
 {
   "reference": {
     "gatk": {
-      "tag": "4.6.2.0",
-      "sha": "76edc75c26504da94bbaee66584e107e76ee15de"
+      "tag": "4.7.0.0",
+      "sha": "0cde69eed30339f5978cbb1ac6e5cf3662f9e1f8"
     },
     "picard": {
-      "tag": "3.4.0",
-      "sha": "6c3f23bc2e0d229d75e9f9b04200396bcd067526"
+      "tag": "3.5.0",
+      "sha": "a53d7ebd975606b79ca0eaddb7bf93f555ec4db4"
     },
     "htsjdk": {
-      "tag": "4.2.0",
-      "sha": "4cc010022ac038fb30f26e6f9717fabff3e808c1"
+      "tag": "5.0.0",
+      "sha": "fb578787cd8aa2f5b3900b0f3150993d5841e013"
     }
   },
-  "generated_from": "/private/tmp/claude-501/-Users-benjamin-GATK/ff6ad6db-872e-4789-942c-8ee35b023b20/scratchpad/gatk-4.6.2.0/gatkdoc",
+  "generated_from": "/private/tmp/claude-501/-Users-benjamin--claude-spares-spare-FrUW6h/2a238f02-c0aa-4a05-818f-95c44d38e000/scratchpad/gatkdoc-out/gatkdoc",
   "counts": {
-    "tools": 311,
+    "tools": 312,
     "read_filters": 55,
     "annotations": 54,
     "metrics_definitions": 57,
-    "arguments": 13130,
+    "arguments": 13363,
     "skipped": 0,
-    "undocumented_tools": 43,
-    "cli_reported_tools": 311
+    "undocumented_tools": 42,
+    "cli_reported_tools": 312
   },
   "tools": [
     {
@@ -485,6 +485,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -1336,6 +1348,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-statistics",
           "short": "-os",
           "type": "GATKPath",
@@ -2114,6 +2138,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -2646,6 +2682,18 @@
           "required": false,
           "kind": "optional",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -3382,6 +3430,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -3914,6 +3974,18 @@
           "required": false,
           "kind": "optional",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -4726,6 +4798,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -4940,6 +5024,18 @@
           "required": false,
           "kind": "advanced",
           "default": "0.002",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--activeregion-alt-multiplier",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "1.0",
           "enum_members": null,
           "min": "-Infinity",
           "max": "Infinity",
@@ -5474,6 +5570,22 @@
           "kind": "optional",
           "default": "false",
           "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--dragen-pd-pair-hmm-implementation",
+          "short": "-pdPpairHMM",
+          "type": "Implementation",
+          "required": false,
+          "kind": "advanced",
+          "default": "FASTEST_AVAILABLE",
+          "enum_members": [
+            "LOGLESS_CACHING",
+            "AVX_LOGLESS_CACHING",
+            "FASTEST_AVAILABLE"
+          ],
           "min": null,
           "max": null,
           "deprecated": false
@@ -6298,6 +6410,63 @@
           "deprecated": false
         },
         {
+          "name": "--native-dragen-pd-pair-avx-level",
+          "short": null,
+          "type": "AVXLevel",
+          "required": false,
+          "kind": "advanced",
+          "default": "FASTEST_AVAILABLE",
+          "enum_members": [
+            "FASTEST_AVAILABLE",
+            "SCALAR",
+            "AVX2",
+            "AVX512"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--native-dragen-pd-pair-hmm-threads",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "8",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--native-dragen-pd-pair-memory-limit",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "1024",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--native-dragen-pd-pair-open-mp-settings",
+          "short": null,
+          "type": "OpenMPSetting",
+          "required": false,
+          "kind": "advanced",
+          "default": "FASTEST_AVAILABLE",
+          "enum_members": [
+            "FASTEST_AVAILABLE",
+            "ENABLE",
+            "DISABLE"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--native-pair-hmm-threads",
           "short": null,
           "type": "int",
@@ -6364,6 +6533,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -7672,6 +7853,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -8282,6 +8475,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--pair-padding",
           "short": "-pp",
           "type": "int",
@@ -8868,6 +9073,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -9400,6 +9617,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -9944,6 +10173,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -10476,6 +10717,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -11074,6 +11327,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -11894,6 +12159,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -12441,6 +12718,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -16010,6 +16299,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-denoised-copy-ratios",
           "short": null,
           "type": "File",
@@ -16614,6 +16915,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -17866,6 +18179,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--parallel",
           "short": null,
           "type": "boolean",
@@ -18512,6 +18837,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -19059,6 +19396,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -19739,6 +20088,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -20465,6 +20826,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -21575,6 +21948,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-interval-list-to-file",
           "short": null,
           "type": "String",
@@ -22167,6 +22552,18 @@
           "required": false,
           "kind": "optional",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -22803,6 +23200,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -23347,6 +23756,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -24077,6 +24498,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -24901,6 +25334,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-hdfs-directory",
           "short": null,
           "type": "String",
@@ -25469,6 +25914,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -26150,6 +26607,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-map",
           "short": null,
           "type": "String",
@@ -26760,6 +27229,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -27844,6 +28325,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-shard-tmp-dir",
           "short": null,
           "type": "String",
@@ -28631,6 +29124,18 @@
           "enum_members": null,
           "min": "-Infinity",
           "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
           "deprecated": false
         },
         {
@@ -29556,6 +30061,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-shard-tmp-dir",
           "short": null,
           "type": "String",
@@ -30256,6 +30773,18 @@
           "required": false,
           "kind": "optional",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -31052,6 +31581,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-shard-tmp-dir",
           "short": null,
           "type": "String",
@@ -31766,6 +32307,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-shard-tmp-dir",
           "short": null,
           "type": "String",
@@ -32364,6 +32917,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-shard-tmp-dir",
           "short": null,
           "type": "String",
@@ -32902,6 +33467,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-shard-tmp-dir",
           "short": null,
           "type": "String",
@@ -33398,6 +33975,18 @@
           "required": false,
           "kind": "optional",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -33942,6 +34531,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-shard-tmp-dir",
           "short": null,
           "type": "String",
@@ -34474,6 +35075,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -35018,6 +35631,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-shard-tmp-dir",
           "short": null,
           "type": "String",
@@ -35304,6 +35929,18 @@
           "required": false,
           "kind": "advanced",
           "default": "0.002",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--activeregion-alt-multiplier",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "1.0",
           "enum_members": null,
           "min": "-Infinity",
           "max": "Infinity",
@@ -35934,6 +36571,22 @@
           "kind": "optional",
           "default": "false",
           "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--dragen-pd-pair-hmm-implementation",
+          "short": "-pdPpairHMM",
+          "type": "Implementation",
+          "required": false,
+          "kind": "advanced",
+          "default": "FASTEST_AVAILABLE",
+          "enum_members": [
+            "LOGLESS_CACHING",
+            "AVX_LOGLESS_CACHING",
+            "FASTEST_AVAILABLE"
+          ],
           "min": null,
           "max": null,
           "deprecated": false
@@ -36958,6 +37611,63 @@
           "deprecated": false
         },
         {
+          "name": "--native-dragen-pd-pair-avx-level",
+          "short": null,
+          "type": "AVXLevel",
+          "required": false,
+          "kind": "advanced",
+          "default": "FASTEST_AVAILABLE",
+          "enum_members": [
+            "FASTEST_AVAILABLE",
+            "SCALAR",
+            "AVX2",
+            "AVX512"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--native-dragen-pd-pair-hmm-threads",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "8",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--native-dragen-pd-pair-memory-limit",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "1024",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--native-dragen-pd-pair-open-mp-settings",
+          "short": null,
+          "type": "OpenMPSetting",
+          "required": false,
+          "kind": "advanced",
+          "default": "FASTEST_AVAILABLE",
+          "enum_members": [
+            "FASTEST_AVAILABLE",
+            "ENABLE",
+            "DISABLE"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--native-pair-hmm-threads",
           "short": null,
           "type": "int",
@@ -37036,6 +37746,18 @@
           "required": false,
           "kind": "optional",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -38224,6 +38946,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-shard-tmp-dir",
           "short": null,
           "type": "String",
@@ -38795,6 +39529,18 @@
           "required": false,
           "kind": "optional",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -39398,6 +40144,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -40010,6 +40768,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-shard-tmp-dir",
           "short": null,
           "type": "String",
@@ -40542,6 +41312,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -41116,6 +41898,18 @@
           "required": false,
           "kind": "optional",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -41702,6 +42496,18 @@
           "required": false,
           "kind": "optional",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -42780,6 +43586,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-shard-tmp-dir",
           "short": null,
           "type": "String",
@@ -43594,6 +44412,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-shard-tmp-dir",
           "short": null,
           "type": "String",
@@ -44234,6 +45064,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -44898,6 +45740,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-shard-tmp-dir",
           "short": null,
           "type": "String",
@@ -45454,6 +46308,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -46424,6 +47290,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-shard-tmp-dir",
           "short": null,
           "type": "String",
@@ -47172,6 +48050,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -48130,6 +49020,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-shard-tmp-dir",
           "short": null,
           "type": "String",
@@ -48860,6 +49762,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-shard-tmp-dir",
           "short": null,
           "type": "String",
@@ -49550,6 +50464,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-shard-tmp-dir",
           "short": null,
           "type": "String",
@@ -50172,6 +51098,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-shard-tmp-dir",
           "short": null,
           "type": "String",
@@ -50397,6 +51335,592 @@
           "type": "boolean",
           "required": false,
           "kind": "optional",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--verbosity",
+          "short": "-verbosity",
+          "type": "LogLevel",
+          "required": false,
+          "kind": "common",
+          "default": "INFO",
+          "enum_members": [
+            "ERROR",
+            "WARNING",
+            "INFO",
+            "DEBUG"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--version",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "optional",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        }
+      ],
+      "kind": "tool",
+      "documented": true
+    },
+    {
+      "name": "ConvertCountsToDepthFile",
+      "display_name": "ConvertCountsToDepthFile",
+      "origin": "gatk",
+      "package": "org.broadinstitute.hellbender.tools.sv",
+      "class": "org.broadinstitute.hellbender.tools.sv.ConvertCountsToDepthFile",
+      "group": "Structural Variant Discovery",
+      "archetype": "sv-caller",
+      "spark": false,
+      "beta": false,
+      "experimental": true,
+      "deprecated": false,
+      "summary": "Converts *.counts.tsv to .rd.txt",
+      "branch": "tool/gatk-convertcountstodepthfile",
+      "arguments": [
+        {
+          "name": "--add-output-sam-program-record",
+          "short": "-add-output-sam-program-record",
+          "type": "boolean",
+          "required": false,
+          "kind": "common",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--add-output-vcf-command-line",
+          "short": "-add-output-vcf-command-line",
+          "type": "boolean",
+          "required": false,
+          "kind": "common",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--arguments_file",
+          "short": null,
+          "type": "List[File]",
+          "required": false,
+          "kind": "optional",
+          "default": "[]",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--cloud-index-prefetch-buffer",
+          "short": "-CIPB",
+          "type": "int",
+          "required": false,
+          "kind": "optional",
+          "default": "-1",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--cloud-prefetch-buffer",
+          "short": "-CPB",
+          "type": "int",
+          "required": false,
+          "kind": "optional",
+          "default": "40",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--compression-level",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "optional",
+          "default": "4",
+          "enum_members": null,
+          "min": "0.0",
+          "max": "9.0",
+          "deprecated": false
+        },
+        {
+          "name": "--counts-filename",
+          "short": "-F",
+          "type": "FeatureInput[SimpleCount]",
+          "required": true,
+          "kind": "required",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--create-output-bam-index",
+          "short": "-OBI",
+          "type": "boolean",
+          "required": false,
+          "kind": "common",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--create-output-bam-md5",
+          "short": "-OBM",
+          "type": "boolean",
+          "required": false,
+          "kind": "common",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--create-output-variant-index",
+          "short": "-OVI",
+          "type": "boolean",
+          "required": false,
+          "kind": "common",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--create-output-variant-md5",
+          "short": "-OVM",
+          "type": "boolean",
+          "required": false,
+          "kind": "common",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--disable-bam-index-caching",
+          "short": "-DBIC",
+          "type": "boolean",
+          "required": false,
+          "kind": "optional",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--disable-read-filter",
+          "short": "-DF",
+          "type": "List[String]",
+          "required": false,
+          "kind": "common",
+          "default": "[]",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--disable-sequence-dictionary-validation",
+          "short": "-disable-sequence-dictionary-validation",
+          "type": "boolean",
+          "required": false,
+          "kind": "optional",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--disable-tool-default-read-filters",
+          "short": "-disable-tool-default-read-filters",
+          "type": "boolean",
+          "required": false,
+          "kind": "common",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--exclude-intervals",
+          "short": "-XL",
+          "type": "List[String]",
+          "required": false,
+          "kind": "common",
+          "default": "[]",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--gatk-config-file",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--gcs-max-retries",
+          "short": "-gcs-retries",
+          "type": "int",
+          "required": false,
+          "kind": "optional",
+          "default": "20",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--gcs-project-for-requester-pays",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "optional",
+          "default": "\"\"",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--help",
+          "short": "-h",
+          "type": "boolean",
+          "required": false,
+          "kind": "optional",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--input",
+          "short": "-I",
+          "type": "List[GATKPath]",
+          "required": false,
+          "kind": "common",
+          "default": "[]",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--interval-exclusion-padding",
+          "short": "-ixp",
+          "type": "int",
+          "required": false,
+          "kind": "common",
+          "default": "0",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--interval-merging-rule",
+          "short": "-imr",
+          "type": "IntervalMergingRule",
+          "required": false,
+          "kind": "optional",
+          "default": "ALL",
+          "enum_members": [
+            "ALL",
+            "OVERLAPPING_ONLY"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--interval-padding",
+          "short": "-ip",
+          "type": "int",
+          "required": false,
+          "kind": "common",
+          "default": "0",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--interval-set-rule",
+          "short": "-isr",
+          "type": "IntervalSetRule",
+          "required": false,
+          "kind": "common",
+          "default": "UNION",
+          "enum_members": [
+            "UNION",
+            "INTERSECTION"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--intervals",
+          "short": "-L",
+          "type": "List[String]",
+          "required": false,
+          "kind": "optional",
+          "default": "[]",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--inverted-read-filter",
+          "short": "-XRF",
+          "type": "List[String]",
+          "required": false,
+          "kind": "common",
+          "default": "[]",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--lenient",
+          "short": "-LE",
+          "type": "boolean",
+          "required": false,
+          "kind": "common",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--max-variants-per-shard",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "common",
+          "default": "0",
+          "enum_members": null,
+          "min": "0.0",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--output",
+          "short": "-O",
+          "type": "GATKPath",
+          "required": true,
+          "kind": "required",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--QUIET",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "common",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--read-filter",
+          "short": "-RF",
+          "type": "List[String]",
+          "required": false,
+          "kind": "common",
+          "default": "[]",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--read-index",
+          "short": "-read-index",
+          "type": "List[GATKPath]",
+          "required": false,
+          "kind": "common",
+          "default": "[]",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--read-validation-stringency",
+          "short": "-VS",
+          "type": "ValidationStringency",
+          "required": false,
+          "kind": "common",
+          "default": "SILENT",
+          "enum_members": [
+            "STRICT",
+            "LENIENT",
+            "SILENT"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--reference",
+          "short": "-R",
+          "type": "GATKPath",
+          "required": false,
+          "kind": "optional",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--sample-name",
+          "short": "-n",
+          "type": "String",
+          "required": false,
+          "kind": "optional",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--seconds-between-progress-updates",
+          "short": "-seconds-between-progress-updates",
+          "type": "double",
+          "required": false,
+          "kind": "common",
+          "default": "10.0",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--sequence-dictionary",
+          "short": "-sequence-dictionary",
+          "type": "GATKPath",
+          "required": false,
+          "kind": "common",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--showHidden",
+          "short": "-showHidden",
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--sites-only-vcf-output",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "optional",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--tmp-dir",
+          "short": null,
+          "type": "GATKPath",
+          "required": false,
+          "kind": "common",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--use-jdk-deflater",
+          "short": "-jdk-deflater",
+          "type": "boolean",
+          "required": false,
+          "kind": "common",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--use-jdk-inflater",
+          "short": "-jdk-inflater",
+          "type": "boolean",
+          "required": false,
+          "kind": "common",
           "default": "false",
           "enum_members": null,
           "min": null,
@@ -50794,6 +52318,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-file-list",
           "short": "-O",
           "type": "String",
@@ -50876,6 +52412,592 @@
           "required": false,
           "kind": "optional",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--seconds-between-progress-updates",
+          "short": "-seconds-between-progress-updates",
+          "type": "double",
+          "required": false,
+          "kind": "common",
+          "default": "10.0",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--sequence-dictionary",
+          "short": "-sequence-dictionary",
+          "type": "GATKPath",
+          "required": false,
+          "kind": "common",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--showHidden",
+          "short": "-showHidden",
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--sites-only-vcf-output",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "optional",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--tmp-dir",
+          "short": null,
+          "type": "GATKPath",
+          "required": false,
+          "kind": "common",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--use-jdk-deflater",
+          "short": "-jdk-deflater",
+          "type": "boolean",
+          "required": false,
+          "kind": "common",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--use-jdk-inflater",
+          "short": "-jdk-inflater",
+          "type": "boolean",
+          "required": false,
+          "kind": "common",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--verbosity",
+          "short": "-verbosity",
+          "type": "LogLevel",
+          "required": false,
+          "kind": "common",
+          "default": "INFO",
+          "enum_members": [
+            "ERROR",
+            "WARNING",
+            "INFO",
+            "DEBUG"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--version",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "optional",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        }
+      ],
+      "kind": "tool",
+      "documented": true
+    },
+    {
+      "name": "PrintSVEvidence",
+      "display_name": "PrintSVEvidence",
+      "origin": "gatk",
+      "package": "org.broadinstitute.hellbender.tools.sv",
+      "class": "org.broadinstitute.hellbender.tools.sv.PrintSVEvidence",
+      "group": "Structural Variant Discovery",
+      "archetype": "sv-caller",
+      "spark": false,
+      "beta": false,
+      "experimental": true,
+      "deprecated": false,
+      "summary": "Merges SV evidence records.",
+      "branch": "tool/gatk-printsvevidence",
+      "arguments": [
+        {
+          "name": "--add-output-sam-program-record",
+          "short": "-add-output-sam-program-record",
+          "type": "boolean",
+          "required": false,
+          "kind": "common",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--add-output-vcf-command-line",
+          "short": "-add-output-vcf-command-line",
+          "type": "boolean",
+          "required": false,
+          "kind": "common",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--arguments_file",
+          "short": null,
+          "type": "List[File]",
+          "required": false,
+          "kind": "optional",
+          "default": "[]",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--cloud-index-prefetch-buffer",
+          "short": "-CIPB",
+          "type": "int",
+          "required": false,
+          "kind": "optional",
+          "default": "-1",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--cloud-prefetch-buffer",
+          "short": "-CPB",
+          "type": "int",
+          "required": false,
+          "kind": "optional",
+          "default": "40",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--compression-level",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "optional",
+          "default": "4",
+          "enum_members": null,
+          "min": "0.0",
+          "max": "9.0",
+          "deprecated": false
+        },
+        {
+          "name": "--create-output-bam-index",
+          "short": "-OBI",
+          "type": "boolean",
+          "required": false,
+          "kind": "common",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--create-output-bam-md5",
+          "short": "-OBM",
+          "type": "boolean",
+          "required": false,
+          "kind": "common",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--create-output-variant-index",
+          "short": "-OVI",
+          "type": "boolean",
+          "required": false,
+          "kind": "common",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--create-output-variant-md5",
+          "short": "-OVM",
+          "type": "boolean",
+          "required": false,
+          "kind": "common",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--disable-bam-index-caching",
+          "short": "-DBIC",
+          "type": "boolean",
+          "required": false,
+          "kind": "optional",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--disable-read-filter",
+          "short": "-DF",
+          "type": "List[String]",
+          "required": false,
+          "kind": "common",
+          "default": "[]",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--disable-sequence-dictionary-validation",
+          "short": "-disable-sequence-dictionary-validation",
+          "type": "boolean",
+          "required": false,
+          "kind": "optional",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--disable-tool-default-read-filters",
+          "short": "-disable-tool-default-read-filters",
+          "type": "boolean",
+          "required": false,
+          "kind": "common",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--evidence-file",
+          "short": "-F",
+          "type": "List[FeatureInput[SVFeature]]",
+          "required": true,
+          "kind": "required",
+          "default": "[]",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--exclude-intervals",
+          "short": "-XL",
+          "type": "List[String]",
+          "required": false,
+          "kind": "common",
+          "default": "[]",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--gatk-config-file",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--gcs-max-retries",
+          "short": "-gcs-retries",
+          "type": "int",
+          "required": false,
+          "kind": "optional",
+          "default": "20",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--gcs-project-for-requester-pays",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "optional",
+          "default": "\"\"",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--help",
+          "short": "-h",
+          "type": "boolean",
+          "required": false,
+          "kind": "optional",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--input",
+          "short": "-I",
+          "type": "List[GATKPath]",
+          "required": false,
+          "kind": "common",
+          "default": "[]",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--interval-exclusion-padding",
+          "short": "-ixp",
+          "type": "int",
+          "required": false,
+          "kind": "common",
+          "default": "0",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--interval-merging-rule",
+          "short": "-imr",
+          "type": "IntervalMergingRule",
+          "required": false,
+          "kind": "optional",
+          "default": "ALL",
+          "enum_members": [
+            "ALL",
+            "OVERLAPPING_ONLY"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--interval-padding",
+          "short": "-ip",
+          "type": "int",
+          "required": false,
+          "kind": "common",
+          "default": "0",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--interval-set-rule",
+          "short": "-isr",
+          "type": "IntervalSetRule",
+          "required": false,
+          "kind": "common",
+          "default": "UNION",
+          "enum_members": [
+            "UNION",
+            "INTERSECTION"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--intervals",
+          "short": "-L",
+          "type": "List[String]",
+          "required": false,
+          "kind": "optional",
+          "default": "[]",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--inverted-read-filter",
+          "short": "-XRF",
+          "type": "List[String]",
+          "required": false,
+          "kind": "common",
+          "default": "[]",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--lenient",
+          "short": "-LE",
+          "type": "boolean",
+          "required": false,
+          "kind": "common",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--max-variants-per-shard",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "common",
+          "default": "0",
+          "enum_members": null,
+          "min": "0.0",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--output",
+          "short": "-O",
+          "type": "GATKPath",
+          "required": true,
+          "kind": "required",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--QUIET",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "common",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--read-filter",
+          "short": "-RF",
+          "type": "List[String]",
+          "required": false,
+          "kind": "common",
+          "default": "[]",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--read-index",
+          "short": "-read-index",
+          "type": "List[GATKPath]",
+          "required": false,
+          "kind": "common",
+          "default": "[]",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--read-validation-stringency",
+          "short": "-VS",
+          "type": "ValidationStringency",
+          "required": false,
+          "kind": "common",
+          "default": "SILENT",
+          "enum_members": [
+            "STRICT",
+            "LENIENT",
+            "SILENT"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--reference",
+          "short": "-R",
+          "type": "GATKPath",
+          "required": false,
+          "kind": "optional",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--sample-names",
+          "short": null,
+          "type": "Set[String]",
+          "required": false,
+          "kind": "optional",
+          "default": "[]",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -51413,6 +53535,18 @@
           "enum_members": null,
           "min": "-Infinity",
           "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
           "deprecated": false
         },
         {
@@ -52474,6 +54608,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--pedigree",
           "short": "-ped",
           "type": "GATKPath",
@@ -53060,6 +55206,18 @@
           "required": false,
           "kind": "optional",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -54003,6 +56161,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--pedigree",
           "short": "-ped",
           "type": "GATKPath",
@@ -54148,6 +56318,18 @@
           "enum_members": null,
           "min": null,
           "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--somatic-quality-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "optional",
+          "default": "3.0",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
           "deprecated": false
         },
         {
@@ -54661,6 +56843,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -55199,6 +57393,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -55761,6 +57967,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -56365,6 +58583,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -56927,6 +59157,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -57759,6 +60001,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--preserve-qscores-less-than",
           "short": null,
           "type": "int",
@@ -58483,6 +60737,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -59531,6 +61797,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -60087,6 +62365,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -60760,6 +63050,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -61488,6 +63790,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-format",
           "short": null,
           "type": "DEPTH_OF_COVERAGE_OUTPUT_FORMAT",
@@ -62110,6 +64424,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -62654,6 +64980,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -63258,6 +65596,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -63814,6 +66164,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -64568,6 +66930,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -65471,6 +67845,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -65923,6 +68309,22 @@
           "deprecated": false
         },
         {
+          "name": "--dragen-pd-pair-hmm-implementation",
+          "short": "-pdPpairHMM",
+          "type": "Implementation",
+          "required": false,
+          "kind": "advanced",
+          "default": "FASTEST_AVAILABLE",
+          "enum_members": [
+            "LOGLESS_CACHING",
+            "AVX_LOGLESS_CACHING",
+            "FASTEST_AVAILABLE"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--dragstr-het-hom-ratio",
           "short": null,
           "type": "int",
@@ -66329,6 +68731,63 @@
           "deprecated": false
         },
         {
+          "name": "--native-dragen-pd-pair-avx-level",
+          "short": null,
+          "type": "AVXLevel",
+          "required": false,
+          "kind": "advanced",
+          "default": "FASTEST_AVAILABLE",
+          "enum_members": [
+            "FASTEST_AVAILABLE",
+            "SCALAR",
+            "AVX2",
+            "AVX512"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--native-dragen-pd-pair-hmm-threads",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "8",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--native-dragen-pd-pair-memory-limit",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "1024",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--native-dragen-pd-pair-open-mp-settings",
+          "short": null,
+          "type": "OpenMPSetting",
+          "required": false,
+          "kind": "advanced",
+          "default": "FASTEST_AVAILABLE",
+          "enum_members": [
+            "FASTEST_AVAILABLE",
+            "ENABLE",
+            "DISABLE"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--native-pair-hmm-threads",
           "short": null,
           "type": "int",
@@ -66359,6 +68818,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -67179,6 +69650,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -67984,6 +70467,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-database-name",
           "short": "-output-db",
           "type": "GATKPath",
@@ -68517,6 +71012,22 @@
           "kind": "optional",
           "default": "false",
           "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--dragen-pd-pair-hmm-implementation",
+          "short": "-pdPpairHMM",
+          "type": "Implementation",
+          "required": false,
+          "kind": "advanced",
+          "default": "FASTEST_AVAILABLE",
+          "enum_members": [
+            "LOGLESS_CACHING",
+            "AVX_LOGLESS_CACHING",
+            "FASTEST_AVAILABLE"
+          ],
           "min": null,
           "max": null,
           "deprecated": false
@@ -69084,6 +71595,63 @@
           "deprecated": false
         },
         {
+          "name": "--native-dragen-pd-pair-avx-level",
+          "short": null,
+          "type": "AVXLevel",
+          "required": false,
+          "kind": "advanced",
+          "default": "FASTEST_AVAILABLE",
+          "enum_members": [
+            "FASTEST_AVAILABLE",
+            "SCALAR",
+            "AVX2",
+            "AVX512"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--native-dragen-pd-pair-hmm-threads",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "8",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--native-dragen-pd-pair-memory-limit",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "1024",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--native-dragen-pd-pair-open-mp-settings",
+          "short": null,
+          "type": "OpenMPSetting",
+          "required": false,
+          "kind": "advanced",
+          "default": "FASTEST_AVAILABLE",
+          "enum_members": [
+            "FASTEST_AVAILABLE",
+            "ENABLE",
+            "DISABLE"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--native-pair-hmm-threads",
           "short": null,
           "type": "int",
@@ -69102,6 +71670,18 @@
           "required": false,
           "kind": "optional",
           "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -69652,6 +72232,22 @@
           "deprecated": false
         },
         {
+          "name": "--dragen-pd-pair-hmm-implementation",
+          "short": "-pdPpairHMM",
+          "type": "Implementation",
+          "required": false,
+          "kind": "advanced",
+          "default": "FASTEST_AVAILABLE",
+          "enum_members": [
+            "LOGLESS_CACHING",
+            "AVX_LOGLESS_CACHING",
+            "FASTEST_AVAILABLE"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--dragstr-het-hom-ratio",
           "short": null,
           "type": "int",
@@ -70094,6 +72690,63 @@
           "deprecated": false
         },
         {
+          "name": "--native-dragen-pd-pair-avx-level",
+          "short": null,
+          "type": "AVXLevel",
+          "required": false,
+          "kind": "advanced",
+          "default": "FASTEST_AVAILABLE",
+          "enum_members": [
+            "FASTEST_AVAILABLE",
+            "SCALAR",
+            "AVX2",
+            "AVX512"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--native-dragen-pd-pair-hmm-threads",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "8",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--native-dragen-pd-pair-memory-limit",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "1024",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--native-dragen-pd-pair-open-mp-settings",
+          "short": null,
+          "type": "OpenMPSetting",
+          "required": false,
+          "kind": "advanced",
+          "default": "FASTEST_AVAILABLE",
+          "enum_members": [
+            "FASTEST_AVAILABLE",
+            "ENABLE",
+            "DISABLE"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--native-pair-hmm-threads",
           "short": null,
           "type": "int",
@@ -70136,6 +72789,18 @@
           "required": false,
           "kind": "optional",
           "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -70464,6 +73129,18 @@
           "required": false,
           "kind": "advanced",
           "default": "0.002",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--activeregion-alt-multiplier",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "1.0",
           "enum_members": null,
           "min": "-Infinity",
           "max": "Infinity",
@@ -71046,6 +73723,22 @@
           "kind": "optional",
           "default": "false",
           "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--dragen-pd-pair-hmm-implementation",
+          "short": "-pdPpairHMM",
+          "type": "Implementation",
+          "required": false,
+          "kind": "advanced",
+          "default": "FASTEST_AVAILABLE",
+          "enum_members": [
+            "LOGLESS_CACHING",
+            "AVX_LOGLESS_CACHING",
+            "FASTEST_AVAILABLE"
+          ],
           "min": null,
           "max": null,
           "deprecated": false
@@ -71894,6 +74587,63 @@
           "deprecated": false
         },
         {
+          "name": "--native-dragen-pd-pair-avx-level",
+          "short": null,
+          "type": "AVXLevel",
+          "required": false,
+          "kind": "advanced",
+          "default": "FASTEST_AVAILABLE",
+          "enum_members": [
+            "FASTEST_AVAILABLE",
+            "SCALAR",
+            "AVX2",
+            "AVX512"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--native-dragen-pd-pair-hmm-threads",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "8",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--native-dragen-pd-pair-memory-limit",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "1024",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--native-dragen-pd-pair-open-mp-settings",
+          "short": null,
+          "type": "OpenMPSetting",
+          "required": false,
+          "kind": "advanced",
+          "default": "FASTEST_AVAILABLE",
+          "enum_members": [
+            "FASTEST_AVAILABLE",
+            "ENABLE",
+            "DISABLE"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--native-pair-hmm-threads",
           "short": null,
           "type": "int",
@@ -71948,6 +74698,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -72638,6 +75400,18 @@
           "deprecated": false
         },
         {
+          "name": "--activeregion-alt-multiplier",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "1.0",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
           "name": "--adaptive-pruning",
           "short": null,
           "type": "boolean",
@@ -73214,6 +75988,22 @@
           "kind": "optional",
           "default": "false",
           "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--dragen-pd-pair-hmm-implementation",
+          "short": "-pdPpairHMM",
+          "type": "Implementation",
+          "required": false,
+          "kind": "advanced",
+          "default": "FASTEST_AVAILABLE",
+          "enum_members": [
+            "LOGLESS_CACHING",
+            "AVX_LOGLESS_CACHING",
+            "FASTEST_AVAILABLE"
+          ],
           "min": null,
           "max": null,
           "deprecated": false
@@ -74062,6 +76852,63 @@
           "deprecated": false
         },
         {
+          "name": "--native-dragen-pd-pair-avx-level",
+          "short": null,
+          "type": "AVXLevel",
+          "required": false,
+          "kind": "advanced",
+          "default": "FASTEST_AVAILABLE",
+          "enum_members": [
+            "FASTEST_AVAILABLE",
+            "SCALAR",
+            "AVX2",
+            "AVX512"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--native-dragen-pd-pair-hmm-threads",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "8",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--native-dragen-pd-pair-memory-limit",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "1024",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--native-dragen-pd-pair-open-mp-settings",
+          "short": null,
+          "type": "OpenMPSetting",
+          "required": false,
+          "kind": "advanced",
+          "default": "FASTEST_AVAILABLE",
+          "enum_members": [
+            "FASTEST_AVAILABLE",
+            "ENABLE",
+            "DISABLE"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--native-pair-hmm-threads",
           "short": null,
           "type": "int",
@@ -74116,6 +76963,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -75232,6 +78091,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -75830,6 +78701,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -76490,6 +79373,22 @@
           "enum_members": null,
           "min": "-Infinity",
           "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--dragen-pd-pair-hmm-implementation",
+          "short": "-pdPpairHMM",
+          "type": "Implementation",
+          "required": false,
+          "kind": "advanced",
+          "default": "FASTEST_AVAILABLE",
+          "enum_members": [
+            "LOGLESS_CACHING",
+            "AVX_LOGLESS_CACHING",
+            "FASTEST_AVAILABLE"
+          ],
+          "min": null,
+          "max": null,
           "deprecated": false
         },
         {
@@ -77387,6 +80286,63 @@
           "deprecated": false
         },
         {
+          "name": "--native-dragen-pd-pair-avx-level",
+          "short": null,
+          "type": "AVXLevel",
+          "required": false,
+          "kind": "advanced",
+          "default": "FASTEST_AVAILABLE",
+          "enum_members": [
+            "FASTEST_AVAILABLE",
+            "SCALAR",
+            "AVX2",
+            "AVX512"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--native-dragen-pd-pair-hmm-threads",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "8",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--native-dragen-pd-pair-memory-limit",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "1024",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--native-dragen-pd-pair-open-mp-settings",
+          "short": null,
+          "type": "OpenMPSetting",
+          "required": false,
+          "kind": "advanced",
+          "default": "FASTEST_AVAILABLE",
+          "enum_members": [
+            "FASTEST_AVAILABLE",
+            "ENABLE",
+            "DISABLE"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--native-pair-hmm-threads",
           "short": null,
           "type": "int",
@@ -77453,6 +80409,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -78808,6 +81776,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--pcr-slippage-rate",
           "short": null,
           "type": "double",
@@ -79476,6 +82456,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--pileup",
           "short": null,
           "type": "FeatureInput[SAMPileupFeature]",
@@ -80050,6 +83042,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-insert-length",
           "short": "-output-insert-length",
           "type": "boolean",
@@ -80612,6 +83616,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -81144,6 +84160,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -82108,6 +85136,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -82780,6 +85820,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-format",
           "short": null,
           "type": "OUTPUT_FORMAT",
@@ -83415,6 +86467,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--overlap-type",
           "short": null,
           "type": "Set[String]",
@@ -84042,6 +87106,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--process-secondary-alignments",
           "short": null,
           "type": "boolean",
@@ -84661,6 +87737,18 @@
           "enum_members": null,
           "min": "0.0",
           "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
           "deprecated": false
         },
         {
@@ -85417,6 +88505,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -86264,6 +89364,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--pedigree",
           "short": "-ped",
           "type": "GATKPath",
@@ -86874,6 +89986,18 @@
           "required": false,
           "kind": "optional",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -87717,6 +90841,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--pesr-breakend-window",
           "short": null,
           "type": "int",
@@ -88075,6 +91211,18 @@
           "deprecated": false
         },
         {
+          "name": "--clustering-config",
+          "short": null,
+          "type": "GATKPath",
+          "required": false,
+          "kind": "optional",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--confidence",
           "short": "-C",
           "type": "File",
@@ -88224,18 +91372,6 @@
           "type": "boolean",
           "required": false,
           "kind": "common",
-          "default": "false",
-          "enum_members": null,
-          "min": null,
-          "max": null,
-          "deprecated": false
-        },
-        {
-          "name": "--do-not-sort",
-          "short": null,
-          "type": "boolean",
-          "required": false,
-          "kind": "optional",
           "default": "false",
           "enum_members": null,
           "min": null,
@@ -88417,6 +91553,18 @@
           "deprecated": false
         },
         {
+          "name": "--max-records-in-ram",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "optional",
+          "default": "1000",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
           "name": "--max-variants-per-shard",
           "short": null,
           "type": "int",
@@ -88483,6 +91631,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -88649,12 +91809,84 @@
           "deprecated": false
         },
         {
+          "name": "--stratify-config",
+          "short": null,
+          "type": "GATKPath",
+          "required": false,
+          "kind": "optional",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--stratify-num-breakpoint-overlaps",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "optional",
+          "default": "1",
+          "enum_members": null,
+          "min": "0.0",
+          "max": "2.0",
+          "deprecated": false
+        },
+        {
+          "name": "--stratify-num-breakpoint-overlaps-interchromosomal",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "optional",
+          "default": "1",
+          "enum_members": null,
+          "min": "1.0",
+          "max": "2.0",
+          "deprecated": false
+        },
+        {
+          "name": "--stratify-overlap-fraction",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "optional",
+          "default": "0.0",
+          "enum_members": null,
+          "min": "0.0",
+          "max": "1.0",
+          "deprecated": false
+        },
+        {
           "name": "--tmp-dir",
           "short": null,
           "type": "GATKPath",
           "required": false,
           "kind": "common",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--track-intervals",
+          "short": null,
+          "type": "List[GATKPath]",
+          "required": false,
+          "kind": "optional",
+          "default": "[]",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--track-name",
+          "short": null,
+          "type": "List[String]",
+          "required": false,
+          "kind": "optional",
+          "default": "[]",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -89093,6 +92325,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -89763,6 +93007,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -90343,6 +93599,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -90905,6 +94173,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -91515,6 +94795,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -92095,6 +95387,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -92705,6 +96009,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -93297,6 +96613,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -93925,6 +97253,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -94715,6 +98055,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--pedigree",
           "short": "-ped",
           "type": "GATKPath",
@@ -95039,6 +98391,18 @@
       "summary": "Calculate likelihood matrix for each Allele in VCF against a set of Reads limited by a set of Haplotypes",
       "branch": "tool/gatk-haplotypebasedvariantrecaller",
       "arguments": [
+        {
+          "name": "--activeregion-alt-multiplier",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "1.0",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
         {
           "name": "--adaptive-pruning",
           "short": null,
@@ -95556,6 +98920,22 @@
           "kind": "optional",
           "default": "false",
           "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--dragen-pd-pair-hmm-implementation",
+          "short": "-pdPpairHMM",
+          "type": "Implementation",
+          "required": false,
+          "kind": "advanced",
+          "default": "FASTEST_AVAILABLE",
+          "enum_members": [
+            "LOGLESS_CACHING",
+            "AVX_LOGLESS_CACHING",
+            "FASTEST_AVAILABLE"
+          ],
           "min": null,
           "max": null,
           "deprecated": false
@@ -96332,6 +99712,63 @@
           "deprecated": false
         },
         {
+          "name": "--native-dragen-pd-pair-avx-level",
+          "short": null,
+          "type": "AVXLevel",
+          "required": false,
+          "kind": "advanced",
+          "default": "FASTEST_AVAILABLE",
+          "enum_members": [
+            "FASTEST_AVAILABLE",
+            "SCALAR",
+            "AVX2",
+            "AVX512"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--native-dragen-pd-pair-hmm-threads",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "8",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--native-dragen-pd-pair-memory-limit",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "1024",
+          "enum_members": null,
+          "min": "-Infinity",
+          "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--native-dragen-pd-pair-open-mp-settings",
+          "short": null,
+          "type": "OpenMPSetting",
+          "required": false,
+          "kind": "advanced",
+          "default": "FASTEST_AVAILABLE",
+          "enum_members": [
+            "FASTEST_AVAILABLE",
+            "ENABLE",
+            "DISABLE"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--native-pair-hmm-threads",
           "short": null,
           "type": "int",
@@ -96377,6 +99814,18 @@
           "enum_members": null,
           "min": "-Infinity",
           "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
           "deprecated": false
         },
         {
@@ -97466,6 +100915,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--pedigree",
           "short": "-ped",
           "type": "GATKPath",
@@ -98136,6 +101597,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -99049,6 +102522,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -100091,6 +103576,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--pedigree",
           "short": "-ped",
           "type": "GATKPath",
@@ -100833,6 +104330,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -101446,6 +104955,18 @@
           "enum_members": null,
           "min": "0.0",
           "max": "Infinity",
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
           "deprecated": false
         },
         {
@@ -102131,6 +105652,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -102787,6 +106320,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -103433,6 +106978,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -104471,6 +108028,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--output-model",
           "short": null,
           "type": "GATKPath",
@@ -105282,6 +108851,18 @@
           "deprecated": false
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -106047,6 +109628,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -107002,8 +110595,8 @@
           "name": "--CHART_OUTPUT",
           "short": "-CHART",
           "type": "File",
-          "required": true,
-          "kind": "required",
+          "required": false,
+          "kind": "optional",
           "default": null,
           "enum_members": null,
           "min": null,
@@ -107294,8 +110887,8 @@
           "name": "--CHART_OUTPUT",
           "short": "-CHART",
           "type": "File",
-          "required": true,
-          "kind": "required",
+          "required": false,
+          "kind": "optional",
           "default": null,
           "enum_members": null,
           "min": null,
@@ -107687,8 +111280,8 @@
           "name": "--Histogram_FILE",
           "short": "-H",
           "type": "File",
-          "required": true,
-          "kind": "required",
+          "required": false,
+          "kind": "optional",
           "default": null,
           "enum_members": null,
           "min": null,
@@ -108279,6 +111872,18 @@
           "required": false,
           "kind": "optional",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--DO_NOT_CREATE_PLOTS",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "optional",
+          "default": "false",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -110397,6 +114002,18 @@
           "deprecated": false
         },
         {
+          "name": "--DO_NOT_CREATE_PLOTS",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "optional",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
           "name": "--help",
           "short": "-h",
           "type": "boolean",
@@ -111365,8 +114982,8 @@
           "name": "--CHART_OUTPUT",
           "short": "-CHART",
           "type": "File",
-          "required": true,
-          "kind": "required",
+          "required": false,
+          "kind": "optional",
           "default": null,
           "enum_members": null,
           "min": null,
@@ -112081,8 +115698,8 @@
           "name": "--CHART_OUTPUT",
           "short": "-CHART",
           "type": "File",
-          "required": true,
-          "kind": "required",
+          "required": false,
+          "kind": "optional",
           "default": null,
           "enum_members": null,
           "min": null,
@@ -112373,8 +115990,8 @@
           "name": "--CHART_OUTPUT",
           "short": "-CHART",
           "type": "File",
-          "required": true,
-          "kind": "required",
+          "required": false,
+          "kind": "optional",
           "default": null,
           "enum_members": null,
           "min": null,
@@ -131146,7 +134763,7 @@
           "type": "File",
           "required": false,
           "kind": "optional",
-          "default": "/Users/louisb/Workspace/gatk/.",
+          "default": "/build/.",
           "enum_members": null,
           "min": null,
           "max": null,
@@ -132666,7 +136283,7 @@
           "type": "Integer",
           "required": false,
           "kind": "common",
-          "default": "10258679",
+          "default": "2208465",
           "enum_members": null,
           "min": "-Infinity",
           "max": "Infinity",
@@ -142662,6 +146279,18 @@
           "enum_members": null
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "optional",
+          "min": null,
+          "max": null,
+          "deprecated": false,
+          "default": "3.1",
+          "enum_members": null
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -143854,6 +147483,18 @@
           "max": null,
           "deprecated": false,
           "default": "0",
+          "enum_members": null
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "optional",
+          "min": null,
+          "max": null,
+          "deprecated": false,
+          "default": "3.1",
           "enum_members": null
         },
         {
@@ -145059,6 +148700,18 @@
           "enum_members": null
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "optional",
+          "min": null,
+          "max": null,
+          "deprecated": false,
+          "default": "3.1",
+          "enum_members": null
+        },
+        {
           "name": "--pedigree",
           "short": "-ped",
           "type": "GATKPath",
@@ -146103,6 +149756,18 @@
           "max": null,
           "deprecated": false,
           "default": "0",
+          "enum_members": null
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "optional",
+          "min": null,
+          "max": null,
+          "deprecated": false,
+          "default": "3.1",
           "enum_members": null
         },
         {
@@ -147374,6 +151039,18 @@
           "enum_members": null
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "optional",
+          "min": null,
+          "max": null,
+          "deprecated": false,
+          "default": "3.1",
+          "enum_members": null
+        },
+        {
           "name": "--output-shard-tmp-dir",
           "short": null,
           "type": "String",
@@ -148514,6 +152191,18 @@
           "max": null,
           "deprecated": false,
           "default": "0",
+          "enum_members": null
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "optional",
+          "min": null,
+          "max": null,
+          "deprecated": false,
+          "default": "3.1",
           "enum_members": null
         },
         {
@@ -149890,6 +153579,18 @@
           "max": null,
           "deprecated": false,
           "default": "0",
+          "enum_members": null
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "optional",
+          "min": null,
+          "max": null,
+          "deprecated": false,
+          "default": "3.1",
           "enum_members": null
         },
         {
@@ -151413,6 +155114,18 @@
           "max": null,
           "deprecated": false,
           "default": "0",
+          "enum_members": null
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "optional",
+          "min": null,
+          "max": null,
+          "deprecated": false,
+          "default": "3.1",
           "enum_members": null
         },
         {
@@ -153677,6 +157390,18 @@
           "enum_members": null
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "optional",
+          "min": null,
+          "max": null,
+          "deprecated": false,
+          "default": "3.1",
+          "enum_members": null
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -154671,6 +158396,18 @@
           "max": null,
           "deprecated": false,
           "default": "0",
+          "enum_members": null
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "optional",
+          "min": null,
+          "max": null,
+          "deprecated": false,
+          "default": "3.1",
           "enum_members": null
         },
         {
@@ -157413,6 +161150,18 @@
           "enum_members": null
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "optional",
+          "min": null,
+          "max": null,
+          "deprecated": false,
+          "default": "3.1",
+          "enum_members": null
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -158708,6 +162457,18 @@
           "enum_members": null
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "optional",
+          "min": null,
+          "max": null,
+          "deprecated": false,
+          "default": "3.1",
+          "enum_members": null
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -159738,6 +163499,18 @@
           "max": null,
           "deprecated": false,
           "default": "CONTIG",
+          "enum_members": null
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "optional",
+          "min": null,
+          "max": null,
+          "deprecated": false,
+          "default": "3.1",
           "enum_members": null
         },
         {
@@ -160795,6 +164568,18 @@
           "max": null,
           "deprecated": false,
           "default": "0",
+          "enum_members": null
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "optional",
+          "min": null,
+          "max": null,
+          "deprecated": false,
+          "default": "3.1",
           "enum_members": null
         },
         {
@@ -162338,6 +166123,18 @@
           "enum_members": null
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "optional",
+          "min": null,
+          "max": null,
+          "deprecated": false,
+          "default": "3.1",
+          "enum_members": null
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -163406,1039 +167203,6 @@
       ]
     },
     {
-      "name": "PrintSVEvidence",
-      "display_name": "PrintSVEvidence",
-      "origin": "gatk",
-      "package": "org.broadinstitute.hellbender.tools.sv",
-      "class": "org.broadinstitute.hellbender.tools.sv.PrintSVEvidence",
-      "group": "Undocumented",
-      "archetype": "unclassified",
-      "spark": false,
-      "beta": false,
-      "experimental": false,
-      "deprecated": false,
-      "summary": null,
-      "branch": "tool/gatk-printsvevidence",
-      "kind": "tool",
-      "documented": false,
-      "arguments": [
-        {
-          "name": "--evidence-file",
-          "short": "-F",
-          "type": "FeatureInput",
-          "required": true,
-          "kind": "required",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        },
-        {
-          "name": "--output",
-          "short": "-O",
-          "type": "GATKPath",
-          "required": true,
-          "kind": "required",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        },
-        {
-          "name": "--add-output-sam-program-record",
-          "short": null,
-          "type": "Boolean",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "true",
-          "enum_members": [
-            "true",
-            "false"
-          ]
-        },
-        {
-          "name": "--add-output-vcf-command-line",
-          "short": null,
-          "type": "Boolean",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "true",
-          "enum_members": [
-            "true",
-            "false"
-          ]
-        },
-        {
-          "name": "--arguments_file",
-          "short": null,
-          "type": "File",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        },
-        {
-          "name": "--cloud-index-prefetch-buffer",
-          "short": "-CIPB",
-          "type": "Integer",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "-1",
-          "enum_members": null
-        },
-        {
-          "name": "--cloud-prefetch-buffer",
-          "short": "-CPB",
-          "type": "Integer",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "40",
-          "enum_members": null
-        },
-        {
-          "name": "--compression-level",
-          "short": null,
-          "type": "Integer",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "4",
-          "enum_members": null
-        },
-        {
-          "name": "--create-output-bam-index",
-          "short": "-OBI",
-          "type": "Boolean",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "true",
-          "enum_members": [
-            "true",
-            "false"
-          ]
-        },
-        {
-          "name": "--create-output-bam-md5",
-          "short": "-OBM",
-          "type": "Boolean",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "false",
-          "enum_members": [
-            "true",
-            "false"
-          ]
-        },
-        {
-          "name": "--create-output-variant-index",
-          "short": "-OVI",
-          "type": "Boolean",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "true",
-          "enum_members": [
-            "true",
-            "false"
-          ]
-        },
-        {
-          "name": "--create-output-variant-md5",
-          "short": "-OVM",
-          "type": "Boolean",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "false",
-          "enum_members": [
-            "true",
-            "false"
-          ]
-        },
-        {
-          "name": "--disable-bam-index-caching",
-          "short": "-DBIC",
-          "type": "Boolean",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "false",
-          "enum_members": [
-            "true",
-            "false"
-          ]
-        },
-        {
-          "name": "--disable-read-filter",
-          "short": "-DF",
-          "type": "String",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": [
-            "WellformedReadFilter"
-          ]
-        },
-        {
-          "name": "--disable-sequence-dictionary-validation",
-          "short": null,
-          "type": "Boolean",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "false",
-          "enum_members": [
-            "true",
-            "false"
-          ]
-        },
-        {
-          "name": "--exclude-intervals",
-          "short": "-XL",
-          "type": "String",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        },
-        {
-          "name": "--gatk-config-file",
-          "short": null,
-          "type": "String",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        },
-        {
-          "name": "--gcs-max-retries",
-          "short": "-gcs-retries",
-          "type": "Integer",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "20",
-          "enum_members": null
-        },
-        {
-          "name": "--gcs-project-for-requester-pays",
-          "short": null,
-          "type": "String",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        },
-        {
-          "name": "--help",
-          "short": "-h",
-          "type": "Boolean",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "false",
-          "enum_members": [
-            "true",
-            "false"
-          ]
-        },
-        {
-          "name": "--input",
-          "short": "-I",
-          "type": "GATKPath",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        },
-        {
-          "name": "--interval-exclusion-padding",
-          "short": "-ixp",
-          "type": "Integer",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "0",
-          "enum_members": null
-        },
-        {
-          "name": "--interval-merging-rule",
-          "short": "-imr",
-          "type": "IntervalMergingRule",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "ALL",
-          "enum_members": [
-            "ALL",
-            "OVERLAPPING_ONLY"
-          ]
-        },
-        {
-          "name": "--interval-padding",
-          "short": "-ip",
-          "type": "Integer",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "0",
-          "enum_members": null
-        },
-        {
-          "name": "--interval-set-rule",
-          "short": "-isr",
-          "type": "IntervalSetRule",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "UNION",
-          "enum_members": [
-            "UNION",
-            "INTERSECTION"
-          ]
-        },
-        {
-          "name": "--intervals",
-          "short": "-L",
-          "type": "String",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        },
-        {
-          "name": "--inverted-read-filter",
-          "short": "-XRF",
-          "type": "String",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        },
-        {
-          "name": "--lenient",
-          "short": "-LE",
-          "type": "Boolean",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "false",
-          "enum_members": [
-            "true",
-            "false"
-          ]
-        },
-        {
-          "name": "--max-variants-per-shard",
-          "short": null,
-          "type": "Integer",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "0",
-          "enum_members": null
-        },
-        {
-          "name": "--QUIET",
-          "short": null,
-          "type": "Boolean",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "false",
-          "enum_members": [
-            "true",
-            "false"
-          ]
-        },
-        {
-          "name": "--read-filter",
-          "short": "-RF",
-          "type": "String",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": [
-            "AlignmentAgreesWithHeaderReadFilter",
-            "AllowAllReadsReadFilter",
-            "AmbiguousBaseReadFilter",
-            "CigarContainsNoNOperator",
-            "ExcessiveEndClippedReadFilter",
-            "FirstOfPairReadFilter",
-            "FlowBasedTPAttributeSymetricReadFilter",
-            "FlowBasedTPAttributeValidReadFilter",
-            "FragmentLengthReadFilter",
-            "GoodCigarReadFilter",
-            "HasReadGroupReadFilter",
-            "HmerQualitySymetricReadFilter",
-            "IntervalOverlapReadFilter",
-            "JexlExpressionReadTagValueFilter",
-            "LibraryReadFilter",
-            "MappedReadFilter",
-            "MappingQualityAvailableReadFilter",
-            "MappingQualityNotZeroReadFilter",
-            "MappingQualityReadFilter",
-            "MatchingBasesAndQualsReadFilter",
-            "MateDifferentStrandReadFilter",
-            "MateDistantReadFilter",
-            "MateOnSameContigOrNoMappedMateReadFilter",
-            "MateUnmappedAndUnmappedReadFilter",
-            "MetricsReadFilter",
-            "NonChimericOriginalAlignmentReadFilter",
-            "NonZeroFragmentLengthReadFilter",
-            "NonZeroReferenceLengthAlignmentReadFilter",
-            "NotDuplicateReadFilter",
-            "NotOpticalDuplicateReadFilter",
-            "NotProperlyPairedReadFilter",
-            "NotSecondaryAlignmentReadFilter",
-            "NotSupplementaryAlignmentReadFilter",
-            "OverclippedReadFilter",
-            "PairedReadFilter",
-            "PassesVendorQualityCheckReadFilter",
-            "PlatformReadFilter",
-            "PlatformUnitReadFilter",
-            "PrimaryLineReadFilter",
-            "ProperlyPairedReadFilter",
-            "ReadGroupBlackListReadFilter",
-            "ReadGroupHasFlowOrderReadFilter",
-            "ReadGroupReadFilter",
-            "ReadLengthEqualsCigarLengthReadFilter",
-            "ReadLengthReadFilter",
-            "ReadNameReadFilter",
-            "ReadStrandFilter",
-            "ReadTagValueFilter",
-            "SampleReadFilter",
-            "SecondOfPairReadFilter",
-            "SeqIsStoredReadFilter",
-            "SoftClippedReadFilter",
-            "ValidAlignmentEndReadFilter",
-            "ValidAlignmentStartReadFilter",
-            "WellformedFlowBasedReadFilter",
-            "WellformedReadFilter"
-          ]
-        },
-        {
-          "name": "--read-index",
-          "short": null,
-          "type": "GATKPath",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        },
-        {
-          "name": "--read-validation-stringency",
-          "short": "-VS",
-          "type": "ValidationStringency",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "SILENT",
-          "enum_members": [
-            "STRICT",
-            "LENIENT",
-            "SILENT"
-          ]
-        },
-        {
-          "name": "--reference",
-          "short": "-R",
-          "type": "GATKPath",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        },
-        {
-          "name": "--sample-names",
-          "short": null,
-          "type": "String",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        },
-        {
-          "name": "--seconds-between-progress-updates",
-          "short": null,
-          "type": "Double",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "10.0",
-          "enum_members": null
-        },
-        {
-          "name": "--sequence-dictionary",
-          "short": null,
-          "type": "GATKPath",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        },
-        {
-          "name": "--sites-only-vcf-output",
-          "short": null,
-          "type": "Boolean",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "false",
-          "enum_members": [
-            "true",
-            "false"
-          ]
-        },
-        {
-          "name": "--tmp-dir",
-          "short": null,
-          "type": "GATKPath",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        },
-        {
-          "name": "--use-jdk-deflater",
-          "short": "-jdk-deflater",
-          "type": "Boolean",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "false",
-          "enum_members": [
-            "true",
-            "false"
-          ]
-        },
-        {
-          "name": "--use-jdk-inflater",
-          "short": "-jdk-inflater",
-          "type": "Boolean",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "false",
-          "enum_members": [
-            "true",
-            "false"
-          ]
-        },
-        {
-          "name": "--verbosity",
-          "short": null,
-          "type": "LogLevel",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "INFO",
-          "enum_members": [
-            "ERROR",
-            "WARNING",
-            "INFO",
-            "DEBUG"
-          ]
-        },
-        {
-          "name": "--version",
-          "short": null,
-          "type": "Boolean",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "false",
-          "enum_members": [
-            "true",
-            "false"
-          ]
-        },
-        {
-          "name": "--disable-tool-default-read-filters",
-          "short": null,
-          "type": "Boolean",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "false",
-          "enum_members": [
-            "true",
-            "false"
-          ]
-        },
-        {
-          "name": "--showHidden",
-          "short": null,
-          "type": "Boolean",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "false",
-          "enum_members": [
-            "true",
-            "false"
-          ]
-        },
-        {
-          "name": "--ambig-filter-bases",
-          "short": null,
-          "type": "Integer",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        },
-        {
-          "name": "--ambig-filter-frac",
-          "short": null,
-          "type": "Double",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "0.05",
-          "enum_members": null
-        },
-        {
-          "name": "--max-clipped-bases",
-          "short": null,
-          "type": "Integer",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "1000",
-          "enum_members": null
-        },
-        {
-          "name": "--read-filter-max-hmer",
-          "short": null,
-          "type": "Integer",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "12",
-          "enum_members": null
-        },
-        {
-          "name": "--max-fragment-length",
-          "short": null,
-          "type": "Integer",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "1000000",
-          "enum_members": null
-        },
-        {
-          "name": "--min-fragment-length",
-          "short": null,
-          "type": "Integer",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "0",
-          "enum_members": null
-        },
-        {
-          "name": "--keep-intervals",
-          "short": null,
-          "type": "String",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        },
-        {
-          "name": "--read-filter-expression",
-          "short": null,
-          "type": "String",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        },
-        {
-          "name": "--library",
-          "short": null,
-          "type": "String",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        },
-        {
-          "name": "--maximum-mapping-quality",
-          "short": null,
-          "type": "Integer",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        },
-        {
-          "name": "--minimum-mapping-quality",
-          "short": null,
-          "type": "Integer",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "10",
-          "enum_members": null
-        },
-        {
-          "name": "--mate-too-distant-length",
-          "short": null,
-          "type": "Integer",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "1000",
-          "enum_members": null
-        },
-        {
-          "name": "--dont-require-soft-clips-both-ends",
-          "short": null,
-          "type": "Boolean",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "false",
-          "enum_members": [
-            "true",
-            "false"
-          ]
-        },
-        {
-          "name": "--filter-too-short",
-          "short": null,
-          "type": "Integer",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "30",
-          "enum_members": null
-        },
-        {
-          "name": "--platform-filter-name",
-          "short": null,
-          "type": "String",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        },
-        {
-          "name": "--black-listed-lanes",
-          "short": null,
-          "type": "String",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        },
-        {
-          "name": "--read-group-black-list",
-          "short": null,
-          "type": "String",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        },
-        {
-          "name": "--keep-read-group",
-          "short": null,
-          "type": "String",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        },
-        {
-          "name": "--max-read-length",
-          "short": null,
-          "type": "Integer",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        },
-        {
-          "name": "--min-read-length",
-          "short": null,
-          "type": "Integer",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "1",
-          "enum_members": null
-        },
-        {
-          "name": "--read-name",
-          "short": null,
-          "type": "String",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        },
-        {
-          "name": "--keep-reverse-strand-only",
-          "short": null,
-          "type": "Boolean",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": [
-            "true",
-            "false"
-          ]
-        },
-        {
-          "name": "--read-filter-tag",
-          "short": null,
-          "type": "String",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        },
-        {
-          "name": "--read-filter-tag-comp",
-          "short": null,
-          "type": "Float",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "0.0",
-          "enum_members": null
-        },
-        {
-          "name": "--read-filter-tag-op",
-          "short": null,
-          "type": "Operator",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": "EQUAL",
-          "enum_members": [
-            "LESS",
-            "LESS_OR_EQUAL",
-            "GREATER",
-            "GREATER_OR_EQUAL",
-            "EQUAL",
-            "NOT_EQUAL"
-          ]
-        },
-        {
-          "name": "--sample",
-          "short": null,
-          "type": "String",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        },
-        {
-          "name": "--max-soft-clipped-leading-trailing-ratio",
-          "short": null,
-          "type": "Double",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        },
-        {
-          "name": "--max-soft-clipped-ratio",
-          "short": null,
-          "type": "Double",
-          "required": false,
-          "kind": "optional",
-          "min": null,
-          "max": null,
-          "deprecated": false,
-          "default": null,
-          "enum_members": null
-        }
-      ]
-    },
-    {
       "name": "ReferenceBlockConcordance",
       "display_name": "ReferenceBlockConcordance",
       "origin": "gatk",
@@ -164875,6 +167639,18 @@
           "max": null,
           "deprecated": false,
           "default": "0",
+          "enum_members": null
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "optional",
+          "min": null,
+          "max": null,
+          "deprecated": false,
+          "default": "3.1",
           "enum_members": null
         },
         {
@@ -167027,6 +169803,18 @@
           "enum_members": null
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "optional",
+          "min": null,
+          "max": null,
+          "deprecated": false,
+          "default": "3.1",
+          "enum_members": null
+        },
+        {
           "name": "--QUIET",
           "short": null,
           "type": "Boolean",
@@ -168096,6 +170884,18 @@
           "max": null,
           "deprecated": false,
           "default": "0",
+          "enum_members": null
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "optional",
+          "min": null,
+          "max": null,
+          "deprecated": false,
+          "default": "3.1",
           "enum_members": null
         },
         {
@@ -169585,6 +172385,18 @@
           ]
         },
         {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "optional",
+          "min": null,
+          "max": null,
+          "deprecated": false,
+          "default": "3.1",
+          "enum_members": null
+        },
+        {
           "name": "--pedigree",
           "short": "-ped",
           "type": "GATKPath",
@@ -171033,6 +173845,18 @@
           "max": null,
           "deprecated": false,
           "default": "10",
+          "enum_members": null
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "optional",
+          "min": null,
+          "max": null,
+          "deprecated": false,
+          "default": "3.1",
           "enum_members": null
         },
         {
@@ -174348,6 +177172,18 @@
           "required": true,
           "kind": "required",
           "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--output-cram-version",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "common",
+          "default": "3.1",
           "enum_members": null,
           "min": null,
           "max": null,

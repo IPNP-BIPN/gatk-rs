@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Hashes of what the knobs of gcnv_frozen_env.sh are meant to pin, to see each knob take effect.
 
-Run twice inside broadinstitute/gatk:4.6.2.0, with and without the knob, and compare the lines.
+Run twice inside broadinstitute/gatk:4.7.0.0, with and without the knob, and compare the lines.
 libm: glibc's exp, log, pow, log1p, expm1 through ctypes; numpy's own ufuncs; MKL through numpy's
 matmul (libblas.so.3 is MKL) and through a pytensor function compiled with the session's flags.
 """

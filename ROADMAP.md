@@ -1161,14 +1161,29 @@ here, IPNP-BIPN/picard-rs#107). The boxes below are what it said while it was op
 
 ## Milestone X: the four hard problems
 
-- [ ] **Spark** (39 tools): establish bit-identity against the `--spark-master local[1]`
-      single-partition oracle first, then prove any parallel path byte-equal to it in CI
-- [ ] **ML inference** (CNNScoreVariants, NVScoreVariants, relatives): reproduce the exact
+- [x] **Spark** (39 tools): establish bit-identity against the `--spark-master local[1]`
+      single-partition oracle first, then prove any parallel path byte-equal to it in CI.
+      Thirty-seven tools go through Main at `local[1]` in suite `spark-walkers`, and the last two,
+      FindBreakpointEvidenceSpark and StructuralVariationDiscoveryPipelineSpark, in `sv-partitions`
+      on several partitions (#1403). The only parallel path is bwa-mem4's pool, and job
+      `spark-threads` compares every Spark tool's bytes at one thread and at four (#1405).
+      CreateReadCountPanelOfNormals' Gramian folds in arrival order even at `local[1]`, so suite
+      `create-read-count-panel-rank` holds its count and its values above the noise, not the bits
+      (`docs/a-rank-is-not-a-byte.md`). Its solvers are F2J's own, bit for bit in that fold
+      order: `dgesdd` up to 128 samples in suite `f2j-dgesdd`, and ARPACK's `symmetricEigs`,
+      local and distributed, in suite `create-read-count-panel-arpack` (#1405)
+- [x] **ML inference** (CNNScoreVariants, NVScoreVariants, relatives): reproduce the exact
       kernels and accumulation order, validated layer by layer against dumped intermediate
       tensors, weights pinned by hash, quarantined and reported as bio-identical if a model
-      proves intractable
-- [ ] **CRAM**, if not closed under H
-- [ ] **GKL-exact deflate**, if not closed under H
+      proves intractable. CNNScoreVariants is gone from 4.6.2.0
+      (`docs/the-ml-surface-cannot-be-bit-identical.md`). NVScoreVariants runs both models
+      without torch, weights pinned by SHA-256, its printed scores and VCFs byte-identical on an
+      AVX-512 runner in suite `nvscorevariants` (#1406); its bits past the dense layers move with
+      the reference's own threads and batch size, so only the printed score is claimed.
+      TrainVariantAnnotationsModel and ScoreVariantAnnotations' isolation forest runs natively in
+      suite `vets-isolation-forest` (#1404)
+- [x] **CRAM**, closed under H.3
+- [x] **GKL-exact deflate**, closed under H
 
 ---
 
@@ -1305,22 +1320,51 @@ the CPU path that already exists, and no bit-identity claim may weaken to buy a 
 - [x] the golden audit: every committed golden is declared, every declared golden exists, and a
       keyed suite whose golden collapses is refused
 - [x] the provenance guard (decision 0014), running in all three repositories
-- [~] covering arrays generated **and run** per tool. Two tools are measured against both the
-      reference and the port on every CI run (`AddOATag` 0/9, `CollectAlignmentSummaryMetrics`
-      0/16 at t=2), with the corpus recording each side of a mismatching row and the dashboard
-      printing the fraction. Zero is the honest figure for binaries written for the throughput
-      benchmark; what remains is the other 42 tools with a suite, and a port binary to run each
-      array against
-- [~] the coverage-guided differential fuzzer (running in picard-rs CI, seeded from the arrays;
-      not yet in gatk-rs or htsjdk-rs)
-- [~] determinism gates: same input twice, different `-Xmx` / `TMPDIR` / `LC_ALL`, two clean
-      builds (running in picard-rs; not yet in the other two)
-- [ ] per-run provenance (input hashes, reference tags, toolchain, container digest, GKL provider
-      state)
-- [ ] per-tool validation reports (inputs, records, byte-equal file count, argument coverage, t
-      level, fuzzer branch coverage, quarantined fields)
-- [ ] the reference version moves to GATK 4.7.0.0, htsjdk 5.0.0 and Picard 3.5.0, once G2 and P
-      are closed (see below)
+- [x] covering arrays generated **and run** per tool. **207 gatk-rs tools** are measured against
+      both the reference and the port on every CI run at t=2 (`tools/coverage/measured.json`,
+      frozen from run 42795659080, printed per tool in `docs/VALIDATION.md`), **200 of them at
+      1.000**, including the Spark SV, PathSeq, gCNV and Python-backed tools (#1403) and the 17
+      Picard tools GATK bundles, which the `gatk` binary now dispatches (#1415). The 7 below
+      1.000 are all Picard VCF tools, and every row they miss has one of four known causes:
+      - 28 rows: a `.idx` whose contig comes back after another (chr1, chr2, chr1). htsjdk's
+        `LinkedHashMap` keeps one entry at the first place holding the last run. Fixed in
+        htsjdk-rs (IPNP-BIPN/htsjdk-rs#280), which gatk-rs pins since `0730c93b`
+      - 11 rows: `FilterVcf --JAVASCRIPT_FILE` runs a Nashorn script, which the port refuses as a
+        port limitation, at the point where Picard builds the filter
+      - 3 rows: `SplitVcfs` with an indexed `.vcf.gz` SNP output beside a text INDEL output, where
+        htsjdk hands one tabix index to both writers
+      - 1 row: `SplitVcfs` splits the whole file before writing, so a tabix out-of-order refusal
+        that Picard raises while streaming arrives after the port's SYMBOLIC refusal
+- [x] the coverage-guided differential fuzzer, in all three repositories: picard-rs fuzzes its
+      tools, htsjdk-rs its byte-level parsers, and gatk-rs (`tools/fuzz/`) seeds from each tool's
+      covering array, mutates one argument at a time within the array's own value domains while
+      JaCoCo counts the reference's probes, and replays every kept case against the port through
+      `run_array.py`, minimizing a divergence on both sides. CI runs it in eight shards over the
+      measured tools; `tools/fuzz/measured.json` is frozen from run 42179251609: **190 tools
+      fuzzed, 2005 kept cases replayed, none on which the port answers differently**. The first
+      freeze (run 42083100066) had 14 tools with a divergence, sixteen minimized cases, and all
+      of them were fixed in the port rather than quarantined: the progress-meter refusal at the
+      end of `GATKTool.onStartup`, `--max-variants-per-shard` in the shared VCF writer,
+      `CheckPileup`'s result lost when it writes to `System.out`, write failures turned into
+      GATK's own user errors, and four refusal orders of single tools
+- [x] determinism gates, in all three repositories: in gatk-rs the suites run again under
+      `fr_FR.UTF-8`, another timezone, another `TMPDIR` and one test thread, and two clean builds of
+      `gatk-engine` must be the same bytes (`determinism` job); htsjdk-rs and picard-rs run their
+      own. The `-Xmx` axis applies to the reference only: the port has no heap setting
+- [x] per-run provenance: `tools/provenance/record.py` records the commit, the `Cargo.lock` pins,
+      the reference versions and the oracle image id, the toolchain, the GKL provider state per
+      suite and a SHA-256 of every input; CI keeps it as the `provenance` artefact
+- [x] per-tool validation reports: `docs/VALIDATION.md`, generated by `tools/reports/generate.py`
+      and checked for staleness in CI (inputs, records, byte-equal file count, argument rows, t
+      level, fuzzer probes and divergences, held-out arguments, quarantined fields)
+- [~] the reference version moves to GATK 4.7.0.0, htsjdk 5.0.0 and Picard 3.5.0, once G2 and P
+      are closed (see below). **The bill is measured**
+      ([docs/the-move-to-4.7.0.0-measured.md](docs/the-move-to-4.7.0.0-measured.md)): of 362
+      oracle-backed suites run under a 4.7.0.0 oracle, 316 are identical, 27 differ by the stamp
+      only (the version and the new `--output-cram-version 3.1` in every command line), 7 by
+      the dumps' own SAM text, now fixed, 6 by what the ground truth gains (`ConvertCountsToDepthFile`
+      and the new arguments), and 5 by behaviour: SVConcordance, SVStratify, GroupedSVCluster's
+      message order, one Spark exception class and CRAM 3.1 by default
 
 ---
 

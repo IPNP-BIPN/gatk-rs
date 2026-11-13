@@ -48,6 +48,8 @@ public class ToolArgumentEnumDump {
     static final StringBuilder args = new StringBuilder();
 
     public static void main(final String[] args) {
+        // What GATK's `Main` sets before anything else: Picard tools parse with Barclay.
+        System.setProperty("picard.useLegacyParser", "false");
         declarations("CountReads", new org.broadinstitute.hellbender.tools.CountReads());
         declarations("CountVariants",
                 new org.broadinstitute.hellbender.tools.walkers.CountVariants());
@@ -345,6 +347,10 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.sv.PrintSVEvidence());
         declarations("SiteDepthtoBAF",
                 new org.broadinstitute.hellbender.tools.sv.SiteDepthtoBAF());
+        // New in GATK 4.7.0.0 (#811), a `FeatureWalker` like `CondenseDepthEvidence` whose driving
+        // file is `--counts-filename`, and whose `--compression-level` declares a range.
+        declarations("ConvertCountsToDepthFile",
+                new org.broadinstitute.hellbender.tools.sv.ConvertCountsToDepthFile());
         // Eight tools whose ports are oracle-backed and whose inputs are tables rather than reads.
         // `GatherTranches` gathers VQSR tranches and declares `--mode`, the
         // `VariantRecalibratorArgumentCollection$Mode` enum the class-name key was made for. The
@@ -604,6 +610,26 @@ public class ToolArgumentEnumDump {
         // X.1, seventh brick: two BAMs compared by their duplicate marks.
         declarations("CompareDuplicatesSpark",
                 new org.broadinstitute.hellbender.tools.spark.validation.CompareDuplicatesSpark());
+        // The Picard tools GATK bundles and the port runs (milestone V). GATK hands them to
+        // `PicardCommandLineProgramExecutor`, which parses with Picard's own Barclay parser:
+        // Picard's standard arguments, upper-case, rather than the engine's collections.
+        declarations("AddCommentsToBam", new picard.sam.AddCommentsToBam());
+        declarations("BuildBamIndex", new picard.sam.BuildBamIndex());
+        declarations("CheckTerminatorBlock", new picard.sam.CheckTerminatorBlock());
+        declarations("FilterVcf", new picard.vcf.filter.FilterVcf());
+        declarations("FixVcfHeader", new picard.vcf.FixVcfHeader());
+        declarations("GatherBamFiles", new picard.sam.GatherBamFiles());
+        declarations("GatherVcfs", new picard.vcf.GatherVcfs());
+        declarations("MakeSitesOnlyVcf", new picard.vcf.MakeSitesOnlyVcf());
+        declarations("MergeVcfs", new picard.vcf.MergeVcfs());
+        declarations("RenameSampleInVcf", new picard.vcf.RenameSampleInVcf());
+        declarations("SetNmAndUqTags", new picard.sam.SetNmAndUqTags());
+        declarations("SetNmMdAndUqTags", new picard.sam.SetNmMdAndUqTags());
+        declarations("SortVcf", new picard.vcf.SortVcf());
+        declarations("SplitVcfs", new picard.vcf.SplitVcfs());
+        declarations("UpdateVcfSequenceDictionary", new picard.vcf.UpdateVcfSequenceDictionary());
+        declarations("VcfFormatConverter", new picard.vcf.VcfFormatConverter());
+        declarations("VcfToIntervalList", new picard.vcf.VcfToIntervalList());
         // The table first, then the arguments that point into it.
         final List<String> names = new ArrayList<>(types.keySet());
         java.util.Collections.sort(names);
@@ -643,9 +669,7 @@ public class ToolArgumentEnumDump {
     /** Every enum-valued argument of one tool, and the type it points at. */
     static void declarations(final String tool, final Object target) {
         final List<NamedArgumentDefinition> definitions =
-                ((CommandLineArgumentParser) ((org.broadinstitute.hellbender.cmdline
-                        .CommandLineProgram) target).getCommandLineParser())
-                        .getNamedArgumentDefinitions();
+                toolParser(target).getNamedArgumentDefinitions();
         for (final NamedArgumentDefinition definition : definitions) {
             final Class<?> type = definition.getUnderlyingFieldClass();
             if (!type.isEnum()) {
@@ -662,6 +686,14 @@ public class ToolArgumentEnumDump {
                     type.getName(),
                     escape(String.valueOf(definition.getDefaultValueAsString()))));
         }
+    }
+
+    /** The parser a tool hands out, whichever of the two `CommandLineProgram`s it extends. */
+    static CommandLineArgumentParser toolParser(final Object target) {
+        return (CommandLineArgumentParser) (target instanceof picard.cmdline.CommandLineProgram
+                ? ((picard.cmdline.CommandLineProgram) target).getCommandLineParser()
+                : ((org.broadinstitute.hellbender.cmdline.CommandLineProgram) target)
+                        .getCommandLineParser());
     }
 
     static String escape(final String text) {

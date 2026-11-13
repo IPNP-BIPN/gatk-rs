@@ -1,6 +1,6 @@
 """Runs segment_gcnv_calls.py for one sample with every compiled-function call and every segment quality
 traced as raw float64 bits, which crates/gatk-tools/tests/gcnv_segments_trace.rs replays
-(docs/gcnv-postprocess.md). Inside broadinstitute/gatk:4.6.2.0, after gcnv_frozen_env.sh.
+(docs/gcnv-postprocess.md). Inside broadinstitute/gatk:4.7.0.0, after gcnv_frozen_env.sh.
 
 Usage: pp_trace.py <segment_gcnv_calls.py> <trace out> <graph out> <the script's arguments...>
 """

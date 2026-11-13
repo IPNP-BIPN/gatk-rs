@@ -1,6 +1,6 @@
 #!/bin/bash
 # One pass of ExtractVariantAnnotations, TrainVariantAnnotationsModel and ScoreVariantAnnotations
-# on the fixture, as `gatk` runs them inside broadinstitute/gatk:4.6.2.0.
+# on the fixture, as `gatk` runs them inside broadinstitute/gatk:4.7.0.0.
 #
 # Usage: measure_vets.sh <fixture directory> <output directory> [hyperparameters json]
 set -e

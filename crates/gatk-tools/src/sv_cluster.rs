@@ -1,4 +1,4 @@
-//! `CanonicalSVLinkage` and `SVClusterEngine`, ported from GATK 4.6.2.0.
+//! `CanonicalSVLinkage` and `SVClusterEngine`, ported from GATK 4.7.0.0.
 //!
 //! Which structural variants are judged the same event. Reading the VCF and collapsing a cluster
 //! into a representative record are not ported; deciding which records belong together is.
@@ -168,6 +168,10 @@ pub struct CallRecord {
     pub algorithms: Vec<String>,
     /// The samples carrying a non-reference allele, which sample overlap is a fraction of.
     pub carriers: Vec<String>,
+    /// `getComplexSubtype()`, which two records of one type must also share.
+    pub cpx_subtype: Option<String>,
+    /// `getComplexEventIntervals()`, which a pair of complex events is judged on instead.
+    pub cpx_intervals: Vec<crate::sv_call_record::ComplexEventInterval>,
 }
 
 impl CallRecord {
@@ -189,28 +193,26 @@ impl CallRecord {
         self.contig_a == self.contig_b
     }
 
-    /// `getLength(record, missingInsertionLength)`, per type.
+    /// `getLength(record, lengthIfMissing)`, per type.
     ///
-    /// An insertion or a complex event takes its own length when it has one, at least 1, and the
-    /// assumed one only when `SVLEN` was undefined; the two tests assume different ones. A breakend
-    /// spans its two positions. Every other type takes its length, a missing one counting as 1.
-    /// Measured on `SVConcordance`'s array, where two insertions 50 bp apart with SVLEN 400 and
-    /// 380 paired in the reference and not here, since an assumed 50 bp made them disjoint.
-    pub fn length_for(&self, assumed_for_insertion: i32) -> i32 {
+    /// A breakend spans its two positions, at least 1 since 4.7.0.0 allows the empty one, and an
+    /// interchromosomal one is 0. Every other type takes its length, at least 1, and the assumed
+    /// one only when it has none; the two tests assume different ones. Measured on
+    /// `SVConcordance`'s array, where two insertions 50 bp apart with SVLEN 400 and 380 paired in
+    /// the reference and not here, since an assumed 50 bp made them disjoint.
+    pub fn length_for(&self, assumed_if_missing: i32) -> i32 {
         match self.sv_type {
-            SvType::Ins | SvType::Cpx => self
-                .length
-                .map(|length| length.max(1))
-                .unwrap_or(assumed_for_insertion),
-            SvType::Bnd => self.position_b - self.position_a + 1,
-            _ => self.length.unwrap_or(1).max(1),
+            SvType::Bnd if self.is_intrachromosomal() => (self.position_b - self.position_a).max(1),
+            SvType::Bnd => 0,
+            _ => self.length.unwrap_or(assumed_if_missing).max(1),
         }
     }
 }
 
-/// `typesMatch`, which lets CNVs stand in for both deletions and duplications.
+/// `typesMatch`, which lets CNVs stand in for both deletions and duplications. Two records of one
+/// type must also share their complex subtype, which is null for every type but CPX.
 pub fn types_match(a: &CallRecord, b: &CallRecord, cluster_del_with_dup: bool) -> bool {
-    if a.sv_type == b.sv_type {
+    if a.sv_type == b.sv_type && a.cpx_subtype == b.cpx_subtype {
         return true;
     }
     if a.is_simple_cnv() && b.is_simple_cnv() {
@@ -230,8 +232,18 @@ pub fn strands_match(a: &CallRecord, b: &CallRecord) -> bool {
     a.strand_a == b.strand_a && a.strand_b == b.strand_b
 }
 
-/// `IntervalUtils.isReciprocalOverlap`: each interval must cover the threshold fraction of the
-/// other.
+/// `computeReciprocalOverlap(SimpleInterval, SimpleInterval)`: the shared bases over the LONGER
+/// interval, and 0 for two that do not overlap.
+pub fn reciprocal_overlap(start_a: i32, end_a: i32, start_b: i32, end_b: i32) -> f64 {
+    let overlap = end_a.min(end_b) - start_a.max(start_b) + 1;
+    if overlap <= 0 {
+        return 0.0;
+    }
+    f64::from(overlap) / f64::from((end_a - start_a + 1).max(end_b - start_b + 1))
+}
+
+/// `testReciprocalOverlap` over [`reciprocal_overlap`]. Since 4.7.0.0 a threshold of 0 passes two
+/// disjoint intervals, which `IntervalUtils.isReciprocalOverlap` did not.
 pub fn is_reciprocal_overlap(
     start_a: i32,
     end_a: i32,
@@ -239,30 +251,32 @@ pub fn is_reciprocal_overlap(
     end_b: i32,
     threshold: f64,
 ) -> bool {
-    let overlap = (end_a.min(end_b) - start_a.max(start_b) + 1).max(0);
-    if overlap == 0 {
-        return false;
-    }
-    let length_a = end_a - start_a + 1;
-    let length_b = end_b - start_b + 1;
-    f64::from(overlap) / f64::from(length_a) >= threshold
-        && f64::from(overlap) / f64::from(length_b) >= threshold
+    reciprocal_overlap(start_a, end_a, start_b, end_b) >= threshold
 }
 
-/// `testSizeSimilarity`: the smaller over the larger.
+/// `computeSizeSimilarity`: the smaller over the larger.
+pub fn size_similarity(length_a: i32, length_b: i32) -> f64 {
+    f64::from(length_a.min(length_b)) / f64::from(length_a.max(length_b))
+}
+
+/// `testSizeSimilarity` over [`size_similarity`].
 pub fn test_size_similarity(length_a: i32, length_b: i32, threshold: f64) -> bool {
-    f64::from(length_a.min(length_b)) / f64::from(length_a.max(length_b)) >= threshold
+    size_similarity(length_a, length_b) >= threshold
 }
 
-/// `testBreakendProximity`: both ends within the window of each other, on the same contigs.
-pub fn test_breakend_proximity(a: &CallRecord, b: &CallRecord, window: i32) -> bool {
-    a.contig_a == b.contig_a
-        && a.contig_b == b.contig_b
-        && (a.position_a - b.position_a).abs() <= window
-        && (a.position_b - b.position_b).abs() <= window
+/// `testBreakendProximity`: both distances measured, which needs both contigs shared, and both
+/// within the window.
+fn test_breakend_proximity(distance_1: Option<i32>, distance_2: Option<i32>, window: i32) -> bool {
+    matches!((distance_1, distance_2), (Some(d1), Some(d2)) if d1 <= window && d2 <= window)
 }
 
-/// `hasSampleOverlap`: a fraction of the SMALLER carrier set.
+/// `getFirstBreakpointProximity` and `getSecondBreakpointProximity`: null across contigs.
+fn distance(contig_a: &str, position_a: i32, contig_b: &str, position_b: i32) -> Option<i32> {
+    (contig_a == contig_b).then(|| (position_a - position_b).abs())
+}
+
+/// `getSampleSetOverlap` and `testSampleOverlap`: the shared carriers over the LARGER set, two
+/// empty sets overlapping perfectly. A threshold of 0 is never computed at all.
 pub fn has_sample_overlap(a: &CallRecord, b: &CallRecord, threshold: f64) -> bool {
     if threshold <= 0.0 {
         return true;
@@ -272,11 +286,36 @@ pub fn has_sample_overlap(a: &CallRecord, b: &CallRecord, threshold: f64) -> boo
         .iter()
         .filter(|sample| b.carriers.contains(sample))
         .count();
-    let smaller = a.carriers.len().min(b.carriers.len());
-    if smaller == 0 {
-        return false;
+    let larger = a.carriers.len().max(b.carriers.len());
+    if larger == 0 {
+        return true;
     }
-    shared as f64 / smaller as f64 >= threshold
+    shared as f64 / larger as f64 >= threshold
+}
+
+/// `CanonicalSVLinkage.CanonicalLinkageResult`: the decision and what was measured on the way to
+/// it, which `SVConcordance` writes as its `TRUTH_*` fields. A pair refused before anything was
+/// measured, and every complex pair, carries no measurement at all.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct LinkageResult {
+    pub result: bool,
+    pub reciprocal_overlap: Option<f64>,
+    pub size_similarity: Option<f64>,
+    pub breakpoint_distance_1: Option<i32>,
+    pub breakpoint_distance_2: Option<i32>,
+}
+
+impl LinkageResult {
+    fn refused() -> LinkageResult {
+        LinkageResult::default()
+    }
+
+    fn bare(result: bool) -> LinkageResult {
+        LinkageResult {
+            result,
+            ..LinkageResult::default()
+        }
+    }
 }
 
 /// The three parameter sets one run was given.
@@ -302,12 +341,17 @@ impl Default for Linkage {
 impl Linkage {
     /// `areClusterable`.
     pub fn are_clusterable(&self, a: &CallRecord, b: &CallRecord) -> bool {
+        self.linkage(a, b).result
+    }
+
+    /// `areClusterable` with what it measured.
+    pub fn linkage(&self, a: &CallRecord, b: &CallRecord) -> LinkageResult {
         if !types_match(a, b, self.cluster_del_with_dup) {
-            return false;
+            return LinkageResult::refused();
         }
         // Only these two types care about strands.
         if matches!(a.sv_type, SvType::Bnd | SvType::Inv) && !strands_match(a, b) {
-            return false;
+            return LinkageResult::refused();
         }
         // The order is PESR, then mixed, then depth: the first set the pair is valid for wins.
         let parameters = if self.pesr.is_valid_pair(a, b) {
@@ -317,60 +361,158 @@ impl Linkage {
         } else if self.depth.is_valid_pair(a, b) {
             self.depth
         } else {
-            return false;
+            return LinkageResult::refused();
         };
         cluster_together_with(a, b, &parameters)
     }
+
+    /// `getMaxClusterableStartingPosition`: the furthest start any record linked to this one can
+    /// have, under its own parameter set or the mixed one, whichever reaches further.
+    pub fn max_clusterable_start(&self, record: &CallRecord, contig_length: i32) -> i32 {
+        let own = if record.is_depth_only() {
+            self.depth
+        } else {
+            self.pesr
+        };
+        max_clusterable_start_with(record, &own, contig_length).max(max_clusterable_start_with(
+            record,
+            &self.mixed,
+            contig_length,
+        ))
+    }
 }
 
-/// `clusterTogetherWithParams`.
+/// `getMaxClusterableStartingPositionWithParams`.
+fn max_clusterable_start_with(
+    record: &CallRecord,
+    parameters: &ClusteringParameters,
+    contig_length: i32,
+) -> i32 {
+    let by_window = record
+        .position_a
+        .wrapping_add(parameters.window)
+        .min(contig_length);
+    if !record.is_intrachromosomal() {
+        return by_window;
+    }
+    let assumed = record.length_for(INSERTION_ASSUMED_LENGTH_FOR_OVERLAP);
+    let by_overlap = ((f64::from(record.position_a)
+        + (1.0 - parameters.reciprocal_overlap) * f64::from(assumed)) as i32)
+        .min(contig_length);
+    if parameters.requires_overlap_and_proximity {
+        by_overlap.min(by_window)
+    } else {
+        by_overlap.max(by_window)
+    }
+}
+
+/// `clusterTogetherWithParams`, as 4.7.0.0 has it: every measurement is taken first, then judged.
+///
+/// Size similarity is now required in both branches, and an interchromosomal pair measures neither
+/// overlap nor size, so each passes and the pair is judged on proximity alone.
 pub fn cluster_together_with(
     a: &CallRecord,
     b: &CallRecord,
     parameters: &ClusteringParameters,
-) -> bool {
+) -> LinkageResult {
     if a.contig_a != b.contig_a || a.contig_b != b.contig_b {
-        return false;
+        return LinkageResult::refused();
+    }
+    if a.sv_type == SvType::Cpx && b.sv_type == SvType::Cpx {
+        return test_complex_intervals(a, b, parameters);
     }
 
-    // Overlap is skipped entirely for an interchromosomal pair, which is then judged on proximity
-    // alone whatever `requires_overlap_and_proximity` says.
-    let overlap_and_size = if a.is_intrachromosomal() {
+    let distance_1 = distance(&a.contig_a, a.position_a, &b.contig_a, b.position_a);
+    let distance_2 = distance(&a.contig_b, a.position_b, &b.contig_b, b.position_b);
+    let overlap = (a.is_intrachromosomal() && b.is_intrachromosomal()).then(|| {
         let length_a = a.length_for(INSERTION_ASSUMED_LENGTH_FOR_OVERLAP);
         let length_b = b.length_for(INSERTION_ASSUMED_LENGTH_FOR_OVERLAP);
-        let overlap = is_reciprocal_overlap(
+        reciprocal_overlap(
             a.position_a,
             a.position_a + length_a - 1,
             b.position_a,
             b.position_a + length_b - 1,
-            parameters.reciprocal_overlap,
-        );
-        let size = test_size_similarity(
+        )
+    });
+    let size = (a.is_intrachromosomal() && b.is_intrachromosomal()).then(|| {
+        size_similarity(
             a.length_for(INSERTION_ASSUMED_LENGTH_FOR_SIZE_SIMILARITY),
             b.length_for(INSERTION_ASSUMED_LENGTH_FOR_SIZE_SIMILARITY),
-            parameters.size_similarity,
-        );
-        let both = overlap && size;
-        if parameters.requires_overlap_and_proximity && !both {
-            return false;
-        }
-        Some(both)
-    } else {
-        None
-    };
+        )
+    });
 
-    let proximity = test_breakend_proximity(a, b, parameters.window);
-    match overlap_and_size {
-        None => proximity && has_sample_overlap(a, b, parameters.sample_overlap),
-        Some(both) => {
-            if parameters.requires_overlap_and_proximity {
-                both && proximity && has_sample_overlap(a, b, parameters.sample_overlap)
-            } else {
-                // Unreachable through CanonicalSVLinkage: every factory sets the flag.
-                (both || proximity) && has_sample_overlap(a, b, parameters.sample_overlap)
-            }
+    let proximity = test_breakend_proximity(distance_1, distance_2, parameters.window);
+    let has_overlap = overlap.is_none_or(|value| value >= parameters.reciprocal_overlap);
+    let has_size = size.is_none_or(|value| value >= parameters.size_similarity);
+    let passes = if parameters.requires_overlap_and_proximity {
+        proximity && has_overlap
+    } else {
+        // Unreachable through CanonicalSVLinkage: every factory sets the flag.
+        proximity || has_overlap
+    };
+    LinkageResult {
+        result: passes && has_size && has_sample_overlap(a, b, parameters.sample_overlap),
+        reciprocal_overlap: overlap,
+        size_similarity: size,
+        breakpoint_distance_1: distance_1,
+        breakpoint_distance_2: distance_2,
+    }
+}
+
+/// `testComplexIntervals`: the whole events' proximity, then each pair of intervals in order by
+/// type, overlap, size and proximity, then the samples. It returns the bare decision, so a matched
+/// complex event writes none of the `TRUTH_*` measurements.
+fn test_complex_intervals(
+    a: &CallRecord,
+    b: &CallRecord,
+    parameters: &ClusteringParameters,
+) -> LinkageResult {
+    let overall_1 = distance(&a.contig_a, a.position_a, &b.contig_a, b.position_a);
+    let overall_2 = distance(&a.contig_b, a.position_b, &b.contig_b, b.position_b);
+    if !test_breakend_proximity(overall_1, overall_2, parameters.window)
+        || a.cpx_intervals.len() != b.cpx_intervals.len()
+    {
+        return LinkageResult::refused();
+    }
+    for (interval_a, interval_b) in a.cpx_intervals.iter().zip(&b.cpx_intervals) {
+        if interval_a.sv_type != interval_b.sv_type {
+            return LinkageResult::refused();
+        }
+        let distance_1 = distance(
+            &interval_a.contig,
+            interval_a.start,
+            &interval_b.contig,
+            interval_b.start,
+        );
+        let distance_2 = distance(
+            &interval_a.contig,
+            interval_a.end,
+            &interval_b.contig,
+            interval_b.end,
+        );
+        // `SimpleInterval.overlaps` asks for the same contig first.
+        let overlap = if interval_a.contig == interval_b.contig {
+            reciprocal_overlap(
+                interval_a.start,
+                interval_a.end,
+                interval_b.start,
+                interval_b.end,
+            )
+        } else {
+            0.0
+        };
+        let size = size_similarity(
+            interval_a.end - interval_a.start + 1,
+            interval_b.end - interval_b.start + 1,
+        );
+        if !(overlap >= parameters.reciprocal_overlap
+            && size >= parameters.size_similarity
+            && test_breakend_proximity(distance_1, distance_2, parameters.window))
+        {
+            return LinkageResult::refused();
         }
     }
+    LinkageResult::bare(has_sample_overlap(a, b, parameters.sample_overlap))
 }
 
 /// `SVClusterEngine.CLUSTERING_TYPE`.

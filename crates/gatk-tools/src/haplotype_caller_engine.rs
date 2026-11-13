@@ -84,6 +84,8 @@ pub struct IsActiveArguments {
     /// `flowBasedModel`: a likelihood engine of the flow-based kind, under which a deletion below
     /// the base quality threshold is skipped like a base.
     pub flow_based_model: bool,
+    /// `--activeregion-alt-multiplier` (4.7.0.0): the weight of an ALT read's terms.
+    pub active_region_alt_multiplier: f64,
 }
 
 impl Default for IsActiveArguments {
@@ -98,6 +100,7 @@ impl Default for IsActiveArguments {
             min_base_quality_score: 10,
             ref_model_deletion_quality: REF_MODEL_DELETION_QUAL,
             flow_based_model: false,
+            active_region_alt_multiplier: 1.0,
         }
     }
 }
@@ -274,7 +277,7 @@ impl ActiveRegionEvaluator {
     }
 
     /// `calcGenotypeLikelihoodsOfRefVsAny(ploidy, pileup, refBase, minBaseQual, hqSoftClips,
-    /// false)`.
+    /// false, activeRegionAltMultiplier)`.
     fn ref_vs_any_likelihoods(
         &self,
         pileup: &ReadPileup<'_>,
@@ -311,14 +314,20 @@ impl ActiveRegionEvaluator {
                     qual_to_error_log10 + log10_one_third,
                 )
             };
-            likelihoods[0] += reference + log10_ploidy;
-            likelihoods[count - 1] += non_ref + log10_ploidy;
+            let weight = if is_alt {
+                self.arguments.active_region_alt_multiplier
+            } else {
+                1.0
+            };
+            likelihoods[0] += weight * (reference + log10_ploidy);
+            likelihoods[count - 1] += weight * (non_ref + log10_ploidy);
             let mut j = count as i64 - 2;
             for (i, slot) in likelihoods.iter_mut().enumerate().take(count - 1).skip(1) {
-                *slot += approximate_log10_sum_log10(
-                    reference + jmath::math::log10(j as f64),
-                    non_ref + jmath::math::log10(i as f64),
-                );
+                *slot += weight
+                    * approximate_log10_sum_log10(
+                        reference + jmath::math::log10(j as f64),
+                        non_ref + jmath::math::log10(i as f64),
+                    );
                 j -= 1;
             }
             if is_alt && element.is_next_to_soft_clip() {

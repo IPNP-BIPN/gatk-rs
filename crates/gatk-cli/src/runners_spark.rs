@@ -31,6 +31,17 @@ pub(super) struct SparkStart {
     pub(super) filters: Vec<gatk_tools::filter_resolution::ResolvedFilter>,
 }
 
+/// The threads BWA gets: the one parallel path a Spark tool has here. `RAYON_NUM_THREADS` is the
+/// knob that governs the rest of bwa-mem4's pool, so one variable moves all of it, which is what
+/// `tools/coverage/thread_independence.py` turns to show the output does not move with it.
+fn bwa_threads() -> usize {
+    std::env::var("RAYON_NUM_THREADS")
+        .ok()
+        .and_then(|text| text.parse().ok())
+        .filter(|threads| *threads > 0)
+        .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |count| count.get()))
+}
+
 /// `SparkContext.parseMasterUrl`'s accepted shapes, for the masters that run in this process.
 ///
 /// `local`, `local[N]`, `local[*]`, `local[N,F]` and `local[*,F]` all run the tool here, and the
@@ -117,6 +128,12 @@ fn spark_verbosity(parser: &Parser) -> Result<(), Thrown> {
 
 /// `ReadsSparkSource.getHeader` for a local path: Disq's format by extension, then the file.
 fn spark_reads_header(input: &str) -> Result<ReadsDataSource, Thrown> {
+    spark_reads_open(input, false)
+}
+
+/// `spark_reads_header`, where the tools that take a BAM a partition at a time ask for no more of it
+/// than the header's blocks.
+fn spark_reads_open(input: &str, splits_by_itself: bool) -> Result<ReadsDataSource, Thrown> {
     let failed = |cause: String| {
         Thrown::user(format!(
             "Failed to read bam header from {input}\n Caused by:{cause}"
@@ -136,6 +153,10 @@ fn spark_reads_header(input: &str) -> Result<ReadsDataSource, Thrown> {
     let path = std::path::Path::new(input);
     if !path.exists() {
         return Err(failed(format!("File {input} does not exist")));
+    }
+    if splits_by_itself {
+        return ReadsDataSource::open_for_splits(path, None)
+            .map_err(|error| failed(format!("{error:?}")));
     }
     ReadsDataSource::open_unindexed(path).map_err(|error| failed(format!("{error:?}")))
 }
@@ -189,10 +210,31 @@ pub(super) fn spark_startup(parser: &Parser, tool: &str) -> Result<SparkStart, T
             "Sorry, we only support a single reads input for for this spark tool.",
         ));
     }
-    let input = inputs.into_iter().next().ok_or_else(|| {
-        Thrown::command_line("Argument input was missing: Argument 'input' is required")
-    })?;
-    let source = spark_reads_header(&input)?;
+    let Some(input) = inputs.into_iter().next() else {
+        // The reads are optional to the parser, so with none `initializeIntervals` still runs:
+        // with no reference either, `-L` has no dictionary to resolve against.
+        if intervals_specified(parser) {
+            match &reference {
+                Some(reference) => {
+                    interval_arguments(parser, reference)?;
+                }
+                None => {
+                    return Err(Thrown::user(
+                        "We require at least one input source that has a sequence dictionary \
+                         (reference or reads) when intervals are specified",
+                    ))
+                }
+            }
+        }
+        return Err(Thrown::command_line(
+            "Argument input was missing: Argument 'input' is required",
+        ));
+    };
+    let splits_by_itself = matches!(
+        tool,
+        "FindBreakpointEvidenceSpark" | "StructuralVariationDiscoveryPipelineSpark"
+    );
+    let source = spark_reads_open(&input, splits_by_itself)?;
     let header = source.header().clone();
     // Disq reads the header at `--read-validation-stringency`, and STRICT refuses this line.
     if let Some(group) = header.read_groups.iter().find(|group| {
@@ -225,7 +267,11 @@ pub(super) fn spark_startup(parser: &Parser, tool: &str) -> Result<SparkStart, T
         }
     }
 
-    let source = spark_traversal_source(parser, &input, source)?;
+    let source = if splits_by_itself {
+        spark_split_source(parser, &input, source)?
+    } else {
+        spark_traversal_source(parser, &input, source)?
+    };
 
     Ok(SparkStart {
         source,
@@ -235,6 +281,48 @@ pub(super) fn spark_startup(parser: &Parser, tool: &str) -> Result<SparkStart, T
     })
 }
 
+/// [`spark_startup`] for a tool that needs no `--input` but is still a `GATKSparkTool`: one given is
+/// read before the tool's own arguments are looked at.
+fn spark_startup_without_reads(parser: &Parser, tool: &str) -> Result<(), Thrown> {
+    if arguments(parser, "input").is_empty() {
+        resolve_read_filters(parser, tool)?;
+        spark_context(parser)?;
+    } else {
+        spark_startup(parser, tool)?;
+    }
+    Ok(())
+}
+
+/// `getUnfilteredReads` with intervals is a Disq traversal, which needs the index beside the BAM.
+/// Without one the reference fails inside the first executor task.
+fn no_spark_index(input: &str) -> Thrown {
+    let path = std::path::Path::new(input);
+    let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    eprintln!("ERROR Executor - Exception in task 0.0 in stage 0.0 (TID 0)");
+    Thrown::non_user(
+        "org.apache.spark.SparkException",
+        format!(
+            "Intervals set but no index file found for file:{}",
+            absolute.display()
+        ),
+    )
+}
+
+/// The BAM a tool takes a partition at a time, with its index under intervals.
+fn spark_split_source(
+    parser: &Parser,
+    input: &str,
+    source: ReadsDataSource,
+) -> Result<ReadsDataSource, Thrown> {
+    if !intervals_specified(parser) {
+        return Ok(source);
+    }
+    let path = std::path::Path::new(input);
+    let index = htsjdk_bam::sam_files::find_index(path).ok_or_else(|| no_spark_index(input))?;
+    ReadsDataSource::open_for_splits(path, Some(&index))
+        .map_err(|error| Thrown::user(format!("{error:?}")))
+}
+
 /// What `getUnfilteredReads` traverses: the BAM with its index under intervals, from Disq's first
 /// record.
 fn spark_traversal_source(
@@ -242,24 +330,12 @@ fn spark_traversal_source(
     input: &str,
     source: ReadsDataSource,
 ) -> Result<ReadsDataSource, Thrown> {
-    // `getUnfilteredReads` with intervals is a Disq traversal, which needs the index beside the
-    // BAM. Without one the reference fails inside the first executor task.
     let source = if intervals_specified(parser) {
         let path = std::path::Path::new(input);
         match htsjdk_bam::sam_files::find_index(path) {
             Some(index) => ReadsDataSource::open(path, &index)
                 .map_err(|error| Thrown::user(format!("{error:?}")))?,
-            None => {
-                let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
-                eprintln!("ERROR Executor - Exception in task 0.0 in stage 0.0 (TID 0)");
-                return Err(Thrown::non_user(
-                    "org.apache.spark.SparkException",
-                    format!(
-                        "Intervals set but no index file found for file:{}",
-                        absolute.display()
-                    ),
-                ));
-            }
+            None => return Err(no_spark_index(input)),
         }
     } else {
         source
@@ -1063,16 +1139,19 @@ fn breakpoint_failure(failure: sv_breakpoints::Failure) -> Thrown {
     }
 }
 
-/// `readExternalEvidence`, of the one partition there is.
+/// `readExternalEvidence`: each feature to the partition its start falls in, and the far end of a
+/// long one to the partition its own start falls in.
 fn external_evidence(
     parser: &Parser,
     metadata: &gatk_tools::read_metadata::ReadMetadata,
-) -> Result<Vec<sv_evidence::Evidence>, Thrown> {
+) -> Result<Vec<Vec<sv_evidence::Evidence>>, Thrown> {
     use sv_evidence::{fixed_width, Evidence, EvidenceKind, SvInterval};
+    let partitions = metadata.partitions.len();
+    let mut evidence: Vec<Vec<Evidence>> = vec![Vec::new(); partitions];
     let Some(path) =
         argument(parser, "external-evidence").or_else(|| argument(parser, "cnv-calls"))
     else {
-        return Ok(Vec::new());
+        return Ok(evidence);
     };
     let weight = number_or(parser, "external-evidence-weight", 10);
     let uncertainty = number_or(parser, "external-evidence-uncertainty", 150);
@@ -1083,9 +1162,21 @@ fn external_evidence(
         kind: EvidenceKind::External,
         distal: None,
     };
+    let mut boundaries: Vec<(i32, i32)> = metadata
+        .partitions
+        .iter()
+        .map(|bounds| (bounds.first_contig, bounds.first_start))
+        .collect();
+    boundaries.push((i32::MAX, i32::MAX));
+    if boundaries.windows(2).any(|pair| pair[0] > pair[1]) {
+        return Err(Thrown::non_user(
+            "org.broadinstitute.hellbender.exceptions.GATKException",
+            "Partition boundaries are not coordinate sorted.",
+        ));
+    }
     let (codec, text) = open_feature_input(&path)?;
     let mut previous = (0, 0);
-    let mut evidence = Vec::new();
+    let mut partition = 0;
     for (feature, _) in gatk_tools::feature_codec::features(&text, codec) {
         let Some(&contig) = metadata.contig_ids.get(&feature.contig) else {
             return Err(Thrown::user(format!(
@@ -1100,14 +1191,113 @@ fn external_evidence(
             )));
         }
         previous = (contig, start);
+        while (contig, start) >= boundaries[partition + 1] {
+            partition += 1;
+        }
         if end - start <= uncertainty.wrapping_mul(2) {
-            evidence.push(external(SvInterval { contig, start, end }));
+            evidence[partition].push(external(SvInterval { contig, start, end }));
         } else {
-            evidence.push(external(fixed_width(contig, start, uncertainty)));
-            evidence.push(external(fixed_width(contig, end, uncertainty)));
+            evidence[partition].push(external(fixed_width(contig, start, uncertainty)));
+            let far = fixed_width(contig, end, uncertainty);
+            let location = (far.contig, far.start);
+            let far_partition = if location >= boundaries[partition + 1] {
+                // `Arrays.binarySearch`, whose hit on equal boundaries is the one its halving meets.
+                let (mut low, mut high) = (0i32, boundaries.len() as i32 - 1);
+                let mut found = None;
+                while low <= high {
+                    let middle = (low + high) >> 1;
+                    match boundaries[middle as usize].cmp(&location) {
+                        std::cmp::Ordering::Less => low = middle + 1,
+                        std::cmp::Ordering::Greater => high = middle - 1,
+                        std::cmp::Ordering::Equal => {
+                            found = Some(middle);
+                            break;
+                        }
+                    }
+                }
+                match found {
+                    Some(index) => index as usize,
+                    None if low > 0 => low as usize - 1,
+                    None => 0,
+                }
+            } else {
+                partition
+            };
+            evidence[far_partition].push(external(far));
         }
     }
     Ok(evidence)
+}
+
+/// `getUnfilteredReads`, as Disq cut it: what each partition's iterator returns.
+struct DisqReads<'a> {
+    source: &'a ReadsDataSource,
+    chunks: Vec<Option<gatk_engine::reads::Chunk>>,
+    intervals: &'a [gatk_engine::interval::SimpleInterval],
+}
+
+impl gatk_tools::read_metadata::ReadPartitions for DisqReads<'_> {
+    fn count(&self) -> usize {
+        self.chunks.len()
+    }
+
+    fn reads(&self, partition: usize) -> Result<Vec<BamRecord>, gatk_engine::reads::ReadsError> {
+        let Some(chunk) = &self.chunks[partition] else {
+            return Ok(Vec::new());
+        };
+        if self.intervals.is_empty() {
+            self.source.read_chunk(chunk)
+        } else {
+            self.source
+                .query_within(self.intervals, chunk.start, chunk.end)
+        }
+    }
+}
+
+/// `--bam-partition-size`, a `long` until `ReadsSparkSource` narrows it, and `--use-nio`, cut by
+/// Disq. What the port cannot follow it through is refused here.
+fn disq_reads<'a>(
+    parser: &Parser,
+    source: &'a ReadsDataSource,
+    intervals: &'a [gatk_engine::interval::SimpleInterval],
+) -> Result<DisqReads<'a>, Thrown> {
+    use gatk_engine::reads::DisqSplitError;
+    let size = scalar(parser, "bam-partition-size")
+        .and_then(|text| text.parse::<i64>().ok())
+        .unwrap_or(0);
+    let chunks = source
+        .disq_partitions(size as i32, flag(parser, "use-nio"))
+        .map_err(|error| match error {
+            DisqSplitError::Reads(error) => Thrown::user(format!("{error:?}")),
+            DisqSplitError::Sbi(message) => {
+                Thrown::non_user("htsjdk.samtools.SAMFormatException", message)
+            }
+            DisqSplitError::NotABlock(address) => Thrown::non_user(
+                PORT_LIMITATION,
+                format!(
+                    "Disq's block guesser accepted bytes at {address} that are not a BGZF block, \
+                     and this port does not read a file as if they were. This message is the \
+                     port's own and not GATK's."
+                ),
+            ),
+        })?;
+    if chunks.len() > 1
+        && arguments(parser, "intervals")
+            .iter()
+            .any(|l| l == "unmapped")
+    {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "-L unmapped over a BAM Disq cuts into several partitions adds unplaced reads to the \
+             partitions the index's last offset falls in, and this port does not follow it. This \
+             message is the port's own and not GATK's.",
+        ));
+    }
+    Ok(DisqReads {
+        source,
+        chunks,
+        intervals,
+    })
 }
 
 /// `gatherEvidenceAndWriteContigSamFile`, with the SAM file written if there is somewhere to write
@@ -1126,30 +1316,15 @@ fn gather_breakpoints(
     ),
     Thrown,
 > {
-    let input = arguments(parser, "input").remove(0);
-    let split = match number_or(parser, "bam-partition-size", 0) {
-        0 => 32 * 1024 * 1024,
-        size => i64::from(size),
-    };
-    if std::fs::metadata(&input).is_ok_and(|file| file.len() as i64 > split) {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            format!(
-                "{input} is larger than one partition, and this port assembles a single \
-                 partition's evidence. This message is the port's own and not GATK's."
-            ),
-        ));
-    }
     if header.attributes.get("SO") != Some("coordinate") {
         return Err(Thrown::non_user(
             "java.lang.IllegalStateException",
             "The reads must be coordinate sorted.",
         ));
     }
-    let records = gatk_tools::read_walker::traverse(source, intervals, &|_| true)
-        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let reads = disq_reads(parser, source, intervals)?;
     let scan = &arguments_read.evidence;
-    let metadata = sv_read_metadata(parser, header, &records, &scan.metadata)?;
+    let metadata = sv_partitioned_metadata(parser, header, &reads, &scan.metadata)?;
     let write_text = |path: &str, text: String| {
         std::fs::write(path, text).map_err(|error| {
             Thrown::user(format!(
@@ -1168,12 +1343,21 @@ fn gather_breakpoints(
         .iter()
         .map(|sequence| sequence.length)
         .collect();
-    let ignored = sv_evidence::high_coverage_intervals(&records, &metadata, &lengths, scan);
+    let mut finder = sv_evidence::CoverageFinder::new(&metadata, &lengths, scan);
+    for partition in 0..reads.chunks.len() {
+        use gatk_tools::read_metadata::ReadPartitions;
+        finder.add_partition(
+            &reads
+                .reads(partition)
+                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+        );
+    }
+    let ignored = finder.finish();
     if let Some(path) = argument(parser, "high-coverage-intervals") {
         write_text(&path, sv_evidence::high_coverage_bed(&ignored, &metadata))?;
     }
     let results = sv_breakpoints::gather(
-        &records,
+        &reads,
         arguments_read,
         &metadata,
         header,
@@ -1409,14 +1593,8 @@ pub fn structural_variation_discovery_pipeline_spark(parser: &Parser) -> Outcome
     Ok(None)
 }
 
-/// `buildMetadata` as far as the file, which each tool writes where it writes the rest.
-fn sv_read_metadata(
-    parser: &Parser,
-    header: &SamHeader,
-    records: &[BamRecord],
-    arguments_read: &gatk_tools::read_metadata::MetadataArguments,
-) -> Result<gatk_tools::read_metadata::ReadMetadata, Thrown> {
-    use gatk_tools::read_metadata::{MetadataFailure, ReadMetadata};
+/// `readCrossContigsToIgnoreFile`.
+fn cross_contigs_to_ignore(parser: &Parser, header: &SamHeader) -> Result<Vec<i32>, Thrown> {
     let mut ignored_contigs = Vec::new();
     if let Some(path) = argument(parser, "cross-contigs-to-ignore") {
         let text = std::fs::read_to_string(&path).map_err(|error| {
@@ -1440,17 +1618,52 @@ fn sv_read_metadata(
             }
         }
     }
-    ReadMetadata::with_arguments(header, records, arguments_read, ignored_contigs).map_err(
-        |failure| match failure {
-            MetadataFailure::Unpaired => evidence_task_failure(
-                "java.lang.IllegalStateException: Cannot get mate information for an unpaired read",
-            ),
-            MetadataFailure::NoReads => {
-                Thrown::non_user("java.lang.ArithmeticException", "/ by zero")
-            }
-            MetadataFailure::Order(error) => Thrown::user(format!("{error:?}")),
-        },
-    )
+    Ok(ignored_contigs)
+}
+
+fn sv_metadata_failure(failure: gatk_tools::read_metadata::MetadataFailure) -> Thrown {
+    use gatk_tools::read_metadata::MetadataFailure;
+    match failure {
+        MetadataFailure::Unpaired => evidence_task_failure(
+            "java.lang.IllegalStateException: Cannot get mate information for an unpaired read",
+        ),
+        MetadataFailure::NoReads => Thrown::non_user("java.lang.ArithmeticException", "/ by zero"),
+        MetadataFailure::Order(error) => Thrown::user(format!("{error:?}")),
+    }
+}
+
+/// `buildMetadata` as far as the file, which each tool writes where it writes the rest.
+fn sv_read_metadata(
+    parser: &Parser,
+    header: &SamHeader,
+    records: &[BamRecord],
+    arguments_read: &gatk_tools::read_metadata::MetadataArguments,
+) -> Result<gatk_tools::read_metadata::ReadMetadata, Thrown> {
+    use gatk_tools::read_metadata::ReadMetadata;
+    let ignored_contigs = cross_contigs_to_ignore(parser, header)?;
+    ReadMetadata::with_arguments(header, records, arguments_read, ignored_contigs)
+        .map_err(sv_metadata_failure)
+}
+
+/// `buildMetadata`, over as many partitions as Disq cut.
+fn sv_partitioned_metadata(
+    parser: &Parser,
+    header: &SamHeader,
+    reads: &DisqReads<'_>,
+    arguments_read: &gatk_tools::read_metadata::MetadataArguments,
+) -> Result<gatk_tools::read_metadata::ReadMetadata, Thrown> {
+    use gatk_tools::read_metadata::{MetadataBuilder, ReadPartitions};
+    let ignored_contigs = cross_contigs_to_ignore(parser, header)?;
+    let mut builder = MetadataBuilder::new(header, *arguments_read, ignored_contigs);
+    for partition in 0..reads.count() {
+        let records = reads
+            .reads(partition)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        builder
+            .add_partition(&records)
+            .map_err(sv_metadata_failure)?;
+    }
+    builder.finish().map_err(sv_metadata_failure)
 }
 
 fn evidence_task_failure(message: &str) -> Thrown {
@@ -1461,10 +1674,17 @@ fn evidence_task_failure(message: &str) -> Thrown {
     )
 }
 
+/// Whether a Spark `WARN` is printed, at `SparkCommandLineArgumentCollection.getSparkVerbosity`.
+fn spark_logs_warnings(parser: &Parser) -> bool {
+    let level = scalar(parser, "spark-verbosity").or_else(|| argument(parser, "verbosity"));
+    let level = level.unwrap_or_default();
+    !matches!(level.to_uppercase().as_str(), "ERROR" | "FATAL" | "OFF")
+}
+
 /// A task's failure in an assembly tool, whose contig alignments are a cached RDD: the block
 /// manager logs what stopped that one first, under the number the tool's RDDs have reached.
-fn assembly_task_failure(cached_rdd: u32, message: &str) -> Thrown {
-    if message.starts_with("no primary alignment for read") {
+fn assembly_task_failure(parser: &Parser, cached_rdd: u32, message: &str) -> Thrown {
+    if message.starts_with("no primary alignment for read") && spark_logs_warnings(parser) {
         eprintln!(
             "WARN  BlockManager - Putting block rdd_{cached_rdd}_0 failed due to exception org.broadinstitute.hellbender.exceptions.GATKException: {message}."
         );
@@ -1732,7 +1952,7 @@ fn sv_assembly_interpretation(
     write_sam: bool,
 ) -> Result<(), Thrown> {
     use gatk_tools::sv_discovery::assembly;
-    let in_task = |message: String| assembly_task_failure(23, &message);
+    let in_task = |message: String| assembly_task_failure(parser, 23, &message);
 
     let classified = assembly::preprocess(records, header, canonical).map_err(in_task)?;
 
@@ -1910,7 +2130,7 @@ pub fn cpx_variant_re_interpreter_spark(parser: &Parser) -> Outcome {
     let fasta = htsjdk_bam::fasta_index::IndexedFasta::open(std::path::Path::new(&reference_path))
         .map_err(|error| Thrown::user(error.message()))?;
     let mut reference = SparkReference { fasta };
-    let in_task = |message: String| assembly_task_failure(32, &message);
+    let in_task = |message: String| assembly_task_failure(parser, 32, &message);
 
     let complex = assembly::complex_calls_from_variants(variants).map_err(in_task)?;
     let one_segment =
@@ -2087,7 +2307,7 @@ fn load_cnv_calls(
 
 /// `ReferenceMultiSparkSource.getBases`.
 struct SparkReference {
-    fasta: htsjdk_bam::fasta_index::IndexedFasta<std::fs::File>,
+    fasta: htsjdk_bam::fasta_index::IndexedFasta<htsjdk_bam::fasta_index::PositionalFile>,
 }
 
 impl gatk_tools::sv_discovery::Reference for SparkReference {
@@ -2344,7 +2564,7 @@ fn pathseq_run_filter(
             if reads.is_empty() {
                 return Ok(reads);
             }
-            let threads = std::thread::available_parallelism().map_or(1, |count| count.get());
+            let threads = bwa_threads();
             // The lines name the image's contigs, which the header no longer holds.
             let contigs = gatk_tools::bwa_aligner::image_contigs(&bytes)?;
             let names = SamHeader {
@@ -2430,7 +2650,7 @@ pub fn pathseq_pipeline_spark(parser: &Parser) -> Outcome {
     let image = argument(parser, "microbe-bwa-image").expect("a required argument");
     let bytes = bwa_image(&image)?;
     let options = pathseq_bwa_options(parser);
-    let threads = std::thread::available_parallelism().map_or(1, |count| count.get());
+    let threads = bwa_threads();
     let align = |batches: Vec<Vec<BamRecord>>, paired: bool| -> Result<Vec<BamRecord>, Thrown> {
         let mut aligned = Vec::new();
         for batch in &batches {
@@ -2537,12 +2757,12 @@ pub fn pathseq_filter_spark(parser: &Parser) -> Outcome {
     cleared.sequences.clear();
     if !filtered.paired.is_empty() {
         cleared.set_sort_order("queryname");
-        let output = argument(parser, "paired-output").ok_or_else(null_pathseq_output)?;
+        let output = argument(parser, "paired-output").ok_or_else(null_spark_tool_output)?;
         write_spark_reads(parser, &cleared, &filtered.paired, &output, true)?;
     }
     if !filtered.unpaired.is_empty() {
         cleared.set_sort_order("unsorted");
-        let output = argument(parser, "unpaired-output").ok_or_else(null_pathseq_output)?;
+        let output = argument(parser, "unpaired-output").ok_or_else(null_spark_tool_output)?;
         write_spark_reads(parser, &cleared, &filtered.unpaired, &output, true)?;
     }
     Ok(None)
@@ -2554,7 +2774,40 @@ fn pathseq_task_failure(message: String) -> Thrown {
     Thrown::non_user("org.apache.spark.SparkException", message)
 }
 
-/// `writeReads` handed the output nobody named.
+/// The check `GATKSparkTool.writeReads` opens with since 4.7.0.0: Disq writes only CRAM 3.1, so a
+/// `.cram` output asking for 3.0 is refused, and `getCRAMVersion` refuses any other value first.
+fn refuse_spark_cram_3_0(parser: &Parser, output: &str) -> Result<(), Thrown> {
+    if !output.ends_with(".cram") {
+        return Ok(());
+    }
+    let version = argument(parser, "output-cram-version").unwrap_or_else(|| "3.1".to_string());
+    match version.trim() {
+        "3.1" => Ok(()),
+        "3.0" => Err(Thrown::user(
+            "CRAM 3.0 output is not supported by GATK Spark tools.\n\
+             The Spark CRAM writer can only produce CRAM 3.1, but '3.0' was requested via \
+             --output-cram-version.\n\
+             To write CRAM 3.0, use the equivalent non-Spark tool (e.g. PrintReads instead of \
+             PrintReadsSpark); otherwise omit --output-cram-version (or set it to 3.1) to write \
+             CRAM 3.1."
+                .to_string(),
+        )),
+        _ => Err(Thrown::user(format!(
+            "Bad input: Unsupported CRAM version '{version}'. Supported values are '3.0' and '3.1'."
+        ))),
+    }
+}
+
+/// `GATKSparkTool.writeReads` handed the output nobody named: since 4.7.0.0 its first line asks
+/// that output whether it ends in `.cram`.
+fn null_spark_tool_output() -> Thrown {
+    Thrown::non_user(
+        "java.lang.NullPointerException",
+        "Cannot invoke \"String.endsWith(String)\" because \"outputFile\" is null".to_string(),
+    )
+}
+
+/// `ReadsSparkSink.writeReads` handed the output nobody named.
 fn null_pathseq_output() -> Thrown {
     Thrown::non_user(
         "java.lang.IllegalArgumentException",
@@ -2876,7 +3129,7 @@ fn bwa_align(
             "Input must be queryname sorted unless you use single-ended alignment mode.",
         ));
     }
-    let threads = std::thread::available_parallelism().map_or(1, |count| count.get());
+    let threads = bwa_threads();
     gatk_tools::bwa_aligner::align(reads, paired, &bytes, header, threads)
         .map_err(|message| evidence_task_failure(&message))
 }
@@ -2912,7 +3165,7 @@ pub fn bwa_spark(parser: &Parser) -> Outcome {
     };
     // The sink's argument after the parts directory is `shardedOutput`: a single file is not sorted,
     // which leaves each read's primary line ahead of the supplementary one the comparator would move.
-    write_spark_reads(
+    write_aligned_reads(
         parser,
         &aligned_header,
         &kept,
@@ -2955,7 +3208,7 @@ pub fn bwa_and_mark_duplicates_pipeline_spark(parser: &Parser) -> Outcome {
     }
     let marked = md::mark(vec![aligned], &aligned_header, &settings)
         .map_err(|failure| evidence_task_failure(&failure.message))?;
-    write_spark_reads(
+    write_aligned_reads(
         parser,
         &aligned_header,
         &marked.reads,
@@ -3043,8 +3296,7 @@ fn pathseq_used_sequences(header: &mut SamHeader, reads: &mut [BamRecord], parti
 
 /// `ParallelCopyGCSDirectoryIntoHDFSSpark.runTool`: what a machine with neither service can see.
 pub fn parallel_copy_gcs_directory_into_hdfs_spark(parser: &Parser) -> Outcome {
-    resolve_read_filters(parser, "ParallelCopyGCSDirectoryIntoHDFSSpark")?;
-    spark_context(parser)?;
+    spark_startup_without_reads(parser, "ParallelCopyGCSDirectoryIntoHDFSSpark")?;
     let input = argument(parser, "input-gcs-path").expect("a required argument");
     if !input.starts_with("gs://") {
         return Err(Thrown::user(format!("Input path {input} is not a GCS URI")));
@@ -3066,8 +3318,7 @@ pub fn parallel_copy_gcs_directory_into_hdfs_spark(parser: &Parser) -> Outcome {
 /// reads landed on.
 pub fn pathseq_bwa_spark(parser: &Parser) -> Outcome {
     let tool = "PathSeqBwaSpark";
-    resolve_read_filters(parser, tool)?;
-    spark_context(parser)?;
+    spark_startup_without_reads(parser, tool)?;
     if !arguments(parser, "input").is_empty() {
         return Err(bad_input(
             "Please use --paired-input or --unpaired-input instead of --input".to_string(),
@@ -3083,7 +3334,7 @@ pub fn pathseq_bwa_spark(parser: &Parser) -> Outcome {
     }
     let image = argument(parser, "microbe-bwa-image").expect("a required argument");
     let options = pathseq_bwa_options(parser);
-    let threads = std::thread::available_parallelism().map_or(1, |count| count.get());
+    let threads = bwa_threads();
     let mut loaded = false;
     for (input, output, paired) in [
         ("paired-input", "paired-output", true),
@@ -3676,6 +3927,7 @@ fn write_reverted(
     partitions: &[Vec<BamRecord>],
     output: &str,
 ) -> Result<(), Thrown> {
+    refuse_spark_cram_3_0(parser, output)?;
     if let Some(parent) = std::path::Path::new(output).parent() {
         std::fs::create_dir_all(parent).map_err(|error| {
             Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
@@ -4720,6 +4972,7 @@ fn write_spark_reads(
     output: &str,
     sort_to_header: bool,
 ) -> Result<(), Thrown> {
+    refuse_spark_cram_3_0(parser, output)?;
     let (header, sort_order) = disq_header(header);
     let partitions = if sort_to_header {
         sorted_partitions(parser, sort_order.as_deref(), records)?
@@ -4727,6 +4980,32 @@ fn write_spark_reads(
         vec![records.to_vec()]
     };
     write_spark_partitions(parser, &header, sort_order.as_deref(), &partitions, output)
+}
+
+/// [`write_spark_reads`] for the aligners, which call `ReadsSparkSink.writeReads` themselves, by the
+/// overload that writes the `.bai` and the `.sbi` whatever the command line asked for.
+fn write_aligned_reads(
+    parser: &Parser,
+    header: &SamHeader,
+    records: &[BamRecord],
+    output: &str,
+    sort_to_header: bool,
+) -> Result<(), Thrown> {
+    let (header, sort_order) = disq_header(header);
+    let partitions = if sort_to_header {
+        sorted_partitions(parser, sort_order.as_deref(), records)?
+    } else {
+        vec![records.to_vec()]
+    };
+    let sort_order = sort_order.as_deref();
+    write_spark_indexed(
+        parser,
+        &header,
+        sort_order,
+        &partitions,
+        output,
+        (true, true),
+    )
 }
 
 /// The header as Disq writes it, `GO` and then `SO` moved behind what else `@HD` holds, and its order.
@@ -4829,7 +5108,10 @@ fn write_spark_indexed(
                 .encode_into(&mut encoded)
                 .map_err(|error| failed(output, format!("{error:?}")))?;
             if (index as u64).is_multiple_of(granularity) {
-                offsets.push(shift + stream.file_pointer());
+                let pointer = stream
+                    .file_pointer()
+                    .map_err(|error| failed(output, error.to_string()))?;
+                offsets.push(shift + pointer);
             }
             std::io::Write::write_all(&mut stream, &encoded)
                 .map_err(|error| failed(output, error.to_string()))?;

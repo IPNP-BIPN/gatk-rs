@@ -3,7 +3,7 @@
 The plan commits to t-wise covering arrays over every tool's arguments, t=2 everywhere and t=3 on
 the critical path, and sizes the programme without ever computing what that means in runs. Now it
 is computed: `tools/coverage/covering.py` generates the arrays from the same
-`tools/inventory/generated/inventory.json` that gives the 311 tools and 13,130 arguments, and
+`tools/inventory/generated/inventory.json` that gives the 312 tools and 13,363 arguments of GATK 4.7.0.0, and
 verifies each one exhaustively.
 
 ## The numbers
@@ -12,13 +12,17 @@ Every tool in the inventory, t=2, arrays verified tuple by tuple:
 
 | value policy | oracle runs | arguments in the arrays | excluded |
 |---|---:|---:|---:|
-| `strict` | **19,454** | 6,320 of 13,130 (48%) | 6,810 |
-| `perturb` | **21,923** | 8,682 of 13,130 (66%) | 4,448 |
+| `strict` | **19,189** | 6,372 of 13,363 (48%) | 6,991 |
+| `perturb` | **21,682** | 8,753 of 13,363 (66%) | 4,610 |
 
 Both totals moved by a few rows when the inventory learned to read a documented enum's members
 (#1120): eight arguments that had no domain at all now have one, so eight arguments left the
 excluded column and the arrays that hold them grew. Nothing else about the sizing changed, and the
 median did not move.
+
+The move to GATK 4.7.0.0 (#810) moved them again: one new tool, `ConvertCountsToDepthFile`, and
+233 new arguments, 155 of them `--output-cram-version` on the tools that write reads. The strict
+total fell by 265 runs, the perturb one by 241, and the median is still 19.
 
 Median tool: **19 rows**. The distribution is very long-tailed: `VCFComparator` alone needs 3,102,
 because `--read-filter` has 56 members and `--annotation` has 55, and pairwise over two domains
@@ -31,10 +35,10 @@ For scale at the other end:
 | tool | arguments | rows (t=2) | rows (t=3) |
 |---|---:|---:|---:|
 | `CollectQualityYieldMetrics` | 23 | 16 | — |
-| `HaplotypeCaller`, strict | 174 | 62 | 325 |
-| `HaplotypeCaller`, perturb | 174 | 83 | — |
+| `HaplotypeCaller`, strict | 181 | 62 | 322 |
+| `HaplotypeCaller`, perturb | 181 | 86 | — |
 
-**174 arguments, 62 runs for every pair.** That is the result that makes the programme's coverage
+**181 arguments, 62 runs for every pair.** That is the result that makes the programme's coverage
 commitment tractable, and it is why the plan says covering arrays rather than "test the
 parameters".
 
@@ -42,7 +46,7 @@ parameters".
 
 Most arguments carry their value domain in the inventory: a boolean has two values, an enum has its
 members, a bounded numeric has its bounds. The awkward case is the numeric with a default and no
-declared bounds, which is 84 of HaplotypeCaller's 174 arguments.
+declared bounds, which is 52 of HaplotypeCaller's 181 arguments.
 
 * `strict` gives it one value, so it is held at its default and excluded from the array. Every
   value used came from the reference's own documentation.

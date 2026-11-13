@@ -73,7 +73,7 @@ def build_fixtures(manifest, into):
         # subdirectories (gtrb/, gtrb_late/) when the temporary directory is cleaned up.
         '&& chmod -R a+rwX /out'
     )
-    return subprocess.run(
+    result = subprocess.run(
         [
             "docker", "run", "--rm", "--platform", oracle["platform"],
             "-v", f"{REPO}/tools/coverage:/harness:ro",
@@ -82,15 +82,21 @@ def build_fixtures(manifest, into):
         ],
         capture_output=True,
         text=True,
-    ).returncode
+    )
+    if result.returncode != 0:
+        print(result.stderr[-2000:])
+    return result.returncode
 
 
-def docker_run(manifest, harness, cls, props, stdout, fixtures=None, python_image=None, suite=None):
-    oracle = manifest["oracle"]
+def oracle_of(manifest, suite):
+    """The image a suite runs in: the manifest's, or the other one it names with an `oracle` key."""
+    return manifest[suite["oracle"]] if suite.get("oracle") else manifest["oracle"]
+
+
+def docker_run(oracle, harness, cls, props, stdout, fixtures=None, python_image=None, suite=None):
     # A suite whose reference needs what the pinned image was built without, an interpreter, names
     # its own image and what to run in it. Its dump is written to stdout like any other.
-    image = (suite or {}).get("image", oracle["image"])
-    command = (suite or {}).get("command") or container_command(cls, props)
+    own = (suite or {}).get("command")
     mounts = ["-v", f"{REPO}/{harness}:/harness:ro"]
     if python_image is not None:
         # The pinned oracle has no Python on purpose. A tool whose other half is a Python script
@@ -105,6 +111,15 @@ def docker_run(manifest, harness, cls, props, stdout, fixtures=None, python_imag
             return subprocess.run(cmd, stdout=fh).returncode
     if fixtures is not None:
         mounts += ["-v", f"{fixtures}:/work/fixtures:ro"]
+    # The pinned image's entrypoint is already `sh -c` and it sets ORACLE_CP itself; the Broad's has
+    # neither, so a manifest entry that needs them says so.
+    entry = ["--entrypoint", oracle["entrypoint"]] if oracle.get("entrypoint") else []
+    env = ["-e", f"ORACLE_CP={oracle['classpath']}"] if oracle.get("classpath") else []
+    script = ["-c"] if oracle.get("entrypoint") else []
+    command = own or container_command(cls, props)
+    # A dump that waits on a script must still be able to end, whoever is waiting for the machine.
+    if oracle.get("timeout_seconds"):
+        command = f"exec timeout {oracle['timeout_seconds']} sh -c '{command}'"
     cmd = [
         "docker",
         "run",
@@ -112,11 +127,13 @@ def docker_run(manifest, harness, cls, props, stdout, fixtures=None, python_imag
         "--platform",
         oracle["platform"],
         *mounts,
+        *entry,
+        *env,
         "-w",
         "/work",
-        *(["--entrypoint", "bash"] if (suite or {}).get("command") else []),
-        image,
-        *(["-c"] if (suite or {}).get("command") else []),
+        *(["--entrypoint", "bash"] if own else []),
+        (suite or {}).get("image", oracle["image"]),
+        *(["-c"] if own else script),
         command,
     ]
     print("+ " + " ".join(cmd[:-1]) + f" '{cmd[-1][:60]}...'", flush=True)
@@ -148,7 +165,8 @@ def run_pending(manifest, suite, workdir):
         dump = case["dump"]
         out = PENDING_DIR / f"{suite['id']}.{dump}.txt"
         rc = docker_run(
-            manifest, suite["harness"], dump, props, out, fixtures, suite.get("python_image"), suite
+            oracle_of(manifest, suite), suite["harness"], dump, props, out, fixtures,
+            suite.get("python_image"), suite,
         )
         rows = [l for l in open(out) if l.strip() and not l.startswith("#")]
         print(f"--- {suite['id']}/{dump}: {len(rows)} rows, nothing compared (no golden yet)")
@@ -196,7 +214,8 @@ def run_suite(manifest, suite, workdir):
         dump = case["dump"]
         out = PENDING_DIR / f"{suite['id']}.{dump}.txt"
         rc = docker_run(
-            manifest, suite["harness"], dump, props, out, fixtures, suite.get("python_image"), suite
+            oracle_of(manifest, suite), suite["harness"], dump, props, out, fixtures,
+            suite.get("python_image"), suite,
         )
         lines = sum(1 for _ in open(out))
         print(f"regenerated {dump}: {lines} lines (docker exit {rc})")
@@ -230,7 +249,7 @@ def run_suite(manifest, suite, workdir):
 def run_probe(manifest, probe, workdir):
     out = Path(workdir) / f"probe.{probe['id']}.txt"
     props = probe.get("java_props", manifest.get("default_java_props", []))
-    docker_run(manifest, probe["harness"], probe["class"], props, out)
+    docker_run(manifest["oracle"], probe["harness"], probe["class"], props, out)
     text = open(out).read()
     print(text)
     if probe["expect"] not in text:

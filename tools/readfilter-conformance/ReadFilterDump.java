@@ -139,6 +139,9 @@ public class ReadFilterDump {
                 new AmbiguousBaseReadFilter(0));
         map.put("AmbiguousBaseReadFilter(maxBases=null,maxFraction=0.05)",
                 new AmbiguousBaseReadFilter());
+        // Exactly the two Ns of two_n_bases: the count has to pass the limit, not reach it.
+        map.put("AmbiguousBaseReadFilter(maxBases=2,maxFraction=0.05)",
+                new AmbiguousBaseReadFilter(2));
 
         // The header-dependent family. Each is given the header by setHeader() in main, exactly as
         // the engine gives it to them.
@@ -192,6 +195,12 @@ public class ReadFilterDump {
                 new ReadTagValueFilter("TV", 0.0f, ReadTagValueFilter.Operator.LESS));
         map.put("ReadTagValueFilter(tag=TV,op=GREATER_OR_EQUAL,value=5.0)",
                 new ReadTagValueFilter("TV", 5.0f, ReadTagValueFilter.Operator.GREATER_OR_EQUAL));
+        // The two operators cargo-mutants found no instance of: deleting their parse arms
+        // changed nothing the golden looked at (#1392).
+        map.put("ReadTagValueFilter(tag=TV,op=GREATER,value=0.0)",
+                new ReadTagValueFilter("TV", 0.0f, ReadTagValueFilter.Operator.GREATER));
+        map.put("ReadTagValueFilter(tag=TV,op=LESS_OR_EQUAL,value=0.0)",
+                new ReadTagValueFilter("TV", 0.0f, ReadTagValueFilter.Operator.LESS_OR_EQUAL));
 
         // Exact values, not substrings, despite the argument documentation saying <TAG>:<SUBSTRING>.
         map.put("ReadGroupBlackListReadFilter(blacklist=PU:unit-rg1)", blackList("PU:unit-rg1"));
@@ -462,6 +471,32 @@ public class ReadFilterDump {
         out.add(read(header, "cigar_all_insertion", 0, 0, 1790, 60, "10I", 0, 0, 0, true));
         out.add(read(header, "cigar_soft_inside_hard", 0, 0, 1800, 60, "2H2S6M2S2H", 0, 0, 0, true));
 
+        // The rules the cigars above left unexercised, each found by a mutant of the port that
+        // survived the golden (#1392): a plain internal deletion, a soft clip one from the start
+        // in a three-element cigar, the same indel twice with an M or a P between, a cigar
+        // starting with a zero-length element, and padding at the start, inside, at the end, and
+        // next to a clip.
+        out.add(read(header, "cigar_internal_deletion", 0, 0, 1210, 60, "5M1D5M", 0, 0, 0, true));
+        out.add(read(header, "cigar_two_soft_clips_first", 0, 0, 1220, 60, "2S2S6M", 0, 0, 0, true));
+        out.add(read(header, "cigar_insertions_split_by_match", 0, 0, 1230, 60, "2M1I2M1I4M", 0, 0, 0, true));
+        out.add(read(header, "cigar_insertions_split_by_pad", 0, 0, 1240, 60, "2M1I1P1I6M", 0, 0, 0, true));
+        out.add(read(header, "cigar_zero_length_match", 0, 0, 1250, 60, "0M10I", 0, 0, 0, true));
+        out.add(read(header, "cigar_leading_pad", 0, 0, 1260, 60, "1P10M", 0, 0, 0, true));
+        out.add(read(header, "cigar_inner_pad", 0, 0, 1270, 60, "5M1P5M", 0, 0, 0, true));
+        out.add(read(header, "cigar_trailing_pad", 0, 0, 1280, 60, "10M1P", 0, 0, 0, true));
+        out.add(read(header, "cigar_pad_after_clip", 0, 0, 1290, 60, "2S1P8M", 0, 0, 0, true));
+        out.add(read(header, "cigar_pad_before_clip", 0, 0, 1300, 60, "8M1P2S", 0, 0, 0, true));
+
+        // Paired with an unmapped mate the record places on another contig: the mate counts as
+        // unmapped, so the contig comparison must not be reached.
+        out.add(read(header, "mate_unmapped_other_contig", 0x1 | 0x40 | 0x8, 0, 1310, 60, "10M", 1, 700, 0, true));
+
+        // No sequence stored at all, the one record SeqIsStoredReadFilter rejects.
+        r = read(header, "no_sequence", 0, 0, 1320, 60, "10M", 0, 0, 0, true);
+        r.setReadBases(SAMRecord.NULL_SEQUENCE);
+        r.setBaseQualities(SAMRecord.NULL_QUALS);
+        out.add(r);
+
         // Read length disagreeing with the cigar's read length, on a *mapped* read: the filter
         // lets every unmapped read through, so an unmapped one would prove nothing.
         r = read(header, "cigar_length_mismatch", 0, 0, 1810, 60, "5M", 0, 0, 0, true);
@@ -515,6 +550,11 @@ public class ReadFilterDump {
 
         r = read(header, "undeclared_read_group", 0, 0, 1900, 60, "10M", 0, 0, 0, false);
         r.setAttribute("RG", "rg_absent");
+        out.add(r);
+
+        // A PU on the read itself, which getPlatformUnit prefers over its group's.
+        r = read(header, "own_platform_unit", 0, 0, 1330, 60, "10M", 0, 0, 0, true);
+        r.setAttribute("PU", "unit-rg2");
         out.add(r);
 
         r = read(header, "past_contig_end", 0, 1, CHR2 + 50, 60, "10M", 0, 0, 0, true);
@@ -617,6 +657,26 @@ public class ReadFilterDump {
         // A tp shorter than the read: the walk indexes past its end.
         out.add(flowRead(header, "flow_tp_short", 1590, "10M", symmetricQuals,
                 new byte[] {1, 0, 1, 0}, "rg3"));
+
+        // The last hmer's side of the same rules (#1392): an asymmetry in TTT, then the same one
+        // behind a trailing hard clip, which exempts it.
+        final byte[] asymmetricLastHmerTp = {1, 0, 1, 0, 0, -1, -1, 1, 0, 0};
+        out.add(flowRead(header, "flow_tp_asymmetric_last", 1570, "10M",
+                symmetricQuals, asymmetricLastHmerTp, "rg3"));
+        out.add(flowRead(header, "flow_hard_clipped_end", 1560, "10M2H",
+                symmetricQuals, asymmetricLastHmerTp, "rg3"));
+        // Behind the same clip, an asymmetry in GG, which is not the last hmer and so not exempt.
+        out.add(flowRead(header, "flow_hard_clipped_end_inner", 1530, "10M2H",
+                symmetricQuals, new byte[] {1, 0, 1, 0, 0, -1, 0, 1, 0, 1}, "rg3"));
+
+        // tp + hmer length on both bounds of [0, maxHmer=12]: 9 + 3 on AAA, -2 + 2 on CC.
+        out.add(flowRead(header, "flow_tp_at_bounds", 1550, "10M", symmetricQuals,
+                new byte[] {9, 9, 9, -2, -2, 0, 0, 0, 0, 0}, "rg3"));
+
+        // tp as text: getAttributeAsByteArray takes a String's bytes rather than throwing.
+        r = flowRead(header, "flow_tp_text", 1540, "10M", symmetricQuals, null, "rg3");
+        r.setAttribute("tp", "!!!!!!!!!!");
+        out.add(r);
 
         // Everything a flow read needs, in a read group that declares no flow order.
         out.add(flowRead(header, "flow_no_flow_order", 1580, "10M",

@@ -217,6 +217,285 @@
       "t": 2,
       "share": 1.0
     },
+    "CompareDuplicatesSpark": {
+      "rows": 22,
+      "accepted": 17,
+      "rejected": 5,
+      "distinct_outputs": 11,
+      "matched": 22,
+      "t": 2,
+      "share": 1.0
+    },
+    "CollectMultipleMetricsSpark": {
+      "rows": 23,
+      "accepted": 23,
+      "rejected": 0,
+      "distinct_outputs": 23,
+      "matched": 23,
+      "t": 2,
+      "share": 1.0
+    },
+    "MarkDuplicatesSpark": {
+      "rows": 27,
+      "accepted": 21,
+      "rejected": 6,
+      "distinct_outputs": 21,
+      "matched": 27,
+      "t": 2,
+      "share": 1.0
+    },
+    "CollectAllelicCountsSpark": {
+      "rows": 19,
+      "accepted": 12,
+      "rejected": 7,
+      "distinct_outputs": 5,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
+    },
+    "BwaSpark": {
+      "rows": 15,
+      "accepted": 13,
+      "rejected": 2,
+      "distinct_outputs": 7,
+      "matched": 15,
+      "t": 2,
+      "share": 1.0
+    },
+    "BwaAndMarkDuplicatesPipelineSpark": {
+      "rows": 19,
+      "accepted": 0,
+      "rejected": 19,
+      "distinct_outputs": 0,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
+    },
+    "ParallelCopyGCSDirectoryIntoHDFSSpark": {
+      "rows": 16,
+      "accepted": 0,
+      "rejected": 16,
+      "distinct_outputs": 0,
+      "matched": 16,
+      "t": 2,
+      "share": 1.0
+    },
+    "PathSeqBwaSpark": {
+      "rows": 22,
+      "accepted": 0,
+      "rejected": 22,
+      "distinct_outputs": 0,
+      "matched": 22,
+      "t": 2,
+      "share": 1.0
+    },
+    "PathSeqPipelineSpark": {
+      "rows": 25,
+      "accepted": 4,
+      "rejected": 21,
+      "distinct_outputs": 4,
+      "matched": 25,
+      "t": 2,
+      "share": 1.0
+    },
+    "FindBadGenomicKmersSpark": {
+      "rows": 21,
+      "accepted": 14,
+      "rejected": 7,
+      "distinct_outputs": 4,
+      "matched": 21,
+      "t": 2,
+      "share": 1.0
+    },
+    "CalcMetadataSpark": {
+      "rows": 21,
+      "accepted": 18,
+      "rejected": 3,
+      "distinct_outputs": 13,
+      "matched": 21,
+      "t": 2,
+      "share": 1.0
+    },
+    "ExtractSVEvidenceSpark": {
+      "rows": 24,
+      "accepted": 13,
+      "rejected": 11,
+      "distinct_outputs": 9,
+      "matched": 24,
+      "t": 2,
+      "share": 1.0
+    },
+    "DiscoverVariantsFromContigAlignmentsSAMSpark": {
+      "rows": 19,
+      "accepted": 13,
+      "rejected": 6,
+      "distinct_outputs": 4,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
+    },
+    "SvDiscoverFromLocalAssemblyContigAlignmentsSpark": {
+      "rows": 17,
+      "accepted": 11,
+      "rejected": 6,
+      "distinct_outputs": 7,
+      "matched": 17,
+      "t": 2,
+      "share": 1.0
+    },
+    "CpxVariantReInterpreterSpark": {
+      "rows": 19,
+      "accepted": 15,
+      "rejected": 4,
+      "distinct_outputs": 5,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
+    },
+    "HtsgetReader": {
+      "rows": 11,
+      "accepted": 0,
+      "rejected": 11,
+      "distinct_outputs": 0,
+      "matched": 11,
+      "t": 2,
+      "share": 1.0
+    },
+    "HaplotypeCallerSpark": {
+      "rows": 47,
+      "accepted": 18,
+      "rejected": 29,
+      "distinct_outputs": 17,
+      "matched": 47,
+      "t": 2,
+      "share": 1.0
+    },
+    "ReadsPipelineSpark": {
+      "rows": 51,
+      "accepted": 12,
+      "rejected": 39,
+      "distinct_outputs": 9,
+      "matched": 51,
+      "t": 2,
+      "share": 1.0
+    },
+    "PathSeqFilterSpark": {
+      "rows": 20,
+      "accepted": 17,
+      "rejected": 3,
+      "distinct_outputs": 16,
+      "matched": 20,
+      "t": 2,
+      "share": 1.0
+    },
+    "PathSeqScoreSpark": {
+      "rows": 15,
+      "accepted": 10,
+      "rejected": 5,
+      "distinct_outputs": 10,
+      "matched": 15,
+      "t": 2,
+      "share": 1.0
+    },
+    "PlotDenoisedCopyRatios": {
+      "rows": 11,
+      "accepted": 0,
+      "rejected": 11,
+      "distinct_outputs": 0,
+      "matched": 11,
+      "t": 2,
+      "share": 1.0
+    },
+    "PlotModeledSegments": {
+      "rows": 11,
+      "accepted": 0,
+      "rejected": 11,
+      "distinct_outputs": 0,
+      "matched": 11,
+      "t": 2,
+      "share": 1.0
+    },
+    "DetermineGermlineContigPloidy": {
+      "rows": 32,
+      "accepted": 0,
+      "rejected": 32,
+      "distinct_outputs": 0,
+      "matched": 32,
+      "t": 2,
+      "share": 1.0
+    },
+    "GermlineCNVCaller": {
+      "rows": 46,
+      "accepted": 0,
+      "rejected": 46,
+      "distinct_outputs": 0,
+      "matched": 46,
+      "t": 2,
+      "share": 1.0
+    },
+    "PostprocessGermlineCNVCalls": {
+      "rows": 20,
+      "accepted": 0,
+      "rejected": 20,
+      "distinct_outputs": 0,
+      "matched": 20,
+      "t": 2,
+      "share": 1.0
+    },
+    "ScoreVariantAnnotations": {
+      "rows": 27,
+      "accepted": 0,
+      "rejected": 27,
+      "distinct_outputs": 9,
+      "matched": 27,
+      "t": 2,
+      "share": 1.0
+    },
+    "TrainVariantAnnotationsModel": {
+      "rows": 11,
+      "accepted": 0,
+      "rejected": 11,
+      "distinct_outputs": 0,
+      "matched": 11,
+      "t": 2,
+      "share": 1.0
+    },
+    "NVScoreVariants": {
+      "rows": 10,
+      "accepted": 0,
+      "rejected": 10,
+      "distinct_outputs": 0,
+      "matched": 10,
+      "t": 2,
+      "share": 1.0
+    },
+    "FindBreakpointEvidenceSpark": {
+      "rows": 26,
+      "accepted": 23,
+      "rejected": 3,
+      "distinct_outputs": 14,
+      "matched": 26,
+      "t": 2,
+      "share": 1.0
+    },
+    "StructuralVariationDiscoveryPipelineSpark": {
+      "rows": 27,
+      "accepted": 22,
+      "rejected": 5,
+      "distinct_outputs": 17,
+      "matched": 27,
+      "t": 2,
+      "share": 1.0
+    },
+    "GenomicsDBImport": {
+      "rows": 19,
+      "accepted": 17,
+      "rejected": 2,
+      "distinct_outputs": 16,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
+    },
     "ExtractOriginalAlignmentRecordsByNameSpark": {
       "rows": 22,
       "accepted": 17,
@@ -984,9 +1263,9 @@
     },
     "SVConcordance": {
       "rows": 19,
-      "accepted": 13,
-      "rejected": 6,
-      "distinct_outputs": 10,
+      "accepted": 5,
+      "rejected": 14,
+      "distinct_outputs": 4,
       "matched": 19,
       "t": 2,
       "share": 1.0
@@ -1441,39 +1720,156 @@
       "t": 2,
       "share": 1.0
     },
-    "CollectMultipleMetricsSpark": {
-      "rows": 23,
-      "accepted": 23,
-      "rejected": 0,
-      "distinct_outputs": 23,
-      "matched": 23,
+    "AddCommentsToBam": {
+      "rows": 14,
+      "accepted": 11,
+      "rejected": 3,
+      "distinct_outputs": 9,
+      "matched": 14,
       "t": 2,
       "share": 1.0
     },
-    "CompareDuplicatesSpark": {
-      "rows": 22,
-      "accepted": 17,
-      "rejected": 5,
-      "distinct_outputs": 11,
-      "matched": 22,
+    "BuildBamIndex": {
+      "rows": 18,
+      "accepted": 9,
+      "rejected": 9,
+      "distinct_outputs": 3,
+      "matched": 18,
       "t": 2,
       "share": 1.0
     },
-    "MarkDuplicatesSpark": {
-      "rows": 27,
-      "accepted": 21,
+    "CheckTerminatorBlock": {
+      "rows": 12,
+      "accepted": 6,
       "rejected": 6,
-      "distinct_outputs": 21,
+      "distinct_outputs": 2,
+      "matched": 12,
+      "t": 2,
+      "share": 1.0
+    },
+    "FilterVcf": {
+      "rows": 20,
+      "accepted": 12,
+      "rejected": 8,
+      "distinct_outputs": 11,
+      "matched": 7,
+      "t": 2,
+      "share": 0.35
+    },
+    "FixVcfHeader": {
+      "rows": 21,
+      "accepted": 9,
+      "rejected": 12,
+      "distinct_outputs": 7,
+      "matched": 20,
+      "t": 2,
+      "share": 0.952
+    },
+    "GatherBamFiles": {
+      "rows": 11,
+      "accepted": 11,
+      "rejected": 0,
+      "distinct_outputs": 8,
+      "matched": 11,
+      "t": 2,
+      "share": 1.0
+    },
+    "GatherVcfs": {
+      "rows": 34,
+      "accepted": 16,
+      "rejected": 18,
+      "distinct_outputs": 10,
+      "matched": 34,
+      "t": 2,
+      "share": 1.0
+    },
+    "MakeSitesOnlyVcf": {
+      "rows": 16,
+      "accepted": 13,
+      "rejected": 3,
+      "distinct_outputs": 7,
+      "matched": 7,
+      "t": 2,
+      "share": 0.438
+    },
+    "MergeVcfs": {
+      "rows": 27,
+      "accepted": 14,
+      "rejected": 13,
+      "distinct_outputs": 13,
       "matched": 27,
       "t": 2,
       "share": 1.0
     },
-    "CollectAllelicCountsSpark": {
-      "rows": 19,
-      "accepted": 12,
+    "RenameSampleInVcf": {
+      "rows": 15,
+      "accepted": 8,
       "rejected": 7,
+      "distinct_outputs": 4,
+      "matched": 11,
+      "t": 2,
+      "share": 0.733
+    },
+    "SetNmAndUqTags": {
+      "rows": 16,
+      "accepted": 10,
+      "rejected": 6,
+      "distinct_outputs": 9,
+      "matched": 16,
+      "t": 2,
+      "share": 1.0
+    },
+    "SetNmMdAndUqTags": {
+      "rows": 16,
+      "accepted": 10,
+      "rejected": 6,
+      "distinct_outputs": 9,
+      "matched": 16,
+      "t": 2,
+      "share": 1.0
+    },
+    "SortVcf": {
+      "rows": 16,
+      "accepted": 11,
+      "rejected": 5,
+      "distinct_outputs": 7,
+      "matched": 16,
+      "t": 2,
+      "share": 1.0
+    },
+    "SplitVcfs": {
+      "rows": 26,
+      "accepted": 11,
+      "rejected": 15,
+      "distinct_outputs": 11,
+      "matched": 21,
+      "t": 2,
+      "share": 0.808
+    },
+    "UpdateVcfSequenceDictionary": {
+      "rows": 18,
+      "accepted": 14,
+      "rejected": 4,
+      "distinct_outputs": 8,
+      "matched": 8,
+      "t": 2,
+      "share": 0.444
+    },
+    "VcfFormatConverter": {
+      "rows": 17,
+      "accepted": 8,
+      "rejected": 9,
+      "distinct_outputs": 7,
+      "matched": 16,
+      "t": 2,
+      "share": 0.941
+    },
+    "VcfToIntervalList": {
+      "rows": 12,
+      "accepted": 8,
+      "rejected": 4,
       "distinct_outputs": 5,
-      "matched": 19,
+      "matched": 12,
       "t": 2,
       "share": 1.0
     }

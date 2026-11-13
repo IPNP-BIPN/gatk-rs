@@ -77,6 +77,11 @@ public class CountingFilterDump {
         map.put("negated", new CountingReadFilter(ReadFilterLibrary.MAPPED)
                 .and(new CountingReadFilter(ReadFilterLibrary.NOT_DUPLICATE).negate()));
 
+        // A nested tree whose left child rejects nothing: the indented branch leaves that child out
+        // rather than printing its zero, which no other composition here shows (#1392).
+        map.put("zero-left", new CountingReadFilter(ReadFilterLibrary.ALLOW_ALL_READS)
+                .and(new CountingReadFilter(ReadFilterLibrary.MAPPED).negate()));
+
         // WellformedReadFilter, the conjunction whose order only the counts can reveal. It is a
         // single ReadFilter to the engine, so wrapping it counts the whole conjunction as one; the
         // composition below spells the same eight filters out in the same order, and the two

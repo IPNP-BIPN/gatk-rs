@@ -23,9 +23,9 @@ import sys
 # Pinned reference versions this inventory is derived from. Recorded in the output so an
 # inventory can never be silently attributed to the wrong reference.
 REFERENCE = {
-    "gatk": {"tag": "4.6.2.0", "sha": "76edc75c26504da94bbaee66584e107e76ee15de"},
-    "picard": {"tag": "3.4.0", "sha": "6c3f23bc2e0d229d75e9f9b04200396bcd067526"},
-    "htsjdk": {"tag": "4.2.0", "sha": "4cc010022ac038fb30f26e6f9717fabff3e808c1"},
+    "gatk": {"tag": "4.7.0.0", "sha": "0cde69eed30339f5978cbb1ac6e5cf3662f9e1f8"},
+    "picard": {"tag": "3.5.0", "sha": "a53d7ebd975606b79ca0eaddb7bf93f555ec4db4"},
+    "htsjdk": {"tag": "5.0.0", "sha": "fb578787cd8aa2f5b3900b0f3150993d5841e013"},
 }
 
 # Maps a documented tool group onto the port archetype it belongs to. The archetype is the

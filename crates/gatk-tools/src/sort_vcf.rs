@@ -34,7 +34,7 @@
 use htsjdk_vcf::comparator::VariantContextComparator;
 use htsjdk_vcf::header::{HeaderLine, VcfHeader};
 use htsjdk_vcf::merge::{smart_merge_headers, Source};
-use htsjdk_vcf::reader::read_vcf;
+use htsjdk_vcf::reader::{read_vcf_with, GenotypeParsing};
 use htsjdk_vcf::variant::VariantContext;
 use htsjdk_vcf::vcf_file::write_vcf;
 
@@ -110,7 +110,8 @@ pub fn sort(inputs: &[String]) -> Result<String, SortError> {
     let mut dictionary: Option<Vec<String>> = None;
 
     for input in inputs {
-        let file = read_vcf(input).map_err(|failure| {
+        // `SortVcf` never looks at a sample column, so it never parses one, as `VCFFileReader` does.
+        let file = read_vcf_with(input, GenotypeParsing::Deferred).map_err(|failure| {
             SortError::Vcf(failure.error.class().to_string(), failure.error.message())
         })?;
         let contigs = contig_lines(&file.header);
@@ -128,7 +129,7 @@ pub fn sort(inputs: &[String]) -> Result<String, SortError> {
             Some(first) if *first != names => return Err(SortError::DifferentSamples),
             Some(_) => {}
         }
-        records.extend(file.records.iter().cloned());
+        records.extend(file.records);
         headers.push(file.header);
     }
 

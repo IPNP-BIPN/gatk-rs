@@ -1,0 +1,411 @@
+{
+  "tool": "AddCommentsToBam",
+  "origin": "picard",
+  "t": 2,
+  "numeric_policy": "strict",
+  "arguments_total": 18,
+  "arguments_in_array": 8,
+  "arguments_excluded": 10,
+  "excluded": [
+    {
+      "argument": "--arguments_file",
+      "type": "List[File]",
+      "reason": "excluded by the repository: expands into the command line itself, which is measured by the barclay-arguments-file suite instead",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--help",
+      "type": "boolean",
+      "reason": "excluded by the repository: prints the usage and returns; the row would measure the argument parser rather than the tool",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--MAX_RECORDS_IN_RAM",
+      "type": "Integer",
+      "reason": "only one value available (default)",
+      "held_at": "500000",
+      "source": "default"
+    },
+    {
+      "argument": "--OUTPUT",
+      "type": "File",
+      "reason": "only one value available (fixture[0])",
+      "held_at": "/work/out/output.bam",
+      "source": "fixture"
+    },
+    {
+      "argument": "--QUIET",
+      "type": "Boolean",
+      "reason": "excluded by the repository: suppresses the log on stderr, and what is compared is stdout and the output file",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--REFERENCE_SEQUENCE",
+      "type": "PicardHtsPath",
+      "reason": "only one value available (fixture[0])",
+      "held_at": "/work/fixtures/picard/ref.fasta",
+      "source": "fixture"
+    },
+    {
+      "argument": "--showHidden",
+      "type": "boolean",
+      "reason": "excluded by the repository: changes the usage text only",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--USE_JDK_INFLATER",
+      "type": "Boolean",
+      "reason": "excluded by the repository: chooses an inflater, and the input is read the same way either way",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--VERBOSITY",
+      "type": "LogLevel",
+      "reason": "excluded by the repository: log level on stderr, same reason",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--version",
+      "type": "boolean",
+      "reason": "excluded by the repository: prints the version and returns, same reason",
+      "held_at": null,
+      "source": "none"
+    }
+  ],
+  "rows": 14,
+  "tuples_total": 156,
+  "tuples_covered": 156,
+  "tuples_forbidden": 0,
+  "constraint_notes": [],
+  "coverage": 1.0,
+  "array": [
+    {
+      "row": 0,
+      "labels": {
+        "--COMMENT": "fixture[0]",
+        "--COMPRESSION_LEVEL": "fixture[0]",
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "true",
+        "--INPUT": "fixture[0]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "STRICT"
+      },
+      "arguments": [
+        "--COMMENT=reviewed_by_qc",
+        "--COMPRESSION_LEVEL=2",
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=true",
+        "--INPUT=/work/fixtures/picard/small.bam",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=STRICT"
+      ]
+    },
+    {
+      "row": 1,
+      "labels": {
+        "--COMMENT": "fixture[0]",
+        "--COMPRESSION_LEVEL": "fixture[1]",
+        "--CREATE_INDEX": "false",
+        "--CREATE_MD5_FILE": "false",
+        "--INPUT": "fixture[1]",
+        "--TMP_DIR": "fixture[1]",
+        "--USE_JDK_DEFLATER": "false",
+        "--VALIDATION_STRINGENCY": "LENIENT"
+      },
+      "arguments": [
+        "--COMMENT=reviewed_by_qc",
+        "--COMPRESSION_LEVEL=5",
+        "--CREATE_INDEX=false",
+        "--CREATE_MD5_FILE=false",
+        "--INPUT=/work/fixtures/picard/queryname.bam",
+        "--TMP_DIR=/work/tmp2",
+        "--USE_JDK_DEFLATER=false",
+        "--VALIDATION_STRINGENCY=LENIENT"
+      ]
+    },
+    {
+      "row": 2,
+      "labels": {
+        "--COMMENT": "fixture[1]",
+        "--COMPRESSION_LEVEL": "fixture[0]",
+        "--CREATE_INDEX": "false",
+        "--CREATE_MD5_FILE": "true",
+        "--INPUT": "fixture[2]",
+        "--TMP_DIR": "fixture[1]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "SILENT"
+      },
+      "arguments": [
+        "--COMMENT=batch:2026-09",
+        "--COMPRESSION_LEVEL=2",
+        "--CREATE_INDEX=false",
+        "--CREATE_MD5_FILE=true",
+        "--INPUT=/work/fixtures/picard/one_read_group.bam",
+        "--TMP_DIR=/work/tmp2",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=SILENT"
+      ]
+    },
+    {
+      "row": 3,
+      "labels": {
+        "--COMMENT": "fixture[1]",
+        "--COMPRESSION_LEVEL": "fixture[1]",
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "false",
+        "--INPUT": "fixture[3]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "false",
+        "--VALIDATION_STRINGENCY": "SILENT"
+      },
+      "arguments": [
+        "--COMMENT=batch:2026-09",
+        "--COMPRESSION_LEVEL=5",
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=false",
+        "--INPUT=/work/fixtures/picard/small.sam",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=false",
+        "--VALIDATION_STRINGENCY=SILENT"
+      ]
+    },
+    {
+      "row": 4,
+      "labels": {
+        "--COMMENT": "fixture[1]",
+        "--COMPRESSION_LEVEL": "fixture[0]",
+        "--CREATE_INDEX": "false",
+        "--CREATE_MD5_FILE": "false",
+        "--INPUT": "fixture[0]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "false",
+        "--VALIDATION_STRINGENCY": "STRICT"
+      },
+      "arguments": [
+        "--COMMENT=batch:2026-09",
+        "--COMPRESSION_LEVEL=2",
+        "--CREATE_INDEX=false",
+        "--CREATE_MD5_FILE=false",
+        "--INPUT=/work/fixtures/picard/small.bam",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=false",
+        "--VALIDATION_STRINGENCY=STRICT"
+      ]
+    },
+    {
+      "row": 5,
+      "labels": {
+        "--COMMENT": "fixture[0]",
+        "--COMPRESSION_LEVEL": "fixture[1]",
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "true",
+        "--INPUT": "fixture[0]",
+        "--TMP_DIR": "fixture[1]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "LENIENT"
+      },
+      "arguments": [
+        "--COMMENT=reviewed_by_qc",
+        "--COMPRESSION_LEVEL=5",
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=true",
+        "--INPUT=/work/fixtures/picard/small.bam",
+        "--TMP_DIR=/work/tmp2",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=LENIENT"
+      ]
+    },
+    {
+      "row": 6,
+      "labels": {
+        "--COMMENT": "fixture[0]",
+        "--COMPRESSION_LEVEL": "fixture[1]",
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "false",
+        "--INPUT": "fixture[2]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "STRICT"
+      },
+      "arguments": [
+        "--COMMENT=reviewed_by_qc",
+        "--COMPRESSION_LEVEL=5",
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=false",
+        "--INPUT=/work/fixtures/picard/one_read_group.bam",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=STRICT"
+      ]
+    },
+    {
+      "row": 7,
+      "labels": {
+        "--COMMENT": "fixture[0]",
+        "--COMPRESSION_LEVEL": "fixture[0]",
+        "--CREATE_INDEX": "false",
+        "--CREATE_MD5_FILE": "true",
+        "--INPUT": "fixture[3]",
+        "--TMP_DIR": "fixture[1]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "STRICT"
+      },
+      "arguments": [
+        "--COMMENT=reviewed_by_qc",
+        "--COMPRESSION_LEVEL=2",
+        "--CREATE_INDEX=false",
+        "--CREATE_MD5_FILE=true",
+        "--INPUT=/work/fixtures/picard/small.sam",
+        "--TMP_DIR=/work/tmp2",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=STRICT"
+      ]
+    },
+    {
+      "row": 8,
+      "labels": {
+        "--COMMENT": "fixture[1]",
+        "--COMPRESSION_LEVEL": "fixture[0]",
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "true",
+        "--INPUT": "fixture[1]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "LENIENT"
+      },
+      "arguments": [
+        "--COMMENT=batch:2026-09",
+        "--COMPRESSION_LEVEL=2",
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=true",
+        "--INPUT=/work/fixtures/picard/queryname.bam",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=LENIENT"
+      ]
+    },
+    {
+      "row": 9,
+      "labels": {
+        "--COMMENT": "fixture[0]",
+        "--COMPRESSION_LEVEL": "fixture[0]",
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "true",
+        "--INPUT": "fixture[2]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "false",
+        "--VALIDATION_STRINGENCY": "LENIENT"
+      },
+      "arguments": [
+        "--COMMENT=reviewed_by_qc",
+        "--COMPRESSION_LEVEL=2",
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=true",
+        "--INPUT=/work/fixtures/picard/one_read_group.bam",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=false",
+        "--VALIDATION_STRINGENCY=LENIENT"
+      ]
+    },
+    {
+      "row": 10,
+      "labels": {
+        "--COMMENT": "fixture[0]",
+        "--COMPRESSION_LEVEL": "fixture[0]",
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "true",
+        "--INPUT": "fixture[0]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "SILENT"
+      },
+      "arguments": [
+        "--COMMENT=reviewed_by_qc",
+        "--COMPRESSION_LEVEL=2",
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=true",
+        "--INPUT=/work/fixtures/picard/small.bam",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=SILENT"
+      ]
+    },
+    {
+      "row": 11,
+      "labels": {
+        "--COMMENT": "fixture[0]",
+        "--COMPRESSION_LEVEL": "fixture[0]",
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "true",
+        "--INPUT": "fixture[1]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "STRICT"
+      },
+      "arguments": [
+        "--COMMENT=reviewed_by_qc",
+        "--COMPRESSION_LEVEL=2",
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=true",
+        "--INPUT=/work/fixtures/picard/queryname.bam",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=STRICT"
+      ]
+    },
+    {
+      "row": 12,
+      "labels": {
+        "--COMMENT": "fixture[0]",
+        "--COMPRESSION_LEVEL": "fixture[0]",
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "true",
+        "--INPUT": "fixture[1]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "SILENT"
+      },
+      "arguments": [
+        "--COMMENT=reviewed_by_qc",
+        "--COMPRESSION_LEVEL=2",
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=true",
+        "--INPUT=/work/fixtures/picard/queryname.bam",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=SILENT"
+      ]
+    },
+    {
+      "row": 13,
+      "labels": {
+        "--COMMENT": "fixture[0]",
+        "--COMPRESSION_LEVEL": "fixture[0]",
+        "--CREATE_INDEX": "true",
+        "--CREATE_MD5_FILE": "true",
+        "--INPUT": "fixture[3]",
+        "--TMP_DIR": "fixture[0]",
+        "--USE_JDK_DEFLATER": "true",
+        "--VALIDATION_STRINGENCY": "LENIENT"
+      },
+      "arguments": [
+        "--COMMENT=reviewed_by_qc",
+        "--COMPRESSION_LEVEL=2",
+        "--CREATE_INDEX=true",
+        "--CREATE_MD5_FILE=true",
+        "--INPUT=/work/fixtures/picard/small.sam",
+        "--TMP_DIR=/work/tmp",
+        "--USE_JDK_DEFLATER=true",
+        "--VALIDATION_STRINGENCY=LENIENT"
+      ]
+    }
+  ]
+}

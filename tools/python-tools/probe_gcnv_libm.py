@@ -1,4 +1,4 @@
-"""Inside broadinstitute/gatk:4.6.2.0 under gcnv_frozen_env.sh: locate glibc's __log_data, test
+"""Inside broadinstitute/gatk:4.7.0.0 under gcnv_frozen_env.sh: locate glibc's __log_data, test
 numpy's sum order, and write libm test vectors (inputs, numpy's outputs) as raw little-endian
 float64, which crates/gatk-tools/src/glibc_libm.rs's tests read from $GCNV_LIBM_VECTORS.
 

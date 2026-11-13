@@ -294,7 +294,7 @@ jobs:
             --tool DenoiseReadCounts \
             --tool ModelSegments \
             --tool ValidateBasicSomaticShortMutations \
-            --tool PrintReadCounts \
+            --tool ConvertCountsToDepthFile --tool PrintReadCounts \
             --tool CollectSVEvidence \
             --tool FastaAlternateReferenceMaker \
             --tool CompareReferences \
@@ -359,6 +359,11 @@ jobs:
             --tool ExtractVariantAnnotations \
             --tool FilterAlignmentArtifacts \
             --tool HaplotypeCaller --tool RampedHaplotypeCaller --tool Mutect2 \
+            --tool AddCommentsToBam --tool BuildBamIndex --tool CheckTerminatorBlock \
+            --tool FilterVcf --tool FixVcfHeader --tool GatherBamFiles --tool GatherVcfs \
+            --tool MakeSitesOnlyVcf --tool MergeVcfs --tool RenameSampleInVcf \
+            --tool SetNmAndUqTags --tool SetNmMdAndUqTags --tool SortVcf --tool SplitVcfs \
+            --tool UpdateVcfSequenceDictionary --tool VcfFormatConverter --tool VcfToIntervalList \
             --port target/release/gatk --corpus-dir /tmp/coverage-corpus
 
       - name: The committed measurement is the one this run produces
@@ -394,9 +399,60 @@ jobs:
             /tmp/coverage-corpus/
           if-no-files-found: ignore
 
+  fuzz:
+    name: "Differential fuzzing, seeded from the covering arrays (shard ${{ matrix.shard }}/8)"
+    # V.6. The arrays cover pairs of argument values; this measures which of the reference's
+    # branches those pairs reach, mutates one argument at a time to reach more, and replays every
+    # case it keeps against the port. The number goes to tools/fuzz/measured.json, frozen from this
+    # job's artefacts like every other measurement; a divergence is evidence for a finding, not a
+    # red build, so the job fails only when the harness cannot fuzz anything at all.
+    needs: oracle-image
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/cache/restore@v6
+        with:
+          path: /tmp/oracle-image.tar
+          key: gatk-rs-oracle-${{ hashFiles('tools/oracle/**') }}
+          fail-on-cache-miss: true
+
+      - run: docker load -i /tmp/oracle-image.tar
+
+      - name: nasm, which gkl-igzip needs to build
+        run: |
+          sudo apt-get update -qq || echo "apt refresh incomplete; the install below is the gate"
+          sudo apt-get install -y -qq nasm python3-h5py
+          nasm -v
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.1"
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo build --release -p gatk-cli
+
+      - name: Fuzz the reference and replay against the port
+        run: |
+          python3 tools/fuzz/run_fuzz.py --shard ${{ matrix.shard }}/8 --iterations 30 \
+            --port target/release/gatk
+
+      - name: Publish the findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-findings-${{ matrix.shard }}
+          path: tools/fuzz/findings/
+          if-no-files-found: ignore
+
   nvscorevariants:
     name: NVScoreVariants on real x86-64
-    # The one job with broadinstitute/gatk:4.6.2.0, which is a second image next to the pinned oracle
+    # The one job with broadinstitute/gatk:4.7.0.0, which is a second image next to the pinned oracle
     # because that one has no Python. Everything else about this tool is measured under Rosetta at
     # AVX2, so this is where those measurements get checked: which CPU dispatch the reference took,
     # how far the port's layers are from it there, and whether the printed scores still agree. The
@@ -411,7 +467,7 @@ jobs:
 
       - name: Weights, fixture, and the reference's dump and layers
         env:
-          IMAGE: broadinstitute/gatk@sha256:71b17ee42d149e8ec112603f5305c873ab60d93949ef8bb62a4fff85427f56fb
+          IMAGE: broadinstitute/gatk@sha256:7da5cf586e1c463f0c72908f9ac7dec8c29e37912c82d6e7b3c250f27fcb3891
         run: |
           mkdir -p /tmp/nv
           chmod 777 /tmp/nv
@@ -442,6 +498,93 @@ jobs:
         env:
           NVSCORE_OUTPUT: /tmp/nv/reference.dump /tmp/nv/fixture /tmp/nv
         run: cargo test --release -p gatk-tools --test nv_score_variants_output -- --nocapture
+
+  spark-threads:
+    name: The Spark tools at one thread and at four are the same bytes
+    needs: oracle-image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache/restore@v4
+        with:
+          path: /tmp/oracle-image.tar
+          key: gatk-rs-oracle-${{ hashFiles('tools/oracle/**') }}
+          fail-on-cache-miss: true
+
+      - run: docker load -i /tmp/oracle-image.tar
+
+      - name: nasm, which is what makes GKL's igzip exact rather than merely valid
+        # As in `argument-coverage`: without it a build cannot write a block-compressed file.
+        run: |
+          sudo apt-get update -qq || echo "apt refresh incomplete; the install below is the gate"
+          sudo apt-get install -y -qq nasm
+          nasm -v
+
+      - name: Build the port binary
+        run: cargo build --release -p gatk-cli
+
+      - name: Every Spark tool's rows, at RAYON_NUM_THREADS 1 and 4
+        # #72: a parallel path has to be proved byte-equal, not concordant. docs/spark-parallel.md.
+        timeout-minutes: 60
+        run: python3 tools/coverage/thread_independence.py --port target/release/gatk --threads 4
+
+  oracle-with-r:
+    name: "Oracle with R: the plots around their images"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Room for the Broad's image
+        # 8.5 GB unpacked, beside a release build of the workspace. The Android SDK is not ours.
+        run: |
+          sudo rm -rf /usr/local/lib/android
+          df -h /
+
+      - name: nasm, R and the packages the rewritten scripts load
+        # The distribution's packages, so that the job does not depend on CRAN and does not spend
+        # its time compiling them. The scripts' own bootstrap would otherwise install them; what it
+        # does when it cannot is checked by the test below. The refresh may fail for the reason the
+        # `test` job gives, and the install is the gate.
+        run: |
+          sudo apt-get update -qq || echo "apt refresh incomplete; the install below is the gate"
+          sudo apt-get install -y -qq --no-install-recommends nasm r-base-core r-cran-optparse \
+            r-cran-data.table r-cran-ggplot2 r-cran-cowplot r-cran-dplyr
+          Rscript -e 'for (p in c("optparse", "data.table", "ggplot2", "cowplot", "dplyr")) cat(p, as.character(packageVersion(p)), "\n"); cat(R.version.string, capabilities("cairo"), "\n")'
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          # Pinned; must match rust-toolchain.toml.
+          toolchain: "1.97.1"
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: The reference with R there to run its scripts
+        # gatk-rs-oracle has no Rscript on purpose, so this suite names the Broad's published image
+        # of the release, pinned by digest in the manifest's `oracle_with_r`. A separate image means
+        # a separate pull, about 2.4 GB, which is why it is not in the `oracle` matrix.
+        timeout-minutes: 30
+        run: |
+          docker pull "$(python3 -c 'import json; print(json.load(open("tools/conformance/manifest.json"))["oracle_with_r"]["image"])')"
+          python3 tools/conformance/run_suite.py --suites r-plots
+
+      - name: The port against what the reference just did
+        # No PNG byte is compared: see tools/conformance/manifest.json. The dump is read directly,
+        # so that this holds from the first run; freezing the candidate below changes nothing here
+        # except that the `test` job's machines without R go on skipping.
+        timeout-minutes: 30
+        env:
+          GATK_RS_REQUIRE_R: "1"
+          GATK_RS_R_PLOTS_DUMP: ${{ github.workspace }}/tools/conformance/pending/r-plots.RPlotsDump.txt
+        run: cargo test --release -p gatk-cli --test r_plots_end_to_end --test interpreter_tools_end_to_end
+
+      - name: Publish what the container produced
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-goldens-r-plots
+          path: tools/conformance/pending/
+          if-no-files-found: ignore
 
   inventory:
     name: Inventory is internally consistent
@@ -565,7 +708,7 @@ jobs:
         # document is stale, and a stale number in a sizing document is how a plan drifts.
         run: |
           python3 tools/coverage/covering.py --all --t 2 | tee /tmp/all.txt
-          grep -q "oracle runs=19454" /tmp/all.txt || {
+          grep -q "oracle runs=19189" /tmp/all.txt || {
             echo "pairwise sizing changed; update docs/what-pairwise-coverage-costs.md"
             exit 1
           }

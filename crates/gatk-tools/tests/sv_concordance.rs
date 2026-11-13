@@ -1,4 +1,4 @@
-//! Conformance for `SVConcordance` against GATK 4.6.2.0, compared as every concordance field of
+//! Conformance for `SVConcordance` against GATK 4.7.0.0, compared as every concordance field of
 //! every eval record of every run.
 //!
 //! Golden from `tools/readfilter-conformance/SVConcordanceDump.java`.
@@ -14,13 +14,15 @@
 //!  * **concordance being computed on the common samples only**;
 //!  * **a truth record's allele counts being copied when it has them and recounted when it does
 //!    not**, which the formatting gives away;
-//!  * **and --do-not-sort changing nothing for an in-order input.**
+//!  * **every record carrying its groups and what the linkage measured against its truth record**,
+//!    and the highest group that found a match being the one written;
+//!  * **and --do-not-sort being gone**, refused as an unknown option.
 
 use gatk_corpus as corpus;
-use gatk_tools::sv_cluster::{CallRecord, Linkage};
+use gatk_tools::sv_cluster::{CallRecord, Linkage, LinkageResult};
 use gatk_tools::sv_concordance::{
-    annotate, are_clusterable, closest, count_alleles, min_distance, run, total_distance,
-    AlleleCounts, Annotation, Genotype, Record,
+    annotate, are_clusterable, closest, count_alleles, min_distance, total_distance, AlleleCounts,
+    Annotation, Engine, Genotype, Record,
 };
 use gatk_tools::sv_stratify::SvType;
 use htsjdk_vcf::variant::format_vcf_double;
@@ -144,6 +146,8 @@ fn records(text: &str, which: &str) -> Vec<Record> {
                     })
                     .map(|genotype| genotype.sample.clone())
                     .collect(),
+                cpx_subtype: None,
+                cpx_intervals: Vec::new(),
             },
             genotypes,
             allele_counts,
@@ -173,6 +177,11 @@ const KEYS: &[&str] = &[
     "VAR_SENSITIVITY",
     "VAR_SPECIFICITY",
     "CNV_CONCORDANCE",
+    "STRAT",
+    "TRUTH_DISTANCE_START",
+    "TRUTH_DISTANCE_END",
+    "TRUTH_RECIPROCAL_OVERLAP",
+    "TRUTH_SIZE_SIMILARITY",
 ];
 
 /// One eval record's measured output: the concordance INFO fields, and the per-sample values.
@@ -268,10 +277,26 @@ fn push_counts(info: &mut Vec<(String, String)>, prefix: &str, counts: &AlleleCo
     info.push((format!("{prefix}AN"), number));
 }
 
-/// One annotation rendered the way the writer renders it.
-fn rendered(annotation: &Annotation) -> Measured {
-    let mut info: Vec<(String, String)> =
-        vec![("STATUS".to_string(), annotation.status.to_string())];
+/// One annotation rendered the way the writer renders it, with the groups it went to.
+fn rendered(annotation: &Annotation, strata: &[String]) -> Measured {
+    let mut info: Vec<(String, String)> = vec![
+        ("STATUS".to_string(), annotation.status.to_string()),
+        ("STRAT".to_string(), strata.join(",")),
+    ];
+    if let Some(linkage) = &annotation.truth_linkage {
+        if let Some(overlap) = linkage.reciprocal_overlap {
+            push_metric(&mut info, "TRUTH_RECIPROCAL_OVERLAP", overlap);
+        }
+        if let Some(similarity) = linkage.size_similarity {
+            push_metric(&mut info, "TRUTH_SIZE_SIMILARITY", similarity);
+        }
+        if let Some(distance) = linkage.breakpoint_distance_1 {
+            info.push(("TRUTH_DISTANCE_START".to_string(), distance.to_string()));
+        }
+        if let Some(distance) = linkage.breakpoint_distance_2 {
+            info.push(("TRUTH_DISTANCE_END".to_string(), distance.to_string()));
+        }
+    }
     if let Some(id) = &annotation.truth_variant_id {
         info.push(("TRUTH_VID".to_string(), id.clone()));
     }
@@ -325,29 +350,68 @@ fn common() -> Vec<String> {
     vec!["s2".to_string(), "s3".to_string()]
 }
 
+/// The walk: by position, a truth record before an eval record at the same one, every eval record
+/// going to `strata` and the default, then each record rendered and stably sorted by start.
+fn concordance(
+    linkage: Linkage,
+    groups: &[(String, Linkage)],
+    strata: &[String],
+    eval: &[Record],
+    truth: &[Record],
+) -> Vec<Measured> {
+    let mut walk: Vec<(i32, bool, &Record)> = truth
+        .iter()
+        .map(|record| (record.call.position_a, true, record))
+        .chain(
+            eval.iter()
+                .map(|record| (record.call.position_a, false, record)),
+        )
+        .collect();
+    walk.sort_by_key(|(position, is_truth, _)| (*position, !*is_truth));
+    let mut engine = Engine::new(groups, linkage, &[("chr1".to_string(), 199980)]);
+    let mut finished = Vec::new();
+    for (_, is_truth, record) in walk {
+        if is_truth {
+            engine.add_truth(record.clone()).expect("added");
+        } else {
+            engine.add_eval(record.clone(), strata).expect("added");
+        }
+        finished.extend(engine.flush(false).expect("flushed"));
+    }
+    finished.extend(engine.flush(true).expect("flushed"));
+    finished.sort_by_key(|done| engine.item(done.id).call.position_a);
+    finished
+        .iter()
+        .map(|done| {
+            let matched = done.truth.map(|(id, result)| (engine.item(id), result));
+            rendered(
+                &annotate(engine.item(done.id), matched, &common()),
+                &done.strata,
+            )
+        })
+        .collect()
+}
+
+fn with_overlap(overlap: f64) -> Linkage {
+    let mut linkage = Linkage::default();
+    linkage.depth.reciprocal_overlap = overlap;
+    linkage.mixed.reciprocal_overlap = overlap;
+    linkage.pesr.reciprocal_overlap = overlap;
+    linkage
+}
+
 #[test]
 fn every_annotation_matches_the_golden() {
     let text = golden();
     let eval = records(&text, "eval");
     let truth = records(&text, "truth");
     let mut compared = 0;
-    for (label, overlap) in [
-        ("default", 0.8),
-        ("do-not-sort", 0.8),
-        ("overlap-high", 0.999),
-    ] {
-        let mut linkage = Linkage::default();
-        linkage.depth.reciprocal_overlap = overlap;
-        linkage.mixed.reciprocal_overlap = overlap;
-        linkage.pesr.reciprocal_overlap = overlap;
-        let produced: Vec<Measured> = run(&linkage, &eval, &truth, &common())
-            .iter()
-            .map(rendered)
-            .collect();
+    for (label, overlap) in [("default", 0.8), ("overlap-high", 0.999)] {
+        let produced = concordance(with_overlap(overlap), &[], &[], &eval, &truth);
         assert_eq!(produced, measured(&text, label), "{label}");
         compared += 1;
     }
-    assert_eq!(compared, 3, "the runs that wrote records");
+    assert_eq!(compared, 2, "the runs that wrote records");
 }
 
 /// The comment says CNV/DEL matching is not allowed. The condition only refuses it when the CNV is
@@ -373,12 +437,12 @@ fn the_cnv_override_is_asymmetric() {
     // The eval CNV against a truth DEL is refused.
     assert_eq!(eval_cnv.call.sv_type, SvType::Cnv);
     assert_eq!(truth_del.call.sv_type, SvType::Del);
-    assert!(!are_clusterable(&linkage, &eval_cnv.call, &truth_del.call));
+    assert!(!are_clusterable(&linkage, &eval_cnv.call, &truth_del.call).result);
 
     // The eval DEL against a truth CNV is not.
     assert_eq!(eval_del.call.sv_type, SvType::Del);
     assert_eq!(truth_cnv.call.sv_type, SvType::Cnv);
-    assert!(are_clusterable(&linkage, &eval_del.call, &truth_cnv.call));
+    assert!(are_clusterable(&linkage, &eval_del.call, &truth_cnv.call).result);
 
     // And the base linkage would have allowed BOTH, so the override is what makes the difference
     // in one direction and nothing in the other.
@@ -425,13 +489,8 @@ fn the_tiebreaker_is_the_closest_single_breakend() {
     );
     assert_eq!(min_distance(&tie.call, &one.call), 0);
     assert_eq!(min_distance(&tie.call, &both.call), 100);
-    assert_eq!(
-        closest(&Linkage::default(), &tie, &truth)
-            .expect("a match")
-            .call
-            .id,
-        "t-tie-one"
-    );
+    let (index, _) = closest(&Linkage::default(), &tie, truth.iter().enumerate()).expect("a match");
+    assert_eq!(truth[index].call.id, "t-tie-one");
 }
 
 /// A sample present in one VCF and not the other is annotated on neither side.
@@ -454,7 +513,7 @@ fn concordance_is_computed_on_the_common_samples_only() {
             .unwrap_or_else(|| panic!("{id}"))
     }
     let exact = of(&eval, "exact");
-    let matched = Some(of(&truth, "t-exact"));
+    let matched = Some((of(&truth, "t-exact"), LinkageResult::default()));
     let narrow = annotate(exact, matched, &common());
     let wide = annotate(
         exact,
@@ -548,16 +607,6 @@ fn a_multiallelic_cnv_is_scored_on_copy_state_instead() {
         .any(|(name, _)| name == "CNV_CONCORDANCE"));
 }
 
-/// The flag removes a buffer that sorts by position, and the records complete in the order they
-/// were added, so for an in-order input it changes nothing.
-#[test]
-fn do_not_sort_changes_nothing_for_an_in_order_input() {
-    let text = golden();
-    assert_eq!(measured(&text, "default"), measured(&text, "do-not-sort"));
-    // The control that says the comparison can see a difference at all.
-    assert_ne!(measured(&text, "default"), measured(&text, "overlap-high"));
-}
-
 /// Raising it to 0.999 breaks exactly one match: the tie pair is the only one whose truth record
 /// is not an exact interval.
 #[test]
@@ -574,11 +623,18 @@ fn a_higher_reciprocal_overlap_breaks_one_match() {
     assert_eq!(changed, vec!["tie"]);
 }
 
-/// The dictionary comes from the argument, not from either VCF, and the finder refuses an input
-/// that is not in position order.
+/// The dictionary comes from the argument, not from either VCF, the finder refuses an input that
+/// is not in position order, and the flag 4.7.0.0 removed is an unknown option.
 #[test]
-fn the_two_refusals() {
+fn the_three_refusals() {
     let text = golden();
+    assert_eq!(
+        refusal(&text, "do-not-sort"),
+        (
+            "org.broadinstitute.barclay.argparser.CommandLineException".to_string(),
+            "do-not-sort is not a recognized option".to_string()
+        )
+    );
     assert_eq!(
         refusal(&text, "no-dictionary"),
         (
@@ -593,4 +649,117 @@ fn the_two_refusals() {
             "Items must be added in dictionary-sorted order".to_string()
         )
     );
+}
+
+/// What the linkage measured is written beside the match: the tie's truth record is exact on the
+/// start, 200 bp off at the end, and so a sixth shorter than the eval record's 1001 + 200.
+#[test]
+fn the_linkage_measurements_are_written_beside_the_match() {
+    let text = golden();
+    let eval = records(&text, "eval");
+    let truth = records(&text, "truth");
+    let tie = eval.iter().find(|r| r.call.id == "tie").expect("tie");
+    let (index, result) =
+        closest(&Linkage::default(), tie, truth.iter().enumerate()).expect("a match");
+    assert_eq!(truth[index].call.id, "t-tie-one");
+    assert_eq!(result.breakpoint_distance_1, Some(0));
+    assert_eq!(result.breakpoint_distance_2, Some(200));
+    assert_eq!(
+        format_vcf_double(result.reciprocal_overlap.expect("measured")),
+        "0.833"
+    );
+    assert_eq!(
+        format_vcf_double(result.size_similarity.expect("measured")),
+        "0.833"
+    );
+
+    // An unmatched record carries none of them.
+    let out = measured(&text, "default");
+    let nomatch = out.iter().find(|r| r.id == "nomatch").expect("nomatch");
+    assert!(!nomatch
+        .info
+        .iter()
+        .any(|(key, _)| key.starts_with("TRUTH_")));
+}
+
+/// A stratum that finds a match is written over the default, one that finds none gives way to the
+/// default's, and STRAT names both groups, sorted, either way.
+#[test]
+fn the_highest_group_that_matched_is_written() {
+    let text = golden();
+    let eval = records(&text, "eval");
+    let truth = records(&text, "truth");
+    let groups = vec![("DEL_tight".to_string(), with_overlap(0.999))];
+    let strata = vec!["DEL_tight".to_string()];
+    let produced = concordance(with_overlap(0.8), &groups, &strata, &eval, &truth);
+    let field = |id: &str, key: &str| {
+        produced
+            .iter()
+            .find(|record| record.id == id)
+            .expect(id)
+            .info
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| value.clone())
+    };
+    // The tight group refuses the tie, as overlap-high does, so the default's match is written.
+    assert_eq!(field("tie", "TRUTH_VID").as_deref(), Some("t-tie-one"));
+    assert_eq!(field("tie", "STRAT").as_deref(), Some("DEL_tight,default"));
+    // Without its stratum the records are the default run's in everything but STRAT.
+    let default = measured(&text, "default");
+    for (with, without) in produced.iter().zip(&default) {
+        let strip = |info: &[(String, String)]| -> Vec<(String, String)> {
+            info.iter()
+                .filter(|(key, _)| key != "STRAT")
+                .cloned()
+                .collect()
+        };
+        assert_eq!(strip(&with.info), strip(&without.info), "{}", with.id);
+    }
+}
+
+/// Eval records finished in one flush come out in the order `HashMap<Long, _>` iterates their
+/// numbers, and the sort by start keeps it between records that start together: with twenty truth
+/// records ahead of them, eighteen eval records at one position are numbered 20 to 37, and in a
+/// table of 32 the numbers from 32 come first.
+#[test]
+fn records_that_finish_together_keep_the_maps_order() {
+    let deletion = |id: String, start: i32| Record {
+        call: CallRecord {
+            id,
+            sv_type: SvType::Del,
+            contig_a: "chr1".to_string(),
+            position_a: start,
+            contig_b: "chr1".to_string(),
+            position_b: start + 100,
+            strand_a: None,
+            strand_b: None,
+            length: Some(101),
+            algorithms: vec!["depth".to_string()],
+            carriers: Vec::new(),
+            cpx_subtype: None,
+            cpx_intervals: Vec::new(),
+        },
+        genotypes: Vec::new(),
+        allele_counts: None,
+    };
+    let mut engine = Engine::new(&[], Linkage::default(), &[("chr1".to_string(), 199980)]);
+    for index in 0..20 {
+        engine
+            .add_truth(deletion(format!("t{index}"), 1 + index))
+            .expect("added");
+    }
+    for index in 0..18 {
+        engine
+            .add_eval(deletion(format!("e{index}"), 1000), &[])
+            .expect("added");
+    }
+    let ids: Vec<u64> = engine
+        .flush(true)
+        .expect("flushed")
+        .iter()
+        .map(|done| done.id)
+        .collect();
+    let expected: Vec<u64> = (32..38).chain(20..32).collect();
+    assert_eq!(ids, expected);
 }
