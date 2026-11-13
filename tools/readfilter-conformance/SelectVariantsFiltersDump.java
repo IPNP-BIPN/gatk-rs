@@ -101,7 +101,10 @@ public class SelectVariantsFiltersDump {
                         + "\tGT:GQ:FT\t0/1:60:PASS\t0/0:60:LowQD\t0/0:60:LowQD\t./.:60:PASS",
                 // 900: three no-calls out of four.
                 "chr1\t900\t.\tA\tC\t50\t.\tDP=50;AC=1;AF=0.125;AN=8;QD=20.0"
-                        + "\tGT:GQ\t0/1:60\t./.:60\t./.:60\t./.:60");
+                        + "\tGT:GQ\t0/1:60\t./.:60\t./.:60\t./.:60",
+                // 950: every genotype filtered, so no genotype expression over FT passes it.
+                "chr1\t950\t.\tA\tC\t50\t.\tDP=50;AC=1;AF=0.125;AN=8;QD=20.0"
+                        + "\tGT:GQ:FT\t0/1:60:LowQD\t0/0:60:LowQD\t0/0:60:LowQD\t0/0:60:LowQD");
 
         // Nothing at all, for the baseline.
         run(dir, "no-filter", input);
@@ -147,6 +150,13 @@ public class SelectVariantsFiltersDump {
         run(dir, "select-two-inverted", input, "-select", "QD > 10.0", "-select", "AC > 1",
                 "--invert-select", "true");
         run(dir, "select-genotype", input, "-select-genotype", "GQ > 55");
+        // GenotypeJEXLContext's FT is the filters or PASS, and isPassFT is "0" or "1": a genotype
+        // without FT passes, and so does FT=PASS, which htsjdk reads as no filter at all.
+        run(dir, "select-genotype-ft-pass", input, "-select-genotype", "FT == \"PASS\"");
+        run(dir, "select-genotype-ft-filter", input, "-select-genotype", "FT == \"LowQD\"");
+        run(dir, "select-genotype-is-pass-ft", input, "-select-genotype", "isPassFT == \"1\"");
+        run(dir, "select-genotype-is-not-pass-ft", input, "-select-genotype",
+                "isPassFT == \"0\"");
         // The same expression over AC, before and after the subset recomputes it.
         run(dir, "select-ac-after-subset", input, "-sn", "s0", "-select", "AC > 1");
         run(dir, "select-ac-before-subset", input, "-sn", "s0", "-select", "AC > 1",

@@ -14,9 +14,9 @@ use gatk_corpus as corpus;
 use gatk_engine::subset_alleles::Genotype;
 use gatk_engine::variant_context_utils::{Allele, Variant};
 use gatk_tools::select_variants::{
-    create_sample_name_inclusion_list, keeps_after_subset, keeps_before_subset, subset_record,
-    AlleleRestriction, FilterArguments, FilterRecord, Record, SampleArguments, SelectError,
-    SubsetArguments, VariantType,
+    create_sample_name_inclusion_list, genotype_jexl_context, keeps_after_subset,
+    keeps_before_subset, subset_record, AlleleRestriction, FilterArguments, FilterRecord, Record,
+    SampleArguments, SelectError, SubsetArguments, VariantType,
 };
 use std::collections::HashMap;
 
@@ -81,10 +81,14 @@ fn input(text: &str) -> (Vec<String>, Vec<(Record, FilterRecord)>) {
         })
         .collect();
 
+    // The genotype contexts come from the port's own reader and map, because what htsjdk-rs makes
+    // of a genotype `FT=PASS` is part of what the expressions over FT read.
+    let parsed = htsjdk_vcf::reader::read_vcf(&whole).expect("the input reads");
     let records = whole
         .lines()
         .filter(|line| !line.starts_with('#'))
-        .map(|line| {
+        .zip(&parsed.records)
+        .map(|(line, vc)| {
             let field: Vec<&str> = line.split('\t').collect();
             let mut alleles = vec![Allele::new(field[3].as_bytes(), true)];
             for alternate in field[4].split(',') {
@@ -92,7 +96,7 @@ fn input(text: &str) -> (Vec<String>, Vec<(Record, FilterRecord)>) {
             }
             let keys: Vec<&str> = field[8].split(':').collect();
             let mut genotypes = Vec::new();
-            let mut genotype_fields = Vec::new();
+            let genotype_fields = vc.genotypes.iter().map(genotype_jexl_context).collect();
             for index in 0..samples.len() {
                 let values: Vec<&str> = field[9 + index].split(':').collect();
                 let by_key: HashMap<String, String> = keys
@@ -119,14 +123,6 @@ fn input(text: &str) -> (Vec<String>, Vec<(Record, FilterRecord)>) {
                         .map(|ft| vec![("FT".to_string(), ft.clone())])
                         .unwrap_or_default(),
                 });
-                genotype_fields.push(
-                    by_key
-                        .iter()
-                        .map(|(key, value)| {
-                            (key.clone(), gatk_engine::jexl::Value::Str(value.clone()))
-                        })
-                        .collect(),
-                );
             }
             let mut attributes = Vec::new();
             let mut info = HashMap::new();
@@ -272,6 +268,22 @@ fn setup(run: &str) -> (SampleArguments, FilterArguments) {
             select_genotype_expressions: names(&["GQ > 55"]),
             ..base()
         }),
+        "select-genotype-ft-pass" => filters(FilterArguments {
+            select_genotype_expressions: names(&["FT == \"PASS\""]),
+            ..base()
+        }),
+        "select-genotype-ft-filter" => filters(FilterArguments {
+            select_genotype_expressions: names(&["FT == \"LowQD\""]),
+            ..base()
+        }),
+        "select-genotype-is-pass-ft" => filters(FilterArguments {
+            select_genotype_expressions: names(&["isPassFT == \"1\""]),
+            ..base()
+        }),
+        "select-genotype-is-not-pass-ft" => filters(FilterArguments {
+            select_genotype_expressions: names(&["isPassFT == \"0\""]),
+            ..base()
+        }),
         "select-two" => filters(FilterArguments {
             select_expressions: names(&["QD > 10.0", "AC > 1"]),
             ..base()
@@ -296,7 +308,7 @@ fn setup(run: &str) -> (SampleArguments, FilterArguments) {
 }
 
 /// The runs whose whole answer is the list of records written.
-const RUNS: [&str; 21] = [
+const RUNS: [&str; 25] = [
     "no-filter",
     "type-snp",
     "type-indel",
@@ -318,6 +330,10 @@ const RUNS: [&str; 21] = [
     "select-one",
     "select-inverted",
     "select-genotype",
+    "select-genotype-ft-pass",
+    "select-genotype-ft-filter",
+    "select-genotype-is-pass-ft",
+    "select-genotype-is-not-pass-ft",
 ];
 
 fn kept(text: &str, run: &str) -> Vec<String> {
@@ -428,7 +444,9 @@ fn the_filtered_fraction_is_an_integer_division_and_the_nocall_fraction_is_not()
         by_fraction.contains(&"800".to_string()),
         "the fraction gate does nothing"
     );
-    assert_eq!(by_fraction, kept(&text, "no-filter"));
+    // Only a record whose genotypes are ALL filtered reaches 4 / 4 = 1, which is above 0.1.
+    assert_eq!(by_fraction, kept(&text, "max-fraction-filtered-genotypes"));
+    assert!(!by_fraction.contains(&"950".to_string()));
 
     // The no-call fraction, written one line below in the reference, casts: 1/4 is above 0.1.
     let no_calls = survivors(&records, &samples, "max-nocall-fraction").expect("kept");
@@ -466,6 +484,8 @@ fn exclude_non_variants_runs_after_the_subset() {
     assert!(!whole.contains(&"700".to_string()));
     // 600 is carried by s2 and s3, which this run keeps.
     assert!(whole.contains(&"600".to_string()));
+    // 950's only carrier is filtered, and `getCalledChrCount` does not count a filtered genotype.
+    assert!(!whole.contains(&"950".to_string()));
 
     let subset = survivors(&records, &samples, "exclude-non-variants-subset").expect("kept");
     // The same record, with only s0 and s1 selected, is no longer polymorphic.
