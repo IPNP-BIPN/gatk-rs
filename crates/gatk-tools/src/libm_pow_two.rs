@@ -111,7 +111,7 @@ pub fn pow_two(y: f64) -> Option<f64> {
 }
 
 /// `exp_data.c`: the tail and the scale bits of each `2^(k/128)`, in pairs.
-const EXP_TABLE: [u64; 256] = [
+pub(crate) const EXP_TABLE: [u64; 256] = [
     0x0000000000000000,
     0x3ff0000000000000,
     0x3c9b3b4f1a88bf6e,

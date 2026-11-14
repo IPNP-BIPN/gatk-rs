@@ -30,6 +30,9 @@
 //! reference does where `python` or its packages are missing, because those refusals are the
 //! reference's answer on such a machine. What the script does not get is the temporary name of
 //! its own file, so the pickle holds zeros where the reference's holds a random number.
+//!
+//! `PostprocessGermlineCNVCalls`' script is ported too, against the frozen reference of
+//! `docs/gcnv-postprocess.md` (`runners_postprocess_gcnv.rs`), behind the same `gcnvkernel` import.
 use super::extract_variant_annotations_runner::{
     labelled_walker_start, matrix, metadata, reduced, validate_output_files, LabelledStart,
 };
@@ -100,7 +103,13 @@ fn port_limit(what: impl std::fmt::Display) -> Thrown {
 
 /// The five `checkPythonEnvironmentForPackage` of the default backend.
 fn check_isolation_forest_packages() -> Result<(), Thrown> {
-    for package in ["argparse", "h5py", "numpy", "sklearn", "dill"] {
+    check_python_packages(&["argparse", "h5py", "numpy", "sklearn", "dill"])
+}
+
+/// `PythonScriptExecutor.checkPythonEnvironmentForPackage`, package by package: the reference's
+/// answer on a machine without `python` or without the package, which the port gives too.
+fn check_python_packages(packages: &[&str]) -> Result<(), Thrown> {
+    for package in packages {
         if !on_the_path("python") {
             return Err(import_stop(package));
         }
@@ -764,8 +773,16 @@ pub fn postprocess_germline_cnv_calls(parser: &Parser) -> Outcome {
         }
     }
 
-    Err(gcnv_stop())
+    check_python_packages(&["gcnvkernel"])?;
+    let dictionary = match master {
+        Some(master) => master.sequences,
+        None => shards_dictionary(parser)?.sequences,
+    };
+    postprocess::run(parser, &dictionary)
 }
+
+#[path = "runners_postprocess_gcnv.rs"]
+mod postprocess;
 
 /// `new HDF5File(file, READ_ONLY)`, reported as each reader of the file reports it.
 fn open_hdf5(path: &str, reading: &str) -> Result<Hdf5Reader, Thrown> {

@@ -194,6 +194,8 @@ random draws), which closes the refusal left by #549 and builds the graph-dump a
 two inference tools need. If the lines disagree, the diff of the dump says which file, and the probes
 above say which knob to look at first.
 
+**Done for the segments**: [gcnv-postprocess.md](gcnv-postprocess.md).
+
 **A frozen reference is a different reference.** A port byte-identical to it is not byte-identical to
 GATK as shipped on any given machine, since the shipped configuration differs between machines
 already. Whether the port then accepts only the frozen configuration, and refuses otherwise, is a

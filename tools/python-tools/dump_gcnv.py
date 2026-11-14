@@ -1,5 +1,7 @@
 #!/usr/bin/env python
-"""Prints the CPU as comments, then `file<TAB>path<TAB>size<TAB>sha256` for every file of a run.
+"""Prints the CPU as comments, then `file<TAB>path<TAB>size<TAB>sha256` for every file of a run,
+then `input<TAB>path<TAB>hex` for every shard file, which crates/gatk-cli/tests/
+gcnv_postprocess_end_to_end.rs writes back to replay PostprocessGermlineCNVCalls.
 
 The pytensor cache is left out: it holds the compiled modules, whose keys name the host.
 Usage: dump_gcnv.py <directory measure_gcnv.sh wrote>
@@ -25,3 +27,6 @@ for path in sorted(paths):
     with open(path, "rb") as f:
         content = f.read()
     print(f"file\t{os.path.relpath(path, root)}\t{len(content)}\t{hashlib.sha256(content).hexdigest()}")
+for path in sorted(p for p in paths if os.path.relpath(p, root).split(os.sep)[0] in ("gcnv", "ploidy")):
+    with open(path, "rb") as f:
+        print(f"input\t{os.path.relpath(path, root)}\t{f.read().hex()}")
