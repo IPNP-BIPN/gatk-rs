@@ -117,7 +117,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | CountBasesInReference | gatk-rs | oracle-backed | 191 suite | 0 suite | 19/19 (100.0%) | 2 | 2046 probes (+0), 0/6 diverge | 4 | 0 | none |
 | CountBasesSpark | gatk-rs | oracle-backed | 6 | 0 | 19/19 (100.0%) | 2 | 1989 probes (+4), 0/11 diverge | 5 | 1 | none |
 | CountFalsePositives | gatk-rs | oracle-backed | 14 suite | 0 suite | 24/24 (100.0%) | 2 | 2273 probes (+30), 0/7 diverge | 2 | 2 | none |
-| CountReads | gatk-rs | oracle-backed | 36532 suite | 6 suite | 21/21 (100.0%) | 2 | 2110 probes (+25), 0/12 diverge | 5 | 0 | none |
+| CountReads | gatk-rs | oracle-backed | 36415 suite | 6 suite | 21/21 (100.0%) | 2 | 2110 probes (+25), 0/12 diverge | 5 | 0 | none |
 | CountReadsSpark | gatk-rs | oracle-backed | 9 | 1 | 19/19 (100.0%) | 2 | 2017 probes (+4), 0/11 diverge | 5 | 1 | none |
 | CountVariants | gatk-rs | oracle-backed | 36414 suite | 12 suite | 23/23 (100.0%) | 2 | 2356 probes (+4), 0/10 diverge | 4 | 0 | none |
 | CountVariantsSpark | gatk-rs | oracle-backed | 7 | 0 | 19/19 (100.0%) | 2 | 1682 probes (+8), 0/11 diverge | 7 | 1 | none |
@@ -177,7 +177,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | GatherPileupSummaries | gatk-rs | oracle-backed | 11 suite | 0 suite | 6/6 (100.0%) | 2 | 1199 probes (+2), 0/6 diverge | 5 | 0 | none |
 | GatherTranches | gatk-rs | oracle-backed | 11 suite | 0 suite | 8/8 (100.0%) | 2 | 1113 probes (+2), 0/7 diverge | 4 | 0 | none |
 | GatherVcfs | gatk-rs | oracle-backed | 28 suite | 0 suite | 34/34 (100.0%) | 2 | not measured | 8 | 0 | none |
-| GatherVcfsCloud | gatk-rs | oracle-backed | 36426 suite | 0 suite | 11/11 (100.0%) | 2 | 1047 probes (+2), 0/5 diverge | 2 | 0 | none |
+| GatherVcfsCloud | gatk-rs | oracle-backed | 36309 suite | 0 suite | 11/11 (100.0%) | 2 | 1047 probes (+2), 0/5 diverge | 2 | 0 | none |
 | GeneExpressionEvaluation | gatk-rs | oracle-backed | 21 suite | 0 suite | 19/19 (100.0%) | 2 | 2777 probes (+4), 0/12 diverge | 4 | 6 | none |
 | GenomicsDBImport | gatk-rs | oracle-backed | 3620 | 3341 | 19/19 (100.0%) | 2 | 2174 probes (+48), 0/9 diverge | 6 | 11 | none |
 | GenotypeConcordance | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -199,7 +199,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | IdentifyContaminant | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
 | IlluminaBasecallsToFastq | picard-rs | oracle-backed | not vendored | not vendored | not measured | - | not measured | 0 | 0 | none |
 | IlluminaBasecallsToSam | picard-rs | oracle-backed | not vendored | not vendored | 31/31 (100.0%) | 2 | not measured | 0 | 0 | none |
-| IndexFeatureFile | gatk-rs | oracle-backed | 36395 suite | 0 suite | 8/8 (100.0%) | 2 | 1219 probes (+10), 0/9 diverge | 0 | 0 | none |
+| IndexFeatureFile | gatk-rs | oracle-backed | 36278 suite | 0 suite | 8/8 (100.0%) | 2 | 1219 probes (+10), 0/9 diverge | 0 | 0 | none |
 | IntervalListToBed | picard-rs | oracle-backed | not vendored | not vendored | 8/8 (100.0%) | 2 | not measured | 0 | 0 | none |
 | IntervalListTools | picard-rs | oracle-backed | not vendored | not vendored | 34/34 (100.0%) | 2 | not measured | 0 | 0 | none |
 | JointGermlineCNVSegmentation | gatk-rs | oracle-backed | 12 suite | 0 suite | 22/22 (100.0%) | 2 | 4190 probes (+0), 0/10 diverge | 6 | 8 | none |
@@ -891,7 +891,7 @@ indexed.vcf and duo.vcf, whose records are all unfiltered SNPs, so what the two 
 
 ### CountReads
 
-Suites: `count-reads-and-bases`, `counting-walkers`, `interval-arguments`, `filter-resolution`, `tool-argument-declarations`, `usage-text`, `tool-argument-enums`, `count-reads-plumbing`, `read-walker-refusals`.
+Suites: `count-reads-and-bases`, `counting-walkers`, `interval-arguments`, `filter-resolution`, `tool-argument-declarations`, `tool-argument-enums`, `count-reads-plumbing`, `read-walker-refusals`.
 
 Inputs: `reads.bai`, `reads.bam`, `reads.vcf`, `reads2.bai`, `reads2.bam`.
 
@@ -1315,7 +1315,7 @@ picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFi
 
 ### GatherVcfsCloud
 
-Suites: `gather-vcfs`, `tool-argument-declarations`, `usage-text`, `tool-argument-enums`.
+Suites: `gather-vcfs`, `tool-argument-declarations`, `tool-argument-enums`.
 
 Inputs: `indexed.vcf`, `reads.vcf`.
 

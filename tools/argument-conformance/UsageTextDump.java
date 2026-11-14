@@ -1,175 +1,165 @@
 /*
- * The usage text Barclay renders for a tool, taken from the reference.
+ * What `gatk <Tool> --help` prints, for every tool `Main` can name.
  *
- * `gatk <Tool> -h` prints a rendering of the same annotations the argument definitions come from:
- * an ordering, a grouping, a wrapping and a set of colour codes, all of them byte-comparable.
- * What is measured is that rendering, for tools of three shapes.
+ * The usage is a rendering of the same annotations the argument definitions come from: an
+ * ordering, a grouping, a wrapping, conditional blocks per plugin descriptor, and possible values
+ * that a descriptor rather than an enum answers for. All of it is byte-comparable, and none of it
+ * can be measured on a handful of tools: a walker's `--disable-read-filter` lists THAT tool's
+ * defaults, an annotation descriptor adds its own conditional block, and a Spark tool prints a
+ * BETA banner above its usage line. So every tool is measured, GATK's and the Picard tools GATK
+ * dispatches to, through `Main.instanceMain` exactly as the command line reaches it.
  *
- * Ten behaviours this is built to catch.
+ * What this is built to catch:
  *
- *   - THE TEXT CARRIES NO ANSI ESCAPES, unlike the top-level usage `Main` prints, which is
- *     coloured: `CommandLineArgumentParser.usage` renders plain text and the colour lives above
- *     it;
- *   - THE ARGUMENTS ARE GROUPED into `Required Arguments`, `Optional Arguments` and
- *     `Advanced Arguments`, with a title line apiece and a blank line between entries;
- *   - THE ORDER INSIDE A GROUP IS ALPHABETICAL BY LONG NAME, which is not the order the parser
- *     reports its definitions in;
- *   - AN ARGUMENT'S LINE CARRIES ITS SHORT NAME, ITS LONG NAME, ITS TYPE AND ITS DEFAULT, and the
- *     documentation is wrapped under it;
- *   - THE WRAPPING IS AT A FIXED WIDTH and breaks on spaces, so a long doc string becomes several
- *     lines with the same indent;
- *   - A COLLECTION ARGUMENT SAYS SO in the same place a scalar says its default, with `This
- *     argument may be specified 0 or more times`;
- *   - AN ENUM ARGUMENT LISTS ITS MEMBERS under its own line, as `Possible values: {...}`;
- *   - THE PLUGIN ARGUMENTS ARE RENDERED LIKE ANY OTHER, so a read walker's usage carries the four
- *     read-filter ones and a tool that is no walker carries none;
- *   - THE VERSION IS PRINTED IN THE HEADER, which is why the golden is pinned to 4.6.2.0;
- *   - AND `-h` AND `--help` RENDER THE SAME TEXT, while a tool given neither renders none.
+ *   - THE TEXT IS WHAT `Main` WRITES TO STDERR for `<Tool> --help`, not a parser built on the side;
+ *   - A PICARD TOOL PRINTS ITS USAGE THROUGH PICARD'S OWN `instanceMain`, which then returns 1;
+ *   - `--disable-read-filter`, `--annotation` and their siblings print the DESCRIPTOR'S allowed
+ *     values, which differ per tool and are recorded on their own rows;
+ *   - THE MUTEX SENTENCE NAMES THE TARGET'S FIELD, recorded where it is not the long name;
+ *   - A DEPRECATED ARGUMENT SAYS SO before its documentation, which no declaration records;
+ *   - AND `-h` AND `--help` RENDER THE SAME TEXT.
  *
- * Output:
+ * Output, tools sorted by name:
  *
- *     usage\t<tool>\t<the whole text, escaped>
+ *     usage\t<tool>\t<what --help wrote to stderr, escaped>
  *     lines\t<tool>\t<how many lines it is>
- *     same\t<tool>\t<whether -h and --help agree>
+ *     same\t<tool>\t<whether -h wrote the same>
+ *     allowed\t<tool>\t<long name>\t<the descriptor's allowed values, sorted, comma-separated>
+ *     field\t<tool>\t<long name>\t<the field name, for a mutex target whose field is not its name>
+ *     deprecated\t<tool>\t<long name>\t<the deprecation detail the usage prints before the doc>
  *
  * Usage: UsageTextDump
  */
 
 import org.broadinstitute.barclay.argparser.CommandLineArgumentParser;
+import org.broadinstitute.barclay.argparser.CommandLinePluginDescriptor;
+import org.broadinstitute.barclay.argparser.NamedArgumentDefinition;
+import org.broadinstitute.hellbender.Main;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.TreeMap;
 
 public class UsageTextDump {
 
-    public static void main(final String[] args) {
-        usage("CountReads", new org.broadinstitute.hellbender.tools.CountReads());
-        usage("IndexFeatureFile", new org.broadinstitute.hellbender.tools.IndexFeatureFile());
-        usage("GatherVcfsCloud", new org.broadinstitute.hellbender.tools.GatherVcfsCloud());
-        // The two the port can run, whose usage the dispatcher answers `-h` with. The other two
-        // of that shape, CheckTerminatorBlock and BuildBamIndex, are Picard's and are measured
-        // there.
-        // Undocumented, like `PrintBGZFBlockInformation` below it: the inventory carries a
-        // summary only for a DOCUMENTED tool, so the usage golden is where this one's comes from
-        // and the declarations generator refuses without it.
-        usage("CompareIntervalLists",
-                new org.broadinstitute.hellbender.tools.CompareIntervalLists());
-        usage("PrintBGZFBlockInformation",
-                new org.broadinstitute.hellbender.tools.PrintBGZFBlockInformation());
-        // Undocumented as well, and a BETA banner above its usage line.
-        usage("FindBreakpointEvidenceSpark",
-                new org.broadinstitute.hellbender.tools.spark.sv.evidence.FindBreakpointEvidenceSpark());
-        usage("StructuralVariationDiscoveryPipelineSpark",
-                new org.broadinstitute.hellbender.tools.spark.sv.StructuralVariationDiscoveryPipelineSpark());
-        usage("NVScoreVariants",
-                new org.broadinstitute.hellbender.tools.walkers.vqsr.NVScoreVariants());
-        // Documented, but the banner above their usage lines is only read from here.
-        usage("TrainVariantAnnotationsModel",
-                new org.broadinstitute.hellbender.tools.walkers.vqsr.scalable.TrainVariantAnnotationsModel());
-        usage("ScoreVariantAnnotations",
-                new org.broadinstitute.hellbender.tools.walkers.vqsr.scalable.ScoreVariantAnnotations());
-        // Undocumented as well, a Spark tool whose declarations need the summary.
-        usage("CollectAllelicCountsSpark",
-                new org.broadinstitute.hellbender.tools.copynumber.CollectAllelicCountsSpark());
-        // Undocumented as well, and a read walker, so this one's usage carries the plugin
-        // arguments the two above it do not.
-        usage("AddOriginalAlignmentTags",
-                new org.broadinstitute.hellbender.tools.AddOriginalAlignmentTags());
-        // Undocumented as well, and the shortest namespace of the four: fifteen arguments, none of
-        // them a walker's.
-        usage("PrintFileDiagnostics",
-                new org.broadinstitute.hellbender.tools.PrintFileDiagnostics());
-        usage("CreateHadoopBamSplittingIndex",
-                new org.broadinstitute.hellbender.tools.spark.CreateHadoopBamSplittingIndex());
-        // Two structural-variant evidence tools, undocumented as well, which the declarations
-        // generator refuses without a summary. `CondenseDepthEvidence` is a `FeatureWalker` and
-        // `PrintSVEvidence` a `MultiFeatureWalker`, so neither usage carries the read walker's
-        // plugin arguments.
-        usage("CondenseDepthEvidence",
-                new org.broadinstitute.hellbender.tools.sv.CondenseDepthEvidence());
-        usage("ConvertCountsToDepthFile",
-                new org.broadinstitute.hellbender.tools.sv.ConvertCountsToDepthFile());
-        usage("PrintSVEvidence",
-                new org.broadinstitute.hellbender.tools.sv.PrintSVEvidence());
-        // Seven more undocumented tools, whose summaries only this golden carries.
-        usage("GatherPileupSummaries",
-                new org.broadinstitute.hellbender.tools.walkers.contamination.GatherPileupSummaries());
-        usage("GatherNormalArtifactData",
-                new org.broadinstitute.hellbender.tools.walkers.mutect.GatherNormalArtifactData());
-        usage("MergeMutectStats",
-                new org.broadinstitute.hellbender.tools.walkers.mutect.MergeMutectStats());
-        usage("CombineSegmentBreakpoints",
-                new org.broadinstitute.hellbender.tools.copynumber.utils.CombineSegmentBreakpoints());
-        usage("MergeAnnotatedRegions",
-                new org.broadinstitute.hellbender.tools.copynumber.utils.MergeAnnotatedRegions());
-        usage("MergeAnnotatedRegionsByAnnotation",
-                new org.broadinstitute.hellbender.tools.copynumber.utils.MergeAnnotatedRegionsByAnnotation());
-        usage("TagGermlineEvents",
-                new org.broadinstitute.hellbender.tools.copynumber.utils.TagGermlineEvents());
-        // Eight more undocumented walkers.
-        usage("AlleleFrequencyQC",
-                new org.broadinstitute.hellbender.tools.walkers.varianteval.AlleleFrequencyQC());
-        usage("CalculateAverageCombinedAnnotations",
-                new org.broadinstitute.hellbender.tools.CalculateAverageCombinedAnnotations());
-        usage("DownsampleByDuplicateSet",
-                new org.broadinstitute.hellbender.tools.walkers.consensus.DownsampleByDuplicateSet());
-        usage("ExampleMultiFeatureWalker",
-                new org.broadinstitute.hellbender.tools.examples.ExampleMultiFeatureWalker());
-        usage("MTLowHeteroplasmyFilterTool",
-                new org.broadinstitute.hellbender.tools.walkers.mutect.filtering.MTLowHeteroplasmyFilterTool());
-        usage("MergeMutect2CallsWithMC3",
-                new org.broadinstitute.hellbender.tools.walkers.validation.MergeMutect2CallsWithMC3());
-        usage("NuMTFilterTool",
-                new org.broadinstitute.hellbender.tools.walkers.mutect.filtering.NuMTFilterTool());
-        usage("ReferenceBlockConcordance",
-                new org.broadinstitute.hellbender.tools.walkers.validation.ReferenceBlockConcordance());
-        // Two more undocumented tools.
-        usage("VCFComparator",
-                new org.broadinstitute.hellbender.tools.walkers.variantutils.VCFComparator());
-        usage("VariantAnnotator",
-                new org.broadinstitute.hellbender.tools.walkers.annotator.VariantAnnotator());
-        // Four more undocumented tools, from the fifth lot of declarations.
-        usage("AddFlowBaseQuality",
-                new org.broadinstitute.hellbender.tools.walkers.groundtruth.AddFlowBaseQuality());
-        usage("CRAMIssue8768Detector",
-                new org.broadinstitute.hellbender.tools.CRAMIssue8768Detector());
-        usage("CollectF1R2Counts",
-                new org.broadinstitute.hellbender.tools.walkers.readorientation.CollectF1R2Counts());
-        usage("SplitCRAM",
-                new org.broadinstitute.hellbender.tools.SplitCRAM());
-        // Undocumented as well, declared on its own.
-        usage("StructuralVariantDiscoverer",
-                new org.broadinstitute.hellbender.tools.StructuralVariantDiscoverer());
-    }
-
-    /** The text the tool's own parser renders, and the two spellings that ask for it. */
-    static void usage(final String tool, final org.broadinstitute.hellbender.cmdline
-            .CommandLineProgram target) {
-        final CommandLineArgumentParser parser =
-                (CommandLineArgumentParser) target.getCommandLineParser();
-        final String text = parser.usage(true, true);
-        System.out.printf("usage\t%s\t%s%n", tool, escape(text));
-        System.out.printf("lines\t%s\t%d%n", tool, text.split("\n", -1).length);
-
-        // `-h` and `--help` reach the same rendering, which is what the two runs below show.
-        final String dash = render(target, "-h");
-        final String longSpelling = render(target, "--help");
-        System.out.printf("same\t%s\t%s%n", tool, dash.equals(longSpelling));
-    }
-
-    /** What one spelling of the help argument prints. */
-    static String render(final org.broadinstitute.hellbender.cmdline.CommandLineProgram target,
-                         final String spelling) {
-        final ByteArrayOutputStream sink = new ByteArrayOutputStream();
-        try {
-            target.getCommandLineParser().parseArguments(
-                    new PrintStream(sink, true, StandardCharsets.UTF_8),
-                    new String[]{spelling});
-        } catch (final Exception e) {
-            return "E:" + e.getClass().getName();
+    public static void main(final String[] args) throws Exception {
+        // What GATK's `Main` sets before anything else: Picard tools parse with Barclay.
+        System.setProperty("picard.useLegacyParser", "false");
+        for (final var tool : tools().entrySet()) {
+            final String name = tool.getKey();
+            final String text = help(name, "--help");
+            System.out.printf("usage\t%s\t%s%n", name, escape(text));
+            System.out.printf("lines\t%s\t%d%n", name, text.split("\n", -1).length);
+            System.out.printf("same\t%s\t%s%n", name, text.equals(help(name, "-h")));
+            descriptors(name, parser(tool.getValue().getDeclaredConstructor().newInstance()));
         }
-        return sink.toString(StandardCharsets.UTF_8);
+    }
+
+    /** Every tool the listing names, by the discovery `extractCommandLineProgram` runs. */
+    static TreeMap<String, Class<?>> tools() throws Exception {
+        final Main main = new Main();
+        final java.lang.reflect.Method packages = Main.class.getDeclaredMethod("getPackageList");
+        packages.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        final List<String> packageList = (List<String>) packages.invoke(main);
+        final org.broadinstitute.barclay.argparser.ClassFinder finder =
+                new org.broadinstitute.barclay.argparser.ClassFinder();
+        for (final String pkg : packageList) {
+            finder.find(pkg, picard.cmdline.CommandLineProgram.class);
+            finder.find(pkg, org.broadinstitute.hellbender.cmdline.CommandLineProgram.class);
+        }
+        final TreeMap<String, Class<?>> tools = new TreeMap<>();
+        for (final Class<?> type : finder.getClasses()) {
+            if (type.equals(org.broadinstitute.hellbender.cmdline.PicardCommandLineProgramExecutor.class)
+                    || type.getSimpleName().equals("CommandLineArgumentValidator")
+                    || !org.broadinstitute.hellbender.utils.ClassUtils.canMakeInstances(type)) {
+                continue;
+            }
+            final var properties = type.getAnnotation(
+                    org.broadinstitute.barclay.argparser.CommandLineProgramProperties.class);
+            if (properties == null || properties.omitFromCommandLine()) {
+                continue;
+            }
+            tools.put(type.getSimpleName(), type);
+        }
+        return tools;
+    }
+
+    /** What one spelling of the help argument makes `Main` write to stderr. */
+    static String help(final String tool, final String spelling) {
+        final ByteArrayOutputStream errBytes = new ByteArrayOutputStream();
+        final PrintStream realOut = System.out;
+        final PrintStream realErr = System.err;
+        try {
+            System.setOut(new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8));
+            System.setErr(new PrintStream(errBytes, true, StandardCharsets.UTF_8));
+            try {
+                new Main().instanceMain(new String[]{tool, spelling});
+            } catch (final Exception ignored) {
+                // A Picard tool's `instanceMain` returns 1 after the usage, which `Main` turns into
+                // a PicardNonZeroExitException; the usage is what is measured here.
+            }
+        } finally {
+            System.setOut(realOut);
+            System.setErr(realErr);
+        }
+        return errBytes.toString(StandardCharsets.UTF_8);
+    }
+
+    /** The parser a tool hands out, whichever of the two `CommandLineProgram`s it extends. */
+    static CommandLineArgumentParser parser(final Object target) {
+        return (CommandLineArgumentParser) (target instanceof picard.cmdline.CommandLineProgram
+                ? ((picard.cmdline.CommandLineProgram) target).getCommandLineParser()
+                : ((org.broadinstitute.hellbender.cmdline.CommandLineProgram) target)
+                        .getCommandLineParser());
+    }
+
+    /** The descriptors' allowed values, the mutex sentence's field names, the deprecations. */
+    static void descriptors(final String tool, final CommandLineArgumentParser parser)
+            throws Exception {
+        final java.lang.reflect.Field registry = CommandLineArgumentParser.class
+                .getDeclaredField("pluginDescriptors");
+        registry.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        final java.util.Map<String, CommandLinePluginDescriptor<?>> descriptors =
+                (java.util.Map<String, CommandLinePluginDescriptor<?>>) registry.get(parser);
+        final Set<String> targets = new HashSet<>();
+        for (final NamedArgumentDefinition definition : parser.getNamedArgumentDefinitions()) {
+            targets.addAll(definition.getMutexTargetList());
+        }
+        for (final NamedArgumentDefinition definition : parser.getNamedArgumentDefinitions()) {
+            final String longName = definition.getLongName();
+            // `usage` asks every descriptor about every argument and prints what one answers;
+            // a descriptor refuses a name that is not its own, which is no answer.
+            for (final CommandLinePluginDescriptor<?> descriptor : descriptors.values()) {
+                final Set<String> allowed;
+                try {
+                    allowed = descriptor.getAllowedValuesForDescriptorHelp(longName);
+                } catch (final RuntimeException notItsOwn) {
+                    continue;
+                }
+                if (allowed != null) {
+                    // Sorted as the usage prints them, which ignores case: `AlleleFraction`
+                    // before `AS_BaseQualityRankSumTest`.
+                    final Set<String> sorted = new java.util.TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+                    sorted.addAll(allowed);
+                    System.out.printf("allowed\t%s\t%s\t%s%n", tool, longName,
+                            String.join(",", sorted));
+                }
+            }
+            final String field = definition.getUnderlyingField().getName();
+            if (targets.contains(longName) && !field.equals(longName)) {
+                System.out.printf("field\t%s\t%s\t%s%n", tool, longName, field);
+            }
+            if (definition.isDeprecated()) {
+                System.out.printf("deprecated\t%s\t%s\t%s%n", tool, longName,
+                        escape(definition.getDeprecationDetail()));
+            }
+        }
     }
 
     static String escape(final String text) {

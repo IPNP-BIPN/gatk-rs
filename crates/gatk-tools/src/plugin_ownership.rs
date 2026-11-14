@@ -523,14 +523,10 @@ pub fn positional_arguments(tool: &str) -> Option<(usize, usize)> {
 /// Cannot be used in conjunction with argument(s) maxAmbiguousBaseFraction
 /// ```
 ///
-/// Measured in the `mutex-target-names` golden. An argument the golden does not name keeps its
-/// long name, which is what the reference prints where the field is named after the argument.
+/// The four a read filter declares were measured in the `mutex-target-names` golden; the whole
+/// table, every tool's targets, is read off the `usage-text` golden. An argument it does not name
+/// keeps its long name, which is what the reference prints where the field is named after the
+/// argument.
 pub fn mutex_field_name(long_name: &str) -> Option<&'static str> {
-    match long_name {
-        "ambig-filter-frac" => Some("maxAmbiguousBaseFraction"),
-        "ambig-filter-bases" => Some("maxAmbiguousBases"),
-        "max-soft-clipped-ratio" => Some("maximumSoftClippedRatio"),
-        "max-soft-clipped-leading-trailing-ratio" => Some("maximumLeadingTrailingSoftClippedRatio"),
-        _ => None,
-    }
+    crate::tool_declarations::mutex_field(long_name)
 }

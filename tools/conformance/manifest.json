@@ -6803,23 +6803,21 @@
     },
     {
       "id": "usage-text",
-      "status": "oracle-backed",
-      "title": "the usage text Barclay renders, which is a rendering and not prose",
+      "status": "golden-pending",
+      "title": "what `gatk <Tool> --help` prints, for every tool `Main` can name",
       "harness": "tools/argument-conformance",
       "tools": [
-        "CountReads",
-        "IndexFeatureFile",
-        "GatherVcfsCloud"
+        "Main"
       ],
       "compare": {
         "mode": "lines"
       },
-      "why": "The usage is generated from the same annotations the argument definitions come from, so it has an ordering, a grouping, a wrapping and a set of colour codes, and it is byte-comparable like anything else. Three tools of three shapes: a read walker whose usage carries the plugin arguments, and two tools that are no walkers and carry none.",
+      "why": "The usage is generated from the same annotations the argument definitions come from, so it has an ordering, a grouping, a wrapping and a set of colour codes, and it is byte-comparable like anything else. A handful of tools cannot stand for the rest: a walker's `--disable-read-filter` lists THAT tool's default filters, the ten tools with an annotation descriptor print a second conditional block and list the annotation library, a Spark tool prints a BETA banner above its usage line, a deprecated argument says so before its documentation, a `ClpEnum` prints one documented constant per line, a tool with no required argument loses a blank line, and `CompareBaseQualities` has a positional section. So every tool is measured, all 312 that `Main` names (191 GATK tools and 121 Picard ones), through `Main.instanceMain` with `--help` and with `-h`, which is exactly what the dispatcher answers. Beside each text the dump records what the text is composed from and no declaration carries: each descriptor's allowed values per tool, the field name of every mutex target whose field is not its long name, and each deprecation's detail. The port compares the 208 tools it declares and runs, byte for byte; the 104 Picard tools it neither declares nor runs are measured and not compared.",
       "cases": [
         {
           "dump": "UsageTextDump",
           "golden": "crates/gatk-tools/tests/data/usage_text.txt.gz",
-          "why": "Frozen from the candidate artefact of run 41201436568, with the tenth Spark brick (X.1): CollectAllelicCountsSpark, which is UNDOCUMENTED. Frozen from the candidate artefact of run 36808605640 on main, byte for byte the local dump, with `StructuralVariantDiscoverer`, which is UNDOCUMENTED. Frozen from the candidate artefact of run 35839898955 with the twenty-seven tools of #1225, byte for byte what this laptop produced. Re-measured with `AddFlowBaseQuality`, `CRAMIssue8768Detector`, `CollectF1R2Counts` and `SplitCRAM`, all UNDOCUMENTED. Frozen from the candidate artefact of run 35812512951 with `VCFComparator` and `VariantAnnotator`, both UNDOCUMENTED. Frozen from the candidate artefact of run 35797503225 with eight more UNDOCUMENTED walkers, whose summaries only this golden carries. Frozen from the candidate artefact of run 35785932792 with seven more UNDOCUMENTED tools, the gathers and copy-number utilities, whose summaries only this golden carries. Frozen from the candidate artefact of run 35772745546 with `CondenseDepthEvidence` and `PrintSVEvidence`, both UNDOCUMENTED, so this golden is the only place their summaries come from and the declarations generator refuses them without it. Re-measured with `PrintFileDiagnostics`, which is UNDOCUMENTED and prints an EXPERIMENTAL banner above its usage line, in the pinned container on a real x86-64 runner, as the candidate artefact of run 34332537404. Re-measured with `AddOriginalAlignmentTags`, which is UNDOCUMENTED and a read walker: the inventory carries a summary only for a documented tool, so this golden is where the declarations generator reads one, and its usage is the first in this dump to print an EXPERIMENTAL banner above the usage line, which is why the summary is read from between the blank line and `Version:` and not from a fixed offset. In the pinned container on a real x86-64 runner, as the candidate artefact of run 34260197895. Re-measured with `CompareIntervalLists`, which is UNDOCUMENTED: the inventory carries a summary only for a documented tool, so this golden is where the declarations generator reads it. Three tools' whole usage text, its line count, and whether -h and --help agree. Refrozen under GATK 4.7.0.0 from the candidate artefact of run 42922912931."
+          "why": "Local smoke run in the 4.7.0.0 release image, NOT a golden: replaced by the candidate artefact of the CI run that adds the whole tool list. One `usage`, `lines` and `same` row per tool, then its `allowed`, `field` and `deprecated` rows."
         }
       ]
     },

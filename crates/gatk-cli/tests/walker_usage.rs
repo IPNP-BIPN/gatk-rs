@@ -1,9 +1,10 @@
-//! Conformance for a walker's composed usage against GATK 4.6.2.0.
+//! Conformance for every tool's composed usage against GATK 4.7.0.0.
 //!
-//! `usage-text` measures the whole text `CountReads -h` prints, conditional blocks and all. The
-//! port composes it from the declarations, the ownership table (`plugin-argument-ownership`), the
-//! catalogue and defaults (`read-filter-catalogue`) and the mutex field names
-//! (`mutex-target-names`), and it is the reference's text byte for byte.
+//! `usage-text` measures the whole text `Main` writes to stderr for `<Tool> --help`, for every
+//! tool it can name. The port composes it from the declarations, the ownership table
+//! (`plugin-argument-ownership`), and what the same golden records beside each text: the
+//! descriptors' possible values, the mutex targets' field names and the deprecations. Every tool
+//! the port runs prints the reference's text byte for byte.
 //!
 //! # What this suite is for
 //!
@@ -12,8 +13,10 @@
 //!  * **the two arguments the descriptor answers for: `--read-filter` prints the whole catalogue
 //!    and `--disable-read-filter` prints the TOOL'S OWN defaults**;
 //!  * **the wrapping, which drops a line that would hold nothing but the indent**;
-//!  * **and the mutex sentence, which names the target definition's FIELD rather than the long
-//!    name the declarations carry.**
+//!  * **the mutex sentence, which names the target definition's FIELD rather than the long name
+//!    the declarations carry;**
+//!  * **and the shapes only some tools have: a banner, an annotation block, a deprecation, a
+//!    documented enum, a positional section, no required section at all.**
 
 use gatk_corpus as corpus;
 
@@ -138,4 +141,46 @@ fn the_descriptor_answers_for_two_arguments() {
     let plain = gatk_cli::composed_usage("IndexFeatureFile").expect("the composition");
     assert!(!plain.contains("Conditional Arguments"));
     assert_eq!(gatk_cli::tool_usage("IndexFeatureFile"), Some(plain));
+}
+
+/// Every tool this port declares, against what the reference's `Main` wrote to stderr for
+/// `<Tool> --help`: the golden measures every tool `Main` can name, and the port answers for every
+/// one it runs, with both spellings, byte for byte.
+#[test]
+fn every_declared_tool_answers_help_with_the_references_usage() {
+    let text = corpus::read_golden(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../gatk-tools/tests/data/usage_text.txt.gz"),
+    );
+    let mut compared = 0;
+    let mut runnable = 0;
+    for line in text.lines().filter(|line| line.starts_with("usage\t")) {
+        let tool = line.split('\t').nth(1).expect("a tool");
+        let runs = gatk_cli::runner(tool).is_some() || gatk_cli::picard::work(tool).is_some();
+        if gatk_tools::tool_declarations::declarations(tool).is_none() {
+            // A Picard tool GATK bundles and this port neither declares nor runs.
+            assert!(!runs, "{tool} runs and has no declarations");
+            continue;
+        }
+        let expected = golden(tool);
+        assert_eq!(
+            gatk_cli::composed_usage(tool).as_deref(),
+            Some(expected.as_str()),
+            "{tool}"
+        );
+        for spelling in ["--help", "-h"] {
+            let outcome = gatk_cli::run(&[tool.to_string(), spelling.to_string()]);
+            assert_eq!(outcome.stderr, expected, "{tool} {spelling}");
+        }
+        compared += 1;
+        runnable += usize::from(runs);
+    }
+    // 191 GATK tools and the 17 Picard tools GATK bundles that this port declares, and runs.
+    assert_eq!(compared, 208);
+    assert_eq!(runnable, compared);
+    // `-h` and `--help` are the same text in the reference too.
+    assert!(text
+        .lines()
+        .filter(|line| line.starts_with("same\t"))
+        .all(|line| line.ends_with("\ttrue")));
 }
