@@ -137,11 +137,43 @@ pub fn prior(read_base: u8, haplotype_base: u8, quality: u8) -> f64 {
     }
 }
 
+/// Every quality's three probabilities, computed once by the functions above.
+struct Tables {
+    /// `qual_to_prob(q)`.
+    prob: [f64; 256],
+    /// `qual_to_error_prob(q)`.
+    error: [f64; 256],
+    /// `qual_to_error_prob(q) / TRISTATE_CORRECTION`, what [`prior`] gives a mismatch.
+    mismatch: [f64; 256],
+    /// `match_to_match_prob(insertion, deletion)`, indexed `insertion * 256 + deletion`.
+    match_to_match: Vec<f64>,
+}
+
+static TABLES: std::sync::LazyLock<Tables> = std::sync::LazyLock::new(|| {
+    let prob = std::array::from_fn(|q| qual_to_prob(q as f64));
+    let error = std::array::from_fn(|q| qual_to_error_prob(q as f64));
+    let mismatch = std::array::from_fn(|q| qual_to_error_prob(q as f64) / TRISTATE_CORRECTION);
+    let match_to_match = (0..256 * 256)
+        .map(|k: i32| match_to_match_prob(k / 256, k % 256))
+        .collect();
+    Tables {
+        prob,
+        error,
+        mismatch,
+        match_to_match,
+    }
+});
+
 /// `computeReadLikelihoodGivenHaplotypeLog10`, the whole recursion.
 ///
 /// The three matrices are padded by one in each direction, the deletion row is seeded with the
 /// initial condition spread over the haplotype's length, and the answer is the log of the last
 /// row's match and insertion terms with that condition taken back off.
+///
+/// Each cell does the reference's operations in the reference's order, so the bits are its own;
+/// what is saved is the rest. Only two rows of each matrix are kept, and the transitions and
+/// priors come from [`TABLES`], built by [`qual_to_trans_probs`]' and [`prior`]'s own functions,
+/// instead of a `pow` per cell.
 pub fn read_likelihood_given_haplotype_log10(
     haplotype: &[u8],
     read: &[u8],
@@ -150,46 +182,260 @@ pub fn read_likelihood_given_haplotype_log10(
     deletion_quals: &[u8],
     gap_continuation: &[u8],
 ) -> f64 {
-    let padded_read = read.len() + 1;
-    let padded_haplotype = haplotype.len() + 1;
-    let mut matches = vec![vec![0.0f64; padded_haplotype]; padded_read];
-    let mut insertions = vec![vec![0.0f64; padded_haplotype]; padded_read];
-    let mut deletions = vec![vec![0.0f64; padded_haplotype]; padded_read];
+    let tables = &*TABLES;
+    let width = haplotype.len() + 1;
+    // Row i - 1 and row i of the match, insertion and deletion matrices.
+    let mut rows = vec![0.0f64; 6 * width];
+    let (previous, current) = rows.split_at_mut(3 * width);
+    let (mut previous_m, rest) = previous.split_at_mut(width);
+    let (mut previous_x, mut previous_y) = rest.split_at_mut(width);
+    let (mut current_m, rest) = current.split_at_mut(width);
+    let (mut current_x, mut current_y) = rest.split_at_mut(width);
 
     // The seed is spread over the haplotype, so a longer haplotype starts from a smaller value and
-    // the answer does not depend on its length.
+    // the answer does not depend on its length. Row zero's column zero carries it too.
     let initial = initial_condition() / haplotype.len() as f64;
-    for cell in deletions[0].iter_mut() {
-        *cell = initial;
-    }
+    previous_y.fill(initial);
 
-    let mut transitions = vec![[0.0f64; TRANS_PROB_ARRAY_LENGTH]; padded_read];
-    for index in 0..read.len() {
-        transitions[index + 1] = qual_to_trans_probs(
-            insertion_quals[index],
-            deletion_quals[index],
-            gap_continuation[index],
+    for i in 0..read.len() {
+        let (insertion, deletion, gap) = (
+            usize::from(insertion_quals[i]),
+            usize::from(deletion_quals[i]),
+            usize::from(gap_continuation[i]),
         );
-    }
+        let match_to_match = tables.match_to_match[insertion * 256 + deletion];
+        let indel_to_match = tables.prob[gap];
+        let match_to_insertion = tables.error[insertion];
+        let insertion_to_insertion = tables.error[gap];
+        let match_to_deletion = tables.error[deletion];
+        let deletion_to_deletion = insertion_to_insertion;
+        let quality = usize::from(read_quals[i]);
+        let (matched, mismatched) = (tables.prob[quality], tables.mismatch[quality]);
+        let read_base = read[i];
 
-    for i in 1..padded_read {
-        for j in 1..padded_haplotype {
-            let p = prior(read[i - 1], haplotype[j - 1], read_quals[i - 1]);
-            matches[i][j] = p
-                * (matches[i - 1][j - 1] * transitions[i][MATCH_TO_MATCH]
-                    + insertions[i - 1][j - 1] * transitions[i][INDEL_TO_MATCH]
-                    + deletions[i - 1][j - 1] * transitions[i][INDEL_TO_MATCH]);
-            insertions[i][j] = matches[i - 1][j] * transitions[i][MATCH_TO_INSERTION]
-                + insertions[i - 1][j] * transitions[i][INSERTION_TO_INSERTION];
-            deletions[i][j] = matches[i][j - 1] * transitions[i][MATCH_TO_DELETION]
-                + deletions[i][j - 1] * transitions[i][DELETION_TO_DELETION];
+        // Column zero of every row past the first is zero.
+        current_m[0] = 0.0;
+        current_x[0] = 0.0;
+        current_y[0] = 0.0;
+        let (mut left_m, mut left_y) = (0.0, 0.0);
+        for j in 1..width {
+            let haplotype_base = haplotype[j - 1];
+            let p = if read_base == haplotype_base || read_base == b'N' || haplotype_base == b'N' {
+                matched
+            } else {
+                mismatched
+            };
+            let m = p
+                * (previous_m[j - 1] * match_to_match
+                    + previous_x[j - 1] * indel_to_match
+                    + previous_y[j - 1] * indel_to_match);
+            current_x[j] =
+                previous_m[j] * match_to_insertion + previous_x[j] * insertion_to_insertion;
+            let y = left_m * match_to_deletion + left_y * deletion_to_deletion;
+            current_m[j] = m;
+            current_y[j] = y;
+            left_m = m;
+            left_y = y;
         }
+        std::mem::swap(&mut previous_m, &mut current_m);
+        std::mem::swap(&mut previous_x, &mut current_x);
+        std::mem::swap(&mut previous_y, &mut current_y);
     }
 
-    let end = padded_read - 1;
+    // After the last swap the read's last row is in `previous`. A read with no bases reads row
+    // zero, as the reference does.
     let mut total = 0.0;
-    for j in 1..padded_haplotype {
-        total += matches[end][j] + insertions[end][j];
+    for j in 1..width {
+        total += previous_m[j] + previous_x[j];
     }
     jmath::math::log10(total) - initial_condition_log10()
+}
+
+/// One read's bases and its four quality arrays, all of the same length, as
+/// [`read_likelihood_given_haplotype_log10`] takes them.
+#[derive(Debug, Clone, Copy)]
+pub struct HmmRead<'a> {
+    pub bases: &'a [u8],
+    pub quals: &'a [u8],
+    pub insertion_quals: &'a [u8],
+    pub deletion_quals: &'a [u8],
+    pub gap_continuation: &'a [u8],
+}
+
+/// Reads computed side by side. Each lane is one read and does that read's own multiplies and
+/// adds, never fused, so vectorising across lanes cannot move a bit.
+const LANES: usize = 4;
+type Lanes = [f64; LANES];
+
+/// One column of a row: the match, insertion and deletion values of every lane, side by side.
+#[derive(Clone, Copy)]
+struct Cell {
+    m: Lanes,
+    x: Lanes,
+    y: Lanes,
+}
+
+const ZERO: Cell = Cell {
+    m: [0.0; LANES],
+    x: [0.0; LANES],
+    y: [0.0; LANES],
+};
+
+/// [`read_likelihood_given_haplotype_log10`] for every read of `reads` against one haplotype,
+/// into `out` in read order, with the same bits.
+///
+/// Reads are taken in order of length, [`LANES`] at a time, so a lane rarely idles. A lane whose
+/// read has ended runs on zero transitions and priors, and its answer was taken at its last row.
+/// The prior is looked up, not chosen: each distinct haplotype byte gets a code, and every row
+/// holds the prior of each code for each lane, which keeps the inner loop free of branches.
+pub fn reads_likelihoods_given_haplotype_log10(
+    haplotype: &[u8],
+    reads: &[HmmRead<'_>],
+    out: &mut [f64],
+) {
+    assert_eq!(reads.len(), out.len(), "one answer per read");
+    let width = haplotype.len() + 1;
+    let initial = initial_condition() / haplotype.len() as f64;
+    let mut order: Vec<usize> = (0..reads.len()).collect();
+    order.sort_by_key(|&r| reads[r].bases.len());
+
+    let mut distinct: Vec<u8> = Vec::new();
+    let codes: Vec<u8> = haplotype
+        .iter()
+        .map(|&base| match distinct.iter().position(|&d| d == base) {
+            Some(code) => code as u8,
+            None => {
+                distinct.push(base);
+                (distinct.len() - 1) as u8
+            }
+        })
+        .collect();
+    let mut priors = vec![[0.0f64; LANES]; distinct.len()];
+
+    thread_local! {
+        // The two rows, kept between calls: allocating them per haplotype was a tenth of a call.
+        static ROWS: std::cell::RefCell<(Vec<Cell>, Vec<Cell>)> =
+            const { std::cell::RefCell::new((Vec::new(), Vec::new())) };
+    }
+    ROWS.with_borrow_mut(|(previous, current)| {
+        previous.resize(width, ZERO);
+        current.resize(width, ZERO);
+        sweep(
+            reads,
+            out,
+            &order,
+            &codes,
+            &distinct,
+            &mut priors,
+            &mut previous[..width],
+            &mut current[..width],
+            initial,
+        );
+    });
+}
+
+/// The rows of [`reads_likelihoods_given_haplotype_log10`], [`LANES`] reads at a time.
+#[allow(clippy::too_many_arguments)]
+fn sweep<'a>(
+    reads: &[HmmRead<'_>],
+    out: &mut [f64],
+    order: &[usize],
+    codes: &[u8],
+    distinct: &[u8],
+    priors: &mut [Lanes],
+    mut previous: &'a mut [Cell],
+    mut current: &'a mut [Cell],
+    initial: f64,
+) {
+    let tables = &*TABLES;
+
+    // The last row's match and insertion terms, summed in the reference's order.
+    let answer = |row: &[Cell], lane: usize| -> f64 {
+        let mut total = 0.0;
+        for cell in &row[1..] {
+            total += cell.m[lane] + cell.x[lane];
+        }
+        jmath::math::log10(total) - initial_condition_log10()
+    };
+
+    for chunk in order.chunks(LANES) {
+        previous.fill(Cell {
+            y: [initial; LANES],
+            ..ZERO
+        });
+        for (lane, &r) in chunk.iter().enumerate() {
+            if reads[r].bases.is_empty() {
+                out[r] = answer(previous, lane);
+            }
+        }
+
+        let longest = chunk
+            .iter()
+            .map(|&r| reads[r].bases.len())
+            .max()
+            .unwrap_or(0);
+        for i in 0..longest {
+            let mut match_to_match = [0.0; LANES];
+            let mut indel_to_match = [0.0; LANES];
+            let mut match_to_insertion = [0.0; LANES];
+            let mut insertion_to_insertion = [0.0; LANES];
+            let mut match_to_deletion = [0.0; LANES];
+            for prior in priors.iter_mut() {
+                *prior = [0.0; LANES];
+            }
+            for (lane, &r) in chunk.iter().enumerate() {
+                let read = &reads[r];
+                if i >= read.bases.len() {
+                    continue;
+                }
+                let insertion = usize::from(read.insertion_quals[i]);
+                let deletion = usize::from(read.deletion_quals[i]);
+                let gap = usize::from(read.gap_continuation[i]);
+                let quality = usize::from(read.quals[i]);
+                match_to_match[lane] = tables.match_to_match[insertion * 256 + deletion];
+                indel_to_match[lane] = tables.prob[gap];
+                match_to_insertion[lane] = tables.error[insertion];
+                insertion_to_insertion[lane] = tables.error[gap];
+                match_to_deletion[lane] = tables.error[deletion];
+                // `prior`, for each haplotype byte.
+                let read_base = read.bases[i];
+                for (prior, &base) in priors.iter_mut().zip(distinct) {
+                    prior[lane] = if read_base == base || read_base == b'N' || base == b'N' {
+                        tables.prob[quality]
+                    } else {
+                        tables.mismatch[quality]
+                    };
+                }
+            }
+            let deletion_to_deletion = insertion_to_insertion;
+
+            current[0] = ZERO;
+            let mut left = ZERO;
+            for ((cell, window), &code) in
+                current[1..].iter_mut().zip(previous.windows(2)).zip(codes)
+            {
+                let (diagonal, up) = (&window[0], &window[1]);
+                let p = &priors[usize::from(code)];
+                let mut next = ZERO;
+                for lane in 0..LANES {
+                    next.m[lane] = p[lane]
+                        * (diagonal.m[lane] * match_to_match[lane]
+                            + diagonal.x[lane] * indel_to_match[lane]
+                            + diagonal.y[lane] * indel_to_match[lane]);
+                    next.x[lane] = up.m[lane] * match_to_insertion[lane]
+                        + up.x[lane] * insertion_to_insertion[lane];
+                    next.y[lane] = left.m[lane] * match_to_deletion[lane]
+                        + left.y[lane] * deletion_to_deletion[lane];
+                }
+                *cell = next;
+                left = next;
+            }
+            std::mem::swap(&mut previous, &mut current);
+            for (lane, &r) in chunk.iter().enumerate() {
+                if reads[r].bases.len() == i + 1 {
+                    out[r] = answer(previous, lane);
+                }
+            }
+        }
+    }
 }
