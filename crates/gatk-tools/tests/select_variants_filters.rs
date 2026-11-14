@@ -314,9 +314,50 @@ fn setup(run: &str) -> (SampleArguments, FilterArguments) {
                 ..base()
             },
         ),
-        other => panic!("no setup for {other}"),
+        "genotype-missing-name-inverted" => filters(FilterArguments {
+            select_genotype_expressions: names(&["ZZ == \"1\""]),
+            invert_select: true,
+            ..base()
+        }),
+        "missing-name" => filters(FilterArguments {
+            select_expressions: names(&["ZZ == \"1\""]),
+            ..base()
+        }),
+        other => match GENOTYPE_RUNS.iter().find(|(run, _)| *run == other) {
+            Some((_, expression)) => filters(FilterArguments {
+                select_genotype_expressions: names(&[expression]),
+                ..base()
+            }),
+            None => panic!("no setup for {other}"),
+        },
     }
 }
+
+/// The `-select-genotype` runs over the `genotypes` input, one per name `GenotypeJEXLContext`
+/// resolves, with the expression each passes.
+const GENOTYPE_RUNS: [(&str, &str); 21] = [
+    ("genotype-gt-phased", "GT == \"A|C\""),
+    ("genotype-gt-mixed", "GT == \"./C\""),
+    ("genotype-gt-unavailable", "GT == \"NA\""),
+    ("genotype-is-hom", "isHom == \"1\""),
+    ("genotype-is-hom-ref", "isHomRef == \"0\""),
+    ("genotype-is-het", "isHet == \"1\""),
+    ("genotype-is-hom-var", "isHomVar == \"1\""),
+    ("genotype-is-not-called", "isCalled == \"0\""),
+    ("genotype-is-no-call", "isNoCall == \"1\""),
+    ("genotype-is-mixed", "isMixed == \"1\""),
+    ("genotype-is-not-available", "isAvailable == \"0\""),
+    ("genotype-dp-against-text", "DP > '6'"),
+    ("genotype-dp-falls-through", "DP == 50"),
+    ("genotype-gq-missing", "GQ < 0"),
+    ("genotype-ad", "AD == \"[10, 5]\""),
+    ("genotype-ft-two-filters", "FT == \"LowQD;LowGQ\""),
+    ("genotype-ft-two-filters-sorted", "FT == \"LowGQ;LowQD\""),
+    ("genotype-filter-name", "LowGQ == \"1\""),
+    ("genotype-filter-name-prefix", "Low == \"1\""),
+    ("genotype-falls-through-to-info", "QD < 10.0"),
+    ("genotype-missing-name", "ZZ == \"1\""),
+];
 
 /// The runs whose whole answer is the list of records written.
 const RUNS: [&str; 25] = [
@@ -520,5 +561,31 @@ fn a_sites_only_variant_survives_exclude_non_variants() {
     assert_eq!(
         kept(&text, "sites-exclude-non-variants"),
         vec!["100".to_string()]
+    );
+}
+
+#[test]
+fn every_genotype_name_selects_what_the_reference_selected() {
+    let text = golden();
+    let (samples, records) = input(&text, "genotypes");
+    let runs = GENOTYPE_RUNS.iter().map(|(run, _)| *run);
+    for run in runs.chain(["genotype-missing-name-inverted", "missing-name"]) {
+        let ours = survivors(&records, &samples, run)
+            .unwrap_or_else(|error| panic!("{run}: {}", error.message()));
+        assert_eq!(ours, kept(&text, run), "kept/{run}");
+    }
+    // DP is an Integer when the genotype has one, so `DP > '6'` compares numbers there; at 900 it
+    // is the INFO text "50", which is lexicographically below "6".
+    assert_eq!(
+        kept(&text, "genotype-dp-against-text"),
+        vec!["100".to_string()]
+    );
+    // A name nothing resolves is a mismatch rather than a refusal, in either kind of expression.
+    assert!(kept(&text, "missing-name").is_empty());
+    assert_eq!(kept(&text, "genotype-missing-name-inverted").len(), 9);
+    // LowQD contains QD, so the genotype filter answers before the INFO QD of 20.0 does.
+    assert_eq!(
+        kept(&text, "genotype-falls-through-to-info"),
+        vec!["200".to_string(), "800".to_string()]
     );
 }
