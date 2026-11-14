@@ -738,6 +738,47 @@ pub struct FilterRecord {
     pub genotype_fields: Vec<gatk_engine::jexl::Context>,
 }
 
+/// `GenotypeJEXLContext.get` for one genotype: its fixed map first, then the genotype's attributes.
+///
+/// `FT` is the filter text or `PASS`, and `isPassFT` is `"0"` or `"1"`, so a genotype with no FT
+/// at all passes both `FT == "PASS"` and `isPassFT == "1"`. `isFiltered()` is asked rather than
+/// `filters` read, because htsjdk-rs holds a genotype `FT=PASS` as `Some("")` where htsjdk holds
+/// null. `GQ` is `getGQ()`, an `Integer`; `DP` is not in that map, so it resolves through the
+/// extended attributes, where the codec left it as text.
+pub fn genotype_jexl_context(
+    genotype: &htsjdk_vcf::variant::Genotype,
+) -> gatk_engine::jexl::Context {
+    let mut fields: gatk_engine::jexl::Context = genotype
+        .extended
+        .iter()
+        .map(|(key, value)| {
+            (
+                key.clone(),
+                JexlValue::Str(value.format().unwrap_or_default()),
+            )
+        })
+        .collect();
+    let filtered = genotype.is_filtered();
+    fields.insert(
+        "FT".to_string(),
+        JexlValue::Str(match &genotype.filters {
+            Some(filters) if filtered => filters.clone(),
+            _ => "PASS".to_string(),
+        }),
+    );
+    fields.insert(
+        "isPassFT".to_string(),
+        JexlValue::Str(if filtered { "0" } else { "1" }.to_string()),
+    );
+    if let Some(gq) = genotype.gq {
+        fields.insert("GQ".to_string(), JexlValue::Int(gq));
+    }
+    if let Some(dp) = genotype.dp {
+        fields.insert("DP".to_string(), JexlValue::Str(dp.to_string()));
+    }
+    fields
+}
+
 /// `applyFirstRoundOfFiltering` plus the two genotype-count gates, which run before the subset.
 ///
 /// Returns whether the record survives. The Mendelian and random-fraction gates are not here:
@@ -857,11 +898,16 @@ pub fn keeps_after_subset(
     if arguments.exclude_non_variants {
         // `isPolymorphicInSamples`: some genotype calls an alternate. `isSpanningDeletionOnly`
         // takes the other half: a record whose only alternate is `*` is not a variant either.
-        let polymorphic = subset
-            .variant
-            .genotypes
-            .iter()
-            .any(|genotype| genotype.alleles.iter().flatten().any(|allele| *allele > 0));
+        // `getCalledChrCount` skips a filtered genotype, so a record whose only carriers are
+        // filtered is not polymorphic. The count is only asked when `hasGenotypes()`: a variant
+        // with no genotypes at all, as in a sites-only file, is polymorphic.
+        let genotypes = &subset.variant.genotypes;
+        let polymorphic = subset.variant.alleles.len() > 1
+            && (genotypes.is_empty()
+                || genotypes
+                    .iter()
+                    .filter(|genotype| !is_filtered(genotype))
+                    .any(|genotype| genotype.alleles.iter().flatten().any(|allele| *allele > 0)));
         let spanning_only =
             subset.variant.alleles.len() == 2 && subset.variant.alleles[1].is_span_del();
         if !polymorphic || spanning_only {

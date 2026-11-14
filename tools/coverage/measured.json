@@ -866,13 +866,13 @@
       "share": 1.0
     },
     "SelectVariants": {
-      "rows": 50,
-      "accepted": 30,
-      "rejected": 20,
+      "rows": 51,
+      "accepted": 29,
+      "rejected": 22,
       "distinct_outputs": 6,
       "matched": 50,
       "t": 2,
-      "share": 1.0
+      "share": 0.98
     },
     "CheckReferenceCompatibility": {
       "rows": 20,
@@ -1487,11 +1487,11 @@
       "share": 1.0
     },
     "GenotypeGVCFs": {
-      "rows": 34,
-      "accepted": 24,
-      "rejected": 10,
-      "distinct_outputs": 21,
-      "matched": 34,
+      "rows": 39,
+      "accepted": 28,
+      "rejected": 11,
+      "distinct_outputs": 22,
+      "matched": 39,
       "t": 2,
       "share": 1.0
     },
@@ -1505,11 +1505,11 @@
       "share": 1.0
     },
     "GnarlyGenotyper": {
-      "rows": 27,
-      "accepted": 18,
+      "rows": 28,
+      "accepted": 19,
       "rejected": 9,
-      "distinct_outputs": 11,
-      "matched": 27,
+      "distinct_outputs": 14,
+      "matched": 28,
       "t": 2,
       "share": 1.0
     },
