@@ -6,7 +6,7 @@
  * `--interval-exclusion-padding`, `--interval-set-rule` and `--exclude-intervals` change nothing
  * in the port and change the answer in the reference. This measures what they change.
  *
- * Eight behaviours this is built to catch.
+ * Nine behaviours this is built to catch.
  *
  *   - PADDING IS APPLIED PER -L ARGUMENT, before the set operator, and each padded batch is sorted
  *     and merged with ALL whatever the merging rule is;
@@ -19,8 +19,10 @@
  *   - -XL THAT REMOVES EVERYTHING IS A REFUSAL, with its own message;
  *   - THE EXCLUSION PADDING IS A SEPARATE ARGUMENT from the inclusion padding, and each applies to
  *     its own side only;
- *   - AND PADDING IS CLAMPED TO THE CONTIG, so a padded interval never runs past the dictionary's
- *     length or below one.
+ *   - PADDING IS CLAMPED TO THE CONTIG, so a padded interval never runs past the dictionary's
+ *     length or below one;
+ *   - AND AN INTERVAL PAST THE END OF ITS CONTIG IS A REFUSAL when it is parsed, on either side,
+ *     so an -L off the end is refused before any -XL is subtracted from it.
  *
  * Output:
  *
@@ -165,6 +167,11 @@ public class IntervalArgumentsDump {
         run("whole-contig", list("chr2"), NONE, UNION, ALL, 0, 0);
         run("three-contigs-out-of-order", list("chr10:1-10", "chr2:1-10", "chr1:1-10"),
                 NONE, UNION, ALL, 0, 0);
+
+        // Off the end of the contig: refused as it is parsed, before -XL is subtracted.
+        run("include-past-the-end", list("chr2:600-700"), list("chr2:100-200"), UNION, ALL, 0, 0);
+        run("include-stop-past-the-end", list("chr2:400-600"), NONE, UNION, ALL, 0, 0);
+        run("exclude-past-the-end", list("chr1:100-200"), list("chr10:150-250"), UNION, ALL, 0, 0);
 
         System.out.print(buf);
     }
