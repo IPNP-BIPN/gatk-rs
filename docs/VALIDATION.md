@@ -109,7 +109,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | ComposeSTRTableFile | gatk-rs | oracle-backed | 12 suite | 0 suite | 22/22 (100.0%) | 2 | 2071 probes (+0), 0/5 diverge | 3 | 8 | none |
 | Concordance | gatk-rs | oracle-backed | 84 suite | 0 suite | 16/16 (100.0%) | 2 | 2516 probes (+17), 0/7 diverge | 4 | 0 | none |
 | CondenseDepthEvidence | gatk-rs | oracle-backed | 18 suite | 0 suite | 18/18 (100.0%) | 2 | 2047 probes (+35), 0/9 diverge | 2 | 7 | none |
-| ConvertCountsToDepthFile | gatk-rs | oracle-backed | 55 suite | 0 suite | not measured | - | not measured | 2 | 4 | none |
+| ConvertCountsToDepthFile | gatk-rs | oracle-backed | 55 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 2 | 4 | none |
 | ConvertHaplotypeDatabaseToVcf | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
 | ConvertHeaderlessHadoopBamShardToBam | gatk-rs | oracle-backed | 21 suite | 0 suite | 12/12 (100.0%) | 2 | 985 probes (+2), 0/6 diverge | 5 | 0 | none |
 | ConvertSequencingArtifactToOxoG | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -163,11 +163,11 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | FindMendelianViolations | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
 | FixMateInformation | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
 | FixMisencodedBaseQualityReads | gatk-rs | oracle-backed | 40 suite | 0 suite | 21/21 (100.0%) | 2 | 2155 probes (+25), 0/12 diverge | 5 | 0 | none |
-| FixVcfHeader | gatk-rs | oracle-backed | 26 suite | 0 suite | 20/21 (95.2%) | 2 | not measured | 8 | 0 | none |
+| FixVcfHeader | gatk-rs | oracle-backed | 26 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 8 | 0 | none |
 | FlagStat | gatk-rs | oracle-backed | 30 suite | 0 suite | 21/21 (100.0%) | 2 | 2124 probes (+25), 0/12 diverge | 5 | 0 | none |
 | FlagStatSpark | gatk-rs | oracle-backed | 5 | 1 | 19/19 (100.0%) | 2 | 2008 probes (+4), 0/11 diverge | 5 | 1 | none |
 | FlowFeatureMapper | gatk-rs | oracle-backed | 197 suite | 0 suite | 25/25 (100.0%) | 2 | 3066 probes (+11), 0/15 diverge | 2 | 8 | none |
-| FlowPairHMMAlignReadsToHaplotypes | gatk-rs | oracle-backed | 16 suite | 0 suite | 38/38 (100.0%) | 2 | 2646 probes (+0), 0/10 diverge | 4 | 8 | none |
+| FlowPairHMMAlignReadsToHaplotypes | gatk-rs | oracle-backed | 16 suite | 0 suite | 40/40 (100.0%) | 2 | 2646 probes (+0), 0/10 diverge | 4 | 8 | none |
 | FuncotateSegments | gatk-rs | oracle-backed | 11 suite | 0 suite | 25/25 (100.0%) | 2 | 6148 probes (+0), 0/12 diverge | 10 | 7 | none |
 | Funcotator | gatk-rs | oracle-backed | 15 suite | 0 suite | 31/31 (100.0%) | 2 | 5849 probes (+20), 0/24 diverge | 9 | 6 | none |
 | FuncotatorDataSourceDownloader | gatk-rs | oracle-backed | 54 suite | 10 suite | 8/8 (100.0%) | 2 | 1568 probes (+286), 0/4 diverge | 2 | 2 | none |
@@ -181,20 +181,20 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | GeneExpressionEvaluation | gatk-rs | oracle-backed | 21 suite | 0 suite | 19/19 (100.0%) | 2 | 2777 probes (+4), 0/12 diverge | 4 | 6 | none |
 | GenomicsDBImport | gatk-rs | oracle-backed | 3620 | 3341 | 19/19 (100.0%) | 2 | 2174 probes (+48), 0/9 diverge | 6 | 11 | none |
 | GenotypeConcordance | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
-| GenotypeGVCFs | gatk-rs | oracle-backed | 7 suite | 0 suite | 34/34 (100.0%) | 2 | 5528 probes (+6), 0/19 diverge | 6 | 9 | none |
+| GenotypeGVCFs | gatk-rs | oracle-backed | 19 suite | 0 suite | 39/39 (100.0%) | 2 | 5528 probes (+6), 0/19 diverge | 6 | 9 | none |
 | GermlineCNVCaller | gatk-rs | oracle-backed | 18 | 0 | 46/46 (100.0%) | 2 | 1062 probes (+0), 0/3 diverge | 2 | 0 | none |
 | GetNormalArtifactData | gatk-rs | oracle-backed | 7 suite | 0 suite | 19/19 (100.0%) | 2 | 2729 probes (+0), 0/6 diverge | 2 | 0 | none |
 | GetPileupSummaries | gatk-rs | oracle-backed | 8 suite | 0 suite | 19/19 (100.0%) | 2 | 3053 probes (+2), 0/10 diverge | 6 | 0 | none |
 | GetSampleName | gatk-rs | oracle-backed | 35 suite | 0 suite | 21/21 (100.0%) | 2 | 1824 probes (+2), 0/9 diverge | 5 | 0 | none |
-| GnarlyGenotyper | gatk-rs | oracle-backed | 41 suite | 0 suite | 27/27 (100.0%) | 2 | 3562 probes (+2), 0/10 diverge | 4 | 5 | none |
-| GroundTruthReadsBuilder | gatk-rs | oracle-backed | 17 suite | 0 suite | 29/29 (100.0%) | 2 | 3122 probes (+3), 0/21 diverge | 5 | 8 | none |
-| GroundTruthScorer | gatk-rs | oracle-backed | 59 suite | 0 suite | 25/25 (100.0%) | 2 | 3704 probes (+0), 0/12 diverge | 6 | 8 | none |
+| GnarlyGenotyper | gatk-rs | oracle-backed | 47 suite | 0 suite | 28/28 (100.0%) | 2 | 3562 probes (+2), 0/10 diverge | 4 | 5 | none |
+| GroundTruthReadsBuilder | gatk-rs | oracle-backed | 17 suite | 0 suite | 32/32 (100.0%) | 2 | 3122 probes (+3), 0/21 diverge | 5 | 8 | none |
+| GroundTruthScorer | gatk-rs | oracle-backed | 59 suite | 0 suite | 30/30 (100.0%) | 2 | 3704 probes (+0), 0/12 diverge | 6 | 8 | none |
 | GroupedSVCluster | gatk-rs | oracle-backed | 14 suite | 0 suite | 23/23 (100.0%) | 2 | 3860 probes (+0), 0/13 diverge | 9 | 8 | none |
 | GtcToVcf | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | none |
 | GtfToBed | gatk-rs | oracle-backed | 9 suite | 0 suite | 20/20 (100.0%) | 2 | 2184 probes (+4), 0/10 diverge | 3 | 4 | none |
-| HaplotypeBasedVariantRecaller | gatk-rs | oracle-backed | 7 suite | 0 suite | 44/44 (100.0%) | 2 | 4112 probes (+2), 0/12 diverge | 5 | 3 | none |
-| HaplotypeCaller | gatk-rs | oracle-backed | 587 suite | 50 suite | 54/54 (100.0%) | 2 | 12968 probes (+2), 0/32 diverge | 11 | 3 | mask_identity_hashes, sort_segments_with |
-| HaplotypeCallerSpark | gatk-rs | oracle-backed | 64 | 15 | 47/47 (100.0%) | 2 | 11894 probes (+2), 0/27 diverge | 11 | 15 | none |
+| HaplotypeBasedVariantRecaller | gatk-rs | oracle-backed | 7 suite | 0 suite | 48/48 (100.0%) | 2 | 4112 probes (+2), 0/12 diverge | 5 | 3 | none |
+| HaplotypeCaller | gatk-rs | oracle-backed | 587 suite | 50 suite | 50/50 (100.0%) | 2 | 12968 probes (+2), 0/32 diverge | 11 | 3 | mask_identity_hashes, sort_segments_with |
+| HaplotypeCallerSpark | gatk-rs | oracle-backed | 64 | 15 | 49/49 (100.0%) | 2 | 11894 probes (+2), 0/27 diverge | 11 | 15 | none |
 | HtsgetReader | gatk-rs | oracle-backed | 865 | 41 | 11/11 (100.0%) | 2 | 1084 probes (+2), 0/5 diverge | 0 | 0 | none |
 | IdentifyContaminant | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
 | IlluminaBasecallsToFastq | picard-rs | oracle-backed | not vendored | not vendored | not measured | - | not measured | 0 | 0 | none |
@@ -211,7 +211,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | LiftoverVcf | picard-rs | oracle-backed | not vendored | not vendored | 17/17 (100.0%) | 2 | not measured | 0 | 0 | none |
 | LocalAssembler | gatk-rs | oracle-backed | 30 suite | 0 suite | 21/21 (100.0%) | 2 | 3269 probes (+3), 0/12 diverge | 5 | 1 | none |
 | MTLowHeteroplasmyFilterTool | gatk-rs | oracle-backed | 24 suite | 0 suite | 15/15 (100.0%) | 2 | 2224 probes (+0), 0/10 diverge | 2 | 7 | none |
-| MakeSitesOnlyVcf | gatk-rs | oracle-backed | 20 suite | 0 suite | 7/16 (43.8%) | 2 | not measured | 4 | 0 | none |
+| MakeSitesOnlyVcf | gatk-rs | oracle-backed | 20 suite | 0 suite | 16/16 (100.0%) | 2 | not measured | 4 | 0 | none |
 | MakeVcfSampleNameMap | picard-rs | oracle-backed | not vendored | not vendored | 6/6 (100.0%) | 2 | not measured | 0 | 0 | none |
 | MarkDuplicates | picard-rs | oracle-backed | not vendored | not vendored | 47/47 (100.0%) | 2 | not measured | 0 | 0 | none |
 | MarkDuplicatesSpark | gatk-rs | oracle-backed | 368 | 203 | 27/27 (100.0%) | 2 | 3023 probes (+2), 0/12 diverge | 3 | 5 | none |
@@ -229,7 +229,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | MergeVcfs | gatk-rs | oracle-backed | 38 suite | 0 suite | 27/27 (100.0%) | 2 | not measured | 8 | 0 | none |
 | MethylationTypeCaller | gatk-rs | oracle-backed | 74 suite | 0 suite | 21/21 (100.0%) | 2 | 2711 probes (+42), 0/12 diverge | 6 | 0 | none |
 | ModelSegments | gatk-rs | oracle-backed | 21 suite | 0 suite | 19/19 (100.0%) | 2 | 3526 probes (+1), 0/15 diverge | 6 | 0 | none |
-| Mutect2 | gatk-rs | oracle-backed | 617 suite | 76 suite | 38/38 (100.0%) | 2 | 14428 probes (+0), 0/26 diverge | 10 | 2 | mask_identity_hashes, sort_segments_with |
+| Mutect2 | gatk-rs | oracle-backed | 617 suite | 76 suite | 40/40 (100.0%) | 2 | 14428 probes (+0), 0/26 diverge | 10 | 2 | mask_identity_hashes, sort_segments_with |
 | NVScoreVariants | gatk-rs | oracle-backed | 1373 suite | 0 suite | 10/10 (100.0%) | 2 | 962 probes (+2), 0/4 diverge | 4 | 0 | none |
 | NonNFastaSize | picard-rs | oracle-backed | not vendored | not vendored | 7/7 (100.0%) | 2 | not measured | 0 | 0 | none |
 | NormalizeFasta | picard-rs | oracle-backed | not vendored | not vendored | 8/8 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -260,13 +260,13 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | PrintVariantsSpark | gatk-rs | oracle-backed | 19 | 5 | 23/23 (100.0%) | 2 | 2097 probes (+1), 0/9 diverge | 7 | 2 | none |
 | QualityScoreDistribution | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | none |
 | QualityScoreDistributionSpark | gatk-rs | oracle-backed | 6 | 2 | 21/21 (100.0%) | 2 | 2120 probes (+2), 0/9 diverge | 4 | 2 | none |
-| RampedHaplotypeCaller | gatk-rs | oracle-backed | 576 suite | 50 suite | 56/56 (100.0%) | 2 | 14390 probes (+52), 0/34 diverge | 13 | 3 | mask_identity_hashes, sort_segments_with |
+| RampedHaplotypeCaller | gatk-rs | oracle-backed | 576 suite | 50 suite | 54/54 (100.0%) | 2 | 14390 probes (+52), 0/34 diverge | 13 | 3 | mask_identity_hashes, sort_segments_with |
 | ReadAnonymizer | gatk-rs | oracle-backed | 28 suite | 0 suite | 22/22 (100.0%) | 2 | 2290 probes (+1), 0/9 diverge | 6 | 0 | none |
-| ReadsPipelineSpark | gatk-rs | oracle-backed | 133 | 48 | 51/51 (100.0%) | 2 | 14460 probes (+86), 0/28 diverge | 11 | 26 | none |
+| ReadsPipelineSpark | gatk-rs | oracle-backed | 133 | 48 | 53/53 (100.0%) | 2 | 14460 probes (+86), 0/28 diverge | 11 | 26 | none |
 | ReblockGVCF | gatk-rs | oracle-backed | 12 suite | 0 suite | 56/56 (100.0%) | 2 | 4880 probes (+0), 0/17 diverge | 8 | 7 | none |
 | ReferenceBlockConcordance | gatk-rs | oracle-backed | 18 suite | 0 suite | 17/17 (100.0%) | 2 | 1764 probes (+0), 0/5 diverge | 3 | 10 | none |
 | RemoveNearbyIndels | gatk-rs | oracle-backed | 102 suite | 0 suite | 24/24 (100.0%) | 2 | 2303 probes (+0), 0/14 diverge | 2 | 2 | none |
-| RenameSampleInVcf | gatk-rs | oracle-backed | 20 suite | 0 suite | 11/15 (73.3%) | 2 | not measured | 5 | 0 | none |
+| RenameSampleInVcf | gatk-rs | oracle-backed | 20 suite | 0 suite | 15/15 (100.0%) | 2 | not measured | 5 | 0 | none |
 | ReorderSam | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
 | ReplaceSamHeader | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
 | RevertBaseQualityScores | gatk-rs | oracle-backed | 49 suite | 0 suite | 19/19 (100.0%) | 2 | 2187 probes (+0), 0/7 diverge | 4 | 0 | none |
@@ -275,14 +275,14 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | RevertSamSpark | gatk-rs | oracle-backed | 67 | 21 | 28/28 (100.0%) | 2 | 2632 probes (+8), 0/18 diverge | 4 | 3 | none |
 | SVAnnotate | gatk-rs | oracle-backed | 15 suite | 0 suite | 18/18 (100.0%) | 2 | 2777 probes (+2), 0/9 diverge | 4 | 9 | none |
 | SVCluster | gatk-rs | oracle-backed | 11 suite | 0 suite | 24/24 (100.0%) | 2 | 3563 probes (+0), 0/11 diverge | 5 | 8 | none |
-| SVConcordance | gatk-rs | oracle-backed | 10 suite | 0 suite | 19/19 (100.0%) | 2 | 3011 probes (+3), 0/8 diverge | 6 | 9 | none |
+| SVConcordance | gatk-rs | oracle-backed | 10 suite | 0 suite | 40/40 (100.0%) | 2 | 3011 probes (+3), 0/8 diverge | 6 | 9 | none |
 | SVStratify | gatk-rs | oracle-backed | 43 suite | 0 suite | 16/16 (100.0%) | 2 | 2739 probes (+1), 0/9 diverge | 8 | 8 | none |
 | SamFormatConverter | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | none |
 | SamToFastq | picard-rs | oracle-backed | not vendored | not vendored | 19/19 (100.0%) | 2 | not measured | 0 | 0 | none |
 | SamToFastqWithTags | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | none |
 | ScatterIntervalsByNs | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
 | ScoreVariantAnnotations | gatk-rs | oracle-backed | 210 suite | 51 suite | 27/27 (100.0%) | 2 | 2639 probes (+2), 0/14 diverge | 6 | 7 | mask_hdf5_modification_times |
-| SelectVariants | gatk-rs | oracle-backed | 36766 suite | 0 suite | 50/50 (100.0%) | 2 | 2736 probes (+5), 0/14 diverge | 2 | 10 | none |
+| SelectVariants | gatk-rs | oracle-backed | 36830 suite | 0 suite | 50/51 (98.0%) | 2 | 2736 probes (+5), 0/14 diverge | 2 | 10 | none |
 | SetNmAndUqTags | gatk-rs | oracle-backed | 10 suite | 0 suite | 16/16 (100.0%) | 2 | not measured | 7 | 0 | none |
 | SetNmMdAndUqTags | gatk-rs | oracle-backed | 10 suite | 0 suite | 16/16 (100.0%) | 2 | not measured | 7 | 0 | none |
 | ShiftFasta | gatk-rs | oracle-backed | 37 suite | 0 suite | 21/21 (100.0%) | 2 | 1855 probes (+2), 0/9 diverge | 0 | 2 | none |
@@ -298,7 +298,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | SplitReads | gatk-rs | oracle-backed | 77 suite | 0 suite | 20/20 (100.0%) | 2 | 2173 probes (+3), 0/9 diverge | 4 | 0 | none |
 | SplitSamByLibrary | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | none |
 | SplitSamByNumberOfReads | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
-| SplitVcfs | gatk-rs | oracle-backed | 22 suite | 0 suite | 21/26 (80.8%) | 2 | not measured | 10 | 0 | none |
+| SplitVcfs | gatk-rs | oracle-backed | 22 suite | 0 suite | 22/26 (84.6%) | 2 | not measured | 10 | 0 | none |
 | StructuralVariantDiscoverer | gatk-rs | oracle-backed | 3 suite | 0 suite | 23/23 (100.0%) | 2 | 3778 probes (+0), 0/14 diverge | 9 | 5 | none |
 | StructuralVariationDiscoveryPipelineSpark | gatk-rs | oracle-backed | 1037 | 733 | 27/27 (100.0%) | 2 | 7002 probes (+3), 0/19 diverge | 11 | 2 | none |
 | SvDiscoverFromLocalAssemblyContigAlignmentsSpark | gatk-rs | oracle-backed | 161 | 88 | 17/17 (100.0%) | 2 | 5831 probes (+5), 0/9 diverge | 6 | 5 | none |
@@ -308,7 +308,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | UmiAwareMarkDuplicatesWithMateCigar | picard-rs | oracle-backed | not vendored | not vendored | 26/26 (100.0%) | 2 | not measured | 0 | 0 | none |
 | UnmarkDuplicates | gatk-rs | oracle-backed | 49 suite | 0 suite | 19/19 (100.0%) | 2 | 2171 probes (+0), 0/8 diverge | 4 | 0 | none |
 | UpdateVCFSequenceDictionary | gatk-rs | oracle-backed | 71 suite | 0 suite | 24/24 (100.0%) | 2 | 2247 probes (+0), 0/9 diverge | 4 | 3 | none |
-| UpdateVcfSequenceDictionary | gatk-rs | oracle-backed | 24 suite | 0 suite | 8/18 (44.4%) | 2 | not measured | 7 | 0 | none |
+| UpdateVcfSequenceDictionary | gatk-rs | oracle-backed | 24 suite | 0 suite | 18/18 (100.0%) | 2 | not measured | 7 | 0 | none |
 | VCFComparator | gatk-rs | oracle-backed | 36 suite | 0 suite | 40/40 (100.0%) | 2 | 3370 probes (+6), 0/17 diverge | 0 | 13 | none |
 | ValidateBasicSomaticShortMutations | gatk-rs | oracle-backed | 171 suite | 0 suite | 22/22 (100.0%) | 2 | 3108 probes (+3), 0/11 diverge | 3 | 0 | none |
 | ValidateSamFile | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -318,7 +318,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | VariantFiltration | gatk-rs | oracle-backed | 227 suite | 0 suite | 24/24 (100.0%) | 2 | 2470 probes (+0), 0/9 diverge | 3 | 2 | none |
 | VariantRecalibrator | gatk-rs | oracle-backed | 27 suite | 0 suite | 26/26 (100.0%) | 2 | 4076 probes (+2), 0/14 diverge | 4 | 4 | none |
 | VariantsToTable | gatk-rs | oracle-backed | 75 suite | 0 suite | 23/23 (100.0%) | 2 | 2355 probes (+5), 0/12 diverge | 2 | 2 | none |
-| VcfFormatConverter | gatk-rs | oracle-backed | 13 suite | 0 suite | 16/17 (94.1%) | 2 | not measured | 6 | 0 | none |
+| VcfFormatConverter | gatk-rs | oracle-backed | 13 suite | 0 suite | 17/17 (100.0%) | 2 | not measured | 6 | 0 | none |
 | VcfToAdpc | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | none |
 | VcfToIntervalList | gatk-rs | oracle-backed | 12 suite | 0 suite | 12/12 (100.0%) | 2 | not measured | 4 | 0 | none |
 | ViewSam | picard-rs | oracle-backed | not vendored | not vendored | 14/14 (100.0%) | 2 | not measured | 0 | 0 | none |
