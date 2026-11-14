@@ -1021,11 +1021,10 @@ const KNOWN: &[(&str, &str, &str)] = &[
     ),
     (
         "vcf: ",
-        " FT: htsjdk-rs \"[\\\"\\\"]\", noodles \"[Some(\\\"PASS\\\")]\"",
-        "htsjdk-rs's bug: a genotype FT of PASS reads as Some(\"\") where htsjdk's \
-         GenotypeBuilder.filters(emptyList) leaves null. is_filtered() agrees with htsjdk, the \
-         field does not, and SelectVariants --select-genotype 'FT == \"PASS\"' diverges from \
-         the oracle because of it",
+        " FT: htsjdk-rs \"[\\\".\\\"]\", noodles \"[Some(\\\"PASS\\\")]\"",
+        "noodles keeps the word, the reference does not: a genotype FT of PASS is no filters, \
+         since htsjdk's GenotypeBuilder.filters(emptyList) leaves null, and htsjdk-rs does as \
+         htsjdk does (IPNP-BIPN/htsjdk-rs#282)",
     ),
 ];
 
