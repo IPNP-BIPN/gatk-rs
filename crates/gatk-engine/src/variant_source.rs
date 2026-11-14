@@ -48,6 +48,18 @@ pub trait Located {
     fn stop(&self) -> i32;
 }
 
+impl<T: Located + ?Sized> Located for &T {
+    fn contig(&self) -> &str {
+        (**self).contig()
+    }
+    fn start(&self) -> i32 {
+        (**self).start()
+    }
+    fn stop(&self) -> i32 {
+        (**self).stop()
+    }
+}
+
 /// `FeatureDataSource.setIntervalsForTraversal`: null and empty are the same thing, and that thing
 /// is "no restriction".
 pub fn intervals_for_traversal(intervals: Option<&[SimpleInterval]>) -> Option<&[SimpleInterval]> {

@@ -101,71 +101,122 @@ pub fn contexts_filtered<'a>(
     samples: Vec<Option<String>>,
     header: &SamHeader,
     options: LocusIteratorOptions,
-    mut states: ReadStateManager<'a>,
+    states: ReadStateManager<'a>,
     filter: &dyn Fn(&BamRecord) -> bool,
 ) -> Result<Vec<AlignmentContext<'a>>, ReadStateError> {
-    let _ = samples;
-    let mut pending: std::collections::VecDeque<&'a BamRecord> =
-        reads.iter().filter(|read| filter(read)).collect();
-    let mut out = Vec::new();
+    Contexts::new(reads, samples, header, options, states, filter).collect()
+}
+
+/// `LocusIteratorByState` as the iterator it is upstream: one context at a time, so a traversal
+/// holds one pileup rather than every pileup of a contig. The first error ends the iteration.
+pub struct Contexts<'a, 'h> {
+    pending: std::collections::VecDeque<&'a BamRecord>,
+    states: ReadStateManager<'a>,
+    header: &'h SamHeader,
+    options: LocusIteratorOptions,
     // The two streams the downsamplers draw from, and they are ONE EACH for the whole traversal.
     // `Utils.getRandomGenerator()` and `Utils.getRandomDataGenerator()` are static, seeded once at
     // class initialisation, and never reset between loci or samples: a generator built per locus
     // would restart the sequence and produce a different pileup at every depth.
-    let mut random = crate::java_random::JavaRandom::gatk();
-    let mut leveling = crate::well19937c::Well19937c::gatk();
+    random: crate::java_random::JavaRandom,
+    leveling: crate::well19937c::Well19937c,
+    failed: bool,
+}
 
-    // `readStates.hasNext()`: states in the system, or reads still to come.
-    while !states.is_empty() || !pending.is_empty() {
-        states.collect_pending_reads(&mut pending, header, &mut random, &mut leveling)?;
-
-        // `getLocation()`, which is null when nothing is in the system. The per-state loop below is
-        // then empty, so the null never reaches a dereference.
-        let location = states
-            .first()
-            .map(|state| (state.read.reference_index, state.machine.genome_position()));
-
-        let mut elements: Vec<PileupElement<'a>> = Vec::new();
-        for per_sample in &states.by_sample {
-            for state in &per_sample.states {
-                let op = state.machine.cigar_operator();
-                // First exclusion: an N is dropped before the adaptor is ever consulted.
-                if !options.include_ns && op == Some(Op::N) {
-                    continue;
-                }
-                let position = location.map(|(_, p)| p).unwrap_or(0);
-                if is_base_inside_adaptor(state.read, position) {
-                    continue;
-                }
-                // Second exclusion: a D is dropped only for a read the adaptor test let through.
-                if !options.include_deletions && op == Some(Op::D) {
-                    continue;
-                }
-                if let Some(element) = PileupElement::from_state(state.read, &state.machine) {
-                    elements.push(element);
-                }
-            }
-        }
-
-        // Critical, and the reference says so: the states advance only after the current offsets
-        // and location have been read.
-        states.update_read_states()?;
-
-        if !elements.is_empty() {
-            let (reference_index, position) = location.expect("elements imply a location");
-            let contig = header
-                .sequences
-                .get(reference_index as usize)
-                .map(|s| s.name.clone())
-                .unwrap_or_default();
-            out.push(AlignmentContext {
-                contig: contig.clone(),
-                position,
-                pileup: ReadPileup::new(&contig, position, elements),
-            });
+impl<'a, 'h> Contexts<'a, 'h> {
+    pub fn new(
+        reads: &'a [BamRecord],
+        samples: Vec<Option<String>>,
+        header: &'h SamHeader,
+        options: LocusIteratorOptions,
+        states: ReadStateManager<'a>,
+        filter: &dyn Fn(&BamRecord) -> bool,
+    ) -> Contexts<'a, 'h> {
+        let _ = samples;
+        Contexts {
+            pending: reads.iter().filter(|read| filter(read)).collect(),
+            states,
+            header,
+            options,
+            random: crate::java_random::JavaRandom::gatk(),
+            leveling: crate::well19937c::Well19937c::gatk(),
+            failed: false,
         }
     }
-    Ok(out)
+
+    fn step(&mut self) -> Result<Option<AlignmentContext<'a>>, ReadStateError> {
+        let (states, options, header) = (&mut self.states, self.options, self.header);
+        // `readStates.hasNext()`: states in the system, or reads still to come.
+        while !states.is_empty() || !self.pending.is_empty() {
+            states.collect_pending_reads(
+                &mut self.pending,
+                header,
+                &mut self.random,
+                &mut self.leveling,
+            )?;
+
+            // `getLocation()`, which is null when nothing is in the system. The per-state loop
+            // below is then empty, so the null never reaches a dereference.
+            let location = states
+                .first()
+                .map(|state| (state.read.reference_index, state.machine.genome_position()));
+
+            let mut elements: Vec<PileupElement<'a>> = Vec::new();
+            for per_sample in &states.by_sample {
+                for state in &per_sample.states {
+                    let op = state.machine.cigar_operator();
+                    // First exclusion: an N is dropped before the adaptor is ever consulted.
+                    if !options.include_ns && op == Some(Op::N) {
+                        continue;
+                    }
+                    let position = location.map(|(_, p)| p).unwrap_or(0);
+                    if is_base_inside_adaptor(state.read, position) {
+                        continue;
+                    }
+                    // Second exclusion: a D is dropped only for a read the adaptor test let
+                    // through.
+                    if !options.include_deletions && op == Some(Op::D) {
+                        continue;
+                    }
+                    if let Some(element) = PileupElement::from_state(state.read, &state.machine) {
+                        elements.push(element);
+                    }
+                }
+            }
+
+            // Critical, and the reference says so: the states advance only after the current
+            // offsets and location have been read.
+            states.update_read_states()?;
+
+            if !elements.is_empty() {
+                let (reference_index, position) = location.expect("elements imply a location");
+                let contig = header
+                    .sequences
+                    .get(reference_index as usize)
+                    .map(|s| s.name.clone())
+                    .unwrap_or_default();
+                return Ok(Some(AlignmentContext {
+                    contig: contig.clone(),
+                    position,
+                    pileup: ReadPileup::new(&contig, position, elements),
+                }));
+            }
+        }
+        Ok(None)
+    }
+}
+
+impl<'a> Iterator for Contexts<'a, '_> {
+    type Item = Result<AlignmentContext<'a>, ReadStateError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.failed {
+            return None;
+        }
+        let step = self.step();
+        self.failed = step.is_err();
+        step.transpose()
+    }
 }
 
 /// `AlignmentStateMachine.getLocation`, for a caller that wants the position without the context.
