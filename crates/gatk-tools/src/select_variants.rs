@@ -741,9 +741,7 @@ pub struct FilterRecord {
 /// `GenotypeJEXLContext.get` for one genotype: its fixed map first, then the genotype's attributes.
 ///
 /// `FT` is the filter text or `PASS`, and `isPassFT` is `"0"` or `"1"`, so a genotype with no FT
-/// at all passes both `FT == "PASS"` and `isPassFT == "1"`. `isFiltered()` is asked rather than
-/// `filters` read, because htsjdk-rs holds a genotype `FT=PASS` as `Some("")` where htsjdk holds
-/// null. `GQ` is `getGQ()`, an `Integer`; `DP` is not in that map, so it resolves through the
+/// at all passes both `FT == "PASS"` and `isPassFT == "1"`. `GQ` is `getGQ()`, an `Integer`; `DP` is not in that map, so it resolves through the
 /// extended attributes, where the codec left it as text.
 pub fn genotype_jexl_context(
     genotype: &htsjdk_vcf::variant::Genotype,
