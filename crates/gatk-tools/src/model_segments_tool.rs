@@ -124,7 +124,7 @@ impl AllelicCounts {
 const READ_GROUP_ID: &str = "GATKCopyNumber";
 
 /// `metadata.toHeader().getSAMString()` for a sample and, when there is one, a dictionary.
-fn header(sample: &str, dictionary: Option<&[SequenceRecord]>) -> String {
+pub fn header(sample: &str, dictionary: Option<&[SequenceRecord]>) -> String {
     let mut header = SamHeader::default();
     if let Some(sequences) = dictionary {
         header.sequences = sequences.to_vec();
@@ -590,6 +590,11 @@ pub fn read_modeled_segments(path: &str) -> Result<ModeledSegments, Thrown> {
 
 /// `new SimpleIntervalCollection(file)`, for the dictionary its header holds.
 pub fn read_interval_collection(path: &str) -> Result<Vec<SequenceRecord>, Thrown> {
+    Ok(read_interval_spans(path)?.0)
+}
+
+/// `new SimpleIntervalCollection(file)`: its dictionary and its intervals.
+pub fn read_interval_spans(path: &str) -> Result<(Vec<SequenceRecord>, Vec<Span>), Thrown> {
     let table = read_table(path)?;
     let [contig, start, end] = table.mandatory(["CONTIG", "START", "END"])?;
     let spans = table.decode(|row| {
@@ -597,7 +602,17 @@ pub fn read_interval_collection(path: &str) -> Result<Vec<SequenceRecord>, Throw
         simple_interval(row.get(contig), first, last)
     })?;
     validate_intervals(&table.header.sequences, &spans, |at| spans[at].render())?;
-    Ok(table.header.sequences)
+    Ok((table.header.sequences, spans))
+}
+
+/// A gCNV sample table as `AbstractSampleRecordCollection` reads it: the header's sample name, the
+/// column names, and each row's values for the caller to decode.
+#[allow(clippy::type_complexity)]
+pub fn read_sample_rows(path: &str) -> Result<(String, Vec<String>, Vec<Vec<String>>), Thrown> {
+    let table = read_table(path)?;
+    let sample = table.metadata()?.sample;
+    let rows = table.decode(|row| Ok(row.values.to_vec()))?;
+    Ok((sample, table.columns.clone(), rows))
 }
 
 fn interval_list_int(text: &str) -> Result<i32, Thrown> {
