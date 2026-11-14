@@ -157,7 +157,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `AddFlowBaseQuality` | unclassified | oracle-backed | add-flow-base-quality | 1 | t=2, 24/24 rows (100%) | 0.004 / 0.054 |
 | `AddFlowSNVQuality` | flow-based | oracle-backed | add-flow-snv-quality | 1 | t=2, 26/26 rows (100%) | 0.004 / 0.061 |
 | `AddOriginalAlignmentTags` | unclassified | oracle-backed | add-oa-tags | 1 | t=2, 18/18 rows (100%) | 0.003 / 0.044 |
-| `AlleleFrequencyQC` | unclassified | oracle-backed | allele-frequency-qc, r-plots | 2 | t=2, 26/26 rows (100%) | not measured |
+| `AlleleFrequencyQC` | unclassified | oracle-backed | allele-frequency-qc, multi-variant-walker, r-plots | 3 | t=2, 26/26 rows (100%) | not measured |
 | `AnalyzeCovariates` | reporting-walker | oracle-backed | analyze-covariates | 1 | t=2, 11/11 rows (100%) | 0.003 / 0.083 |
 | `AnalyzeSaturationMutagenesis` | locus-walker | oracle-backed | analyze-saturation-mutagenesis | 1 | t=2, 21/21 rows (100%) | 0.003 / 0.056 |
 | `AnnotateIntervals` | cnv-segmentation | oracle-backed | annotate-intervals | 1 | t=2, 19/19 rows (100%) | 0.003 / 0.067 |
@@ -165,7 +165,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `AnnotateVcfWithExpectedAlleleFraction` | variant-walker | oracle-backed | annotate-vcf-with-expected-allele-fraction | 1 | t=2, 23/23 rows (100%) | 0.002 / 0.054 |
 | `ApplyBQSR` | record-transform | oracle-backed | apply-bqsr, tool-argument-declarations, tool-argument-enums | 3 | t=2, 21/21 rows (100%) | 0.003 / 0.071 |
 | `ApplyBQSRSpark` | record-transform | oracle-backed | spark-walkers | 1 | t=2, 20/20 rows (100%) | not measured |
-| `ApplyVQSR` | variant-transform | oracle-backed | apply-vqsr-allele-specific, apply-vqsr-site-filtering, apply-vqsr-tranches, apply-vqsr-two-modes | 4 | t=2, 25/25 rows (100%) | 0.002 / 0.058 |
+| `ApplyVQSR` | variant-transform | oracle-backed | apply-vqsr-allele-specific, apply-vqsr-site-filtering, apply-vqsr-tranches, apply-vqsr-two-modes, multi-variant-walker | 5 | t=2, 25/25 rows (100%) | 0.002 / 0.058 |
 | `BQSRPipelineSpark` | record-transform | oracle-backed | spark-walkers | 1 | t=2, 23/23 rows (100%) | not measured |
 | `BaseRecalibrator` | record-transform | oracle-backed | base-recalibrator | 1 | t=2, 21/21 rows (100%) | 0.006 / 0.127 |
 | `BaseRecalibratorSpark` | record-transform | oracle-backed | spark-walkers | 1 | t=2, 22/22 rows (100%) | not measured |
@@ -193,7 +193,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `CollectQualityYieldMetricsSpark` | reporting-walker | oracle-backed | spark-walkers | 1 | t=2, 22/22 rows (100%) | not measured |
 | `CollectReadCounts` | locus-walker | oracle-backed | collect-read-counts | 1 | t=2, 18/18 rows (100%) | 0.002 / 0.055 |
 | `CollectSVEvidence` | sv-caller | oracle-backed | collect-sv-evidence | 1 | t=2, 20/20 rows (100%) | 0.002 / 0.058 |
-| `CombineGVCFs` | assembly-caller | oracle-backed | combine-gvcfs | 1 | t=2, 26/26 rows (100%) | 0.004 / 0.079 |
+| `CombineGVCFs` | assembly-caller | oracle-backed | combine-gvcfs, multi-variant-walker | 2 | t=2, 26/26 rows (100%) | 0.004 / 0.079 |
 | `CombineSegmentBreakpoints` | unclassified | oracle-backed | combine-segment-breakpoints | 1 | t=2, 18/18 rows (100%) | 0.002 / 0.045 |
 | `CompareBaseQualities` | reporting-walker | oracle-backed | compare-base-qualities | 1 | t=2, 11/11 rows (100%) | 0.003 / 0.090 |
 | `CompareDuplicatesSpark` | reporting-walker | oracle-backed | spark-walkers | 1 | t=2, 22/22 rows (100%) | not measured |
@@ -229,7 +229,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `ExtractVariantAnnotations` | variant-transform | oracle-backed | extract-variant-annotations | 1 | t=2, 29/29 rows (100%) | 0.036 / 0.581 |
 | `FastaAlternateReferenceMaker` | reference-utility | oracle-backed | fasta-alternate-reference-maker | 1 | t=2, 21/21 rows (100%) | 0.007 / 0.161 |
 | `FastaReferenceMaker` | reference-utility | oracle-backed | fasta-reference-maker | 1 | t=2, 21/21 rows (100%) | 0.004 / 0.086 |
-| `FilterAlignmentArtifacts` | variant-transform | oracle-backed | filter-alignment-artifacts | 1 | t=2, 21/21 rows (100%) | 0.003 / 0.052 |
+| `FilterAlignmentArtifacts` | variant-transform | oracle-backed | filter-alignment-artifacts, multi-variant-walker | 2 | t=2, 21/21 rows (100%) | 0.003 / 0.052 |
 | `FilterFuncotations` | variant-walker | oracle-backed | filter-funcotations | 1 | t=2, 16/16 rows (100%) | 0.002 / 0.053 |
 | `FilterIntervals` | cnv-segmentation | oracle-backed | filter-intervals | 1 | t=2, 11/11 rows (100%) | 0.002 / 0.059 |
 | `FilterMutectCalls` | variant-transform | oracle-backed | filter-mutect-calls | 1 | t=2, 24/24 rows (100%) | 0.003 / 0.069 |
@@ -259,14 +259,14 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `GnarlyGenotyper` | assembly-caller | oracle-backed | genomicsdb-query, gnarly-genotyper | 2 | t=2, 28/28 rows (100%) | 0.003 / 0.042 |
 | `GroundTruthReadsBuilder` | flow-based | oracle-backed | ground-truth-reads-builder | 1 | t=2, 32/32 rows (100%) | 0.003 / 0.071 |
 | `GroundTruthScorer` | flow-based | oracle-backed | ground-truth-scorer, series-stats | 2 | t=2, 30/30 rows (100%) | 0.004 / 0.089 |
-| `GroupedSVCluster` | sv-caller | oracle-backed | grouped-sv-cluster | 1 | t=2, 23/23 rows (100%) | 0.002 / 0.054 |
+| `GroupedSVCluster` | sv-caller | oracle-backed | grouped-sv-cluster, multi-variant-walker | 2 | t=2, 23/23 rows (100%) | 0.002 / 0.054 |
 | `GtfToBed` | assembly-caller | oracle-backed | gtf-to-bed | 1 | t=2, 20/20 rows (100%) | 0.002 / 0.054 |
 | `HaplotypeBasedVariantRecaller` | assembly-caller | oracle-backed | haplotype-based-variant-recaller | 1 | t=2, 48/48 rows (100%) | 0.054 / 0.968 |
 | `HaplotypeCaller` | assembly-caller | oracle-backed | callers-all-annotations, hc-allele-filtering, hc-allele-graphs, hc-alleles, hc-bamout, hc-contamination, hc-debug-outputs, hc-disable-optimizations, hc-dragen-end-to-end, hc-end-to-end, hc-error-correction, hc-flow, hc-gvcf-end-to-end, hc-linked-graph, hc-pdhmm, hc-pedigree, hc-pileup, hc-ploidy, hc-resources | 19 | t=2, 50/50 rows (100%) | 0.025 / 0.315 |
 | `HaplotypeCallerSpark` | assembly-caller | oracle-backed | spark-walkers | 1 | t=2, 49/49 rows (100%) | not measured |
 | `HtsgetReader` | unclassified | oracle-backed | htsget-reader | 1 | t=2, 11/11 rows (100%), **1 distinct output** | not measured |
 | `IndexFeatureFile` | unclassified | oracle-backed | index-feature-file, tool-argument-declarations, tool-argument-enums, usage-text | 4 | t=2, 8/8 rows (100%) | 0.002 / 0.063 |
-| `JointGermlineCNVSegmentation` | sv-caller | oracle-backed | joint-germline-cnv-segmentation | 1 | t=2, 22/22 rows (100%) | 0.003 / 0.065 |
+| `JointGermlineCNVSegmentation` | sv-caller | oracle-backed | joint-germline-cnv-segmentation, multi-variant-walker | 2 | t=2, 22/22 rows (100%) | 0.003 / 0.065 |
 | `LearnReadOrientationModel` | assembly-caller | oracle-backed | learn-read-orientation-model | 1 | t=2, 12/12 rows (100%) | 0.023 / 0.302 |
 | `LeftAlignAndTrimVariants` | variant-transform | oracle-backed | left-align-and-trim-variants | 1 | t=2, 22/22 rows (100%) | 0.004 / 0.091 |
 | `LeftAlignIndels` | record-transform | oracle-backed | left-align-indels-tool | 1 | t=2, 19/19 rows (100%) | 0.003 / 0.044 |
@@ -310,15 +310,15 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `RampedHaplotypeCaller` | assembly-caller | oracle-backed | callers-all-annotations, hc-allele-filtering, hc-allele-graphs, hc-alleles, hc-bamout, hc-contamination, hc-debug-outputs, hc-disable-optimizations, hc-error-correction, hc-flow, hc-linked-graph, hc-pdhmm, hc-pileup, hc-ploidy, hc-resources, ramped-haplotype-caller, ramps-end-to-end | 17 | t=2, 54/54 rows (100%) | 0.024 / 0.325 |
 | `ReadAnonymizer` | unclassified | oracle-backed | read-anonymizer | 1 | t=2, 22/22 rows (100%) | 0.003 / 0.043 |
 | `ReadsPipelineSpark` | assembly-caller | oracle-backed | spark-walkers | 1 | t=2, 53/53 rows (100%) | not measured |
-| `ReblockGVCF` | unclassified | oracle-backed | reblock-gvcf | 1 | t=2, 56/56 rows (100%) | 0.003 / 0.053 |
+| `ReblockGVCF` | unclassified | oracle-backed | multi-variant-walker, reblock-gvcf | 2 | t=2, 56/56 rows (100%) | 0.003 / 0.053 |
 | `ReferenceBlockConcordance` | unclassified | oracle-backed | reference-block-concordance | 1 | t=2, 17/17 rows (100%) | 0.002 / 0.056 |
 | `RemoveNearbyIndels` | variant-transform | oracle-backed | remove-nearby-indels | 1 | t=2, 24/24 rows (100%) | 0.002 / 0.055 |
 | `RevertBaseQualityScores` | record-transform | oracle-backed | record-transform | 1 | t=2, 19/19 rows (100%) | 0.003 / 0.043 |
 | `RevertSamSpark` | record-transform | oracle-backed | spark-walkers | 1 | t=2, 28/28 rows (100%) | not measured |
 | `SVAnnotate` | sv-caller | oracle-backed | sv-annotate | 1 | t=2, 18/18 rows (100%) | 0.003 / 0.067 |
-| `SVCluster` | sv-caller | oracle-backed | sv-cluster | 1 | t=2, 24/24 rows (100%) | 0.002 / 0.048 |
+| `SVCluster` | sv-caller | oracle-backed | multi-variant-walker, sv-cluster | 2 | t=2, 24/24 rows (100%) | 0.002 / 0.048 |
 | `SVConcordance` | sv-caller | oracle-backed | sv-concordance | 1 | t=2, 40/40 rows (100%) | 0.003 / 0.064 |
-| `SVStratify` | sv-caller | oracle-backed | sv-stratify | 1 | t=2, 16/16 rows (100%) | 0.002 / 0.059 |
+| `SVStratify` | sv-caller | oracle-backed | multi-variant-walker, sv-stratify | 2 | t=2, 16/16 rows (100%) | 0.002 / 0.059 |
 | `ScoreVariantAnnotations` | variant-transform | oracle-backed | interpreter-tools, vets-isolation-forest | 2 | t=2, 27/27 rows (100%) | not measured |
 | `SelectVariants` | variant-transform | oracle-backed | genomicsdb-query, select-variants-concordance, select-variants-filters, select-variants-header, select-variants-output, select-variants-samples, select-variants-subset, tool-argument-declarations, tool-argument-enums | 9 | t=2, 50/51 rows (98%) | 0.002 / 0.055 |
 | `ShiftFasta` | reference-utility | oracle-backed | shift-fasta | 1 | t=2, 21/21 rows (100%) | 0.003 / 0.086 |
@@ -336,13 +336,13 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `TransferReadTags` | record-transform | oracle-backed | transfer-read-tags | 1 | t=2, 19/19 rows (100%) | 0.002 / 0.035 |
 | `UnmarkDuplicates` | record-transform | oracle-backed | record-transform | 1 | t=2, 19/19 rows (100%) | 0.003 / 0.042 |
 | `UpdateVCFSequenceDictionary` | variant-transform | oracle-backed | update-vcf-sequence-dictionary | 1 | t=2, 24/24 rows (100%) | 0.002 / 0.055 |
-| `VCFComparator` | unclassified | oracle-backed | vcf-comparator | 1 | t=2, 40/40 rows (100%), **1 distinct output** | 0.003 / 0.056 |
+| `VCFComparator` | unclassified | oracle-backed | multi-variant-walker, vcf-comparator | 2 | t=2, 40/40 rows (100%), **1 distinct output** | 0.003 / 0.056 |
 | `ValidateBasicSomaticShortMutations` | variant-walker | oracle-backed | validate-basic-somatic-short-mutations | 1 | t=2, 22/22 rows (100%) | 0.002 / 0.049 |
 | `ValidateVariants` | variant-walker | oracle-backed | validate-variants | 1 | t=2, 40/40 rows (100%), **1 distinct output** | 0.003 / 0.065 |
 | `VariantAnnotator` | unclassified | oracle-backed | variant-annotator | 1 | t=2, 83/83 rows (100%) | 0.003 / 0.061 |
-| `VariantEval` | variant-walker | oracle-backed | variant-eval | 1 | t=2, 68/68 rows (100%) | 0.002 / 0.066 |
+| `VariantEval` | variant-walker | oracle-backed | multi-variant-walker, variant-eval | 2 | t=2, 68/68 rows (100%) | 0.002 / 0.066 |
 | `VariantFiltration` | variant-transform | oracle-backed | variant-filtration | 1 | t=2, 24/24 rows (100%) | 0.002 / 0.055 |
-| `VariantRecalibrator` | variant-transform | oracle-backed | variant-recalibrator | 1 | t=2, 26/26 rows (100%) | 0.081 / 1.010 |
+| `VariantRecalibrator` | variant-transform | oracle-backed | multi-variant-walker, variant-recalibrator | 2 | t=2, 26/26 rows (100%) | 0.081 / 1.010 |
 | `VariantsToTable` | variant-walker | oracle-backed | variants-to-table | 1 | t=2, 23/23 rows (100%) | 0.002 / 0.056 |
 
 <details><summary>0 not started</summary>

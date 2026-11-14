@@ -54,7 +54,7 @@ The single biggest unlock: 151 non-Spark GATK tools stand on it.
 | open item | where it lives now | why |
 |---|---|---|
 | the Tribble index (G1.3) | Milestone H | it is an htsjdk capability GATK consumes |
-| the multi-input walkers (G1.6) | Milestone H | they merge with `VCFUtils.smartMergeHeaders` and `VariantContextComparator` |
+| the multi-input walkers (G1.6) | **done, G1.6** | `smartMergeHeaders` and `VariantContextComparator` landed in htsjdk-rs, and the walkers on them are oracle-backed by `multi-variant-walker` |
 | `AllelePseudoDepth` (G1.7) | **done, G1.9** | the licence was never what blocked it. Both values leave through a `DecimalFormat` at two and four decimals, and the fixed point turned out bit-identical anyway. Oracle-backed, 46 calls, no divergence |
 | `AssemblyComplexity` (G1.7) | Milestone G3 | it needs `Haplotype.getEventMap()`, the assembly event model |
 
@@ -167,12 +167,33 @@ Three of the four remain open, none of them G1 work.
       `afterNthPass` runs after the **last** pass too, which its own javadoc denies; and
       `TwoPassVariantWalker`'s `afterNthPass` guard is `n == 0` then `n > 1`, so the call after the
       second pass matches neither branch and does nothing at all. Zero passes is legal throughout
-- [ ] the multi-input walkers (`MultiVariantWalker` and `MultiVariantDataSource`), which merge
-      several VCFs into one position-ordered stream. Not effort-blocked but layer-blocked: the
-      merged header comes from htsjdk's `VCFUtils.smartMergeHeaders` and the merged order from
-      `VariantContextComparator` over the merged dictionary, so it lands once those are in
-      htsjdk-rs. `MultiVariantWalkerGroupedOnStart` and `MultiVariantWalkerGroupedByOverlap` sit
-      on top of it
+- [x] the multi-input walkers (`MultiVariantWalker` and `MultiVariantDataSource`), which merge
+      several VCFs into one position-ordered stream, and `MultiVariantWalkerGroupedOnStart` and
+      `MultiVariantWalkerGroupedByOverlap` on top: `gatk_tools::multi_variant` and the runner half
+      in `gatk-cli`'s `runners/multi_variant.rs`, oracle-backed by `multi-variant-walker`, 36 runs
+      through three probe walkers. Twelve tools open their inputs through it (CombineGVCFs,
+      ReblockGVCF, VariantEval and AlleleFrequencyQC, VariantRecalibrator, ApplyVQSR,
+      FilterAlignmentArtifacts, VCFComparator, SVStratify, SVCluster, GroupedSVCluster,
+      JointGermlineCNVSegmentation), and the port's "more than one `--variant`" and "dictionaries
+      differ" limitations are gone. What the suite pinned:
+      - **the merge is not stable**: htsjdk's `MergingIterator` is a `PriorityQueue`, so three
+        inputs tied at one locus come out 1, 3, 2. **A single input is never compared**, so one
+        file holding a contig the dictionary lacks, or out of order, is walked as it is; with two,
+        the first is the comparator's `NullPointerException` and the second its
+        `IllegalStateException`, and neither is wrapped by the walker;
+      - **the first input to name a contig owns it**: the pairwise cross-check refuses a length
+        mismatch unless either length is 0, and never reaches the md5 for a VCF;
+      - **a header without `##contig` lines takes its Tribble index's contigs at length 0**, and
+        they are written out; several inputs with no dictionary anywhere are refused;
+      - **the written header can lose contigs**: `getMetaDataInSortedOrder` is a `TreeSet` whose
+        contig lines compare by index alone, so two files' contig lines sharing an index collapse
+        to the first;
+      - **samples are collected `toMap` by input name**, so two files under one tag are a
+        `Duplicate key` after the cross-check and the header merge, while the same file under two
+        tags is accepted. VariantEval, which fills its inputs itself and skips the uniqueness
+        check, reaches the same refusal for an eval that is also a comp;
+      - **`GroupedByOverlap` keeps a running end per contig that no group resets**, and whatever
+        `apply` throws is the walker's `GATKException` naming the locus and the whole record.
 
 ### G1.7 Annotations
 
