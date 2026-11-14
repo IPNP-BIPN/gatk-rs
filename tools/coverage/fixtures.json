@@ -2669,11 +2669,14 @@
         "through commons-jexl's arithmetic: an integer literal sends the comparison down",
         "Integer.parseInt and a real one down the double path. Both answer now that the context",
         "is typed (#1142); before that the integer literal refused, because a rendered string",
-        "reached parseInt where the reference had a Double."
+        "reached parseInt where the reference had a Double.",
+        "gendb:///work/fixtures/cg_ws is cg_a, cg_b and cg_c imported by GenomicsDBImport and read",
+        "back through GenomicsDB's own query: the samples of cg_combined.g.vcf, merged the native way."
       ],
       "--variant": [
         "/work/fixtures/indexed.vcf",
-        "/work/fixtures/population.vcf"
+        "/work/fixtures/population.vcf",
+        "gendb:///work/fixtures/cg_ws"
       ],
       "--output": [
         "/work/out/selected.vcf",
@@ -5722,12 +5725,15 @@
         "reason every variant writer holds them: one writes the run's own time into the header and",
         "the other writes the output file's last-modified time into an index.",
         "--max-variants-per-shard is held at 0 and --disable-read-filter at WellformedReadFilter, for",
-        "the reasons CombineGVCFs gives."
+        "the reasons CombineGVCFs gives.",
+        "gendb:///work/fixtures/cg_ws is cg_a, cg_b and cg_c imported by GenomicsDBImport and read",
+        "back through GenomicsDB's own query: the samples of cg_combined.g.vcf, merged the native way."
       ],
       "--variant": [
         "/work/fixtures/cg_combined.g.vcf",
         "/work/fixtures/cg_a.g.vcf",
-        "/work/fixtures/cg_c.g.vcf"
+        "/work/fixtures/cg_c.g.vcf",
+        "gendb:///work/fixtures/cg_ws"
       ],
       "--output": [
         "/work/out/genotyped.vcf"
@@ -5985,7 +5991,8 @@
     "GnarlyGenotyper": {
       "--variant": [
         "/work/fixtures/gn_sites.g.vcf",
-        "/work/fixtures/gn_combined.g.vcf"
+        "/work/fixtures/gn_combined.g.vcf",
+        "gendb:///work/fixtures/cg_ws"
       ],
       "--output": [
         "/work/out/gnarly.vcf"
@@ -6064,7 +6071,9 @@
         "reason every variant writer holds them: one writes the run's own time into the header and",
         "the other writes the output file's last-modified time into an index.",
         "--max-variants-per-shard is held at 0 and --disable-read-filter at WellformedReadFilter, for",
-        "the reasons CombineGVCFs gives."
+        "the reasons CombineGVCFs gives.",
+        "gendb:///work/fixtures/cg_ws is cg_a, cg_b and cg_c imported by GenomicsDBImport and read",
+        "back through GenomicsDB's own query: the samples of cg_combined.g.vcf, merged the native way."
       ]
     },
     "VariantEval": {
@@ -19713,6 +19722,18 @@
         "--OLD_SAMPLE_NAME": "sampleA"
       },
       "why": "picard-rs's clause: the two-sample file is refused as not single-sample before OLD_SAMPLE_NAME is read, so naming an old sample beside it only repeats that refusal, which then took eight of the first twelve rows. The refusal is kept, with OLD_SAMPLE_NAME=null."
+    },
+    {
+      "tools": [
+        "GenotypeGVCFs",
+        "GnarlyGenotyper",
+        "SelectVariants"
+      ],
+      "forbid": {
+        "--variant": "gendb:///work/fixtures/cg_ws",
+        "--genomicsdb-use-bcf-codec": "true"
+      },
+      "why": "The port refuses the BCF codec over a workspace in its own words: the records BCF2Codec decodes keep FORMAT in header order and print their floats with htsjdk's two decimals, a second representation it does not reproduce. A row with the pair measures that refusal, which is the same on every row; over a file the flag is inert and stays in the array."
     }
   ],
   "exclude": {

@@ -503,12 +503,12 @@ jobs:
             suites: "mutect2-permutect hc-allele-graphs mutect2-dragstr spark-walkers htsget-reader"
           - group: oracle-backed
             index: "72/73"
-            slug: "interpreter-tools-genomicsdb-import-sv-evidence-sv-partitions-nvscorevariants"
-            suites: "interpreter-tools genomicsdb-import sv-evidence sv-partitions nvscorevariants"
+            slug: "interpreter-tools-genomicsdb-import-genomicsdb-query-sv-evidence-sv-partitions"
+            suites: "interpreter-tools genomicsdb-import genomicsdb-query sv-evidence sv-partitions"
           - group: oracle-backed
             index: "73/73"
-            slug: "vets-isolation-forest"
-            suites: "vets-isolation-forest"
+            slug: "nvscorevariants-vets-isolation-forest"
+            suites: "nvscorevariants vets-isolation-forest"
           - group: golden-pending
             index: "1/1"
             slug: "usage-text"
