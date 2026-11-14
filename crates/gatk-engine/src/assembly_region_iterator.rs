@@ -45,7 +45,7 @@ use crate::activity_profile::ActivityProfile;
 use crate::assembly_region::{AssemblyRegion, RegionError};
 use crate::interval::SimpleInterval;
 use crate::interval_args::with_flanks;
-use crate::locus_shards::{interval_alignment_contexts, is_after, EmittedLocus};
+use crate::locus_shards::{for_each_interval_context, is_after, EmittedLocus};
 use crate::read_utils;
 use crate::variant_source::Located;
 use htsjdk_bam::header::SamHeader;
@@ -305,8 +305,39 @@ pub fn assembly_regions_with_states<T: Located>(
     header: &SamHeader,
     is_active: &mut dyn FnMut(&EmittedLocus, Option<&T>) -> ActivityAnswer,
 ) -> Result<Vec<TraversedRegion>, RegionError> {
-    let loci = interval_alignment_contexts(contexts, &shard.intervals, header);
+    assembly_regions_streaming(
+        contexts.iter(),
+        reads,
+        shard,
+        args,
+        header,
+        &mut |locus, context| is_active(locus, context.copied()),
+    )
+}
 
+/// The same traversal over contexts drawn one at a time, as `AssemblyRegionIterator` draws them:
+/// a pileup is gone once its locus has been evaluated.
+pub fn assembly_regions_streaming<C: Located>(
+    contexts: impl Iterator<Item = C>,
+    reads: &[BamRecord],
+    shard: &ReadShard,
+    args: &AssemblyRegionArgs,
+    header: &SamHeader,
+    is_active: &mut dyn FnMut(&EmittedLocus, Option<&C>) -> ActivityAnswer,
+) -> Result<Vec<TraversedRegion>, RegionError> {
+    let ready = unfilled_regions(contexts, shard, args, header, is_active)?;
+    RegionFiller::new(reads, ready, args.force_active, header).collect()
+}
+
+/// The regions the activity profile cuts, in the order they were emitted, before any read is
+/// added: every locus is evaluated by the time this returns.
+pub fn unfilled_regions<C: Located>(
+    contexts: impl Iterator<Item = C>,
+    shard: &ReadShard,
+    args: &AssemblyRegionArgs,
+    header: &SamHeader,
+    is_active: &mut dyn FnMut(&EmittedLocus, Option<&C>) -> ActivityAnswer,
+) -> Result<Vec<AssemblyRegion>, RegionError> {
     let contig = shard
         .intervals
         .first()
@@ -333,9 +364,6 @@ pub fn assembly_regions_with_states<T: Located>(
 
     let mut pending: std::collections::VecDeque<AssemblyRegion> = Default::default();
     let mut ready: Vec<AssemblyRegion> = Vec::new();
-    let mut previous_region_reads: Vec<BamRecord> = Vec::new();
-    // The read cache: an index into `reads`, since the reads are already in coordinate order.
-    let mut cache_index = 0usize;
 
     let push_popped = |profile: &mut ActivityProfile,
                        pending: &mut std::collections::VecDeque<AssemblyRegion>,
@@ -358,7 +386,7 @@ pub fn assembly_regions_with_states<T: Located>(
         Ok(())
     };
 
-    for locus in loci.iter() {
+    let mut evaluate = |locus: EmittedLocus, context: Option<&C>| -> Result<(), RegionError> {
         // Ordering matters: the profile is popped before the pileup is added, and the force flag
         // is "this locus does not continue the profile".
         if !profile.is_empty() {
@@ -366,8 +394,7 @@ pub fn assembly_regions_with_states<T: Located>(
             push_popped(&mut profile, &mut pending, force)?;
         }
 
-        let context = locus.context.map(|position| &contexts[position]);
-        let (prob, hq_soft_clips) = is_active(locus, context);
+        let (prob, hq_soft_clips) = is_active(&locus, context);
         profile.add_state(locus.interval.start, prob, hq_soft_clips);
 
         // A pending region becomes ready only once the loci have advanced past the end of its
@@ -383,7 +410,9 @@ pub fn assembly_regions_with_states<T: Located>(
                 ready.push(region);
             }
         }
-    }
+        Ok(())
+    };
+    for_each_interval_context(contexts, &shard.intervals, header, &mut evaluate)?;
 
     // Out of loci: close the profile with forceConversion, then drain the queue.
     if !profile.is_empty() {
@@ -393,11 +422,43 @@ pub fn assembly_regions_with_states<T: Located>(
         ready.push(region);
     }
 
-    // Fill each region in turn, in the order they were emitted.
-    let mut out = Vec::new();
-    for mut region in ready {
+    Ok(ready)
+}
+
+/// Fill each region in turn, in the order they were emitted, one region per `next`: only the
+/// region being handed out holds copies of its reads.
+pub struct RegionFiller<'h, R> {
+    reads: R,
+    ready: std::vec::IntoIter<AssemblyRegion>,
+    force_active: bool,
+    header: &'h SamHeader,
+    previous_region_reads: Vec<BamRecord>,
+    // The read cache: an index into `reads`, since the reads are already in coordinate order.
+    cache_index: usize,
+}
+
+impl<'h, R: std::borrow::Borrow<[BamRecord]>> RegionFiller<'h, R> {
+    pub fn new(
+        reads: R,
+        ready: Vec<AssemblyRegion>,
+        force_active: bool,
+        header: &'h SamHeader,
+    ) -> RegionFiller<'h, R> {
+        RegionFiller {
+            reads,
+            ready: ready.into_iter(),
+            force_active,
+            header,
+            previous_region_reads: Vec::new(),
+            cache_index: 0,
+        }
+    }
+
+    fn fill(&mut self, mut region: AssemblyRegion) -> Result<TraversedRegion, RegionError> {
+        let header = self.header;
+        let reads: &[BamRecord] = self.reads.borrow();
         let padded = region.padded_span().clone();
-        for read in &previous_region_reads {
+        for read in &self.previous_region_reads {
             if padded.overlaps(
                 &contig_of(read, header),
                 read_utils::start(read),
@@ -406,8 +467,8 @@ pub fn assembly_regions_with_states<T: Located>(
                 region.add(read.clone(), header)?;
             }
         }
-        while cache_index < reads.len() {
-            let read = &reads[cache_index];
+        while self.cache_index < reads.len() {
+            let read = &reads[self.cache_index];
             let located = LocusPosition {
                 contig: contig_of(read, header),
                 position: read_utils::start(read),
@@ -422,7 +483,7 @@ pub fn assembly_regions_with_states<T: Located>(
             if is_after(&read_interval, &padded, header) == Some(true) {
                 break;
             }
-            cache_index += 1;
+            self.cache_index += 1;
             if padded.overlaps(
                 &read_interval.contig,
                 read_interval.start,
@@ -432,17 +493,24 @@ pub fn assembly_regions_with_states<T: Located>(
             }
         }
 
-        previous_region_reads = region.reads().to_vec();
-        let is_active = if args.force_active {
+        self.previous_region_reads = region.reads().to_vec();
+        let is_active = if self.force_active {
             region.set_is_active(true);
             true
         } else {
             region.is_active()
         };
-        out.push(TraversedRegion { region, is_active });
+        Ok(TraversedRegion { region, is_active })
     }
+}
 
-    Ok(out)
+impl<R: std::borrow::Borrow<[BamRecord]>> Iterator for RegionFiller<'_, R> {
+    type Item = Result<TraversedRegion, RegionError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let region = self.ready.next()?;
+        Some(self.fill(region))
+    }
 }
 
 fn contig_of(record: &BamRecord, header: &SamHeader) -> String {

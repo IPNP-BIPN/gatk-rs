@@ -682,7 +682,11 @@ fn call_variants_into(
                 _ => None,
             },
         };
-        for mut traversed in regions {
+        for traversed in regions.into_iter().flatten() {
+            let mut traversed = traversed.map_err(|error| {
+                let error = gatk_engine::assembly_region_walker::WalkerError::from(error);
+                HaplotypeCallerError::new(error.class(), error.message())
+            })?;
             if detection.use_pileup_detection {
                 crate::pileup_based_alleles::tag_mismatch_percentage(
                     &mut traversed.region,
