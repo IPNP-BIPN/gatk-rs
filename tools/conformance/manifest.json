@@ -8419,7 +8419,7 @@
     },
     {
       "id": "genomicsdb-query",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "GenotypeGVCFs, GnarlyGenotyper and SelectVariants over a gendb:// workspace",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -8442,8 +8442,8 @@
       "cases": [
         {
           "dump": "GenomicsDBQueryDump",
-          "golden": null,
-          "why": "Golden pending: frozen from the candidate artefact of the first CI run."
+          "golden": "crates/gatk-tools/tests/data/genomicsdb_query.txt.gz",
+          "why": "Frozen from the candidate artefact of run 43491520231."
         }
       ]
     },
