@@ -1455,8 +1455,7 @@ impl Schema {
                         None => Encoded::Absent,
                     },
                     "FT" => match &genotype.filters {
-                        // `PASS` parses to no filter at all, and the stream still holds the word.
-                        Some(text) if text.is_empty() => Encoded::Text("PASS".to_string()),
+                        // The FT as written, which the runner put back: the stream is raw text.
                         Some(text) => Encoded::Text(text.clone()),
                         None => Encoded::Absent,
                     },

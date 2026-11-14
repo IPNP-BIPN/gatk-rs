@@ -507,8 +507,8 @@ jobs:
             suites: "htsget-reader interpreter-tools genomicsdb-import genomicsdb-query sv-evidence"
           - group: oracle-backed
             index: "73/73"
-            slug: "sv-partitions-nvscorevariants-vets-isolation-forest"
-            suites: "sv-partitions nvscorevariants vets-isolation-forest"
+            slug: "sv-partitions-gcnv-frozen-nvscorevariants-vets-isolation-forest"
+            suites: "sv-partitions gcnv-frozen nvscorevariants vets-isolation-forest"
     steps:
       - uses: actions/checkout@v7
 
@@ -519,6 +519,10 @@ jobs:
           fail-on-cache-miss: true
 
       - run: docker load -i /tmp/oracle-image.tar
+
+      - name: Pull broadinstitute/gatk:4.7.0.0 for gcnv-frozen
+        if: contains(matrix.suites, 'gcnv-frozen')
+        run: docker pull --platform linux/amd64 broadinstitute/gatk:4.7.0.0
 
       - name: Pull broadinstitute/gatk:4.7.0.0 for vets-isolation-forest
         if: contains(matrix.suites, 'vets-isolation-forest')
