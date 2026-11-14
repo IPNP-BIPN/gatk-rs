@@ -726,15 +726,48 @@ fn open_samples(samples: &[Sample]) -> Result<Vec<htsjdk_vcf::reader::VcfFile>, 
                     sample.path
                 )));
             }
-            htsjdk_vcf::reader::read_vcf(&text).map_err(|_| {
+            let mut file = htsjdk_vcf::reader::read_vcf(&text).map_err(|_| {
                 limitation(&format!(
                     "{} has a record this port's reader refuses, and the reference only refuses \
                      it, in its own words, if an interval reaches it.",
                     sample.path
                 ))
-            })
+            })?;
+            restore_raw_ft(&text, &mut file).map_err(|()| {
+                limitation(&format!(
+                    "{} has a line this port's reader does not read as one record.",
+                    sample.path
+                ))
+            })?;
+            Ok(file)
         })
         .collect()
+}
+
+/// Puts back each genotype's `FT` as the sample column wrote it. The stream carries that text, but
+/// the reader reads htsjdk's way: `PASS` is no filter, and two or more names come back sorted.
+fn restore_raw_ft(text: &str, file: &mut htsjdk_vcf::reader::VcfFile) -> Result<(), ()> {
+    let lines: Vec<&str> = text
+        .lines()
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .collect();
+    if lines.len() != file.records.len() {
+        return Err(());
+    }
+    for (record, line) in file.records.iter_mut().zip(lines) {
+        let mut columns = line.split('\t').skip(8);
+        let (Some(format), Some(sample)) = (columns.next(), columns.next()) else {
+            continue;
+        };
+        let raw = format
+            .split(':')
+            .zip(sample.split(':'))
+            .find_map(|(key, value)| (key == "FT").then_some(value));
+        if let (Some(raw), Some(genotype)) = (raw, record.genotypes.first_mut()) {
+            genotype.filters = Some(raw.to_string());
+        }
+    }
+    Ok(())
 }
 
 /// The FORMAT key of a value the parsed genotype cannot give back. The stream's sample column is the
