@@ -218,7 +218,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `CreateSomaticPanelOfNormals` | variant-transform | oracle-backed | brent-optimizer, create-somatic-panel-of-normals | 2 | t=2, 21/21 rows (100%) | 0.003 / 0.072 |
 | `DenoiseReadCounts` | cnv-segmentation | oracle-backed | denoise-read-counts | 1 | t=2, 6/6 rows (100%) | 0.002 / 0.054 |
 | `DepthOfCoverage` | locus-walker | oracle-backed | depth-of-coverage | 1 | t=2, 20/20 rows (100%) | 0.003 / 0.067 |
-| `DetermineGermlineContigPloidy` | cnv-segmentation | oracle-backed | interpreter-tools | 1 | t=2, 32/32 rows (100%), **1 distinct output** | not measured |
+| `DetermineGermlineContigPloidy` | cnv-segmentation | oracle-backed | gcnv-frozen, interpreter-tools | 2 | t=2, 32/32 rows (100%), **1 distinct output** | not measured |
 | `DiscoverVariantsFromContigAlignmentsSAMSpark` | sv-caller | oracle-backed | spark-walkers | 1 | t=2, 19/19 rows (100%) | not measured |
 | `DownsampleByDuplicateSet` | unclassified | oracle-backed | downsample-by-duplicate-set | 1 | t=2, 18/18 rows (100%) | 0.003 / 0.041 |
 | `DumpTabixIndex` | reporting-walker | oracle-backed | dump-tabix-index | 1 | t=2, 7/7 rows (100%) | 0.002 / 0.064 |
@@ -252,7 +252,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `GeneExpressionEvaluation` | locus-walker | oracle-backed | gene-expression-evaluation | 1 | t=2, 19/19 rows (100%) | 0.002 / 0.058 |
 | `GenomicsDBImport` | assembly-caller | oracle-backed | genomicsdb-import | 1 | t=2, 19/19 rows (100%) | not measured |
 | `GenotypeGVCFs` | assembly-caller | oracle-backed | genomicsdb-query, genotype-gvcfs | 2 | t=2, 39/39 rows (100%) | 0.004 / 0.074 |
-| `GermlineCNVCaller` | cnv-segmentation | oracle-backed | interpreter-tools | 1 | t=2, 46/46 rows (100%), **1 distinct output** | not measured |
+| `GermlineCNVCaller` | cnv-segmentation | oracle-backed | gcnv-frozen, interpreter-tools | 2 | t=2, 46/46 rows (100%), **1 distinct output** | not measured |
 | `GetNormalArtifactData` | locus-walker | oracle-backed | normal-artifact-data | 1 | t=2, 19/19 rows (100%) | 0.002 / 0.055 |
 | `GetPileupSummaries` | locus-walker | oracle-backed | get-pileup-summaries | 1 | t=2, 19/19 rows (100%) | 0.002 / 0.054 |
 | `GetSampleName` | reporting-walker | oracle-backed | get-sample-name | 1 | t=2, 21/21 rows (100%) | 0.002 / 0.055 |
@@ -295,7 +295,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `PlotDenoisedCopyRatios` | cnv-segmentation | oracle-backed | interpreter-tools, r-plots | 2 | t=2, 11/11 rows (100%), **1 distinct output** | not measured |
 | `PlotModeledSegments` | cnv-segmentation | oracle-backed | interpreter-tools, r-plots | 2 | t=2, 11/11 rows (100%), **1 distinct output** | not measured |
 | `PostProcessReadsForRSEM` | record-transform | oracle-backed | post-process-reads-for-rsem | 1 | t=2, 20/20 rows (100%) | 0.002 / 0.029 |
-| `PostprocessGermlineCNVCalls` | cnv-segmentation | oracle-backed | interpreter-tools | 1 | t=2, 20/20 rows (100%), **1 distinct output** | not measured |
+| `PostprocessGermlineCNVCalls` | cnv-segmentation | oracle-backed | gcnv-frozen, interpreter-tools | 2 | t=2, 20/20 rows (100%), **1 distinct output** | not measured |
 | `PreprocessIntervals` | interval-utility | oracle-backed | preprocess-intervals | 1 | t=2, 20/20 rows (100%) | 0.004 / 0.095 |
 | `PrintBGZFBlockInformation` | unclassified | oracle-backed | print-bgzf-block-information | 1 | t=2, 6/6 rows (100%) | 0.002 / 0.064 |
 | `PrintDistantMates` | record-transform | oracle-backed | print-distant-mates | 1 | t=2, 19/19 rows (100%) | 0.003 / 0.044 |
