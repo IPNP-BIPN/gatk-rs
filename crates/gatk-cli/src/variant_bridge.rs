@@ -29,7 +29,7 @@
 use gatk_engine::jexl::{Context as JexlContext, Value as JexlValue};
 use gatk_engine::subset_alleles::Genotype as EngineGenotype;
 use gatk_engine::variant_context_utils::{Allele as EngineAllele, Variant};
-use gatk_tools::select_variants::{FilterRecord, Record};
+use gatk_tools::select_variants::{genotype_jexl_context, FilterRecord, Record};
 use htsjdk_vcf::allele::Allele as VcfAllele;
 use htsjdk_vcf::variant::{Genotype as VcfGenotype, Value, VariantContext};
 
@@ -74,7 +74,9 @@ fn engine_genotype(genotype: &VcfGenotype, alleles: &[VcfAllele]) -> EngineGenot
     let mut attributes: Vec<(String, String)> = Vec::new();
     // `FT` is a field of its own in htsjdk and an attribute in the reduced model, and it is the
     // attribute `setFilteredGenotypeToNocall` reads, so it goes first.
-    if let Some(filters) = &genotype.filters {
+    // `is_filtered()`, not `filters`: htsjdk-rs reads a genotype `FT=PASS` as `Some("")` where
+    // htsjdk holds null, and the reduced model's `is_filtered` counts any FT but `PASS` and `.`.
+    if let Some(filters) = genotype.filters.as_ref().filter(|_| genotype.is_filtered()) {
         attributes.push(("FT".to_string(), filters.clone()));
     }
     for (key, value) in &genotype.extended {
@@ -163,30 +165,7 @@ pub fn to_engine(vc: &VariantContext) -> Bridged {
             }
             context
         },
-        genotype_fields: vc
-            .genotypes
-            .iter()
-            .map(|genotype| {
-                let mut fields: JexlContext = genotype
-                    .extended
-                    .iter()
-                    .map(|(key, value)| (key.clone(), JexlValue::Str(rendered(value))))
-                    .collect();
-                // `GenotypeJEXLContext`'s own map: `FT` is the filter text or `PASS`, and `GQ`
-                // is `getGQ()`, an `Integer`. `DP` is NOT in that map, so it resolves through the
-                // genotype's extended attributes, where the codec left it as text.
-                if let Some(filters) = &genotype.filters {
-                    fields.insert("FT".to_string(), JexlValue::Str(filters.clone()));
-                }
-                if let Some(gq) = genotype.gq {
-                    fields.insert("GQ".to_string(), JexlValue::Int(gq));
-                }
-                if let Some(dp) = genotype.dp {
-                    fields.insert("DP".to_string(), JexlValue::Str(dp.to_string()));
-                }
-                fields
-            })
-            .collect(),
+        genotype_fields: vc.genotypes.iter().map(genotype_jexl_context).collect(),
     };
     Bridged {
         original: vc.clone(),

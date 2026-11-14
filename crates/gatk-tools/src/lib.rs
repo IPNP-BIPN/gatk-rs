@@ -104,6 +104,7 @@ pub mod gcnv_ploidy_io;
 pub mod gcnv_segments;
 pub mod gene_expression_evaluation;
 pub mod genomicsdb;
+pub mod genomicsdb_query;
 pub mod genotype_gvcfs;
 pub mod genotyping_engine;
 pub mod get_normal_artifact_data;
