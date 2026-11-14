@@ -11,7 +11,7 @@ out=$2
 samples=${3:-6}
 mkdir -p "$out"
 cd "$out"
-export PYTENSOR_FLAGS="base_compiledir=$out/.pytensor"
+export PYTENSOR_FLAGS="base_compiledir=$out/.pytensor${PYTENSOR_EXTRA:+,$PYTENSOR_EXTRA}"
 java_options="-Xmx2g -XX:ActiveProcessorCount=${JAVA_CORES:-2}"
 inputs=""
 for i in $(seq 0 $((samples - 1))); do inputs="$inputs -I $fixture/sample$i.counts.tsv"; done

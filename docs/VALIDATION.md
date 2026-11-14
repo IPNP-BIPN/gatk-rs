@@ -983,7 +983,7 @@ A SMALL window, chr1:101-200, because every base of the interval is a row whethe
 
 ### DetermineGermlineContigPloidy
 
-Suites: `interpreter-tools`.
+Suites: `interpreter-tools`, `gcnv-frozen`.
 
 Inputs: `nothing`, `nothing.tsv`.
 
@@ -1353,7 +1353,7 @@ The inputs are the CombineGVCFs corpus: cg_a.g.vcf, a diploid sample with a know
 
 ### GermlineCNVCaller
 
-Suites: `interpreter-tools`.
+Suites: `interpreter-tools`, `gcnv-frozen`.
 
 Inputs: `nothing`, `nothing.tsv`.
 
@@ -1789,7 +1789,7 @@ qname.bam holds the four answers passesRSEMFilter gives -- a proper pair of sing
 
 ### PostprocessGermlineCNVCalls
 
-Suites: `interpreter-tools`.
+Suites: `interpreter-tools`, `gcnv-frozen`.
 
 Inputs: `nothing`, `nothing.vcf`, `shard`.
 
