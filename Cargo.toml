@@ -30,18 +30,18 @@ bwa-mem4-core = { git = "https://github.com/IPNP-BIPN/bwa-mem4", rev = "41b46129
 bwa-mem4-index = { git = "https://github.com/IPNP-BIPN/bwa-mem4", rev = "41b46129606d0f996e72a91557b1c2f0f0853121", default-features = false }
 bwa-mem4-mem = { git = "https://github.com/IPNP-BIPN/bwa-mem4", rev = "41b46129606d0f996e72a91557b1c2f0f0853121", default-features = false }
 clap = { version = "4", default-features = false, features = ["std", "derive"] }
-htsjdk-bam = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "0730c93b27ae561c891c711240f27c2d8dd789f5" }
+htsjdk-bam = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "cb1f5804bd837914113608073a46ddc7451f5ef5" }
 # `gkl-igzip` because GATKConfig writes at compression level TWO, which is the one level pair
 # Intel's GKL routes through ISA-L igzip rather than zlib. Without the feature those levels refuse
 # rather than answer with zlib's bytes, and a tool that writes a block-compressed file could not
 # run at all.
-htsjdk-bgzf = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "0730c93b27ae561c891c711240f27c2d8dd789f5", features = ["gkl-igzip"] }
+htsjdk-bgzf = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "cb1f5804bd837914113608073a46ddc7451f5ef5", features = ["gkl-igzip"] }
 # `SplitCRAM` walks containers and copies them, which is the only CRAM a ported tool touches.
-htsjdk-cram = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "0730c93b27ae561c891c711240f27c2d8dd789f5" }
-htsjdk-metrics = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "0730c93b27ae561c891c711240f27c2d8dd789f5" }
-htsjdk-tribble = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "0730c93b27ae561c891c711240f27c2d8dd789f5" }
-htsjdk-vcf = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "0730c93b27ae561c891c711240f27c2d8dd789f5" }
-jmath = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "0730c93b27ae561c891c711240f27c2d8dd789f5" }
+htsjdk-cram = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "cb1f5804bd837914113608073a46ddc7451f5ef5" }
+htsjdk-metrics = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "cb1f5804bd837914113608073a46ddc7451f5ef5" }
+htsjdk-tribble = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "cb1f5804bd837914113608073a46ddc7451f5ef5" }
+htsjdk-vcf = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "cb1f5804bd837914113608073a46ddc7451f5ef5" }
+jmath = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "cb1f5804bd837914113608073a46ddc7451f5ef5" }
 # GatherBamFiles writes a .md5 beside its output, which is the only digest a ported tool computes
 # for itself. htsjdk-bam already pulls this crate in for the same algorithm.
 md-5 = "0.11.0"

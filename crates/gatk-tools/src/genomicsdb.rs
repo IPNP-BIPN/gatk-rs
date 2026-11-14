@@ -1218,7 +1218,9 @@ impl Schema {
                 ));
             }
         }
-        let genotype = vc.genotypes.iter().next();
+        // `peek`, not the list: reading the genotypes is `decode()`, which would drop the text
+        // `stream_ft` reads, and a record overlapping two intervals is converted twice.
+        let genotype = vc.genotypes.peek().first();
         if let Some(genotype) = genotype {
             self.check_format_keys(vc, genotype)?;
         }
@@ -1325,7 +1327,7 @@ impl Schema {
         if genotype.pl.is_some() {
             keys.push("PL");
         }
-        if genotype.filters.is_some() {
+        if stream_ft(vc, genotype).is_some() {
             keys.push("FT");
         }
         for key in keys {
@@ -1454,10 +1456,8 @@ impl Schema {
                         Some(values) => encode_int_accessor(vcf_name, values, number, vc)?,
                         None => Encoded::Absent,
                     },
-                    "FT" => match &genotype.filters {
-                        // `PASS` parses to no filter at all, and the stream still holds the word.
-                        Some(text) if text.is_empty() => Encoded::Text("PASS".to_string()),
-                        Some(text) => Encoded::Text(text.clone()),
+                    "FT" => match stream_ft(vc, genotype) {
+                        Some(text) => Encoded::Text(text.to_string()),
                         None => Encoded::Absent,
                     },
                     _ => match genotype
@@ -1509,6 +1509,24 @@ impl Schema {
             out.extend_from_slice(&index.to_le_bytes());
         }
         Ok(out)
+    }
+}
+
+/// The FT of the stream. `VCFEncoder` copies a lazy sample column as it was read, so `PASS` stays
+/// and two names keep their order, where the parsed genotype has no filters and sorted names.
+fn stream_ft<'a>(vc: &'a VariantContext, genotype: &'a Genotype) -> Option<&'a str> {
+    match vc.genotypes.unparsed() {
+        Some(text) => {
+            let mut columns = text.split('\t');
+            let index = columns.next()?.split(':').position(|key| key == "FT")?;
+            columns
+                .next()?
+                .split(':')
+                .nth(index)
+                .filter(|value| *value != ".")
+        }
+        // A decoded context is encoded from the genotype.
+        None => genotype.filters.as_deref(),
     }
 }
 
