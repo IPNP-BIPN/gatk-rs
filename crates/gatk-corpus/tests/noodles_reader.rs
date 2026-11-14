@@ -929,7 +929,11 @@ fn vcf_fields(
                     .or(Some(vec![".".into()])),
             };
             if let Some(ours) = ours {
-                let (theirs, floats) = sample_strings(value.as_ref());
+                let (mut theirs, floats) = sample_strings(value.as_ref());
+                // htsjdk holds a genotype `FT=PASS` as no filter: `filters(emptyList)` is null.
+                if *key == "FT" && theirs == [Some("PASS".to_string())] {
+                    theirs = vec![None];
+                }
                 if !same_values(&ours, &theirs, floats) {
                     push(
                         &format!("{} {key}", g.sample_name),
@@ -1018,14 +1022,6 @@ const KNOWN: &[(&str, &str, &str)] = &[
         "the specification's ambiguity, written by GATK: an allele-specific value per allele with \
          the <NON_REF> one empty (`AS_MQ=57.52,`); the specification has no empty element and \
          noodles refuses it, the port writes the reference's bytes",
-    ),
-    (
-        "vcf: ",
-        " FT: htsjdk-rs \"[\\\"\\\"]\", noodles \"[Some(\\\"PASS\\\")]\"",
-        "htsjdk-rs's bug: a genotype FT of PASS reads as Some(\"\") where htsjdk's \
-         GenotypeBuilder.filters(emptyList) leaves null. is_filtered() agrees with htsjdk, the \
-         field does not, and SelectVariants --select-genotype 'FT == \"PASS\"' diverges from \
-         the oracle because of it",
     ),
 ];
 
