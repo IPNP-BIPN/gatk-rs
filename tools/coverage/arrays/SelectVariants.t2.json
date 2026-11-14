@@ -295,10 +295,10 @@
       "source": "none"
     }
   ],
-  "rows": 50,
-  "tuples_total": 5904,
-  "tuples_covered": 5904,
-  "tuples_forbidden": 0,
+  "rows": 51,
+  "tuples_total": 6011,
+  "tuples_covered": 6011,
+  "tuples_forbidden": 1,
   "constraint_notes": [],
   "coverage": 1.0,
   "array": [
@@ -660,7 +660,7 @@
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[1]",
         "--use-jdk-deflater": "true",
-        "--variant": "fixture[1]",
+        "--variant": "fixture[2]",
         "--variant-output-filtering": "CONTAINED"
       },
       "arguments": [
@@ -710,7 +710,7 @@
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp2",
         "--use-jdk-deflater=true",
-        "--variant=/work/fixtures/population.vcf",
+        "--variant=gendb:///work/fixtures/cg_ws",
         "--variant-output-filtering=CONTAINED"
       ]
     },
@@ -866,7 +866,7 @@
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[1]",
         "--use-jdk-deflater": "false",
-        "--variant": "fixture[0]",
+        "--variant": "fixture[1]",
         "--variant-output-filtering": "ANYWHERE"
       },
       "arguments": [
@@ -916,7 +916,7 @@
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp2",
         "--use-jdk-deflater=false",
-        "--variant=/work/fixtures/indexed.vcf",
+        "--variant=/work/fixtures/population.vcf",
         "--variant-output-filtering=ANYWHERE"
       ]
     },
@@ -969,7 +969,7 @@
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true",
-        "--variant": "fixture[0]",
+        "--variant": "fixture[2]",
         "--variant-output-filtering": "ENDS_IN"
       },
       "arguments": [
@@ -1019,7 +1019,7 @@
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true",
-        "--variant=/work/fixtures/indexed.vcf",
+        "--variant=gendb:///work/fixtures/cg_ws",
         "--variant-output-filtering=ENDS_IN"
       ]
     },
@@ -1175,7 +1175,7 @@
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[1]",
         "--use-jdk-deflater": "true",
-        "--variant": "fixture[1]",
+        "--variant": "fixture[0]",
         "--variant-output-filtering": "OVERLAPS"
       },
       "arguments": [
@@ -1225,7 +1225,7 @@
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp2",
         "--use-jdk-deflater=true",
-        "--variant=/work/fixtures/population.vcf",
+        "--variant=/work/fixtures/indexed.vcf",
         "--variant-output-filtering=OVERLAPS"
       ]
     },
@@ -1381,7 +1381,7 @@
         "--sites-only-vcf-output": "false",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true",
-        "--variant": "fixture[1]",
+        "--variant": "fixture[0]",
         "--variant-output-filtering": "ENDS_IN"
       },
       "arguments": [
@@ -1431,7 +1431,7 @@
         "--sites-only-vcf-output=false",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true",
-        "--variant=/work/fixtures/population.vcf",
+        "--variant=/work/fixtures/indexed.vcf",
         "--variant-output-filtering=ENDS_IN"
       ]
     },
@@ -1484,7 +1484,7 @@
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true",
-        "--variant": "fixture[1]",
+        "--variant": "fixture[2]",
         "--variant-output-filtering": "OVERLAPS"
       },
       "arguments": [
@@ -1534,7 +1534,7 @@
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true",
-        "--variant=/work/fixtures/population.vcf",
+        "--variant=gendb:///work/fixtures/cg_ws",
         "--variant-output-filtering=OVERLAPS"
       ]
     },
@@ -1587,7 +1587,7 @@
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "false",
-        "--variant": "fixture[0]",
+        "--variant": "fixture[2]",
         "--variant-output-filtering": "STARTS_IN"
       },
       "arguments": [
@@ -1637,7 +1637,7 @@
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=false",
-        "--variant=/work/fixtures/indexed.vcf",
+        "--variant=gendb:///work/fixtures/cg_ws",
         "--variant-output-filtering=STARTS_IN"
       ]
     },
@@ -1793,7 +1793,7 @@
         "--sites-only-vcf-output": "false",
         "--tmp-dir": "fixture[1]",
         "--use-jdk-deflater": "true",
-        "--variant": "fixture[1]",
+        "--variant": "fixture[2]",
         "--variant-output-filtering": "STARTS_IN"
       },
       "arguments": [
@@ -1843,7 +1843,7 @@
         "--sites-only-vcf-output=false",
         "--tmp-dir=/work/tmp2",
         "--use-jdk-deflater=true",
-        "--variant=/work/fixtures/population.vcf",
+        "--variant=gendb:///work/fixtures/cg_ws",
         "--variant-output-filtering=STARTS_IN"
       ]
     },
@@ -1896,7 +1896,7 @@
         "--sites-only-vcf-output": "false",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "false",
-        "--variant": "fixture[0]",
+        "--variant": "fixture[1]",
         "--variant-output-filtering": "STARTS_IN"
       },
       "arguments": [
@@ -1946,7 +1946,7 @@
         "--sites-only-vcf-output=false",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=false",
-        "--variant=/work/fixtures/indexed.vcf",
+        "--variant=/work/fixtures/population.vcf",
         "--variant-output-filtering=STARTS_IN"
       ]
     },
@@ -1970,7 +1970,7 @@
         "--genomicsdb-shared-posixfs-optimizations": "true",
         "--genomicsdb-use-bcf-codec": "true",
         "--genomicsdb-use-gcs-hdfs-connector": "true",
-        "--ignore-non-ref-in-types": "true",
+        "--ignore-non-ref-in-types": "false",
         "--interval-exclusion-padding": "fixture[0]",
         "--interval-merging-rule": "ALL",
         "--interval-padding": "fixture[0]",
@@ -2020,7 +2020,7 @@
         "--genomicsdb-shared-posixfs-optimizations=true",
         "--genomicsdb-use-bcf-codec=true",
         "--genomicsdb-use-gcs-hdfs-connector=true",
-        "--ignore-non-ref-in-types=true",
+        "--ignore-non-ref-in-types=false",
         "--interval-exclusion-padding=0",
         "--interval-merging-rule=ALL",
         "--interval-padding=0",
@@ -2071,13 +2071,13 @@
         "--exclude-intervals": "fixture[0]",
         "--exclude-non-variants": "true",
         "--genomicsdb-shared-posixfs-optimizations": "true",
-        "--genomicsdb-use-bcf-codec": "true",
+        "--genomicsdb-use-bcf-codec": "false",
         "--genomicsdb-use-gcs-hdfs-connector": "true",
         "--ignore-non-ref-in-types": "true",
         "--interval-exclusion-padding": "fixture[0]",
-        "--interval-merging-rule": "OVERLAPPING_ONLY",
+        "--interval-merging-rule": "ALL",
         "--interval-padding": "fixture[0]",
-        "--interval-set-rule": "INTERSECTION",
+        "--interval-set-rule": "UNION",
         "--intervals": "fixture[0]",
         "--invertSelect": "false",
         "--inverted-read-filter": "fixture[1]",
@@ -2102,7 +2102,7 @@
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true",
-        "--variant": "fixture[0]",
+        "--variant": "fixture[2]",
         "--variant-output-filtering": "OVERLAPS"
       },
       "arguments": [
@@ -2121,13 +2121,13 @@
         "--exclude-intervals=chr1:1-500",
         "--exclude-non-variants=true",
         "--genomicsdb-shared-posixfs-optimizations=true",
-        "--genomicsdb-use-bcf-codec=true",
+        "--genomicsdb-use-bcf-codec=false",
         "--genomicsdb-use-gcs-hdfs-connector=true",
         "--ignore-non-ref-in-types=true",
         "--interval-exclusion-padding=0",
-        "--interval-merging-rule=OVERLAPPING_ONLY",
+        "--interval-merging-rule=ALL",
         "--interval-padding=0",
-        "--interval-set-rule=INTERSECTION",
+        "--interval-set-rule=UNION",
         "--intervals=chr1:1-1000",
         "--invertSelect=false",
         "--inverted-read-filter=PrimaryLineReadFilter",
@@ -2152,7 +2152,7 @@
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true",
-        "--variant=/work/fixtures/indexed.vcf",
+        "--variant=gendb:///work/fixtures/cg_ws",
         "--variant-output-filtering=OVERLAPS"
       ]
     },
@@ -2205,7 +2205,7 @@
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true",
-        "--variant": "fixture[0]",
+        "--variant": "fixture[2]",
         "--variant-output-filtering": "CONTAINED"
       },
       "arguments": [
@@ -2255,7 +2255,7 @@
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true",
-        "--variant=/work/fixtures/indexed.vcf",
+        "--variant=gendb:///work/fixtures/cg_ws",
         "--variant-output-filtering=CONTAINED"
       ]
     },
@@ -2266,8 +2266,8 @@
         "--apply-jexl-filters-first": "true",
         "--cloud-index-prefetch-buffer": "fixture[0]",
         "--cloud-prefetch-buffer": "fixture[0]",
-        "--create-output-bam-index": "true",
-        "--create-output-bam-md5": "true",
+        "--create-output-bam-index": "false",
+        "--create-output-bam-md5": "false",
         "--create-output-variant-md5": "true",
         "--disable-bam-index-caching": "true",
         "--disable-read-filter": "fixture[0]",
@@ -2277,7 +2277,7 @@
         "--exclude-intervals": "fixture[0]",
         "--exclude-non-variants": "true",
         "--genomicsdb-shared-posixfs-optimizations": "true",
-        "--genomicsdb-use-bcf-codec": "true",
+        "--genomicsdb-use-bcf-codec": "false",
         "--genomicsdb-use-gcs-hdfs-connector": "true",
         "--ignore-non-ref-in-types": "true",
         "--interval-exclusion-padding": "fixture[0]",
@@ -2309,15 +2309,15 @@
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true",
         "--variant": "fixture[0]",
-        "--variant-output-filtering": "ENDS_IN"
+        "--variant-output-filtering": "ANYWHERE"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
         "--apply-jexl-filters-first=true",
         "--cloud-index-prefetch-buffer=-1",
         "--cloud-prefetch-buffer=40",
-        "--create-output-bam-index=true",
-        "--create-output-bam-md5=true",
+        "--create-output-bam-index=false",
+        "--create-output-bam-md5=false",
         "--create-output-variant-md5=true",
         "--disable-bam-index-caching=true",
         "--disable-read-filter=WellformedReadFilter",
@@ -2327,7 +2327,7 @@
         "--exclude-intervals=chr1:1-500",
         "--exclude-non-variants=true",
         "--genomicsdb-shared-posixfs-optimizations=true",
-        "--genomicsdb-use-bcf-codec=true",
+        "--genomicsdb-use-bcf-codec=false",
         "--genomicsdb-use-gcs-hdfs-connector=true",
         "--ignore-non-ref-in-types=true",
         "--interval-exclusion-padding=0",
@@ -2359,7 +2359,7 @@
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true",
         "--variant=/work/fixtures/indexed.vcf",
-        "--variant-output-filtering=ENDS_IN"
+        "--variant-output-filtering=ANYWHERE"
       ]
     },
     {
@@ -2483,7 +2483,7 @@
         "--exclude-intervals": "fixture[0]",
         "--exclude-non-variants": "false",
         "--genomicsdb-shared-posixfs-optimizations": "true",
-        "--genomicsdb-use-bcf-codec": "true",
+        "--genomicsdb-use-bcf-codec": "false",
         "--genomicsdb-use-gcs-hdfs-connector": "true",
         "--ignore-non-ref-in-types": "false",
         "--interval-exclusion-padding": "fixture[0]",
@@ -2514,7 +2514,7 @@
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true",
-        "--variant": "fixture[1]",
+        "--variant": "fixture[2]",
         "--variant-output-filtering": "OVERLAPS"
       },
       "arguments": [
@@ -2533,7 +2533,7 @@
         "--exclude-intervals=chr1:1-500",
         "--exclude-non-variants=false",
         "--genomicsdb-shared-posixfs-optimizations=true",
-        "--genomicsdb-use-bcf-codec=true",
+        "--genomicsdb-use-bcf-codec=false",
         "--genomicsdb-use-gcs-hdfs-connector=true",
         "--ignore-non-ref-in-types=false",
         "--interval-exclusion-padding=0",
@@ -2564,7 +2564,7 @@
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true",
-        "--variant=/work/fixtures/population.vcf",
+        "--variant=gendb:///work/fixtures/cg_ws",
         "--variant-output-filtering=OVERLAPS"
       ]
     },
@@ -2574,7 +2574,7 @@
         "--add-output-sam-program-record": "true",
         "--apply-jexl-filters-first": "true",
         "--cloud-index-prefetch-buffer": "fixture[0]",
-        "--cloud-prefetch-buffer": "fixture[0]",
+        "--cloud-prefetch-buffer": "fixture[1]",
         "--create-output-bam-index": "true",
         "--create-output-bam-md5": "true",
         "--create-output-variant-md5": "true",
@@ -2617,14 +2617,14 @@
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true",
-        "--variant": "fixture[0]",
-        "--variant-output-filtering": "CONTAINED"
+        "--variant": "fixture[1]",
+        "--variant-output-filtering": "OVERLAPS"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
         "--apply-jexl-filters-first=true",
         "--cloud-index-prefetch-buffer=-1",
-        "--cloud-prefetch-buffer=40",
+        "--cloud-prefetch-buffer=0",
         "--create-output-bam-index=true",
         "--create-output-bam-md5=true",
         "--create-output-variant-md5=true",
@@ -2667,8 +2667,8 @@
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true",
-        "--variant=/work/fixtures/indexed.vcf",
-        "--variant-output-filtering=CONTAINED"
+        "--variant=/work/fixtures/population.vcf",
+        "--variant-output-filtering=OVERLAPS"
       ]
     },
     {
@@ -2781,8 +2781,8 @@
         "--apply-jexl-filters-first": "true",
         "--cloud-index-prefetch-buffer": "fixture[0]",
         "--cloud-prefetch-buffer": "fixture[0]",
-        "--create-output-bam-index": "false",
-        "--create-output-bam-md5": "false",
+        "--create-output-bam-index": "true",
+        "--create-output-bam-md5": "true",
         "--create-output-variant-md5": "true",
         "--disable-bam-index-caching": "true",
         "--disable-read-filter": "fixture[0]",
@@ -2823,7 +2823,7 @@
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true",
-        "--variant": "fixture[0]",
+        "--variant": "fixture[1]",
         "--variant-output-filtering": "ANYWHERE"
       },
       "arguments": [
@@ -2831,8 +2831,8 @@
         "--apply-jexl-filters-first=true",
         "--cloud-index-prefetch-buffer=-1",
         "--cloud-prefetch-buffer=40",
-        "--create-output-bam-index=false",
-        "--create-output-bam-md5=false",
+        "--create-output-bam-index=true",
+        "--create-output-bam-md5=true",
         "--create-output-variant-md5=true",
         "--disable-bam-index-caching=true",
         "--disable-read-filter=WellformedReadFilter",
@@ -2873,7 +2873,7 @@
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true",
-        "--variant=/work/fixtures/indexed.vcf",
+        "--variant=/work/fixtures/population.vcf",
         "--variant-output-filtering=ANYWHERE"
       ]
     },
@@ -2927,7 +2927,7 @@
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true",
         "--variant": "fixture[0]",
-        "--variant-output-filtering": "ANYWHERE"
+        "--variant-output-filtering": "STARTS_IN"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -2977,7 +2977,7 @@
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true",
         "--variant=/work/fixtures/indexed.vcf",
-        "--variant-output-filtering=ANYWHERE"
+        "--variant-output-filtering=STARTS_IN"
       ]
     },
     {
@@ -3101,7 +3101,7 @@
         "--exclude-intervals": "fixture[0]",
         "--exclude-non-variants": "true",
         "--genomicsdb-shared-posixfs-optimizations": "true",
-        "--genomicsdb-use-bcf-codec": "true",
+        "--genomicsdb-use-bcf-codec": "false",
         "--genomicsdb-use-gcs-hdfs-connector": "true",
         "--ignore-non-ref-in-types": "true",
         "--interval-exclusion-padding": "fixture[0]",
@@ -3132,8 +3132,8 @@
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true",
-        "--variant": "fixture[0]",
-        "--variant-output-filtering": "ANYWHERE"
+        "--variant": "fixture[2]",
+        "--variant-output-filtering": "ENDS_IN"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -3151,7 +3151,7 @@
         "--exclude-intervals=chr1:1-500",
         "--exclude-non-variants=true",
         "--genomicsdb-shared-posixfs-optimizations=true",
-        "--genomicsdb-use-bcf-codec=true",
+        "--genomicsdb-use-bcf-codec=false",
         "--genomicsdb-use-gcs-hdfs-connector=true",
         "--ignore-non-ref-in-types=true",
         "--interval-exclusion-padding=0",
@@ -3182,8 +3182,8 @@
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true",
-        "--variant=/work/fixtures/indexed.vcf",
-        "--variant-output-filtering=ANYWHERE"
+        "--variant=gendb:///work/fixtures/cg_ws",
+        "--variant-output-filtering=ENDS_IN"
       ]
     },
     {
@@ -3957,7 +3957,7 @@
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true",
         "--variant": "fixture[0]",
-        "--variant-output-filtering": "STARTS_IN"
+        "--variant-output-filtering": "CONTAINED"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -4007,7 +4007,7 @@
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true",
         "--variant=/work/fixtures/indexed.vcf",
-        "--variant-output-filtering=STARTS_IN"
+        "--variant-output-filtering=CONTAINED"
       ]
     },
     {
@@ -4119,7 +4119,7 @@
         "--add-output-sam-program-record": "true",
         "--apply-jexl-filters-first": "true",
         "--cloud-index-prefetch-buffer": "fixture[0]",
-        "--cloud-prefetch-buffer": "fixture[1]",
+        "--cloud-prefetch-buffer": "fixture[0]",
         "--create-output-bam-index": "true",
         "--create-output-bam-md5": "true",
         "--create-output-variant-md5": "true",
@@ -4169,7 +4169,7 @@
         "--add-output-sam-program-record=true",
         "--apply-jexl-filters-first=true",
         "--cloud-index-prefetch-buffer=-1",
-        "--cloud-prefetch-buffer=0",
+        "--cloud-prefetch-buffer=40",
         "--create-output-bam-index=true",
         "--create-output-bam-md5=true",
         "--create-output-variant-md5=true",
@@ -4987,7 +4987,7 @@
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true",
         "--variant": "fixture[0]",
-        "--variant-output-filtering": "STARTS_IN"
+        "--variant-output-filtering": "OVERLAPS"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -5037,7 +5037,7 @@
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true",
         "--variant=/work/fixtures/indexed.vcf",
-        "--variant-output-filtering=STARTS_IN"
+        "--variant-output-filtering=OVERLAPS"
       ]
     },
     {
@@ -5090,7 +5090,7 @@
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true",
         "--variant": "fixture[0]",
-        "--variant-output-filtering": "OVERLAPS"
+        "--variant-output-filtering": "STARTS_IN"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -5140,7 +5140,7 @@
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true",
         "--variant=/work/fixtures/indexed.vcf",
-        "--variant-output-filtering=OVERLAPS"
+        "--variant-output-filtering=STARTS_IN"
       ]
     },
     {
@@ -5450,6 +5450,109 @@
         "--use-jdk-deflater=true",
         "--variant=/work/fixtures/indexed.vcf",
         "--variant-output-filtering=OVERLAPS"
+      ]
+    },
+    {
+      "row": 50,
+      "labels": {
+        "--add-output-sam-program-record": "true",
+        "--apply-jexl-filters-first": "true",
+        "--cloud-index-prefetch-buffer": "fixture[0]",
+        "--cloud-prefetch-buffer": "fixture[0]",
+        "--create-output-bam-index": "true",
+        "--create-output-bam-md5": "true",
+        "--create-output-variant-md5": "true",
+        "--disable-bam-index-caching": "true",
+        "--disable-read-filter": "fixture[0]",
+        "--disable-sequence-dictionary-validation": "true",
+        "--disable-tool-default-read-filters": "true",
+        "--exclude-filtered": "true",
+        "--exclude-intervals": "fixture[0]",
+        "--exclude-non-variants": "true",
+        "--genomicsdb-shared-posixfs-optimizations": "true",
+        "--genomicsdb-use-bcf-codec": "false",
+        "--genomicsdb-use-gcs-hdfs-connector": "true",
+        "--ignore-non-ref-in-types": "true",
+        "--interval-exclusion-padding": "fixture[0]",
+        "--interval-merging-rule": "ALL",
+        "--interval-padding": "fixture[0]",
+        "--interval-set-rule": "UNION",
+        "--intervals": "fixture[0]",
+        "--invertSelect": "true",
+        "--inverted-read-filter": "fixture[0]",
+        "--keep-original-ac": "true",
+        "--keep-original-dp": "true",
+        "--lenient": "true",
+        "--max-variants-per-shard": "default",
+        "--output": "fixture[0]",
+        "--preserve-alleles": "true",
+        "--read-filter": "fixture[0]",
+        "--read-validation-stringency": "STRICT",
+        "--reference": "fixture[0]",
+        "--remove-unused-alternates": "true",
+        "--restrict-alleles-to": "ALL",
+        "--sample-name": "fixture[0]",
+        "--seconds-between-progress-updates": "fixture[0]",
+        "--select": "fixture[0]",
+        "--select-type-to-exclude": "NO_VARIATION",
+        "--select-type-to-include": "SNP",
+        "--sequence-dictionary": "fixture[0]",
+        "--set-filtered-gt-to-nocall": "true",
+        "--sites-only-vcf-output": "true",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true",
+        "--variant": "fixture[2]",
+        "--variant-output-filtering": "ANYWHERE"
+      },
+      "arguments": [
+        "--add-output-sam-program-record=true",
+        "--apply-jexl-filters-first=true",
+        "--cloud-index-prefetch-buffer=-1",
+        "--cloud-prefetch-buffer=40",
+        "--create-output-bam-index=true",
+        "--create-output-bam-md5=true",
+        "--create-output-variant-md5=true",
+        "--disable-bam-index-caching=true",
+        "--disable-read-filter=WellformedReadFilter",
+        "--disable-sequence-dictionary-validation=true",
+        "--disable-tool-default-read-filters=true",
+        "--exclude-filtered=true",
+        "--exclude-intervals=chr1:1-500",
+        "--exclude-non-variants=true",
+        "--genomicsdb-shared-posixfs-optimizations=true",
+        "--genomicsdb-use-bcf-codec=false",
+        "--genomicsdb-use-gcs-hdfs-connector=true",
+        "--ignore-non-ref-in-types=true",
+        "--interval-exclusion-padding=0",
+        "--interval-merging-rule=ALL",
+        "--interval-padding=0",
+        "--interval-set-rule=UNION",
+        "--intervals=chr1:1-1000",
+        "--invertSelect=true",
+        "--inverted-read-filter=FirstOfPairReadFilter",
+        "--keep-original-ac=true",
+        "--keep-original-dp=true",
+        "--lenient=true",
+        "--max-variants-per-shard=0",
+        "--output=/work/out/selected.vcf",
+        "--preserve-alleles=true",
+        "--read-filter=GoodCigarReadFilter",
+        "--read-validation-stringency=STRICT",
+        "--reference=/work/fixtures/reference.fasta",
+        "--remove-unused-alternates=true",
+        "--restrict-alleles-to=ALL",
+        "--sample-name=sample1",
+        "--seconds-between-progress-updates=10.0",
+        "--select=QUAL>50",
+        "--select-type-to-exclude=NO_VARIATION",
+        "--select-type-to-include=SNP",
+        "--sequence-dictionary=/work/fixtures/matching.dict",
+        "--set-filtered-gt-to-nocall=true",
+        "--sites-only-vcf-output=true",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true",
+        "--variant=gendb:///work/fixtures/cg_ws",
+        "--variant-output-filtering=ANYWHERE"
       ]
     }
   ]
