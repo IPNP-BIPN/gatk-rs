@@ -362,20 +362,20 @@
       "share": 1.0
     },
     "HaplotypeCallerSpark": {
-      "rows": 47,
-      "accepted": 18,
-      "rejected": 29,
-      "distinct_outputs": 17,
-      "matched": 47,
+      "rows": 49,
+      "accepted": 19,
+      "rejected": 30,
+      "distinct_outputs": 15,
+      "matched": 49,
       "t": 2,
       "share": 1.0
     },
     "ReadsPipelineSpark": {
-      "rows": 51,
-      "accepted": 12,
-      "rejected": 39,
-      "distinct_outputs": 9,
-      "matched": 51,
+      "rows": 53,
+      "accepted": 13,
+      "rejected": 40,
+      "distinct_outputs": 10,
+      "matched": 53,
       "t": 2,
       "share": 1.0
     },
@@ -866,13 +866,13 @@
       "share": 1.0
     },
     "SelectVariants": {
-      "rows": 50,
-      "accepted": 30,
-      "rejected": 20,
+      "rows": 51,
+      "accepted": 29,
+      "rejected": 22,
       "distinct_outputs": 6,
       "matched": 50,
       "t": 2,
-      "share": 1.0
+      "share": 0.98
     },
     "CheckReferenceCompatibility": {
       "rows": 20,
@@ -1051,6 +1051,15 @@
       "rejected": 3,
       "distinct_outputs": 11,
       "matched": 22,
+      "t": 2,
+      "share": 1.0
+    },
+    "ConvertCountsToDepthFile": {
+      "rows": 21,
+      "accepted": 9,
+      "rejected": 12,
+      "distinct_outputs": 2,
+      "matched": 21,
       "t": 2,
       "share": 1.0
     },
@@ -1262,11 +1271,11 @@
       "share": 1.0
     },
     "SVConcordance": {
-      "rows": 19,
-      "accepted": 5,
-      "rejected": 14,
-      "distinct_outputs": 4,
-      "matched": 19,
+      "rows": 40,
+      "accepted": 2,
+      "rejected": 38,
+      "distinct_outputs": 2,
+      "matched": 40,
       "t": 2,
       "share": 1.0
     },
@@ -1442,11 +1451,11 @@
       "share": 1.0
     },
     "FlowPairHMMAlignReadsToHaplotypes": {
-      "rows": 38,
-      "accepted": 26,
-      "rejected": 12,
-      "distinct_outputs": 15,
-      "matched": 38,
+      "rows": 40,
+      "accepted": 31,
+      "rejected": 9,
+      "distinct_outputs": 14,
+      "matched": 40,
       "t": 2,
       "share": 1.0
     },
@@ -1478,11 +1487,11 @@
       "share": 1.0
     },
     "GenotypeGVCFs": {
-      "rows": 34,
-      "accepted": 24,
-      "rejected": 10,
-      "distinct_outputs": 21,
-      "matched": 34,
+      "rows": 39,
+      "accepted": 28,
+      "rejected": 11,
+      "distinct_outputs": 22,
+      "matched": 39,
       "t": 2,
       "share": 1.0
     },
@@ -1496,11 +1505,11 @@
       "share": 1.0
     },
     "GnarlyGenotyper": {
-      "rows": 27,
-      "accepted": 18,
+      "rows": 28,
+      "accepted": 19,
       "rejected": 9,
-      "distinct_outputs": 11,
-      "matched": 27,
+      "distinct_outputs": 14,
+      "matched": 28,
       "t": 2,
       "share": 1.0
     },
@@ -1523,29 +1532,29 @@
       "share": 1.0
     },
     "GroundTruthScorer": {
-      "rows": 25,
-      "accepted": 13,
-      "rejected": 12,
+      "rows": 30,
+      "accepted": 15,
+      "rejected": 15,
       "distinct_outputs": 11,
-      "matched": 25,
+      "matched": 30,
       "t": 2,
       "share": 1.0
     },
     "GroundTruthReadsBuilder": {
-      "rows": 29,
-      "accepted": 20,
-      "rejected": 9,
-      "distinct_outputs": 14,
-      "matched": 29,
+      "rows": 32,
+      "accepted": 22,
+      "rejected": 10,
+      "distinct_outputs": 16,
+      "matched": 32,
       "t": 2,
       "share": 1.0
     },
     "HaplotypeBasedVariantRecaller": {
-      "rows": 44,
-      "accepted": 28,
-      "rejected": 16,
+      "rows": 48,
+      "accepted": 30,
+      "rejected": 18,
       "distinct_outputs": 15,
-      "matched": 44,
+      "matched": 48,
       "t": 2,
       "share": 1.0
     },
@@ -1694,29 +1703,29 @@
       "share": 1.0
     },
     "HaplotypeCaller": {
-      "rows": 54,
-      "accepted": 26,
-      "rejected": 28,
-      "distinct_outputs": 20,
-      "matched": 54,
+      "rows": 50,
+      "accepted": 23,
+      "rejected": 27,
+      "distinct_outputs": 21,
+      "matched": 50,
       "t": 2,
       "share": 1.0
     },
     "RampedHaplotypeCaller": {
-      "rows": 56,
-      "accepted": 37,
+      "rows": 54,
+      "accepted": 35,
       "rejected": 19,
-      "distinct_outputs": 36,
-      "matched": 56,
+      "distinct_outputs": 33,
+      "matched": 54,
       "t": 2,
       "share": 1.0
     },
     "Mutect2": {
-      "rows": 38,
-      "accepted": 25,
-      "rejected": 13,
-      "distinct_outputs": 24,
-      "matched": 38,
+      "rows": 40,
+      "accepted": 30,
+      "rejected": 10,
+      "distinct_outputs": 27,
+      "matched": 40,
       "t": 2,
       "share": 1.0
     },
@@ -1761,9 +1770,9 @@
       "accepted": 9,
       "rejected": 12,
       "distinct_outputs": 7,
-      "matched": 20,
+      "matched": 21,
       "t": 2,
-      "share": 0.952
+      "share": 1.0
     },
     "GatherBamFiles": {
       "rows": 11,
@@ -1788,9 +1797,9 @@
       "accepted": 13,
       "rejected": 3,
       "distinct_outputs": 7,
-      "matched": 7,
+      "matched": 16,
       "t": 2,
-      "share": 0.438
+      "share": 1.0
     },
     "MergeVcfs": {
       "rows": 27,
@@ -1806,9 +1815,9 @@
       "accepted": 8,
       "rejected": 7,
       "distinct_outputs": 4,
-      "matched": 11,
+      "matched": 15,
       "t": 2,
-      "share": 0.733
+      "share": 1.0
     },
     "SetNmAndUqTags": {
       "rows": 16,
@@ -1842,27 +1851,27 @@
       "accepted": 11,
       "rejected": 15,
       "distinct_outputs": 11,
-      "matched": 21,
+      "matched": 22,
       "t": 2,
-      "share": 0.808
+      "share": 0.846
     },
     "UpdateVcfSequenceDictionary": {
       "rows": 18,
       "accepted": 14,
       "rejected": 4,
       "distinct_outputs": 8,
-      "matched": 8,
+      "matched": 18,
       "t": 2,
-      "share": 0.444
+      "share": 1.0
     },
     "VcfFormatConverter": {
       "rows": 17,
       "accepted": 8,
       "rejected": 9,
       "distinct_outputs": 7,
-      "matched": 16,
+      "matched": 17,
       "t": 2,
-      "share": 0.941
+      "share": 1.0
     },
     "VcfToIntervalList": {
       "rows": 12,

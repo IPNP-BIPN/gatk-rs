@@ -922,6 +922,16 @@ fn read_walker_startup_with(
     };
     let source = if deferred_parse_refusal.is_some() {
         None
+    } else if let (Some(bytes), true, Some(inflated)) = (bytes, compressed, decompressed) {
+        // The file read and inflated above, rather than once more each by `open` and by
+        // `open_unindexed`. The answer is `open`'s or its fallback's: a header that does not
+        // parse is the fallback's refusal, and an index that does not parse is no index.
+        let mut source = ReadsDataSource::from_inflated(path, bytes, inflated)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        if let Some(index) = &index {
+            let _ = source.load_index(index);
+        }
+        Some(source)
     } else {
         Some(match &index {
             // An index that does not parse is not refused here: htsjdk opens it lazily, so the
@@ -1098,7 +1108,9 @@ fn index_dictionary(path: &str) -> Option<SamHeader> {
 }
 
 fn has_feature_index(path: &str) -> bool {
-    std::path::Path::new(&index_feature_file::default_output(path)).is_file()
+    // `isQueryableByInterval`: a GenomicsDB workspace is queried without an index.
+    genomicsdb_query_runner::genomicsdb_path(path).is_some()
+        || std::path::Path::new(&index_feature_file::default_output(path)).is_file()
 }
 
 /// `CountVariants.doWork`, with the input read, the intervals resolved and the count written.
@@ -1136,6 +1148,11 @@ fn variant_walker_startup(parser: &Parser, tool: &str) -> Result<VariantWalkerSt
     let input = argument(parser, "variant").ok_or_else(|| {
         Thrown::command_line("Argument variant was missing: Argument 'variant' is required")
     })?;
+    if matches!(tool, "GenotypeGVCFs" | "GnarlyGenotyper" | "SelectVariants")
+        && genomicsdb_query_runner::genomicsdb_path(&input).is_some()
+    {
+        return genomicsdb_query_runner::genomicsdb_startup(parser, tool, input);
+    }
     variant_walker_startup_over(parser, input)
 }
 
@@ -14925,11 +14942,6 @@ pub fn gnarly_genotyper(parser: &Parser) -> Outcome {
             format!("{what} This message is the port's own and not GATK's."),
         )
     };
-    if let Some(variant) = argument(parser, "variant") {
-        if variant.starts_with("gendb:") {
-            return Err(limitation("GenomicsDB input is not ported."));
-        }
-    }
     if argument(parser, "population-callset").is_some() {
         return Err(limitation("--population-callset is not ported."));
     }
@@ -16328,11 +16340,6 @@ pub fn genotype_gvcfs(parser: &Parser) -> Outcome {
             )));
         }
     }
-    if let Some(variant) = argument(parser, "variant") {
-        if variant.starts_with("gendb:") {
-            return Err(limitation("GenomicsDB input is not ported."));
-        }
-    }
     let VariantWalkerStart {
         input,
         text,
@@ -17465,12 +17472,15 @@ fn select_variants_limits(parser: &Parser) -> Result<(), Thrown> {
     if argument(parser, "pedigree").is_some() {
         refused.push("--pedigree");
     }
+    // `--call-genotypes` is a GenomicsDB export option, which the port reads for `gendb://` alone.
+    let genomicsdb = argument(parser, "variant")
+        .is_some_and(|variant| genomicsdb_query_runner::genomicsdb_path(&variant).is_some());
     for flagged in [
         "mendelian-violation",
         "invert-mendelian-violation",
         "call-genotypes",
     ] {
-        if flag(parser, flagged) {
+        if flag(parser, flagged) && !(genomicsdb && flagged == "call-genotypes") {
             refused.push(match flagged {
                 "mendelian-violation" => "--mendelian-violation",
                 "invert-mendelian-violation" => "--invert-mendelian-violation",
@@ -24996,6 +25006,10 @@ pub fn bwa_mem_index_image_creator(parser: &Parser) -> Outcome {
 #[path = "runners_extract_variant_annotations.rs"]
 mod extract_variant_annotations_runner;
 pub use extract_variant_annotations_runner::extract_variant_annotations;
+
+/// A `gendb://` workspace read back as the driving variants of three tools.
+#[path = "runners_genomicsdb_query.rs"]
+mod genomicsdb_query_runner;
 
 /// `GenomicsDBImport`, whose workspace is written as the native library writes it.
 #[path = "runners_genomicsdb_import.rs"]
