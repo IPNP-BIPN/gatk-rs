@@ -59,6 +59,7 @@ pub mod genotype_index;
 pub mod genotype_likelihood_calculator;
 pub mod genotyper_debug;
 pub mod germline_filter;
+pub mod gpu;
 pub mod graph_dot;
 pub mod haplotype;
 pub mod haplotype_alignment;
