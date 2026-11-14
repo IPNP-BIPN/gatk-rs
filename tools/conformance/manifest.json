@@ -6631,7 +6631,7 @@
         {
           "dump": "IntervalArgumentsDump",
           "golden": "crates/gatk-engine/tests/data/interval_arguments.txt.gz",
-          "why": "Twenty-four command lines over one three-contig dictionary whose order is not alphabetical, covering each argument alone, the pairs that interact, and the three refusals."
+          "why": "Twenty-seven command lines over one three-contig dictionary whose order is not alphabetical, covering each argument alone, the pairs that interact, the three refusals, and an interval past the end of its contig on either side, which is refused as it is parsed and so before -XL is subtracted."
         }
       ]
     },
