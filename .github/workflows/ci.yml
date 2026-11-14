@@ -564,6 +564,15 @@ jobs:
 
       - run: docker load -i /tmp/oracle-image.tar
 
+      - name: The Broad's image, where a tool under `$past_the_interpreter` runs its reference
+        # The pinned image has no python, so TrainVariantAnnotationsModel's array stopped at the
+        # import on every row. The Broad's image of the same release, pinned by digest in the
+        # manifest's `oracle_with_r`, gets the reference past it (tools/coverage/run_array.py).
+        # 8.5 GB unpacked; the Android SDK is not ours.
+        run: |
+          sudo rm -rf /usr/local/lib/android
+          docker pull "$(python3 -c 'import json; print(json.load(open("tools/conformance/manifest.json"))["oracle_with_r"]["image"])')"
+
       - name: nasm, which is what makes GKL's igzip exact rather than merely valid
         # `gkl-igzip` links ISA-L, and ISA-L without an assembler falls back to its readable C.
         # That C still returns valid deflate; it is simply not GKL's, and `gkl-deflate` refuses the

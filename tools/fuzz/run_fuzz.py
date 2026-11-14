@@ -32,6 +32,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "coverage"))
 import run_array  # noqa: E402
 
+# The branch probes run in the pinned image, which has no python, so the replay must as well.
+run_array.PAST_THE_INTERPRETER = False
+
 REPO = Path(__file__).resolve().parents[2]
 FINDINGS = REPO / "tools" / "fuzz" / "findings"
 MEASURED = REPO / "tools" / "fuzz" / "measured.json"
