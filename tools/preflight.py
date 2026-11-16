@@ -63,6 +63,10 @@ def main():
          ["python3", "tools/audit/arithmetic.py"])
     step("The arithmetic guard catches what it forbids",
          ["python3", "tools/audit/arithmetic.py", "--self-test"])
+    step("Every device kernel meets the eligibility rule",
+         ["python3", "tools/audit/gpu_kernels.py"])
+    step("The eligibility guard catches what it forbids",
+         ["python3", "tools/audit/gpu_kernels.py", "--self-test"])
     step("A file already explained does not lose its explanations",
          ["python3", "tools/audit/comment_density.py", "--check"])
     step("cargo fmt", ["cargo", "fmt", "--all", "--", "--check"])

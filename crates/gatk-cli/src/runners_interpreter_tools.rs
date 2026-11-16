@@ -950,6 +950,12 @@ pub fn train_variant_annotations_model(parser: &Parser) -> Outcome {
     let script = argument(parser, "python-script");
     let hyperparameters = argument(parser, "hyperparameters-json");
     let backend = backend_of(parser);
+    // `java.io.tmpdir`, which the script's name in the scorer is under.
+    let tmp_dir = match argument(parser, "tmp-dir") {
+        Some(dir) => std::path::absolute(&dir).map_or(dir, |path| path.display().to_string()),
+        None => "/tmp".to_string(),
+    };
+    let script_name = scorer_pickle::script_name(&tmp_dir);
 
     // `validateArgumentsAndSetModes`.
     can_read_file(Some(&annotations))?;
@@ -1070,6 +1076,7 @@ pub fn train_variant_annotations_model(parser: &Parser) -> Outcome {
             calibration.as_deref(),
             hyperparameters.as_deref(),
             &tagged,
+            &script_name,
         )?;
     }
     Ok(None)
@@ -1082,6 +1089,7 @@ fn train_isolation_forest(
     calibration: Option<&[&Vec<f64>]>,
     hyperparameters: Option<&str>,
     tagged: &str,
+    script_name: &str,
 ) -> Result<(), Thrown> {
     let json = match hyperparameters {
         Some(path) => std::fs::read_to_string(path).map_err(port_limit)?,
@@ -1093,7 +1101,7 @@ fn train_isolation_forest(
     let forest = isolation_forest::fit(names, &training, &hyperparameters).map_err(port_limit)?;
     write_file(
         &format!("{tagged}.scorer.pkl"),
-        &scorer_pickle::write(&forest),
+        &scorer_pickle::write(&forest, script_name),
     )?;
     let scorer = forest.scorer();
     let scores = isolation_forest::score_samples(&scorer, names, &training).map_err(port_limit)?;
@@ -1311,7 +1319,7 @@ pub fn score_variant_annotations(parser: &Parser) -> Outcome {
     // `createVCFWriter` opens the file, and `writeHeader` leaves its bytes in the writer's buffer.
     write_file(&vcf_path, b"")?;
     let keys = ScoreKeys::of(parser)?;
-    let header = scored_header(parser, &file.header, &sorted_labels, &keys);
+    let mut header = scored_header(parser, &file.header, &sorted_labels, &keys);
 
     // `afterOnTraversalStart`, whose other three `Utils.nonNull` the header has answered.
     if argument(parser, "double-format").is_none() {
@@ -1529,6 +1537,7 @@ pub fn score_variant_annotations(parser: &Parser) -> Outcome {
         }
         written.push(out);
     }
+    apply_sites_only(parser, &mut header, &mut written);
     let vcf = htsjdk_vcf::vcf_file::write_vcf(&header, &written)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
     write_variant_output(parser, &vcf_path, &vcf)?;

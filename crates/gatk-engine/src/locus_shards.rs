@@ -164,99 +164,111 @@ pub fn interval_alignment_contexts<T: Located>(
     intervals: &[SimpleInterval],
     header: &SamHeader,
 ) -> Vec<EmittedLocus> {
-    let loci = interval_loci(intervals);
-    let mut locus_index = 0usize;
-    let mut context_index = 0usize;
+    let mut out = Vec::new();
+    let _ = for_each_interval_context(
+        contexts.iter(),
+        intervals,
+        header,
+        |locus, _: Option<&&T>| -> Result<(), ()> {
+            out.push(locus);
+            Ok(())
+        },
+    );
+    out
+}
 
-    let advance_locus = |locus_index: &mut usize| -> Option<SimpleInterval> {
-        if *locus_index < loci.len() {
-            let locus = loci[*locus_index].clone();
-            *locus_index += 1;
-            Some(locus)
-        } else {
-            None
-        }
-    };
-
-    // `advanceAlignmentContext`.
-    let advance_context = |context_index: &mut usize| -> Option<usize> {
-        if *context_index < contexts.len() {
-            let index = *context_index;
-            *context_index += 1;
-            Some(index)
-        } else {
-            None
-        }
-    };
+/// `IntervalAlignmentContextIterator` as the iterator it is upstream: each locus is handed to `f`
+/// with the context it carries, and neither the loci nor the contexts are held past their turn.
+/// `EmittedLocus::context` counts the contexts drawn from `contexts`. The first error `f` answers
+/// stops the walk.
+pub fn for_each_interval_context<C: Located, E>(
+    contexts: impl Iterator<Item = C>,
+    intervals: &[SimpleInterval],
+    header: &SamHeader,
+    mut f: impl FnMut(EmittedLocus, Option<&C>) -> Result<(), E>,
+) -> Result<(), E> {
+    // `IntervalLocusIterator`: `interval_loci`, one base at a time.
+    let mut loci = intervals.iter().flat_map(|interval| {
+        (interval.start..=interval.end).map(move |position| {
+            SimpleInterval::new(&interval.contig, position, position)
+                .expect("a shard of a valid interval is a valid interval")
+        })
+    });
+    let mut contexts = contexts.enumerate();
 
     // Position of the current context for comparison purposes: an exhausted iterator's context sits
     // at the current locus, so it compares equal to it.
-    let context_position = |context: Option<usize>, locus: &SimpleInterval| -> (String, i32, i32) {
-        match context {
-            Some(index) => (
-                contexts[index].contig().to_string(),
-                contexts[index].start(),
-                contexts[index].stop(),
-            ),
-            None => (locus.contig.clone(), locus.start, locus.end),
-        }
-    };
+    let context_position =
+        |context: &Option<(usize, C)>, locus: &SimpleInterval| -> SimpleInterval {
+            match context {
+                Some((_, context)) => SimpleInterval {
+                    contig: context.contig().to_string(),
+                    start: context.start(),
+                    end: context.stop(),
+                },
+                None => locus.clone(),
+            }
+        };
 
-    // `currentInterval` and `currentAlignmentContext`. The context is `Some(index)` when it is one
-    // of the wrapped iterator's, and `None` when it is a manufactured empty one at the locus.
-    let mut current_locus = advance_locus(&mut locus_index);
-    let mut current_context = advance_context(&mut context_index);
+    // `currentInterval` and `currentAlignmentContext`. The context is `Some` when it is one of the
+    // wrapped iterator's, and `None` when it is a manufactured empty one at the locus.
+    let mut current_locus = loci.next();
+    let mut current_context = contexts.next();
 
     // `advanceAlignmentContextToCurrentInterval`.
     let catch_up = |current_locus: &Option<SimpleInterval>,
-                    current_context: &mut Option<usize>,
-                    context_index: &mut usize| {
+                    current_context: &mut Option<(usize, C)>,
+                    contexts: &mut dyn Iterator<Item = (usize, C)>| {
         let Some(locus) = current_locus else {
             *current_context = None;
             return;
         };
         loop {
-            let (contig, start, end) = context_position(*current_context, locus);
-            let position = SimpleInterval { contig, start, end };
+            let position = context_position(current_context, locus);
             match compare_locatables(locus, &position, header) {
                 Some(std::cmp::Ordering::Greater) => {
-                    *current_context = advance_context(context_index);
+                    *current_context = contexts.next();
                 }
                 _ => break,
             }
         }
     };
-    catch_up(&current_locus, &mut current_context, &mut context_index);
+    catch_up(&current_locus, &mut current_context, &mut contexts);
 
-    let mut out = Vec::new();
-    while let Some(locus) = current_locus.clone() {
-        let (contig, start, end) = context_position(current_context, &locus);
-        let overlaps = locus.overlaps(&contig, start, end);
+    while let Some(locus) = current_locus.take() {
+        let position = context_position(&current_context, &locus);
+        let overlaps = locus.overlaps(&position.contig, position.start, position.end);
 
         if overlaps {
-            out.push(EmittedLocus {
-                interval: locus.clone(),
-                context: current_context,
-            });
-            current_locus = advance_locus(&mut locus_index);
-            catch_up(&current_locus, &mut current_context, &mut context_index);
+            let context = current_context.as_ref();
+            f(
+                EmittedLocus {
+                    interval: locus,
+                    context: context.map(|(index, _)| *index),
+                },
+                context.map(|(_, context)| context),
+            )?;
+            current_locus = loci.next();
+            catch_up(&current_locus, &mut current_context, &mut contexts);
         } else {
-            out.push(EmittedLocus {
-                interval: locus.clone(),
-                context: None,
-            });
-            current_locus = advance_locus(&mut locus_index);
-            if let Some(next) = current_locus.clone() {
-                let (contig, start, end) = context_position(current_context, &next);
-                let position = SimpleInterval { contig, start, end };
-                if compare_locatables(&next, &position, header) == Some(std::cmp::Ordering::Greater)
+            f(
+                EmittedLocus {
+                    interval: locus,
+                    context: None,
+                },
+                None,
+            )?;
+            current_locus = loci.next();
+            if let Some(next) = &current_locus {
+                let position = context_position(&current_context, next);
+                if compare_locatables(next, &position, header) == Some(std::cmp::Ordering::Greater)
                 {
-                    catch_up(&current_locus, &mut current_context, &mut context_index);
+                    catch_up(&current_locus, &mut current_context, &mut contexts);
                 }
             }
         }
     }
-    out
+    Ok(())
 }
 
 /// `ReadCachingIterator`: hand each item through and keep a copy until the client takes them.

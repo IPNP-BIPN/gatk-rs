@@ -177,9 +177,9 @@ fn file_argument_message(error: &crate::interval_args::IntervalArgumentError) ->
             "Badly formed genome unclippedLoc: Query interval \"{query}\" is not valid for this \
              input."
         ),
-        File::MalformedGenomeLoc(locus) => format!(
-            "Badly formed genome unclippedLoc: Parameters to GenomeLocParser are incorrect: The \
-             stop position {locus} is larger than contig length"
+        // `vglHelper` glues its detail on with no space after the colon.
+        File::MalformedGenomeLoc(detail) => format!(
+            "Badly formed genome unclippedLoc: Parameters to GenomeLocParser are incorrect:{detail}"
         ),
         File::IntervalFileEmpty => "It contains no intervals.".to_string(),
         File::LegacySemicolonSyntax(query) => format!(
@@ -305,9 +305,12 @@ fn resolve_query(
         )
         .map_err(IntervalArgumentError::File);
     }
-    Ok(vec![
-        parse_interval(query, header).map_err(IntervalArgumentError::Parse)?
-    ])
+    let parsed = parse_interval(query, header).map_err(IntervalArgumentError::Parse)?;
+    // `parseGenomeLoc` creates the loc with `mustBeOnReference`, so an `-L` past the end of its
+    // contig is refused here, before any `-XL` is subtracted from it.
+    crate::interval_args::validate_on_reference(&parsed, header)
+        .map_err(IntervalArgumentError::File)?;
+    Ok(vec![parsed])
 }
 
 /// `loadIntervals` with a set rule and padding: resolve, pad, fold.

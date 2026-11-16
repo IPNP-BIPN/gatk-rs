@@ -240,9 +240,9 @@
       "accepted": 21,
       "rejected": 6,
       "distinct_outputs": 21,
-      "matched": 27,
+      "matched": 26,
       "t": 2,
-      "share": 1.0
+      "share": 0.963
     },
     "CollectAllelicCountsSpark": {
       "rows": 19,
@@ -870,9 +870,9 @@
       "accepted": 29,
       "rejected": 22,
       "distinct_outputs": 6,
-      "matched": 50,
+      "matched": 51,
       "t": 2,
-      "share": 0.98
+      "share": 1.0
     },
     "CheckReferenceCompatibility": {
       "rows": 20,

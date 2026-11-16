@@ -37,8 +37,8 @@
 
 use crate::assembly_region::RegionError;
 use crate::assembly_region_iterator::{
-    assembly_regions, assembly_regions_with_states, group_intervals_by_contig, ActivityAnswer,
-    AssemblyRegionArgs, ReadShard, TraversedRegion,
+    assembly_regions, group_intervals_by_contig, unfilled_regions, ActivityAnswer,
+    AssemblyRegionArgs, ReadShard, RegionFiller, TraversedRegion,
 };
 use crate::interval::SimpleInterval;
 use crate::locus_iterator::AlignmentContext;
@@ -256,49 +256,64 @@ impl Located for AlignmentContext<'_> {
 /// reads lazily as the loci advance: the draws are the same, and only their interleaving with a
 /// draw the tool makes while calling a region could differ.
 #[allow(clippy::too_many_arguments)]
-pub fn traverse_with_pileups(
+pub fn traverse_with_pileups<'h>(
     reads: &[BamRecord],
     intervals: &[SimpleInterval],
     samples: &[Option<String>],
     args: &AssemblyRegionArgs,
-    header: &SamHeader,
+    header: &'h SamHeader,
     downsample: &mut dyn FnMut(&[BamRecord]) -> Vec<BamRecord>,
     is_active: &mut dyn FnMut(&SimpleInterval, Option<&AlignmentContext<'_>>) -> ActivityAnswer,
-) -> Result<Vec<TraversedRegion>, WalkerError> {
+) -> Result<Vec<RegionFiller<'h, Vec<BamRecord>>>, WalkerError> {
     let shards = make_read_shards(intervals, args.assembly_region_padding, header)
         .expect("a padding validate() has already accepted");
 
     let mut out = Vec::new();
     for shard in &shards {
-        let queried: Vec<BamRecord> = reads
-            .iter()
-            .filter(|record| {
-                let contig = contig_of(record, header);
-                shard.padded_intervals.iter().any(|interval| {
-                    interval.overlaps(&contig, read_utils::start(record), read_utils::end(record))
+        // The query's copy goes as soon as the downsampler has drawn from it.
+        let shard_reads = {
+            let queried: Vec<BamRecord> = reads
+                .iter()
+                .filter(|record| {
+                    let contig = contig_of(record, header);
+                    shard.padded_intervals.iter().any(|interval| {
+                        interval.overlaps(
+                            &contig,
+                            read_utils::start(record),
+                            read_utils::end(record),
+                        )
+                    })
                 })
-            })
-            .cloned()
-            .collect();
-        let shard_reads = downsample(&queried);
+                .cloned()
+                .collect();
+            downsample(&queried)
+        };
 
         let states = ReadStateManager::new(samples.to_vec(), DownsamplingInfo::NONE)?;
-        let contexts = locus_iterator::contexts(
+        // Drawn one locus at a time: a contig's pileups held together are gigabytes.
+        let mut failure = None;
+        let contexts = locus_iterator::Contexts::new(
             &shard_reads,
             samples.to_vec(),
             header,
             REGION_LOCUS_OPTIONS,
             states,
-        )?;
-        let regions = assembly_regions_with_states(
-            &contexts,
-            &shard_reads,
-            shard,
-            args,
+            &|_| true,
+        )
+        .map_while(|context| context.map_err(|error| failure = Some(error)).ok());
+        let regions = unfilled_regions(contexts, shard, args, header, &mut |locus, context| {
+            is_active(&locus.interval, context)
+        });
+        if let Some(error) = failure {
+            return Err(error.into());
+        }
+        // Filled as the caller draws them: the regions' copies of their reads are never all held.
+        out.push(RegionFiller::new(
+            shard_reads,
+            regions?,
+            args.force_active,
             header,
-            &mut |locus, context| is_active(&locus.interval, context),
-        )?;
-        out.extend(regions);
+        ));
     }
     Ok(out)
 }

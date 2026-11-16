@@ -338,6 +338,8 @@ fn ref_vs_any(
     let count = ploidy + 1;
     let log10_ploidy = jmath::math::log10(ploidy as f64);
     let log10_one_third = -jmath::math::log10(3.0);
+    // `log10(i)` and `log10(j)` per element in the reference; the same values, computed once.
+    let log10_counts: Vec<f64> = (0..count).map(|k| jmath::math::log10(k as f64)).collect();
     let mut result = RefVsAny {
         likelihoods: vec![0.0; count],
         ref_depth: 0,
@@ -396,8 +398,8 @@ fn ref_vs_any(
             .skip(1)
         {
             *slot += approximate_log10_sum_log10(
-                reference + jmath::math::log10(j as f64),
-                non_ref + jmath::math::log10(i as f64),
+                reference + log10_counts[j as usize],
+                non_ref + log10_counts[i],
             );
             j -= 1;
         }
