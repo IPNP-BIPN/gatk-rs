@@ -20,6 +20,13 @@ use std::rc::Rc;
 /// The file name the code objects carry, where the reference's has its random digits.
 pub const SCRIPT_NAME: &str = "/tmp/isolation-forest.00000000000000000000.py";
 
+/// `SCRIPT_NAME` in another temporary directory: `File.createTempFile` puts the script in
+/// `java.io.tmpdir`, which GATK sets from `--tmp-dir` made absolute, without a trailing slash.
+pub fn script_name(tmp_dir: &str) -> String {
+    let dir = tmp_dir.trim_end_matches('/');
+    format!("{dir}{}", &SCRIPT_NAME["/tmp".len()..])
+}
+
 const FRAME_TARGET: usize = 64 * 1024;
 
 const MARK: u8 = b'(';
@@ -413,8 +420,8 @@ fn first_tree(w: &mut Writer, forest: &Forest) {
     w.raw(&template::TREE_J[1..]);
 }
 
-/// `dill.dump(scorer_lambda, f)`.
-pub fn write(forest: &Forest) -> Vec<u8> {
+/// `dill.dump(scorer_lambda, f)`, from a script run as `script_name`.
+pub fn write(forest: &Forest, script_name: &str) -> Vec<u8> {
     let columns = forest.statistics.len() as i64;
     let mut w = Writer {
         out: vec![PROTO, 4],
@@ -422,7 +429,7 @@ pub fn write(forest: &Forest) -> Vec<u8> {
     };
     let random_state = i64::from(forest.hyperparameters.random_state);
     w.raw(template::CODE_START);
-    w.string(SCRIPT_NAME);
+    w.string(script_name);
     w.raw(&template::AFTER_NAME[1..]);
     w.int(columns);
     w.raw(template::IMPUTER_A);
@@ -937,6 +944,19 @@ mod tests {
     use super::*;
     use crate::isolation_forest::{fit, score_samples, Hyperparameters};
 
+    #[test]
+    fn the_script_is_named_under_the_tmp_dir() {
+        assert_eq!(script_name("/tmp"), SCRIPT_NAME);
+        assert_eq!(
+            script_name("/work/tmp2/"),
+            "/work/tmp2/isolation-forest.00000000000000000000.py"
+        );
+        assert_eq!(
+            script_name("/"),
+            "/isolation-forest.00000000000000000000.py"
+        );
+    }
+
     fn forest(trees: usize) -> Forest {
         let rows: Vec<Vec<f64>> = (0..40)
             .map(|i| vec![f64::from(i), f64::from(i * 7 % 13)])
@@ -957,7 +977,7 @@ mod tests {
     fn a_written_scorer_reads_back_and_scores_alike() {
         for trees in [1, 2, 3, 4, 100] {
             let forest = forest(trees);
-            let read_back = read(&write(&forest)).expect("a scorer");
+            let read_back = read(&write(&forest, SCRIPT_NAME)).expect("a scorer");
             assert_eq!(read_back, forest.scorer(), "{trees} trees");
         }
         let names = ["AA".to_string(), "B".to_string()];
@@ -965,7 +985,11 @@ mod tests {
         let scorer = forest(10).scorer();
         assert_eq!(
             score_samples(&scorer, &names, &rows),
-            score_samples(&read(&write(&forest(10))).unwrap(), &names, &rows)
+            score_samples(
+                &read(&write(&forest(10), SCRIPT_NAME)).unwrap(),
+                &names,
+                &rows
+            )
         );
     }
 
@@ -980,7 +1004,7 @@ mod tests {
     #[test]
     fn a_frame_closes_at_the_first_save_past_the_target() {
         let forest = forest(100);
-        let bytes = write(&forest);
+        let bytes = write(&forest, SCRIPT_NAME);
         assert_eq!(bytes[2], FRAME);
     }
 }

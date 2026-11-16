@@ -72,6 +72,18 @@ ADD_OPENS = (
 JAVA_PROPS = json.loads((REPO / "tools" / "conformance" / "manifest.json").read_text())["default_java_props"]
 JAVA_OPENS = " ".join([*(f"--add-opens={module}=ALL-UNNAMED" for module in ADD_OPENS), *JAVA_PROPS])
 
+# The Broad's own image of the release, which has the `python` and the `Rscript` the pinned one
+# deliberately lacks. A tool under `$past_the_interpreter` runs its REFERENCE there, so the array
+# measures its arguments past the interpreter rather than up to it. Its PORT runs, for "python",
+# behind a stand-in that answers every import, since the port's only use of python is that check;
+# for "Rscript", in PORT_WITH_R, since the port runs its own rewritten scripts. numpy takes other
+# loops on an AVX-512 CPU, so those features are turned off as `vets_dump.sh` does.
+# `run_fuzz.py` turns this off: its branch probes run in the pinned image, without either.
+PAST_THE_INTERPRETER = True
+PORT_WITH_R = "gatk-rs-port-with-r:4.7.0.0"
+BROAD = json.loads((REPO / "tools" / "conformance" / "manifest.json").read_text())["oracle_with_r"]
+NUMPY_WITHOUT_AVX512 = "AVX512F AVX512CD AVX512_SKX AVX512_CLX AVX512_CNL AVX512_ICL AVX512_SPR"
+
 # Values that mean "the argument is absent", so a held-at value carrying one must not be passed.
 ABSENT = {"None", "null", "[]", ""}
 
@@ -113,6 +125,41 @@ def build_fixtures(workdir):
         print(result.stderr[-2000:])
         raise SystemExit("could not build the fixtures")
     return fixtures
+
+
+# The scorers MakeFixtures.java leaves as placeholders, since the pinned image cannot train one.
+SCORERS = {"it/both": ("SNP", "INDEL"), "it/snp": ("SNP",)}
+
+
+def train_scorers(fixtures):
+    """Real scorers at the corpus's model prefixes, trained by the reference in the Broad's image.
+
+    `ScoreVariantAnnotations` past the interpreter unpickles its scorer, and a placeholder would
+    measure nothing but the refusal to read it. Done once, before the rows, while the corpus is
+    still writable; a corpus that already holds them is left alone.
+    """
+    if (fixtures / "it" / "both.snp.scorer.pkl").read_bytes() != b"no pickle\n":
+        return
+    train = " && ".join(
+        f'java -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main TrainVariantAnnotationsModel '
+        f"--annotations-hdf5 /work/fixtures/it/extract.annot.hdf5 --mode {mode} --output /work/fixtures/{prefix}"
+        for prefix, modes in SCORERS.items()
+        for mode in modes
+    )
+    result = subprocess.run(
+        [
+            "docker", "run", "--rm", "--platform", PLATFORM,
+            "-v", f"{fixtures}:/work/fixtures",
+            "-e", f"ORACLE_CP={BROAD['classpath']}", "-e", f"NPY_DISABLE_CPU_FEATURES={NUMPY_WITHOUT_AVX512}",
+            "-w", "/work", "--entrypoint", "sh", BROAD["image"], "-c",
+            f"{train}; rc=$?; chmod -R a+rwX /work/fixtures/it; exit $rc",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(result.stdout[-2000:])
+        raise SystemExit("could not train the scorers")
 
 
 def row_arguments(row, held):
@@ -215,12 +262,18 @@ def run_oracle(tool, row_args, workdir, positional=(), tagged=(), lists=()):
     # `gatk <Tool> <args>`: the tool name is the first token, which is the shape the bit-identity
     # claim is defined against, and the wrapper is what fixes the parser to Barclay.
     command = f'rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && {copies}java {JAVA_OPENS} -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {tool} {cli}; rc=$?; chmod -R a+rwX /work/out; exit $rc'
+    image = [IMAGE, command]
+    if past_the_interpreter(tool):
+        image = [
+            "-e", f"ORACLE_CP={BROAD['classpath']}", "-e", f"NPY_DISABLE_CPU_FEATURES={NUMPY_WITHOUT_AVX512}",
+            "--entrypoint", "sh", BROAD["image"], "-c", command,
+        ]
     result = subprocess.run(
         [
             "docker", "run", "--rm", "--platform", PLATFORM,
             "-v", f"{fixtures_of(workdir)}:/work/fixtures:ro",
             "-v", f"{out_dir}:/work/out",
-            "-w", "/work", IMAGE, command,
+            "-w", "/work", *image,
         ],
         capture_output=True,
         text=True,
@@ -272,6 +325,18 @@ def read_output(out_dir, row_args=()):
                 digest = hashlib.sha256(masked).hexdigest()
                 parts.append(f"{name}: TRIBBLE INDEX sha256={digest} bytes={len(raw)} (mtime masked)")
                 continue
+        if name.endswith((".data.rds", ".ggplot.rds", ".af_combined.png")):
+            # What the rewritten plot scripts add (#807), which the reference does not write: the
+            # exports, whose numbers suite `r-plots` measures against the reference's own traced
+            # ones, and AlleleFrequencyQC's combined figure. The same list as r_plots_end_to_end.rs.
+            continue
+        if name.endswith(".png"):
+            parts.append(f"{name}: {png_shape(raw)}")
+            continue
+        if name.endswith(".scorer.pkl"):
+            digest = hashlib.sha256(scorer_masked(raw)).hexdigest()
+            parts.append(f"{name}: SCORER sha256={digest} bytes={len(raw)} (frames and the script's digits masked)")
+            continue
         if name.endswith(".img"):
             masked = bwa_image_masked(raw)
             if masked is not None:
@@ -491,6 +556,61 @@ def zip_members(raw):
     return "ZIP " + " ".join(rendered)
 
 
+def png_shape(raw):
+    """A PNG as its pixel size and resolution, which is all of it a port can claim.
+
+    The reference rasterises base graphics through cairo and the port ggplot2, so no pixel is
+    comparable (#807); the size and the dots per metre are the tool's arguments to `png()`.
+    """
+    if raw[:8] != b"\x89PNG\r\n\x1a\n":
+        return f"NOT A PNG sha256={hashlib.sha256(raw).hexdigest()} bytes={len(raw)}"
+    width, height = int.from_bytes(raw[16:20], "big"), int.from_bytes(raw[20:24], "big")
+    at, density = raw.find(b"pHYs"), "no pHYs"
+    if at > 0:
+        x, y, unit = int.from_bytes(raw[at + 4 : at + 8], "big"), int.from_bytes(raw[at + 8 : at + 12], "big"), raw[at + 12]
+        density = f"{x}x{y} per {'metre' if unit == 1 else 'unit'}"
+    return f"PNG {width}x{height}, {density}"
+
+
+def scorer_masked(raw):
+    """A dill pickle of the isolation-forest scorer, without its frames and its script's digits.
+
+    The lambda's code object names the temporary file the reference ran the script from, whose
+    digits are random in every run, and a name one digit shorter moves every frame after it. The
+    directory stays, since `--tmp-dir` decides it; the name's length byte goes with the digits.
+    """
+    out, at = bytearray(raw[:2]), 2
+    while at < len(raw) and raw[at] == 0x95:  # FRAME, then an eight-byte length
+        length = int.from_bytes(raw[at + 1 : at + 9], "little")
+        out += raw[at + 9 : at + 9 + length]
+        at += 9 + length
+    out += raw[at:]
+    return re.sub(
+        rb"\x8c.(/[ -~]*?/isolation-forest\.)\d+(\.py)", lambda m: b"\x8c?" + m[1] + b"N" + m[2], bytes(out), count=1, flags=re.S
+    )
+
+
+def past_the_interpreter(tool):
+    """The interpreter a tool's reference runs past in the Broad's image, "python" or "Rscript",
+    per tool under `$past_the_interpreter`; None where it runs in the pinned image."""
+    path = REPO / "tools" / "coverage" / "fixtures.json"
+    if not PAST_THE_INTERPRETER or not path.exists():
+        return None
+    return json.loads(path.read_text()).get("per_tool", {}).get(tool, {}).get("$past_the_interpreter")
+
+
+def build_port_with_r():
+    """PORT_WITH_R, from tools/coverage/port-with-r; docker's cache makes a second build free."""
+    result = subprocess.run(
+        ["docker", "build", "--platform", PLATFORM, "-t", PORT_WITH_R, str(REPO / "tools" / "coverage" / "port-with-r")],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(result.stderr[-2000:])
+        raise SystemExit("could not build the port's image with R")
+
+
 def bwa_image_masked(raw):
     """A BWA-MEM index image with its addresses and padding zeroed, or None if it is not one.
 
@@ -643,6 +763,9 @@ LOG_TIME = re.compile(r"^\d\d:\d\d:\d\d\.\d\d\d ")
 PICARD_LOG_TIME = re.compile(r"^(ERROR|WARNING|INFO|DEBUG)\t\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\t")
 # Which stage and task a Spark job had reached counts the jobs before it, not the tool's behaviour.
 SPARK_TASK = re.compile(r"Exception in task \d+\.\d+ in stage \d+\.\d+ \(TID \d+\)")
+# `File.createTempFile`'s random digits: ScoreVariantAnnotations under PYTHON_SCRIPT names the
+# scores file its script was to write, and a script that wrote none is refused under that name.
+TEMP_FILE = re.compile(r"/temp\d+\.")
 
 
 def first_error(text):
@@ -671,7 +794,7 @@ def first_error(text):
     for line in lines:
         if "Exception" in line or line.startswith("ERROR"):
             line = PICARD_LOG_TIME.sub(r"\1\t<time>\t", LOG_TIME.sub("", line.strip()))
-            return SPARK_TASK.sub("Exception in a task", line)
+            return TEMP_FILE.sub("/temp<n>.", SPARK_TASK.sub("Exception in a task", line))
     return text.strip().split("\n")[-1][:200] if text.strip() else ""
 
 
@@ -697,13 +820,24 @@ def run_port(binary, tool, row_args, workdir, positional=(), tagged=(), lists=()
     copies, row_args = writable_copies(tool, row_args)
     cli = " ".join(as_cli(row_args, positional, tagged, lists))
     command = f"rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && {copies}/work/port-binary/{binary.name} {tool} {cli}"
+    stand_in, image = [], IMAGE
+    if past_the_interpreter(tool) == "Rscript":
+        image = PORT_WITH_R
+    if past_the_interpreter(tool) == "python":
+        python = workdir / "stand-in" / "python"
+        python.parent.mkdir(exist_ok=True)
+        python.write_text("#!/bin/sh\nexit 0\n")
+        python.chmod(0o755)
+        stand_in = ["-v", f"{python.parent}:/work/stand-in:ro"]
+        command = f"export PATH=/work/stand-in:$PATH && {command}"
     result = subprocess.run(
         [
             "docker", "run", "--rm", "--platform", PLATFORM,
             "-v", f"{fixtures_of(workdir)}:/work/fixtures:ro",
             "-v", f"{out_dir}:/work/out",
             "-v", f"{binary.parent}:/work/port-binary:ro",
-            "-w", "/work", IMAGE, command,
+            *stand_in,
+            "-w", "/work", image, command,
         ],
         capture_output=True,
         text=True,
@@ -927,6 +1061,10 @@ def run_rows(options, array, held, workdir):
     if True:  # keeps the body's indentation while it lives in its own function
         if FIXTURES_DIR is None:
             build_fixtures(workdir)
+        if past_the_interpreter(options.tool) == "python":
+            train_scorers(fixtures_of(workdir))
+        if past_the_interpreter(options.tool) == "Rscript" and options.port:
+            build_port_with_r()
         (workdir / "tmp").mkdir(exist_ok=True)
         for row in array["array"]:
             args = row_arguments(row, held)

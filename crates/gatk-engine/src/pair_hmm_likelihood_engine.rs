@@ -33,6 +33,7 @@ use crate::allele_likelihoods::{AlleleLikelihoods, LikelihoodsError};
 use crate::allele_list::{AlleleList, SampleList};
 use crate::clipping::{hard_clip_soft_clipped_bases, ClipError};
 use crate::dragstr::{dragstr_impute, DragstrError, DragstrParams};
+use crate::gpu;
 use crate::haplotype::Haplotype;
 use crate::pair_hmm::{fast_round, read_likelihood_given_haplotype_log10};
 use crate::read_utils::{base_deletion_qualities, base_insertion_qualities};
@@ -296,10 +297,10 @@ impl PairHmmLikelihoodEngine {
             let processed = self.modify_read_qualities(sample_reads)?;
             Self::print_processed(&processed, sample_reads, None);
             let mut sample_values = vec![vec![0.0; processed.len()]; haplotypes.len()];
-            for (r, read) in processed.iter().enumerate() {
-                // `inputScoreImputator.impute(read)`: the read's own indel qualities and a constant
-                // continuation penalty, or the DRAGstr penalties of its sequence.
-                let (insertion, deletion, gap_continuation) = match &self.arguments.dragstr_params {
+            // `inputScoreImputator.impute(read)`: the read's own indel qualities and a constant
+            // continuation penalty, or the DRAGstr penalties of its sequence.
+            let impute = |read: &ProcessedRead| -> Result<_, LikelihoodEngineError> {
+                Ok(match &self.arguments.dragstr_params {
                     Some(params) => {
                         let (gop, gcp) = dragstr_impute(params, &read.bases)
                             .map_err(LikelihoodEngineError::Dragstr)?;
@@ -310,16 +311,42 @@ impl PairHmmLikelihoodEngine {
                         read.deletion_qualities.clone(),
                         vec![self.arguments.gap_continuation_penalty as u8; read.bases.len()],
                     ),
-                };
+                })
+            };
+            // Milestone GPU: the same likelihoods from the device, for every read up to the first
+            // the imputation refuses. The loop below still raises that refusal where the CPU path
+            // would, after the same lines of the results file.
+            let device = if gpu::requested() {
+                let imputed: Vec<_> = processed.iter().map_while(|r| impute(r).ok()).collect();
+                let inputs: Vec<_> = imputed
+                    .iter()
+                    .zip(&processed)
+                    .map(|((insertion, deletion, gap), read)| gpu::ReadInputs {
+                        bases: &read.bases,
+                        qualities: &read.qualities,
+                        insertion,
+                        deletion,
+                        gap_continuation: gap,
+                    })
+                    .collect();
+                gpu::pair_hmm_log10(&haplotype_bases, &inputs)
+            } else {
+                None
+            };
+            for (r, read) in processed.iter().enumerate() {
+                let (insertion, deletion, gap_continuation) = impute(read)?;
                 for (a, haplotype) in haplotype_bases.iter().enumerate() {
-                    let likelihood = read_likelihood_given_haplotype_log10(
-                        haplotype,
-                        &read.bases,
-                        &read.qualities,
-                        &insertion,
-                        &deletion,
-                        &gap_continuation,
-                    );
+                    let likelihood = match &device {
+                        Some(values) => values[r * haplotype_bases.len() + a],
+                        None => read_likelihood_given_haplotype_log10(
+                            haplotype,
+                            &read.bases,
+                            &read.qualities,
+                            &insertion,
+                            &deletion,
+                            &gap_continuation,
+                        ),
+                    };
                     if likelihood > 0.0 || likelihood.is_nan() {
                         return Err(LikelihoodEngineError::InvalidLikelihood(likelihood));
                     }

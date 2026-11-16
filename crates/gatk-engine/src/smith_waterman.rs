@@ -122,7 +122,66 @@ pub fn last_index_of(reference: &[u8], query: &[u8]) -> Option<usize> {
 }
 
 impl SmithWatermanAligner for SmithWatermanJavaAligner {
+    /// fgkl's kernel, which gives this port's answer on every input measured
+    /// (docs/fgkl-and-lorikeet.md); [`SmithWatermanJavaAligner::port_align`] is the transcription.
     fn align(
+        &self,
+        reference: &[u8],
+        alternate: &[u8],
+        parameters: &SwParameters,
+        strategy: SwOverhangStrategy,
+    ) -> Result<SwAlignment, AlignmentError> {
+        thread_local! {
+            // fgkl's aligner keeps its scratch rows between calls, so one per thread.
+            static ALIGNER: std::cell::RefCell<fgkl_smithwaterman::Aligner> =
+                std::cell::RefCell::new(fgkl_smithwaterman::Aligner::new());
+        }
+        let parameters = fgkl_smithwaterman::SwParameters::new(
+            parameters.match_value,
+            parameters.mismatch_penalty,
+            parameters.gap_open_penalty,
+            parameters.gap_extend_penalty,
+        );
+        let strategy = match strategy {
+            SwOverhangStrategy::Indel => fgkl_smithwaterman::OverhangStrategy::Indel,
+            SwOverhangStrategy::SoftClip => fgkl_smithwaterman::OverhangStrategy::SoftClip,
+            SwOverhangStrategy::LeadingIndel => fgkl_smithwaterman::OverhangStrategy::LeadingIndel,
+            SwOverhangStrategy::Ignore => fgkl_smithwaterman::OverhangStrategy::Ignore,
+        };
+        let alignment = ALIGNER
+            .with(|aligner| {
+                aligner
+                    .borrow_mut()
+                    .align(reference, alternate, &parameters, strategy)
+            })
+            .map_err(|error| match error {
+                fgkl_smithwaterman::Error::EmptySequence => AlignmentError::EmptySequence,
+                // `Aligner::new` only picks a backend the CPU has.
+                other => unreachable!("{other}"),
+            })?;
+        let cigar = alignment
+            .cigar
+            .iter()
+            .map(|element| CigarElement {
+                length: element.len,
+                op: match element.op {
+                    fgkl_smithwaterman::CigarOp::M => Op::M,
+                    fgkl_smithwaterman::CigarOp::I => Op::I,
+                    fgkl_smithwaterman::CigarOp::D => Op::D,
+                    fgkl_smithwaterman::CigarOp::S => Op::S,
+                },
+            })
+            .collect();
+        Ok(SwAlignment {
+            cigar: Cigar::new(cigar),
+            alignment_offset: alignment.offset,
+        })
+    }
+}
+
+impl SmithWatermanJavaAligner {
+    /// The transcription of `SmithWatermanJavaAligner.align`, kept as the check fgkl is held to.
+    pub fn port_align(
         &self,
         reference: &[u8],
         alternate: &[u8],
@@ -402,14 +461,13 @@ mod tests {
     use super::*;
 
     fn align(reference: &str, alternate: &str, strategy: SwOverhangStrategy) -> (i32, String) {
+        let (reference, alternate) = (reference.as_bytes(), alternate.as_bytes());
         let result = SmithWatermanJavaAligner
-            .align(
-                reference.as_bytes(),
-                alternate.as_bytes(),
-                &NEW_SW_PARAMETERS,
-                strategy,
-            )
+            .align(reference, alternate, &NEW_SW_PARAMETERS, strategy)
             .expect("an alignment");
+        let port =
+            SmithWatermanJavaAligner.port_align(reference, alternate, &NEW_SW_PARAMETERS, strategy);
+        assert_eq!(Ok(&result), port.as_ref());
         (result.alignment_offset, result.cigar.to_text())
     }
 

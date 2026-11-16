@@ -30,6 +30,9 @@
 //! reference does where `python` or its packages are missing, because those refusals are the
 //! reference's answer on such a machine. What the script does not get is the temporary name of
 //! its own file, so the pickle holds zeros where the reference's holds a random number.
+//!
+//! `PostprocessGermlineCNVCalls`' script is ported too, against the frozen reference of
+//! `docs/gcnv-postprocess.md` (`runners_postprocess_gcnv.rs`), behind the same `gcnvkernel` import.
 use super::extract_variant_annotations_runner::{
     labelled_walker_start, matrix, metadata, reduced, validate_output_files, LabelledStart,
 };
@@ -100,7 +103,13 @@ fn port_limit(what: impl std::fmt::Display) -> Thrown {
 
 /// The five `checkPythonEnvironmentForPackage` of the default backend.
 fn check_isolation_forest_packages() -> Result<(), Thrown> {
-    for package in ["argparse", "h5py", "numpy", "sklearn", "dill"] {
+    check_python_packages(&["argparse", "h5py", "numpy", "sklearn", "dill"])
+}
+
+/// `PythonScriptExecutor.checkPythonEnvironmentForPackage`, package by package: the reference's
+/// answer on a machine without `python` or without the package, which the port gives too.
+fn check_python_packages(packages: &[&str]) -> Result<(), Thrown> {
+    for package in packages {
         if !on_the_path("python") {
             return Err(import_stop(package));
         }
@@ -618,10 +627,14 @@ pub fn plot_modeled_segments(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
-/// `DetermineGermlineContigPloidy.onStartup`.
-pub fn determine_germline_contig_ploidy(_parser: &Parser) -> Outcome {
-    Err(gcnv_stop())
+/// `DetermineGermlineContigPloidy`: `onStartup`'s import, then `doWork` (cohort mode).
+pub fn determine_germline_contig_ploidy(parser: &Parser) -> Outcome {
+    check_python_packages(&["gcnvkernel"])?;
+    ploidy::run(parser)
 }
+
+#[path = "runners_ploidy_gcnv.rs"]
+mod ploidy;
 
 /// `GermlineCNVCaller.onStartup`.
 pub fn germline_cnv_caller(_parser: &Parser) -> Outcome {
@@ -764,8 +777,16 @@ pub fn postprocess_germline_cnv_calls(parser: &Parser) -> Outcome {
         }
     }
 
-    Err(gcnv_stop())
+    check_python_packages(&["gcnvkernel"])?;
+    let dictionary = match master {
+        Some(master) => master.sequences,
+        None => shards_dictionary(parser)?.sequences,
+    };
+    postprocess::run(parser, &dictionary)
 }
+
+#[path = "runners_postprocess_gcnv.rs"]
+mod postprocess;
 
 /// `new HDF5File(file, READ_ONLY)`, reported as each reader of the file reports it.
 fn open_hdf5(path: &str, reading: &str) -> Result<Hdf5Reader, Thrown> {
@@ -929,6 +950,12 @@ pub fn train_variant_annotations_model(parser: &Parser) -> Outcome {
     let script = argument(parser, "python-script");
     let hyperparameters = argument(parser, "hyperparameters-json");
     let backend = backend_of(parser);
+    // `java.io.tmpdir`, which the script's name in the scorer is under.
+    let tmp_dir = match argument(parser, "tmp-dir") {
+        Some(dir) => std::path::absolute(&dir).map_or(dir, |path| path.display().to_string()),
+        None => "/tmp".to_string(),
+    };
+    let script_name = scorer_pickle::script_name(&tmp_dir);
 
     // `validateArgumentsAndSetModes`.
     can_read_file(Some(&annotations))?;
@@ -1049,6 +1076,7 @@ pub fn train_variant_annotations_model(parser: &Parser) -> Outcome {
             calibration.as_deref(),
             hyperparameters.as_deref(),
             &tagged,
+            &script_name,
         )?;
     }
     Ok(None)
@@ -1061,6 +1089,7 @@ fn train_isolation_forest(
     calibration: Option<&[&Vec<f64>]>,
     hyperparameters: Option<&str>,
     tagged: &str,
+    script_name: &str,
 ) -> Result<(), Thrown> {
     let json = match hyperparameters {
         Some(path) => std::fs::read_to_string(path).map_err(port_limit)?,
@@ -1072,7 +1101,7 @@ fn train_isolation_forest(
     let forest = isolation_forest::fit(names, &training, &hyperparameters).map_err(port_limit)?;
     write_file(
         &format!("{tagged}.scorer.pkl"),
-        &scorer_pickle::write(&forest),
+        &scorer_pickle::write(&forest, script_name),
     )?;
     let scorer = forest.scorer();
     let scores = isolation_forest::score_samples(&scorer, names, &training).map_err(port_limit)?;
@@ -1290,7 +1319,7 @@ pub fn score_variant_annotations(parser: &Parser) -> Outcome {
     // `createVCFWriter` opens the file, and `writeHeader` leaves its bytes in the writer's buffer.
     write_file(&vcf_path, b"")?;
     let keys = ScoreKeys::of(parser)?;
-    let header = scored_header(parser, &file.header, &sorted_labels, &keys);
+    let mut header = scored_header(parser, &file.header, &sorted_labels, &keys);
 
     // `afterOnTraversalStart`, whose other three `Utils.nonNull` the header has answered.
     if argument(parser, "double-format").is_none() {
@@ -1508,6 +1537,7 @@ pub fn score_variant_annotations(parser: &Parser) -> Outcome {
         }
         written.push(out);
     }
+    apply_sites_only(parser, &mut header, &mut written);
     let vcf = htsjdk_vcf::vcf_file::write_vcf(&header, &written)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
     write_variant_output(parser, &vcf_path, &vcf)?;

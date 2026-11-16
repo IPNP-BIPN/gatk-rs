@@ -726,15 +726,37 @@ fn open_samples(samples: &[Sample]) -> Result<Vec<htsjdk_vcf::reader::VcfFile>, 
                     sample.path
                 )));
             }
-            htsjdk_vcf::reader::read_vcf(&text).map_err(|_| {
+            let mut file = htsjdk_vcf::reader::read_vcf(&text).map_err(|_| {
                 limitation(&format!(
                     "{} has a record this port's reader refuses, and the reference only refuses \
                      it, in its own words, if an interval reaches it.",
                     sample.path
                 ))
-            })
+            })?;
+            restore_written_ft(&mut file);
+            Ok(file)
         })
         .collect()
+}
+
+/// The stream is the sample column as written (`VCFEncoder` copies a lazy genotype block), while
+/// the reader holds `FT=PASS` as no filter and sorts two names or more. So the one genotype gets
+/// back the `FT` its text carries, read before anything decodes the block and drops the text.
+fn restore_written_ft(file: &mut htsjdk_vcf::reader::VcfFile) {
+    for record in &mut file.records {
+        let written = record.genotypes.unparsed().and_then(|block| {
+            let mut columns = block.split('\t');
+            let (format, sample) = (columns.next()?, columns.next()?);
+            format
+                .split(':')
+                .zip(sample.split(':'))
+                .find(|(key, value)| *key == "FT" && *value != ".")
+                .map(|(_, value)| value.to_string())
+        });
+        if let (Some(written), Some(genotype)) = (written, record.genotypes.first_mut()) {
+            genotype.filters = Some(written);
+        }
+    }
 }
 
 /// The FORMAT key of a value the parsed genotype cannot give back. The stream's sample column is the

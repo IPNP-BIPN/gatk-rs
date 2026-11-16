@@ -462,8 +462,8 @@ impl LoadedModel {
 pub fn variant_recalibrator(parser: &Parser) -> Outcome {
     let _ = resolve_read_filters(parser, "VariantRecalibrator")?;
     let settings = settings(parser);
-    let paths = arguments(parser, "variant");
-    if paths.is_empty() {
+    let inputs = multi_variant::feature_inputs(parser);
+    if inputs.is_empty() {
         return Err(Thrown::command_line(
             "Argument variant was missing: Argument 'variant' is required",
         ));
@@ -477,53 +477,26 @@ pub fn variant_recalibrator(parser: &Parser) -> Outcome {
         )
     })?;
 
-    // `initializeDrivingVariants`: a repeated input is refused before any is opened.
-    let names: Vec<String> = paths.iter().map(|path| absolute_input_name(path)).collect();
-    for (index, name) in names.iter().enumerate() {
-        if names[..index].contains(name) {
-            return Err(Thrown::user(format!(
-                "Bad input: Feature inputs must be unique: {name}"
-            )));
-        }
-    }
-    let mut inputs = Vec::new();
-    let mut texts = Vec::new();
-    for path in &paths {
-        let (codec, text) = open_feature_input(path)?;
-        let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
-            failure: Failure::User,
-            exception: "htsjdk.tribble.TribbleException",
-            message: Some(failure.error.message()),
-        })?;
-        texts.push((codec, text));
-        inputs.push(file);
-    }
-    let dictionaries: Vec<SamHeader> = texts.iter().map(|(_, text)| vcf_dictionary(text)).collect();
-    let names_of = |header: &SamHeader| -> Vec<(String, i32)> {
-        header
-            .sequences
-            .iter()
-            .map(|sequence| (sequence.name.clone(), sequence.length))
-            .collect()
-    };
-    if dictionaries
-        .iter()
-        .any(|header| names_of(header) != names_of(&dictionaries[0]))
-    {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "--variant inputs whose sequence dictionaries differ are merged into one by GATK, \
-             which this port does not carry yet. This message is the port's own and not GATK's.",
-        ));
-    }
+    // `initializeDrivingVariants`: a repeated input is refused before any is opened, then the
+    // inputs' dictionaries are cross-checked and their headers merged.
+    let driving = multi_variant::open(
+        inputs,
+        !flag(parser, "disable-sequence-dictionary-validation"),
+    )?;
+    let dictionary = driving.dictionary();
+    let first = &driving.inputs[0];
     let VariantWalkerStart { intervals, .. } = variant_walker_validation(
         parser,
-        paths[0].clone(),
-        texts[0].1.clone(),
-        texts[0].0,
-        dictionaries[0].clone(),
+        first.path.clone(),
+        first.text.clone(),
+        first.codec,
+        dictionary.clone(),
     )?;
-    let contigs: Vec<(String, i32)> = names_of(&dictionaries[0]);
+    let contigs: Vec<(String, i32)> = dictionary
+        .sequences
+        .iter()
+        .map(|sequence| (sequence.name.clone(), sequence.length))
+        .collect();
 
     // The resources and the aggregate inputs are feature inputs too, opened at startup.
     let resource_values: Vec<(String, Vec<(String, String)>)> = parser
@@ -663,36 +636,7 @@ pub fn variant_recalibrator(parser: &Parser) -> Outcome {
     }
 
     // The traversal: the inputs merged, each cut to `-L`, each record queued by start.
-    let mut reached: Vec<Vec<&VariantContext>> = Vec::new();
-    for (input, file) in paths.iter().zip(&inputs) {
-        reached.push(variants_in_traversal(
-            &file.records,
-            intervals.as_deref(),
-            input,
-        )?);
-    }
-    let contig_index = |name: &str| {
-        contigs
-            .iter()
-            .position(|(contig, _)| contig == name)
-            .map_or(-1, |index| index as i64)
-    };
-    let keys_of: Vec<Vec<(i64, i64)>> = reached
-        .iter()
-        .map(|records| {
-            records
-                .iter()
-                .map(|record| (contig_index(&record.contig), record.start))
-                .collect()
-        })
-        .collect();
-    let failed = |failure: gatk_tools::combine_gvcfs::Failure| match failure {
-        gatk_tools::combine_gvcfs::Failure::User(message) => Thrown::user(message),
-        gatk_tools::combine_gvcfs::Failure::Runtime { class, message } => {
-            Thrown::non_user(java_class_name(&class), message)
-        }
-    };
-    let order = gatk_tools::combine_gvcfs::merging_order(&keys_of).map_err(failed)?;
+    let (order, failure) = driving.merged(intervals.as_deref())?;
     let context = DatumContext {
         keys: &manager.annotation_keys.clone(),
         arguments: &settings.arguments,
@@ -722,25 +666,18 @@ pub fn variant_recalibrator(parser: &Parser) -> Outcome {
         queue.clear();
         Ok(())
     };
-    for (input, index) in order {
-        let record = reached[input][index];
+    for (input, record) in order {
         let changed = queue
             .first()
             .is_some_and(|first| first.start != record.start || first.contig != record.contig);
         if changed {
-            consume(&mut queue, &mut data, &mut random).map_err(|_| {
-                Thrown::non_user(
-                    "org.broadinstitute.hellbender.exceptions.GATKException",
-                    format!(
-                        "Exception thrown at {}:{} {}",
-                        record.contig,
-                        record.start,
-                        java_variant_context_string(record, &paths[input])
-                    ),
-                )
-            })?;
+            consume(&mut queue, &mut data, &mut random)
+                .map_err(|_| driving.apply_failure(input, record))?;
         }
         queue.push(record);
+    }
+    if let Some(failure) = failure {
+        return Err(failure);
     }
     consume(&mut queue, &mut data, &mut random)?;
     manager.active = (0..data.len()).collect();

@@ -74,8 +74,8 @@ fn engine_genotype(genotype: &VcfGenotype, alleles: &[VcfAllele]) -> EngineGenot
     let mut attributes: Vec<(String, String)> = Vec::new();
     // `FT` is a field of its own in htsjdk and an attribute in the reduced model, and it is the
     // attribute `setFilteredGenotypeToNocall` reads, so it goes first.
-    // `is_filtered()`, not `filters`: htsjdk-rs reads a genotype `FT=PASS` as `Some("")` where
-    // htsjdk holds null, and the reduced model's `is_filtered` counts any FT but `PASS` and `.`.
+    // `is_filtered()`, not `filters`: the reduced model's `is_filtered` counts any FT but `PASS`
+    // and `.`, so only a genotype htsjdk calls filtered may carry one.
     if let Some(filters) = genotype.filters.as_ref().filter(|_| genotype.is_filtered()) {
         attributes.push(("FT".to_string(), filters.clone()));
     }

@@ -16,6 +16,8 @@
 //!  * **`-XL` with no `-L` meaning the whole reference**, contig by contig, in the dictionary's
 //!    own order;
 //!  * **padding being clamped to the contig at both ends**;
+//!  * **an interval past the end of its contig being refused as it is parsed**, so an `-L` off
+//!    the end is refused before any `-XL` is subtracted from it;
 //!  * **and `unmapped` being a traversal flag rather than an interval**, accepted on `-L` and
 //!    refused on `-XL`.
 //!
@@ -228,6 +230,33 @@ const CASES: &[Case] = &[
         "three-contigs-out-of-order",
         &["chr10:1-10", "chr2:1-10", "chr1:1-10"],
         &[],
+        UNION,
+        ALL,
+        0,
+        0,
+    ),
+    (
+        "include-past-the-end",
+        &["chr2:600-700"],
+        &["chr2:100-200"],
+        UNION,
+        ALL,
+        0,
+        0,
+    ),
+    (
+        "include-stop-past-the-end",
+        &["chr2:400-600"],
+        &[],
+        UNION,
+        ALL,
+        0,
+        0,
+    ),
+    (
+        "exclude-past-the-end",
+        &["chr1:100-200"],
+        &["chr10:150-250"],
         UNION,
         ALL,
         0,

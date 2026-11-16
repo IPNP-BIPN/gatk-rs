@@ -287,6 +287,8 @@ impl ActiveRegionEvaluator {
         let count = self.ploidy + 1;
         let log10_ploidy = jmath::math::log10(self.ploidy as f64);
         let log10_one_third = -jmath::math::log10(3.0);
+        // `log10(i)` and `log10(j)` per element in the reference; the same values, computed once.
+        let log10_counts: Vec<f64> = (0..count).map(|k| jmath::math::log10(k as f64)).collect();
         let mut likelihoods = vec![0.0; count];
         let mut read_count = 0usize;
         for element in &pileup.elements {
@@ -325,8 +327,8 @@ impl ActiveRegionEvaluator {
             for (i, slot) in likelihoods.iter_mut().enumerate().take(count - 1).skip(1) {
                 *slot += weight
                     * approximate_log10_sum_log10(
-                        reference + jmath::math::log10(j as f64),
-                        non_ref + jmath::math::log10(i as f64),
+                        reference + log10_counts[j as usize],
+                        non_ref + log10_counts[i],
                     );
                 j -= 1;
             }

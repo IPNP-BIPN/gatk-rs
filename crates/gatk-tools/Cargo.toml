@@ -43,3 +43,6 @@ zip = { version = "9", default-features = false, features = ["deflate"] }
 [dev-dependencies]
 # One corpus parser for the whole workspace: two parsers would be two corpora.
 gatk-corpus = { path = "../gatk-corpus" }
+# IPNP-BIPN/gatk-rs#1294: a reader of HDF5 that does not share our reading of the specification,
+# for what hdf5_writer writes. Test-only; the writer stays in-house (docs/hdf5-second-reader.md).
+hdf5-pure = { version = "0.48.0", default-features = false, features = ["std", "checksum"] }

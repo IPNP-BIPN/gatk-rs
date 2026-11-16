@@ -2669,11 +2669,14 @@
         "through commons-jexl's arithmetic: an integer literal sends the comparison down",
         "Integer.parseInt and a real one down the double path. Both answer now that the context",
         "is typed (#1142); before that the integer literal refused, because a rendered string",
-        "reached parseInt where the reference had a Double."
+        "reached parseInt where the reference had a Double.",
+        "gendb:///work/fixtures/cg_ws is cg_a, cg_b and cg_c imported by GenomicsDBImport and read",
+        "back through GenomicsDB's own query: the samples of cg_combined.g.vcf, merged the native way."
       ],
       "--variant": [
         "/work/fixtures/indexed.vcf",
-        "/work/fixtures/population.vcf"
+        "/work/fixtures/population.vcf",
+        "gendb:///work/fixtures/cg_ws"
       ],
       "--output": [
         "/work/out/selected.vcf",
@@ -5722,12 +5725,15 @@
         "reason every variant writer holds them: one writes the run's own time into the header and",
         "the other writes the output file's last-modified time into an index.",
         "--max-variants-per-shard is held at 0 and --disable-read-filter at WellformedReadFilter, for",
-        "the reasons CombineGVCFs gives."
+        "the reasons CombineGVCFs gives.",
+        "gendb:///work/fixtures/cg_ws is cg_a, cg_b and cg_c imported by GenomicsDBImport and read",
+        "back through GenomicsDB's own query: the samples of cg_combined.g.vcf, merged the native way."
       ],
       "--variant": [
         "/work/fixtures/cg_combined.g.vcf",
         "/work/fixtures/cg_a.g.vcf",
-        "/work/fixtures/cg_c.g.vcf"
+        "/work/fixtures/cg_c.g.vcf",
+        "gendb:///work/fixtures/cg_ws"
       ],
       "--output": [
         "/work/out/genotyped.vcf"
@@ -5985,7 +5991,8 @@
     "GnarlyGenotyper": {
       "--variant": [
         "/work/fixtures/gn_sites.g.vcf",
-        "/work/fixtures/gn_combined.g.vcf"
+        "/work/fixtures/gn_combined.g.vcf",
+        "gendb:///work/fixtures/cg_ws"
       ],
       "--output": [
         "/work/out/gnarly.vcf"
@@ -6064,7 +6071,9 @@
         "reason every variant writer holds them: one writes the run's own time into the header and",
         "the other writes the output file's last-modified time into an index.",
         "--max-variants-per-shard is held at 0 and --disable-read-filter at WellformedReadFilter, for",
-        "the reasons CombineGVCFs gives."
+        "the reasons CombineGVCFs gives.",
+        "gendb:///work/fixtures/cg_ws is cg_a, cg_b and cg_c imported by GenomicsDBImport and read",
+        "back through GenomicsDB's own query: the samples of cg_combined.g.vcf, merged the native way."
       ]
     },
     "VariantEval": {
@@ -7293,6 +7302,7 @@
       "--read-index": []
     },
     "AlleleFrequencyQC": {
+      "$past_the_interpreter": "Rscript",
       "$output_on_failure": true,
       "$tagged": [
         "--eval"
@@ -7427,8 +7437,9 @@
         "which is what puts two rows in each allele-frequency bin, in either order; the call set alone",
         "leaves one row per bin and a statistic of nought; afqc_eval_noalias.vcf has no ##sampleAlias",
         "line and is the NullPointerException the tool raises before VariantEval starts. --comparison",
-        "null leaves the comp-AF stratifier without a comp. Every run that gets as far as the plot",
-        "ends on the Rscript user error, since the image carries no R, after the metrics are written.",
+        "null leaves the comp-AF stratifier without a comp. The reference runs in the Broad's image and",
+        "the port in one with R ($past_the_interpreter), so a run that gets as far as the plot draws it:",
+        "the PNGs are compared by pixel size and resolution, and the combined figure the port adds is not.",
         "--pedigree, --ancestral-alignments and --list are held out as for VariantEval."
       ]
     },
@@ -16905,9 +16916,11 @@
       ]
     },
     "PlotDenoisedCopyRatios": {
+      "$past_the_interpreter": "Rscript",
       "$why": [
-        "The reference checks every input and makes the output directory, then RScriptExecutor finds no Rscript in the image,",
-        "so every accepted row ends on that user error. The second copy-ratio file has other intervals, which is the one refusal",
+        "The reference runs in the Broad's image and the port in one with R ($past_the_interpreter), so an accepted row draws",
+        "its plot: the four MAD files are compared byte for byte, the PNG by pixel size and resolution, and the port's .rds",
+        "exports are not (suite r-plots reads them back). The second copy-ratio file has other intervals, which is the one refusal",
         "between two tables; a dictionary of one contig still plots, and a contig length above both contigs is the threshold's refusal."
       ],
       "$output_on_failure": true,
@@ -16945,9 +16958,10 @@
       ]
     },
     "PlotModeledSegments": {
+      "$past_the_interpreter": "Rscript",
       "$why": [
-        "The same stop as PlotDenoisedCopyRatios. Either input may be absent and both absent is a refusal; a segments file",
-        "claiming other point counts is the check between the tables."
+        "Past R as PlotDenoisedCopyRatios is, with the PNG the only file. Either input may be absent and both absent is a",
+        "refusal; a segments file claiming other point counts is the check between the tables."
       ],
       "$output_on_failure": true,
       "--denoised-copy-ratios": [
@@ -17110,9 +17124,12 @@
     },
     "TrainVariantAnnotationsModel": {
       "$why": [
-        "The default backend reads a file only to compare two sets of annotation names, and then imports. JAVA_BGMM is the",
-        "reference's own missing module, and PYTHON_SCRIPT reads every matrix before python is looked for. None writes a file."
+        "The reference runs in the Broad's image, whose python gets it past the import, and the port behind a stand-in python",
+        "(run_array.py, $past_the_interpreter): the default backend then fits the forest and writes the scorer and its scores.",
+        "JAVA_BGMM is the reference's own missing module. PYTHON_SCRIPT runs a script that does nothing, which the port",
+        "refuses in its own words, and so does --unlabeled-annotations-hdf5 under the default backend: those rows differ."
       ],
+      "$past_the_interpreter": "python",
       "--annotations-hdf5": [
         "/work/fixtures/it/extract.annot.hdf5",
         "/work/fixtures/it/hyperparameters.json"
@@ -17146,12 +17163,14 @@
     "ScoreVariantAnnotations": {
       "$why": [
         "The variants, resources, annotations and modes are ExtractVariantAnnotations': the same walker's onTraversalStart runs,",
-        "with the reserved snp label its refusal. The header goes to a writer nothing closes, and only then the backend. PYTHON_SCRIPT",
-        "needs a scorer readable at the model prefix, runs a whole pass, writes the annotations and stops at the first script.",
-        "An interval with no variant is the one way to a finished VCF. The command line is held off because it records the date.",
-        "The two thresholds are not varied: their bounds refuse a null where the parser reads one, and a value is refused for the",
-        "calibration scores no fixture can hold, so either would stop every row before the pass. The dump covers both refusals."
+        "with the reserved snp label its refusal. The header goes to a writer nothing closes, and only then the backend. The",
+        "reference runs in the Broad's image, so past the import, and the port behind a stand-in python ($past_the_interpreter);",
+        "it/both and it/snp then hold scorers the reference trained before the rows (run_array.train_scorers), and nothing holds",
+        "none. PYTHON_SCRIPT runs a script that does nothing, which the port refuses in its own words: those rows differ.",
+        "The command line is held off because it records the date. The two thresholds are not varied: their bounds refuse a null",
+        "where the parser reads one, so a row without them would stop before the pass. The dump covers their refusals."
       ],
+      "$past_the_interpreter": "python",
       "$output_on_failure": true,
       "$tagged": [
         "--resource"
@@ -19713,6 +19732,18 @@
         "--OLD_SAMPLE_NAME": "sampleA"
       },
       "why": "picard-rs's clause: the two-sample file is refused as not single-sample before OLD_SAMPLE_NAME is read, so naming an old sample beside it only repeats that refusal, which then took eight of the first twelve rows. The refusal is kept, with OLD_SAMPLE_NAME=null."
+    },
+    {
+      "tools": [
+        "GenotypeGVCFs",
+        "GnarlyGenotyper",
+        "SelectVariants"
+      ],
+      "forbid": {
+        "--variant": "gendb:///work/fixtures/cg_ws",
+        "--genomicsdb-use-bcf-codec": "true"
+      },
+      "why": "The port refuses the BCF codec over a workspace in its own words: the records BCF2Codec decodes keep FORMAT in header order and print their floats with htsjdk's two decimals, a second representation it does not reproduce. A row with the pair measures that refusal, which is the same on every row; over a file the flag is inert and stays in the array."
     }
   ],
   "exclude": {
