@@ -56,15 +56,29 @@ pub fn fast_round(value: f64) -> i32 {
     }
 }
 
-/// `JacobianLogTable.get`, computed at the table's own quantisation.
+/// `JacobianLogTable.get`: the table's entry at the difference's quantisation.
 ///
-/// The reference builds the table once and reads it by index; reading it by index is what this
-/// reproduces, so the value is the table's entry and not `log10(1 + 10^-difference)`.
+/// The reference builds the table once and reads it by index; so does this, and every entry is
+/// the reference's expression, so the value is the table's entry and not `log10(1 + 10^-difference)`.
+/// An index past the table, which `approximate_log10_sum_log10` never asks for, is computed.
 pub fn jacobian_log(difference: f64) -> f64 {
     // `fastRound(difference * INV_STEP)`, a product by `1.0 / TABLE_STEP` rather than a quotient
-    // by the step, then the entry `Math.log10(1.0 + Math.pow(10.0, -k * TABLE_STEP))`, whose
-    // `Math.log10` is correctly rounded.
+    // by the step.
     let index = fast_round(difference * (1.0 / JACOBIAN_TABLE_STEP));
+    static TABLE: std::sync::LazyLock<Vec<f64>> = std::sync::LazyLock::new(|| {
+        // `(int) (MAX_TOLERANCE / TABLE_STEP) + 1` entries.
+        let size = (JACOBIAN_MAX_TOLERANCE / JACOBIAN_TABLE_STEP) as i32 + 1;
+        (0..size).map(jacobian_entry).collect()
+    });
+    match usize::try_from(index).ok().and_then(|i| TABLE.get(i)) {
+        Some(&entry) => entry,
+        None => jacobian_entry(index),
+    }
+}
+
+/// One entry: `Math.log10(1.0 + Math.pow(10.0, -k * TABLE_STEP))`, whose `Math.log10` is correctly
+/// rounded.
+fn jacobian_entry(index: i32) -> f64 {
     let quantised = f64::from(-index) * JACOBIAN_TABLE_STEP;
     jmath::math::log10(1.0 + std::hint::black_box(10f64).powf(quantised))
 }
