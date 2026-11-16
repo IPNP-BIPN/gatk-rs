@@ -2609,6 +2609,18 @@ pub struct Driving {
     pub record: VariantContext,
 }
 
+impl crate::multi_variant::Located for Driving {
+    fn contig(&self) -> &str {
+        &self.record.contig
+    }
+    fn start(&self) -> i64 {
+        self.record.start
+    }
+    fn end(&self) -> i64 {
+        self.record.stop
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Source {
     Eval(usize),

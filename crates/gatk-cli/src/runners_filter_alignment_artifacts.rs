@@ -16,7 +16,7 @@
 //! * **the traversal**: the calls in input order, a filtered one skipped unless
 //!   `--dont-skip-filtered-variants` is given, and each one's supporting reads looked for among
 //!   the reads that cover its start;
-//! * **the output**: the input's header with the tool's FILTER and three INFO lines, every call
+//! * **the output**: the merged header of the inputs with the tool's FILTER and three INFO lines, every call
 //!   with its two attributes, and the writer's standard arguments.
 use super::*;
 use gatk_tools::filter_alignment_artifacts as artifacts;
@@ -43,29 +43,23 @@ fn support_read(record: &htsjdk_bam::record::BamRecord) -> artifacts::Read {
 }
 
 pub fn filter_alignment_artifacts(parser: &Parser) -> Outcome {
-    let inputs = arguments(parser, "variant");
-    if inputs.len() > 1 {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "More than one --variant is a GATK feature that this port does not carry yet. This \
-             message is the port's own and not GATK's.",
+    let resolved = resolve_read_filters(parser, "FilterAlignmentArtifacts")?;
+    let inputs = multi_variant::feature_inputs(parser);
+    if inputs.is_empty() {
+        return Err(Thrown::command_line(
+            "Argument variant was missing: Argument 'variant' is required",
         ));
     }
-    let resolved = resolve_read_filters(parser, "FilterAlignmentArtifacts")?;
-    let input = inputs.into_iter().next().ok_or_else(|| {
-        Thrown::command_line("Argument variant was missing: Argument 'variant' is required")
-    })?;
     if arguments(parser, "input").is_empty() {
         return Err(Thrown::command_line(
             "Argument input was missing: Argument 'input' is required",
         ));
     }
-    let VariantWalkerStart {
-        input,
-        text,
-        intervals,
-        ..
-    } = variant_walker_startup_over(parser, input)?;
+    let driving = multi_variant::open(
+        inputs,
+        !flag(parser, "disable-sequence-dictionary-validation"),
+    )?;
+    let VariantWalkerStart { intervals, .. } = driving.startup(parser)?;
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
@@ -123,20 +117,12 @@ pub fn filter_alignment_artifacts(parser: &Parser) -> Outcome {
         }
     }
 
-    let mut file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
-        failure: Failure::User,
-        exception: failure.error.class(),
-        message: Some(failure.error.message()),
-    })?;
-    let traversed: Vec<htsjdk_vcf::variant::VariantContext> =
-        variants_in_traversal(&file.records, intervals.as_deref(), &input)?
-            .into_iter()
-            .cloned()
-            .collect();
+    let mut header = driving.header();
+    let (traversed, failure) = driving.merged(intervals.as_deref())?;
     let skip_filtered = !flag(parser, "dont-skip-filtered-variants");
     let tolerance = number_or(parser, "indel-start-tolerance", 5);
     let mut written = Vec::new();
-    for record in traversed {
+    for (_, record) in traversed {
         if skip_filtered && record.filters.as_ref().is_some_and(|f| !f.is_empty()) {
             continue;
         }
@@ -169,6 +155,9 @@ pub fn filter_alignment_artifacts(parser: &Parser) -> Outcome {
         out.attributes
             .push(("UNITIGS".to_string(), htsjdk_vcf::variant::Value::Missing));
         written.push(out);
+    }
+    if let Some(failure) = failure {
+        return Err(failure);
     }
 
     // The header: the input's lines, the tool's own, and the defaults.
@@ -204,29 +193,23 @@ pub fn filter_alignment_artifacts(parser: &Parser) -> Outcome {
     ];
     let same = |a: &HeaderLine, b: &HeaderLine| a.render() == b.render();
     for line in added {
-        if !file
-            .header
-            .lines
-            .iter()
-            .any(|existing| same(existing, &line))
-        {
-            file.header.lines.push(line);
+        if !header.lines.iter().any(|existing| same(existing, &line)) {
+            header.lines.push(line);
         }
     }
-    file.header.lines.extend(default_tool_vcf_header_lines(
+    header.lines.extend(default_tool_vcf_header_lines(
         parser,
         "FilterAlignmentArtifacts",
     ));
 
     let keep = variant_output_filter(parser, intervals.as_deref())?;
     written.retain(|record| keep(record));
-    apply_sites_only(parser, &mut file.header, &mut written);
-    let rendered =
-        htsjdk_vcf::vcf_file::write_vcf(&file.header, &written).map_err(|error| Thrown {
-            failure: Failure::User,
-            exception: "org.broadinstitute.hellbender.exceptions.UserException",
-            message: Some(format!("{error:?}")),
-        })?;
+    apply_sites_only(parser, &mut header, &mut written);
+    let rendered = htsjdk_vcf::vcf_file::write_vcf(&header, &written).map_err(|error| Thrown {
+        failure: Failure::User,
+        exception: "org.broadinstitute.hellbender.exceptions.UserException",
+        message: Some(format!("{error:?}")),
+    })?;
     write_variant_output(parser, &output, &rendered)?;
     // `onTraversalSuccess` returns "SUCCESS", which `Main` prints.
     Ok(Some("SUCCESS".to_string()))

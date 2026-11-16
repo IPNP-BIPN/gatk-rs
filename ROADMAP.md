@@ -12,22 +12,25 @@ golden stays `[~]`.
 
 ---
 
-## Where we are (measured 2026-09-17)
+## Where we are (measured 2026-11-13)
+
+Reference: **GATK 4.7.0.0, htsjdk 5.0.0, Picard 3.5.0** since #1420. Counts are read off each
+repository's `main` (htsjdk-rs `0730c93b`, picard-rs `bd199d29`, gatk-rs `09958061`).
 
 | Repo | Scope | State |
 |---|---|---|
-| **htsjdk-rs** | the I/O and math foundation | 86 conformance suites, all oracle-backed; `format`, whose 41,678 formatted doubles once had a harness and a Rust test and no CI-derived golden, is among them. CRAM, GKL-exact deflate and full VCF remain |
-| **picard-rs** | 121 tools | 105 tools carry a suite, all oracle-backed; 107 suites over 122 cases. Many are partial (default paths only). The harness is generated from a manifest, the fuzzer and the determinism gate run in CI, and argument coverage is measured for 53 tools |
-| **gatk-rs** | 190 tools | 7 crates, **298 conformance suites over 303 cases and 158 tools, all 298 oracle-backed**; 3 tools byte-identical, and 53 of 54 annotations measured. The seventh crate is `gatk-cli`, which now declares 137 tools' arguments and RUNS 137 of them end to end, with a t=2 covering array measured against the oracle for all 137, every one at 1.000 with what the tool PRINTS compared as well as what it writes. LearnReadOrientationModel gets there by calling the platform's `exp` in its E-step, because HotSpot's `Math.exp` intrinsic, which htsjdk-rs decision 0014 could not publish, agrees with the platform's and not with FDLIBM's. AnalyzeSaturationMutagenesis holds `--write-rejected-reads` out: with it, the reference's own output depends on its asynchronous BAM writer (#1266). **No performance number exists yet for any of it**: see Milestone S |
+| **htsjdk-rs** | the I/O and math foundation | 88 conformance suites, all oracle-backed. CRAM, GKL-exact deflate and full VCF remain |
+| **picard-rs** | 121 tools | 124 suites over 139 cases, 119 oracle-backed and 5 golden-pending; 115 tools carry a suite. Argument coverage is measured for 119 tools |
+| **gatk-rs** | 191 tools | 8 crates, **363 conformance suites over 368 cases, all 363 oracle-backed**, and all 54 annotations among them. A t=2 covering array is run against the reference and the port on every CI run for **207 tools, 200 of them at 1.000** (the seven below are Picard VCF tools, causes listed under Milestone V); the differential fuzzer has replayed its kept cases for 190 tools with no divergence. Cost against the reference is measured for 139 tools (Milestone S) |
 
-Across the three repositories that is **491 oracle-backed suites**, and the generated dashboard
-([docs/STATUS.md](docs/STATUS.md)) puts 227 of the 311 tools in an oracle-backed state, 73.0%. The
-tool count did not move while the suite count did, which is the shape of this stretch: the work went
-into running declared tools from a command line and measuring their arguments rather than into new
-ports.
+Across the three repositories that is **570 oracle-backed suites**, and the generated dashboard
+([docs/STATUS.md](docs/STATUS.md)) puts **all 312 tools** in an oracle-backed state. What
+oracle-backed does not yet say is the whole argument surface: three tools have no covering array
+(`ConvertCountsToDepthFile`, `IlluminaBasecallsToFastq`, `MergeBamAlignment`), which is the G2
+item on full parameter coverage.
 
-Totals from the generated inventory (`tools/inventory`): **311 tools** (190 GATK-origin,
-121 Picard-origin), **39 Spark**, ~13,130 arguments. Non-Spark: 151 GATK + 121 Picard.
+Totals from the generated inventory (`tools/inventory`): **312 tools** (191 GATK-origin,
+121 Picard-origin), **39 Spark**, ~13,360 arguments.
 
 ### What "100% repro" means, per tool
 
@@ -49,14 +52,14 @@ which is not yet this bar for any tool.
 
 The single biggest unlock: 151 non-Spark GATK tools stand on it.
 
-**Closed.** Every box below is `[x]` except four, and none of the four is G1 work:
+**Closed.** Every box below is `[x]` except two, and neither is G1 work; the table keeps the two annotations that were once on it:
 
 | open item | where it lives now | why |
 |---|---|---|
 | the Tribble index (G1.3) | Milestone H | it is an htsjdk capability GATK consumes |
-| the multi-input walkers (G1.6) | Milestone H | they merge with `VCFUtils.smartMergeHeaders` and `VariantContextComparator` |
+| the multi-input walkers (G1.6) | **done, G1.6** | `smartMergeHeaders` and `VariantContextComparator` landed in htsjdk-rs, and the walkers on them are oracle-backed by `multi-variant-walker` |
 | `AllelePseudoDepth` (G1.7) | **done, G1.9** | the licence was never what blocked it. Both values leave through a `DecimalFormat` at two and four decimals, and the fixed point turned out bit-identical anyway. Oracle-backed, 46 calls, no divergence |
-| `AssemblyComplexity` (G1.7) | Milestone G3 | it needs `Haplotype.getEventMap()`, the assembly event model |
+| `AssemblyComplexity` (G1.7) | **done, G3.1c** | it needed `Haplotype.getEventMap()`, the assembly event model, which landed with `HaplotypeCaller` (#1282). Oracle-backed, 21 cases |
 
 57 conformance suites carry it, all oracle-backed.
 
@@ -167,16 +170,37 @@ Three of the four remain open, none of them G1 work.
       `afterNthPass` runs after the **last** pass too, which its own javadoc denies; and
       `TwoPassVariantWalker`'s `afterNthPass` guard is `n == 0` then `n > 1`, so the call after the
       second pass matches neither branch and does nothing at all. Zero passes is legal throughout
-- [ ] the multi-input walkers (`MultiVariantWalker` and `MultiVariantDataSource`), which merge
-      several VCFs into one position-ordered stream. Not effort-blocked but layer-blocked: the
-      merged header comes from htsjdk's `VCFUtils.smartMergeHeaders` and the merged order from
-      `VariantContextComparator` over the merged dictionary, so it lands once those are in
-      htsjdk-rs. `MultiVariantWalkerGroupedOnStart` and `MultiVariantWalkerGroupedByOverlap` sit
-      on top of it
+- [x] the multi-input walkers (`MultiVariantWalker` and `MultiVariantDataSource`), which merge
+      several VCFs into one position-ordered stream, and `MultiVariantWalkerGroupedOnStart` and
+      `MultiVariantWalkerGroupedByOverlap` on top: `gatk_tools::multi_variant` and the runner half
+      in `gatk-cli`'s `runners/multi_variant.rs`, oracle-backed by `multi-variant-walker`, 36 runs
+      through three probe walkers. Twelve tools open their inputs through it (CombineGVCFs,
+      ReblockGVCF, VariantEval and AlleleFrequencyQC, VariantRecalibrator, ApplyVQSR,
+      FilterAlignmentArtifacts, VCFComparator, SVStratify, SVCluster, GroupedSVCluster,
+      JointGermlineCNVSegmentation), and the port's "more than one `--variant`" and "dictionaries
+      differ" limitations are gone. What the suite pinned:
+      - **the merge is not stable**: htsjdk's `MergingIterator` is a `PriorityQueue`, so three
+        inputs tied at one locus come out 1, 3, 2. **A single input is never compared**, so one
+        file holding a contig the dictionary lacks, or out of order, is walked as it is; with two,
+        the first is the comparator's `NullPointerException` and the second its
+        `IllegalStateException`, and neither is wrapped by the walker;
+      - **the first input to name a contig owns it**: the pairwise cross-check refuses a length
+        mismatch unless either length is 0, and never reaches the md5 for a VCF;
+      - **a header without `##contig` lines takes its Tribble index's contigs at length 0**, and
+        they are written out; several inputs with no dictionary anywhere are refused;
+      - **the written header can lose contigs**: `getMetaDataInSortedOrder` is a `TreeSet` whose
+        contig lines compare by index alone, so two files' contig lines sharing an index collapse
+        to the first;
+      - **samples are collected `toMap` by input name**, so two files under one tag are a
+        `Duplicate key` after the cross-check and the header merge, while the same file under two
+        tags is accepted. VariantEval, which fills its inputs itself and skips the uniqueness
+        check, reaches the same refusal for an eval that is also a comp;
+      - **`GroupedByOverlap` keeps a running end per contig that no group resets**, and whatever
+        `apply` throws is the walker's `GATKException` naming the locus and the whole record.
 
 ### G1.7 Annotations
 
-- [~] the 54-annotation library. **Fifty-three** are ported and oracle-backed: the counting family
+- [x] the 54-annotation library. **All fifty-four** are ported and oracle-backed: the counting family
       (`ChromosomeCounts`, `SampleList`, `RawGtCount`, `Coverage`, `MappingQualityZero`,
       `CountNs`, `OriginalAlignment`) and the median family (`BaseQuality`, `MappingQuality`,
       `ReadPosition`, `FragmentLength`, i.e. MBQ/MMQ/MPOS/MFRL) and the rank-sum family
@@ -201,25 +225,16 @@ Three of the four remain open, none of them G1 work.
       `VariantContextGetters`, **`MannWhitneyU`** and **`FisherExactTest`**, with commons-math3's
       `FastMath.exp`, `FastMath.log`, `Gamma`, `Erf`, `NormalDistribution` and the saddle-point
       expansion under them, all oracle-backed in htsjdk-rs)
-- [ ] the remaining 2, **neither of which is blocked on effort**. **The claim that
-      most of the 54 wait on jmath did not survive a grep**: 10 of the 57 files in
-      `tools/walkers/annotator` mention `MathUtils` at all, and what the annotators reach through
-      `java.lang.Math` is `log`, `log10`, `sqrt` and `round`, all four already exact. What the
-      first fifty-two actually waited on was engine machinery, and all of it is now ported. The
-      third of the three came in with the haplotype-typed matrix: `HaplotypeFilteringAnnotation`
-      is oracle-backed above, and `Haplotype` is ported as far as an allele axis needs it, which
-      stops short of `EventMap`. The two that are left cannot be closed by working harder:
-  - `AllelePseudoDepth` is **refused on the licence boundary**, not deferred. It ends in
-    `SomaticLikelihoodsEngine.alleleFractionsPosterior`, whose fixed point runs through
-    `NaturalLogUtils.normalizeFromLogToLinearSpace` and `logSumExp`, and both of those call
-    `java.lang.Math.exp`. htsjdk-rs decision 0014 withdrew `Math.exp`: its only faithful port was
-    an operation-by-operation transcription of HotSpot's x86 intrinsic, whose source is GPL2 with
-    no Classpath Exception and therefore cannot be published under that crate's MIT licence. The
-    `Gamma.digamma` this annotation also needs **is** ported (htsjdk-rs #62); the exponential is
-    what stops it, and no amount of work on this side changes that
-  - `AssemblyComplexity` needs `Haplotype.getEventMap()`, which is the assembly event model, so it
-    belongs to **G3** with `HaplotypeCaller` rather than to G1. Listing it here would be counting
-    the assembler as an annotation
+- [x] the remaining 2, both oracle-backed. They were once listed here as blocked, one on the
+      licence and one on the assembler, and neither turned out to be blocked on effort:
+  - `AllelePseudoDepth` (G1.9, suite `allele-pseudo-depth`): it ends in `Math.exp` through
+    `SomaticLikelihoodsEngine.alleleFractionsPosterior`, but both values it writes leave through a
+    `DecimalFormat` at two and four decimals, and the fixed point measured bit-identical anyway.
+    46 calls, no divergence
+  - `AssemblyComplexity` (G3.1c, #1282, suite `assembly-complexity`): it needed
+    `Haplotype.getEventMap()`, which came in with the assembly event model under `HaplotypeCaller`
+    (`gatk_engine::event_map`). Twenty-one cases, and the callers run it under
+    `--enable-all-annotations` (G3.2c)
 
 ### G1.9 `AllelePseudoDepth`, and the premise that refused it
 
@@ -1202,7 +1217,9 @@ GATK, which targets concordance and says so.
 
 ### GPU.1 What makes a kernel eligible
 
-- [ ] a written eligibility rule, and a guard that enforces it per kernel:
+- [x] a written eligibility rule, and a guard that enforces it per kernel
+      (`docs/gpu/eligibility.md`, `tools/audit/gpu_kernels.py` with its self-test, in CI and
+      preflight):
   - integer and byte work with a fixed traversal order is eligible as it stands;
   - floating point is eligible only when the operation order, the rounding and the transcendental
     implementations are pinned to the CPU path's. In practice: no fast-math, no FMA contraction
@@ -1212,31 +1229,54 @@ GATK, which targets concordance and says so.
     a vendor libm is not the one jmath reproduces;
   - anything that cannot meet the above is quarantined and reported as bio-identical, exactly as a
     CPU quarantine is
-- [ ] a determinism gate across **two different GPU architectures**, not one: a reduction that is
+- [~] a determinism gate across **two different GPU architectures**, not one: a reduction that is
       deterministic at one warp size or occupancy can stop being so at another, and a single-device
-      green run does not establish that
+      green run does not establish that. Observed on one so far (Apple M4 Max,
+      `docs/gpu/devices.md`). The only kernel is integer-only and the guard refuses every
+      width-dependent construct, so the argument is structural; the CI `gpu` job adds GitHub's
+      paravirtualised macOS GPU, which is a second driver stack, not a second architecture
 
 ### GPU.2 The targets, in order of tractability
 
-- [ ] **BGZF deflate and inflate**: integer work, block-independent, and already the hottest path
+- [~] **BGZF deflate and inflate**: integer work, block-independent, and already the hottest path
       in every tool that writes a BAM. Byte-identity is decidable here because the output is
-      defined bit for bit
-- [ ] **the read filters and the pileup floor**: integer and byte predicates over many reads, no
-      floating point, and a fixed order. The cheapest place to prove the harness works end to end
-- [ ] **`PairHMM`**: the reason anyone wants a GPU here. Byte-identity against `LoglessPairHMM`
+      defined bit for bit. Lives in htsjdk-rs (`htsjdk-bgzf`, `gkl-deflate`). Inflate is settled as
+      not worth a kernel: with the port already inflating on every core, a free inflater would save
+      CountReads 4.5% at 16 threads (`tools/speed/bgzf_inflate_bound.py`, `docs/gpu/targets.md`).
+      Deflate is open, and not measurable on ARM until level 2's igzip has a pure-Rust build
+- [~] **the read filters and the pileup floor**: integer and byte predicates over many reads, no
+      floating point, and a fixed order. The cheapest place to prove the harness works end to end.
+      Settled as not worth a kernel (`docs/gpu/targets.md`): the host must gather every field a
+      predicate reads before the device sees it, so the host's share alone is the CPU path's cost.
+      The harness was proved end to end by `PairHMM` instead. Becomes a target if BGZF decoding
+      moves to the device
+- [x] **`PairHMM`**: the reason anyone wants a GPU here. Byte-identity against `LoglessPairHMM`
       requires reproducing the pure-Java accumulation order, which is the same constraint the CPU
-      port already carries, so the kernel is a transliteration rather than a redesign
+      port already carries, so the kernel is a transliteration rather than a redesign. Metal,
+      binary64 in software on integers because Apple GPUs have none; bit-identical on every pair
+      tested and on every suite of the workspace, and 21 to 22 times the engine's
+      single CPU thread from 8,000 pairs (`docs/gpu/targets.md`)
+- [x] **NVScoreVariants' convolutions** (GPU.4, #1021): inference is 86% of the tool, so a device
+      can pay. Every convolution of both models on Metal, oneDNN's order in software binary32 on
+      integers; bit-identical to the CPU path, and the printed scores and VCFs to the reference's,
+      at 3.7 to 3.9 times the CPU path on every core (`docs/gpu/targets.md`)
 - [ ] **the assembly graph and genotyping** (G3): larger, and floating point throughout
 - [ ] **CRAM codecs** (Milestone H), whose arithmetic is integral and whose output is defined
 
 ### GPU.3 How it is verified
 
-- [ ] every conformance suite runs twice in CI, CPU and GPU, and the goldens are compared with the
-      same comparator: a GPU run is not a separate claim, it is the same claim on other hardware
-- [ ] the oracle contract records the device, the driver and the toolkit version alongside the
+- [~] every conformance suite runs twice in CI, CPU and GPU, and the goldens are compared with the
+      same comparator: a GPU run is not a separate claim, it is the same claim on other hardware.
+      The `gpu` job runs the workspace on both paths on one macOS runner and requires the same
+      failures on each; locally the device path fails exactly the CPU path's three host-bound
+      tests. Not ticked until that job has run green on GitHub, whose macOS runner may expose no
+      Metal device
+- [x] the oracle contract records the device, the driver and the toolkit version alongside the
       container digest, because a kernel's result is a property of all three
-- [ ] a measured speedup per kernel, published beside its byte-equality, so an accelerated path
-      that is not faster gets deleted rather than kept
+      (`tools/provenance/record.py`, format 2, `device` on a `GATK_RS_GPU` run)
+- [x] a measured speedup per kernel, published beside its byte-equality, so an accelerated path
+      that is not faster gets deleted rather than kept (`docs/gpu/targets.md`,
+      `crates/gatk-engine/examples/gpu_speed.rs`)
 
 **Scope note.** This milestone is optional and runs in parallel: nothing in G1, G2, G3, H or P
 depends on it, and no tool's byte-identity claim may rest on a GPU path alone.
@@ -1320,21 +1360,29 @@ the CPU path that already exists, and no bit-identity claim may weaken to buy a 
 - [x] the golden audit: every committed golden is declared, every declared golden exists, and a
       keyed suite whose golden collapses is refused
 - [x] the provenance guard (decision 0014), running in all three repositories
-- [x] covering arrays generated **and run** per tool. **207 gatk-rs tools** are measured against
+- [x] covering arrays generated **and run** per tool. **208 gatk-rs tools** are measured against
       both the reference and the port on every CI run at t=2 (`tools/coverage/measured.json`,
-      frozen from run 42795659080, printed per tool in `docs/VALIDATION.md`), **200 of them at
-      1.000**, including the Spark SV, PathSeq, gCNV and Python-backed tools (#1403) and the 17
-      Picard tools GATK bundles, which the `gatk` binary now dispatches (#1415). The 7 below
-      1.000 are all Picard VCF tools, and every row they miss has one of four known causes:
-      - 28 rows: a `.idx` whose contig comes back after another (chr1, chr2, chr1). htsjdk's
-        `LinkedHashMap` keeps one entry at the first place holding the last run. Fixed in
-        htsjdk-rs (IPNP-BIPN/htsjdk-rs#280), which gatk-rs pins since `0730c93b`
-      - 11 rows: `FilterVcf --JAVASCRIPT_FILE` runs a Nashorn script, which the port refuses as a
-        port limitation, at the point where Picard builds the filter
-      - 3 rows: `SplitVcfs` with an indexed `.vcf.gz` SNP output beside a text INDEL output, where
-        htsjdk hands one tabix index to both writers
-      - 1 row: `SplitVcfs` splits the whole file before writing, so a tabix out-of-order refusal
-        that Picard raises while streaming arrives after the port's SYMBOLIC refusal
+      frozen from run 43572913214 on main, printed per tool in `docs/VALIDATION.md`), **204 of
+      them at 1.000**, including the Spark SV, PathSeq, gCNV and Python-backed tools (#1403), the
+      17 Picard tools GATK bundles, which the `gatk` binary now dispatches (#1415), and
+      `ConvertCountsToDepthFile`, whose array landed with the move to 4.7.0.0 and was never frozen
+      until now. The 28 rows a `.idx` with a returning contig used to cost (htsjdk's
+      `LinkedHashMap` keeps one entry at the first place, fixed in IPNP-BIPN/htsjdk-rs#280) are
+      gone, which takes five Picard VCF tools to 1.000. The 4 still below:
+      - `FilterVcf`, 7 of 20: 11 rows are `--JAVASCRIPT_FILE`, a Nashorn script the port refuses
+        as a port limitation at the point where Picard builds the filter, and 2 are not yet
+        attributed
+      - `SplitVcfs`, 22 of 26: 3 rows write an indexed `.vcf.gz` SNP output beside a text INDEL
+        output, where htsjdk hands one tabix index to both writers, and 1 is a tabix out-of-order
+        refusal Picard raises while streaming, which arrives after the port's SYMBOLIC refusal
+        because the port splits the whole file before writing
+      - `SelectVariants`, 50 of 51: the array regenerated with the GenomicsDB inputs (#1431) has a
+        row whose `-L` lies past the end of a 3000-base contig beside an `-XL`; GATK refuses the
+        interval as badly formed before it subtracts `-XL`, the port subtracts first and refuses
+        because `-XL` removed all territory
+      - `MarkDuplicatesSpark`, 26 of 27: one row's BAM came out a byte shorter on the port than in
+        run 43552518084, with the tool, its array and the reference's output unchanged between the
+        two runs, so the port's output on that row is not yet reproducible run to run
 - [x] the coverage-guided differential fuzzer, in all three repositories: picard-rs fuzzes its
       tools, htsjdk-rs its byte-level parsers, and gatk-rs (`tools/fuzz/`) seeds from each tool's
       covering array, mutates one argument at a time within the array's own value domains while

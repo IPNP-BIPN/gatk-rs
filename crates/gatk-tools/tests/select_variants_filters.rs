@@ -14,9 +14,9 @@ use gatk_corpus as corpus;
 use gatk_engine::subset_alleles::Genotype;
 use gatk_engine::variant_context_utils::{Allele, Variant};
 use gatk_tools::select_variants::{
-    create_sample_name_inclusion_list, keeps_after_subset, keeps_before_subset, subset_record,
-    AlleleRestriction, FilterArguments, FilterRecord, Record, SampleArguments, SelectError,
-    SubsetArguments, VariantType,
+    create_sample_name_inclusion_list, genotype_jexl_context, keeps_after_subset,
+    keeps_before_subset, subset_record, AlleleRestriction, FilterArguments, FilterRecord, Record,
+    SampleArguments, SelectError, SubsetArguments, VariantType,
 };
 use std::collections::HashMap;
 
@@ -57,9 +57,14 @@ fn unescape(text: &str) -> String {
     out
 }
 
-/// The input file as the two views the port takes of it.
-fn input(text: &str) -> (Vec<String>, Vec<(Record, FilterRecord)>) {
-    let whole = unescape(rows(text, "input").first().expect("an input")[1]);
+/// The input file the dump labelled `label`, as the two views the port takes of it.
+fn input(text: &str, label: &str) -> (Vec<String>, Vec<(Record, FilterRecord)>) {
+    let whole = unescape(
+        rows(text, "input")
+            .into_iter()
+            .find(|row| row[0] == label)
+            .expect("an input")[1],
+    );
     let samples: Vec<String> = whole
         .lines()
         .find(|line| line.starts_with("#CHROM"))
@@ -81,18 +86,23 @@ fn input(text: &str) -> (Vec<String>, Vec<(Record, FilterRecord)>) {
         })
         .collect();
 
+    // The genotype contexts come from the port's own reader and map, because what htsjdk-rs makes
+    // of a genotype `FT=PASS` is part of what the expressions over FT read.
+    let parsed = htsjdk_vcf::reader::read_vcf(&whole).expect("the input reads");
     let records = whole
         .lines()
         .filter(|line| !line.starts_with('#'))
-        .map(|line| {
+        .zip(&parsed.records)
+        .map(|(line, vc)| {
             let field: Vec<&str> = line.split('\t').collect();
             let mut alleles = vec![Allele::new(field[3].as_bytes(), true)];
-            for alternate in field[4].split(',') {
+            for alternate in field[4].split(',').filter(|alternate| *alternate != ".") {
                 alleles.push(Allele::new(alternate.as_bytes(), false));
             }
-            let keys: Vec<&str> = field[8].split(':').collect();
+            // A sites-only file has no FORMAT column.
+            let keys: Vec<&str> = field.get(8).map_or(Vec::new(), |f| f.split(':').collect());
             let mut genotypes = Vec::new();
-            let mut genotype_fields = Vec::new();
+            let genotype_fields = vc.genotypes.iter().map(genotype_jexl_context).collect();
             for index in 0..samples.len() {
                 let values: Vec<&str> = field[9 + index].split(':').collect();
                 let by_key: HashMap<String, String> = keys
@@ -119,14 +129,6 @@ fn input(text: &str) -> (Vec<String>, Vec<(Record, FilterRecord)>) {
                         .map(|ft| vec![("FT".to_string(), ft.clone())])
                         .unwrap_or_default(),
                 });
-                genotype_fields.push(
-                    by_key
-                        .iter()
-                        .map(|(key, value)| {
-                            (key.clone(), gatk_engine::jexl::Value::Str(value.clone()))
-                        })
-                        .collect(),
-                );
             }
             let mut attributes = Vec::new();
             let mut info = HashMap::new();
@@ -249,6 +251,11 @@ fn setup(run: &str) -> (SampleArguments, FilterArguments) {
             exclude_non_variants: true,
             ..base()
         }),
+        "sites-no-filter" => filters(base()),
+        "sites-exclude-non-variants" => filters(FilterArguments {
+            exclude_non_variants: true,
+            ..base()
+        }),
         "exclude-non-variants-subset" => (
             SampleArguments {
                 sample_names: names(&["s0", "s1"]),
@@ -270,6 +277,22 @@ fn setup(run: &str) -> (SampleArguments, FilterArguments) {
         }),
         "select-genotype" => filters(FilterArguments {
             select_genotype_expressions: names(&["GQ > 55"]),
+            ..base()
+        }),
+        "select-genotype-ft-pass" => filters(FilterArguments {
+            select_genotype_expressions: names(&["FT == \"PASS\""]),
+            ..base()
+        }),
+        "select-genotype-ft-filter" => filters(FilterArguments {
+            select_genotype_expressions: names(&["FT == \"LowQD\""]),
+            ..base()
+        }),
+        "select-genotype-is-pass-ft" => filters(FilterArguments {
+            select_genotype_expressions: names(&["isPassFT == \"1\""]),
+            ..base()
+        }),
+        "select-genotype-is-not-pass-ft" => filters(FilterArguments {
+            select_genotype_expressions: names(&["isPassFT == \"0\""]),
             ..base()
         }),
         "select-two" => filters(FilterArguments {
@@ -296,7 +319,7 @@ fn setup(run: &str) -> (SampleArguments, FilterArguments) {
 }
 
 /// The runs whose whole answer is the list of records written.
-const RUNS: [&str; 21] = [
+const RUNS: [&str; 25] = [
     "no-filter",
     "type-snp",
     "type-indel",
@@ -318,6 +341,10 @@ const RUNS: [&str; 21] = [
     "select-one",
     "select-inverted",
     "select-genotype",
+    "select-genotype-ft-pass",
+    "select-genotype-ft-filter",
+    "select-genotype-is-pass-ft",
+    "select-genotype-is-not-pass-ft",
 ];
 
 fn kept(text: &str, run: &str) -> Vec<String> {
@@ -368,7 +395,7 @@ fn survivors(
 #[test]
 fn every_run_writes_the_records_the_reference_wrote() {
     let text = golden();
-    let (samples, records) = input(&text);
+    let (samples, records) = input(&text, "records");
     for run in RUNS {
         let ours = survivors(&records, &samples, run)
             .unwrap_or_else(|error| panic!("{run}: {}", error.message()));
@@ -380,7 +407,7 @@ fn every_run_writes_the_records_the_reference_wrote() {
 #[test]
 fn an_expression_over_a_per_allele_annotation_is_a_refusal() {
     let text = golden();
-    let (samples, records) = input(&text);
+    let (samples, records) = input(&text, "records");
 
     for run in [
         "select-two",
@@ -412,7 +439,7 @@ fn an_expression_over_a_per_allele_annotation_is_a_refusal() {
 #[test]
 fn the_filtered_fraction_is_an_integer_division_and_the_nocall_fraction_is_not() {
     let text = golden();
-    let (samples, records) = input(&text);
+    let (samples, records) = input(&text, "records");
 
     // Record 800 has two filtered genotypes out of four, which is a fraction of 0.5.
     let by_count = survivors(&records, &samples, "max-filtered-genotypes").expect("kept");
@@ -428,7 +455,9 @@ fn the_filtered_fraction_is_an_integer_division_and_the_nocall_fraction_is_not()
         by_fraction.contains(&"800".to_string()),
         "the fraction gate does nothing"
     );
-    assert_eq!(by_fraction, kept(&text, "no-filter"));
+    // Only a record whose genotypes are ALL filtered reaches 4 / 4 = 1, which is above 0.1.
+    assert_eq!(by_fraction, kept(&text, "max-fraction-filtered-genotypes"));
+    assert!(!by_fraction.contains(&"950".to_string()));
 
     // The no-call fraction, written one line below in the reference, casts: 1/4 is above 0.1.
     let no_calls = survivors(&records, &samples, "max-nocall-fraction").expect("kept");
@@ -441,7 +470,7 @@ fn the_filtered_fraction_is_an_integer_division_and_the_nocall_fraction_is_not()
 #[test]
 fn invert_select_inverts_each_expression_and_not_their_disjunction() {
     let text = golden();
-    let (samples, records) = input(&text);
+    let (samples, records) = input(&text, "records");
     let plain = survivors(&records, &samples, "select-one").expect("kept");
     let inverted = survivors(&records, &samples, "select-inverted").expect("kept");
     let all = kept(&text, "no-filter");
@@ -459,16 +488,37 @@ fn invert_select_inverts_each_expression_and_not_their_disjunction() {
 #[test]
 fn exclude_non_variants_runs_after_the_subset() {
     let text = golden();
-    let (samples, records) = input(&text);
+    let (samples, records) = input(&text, "records");
 
     let whole = survivors(&records, &samples, "exclude-non-variants").expect("kept");
     // 700 is `A -> *`, which is not a variant even though a genotype calls it.
     assert!(!whole.contains(&"700".to_string()));
     // 600 is carried by s2 and s3, which this run keeps.
     assert!(whole.contains(&"600".to_string()));
+    // 950's only carrier is filtered, and `getCalledChrCount` does not count a filtered genotype.
+    assert!(!whole.contains(&"950".to_string()));
 
     let subset = survivors(&records, &samples, "exclude-non-variants-subset").expect("kept");
     // The same record, with only s0 and s1 selected, is no longer polymorphic.
     assert!(!subset.contains(&"600".to_string()));
     assert_eq!(subset, kept(&text, "exclude-non-variants-subset"));
+}
+
+/// A record with no genotypes is a variant when it has an alternate: `isMonomorphicInSamples`
+/// counts chromosomes only when `hasGenotypes()`.
+#[test]
+fn a_sites_only_variant_survives_exclude_non_variants() {
+    let text = golden();
+    let (samples, records) = input(&text, "sites");
+    assert!(samples.is_empty());
+    for run in ["sites-no-filter", "sites-exclude-non-variants"] {
+        let ours = survivors(&records, &samples, run)
+            .unwrap_or_else(|error| panic!("{run}: {}", error.message()));
+        assert_eq!(ours, kept(&text, run), "kept/{run}");
+    }
+    // 100 is a SNP; 200 is a lone spanning deletion and 300 has no alternate.
+    assert_eq!(
+        kept(&text, "sites-exclude-non-variants"),
+        vec!["100".to_string()]
+    );
 }

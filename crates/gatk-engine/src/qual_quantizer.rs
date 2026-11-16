@@ -415,8 +415,14 @@ pub fn calculate_quantization_levels(quantized_quals: &[u8]) -> i32 {
 }
 
 /// `QualityUtils.qualToProbLog10`, kept beside the rest of the quantizer's arithmetic.
+///
+/// Read from a table, as the reference reads its `qualToProbLog10Cache`: every entry is the same
+/// expression evaluated once, so the bits are the expression's, at a load per call instead of a
+/// `pow` and a `log10`.
 pub fn qual_to_prob_log10(qual: u8) -> f64 {
-    log10(1.0 - pow10(qual as f64 / -10.0))
+    static TABLE: std::sync::LazyLock<[f64; 256]> =
+        std::sync::LazyLock::new(|| std::array::from_fn(|q| log10(1.0 - pow10(q as f64 / -10.0))));
+    TABLE[usize::from(qual)]
 }
 
 #[cfg(test)]

@@ -73,7 +73,7 @@ public class SelectVariantsFiltersDump {
 
         System.out.println("# SelectVariantsFiltersDump: which records survive, from the reference");
 
-        final Path input = writeVcf(dir, "records",
+        final Path input = writeVcf(dir, "records", HEADER,
                 // 100: a plain SNP, unfiltered, with an rsID.
                 "chr1\t100\trs100\tA\tC\t50\t.\tDP=50;AC=2;AF=0.250;AN=8;QD=20.0"
                         + "\tGT:GQ\t0/1:60\t0/1:60\t0/0:60\t0/0:60",
@@ -101,7 +101,10 @@ public class SelectVariantsFiltersDump {
                         + "\tGT:GQ:FT\t0/1:60:PASS\t0/0:60:LowQD\t0/0:60:LowQD\t./.:60:PASS",
                 // 900: three no-calls out of four.
                 "chr1\t900\t.\tA\tC\t50\t.\tDP=50;AC=1;AF=0.125;AN=8;QD=20.0"
-                        + "\tGT:GQ\t0/1:60\t./.:60\t./.:60\t./.:60");
+                        + "\tGT:GQ\t0/1:60\t./.:60\t./.:60\t./.:60",
+                // 950: every genotype filtered, so no genotype expression over FT passes it.
+                "chr1\t950\t.\tA\tC\t50\t.\tDP=50;AC=1;AF=0.125;AN=8;QD=20.0"
+                        + "\tGT:GQ:FT\t0/1:60:LowQD\t0/0:60:LowQD\t0/0:60:LowQD\t0/0:60:LowQD");
 
         // Nothing at all, for the baseline.
         run(dir, "no-filter", input);
@@ -147,17 +150,37 @@ public class SelectVariantsFiltersDump {
         run(dir, "select-two-inverted", input, "-select", "QD > 10.0", "-select", "AC > 1",
                 "--invert-select", "true");
         run(dir, "select-genotype", input, "-select-genotype", "GQ > 55");
+        // GenotypeJEXLContext's FT is the filters or PASS, and isPassFT is "0" or "1": a genotype
+        // without FT passes, and so does FT=PASS, which htsjdk reads as no filter at all.
+        run(dir, "select-genotype-ft-pass", input, "-select-genotype", "FT == \"PASS\"");
+        run(dir, "select-genotype-ft-filter", input, "-select-genotype", "FT == \"LowQD\"");
+        run(dir, "select-genotype-is-pass-ft", input, "-select-genotype", "isPassFT == \"1\"");
+        run(dir, "select-genotype-is-not-pass-ft", input, "-select-genotype",
+                "isPassFT == \"0\"");
         // The same expression over AC, before and after the subset recomputes it.
         run(dir, "select-ac-after-subset", input, "-sn", "s0", "-select", "AC > 1");
         run(dir, "select-ac-before-subset", input, "-sn", "s0", "-select", "AC > 1",
                 "--apply-jexl-filters-first", "true");
         // And an expression the engine cannot compile.
         run(dir, "select-unparseable", input, "-select", "QD >");
+
+        // A sites-only file: a record with no genotypes is still a variant, because
+        // isMonomorphicInSamples only counts chromosomes when hasGenotypes(). Excluding every
+        // sample cannot get here: that is a UserException before any record is read.
+        final Path sites = writeVcf(dir, "sites", HEADER.replace("\tFORMAT\ts0\ts1\ts2\ts3", ""),
+                // 100: a SNP, which --exclude-non-variants keeps.
+                "chr1\t100\t.\tA\tC\t50\t.\tDP=50",
+                // 200: a spanning deletion alone, which it drops.
+                "chr1\t200\t.\tA\t*\t50\t.\tDP=50",
+                // 300: no alternate at all, NO_VARIATION, which it drops.
+                "chr1\t300\t.\tA\t.\t50\t.\tDP=50");
+        run(dir, "sites-no-filter", sites);
+        run(dir, "sites-exclude-non-variants", sites, "--exclude-non-variants", "true");
     }
 
-    static Path writeVcf(final Path dir, final String label, final String... records)
-            throws Exception {
-        final StringBuilder text = new StringBuilder(HEADER);
+    static Path writeVcf(final Path dir, final String label, final String header,
+                         final String... records) throws Exception {
+        final StringBuilder text = new StringBuilder(header);
         for (final String record : records) {
             text.append(record).append("\n");
         }

@@ -10,7 +10,7 @@ cd "$1"
 name=$2
 sample=${3:-0}
 mkdir -p "$name"
-export PYTENSOR_FLAGS="base_compiledir=/tmp/pytensor-$name"
+export PYTENSOR_FLAGS="base_compiledir=/tmp/pytensor-$name${PYTENSOR_EXTRA:+,$PYTENSOR_EXTRA}"
 gatk --java-options "-Xmx2g -XX:ActiveProcessorCount=${JAVA_CORES:-2}" PostprocessGermlineCNVCalls \
   --model-shard-path gcnv/g-model --calls-shard-path gcnv/g-calls \
   --contig-ploidy-calls ploidy/p-calls --sample-index "$sample" \

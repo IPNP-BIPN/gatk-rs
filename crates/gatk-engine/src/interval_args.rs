@@ -90,7 +90,7 @@ pub enum IntervalArgumentError {
     /// `getResolvedIntervals` does not check the length -- it only asks whether the positions are
     /// a valid interval at all -- so `chr2:20-40` on a 24-base contig resolves happily and dies in
     /// `GenomeLocParser.validateGenomeLoc`, whose `mustBeOnReference` is true. A clip would be a
-    /// different tool: this is a refusal.
+    /// different tool: this is a refusal. Carries `vglHelper`'s detail, after its prefix.
     MalformedGenomeLoc(String),
     /// The argument ends in `.list` or `.intervals` and there is no such file.
     IntervalFileMissing(String),
@@ -374,7 +374,7 @@ pub fn parse_interval_arguments(
 ///
 /// The start is already at least one, because `SimpleInterval::is_valid` refused anything else
 /// before this is reached.
-fn validate_on_reference(
+pub(crate) fn validate_on_reference(
     interval: &SimpleInterval,
     header: &SamHeader,
 ) -> Result<(), IntervalArgumentError> {
@@ -383,8 +383,8 @@ fn validate_on_reference(
         // not a length the stop is checked against.
         Some(length) if length != 0 && interval.end > length => {
             Err(IntervalArgumentError::MalformedGenomeLoc(format!(
-                "{}:{}-{}",
-                interval.contig, interval.start, interval.end
+                "The genome loc coordinates {}-{} exceed the contig size ({length})",
+                interval.start, interval.end
             )))
         }
         _ => Ok(()),
