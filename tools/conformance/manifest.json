@@ -6834,7 +6834,7 @@
     },
     {
       "id": "usage-text",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "what `gatk <Tool> --help` prints, for every tool `Main` can name",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6848,7 +6848,7 @@
         {
           "dump": "UsageTextDump",
           "golden": "crates/gatk-tools/tests/data/usage_text.txt.gz",
-          "why": "Local smoke run in the 4.7.0.0 release image, NOT a golden: replaced by the candidate artefact of the CI run that adds the whole tool list. One `usage`, `lines` and `same` row per tool, then its `allowed`, `field` and `deprecated` rows."
+          "why": "Frozen from CI run 43626754546, byte-identical to run 43573435478. One `usage`, `lines` and `same` row per tool, then its `allowed`, `field` and `deprecated` rows."
         }
       ]
     },
