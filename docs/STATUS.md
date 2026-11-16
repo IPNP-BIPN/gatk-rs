@@ -272,7 +272,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `LeftAlignIndels` | record-transform | oracle-backed | left-align-indels-tool | 1 | t=2, 19/19 rows (100%) | 0.003 / 0.044 |
 | `LocalAssembler` | locus-walker | oracle-backed | local-assembler | 1 | t=2, 21/21 rows (100%) | 0.004 / 0.105 |
 | `MTLowHeteroplasmyFilterTool` | unclassified | oracle-backed | mt-low-heteroplasmy | 1 | t=2, 15/15 rows (100%) | 0.002 / 0.055 |
-| `MarkDuplicatesSpark` | record-transform | oracle-backed | spark-walkers | 1 | t=2, 27/27 rows (100%) | not measured |
+| `MarkDuplicatesSpark` | record-transform | oracle-backed | spark-walkers | 1 | t=2, 26/27 rows (96%) | not measured |
 | `MeanQualityByCycleSpark` | reporting-walker | oracle-backed | spark-walkers | 1 | t=2, 21/21 rows (100%) | not measured |
 | `MergeAnnotatedRegions` | unclassified | oracle-backed | merge-annotated-regions | 1 | t=2, 18/18 rows (100%) | 0.002 / 0.058 |
 | `MergeAnnotatedRegionsByAnnotation` | unclassified | oracle-backed | merge-annotated-regions-by-annotation | 1 | t=2, 22/22 rows (100%) | 0.002 / 0.057 |
