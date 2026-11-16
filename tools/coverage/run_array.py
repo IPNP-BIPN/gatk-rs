@@ -72,6 +72,16 @@ ADD_OPENS = (
 JAVA_PROPS = json.loads((REPO / "tools" / "conformance" / "manifest.json").read_text())["default_java_props"]
 JAVA_OPENS = " ".join([*(f"--add-opens={module}=ALL-UNNAMED" for module in ADD_OPENS), *JAVA_PROPS])
 
+# The Broad's own image of the release, which has the `python` the pinned one deliberately lacks.
+# A tool under `$past_the_interpreter` runs its REFERENCE there, so the array measures its
+# arguments past the package import rather than up to it, and its PORT behind a stand-in `python`
+# that answers every import, since the port's only use of the interpreter is that check. numpy
+# takes other loops on an AVX-512 CPU, so those features are turned off as `vets_dump.sh` does.
+# `run_fuzz.py` turns this off: its branch probes run in the pinned image, without python.
+PAST_THE_INTERPRETER = True
+BROAD = json.loads((REPO / "tools" / "conformance" / "manifest.json").read_text())["oracle_with_r"]
+NUMPY_WITHOUT_AVX512 = "AVX512F AVX512CD AVX512_SKX AVX512_CLX AVX512_CNL AVX512_ICL AVX512_SPR"
+
 # Values that mean "the argument is absent", so a held-at value carrying one must not be passed.
 ABSENT = {"None", "null", "[]", ""}
 
@@ -215,12 +225,18 @@ def run_oracle(tool, row_args, workdir, positional=(), tagged=(), lists=()):
     # `gatk <Tool> <args>`: the tool name is the first token, which is the shape the bit-identity
     # claim is defined against, and the wrapper is what fixes the parser to Barclay.
     command = f'rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && {copies}java {JAVA_OPENS} -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {tool} {cli}; rc=$?; chmod -R a+rwX /work/out; exit $rc'
+    image = [IMAGE, command]
+    if past_the_interpreter(tool):
+        image = [
+            "-e", f"ORACLE_CP={BROAD['classpath']}", "-e", f"NPY_DISABLE_CPU_FEATURES={NUMPY_WITHOUT_AVX512}",
+            "--entrypoint", "sh", BROAD["image"], "-c", command,
+        ]
     result = subprocess.run(
         [
             "docker", "run", "--rm", "--platform", PLATFORM,
             "-v", f"{fixtures_of(workdir)}:/work/fixtures:ro",
             "-v", f"{out_dir}:/work/out",
-            "-w", "/work", IMAGE, command,
+            "-w", "/work", *image,
         ],
         capture_output=True,
         text=True,
@@ -272,6 +288,10 @@ def read_output(out_dir, row_args=()):
                 digest = hashlib.sha256(masked).hexdigest()
                 parts.append(f"{name}: TRIBBLE INDEX sha256={digest} bytes={len(raw)} (mtime masked)")
                 continue
+        if name.endswith(".scorer.pkl"):
+            digest = hashlib.sha256(scorer_masked(raw)).hexdigest()
+            parts.append(f"{name}: SCORER sha256={digest} bytes={len(raw)} (frames and the script's digits masked)")
+            continue
         if name.endswith(".img"):
             masked = bwa_image_masked(raw)
             if masked is not None:
@@ -491,6 +511,32 @@ def zip_members(raw):
     return "ZIP " + " ".join(rendered)
 
 
+def scorer_masked(raw):
+    """A dill pickle of the isolation-forest scorer, without its frames and its script's digits.
+
+    The lambda's code object names the temporary file the reference ran the script from, whose
+    digits are random in every run, and a name one digit shorter moves every frame after it. The
+    directory stays, since `--tmp-dir` decides it; the name's length byte goes with the digits.
+    """
+    out, at = bytearray(raw[:2]), 2
+    while at < len(raw) and raw[at] == 0x95:  # FRAME, then an eight-byte length
+        length = int.from_bytes(raw[at + 1 : at + 9], "little")
+        out += raw[at + 9 : at + 9 + length]
+        at += 9 + length
+    out += raw[at:]
+    return re.sub(
+        rb"\x8c.(/[ -~]*?/isolation-forest\.)\d+(\.py)", lambda m: b"\x8c?" + m[1] + b"N" + m[2], bytes(out), count=1, flags=re.S
+    )
+
+
+def past_the_interpreter(tool):
+    """Whether a tool's reference runs in the Broad's image, per tool under `$past_the_interpreter`."""
+    path = REPO / "tools" / "coverage" / "fixtures.json"
+    return PAST_THE_INTERPRETER and path.exists() and bool(
+        json.loads(path.read_text()).get("per_tool", {}).get(tool, {}).get("$past_the_interpreter", False)
+    )
+
+
 def bwa_image_masked(raw):
     """A BWA-MEM index image with its addresses and padding zeroed, or None if it is not one.
 
@@ -697,12 +743,21 @@ def run_port(binary, tool, row_args, workdir, positional=(), tagged=(), lists=()
     copies, row_args = writable_copies(tool, row_args)
     cli = " ".join(as_cli(row_args, positional, tagged, lists))
     command = f"rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && {copies}/work/port-binary/{binary.name} {tool} {cli}"
+    stand_in = []
+    if past_the_interpreter(tool):
+        python = workdir / "stand-in" / "python"
+        python.parent.mkdir(exist_ok=True)
+        python.write_text("#!/bin/sh\nexit 0\n")
+        python.chmod(0o755)
+        stand_in = ["-v", f"{python.parent}:/work/stand-in:ro"]
+        command = f"export PATH=/work/stand-in:$PATH && {command}"
     result = subprocess.run(
         [
             "docker", "run", "--rm", "--platform", PLATFORM,
             "-v", f"{fixtures_of(workdir)}:/work/fixtures:ro",
             "-v", f"{out_dir}:/work/out",
             "-v", f"{binary.parent}:/work/port-binary:ro",
+            *stand_in,
             "-w", "/work", IMAGE, command,
         ],
         capture_output=True,

@@ -87,7 +87,7 @@ fn the_port_matches_a_measured_run() {
         let reference = std::fs::read(format!("{run}/train.{tag}.calibrationScores.hdf5")).unwrap();
         assert!(file == reference, "{tag}: calibration scores differ");
 
-        let ours = scorer_pickle::write(&forest);
+        let ours = scorer_pickle::write(&forest, scorer_pickle::SCRIPT_NAME);
         let theirs = masked(reference_pickle);
         let first = ours.iter().zip(&theirs).position(|(a, b)| a != b);
         assert!(
