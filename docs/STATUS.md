@@ -320,7 +320,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `SVConcordance` | sv-caller | oracle-backed | sv-concordance | 1 | t=2, 40/40 rows (100%) | 0.003 / 0.064 |
 | `SVStratify` | sv-caller | oracle-backed | sv-stratify | 1 | t=2, 16/16 rows (100%) | 0.002 / 0.059 |
 | `ScoreVariantAnnotations` | variant-transform | oracle-backed | interpreter-tools, vets-isolation-forest | 2 | t=2, 27/27 rows (100%) | not measured |
-| `SelectVariants` | variant-transform | oracle-backed | genomicsdb-query, select-variants-concordance, select-variants-filters, select-variants-header, select-variants-output, select-variants-samples, select-variants-subset, tool-argument-declarations, tool-argument-enums | 9 | t=2, 50/51 rows (98%) | 0.002 / 0.055 |
+| `SelectVariants` | variant-transform | oracle-backed | genomicsdb-query, select-variants-concordance, select-variants-filters, select-variants-header, select-variants-output, select-variants-samples, select-variants-subset, tool-argument-declarations, tool-argument-enums | 9 | t=2, 51/51 rows (100%) | 0.002 / 0.055 |
 | `ShiftFasta` | reference-utility | oracle-backed | shift-fasta | 1 | t=2, 21/21 rows (100%) | 0.003 / 0.086 |
 | `SiteDepthtoBAF` | sv-caller | oracle-backed | site-depth-to-baf | 1 | t=2, 18/18 rows (100%) | 0.002 / 0.055 |
 | `SortSamSpark` | record-transform | oracle-backed | spark-walkers | 1 | t=2, 23/23 rows (100%) | not measured |
