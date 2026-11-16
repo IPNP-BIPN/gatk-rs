@@ -48,6 +48,47 @@ to the CPU if a profile ever shows small regions dominating.
 
 To run it: build with `--features gatk-engine/gpu` on macOS and set `GATK_RS_GPU=1`.
 
+## 1b. NVScoreVariants' convolutions: shipped (GPU.4, #1021)
+
+**Whether a device could pay at all.** #1021 asked first how much of the tool is inference. With
+`crates/gatk-tools/examples/nvscore_profile.rs` on the `make_fixture.py` corpus (71 variants), the
+encoding, FASTA, VCF and BAM reading included, takes 0.001 s in 1D and 0.03 s in 2D; inference is
+86% of the whole tool in both modes, and the rest is the tool's own start-up around it. The bar was
+10%.
+
+**What runs on the device.** Every convolution of both models, one output element per thread, in
+`conv2d_fused` (`crates/gatk-engine/src/gpu/kernels.metal`). The batch norm, the pooling, the dense
+layers and the softmax stay on the host. Each accumulator is `kernels::conv2d_on_host`'s chain of
+`fused`, oneDNN's order, in the same blocks; `fused` is transliterated operation for operation onto
+the kernel's software binary64, and floats travel as their bits, so the kernel is of class
+`integer` like the PairHMM. #1021 expected that "a GPU path cannot be the byte-identical path";
+that holds for a GPU's own float units, not for this.
+
+**The tests that prove it.** `crates/gatk-tools/tests/nv_score_variants_gpu.rs`: 408,192 `fused`
+and as many binary32 additions against the host bit for bit, specials (zeros, subnormals,
+infinities, both kinds of NaN) and products that cancel their addend among them; then five
+convolutions at the two models' shapes, flat first layer, blocks of 8, a partial block and
+`brgconv`'s bias-last, against `conv2d_on_host`. Rounding ties to odd, dropping the round-to-odd
+step and summing in one block instead of 8 each fail it. Then, locally with the reference's dumps
+made under Docker as the `nvscorevariants` job makes them, the device path against PyTorch itself:
+`nv_score_variants_layers` finds every convolution of both models bit-identical to the reference's
+layer dump (0 of 60,489,728 values at the 2D model's `conv.0`, 0 of 2,126,592 at the 1D model's,
+and 0 at every other layer), and `nv_score_variants_output` finds 31 cases, 337 score rows, 0
+differing parts. Those two need the weights and run in CI only on the CPU path, in the
+`nvscorevariants` job; the `gpu` job runs the weight-free test above.
+
+**Speed.** The same Apple M4 Max as above, best of two runs, each mode on the CPU path then the
+device path. The host was loaded (load average 18 to 33 on 16 cores), so the CPU columns are
+pessimistic and the ratios a floor.
+
+| Mode | variants | tool, CPU, 16 threads | tool, device | inference, CPU, 1 thread | inference, device | vs 16 threads | vs 1 thread | same bytes |
+|---|---:|---:|---:|---:|---:|---:|---:|:---:|
+| 1D | 71 | 3.07 s | 0.84 s | 27.2 s | 0.97 s | 3.7x | 28x | yes |
+| 2D | 71 | 38.8 s | 9.9 s | 385 s | 9.7 s | 3.9x | 40x | yes |
+
+"Same bytes" is the output VCF and the scores file of each mode, compared with `cmp` between the two
+paths. The kernel stays: it beats the CPU path spread over every core in both modes.
+
 ## 2. The read filters and the pileup floor: not built, because they cannot pay
 
 A filter is a handful of loads and compares on fields of a decoded `BamRecord`. To run it on the

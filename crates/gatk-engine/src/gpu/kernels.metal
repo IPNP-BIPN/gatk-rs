@@ -224,3 +224,147 @@ kernel void pair_hmm(device const uchar *read_bases [[buffer(0)]],
     for (uint j = 1; j < width; j++) total = f64_add(total, f64_add(m[j], ins[j]));
     out[id] = total;
 }
+
+// ---- binary32, for NVScoreVariants' convolutions (crates/gatk-tools/src/nv_score_variants) ----
+//
+// A float is carried as the `uint` holding its bits, and every operation goes through the binary64
+// arithmetic above, so this half is integer work too.
+
+constant ulong F32_MIN_NORMAL_AS_F64 = 0x3810000000000000ul; // 2^-126
+
+// `f64::from(f32)`: exact. A signalling NaN comes back quiet, as `fcvt` returns it.
+static ulong f32_to_f64(uint a) {
+    ulong sign = ulong(a & 0x80000000u) << 32;
+    uint field = (a >> 23) & 0xFFu;
+    ulong frac = ulong(a & 0x7FFFFFu);
+    if (field == 0xFFu) return sign | EXP_MASK | (frac != 0 ? QUIET_BIT : 0ul) | (frac << 29);
+    if (field == 0u) {
+        if (frac == 0) return sign;
+        // A subnormal float is a normal double: bring its leading bit up to the hidden bit.
+        uint shift = clz64(frac) - 40;
+        frac = (frac << shift) & 0x7FFFFFul;
+        return sign | (ulong(897 - shift) << 52) | (frac << 29);
+    }
+    return sign | (ulong(field + 896) << 52) | (frac << 29);
+}
+
+// `f64 as f32`: rounded to nearest-even, subnormals kept, overflow to infinity, NaN quietened.
+static uint f64_to_f32(ulong a) {
+    uint sign = uint(a >> 32) & 0x80000000u;
+    int field = int((a & EXP_MASK) >> 52);
+    ulong frac = a & FRAC_MASK;
+    if (field == 0x7FF) return frac != 0 ? sign | 0x7FC00000u | uint(frac >> 29) : sign | 0x7F800000u;
+    // A subnormal double is below half the smallest subnormal float.
+    if (field == 0) return sign;
+    int exponent = field - 896;
+    ulong sig = frac | HIDDEN_BIT;
+    uint shift = 29;
+    if (exponent <= 0) {
+        if (30 - exponent >= 64) return sign;
+        shift = uint(30 - exponent);
+        exponent = 0;
+    }
+    ulong kept = sig >> shift;
+    ulong rest = sig & ((1ul << shift) - 1ul);
+    ulong midpoint = 1ul << (shift - 1);
+    if (rest > midpoint || (rest == midpoint && (kept & 1ul) != 0)) kept += 1;
+    if (exponent == 0) return sign | uint(kept);
+    // As in round_and_pack: the hidden bit carries the exponent up by one, and so does a carry.
+    ulong bits = (ulong(exponent - 1) << 23) + kept;
+    return bits >= 0x7F800000ul ? sign | 0x7F800000u : sign | uint(bits);
+}
+
+// a - b as the CPU's `fsub`: a NaN `b` propagates with its own sign.
+static inline ulong f64_sub(ulong a, ulong b) { return f64_add(a, is_nan(b) ? b : b ^ SIGN); }
+
+static inline bool f64_is_zero(ulong a) { return (a & ~SIGN) == 0; }
+static inline bool f64_positive(ulong a) { return !is_nan(a) && (a & SIGN) == 0 && !f64_is_zero(a); }
+
+// f32 + f32. The double holds the exact sum to 53 bits, and 53 >= 2 * 24 + 2 makes rounding it
+// again to a float the same as rounding the exact sum once.
+static uint f32_add(uint a, uint b) {
+    // NaNs first, in binary32: widening would quieten a signalling one before it could take
+    // precedence, as AArch64's order gives it.
+    bool a_nan = (a & 0x7FFFFFFFu) > 0x7F800000u, b_nan = (b & 0x7FFFFFFFu) > 0x7F800000u;
+    if (a_nan && (a & 0x00400000u) == 0) return a | 0x00400000u;
+    if (b_nan && (b & 0x00400000u) == 0) return b | 0x00400000u;
+    if (a_nan) return a;
+    if (b_nan) return b;
+    return f64_to_f32(f64_add(f32_to_f64(a), f32_to_f64(b)));
+}
+
+// `kernels::fused`, operation for operation: `vfmadd231ps` on one lane, a * b + c rounded once.
+static uint f32_fused(uint a, uint b, uint c) {
+    ulong product = f64_mul(f32_to_f64(a), f32_to_f64(b));
+    ulong addend = f32_to_f64(c);
+    ulong sum = f64_add(product, addend);
+    if ((sum & 0x1FFFFFFFul) != 0x10000000ul && !is_nan(sum) && (sum & ~SIGN) >= F32_MIN_NORMAL_AS_F64)
+        return f64_to_f32(sum);
+    // `rounded_once`: round to odd in the double.
+    ulong from_product = f64_sub(sum, addend);
+    ulong error = f64_add(f64_sub(product, from_product), f64_sub(addend, f64_sub(sum, from_product)));
+    if (f64_is_zero(error) || (sum & 1ul) != 0) return f64_to_f32(sum);
+    bool outward = f64_positive(error) == f64_positive(sum);
+    return f64_to_f32(outward ? sum + 1ul : sum - 1ul);
+}
+
+// One binary32 operation per thread, for the test that holds the arithmetic above to the host's:
+// 0 is `fused(a, b, c)`, 1 is a + b.
+kernel void f32_ops(device const uint *a [[buffer(0)]],
+                    device const uint *b [[buffer(1)]],
+                    device const uint *c [[buffer(2)]],
+                    device uint *out [[buffer(3)]],
+                    constant uint &operation [[buffer(4)]],
+                    constant uint &count [[buffer(5)]],
+                    uint id [[thread_position_in_grid]]) {
+    if (id >= count) return;
+    out[id] = operation == 0 ? f32_fused(a[id], b[id], c[id]) : f32_add(a[id], b[id]);
+}
+
+// The words of `ConvShape`, in order.
+struct ConvShape {
+    uint batch, inputs, height, width;
+    uint outputs, kernel_height, kernel_width;
+    uint block, bias_last, padded, first;
+};
+
+// `kernels::conv2d`, one output element per thread: every accumulator is one thread's own chain of
+// `fused`, in the CPU path's order, and no sum is split between threads.
+kernel void conv2d_fused(device const uint *src [[buffer(0)]],
+                         device const uint *weight [[buffer(1)]],
+                         device const uint *bias [[buffer(2)]],
+                         device uint *dst [[buffer(3)]],
+                         device const ConvShape *shape [[buffer(4)]],
+                         constant uint &count [[buffer(5)]],
+                         uint thread_id [[thread_position_in_grid]]) {
+    if (thread_id >= count) return;
+    ConvShape s = *shape;
+    uint id = s.first + thread_id;
+    uint out_height = s.height + 1 - s.kernel_height;
+    uint out_width = s.width + 1 - s.kernel_width;
+    uint plane = out_height * out_width;
+    uint batch_channel = id / plane;
+    uint y = (id % plane) / out_width;
+    uint x = (id % plane) % out_width;
+    uint channel = batch_channel % s.outputs;
+    ulong span = ulong(s.height) * s.width;
+    uint span_w = s.kernel_height * s.kernel_width;
+    device const uint *image = src + ulong(batch_channel / s.outputs) * s.inputs * span;
+    device const uint *w = weight + ulong(channel) * s.inputs * span_w;
+    uint sum = s.bias_last != 0 ? 0u : bias[channel];
+    for (uint first = 0; first < s.inputs; first += s.block) {
+        uint last = min(first + s.block, s.inputs);
+        for (uint ky = 0; ky < s.kernel_height; ky++) {
+            for (uint kx = 0; kx < s.kernel_width; kx++) {
+                uint at_k = ky * s.kernel_width + kx;
+                ulong at_i = ulong(y + ky) * s.width + x + kx;
+                for (uint c = first; c < last; c++) {
+                    sum = f32_fused(image[c * span + at_i], w[c * span_w + at_k], sum);
+                }
+            }
+        }
+    }
+    if (s.padded != 0) sum = f32_add(sum, 0u);
+    if (s.bias_last != 0) sum = f32_add(sum, bias[channel]);
+    dst[thread_id] = sum;
+}

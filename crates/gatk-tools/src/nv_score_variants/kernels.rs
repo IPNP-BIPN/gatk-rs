@@ -84,6 +84,57 @@ pub struct ConvWeights<'a> {
     pub bias_last: bool,
 }
 
+/// [`conv2d_on_host`], or the same sums on the device when `GATK_RS_GPU` asks for it.
+pub fn conv2d(src: &[f32], input: Shape, conv: &ConvWeights, threads: usize) -> (Vec<f32>, Shape) {
+    match conv2d_on_device(src, input, conv) {
+        Some(dst) => (dst, output_shape(input, conv)),
+        None => conv2d_on_host(src, input, conv, threads),
+    }
+}
+
+fn output_shape(input: Shape, conv: &ConvWeights) -> Shape {
+    Shape {
+        batch: input.batch,
+        channels: conv.outputs,
+        height: input.height + 1 - conv.height,
+        width: input.width + 1 - conv.width,
+    }
+}
+
+/// Input channels per block of a sum: oneDNN's 8, or all of them for its flat first convolution
+/// and for `brgconv`.
+fn block(conv: &ConvWeights) -> usize {
+    if conv.inputs < 8 || conv.bias_last {
+        conv.inputs
+    } else {
+        8
+    }
+}
+
+/// [`conv2d_on_host`]'s sums in `crates/gatk-engine/src/gpu/kernels.metal`, or `None` when the
+/// device path is not taken.
+pub fn conv2d_on_device(src: &[f32], input: Shape, conv: &ConvWeights) -> Option<Vec<f32>> {
+    // The kernel strides the image and the weights by the same channel count.
+    assert_eq!(input.channels, conv.inputs);
+    gatk_engine::gpu::conv2d_fused(
+        src,
+        conv.weight,
+        conv.bias,
+        &gatk_engine::gpu::ConvShape {
+            batch: input.batch,
+            inputs: input.channels,
+            height: input.height,
+            width: input.width,
+            outputs: conv.outputs,
+            kernel_height: conv.height,
+            kernel_width: conv.width,
+            block: block(conv),
+            bias_last: conv.bias_last,
+            padded: !conv.inputs.is_multiple_of(block(conv)),
+        },
+    )
+}
+
 /// `jit_avx2_convolution_fwd_t` on a NCHW tensor, stride 1 and no padding.
 ///
 /// The blocks are of 8 input channels unless there are fewer than 8 in all, which is oneDNN's flat
@@ -91,19 +142,15 @@ pub struct ConvWeights<'a> {
 /// which leaves every sum where it was except a negative zero. The threads share out outputs and
 /// not terms, so no accumulator is ever split: this is the same number of threads as the reference
 /// has or not, and the bits do not care.
-pub fn conv2d(src: &[f32], input: Shape, conv: &ConvWeights, threads: usize) -> (Vec<f32>, Shape) {
-    let out = Shape {
-        batch: input.batch,
-        channels: conv.outputs,
-        height: input.height + 1 - conv.height,
-        width: input.width + 1 - conv.width,
-    };
+pub fn conv2d_on_host(
+    src: &[f32],
+    input: Shape,
+    conv: &ConvWeights,
+    threads: usize,
+) -> (Vec<f32>, Shape) {
+    let out = output_shape(input, conv);
     let mut dst = vec![0f32; out.len()];
-    let block = if conv.inputs < 8 || conv.bias_last {
-        conv.inputs
-    } else {
-        8
-    };
+    let block = block(conv);
     let padded = !conv.inputs.is_multiple_of(block);
     let plane = out.height * out.width;
     let each_channel = |batch_channel: usize, slab: &mut [f32]| {
