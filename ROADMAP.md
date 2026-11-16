@@ -12,22 +12,25 @@ golden stays `[~]`.
 
 ---
 
-## Where we are (measured 2026-09-17)
+## Where we are (measured 2026-11-13)
+
+Reference: **GATK 4.7.0.0, htsjdk 5.0.0, Picard 3.5.0** since #1420. Counts are read off each
+repository's `main` (htsjdk-rs `0730c93b`, picard-rs `bd199d29`, gatk-rs `09958061`).
 
 | Repo | Scope | State |
 |---|---|---|
-| **htsjdk-rs** | the I/O and math foundation | 86 conformance suites, all oracle-backed; `format`, whose 41,678 formatted doubles once had a harness and a Rust test and no CI-derived golden, is among them. CRAM, GKL-exact deflate and full VCF remain |
-| **picard-rs** | 121 tools | 105 tools carry a suite, all oracle-backed; 107 suites over 122 cases. Many are partial (default paths only). The harness is generated from a manifest, the fuzzer and the determinism gate run in CI, and argument coverage is measured for 53 tools |
-| **gatk-rs** | 190 tools | 7 crates, **298 conformance suites over 303 cases and 158 tools, all 298 oracle-backed**; 3 tools byte-identical, and 53 of 54 annotations measured. The seventh crate is `gatk-cli`, which now declares 137 tools' arguments and RUNS 137 of them end to end, with a t=2 covering array measured against the oracle for all 137, every one at 1.000 with what the tool PRINTS compared as well as what it writes. LearnReadOrientationModel gets there by calling the platform's `exp` in its E-step, because HotSpot's `Math.exp` intrinsic, which htsjdk-rs decision 0014 could not publish, agrees with the platform's and not with FDLIBM's. AnalyzeSaturationMutagenesis holds `--write-rejected-reads` out: with it, the reference's own output depends on its asynchronous BAM writer (#1266). **No performance number exists yet for any of it**: see Milestone S |
+| **htsjdk-rs** | the I/O and math foundation | 88 conformance suites, all oracle-backed. CRAM, GKL-exact deflate and full VCF remain |
+| **picard-rs** | 121 tools | 124 suites over 139 cases, 119 oracle-backed and 5 golden-pending; 115 tools carry a suite. Argument coverage is measured for 119 tools |
+| **gatk-rs** | 191 tools | 8 crates, **363 conformance suites over 368 cases, all 363 oracle-backed**, and all 54 annotations among them. A t=2 covering array is run against the reference and the port on every CI run for **207 tools, 200 of them at 1.000** (the seven below are Picard VCF tools, causes listed under Milestone V); the differential fuzzer has replayed its kept cases for 190 tools with no divergence. Cost against the reference is measured for 139 tools (Milestone S) |
 
-Across the three repositories that is **491 oracle-backed suites**, and the generated dashboard
-([docs/STATUS.md](docs/STATUS.md)) puts 227 of the 311 tools in an oracle-backed state, 73.0%. The
-tool count did not move while the suite count did, which is the shape of this stretch: the work went
-into running declared tools from a command line and measuring their arguments rather than into new
-ports.
+Across the three repositories that is **570 oracle-backed suites**, and the generated dashboard
+([docs/STATUS.md](docs/STATUS.md)) puts **all 312 tools** in an oracle-backed state. What
+oracle-backed does not yet say is the whole argument surface: three tools have no covering array
+(`ConvertCountsToDepthFile`, `IlluminaBasecallsToFastq`, `MergeBamAlignment`), which is the G2
+item on full parameter coverage.
 
-Totals from the generated inventory (`tools/inventory`): **311 tools** (190 GATK-origin,
-121 Picard-origin), **39 Spark**, ~13,130 arguments. Non-Spark: 151 GATK + 121 Picard.
+Totals from the generated inventory (`tools/inventory`): **312 tools** (191 GATK-origin,
+121 Picard-origin), **39 Spark**, ~13,360 arguments.
 
 ### What "100% repro" means, per tool
 
@@ -49,14 +52,14 @@ which is not yet this bar for any tool.
 
 The single biggest unlock: 151 non-Spark GATK tools stand on it.
 
-**Closed.** Every box below is `[x]` except four, and none of the four is G1 work:
+**Closed.** Every box below is `[x]` except two, and neither is G1 work; the table keeps the two annotations that were once on it:
 
 | open item | where it lives now | why |
 |---|---|---|
 | the Tribble index (G1.3) | Milestone H | it is an htsjdk capability GATK consumes |
 | the multi-input walkers (G1.6) | Milestone H | they merge with `VCFUtils.smartMergeHeaders` and `VariantContextComparator` |
 | `AllelePseudoDepth` (G1.7) | **done, G1.9** | the licence was never what blocked it. Both values leave through a `DecimalFormat` at two and four decimals, and the fixed point turned out bit-identical anyway. Oracle-backed, 46 calls, no divergence |
-| `AssemblyComplexity` (G1.7) | Milestone G3 | it needs `Haplotype.getEventMap()`, the assembly event model |
+| `AssemblyComplexity` (G1.7) | **done, G3.1c** | it needed `Haplotype.getEventMap()`, the assembly event model, which landed with `HaplotypeCaller` (#1282). Oracle-backed, 21 cases |
 
 57 conformance suites carry it, all oracle-backed.
 
@@ -176,7 +179,7 @@ Three of the four remain open, none of them G1 work.
 
 ### G1.7 Annotations
 
-- [~] the 54-annotation library. **Fifty-three** are ported and oracle-backed: the counting family
+- [x] the 54-annotation library. **All fifty-four** are ported and oracle-backed: the counting family
       (`ChromosomeCounts`, `SampleList`, `RawGtCount`, `Coverage`, `MappingQualityZero`,
       `CountNs`, `OriginalAlignment`) and the median family (`BaseQuality`, `MappingQuality`,
       `ReadPosition`, `FragmentLength`, i.e. MBQ/MMQ/MPOS/MFRL) and the rank-sum family
@@ -201,25 +204,16 @@ Three of the four remain open, none of them G1 work.
       `VariantContextGetters`, **`MannWhitneyU`** and **`FisherExactTest`**, with commons-math3's
       `FastMath.exp`, `FastMath.log`, `Gamma`, `Erf`, `NormalDistribution` and the saddle-point
       expansion under them, all oracle-backed in htsjdk-rs)
-- [ ] the remaining 2, **neither of which is blocked on effort**. **The claim that
-      most of the 54 wait on jmath did not survive a grep**: 10 of the 57 files in
-      `tools/walkers/annotator` mention `MathUtils` at all, and what the annotators reach through
-      `java.lang.Math` is `log`, `log10`, `sqrt` and `round`, all four already exact. What the
-      first fifty-two actually waited on was engine machinery, and all of it is now ported. The
-      third of the three came in with the haplotype-typed matrix: `HaplotypeFilteringAnnotation`
-      is oracle-backed above, and `Haplotype` is ported as far as an allele axis needs it, which
-      stops short of `EventMap`. The two that are left cannot be closed by working harder:
-  - `AllelePseudoDepth` is **refused on the licence boundary**, not deferred. It ends in
-    `SomaticLikelihoodsEngine.alleleFractionsPosterior`, whose fixed point runs through
-    `NaturalLogUtils.normalizeFromLogToLinearSpace` and `logSumExp`, and both of those call
-    `java.lang.Math.exp`. htsjdk-rs decision 0014 withdrew `Math.exp`: its only faithful port was
-    an operation-by-operation transcription of HotSpot's x86 intrinsic, whose source is GPL2 with
-    no Classpath Exception and therefore cannot be published under that crate's MIT licence. The
-    `Gamma.digamma` this annotation also needs **is** ported (htsjdk-rs #62); the exponential is
-    what stops it, and no amount of work on this side changes that
-  - `AssemblyComplexity` needs `Haplotype.getEventMap()`, which is the assembly event model, so it
-    belongs to **G3** with `HaplotypeCaller` rather than to G1. Listing it here would be counting
-    the assembler as an annotation
+- [x] the remaining 2, both oracle-backed. They were once listed here as blocked, one on the
+      licence and one on the assembler, and neither turned out to be blocked on effort:
+  - `AllelePseudoDepth` (G1.9, suite `allele-pseudo-depth`): it ends in `Math.exp` through
+    `SomaticLikelihoodsEngine.alleleFractionsPosterior`, but both values it writes leave through a
+    `DecimalFormat` at two and four decimals, and the fixed point measured bit-identical anyway.
+    46 calls, no divergence
+  - `AssemblyComplexity` (G3.1c, #1282, suite `assembly-complexity`): it needed
+    `Haplotype.getEventMap()`, which came in with the assembly event model under `HaplotypeCaller`
+    (`gatk_engine::event_map`). Twenty-one cases, and the callers run it under
+    `--enable-all-annotations` (G3.2c)
 
 ### G1.9 `AllelePseudoDepth`, and the premise that refused it
 
