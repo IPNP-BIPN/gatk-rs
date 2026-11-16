@@ -1,0 +1,19 @@
+{
+  "sources": {
+    "crates/gatk-engine/src/gpu/kernels.metal": {
+      "kernels": {
+        "f64_ops": {
+          "class": "integer",
+          "what": "IEEE 754 binary64 add and multiply on ulong bit patterns, round-to-nearest-even, subnormals kept",
+          "test": "crates/gatk-engine/tests/gpu.rs"
+        },
+        "pair_hmm": {
+          "class": "integer",
+          "what": "LoglessPairHMM's lattice and last-row sum in software binary64, one read/haplotype pair per thread",
+          "test": "crates/gatk-engine/tests/gpu.rs"
+        }
+      },
+      "allowed": {}
+    }
+  }
+}
