@@ -176,6 +176,76 @@ public class SelectVariantsFiltersDump {
                 "chr1\t300\t.\tA\t.\t50\t.\tDP=50");
         run(dir, "sites-no-filter", sites);
         run(dir, "sites-exclude-non-variants", sites, "--exclude-non-variants", "true");
+
+        // The rest of GenotypeJEXLContext: one record per genotype shape in s0, the others
+        // homozygous reference at DP 3, so each name below selects the records its shape is in.
+        final Path genotypes = writeVcf(dir, "genotypes", HEADER
+                        .replace("##FORMAT=<ID=FT", "##FORMAT=<ID=DP,Number=1,Type=Integer,"
+                                + "Description=\"Depth\">\n##FORMAT=<ID=AD,Number=R,Type=Integer,"
+                                + "Description=\"Allele depths\">\n##FORMAT=<ID=FT")
+                        .replace("##FILTER=<ID=LowQD", "##FILTER=<ID=LowGQ,Description=\"Low GQ\">"
+                                + "\n##FILTER=<ID=LowQD"),
+                // 100: a phased het at DP 50, the one DP above 6 as an Integer and not as text.
+                "chr1\t100\t.\tA\tC\t50\t.\tDP=50;QD=20.0\tGT:GQ:DP:AD\t0|1:60:50:10,5"
+                        + "\t0/0:60:3:3,0\t0/0:60:3:3,0\t0/0:60:3:3,0",
+                // 200: homozygous alternate, and the one QD below 10.
+                "chr1\t200\t.\tA\tC\t50\t.\tDP=50;QD=1.0\tGT:GQ:DP:AD\t1/1:60:3:0,3"
+                        + "\t0/0:60:3:3,0\t0/0:60:3:3,0\t0/0:60:3:3,0",
+                // 300: every genotype a no-call.
+                "chr1\t300\t.\tA\tC\t50\t.\tDP=50;QD=20.0\tGT:GQ:DP\t./.:60:3\t./.:60:3"
+                        + "\t./.:60:3\t./.:60:3",
+                // 400: half called, which is MIXED and therefore called.
+                "chr1\t400\t.\tA\tC\t50\t.\tDP=50;QD=20.0\tGT:GQ:DP:AD\t./1:60:3:0,3"
+                        + "\t0/0:60:3:3,0\t0/0:60:3:3,0\t0/0:60:3:3,0",
+                // 500: a het with no reference allele.
+                "chr1\t500\t.\tA\tC,G\t50\t.\tDP=50;QD=20.0\tGT:GQ:DP:AD\t1/2:60:3:0,2,1"
+                        + "\t0/0:60:3:3,0,0\t0/0:60:3:3,0,0\t0/0:60:3:3,0,0",
+                // 600: haploid alternate, which is HOM_VAR.
+                "chr1\t600\t.\tA\tC\t50\t.\tDP=50;QD=20.0\tGT:GQ:DP:AD\t1:60:3:0,3"
+                        + "\t0/0:60:3:3,0\t0/0:60:3:3,0\t0/0:60:3:3,0",
+                // 700: no GT at all, so no alleles: UNAVAILABLE, and a genotype string of NA.
+                "chr1\t700\t.\tA\tC\t50\t.\tDP=50;QD=20.0\tGQ:DP\t60:3\t60:3\t60:3\t60:3",
+                // 800: two genotype filters and no GQ, which getGQ() answers with -1.
+                "chr1\t800\t.\tA\tC\t50\t.\tDP=50;QD=20.0\tGT:DP:FT\t0/1:3:LowQD;LowGQ"
+                        + "\t0/0:3:PASS\t0/0:3:PASS\t0/0:3:PASS",
+                // 900: no genotype DP, so DP falls through to the record's INFO text.
+                "chr1\t900\t.\tA\tC\t50\t.\tDP=50;QD=20.0\tGT:GQ\t0/1:60\t0/0:60\t0/0:60\t0/0:60");
+        final String[][] names = {
+                {"genotype-gt-phased", "GT == \"A|C\""},
+                {"genotype-gt-mixed", "GT == \"./C\""},
+                {"genotype-gt-unavailable", "GT == \"NA\""},
+                {"genotype-is-hom", "isHom == \"1\""},
+                {"genotype-is-hom-ref", "isHomRef == \"0\""},
+                {"genotype-is-het", "isHet == \"1\""},
+                {"genotype-is-hom-var", "isHomVar == \"1\""},
+                {"genotype-is-not-called", "isCalled == \"0\""},
+                {"genotype-is-no-call", "isNoCall == \"1\""},
+                {"genotype-is-mixed", "isMixed == \"1\""},
+                {"genotype-is-not-available", "isAvailable == \"0\""},
+                // An Integer against a String literal compares as numbers; text, as text.
+                {"genotype-dp-against-text", "DP > '6'"},
+                {"genotype-dp-falls-through", "DP == 50"},
+                {"genotype-gq-missing", "GQ < 0"},
+                {"genotype-ad", "AD == \"[10, 5]\""},
+                // The codec sorts the names, so the order written is not the order read.
+                {"genotype-ft-two-filters", "FT == \"LowQD;LowGQ\""},
+                {"genotype-ft-two-filters-sorted", "FT == \"LowGQ;LowQD\""},
+                // A name getFilters() CONTAINS resolves to "1": String.contains, so a prefix does.
+                {"genotype-filter-name", "LowGQ == \"1\""},
+                {"genotype-filter-name-prefix", "Low == \"1\""},
+                // A name the genotype does not know is the variant's, except that LowQD CONTAINS
+                // QD, so at 800 the genotype's filter answers "1" before the INFO field is read.
+                {"genotype-falls-through-to-info", "QD < 10.0"},
+        };
+        for (final String[] name : names) {
+            run(dir, name[0], genotypes, "-select-genotype", name[1]);
+        }
+        // A name nothing resolves is JexlException.Variable, which JEXLMap answers with the
+        // default TREAT_AS_MISMATCH: a false, not an error, and so a true once inverted.
+        run(dir, "genotype-missing-name", genotypes, "-select-genotype", "ZZ == \"1\"");
+        run(dir, "genotype-missing-name-inverted", genotypes, "-select-genotype",
+                "ZZ == \"1\"", "--invert-select", "true");
+        run(dir, "missing-name", genotypes, "-select", "ZZ == \"1\"");
     }
 
     static Path writeVcf(final Path dir, final String label, final String header,

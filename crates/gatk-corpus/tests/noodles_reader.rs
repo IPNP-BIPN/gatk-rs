@@ -934,6 +934,14 @@ fn vcf_fields(
                 if *key == "FT" && theirs == [Some("PASS".to_string())] {
                     theirs = vec![None];
                 }
+                // `GenotypeBuilder.filters(List)` sorts two or more names; noodles keeps them as written.
+                if *key == "FT" {
+                    if let [Some(filters)] = theirs.as_mut_slice() {
+                        let mut names: Vec<&str> = filters.split(';').collect();
+                        names.sort_unstable();
+                        *filters = names.join(";");
+                    }
+                }
                 if !same_values(&ours, &theirs, floats) {
                     push(
                         &format!("{} {key}", g.sample_name),
