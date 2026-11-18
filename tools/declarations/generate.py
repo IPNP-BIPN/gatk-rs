@@ -16,6 +16,7 @@ import argparse
 import gzip
 import json
 import pathlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -107,9 +108,19 @@ pub struct EnumType {
 '''
 
 
+def unescape(text):
+    """A golden's own escaping undone: `\\\\`, `\\t` and `\\n`, read left to right, so an
+    escaped backslash in front of a `t` stays a backslash and a `t`."""
+    return re.sub(r"\\(.)", lambda m: {"t": "\t", "n": "\n"}.get(m.group(1), m.group(1)), text)
+
+
 def literal(text):
     """A Rust string literal for a golden's own escaping, unescaped back to its bytes."""
-    body = text.replace("\\t", "\t").replace("\\n", "\n")
+    return rust_str(unescape(text))
+
+
+def rust_str(body):
+    """A Rust string literal for text that is already the bytes."""
     escaped = (body.replace("\\", "\\\\").replace('"', '\\"')
                .replace("\t", "\\t").replace("\n", "\\n"))
     return f'"{escaped}"'
@@ -243,7 +254,7 @@ def summary_table(tools):
         )
         if summary is None:
             sys.exit(f"{tool}: neither the usage golden nor the inventory carries a summary")
-        arms.append(f'        "{tool}" => Some({literal(summary)}),')
+        arms.append(f'        "{tool}" => Some({rust_str(summary)}),')
     banners = usage_banners()
     maturities = "\n".join(
         f'        "{tool}" => Maturity::{banners.get(tool, "Released")},' for tool in tools)
@@ -267,7 +278,7 @@ def usage_banners():
         if not line.startswith("usage\t"):
             continue
         _, tool, body = line.split("\t", 2)
-        head = body.replace("\\n", "\n").split("\n")
+        head = unescape(body).split("\n")
         if any("EXPERIMENTAL FEATURE" in entry for entry in head[:4]):
             banners[tool] = "Experimental"
         elif any("BETA FEATURE" in entry for entry in head[:4]):
@@ -290,7 +301,7 @@ def usage_summaries():
         if not line.startswith("usage\t"):
             continue
         _, tool, body = line.split("\t", 2)
-        lines = body.replace("\\t", "\t").replace("\\n", "\n").split("\n")
+        lines = unescape(body).split("\n")
         # An experimental or beta tool prints a BANNER above its usage line, so the header does
         # not start where a reader would expect: the summary is what sits between the `USAGE:`
         # line's blank line and `Version:`, wherever that pair happens to be.
@@ -302,6 +313,73 @@ def usage_summaries():
             collected.append(entry)
         summaries[tool] = "\n".join(collected)
     return summaries
+
+
+def usage_rows(kind):
+    """The `usage-text` golden's rows of one kind, split on their tabs after the kind."""
+    if not USAGE_GOLDEN.exists():
+        return []
+    text = gzip.open(USAGE_GOLDEN, "rt").read()
+    return [line.split("\t")[1:] for line in text.split("\n") if line.startswith(kind + "\t")]
+
+
+def descriptor_table(tools):
+    """What a plugin descriptor lists as an argument's possible values, per tool.
+
+    `--read-filter` lists the catalogue, `--disable-read-filter` the TOOL'S OWN defaults and
+    `--annotation` and its siblings the annotation library, so the list is per tool and per
+    argument. The usage golden records each one the descriptor answered, sorted as the usage
+    prints it; a list several tools share is one constant.
+    """
+    lists = {}
+    arms = []
+    for tool, long_name, values in usage_rows("allowed"):
+        if tool not in tools:
+            continue
+        key = tuple(values.split(",")) if values else ()
+        constant = lists.setdefault(key, f"DESCRIPTOR_VALUES_{len(lists)}")
+        arms.append(f'        ("{tool}", "{long_name}") => Some({constant}),')
+    constants = "\n".join(
+        f"const {name}: &[&str] = &[{', '.join(literal(value) for value in key)}];"
+        for key, name in lists.items())
+    return (
+        constants + "\n\n"
+        "/// The possible values a plugin descriptor lists for one of its own arguments, if it\n"
+        "/// answers for it, from the usage golden.\n"
+        "pub fn descriptor_values(tool: &str, long_name: &str) -> Option<&'static [&'static str]> {\n"
+        "    match (tool, long_name) {\n" + "\n".join(arms) + "\n        _ => None,\n    }\n}\n"
+    )
+
+
+def deprecation_table(tools):
+    """The detail a deprecated argument's usage prints before its documentation, per tool."""
+    arms = "\n".join(
+        f'        ("{tool}", "{long_name}") => Some({literal(detail)}),'
+        for tool, long_name, detail in usage_rows("deprecated") if tool in tools)
+    return (
+        "/// Why an argument is deprecated, for one the usage says is, from the usage golden.\n"
+        "pub fn deprecation(tool: &str, long_name: &str) -> Option<&'static str> {\n"
+        "    match (tool, long_name) {\n" + arms + "\n        _ => None,\n    }\n}\n"
+    )
+
+
+def mutex_field_table():
+    """The FIELD name the mutex sentence prints for a target whose field is not its long name.
+
+    One table for every tool: the same long name is the same field wherever it is declared, and
+    a golden that said otherwise stops the generator rather than picking one.
+    """
+    fields = {}
+    for tool, long_name, field in usage_rows("field"):
+        if fields.setdefault(long_name, field) != field:
+            sys.exit(f"--{long_name} is field {field} in {tool} and {fields[long_name]} elsewhere")
+    arms = "\n".join(f'        "{name}" => Some("{field}"),' for name, field in sorted(fields.items()))
+    return (
+        "/// The field a mutex target's long name resolves to, where the two differ, from the\n"
+        "/// usage golden.\n"
+        "pub fn mutex_field(long_name: &str) -> Option<&'static str> {\n"
+        "    match long_name {\n" + arms + "\n        _ => None,\n    }\n}\n"
+    )
 
 
 def enum_table():
@@ -437,6 +515,9 @@ def main():
         )
     out.append(summary_table(tools))
     out.append(enum_table())
+    out.append(descriptor_table(set(tools)))
+    out.append(deprecation_table(set(tools)))
+    out.append(mutex_field_table())
     arms = "\n".join(f'        "{tool}" => Some({constant_name(tool)}),' for tool in tools)
     out.append(
         "/// The declarations of one tool, by the name `gatk <Tool>` resolves.\n"

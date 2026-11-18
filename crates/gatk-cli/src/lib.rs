@@ -6,17 +6,16 @@
 //! to the two streams the reference writes to, and returns the status the reference would have
 //! exited with.
 //!
-//! # What this does not do yet
+//! # The usage
 //!
-//! One thing, and it is a deliberate boundary rather than an omission: **a WALKER's own usage**
-//! carries a conditional block per read filter the plugin descriptor discovered, and neither the
-//! blocks nor their order is measured, so [`tool_usage`] answers for a tool with no controlled
-//! argument and nothing for the rest. Its command line does reach the parser: the plugin trim runs
-//! over the ownership table measured in `plugin-argument-ownership`.
+//! `<Tool> --help` answers with the tool's own usage, composed from its declarations, for every
+//! tool this port runs: the conditional block per read filter and per annotation that declares an
+//! argument, the possible values a plugin descriptor lists, the banner and the summary. All of it
+//! is compared against what the reference's `Main` writes to stderr for every tool it can name
+//! (`usage-text`).
 //!
-//! The main usage listing WAS the other one. It is three hundred and seventy-three lines of tool
-//! names, program groups and one-line summaries, and none of them was in a golden; they are now
-//! (`main-usage`), and [`usage`] reproduces the listing line for line.
+//! The main usage listing is three hundred and seventy-three lines of tool names, program groups
+//! and one-line summaries (`main-usage`), and [`usage`] reproduces the listing line for line.
 //!
 //! Ported from `org.broadinstitute.hellbender.Main`.
 
@@ -245,30 +244,52 @@ pub fn parseable(tool: &str) -> bool {
 
 /// Whether a tool's usage can be laid out from its declarations alone.
 ///
-/// It can, for every declared tool. A walker's conditional blocks are one per read filter that
-/// declares an argument, in the ownership table's order; the two arguments the descriptor answers
-/// for print the catalogue and the tool's own defaults; and the mutex sentence names the target
-/// definition's FIELD, which `mutex-target-names` measured. `CountReads`'s two hundred and
-/// ninety-seven lines are the reference's, and the test beside this file compares them as one
-/// string rather than counting how many agree.
+/// It can, for every declared tool whose controlled arguments all have a known owner: a read
+/// filter in the ownership table (`plugin-argument-ownership`) or an annotation. The blocks, the
+/// descriptor's possible values, the mutex field names and the header are measured for every tool
+/// in `usage-text`, and the test beside this file compares each one as one string.
 pub fn usage_composable(tool: &str) -> bool {
-    parseable(tool)
+    gatk_tools::tool_declarations::declarations(tool).is_some_and(|list| {
+        list.iter()
+            .filter(|declaration| declaration.controlled_by.is_some())
+            .all(|declaration| {
+                gatk_tools::plugin_ownership::owner(declaration.long_name).is_some()
+                    || gatk_tools::plugin_ownership::annotation_owner(declaration.long_name)
+                        .is_some()
+            })
+    })
 }
 
 /// A tool's usage as this port composes it, whatever the dispatcher does with it.
 ///
-/// [`tool_usage`] is what the dispatcher answers `-h` with and is gated on [`parseable`]; this is
-/// the composition itself, which a test compares against the golden for every declared tool.
+/// [`tool_usage`] is what the dispatcher answers `-h` with and is gated on [`usage_composable`];
+/// this is the composition itself, which a test compares against the golden for every declared
+/// tool.
 pub fn composed_usage(tool: &str) -> Option<String> {
     let list = gatk_tools::tool_declarations::declarations(tool)?;
     let summary = gatk_tools::tool_declarations::summary(tool)?;
     let (required, optional, advanced) = gatk_tools::usage_text::sections_for(Some(tool), list);
     let conditional = gatk_tools::usage_text::conditionals(list);
-    Some(gatk_tools::usage_text::render(
+    // shortcut: the one positional argument a declared tool has is `CompareBaseQualities`' two
+    // GATKPaths, which `getNamedArgumentDefinitions` does not report; measure the positional
+    // definition if a second tool ever declares one.
+    let positional: Vec<gatk_tools::usage_text::Entry> =
+        gatk_tools::plugin_ownership::positional_arguments(tool)
+            .map(|_| gatk_tools::usage_text::Entry {
+                long_name: "POSITIONAL (must be first)".to_string(),
+                short_names: Vec::new(),
+                type_name: "GATKPath".to_string(),
+                description: "Undocumented option  This argument must be specified at least once. "
+                    .to_string(),
+            })
+            .into_iter()
+            .collect();
+    Some(gatk_tools::usage_text::render_with_positional(
         tool,
         summary,
         TOOLKIT_VERSION,
         gatk_tools::tool_declarations::maturity(tool),
+        &positional,
         &required,
         &optional,
         &advanced,

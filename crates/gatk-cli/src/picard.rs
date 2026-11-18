@@ -88,17 +88,22 @@ pub fn run(name: &str, args: &[String]) -> Option<crate::Outcome> {
     let work = work(name)?;
     let mut stdout = String::new();
     let mut stderr = String::new();
+    // `--help` makes Barclay print the usage and answer false, which is a return of 1 too, and it
+    // answers before it checks a required argument.
+    let help = args.iter().any(|arg| arg == "-h" || arg == "--help");
     let returned: Result<i32, Thrown> = match parse(name, args) {
+        _ if help => {
+            stderr.push_str(&crate::tool_usage(name).unwrap_or_default());
+            Ok(1)
+        }
         // `parseArgs` prints the tool's usage, then the parser's message, and returns false.
-        // shortcut: Picard's usage text is not composed, only the message; compose it if a golden
-        // ever compares stderr.
+        // shortcut: the usage printed here is `usage(false, ...)`, without the common arguments,
+        // and is not composed, only the message; compose it if a golden ever compares stderr.
         Err(message) => {
             stderr.push_str(&message);
             stderr.push('\n');
             Ok(1)
         }
-        // `--help` makes Barclay print the usage and answer false, which is a return of 1 too.
-        Ok(parser) if flag(&parser, "help") => Ok(1),
         // `customCommandLineValidation`, inside `parseArgs`: the usage, then each message.
         Ok(parser) if custom_validation(name, &parser).is_some() => {
             stderr.push_str(&custom_validation(name, &parser).unwrap_or_default());
