@@ -41,7 +41,7 @@ ureq = { version = "2", default-features = false, features = ["tls", "native-cer
 [dev-dependencies]
 gatk-corpus = { path = "../gatk-corpus" }
 # HtsgetReader's conformance serves over TLS what the dump served, under a certificate of its own.
-rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"] }
+rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 # The off-ramp conformance reads back the zip RampedHaplotypeCaller wrote.
 zip = { version = "9", default-features = false, features = ["deflate"] }
