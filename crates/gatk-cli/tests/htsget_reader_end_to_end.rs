@@ -134,7 +134,7 @@ fn every_run_replays_as_the_reference_ran_it() {
             .with_no_client_auth()
             .with_single_cert(
                 vec![certified.cert.der().clone()],
-                rustls::pki_types::PrivateKeyDer::Pkcs8(certified.key_pair.serialize_der().into()),
+                rustls::pki_types::PrivateKeyDer::Pkcs8(certified.signing_key.serialize_der().into()),
             )
             .unwrap(),
     );
