@@ -35,7 +35,7 @@ use crate::clipping::{hard_clip_soft_clipped_bases, ClipError};
 use crate::dragstr::{dragstr_impute, DragstrError, DragstrParams};
 use crate::gpu;
 use crate::haplotype::Haplotype;
-use crate::pair_hmm::{fast_round, read_likelihood_given_haplotype_log10};
+use crate::pair_hmm::{fast_round, reads_likelihoods_given_haplotype_log10, HmmRead};
 use crate::read_utils::{base_deletion_qualities, base_insertion_qualities};
 use crate::tsv_table::java_double_to_string;
 
@@ -298,59 +298,77 @@ impl PairHmmLikelihoodEngine {
             Self::print_processed(&processed, sample_reads, None);
             let mut sample_values = vec![vec![0.0; processed.len()]; haplotypes.len()];
             // `inputScoreImputator.impute(read)`: the read's own indel qualities and a constant
-            // continuation penalty, or the DRAGstr penalties of its sequence.
-            let impute = |read: &ProcessedRead| -> Result<_, LikelihoodEngineError> {
-                Ok(match &self.arguments.dragstr_params {
-                    Some(params) => {
-                        let (gop, gcp) = dragstr_impute(params, &read.bases)
-                            .map_err(LikelihoodEngineError::Dragstr)?;
-                        (gop.clone(), gop, gcp)
-                    }
-                    None => (
+            // continuation penalty, or the DRAGstr penalties of its sequence. A failure stops at
+            // that read, after the reads before it have been computed and written, as the
+            // reference's read-by-read loop does.
+            let mut imputed = Vec::with_capacity(processed.len());
+            let mut impute_error = None;
+            for read in &processed {
+                match &self.arguments.dragstr_params {
+                    Some(params) => match dragstr_impute(params, &read.bases) {
+                        Ok((gop, gcp)) => imputed.push((gop.clone(), gop, gcp)),
+                        Err(error) => {
+                            impute_error = Some(LikelihoodEngineError::Dragstr(error));
+                            break;
+                        }
+                    },
+                    None => imputed.push((
                         read.insertion_qualities.clone(),
                         read.deletion_qualities.clone(),
                         vec![self.arguments.gap_continuation_penalty as u8; read.bases.len()],
-                    ),
+                    )),
+                }
+            }
+            let hmm_reads: Vec<HmmRead<'_>> = processed
+                .iter()
+                .zip(&imputed)
+                .map(|(read, (insertion, deletion, gap_continuation))| HmmRead {
+                    bases: &read.bases,
+                    quals: &read.qualities,
+                    insertion_quals: insertion,
+                    deletion_quals: deletion,
+                    gap_continuation,
                 })
-            };
+                .collect();
             // Milestone GPU: the same likelihoods from the device, for every read up to the first
-            // the imputation refuses. The loop below still raises that refusal where the CPU path
-            // would, after the same lines of the results file.
+            // the imputation refuses.
             let device = if gpu::requested() {
-                let imputed: Vec<_> = processed.iter().map_while(|r| impute(r).ok()).collect();
-                let inputs: Vec<_> = imputed
+                let inputs: Vec<_> = hmm_reads
                     .iter()
-                    .zip(&processed)
-                    .map(|((insertion, deletion, gap), read)| gpu::ReadInputs {
-                        bases: &read.bases,
-                        qualities: &read.qualities,
-                        insertion,
-                        deletion,
-                        gap_continuation: gap,
+                    .map(|read| gpu::ReadInputs {
+                        bases: read.bases,
+                        qualities: read.quals,
+                        insertion: read.insertion_quals,
+                        deletion: read.deletion_quals,
+                        gap_continuation: read.gap_continuation,
                     })
                     .collect();
                 gpu::pair_hmm_log10(&haplotype_bases, &inputs)
             } else {
                 None
             };
-            for (r, read) in processed.iter().enumerate() {
-                let (insertion, deletion, gap_continuation) = impute(read)?;
+            // Otherwise one haplotype at a time against every read: the same bits as one pair at
+            // a time.
+            if device.is_none() {
+                for (a, haplotype) in haplotype_bases.iter().enumerate() {
+                    reads_likelihoods_given_haplotype_log10(
+                        haplotype,
+                        &hmm_reads,
+                        &mut sample_values[a][..hmm_reads.len()],
+                    );
+                }
+            }
+            // The checks and the results file in the reference's order: read by read.
+            for (r, read) in hmm_reads.iter().enumerate() {
                 for (a, haplotype) in haplotype_bases.iter().enumerate() {
                     let likelihood = match &device {
                         Some(values) => values[r * haplotype_bases.len() + a],
-                        None => read_likelihood_given_haplotype_log10(
-                            haplotype,
-                            &read.bases,
-                            &read.qualities,
-                            &insertion,
-                            &deletion,
-                            &gap_continuation,
-                        ),
+                        None => sample_values[a][r],
                     };
+                    sample_values[a][r] = likelihood;
                     if likelihood > 0.0 || likelihood.is_nan() {
                         return Err(LikelihoodEngineError::InvalidLikelihood(likelihood));
                     }
-                    sample_values[a][r] = likelihood;
                     // `writeToResultsFileIfApplicable`.
                     if let Some(path) = &self.arguments.results_file {
                         let fastq = |q: &[u8]| -> String {
@@ -359,11 +377,11 @@ impl PairHmmLikelihoodEngine {
                         let line = format!(
                             "\n{} {} {} {} {} {} {}",
                             String::from_utf8_lossy(haplotype),
-                            String::from_utf8_lossy(&read.bases),
-                            fastq(&read.qualities),
-                            fastq(&insertion),
-                            fastq(&deletion),
-                            fastq(&gap_continuation),
+                            String::from_utf8_lossy(read.bases),
+                            fastq(read.quals),
+                            fastq(read.insertion_quals),
+                            fastq(read.deletion_quals),
+                            fastq(read.gap_continuation),
                             java_scientific(likelihood),
                         );
                         if let Ok(mut file) = std::fs::OpenOptions::new().append(true).open(path) {
@@ -371,6 +389,9 @@ impl PairHmmLikelihoodEngine {
                         }
                     }
                 }
+            }
+            if let Some(error) = impute_error {
+                return Err(error);
             }
             hmm_qualities.push(processed.into_iter().map(|p| p.qualities).collect());
             values.push(sample_values);

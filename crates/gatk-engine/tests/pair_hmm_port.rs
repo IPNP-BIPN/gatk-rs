@@ -16,8 +16,9 @@
 use gatk_corpus as corpus;
 use gatk_engine::pair_hmm::{
     approximate_log10_sum_log10, initial_condition, initial_condition_log10, match_to_match_prob,
-    prior, qual_to_trans_probs, read_likelihood_given_haplotype_log10, INDEL_TO_MATCH,
-    MATCH_TO_DELETION, MATCH_TO_INSERTION, MATCH_TO_MATCH, TRISTATE_CORRECTION,
+    prior, qual_to_trans_probs, read_likelihood_given_haplotype_log10, DELETION_TO_DELETION,
+    INDEL_TO_MATCH, INSERTION_TO_INSERTION, MATCH_TO_DELETION, MATCH_TO_INSERTION, MATCH_TO_MATCH,
+    TRISTATE_CORRECTION,
 };
 
 fn golden() -> String {
@@ -253,4 +254,165 @@ fn a_mismatch_is_divided_by_three() {
     let low = f64::from_bits(bits(&text, "low-base-quality"));
     let high = f64::from_bits(bits(&text, "high-base-quality"));
     assert!(high < low, "a higher quality makes a mismatch cost more");
+}
+
+/// The straight transcription the kernel replaced: three full matrices and a `pow` per cell.
+fn transcription(
+    haplotype: &[u8],
+    read: &[u8],
+    read_quals: &[u8],
+    insertion_quals: &[u8],
+    deletion_quals: &[u8],
+    gap_continuation: &[u8],
+) -> f64 {
+    let (n, m) = (read.len() + 1, haplotype.len() + 1);
+    let mut matches = vec![vec![0.0f64; m]; n];
+    let mut insertions = vec![vec![0.0f64; m]; n];
+    let mut deletions = vec![vec![0.0f64; m]; n];
+    let initial = initial_condition() / haplotype.len() as f64;
+    deletions[0].fill(initial);
+    for i in 1..n {
+        let t = qual_to_trans_probs(
+            insertion_quals[i - 1],
+            deletion_quals[i - 1],
+            gap_continuation[i - 1],
+        );
+        for j in 1..m {
+            let p = prior(read[i - 1], haplotype[j - 1], read_quals[i - 1]);
+            matches[i][j] = p
+                * (matches[i - 1][j - 1] * t[MATCH_TO_MATCH]
+                    + insertions[i - 1][j - 1] * t[INDEL_TO_MATCH]
+                    + deletions[i - 1][j - 1] * t[INDEL_TO_MATCH]);
+            insertions[i][j] = matches[i - 1][j] * t[MATCH_TO_INSERTION]
+                + insertions[i - 1][j] * t[INSERTION_TO_INSERTION];
+            deletions[i][j] = matches[i][j - 1] * t[MATCH_TO_DELETION]
+                + deletions[i][j - 1] * t[DELETION_TO_DELETION];
+        }
+    }
+    let mut total = 0.0;
+    for j in 1..m {
+        total += matches[n - 1][j] + insertions[n - 1][j];
+    }
+    jmath::math::log10(total) - initial_condition_log10()
+}
+
+/// The kernel gives the transcription's bits on seeded pairs that reach every quality, `N` on
+/// both sides, indels, an empty read and a one-base haplotype.
+#[test]
+fn the_kernel_gives_the_transcriptions_bits() {
+    let mut state = 0x1391_u64;
+    let mut next = move |bound: u64| {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state % bound
+    };
+    let bases = b"ACGTN";
+    for _ in 0..3000 {
+        let haplotype: Vec<u8> = (0..1 + next(300))
+            .map(|_| bases[next(5) as usize])
+            .collect();
+        let length = next(160) as usize;
+        let read: Vec<u8> = (0..length)
+            .map(|k| {
+                if next(10) < 8 && k < haplotype.len() {
+                    haplotype[k]
+                } else {
+                    bases[next(5) as usize]
+                }
+            })
+            .collect();
+        let wide = next(4) == 0;
+        let mut quals = |wide: bool| -> Vec<u8> {
+            (0..length)
+                .map(|_| {
+                    if wide {
+                        next(256) as u8
+                    } else {
+                        2 + next(40) as u8
+                    }
+                })
+                .collect()
+        };
+        let (base, insertion, deletion, gap) = (quals(wide), quals(wide), quals(wide), quals(wide));
+        let ours = read_likelihood_given_haplotype_log10(
+            &haplotype, &read, &base, &insertion, &deletion, &gap,
+        );
+        let theirs = transcription(&haplotype, &read, &base, &insertion, &deletion, &gap);
+        assert_eq!(ours.to_bits(), theirs.to_bits(), "{haplotype:?} {read:?}");
+    }
+}
+
+/// Many reads against one haplotype, lane by lane, give each read's own single-pair bits: groups
+/// of 0 to 40 reads of mixed lengths, including empty ones, at every quality.
+#[test]
+fn reads_side_by_side_give_each_reads_own_bits() {
+    use gatk_engine::pair_hmm::{reads_likelihoods_given_haplotype_log10, HmmRead};
+    let mut state = 0x2026_u64;
+    let mut next = move |bound: u64| {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state % bound
+    };
+    let bases = b"ACGTN";
+    for _ in 0..300 {
+        let haplotype: Vec<u8> = (0..1 + next(250))
+            .map(|_| bases[next(5) as usize])
+            .collect();
+        let count = next(41) as usize;
+        let wide = next(4) == 0;
+        let reads: Vec<[Vec<u8>; 5]> = (0..count)
+            .map(|_| {
+                let length = next(150) as usize;
+                let start = next(haplotype.len() as u64) as usize;
+                let read = (0..length)
+                    .map(|k| match haplotype.get(start + k) {
+                        Some(&base) if next(10) < 9 => base,
+                        _ => bases[next(5) as usize],
+                    })
+                    .collect();
+                let mut quals = || -> Vec<u8> {
+                    (0..length)
+                        .map(|_| {
+                            if wide {
+                                next(256) as u8
+                            } else {
+                                2 + next(40) as u8
+                            }
+                        })
+                        .collect()
+                };
+                [read, quals(), quals(), quals(), quals()]
+            })
+            .collect();
+        let views: Vec<HmmRead<'_>> = reads
+            .iter()
+            .map(|[bases, quals, insertion, deletion, gap]| HmmRead {
+                bases,
+                quals,
+                insertion_quals: insertion,
+                deletion_quals: deletion,
+                gap_continuation: gap,
+            })
+            .collect();
+        let mut out = vec![0.0; views.len()];
+        reads_likelihoods_given_haplotype_log10(&haplotype, &views, &mut out);
+        for (read, ours) in views.iter().zip(&out) {
+            let alone = read_likelihood_given_haplotype_log10(
+                &haplotype,
+                read.bases,
+                read.quals,
+                read.insertion_quals,
+                read.deletion_quals,
+                read.gap_continuation,
+            );
+            assert_eq!(
+                ours.to_bits(),
+                alone.to_bits(),
+                "{haplotype:?} {:?}",
+                read.bases
+            );
+        }
+    }
 }
