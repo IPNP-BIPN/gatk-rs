@@ -202,7 +202,7 @@
    "bytes": 32875
   }
  ],
- "steps_comment": "The best-practices chain on chr20. Each step reads the REFERENCE's output of the steps it needs (mounted at {in}/<step>), so both sides of every step get identical input, and a port failure upstream does not hide the steps below it. {threads} is the same on both sides: the JVM's pair-HMM and Spark threads, and the port's RAYON_NUM_THREADS. VCF writers hold --add-output-vcf-command-line false because ##GATKCommandLine carries the run's wall-clock time. `group` is the CI job a step runs in. `timeout` is seconds per side, chosen so a group's runs fit one 6-hour CI job; a side that reaches it is killed and recorded as such.",
+ "steps_comment": "The best-practices chain on chr20. Each step reads the REFERENCE's output of the steps it needs (mounted at {in}/<step>), so both sides of every step get identical input, and a port failure upstream does not hide the steps below it. {threads} is the same on both sides: the JVM's pair-HMM and Spark threads, and the port's RAYON_NUM_THREADS. VCF writers hold --add-output-vcf-command-line false because ##GATKCommandLine carries the run's wall-clock time. `group` is the CI job a step runs in. `timeout` is seconds per side, chosen so a group's runs fit one 6-hour CI job; a side that reaches it is killed and recorded as such. Picard's MarkDuplicates runs beside MarkDuplicatesSpark on the same reads; the steps below read MarkDuplicatesSpark's output.",
  "steps": [
   {
    "name": "MarkDuplicatesSpark",
@@ -210,6 +210,13 @@
    "needs": [],
    "args": "-I {data}/NA12878.chr20.bam -O {out}/md.bam -M {out}/md.metrics --spark-master local[{threads}] --tmp-dir /work/tmp",
    "timeout": 3000
+  },
+  {
+   "name": "MarkDuplicates",
+   "group": "prep",
+   "needs": [],
+   "timeout": 3000,
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/md.bam -M {out}/md.metrics --TMP_DIR /work/tmp"
   },
   {
    "name": "BaseRecalibrator",

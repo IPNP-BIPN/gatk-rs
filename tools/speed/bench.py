@@ -358,7 +358,7 @@ def scale_steps(names):
 
 def scale_command(step, side, port, threads):
     """One side's command line, with the step's placeholders resolved inside the container."""
-    args = step["args"].format(data="/work/data", out=f"/work/result/{side}", threads=threads, **{"in": "/work/in"})
+    args = step["args"].format(data="/work/data", out="/work/out", threads=threads, **{"in": "/work/in"})
     if side == "oracle":
         java = f"java {run_array.JAVA_OPENS} {step.get('java_options', '')}".strip()
         return f'{java} -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {step["name"]} {args}'

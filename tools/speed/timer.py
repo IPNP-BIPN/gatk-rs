@@ -114,7 +114,13 @@ def main(spec_path):
         for path in spec.get("warm", []):
             subprocess.run(["cat", path], stdout=subprocess.DEVNULL, check=False)
         for side in ("oracle", "port"):
+            # Both sides write to the same path, /work/out, which points at the side's own kept
+            # directory: an output records the path it was written to (a BAM's @PG CL).
             out = Path(spec["out"][side])
+            out.mkdir(parents=True, exist_ok=True)
+            if OUT.is_symlink() or OUT.exists():
+                OUT.unlink() if OUT.is_symlink() else shutil.rmtree(OUT)
+            OUT.symlink_to(out)
             runs[side].append(run(spec[side], timeout, out, out.with_name(f"{side}.log")))
         reps = -1
     for rep in range(reps + 1):
