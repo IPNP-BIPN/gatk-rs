@@ -57,6 +57,9 @@ pub fn argument(parser: &Parser, long_name: &str) -> Option<String> {
         .and_then(|definition| match &definition.value {
             Value::Tagged { value, .. } => Some(value.clone()),
             Value::Str(text) => Some(text.clone()),
+            // An enum's constant is its name; without this, `--restrict-alleles-to` and
+            // `--read-validation-stringency` read as never given.
+            Value::Enum(name) => Some(name.clone()),
             _ => None,
         })
 }
@@ -17133,8 +17136,7 @@ fn select_variants_filters(
             .collect()
     }
 
-    // `scalar`, not `argument`: the value is an `Enum`, which `argument` reads as absent.
-    let restriction = match scalar(parser, "restrict-alleles-to").as_deref() {
+    let restriction = match argument(parser, "restrict-alleles-to").as_deref() {
         Some("BIALLELIC") => AlleleRestriction::Biallelic,
         Some("MULTIALLELIC") => AlleleRestriction::Multiallelic,
         _ => AlleleRestriction::All,
