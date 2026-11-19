@@ -552,13 +552,30 @@ def scale_row(name, entry):
     verdict = "-" if equal is None else ("yes" if equal else "**no**")
     return (f"| {name} | {cell(o, 'wall')} | {cell(p, 'wall')} | "
             f"{f'{ratio_wall:.2f}' if ratio_wall else '-'} | {cell(o, 'cpu')} | {cell(p, 'cpu')} | "
-            f"{cell(o, 'rss_kib')} | {cell(p, 'rss_kib')} | {verdict} |")
+            f"{cell(o, 'rss_kib')} | {cell(p, 'rss_kib')} | {verdict} | {target(o, p)} |")
+
+
+def target(o, p):
+    """The S.7 target: port CPU <= GATK's AND port peak RSS <= GATK's, at equal threads.
+
+    Beating one and not the other is flagged red: no trading memory for time or back.
+    """
+    if side_state(o):
+        return "-"
+    if side_state(p):
+        return "❌ port did not finish"
+    cpu, rss = p["cpu"] <= o["cpu"], p["rss_kib"] <= o["rss_kib"]
+    if cpu and rss:
+        return "✅ met"
+    if cpu or rss:
+        return f"🔴 {'CPU' if cpu else 'RSS'} only"
+    return "❌ neither"
 
 
 def scale_table(document):
     print("\n| step | reference wall | port wall | port / ref | reference CPU | port CPU | "
-          "reference peak RSS | port peak RSS | bytes equal |")
-    print("|---|---:|---:|---:|---:|---:|---:|---:|:-:|")
+          "reference peak RSS | port peak RSS | bytes equal | CPU and RSS ≤ GATK |")
+    print("|---|---:|---:|---:|---:|---:|---:|---:|:-:|:-:|")
     order = [s["name"] for s in json.loads(SCALE.read_text())["steps"]]
     for name in sorted(document["steps"], key=lambda n: order.index(n) if n in order else len(order)):
         print(scale_row(name, document["steps"][name]))

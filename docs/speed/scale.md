@@ -32,6 +32,17 @@ timeout is killed and recorded that way, not retried. The two sides' files are c
 under the masks `run_array.py` applies. A divergence is a correctness bug, reported with its first
 differing line.
 
+## The target
+
+Per tool, at equal threads: **the port's CPU time (user + system) ≤ GATK's, and its peak RSS ≤
+GATK's.** Both, with no trade of one for the other, and byte identity unchanged. The last column
+of the table says where each tool stands:
+
+- ✅ met: both are at or below GATK's.
+- 🔴 one only: the port beats GATK on CPU or on RSS but not on both. **These rows are the perf
+  backlog**, because one number has been bought with the other or never worked on.
+- ❌ neither, or the port did not finish (killed, refused, or failed).
+
 ## Predictions, written before the first measurement
 
 Written on 2026-11-19, before any step had run at scale on either side. Today the port reads its
