@@ -483,6 +483,50 @@ fn read_filter<'a>(
                 },
                 filter.negated,
             ));
+        } else if name == "ReadStrandFilter" {
+            // `--keep-reverse-strand-only` is required (optional=false); the arrays never leave it off.
+            let keep_reverse = scalar(parser, "keep-reverse-strand-only")
+                .ok_or_else(|| missing_filter_argument(name, "keep-reverse-strand-only"))?;
+            parameterized.push((
+                gatk_readfilter::Parameterized::ReadStrand {
+                    keep_reverse: keep_reverse.eq_ignore_ascii_case("true"),
+                },
+                filter.negated,
+            ));
+        } else if name == "OverclippedReadFilter" {
+            parameterized.push((
+                gatk_readfilter::Parameterized::Overclipped {
+                    min_aligned_bases: number_or(parser, "filter-too-short", 30),
+                    dont_require_both_ends: flag(parser, "dont-require-soft-clips-both-ends"),
+                },
+                filter.negated,
+            ));
+        } else if name == "ReadTagValueFilter" {
+            // `--read-filter-tag` is required; a tag that is not two characters throws in htsjdk,
+            // which this port does not reproduce.
+            let tag = scalar(parser, "read-filter-tag")
+                .filter(|tag| tag.len() == 2)
+                .ok_or_else(|| missing_filter_argument(name, "read-filter-tag"))?;
+            use gatk_readfilter::TagOperator as Op;
+            let op = match scalar(parser, "read-filter-tag-op").as_deref() {
+                None | Some("EQUAL") => Op::Equal,
+                Some("LESS") => Op::Less,
+                Some("LESS_OR_EQUAL") => Op::LessOrEqual,
+                Some("GREATER") => Op::Greater,
+                Some("GREATER_OR_EQUAL") => Op::GreaterOrEqual,
+                Some("NOT_EQUAL") => Op::NotEqual,
+                Some(_) => return Err(missing_filter_argument(name, "read-filter-tag-op")),
+            };
+            parameterized.push((
+                gatk_readfilter::Parameterized::ReadTagValue {
+                    tag,
+                    op,
+                    value: scalar(parser, "read-filter-tag-comp")
+                        .and_then(|text| text.parse().ok())
+                        .unwrap_or(0.0),
+                },
+                filter.negated,
+            ));
         } else {
             return Err(Thrown::non_user(
                 PORT_LIMITATION,
@@ -2231,6 +2275,15 @@ pub(crate) fn apply_bqsr_arguments(
             .unwrap_or(-1.0),
         allow_missing_read_groups: flag(parser, "allow-missing-read-group"),
     }
+}
+
+/// A read filter argument the port cannot take as given: required and absent, or a value it
+/// does not parse the way Barclay would.
+fn missing_filter_argument(filter: &str, argument: &str) -> Thrown {
+    Thrown::non_user(
+        PORT_LIMITATION,
+        format!("{filter} needs a --{argument} value this port does not handle. This message is the port's own and not GATK's."),
+    )
 }
 
 /// An integer argument with the tool's own default where it was not given.
