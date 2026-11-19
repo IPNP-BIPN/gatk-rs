@@ -73,3 +73,26 @@ pub fn print_reads_with(
         deflater,
     )
 }
+
+/// [`print_reads_with`] straight to `output`, a read at a time: see
+/// [`crate::sam_output::write_bam_file`]. The outer error is the traversal's, the inner one the
+/// file's.
+pub fn print_reads_to(
+    output: &std::path::Path,
+    source: &ReadsDataSource,
+    options: &Options,
+    filter: &dyn Fn(&BamRecord) -> bool,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
+) -> Result<Result<crate::sam_output::Written, std::io::Error>, ReadsError> {
+    let records = crate::read_walker::traverse_iter(source, &options.intervals, false, filter)?;
+    let header = header_for_sam_writer(source.header(), options);
+    crate::sam_output::write_bam_file(
+        output,
+        &header,
+        records,
+        options.create_output_bam_index,
+        level,
+        deflater,
+    )
+}

@@ -127,7 +127,31 @@ pub fn write_records_with(
     level: u32,
     deflater: htsjdk_bgzf::Deflater,
 ) -> Result<(Vec<u8>, Option<Vec<u8>>), ReadsError> {
-    let writer = BamWriter::with_compression(Vec::new(), header, level, deflater)
+    write_stream(
+        Vec::new(),
+        header,
+        records.iter().cloned().map(Ok),
+        create_index,
+        level,
+        deflater,
+    )
+}
+
+/// The same, a record at a time into `out`: the BAM is written as the reads arrive and the `.bai`
+/// is built beside it, so neither the reads nor the output are held.
+///
+/// A refusal from the traversal stops the writing where it came, and `out` holds what came
+/// before it; a caller that must leave no file behind writes to a scratch path, as
+/// [`write_bam_file`] does.
+pub fn write_stream<W: std::io::Write>(
+    out: W,
+    header: &SamHeader,
+    records: impl IntoIterator<Item = Result<BamRecord, ReadsError>>,
+    create_index: bool,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
+) -> Result<(W, Option<Vec<u8>>), ReadsError> {
+    let writer = BamWriter::with_compression(out, header, level, deflater)
         .map_err(|e| ReadsError::Io(e.to_string()))?;
     let mut writer = if create_index {
         writer.with_index()
@@ -136,7 +160,7 @@ pub fn write_records_with(
     };
     for record in records {
         writer
-            .write(record)
+            .write(&record?)
             .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?;
     }
     if create_index {
@@ -147,5 +171,100 @@ pub fn write_records_with(
     } else {
         let bam = writer.finish().map_err(|e| ReadsError::Io(e.to_string()))?;
         Ok((bam, None))
+    }
+}
+
+/// What a BAM written to disk leaves: its `.bai` when one was asked for, and the MD5 of its bytes,
+/// taken as they were written rather than read back.
+pub struct Written {
+    pub index: Option<Vec<u8>>,
+    pub md5: String,
+}
+
+/// [`write_stream`] to `path`, through a scratch file beside it that is renamed over `path` only
+/// once everything is written: a refusal partway leaves `path` as it was, which is what writing
+/// the bytes only after the traversal had finished did.
+pub fn write_bam_file(
+    path: &std::path::Path,
+    header: &SamHeader,
+    records: impl IntoIterator<Item = Result<BamRecord, ReadsError>>,
+    create_index: bool,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
+) -> Result<Result<Written, std::io::Error>, ReadsError> {
+    // A device, a pipe or a directory is written, or refused, where it is: there is nothing to
+    // rename over it.
+    let in_place = std::fs::metadata(path).is_ok_and(|metadata| !metadata.is_file());
+    let scratch = if in_place {
+        path.to_path_buf()
+    } else {
+        scratch_beside(path)
+    };
+    let file = match std::fs::File::create(&scratch) {
+        Ok(file) => file,
+        Err(error) => return Ok(Err(error)),
+    };
+    let out = Md5Writer {
+        inner: std::io::BufWriter::with_capacity(1 << 20, file),
+        md5: <md5::Md5 as md5::Digest>::new(),
+    };
+    let written = write_stream(out, header, records, create_index, level, deflater);
+    let (out, index) = match written {
+        Ok(written) => written,
+        Err(error) => {
+            if !in_place {
+                let _ = std::fs::remove_file(&scratch);
+            }
+            return Err(error);
+        }
+    };
+    let md5 = format!(
+        "{:032x}",
+        u128::from_be_bytes(md5::Digest::finalize(out.md5).into())
+    );
+    let finished = out
+        .inner
+        .into_inner()
+        .map_err(|error| error.into_error())
+        .and_then(|_| {
+            if in_place {
+                Ok(())
+            } else {
+                std::fs::rename(&scratch, path)
+            }
+        });
+    if let Err(error) = finished {
+        if !in_place {
+            let _ = std::fs::remove_file(&scratch);
+        }
+        return Ok(Err(error));
+    }
+    Ok(Ok(Written { index, md5 }))
+}
+
+/// A name in `path`'s directory that no other writer uses.
+fn scratch_beside(path: &std::path::Path) -> std::path::PathBuf {
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    path.with_file_name(format!(".{name}.{}.partial", std::process::id()))
+}
+
+/// The bytes on their way to the file, hashed as they pass.
+struct Md5Writer<W> {
+    inner: W,
+    md5: md5::Md5,
+}
+
+impl<W: std::io::Write> std::io::Write for Md5Writer<W> {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        let written = self.inner.write(bytes)?;
+        md5::Digest::update(&mut self.md5, &bytes[..written]);
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
     }
 }
