@@ -366,6 +366,8 @@ fn intervals_vcf(parser: &Parser, start: &Start) -> Result<String, Thrown> {
             records.push(record);
         }
     }
+    // `--sites-only-vcf-output` is the writer's: `createVCFWriter` drops the genotypes.
+    apply_sites_only(parser, &mut header, &mut records);
     write_vcf_honouring_lenient(parser, &header, &records)
 }
 
@@ -565,6 +567,8 @@ fn segments_vcf(parser: &Parser, start: &Start) -> Result<String, Thrown> {
         record.log10_p_error = qs / -10.0;
         records.push(record);
     }
+    // `--sites-only-vcf-output` is the writer's: `createVCFWriter` drops the genotypes.
+    apply_sites_only(parser, &mut header, &mut records);
     write_vcf_honouring_lenient(parser, &header, &records)
 }
 
