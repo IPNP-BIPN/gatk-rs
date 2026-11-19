@@ -17853,6 +17853,9 @@
         "compared file is output.vcf; the .idx beside it records a timestamp and is not compared. JAVASCRIPT_FILE keeps",
         "single-base sites past position 1000 (a site the script rejects is filtered under the script's base name), or",
         "is not JavaScript at all.",
+        "The port runs the script in Boa with stand-ins for the Java objects Nashorn binds; a script",
+        "that reaches what they do not mirror (Java.type, a string's length(), a run-time error) is a",
+        "port limitation, never a different answer (docs/filtervcf-javascript.md).",
         "OUTPUT is also a .vcf.gz, which htsjdk block-compresses with a tabix index beside it",
         "(picard-rs#374); the .vcf.gz and its .tbi are compared byte for byte."
       ],

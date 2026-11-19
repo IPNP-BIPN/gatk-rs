@@ -1369,16 +1369,14 @@ the CPU path that already exists, and no bit-identity claim may weaken to buy a 
 - [x] the provenance guard (decision 0014), running in all three repositories
 - [x] covering arrays generated **and run** per tool. **208 gatk-rs tools** are measured against
       both the reference and the port on every CI run at t=2 (`tools/coverage/measured.json`,
-      frozen from run 43572913214 on main, printed per tool in `docs/VALIDATION.md`), **204 of
+      frozen from run 43572913214 on main, printed per tool in `docs/VALIDATION.md`), **205 of
       them at 1.000**, including the Spark SV, PathSeq, gCNV and Python-backed tools (#1403), the
       17 Picard tools GATK bundles, which the `gatk` binary now dispatches (#1415), and
       `ConvertCountsToDepthFile`, whose array landed with the move to 4.7.0.0 and was never frozen
       until now. The 28 rows a `.idx` with a returning contig used to cost (htsjdk's
       `LinkedHashMap` keeps one entry at the first place, fixed in IPNP-BIPN/htsjdk-rs#280) are
-      gone, which takes five Picard VCF tools to 1.000. The 4 still below:
-      - `FilterVcf`, 7 of 20: 11 rows are `--JAVASCRIPT_FILE`, a Nashorn script the port refuses
-        as a port limitation at the point where Picard builds the filter, and 2 are not yet
-        attributed
+      gone, which takes five Picard VCF tools to 1.000, and `FilterVcf` runs its `--JAVASCRIPT_FILE`
+      in Boa (`docs/filtervcf-javascript.md`). The 3 still below:
       - `SplitVcfs`, 22 of 26: 3 rows write an indexed `.vcf.gz` SNP output beside a text INDEL
         output, where htsjdk hands one tabix index to both writers, and 1 is a tabix out-of-order
         refusal Picard raises while streaming, which arrives after the port's SYMBOLIC refusal
