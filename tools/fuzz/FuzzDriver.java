@@ -21,6 +21,7 @@
  *   positional <token>...      appended last, as run_array.as_cli does
  *   tagged     <name>...       a value of these is `tag:path` words, each `--name:tag path`
  *   lists      <name>...       a value of these is words, each `--name word`
+ *   writable   <name>...       a fixture value of these is copied to a private writable file first
  *   domain     <name> <v>...   every value the array gives the argument; what a mutation draws from
  *   row        --name=value... one seed command line
  */
@@ -38,6 +39,7 @@ import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -64,6 +66,7 @@ public class FuzzDriver {
     static List<String> positional = new ArrayList<>();
     static Set<String> tagged = new HashSet<>();
     static Set<String> lists = new HashSet<>();
+    static Set<String> writable = new HashSet<>();
     static Map<String, List<String>> domains = new LinkedHashMap<>();
 
     public static void main(String[] args) throws Exception {
@@ -83,6 +86,7 @@ public class FuzzDriver {
                 case "positional": positional.addAll(rest); break;
                 case "tagged": tagged.addAll(rest); break;
                 case "lists": lists.addAll(rest); break;
+                case "writable": writable.addAll(rest); break;
                 case "domain": domains.put(rest.get(0), rest.subList(1, rest.size())); break;
                 case "row": corpus.add(rest); break;
                 default: throw new IllegalArgumentException("unknown seed record: " + f[0]);
@@ -135,7 +139,7 @@ public class FuzzDriver {
     }
 
     /** `--name=value` pairs to argv, the way run_array.as_cli writes them. */
-    static List<String> argv(List<String> pairs) {
+    static List<String> argv(List<String> pairs) throws IOException {
         List<String> out = new ArrayList<>();
         out.add(tool);
         for (String pair : pairs) {
@@ -143,6 +147,15 @@ public class FuzzDriver {
             String name = eq < 0 ? pair : pair.substring(0, eq);
             String value = eq < 0 ? "" : pair.substring(eq + 1);
             if (value.equals(UNSET)) continue;
+            if (writable.contains(name) && value.startsWith("/work/fixtures/")) {
+                // As run_array.writable_copies: the corpus is read-only, and AddCommentsToBam
+                // asserts its INPUT writable before it reads it.
+                Path copy = Path.of("/work/tmp/inputs").resolve(Path.of(value).getFileName());
+                Files.createDirectories(copy.getParent());
+                Files.copy(Path.of(value), copy, StandardCopyOption.REPLACE_EXISTING);
+                copy.toFile().setWritable(true);
+                value = copy.toString();
+            }
             if (tagged.contains(name)) {
                 for (String word : value.split(" ")) {
                     int colon = word.indexOf(':');
