@@ -75,8 +75,10 @@ JAVA_OPENS = " ".join([*(f"--add-opens={module}=ALL-UNNAMED" for module in ADD_O
 # The Broad's own image of the release, which has the `python` and the `Rscript` the pinned one
 # deliberately lacks. A tool under `$past_the_interpreter` runs its REFERENCE there, so the array
 # measures its arguments past the interpreter rather than up to it. Its PORT runs, for "python",
-# behind a stand-in that answers every import, since the port's only use of python is that check;
-# for "Rscript", in PORT_WITH_R, since the port runs its own rewritten scripts. numpy takes other
+# in that same image, since the port hands python the reference's own scripts and a user's: the
+# binary through the pinned image's glibc loader (`port_glibc`), the Broad's glibc being older than
+# the one CI links against, and python, which it starts, on the Broad's own libraries. For
+# "Rscript", in PORT_WITH_R, since the port runs its own rewritten scripts. numpy takes other
 # loops on an AVX-512 CPU, so those features are turned off as `vets_dump.sh` does.
 # `run_fuzz.py` turns this off: its branch probes run in the pinned image, without either.
 PAST_THE_INTERPRETER = True
@@ -611,6 +613,28 @@ def build_port_with_r():
         raise SystemExit("could not build the port's image with R")
 
 
+def port_glibc(workdir):
+    """The pinned image's loader, libc, libm and libgcc_s, which is all the port binary links.
+
+    Run as `ld-linux-x86-64.so.2 --library-path <dir> <binary>`, the binary gets them without
+    LD_LIBRARY_PATH, so the processes it starts load the image's own.
+    """
+    glibc = workdir / "glibc"
+    if not (glibc / "libc.so.6").exists():
+        glibc.mkdir(exist_ok=True)
+        libraries = " ".join(f"/usr/lib/x86_64-linux-gnu/{name}" for name in ("libc.so.6", "libm.so.6", "libgcc_s.so.1"))
+        result = subprocess.run(
+            ["docker", "run", "--rm", "--platform", PLATFORM, "-v", f"{glibc}:/out", IMAGE,
+             f"cp -L /lib64/ld-linux-x86-64.so.2 {libraries} /out/ && chmod -R a+rX /out"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            print(result.stderr[-2000:])
+            raise SystemExit("could not copy the pinned image's glibc")
+    return glibc
+
+
 def bwa_image_masked(raw):
     """A BWA-MEM index image with its addresses and padding zeroed, or None if it is not one.
 
@@ -819,25 +843,24 @@ def run_port(binary, tool, row_args, workdir, positional=(), tagged=(), lists=()
     binary = Path(binary).resolve()
     copies, row_args = writable_copies(tool, row_args)
     cli = " ".join(as_cli(row_args, positional, tagged, lists))
-    command = f"rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && {copies}/work/port-binary/{binary.name} {tool} {cli}"
-    stand_in, image = [], IMAGE
-    if past_the_interpreter(tool) == "Rscript":
-        image = PORT_WITH_R
-    if past_the_interpreter(tool) == "python":
-        python = workdir / "stand-in" / "python"
-        python.parent.mkdir(exist_ok=True)
-        python.write_text("#!/bin/sh\nexit 0\n")
-        python.chmod(0o755)
-        stand_in = ["-v", f"{python.parent}:/work/stand-in:ro"]
-        command = f"export PATH=/work/stand-in:$PATH && {command}"
+    python = past_the_interpreter(tool) == "python"
+    loader = "/work/glibc/ld-linux-x86-64.so.2 --library-path /work/glibc " if python else ""
+    command = f"rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && {copies}{loader}/work/port-binary/{binary.name} {tool} {cli}"
+    broad, image = [], [PORT_WITH_R if past_the_interpreter(tool) == "Rscript" else IMAGE, command]
+    if python:
+        broad = [
+            "-v", f"{port_glibc(workdir)}:/work/glibc:ro",
+            "-e", f"NPY_DISABLE_CPU_FEATURES={NUMPY_WITHOUT_AVX512}", "--entrypoint", "sh",
+        ]
+        image = [BROAD["image"], "-c", command]
     result = subprocess.run(
         [
             "docker", "run", "--rm", "--platform", PLATFORM,
             "-v", f"{fixtures_of(workdir)}:/work/fixtures:ro",
             "-v", f"{out_dir}:/work/out",
             "-v", f"{binary.parent}:/work/port-binary:ro",
-            *stand_in,
-            "-w", "/work", image, command,
+            *broad,
+            "-w", "/work", *image,
         ],
         capture_output=True,
         text=True,

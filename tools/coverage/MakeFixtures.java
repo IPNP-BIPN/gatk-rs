@@ -7352,7 +7352,26 @@ public class MakeFixtures {
                 + "chr1\t1000\t2999\t3\t3" + posteriors + "chr2\t500\t999\t1\t1" + posteriors, StandardCharsets.UTF_8);
         Files.writeString(dir.resolve("hyperparameters.json"), "{}\n", StandardCharsets.UTF_8);
         Files.writeString(dir.resolve("hyperparameters2.json"), "{\"n_estimators\": 10}\n", StandardCharsets.UTF_8);
-        Files.writeString(dir.resolve("score.py"), "# never run: the image has no python\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("score.py"), "# A --python-script backend: training pickles each annotation's mean, and scoring writes minus the\n"
+                + "# sum of each site's absolute annotations, NaN taken as nought.\n"
+                + "import argparse\n"
+                + "import pickle\n"
+                + "import h5py\n"
+                + "import numpy as np\n"
+                + "parser = argparse.ArgumentParser()\n"
+                + "for name in ('annotations_file', 'hyperparameters_json_file', 'output_prefix',\n"
+                + "             'unlabeled_annotations_file', 'scorer_pkl_file', 'output_scores_file'):\n"
+                + "    parser.add_argument('--' + name)\n"
+                + "args = parser.parse_args()\n"
+                + "with h5py.File(args.annotations_file, 'r') as f:\n"
+                + "    x = np.vstack([f[f'/annotations/chunk_{i}'][()] for i in range(int(f['/annotations/num_chunks'][()]))])\n"
+                + "if args.output_prefix is not None:\n"
+                + "    with open(args.output_prefix + '.scorer.pkl', 'wb') as f:\n"
+                + "        pickle.dump(np.nanmean(x, axis=0).tolist(), f, protocol=4)\n"
+                + "else:\n"
+                + "    open(args.scorer_pkl_file, 'rb').close()\n"
+                + "    with h5py.File(args.output_scores_file, 'w') as f:\n"
+                + "        f.create_dataset('data/scores', data=-np.nansum(np.abs(x), axis=1))\n", StandardCharsets.UTF_8);
         Files.writeString(dir.resolve("score2.py"), "# nor this one\n", StandardCharsets.UTF_8);
         for (final String scorer : List.of("both.snp", "both.indel", "snp.snp")) {
             Files.writeString(dir.resolve(scorer + ".scorer.pkl"), "no pickle\n", StandardCharsets.UTF_8);

@@ -2027,7 +2027,7 @@ Inputs: `both`, `nothing`, `score.py`, `snp`, `vr_calls.vcf`, `vr_calls2.vcf`.
 
 Held out: `--indel-calibration-sensitivity-threshold`, `--input`, `--read-index`, `--reference`, `--sequence-dictionary`, `--snp-calibration-sensitivity-threshold`, `--variant-output-filtering`.
 
-The variants, resources, annotations and modes are ExtractVariantAnnotations': the same walker's onTraversalStart runs, with the reserved snp label its refusal. The header goes to a writer nothing closes, and only then the backend. The reference runs in the Broad's image, so past the import, and the port behind a stand-in python ($past_the_interpreter); it/both and it/snp then hold scorers the reference trained before the rows (run_array.train_scorers), and nothing holds none. PYTHON_SCRIPT runs a script that does nothing, which the port refuses in its own words: those rows differ. The command line is held off because it records the date. The two thresholds are not varied: their bounds refuse a null where the parser reads one, so a row without them would stop before the pass. The dump covers their refusals.
+The variants, resources, annotations and modes are ExtractVariantAnnotations': the same walker's onTraversalStart runs, with the reserved snp label its refusal. The header goes to a writer nothing closes, and only then the backend. The reference runs in the Broad's image, so past the import, and the port there too, through the pinned image's glibc ($past_the_interpreter); it/both and it/snp then hold scorers the reference trained before the rows (run_array.train_scorers), and nothing holds none. PYTHON_SCRIPT runs it/score.py (MakeFixtures) on each side. The command line is held off because it records the date. The two thresholds are not varied: their bounds refuse a null where the parser reads one, so a row without them would stop before the pass. The dump covers their refusals.
 
 ### SelectVariants
 
@@ -2195,7 +2195,7 @@ Inputs: `extract.annot.hdf5`, `extract.unlabeled.annot.hdf5`, `hyperparameters.j
 
 Held out: none.
 
-The reference runs in the Broad's image, whose python gets it past the import, and the port behind a stand-in python (run_array.py, $past_the_interpreter): the default backend then fits the forest and writes the scorer and its scores. JAVA_BGMM is the reference's own missing module. PYTHON_SCRIPT runs a script that does nothing, which the port refuses in its own words, and so does --unlabeled-annotations-hdf5 under the default backend: those rows differ.
+The reference runs in the Broad's image, whose python gets it past the import, and the port there too, through the pinned image's glibc (run_array.py, $past_the_interpreter): the default backend then fits the forest and writes the scorer and its scores. JAVA_BGMM is the reference's own missing module. PYTHON_SCRIPT runs it/score.py (MakeFixtures), which pickles the means and writes scores, with both sides' own python. The port refuses --unlabeled-annotations-hdf5 under the default backend in its own words, where the reference's script rejects it.
 
 ### TransferReadTags
 
