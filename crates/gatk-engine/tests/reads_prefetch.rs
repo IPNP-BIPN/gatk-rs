@@ -10,7 +10,7 @@ use htsjdk_bam::header::{SamHeader, SequenceRecord};
 use htsjdk_bam::reader::BamReader;
 use htsjdk_bam::record::BamRecord;
 use htsjdk_bam::writer::BamWriter;
-use htsjdk_bgzf::BgzfWriter;
+use htsjdk_bgzf::{vfp, BgzfReader, BgzfWriter};
 use std::io::Write;
 
 const RECORDS: usize = 40_000;
@@ -58,7 +58,8 @@ fn stream() -> (Vec<u8>, Vec<Vec<u8>>) {
     (inflated[..start].to_vec(), records)
 }
 
-/// The BAM of `header` then `records`, and the virtual pointer each record starts at.
+/// The BAM of `header` then `records`, and the virtual pointer each record starts at, then the
+/// one past the last.
 fn write(
     dir: &std::path::Path,
     header: &[u8],
@@ -71,6 +72,7 @@ fn write(
         pointers.push(writer.file_pointer().unwrap());
         writer.write_all(record).unwrap();
     }
+    pointers.push(writer.file_pointer().unwrap());
     let path = dir.join("reads.bam");
     std::fs::write(&path, writer.into_inner().unwrap()).unwrap();
     (path, pointers)
@@ -181,4 +183,63 @@ fn a_stream_cut_inside_its_last_record_is_truncated_or_eof_as_before() {
         end: u64::MAX,
     };
     assert_eq!(names(source.read_chunk_iter(&chunk)), wanted);
+}
+
+#[test]
+fn a_block_that_does_not_inflate_is_refused_where_the_records_reach_it() {
+    let dir = scratch("crc");
+    let (header, records) = stream();
+    let (path, pointers) = write(&dir, &header, &records);
+    let mut bam = std::fs::read(&path).unwrap();
+    // The block a record in the middle starts in, its inflated size off by one: its frame is still
+    // sound, and its inflating is refused.
+    let damaged = vfp::block_address(pointers[RECORDS / 2]) as usize;
+    let mut inflated_before = 0;
+    let mut at = 0;
+    while at < damaged {
+        let length = usize::from(u16::from_le_bytes([bam[at + 16], bam[at + 17]])) + 1;
+        inflated_before +=
+            u32::from_le_bytes(bam[at + length - 4..at + length].try_into().unwrap()) as usize;
+        at += length;
+    }
+    let length = usize::from(u16::from_le_bytes([bam[damaged + 16], bam[damaged + 17]])) + 1;
+    bam[damaged + length - 4] ^= 0x01;
+    std::fs::write(&path, &bam).unwrap();
+    let refusal = format!(
+        "{:?}",
+        BgzfReader::new(&bam[damaged..]).next_block().unwrap_err()
+    );
+
+    // The open no longer inflates the file, so it opens; the reading stops at that block.
+    let source = ReadsDataSource::open_unindexed(&path).unwrap();
+    let mut end = header.len();
+    let whole = records
+        .iter()
+        .take_while(|record| {
+            end += record.len();
+            end <= inflated_before
+        })
+        .count();
+    assert!(whole > 0 && whole < RECORDS);
+    let mut wanted = expected_names(&records[..whole]);
+    wanted.push(Err(ReadsError::Malformed(refusal)));
+    assert_eq!(names(source.records_all().unwrap()), wanted);
+    let chunk = Chunk {
+        start: pointers[0],
+        end: u64::MAX,
+    };
+    assert_eq!(names(source.read_chunk_iter(&chunk)), wanted);
+}
+
+#[test]
+fn a_file_cut_short_is_still_refused_at_the_open() {
+    let dir = scratch("short");
+    let (header, records) = stream();
+    let (path, _) = write(&dir, &header, &records);
+    let bam = std::fs::read(&path).unwrap();
+    std::fs::write(&path, &bam[..bam.len() - 10]).unwrap();
+    assert!(matches!(
+        ReadsDataSource::open_unindexed(&path),
+        Err(ReadsError::Malformed(_))
+    ));
 }

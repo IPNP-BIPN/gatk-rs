@@ -465,14 +465,19 @@ fn malformed(error: impl std::fmt::Debug) -> ReadsError {
 /// How many blocks [`check_blocks`] inflates at once: at most 16 MiB either side of the inflate.
 const CHECKED_BLOCKS: usize = 256;
 
-/// `decompress_all`'s answer for the whole file, keeping none of what it inflates.
+/// Whether the file is BGZF blocks end to end, before any record is read.
 ///
 /// Opening a BAM inflated it whole, so a damaged block anywhere was refused at the open, before
-/// any argument check that follows it. The refusal stays where it was; only the inflated copy goes.
-/// The file is cut at frames `BgzfReader::next_block` would accept, so each batch's first failing
-/// block is the one the whole stream would have stopped at; where the walk cannot vouch for a
-/// frame the serial reader takes over and refuses it in its own way.
+/// any argument check that follows it. A file whose frames run cleanly to its end is now taken
+/// without inflating it: the reference reads lazily, so a block whose deflate stream or CRC is bad
+/// is refused where a reader reaches it, as `BlockCompressedInputStream` refuses it, and the
+/// traversal inflates the file once rather than twice. A file whose frames do not run to its end
+/// (cut short, not BGZF, a header the walk cannot vouch for) is checked as it was, inflating every
+/// block in batches, so its refusal stays at the open and stays the one it was.
 fn check_blocks(compressed: &CompressedFile) -> Result<(), ReadsError> {
+    if frames(compressed, 0, usize::MAX)? == compressed.len() {
+        return Ok(());
+    }
     let mut address = 0u64;
     loop {
         let end = frames(compressed, address, CHECKED_BLOCKS)?;
@@ -724,9 +729,9 @@ impl ReadsDataSource {
         Self::open_checked(bam)
     }
 
-    /// Whether the whole file inflates, which [`Self::open_unindexed`] asks before it reads the
-    /// header. A caller that needs the answer before it opens asks here and then opens with
-    /// [`Self::open_checked`], so the file is inflated once and not twice.
+    /// Whether the file is BGZF blocks end to end ([`check_blocks`]), which
+    /// [`Self::open_unindexed`] asks before it reads the header. A caller that needs the answer
+    /// before it opens asks here and then opens with [`Self::open_checked`], so it is asked once.
     pub fn check(bam: &Path) -> Result<(), ReadsError> {
         check_blocks(&CompressedFile::open(bam)?)
     }
