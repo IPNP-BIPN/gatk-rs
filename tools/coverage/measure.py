@@ -79,6 +79,8 @@ def main(argv):
     # Before the tools run side by side, so that no two of them train into the corpus at once.
     if any(run_array.past_the_interpreter(tool) == "python" for tool in options.tool):
         run_array.train_scorers(fixtures)
+    if any(run_array.uses_gcnv(tool) for tool in options.tool):
+        run_array.build_gcnv(fixtures)
     if any(run_array.past_the_interpreter(tool) == "Rscript" for tool in options.tool):
         run_array.build_port_with_r()
 
