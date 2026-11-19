@@ -1355,6 +1355,14 @@ Folklore says a Rust port is faster than the JVM. The answerable version is narr
       — each marked removable or not
 - [x] **S.5** (#112) the first targets, chosen from the baseline rather than from reading the code.
       Blocked on S.3 by construction
+- [ ] **S.6** (#1452) bounded memory: a streaming engine. The costs above were measured on the
+      conformance fixtures, where the port's RSS is a fraction of the reference's; at scale it was
+      the other way round, because the port held whole inputs. `CountReads` over NA12878 chr20
+      (923 MB) peaked at 28.9 GB. Record order stays the same, only where records live changes, so
+      no suite may move. Streaming reader and read-walker iterator (#1458, #1459), BGZF writer with
+      the `.bai` built on the fly (#1460), and a guard under `ulimit -v` (#1461) bring that run to
+      98 MB; the assembly-region, locus and variant walkers, the external sort and the remaining
+      whole-file reads are what is left
 
 Milestone GPU is a different thing: a second implementation on other hardware. This one is about
 the CPU path that already exists, and no bit-identity claim may weaken to buy a speedup.
