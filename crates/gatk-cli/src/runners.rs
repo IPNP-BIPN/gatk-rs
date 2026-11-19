@@ -1728,15 +1728,19 @@ pub fn print_reads(parser: &Parser) -> Outcome {
         version: crate::TOOLKIT_VERSION,
     };
     let (level, deflater) = output_compression(parser);
-    let (bam, bai) =
-        gatk_tools::print_reads::print_reads_with(&source, &options, &filter, level, deflater)
-            .map_err(|error| Thrown::user(format!("{error:?}")))?;
-
-    let written = bam;
-    std::fs::write(&output, &written).map_err(|error| {
+    let written = gatk_tools::print_reads::print_reads_to(
+        std::path::Path::new(&output),
+        &source,
+        &options,
+        &filter,
+        level,
+        deflater,
+    )
+    .map_err(|error| Thrown::user(format!("{error:?}")))?
+    .map_err(|error| {
         Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
     })?;
-    if let Some(bai) = bai {
+    if let Some(bai) = written.index {
         // The index REPLACES the output's extension: `out.bam` is indexed by `out.bai`.
         let companion = std::path::Path::new(&output).with_extension("bai");
         std::fs::write(&companion, bai).map_err(|error| {
@@ -1750,9 +1754,9 @@ pub fn print_reads(parser: &Parser) -> Outcome {
         // The digest APPENDS where the index replaces: `out.bam` is checksummed by `out.bam.md5`,
         // and the file is the thirty-two hex characters and nothing else.
         let digest = format!("{output}.md5");
-        std::fs::write(&digest, gatk_tools::gather_bam_files::md5_file(&written)).map_err(
-            |error| Thrown::non_user(PORT_FAILURE, format!("could not write {digest}: {error}")),
-        )?;
+        std::fs::write(&digest, written.md5).map_err(|error| {
+            Thrown::non_user(PORT_FAILURE, format!("could not write {digest}: {error}"))
+        })?;
     }
     // The tool returns nothing, so `handleResult` prints nothing.
     Ok(None)
