@@ -3493,6 +3493,32 @@ public class MakeFixtures {
                 "--reference", dir.resolve("reference.fasta").toString(),
                 "--output", dir.resolve("f1r2_counts.tar.gz").toString(),
         });
+        // FilterMutectCalls' three model inputs over the same reads, each the reference's own: the
+        // orientation priors LearnReadOrientationModel fits to the tumour/normal archive, and the
+        // contamination table and tumour segmentation CalculateContamination writes from the
+        // tumour's pileups at the germline resource's first three sites, every frequency let through
+        // (the resource's `AF=.` record further on is a NumberFormatException to GetPileupSummaries).
+        // That estimate is 0.0, the default, so a second table says the tumour is a tenth
+        // contaminated and the normal, which the filter skips, a fifth.
+        new org.broadinstitute.hellbender.tools.walkers.readorientation.LearnReadOrientationModel().instanceMain(new String[] {
+                "--input", dir.resolve("f1r2_tn.tar.gz").toString(),
+                "--output", dir.resolve("mutect_priors.tar.gz").toString(),
+        });
+        new org.broadinstitute.hellbender.tools.walkers.contamination.GetPileupSummaries().instanceMain(new String[] {
+                "--input", dir.resolve("mutect_t.bam").toString(),
+                "--variant", dir.resolve("m2_germline.vcf").toString(),
+                "--intervals", "chr1:1-1300",
+                "--minimum-population-allele-frequency", "0.0",
+                "--maximum-population-allele-frequency", "1.0",
+                "--output", dir.resolve("mutect_summaries.table").toString(),
+        });
+        new org.broadinstitute.hellbender.tools.walkers.contamination.CalculateContamination().instanceMain(new String[] {
+                "--input", dir.resolve("mutect_summaries.table").toString(),
+                "--tumor-segmentation", dir.resolve("mutect_segments.table").toString(),
+                "--output", dir.resolve("mutect_contamination.table").toString(),
+        });
+        Files.writeString(dir.resolve("mutect_contaminated.table"),
+                "sample\tcontamination\terror\ntumor\t0.1\t0.01\nnormal\t0.2\t0.01\n", StandardCharsets.UTF_8);
         // A decimation matrix for `ComposeSTRTableFile`, with a comment line, a blank line and a row
         // that keeps one site in two of every period-one repeat of length three.
         Files.writeString(dir.resolve("decimation.txt"), "# period by repeat\n0\n0 0 0 1 2\n\n0 0 1\n",
