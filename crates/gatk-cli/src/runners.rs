@@ -865,7 +865,9 @@ fn read_walker_startup_with(
     let reference = reference_dictionary(parser)?;
 
     // `initializeReads`: the file itself, which is a refusal only when it cannot be read at all.
-    let bytes = std::fs::read(path).ok();
+    // Only the start of the stream decides a refusal, so only the start is kept: the file's own
+    // bytes, or for BGZF the inflated ones once the whole file is known to inflate.
+    let bytes = gatk_engine::reads::file_start(path);
     let compressed = bytes
         .as_deref()
         .map(gatk_tools::read_walker_refusal::is_block_compressed)
@@ -873,7 +875,9 @@ fn read_walker_startup_with(
     let decompressed = match (&bytes, compressed) {
         (None, _) => None,
         (Some(bytes), false) => Some(bytes.clone()),
-        (Some(bytes), true) => htsjdk_bgzf::read::decompress_all(bytes).ok(),
+        (Some(_), true) => ReadsDataSource::check(path)
+            .and_then(|()| gatk_engine::reads::inflated_start(path))
+            .ok(),
     };
     let reader_refusal = gatk_tools::read_walker_refusal::refusal(
         &input,
@@ -923,11 +927,11 @@ fn read_walker_startup_with(
     };
     let source = if deferred_parse_refusal.is_some() {
         None
-    } else if let (Some(bytes), true, Some(inflated)) = (bytes, compressed, decompressed) {
-        // The file read and inflated above, rather than once more each by `open` and by
+    } else if let (Some(_), true, Some(_)) = (bytes, compressed, decompressed) {
+        // The file checked above, rather than once more each by `open` and by
         // `open_unindexed`. The answer is `open`'s or its fallback's: a header that does not
         // parse is the fallback's refusal, and an index that does not parse is no index.
-        let mut source = ReadsDataSource::from_inflated(path, bytes, inflated)
+        let mut source = ReadsDataSource::open_checked(path)
             .map_err(|error| Thrown::user(format!("{error:?}")))?;
         if let Some(index) = &index {
             let _ = source.load_index(index);
@@ -1631,14 +1635,24 @@ pub fn print_reads(parser: &Parser) -> Outcome {
     })?;
     let path = std::path::Path::new(&input);
 
-    let bytes = std::fs::read(path)
-        .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&input, false)))?;
+    // The start of the file decides what it is; for BGZF, once the whole file is known to inflate.
+    let bytes = gatk_engine::reads::file_start(path)
+        .ok_or_else(|| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&input, false)))?;
     let is_binary = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
-        htsjdk_bgzf::read::decompress_all(&bytes)
+        ReadsDataSource::check(path)
+            .and_then(|()| gatk_engine::reads::inflated_start(path))
             .map(|inflated| inflated.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC))
             .unwrap_or(false)
     } else {
         bytes.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC)
+    };
+    // A binary input passed the check above, so opening it does not inflate it again.
+    let open_unindexed = |path: &std::path::Path| {
+        if is_binary {
+            ReadsDataSource::open_checked(path)
+        } else {
+            ReadsDataSource::open_unindexed(path)
+        }
     };
     let named_index = read_index(
         parser,
@@ -1655,22 +1669,21 @@ pub fn print_reads(parser: &Parser) -> Outcome {
     // opens the file, `initializeIntervals` runs next, and a query that does not resolve is
     // refused before anything asks the index what it is.
     let (source, bad_index) = match &index {
-        Some(index) => match ReadsDataSource::open(path, index) {
-            Ok(source) => (source, None),
-            Err(_) => (
-                ReadsDataSource::open_unindexed(path)
-                    .map_err(|error| Thrown::user(format!("{error:?}")))?,
-                Some(
-                    index
-                        .file_name()
-                        .map(|name| name.to_string_lossy().into_owned())
-                        .unwrap_or_default(),
-                ),
-            ),
-        },
+        // `open` is the unindexed open then the index: a refusal of either leaves the source
+        // unindexed, and the index's is the one that waits.
+        Some(index) => {
+            let mut source =
+                open_unindexed(path).map_err(|error| Thrown::user(format!("{error:?}")))?;
+            let bad_index = source.load_index(index).err().map(|_| {
+                index
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            });
+            (source, bad_index)
+        }
         None => (
-            ReadsDataSource::open_unindexed(path)
-                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+            open_unindexed(path).map_err(|error| Thrown::user(format!("{error:?}")))?,
             None,
         ),
     };
