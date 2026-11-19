@@ -20,6 +20,27 @@ published come from the `Speed` workflow on real x86-64.
 | `bench.py` | picks the rows, runs the timer per tool, summarises, merges shards, compares runs |
 | `timer.py` | runs inside the container: alternates the two sides, reads CPU and peak RSS from `wait4` |
 | `Steady.java` | the reference's steady state: one JVM, the same command line `n` times |
+| `scale.json` | the scale benchmark: chr20 of a 30x WGS, pinned by sha256, and the chain run on it |
+| `scale_data.py` | derives that data from its public sources in pinned images and checks every hash |
+
+## At scale
+
+```sh
+python3 tools/speed/scale_data.py ~/scale-data
+python3 tools/speed/bench.py --scale --port target-linux/release/gatk --data ~/scale-data \
+  --results ~/scale-results --out scale.json [--step HaplotypeCaller ...]
+```
+
+The fixtures above are tiny, so their numbers are mostly the JVM's start. `--scale` runs the
+best-practices chain in `scale.json` on chr20 of NA12878 at 30x: one run per side per step, at the
+same thread count (`--threads`, default 4), in one container limited to `--memory` (default 14g,
+which leaves room on a 16 GiB runner). Each step reads the reference's outputs of the steps it
+needs, so a port failure upstream does not hide the steps below it. A side that runs out of
+memory or reaches the step's timeout is killed and recorded that way, not retried. After each step
+the two sides' files are compared one by one, under the same masks as `run_array.py` uses. A file
+that differs is reported with its first differing line (text) or decompressed byte offset
+(binary). The published numbers come from the `Speed at scale` workflow; see
+`docs/speed/scale.md`.
 
 ## What a number means
 

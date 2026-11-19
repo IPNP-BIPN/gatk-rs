@@ -1,0 +1,342 @@
+{
+ "comment": "Milestone D, D1: the chr20 30x WGS the scale benchmark runs on. Every file is DERIVED from a public source by the command beside it, in the pinned image beside it, and is pinned by the sha256 of what that produces. Only chr20 is fetched, by range requests against each source's index. `python3 tools/speed/scale_data.py DIR` derives what is missing and checks every hash; `--pin` writes the hashes here.",
+ "contig": "chr20",
+ "images": {
+  "samtools": "quay.io/biocontainers/samtools@sha256:a130447589651ed09252aa95a5e4f4132942cdb54d835d81a04a9a930d656561",
+  "bcftools": "quay.io/biocontainers/bcftools@sha256:186c45de3059dbb1837006c27788284c89d17f8e693e7804624b6cf6ca5caca0"
+ },
+ "image_tags": {
+  "samtools": "1.24--h9dcdb79_1",
+  "bcftools": "1.24--h118bc1c_4"
+ },
+ "sources": {
+  "reads": {
+   "url": "https://ftp-trace.ncbi.nlm.nih.gov/1000genomes/ftp/1000G_2504_high_coverage/data/ERR3239334/NA12878.final.cram",
+   "bytes": 15797182294,
+   "what": "1000 Genomes high coverage (NYGC), NA12878, 30x PCR-free 2x150, GRCh38_full_analysis_set_plus_decoy_hla"
+  },
+  "reference": {
+   "url": "https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta",
+   "bytes": 3249912778,
+   "what": "the Broad's GRCh38 analysis set"
+  },
+  "dbsnp": {
+   "url": "https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.dbsnp138.vcf.gz",
+   "bytes": 1560889937
+  },
+  "known_indels": {
+   "url": "https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.known_indels.vcf.gz",
+   "bytes": 61692306
+  },
+  "mills": {
+   "url": "https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Mills_and_1000G_gold_standard.indels.hg38.vcf.gz",
+   "bytes": 20685880
+  },
+  "hapmap": {
+   "url": "https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/hapmap_3.3.hg38.vcf.gz",
+   "bytes": 62043448
+  },
+  "omni": {
+   "url": "https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/1000G_omni2.5.hg38.vcf.gz",
+   "bytes": 53238342
+  },
+  "phase1": {
+   "url": "https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/1000G_phase1.snps.high_confidence.hg38.vcf.gz",
+   "bytes": 1888262073
+  },
+  "gnomad": {
+   "url": "https://storage.googleapis.com/gatk-best-practices/somatic-hg38/af-only-gnomad.hg38.vcf.gz",
+   "bytes": 3184275189
+  },
+  "pon": {
+   "url": "https://storage.googleapis.com/gatk-best-practices/somatic-hg38/1000g_pon.hg38.vcf.gz",
+   "bytes": 17273497
+  }
+ },
+ "files": [
+  {
+   "name": "chr20.fasta",
+   "image": "samtools",
+   "derive": "samtools faidx {reference} chr20 > chr20.fasta",
+   "sha256": "bf27a150de2046d0b6e8d0f493b3b4e1f48cd938cd1b9496f63a701141d9fece",
+   "bytes": 65088616
+  },
+  {
+   "name": "chr20.fasta.fai",
+   "image": "samtools",
+   "derive": "samtools faidx chr20.fasta",
+   "sha256": "25ef4b7d2658a91c5fa487573a828a2176ef5fe98e438c4f342bf212ecb482b4",
+   "bytes": 25
+  },
+  {
+   "name": "chr20.dict",
+   "image": "samtools",
+   "derive": "samtools dict -o chr20.dict chr20.fasta",
+   "sha256": "4e2bc71e279636ba4465dc81ba121f57c8bdd41be81e0d67a35f26e78f5e859b",
+   "bytes": 112
+  },
+  {
+   "name": "NA12878.chr20.bam",
+   "image": "samtools",
+   "derive": "samtools view -@ 4 -T chr20.fasta -b -o NA12878.chr20.bam {reads} chr20",
+   "sha256": "ee8be1f2340c4ca2c95843cbae5c1a713fa32e40163c7ef48d0b2c688b785d9f",
+   "bytes": 968201969
+  },
+  {
+   "name": "NA12878.chr20.bam.bai",
+   "image": "samtools",
+   "derive": "samtools index NA12878.chr20.bam",
+   "sha256": "8614863bfb02f0dffa1c77a8b0d9accc9a47199fef3bce44cf1250f0ff685f8c",
+   "bytes": 221392
+  },
+  {
+   "name": "dbsnp138.chr20.vcf.gz",
+   "image": "bcftools",
+   "derive": "bcftools view --no-version -r chr20 -Oz -o dbsnp138.chr20.vcf.gz {dbsnp}",
+   "sha256": "94d64ecd24ac7cba4c22d9fc1d1c26b2f1e2fbef6b4072318fc3ffc2634baf94",
+   "bytes": 32923993
+  },
+  {
+   "name": "known_indels.chr20.vcf.gz",
+   "image": "bcftools",
+   "derive": "bcftools view --no-version -r chr20 -Oz -o known_indels.chr20.vcf.gz {known_indels}",
+   "sha256": "4af97b7d49672042c18426145506a7789ad5f282203cb7d8273b73021d5eeff3",
+   "bytes": 1230040
+  },
+  {
+   "name": "mills.chr20.vcf.gz",
+   "image": "bcftools",
+   "derive": "bcftools view --no-version -r chr20 -Oz -o mills.chr20.vcf.gz {mills}",
+   "sha256": "3a4e56c760edf663771a3fc4454615efce0d5d48c71e3a2007ea99173d3b924a",
+   "bytes": 430737
+  },
+  {
+   "name": "hapmap.chr20.vcf.gz",
+   "image": "bcftools",
+   "derive": "bcftools view --no-version -r chr20 -Oz -o hapmap.chr20.vcf.gz {hapmap}",
+   "sha256": "ca507586f32c3ffbf539f891d3257135c076462ed0482c5ce334ed2e55a2a314",
+   "bytes": 1589231
+  },
+  {
+   "name": "omni.chr20.vcf.gz",
+   "image": "bcftools",
+   "derive": "bcftools view --no-version -r chr20 -Oz -o omni.chr20.vcf.gz {omni}",
+   "sha256": "12be6eb656eb7dcc2957ad6c92f4c27c91f711bd9c9446d98c25ac0f45ec7437",
+   "bytes": 1111821
+  },
+  {
+   "name": "phase1.chr20.vcf.gz",
+   "image": "bcftools",
+   "derive": "bcftools view --no-version -r chr20 -Oz -o phase1.chr20.vcf.gz {phase1}",
+   "sha256": "315640cc3d2eedbc9c2f2718b873d0a3d40c77b6f5b9f592c84907105bf6ab64",
+   "bytes": 38884366
+  },
+  {
+   "name": "gnomad.chr20.vcf.gz",
+   "image": "bcftools",
+   "derive": "bcftools view --no-version -r chr20 -Oz -o gnomad.chr20.vcf.gz {gnomad}",
+   "sha256": "9cceffee182342f798d4c45c7d93446be330ecd9ad8999df399f219a40d98c9c",
+   "bytes": 61167817
+  },
+  {
+   "name": "pon.chr20.vcf.gz",
+   "image": "bcftools",
+   "derive": "bcftools view --no-version -r chr20 -Oz -o pon.chr20.vcf.gz {pon}",
+   "sha256": "6ab596f593b66cdc1d167ac7535f34d4802e1e66c08599caac67c3194eb7515d",
+   "bytes": 340686
+  },
+  {
+   "name": "dbsnp138.chr20.vcf.gz.tbi",
+   "image": "bcftools",
+   "derive": "bcftools index -t dbsnp138.chr20.vcf.gz",
+   "sha256": "0ccec6d09a9904f47b7301e3038ef78ef5e535f37b46b4fbd5384cf11f15784e",
+   "bytes": 48590
+  },
+  {
+   "name": "known_indels.chr20.vcf.gz.tbi",
+   "image": "bcftools",
+   "derive": "bcftools index -t known_indels.chr20.vcf.gz",
+   "sha256": "792a60b114b67ba18cf9f65f3cf0676e966e971daa0deb7ab1fc555bfc5ef986",
+   "bytes": 32830
+  },
+  {
+   "name": "mills.chr20.vcf.gz.tbi",
+   "image": "bcftools",
+   "derive": "bcftools index -t mills.chr20.vcf.gz",
+   "sha256": "ad9e9d357044bd668cdf4343558823ba632caff1e513a83760e4652c44bc0f86",
+   "bytes": 32056
+  },
+  {
+   "name": "hapmap.chr20.vcf.gz.tbi",
+   "image": "bcftools",
+   "derive": "bcftools index -t hapmap.chr20.vcf.gz",
+   "sha256": "43dc345226872c10019327daee71cacf1155f1ddafcef2297de3ec9c2e4c297b",
+   "bytes": 32896
+  },
+  {
+   "name": "omni.chr20.vcf.gz.tbi",
+   "image": "bcftools",
+   "derive": "bcftools index -t omni.chr20.vcf.gz",
+   "sha256": "6d987c4fdd036d2bf10031da39b291ecd62ccb07f98c5d247e46f5a43cbd22d1",
+   "bytes": 32727
+  },
+  {
+   "name": "phase1.chr20.vcf.gz.tbi",
+   "image": "bcftools",
+   "derive": "bcftools index -t phase1.chr20.vcf.gz",
+   "sha256": "d6e4dca9b7a4971df5fbc23f0879b85dde0470ff1b642b0c2a2a296aed5da1e4",
+   "bytes": 45358
+  },
+  {
+   "name": "gnomad.chr20.vcf.gz.tbi",
+   "image": "bcftools",
+   "derive": "bcftools index -t gnomad.chr20.vcf.gz",
+   "sha256": "e09ce948f276e67d7cb3f0250cc667f0a2e6229b7059e035d2ad5e8b4ba27234",
+   "bytes": 46371
+  },
+  {
+   "name": "pon.chr20.vcf.gz.tbi",
+   "image": "bcftools",
+   "derive": "bcftools index -t pon.chr20.vcf.gz",
+   "sha256": "42592b7c9f0b5efbd3678d9026c484d3624492653f8a67d141cd3d8ad9e9b94b",
+   "bytes": 32875
+  }
+ ],
+ "steps_comment": "The best-practices chain on chr20. Each step reads the REFERENCE's output of the steps it needs (mounted at {in}/<step>), so both sides of every step get identical input, and a port failure upstream does not hide the steps below it. {threads} is the same on both sides: the JVM's pair-HMM and Spark threads, and the port's RAYON_NUM_THREADS. VCF writers hold --add-output-vcf-command-line false because ##GATKCommandLine carries the run's wall-clock time. `group` is the CI job a step runs in. `timeout` is seconds per side, chosen so a group's runs fit one 6-hour CI job; a side that reaches it is killed and recorded as such.",
+ "steps": [
+  {
+   "name": "MarkDuplicatesSpark",
+   "group": "prep",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/md.bam -M {out}/md.metrics --spark-master local[{threads}] --tmp-dir /work/tmp",
+   "timeout": 3000
+  },
+  {
+   "name": "BaseRecalibrator",
+   "group": "prep",
+   "needs": [
+    "MarkDuplicatesSpark"
+   ],
+   "args": "-R {data}/chr20.fasta -I {in}/MarkDuplicatesSpark/md.bam --known-sites {data}/dbsnp138.chr20.vcf.gz --known-sites {data}/mills.chr20.vcf.gz --known-sites {data}/known_indels.chr20.vcf.gz -O {out}/recal.table",
+   "timeout": 3000
+  },
+  {
+   "name": "ApplyBQSR",
+   "group": "prep",
+   "needs": [
+    "MarkDuplicatesSpark",
+    "BaseRecalibrator"
+   ],
+   "args": "-R {data}/chr20.fasta -I {in}/MarkDuplicatesSpark/md.bam --bqsr-recal-file {in}/BaseRecalibrator/recal.table -O {out}/bqsr.bam",
+   "timeout": 3000
+  },
+  {
+   "name": "HaplotypeCaller",
+   "group": "haplotypecaller",
+   "needs": [
+    "ApplyBQSR"
+   ],
+   "args": "-R {data}/chr20.fasta -I {in}/ApplyBQSR/bqsr.bam -L chr20 -ERC GVCF --native-pair-hmm-threads {threads} -O {out}/g.vcf.gz --add-output-vcf-command-line false",
+   "timeout": 9900
+  },
+  {
+   "name": "GenotypeGVCFs",
+   "group": "joint",
+   "needs": [
+    "HaplotypeCaller"
+   ],
+   "args": "-R {data}/chr20.fasta -V {in}/HaplotypeCaller/g.vcf.gz -O {out}/geno.vcf.gz --add-output-vcf-command-line false",
+   "timeout": 1800
+  },
+  {
+   "name": "VariantRecalibrator",
+   "group": "joint",
+   "needs": [
+    "GenotypeGVCFs"
+   ],
+   "args": "-R {data}/chr20.fasta -V {in}/GenotypeGVCFs/geno.vcf.gz -mode SNP --resource:hapmap,known=false,training=true,truth=true,prior=15.0 {data}/hapmap.chr20.vcf.gz --resource:omni,known=false,training=true,truth=false,prior=12.0 {data}/omni.chr20.vcf.gz --resource:1000G,known=false,training=true,truth=false,prior=10.0 {data}/phase1.chr20.vcf.gz --resource:dbsnp,known=true,training=false,truth=false,prior=2.0 {data}/dbsnp138.chr20.vcf.gz -an QD -an MQ -an MQRankSum -an ReadPosRankSum -an FS -an SOR --max-gaussians 6 -O {out}/snps.recal --tranches-file {out}/snps.tranches --add-output-vcf-command-line false",
+   "timeout": 1800
+  },
+  {
+   "name": "ApplyVQSR",
+   "group": "joint",
+   "needs": [
+    "GenotypeGVCFs",
+    "VariantRecalibrator"
+   ],
+   "args": "-R {data}/chr20.fasta -V {in}/GenotypeGVCFs/geno.vcf.gz --recal-file {in}/VariantRecalibrator/snps.recal --tranches-file {in}/VariantRecalibrator/snps.tranches -mode SNP --truth-sensitivity-filter-level 99.7 -O {out}/vqsr.vcf.gz --add-output-vcf-command-line false",
+   "timeout": 1800
+  },
+  {
+   "name": "SelectVariants",
+   "group": "joint",
+   "needs": [
+    "ApplyVQSR"
+   ],
+   "args": "-V {in}/ApplyVQSR/vqsr.vcf.gz --select-type-to-include SNP --exclude-filtered -O {out}/select.vcf.gz --add-output-vcf-command-line false",
+   "timeout": 1800
+  },
+  {
+   "name": "VariantFiltration",
+   "group": "joint",
+   "needs": [
+    "GenotypeGVCFs"
+   ],
+   "args": "-V {in}/GenotypeGVCFs/geno.vcf.gz --filter-expression 'QD < 2.0' --filter-name QD2 --filter-expression 'FS > 60.0' --filter-name FS60 --filter-expression 'MQ < 40.0' --filter-name MQ40 -O {out}/vf.vcf.gz --add-output-vcf-command-line false",
+   "timeout": 1800
+  },
+  {
+   "name": "Mutect2",
+   "group": "mutect2",
+   "needs": [
+    "ApplyBQSR"
+   ],
+   "args": "-R {data}/chr20.fasta -I {in}/ApplyBQSR/bqsr.bam -L chr20 --germline-resource {data}/gnomad.chr20.vcf.gz --panel-of-normals {data}/pon.chr20.vcf.gz --native-pair-hmm-threads {threads} -O {out}/m2.vcf.gz --add-output-vcf-command-line false",
+   "timeout": 9300
+  },
+  {
+   "name": "FilterMutectCalls",
+   "group": "mutect2",
+   "needs": [
+    "Mutect2"
+   ],
+   "args": "-R {data}/chr20.fasta -V {in}/Mutect2/m2.vcf.gz -O {out}/m2.filtered.vcf.gz --add-output-vcf-command-line false",
+   "timeout": 900
+  },
+  {
+   "name": "PreprocessIntervals",
+   "group": "cnv",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -L chr20 --bin-length 1000 --padding 0 --interval-merging-rule OVERLAPPING_ONLY -O {out}/chr20.interval_list",
+   "timeout": 1800
+  },
+  {
+   "name": "CollectReadCounts",
+   "group": "cnv",
+   "needs": [
+    "ApplyBQSR",
+    "PreprocessIntervals"
+   ],
+   "args": "-I {in}/ApplyBQSR/bqsr.bam -L {in}/PreprocessIntervals/chr20.interval_list --interval-merging-rule OVERLAPPING_ONLY --format TSV -O {out}/counts.tsv",
+   "timeout": 1800
+  },
+  {
+   "name": "DenoiseReadCounts",
+   "group": "cnv",
+   "needs": [
+    "CollectReadCounts"
+   ],
+   "args": "-I {in}/CollectReadCounts/counts.tsv --standardized-copy-ratios {out}/standardized.tsv --denoised-copy-ratios {out}/denoised.tsv",
+   "timeout": 1800
+  },
+  {
+   "name": "ModelSegments",
+   "group": "cnv",
+   "needs": [
+    "DenoiseReadCounts"
+   ],
+   "args": "--denoised-copy-ratios {in}/DenoiseReadCounts/denoised.tsv -O {out} --output-prefix NA12878",
+   "timeout": 1800
+  }
+ ]
+}

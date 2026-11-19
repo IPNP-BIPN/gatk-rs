@@ -1,0 +1,150 @@
+name: Speed at scale
+
+# Milestone D (D2): the best-practices chain on chr20 of a 30x WGS (tools/speed/scale.json), the
+# reference and the port in the pinned container at equal thread counts, wall clock, CPU, peak RSS
+# and whether the output bytes agree. Kept out of ci.yml for the reasons speed.yml is, and more:
+# one run is hours of runner time. It runs by hand, nightly, and when its own files change.
+# Each group is one job; a step reads the REFERENCE's outputs of the steps it needs, carried
+# between jobs as artifacts, so both sides of every step get the same input.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 1 * * *"
+  pull_request:
+    paths:
+      - "tools/speed/scale.json"
+      - "tools/speed/scale_data.py"
+      - ".github/workflows/speed-scale*.yml"
+
+concurrency:
+  group: speed-scale-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  oracle-image:
+    name: The pinned oracle image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: cache
+        uses: actions/cache@v6
+        with:
+          path: /tmp/oracle-image.tar
+          key: gatk-rs-oracle-${{ hashFiles('tools/oracle/**') }}
+
+      - name: Build the oracle image
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          docker build --platform linux/amd64 -t gatk-rs-oracle:4.7.0.0 tools/oracle
+          docker save gatk-rs-oracle:4.7.0.0 -o /tmp/oracle-image.tar
+
+  data:
+    name: The chr20 data, pinned by sha256
+    runs-on: ubuntu-latest
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: key
+        # The files' pins, not the whole of scale.json: editing a step must not fetch the data again.
+        run: |
+          echo "key=scale-data-$(python3 -c "import json,hashlib;print(hashlib.sha256(json.dumps(json.load(open('tools/speed/scale.json'))['files'],sort_keys=True).encode()).hexdigest()[:16])")" >> "$GITHUB_OUTPUT"
+
+      - id: cache
+        uses: actions/cache@v6
+        with:
+          path: /tmp/scale-data
+          key: ${{ steps.key.outputs.key }}
+
+      - name: Derive the data and check every hash
+        run: python3 tools/speed/scale_data.py /tmp/scale-data
+
+  port:
+    name: The port binary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: nasm, which is what makes GKL's igzip exact rather than merely valid
+        run: |
+          sudo apt-get update -qq || echo "apt refresh incomplete; the install below is the gate"
+          sudo apt-get install -y -qq nasm
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo build --release -p gatk-cli
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: scale-port-binary
+          path: target/release/gatk
+          retention-days: 3
+
+  prep:
+    needs: [oracle-image, data, port]
+    uses: ./.github/workflows/speed-scale-group.yml
+    with:
+      group: prep
+      data-key: ${{ needs.data.outputs.key }}
+
+  haplotypecaller:
+    needs: [data, prep]
+    if: ${{ !cancelled() && needs.data.result == 'success' }}
+    uses: ./.github/workflows/speed-scale-group.yml
+    with:
+      group: haplotypecaller
+      data-key: ${{ needs.data.outputs.key }}
+
+  joint:
+    needs: [data, haplotypecaller]
+    if: ${{ !cancelled() && needs.data.result == 'success' }}
+    uses: ./.github/workflows/speed-scale-group.yml
+    with:
+      group: joint
+      data-key: ${{ needs.data.outputs.key }}
+
+  mutect2:
+    needs: [data, prep]
+    if: ${{ !cancelled() && needs.data.result == 'success' }}
+    uses: ./.github/workflows/speed-scale-group.yml
+    with:
+      group: mutect2
+      data-key: ${{ needs.data.outputs.key }}
+
+  cnv:
+    needs: [data, prep]
+    if: ${{ !cancelled() && needs.data.result == 'success' }}
+    uses: ./.github/workflows/speed-scale-group.yml
+    with:
+      group: cnv
+      data-key: ${{ needs.data.outputs.key }}
+
+  table:
+    name: One table
+    needs: [prep, haplotypecaller, joint, mutect2, cnv]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: scale-json-*
+          path: /tmp/groups
+          merge-multiple: true
+
+      - name: Merge the groups
+        run: |
+          python3 tools/speed/bench.py --merge /tmp/groups/scale-*.json --out /tmp/scale.json \
+            | tee /tmp/scale.txt
+          cat /tmp/scale.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: scale
+          path: |
+            /tmp/scale.json
+            /tmp/scale.txt
