@@ -192,6 +192,19 @@ pub fn write_bam_file(
     level: u32,
     deflater: htsjdk_bgzf::Deflater,
 ) -> Result<Result<Written, std::io::Error>, ReadsError> {
+    let written = write_file(path, |out| {
+        write_stream(out, header, records, create_index, level, deflater).map(|(_, index)| index)
+    })?;
+    Ok(written.map(|(index, md5)| Written { index, md5 }))
+}
+
+/// `write` given a stream to `path` through a scratch file beside it, renamed over `path` only
+/// once `write` has succeeded, with the MD5 of the bytes as they went. A refusal from `write`
+/// leaves `path` as it was; an error of the file's own is the inner one.
+pub fn write_file<T, E>(
+    path: &std::path::Path,
+    write: impl FnOnce(&mut dyn std::io::Write) -> Result<T, E>,
+) -> Result<Result<(T, String), std::io::Error>, E> {
     // A device, a pipe or a directory is written, or refused, where it is: there is nothing to
     // rename over it.
     let in_place = std::fs::metadata(path).is_ok_and(|metadata| !metadata.is_file());
@@ -204,13 +217,12 @@ pub fn write_bam_file(
         Ok(file) => file,
         Err(error) => return Ok(Err(error)),
     };
-    let out = Md5Writer {
+    let mut out = Md5Writer {
         inner: std::io::BufWriter::with_capacity(1 << 20, file),
         md5: <md5::Md5 as md5::Digest>::new(),
     };
-    let written = write_stream(out, header, records, create_index, level, deflater);
-    let (out, index) = match written {
-        Ok(written) => written,
+    let value = match write(&mut out) {
+        Ok(value) => value,
         Err(error) => {
             if !in_place {
                 let _ = std::fs::remove_file(&scratch);
@@ -239,7 +251,7 @@ pub fn write_bam_file(
         }
         return Ok(Err(error));
     }
-    Ok(Ok(Written { index, md5 }))
+    Ok(Ok((value, md5)))
 }
 
 /// A name in `path`'s directory that no other writer uses.
