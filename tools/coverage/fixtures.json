@@ -17288,7 +17288,8 @@
         "model under gcnv/ are made once by the reference before the rows (run_array.build_gcnv). Every numeric argument has",
         "two in-range values, the iteration, epoch and sampling counts small ones so that a row takes seconds: the parser's",
         "bounds are measured on every other tool, and a third, out-of-range value would refuse all but a row or two before",
-        "the script. --mapping-error-rate keeps 0.0 for the collection's own refusal."
+        "the script. --mapping-error-rate keeps 0.0 for the collection's own refusal. --convergence-snr-averaging-window",
+        "takes 20, not 10: Java allows any window, but gcnvkernel's ELBO convergence tracker asserts one above 10."
       ],
       "--input": [
         "/work/fixtures/gcnv/sample0.counts.tsv /work/fixtures/gcnv/sample1.counts.tsv /work/fixtures/gcnv/sample2.counts.tsv /work/fixtures/gcnv/sample3.counts.tsv",
@@ -17383,7 +17384,7 @@
       ],
       "--convergence-snr-averaging-window": [
         "5000",
-        "10"
+        "20"
       ],
       "--convergence-snr-trigger-threshold": [
         "0.1",
@@ -17421,7 +17422,8 @@
         "ploidy calls, and its cohort model for case mode and as an initial model, under gcnv/. Two in-range values per numeric",
         "argument, the iteration, epoch and sampling counts small. The arguments a model fixes are refused in CASE mode once",
         "SET, and a row carries every argument it varies, so each has <unset> as a value and a constraint keeps the other off",
-        "CASE rows; --num-gc-bins is left free so that the refusal is measured."
+        "CASE rows; --num-gc-bins is left free so that the refusal is measured. --convergence-snr-averaging-window takes 20,",
+        "not 10: Java allows any window, but gcnvkernel's ELBO convergence tracker asserts one above 10."
       ],
       "--input": [
         "/work/fixtures/gcnv/sample0.counts.tsv /work/fixtures/gcnv/sample1.counts.tsv /work/fixtures/gcnv/sample2.counts.tsv /work/fixtures/gcnv/sample3.counts.tsv",
@@ -17574,7 +17576,7 @@
       ],
       "--convergence-snr-averaging-window": [
         "500",
-        "10"
+        "20"
       ],
       "--convergence-snr-trigger-threshold": [
         "0.1",
@@ -20009,6 +20011,26 @@
         "--genomicsdb-use-bcf-codec": "true"
       },
       "why": "The port refuses the BCF codec over a workspace in its own words: the records BCF2Codec decodes keep FORMAT in header order and print their floats with htsjdk's two decimals, a second representation it does not reproduce. A row with the pair measures that refusal, which is the same on every row; over a file the flag is inert and stays in the array."
+    },
+    {
+      "tools": [
+        "GermlineCNVCaller"
+      ],
+      "forbid": {
+        "--model": "/work/fixtures/gcnv/g-model",
+        "--max-bias-factors": "2"
+      },
+      "why": "gcnvkernel loads the model's W_tu with the shape the model was built with (the default bias factors), and stops on any other: 'Loaded mean for \"W_tu\" has an unexpected shape'."
+    },
+    {
+      "tools": [
+        "GermlineCNVCaller"
+      ],
+      "forbid": {
+        "--model": "/work/fixtures/gcnv/g-model",
+        "--annotated-intervals": "/work/fixtures/gcnv/annotated.tsv"
+      },
+      "why": "With --model, COHORT mode models the model's own intervals, which carry no GC_CONTENT (it was built without --annotated-intervals), yet still enables explicit GC bias modeling, and gcnvkernel stops on the missing annotation. Scoped to COHORT, the clause would need three arguments, and covering.py drops the rows it cannot extend under one, losing pairs; so CASE's refusal of --annotated-intervals, checked only once a model is given, goes unmeasured here."
     },
     {
       "tools": [
