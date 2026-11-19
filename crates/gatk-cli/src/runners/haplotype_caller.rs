@@ -1078,31 +1078,30 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     // `makePreReadFilterTransformer`, then the filters.
     let filter = read_filter(parser, &filters, &header)?;
     let transform_mapping_quality = flag(parser, "transform-dragen-mapping-quality");
-    let mut reads = Vec::new();
-    if let Some(given) = pipeline_reads {
-        reads = given;
-    } else {
-        for mut read in source
-            .iter_all()
-            .map_err(|error| Thrown::user(format!("{error:?}")))?
-        {
-            // `AssemblyRegionWalkerSpark` takes `getReads` as they are: neither transformer is
-            // the Spark tool's.
-            if !spark {
-                hc::iupac_to_n(&mut read).map_err(Thrown::user)?;
-            }
-            if filter(&read) {
-                // `makePostReadFilterTransformer`: DRAGEN's mapping quality swap, after the
-                // filters.
-                if transform_mapping_quality && !spark {
-                    gatk_engine::dragen_genotypes::transform_mapping_quality(&mut read).map_err(
-                        |message| Thrown::non_user("java.lang.IllegalArgumentException", message),
-                    )?;
-                }
-                reads.push(read);
-            }
+    let prepare = |mut read: htsjdk_bam::record::BamRecord| -> Result<_, Thrown> {
+        // `AssemblyRegionWalkerSpark` takes `getReads` as they are: neither transformer is the
+        // Spark tool's.
+        if !spark {
+            hc::iupac_to_n(&mut read).map_err(Thrown::user)?;
         }
-    }
+        if !filter(&read) {
+            return Ok(None);
+        }
+        // `makePostReadFilterTransformer`: DRAGEN's mapping quality swap, after the filters.
+        if transform_mapping_quality && !spark {
+            gatk_engine::dragen_genotypes::transform_mapping_quality(&mut read).map_err(
+                |message| Thrown::non_user("java.lang.IllegalArgumentException", message),
+            )?;
+        }
+        Ok(Some(read))
+    };
+    // Every read goes through the transformers before the traversal, so a read that refuses
+    // refuses there, wherever it is in the file.
+    let (mut reads, queried) = match pipeline_reads {
+        Some(given) => (given, false),
+        None if spark => (super::prepare_reads(&source, &prepare, true)?.0, false),
+        None => super::assembly_region_reads(&source, &prepare)?,
+    };
 
     // `DragstrParamUtils.parse(hcArgs.likelihoodArgs.dragstrParams)`.
     let dragstr_params = dragstr_params(parser)?;
@@ -1515,8 +1514,10 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
                     })
                     .cloned()
                     .collect();
+                let held =
+                    gatk_engine::assembly_region_walker::WalkerReads::held(&shard_reads, &header);
                 match hc::call_variants(
-                    &shard_reads,
+                    &held,
                     &header,
                     std::slice::from_ref(&shard),
                     &arguments,
@@ -1541,8 +1542,13 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             None => Ok(calls),
         }
     } else {
+        let walker_reads = if queried {
+            super::queried_reads(&source, &header, &prepare)
+        } else {
+            gatk_engine::assembly_region_walker::WalkerReads::held(&reads, &header)
+        };
         hc::call_variants(
-            &reads,
+            &walker_reads,
             &header,
             &traversal,
             &arguments,

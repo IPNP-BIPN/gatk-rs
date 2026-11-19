@@ -326,7 +326,7 @@ pub fn assembly_regions_streaming<C: Located>(
     is_active: &mut dyn FnMut(&EmittedLocus, Option<&C>) -> ActivityAnswer,
 ) -> Result<Vec<TraversedRegion>, RegionError> {
     let ready = unfilled_regions(contexts, shard, args, header, is_active)?;
-    RegionFiller::new(reads, ready, args.force_active, header).collect()
+    RegionFiller::new(reads.iter().cloned(), ready, args.force_active, header).collect()
 }
 
 /// The regions the activity profile cuts, in the order they were emitted, before any read is
@@ -338,38 +338,63 @@ pub fn unfilled_regions<C: Located>(
     header: &SamHeader,
     is_active: &mut dyn FnMut(&EmittedLocus, Option<&C>) -> ActivityAnswer,
 ) -> Result<Vec<AssemblyRegion>, RegionError> {
-    let contig = shard
-        .intervals
-        .first()
-        .map(|interval| interval.contig.clone())
-        .unwrap_or_default();
-    let contig_length = header
-        .sequences
-        .iter()
-        .find(|sequence| sequence.name == contig)
-        .map(|sequence| sequence.length)
-        .unwrap_or(i32::MAX);
+    let mut cutter = RegionCutter::new(shard, args, header);
+    for_each_interval_context(
+        contexts,
+        &shard.intervals,
+        header,
+        |locus: EmittedLocus, context: Option<&C>| {
+            cutter.add(&locus, || is_active(&locus, context))
+        },
+    )?;
+    cutter.finish()
+}
 
-    let mut profile = ActivityProfile::band_pass(
-        args.max_prob_propagation_distance,
-        args.active_prob_threshold,
-        // `BandPassActivityProfile.MAX_FILTER_SIZE` and `DEFAULT_SIGMA`, hard-coded at the call
-        // site rather than taken from the arguments.
-        crate::activity_profile::MAX_FILTER_SIZE,
-        crate::activity_profile::DEFAULT_SIGMA,
-        true,
-        &contig,
-        contig_length,
-    );
+/// [`unfilled_regions`]' state, fed one locus at a time, so a traversal that walks a shard's loci
+/// a window at a time keeps one profile across the windows.
+pub struct RegionCutter<'a> {
+    args: &'a AssemblyRegionArgs,
+    header: &'a SamHeader,
+    profile: ActivityProfile,
+    pending: std::collections::VecDeque<AssemblyRegion>,
+    ready: Vec<AssemblyRegion>,
+}
 
-    let mut pending: std::collections::VecDeque<AssemblyRegion> = Default::default();
-    let mut ready: Vec<AssemblyRegion> = Vec::new();
+impl<'a> RegionCutter<'a> {
+    pub fn new(shard: &ReadShard, args: &'a AssemblyRegionArgs, header: &'a SamHeader) -> Self {
+        let contig = shard
+            .intervals
+            .first()
+            .map(|interval| interval.contig.clone())
+            .unwrap_or_default();
+        let contig_length = header
+            .sequences
+            .iter()
+            .find(|sequence| sequence.name == contig)
+            .map(|sequence| sequence.length)
+            .unwrap_or(i32::MAX);
+        RegionCutter {
+            args,
+            header,
+            profile: ActivityProfile::band_pass(
+                args.max_prob_propagation_distance,
+                args.active_prob_threshold,
+                // `BandPassActivityProfile.MAX_FILTER_SIZE` and `DEFAULT_SIGMA`, hard-coded at the
+                // call site rather than taken from the arguments.
+                crate::activity_profile::MAX_FILTER_SIZE,
+                crate::activity_profile::DEFAULT_SIGMA,
+                true,
+                &contig,
+                contig_length,
+            ),
+            pending: Default::default(),
+            ready: Vec::new(),
+        }
+    }
 
-    let push_popped = |profile: &mut ActivityProfile,
-                       pending: &mut std::collections::VecDeque<AssemblyRegion>,
-                       force: bool|
-     -> Result<(), RegionError> {
-        for popped in profile.pop_ready_regions(
+    fn push_popped(&mut self, force: bool) -> Result<(), RegionError> {
+        let args = self.args;
+        for popped in self.profile.pop_ready_regions(
             args.assembly_region_padding,
             args.min_assembly_region_size as usize,
             args.max_assembly_region_size as usize,
@@ -379,84 +404,86 @@ pub fn unfilled_regions<C: Located>(
                 popped.span.clone(),
                 popped.is_active,
                 args.assembly_region_padding,
-                header,
+                self.header,
             )?;
-            pending.push_back(region);
+            self.pending.push_back(region);
         }
         Ok(())
-    };
+    }
 
-    let mut evaluate = |locus: EmittedLocus, context: Option<&C>| -> Result<(), RegionError> {
+    /// One locus: `is_active` is asked only once the profile has been popped.
+    pub fn add(
+        &mut self,
+        locus: &EmittedLocus,
+        is_active: impl FnOnce() -> ActivityAnswer,
+    ) -> Result<(), RegionError> {
         // Ordering matters: the profile is popped before the pileup is added, and the force flag
         // is "this locus does not continue the profile".
-        if !profile.is_empty() {
-            let force = locus.interval.start != profile.end() + 1;
-            push_popped(&mut profile, &mut pending, force)?;
+        if !self.profile.is_empty() {
+            let force = locus.interval.start != self.profile.end() + 1;
+            self.push_popped(force)?;
         }
 
-        let (prob, hq_soft_clips) = is_active(&locus, context);
-        profile.add_state(locus.interval.start, prob, hq_soft_clips);
+        let (prob, hq_soft_clips) = is_active();
+        self.profile
+            .add_state(locus.interval.start, prob, hq_soft_clips);
 
         // A pending region becomes ready only once the loci have advanced past the end of its
         // padded span, which is what guarantees its reads have been read.
-        if let Some(front) = pending.front() {
+        if let Some(front) = self.pending.front() {
             let here = LocusPosition {
                 contig: locus.interval.contig.clone(),
                 position: locus.interval.start,
             };
-            let padded = front.padded_span().clone();
-            if is_after(&here, &padded, header) == Some(true) {
-                let region = pending.pop_front().expect("just peeked");
-                ready.push(region);
+            if is_after(&here, front.padded_span(), self.header) == Some(true) {
+                let region = self.pending.pop_front().expect("just peeked");
+                self.ready.push(region);
             }
         }
         Ok(())
-    };
-    for_each_interval_context(contexts, &shard.intervals, header, &mut evaluate)?;
-
-    // Out of loci: close the profile with forceConversion, then drain the queue.
-    if !profile.is_empty() {
-        push_popped(&mut profile, &mut pending, true)?;
-    }
-    while let Some(region) = pending.pop_front() {
-        ready.push(region);
     }
 
-    Ok(ready)
+    /// Out of loci: close the profile with forceConversion, then drain the queue.
+    pub fn finish(mut self) -> Result<Vec<AssemblyRegion>, RegionError> {
+        if !self.profile.is_empty() {
+            self.push_popped(true)?;
+        }
+        self.ready.extend(self.pending.drain(..));
+        Ok(self.ready)
+    }
 }
 
 /// Fill each region in turn, in the order they were emitted, one region per `next`: only the
 /// region being handed out holds copies of its reads.
-pub struct RegionFiller<'h, R> {
-    reads: R,
+///
+/// `reads` is the shard's reads in the order the read cache hands them over, pulled only as far as
+/// the region being filled needs: a read is gone once it is behind the region and not in it.
+pub struct RegionFiller<'h, I: Iterator<Item = BamRecord>> {
+    reads: std::iter::Peekable<I>,
     ready: std::vec::IntoIter<AssemblyRegion>,
     force_active: bool,
     header: &'h SamHeader,
     previous_region_reads: Vec<BamRecord>,
-    // The read cache: an index into `reads`, since the reads are already in coordinate order.
-    cache_index: usize,
 }
 
-impl<'h, R: std::borrow::Borrow<[BamRecord]>> RegionFiller<'h, R> {
+impl<'h, I: Iterator<Item = BamRecord>> RegionFiller<'h, I> {
     pub fn new(
-        reads: R,
+        reads: I,
         ready: Vec<AssemblyRegion>,
         force_active: bool,
         header: &'h SamHeader,
-    ) -> RegionFiller<'h, R> {
+    ) -> RegionFiller<'h, I> {
         RegionFiller {
-            reads,
+            reads: reads.peekable(),
             ready: ready.into_iter(),
             force_active,
             header,
             previous_region_reads: Vec::new(),
-            cache_index: 0,
         }
     }
 
     fn fill(&mut self, mut region: AssemblyRegion) -> Result<TraversedRegion, RegionError> {
         let header = self.header;
-        let reads: &[BamRecord] = self.reads.borrow();
         let padded = region.padded_span().clone();
         for read in &self.previous_region_reads {
             if padded.overlaps(
@@ -467,29 +494,24 @@ impl<'h, R: std::borrow::Borrow<[BamRecord]>> RegionFiller<'h, R> {
                 region.add(read.clone(), header)?;
             }
         }
-        while self.cache_index < reads.len() {
-            let read = &reads[self.cache_index];
-            let located = LocusPosition {
-                contig: contig_of(read, header),
-                position: read_utils::start(read),
-            };
+        while let Some(read) = self.reads.peek() {
             // `IntervalUtils.isAfter(read, paddedSpan, dict)` on the read, whose end matters: a
             // read is left in the cache only when its **start** is past the region's end.
             let read_interval = SimpleInterval {
-                contig: located.contig.clone(),
+                contig: contig_of(read, header),
                 start: read_utils::start(read),
                 end: read_utils::end(read),
             };
             if is_after(&read_interval, &padded, header) == Some(true) {
                 break;
             }
-            self.cache_index += 1;
+            let read = self.reads.next().expect("just peeked");
             if padded.overlaps(
                 &read_interval.contig,
                 read_interval.start,
                 read_interval.end,
             ) {
-                region.add(read.clone(), header)?;
+                region.add(read, header)?;
             }
         }
 
@@ -504,7 +526,7 @@ impl<'h, R: std::borrow::Borrow<[BamRecord]>> RegionFiller<'h, R> {
     }
 }
 
-impl<R: std::borrow::Borrow<[BamRecord]>> Iterator for RegionFiller<'_, R> {
+impl<I: Iterator<Item = BamRecord>> Iterator for RegionFiller<'_, I> {
     type Item = Result<TraversedRegion, RegionError>;
 
     fn next(&mut self) -> Option<Self::Item> {

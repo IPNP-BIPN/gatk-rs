@@ -37,12 +37,14 @@
 
 use crate::assembly_region::RegionError;
 use crate::assembly_region_iterator::{
-    assembly_regions, group_intervals_by_contig, unfilled_regions, ActivityAnswer,
-    AssemblyRegionArgs, ReadShard, RegionFiller, TraversedRegion,
+    assembly_regions, group_intervals_by_contig, ActivityAnswer, AssemblyRegionArgs, ReadShard,
+    RegionCutter, RegionFiller, TraversedRegion,
 };
 use crate::interval::SimpleInterval;
+use crate::java_random::JavaRandom;
 use crate::locus_iterator::AlignmentContext;
 use crate::locus_iterator::{self, LocusIteratorOptions};
+use crate::locus_shards::for_each_interval_context;
 use crate::read_states::{DownsamplingInfo, ReadStateError, ReadStateManager};
 use crate::read_utils;
 use crate::variant_source::Located;
@@ -90,6 +92,9 @@ pub fn make_read_shards(
 pub enum WalkerError {
     Region(RegionError),
     ReadState(ReadStateError),
+    /// The reads source failing under a shard's query, which a run only meets when the file
+    /// changes under it: every read was decoded once before the traversal.
+    Reads(String),
 }
 
 impl From<RegionError> for WalkerError {
@@ -112,6 +117,7 @@ impl WalkerError {
                 "java.lang.IllegalStateException"
             }
             WalkerError::Region(error) => error.class(),
+            WalkerError::Reads(_) => "UserException",
             _ => "java.lang.IllegalStateException",
         }
     }
@@ -125,6 +131,7 @@ impl WalkerError {
             ),
             WalkerError::Region(error) => error.message(),
             WalkerError::ReadState(other) => format!("{other:?}"),
+            WalkerError::Reads(message) => message.clone(),
         }
     }
 }
@@ -247,75 +254,273 @@ impl Located for AlignmentContext<'_> {
     }
 }
 
+/// A shard's reads, one at a time, in the order the traversal reads them.
+pub type ReadStream<'r> = Box<dyn Iterator<Item = Result<BamRecord, String>> + 'r>;
+
+/// Where [`traverse_with_pileups`] reads a shard from: `query` answers the reads overlapping the
+/// shard's padded intervals ([`overlaps_shard`]), through the tool's transformers and filters, in
+/// file order, and is asked twice per shard.
+pub struct WalkerReads<'r> {
+    pub query: Box<dyn Fn(&ReadShard) -> ReadStream<'r> + 'r>,
+    /// `Some(width)` when every stream is coordinate sorted: the loci are then walked `width` at a
+    /// time and only the reads overlapping the window are held. `None` holds a whole shard.
+    pub window: Option<i32>,
+}
+
+/// How wide [`WalkerReads::window`] walks: the reads held are the depth times this plus a read.
+pub const WINDOW: i32 = 20_000;
+
+impl<'r> WalkerReads<'r> {
+    /// Every filtered read of the file, in hand: each shard picks out its own.
+    pub fn held(reads: &'r [BamRecord], header: &'r SamHeader) -> WalkerReads<'r> {
+        WalkerReads {
+            query: Box::new(move |shard: &ReadShard| {
+                let shard = shard.clone();
+                Box::new(
+                    reads
+                        .iter()
+                        .filter(move |read| overlaps_shard(read, &shard, header))
+                        .cloned()
+                        .map(Ok),
+                )
+            }),
+            window: None,
+        }
+    }
+}
+
+/// The shard's iterator: a read is in it when it overlaps one of the **padded** intervals.
+pub fn overlaps_shard(record: &BamRecord, shard: &ReadShard, header: &SamHeader) -> bool {
+    let contig = contig_of(record, header);
+    shard.padded_intervals.iter().any(|interval| {
+        interval.overlaps(&contig, read_utils::start(record), read_utils::end(record))
+    })
+}
+
+/// `createDownsampler()`, as the tool builds it, run a batch at a time: a batch ends where the
+/// downsampler starts over, so running it batch by batch draws what running it over the whole
+/// shard draws.
+#[derive(Clone, Copy)]
+pub struct Downsampler<'d> {
+    /// Whether `next` starts a new batch after `previous`, in a batch that began with `first`.
+    pub new_batch: &'d dyn Fn(&BamRecord, &BamRecord, &BamRecord) -> bool,
+    /// The downsampler over one batch, drawing from the generator it is handed.
+    pub run: &'d dyn Fn(&[BamRecord], &mut JavaRandom) -> Vec<BamRecord>,
+}
+
+/// A stream through a [`Downsampler`], a batch at a time.
+struct Downsampled<'r, R> {
+    input: std::iter::Peekable<ReadStream<'r>>,
+    downsampler: Downsampler<'r>,
+    random: R,
+    out: std::collections::VecDeque<BamRecord>,
+}
+
+impl<'r, R: std::borrow::BorrowMut<JavaRandom>> Downsampled<'r, R> {
+    fn new(input: ReadStream<'r>, downsampler: Downsampler<'r>, random: R) -> Self {
+        Downsampled {
+            input: input.peekable(),
+            downsampler,
+            random,
+            out: Default::default(),
+        }
+    }
+}
+
+impl<R: std::borrow::BorrowMut<JavaRandom>> Iterator for Downsampled<'_, R> {
+    type Item = Result<BamRecord, String>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(read) = self.out.pop_front() {
+            return Some(Ok(read));
+        }
+        let mut batch = match self.input.next()? {
+            Ok(first) => vec![first],
+            Err(error) => return Some(Err(error)),
+        };
+        while let Some(Ok(next)) = self.input.peek() {
+            let previous = batch.last().expect("a batch starts with a read");
+            if (self.downsampler.new_batch)(&batch[0], previous, next) {
+                break;
+            }
+            batch.push(
+                self.input
+                    .next()
+                    .expect("just peeked")
+                    .expect("just peeked"),
+            );
+        }
+        self.out = (self.downsampler.run)(&batch, self.random.borrow_mut()).into();
+        self.next()
+    }
+}
+
+/// One shard's regions, filled as they are drawn from a second read of the shard.
+pub struct ShardRegions<'h, 'r> {
+    filler: RegionFiller<'h, Box<dyn Iterator<Item = BamRecord> + 'r>>,
+    failure: std::rc::Rc<std::cell::RefCell<Option<String>>>,
+}
+
+impl Iterator for ShardRegions<'_, '_> {
+    type Item = Result<TraversedRegion, WalkerError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let region = self.filler.next()?;
+        // A region the stream failed under is short of reads: the failure is the answer.
+        if let Some(error) = self.failure.borrow_mut().take() {
+            return Some(Err(WalkerError::Reads(error)));
+        }
+        Some(region.map_err(WalkerError::from))
+    }
+}
+
 /// `traverse()` as a tool with a real evaluator runs it: each shard's reads through the tool's
-/// downsampler (`createDownsampler()`, which is `downsample` here), then the evaluator handed the
-/// locus and its `AlignmentContext`, `None` for a locus no read covers. The evaluator answers the
-/// probability and, for a `HIGH_QUALITY_SOFT_CLIPS` state, its value.
+/// downsampler (`createDownsampler()`), then the evaluator handed the locus and its
+/// `AlignmentContext`, `None` for a locus no read covers. The evaluator answers the probability
+/// and, for a `HIGH_QUALITY_SOFT_CLIPS` state, its value.
 ///
-/// The downsampler runs over the whole shard before the first locus, where the reference pulls
-/// reads lazily as the loci advance: the draws are the same, and only their interleaving with a
-/// draw the tool makes while calling a region could differ.
+/// Every locus of a shard is evaluated, and every draw its downsampler makes from `random` taken,
+/// before the first of its regions is handed out, where the reference pulls reads lazily as the
+/// loci advance and calls each region as it is ready: the draws are the same, and only their
+/// interleaving with a draw the tool makes while calling a region could differ. That order is
+/// kept here without holding the shard: the loci are walked over one read of it, and the regions
+/// are filled from a second, through the downsampler again from a copy of `random` taken before
+/// the first, which draws the same reads.
 #[allow(clippy::too_many_arguments)]
-pub fn traverse_with_pileups<'h>(
-    reads: &[BamRecord],
+pub fn traverse_with_pileups<'h, 's, 'r: 's, 'd: 's>(
+    reads: &WalkerReads<'r>,
     intervals: &[SimpleInterval],
     samples: &[Option<String>],
     args: &AssemblyRegionArgs,
     header: &'h SamHeader,
-    downsample: &mut dyn FnMut(&[BamRecord]) -> Vec<BamRecord>,
+    downsampler: Downsampler<'d>,
+    random: &mut JavaRandom,
     is_active: &mut dyn FnMut(&SimpleInterval, Option<&AlignmentContext<'_>>) -> ActivityAnswer,
-) -> Result<Vec<RegionFiller<'h, Vec<BamRecord>>>, WalkerError> {
+) -> Result<Vec<ShardRegions<'h, 's>>, WalkerError> {
     let shards = make_read_shards(intervals, args.assembly_region_padding, header)
         .expect("a padding validate() has already accepted");
 
     let mut out = Vec::new();
     for shard in &shards {
-        // The query's copy goes as soon as the downsampler has drawn from it.
-        let shard_reads = {
-            let queried: Vec<BamRecord> = reads
-                .iter()
-                .filter(|record| {
-                    let contig = contig_of(record, header);
-                    shard.padded_intervals.iter().any(|interval| {
-                        interval.overlaps(
-                            &contig,
-                            read_utils::start(record),
-                            read_utils::end(record),
+        let replay = random.clone();
+        let regions = walk_loci(
+            reads,
+            shard,
+            samples,
+            args,
+            header,
+            downsampler,
+            random,
+            is_active,
+        )?;
+        let failure = std::rc::Rc::new(std::cell::RefCell::new(None));
+        let slot = failure.clone();
+        let input: ReadStream<'s> = (reads.query)(shard);
+        let stream: Box<dyn Iterator<Item = BamRecord> + 's> = Box::new(
+            Downsampled::new(input, downsampler, replay)
+                .map_while(move |read| read.map_err(|error| *slot.borrow_mut() = Some(error)).ok()),
+        );
+        out.push(ShardRegions {
+            filler: RegionFiller::new(stream, regions, args.force_active, header),
+            failure,
+        });
+    }
+    Ok(out)
+}
+
+/// The first read of a shard: every locus evaluated and the regions cut.
+///
+/// With a window the loci go `width` at a time, each window over a fresh `LocusIteratorByState`
+/// fed the reads overlapping it and nothing else, whose contexts before the window are dropped.
+/// A sorted stream makes that the same pileups: every read is taken in at its own start, so the
+/// states at a locus are the reads overlapping it in stream order, whatever came before.
+#[allow(clippy::too_many_arguments)]
+fn walk_loci(
+    reads: &WalkerReads<'_>,
+    shard: &ReadShard,
+    samples: &[Option<String>],
+    args: &AssemblyRegionArgs,
+    header: &SamHeader,
+    downsampler: Downsampler<'_>,
+    random: &mut JavaRandom,
+    is_active: &mut dyn FnMut(&SimpleInterval, Option<&AlignmentContext<'_>>) -> ActivityAnswer,
+) -> Result<Vec<crate::assembly_region::AssemblyRegion>, WalkerError> {
+    // Each window is its loci and the bounds of its contexts, none for a whole shard.
+    type Window = (Vec<SimpleInterval>, Option<(i32, i32)>);
+    let windows: Vec<Window> = match reads.window {
+        None => vec![(shard.intervals.clone(), None)],
+        Some(width) => shard
+            .intervals
+            .iter()
+            .flat_map(|interval| {
+                (interval.start..=interval.end)
+                    .step_by(width.max(1) as usize)
+                    .map(move |start| {
+                        let end = start.saturating_add(width.max(1) - 1).min(interval.end);
+                        (
+                            vec![SimpleInterval {
+                                contig: interval.contig.clone(),
+                                start,
+                                end,
+                            }],
+                            Some((start, end)),
                         )
                     })
-                })
-                .cloned()
-                .collect();
-            downsample(&queried)
-        };
+            })
+            .collect(),
+    };
+
+    let mut stream = Downsampled::new((reads.query)(shard), downsampler, &mut *random).peekable();
+    let mut held: Vec<BamRecord> = Vec::new();
+    let mut cutter = RegionCutter::new(shard, args, header);
+    for (loci, bounds) in &windows {
+        if let Some((first, _)) = bounds {
+            held.retain(|read| read_utils::end(read) >= *first);
+        }
+        loop {
+            match stream.peek() {
+                Some(Ok(read))
+                    if bounds.is_none_or(|(_, last)| read_utils::start(read) <= last) => {}
+                Some(Err(_)) => {
+                    let error = stream
+                        .next()
+                        .expect("just peeked")
+                        .expect_err("just peeked");
+                    return Err(WalkerError::Reads(error));
+                }
+                _ => break,
+            }
+            held.push(stream.next().expect("just peeked").expect("just peeked"));
+        }
 
         let states = ReadStateManager::new(samples.to_vec(), DownsamplingInfo::NONE)?;
         // Drawn one locus at a time: a contig's pileups held together are gigabytes.
         let mut failure = None;
         let contexts = locus_iterator::Contexts::new(
-            &shard_reads,
+            &held,
             samples.to_vec(),
             header,
             REGION_LOCUS_OPTIONS,
             states,
             &|_| true,
         )
-        .map_while(|context| context.map_err(|error| failure = Some(error)).ok());
-        let regions = unfilled_regions(contexts, shard, args, header, &mut |locus, context| {
-            is_active(&locus.interval, context)
+        .map_while(|context| context.map_err(|error| failure = Some(error)).ok())
+        .skip_while(|context| bounds.is_some_and(|(first, _)| context.position < first))
+        .take_while(|context| bounds.is_none_or(|(_, last)| context.position <= last));
+        let walked = for_each_interval_context(contexts, loci, header, |locus, context| {
+            cutter.add(&locus, || is_active(&locus.interval, context))
         });
         if let Some(error) = failure {
             return Err(error.into());
         }
-        // Filled as the caller draws them: the regions' copies of their reads are never all held.
-        out.push(RegionFiller::new(
-            shard_reads,
-            regions?,
-            args.force_active,
-            header,
-        ));
+        walked?;
     }
-    Ok(out)
+    drop(held);
+    // The rest of the shard still goes through the downsampler: its draws come before any region's.
+    for read in stream {
+        read.map_err(WalkerError::Reads)?;
+    }
+    Ok(cutter.finish()?)
 }
 
 fn contig_of(record: &BamRecord, header: &SamHeader) -> String {

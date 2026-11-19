@@ -430,6 +430,94 @@ pub(crate) fn pedigree_arguments(
     Ok(out)
 }
 
+/// An `AssemblyRegionWalker`'s transformers and filters over one read: the read they keep, if any.
+type PrepareRead<'a> = dyn Fn(BamRecord) -> Result<Option<BamRecord>, Thrown> + 'a;
+
+/// Every read of the file through `prepare`, as a walker that read the file whole and then
+/// transformed it refuses: a read the file cannot decode first, wherever it is, then the first read
+/// `prepare` refuses. The prepared reads are kept only with `keep`; the flag is whether they come
+/// in coordinate order, so a shard can be walked a window at a time.
+fn prepare_reads(
+    source: &ReadsDataSource,
+    prepare: &PrepareRead<'_>,
+    keep: bool,
+) -> Result<(Vec<BamRecord>, bool), Thrown> {
+    let reads_error = |error: gatk_engine::reads::ReadsError| Thrown::user(format!("{error:?}"));
+    let (mut kept, mut sorted, mut last, mut refused) = (Vec::new(), true, (i32::MIN, 0), None);
+    for read in source.records_all().map_err(reads_error)? {
+        let read = read.map_err(reads_error)?;
+        if refused.is_some() {
+            continue;
+        }
+        match prepare(read) {
+            Err(thrown) => refused = Some(thrown),
+            Ok(None) => {}
+            Ok(Some(read)) => {
+                let here = (read.reference_index, gatk_engine::read_utils::start(&read));
+                // An unmapped read is in no shard.
+                if here.1 != gatk_engine::read_utils::UNSET_POSITION {
+                    sorted &= here >= last;
+                    last = last.max(here);
+                }
+                if keep {
+                    kept.push(read);
+                }
+            }
+        }
+    }
+    match refused {
+        Some(thrown) => Err(thrown),
+        None => Ok((kept, sorted)),
+    }
+}
+
+/// The reads an `AssemblyRegionWalker` holds, and whether it holds none because each shard can be
+/// queried instead: the source has an index and the prepared reads are coordinate sorted. Either
+/// way every read has been through `prepare` once, so nothing refuses mid-traversal.
+fn assembly_region_reads(
+    source: &ReadsDataSource,
+    prepare: &PrepareRead<'_>,
+) -> Result<(Vec<BamRecord>, bool), Thrown> {
+    let indexed = source.has_index();
+    let (reads, sorted) = prepare_reads(source, prepare, !indexed)?;
+    Ok(match (indexed, sorted) {
+        (true, true) => (reads, true),
+        (true, false) => (prepare_reads(source, prepare, true)?.0, false),
+        (false, _) => (reads, false),
+    })
+}
+
+/// [`assembly_region_reads`]' query: a shard's reads straight from the file, through `prepare`.
+fn queried_reads<'a>(
+    source: &'a ReadsDataSource,
+    header: &'a SamHeader,
+    prepare: &'a PrepareRead<'a>,
+) -> gatk_engine::assembly_region_walker::WalkerReads<'a> {
+    use gatk_engine::assembly_region_walker::{overlaps_shard, ReadStream, WalkerReads, WINDOW};
+    WalkerReads {
+        query: Box::new(move |shard| -> ReadStream<'a> {
+            let records = match source.query_iter(&shard.padded_intervals) {
+                Ok(records) => records,
+                Err(error) => return Box::new(std::iter::once(Err(format!("{error:?}")))),
+            };
+            let shard = shard.clone();
+            Box::new(
+                records
+                    .map(move |read| {
+                        let read = read.map_err(|error| format!("{error:?}"))?;
+                        prepare(read).map_err(|thrown| thrown.message.unwrap_or_default())
+                    })
+                    .filter_map(Result::transpose)
+                    .filter(move |read| {
+                        read.as_ref()
+                            .map_or(true, |read| overlaps_shard(read, &shard, header))
+                    }),
+            )
+        }),
+        window: Some(WINDOW),
+    }
+}
+
 /// The predicate the resolved list becomes, once a header exists to read a filter against.
 fn read_filter<'a>(
     parser: &'a Parser,
