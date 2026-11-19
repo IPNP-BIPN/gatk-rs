@@ -84,13 +84,14 @@ pub fn assembly_region_rows(region: &AssemblyRegion) -> String {
 }
 
 /// What `callRegion` runs with, beside the region.
+#[derive(Clone)]
 pub struct CallRegionContext<'a> {
     pub header: &'a SamHeader,
     pub samples: &'a [String],
     pub contig_bases: &'a [u8],
     pub assembly: &'a RegionAssemblyArguments,
     pub assembler: &'a ReadThreadingAssembler,
-    pub aligner: &'a dyn SmithWatermanAligner,
+    pub aligner: &'a (dyn SmithWatermanAligner + Sync),
     pub trimmer: &'a AssemblyRegionTrimmer,
     pub likelihood_engine: &'a crate::flow_likelihood_engine::ReadLikelihoodEngine,
     /// `filterStepLikelihoodCalculationEngine`, with stepwise filtering.
@@ -100,7 +101,7 @@ pub struct CallRegionContext<'a> {
     pub mapping_quality_threshold: u8,
     /// RampedHaplotypeCaller's off ramp: the region's state is written to it at the ramp's point,
     /// and the region answers no calls.
-    pub off_ramp: Option<&'a std::cell::RefCell<crate::ramp_files::OffRamp>>,
+    pub off_ramp: Option<&'a std::sync::Mutex<crate::ramp_files::OffRamp>>,
     /// RampedHaplotypeCaller's on ramp: the assembly or the likelihoods are read back from it
     /// instead of computed.
     pub on_ramp: Option<&'a crate::ramp_files::OnRamp>,
@@ -124,7 +125,7 @@ pub struct CallRegionContext<'a> {
     /// `--alleles`: the records, and `--force-call-filtered-alleles`.
     pub given_alleles: Option<(&'a [htsjdk_vcf::variant::VariantContext], bool)>,
     /// `--bam-output`.
-    pub bamout: Option<&'a std::cell::RefCell<crate::haplotype_bam_writer::HaplotypeBamWriter>>,
+    pub bamout: Option<&'a std::sync::Mutex<crate::haplotype_bam_writer::HaplotypeBamWriter>>,
     /// `--keep-rg`: reads of any other read group are filtered before genotyping.
     pub keep_rg: Option<&'a str>,
     /// `--just-determine-active-regions`.
@@ -134,15 +135,15 @@ pub struct CallRegionContext<'a> {
     /// `--debug-assembly-variants-out`'s queue, which HaplotypeCaller's engine fills and the
     /// ramped engine does not.
     pub assembly_variants:
-        Option<&'a std::cell::RefCell<crate::assembly_variants_out::AssemblyVariantsOut>>,
+        Option<&'a std::sync::Mutex<crate::assembly_variants_out::AssemblyVariantsOut>>,
     /// `--debug-assembly-region-state`'s stream.
-    pub assembly_state: Option<&'a std::cell::RefCell<String>>,
+    pub assembly_state: Option<&'a std::sync::Mutex<String>>,
     /// `--alm-path`'s writer.
-    pub alm:
-        Option<&'a std::cell::RefCell<crate::allele_likelihood_writer::AlleleLikelihoodWriter>>,
+    pub alm: Option<&'a std::sync::Mutex<crate::allele_likelihood_writer::AlleleLikelihoodWriter>>,
 }
 
 /// What `--use-pdhmm` runs with.
+#[derive(Clone)]
 pub struct PdContext<'a> {
     pub arguments: crate::pd_haplotypes::PdArguments,
     /// `--fallback-gga-if-pdhmm-fails`.
@@ -152,7 +153,7 @@ pub struct PdContext<'a> {
     /// `PDPairHMMLikelihoodCalculationEngine`, built from the likelihood arguments.
     pub engine: &'a gatk_engine::pair_hmm_likelihood_engine::PairHmmLikelihoodEngine,
     /// `--pdhmm-results-file`'s text.
-    pub results: Option<&'a std::cell::RefCell<String>>,
+    pub results: Option<&'a std::sync::Mutex<String>>,
 }
 
 /// `AlignmentUtils.unclippedReadLength`: the bases that are not soft-clipped.
@@ -169,16 +170,50 @@ fn unclipped_read_length(read: &BamRecord) -> i32 {
 
 /// `HaplotypeCallerEngine.callRegion` without reference confidence: the region's calls.
 pub fn call_region(
-    mut region: AssemblyRegion,
+    region: AssemblyRegion,
     context: &CallRegionContext<'_>,
     engine: &mut GenotypingEngine,
     annotator: Option<CallAnnotator<'_>>,
 ) -> Result<Vec<VariantContext>, RegionAssemblyError> {
+    genotype_region(prepare_region(region, context)?, context, engine, annotator)
+}
+
+/// What `callRegion` has once the likelihoods are in hand: the calls already, when it stopped
+/// before genotyping, or what genotyping reads.
+pub enum Prepared {
+    Done(Vec<VariantContext>),
+    Genotype(Box<ToGenotype>),
+}
+
+/// `finish_region`'s inputs, owned.
+pub struct ToGenotype {
+    region: AssemblyRegion,
+    haplotypes: Vec<Haplotype>,
+    likelihoods: AlleleLikelihoods<BamRecord, Haplotype>,
+    assembly: AssemblyResultSet,
+    ref_loc: SimpleInterval,
+    reference_haplotype: Haplotype,
+    genotyping_region: AssemblyRegion,
+    filtered: Vec<Vec<BamRecord>>,
+    trimmed: TrimResult,
+    ramp_flanks: Option<(Option<AssemblyRegion>, Option<AssemblyRegion>)>,
+    suspicious: std::collections::BTreeSet<i32>,
+    pre_filtering: Option<(AlleleLikelihoods<BamRecord, Haplotype>, Vec<Haplotype>)>,
+    given: Vec<gatk_engine::event_map::Event>,
+}
+
+/// The part of `callRegion` that draws from no generator and touches no engine state: trimming,
+/// assembly and the likelihoods. It writes to the context's sinks and debug streams, which is why
+/// a caller runs it off the calling thread only when none of them is open.
+pub fn prepare_region(
+    mut region: AssemblyRegion,
+    context: &CallRegionContext<'_>,
+) -> Result<Prepared, RegionAssemblyError> {
     let calling = |e: String| RegionAssemblyError::Calling(e);
     // `referenceModelForNoVariation` answers nothing outside reference-confidence mode.
     // `--just-determine-active-regions`: both engines leave before anything.
     if context.just_determine_active_regions {
-        return Ok(Vec::new());
+        return Ok(Prepared::Done(Vec::new()));
     }
     use gatk_engine::genotyper_debug as debugger;
     if debugger::is_enabled() && !context.genotyping.ramped_engine {
@@ -189,7 +224,7 @@ pub fn call_region(
         ));
     }
     if !region.is_active() {
-        return reference_model_for_no_variation(region, true, context);
+        return reference_model_for_no_variation(region, true, context).map(Prepared::Done);
     }
     // The given events: the records over the padded span, split; HaplotypeCaller keeps those
     // starting in the region, the ramped engine every one.
@@ -209,7 +244,7 @@ pub fn call_region(
         None => Vec::new(),
     };
     if given.is_empty() && region.reads().is_empty() {
-        return reference_model_for_no_variation(region, true, context);
+        return reference_model_for_no_variation(region, true, context).map(Prepared::Done);
     }
     // `--debug-assembly-region-state`: the region and its reads, one per line for HaplotypeCaller
     // and run together for the ramped engine.
@@ -231,13 +266,15 @@ pub fn call_region(
                 text.push('\n');
             }
         }
-        state.borrow_mut().push_str(&text);
+        state.lock().expect("a sink").push_str(&text);
     }
     // The pre-assembler off ramp: the region's place, before anything is assembled.
-    let ramp_kind = context.off_ramp.map(|ramp| ramp.borrow().kind);
+    let ramp_kind = context
+        .off_ramp
+        .map(|ramp| ramp.lock().expect("a sink").kind);
     if ramp_kind == Some(crate::ramp_files::OffRampType::PreAssembler) {
         if let Some(ramp) = context.off_ramp {
-            ramp.borrow_mut().add_assembly(
+            ramp.lock().expect("a sink").add_assembly(
                 region.span(),
                 &crate::ramp_files::region_description(&region),
                 "assemblyResult",
@@ -247,7 +284,7 @@ pub fn call_region(
                 context.header,
             );
         }
-        return Ok(Vec::new());
+        return Ok(Prepared::Done(Vec::new()));
     }
     let on_kind = context.on_ramp.map(|ramp| ramp.kind);
     // The post-assembler on ramp's flanks, which stand in for the trimmer's.
@@ -267,7 +304,7 @@ pub fn call_region(
         let left = flank("assemblyResult.nonVariantLeftFlankRegion")?;
         let right = flank("assemblyResult.nonVariantRightFlankRegion")?;
         let Some(object) = ramp.region(region.span(), "assemblyResult") else {
-            return Ok(Vec::new());
+            return Ok(Prepared::Done(Vec::new()));
         };
         let haplotypes = ramp.bam_haplotypes(region.span()).map_err(calling)?;
         let padded_loc = ramp
@@ -325,7 +362,7 @@ pub fn call_region(
         // "assembler bailing out": a trim the set refuses is a region with no calls.
         let assembly = match set.trim_to(variant_region) {
             Ok(assembly) => assembly,
-            Err(ResultSetError::IllegalState(_)) => return Ok(Vec::new()),
+            Err(ResultSetError::IllegalState(_)) => return Ok(Prepared::Done(Vec::new())),
             Err(e) => return Err(calling(format!("{e:?}"))),
         };
         if context.ramps_debug_post_assembler_on {
@@ -371,12 +408,12 @@ pub fn call_region(
                 .variation_events(context.genotyping.max_mnp_distance)
                 .map_err(|e| calling(format!("{e:?}")))?
             {
-                queue.borrow_mut().add_event(&event);
+                queue.lock().expect("a sink").add_event(&event);
             }
         }
         if let (true, Some(ramp)) = (post_filter, context.on_ramp) {
             if !ramp.has_region(region.span()) {
-                return Ok(Vec::new());
+                return Ok(Prepared::Done(Vec::new()));
             }
             for haplotype in ramp
                 .haplotypes(region.span(), "readLikelihoods.haplotypes")
@@ -411,7 +448,7 @@ pub fn call_region(
                     text.push('\n');
                 }
             }
-            state.borrow_mut().push_str(&text);
+            state.lock().expect("a sink").push_str(&text);
         }
         let mut events = untrimmed
             .variation_events(context.genotyping.max_mnp_distance)
@@ -454,7 +491,8 @@ pub fn call_region(
             _ => {
                 if trimmed.variant_span.is_none() {
                     if !context.disable_optimizations {
-                        return reference_model_for_no_variation(region, false, context);
+                        return reference_model_for_no_variation(region, false, context)
+                            .map(Prepared::Done);
                     }
                     return Err(RegionAssemblyError::NoVariationPresent);
                 }
@@ -582,7 +620,7 @@ pub fn call_region(
             .expect("a trimmed set has its region")
             .clone();
         if let Some(ramp) = context.off_ramp {
-            ramp.borrow_mut().add_assembly(
+            ramp.lock().expect("a sink").add_assembly(
                 region.span(),
                 &crate::ramp_files::region_description(&region),
                 "assemblyResult",
@@ -592,7 +630,7 @@ pub fn call_region(
                 context.header,
             );
         }
-        return Ok(Vec::new());
+        return Ok(Prepared::Done(Vec::new()));
     }
 
     // The read stubs the trim left, then `filterNonPassingReads`, whose reads the annotations
@@ -638,18 +676,18 @@ pub fn call_region(
         genotyping_region.retain_reads(|read| !fails_genotyping_filters(read, threshold, keep_rg));
     }
     if !assembly.is_variation_present() && !context.disable_optimizations {
-        return reference_model_for_no_variation(region, false, context);
+        return reference_model_for_no_variation(region, false, context).map(Prepared::Done);
     }
     // `--dont-genotype`: the user asked to stop here.
     if context.dont_genotype {
-        return Ok(Vec::new());
+        return Ok(Prepared::Done(Vec::new()));
     }
     let genotyping_region = assembly
         .region_for_genotyping()
         .expect("a trimmed set has its region")
         .clone();
     if genotyping_region.reads().is_empty() && !context.disable_optimizations {
-        return reference_model_for_no_variation(region, false, context);
+        return reference_model_for_no_variation(region, false, context).map(Prepared::Done);
     }
     if debugger::is_enabled() && !ramped {
         let span = region.span();
@@ -722,7 +760,7 @@ pub fn call_region(
             .compute_read_likelihoods(&haplotypes, context.header, context.samples, &reads)
             .map_err(calling)?;
         if let Some(alm) = context.alm {
-            alm.borrow_mut().write(&computed);
+            alm.lock().expect("a sink").write(&computed);
         }
         let mut all_reads: Vec<Vec<BamRecord>> = vec![Vec::new(); context.samples.len()];
         for read in region.reads() {
@@ -747,24 +785,21 @@ pub fn call_region(
         haplotypes = (0..likelihoods.number_of_alleles())
             .filter_map(|index| likelihoods.get_allele(index).cloned())
             .collect();
-        return finish_region(
+        return Ok(Prepared::Genotype(Box::new(ToGenotype {
             region,
-            context,
-            engine,
-            annotator,
-            &mut haplotypes,
-            &likelihoods,
-            &assembly,
-            &ref_loc,
-            &reference_haplotype,
-            &genotyping_region,
-            &filtered,
-            &trimmed,
+            haplotypes,
+            likelihoods,
+            assembly,
+            ref_loc,
+            reference_haplotype,
+            genotyping_region,
+            filtered,
+            trimmed,
             ramp_flanks,
-            &std::collections::BTreeSet::new(),
-            None,
-            &given,
-        );
+            suspicious: std::collections::BTreeSet::new(),
+            pre_filtering: None,
+            given,
+        })));
     }
     // Stepwise filtering scores with the flow aligner first; the ramped engine has no filtering
     // engine and scores with the main one, rescoring after the filter all the same.
@@ -775,7 +810,7 @@ pub fn call_region(
     let mut likelihoods = match (&context.pd, context.stepwise_engine) {
         // The PDHMM, over a set of partially determined haplotypes and without stepwise filtering.
         (Some(pd), None) if assembly.is_partially_determined_list() => {
-            let mut results = pd.results.map(|cell| cell.borrow_mut());
+            let mut results = pd.results.map(|cell| cell.lock().expect("a sink"));
             pd.engine
                 .compute_read_likelihoods_partially_determined(
                     &haplotypes,
@@ -835,7 +870,7 @@ pub fn call_region(
     // `alleleLikelihoodWriter.writeAlleleLikelihoods`: HaplotypeCaller's after its uncollapsing,
     // the ramped engine's before.
     if let Some(alm) = context.alm {
-        alm.borrow_mut().write(&likelihoods);
+        alm.lock().expect("a sink").write(&likelihoods);
     }
     // `filterAlleles`: HaplotypeCaller's engine before realigning, the ramped one after its
     // pre-filter off ramp.
@@ -890,7 +925,7 @@ pub fn call_region(
                     text.push_str(&crate::pd_haplotypes::haplotype_string(h));
                     text.push('\n');
                 }
-                state.borrow_mut().push_str(&text);
+                state.lock().expect("a sink").push_str(&text);
             }
             *likelihoods = kept;
             *suspicious = filtered.suspicious_locations;
@@ -965,14 +1000,14 @@ pub fn call_region(
     // The pre-filter off ramp: the realigned likelihoods, before any allele is filtered.
     if ramp_kind == Some(crate::ramp_files::OffRampType::PreFilter) {
         if let Some(ramp) = context.off_ramp {
-            ramp.borrow_mut().add_likelihoods(
+            ramp.lock().expect("a sink").add_likelihoods(
                 region.span(),
                 "readLikelihoods",
                 &likelihoods,
                 &genotyping_region,
             );
         }
-        return Ok(Vec::new());
+        return Ok(Prepared::Done(Vec::new()));
     }
     if ramped {
         filter(
@@ -983,23 +1018,51 @@ pub fn call_region(
         )?;
         rescore(&mut likelihoods, &haplotypes)?;
     }
-    finish_region(
+    Ok(Prepared::Genotype(Box::new(ToGenotype {
         region,
+        haplotypes,
+        likelihoods,
+        assembly,
+        ref_loc,
+        reference_haplotype,
+        genotyping_region,
+        filtered,
+        trimmed,
+        ramp_flanks,
+        suspicious,
+        pre_filtering,
+        given,
+    })))
+}
+
+/// The rest of `callRegion`, in region order: genotyping, the annotations' draws and the bamout.
+pub fn genotype_region(
+    prepared: Prepared,
+    context: &CallRegionContext<'_>,
+    engine: &mut GenotypingEngine,
+    annotator: Option<CallAnnotator<'_>>,
+) -> Result<Vec<VariantContext>, RegionAssemblyError> {
+    let mut g = match prepared {
+        Prepared::Done(calls) => return Ok(calls),
+        Prepared::Genotype(g) => g,
+    };
+    finish_region(
+        g.region,
         context,
         engine,
         annotator,
-        &mut haplotypes,
-        &likelihoods,
-        &assembly,
-        &ref_loc,
-        &reference_haplotype,
-        &genotyping_region,
-        &filtered,
-        &trimmed,
-        ramp_flanks,
-        &suspicious,
-        pre_filtering.as_ref().map(|(l, h)| (l, h.as_slice())),
-        &given,
+        &mut g.haplotypes,
+        &g.likelihoods,
+        &g.assembly,
+        &g.ref_loc,
+        &g.reference_haplotype,
+        &g.genotyping_region,
+        &g.filtered,
+        &g.trimmed,
+        g.ramp_flanks,
+        &g.suspicious,
+        g.pre_filtering.as_ref().map(|(l, h)| (l, h.as_slice())),
+        &g.given,
     )
 }
 
@@ -1107,7 +1170,8 @@ fn finish_region(
             None
         };
         writer
-            .borrow_mut()
+            .lock()
+            .expect("a sink")
             .write_region(
                 haplotypes,
                 ref_loc,

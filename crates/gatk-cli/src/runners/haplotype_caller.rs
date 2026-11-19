@@ -1432,7 +1432,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         expressions: Vec::new(),
         allele_concordance: false,
         // The annotations' own arguments, which the plugin descriptor hands to their instances.
-        pseudo_depth: std::cell::RefCell::new(
+        pseudo_depth: std::sync::Mutex::new(
             gatk_annotation::allele_pseudo_depth::AllelePseudoDepth::new(
                 double_or(parser, "dirichlet-prior-pseudo-count", 1.0),
                 flag(parser, "dirichlet-keep-prior-in-count"),
@@ -1460,7 +1460,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     let assembly_variants = argument(parser, "debug-assembly-variants-out").map(|path| {
         (
             path,
-            std::cell::RefCell::new(gatk_tools::assembly_variants_out::AssemblyVariantsOut::new(
+            std::sync::Mutex::new(gatk_tools::assembly_variants_out::AssemblyVariantsOut::new(
                 header.sequences.iter().map(|s| s.name.clone()).collect(),
             )),
         )
@@ -1778,7 +1778,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
                 .collect(),
             samples: Vec::new(),
         };
-        let records = queue.borrow().records();
+        let records = queue.lock().expect("a sink").records();
         let text = write_vcf_strict_or_lenient(false, &debug_header, &records)?;
         super::write_variant_file(
             parser,

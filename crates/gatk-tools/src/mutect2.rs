@@ -91,7 +91,7 @@ const MINIMUM_READ_LENGTH_AFTER_TRIMMING: usize = 10;
 const MAX_QUAL: f64 = 93.0;
 
 /// Everything the command line decides for one run.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Mutect2Arguments {
     pub region: AssemblyRegionArgs,
     /// `PileupDetectionArgumentCollection`.
@@ -146,7 +146,7 @@ pub struct Mutect2Arguments {
     pub f1r2: Option<crate::collect_f1r2_counts::Args>,
     /// `--permutect-training-dataset` and `--permutect-test-dataset`: the engines each annotated
     /// call feeds, whose text the caller writes once the run ends, a failed one too.
-    pub permutect: Option<std::cell::RefCell<crate::permutect_dataset::Datasets>>,
+    pub permutect: Option<std::sync::Mutex<crate::permutect_dataset::Datasets>>,
     pub informative_read_overlap_margin: i32,
     pub max_mnp_distance: i32,
     pub phred_scaled_global_read_mismapping_rate: f64,
@@ -204,20 +204,18 @@ pub fn call_variants(
     annotator: &AnnotatorEngine,
     contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>,
     random: &mut JavaRandom,
-    assembly_variants: Option<
-        &std::cell::RefCell<crate::assembly_variants_out::AssemblyVariantsOut>,
-    >,
+    assembly_variants: Option<&std::sync::Mutex<crate::assembly_variants_out::AssemblyVariantsOut>>,
 ) -> Result<Mutect2Output, Mutect2Error> {
     // `createBamWriter`, closed with the engine, after a failure too.
     let bamout = arguments.bamout.as_ref().map(|b| {
-        std::cell::RefCell::new(crate::haplotype_bam_writer::HaplotypeBamWriter::new(
+        std::sync::Mutex::new(crate::haplotype_bam_writer::HaplotypeBamWriter::new(
             b.kind, header,
         ))
     });
     let region_out = arguments
         .assembly_region_out
         .as_ref()
-        .map(|_| std::cell::RefCell::new(crate::hc_region::ASSEMBLY_REGION_OUT_HEADER.to_string()));
+        .map(|_| std::sync::Mutex::new(crate::hc_region::ASSEMBLY_REGION_OUT_HEADER.to_string()));
     let outcome = call_variants_with(
         reads,
         header,
@@ -231,11 +229,11 @@ pub fn call_variants(
         assembly_variants,
     );
     if let (Some(path), Some(text)) = (&arguments.assembly_region_out, region_out) {
-        std::fs::write(path, text.into_inner())
+        std::fs::write(path, text.into_inner().expect("a sink"))
             .map_err(|e| failure("UserException.CouldNotCreateOutputFile", e.to_string()))?;
     }
     if let (Some(writer), Some(settings)) = (bamout, &arguments.bamout) {
-        crate::haplotype_caller::close_bamout(writer.into_inner(), settings)
+        crate::haplotype_caller::close_bamout(writer.into_inner().expect("a sink"), settings)
             .map_err(|e| failure("UserException.CouldNotCreateOutputFile", e))?;
     }
     outcome
@@ -251,11 +249,9 @@ fn call_variants_with(
     annotator: &AnnotatorEngine,
     contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>,
     random: &mut JavaRandom,
-    bamout: Option<&std::cell::RefCell<crate::haplotype_bam_writer::HaplotypeBamWriter>>,
-    region_out: Option<&std::cell::RefCell<String>>,
-    assembly_variants: Option<
-        &std::cell::RefCell<crate::assembly_variants_out::AssemblyVariantsOut>,
-    >,
+    bamout: Option<&std::sync::Mutex<crate::haplotype_bam_writer::HaplotypeBamWriter>>,
+    region_out: Option<&std::sync::Mutex<String>>,
+    assembly_variants: Option<&std::sync::Mutex<crate::assembly_variants_out::AssemblyVariantsOut>>,
 ) -> Result<Mutect2Output, Mutect2Error> {
     let samples = samples_of(header);
     let partition: Vec<Option<String>> = samples.iter().cloned().map(Some).collect();
@@ -408,7 +404,18 @@ fn call_variants_with(
             bamout,
             assembly_variants,
         };
-        for traversed in regions.into_iter().flatten() {
+        // A region's preparation runs on every core unless it writes to the assembly variants'
+        // queue or a debug stream; its genotyping, which draws from `random`, stays here in order.
+        let sequential = assembly_variants.is_some()
+            || detection.debug_stdout
+            || arguments.assembler.graph_output.is_some()
+            || arguments.assembler.debug_graph_transformations;
+        let threads = if sequential {
+            1
+        } else {
+            crate::in_order::threads()
+        };
+        let items = regions.into_iter().flatten().map(|traversed| {
             let mut traversed =
                 traversed.map_err(|error| failure(error.class(), error.message()))?;
             if detection.use_pileup_detection {
@@ -418,18 +425,31 @@ fn call_variants_with(
                     &bases,
                 );
             }
-            if let Some(out) = region_out {
-                out.borrow_mut()
-                    .push_str(&crate::hc_region::assembly_region_rows(&traversed.region));
-            }
-            match call_region(traversed.region, &context, random) {
-                Ok(region_calls) => calls.extend(region_calls),
-                Err(mut error) => {
-                    error.calls_before = calls;
-                    return Err(error);
+            // Written when the region's turn comes.
+            let rows =
+                region_out.map(|_| crate::hc_region::assembly_region_rows(&traversed.region));
+            Ok((traversed.region, rows))
+        });
+        crate::in_order::map_in_order(
+            items,
+            threads,
+            |(region, rows)| (prepare_region(region, &context), rows),
+            |(prepared, rows)| {
+                if let (Some(out), Some(rows)) = (region_out, rows) {
+                    out.lock().expect("a sink").push_str(&rows);
                 }
-            }
-        }
+                match prepared.and_then(|prepared| genotype_region(prepared, &context, random)) {
+                    Ok(region_calls) => {
+                        calls.extend(region_calls);
+                        Ok(())
+                    }
+                    Err(mut error) => {
+                        error.calls_before = std::mem::take(&mut calls);
+                        Err(error)
+                    }
+                }
+            },
+        )?;
     }
     Ok(Mutect2Output {
         calls,
@@ -602,7 +622,7 @@ fn is_active(
     if arguments
         .permutect
         .as_ref()
-        .is_some_and(|p| p.borrow().engines.iter().any(|e| e.training))
+        .is_some_and(|p| p.lock().expect("a sink").engines.iter().any(|e| e.training))
     {
         return Ok(1.0);
     }
@@ -844,10 +864,10 @@ struct RegionContext<'a> {
     /// The loci walked, with pileup detection.
     pileup_loci: &'a [crate::pileup_based_alleles::LocusSummary],
     /// `--bam-output`.
-    bamout: Option<&'a std::cell::RefCell<crate::haplotype_bam_writer::HaplotypeBamWriter>>,
+    bamout: Option<&'a std::sync::Mutex<crate::haplotype_bam_writer::HaplotypeBamWriter>>,
     /// `--debug-assembly-variants-out`'s queue.
     assembly_variants:
-        Option<&'a std::cell::RefCell<crate::assembly_variants_out::AssemblyVariantsOut>>,
+        Option<&'a std::sync::Mutex<crate::assembly_variants_out::AssemblyVariantsOut>>,
 }
 
 /// A failure while calling: a message naming its own class as `class: message` keeps it.
@@ -942,12 +962,33 @@ fn somatic_ref_confidence(
     })
 }
 
-/// `Mutect2Engine.callRegion`.
-fn call_region(
+/// What `callRegion` has once the likelihoods are in hand: the calls already, when it stopped
+/// before genotyping, or what genotyping reads.
+enum Prepared {
+    Done(Vec<VariantContext>),
+    Genotype(Box<ToGenotype>),
+}
+
+/// [`genotype_region`]'s inputs.
+struct ToGenotype {
+    region: AssemblyRegion,
+    likelihoods: AlleleLikelihoods<BamRecord, Haplotype>,
+    haplotypes: Vec<Haplotype>,
+    initial_haplotypes: Vec<Haplotype>,
+    assembly: gatk_engine::assembly_result_set::AssemblyResultSet,
+    ref_loc: SimpleInterval,
+    reference_haplotype: Haplotype,
+    genotyping_region: AssemblyRegion,
+    trimmed: gatk_engine::assembly_region_trimmer::TrimResult,
+    given: Vec<Event>,
+}
+
+/// The part of `Mutect2Engine.callRegion` before genotyping, which draws from no generator and
+/// writes nowhere but `--debug-assembly-variants-out`'s queue: what may run off the calling thread.
+fn prepare_region(
     mut region: AssemblyRegion,
     context: &RegionContext<'_>,
-    random: &mut JavaRandom,
-) -> Result<Vec<VariantContext>, Mutect2Error> {
+) -> Result<Prepared, Mutect2Error> {
     let arguments = context.arguments;
     // `cleanOverlappingReadPairs(..., false, pcrSnvQual / 2, pcrIndelQual / 2)`.
     let mut reads = region.reads().to_vec();
@@ -965,7 +1006,7 @@ fn call_region(
         .add_all(reads, context.header)
         .map_err(|e| calling(format!("{e:?}")))?;
     if !region.is_active() || region.reads().is_empty() {
-        return reference_model_for_no_variation(region, context);
+        return reference_model_for_no_variation(region, context).map(Prepared::Done);
     }
     remove_unmarked_duplicates(&mut region, context.header)?;
     // The given events: the usable records over the padded span, split, wherever they start.
@@ -1009,7 +1050,7 @@ fn call_region(
             .variation_events(arguments.max_mnp_distance)
             .map_err(|e| calling(format!("{e:?}")))?
         {
-            queue.borrow_mut().add_event(&event);
+            queue.lock().expect("a sink").add_event(&event);
         }
     }
     let mut events = untrimmed
@@ -1037,7 +1078,7 @@ fn call_region(
         .trim(&region, &events, padded_bases, padded.start)
         .map_err(|e| calling(format!("{e:?}")))?;
     if trimmed.variant_span.is_none() {
-        return reference_model_for_no_variation(region, context);
+        return reference_model_for_no_variation(region, context).map(Prepared::Done);
     }
     let variant_region = context
         .trimmer
@@ -1067,7 +1108,7 @@ fn call_region(
     )
     .map_err(calling)?;
     if !assembly.is_variation_present() {
-        return reference_model_for_no_variation(region, context);
+        return reference_model_for_no_variation(region, context).map(Prepared::Done);
     }
     // `removeReadStubs`: reads under ten bases long, soft clips included.
     let genotyping_region = assembly
@@ -1161,6 +1202,44 @@ fn call_region(
             .filter_map(|index| likelihoods.get_allele(index).cloned())
             .collect();
     }
+    Ok(Prepared::Genotype(Box::new(ToGenotype {
+        region,
+        likelihoods,
+        haplotypes,
+        initial_haplotypes,
+        assembly,
+        ref_loc,
+        reference_haplotype,
+        genotyping_region,
+        trimmed,
+        given,
+    })))
+}
+
+/// The rest of `Mutect2Engine.callRegion`, in region order: genotyping, which draws from
+/// `random`, the bamout and the reference confidence.
+fn genotype_region(
+    prepared: Prepared,
+    context: &RegionContext<'_>,
+    random: &mut JavaRandom,
+) -> Result<Vec<VariantContext>, Mutect2Error> {
+    let ToGenotype {
+        region,
+        likelihoods,
+        mut haplotypes,
+        initial_haplotypes,
+        assembly,
+        ref_loc,
+        reference_haplotype,
+        genotyping_region,
+        trimmed,
+        given,
+    } = match prepared {
+        Prepared::Done(calls) => return Ok(calls),
+        Prepared::Genotype(g) => *g,
+    };
+    let arguments = context.arguments;
+    let padded = region.padded_span().clone();
     let window = (
         i64::from(padded.start),
         &context.contig_bases[padded.start as usize - 1..padded.end as usize],
@@ -1190,7 +1269,8 @@ fn call_region(
     if let (Some(writer), Some((tags, scored))) = (context.bamout, &bamout_tags) {
         let called: Vec<Haplotype> = tags.called.iter().map(|&h| haplotypes[h].clone()).collect();
         writer
-            .borrow_mut()
+            .lock()
+            .expect("a sink")
             .write_region(
                 &initial_haplotypes,
                 &ref_loc,
@@ -1599,7 +1679,8 @@ fn call_mutations(
                 .unwrap_or(0);
             let haplotype_refs: Vec<&Haplotype> = haplotypes.iter().collect();
             permutect
-                .borrow_mut()
+                .lock()
+                .expect("a sink")
                 .add_data(
                     reference_window,
                     &annotated,
