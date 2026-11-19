@@ -1992,12 +1992,13 @@
         "`getMateReferenceName` on an unpaired read throws, so the pairs file is the answer and the",
         "unpaired one is the refusal -- htsjdk's `IllegalStateException` rather than the tool's own",
         "exception, which is a different handler and a different exit status.",
-        "The three read-filter arguments below are held out. Each belongs to a filter that no row",
-        "selects -- --read-filter-tag-op to ReadTagValueFilter, --keep-reverse-strand-only to",
-        "ReadStrandFilter, --dont-require-soft-clips-both-ends to OverclippedReadFilter -- and the",
-        "reference refuses a command line that carries an argument whose filter is not among the",
-        "selected ones: `Argument \"/read-filter-tag-op\" is only valid when the argument",
-        "\"ReadTagValueFilter\" is specified`. With them in the array all twenty rows are that one",
+        "The three read-filter arguments vary with the filter each belongs to: --read-filter selects",
+        "ReadTagValueFilter, ReadStrandFilter or OverclippedReadFilter beside the shared values, and --read-filter-tag",
+        "(NM), --read-filter-tag-op, --keep-reverse-strand-only and --dont-require-soft-clips-both-ends are each forbidden",
+        "beside a row that does not select their filter, because the reference refuses that command line: `Argument",
+        "\"/read-filter-tag-op\" is only valid when the argument \"ReadTagValueFilter\" is specified`. A selected filter is",
+        "never left without the argument it requires, and pairs of arguments whose filters differ are forbidden too,",
+        "since one --read-filter selects one filter per row. With them in the array all twenty rows are that one",
         "refusal and the array measures nothing. Which filter owns which argument, and what the",
         "refusal costs, is measured by the filter-resolution and read-filter-catalogue suites."
       ],
@@ -2017,9 +2018,30 @@
         "/work/out/tagged.bam",
         "/work/out/tagged2.bam"
       ],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": []
+      "--read-filter-tag-op": [
+        "<unset>",
+        "GREATER"
+      ],
+      "--keep-reverse-strand-only": [
+        "<unset>",
+        "true",
+        "false"
+      ],
+      "--dont-require-soft-clips-both-ends": [
+        "<unset>",
+        "true"
+      ],
+      "--read-filter": [
+        "GoodCigarReadFilter",
+        "MappedReadFilter",
+        "ReadTagValueFilter",
+        "ReadStrandFilter",
+        "OverclippedReadFilter"
+      ],
+      "--read-filter-tag": [
+        "<unset>",
+        "NM"
+      ]
     },
     "LeftAlignIndels": {
       "$why": [
@@ -2971,10 +2993,7 @@
         "--input and --read-index are held out, as for PrintReadCounts: this tool reads a feature file",
         "and no reads. --intervals and --exclude-intervals are held out because a bounded feature",
         "traversal needs an index and measures the random-access path rather than the merge.",
-        "--read-filter-tag-op, --keep-reverse-strand-only and --dont-require-soft-clips-both-ends",
-        "are held out for the reason AddOriginalAlignmentTags gives: each belongs to a filter no row",
-        "selects, and the reference refuses the whole command line for it, so every row was that",
-        "one refusal and the first array accepted nothing."
+        "The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags."
       ],
       "--depth-evidence": [
         "/work/fixtures/depth.rd.txt",
@@ -3003,9 +3022,30 @@
       ],
       "--intervals": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": []
+      "--read-filter-tag-op": [
+        "<unset>",
+        "GREATER"
+      ],
+      "--keep-reverse-strand-only": [
+        "<unset>",
+        "true",
+        "false"
+      ],
+      "--dont-require-soft-clips-both-ends": [
+        "<unset>",
+        "true"
+      ],
+      "--read-filter": [
+        "GoodCigarReadFilter",
+        "MappedReadFilter",
+        "ReadTagValueFilter",
+        "ReadStrandFilter",
+        "OverclippedReadFilter"
+      ],
+      "--read-filter-tag": [
+        "<unset>",
+        "NM"
+      ]
     },
     "PrintSVEvidence": {
       "$why": [
@@ -3022,8 +3062,7 @@
         "--output carries a mixed-case name, which the codec lower-cases, and --compression-level is 4",
         "and 0, which a text output never reads. A block-compressed or .bci output, and any evidence",
         "type but depth, are refusals of the port's own, so the claim is narrower by those.",
-        "--input, --read-index, --intervals, --exclude-intervals and the three read-filter arguments",
-        "whose filters no row selects are held out for the reasons CondenseDepthEvidence gives."
+        "--input, --read-index, --intervals and --exclude-intervals are held out for the reasons CondenseDepthEvidence gives."
       ],
       "--evidence-file": [
         "/work/fixtures/depth.rd.txt",
@@ -3055,10 +3094,7 @@
         "0"
       ],
       "--intervals": [],
-      "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": []
+      "--exclude-intervals": []
     },
     "SiteDepthtoBAF": {
       "$why": [
@@ -3074,8 +3110,7 @@
         "dictionary IS the walk's, and a mismatch is an AssertionError whose message the port does not",
         "reproduce, so a row that varied either would measure that gap. --sample-names is held out: it",
         "reaches only a .bci output, and a .bci or block-compressed output is a refusal of the port's own.",
-        "--input, --read-index, --intervals, --exclude-intervals and the three read-filter arguments",
-        "whose filters no row selects are held out for the reasons CondenseDepthEvidence gives."
+        "--input, --read-index, --intervals and --exclude-intervals are held out for the reasons CondenseDepthEvidence gives."
       ],
       "--site-depth": [
         "/work/fixtures/depth.sd.txt",
@@ -3116,10 +3151,7 @@
         "0"
       ],
       "--intervals": [],
-      "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": []
+      "--exclude-intervals": []
     },
     "MergeMutectStats": {
       "$why": [
@@ -3183,10 +3215,10 @@
         "the codec does not claim, which is refused before a line is read. --reference is",
         "two_contigs.fasta, naming chr1 and chr2, and reference.fasta, naming chr1 alone: a file of",
         "two or more rows with a chr2 row is then refused by the dictionary sort's compareContigs.",
-        "--input, --read-index, --intervals, --exclude-intervals and the three read-filter arguments",
-        "whose filters no row selects are held out for the reasons CondenseDepthEvidence gives, and",
+        "--input, --read-index, --intervals and --exclude-intervals are held out for the reasons CondenseDepthEvidence gives, and",
         "--sequence-dictionary with them: beside a reference it is compared against that reference's,",
-        "which measures the engine's validation rather than the tool."
+        "which measures the engine's validation rather than the tool.",
+        "The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags."
       ],
       "--segments": [
         "/work/fixtures/regions.seg",
@@ -3205,12 +3237,33 @@
       "--read-index": [],
       "--intervals": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
+      "--read-filter-tag-op": [
+        "<unset>",
+        "GREATER"
+      ],
+      "--keep-reverse-strand-only": [
+        "<unset>",
+        "true",
+        "false"
+      ],
+      "--dont-require-soft-clips-both-ends": [
+        "<unset>",
+        "true"
+      ],
       "--sequence-dictionary": [],
       "--max-variants-per-shard": [
         "0"
+      ],
+      "--read-filter": [
+        "GoodCigarReadFilter",
+        "MappedReadFilter",
+        "ReadTagValueFilter",
+        "ReadStrandFilter",
+        "OverclippedReadFilter"
+      ],
+      "--read-filter-tag": [
+        "<unset>",
+        "NM"
       ]
     },
     "MergeAnnotatedRegionsByAnnotation": {
@@ -3219,10 +3272,10 @@
         "the file does not carry. --max-merge-distance is the default and 50, which splits the chain.",
         "--reference is two_contigs.fasta and reference.fasta, as for MergeAnnotatedRegions. The",
         "output's locatable column names are arguments.",
-        "--input, --read-index, --intervals, --exclude-intervals and the three read-filter arguments",
-        "whose filters no row selects are held out for the reasons CondenseDepthEvidence gives, and",
+        "--input, --read-index, --intervals and --exclude-intervals are held out for the reasons CondenseDepthEvidence gives, and",
         "--sequence-dictionary with them: beside a reference it is compared against that reference's,",
-        "which measures the engine's validation rather than the tool."
+        "which measures the engine's validation rather than the tool.",
+        "The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags."
       ],
       "--segments": [
         "/work/fixtures/regions.seg",
@@ -3257,12 +3310,33 @@
       "--read-index": [],
       "--intervals": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
+      "--read-filter-tag-op": [
+        "<unset>",
+        "GREATER"
+      ],
+      "--keep-reverse-strand-only": [
+        "<unset>",
+        "true",
+        "false"
+      ],
+      "--dont-require-soft-clips-both-ends": [
+        "<unset>",
+        "true"
+      ],
       "--sequence-dictionary": [],
       "--max-variants-per-shard": [
         "0"
+      ],
+      "--read-filter": [
+        "GoodCigarReadFilter",
+        "MappedReadFilter",
+        "ReadTagValueFilter",
+        "ReadStrandFilter",
+        "OverclippedReadFilter"
+      ],
+      "--read-filter-tag": [
+        "<unset>",
+        "NM"
       ]
     },
     "TagGermlineEvents": {
@@ -3274,10 +3348,10 @@
         "--endpoint-padding is the default and 2, which loses the breakpoint match; --reciprocal-threshold",
         "is the default 0.75 and 0.95, which loses the overlap. --reference is two_contigs.fasta and",
         "reference.fasta, whose missing chr2 refuses regions.seg once it gets past the overlap check.",
-        "--input, --read-index, --intervals, --exclude-intervals and the three read-filter arguments",
-        "whose filters no row selects are held out for the reasons CondenseDepthEvidence gives, and",
+        "--input, --read-index, --intervals and --exclude-intervals are held out for the reasons CondenseDepthEvidence gives, and",
         "--sequence-dictionary with them: beside a reference it is compared against that reference's,",
-        "which measures the engine's validation rather than the tool."
+        "which measures the engine's validation rather than the tool.",
+        "The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags."
       ],
       "--segments": [
         "/work/fixtures/tumour.seg",
@@ -3307,12 +3381,33 @@
       "--read-index": [],
       "--intervals": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
+      "--read-filter-tag-op": [
+        "<unset>",
+        "GREATER"
+      ],
+      "--keep-reverse-strand-only": [
+        "<unset>",
+        "true",
+        "false"
+      ],
+      "--dont-require-soft-clips-both-ends": [
+        "<unset>",
+        "true"
+      ],
       "--sequence-dictionary": [],
       "--max-variants-per-shard": [
         "0"
+      ],
+      "--read-filter": [
+        "GoodCigarReadFilter",
+        "MappedReadFilter",
+        "ReadTagValueFilter",
+        "ReadStrandFilter",
+        "OverclippedReadFilter"
+      ],
+      "--read-filter-tag": [
+        "<unset>",
+        "NM"
       ]
     },
     "GatherTranches": {
@@ -3351,8 +3446,8 @@
         "block-compressed one. --create-output-variant-index is held at false for the reason every",
         "variant writer holds it: the index records the output's last-modified time.",
         "--variant-output-filtering is held at ANYWHERE: any other mode needs -L, and -L is held out.",
-        "--input, --read-index, --intervals, --exclude-intervals and the three read-filter arguments",
-        "whose filters no row selects are held out for the reasons CondenseDepthEvidence gives."
+        "--input, --read-index, --intervals and --exclude-intervals are held out for the reasons CondenseDepthEvidence gives.",
+        "The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags."
       ],
       "--variant": [
         "/work/fixtures/mito.vcf",
@@ -3374,9 +3469,19 @@
       "--read-index": [],
       "--intervals": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
+      "--read-filter-tag-op": [
+        "<unset>",
+        "GREATER"
+      ],
+      "--keep-reverse-strand-only": [
+        "<unset>",
+        "true",
+        "false"
+      ],
+      "--dont-require-soft-clips-both-ends": [
+        "<unset>",
+        "true"
+      ],
       "--create-output-variant-index": [
         "false"
       ],
@@ -3385,6 +3490,17 @@
       ],
       "--max-variants-per-shard": [
         "0"
+      ],
+      "--read-filter": [
+        "GoodCigarReadFilter",
+        "MappedReadFilter",
+        "ReadTagValueFilter",
+        "ReadStrandFilter",
+        "OverclippedReadFilter"
+      ],
+      "--read-filter-tag": [
+        "<unset>",
+        "NM"
       ]
     },
     "MTLowHeteroplasmyFilterTool": {
@@ -3395,7 +3511,8 @@
         "reach, so the file comes out untouched. --low-het-threshold is 0.1 and 0.6 and changes nothing:",
         "the field is a private final with a constant initialiser, so javac folded every read of it.",
         "--create-output-variant-index is held at false and --variant-output-filtering at ANYWHERE for",
-        "the reasons NuMTFilterTool gives, and the engine's read arguments are held out likewise."
+        "the reasons NuMTFilterTool gives, and the engine's read arguments are held out likewise.",
+        "The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags."
       ],
       "--variant": [
         "/work/fixtures/mito.vcf",
@@ -3417,9 +3534,19 @@
       "--read-index": [],
       "--intervals": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
+      "--read-filter-tag-op": [
+        "<unset>",
+        "GREATER"
+      ],
+      "--keep-reverse-strand-only": [
+        "<unset>",
+        "true",
+        "false"
+      ],
+      "--dont-require-soft-clips-both-ends": [
+        "<unset>",
+        "true"
+      ],
       "--create-output-variant-index": [
         "false"
       ],
@@ -3428,6 +3555,17 @@
       ],
       "--max-variants-per-shard": [
         "0"
+      ],
+      "--read-filter": [
+        "GoodCigarReadFilter",
+        "MappedReadFilter",
+        "ReadTagValueFilter",
+        "ReadStrandFilter",
+        "OverclippedReadFilter"
+      ],
+      "--read-filter-tag": [
+        "<unset>",
+        "NM"
       ]
     },
     "ExampleMultiFeatureWalker": {
@@ -3437,7 +3575,8 @@
         "a file names twice. --sequence-dictionary is sv.dict or null and --reference reference.fasta or",
         "null: both, one, or neither, the last refused as having no dictionary, and the reference alone",
         "misreporting chr2 as an unsorted input after printing everything before it.",
-        "The engine's read arguments are held out for the reasons CondenseDepthEvidence gives."
+        "The engine's read arguments are held out for the reasons CondenseDepthEvidence gives.",
+        "The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags."
       ],
       "--feature": [
         "/work/fixtures/depth.rd.txt",
@@ -3456,11 +3595,32 @@
       "--read-index": [],
       "--intervals": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
+      "--read-filter-tag-op": [
+        "<unset>",
+        "GREATER"
+      ],
+      "--keep-reverse-strand-only": [
+        "<unset>",
+        "true",
+        "false"
+      ],
+      "--dont-require-soft-clips-both-ends": [
+        "<unset>",
+        "true"
+      ],
       "--max-variants-per-shard": [
         "0"
+      ],
+      "--read-filter": [
+        "GoodCigarReadFilter",
+        "MappedReadFilter",
+        "ReadTagValueFilter",
+        "ReadStrandFilter",
+        "OverclippedReadFilter"
+      ],
+      "--read-filter-tag": [
+        "<unset>",
+        "NM"
       ]
     },
     "CalculateAverageCombinedAnnotations": {
@@ -3470,7 +3630,8 @@
         "is refused where the walk reaches it, leaving the header and two records. --summed-annotation-to-",
         "divide is sums_two.list, naming MQ_SUM and QD_SUM, and sums.list, naming them the other way",
         "round with one annotation no site carries, which still gains its header line. The index and the output filtering mode are held for the reasons",
-        "NuMTFilterTool gives, and the engine's read arguments are held out likewise."
+        "NuMTFilterTool gives, and the engine's read arguments are held out likewise.",
+        "The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags."
       ],
       "--variant": [
         "/work/fixtures/summed.vcf",
@@ -3488,9 +3649,19 @@
       "--read-index": [],
       "--intervals": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
+      "--read-filter-tag-op": [
+        "<unset>",
+        "GREATER"
+      ],
+      "--keep-reverse-strand-only": [
+        "<unset>",
+        "true",
+        "false"
+      ],
+      "--dont-require-soft-clips-both-ends": [
+        "<unset>",
+        "true"
+      ],
       "--create-output-variant-index": [
         "false"
       ],
@@ -3499,6 +3670,17 @@
       ],
       "--max-variants-per-shard": [
         "0"
+      ],
+      "--read-filter": [
+        "GoodCigarReadFilter",
+        "MappedReadFilter",
+        "ReadTagValueFilter",
+        "ReadStrandFilter",
+        "OverclippedReadFilter"
+      ],
+      "--read-filter-tag": [
+        "<unset>",
+        "NM"
       ]
     },
     "FilterVariantTranches": {
@@ -3540,9 +3722,6 @@
       "--read-index": [],
       "--intervals": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--create-output-variant-index": [
         "false"
       ],
@@ -3564,8 +3743,7 @@
         "molecules, which the walker refuses as not sorted by MI. --fraction-to-keep is 0.5 and 1.0: the",
         "seeded draws keep and drop whole molecules, and a rejected molecule costs no draw. --min-reads is",
         "1 and 4, --min-per-strand-reads 0 and 1. --read-index, --intervals and --exclude-intervals are",
-        "held out: the file is unsorted and unindexed. The three read-filter arguments whose filters no",
-        "row selects are held out as for CondenseDepthEvidence."
+        "held out: the file is unsorted and unindexed. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags."
       ],
       "--input": [
         "/work/fixtures/molecules.bam",
@@ -3590,11 +3768,32 @@
       "--read-index": [],
       "--intervals": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
+      "--read-filter-tag-op": [
+        "<unset>",
+        "GREATER"
+      ],
+      "--keep-reverse-strand-only": [
+        "<unset>",
+        "true",
+        "false"
+      ],
+      "--dont-require-soft-clips-both-ends": [
+        "<unset>",
+        "true"
+      ],
       "--max-variants-per-shard": [
         "0"
+      ],
+      "--read-filter": [
+        "GoodCigarReadFilter",
+        "MappedReadFilter",
+        "ReadTagValueFilter",
+        "ReadStrandFilter",
+        "OverclippedReadFilter"
+      ],
+      "--read-filter-tag": [
+        "<unset>",
+        "NM"
       ]
     },
     "ASEReadCounter": {
@@ -3607,8 +3806,7 @@
         "--reference is reference.fasta or null, and without one the first locus indexes an empty array.",
         "--min-mapping-quality and --min-base-quality are 0 and 20, --min-depth-of-non-filtered-base -1 and",
         "3; --output is a file or null, the second writing to stdout, which the array compares.",
-        "--read-index, --intervals and --exclude-intervals are held out, and the three read-filter",
-        "arguments whose filters no row selects, as for CondenseDepthEvidence."
+        "--read-index, --intervals and --exclude-intervals are held out, as for CondenseDepthEvidence."
       ],
       "--input": [
         "/work/fixtures/ase.bam"
@@ -3650,9 +3848,6 @@
       "--read-index": [],
       "--intervals": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--max-variants-per-shard": [
         "0"
       ]
@@ -3709,9 +3904,6 @@
       "--read-index": [],
       "--intervals": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--create-output-variant-index": [
         "false"
       ],
@@ -3781,9 +3973,6 @@
       "--read-index": [],
       "--intervals": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--create-output-variant-index": [
         "false"
       ],
@@ -3889,9 +4078,6 @@
       "--read-index": [],
       "--intervals": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--create-output-variant-index": [
         "false"
       ],
@@ -4032,9 +4218,6 @@
       "--read-index": [],
       "--intervals": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--create-output-variant-index": [
         "false"
       ],
@@ -4135,9 +4318,6 @@
       "--read-index": [],
       "--intervals": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--create-output-variant-index": [
         "false"
       ],
@@ -4227,9 +4407,6 @@
       "--read-index": [],
       "--intervals": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--create-output-variant-index": [
         "false"
       ],
@@ -4246,7 +4423,8 @@
         "at different GQs, each with a variant site the hom-ref filter drops; --evaluation also takes a two-sample",
         "GVCF the length extraction refuses. The three histogram outputs carry two names each. Every metrics",
         "file is headed by the time the run started, which run_array replaces before comparing. The engine's",
-        "read, interval and dictionary arguments are held out."
+        "read, interval and dictionary arguments are held out.",
+        "The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags."
       ],
       "--truth": [
         "/work/fixtures/rbc_truth.g.vcf",
@@ -4278,9 +4456,30 @@
       "--read-index": [],
       "--intervals": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": []
+      "--read-filter-tag-op": [
+        "<unset>",
+        "GREATER"
+      ],
+      "--keep-reverse-strand-only": [
+        "<unset>",
+        "true",
+        "false"
+      ],
+      "--dont-require-soft-clips-both-ends": [
+        "<unset>",
+        "true"
+      ],
+      "--read-filter": [
+        "GoodCigarReadFilter",
+        "MappedReadFilter",
+        "ReadTagValueFilter",
+        "ReadStrandFilter",
+        "OverclippedReadFilter"
+      ],
+      "--read-filter-tag": [
+        "<unset>",
+        "NM"
+      ]
     },
     "CombineSegmentBreakpoints": {
       "$why": [
@@ -4289,7 +4488,8 @@
         "--labels is absent (1 and 2) or a .list of T and N. --columns-of-interest is CALL and MEAN, CALL",
         "alone (which both files carry, so it takes the labels), or a column neither has, refused.",
         "--reference is two_contigs.fasta or absent, which without a SAM header is refused. The engine's",
-        "read, interval and dictionary arguments are held out."
+        "read, interval and dictionary arguments are held out.",
+        "The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags."
       ],
       "--segments": [
         "/work/fixtures/csb_pair.list",
@@ -4317,9 +4517,30 @@
       "--read-index": [],
       "--intervals": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": []
+      "--read-filter-tag-op": [
+        "<unset>",
+        "GREATER"
+      ],
+      "--keep-reverse-strand-only": [
+        "<unset>",
+        "true",
+        "false"
+      ],
+      "--dont-require-soft-clips-both-ends": [
+        "<unset>",
+        "true"
+      ],
+      "--read-filter": [
+        "GoodCigarReadFilter",
+        "MappedReadFilter",
+        "ReadTagValueFilter",
+        "ReadStrandFilter",
+        "OverclippedReadFilter"
+      ],
+      "--read-filter-tag": [
+        "<unset>",
+        "NM"
+      ]
     },
     "MergeMutect2CallsWithMC3": {
       "$why": [
@@ -4327,7 +4548,8 @@
         "it calls another allele; --evaluation is m2.vcf, with those and a multiallelic call MC3 lacks and a",
         "filtered one it lacks, and the same without its ##tumor_sample line, the reference's",
         "NullPointerException. --output is plain or BGZF. The engine's read, interval and dictionary",
-        "arguments are held out, and the writer's index, filtering mode and command line held."
+        "arguments are held out, and the writer's index, filtering mode and command line held.",
+        "The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags."
       ],
       "--truth": [
         "/work/fixtures/mc3.vcf"
@@ -4350,9 +4572,19 @@
       "--read-index": [],
       "--intervals": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
+      "--read-filter-tag-op": [
+        "<unset>",
+        "GREATER"
+      ],
+      "--keep-reverse-strand-only": [
+        "<unset>",
+        "true",
+        "false"
+      ],
+      "--dont-require-soft-clips-both-ends": [
+        "<unset>",
+        "true"
+      ],
       "--create-output-variant-index": [
         "false"
       ],
@@ -4361,6 +4593,17 @@
       ],
       "--add-output-vcf-command-line": [
         "false"
+      ],
+      "--read-filter": [
+        "GoodCigarReadFilter",
+        "MappedReadFilter",
+        "ReadTagValueFilter",
+        "ReadStrandFilter",
+        "OverclippedReadFilter"
+      ],
+      "--read-filter-tag": [
+        "<unset>",
+        "NM"
       ]
     },
     "FilterFuncotations": {
@@ -4397,9 +4640,6 @@
       "--read-index": [],
       "--intervals": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--create-output-variant-index": [
         "false"
       ],
@@ -4449,7 +4689,8 @@
         "--f1r2-min-bq 5 lets the two low-quality alt bases at 1031 through; --f1r2-median-mq 30 lets",
         "the block at 2001 in; --f1r2-max-depth 3 caps the depth bins where the default does not.",
         "--intervals keeps the window over the reads, and its second value leaves the far end out.",
-        "--max-depth-per-sample is held at zero: this port does not reproduce the downsampler's stream."
+        "--max-depth-per-sample is held at zero: this port does not reproduce the downsampler's stream.",
+        "The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags."
       ],
       "--input": [
         "/work/fixtures/f1r2.bam",
@@ -4478,12 +4719,33 @@
       "--max-depth-per-sample": [
         "0"
       ],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
+      "--read-filter-tag-op": [
+        "<unset>",
+        "GREATER"
+      ],
+      "--keep-reverse-strand-only": [
+        "<unset>",
+        "true",
+        "false"
+      ],
+      "--dont-require-soft-clips-both-ends": [
+        "<unset>",
+        "true"
+      ],
       "--sequence-dictionary": [],
       "--reference": [
         "/work/fixtures/reference.fasta"
+      ],
+      "--read-filter": [
+        "GoodCigarReadFilter",
+        "MappedReadFilter",
+        "ReadTagValueFilter",
+        "ReadStrandFilter",
+        "OverclippedReadFilter"
+      ],
+      "--read-filter-tag": [
+        "<unset>",
+        "NM"
       ]
     },
     "CreateReadCountPanelOfNormals": {
@@ -4603,9 +4865,6 @@
       "--input": [],
       "--read-index": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--create-output-variant-index": [
         "false"
       ],
@@ -4717,9 +4976,6 @@
         "null",
         "chr1:1590-1610"
       ],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--create-output-variant-index": [
         "false"
       ],
@@ -4865,9 +5121,6 @@
       "--input": [],
       "--read-index": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--max-variants-per-shard": [
         "0"
       ]
@@ -4967,9 +5220,6 @@
       "--read-index": [],
       "--sequence-dictionary": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--max-variants-per-shard": [
         "0"
       ]
@@ -5056,9 +5306,6 @@
       "--read-index": [],
       "--sequence-dictionary": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--max-variants-per-shard": [
         "0"
       ]
@@ -5212,7 +5459,8 @@
         "the tool reads its bands from; --replace-quality-mode moves the answer from XQ to OQ and QUAL.",
         "--flow-matrix-mods carries two instruction lists valid under both classes; --reference is the",
         "reads' own or none. --flow-fill-empty-bins-value 0 is the",
-        "mode that estimates the floor from the read's own best quality."
+        "mode that estimates the floor from the read's own best quality.",
+        "The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags."
       ],
       "--input": [
         "/work/fixtures/flow.bam"
@@ -5295,11 +5543,32 @@
       "--read-index": [],
       "--sequence-dictionary": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
+      "--read-filter-tag-op": [
+        "<unset>",
+        "GREATER"
+      ],
+      "--keep-reverse-strand-only": [
+        "<unset>",
+        "true",
+        "false"
+      ],
+      "--dont-require-soft-clips-both-ends": [
+        "<unset>",
+        "true"
+      ],
       "--max-variants-per-shard": [
         "0"
+      ],
+      "--read-filter": [
+        "GoodCigarReadFilter",
+        "MappedReadFilter",
+        "ReadTagValueFilter",
+        "ReadStrandFilter",
+        "OverclippedReadFilter"
+      ],
+      "--read-filter-tag": [
+        "<unset>",
+        "NM"
       ]
     },
     "AddFlowSNVQuality": {
@@ -5403,9 +5672,6 @@
       "--read-index": [],
       "--sequence-dictionary": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--max-variants-per-shard": [
         "0"
       ]
@@ -5502,9 +5768,6 @@
       "--read-index": [],
       "--sequence-dictionary": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--max-variants-per-shard": [
         "0"
       ]
@@ -5644,9 +5907,6 @@
       "--read-index": [],
       "--sequence-dictionary": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--max-variants-per-shard": [
         "0"
       ],
@@ -5678,12 +5938,12 @@
         "--input and --read-index carry no value: the walker opens reads it never consults.",
         "--ignore-attribute carries the rank sum that differs and the site DP that differs, so each",
         "value silences a different complaint.",
-        "--read-filter-tag-op, --keep-reverse-strand-only and --dont-require-soft-clips-both-ends belong to",
-        "read filters no row enables, and --allow-old-rms-mapping-quality-annotation-data,",
-        "--assembly-complexity-reference-mode and --dirichlet-keep-prior-in-count to annotations: each is",
+        "--allow-old-rms-mapping-quality-annotation-data,",
+        "--assembly-complexity-reference-mode and --dirichlet-keep-prior-in-count belong to annotations: each is",
         "refused without its plugin, and every row would set it.",
         "A run that finds nothing prints nothing, so every accepted row answers the same and",
-        "distinct_outputs is one by construction: what varies is WHICH complaint a rejected row reports."
+        "distinct_outputs is one by construction: what varies is WHICH complaint a rejected row reports.",
+        "The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags."
       ],
       "$tagged": [
         "--variant"
@@ -5747,12 +6007,33 @@
       "--annotation": [],
       "--annotation-group": [],
       "--annotations-to-exclude": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
+      "--read-filter-tag-op": [
+        "<unset>",
+        "GREATER"
+      ],
+      "--keep-reverse-strand-only": [
+        "<unset>",
+        "true",
+        "false"
+      ],
+      "--dont-require-soft-clips-both-ends": [
+        "<unset>",
+        "true"
+      ],
       "--allow-old-rms-mapping-quality-annotation-data": [],
       "--assembly-complexity-reference-mode": [],
-      "--dirichlet-keep-prior-in-count": []
+      "--dirichlet-keep-prior-in-count": [],
+      "--read-filter": [
+        "GoodCigarReadFilter",
+        "MappedReadFilter",
+        "ReadTagValueFilter",
+        "ReadStrandFilter",
+        "OverclippedReadFilter"
+      ],
+      "--read-filter-tag": [
+        "<unset>",
+        "NM"
+      ]
     },
     "GenotypeGVCFs": {
       "$why": [
@@ -6419,7 +6700,10 @@
       "--read-filter": [
         "null",
         "MappingQualityNotZeroReadFilter",
-        "GoodCigarReadFilter"
+        "GoodCigarReadFilter",
+        "ReadTagValueFilter",
+        "ReadStrandFilter",
+        "OverclippedReadFilter"
       ],
       "--disable-read-filter": [
         "null",
@@ -6429,9 +6713,19 @@
         "null",
         "FirstOfPairReadFilter"
       ],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
+      "--read-filter-tag-op": [
+        "<unset>",
+        "GREATER"
+      ],
+      "--keep-reverse-strand-only": [
+        "<unset>",
+        "true",
+        "false"
+      ],
+      "--dont-require-soft-clips-both-ends": [
+        "<unset>",
+        "true"
+      ],
       "--read-validation-stringency": [],
       "--sequence-dictionary": [],
       "--read-index": [],
@@ -6476,13 +6770,15 @@
         "--dirichlet-keep-prior-in-count are held out: each is refused without its annotation, and",
         "the port's parser does not yet tie an annotation's arguments to it. --pedigree, --founder-id",
         "and --flow-order-for-annotations are held out: the port carries no pedigree or flow",
-        "annotation for this tool. --read-filter-tag-op, --keep-reverse-strand-only and",
-        "--dont-require-soft-clips-both-ends belong to filters no row enables, and each is refused without it;",
-        "--read-validation-stringency, --sequence-dictionary and --read-index are held out, as for the",
+        "annotation for this tool. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags. --read-validation-stringency, --sequence-dictionary and --read-index are held out, as for the",
         "other variant walkers that read BAMs. --variant-output-filtering is held out: every mode but",
         "ANYWHERE needs -L, and was compared by hand.",
         "--add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the",
         "reason every variant writer holds them, and --max-variants-per-shard at 0."
+      ],
+      "--read-filter-tag": [
+        "<unset>",
+        "NM"
       ]
     },
     "FuncotatorDataSourceDownloader": {
@@ -6635,9 +6931,6 @@
       "--sequence-dictionary": [],
       "--input": [],
       "--read-index": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--create-output-variant-index": [
         "false"
       ],
@@ -6738,9 +7031,6 @@
       "--sequence-dictionary": [],
       "--input": [],
       "--read-index": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--create-output-variant-index": [
         "false"
       ],
@@ -6835,8 +7125,7 @@
         "variant writer holds it: the line carries the run's date.",
         "--read-index is held out: a queryname-sorted file cannot be indexed, so the one index in the",
         "corpus belongs to the refused coordinate-sorted file.",
-        "--read-filter-tag-op, --keep-reverse-strand-only and --dont-require-soft-clips-both-ends",
-        "belong to filters no row selects and are refused without them, as for AddOriginalAlignmentTags.",
+        "The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags.",
         "The complex-event path (three or more alignments) is not in the corpus: the port refuses it",
         "as its own limitation."
       ],
@@ -6899,7 +7188,10 @@
       "--read-filter": [
         "null",
         "MappingQualityReadFilter",
-        "PrimaryLineReadFilter"
+        "PrimaryLineReadFilter",
+        "ReadTagValueFilter",
+        "ReadStrandFilter",
+        "OverclippedReadFilter"
       ],
       "--disable-read-filter": [
         "null",
@@ -6951,9 +7243,23 @@
         "false",
         "true"
       ],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": []
+      "--read-filter-tag-op": [
+        "<unset>",
+        "GREATER"
+      ],
+      "--keep-reverse-strand-only": [
+        "<unset>",
+        "true",
+        "false"
+      ],
+      "--dont-require-soft-clips-both-ends": [
+        "<unset>",
+        "true"
+      ],
+      "--read-filter-tag": [
+        "<unset>",
+        "NM"
+      ]
     },
     "JointGermlineCNVSegmentation": {
       "$why": [
@@ -7057,9 +7363,6 @@
         "null",
         "FirstOfPairReadFilter"
       ],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--read-validation-stringency": [],
       "--sequence-dictionary": [],
       "--input": [],
@@ -7649,9 +7952,6 @@
       "--read-index": [],
       "--sequence-dictionary": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--max-variants-per-shard": [
         "0"
       ],
@@ -7827,9 +8127,6 @@
       "--read-index": [],
       "--sequence-dictionary": [],
       "--exclude-intervals": [],
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--max-variants-per-shard": [
         "0"
       ],
@@ -13060,9 +13357,19 @@
       ]
     },
     "CollectAllelicCountsSpark": {
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
+      "--read-filter-tag-op": [
+        "<unset>",
+        "GREATER"
+      ],
+      "--keep-reverse-strand-only": [
+        "<unset>",
+        "true",
+        "false"
+      ],
+      "--dont-require-soft-clips-both-ends": [
+        "<unset>",
+        "true"
+      ],
       "--input": [
         "/work/fixtures/reads.bam",
         "/work/fixtures/reads2.bam",
@@ -13118,7 +13425,19 @@
         "0"
       ],
       "$why": [
-        "CollectAllelicCounts' values over the Spark engine's arguments. Intervals are required, so -L has no <unset>. The far window is one shard: two would fail two tasks at once on local[2], and the log line that comes first is a race."
+        "CollectAllelicCounts' values over the Spark engine's arguments. Intervals are required, so -L has no <unset>. The far window is one shard: two would fail two tasks at once on local[2], and the log line that comes first is a race.",
+        "The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags."
+      ],
+      "--read-filter": [
+        "GoodCigarReadFilter",
+        "MappedReadFilter",
+        "ReadTagValueFilter",
+        "ReadStrandFilter",
+        "OverclippedReadFilter"
+      ],
+      "--read-filter-tag": [
+        "<unset>",
+        "NM"
       ]
     },
     "CollectInsertSizeMetricsSpark": {
@@ -13400,9 +13719,6 @@
       ]
     },
     "FindBadGenomicKmersSpark": {
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--spark-master": [
         "local[1]",
         "local[2]"
@@ -13467,9 +13783,6 @@
       ]
     },
     "CalcMetadataSpark": {
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--spark-master": [
         "local[1]",
         "local[2]"
@@ -15985,9 +16298,6 @@
       ]
     },
     "PathSeqFilterSpark": {
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--spark-master": [
         "local[1]",
         "local[2]"
@@ -16123,9 +16433,6 @@
       ]
     },
     "PathSeqScoreSpark": {
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--spark-master": [
         "local[1]",
         "local[2]"
@@ -16212,9 +16519,6 @@
       ]
     },
     "ExtractSVEvidenceSpark": {
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--spark-master": [
         "local[1]",
         "local[2]"
@@ -16308,9 +16612,6 @@
       ]
     },
     "DiscoverVariantsFromContigAlignmentsSAMSpark": {
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--spark-master": [
         "local[1]",
         "local[2]"
@@ -16406,9 +16707,6 @@
       ]
     },
     "SvDiscoverFromLocalAssemblyContigAlignmentsSpark": {
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--spark-master": [
         "local[1]",
         "local[2]"
@@ -16515,9 +16813,6 @@
       ]
     },
     "CpxVariantReInterpreterSpark": {
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--spark-master": [
         "local[1]",
         "local[2]"
@@ -16672,9 +16967,6 @@
       ]
     },
     "BwaSpark": {
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--spark-master": [
         "local[1]",
         "local[2]"
@@ -16736,9 +17028,6 @@
       ]
     },
     "BwaAndMarkDuplicatesPipelineSpark": {
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--spark-master": [
         "local[1]",
         "local[2]"
@@ -16815,9 +17104,6 @@
       ]
     },
     "PathSeqBwaSpark": {
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--spark-master": [
         "local[1]",
         "local[2]"
@@ -16892,9 +17178,6 @@
       ]
     },
     "PathSeqPipelineSpark": {
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--spark-master": [
         "local[1]",
         "local[2]"
@@ -17020,9 +17303,6 @@
       ]
     },
     "ParallelCopyGCSDirectoryIntoHDFSSpark": {
-      "--read-filter-tag-op": [],
-      "--keep-reverse-strand-only": [],
-      "--dont-require-soft-clips-both-ends": [],
       "--spark-master": [
         "local[1]",
         "local[2]"
@@ -20104,6 +20384,1064 @@
         "--exclude-intervals": "null"
       },
       "why": "A filtering mode with no -L or -XL is the one MissingArgument at the end of onStartup, on every such row."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "VariantAnnotator",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--read-filter-tag": "NM",
+        "--read-filter": "GoodCigarReadFilter"
+      },
+      "why": "--read-filter-tag belongs to ReadTagValueFilter, and the descriptor refuses it while the command line is parsed unless ReadTagValueFilter is selected."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--read-filter-tag": "NM",
+        "--read-filter": "MappedReadFilter"
+      },
+      "why": "--read-filter-tag belongs to ReadTagValueFilter, and the descriptor refuses it while the command line is parsed unless ReadTagValueFilter is selected."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "VariantAnnotator",
+        "StructuralVariantDiscoverer",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--read-filter-tag": "NM",
+        "--read-filter": "ReadStrandFilter"
+      },
+      "why": "--read-filter-tag belongs to ReadTagValueFilter, and the descriptor refuses it while the command line is parsed unless ReadTagValueFilter is selected."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "VariantAnnotator",
+        "StructuralVariantDiscoverer",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--read-filter-tag": "NM",
+        "--read-filter": "OverclippedReadFilter"
+      },
+      "why": "--read-filter-tag belongs to ReadTagValueFilter, and the descriptor refuses it while the command line is parsed unless ReadTagValueFilter is selected."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "VariantAnnotator",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--read-filter-tag-op": "GREATER",
+        "--read-filter": "GoodCigarReadFilter"
+      },
+      "why": "--read-filter-tag-op belongs to ReadTagValueFilter, and the descriptor refuses it while the command line is parsed unless ReadTagValueFilter is selected."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--read-filter-tag-op": "GREATER",
+        "--read-filter": "MappedReadFilter"
+      },
+      "why": "--read-filter-tag-op belongs to ReadTagValueFilter, and the descriptor refuses it while the command line is parsed unless ReadTagValueFilter is selected."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "VariantAnnotator",
+        "StructuralVariantDiscoverer",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--read-filter-tag-op": "GREATER",
+        "--read-filter": "ReadStrandFilter"
+      },
+      "why": "--read-filter-tag-op belongs to ReadTagValueFilter, and the descriptor refuses it while the command line is parsed unless ReadTagValueFilter is selected."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "VariantAnnotator",
+        "StructuralVariantDiscoverer",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--read-filter-tag-op": "GREATER",
+        "--read-filter": "OverclippedReadFilter"
+      },
+      "why": "--read-filter-tag-op belongs to ReadTagValueFilter, and the descriptor refuses it while the command line is parsed unless ReadTagValueFilter is selected."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "VariantAnnotator",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--keep-reverse-strand-only": "true",
+        "--read-filter": "GoodCigarReadFilter"
+      },
+      "why": "--keep-reverse-strand-only belongs to ReadStrandFilter, and the descriptor refuses it while the command line is parsed unless ReadStrandFilter is selected."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "VariantAnnotator",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--keep-reverse-strand-only": "false",
+        "--read-filter": "GoodCigarReadFilter"
+      },
+      "why": "--keep-reverse-strand-only belongs to ReadStrandFilter, and the descriptor refuses it while the command line is parsed unless ReadStrandFilter is selected."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--keep-reverse-strand-only": "true",
+        "--read-filter": "MappedReadFilter"
+      },
+      "why": "--keep-reverse-strand-only belongs to ReadStrandFilter, and the descriptor refuses it while the command line is parsed unless ReadStrandFilter is selected."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--keep-reverse-strand-only": "false",
+        "--read-filter": "MappedReadFilter"
+      },
+      "why": "--keep-reverse-strand-only belongs to ReadStrandFilter, and the descriptor refuses it while the command line is parsed unless ReadStrandFilter is selected."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "VariantAnnotator",
+        "StructuralVariantDiscoverer",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--keep-reverse-strand-only": "true",
+        "--read-filter": "ReadTagValueFilter"
+      },
+      "why": "--keep-reverse-strand-only belongs to ReadStrandFilter, and the descriptor refuses it while the command line is parsed unless ReadStrandFilter is selected."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "VariantAnnotator",
+        "StructuralVariantDiscoverer",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--keep-reverse-strand-only": "false",
+        "--read-filter": "ReadTagValueFilter"
+      },
+      "why": "--keep-reverse-strand-only belongs to ReadStrandFilter, and the descriptor refuses it while the command line is parsed unless ReadStrandFilter is selected."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "VariantAnnotator",
+        "StructuralVariantDiscoverer",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--keep-reverse-strand-only": "true",
+        "--read-filter": "OverclippedReadFilter"
+      },
+      "why": "--keep-reverse-strand-only belongs to ReadStrandFilter, and the descriptor refuses it while the command line is parsed unless ReadStrandFilter is selected."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "VariantAnnotator",
+        "StructuralVariantDiscoverer",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--keep-reverse-strand-only": "false",
+        "--read-filter": "OverclippedReadFilter"
+      },
+      "why": "--keep-reverse-strand-only belongs to ReadStrandFilter, and the descriptor refuses it while the command line is parsed unless ReadStrandFilter is selected."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "VariantAnnotator",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--dont-require-soft-clips-both-ends": "true",
+        "--read-filter": "GoodCigarReadFilter"
+      },
+      "why": "--dont-require-soft-clips-both-ends belongs to OverclippedReadFilter, and the descriptor refuses it while the command line is parsed unless OverclippedReadFilter is selected."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--dont-require-soft-clips-both-ends": "true",
+        "--read-filter": "MappedReadFilter"
+      },
+      "why": "--dont-require-soft-clips-both-ends belongs to OverclippedReadFilter, and the descriptor refuses it while the command line is parsed unless OverclippedReadFilter is selected."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "VariantAnnotator",
+        "StructuralVariantDiscoverer",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--dont-require-soft-clips-both-ends": "true",
+        "--read-filter": "ReadTagValueFilter"
+      },
+      "why": "--dont-require-soft-clips-both-ends belongs to OverclippedReadFilter, and the descriptor refuses it while the command line is parsed unless OverclippedReadFilter is selected."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "VariantAnnotator",
+        "StructuralVariantDiscoverer",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--dont-require-soft-clips-both-ends": "true",
+        "--read-filter": "ReadStrandFilter"
+      },
+      "why": "--dont-require-soft-clips-both-ends belongs to OverclippedReadFilter, and the descriptor refuses it while the command line is parsed unless OverclippedReadFilter is selected."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "VariantAnnotator",
+        "StructuralVariantDiscoverer",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--read-filter": "ReadTagValueFilter",
+        "--read-filter-tag": "<unset>"
+      },
+      "why": "ReadTagValueFilter requires --read-filter-tag; without it Barclay refuses the command line before the tool runs."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "VariantAnnotator",
+        "StructuralVariantDiscoverer",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--read-filter": "ReadStrandFilter",
+        "--keep-reverse-strand-only": "<unset>"
+      },
+      "why": "ReadStrandFilter requires --keep-reverse-strand-only; without it Barclay refuses the command line before the tool runs."
+    },
+    {
+      "tools": [
+        "VariantAnnotator",
+        "StructuralVariantDiscoverer"
+      ],
+      "forbid": {
+        "--read-filter-tag": "NM",
+        "--read-filter": "null"
+      },
+      "why": "--read-filter-tag belongs to ReadTagValueFilter, and the descriptor refuses it while the command line is parsed unless ReadTagValueFilter is selected."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--read-filter-tag": "NM",
+        "--read-filter": "MappingQualityNotZeroReadFilter"
+      },
+      "why": "--read-filter-tag belongs to ReadTagValueFilter, and the descriptor refuses it while the command line is parsed unless ReadTagValueFilter is selected."
+    },
+    {
+      "tools": [
+        "VariantAnnotator",
+        "StructuralVariantDiscoverer"
+      ],
+      "forbid": {
+        "--read-filter-tag-op": "GREATER",
+        "--read-filter": "null"
+      },
+      "why": "--read-filter-tag-op belongs to ReadTagValueFilter, and the descriptor refuses it while the command line is parsed unless ReadTagValueFilter is selected."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--read-filter-tag-op": "GREATER",
+        "--read-filter": "MappingQualityNotZeroReadFilter"
+      },
+      "why": "--read-filter-tag-op belongs to ReadTagValueFilter, and the descriptor refuses it while the command line is parsed unless ReadTagValueFilter is selected."
+    },
+    {
+      "tools": [
+        "VariantAnnotator",
+        "StructuralVariantDiscoverer"
+      ],
+      "forbid": {
+        "--keep-reverse-strand-only": "true",
+        "--read-filter": "null"
+      },
+      "why": "--keep-reverse-strand-only belongs to ReadStrandFilter, and the descriptor refuses it while the command line is parsed unless ReadStrandFilter is selected."
+    },
+    {
+      "tools": [
+        "VariantAnnotator",
+        "StructuralVariantDiscoverer"
+      ],
+      "forbid": {
+        "--keep-reverse-strand-only": "false",
+        "--read-filter": "null"
+      },
+      "why": "--keep-reverse-strand-only belongs to ReadStrandFilter, and the descriptor refuses it while the command line is parsed unless ReadStrandFilter is selected."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--keep-reverse-strand-only": "true",
+        "--read-filter": "MappingQualityNotZeroReadFilter"
+      },
+      "why": "--keep-reverse-strand-only belongs to ReadStrandFilter, and the descriptor refuses it while the command line is parsed unless ReadStrandFilter is selected."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--keep-reverse-strand-only": "false",
+        "--read-filter": "MappingQualityNotZeroReadFilter"
+      },
+      "why": "--keep-reverse-strand-only belongs to ReadStrandFilter, and the descriptor refuses it while the command line is parsed unless ReadStrandFilter is selected."
+    },
+    {
+      "tools": [
+        "VariantAnnotator",
+        "StructuralVariantDiscoverer"
+      ],
+      "forbid": {
+        "--dont-require-soft-clips-both-ends": "true",
+        "--read-filter": "null"
+      },
+      "why": "--dont-require-soft-clips-both-ends belongs to OverclippedReadFilter, and the descriptor refuses it while the command line is parsed unless OverclippedReadFilter is selected."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--dont-require-soft-clips-both-ends": "true",
+        "--read-filter": "MappingQualityNotZeroReadFilter"
+      },
+      "why": "--dont-require-soft-clips-both-ends belongs to OverclippedReadFilter, and the descriptor refuses it while the command line is parsed unless OverclippedReadFilter is selected."
+    },
+    {
+      "tools": [
+        "StructuralVariantDiscoverer"
+      ],
+      "forbid": {
+        "--read-filter-tag": "NM",
+        "--read-filter": "MappingQualityReadFilter"
+      },
+      "why": "--read-filter-tag belongs to ReadTagValueFilter, and the descriptor refuses it while the command line is parsed unless ReadTagValueFilter is selected."
+    },
+    {
+      "tools": [
+        "StructuralVariantDiscoverer"
+      ],
+      "forbid": {
+        "--read-filter-tag": "NM",
+        "--read-filter": "PrimaryLineReadFilter"
+      },
+      "why": "--read-filter-tag belongs to ReadTagValueFilter, and the descriptor refuses it while the command line is parsed unless ReadTagValueFilter is selected."
+    },
+    {
+      "tools": [
+        "StructuralVariantDiscoverer"
+      ],
+      "forbid": {
+        "--read-filter-tag-op": "GREATER",
+        "--read-filter": "MappingQualityReadFilter"
+      },
+      "why": "--read-filter-tag-op belongs to ReadTagValueFilter, and the descriptor refuses it while the command line is parsed unless ReadTagValueFilter is selected."
+    },
+    {
+      "tools": [
+        "StructuralVariantDiscoverer"
+      ],
+      "forbid": {
+        "--read-filter-tag-op": "GREATER",
+        "--read-filter": "PrimaryLineReadFilter"
+      },
+      "why": "--read-filter-tag-op belongs to ReadTagValueFilter, and the descriptor refuses it while the command line is parsed unless ReadTagValueFilter is selected."
+    },
+    {
+      "tools": [
+        "StructuralVariantDiscoverer"
+      ],
+      "forbid": {
+        "--keep-reverse-strand-only": "true",
+        "--read-filter": "MappingQualityReadFilter"
+      },
+      "why": "--keep-reverse-strand-only belongs to ReadStrandFilter, and the descriptor refuses it while the command line is parsed unless ReadStrandFilter is selected."
+    },
+    {
+      "tools": [
+        "StructuralVariantDiscoverer"
+      ],
+      "forbid": {
+        "--keep-reverse-strand-only": "false",
+        "--read-filter": "MappingQualityReadFilter"
+      },
+      "why": "--keep-reverse-strand-only belongs to ReadStrandFilter, and the descriptor refuses it while the command line is parsed unless ReadStrandFilter is selected."
+    },
+    {
+      "tools": [
+        "StructuralVariantDiscoverer"
+      ],
+      "forbid": {
+        "--keep-reverse-strand-only": "true",
+        "--read-filter": "PrimaryLineReadFilter"
+      },
+      "why": "--keep-reverse-strand-only belongs to ReadStrandFilter, and the descriptor refuses it while the command line is parsed unless ReadStrandFilter is selected."
+    },
+    {
+      "tools": [
+        "StructuralVariantDiscoverer"
+      ],
+      "forbid": {
+        "--keep-reverse-strand-only": "false",
+        "--read-filter": "PrimaryLineReadFilter"
+      },
+      "why": "--keep-reverse-strand-only belongs to ReadStrandFilter, and the descriptor refuses it while the command line is parsed unless ReadStrandFilter is selected."
+    },
+    {
+      "tools": [
+        "StructuralVariantDiscoverer"
+      ],
+      "forbid": {
+        "--dont-require-soft-clips-both-ends": "true",
+        "--read-filter": "MappingQualityReadFilter"
+      },
+      "why": "--dont-require-soft-clips-both-ends belongs to OverclippedReadFilter, and the descriptor refuses it while the command line is parsed unless OverclippedReadFilter is selected."
+    },
+    {
+      "tools": [
+        "StructuralVariantDiscoverer"
+      ],
+      "forbid": {
+        "--dont-require-soft-clips-both-ends": "true",
+        "--read-filter": "PrimaryLineReadFilter"
+      },
+      "why": "--dont-require-soft-clips-both-ends belongs to OverclippedReadFilter, and the descriptor refuses it while the command line is parsed unless OverclippedReadFilter is selected."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "VariantAnnotator",
+        "StructuralVariantDiscoverer",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--read-filter-tag": "<unset>",
+        "--read-filter-tag-op": "GREATER"
+      },
+      "why": "--read-filter-tag-op needs ReadTagValueFilter, which needs --read-filter-tag: the pair cannot occur on a row the reference accepts."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "VariantAnnotator",
+        "StructuralVariantDiscoverer",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--keep-reverse-strand-only": "true",
+        "--read-filter-tag": "NM"
+      },
+      "why": "One --read-filter selects one filter per row, and each of these arguments needs its own filter selected, so the pair cannot occur on a row the reference accepts."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "VariantAnnotator",
+        "StructuralVariantDiscoverer",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--keep-reverse-strand-only": "true",
+        "--read-filter-tag-op": "GREATER"
+      },
+      "why": "One --read-filter selects one filter per row, and each of these arguments needs its own filter selected, so the pair cannot occur on a row the reference accepts."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "VariantAnnotator",
+        "StructuralVariantDiscoverer",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--keep-reverse-strand-only": "true",
+        "--dont-require-soft-clips-both-ends": "true"
+      },
+      "why": "One --read-filter selects one filter per row, and each of these arguments needs its own filter selected, so the pair cannot occur on a row the reference accepts."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "VariantAnnotator",
+        "StructuralVariantDiscoverer",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--keep-reverse-strand-only": "false",
+        "--read-filter-tag": "NM"
+      },
+      "why": "One --read-filter selects one filter per row, and each of these arguments needs its own filter selected, so the pair cannot occur on a row the reference accepts."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "VariantAnnotator",
+        "StructuralVariantDiscoverer",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--keep-reverse-strand-only": "false",
+        "--read-filter-tag-op": "GREATER"
+      },
+      "why": "One --read-filter selects one filter per row, and each of these arguments needs its own filter selected, so the pair cannot occur on a row the reference accepts."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "VariantAnnotator",
+        "StructuralVariantDiscoverer",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--keep-reverse-strand-only": "false",
+        "--dont-require-soft-clips-both-ends": "true"
+      },
+      "why": "One --read-filter selects one filter per row, and each of these arguments needs its own filter selected, so the pair cannot occur on a row the reference accepts."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "VariantAnnotator",
+        "StructuralVariantDiscoverer",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--dont-require-soft-clips-both-ends": "true",
+        "--read-filter-tag": "NM"
+      },
+      "why": "One --read-filter selects one filter per row, and each of these arguments needs its own filter selected, so the pair cannot occur on a row the reference accepts."
+    },
+    {
+      "tools": [
+        "AddOriginalAlignmentTags",
+        "CondenseDepthEvidence",
+        "MergeAnnotatedRegions",
+        "MergeAnnotatedRegionsByAnnotation",
+        "TagGermlineEvents",
+        "NuMTFilterTool",
+        "MTLowHeteroplasmyFilterTool",
+        "ExampleMultiFeatureWalker",
+        "CalculateAverageCombinedAnnotations",
+        "DownsampleByDuplicateSet",
+        "ReferenceBlockConcordance",
+        "CombineSegmentBreakpoints",
+        "MergeMutect2CallsWithMC3",
+        "CollectF1R2Counts",
+        "AddFlowBaseQuality",
+        "VCFComparator",
+        "VariantAnnotator",
+        "StructuralVariantDiscoverer",
+        "CollectAllelicCountsSpark"
+      ],
+      "forbid": {
+        "--dont-require-soft-clips-both-ends": "true",
+        "--read-filter-tag-op": "GREATER"
+      },
+      "why": "One --read-filter selects one filter per row, and each of these arguments needs its own filter selected, so the pair cannot occur on a row the reference accepts."
     }
   ],
   "exclude": {

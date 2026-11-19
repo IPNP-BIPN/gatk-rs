@@ -673,17 +673,27 @@ impl Parameterized {
                     && !read::is_supplementary_alignment(read),
             ),
             Parameterized::ReadTagValue { tag, op, value } => {
+                use htsjdk_bam::tag::TagValue;
                 let name = tag.as_bytes();
-                match tag_string(read, &[name[0], name[1]]) {
+                let Some((_, attribute)) = read
+                    .tags
+                    .iter()
+                    .find(|(t, _)| t.name() == [name[0], name[1]])
+                else {
                     // `hasAttribute` first: an absent tag is filtered out, not an error.
-                    None => Some(false),
-                    // `getAttributeAsFloat` parses the text of a non-float attribute and throws
-                    // `ReadAttributeTypeMismatch` when that fails.
-                    Some(text) => text
-                        .parse::<f32>()
-                        .ok()
-                        .map(|tag_value| op.apply(tag_value, *value)),
-                }
+                    return Some(false);
+                };
+                // `getAttributeAsFloat` returns a Float as is and parses `toString()` of anything
+                // else, so `NM:i:0` is 0; an array's `toString()` never parses, which throws
+                // `ReadAttributeTypeMismatch`.
+                let tag_value = match attribute {
+                    TagValue::Float(number) => Some(*number),
+                    TagValue::Int(number) => Some(*number as f32),
+                    TagValue::Char(c) => (*c as char).to_string().parse().ok(),
+                    TagValue::Str(text) => text.parse().ok(),
+                    _ => None,
+                };
+                tag_value.map(|tag_value| op.apply(tag_value, *value))
             }
             Parameterized::HmerQualitySymmetric => {
                 // getBaseQualitiesNoCopy() is never null, so this filter reaches the cigar for
@@ -1374,6 +1384,14 @@ mod tests {
             htsjdk_bam::tag::TagValue::Str("high".to_string()),
         );
         assert_eq!(filter.decide(&with_text), None);
+
+        // An integer tag such as `NM:i:0` is read as its number, not refused.
+        let mut with_int = mapped_read();
+        with_int.tags.insert(
+            htsjdk_bam::Tag::new(b"TV"),
+            htsjdk_bam::tag::TagValue::Int(0),
+        );
+        assert_eq!(filter.decide(&with_int), Some(true));
     }
 
     /// A read with no `RG` throws rather than being filtered out.
