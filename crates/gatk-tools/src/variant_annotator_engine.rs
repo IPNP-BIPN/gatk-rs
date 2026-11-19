@@ -136,7 +136,7 @@ pub struct Engine {
     /// The one `AllelePseudoDepth` the plugin descriptor instantiates: its memo of prior pseudo
     /// counts lives as long as the tool and is written through by one branch, so it is state the
     /// sites share, not a cache.
-    pub pseudo_depth: std::cell::RefCell<gatk_annotation::allele_pseudo_depth::AllelePseudoDepth>,
+    pub pseudo_depth: std::sync::Mutex<gatk_annotation::allele_pseudo_depth::AllelePseudoDepth>,
     /// `--assembly-complexity-reference-mode`, `AssemblyComplexity`'s one argument.
     pub assembly_complexity_reference_mode: bool,
     /// What `--pedigree` and `--founder-id` hand the pedigree annotations.
@@ -1130,7 +1130,7 @@ fn annotate_genotype(
     called: bool,
     likelihoods: &AlleleLikelihoods<BamRecord>,
     fragments: Option<&AlleleLikelihoods<Fragment>>,
-    pseudo_depth: &std::cell::RefCell<a_pd::AllelePseudoDepth>,
+    pseudo_depth: &std::sync::Mutex<a_pd::AllelePseudoDepth>,
 ) -> Result<(), EngineError> {
     use gatk_annotation as a;
     let sample = genotype.sample_name.as_str();
@@ -1197,7 +1197,8 @@ fn annotate_genotype(
                 is_natural_log: likelihoods.is_natural_log(),
             };
             let depths = pseudo_depth
-                .borrow_mut()
+                .lock()
+                .expect("the pseudo-depth annotation")
                 .annotate(&allele_indices, Some(&sample_matrix))
                 .map_err(|error| match error {
                     a_pd::PseudoDepthError::EvidenceIndexOutOfBounds {
