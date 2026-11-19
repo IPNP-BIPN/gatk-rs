@@ -13131,7 +13131,10 @@
         "/work/fixtures/marking_names.bam",
         "/work/fixtures/marking_one.bam"
       ],
-      "--read-index": [],
+      "--read-index": [
+        "/work/fixtures/marking.bai",
+        "<unset>"
+      ],
       "--intervals": [
         "chr1:1-3000",
         "chr1:1000-9000",
@@ -13161,7 +13164,15 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
+      ],
+      "--output-shard-tmp-dir": [
+        "/work/out/parts",
+        "<unset>"
+      ],
       "--exclude-intervals": [
         "chr1:2000-2200",
         "<unset>"
@@ -13170,7 +13181,11 @@
         "/work/out/marked.bam",
         "/work/out/marked2.bam"
       ],
-      "--reference": [],
+      "--reference": [
+        "/work/fixtures/sv_reference.fasta",
+        "/work/fixtures/reference.fasta",
+        "<unset>"
+      ],
       "--disable-read-filter": [
         "WellformedReadFilter"
       ],
@@ -13186,10 +13201,17 @@
       "--duplicate-tagging-policy": [
         "DontTag",
         "All",
-        "OpticalOnly"
+        "OpticalOnly",
+        "<unset>"
       ],
-      "--remove-all-duplicates": [],
-      "--remove-sequencing-duplicates": [],
+      "--remove-all-duplicates": [
+        "true",
+        "<unset>"
+      ],
+      "--remove-sequencing-duplicates": [
+        "true",
+        "<unset>"
+      ],
       "--do-not-mark-unmapped-mates": [
         "false",
         "true"
@@ -13241,7 +13263,7 @@
         "3"
       ],
       "$why": [
-        "Every record type the tool makes, in the three orders of header it treats apart, the one-library copy being what brings the histogram. The two removals exclude --duplicate-tagging-policy, even at false, so they are measured in the spark-walkers golden and left out here. The array keeps to a single input and to fixtures without flow tags; the golden measures several inputs and a flow-tagged fixture."
+        "Every record type the tool makes, in the three orders of header it treats apart, the one-library copy being what brings the histogram. The two removals and --duplicate-tagging-policy exclude one another whenever two are given, so each has an `<unset>` and the pairs are forbidden. --reference is sv_reference.fasta, whose dictionary is the marking BAMs', and reference.fasta, which lacks chr2 and is still accepted, since the dictionaries are compared only on the contigs they share. A Spark tool never reads --read-index, so its row shows the argument is accepted and ignored. --output-shard-tmp-dir excludes --sharded-output, even at false, so that one has an `<unset>` too; it is where the single BAM's parts are written before they are merged; the directory is gone once the BAM is. The array keeps to a single input and to fixtures without flow tags; the spark-walkers golden measures several inputs and a flow-tagged fixture."
       ]
     },
     "FindBadGenomicKmersSpark": {
@@ -19744,6 +19766,96 @@
         "--genomicsdb-use-bcf-codec": "true"
       },
       "why": "The port refuses the BCF codec over a workspace in its own words: the records BCF2Codec decodes keep FORMAT in header order and print their floats with htsjdk's two decimals, a second representation it does not reproduce. A row with the pair measures that refusal, which is the same on every row; over a file the flag is inert and stays in the array."
+    },
+    {
+      "tools": [
+        "MarkDuplicatesSpark"
+      ],
+      "forbid": {
+        "--duplicate-tagging-policy": "DontTag",
+        "--remove-all-duplicates": "true"
+      },
+      "why": "Barclay refuses two of the marking arguments given together, whatever their values, so a row holding the pair measures only that refusal."
+    },
+    {
+      "tools": [
+        "MarkDuplicatesSpark"
+      ],
+      "forbid": {
+        "--duplicate-tagging-policy": "DontTag",
+        "--remove-sequencing-duplicates": "true"
+      },
+      "why": "Barclay refuses two of the marking arguments given together, whatever their values, so a row holding the pair measures only that refusal."
+    },
+    {
+      "tools": [
+        "MarkDuplicatesSpark"
+      ],
+      "forbid": {
+        "--duplicate-tagging-policy": "All",
+        "--remove-all-duplicates": "true"
+      },
+      "why": "Barclay refuses two of the marking arguments given together, whatever their values, so a row holding the pair measures only that refusal."
+    },
+    {
+      "tools": [
+        "MarkDuplicatesSpark"
+      ],
+      "forbid": {
+        "--duplicate-tagging-policy": "All",
+        "--remove-sequencing-duplicates": "true"
+      },
+      "why": "Barclay refuses two of the marking arguments given together, whatever their values, so a row holding the pair measures only that refusal."
+    },
+    {
+      "tools": [
+        "MarkDuplicatesSpark"
+      ],
+      "forbid": {
+        "--duplicate-tagging-policy": "OpticalOnly",
+        "--remove-all-duplicates": "true"
+      },
+      "why": "Barclay refuses two of the marking arguments given together, whatever their values, so a row holding the pair measures only that refusal."
+    },
+    {
+      "tools": [
+        "MarkDuplicatesSpark"
+      ],
+      "forbid": {
+        "--duplicate-tagging-policy": "OpticalOnly",
+        "--remove-sequencing-duplicates": "true"
+      },
+      "why": "Barclay refuses two of the marking arguments given together, whatever their values, so a row holding the pair measures only that refusal."
+    },
+    {
+      "tools": [
+        "MarkDuplicatesSpark"
+      ],
+      "forbid": {
+        "--remove-all-duplicates": "true",
+        "--remove-sequencing-duplicates": "true"
+      },
+      "why": "The same mutual exclusion, between the two removals."
+    },
+    {
+      "tools": [
+        "MarkDuplicatesSpark"
+      ],
+      "forbid": {
+        "--sharded-output": "false",
+        "--output-shard-tmp-dir": "/work/out/parts"
+      },
+      "why": "Barclay refuses the parts directory beside --sharded-output, whatever its value, so a row holding the pair measures only that refusal."
+    },
+    {
+      "tools": [
+        "MarkDuplicatesSpark"
+      ],
+      "forbid": {
+        "--sharded-output": "true",
+        "--output-shard-tmp-dir": "/work/out/parts"
+      },
+      "why": "Barclay refuses the parts directory beside --sharded-output, whatever its value, so a row holding the pair measures only that refusal."
     }
   ],
   "exclude": {
