@@ -59,6 +59,7 @@ def seed_file(tool, array, path):
         "\t".join(["positional", *run_array.positional_values(tool)]),
         "\t".join(["tagged", *run_array.tagged_arguments(tool)]),
         "\t".join(["lists", *run_array.list_arguments(tool)]),
+        "\t".join(["writable", *run_array.writable_arguments(tool)]),
     ]
     lines += ["\t".join(["domain", name, *values]) for name, values in domains.items()]
     lines += ["\t".join(["row", *args]) for args in rows]
@@ -131,9 +132,9 @@ def minimize(tool, args, varied, port, workdir, config, original):
 
 
 def run(options):
-    array_path = run_array.ARRAYS / f"{options.tool}.t{options.t}.json"
-    if not array_path.exists():
-        raise SystemExit(f"no array at {array_path}; generate it with covering.py")
+    array_path = run_array.array_file(options.tool, options.t)
+    if array_path is None:
+        raise SystemExit(f"no t={options.t} array for {options.tool}; generate it with covering.py")
     array = json.loads(array_path.read_text())
     run_array.FIXTURES_DIR = options.fixtures_dir
     config = (
@@ -251,7 +252,7 @@ def shard(options):
     recorded as failed and the slice goes on; the report then reads `not measured` for it."""
     k, n = (int(x) for x in options.shard.split("/"))
     measured = json.loads((REPO / "tools" / "coverage" / "measured.json").read_text())["tools"]
-    tools = sorted(t for t in measured if (run_array.ARRAYS / f"{t}.t{options.t}.json").exists())
+    tools = sorted(t for t in measured if run_array.array_file(t, options.t))
     mine = tools[k::n]
     failed = []
     # mkdtemp rather than TemporaryDirectory: the container writes the fixtures as root, and from
