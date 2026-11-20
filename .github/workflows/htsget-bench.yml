@@ -26,7 +26,11 @@ jobs:
           (cd ../after && cargo build --release -p gatk-cli --bin gatk --target-dir ../t && cp ../t/release/gatk ../new)
           (cd ../before && cargo build --release -p gatk-cli --bin gatk --target-dir ../t && cp ../t/release/gatk ../old)
       - name: The oracle image, native
-        run: docker build -q -t gatk-rs-oracle:4.7.0.0 tools/oracle
+        # GKL ships x86-64 code only, and the probe refuses an image it cannot load in; HtsgetReader
+        # never calls GKL, so on arm64 the probe is left out.
+        run: |
+          [ "$(uname -m)" = x86_64 ] || sed -i '/OracleProbe$/d' tools/oracle/Dockerfile
+          docker build -q -t gatk-rs-oracle:4.7.0.0 tools/oracle
       - name: A 1 GB BAM and the pinned htsget-rs server
         run: |
           mkdir -p bench-work/htsget/data
