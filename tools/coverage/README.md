@@ -152,6 +152,26 @@ of the log is compared:
 }
 ```
 
+## An environment both sides source
+
+The gCNV tools' bytes depend on the CPU under GATK's own configuration, so both sides of their rows
+run under `tools/python-tools/gcnv_frozen_env.sh` (docs/gcnv-reproducible-oracle.md). A tool names
+the script under `$environment`; `run_array.py` mounts it, sources it before the command, and points
+pytensor at one compile directory beside the corpus, shared by both sides and every row:
+
+```json
+{
+  "per_tool": {
+    "GermlineCNVCaller": { "$environment": "tools/python-tools/gcnv_frozen_env.sh" }
+  }
+}
+```
+
+Their corpus is built once before the rows, like the scorers: `build_gcnv` writes the read counts
+with `make_gcnv_fixture.py` and has the reference make a ploidy model and calls (`gcnv/p-*`) and a
+denoising model and calls (`gcnv/g-*`) under that script, for any tool whose fixtures name
+`/work/fixtures/gcnv/`.
+
 ## A refusal that comes after the answer
 
 A refused row is compared on its exit status and its error line, because for most tools a failed

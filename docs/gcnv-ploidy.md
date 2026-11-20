@@ -6,13 +6,14 @@ as for [PostprocessGermlineCNVCalls](gcnv-postprocess.md). Cohort mode only.
 
 ## What runs where
 
-| Step | Reference | Port |
-| --- | --- | --- |
-| Import check, then `doWork`: intervals, counts summed per contig, `interval_list.tsv`, the priors copy | Java | `runners_ploidy_gcnv.rs` |
-| `cohort_determine_ploidy_and_depth.py`: the model, ADVI, sampler, caller, writers | gcnvkernel 0.9, pymc 5.10.1, pytensor 2.18 | `gatk_tools::gcnv_ploidy` |
+| Step | Reference | CLI | Library |
+| --- | --- | --- | --- |
+| Import check, then `doWork`: validation, intervals, counts summed per contig, the script's arguments | Java | `runners_gcnv.rs` | |
+| `cohort_determine_ploidy_and_depth.py` / `case_determine_ploidy_and_depth.py`: the model, ADVI, sampler, caller, writers | gcnvkernel 0.9, pymc 5.10.1, pytensor 2.18 | the same scripts, run by `python` | `gatk_tools::gcnv_ploidy`, cohort mode |
 
-`python` must be on the path and `gcnvkernel` must import, as for the reference; no Python runs
-beyond that check.
+The CLI runs GATK's own scripts as GATK does, so every mode and argument reaches gcnvkernel; its
+covering array is measured past the interpreter under the frozen environment. The native port is a
+library, kept and checked against the frozen golden; the CLI does not call it.
 
 ## What the numbers are
 
@@ -35,7 +36,7 @@ C pytensor generated for each, op for op, read from the graph dump of
   updates, `np.mean` (pairwise) of the caller's Hellinger distances;
 * Python's `repr` of floats, `write_ndarray_to_tsv`, `json.dump(indent=1)`.
 
-## Refused, in the port's words
+## Out of the library's reach
 
 * `--model` (case mode, `case_determine_ploidy_and_depth.py`);
 * `--disable-annealing`, `--disable-caller`, `--disable-sampler`;
@@ -48,8 +49,9 @@ C pytensor generated for each, op for op, read from the graph dump of
 ## What is proven, and where
 
 * `crates/gatk-cli/tests/gcnv_ploidy_end_to_end.rs` makes the fixture (`make_gcnv_fixture.py`),
-  runs `measure_gcnv.sh`'s command line through the CLI, and compares all 38 `ploidy/` files of
-  the `gcnv-frozen` golden byte for byte.
+  runs `measure_gcnv.sh`'s command line through the CLI with a stand-in `python` that keeps the
+  files and arguments the CLI hands the script, feeds those to `gatk_tools::gcnv_ploidy`, and
+  compares all 38 `ploidy/` files of the `gcnv-frozen` golden byte for byte.
 * `crates/gatk-tools/tests/gcnv_ploidy_trace.rs` replays a trace of the reference
   (`GCNV_PLOIDY_TRACE=<ploidy_trace.sh output>/trace`) call by call: every step's loss, `mu` and
   `rho`, every draw, every caller update. It is a debugging aid and skips without the variable.
