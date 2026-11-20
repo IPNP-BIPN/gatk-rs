@@ -33,9 +33,15 @@
 //! than on either sample. A het with no `AD` is skipped, and a record with no het genotype answers
 //! nothing at all.
 
-use htsjdk_vcf::encoder::EncodeError;
+use std::sync::Arc;
+
+use htsjdk_vcf::encoder::{EncodeError, VcfEncoder};
+use htsjdk_vcf::genotype_parse::{parse_genotypes, GenotypeContext};
+use htsjdk_vcf::genotype_type::compare_sample_names;
+use htsjdk_vcf::genotypes_context::GenotypesContext;
 use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType, VcfHeader};
-use htsjdk_vcf::reader::read_vcf;
+use htsjdk_vcf::reader::{read_vcf, ReadError, VcfFile};
+use htsjdk_vcf::record_parse::decode_line;
 use htsjdk_vcf::variant::{Genotype, Value, VariantContext};
 use htsjdk_vcf::vcf_file::write_vcf;
 
@@ -153,19 +159,14 @@ fn attribute_as_double(record: &VariantContext, key: &str, default: f64) -> f64 
 
 /// `AlleleBalanceFilter.filter`.
 fn allele_balance(record: &VariantContext, min_ab: f64) -> Option<String> {
-    let hets: Vec<&Genotype> = record
-        .genotypes
-        .iter()
-        .filter(|genotype| is_het(genotype))
-        .collect();
-    if hets.is_empty() {
+    if !record.genotypes.iter().any(is_het) {
         return None;
     }
-    // `getGenotypesOrderedByName()` and a map keyed by the allele list.
-    let mut ordered: Vec<&Genotype> = record.genotypes.iter().collect();
-    ordered.sort_by(|left, right| left.sample_name.cmp(&right.sample_name));
+    // Upstream walks `getGenotypesOrderedByName()` into a map keyed by the allele list. The tallies
+    // are integer sums and the verdict is whether any is below the threshold, so neither order can
+    // reach the answer, and the genotypes are taken as they come.
     let mut tallies: Vec<(Vec<String>, i64, i64)> = Vec::new();
-    for genotype in ordered {
+    for genotype in record.genotypes.iter() {
         if !is_het(genotype) || genotype.ad.is_none() {
             continue;
         }
@@ -199,11 +200,22 @@ fn allele_balance(record: &VariantContext, min_ab: f64) -> Option<String> {
     None
 }
 
-/// `Genotype.isHet()`: called, and two different alleles.
+/// `Genotype.isHet()`: called, and two different alleles, compared by `base_string`.
 fn is_het(genotype: &Genotype) -> bool {
-    genotype.alleles.len() == 2
-        && !genotype.alleles.iter().any(|allele| allele.is_no_call())
-        && genotype.alleles[0].base_string() != genotype.alleles[1].base_string()
+    let [first, second] = genotype.alleles.as_slice() else {
+        return false;
+    };
+    if first.is_no_call() || second.is_no_call() {
+        return false;
+    }
+    // `base_string` without building it: a symbolic allele's is empty, any other's is its bases.
+    let same = match (first.is_symbolic(), second.is_symbolic()) {
+        (true, true) => true,
+        (true, false) => second.is_empty(),
+        (false, true) => first.is_empty(),
+        (false, false) => first.equals_ignore_ref(second),
+    };
+    !same
 }
 
 fn allele_index(record: &VariantContext, bases: &str) -> Option<usize> {
@@ -215,58 +227,58 @@ fn allele_index(record: &VariantContext, bases: &str) -> Option<usize> {
 
 /// `FilterApplyingVariantIterator.next`, for one record.
 pub fn filter_record(record: &VariantContext, thresholds: &Thresholds) -> VariantContext {
+    filter_owned(record.clone(), thresholds)
+}
+
+/// [`filter_record`] on a record the caller hands over, which is changed rather than copied.
+pub fn filter_owned(mut record: VariantContext, thresholds: &Thresholds) -> VariantContext {
     let mut filters: Vec<String> = Vec::new();
-    if let Some(name) = allele_balance(record, thresholds.min_ab) {
+    if let Some(name) = allele_balance(&record, thresholds.min_ab) {
         filters.push(name);
     }
     // `getAttributeAsDouble("FS", 0)`, so an absent FS is zero.
-    if attribute_as_double(record, "FS", 0.0) > thresholds.max_fs {
+    if attribute_as_double(&record, "FS", 0.0) > thresholds.max_fs {
         filters.push(STRAND_BIAS.to_string());
     }
     // `getAttributeAsDouble("QD", -1)`, and a negative value means absent.
-    let qd = attribute_as_double(record, "QD", -1.0);
+    let qd = attribute_as_double(&record, "QD", -1.0);
     if qd >= 0.0 && qd < thresholds.min_qd {
         filters.push(LOW_QD.to_string());
     }
 
-    let mut genotypes = Vec::new();
+    // Taken out of the context, so the record is written from these rather than from its text.
+    let mut genotypes = std::mem::take(&mut record.genotypes).into_vec();
     // `variantSamples`: only a called, non-hom-ref genotype counts, and a record with none is
     // never `AllGtsFiltered` however many hom-ref genotypes were filtered.
     let mut any_variant = false;
     let mut all_variants_filtered = true;
-    for genotype in &record.genotypes {
+    for genotype in &mut genotypes {
         let variant = genotype.is_called() && !genotype.is_hom_ref();
         any_variant |= variant;
-        let mut own: Vec<String> = Vec::new();
-        // `getGQ()` and `getDP()` are -1 when absent.
-        if genotype.gq.unwrap_or(-1) < thresholds.min_gq {
-            own.push(LOW_GQ.to_string());
-        }
-        if genotype.dp.unwrap_or(-1) < thresholds.min_dp {
-            own.push(LOW_DP.to_string());
-        }
-        let mut copy = genotype.clone();
-        if own.is_empty() {
-            all_variants_filtered &= !variant;
-            // The iterator sets `FT=PASS` and htsjdk's writer drops a passing FT, so the field
-            // never reaches the file. Carrying `None` here is the same bytes and says why.
-            copy.filters = None;
-        } else {
-            own.sort();
-            copy.filters = Some(own.join(";"));
-        }
-        genotypes.push(copy);
+        // `getGQ()` and `getDP()` are -1 when absent. `LowDP` sorts before `LowGQ`.
+        let low_gq = genotype.gq.unwrap_or(-1) < thresholds.min_gq;
+        let low_dp = genotype.dp.unwrap_or(-1) < thresholds.min_dp;
+        genotype.filters = match (low_dp, low_gq) {
+            (false, false) => {
+                all_variants_filtered &= !variant;
+                // The iterator sets `FT=PASS` and htsjdk's writer drops a passing FT, so the field
+                // never reaches the file. Carrying `None` here is the same bytes and says why.
+                None
+            }
+            (true, true) => Some(format!("{LOW_DP};{LOW_GQ}")),
+            (true, false) => Some(LOW_DP.to_string()),
+            (false, true) => Some(LOW_GQ.to_string()),
+        };
     }
     if any_variant && all_variants_filtered {
         filters.push(ALL_GTS_FILTERED.to_string());
     }
 
-    let mut out = record.clone();
-    out.genotypes = genotypes.into();
+    record.genotypes = genotypes.into();
     filters.sort();
     // `passFilters()` for an empty set, which is `Some(empty)` here and prints PASS.
-    out.filters = Some(filters);
-    out
+    record.filters = Some(filters);
+    record
 }
 
 /// `doWork()`: the whole run, to a `.vcf` or `.bcf` output.
@@ -281,22 +293,132 @@ pub fn filter_to(
     thresholds: &Thresholds,
     vcf_or_bcf_output: bool,
 ) -> Result<String, FilterError> {
-    let file = read_vcf(input).map_err(|failure| {
-        FilterError::Vcf(failure.error.class().to_string(), failure.error.message())
-    })?;
-    let has_dictionary = file
-        .header
-        .lines
-        .iter()
-        .any(|line| matches!(line, HeaderLine::Contig { .. }));
-    if vcf_or_bcf_output && !has_dictionary {
-        return Err(FilterError::NoSequenceDictionary);
+    let mut out = String::new();
+    filter_stream(
+        input.lines().map(str::to_string),
+        thresholds,
+        vcf_or_bcf_output,
+        |text| {
+            out.push_str(text);
+            Ok(())
+        },
+    )?;
+    Ok(out)
+}
+
+/// [`filter_to`] one record at a time: `lines` is the input without its line ends, and `emit` gets
+/// the output in order. What was emitted is the output only if this returns `Ok`.
+///
+/// The refusals come in the order the whole-file read gives them: a record the reader refuses,
+/// anywhere in the file, before a missing dictionary or a record the encoder refuses. So after
+/// either of those the rest is still decoded, and only a read refusal can replace it.
+pub fn filter_stream<E>(
+    lines: impl Iterator<Item = String>,
+    thresholds: &Thresholds,
+    vcf_or_bcf_output: bool,
+    mut emit: E,
+) -> Result<(), FilterError>
+where
+    E: FnMut(&str) -> Result<(), FilterError>,
+{
+    let mut lines = lines;
+    // The `##` lines and the column line, which is all `read_vcf` reads before the first record.
+    let mut header_text = String::new();
+    let mut complete = false;
+    for line in lines.by_ref() {
+        header_text.push_str(&line);
+        header_text.push('\n');
+        if !line.starts_with("##") {
+            complete = line.starts_with('#');
+            break;
+        }
+    }
+    if !complete {
+        // No column line: the header is refused, or the text is all header. Either way the
+        // whole-file path answers it.
+        for line in lines {
+            header_text.push_str(&line);
+            header_text.push('\n');
+        }
+        return emit(&filter_whole(&header_text, thresholds, vcf_or_bcf_output)?);
+    }
+    let file = read_vcf(&header_text).map_err(|failure| read_error(&failure.error))?;
+    let VcfFile {
+        header: read_header,
+        codec_version,
+        ..
+    } = file;
+    let mut refusal = (vcf_or_bcf_output && !has_dictionary(&read_header))
+        .then_some(FilterError::NoSequenceDictionary);
+    let header = output_header(&read_header);
+    let encoder = VcfEncoder::new(&header);
+    if refusal.is_none() {
+        emit(&header.write())?;
     }
 
-    // `header.addMetaDataLine(...)` on the reader's own header, which is then written.
+    // `read_vcf_with`'s eager loop, one line at a time.
+    let samples: Arc<[String]> = Arc::from(read_header.samples.clone());
+    let samples_were_already_sorted = read_header
+        .samples
+        .windows(2)
+        .all(|pair| compare_sample_names(&pair[0], &pair[1]) != std::cmp::Ordering::Greater);
+    let mut line_number = header_text.lines().count();
+    let mut out = String::new();
+    for line in lines {
+        let decoded = match decode_line(&line, &read_header, line_number, codec_version) {
+            Ok(Some(decoded)) => decoded,
+            Ok(None) => continue,
+            Err(error) => return Err(read_error(&ReadError::Record(error))),
+        };
+        line_number += 1;
+        let mut variant = decoded.variant;
+        if let Some(block) = decoded.genotype_block {
+            let context = GenotypeContext {
+                line: &line,
+                header: &read_header,
+                version: codec_version,
+                contig: &variant.contig,
+                pos: variant.start,
+                line_number,
+            };
+            let genotypes = parse_genotypes(&block, &variant.alleles, &context)
+                .map_err(|error| read_error(&ReadError::Record(error)))?;
+            variant.genotypes = GenotypesContext::lazy(genotypes, block, samples.clone());
+            if !samples_were_already_sorted {
+                variant.genotypes.decode();
+            }
+        }
+        if refusal.is_some() {
+            continue;
+        }
+        out.clear();
+        match encoder.encode_into(&filter_owned(variant, thresholds), &mut out) {
+            Ok(()) => {
+                out.push('\n');
+                emit(&out)?;
+            }
+            Err(error) => refusal = Some(encode_error(error)),
+        }
+    }
+    refusal.map_or(Ok(()), Err)
+}
+
+fn read_error(error: &ReadError) -> FilterError {
+    FilterError::Vcf(error.class().to_string(), error.message())
+}
+
+fn has_dictionary(header: &VcfHeader) -> bool {
+    header
+        .lines
+        .iter()
+        .any(|line| matches!(line, HeaderLine::Contig { .. }))
+}
+
+/// `header.addMetaDataLine(...)` on the reader's own header, which is then written.
+fn output_header(read: &VcfHeader) -> VcfHeader {
     let mut header = VcfHeader {
-        lines: file.header.lines.clone(),
-        samples: file.header.samples.clone(),
+        lines: read.lines.clone(),
+        samples: read.samples.clone(),
     };
     // `VCFHeader.addMetaDataLine` keeps the line already there under the same key and ID, so an
     // input's own `FT` or `LowQD` line, whatever its description, is the one written.
@@ -314,14 +436,11 @@ pub fn filter_to(
             header.lines.push(line);
         }
     }
+    header
+}
 
-    let records: Vec<VariantContext> = file
-        .records
-        .iter()
-        .map(|record| filter_record(record, thresholds))
-        .collect();
-
-    write_vcf(&header, &records).map_err(|error| match error {
+fn encode_error(error: EncodeError) -> FilterError {
+    match error {
         EncodeError::MissingFromHeader {
             key,
             field,
@@ -339,5 +458,24 @@ pub fn filter_to(
             "java.lang.IllegalStateException".to_string(),
             format!("{other:?}"),
         ),
-    })
+    }
+}
+
+/// The whole-file run, for a text with no column line.
+fn filter_whole(
+    input: &str,
+    thresholds: &Thresholds,
+    vcf_or_bcf_output: bool,
+) -> Result<String, FilterError> {
+    let file = read_vcf(input).map_err(|failure| read_error(&failure.error))?;
+    if vcf_or_bcf_output && !has_dictionary(&file.header) {
+        return Err(FilterError::NoSequenceDictionary);
+    }
+    let header = output_header(&file.header);
+    let records: Vec<VariantContext> = file
+        .records
+        .into_iter()
+        .map(|record| filter_owned(record, thresholds))
+        .collect();
+    write_vcf(&header, &records).map_err(encode_error)
 }
