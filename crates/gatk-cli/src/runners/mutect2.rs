@@ -402,6 +402,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         }
     }
 
+    let has_user_intervals = !intervals.is_empty();
     let traversal: Vec<gatk_engine::interval::SimpleInterval> = if intervals.is_empty() {
         header
             .sequences
@@ -462,7 +463,14 @@ pub fn mutect2(parser: &Parser) -> Outcome {
     // Every read goes through the filters and the clipper before the traversal, so a read that
     // refuses refuses there. Held when no index lets a shard be queried, or when the clipper
     // leaves the reads out of coordinate order.
-    let (reads, queried) = super::assembly_region_reads(&source, &prepare)?;
+    let (reads, queried) = super::assembly_region_reads(
+        &source,
+        &prepare,
+        has_user_intervals.then(|| {
+            let padding = number_or(parser, "assembly-region-padding", 100);
+            (traversal.as_slice(), padding, &header)
+        }),
+    )?;
     let walker_reads = if queried {
         super::queried_reads(&source, &header, &prepare)
     } else {

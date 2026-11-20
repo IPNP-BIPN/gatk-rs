@@ -776,6 +776,7 @@ dependencies = [
  "htsjdk-tribble",
  "htsjdk-vcf",
  "jmath",
+ "md-5",
  "rcgen",
  "rustls",
  "sha2",

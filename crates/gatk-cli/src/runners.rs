@@ -34,6 +34,7 @@ pub use funcotator::{funcotate_segments, funcotator, funcotator_data_source_down
 pub type Outcome = Result<Option<String>, Thrown>;
 
 mod haplotype_caller;
+mod vcf_stream;
 pub use haplotype_caller::{
     haplotype_caller, haplotype_caller_modes, haplotype_caller_spark, ramped_haplotype_caller,
     reads_pipeline_spark,
@@ -437,14 +438,22 @@ type PrepareRead<'a> = dyn Fn(BamRecord) -> Result<Option<BamRecord>, Thrown> + 
 /// transformed it refuses: a read the file cannot decode first, wherever it is, then the first read
 /// `prepare` refuses. The prepared reads are kept only with `keep`; the flag is whether they come
 /// in coordinate order, so a shard can be walked a window at a time.
+///
+/// `scope`, when given, is the intervals the traversal's shards query: the reads the reference
+/// ever decodes from an indexed file.
 fn prepare_reads(
     source: &ReadsDataSource,
     prepare: &PrepareRead<'_>,
     keep: bool,
+    scope: Option<&[gatk_engine::interval::SimpleInterval]>,
 ) -> Result<(Vec<BamRecord>, bool), Thrown> {
     let reads_error = |error: gatk_engine::reads::ReadsError| Thrown::user(format!("{error:?}"));
     let (mut kept, mut sorted, mut last, mut refused) = (Vec::new(), true, (i32::MIN, 0), None);
-    for read in source.records_all().map_err(reads_error)? {
+    let records = match scope {
+        Some(intervals) => source.query_iter(intervals),
+        None => source.records_all(),
+    };
+    for read in records.map_err(reads_error)? {
         let read = read.map_err(reads_error)?;
         if refused.is_some() {
             continue;
@@ -473,16 +482,31 @@ fn prepare_reads(
 
 /// The reads an `AssemblyRegionWalker` holds, and whether it holds none because each shard can be
 /// queried instead: the source has an index and the prepared reads are coordinate sorted. Either
-/// way every read has been through `prepare` once, so nothing refuses mid-traversal.
+/// way every read the traversal will meet has been through `prepare` once, so nothing refuses
+/// mid-traversal. With an index and `-L`, that is the reads of the shards' padded intervals
+/// (`padding` is `--assembly-region-padding`), as the reference's queries read them; a read of the
+/// file outside them is never decoded (#1452).
 fn assembly_region_reads(
     source: &ReadsDataSource,
     prepare: &PrepareRead<'_>,
+    traversal: Option<(&[gatk_engine::interval::SimpleInterval], i32, &SamHeader)>,
 ) -> Result<(Vec<BamRecord>, bool), Thrown> {
     let indexed = source.has_index();
-    let (reads, sorted) = prepare_reads(source, prepare, !indexed)?;
+    let scope = traversal
+        .filter(|_| indexed)
+        .and_then(|(intervals, padding, header)| {
+            gatk_engine::assembly_region_walker::make_read_shards(intervals, padding, header)
+        })
+        .map(|shards| {
+            shards
+                .into_iter()
+                .flat_map(|shard| shard.padded_intervals)
+                .collect::<Vec<_>>()
+        });
+    let (reads, sorted) = prepare_reads(source, prepare, !indexed, scope.as_deref())?;
     Ok(match (indexed, sorted) {
         (true, true) => (reads, true),
-        (true, false) => (prepare_reads(source, prepare, true)?.0, false),
+        (true, false) => (prepare_reads(source, prepare, true, None)?.0, false),
         (false, _) => (reads, false),
     })
 }
@@ -1865,12 +1889,32 @@ fn on_the_fly_index(
     size: i64,
     timestamp: i64,
 ) -> Vec<u8> {
-    use htsjdk_tribble::index::{TribbleIndex, INTERVAL_TREE, LINEAR, VERSION};
-    use htsjdk_tribble::index_write::{BalanceApproach, BuiltIndex, DynamicIndexCreator, Feature};
-
-    let mut creator = DynamicIndexCreator::new(BalanceApproach::ForSeekTime);
-    let mut at: i64 = 0;
+    let mut index = OnTheFlyIndex::new();
     for line in text.split_inclusive('\n') {
+        index.add_line(line);
+    }
+    index.finish(dictionary, path, size, timestamp)
+}
+
+/// [`on_the_fly_index`] a line at a time, as the writer's records go out.
+pub(crate) struct OnTheFlyIndex {
+    creator: htsjdk_tribble::index_write::DynamicIndexCreator,
+    /// The offset of the next line, which at the end is the text's length.
+    at: i64,
+}
+
+impl OnTheFlyIndex {
+    pub(crate) fn new() -> OnTheFlyIndex {
+        use htsjdk_tribble::index_write::{BalanceApproach, DynamicIndexCreator};
+        OnTheFlyIndex {
+            creator: DynamicIndexCreator::new(BalanceApproach::ForSeekTime),
+            at: 0,
+        }
+    }
+
+    /// One line of the file, its newline included.
+    pub(crate) fn add_line(&mut self, line: &str) {
+        use htsjdk_tribble::index_write::Feature;
         let body = line.trim_end_matches('\n');
         if !body.starts_with('#') {
             let columns: Vec<&str> = body.split('\t').collect();
@@ -1882,50 +1926,60 @@ fn on_the_fly_index(
                         .find(|(key, _)| *key == "END")
                         .and_then(|(_, value)| value.parse::<i32>().ok())
                         .unwrap_or(start + columns[3].len() as i32 - 1);
-                    creator.add_feature(
+                    self.creator.add_feature(
                         &Feature {
                             contig: columns[0].to_string(),
                             start,
                             end,
                         },
-                        at,
+                        self.at,
                     );
                 }
             }
         }
-        at += line.len() as i64;
+        self.at += line.len() as i64;
     }
 
-    let mut properties: Vec<(String, String)> = dictionary
-        .iter()
-        .map(|(name, length)| (format!("DICT:{name}"), length.to_string()))
-        .collect();
-    properties.extend(creator.properties());
+    pub(crate) fn finish(
+        self,
+        dictionary: &[(String, i32)],
+        path: &str,
+        size: i64,
+        timestamp: i64,
+    ) -> Vec<u8> {
+        use htsjdk_tribble::index::{TribbleIndex, INTERVAL_TREE, LINEAR, VERSION};
+        use htsjdk_tribble::index_write::BuiltIndex;
+        let mut properties: Vec<(String, String)> = dictionary
+            .iter()
+            .map(|(name, length)| (format!("DICT:{name}"), length.to_string()))
+            .collect();
+        properties.extend(self.creator.properties());
 
-    let (index_type, contigs, interval_contigs) = match creator.finalize(text.len() as i64) {
-        Ok(BuiltIndex::Linear(contigs)) => (LINEAR, contigs, Vec::new()),
-        Ok(BuiltIndex::IntervalTree(intervals)) => (INTERVAL_TREE, Vec::new(), intervals),
-        Err(_) => (LINEAR, Vec::new(), Vec::new()),
-    };
+        let (index_type, contigs, interval_contigs) = match self.creator.finalize(self.at) {
+            Ok(BuiltIndex::Linear(contigs)) => (LINEAR, contigs, Vec::new()),
+            Ok(BuiltIndex::IntervalTree(intervals)) => (INTERVAL_TREE, Vec::new(), intervals),
+            Err(_) => (LINEAR, Vec::new(), Vec::new()),
+        };
 
-    TribbleIndex {
-        index_type,
-        version: VERSION,
-        indexed_path: format!("file://{path}"),
-        // `close()` writes the index with `writeBasedOnFeaturePath`, which STATS the file it has
-        // just finished: the size and the timestamp are the written file's. The md5 is not
-        // computed and stays empty.
-        indexed_file_size: size,
-        indexed_file_timestamp: timestamp,
-        indexed_file_md5: String::new(),
-        // Zero, not the dictionary flag: from version 3 the dictionary is properties.
-        flags: 0,
-        properties,
-        contigs,
-        interval_contigs,
+        TribbleIndex {
+            index_type,
+            version: VERSION,
+            indexed_path: format!("file://{path}"),
+            // `close()` writes the index with `writeBasedOnFeaturePath`, which STATS the file it
+            // has just finished: the size and the timestamp are the written file's. The md5 is
+            // not computed and stays empty.
+            indexed_file_size: size,
+            indexed_file_timestamp: timestamp,
+            indexed_file_md5: String::new(),
+            // Zero, not the dictionary flag: from version 3 the dictionary is properties.
+            flags: 0,
+            properties,
+            contigs,
+            interval_contigs,
+        }
+        .write()
+        .unwrap_or_default()
     }
-    .write()
-    .unwrap_or_default()
 }
 
 /// One input VCF, read as far as the gather looks at it.
@@ -22603,7 +22657,7 @@ pub(crate) fn write_vcf_strict_or_lenient(
     header: &htsjdk_vcf::header::VcfHeader,
     records: &[htsjdk_vcf::variant::VariantContext],
 ) -> Result<String, Thrown> {
-    use htsjdk_vcf::encoder::{EncodeError, MissingFields, VcfEncoder};
+    use htsjdk_vcf::encoder::{MissingFields, VcfEncoder};
     let missing = if lenient {
         MissingFields::Allow
     } else {
@@ -22614,25 +22668,30 @@ pub(crate) fn write_vcf_strict_or_lenient(
     for record in records {
         encoder
             .encode_into(record, &mut out)
-            .map_err(|error| match error {
-                EncodeError::MissingFromHeader {
-                    key,
-                    field,
-                    contig,
-                    start,
-                } => Thrown::non_user(
-                    "java.lang.IllegalStateException",
-                    format!(
-                    "Key {key} found in VariantContext field {field} at {contig}:{start} but this \
-                     key isn't defined in the VCFHeader.  We require all VCFs to have complete VCF \
-                     headers by default."
-                ),
-                ),
-                other => Thrown::user(format!("{other:?}")),
-            })?;
+            .map_err(encode_refusal)?;
         out.push('\n');
     }
     Ok(out)
+}
+
+/// What the strict VCF writer throws for a record it cannot encode.
+pub(crate) fn encode_refusal(error: htsjdk_vcf::encoder::EncodeError) -> Thrown {
+    match error {
+        htsjdk_vcf::encoder::EncodeError::MissingFromHeader {
+            key,
+            field,
+            contig,
+            start,
+        } => Thrown::non_user(
+            "java.lang.IllegalStateException",
+            format!(
+                "Key {key} found in VariantContext field {field} at {contig}:{start} but this \
+                 key isn't defined in the VCFHeader.  We require all VCFs to have complete VCF \
+                 headers by default."
+            ),
+        ),
+        other => Thrown::user(format!("{other:?}")),
+    }
 }
 
 /// [`java_variant_context_string`] once the genotypes have been decoded, which is

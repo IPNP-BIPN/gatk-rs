@@ -128,6 +128,8 @@ pub struct HaplotypeCallerError {
     pub calls_before: Vec<VariantContext>,
     /// Raised as the engine is built, before the VCF writer exists: nothing is written.
     pub at_startup: bool,
+    /// Raised as the side outputs close, after the traversal: the run writes its header alone.
+    pub closing: bool,
 }
 
 impl HaplotypeCallerError {
@@ -137,6 +139,14 @@ impl HaplotypeCallerError {
             message: message.into(),
             calls_before: Vec::new(),
             at_startup: false,
+            closing: false,
+        }
+    }
+
+    fn closing(message: impl Into<String>) -> Self {
+        HaplotypeCallerError {
+            closing: true,
+            ..HaplotypeCallerError::new("UserException.CouldNotCreateOutputFile", message)
         }
     }
 }
@@ -236,13 +246,50 @@ pub fn call_variants(
     random: &mut JavaRandom,
     assembly_variants: Option<&std::sync::Mutex<crate::assembly_variants_out::AssemblyVariantsOut>>,
 ) -> Result<Vec<VariantContext>, HaplotypeCallerError> {
+    let mut calls = Vec::new();
+    let outcome = call_variants_to(
+        reads,
+        header,
+        intervals,
+        arguments,
+        annotator,
+        contig_bases,
+        random,
+        assembly_variants,
+        &mut |region_calls| calls.extend(region_calls),
+    );
+    match outcome {
+        Ok(()) => Ok(calls),
+        Err(mut error) => {
+            if !error.closing {
+                error.calls_before = calls;
+            }
+            Err(error)
+        }
+    }
+}
+
+/// [`call_variants`], handing each region's calls to `sink` as they are made, so that a writer
+/// can take them without the run's calls ever being held together (#1452). The error's
+/// `calls_before` is empty: the sink has had them.
+#[allow(clippy::too_many_arguments)]
+pub fn call_variants_to(
+    reads: &WalkerReads<'_>,
+    header: &SamHeader,
+    intervals: &[SimpleInterval],
+    arguments: &HaplotypeCallerArguments,
+    annotator: &AnnotatorEngine,
+    contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>,
+    random: &mut JavaRandom,
+    assembly_variants: Option<&std::sync::Mutex<crate::assembly_variants_out::AssemblyVariantsOut>>,
+    sink: &mut dyn FnMut(Vec<VariantContext>),
+) -> Result<(), HaplotypeCallerError> {
     // `HaplotypeCallerGenotypingDebugger.initialize`, as the engine starts: its stream is never
     // closed, but writes through, so the file holds what was printed before any failure.
     let _genotyper_debug = arguments
         .genotyper_debug_output
         .clone()
         .map(GenotyperDebugFile::open);
-    let mut calls = Vec::new();
     // `PDPairHMMLikelihoodCalculationEngine`, built with the engine, and its results file, opened
     // then with its header line and closed as the engine shuts down, after a failure too.
     let pd_engine = arguments
@@ -315,43 +362,33 @@ pub fn call_variants(
         assembly_variants,
         alm.as_ref(),
         assembly_state.as_ref(),
-        &mut calls,
+        sink,
     );
     if let (Some(path), Some(state)) = (&arguments.assembly_state_output, assembly_state) {
-        std::fs::write(path, state.into_inner().expect("a sink")).map_err(|e| {
-            HaplotypeCallerError::new("UserException.CouldNotCreateOutputFile", e.to_string())
-        })?;
+        std::fs::write(path, state.into_inner().expect("a sink"))
+            .map_err(|e| HaplotypeCallerError::closing(e.to_string()))?;
     }
     if let (Some((path, _)), Some(alm)) = (&arguments.alm, alm) {
-        std::fs::write(path, alm.into_inner().expect("a sink").text).map_err(|e| {
-            HaplotypeCallerError::new("UserException.CouldNotCreateOutputFile", e.to_string())
-        })?;
+        std::fs::write(path, alm.into_inner().expect("a sink").text)
+            .map_err(|e| HaplotypeCallerError::closing(e.to_string()))?;
     }
     if let (Some(path), Some(text)) = (&arguments.assembly_region_out, region_out) {
-        std::fs::write(path, text.into_inner().expect("a sink")).map_err(|e| {
-            HaplotypeCallerError::new("UserException.CouldNotCreateOutputFile", e.to_string())
-        })?;
+        std::fs::write(path, text.into_inner().expect("a sink"))
+            .map_err(|e| HaplotypeCallerError::closing(e.to_string()))?;
     }
     // The writer closes with the engine, after a failure too.
     if let (Some(writer), Some(settings)) = (bamout, &arguments.bamout) {
         close_bamout(writer.into_inner().expect("a sink"), settings)
-            .map_err(|e| HaplotypeCallerError::new("UserException.CouldNotCreateOutputFile", e))?;
+            .map_err(HaplotypeCallerError::closing)?;
     }
     if let (Some(path), Some(text)) = (&results_file, &results) {
-        std::fs::write(path, text.lock().expect("a sink").as_bytes()).map_err(|e| {
-            HaplotypeCallerError::new("UserException.CouldNotCreateOutputFile", e.to_string())
-        })?;
+        std::fs::write(path, text.lock().expect("a sink").as_bytes())
+            .map_err(|e| HaplotypeCallerError::closing(e.to_string()))?;
     }
-    match outcome {
-        Ok(()) => Ok(calls),
-        Err(mut error) => {
-            error.calls_before = calls;
-            Err(error)
-        }
-    }
+    outcome
 }
 
-/// [`call_variants`], appending each region's calls to `calls` as it goes.
+/// [`call_variants_to`]'s traversal, handing each region's calls to `calls` as it goes.
 #[allow(clippy::too_many_arguments)]
 fn call_variants_into(
     reads: &WalkerReads<'_>,
@@ -368,7 +405,7 @@ fn call_variants_into(
     assembly_variants: Option<&std::sync::Mutex<crate::assembly_variants_out::AssemblyVariantsOut>>,
     alm: Option<&std::sync::Mutex<crate::allele_likelihood_writer::AlleleLikelihoodWriter>>,
     assembly_state: Option<&std::sync::Mutex<String>>,
-    calls: &mut Vec<VariantContext>,
+    calls: &mut dyn FnMut(Vec<VariantContext>),
 ) -> Result<(), HaplotypeCallerError> {
     let header_samples = samples_from_header(header);
     let partition: Vec<Option<String>> = header_samples.iter().cloned().map(Some).collect();
@@ -772,7 +809,7 @@ fn call_variants_into(
                         )
                     })
                     .map_err(region_failure)?;
-                calls.extend(region_calls);
+                calls(region_calls);
                 Ok(())
             },
         )?;
