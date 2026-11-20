@@ -1,0 +1,75 @@
+name: FilterVcf against GATK, per CPU (temporary bench for PR 1488)
+
+# Lives only on bench/filtervcf-arch. The port is built here with the release profile as it is,
+# no target-cpu, so the x86-64 binary is the baseline target; the qemu64 step runs it on a CPU
+# model with no SSE4/AVX at all and checks the bytes.
+
+on:
+  push:
+    branches: [bench/filtervcf-arch]
+
+jobs:
+  bench:
+    name: "FilterVcf on ${{ matrix.runner }}"
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-22.04, ubuntu-24.04-arm, ubuntu-22.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: nasm, which gkl-igzip needs to build
+        if: runner.arch == 'X64'
+        run: |
+          sudo apt-get update -qq || echo "apt refresh incomplete"
+          sudo apt-get install -y -qq nasm
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.1"
+
+      - run: cargo build --release -p gatk-cli
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: GATK 4.7.0.0, the release the oracle image pins
+        run: |
+          curl -fsSL -o gatk.zip https://github.com/broadinstitute/gatk/releases/download/4.7.0.0/gatk-4.7.0.0.zip
+          echo "d093d2693b1626361a413ca59d6d4a0bf968717f280a8fd9ce060b25eb2ed1db  gatk.zip" | sha256sum -c
+          unzip -q gatk.zip
+          java -version
+
+      - run: lscpu
+
+      - name: Time both sides
+        run: |
+          python3 bench/filter_vcf_arch.py --jar gatk-4.7.0.0/gatk-package-4.7.0.0-local.jar \
+            --port target/release/gatk --work /tmp/fv --reps 5
+
+      - name: The x86-64 binary on a baseline CPU model (qemu64), same bytes
+        if: runner.arch == 'X64'
+        run: |
+          sudo apt-get install -y -qq qemu-user
+          python3 - <<'PY'
+          import subprocess, hashlib, sys
+          sys.path.insert(0, "bench"); import filter_vcf_arch as b
+          from pathlib import Path
+          small = Path("/tmp/fv/small.vcf"); b.generate(small, 20000, 12)
+          args = ["FilterVcf", "--INPUT", str(small), *b.ARGS]
+          for name, prefix in (("native", []), ("qemu64", ["qemu-x86_64", "-cpu", "qemu64"])):
+              out = Path(f"/tmp/fv/{name}"); out.mkdir(exist_ok=True)
+              subprocess.run([*prefix, "target/release/gatk", *args, "--OUTPUT", "/tmp/fv/same.vcf"], check=True,
+                             stdout=subprocess.DEVNULL)
+              print(name, hashlib.sha256(Path("/tmp/fv/same.vcf").read_bytes()).hexdigest(),
+                    hashlib.sha256(b.masked_index(Path("/tmp/fv/same.vcf.idx").read_bytes())).hexdigest())
+          PY
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: filtervcf-bench-${{ matrix.runner }}
+          path: /tmp/fv/result.json
