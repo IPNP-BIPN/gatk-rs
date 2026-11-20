@@ -540,11 +540,24 @@ public class MakeFixtures {
      * line, and adding it to `reads.bam` would change a header that several goldens print.
      */
     static void md5Bam(final Path bam, final Path reference) {
+        md5Bam(bam, reference, null);
+    }
+
+    /**
+     * The same BAM with a `UR` after the `M5`, which is the `@SQ` line `CreateSequenceDictionary`
+     * and every aligner write. The copy-number collectors write their input's dictionary into
+     * their tables through `SAMTextHeaderCodec`, every attribute in order; a port writing `SN` and
+     * `LN` alone matched every row until chr20 30x, whose BAM carries both.
+     */
+    static void md5Bam(final Path bam, final Path reference, final String uri) {
         final SAMFileHeader header = new SAMFileHeader();
         // The reference's own `.dict`, M5 included, which is what makes this BAM's dictionary
         // agree with `reference.fasta` base for base rather than by name alone.
         header.setSequenceDictionary(htsjdk.samtools.reference.ReferenceSequenceFileFactory
                 .getReferenceSequenceFile(reference).getSequenceDictionary());
+        if (uri != null) {
+            header.getSequenceDictionary().getSequences().forEach(sequence -> sequence.setAttribute("UR", uri));
+        }
         header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
         final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
         group.setSample("sample1");
@@ -3465,6 +3478,7 @@ public class MakeFixtures {
         // whose `@SQ` line carries an M5, which is the only way a command line reaches
         // `CheckReferenceCompatibility`'s MD5 path.
         md5Bam(dir.resolve("md5header.bam"), dir.resolve("reference.fasta"));
+        md5Bam(dir.resolve("sq_tags.bam"), dir.resolve("reference.fasta"), "file:/work/fixtures/reference.fasta");
         splitCram(dir);
         mutectFixtures(dir);
         givenAllelesFixtures(dir);
