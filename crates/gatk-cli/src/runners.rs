@@ -24444,13 +24444,16 @@ fn htsget_write_blocks(
         }
         return Ok(());
     }
-    // The executor's: the blocks are all asked for at once, each into a temporary file as the
-    // reference's are, and copied into the output in their order.
+    // The executor's: the blocks are all asked for at once and land in the output in their order.
+    // The block whose turn it is streams straight in; a later one waits in a `Spool`.
     let next = std::sync::atomic::AtomicUsize::new(0);
-    let answers: Vec<_> = blocks
-        .iter()
-        .map(|_| std::sync::Mutex::new(None::<Option<std::fs::File>>))
-        .collect();
+    let turn = (
+        std::sync::Mutex::new(Turn {
+            next: 0,
+            failure: None,
+        }),
+        std::sync::Condvar::new(),
+    );
     std::thread::scope(|scope| {
         for _ in 0..threads.min(blocks.len()) {
             scope.spawn(|| loop {
@@ -24458,23 +24461,168 @@ fn htsget_write_blocks(
                 let Some(block) = blocks.get(at) else {
                     return;
                 };
-                let answer = htsget_temp_file(tmp_dir, at).and_then(|mut temp| {
-                    htsget_block(agent, block, &mut temp).ok()?;
-                    temp.rewind().ok()?;
-                    Some(temp)
-                });
-                *answers[at].lock().expect("no writer panics") = Some(answer);
+                let mut spool = Spool::new(at, &file, &turn, tmp_dir);
+                let fetched = htsget_block(agent, block, &mut spool);
+                spool.finish(fetched, parallel);
             });
         }
     });
-    for answer in answers {
-        let answer = answer.into_inner().expect("no writer panics");
-        let mut temp = answer
-            .expect("every block is answered")
-            .ok_or_else(|| Thrown::user("Error while waiting to download block"))?;
-        std::io::copy(&mut temp, &mut file).map_err(|_| copy_failure())?;
+    if let Some(thrown) = turn.0.into_inner().expect("no writer panics").failure {
+        return Err(thrown);
     }
-    file.flush().map_err(|_| copy_failure())
+    (&file).flush().map_err(|_| copy_failure())
+}
+
+/// Whose turn it is to write into the output, and the failure that stopped the blocks, if one did.
+struct Turn {
+    next: usize,
+    failure: Option<Thrown>,
+}
+
+/// One block of `getDataParallel`: written straight into the output once every earlier block is
+/// in, held until then, in memory up to `SPOOL_IN_MEMORY` and in a temporary file beyond it, as
+/// the reference's blocks always are.
+struct Spool<'a> {
+    index: usize,
+    output: &'a std::fs::File,
+    turn: &'a (std::sync::Mutex<Turn>, std::sync::Condvar),
+    tmp_dir: &'a std::path::Path,
+    memory: Vec<u8>,
+    temp: Option<std::fs::File>,
+    direct: bool,
+    start: u64,
+    output_failed: bool,
+}
+
+const SPOOL_IN_MEMORY: usize = 8 << 20;
+
+impl<'a> Spool<'a> {
+    fn new(
+        index: usize,
+        output: &'a std::fs::File,
+        turn: &'a (std::sync::Mutex<Turn>, std::sync::Condvar),
+        tmp_dir: &'a std::path::Path,
+    ) -> Self {
+        let (memory, temp, direct, start, output_failed) = (Vec::new(), None, false, 0, false);
+        Spool {
+            index,
+            output,
+            turn,
+            tmp_dir,
+            memory,
+            temp,
+            direct,
+            start,
+            output_failed,
+        }
+    }
+
+    /// Everything held so far into the output, which this block now writes to directly.
+    fn drain(&mut self) -> std::io::Result<()> {
+        use std::io::{Seek, Write};
+        let mut output = self.output;
+        self.direct = true;
+        self.start = output.stream_position()?;
+        let failed = |error| (true, error);
+        let result = output
+            .write_all(&self.memory)
+            .map_err(failed)
+            .and_then(|()| match self.temp.as_mut() {
+                Some(temp) => {
+                    temp.rewind().map_err(|error| (false, error))?;
+                    std::io::copy(temp, &mut output).map(drop).map_err(failed)
+                }
+                None => Ok(()),
+            });
+        self.memory = Vec::new();
+        self.temp = None;
+        result.map_err(|(output, error)| {
+            self.output_failed |= output;
+            error
+        })
+    }
+
+    /// Wait for this block's turn, put what it holds in, or record why the blocks stop here.
+    fn finish(mut self, fetched: Result<(), BlockStop>, parallel: bool) {
+        let (lock, ready) = self.turn;
+        let mut turn = lock.lock().expect("no writer panics");
+        while turn.next != self.index {
+            turn = ready.wait(turn).expect("no writer panics");
+        }
+        if turn.failure.is_none() {
+            let copy_failure = || {
+                Thrown::user(if parallel {
+                    "Error while copying data block to output file"
+                } else {
+                    "Failed to copy data block to output file"
+                })
+            };
+            let waited = || Thrown::user("Error while waiting to download block");
+            let failure = match fetched {
+                Ok(()) if self.direct => None,
+                Ok(()) => self.drain().err().map(|_| {
+                    if self.output_failed {
+                        copy_failure()
+                    } else {
+                        waited()
+                    }
+                }),
+                Err(BlockStop::Sink) if self.output_failed => Some(copy_failure()),
+                Err(_) => {
+                    // The reference's future fails before any of the block reaches the output.
+                    if self.direct {
+                        let _ = self.output.set_len(self.start);
+                        let _ = std::io::Seek::seek(
+                            &mut self.output,
+                            std::io::SeekFrom::Start(self.start),
+                        );
+                    }
+                    Some(waited())
+                }
+            };
+            turn.failure = failure;
+        }
+        turn.next += 1;
+        ready.notify_all();
+    }
+}
+
+impl std::io::Write for Spool<'_> {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        if !self.direct {
+            let mine = {
+                let turn = self.turn.0.lock().expect("no writer panics");
+                turn.next == self.index && turn.failure.is_none()
+            };
+            if mine {
+                self.drain()?;
+            }
+        }
+        if self.direct {
+            let mut output = self.output;
+            return output
+                .write(data)
+                .inspect_err(|_| self.output_failed = true);
+        }
+        if self.temp.is_none() && self.memory.len() + data.len() > SPOOL_IN_MEMORY {
+            let mut temp = htsget_temp_file(self.tmp_dir, self.index)
+                .ok_or_else(|| std::io::Error::other("no temporary file"))?;
+            temp.write_all(&self.memory)?;
+            self.memory = Vec::new();
+            self.temp = Some(temp);
+        }
+        match self.temp.as_mut() {
+            Some(temp) => temp.write(data),
+            None => {
+                self.memory.extend_from_slice(data);
+                Ok(data.len())
+            }
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 /// `IOUtils.createTempPath("htsget-temp", "")`, unlinked at once so nothing outlives the run.
