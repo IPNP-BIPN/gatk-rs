@@ -883,6 +883,41 @@ fn transcode_reads(
     Ok(Some(Transcoded { bam, bai, header }))
 }
 
+/// `validateSequenceDictionaries`, which the argument turns off wholesale. The master block
+/// runs first and checks the reference before the reads; then the reference is checked against
+/// the reads on its own.
+fn validate_sequence_dictionaries(
+    parser: &Parser,
+    master: Option<&SamHeader>,
+    reference: Option<&SamHeader>,
+    header: &SamHeader,
+) -> Result<(), Thrown> {
+    if !flag(parser, "disable-sequence-dictionary-validation") {
+        if let Some(master) = master {
+            validate_against_master(master, "reads", &header.sequences)?;
+            if let Some(reference) = reference {
+                validate_against_master(master, "reference", &reference.sequences)?;
+            }
+        }
+        if let Some(reference) = reference {
+            gatk_tools::sequence_dictionary::validate(
+                "reference",
+                &reference.sequences,
+                "reads",
+                &header.sequences,
+                false,
+                false,
+            )
+            .map_err(|refusal| Thrown {
+                failure: Failure::User,
+                exception: refusal.java_class(),
+                message: Some(refusal.message()),
+            })?;
+        }
+    }
+    Ok(())
+}
+
 fn read_walker_startup(parser: &Parser, tool: &str) -> Result<ReadWalkerStart, Thrown> {
     read_walker_startup_with(parser, tool, &mut |intervals, _| Ok(intervals))
 }
@@ -1051,32 +1086,7 @@ fn read_walker_startup_with(
         None => Vec::new(),
     };
 
-    // `validateSequenceDictionaries`, which the argument turns off wholesale. The master block
-    // runs first and checks the reference before the reads; then the reference is checked against
-    // the reads on its own.
-    if !flag(parser, "disable-sequence-dictionary-validation") {
-        if let Some(master) = &master {
-            validate_against_master(master, "reads", &header.sequences)?;
-            if let Some(reference) = &reference {
-                validate_against_master(master, "reference", &reference.sequences)?;
-            }
-        }
-        if let Some(reference) = &reference {
-            gatk_tools::sequence_dictionary::validate(
-                "reference",
-                &reference.sequences,
-                "reads",
-                &header.sequences,
-                false,
-                false,
-            )
-            .map_err(|refusal| Thrown {
-                failure: Failure::User,
-                exception: refusal.java_class(),
-                message: Some(refusal.message()),
-            })?;
-        }
-    }
+    validate_sequence_dictionaries(parser, master.as_ref(), reference.as_ref(), &header)?;
 
     // `setTraversalBounds`, which the traversal calls before it reads anything -- if the traversal
     // is a WALKER's. `ReadWalker.traverse` and `LocusWalker.traverse` make that call; a `GATKTool`
@@ -1105,6 +1115,147 @@ fn read_walker_startup_with(
         filters: resolved_filters,
     })
 }
+/// A SAM text or CRAM input whose records are decoded one at a time and never held.
+enum Stream {
+    Sam(std::io::BufReader<std::fs::File>),
+    Cram {
+        file: std::fs::File,
+        reference: String,
+    },
+}
+
+/// `CountReads` over SAM text or CRAM with no traversal bounds, which is every record in file
+/// order: the same answer as [`read_walker_startup`] then a whole-file traversal, without the
+/// in-memory BAM that path transcodes to, so the cost is one record at a time.
+///
+/// `None` hands the command line to that path, which answers for everything this does not take:
+/// a BAM, intervals, a named index, more than one input, and any file whose decode fails here
+/// (text that is not SAM, a CRAM that does not decode), so every refusal stays that path's own.
+/// The checks it makes before the reads are opened are made here in its order, so a refusal from
+/// one of those is the same refusal.
+fn streamed_count_reads(parser: &Parser) -> Result<Option<i64>, Thrown> {
+    use std::io::{BufRead, Read};
+    let filters = resolve_read_filters(parser, "CountReads")?;
+    let inputs = arguments(parser, "input");
+    if inputs.len() != 1
+        || !arguments(parser, "intervals").is_empty()
+        || !arguments(parser, "exclude-intervals").is_empty()
+        || argument(parser, "read-index").is_some()
+    {
+        return Ok(None);
+    }
+    let path = std::path::Path::new(&inputs[0]);
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return Ok(None);
+    };
+    let mut magic = [0u8; 4];
+    if !path.is_file() || file.read_exact(&mut magic).is_err() {
+        return Ok(None);
+    }
+    let master = master_dictionary(parser)?;
+    let reference = reference_dictionary(parser)?;
+
+    let stream = if &magic == b"CRAM" {
+        let Some(fasta) = argument(parser, "reference") else {
+            return Ok(None);
+        };
+        let Ok(file) = std::fs::File::open(path) else {
+            return Ok(None);
+        };
+        Stream::Cram {
+            file,
+            reference: fasta,
+        }
+    } else if magic == gatk_tools::read_walker_refusal::BAM_MAGIC
+        || gatk_tools::read_walker_refusal::is_block_compressed(&magic)
+    {
+        return Ok(None);
+    } else {
+        let Ok(file) = std::fs::File::open(path) else {
+            return Ok(None);
+        };
+        Stream::Sam(std::io::BufReader::with_capacity(1 << 20, file))
+    };
+
+    // The dictionaries are validated against the reads' header, and the filter reads it too.
+    let prepare = |header: &SamHeader| {
+        validate_sequence_dictionaries(parser, master.as_ref(), reference.as_ref(), header)
+    };
+    let mut count = 0i64;
+    match stream {
+        Stream::Cram { file, reference } => {
+            // One container in memory at a time, not the file.
+            let Ok(mut reader) =
+                htsjdk_cram::reader::CramReader::from_read(std::io::BufReader::new(file))
+            else {
+                return Ok(None);
+            };
+            let mut fasta =
+                htsjdk_cram::reader::FastaReference::open(std::path::Path::new(&reference));
+            let header = reader.header.clone();
+            prepare(&header)?;
+            let filter = read_filter(parser, &filters, &header)?;
+            loop {
+                match reader.next_container(&mut fasta) {
+                    Ok(Some(records)) => {
+                        count += records.iter().filter(|record| filter(record)).count() as i64
+                    }
+                    Ok(None) => break,
+                    Err(_) => return Ok(None),
+                }
+            }
+        }
+        Stream::Sam(mut reader) => {
+            // The header lines, and the first record line, which is where the header read stops.
+            let mut line = Vec::new();
+            let mut text = String::new();
+            loop {
+                line.clear();
+                if reader.read_until(b'\n', &mut line).is_err() {
+                    return Ok(None);
+                }
+                if !line.starts_with(b"@") {
+                    break;
+                }
+                let Ok(header_line) = std::str::from_utf8(&line) else {
+                    return Ok(None);
+                };
+                text.push_str(header_line.trim_end_matches(['\n', '\r']));
+                text.push('\n');
+            }
+            let header = htsjdk_bam::reader::parse_header_text(&text);
+            prepare(&header)?;
+            let filter = read_filter(parser, &filters, &header)?;
+            let contigs: std::collections::HashMap<&str, i32> = header
+                .sequences
+                .iter()
+                .enumerate()
+                .map(|(index, sequence)| (sequence.name.as_str(), index as i32))
+                .collect();
+            while !line.is_empty() {
+                // `read_sam` skips blank lines, and `str::lines` drops a trailing `\r`.
+                let Ok(text) = std::str::from_utf8(&line) else {
+                    return Ok(None);
+                };
+                let text = text.trim_end_matches('\n').trim_end_matches('\r');
+                if !text.is_empty() {
+                    match htsjdk_bam::text_parse::parse_line(text, |name| {
+                        contigs.get(name).copied()
+                    }) {
+                        Ok(record) => count += filter(&record) as i64,
+                        Err(_) => return Ok(None),
+                    }
+                }
+                line.clear();
+                if reader.read_until(b'\n', &mut line).is_err() {
+                    return Ok(None);
+                }
+            }
+        }
+    }
+    Ok(Some(count))
+}
+
 /// `CountReads.doWork`, with the input read and the output written.
 ///
 /// Three things the `count-reads-plumbing` golden pins and this reproduces: the tool RETURNS the
@@ -1119,12 +1270,19 @@ pub fn count_reads(parser: &Parser) -> Outcome {
         header,
         intervals,
         filters,
-    } = read_walker_startup(parser, "CountReads")?;
+    } = match streamed_count_reads(parser)? {
+        Some(count) => return count_reads_answer(parser, count),
+        None => read_walker_startup(parser, "CountReads")?,
+    };
 
     let filter = read_filter(parser, &filters, &header)?;
     let count = gatk_tools::count_reads::count_reads(&source, &intervals, &filter)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    count_reads_answer(parser, count)
+}
 
+/// What `CountReads` answers once it has its count.
+fn count_reads_answer(parser: &Parser, count: i64) -> Outcome {
     if let Some(output) = argument(parser, "output") {
         // `print`, not `println`: the file is the number's digits and nothing else.
         std::fs::write(&output, gatk_tools::count_reads::output(count))
