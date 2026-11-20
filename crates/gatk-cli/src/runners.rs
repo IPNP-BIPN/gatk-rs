@@ -13896,6 +13896,18 @@ fn variants_in_traversal<'a>(
     intervals: Option<&[gatk_engine::interval::SimpleInterval]>,
     input: &str,
 ) -> Result<Vec<&'a htsjdk_vcf::variant::VariantContext>, Thrown> {
+    Ok(traversal_indices(records, intervals, input)?
+        .into_iter()
+        .map(|index| &records[index])
+        .collect())
+}
+
+/// [`variants_in_traversal`] as indices into `records`, in traversal order.
+fn traversal_indices(
+    records: &[htsjdk_vcf::variant::VariantContext],
+    intervals: Option<&[gatk_engine::interval::SimpleInterval]>,
+    input: &str,
+) -> Result<Vec<usize>, Thrown> {
     let spans: Vec<Locus> = records
         .iter()
         .map(|record| Locus {
@@ -13916,12 +13928,9 @@ fn variants_in_traversal<'a>(
     }
     Ok(gatk_engine::variant_source::traverse(&spans, intervals)
         .into_iter()
+        // `traverse` hands back references into `spans`; the offset is the index, without a scan.
         .map(|span| {
-            let index = spans
-                .iter()
-                .position(|other| std::ptr::eq(other, span))
-                .expect("a span of this list");
-            &records[index]
+            (span as *const Locus as usize - spans.as_ptr() as usize) / std::mem::size_of::<Locus>()
         })
         .collect())
 }
