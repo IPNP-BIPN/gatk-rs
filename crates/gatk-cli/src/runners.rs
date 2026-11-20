@@ -12642,6 +12642,7 @@ pub(crate) fn recalibration_table_over(
             indels_context_size: number_or(parser, "indels-context-size", 3),
             maximum_cycle_value: number_or(parser, "maximum-cycle-value", 500),
             low_qual_tail: u8::try_from(number_or(parser, "low-quality-tail", 2)).unwrap_or(2),
+            binary_tag_name: argument(parser, "binary-tag-name"),
         },
         enable_baq: flag(parser, "enable-baq"),
         compute_indel_bqsr_tables: flag(parser, "compute-indel-bqsr-tables"),
@@ -15998,20 +15999,18 @@ pub fn genotype_gvcfs(parser: &Parser) -> Outcome {
             format!("{what} This message is the port's own and not GATK's."),
         )
     };
-    for configured in ["pedigree", "founder-id", "flow-order-for-annotations"] {
-        if !arguments(parser, configured).is_empty() || argument(parser, configured).is_some() {
-            return Err(limitation(&format!(
-                "--{configured} configures a pedigree or flow annotation, which this port does not \
-                 carry for GenotypeGVCFs yet."
-            )));
-        }
-    }
+    // `validateAndResolvePlugins`, while the command line is parsed. The flow order goes to no
+    // annotation GenotypeGVCFs computes, so past the refusal it changes nothing.
+    pedigree_refusal(parser, &resolved)?;
+    flow_order_for_annotations(parser, &resolved)?;
     let VariantWalkerStart {
         input,
         text,
         intervals,
         ..
     } = variant_walker_startup(parser, "GenotypeGVCFs")?;
+    // The end of `onStartup`, before `onTraversalStart`'s own refusals.
+    let keep = variant_output_filter(parser, intervals.as_deref())?;
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
@@ -16035,8 +16034,10 @@ pub fn genotype_gvcfs(parser: &Parser) -> Outcome {
         }
         None => None,
     };
-    if argument(parser, "population-callset").is_some() {
-        return Err(limitation("--population-callset is not ported."));
+    // `--population-callset` is a feature input GenotypeGVCFs declares and never queries: the
+    // engine opens it, and that is all.
+    if let Some(path) = argument(parser, "population-callset") {
+        open_feature_input(&path)?;
     }
 
     // `onTraversalStart`.
@@ -16073,7 +16074,6 @@ pub fn genotype_gvcfs(parser: &Parser) -> Outcome {
         raw_keys_to_keep.extend(entry.raw_keys.unwrap_or(&[]).iter().copied());
     }
 
-    let keep = variant_output_filter(parser, intervals.as_deref())?;
     // `--only-output-calls-starting-in-intervals` is STARTS_IN by another name.
     let starts_in = flag(parser, "only-output-calls-starting-in-intervals");
     if starts_in && intervals.as_ref().is_none_or(|list| list.is_empty()) {
@@ -16119,6 +16119,7 @@ pub fn genotype_gvcfs(parser: &Parser) -> Outcome {
         keep_combined: flag(parser, "keep-combined-raw-annotations"),
         raw_keys_to_keep,
         dbsnp: dbsnp_records,
+        founder_ids: pedigree_arguments(parser)?.founder_ids,
     };
     let allele_specific = annotations.any_allele_specific();
     let annotate_discovered = flag(parser, "annotate-with-num-discovered-alleles");
