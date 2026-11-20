@@ -8,6 +8,8 @@ How to read it: **records** and **files** count the lines of the goldens CI re-d
 
 Each run's inputs, toolchain and container are in the `provenance` artefact CI keeps (`tools/provenance/record.py`).
 
+**Quarantined** lists the fields a suite's comparison sets aside that nothing below accounts for. A **limit** is one the reference itself does not hold still, or a decision that keeps it, written down with its proof under [Known limits](#known-limits), whose verdict says what is claimed; where a field the tool writes is set aside, the ROADMAP calls the tool bio-identical.
+
 | tool | port | state | records | files | argument rows | t | fuzzer branches | inputs | held-out arguments | quarantined |
 |---|---|---|---:|---:|---:|---:|---|---:|---:|---|
 | ASEReadCounter | gatk-rs | oracle-backed | 10 suite | 0 suite | 20/20 (100.0%) | 2 | 2762 probes (+5), 0/13 diverge | 4 | 6 | none |
@@ -21,7 +23,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | AddOriginalAlignmentTags | gatk-rs | oracle-backed | 16 suite | 0 suite | 18/18 (100.0%) | 2 | 2280 probes (+32), 0/10 diverge | 4 | 3 | none |
 | AlleleFrequencyQC | gatk-rs | oracle-backed | 408 suite | 0 suite | 26/26 (100.0%) | 2 | 3654 probes (+0), 0/14 diverge | 6 | 6 | none |
 | AnalyzeCovariates | gatk-rs | oracle-backed | 15 suite | 0 suite | 11/11 (100.0%) | 2 | 1760 probes (+1), 0/7 diverge | 2 | 1 | none |
-| AnalyzeSaturationMutagenesis | gatk-rs | oracle-backed | 30 suite | 0 suite | 21/21 (100.0%) | 2 | 3013 probes (+10), 0/13 diverge | 6 | 1 | none |
+| AnalyzeSaturationMutagenesis | gatk-rs | oracle-backed | 30 suite | 0 suite | 21/21 (100.0%) | 2 | 3013 probes (+10), 0/13 diverge | 6 | 1 | none; limit [asm-rejected-reads](#asm-rejected-reads) |
 | AnnotateIntervals | gatk-rs | oracle-backed | 8 suite | 0 suite | 19/19 (100.0%) | 2 | 2268 probes (+54), 0/11 diverge | 4 | 0 | none |
 | AnnotateVcfWithBamDepth | gatk-rs | oracle-backed | 54 suite | 0 suite | 23/23 (100.0%) | 2 | 2535 probes (+5), 0/11 diverge | 6 | 0 | none |
 | AnnotateVcfWithExpectedAlleleFraction | gatk-rs | oracle-backed | 30 suite | 0 suite | 23/23 (100.0%) | 2 | 2436 probes (+2), 0/13 diverge | 4 | 2 | none |
@@ -38,7 +40,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | BpmToNormalizationManifestCsv | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
 | BuildBamIndex | gatk-rs | oracle-backed | 16 suite | 0 suite | 18/18 (100.0%) | 2 | not measured | 7 | 0 | none |
 | BwaAndMarkDuplicatesPipelineSpark | gatk-rs | oracle-backed | 30 | 12 | 19/19 (100.0%) | 2 | 496 probes (+0), 0/4 diverge | 4 | 5 | none |
-| BwaMemIndexImageCreator | gatk-rs | oracle-backed | 37 suite | 0 suite | 15/15 (100.0%) | 2 | 1038 probes (+2), 0/8 diverge | 5 | 0 | none |
+| BwaMemIndexImageCreator | gatk-rs | oracle-backed | 37 suite | 0 suite | 15/15 (100.0%) | 2 | 1038 probes (+2), 0/8 diverge | 5 | 0 | none; limit [bwa-index-pointers](#bwa-index-pointers) |
 | BwaSpark | gatk-rs | oracle-backed | 93 | 37 | 15/15 (100.0%) | 2 | 2200 probes (+2), 0/8 diverge | 5 | 5 | none |
 | CRAMIssue8768Detector | gatk-rs | oracle-backed | 54 suite | 0 suite | 11/11 (100.0%) | 2 | 1201 probes (+0), 0/7 diverge | 5 | 0 | none |
 | CalcMetadataSpark | gatk-rs | oracle-backed | 60 | 15 | 21/21 (100.0%) | 2 | 2107 probes (+1), 0/11 diverge | 3 | 6 | none |
@@ -125,7 +127,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | CreateBafRegressMetricsFile | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CreateExtendedIlluminaManifest | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CreateHadoopBamSplittingIndex | gatk-rs | oracle-backed | 43 suite | 0 suite | 11/11 (100.0%) | 2 | 1012 probes (+10), 0/7 diverge | 3 | 0 | none |
-| CreateReadCountPanelOfNormals | gatk-rs | oracle-backed | 445 suite | 0 suite | 25/25 (100.0%) | 2 | 2161 probes (+22), 0/10 diverge | 5 | 0 | none |
+| CreateReadCountPanelOfNormals | gatk-rs | oracle-backed | 445 suite | 0 suite | 25/25 (100.0%) | 2 | 2161 probes (+22), 0/10 diverge | 5 | 0 | none; limit [panel-of-normals-rank](#panel-of-normals-rank) |
 | CreateSequenceDictionary | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CreateSomaticPanelOfNormals | gatk-rs | oracle-backed | 29 suite | 0 suite | 21/21 (100.0%) | 2 | 2345 probes (+4), 0/8 diverge | 3 | 8 | none |
 | CreateVerifyIDIntensityContaminationMetricsFile | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -179,7 +181,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | GatherVcfs | gatk-rs | oracle-backed | 28 suite | 0 suite | 34/34 (100.0%) | 2 | not measured | 8 | 0 | none |
 | GatherVcfsCloud | gatk-rs | oracle-backed | 36309 suite | 0 suite | 11/11 (100.0%) | 2 | 1047 probes (+2), 0/5 diverge | 2 | 0 | none |
 | GeneExpressionEvaluation | gatk-rs | oracle-backed | 21 suite | 0 suite | 19/19 (100.0%) | 2 | 2777 probes (+4), 0/12 diverge | 4 | 6 | none |
-| GenomicsDBImport | gatk-rs | oracle-backed | 3620 | 3341 | 19/19 (100.0%) | 2 | 2174 probes (+48), 0/9 diverge | 6 | 11 | none |
+| GenomicsDBImport | gatk-rs | oracle-backed | 3620 | 3341 | 19/19 (100.0%) | 2 | 2174 probes (+48), 0/9 diverge | 6 | 11 | none; limit [genomicsdb-names-and-clock](#genomicsdb-names-and-clock) |
 | GenotypeConcordance | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
 | GenotypeGVCFs | gatk-rs | oracle-backed | 19 suite | 0 suite | 39/39 (100.0%) | 2 | 5528 probes (+6), 0/19 diverge | 6 | 9 | none |
 | GermlineCNVCaller | gatk-rs | oracle-backed | 297 suite | 150 suite | 46/46 (100.0%) | 2 | 1062 probes (+0), 0/3 diverge | 2 | 0 | none |
@@ -193,7 +195,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | GtcToVcf | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | none |
 | GtfToBed | gatk-rs | oracle-backed | 9 suite | 0 suite | 20/20 (100.0%) | 2 | 2184 probes (+4), 0/10 diverge | 3 | 4 | none |
 | HaplotypeBasedVariantRecaller | gatk-rs | oracle-backed | 7 suite | 0 suite | 48/48 (100.0%) | 2 | 4112 probes (+2), 0/12 diverge | 5 | 3 | none |
-| HaplotypeCaller | gatk-rs | oracle-backed | 587 suite | 50 suite | 50/50 (100.0%) | 2 | 12968 probes (+2), 0/32 diverge | 11 | 3 | mask_identity_hashes, sort_segments_with |
+| HaplotypeCaller | gatk-rs | oracle-backed | 587 suite | 50 suite | 50/50 (100.0%) | 2 | 12968 probes (+2), 0/32 diverge | 11 | 3 | none; limit [identity-hashes](#identity-hashes) |
 | HaplotypeCallerSpark | gatk-rs | oracle-backed | 64 | 15 | 49/49 (100.0%) | 2 | 11894 probes (+2), 0/27 diverge | 11 | 15 | none |
 | HtsgetReader | gatk-rs | oracle-backed | 865 | 41 | 11/11 (100.0%) | 2 | 1084 probes (+2), 0/5 diverge | 0 | 0 | none |
 | IdentifyContaminant | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -229,8 +231,8 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | MergeVcfs | gatk-rs | oracle-backed | 38 suite | 0 suite | 27/27 (100.0%) | 2 | not measured | 8 | 0 | none |
 | MethylationTypeCaller | gatk-rs | oracle-backed | 74 suite | 0 suite | 21/21 (100.0%) | 2 | 2711 probes (+42), 0/12 diverge | 6 | 0 | none |
 | ModelSegments | gatk-rs | oracle-backed | 21 suite | 0 suite | 19/19 (100.0%) | 2 | 3526 probes (+1), 0/15 diverge | 6 | 0 | none |
-| Mutect2 | gatk-rs | oracle-backed | 617 suite | 76 suite | 40/40 (100.0%) | 2 | 14428 probes (+0), 0/26 diverge | 10 | 2 | mask_identity_hashes, sort_segments_with |
-| NVScoreVariants | gatk-rs | oracle-backed | 1373 suite | 0 suite | 10/10 (100.0%) | 2 | 962 probes (+2), 0/4 diverge | 4 | 0 | none |
+| Mutect2 | gatk-rs | oracle-backed | 617 suite | 76 suite | 40/40 (100.0%) | 2 | 14428 probes (+0), 0/26 diverge | 10 | 2 | none; limit [identity-hashes](#identity-hashes) |
+| NVScoreVariants | gatk-rs | oracle-backed | 1373 suite | 0 suite | 10/10 (100.0%) | 2 | 962 probes (+2), 0/4 diverge | 4 | 0 | none; limit [nvscorevariants-bits](#nvscorevariants-bits) |
 | NonNFastaSize | picard-rs | oracle-backed | not vendored | not vendored | 7/7 (100.0%) | 2 | not measured | 0 | 0 | none |
 | NormalizeFasta | picard-rs | oracle-backed | not vendored | not vendored | 8/8 (100.0%) | 2 | not measured | 0 | 0 | none |
 | NuMTFilterTool | gatk-rs | oracle-backed | 35 suite | 0 suite | 15/15 (100.0%) | 2 | 2183 probes (+0), 0/7 diverge | 2 | 7 | none |
@@ -260,7 +262,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | PrintVariantsSpark | gatk-rs | oracle-backed | 19 | 5 | 23/23 (100.0%) | 2 | 2097 probes (+1), 0/9 diverge | 7 | 2 | none |
 | QualityScoreDistribution | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | none |
 | QualityScoreDistributionSpark | gatk-rs | oracle-backed | 6 | 2 | 21/21 (100.0%) | 2 | 2120 probes (+2), 0/9 diverge | 4 | 2 | none |
-| RampedHaplotypeCaller | gatk-rs | oracle-backed | 576 suite | 50 suite | 54/54 (100.0%) | 2 | 14390 probes (+52), 0/34 diverge | 13 | 3 | mask_identity_hashes, sort_segments_with |
+| RampedHaplotypeCaller | gatk-rs | oracle-backed | 576 suite | 50 suite | 54/54 (100.0%) | 2 | 14390 probes (+52), 0/34 diverge | 13 | 3 | none; limit [identity-hashes](#identity-hashes) |
 | ReadAnonymizer | gatk-rs | oracle-backed | 28 suite | 0 suite | 22/22 (100.0%) | 2 | 2290 probes (+1), 0/9 diverge | 6 | 0 | none |
 | ReadsPipelineSpark | gatk-rs | oracle-backed | 133 | 48 | 53/53 (100.0%) | 2 | 14460 probes (+86), 0/28 diverge | 11 | 26 | none |
 | ReblockGVCF | gatk-rs | oracle-backed | 255 suite | 0 suite | 56/56 (100.0%) | 2 | 4880 probes (+0), 0/17 diverge | 8 | 7 | none |
@@ -281,7 +283,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | SamToFastq | picard-rs | oracle-backed | not vendored | not vendored | 19/19 (100.0%) | 2 | not measured | 0 | 0 | none |
 | SamToFastqWithTags | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | none |
 | ScatterIntervalsByNs | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
-| ScoreVariantAnnotations | gatk-rs | oracle-backed | 210 suite | 51 suite | 27/27 (100.0%) | 2 | 2639 probes (+2), 0/14 diverge | 6 | 7 | mask_hdf5_modification_times |
+| ScoreVariantAnnotations | gatk-rs | oracle-backed | 210 suite | 51 suite | 27/27 (100.0%) | 2 | 2639 probes (+2), 0/14 diverge | 6 | 7 | none; limit [hdf5-clock](#hdf5-clock) |
 | SelectVariants | gatk-rs | oracle-backed | 36903 suite | 0 suite | 51/51 (100.0%) | 2 | 2736 probes (+5), 0/14 diverge | 2 | 10 | none |
 | SetNmAndUqTags | gatk-rs | oracle-backed | 10 suite | 0 suite | 16/16 (100.0%) | 2 | not measured | 7 | 0 | none |
 | SetNmMdAndUqTags | gatk-rs | oracle-backed | 10 suite | 0 suite | 16/16 (100.0%) | 2 | not measured | 7 | 0 | none |
@@ -303,7 +305,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | StructuralVariationDiscoveryPipelineSpark | gatk-rs | oracle-backed | 1037 | 733 | 27/27 (100.0%) | 2 | 7002 probes (+3), 0/19 diverge | 11 | 2 | none |
 | SvDiscoverFromLocalAssemblyContigAlignmentsSpark | gatk-rs | oracle-backed | 161 | 88 | 17/17 (100.0%) | 2 | 5831 probes (+5), 0/9 diverge | 6 | 5 | none |
 | TagGermlineEvents | gatk-rs | oracle-backed | 15 suite | 0 suite | 17/17 (100.0%) | 2 | 2085 probes (+5), 0/8 diverge | 6 | 8 | none |
-| TrainVariantAnnotationsModel | gatk-rs | oracle-backed | 131 suite | 10 suite | 11/11 (100.0%) | 2 | 1224 probes (+1), 0/10 diverge | 5 | 0 | mask_hdf5_modification_times |
+| TrainVariantAnnotationsModel | gatk-rs | oracle-backed | 131 suite | 10 suite | 11/11 (100.0%) | 2 | 1224 probes (+1), 0/10 diverge | 5 | 0 | none; limit [hdf5-clock](#hdf5-clock) |
 | TransferReadTags | gatk-rs | oracle-backed | 65 suite | 0 suite | 19/19 (100.0%) | 2 | 1947 probes (+2), 0/10 diverge | 3 | 1 | none |
 | UmiAwareMarkDuplicatesWithMateCigar | picard-rs | oracle-backed | not vendored | not vendored | 26/26 (100.0%) | 2 | not measured | 0 | 0 | none |
 | UnmarkDuplicates | gatk-rs | oracle-backed | 49 suite | 0 suite | 19/19 (100.0%) | 2 | 2171 probes (+0), 0/8 diverge | 4 | 0 | none |
@@ -322,6 +324,75 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | VcfToAdpc | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | none |
 | VcfToIntervalList | gatk-rs | oracle-backed | 12 suite | 0 suite | 12/12 (100.0%) | 2 | not measured | 4 | 0 | none |
 | ViewSam | picard-rs | oracle-backed | not vendored | not vendored | 14/14 (100.0%) | 2 | not measured | 0 | 0 | none |
+
+## Known limits
+
+From `tools/reports/limits.json`.
+
+### identity-hashes
+
+**The callers' debug outputs print System.identityHashCode.** Tools: HaplotypeCaller, RampedHaplotypeCaller, Mutect2. Rules: `mask_identity_hashes`, `sort_segments_with`.
+
+Verdict: bio-identical in the debug outputs of suite `hc-debug-outputs`; no suite of the three tools sets aside anything else.
+
+Vertex ids and labels in the dot files, junction-tree node names and the genotyper debug's `double[]` renderings are `System.identityHashCode`, and the files holding junction trees print them from identity-keyed `HashMap`s, so in an order those hashes decide. Measured 2026-11-19: the suite's dump ran twice in a row in `gatk-rs-oracle:4.7.0.0` on one arm64 Mac under emulation (`python3 tools/conformance/run_suite.py --suites hc-debug-outputs`, twice). The two dumps and the CI golden, three runs of the reference on the same input, differ pairwise on 129 of 214 rows; with `mask_identity_hashes` alone on 3 of them, the junction-tree files; with both rules on none. Nothing outside those shapes moves, and those shapes move in every run: no port can be byte-identical to a reference that is not byte-identical to itself.
+
+### hdf5-clock
+
+**Java's HDF5 library stamps object headers with the clock.** Tools: TrainVariantAnnotationsModel, ScoreVariantAnnotations. Rules: `mask_hdf5_modification_times`.
+
+Verdict: bio-identical in the 48 bytes of seconds; every other byte of the annotations, the models' score files and the VCF is compared.
+
+The masked file is the annotations ExtractVariantAnnotations writes, which the port reads as training input and never writes in this suite. The committed golden is its own proof: its two passes, `default` and `seven`, run the same ExtractVariantAnnotations command on the same fixture in the same container, and their `extract.annot.hdf5` are 175,040 bytes each and differ in 12 bytes, every one inside one of the twelve Object Modification Time messages, which read 2026-11-05T07:34:31 and 07:34:42 UTC. The same clock is why the dump compares the doubles of `score.scores.hdf5` rather than its bytes, and the scorer pickle is hashed without the name of the temporary script it ran from, random in every run (`tools/python-tools/dump_vets.py`).
+
+### nvscorevariants-bits
+
+**NVScoreVariants' bits past the dense layers.** Tools: NVScoreVariants.
+
+Verdict: byte-identical in what the tool writes (the VCF and its `%.3f` scores); the intermediate floats are not claimed.
+
+MKL's `SGEMM` sums the dense layers in an order set by the thread count and the batch size, so the reference's own floats move with them: against one thread at batch 64, four threads differ on 2047 of 2840 dense_2.0 values and on 20 of 71 scores by up to 5 ulp, one thread at batch 1 on 43 of 71 scores. Its VCF and score file are identical at 1, 2, 4 and 16 threads, and its score file at batch sizes 1, 7 and 64. `docs/nvscorevariants.md`, suite `nvscorevariants`.
+
+### panel-of-normals-rank
+
+**CreateReadCountPanelOfNormals' eigensample count is a solver's rank.** Tools: CreateReadCountPanelOfNormals.
+
+Verdict: bio-identical in the panel's eigensamples: suites hold the cap the rank is taken under, whether the basis is empty, and at `local[1]` the count and the values above the noise.
+
+The count is the number of singular values over rCond 1e-9, decided on values that are rounding noise on a rank-deficient panel, in the order Spark folds the Gramian. The same fixture answered 8, 6 and 7 eigensamples on two CI runs and a laptop with one image; twelve runs at `local[4]` gave eleven sets of bits and ranks 6 and 7; two identical runs in one container wrote HDF5 panels differing in 268 bytes (#1270). `docs/a-rank-is-not-a-byte.md`, `docs/spark-parallel.md`, suites `create-read-count-panel-of-normals`, `create-read-count-panel-rank` and `create-read-count-panel-arpack`.
+
+### asm-rejected-reads
+
+**AnalyzeSaturationMutagenesis --write-rejected-reads.** Tools: AnalyzeSaturationMutagenesis.
+
+Verdict: held out of the covering array at false; the other outputs are compared byte for byte.
+
+GATK writes BAMs asynchronously, and a read rejected before its report exists is added to the rejected BAM twice, once tagged `XX:unmapped` and again, after `processReport` retags the same object `XX:lowQ`. Whether the first copy was encoded before the retag depends on the writer thread: 4 of 18 reference runs under load kept `XX:unmapped` on `dup1` and `qc1` (`tools/coverage/fixtures.json`).
+
+### bwa-index-pointers
+
+**BwaMemIndexImageCreator writes heap addresses.** Tools: BwaMemIndexImageCreator.
+
+Verdict: byte-identical outside the address fields and padding, which the covering array zeroes from the image's layout; the golden holds the size and the instability.
+
+BWA's serialiser writes in-process pointers through JNI, which address-space layout randomisation moves on every run: one reference built twice in one process gives two images of the same length differing in nine bytes. `docs/pointers-that-reach-the-output.md`.
+
+### genomicsdb-names-and-clock
+
+**GenomicsDBImport names fragments by UUID, thread and clock.** Tools: GenomicsDBImport.
+
+Verdict: byte-identical outside the fragment and metadata names, the header's `Date` and the schema's absolute path, which the dump numbers or masks.
+
+Two reference runs on the same input wrote 134 files of which 133 are identical; what differs is the fragment and `genomicsdb_meta` file names (a UUID, a thread id and the wall clock), `Date` in `vcfheader.vcf` and the absolute path in `__array_schema.tdb` (suite `genomicsdb-import`, #1400).
+
+### double-to-string-above-2-53
+
+**DecimalFormat above 2^53 (68 values).** Tools: none named.
+
+Verdict: a decision, not an instability: the reference is stable here, and the port follows the specification where Java 17 departs from it.
+
+Above 2^53 Java 17's pre-Schubfach converter stops producing the shortest decimal form, and `DecimalFormat` keeps that converter until JDK 26, so 68 renderings across the two repositories' corpora differ. Below 2^53 nothing differs on 903,121 measured values. An oracle on JDK 26 takes the 68 to 0 for one golden regenerated in each repository, against a runtime GATK does not ship on: decision #115, open. The ROADMAP measures nothing a gatk-rs tool prints within eleven orders of magnitude of 2^53. `docs/licence-compatibility-risk.md`.
+
 
 ## What each array draws on and leaves out
 

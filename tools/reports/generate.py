@@ -14,7 +14,8 @@ Every number is read from a committed source, and a number that no source holds 
 * argument coverage and the `t` level, from each port's `measured.json`;
 * inputs and held-out arguments, from `tools/coverage/fixtures.json`. An argument with no values is
   one no array varies, and the entry's `$why` says why;
-* quarantined fields, from each suite's `compare` rules;
+* quarantined fields, from each suite's `compare` rules, less those `tools/reports/limits.json`
+  proves the reference itself does not reproduce; its entries are the known limits;
 * fuzzer coverage, from `tools/fuzz/measured.json`: the reference's JaCoCo probes the covering
   array's rows reach, how many more the fuzzer's mutants reach, and on how many kept cases the
   port diverged.
@@ -37,6 +38,7 @@ MEASURED = REPO / "tools" / "coverage" / "measured.json"
 FUZZED = REPO / "tools" / "fuzz" / "measured.json"
 FIXTURES = REPO / "tools" / "coverage" / "fixtures.json"
 PORTS = REPO / "tools" / "dashboard" / "ports"
+LIMITS = REPO / "tools" / "reports" / "limits.json"
 REPORT = REPO / "docs" / "VALIDATION.md"
 
 
@@ -126,7 +128,16 @@ def gather():
     for name, value in measured.items():
         if name in tools and tools[name]["coverage"] is None:
             tools[name]["coverage"] = value
-    return inventory, tools, fixtures
+    limits = json.loads(LIMITS.read_text())["limits"]
+    for limit in limits:
+        for name in limit["tools"]:
+            tool = tools[name]
+            stale = set(limit.get("rules", [])) - tool["quarantine"]
+            if stale:
+                raise SystemExit(f"limits.json: {limit['id']} covers {sorted(stale)}, which no suite of {name} declares")
+            tool["quarantine"] -= set(limit.get("rules", []))
+            tool.setdefault("limits", []).append(limit["id"])
+    return inventory, tools, fixtures, limits
 
 
 def coverage_text(value):
@@ -163,7 +174,7 @@ def fixture_summary(entry):
     return sorted(inputs), held
 
 
-def render(inventory, tools, fixtures):
+def render(inventory, tools, fixtures, limits):
     reference = inventory.get("reference")
     lines = [
         "# Validation report",
@@ -184,6 +195,11 @@ def render(inventory, tools, fixtures):
         "",
         "Each run's inputs, toolchain and container are in the `provenance` artefact CI keeps "
         "(`tools/provenance/record.py`).",
+        "",
+        "**Quarantined** lists the fields a suite's comparison sets aside that nothing below accounts "
+        "for. A **limit** is one the reference itself does not hold still, or a decision that keeps "
+        "it, written down with its proof under [Known limits](#known-limits), whose verdict says what is "
+        "claimed; where a field the tool writes is set aside, the ROADMAP calls the tool bio-identical.",
         "",
         "| tool | port | state | records | files | argument rows | t | fuzzer branches | inputs | held-out arguments | quarantined |",
         "|---|---|---|---:|---:|---:|---:|---|---:|---:|---|",
@@ -208,6 +224,8 @@ def render(inventory, tools, fixtures):
         covered, level = coverage_text(tool["coverage"])
         inputs, held = fixture_summary(fixtures.get(name))
         quarantine = ", ".join(sorted(tool["quarantine"])) or "none"
+        if tool.get("limits"):
+            quarantine += "; limit " + ", ".join(f"[{i}](#{i})" for i in tool["limits"])
         lines.append(
             f"| {name} | {tool['port'] or '-'} | {state} | {records} | {files} | {covered} | {level} "
             f"| {fuzz_text(tool['fuzz'])} | {len(inputs)} | {len(held)} | {quarantine} |"
@@ -226,6 +244,13 @@ def render(inventory, tools, fixtures):
                 block.extend(["", why])
             block.append("")
             details.extend(block)
+    lines.extend(["", "## Known limits", "", "From `tools/reports/limits.json`.", ""])
+    for limit in limits:
+        lines.extend([f"### {limit['id']}", "", f"**{limit['title']}.** Tools: "
+                      + (", ".join(limit["tools"]) or "none named") + "."])
+        if limit.get("rules"):
+            lines[-1] += " Rules: " + ", ".join(f"`{r}`" for r in limit["rules"]) + "."
+        lines.extend(["", f"Verdict: {limit['verdict']}.", "", " ".join(limit["proof"]), ""])
     lines.extend(["", "## What each array draws on and leaves out", ""])
     lines.extend(details)
     return "\n".join(lines).rstrip() + "\n"
