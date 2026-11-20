@@ -81,8 +81,18 @@ def masked_index(raw):
     return raw[:end + 9] + b"\0" * 8 + raw[end + 17:]
 
 
+def sha256(path):
+    # Streamed: a file read whole here stays resident in this process, and a child forked from it
+    # then reports that memory as its own ru_maxrss.
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        while chunk := f.read(1 << 20):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def digests(out_dir):
-    return {f.name: hashlib.sha256(masked_index(f.read_bytes()) if f.suffix == ".idx" else f.read_bytes()).hexdigest()
+    return {f.name: hashlib.sha256(masked_index(f.read_bytes())).hexdigest() if f.suffix == ".idx" else sha256(f)
             for f in sorted(out_dir.iterdir())}
 
 
@@ -121,7 +131,7 @@ def main():
         vcf = work / f"{label.replace(' ', '_')}.vcf"
         if not vcf.exists():
             generate(vcf, o.records, samples)
-        result["inputs"][label] = {"bytes": vcf.stat().st_size, "sha256": hashlib.sha256(vcf.read_bytes()).hexdigest()}
+        result["inputs"][label] = {"bytes": vcf.stat().st_size, "sha256": sha256(vcf)}
         common = ["FilterVcf", "--INPUT", str(vcf), "--OUTPUT", str(out / "out.vcf"), *ARGS]
         sides = {"java": ["java", *PROPS, "-jar", o.jar, *common], "port": [o.port, *common]}
         runs = {"java": [], "port": []}
