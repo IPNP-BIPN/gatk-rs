@@ -1484,119 +1484,6 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         super::spark_runners::no_reads_refusal(parser, &reads, &traversal, shard_size)?;
         super::spark_runners::oversized_read_refusal(parser, &reads, &header, shard_size)?;
     }
-    let called = if spark && !flag(parser, "strict") {
-        let mut calls = Vec::new();
-        let mut failure = None;
-        'shards: for interval in &traversal {
-            let contig_length = header
-                .sequences
-                .iter()
-                .find(|sequence| sequence.name == interval.contig)
-                .map_or(interval.end, |sequence| sequence.length);
-            for start in (interval.start..=interval.end).step_by(shard_size as usize) {
-                let shard = gatk_engine::interval::SimpleInterval {
-                    contig: interval.contig.clone(),
-                    start,
-                    end: (start + shard_size - 1).min(interval.end),
-                };
-                let padded_start = (shard.start - shard_padding).max(1);
-                let padded_end = (shard.end + shard_padding).min(contig_length);
-                let contig_index = header
-                    .sequences
-                    .iter()
-                    .position(|sequence| sequence.name == shard.contig)
-                    .map_or(-1, |index| index as i32);
-                let shard_reads: Vec<htsjdk_bam::record::BamRecord> = reads
-                    .iter()
-                    .filter(|read| {
-                        read.reference_index == contig_index
-                            && read.alignment_start <= padded_end
-                            && read.alignment_end() >= padded_start
-                    })
-                    .cloned()
-                    .collect();
-                let held =
-                    gatk_engine::assembly_region_walker::WalkerReads::held(&shard_reads, &header);
-                match hc::call_variants(
-                    &held,
-                    &header,
-                    std::slice::from_ref(&shard),
-                    &arguments,
-                    &annotator,
-                    &mut contig_bases,
-                    &mut random,
-                    assembly_variants.as_ref().map(|(_, queue)| queue),
-                ) {
-                    Ok(found) => calls.extend(found),
-                    Err(mut error) => {
-                        let mut before = std::mem::take(&mut calls);
-                        before.append(&mut error.calls_before);
-                        error.calls_before = before;
-                        failure = Some(error);
-                        break 'shards;
-                    }
-                }
-            }
-        }
-        match failure {
-            Some(error) => Err(error),
-            None => Ok(calls),
-        }
-    } else {
-        let walker_reads = if queried {
-            super::queried_reads(
-                &source,
-                &header,
-                &prepare,
-                &refused,
-                Some(gatk_engine::assembly_region_walker::WINDOW),
-            )
-        } else {
-            gatk_engine::assembly_region_walker::WalkerReads::held(&reads, &header)
-        };
-        hc::call_variants(
-            &walker_reads,
-            &header,
-            &traversal,
-            &arguments,
-            &annotator,
-            &mut contig_bases,
-            &mut random,
-            assembly_variants.as_ref().map(|(_, queue)| queue),
-        )
-    };
-    drop(random);
-    // A failure mid-traversal still writes what came before it, and the writer's own refusal of
-    // those records, raised as it closes, is what the run reports.
-    let (mut written, failure) = match called {
-        Ok(calls) => (calls, None),
-        // Before the VCF writer exists: the run ends with nothing more written.
-        Err(error) if error.at_startup && !spark_task_failure(spark, &error.message) => {
-            return Err(Thrown::non_user(
-                java_class_name(&error.class),
-                error.message,
-            ));
-        }
-        Err(error) if spark_task_failure(spark, &error.message) => {
-            eprintln!("ERROR Executor - Exception in task 0.0 in stage 0.0 (TID 0)");
-            return Err(Thrown::non_user(
-                "org.apache.spark.SparkException",
-                error.message,
-            ));
-        }
-        Err(error) => (
-            error.calls_before,
-            // A `UserException` is reported as a user error, by its message alone.
-            Some(if let Some(thrown) = refused.take() {
-                thrown
-            } else if error.class.contains("UserException") {
-                Thrown::user(error.message)
-            } else {
-                Thrown::non_user(java_class_name(&error.class), error.message)
-            }),
-        ),
-    };
-
     // `makeVCFHeader`.
     let compound =
         |key: &str, id: &str, number: Cardinality, line_type: LineType, description: &str| {
@@ -1759,13 +1646,157 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             unique.push(line);
         }
     }
-    let mut vcf_header = VcfHeader {
+    let vcf_header = VcfHeader {
         lines: unique,
         samples: match &sample_name {
             Some(name) => vec![name.clone()],
             None => hc::samples_from_header(&header),
         },
     };
+    // The calls go to the VCF as the regions make them, when no Spark writer has to see them all.
+    let mut final_header = vcf_header.clone();
+    let streamed = (!spark).then(|| {
+        let combiner = gvcf_combiner(parser, &emit_mode, spark, &mut final_header);
+        if flag(parser, "sites-only-vcf-output") {
+            final_header.samples.clear();
+        }
+        combiner
+    });
+    let mut streamed =
+        streamed.map(|combiner| StreamedVcf::new(parser, &output, &final_header, combiner));
+    let called = if spark && !flag(parser, "strict") {
+        let mut calls = Vec::new();
+        let mut failure = None;
+        'shards: for interval in &traversal {
+            let contig_length = header
+                .sequences
+                .iter()
+                .find(|sequence| sequence.name == interval.contig)
+                .map_or(interval.end, |sequence| sequence.length);
+            for start in (interval.start..=interval.end).step_by(shard_size as usize) {
+                let shard = gatk_engine::interval::SimpleInterval {
+                    contig: interval.contig.clone(),
+                    start,
+                    end: (start + shard_size - 1).min(interval.end),
+                };
+                let padded_start = (shard.start - shard_padding).max(1);
+                let padded_end = (shard.end + shard_padding).min(contig_length);
+                let contig_index = header
+                    .sequences
+                    .iter()
+                    .position(|sequence| sequence.name == shard.contig)
+                    .map_or(-1, |index| index as i32);
+                let shard_reads: Vec<htsjdk_bam::record::BamRecord> = reads
+                    .iter()
+                    .filter(|read| {
+                        read.reference_index == contig_index
+                            && read.alignment_start <= padded_end
+                            && read.alignment_end() >= padded_start
+                    })
+                    .cloned()
+                    .collect();
+                let held =
+                    gatk_engine::assembly_region_walker::WalkerReads::held(&shard_reads, &header);
+                match hc::call_variants(
+                    &held,
+                    &header,
+                    std::slice::from_ref(&shard),
+                    &arguments,
+                    &annotator,
+                    &mut contig_bases,
+                    &mut random,
+                    assembly_variants.as_ref().map(|(_, queue)| queue),
+                ) {
+                    Ok(found) => calls.extend(found),
+                    Err(mut error) => {
+                        let mut before = std::mem::take(&mut calls);
+                        before.append(&mut error.calls_before);
+                        error.calls_before = before;
+                        failure = Some(error);
+                        break 'shards;
+                    }
+                }
+            }
+        }
+        match failure {
+            Some(error) => Err(error),
+            None => Ok(calls),
+        }
+    } else {
+        let walker_reads = if queried {
+            super::queried_reads(
+                &source,
+                &header,
+                &prepare,
+                &refused,
+                Some(gatk_engine::assembly_region_walker::WINDOW),
+            )
+        } else {
+            gatk_engine::assembly_region_walker::WalkerReads::held(&reads, &header)
+        };
+        match &mut streamed {
+            Some(out) => hc::call_variants_to(
+                &walker_reads,
+                &header,
+                &traversal,
+                &arguments,
+                &annotator,
+                &mut contig_bases,
+                &mut random,
+                assembly_variants.as_ref().map(|(_, queue)| queue),
+                &mut |calls| out.take(calls),
+            )
+            .map(|()| Vec::new()),
+            None => hc::call_variants(
+                &walker_reads,
+                &header,
+                &traversal,
+                &arguments,
+                &annotator,
+                &mut contig_bases,
+                &mut random,
+                assembly_variants.as_ref().map(|(_, queue)| queue),
+            ),
+        }
+    };
+    drop(random);
+    // A failure mid-traversal still writes what came before it, and the writer's own refusal of
+    // those records, raised as it closes, is what the run reports.
+    let (mut written, failure) = match called {
+        Ok(calls) => (calls, None),
+        // Before the VCF writer exists: the run ends with nothing more written.
+        Err(error) if error.at_startup && !spark_task_failure(spark, &error.message) => {
+            return Err(Thrown::non_user(
+                java_class_name(&error.class),
+                error.message,
+            ));
+        }
+        Err(error) if spark_task_failure(spark, &error.message) => {
+            eprintln!("ERROR Executor - Exception in task 0.0 in stage 0.0 (TID 0)");
+            return Err(Thrown::non_user(
+                "org.apache.spark.SparkException",
+                error.message,
+            ));
+        }
+        Err(error) => (
+            {
+                // The side outputs failed to close: the reference's VCF is its header alone.
+                if let (true, Some(out)) = (error.closing, &mut streamed) {
+                    out.discard();
+                }
+                error.calls_before
+            },
+            // A `UserException` is reported as a user error, by its message alone.
+            Some(if let Some(thrown) = refused.take() {
+                thrown
+            } else if error.class.contains("UserException") {
+                Thrown::user(error.message)
+            } else {
+                Thrown::non_user(java_class_name(&error.class), error.message)
+            }),
+        ),
+    };
+
     // `--debug-assembly-variants-out`: `makeVCFHeader` without the tool's default lines and without
     // genotypes, then the queue, indexed on the fly, written as the engine shuts down.
     if let Some((path, queue)) = &assembly_variants {
@@ -1795,21 +1826,13 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             ),
         )?;
     }
+    if let Some(out) = streamed {
+        out.finish()?;
+        return failure.map_or(Ok(None), Err);
+    }
     // `GVCFWriter`: the reference records combined into GQ-band blocks.
-    if emit_mode == "GVCF" {
-        let bands: Vec<i32> = arguments_or_default_bands(parser);
-        let partitions = gatk_tools::gvcf_blocks::parse_partitions(&bands).map_err(|message| {
-            Thrown::command_line(format!(
-                "Argument GQBands has a bad value: are malformed: {message}"
-            ))
-        })?;
-        gatk_tools::gvcf_blocks::add_ranges_to_header(&mut vcf_header, &partitions);
-        let mut combiner = gatk_tools::gvcf_blocks::BlockCombiner::new(
-            partitions,
-            // `VariantsSparkSink` builds its `GVCFWriter` without the argument.
-            !spark && flag(parser, "floor-blocks"),
-            None,
-        );
+    let mut vcf_header = vcf_header;
+    if let Some(mut combiner) = gvcf_combiner(parser, &emit_mode, spark, &mut vcf_header)? {
         let mut combined = Vec::new();
         for vc in written {
             combiner
@@ -1855,6 +1878,158 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         return Err(failure);
     }
     Ok(None)
+}
+
+/// `GVCFWriter`'s GQ bands, added to the header, and the combiner that folds the reference
+/// records into their blocks: `None` unless `-ERC GVCF`.
+fn gvcf_combiner(
+    parser: &Parser,
+    emit_mode: &str,
+    spark: bool,
+    vcf_header: &mut VcfHeader,
+) -> Result<Option<gatk_tools::gvcf_blocks::BlockCombiner>, Thrown> {
+    if emit_mode != "GVCF" {
+        return Ok(None);
+    }
+    let bands: Vec<i32> = arguments_or_default_bands(parser);
+    let partitions = gatk_tools::gvcf_blocks::parse_partitions(&bands).map_err(|message| {
+        Thrown::command_line(format!(
+            "Argument GQBands has a bad value: are malformed: {message}"
+        ))
+    })?;
+    gatk_tools::gvcf_blocks::add_ranges_to_header(vcf_header, &partitions);
+    Ok(Some(gatk_tools::gvcf_blocks::BlockCombiner::new(
+        partitions,
+        // `VariantsSparkSink` builds its `GVCFWriter` without the argument.
+        !spark && flag(parser, "floor-blocks"),
+        None,
+    )))
+}
+
+/// HaplotypeCaller's VCF written as the regions' calls arrive (#1452): the bytes, md5 and index
+/// the held path writes, and its refusals in its order. The GQ bands' refusal comes first, then
+/// the combiner's, then the encoder's, and a refusal leaves the output untouched, as when the
+/// held text was refused before it was written.
+struct StreamedVcf<'a> {
+    parser: &'a Parser,
+    output: &'a str,
+    header: &'a VcfHeader,
+    encoder: htsjdk_vcf::encoder::VcfEncoder<'a>,
+    sites_only: bool,
+    /// `Err` is the GQ bands' refusal.
+    combiner: Result<Option<gatk_tools::gvcf_blocks::BlockCombiner>, Thrown>,
+    combining: Option<Thrown>,
+    /// The encoder's refusal; the combiner still sees every record, as it saw them all first.
+    encoding: Option<Thrown>,
+    /// Opened at the first record, so a run that fails before any writes nothing.
+    stream: Option<super::vcf_stream::VcfStream>,
+    line: String,
+}
+
+impl<'a> StreamedVcf<'a> {
+    fn new(
+        parser: &'a Parser,
+        output: &'a str,
+        header: &'a VcfHeader,
+        combiner: Result<Option<gatk_tools::gvcf_blocks::BlockCombiner>, Thrown>,
+    ) -> Self {
+        StreamedVcf {
+            parser,
+            output,
+            header,
+            encoder: htsjdk_vcf::encoder::VcfEncoder::new(header)
+                .with_missing_fields(htsjdk_vcf::encoder::MissingFields::Refuse),
+            sites_only: flag(parser, "sites-only-vcf-output"),
+            combiner,
+            combining: None,
+            encoding: None,
+            stream: None,
+            line: String::new(),
+        }
+    }
+
+    /// A region's calls.
+    fn take(&mut self, calls: Vec<htsjdk_vcf::variant::VariantContext>) {
+        if self.combining.is_some() {
+            return;
+        }
+        let ready = match &mut self.combiner {
+            Err(_) => return,
+            Ok(None) => calls,
+            Ok(Some(combiner)) => {
+                let mut ready = Vec::new();
+                for vc in calls {
+                    if let Err(error) = combiner.submit(vc) {
+                        self.combining = Some(Thrown::non_user(PORT_FAILURE, format!("{error:?}")));
+                        return;
+                    }
+                    ready.extend(combiner.drain());
+                }
+                ready
+            }
+        };
+        self.write(ready);
+    }
+
+    fn write(&mut self, records: Vec<htsjdk_vcf::variant::VariantContext>) {
+        if self.encoding.is_some() {
+            return;
+        }
+        for mut record in records {
+            if self.sites_only {
+                record.genotypes = Vec::new().into();
+            }
+            if let Err(error) = self.encoder.encode_into(&record, &mut self.line) {
+                self.encoding = Some(super::encode_refusal(error));
+                return;
+            }
+            self.line.push('\n');
+            let (parser, output, header) = (self.parser, self.output, self.header);
+            self.stream
+                .get_or_insert_with(|| {
+                    super::vcf_stream::VcfStream::open(parser, output, &header.write())
+                })
+                .write_line(&self.line);
+            self.line.clear();
+        }
+    }
+
+    /// What was written goes, as if no call had been made.
+    fn discard(&mut self) {
+        if let Some(stream) = self.stream.take() {
+            stream.abandon();
+        }
+        if let Ok(combiner) = &mut self.combiner {
+            *combiner = None;
+        }
+        (self.combining, self.encoding) = (None, None);
+    }
+
+    fn finish(mut self) -> Result<(), Thrown> {
+        if let (Ok(Some(combiner)), None) = (&mut self.combiner, &self.combining) {
+            combiner.end_of_input();
+            let rest = combiner.drain();
+            self.write(rest);
+        }
+        let bands = std::mem::replace(&mut self.combiner, Ok(None)).err();
+        if let Some(refusal) = bands.or(self.combining.take()).or(self.encoding.take()) {
+            return Err(refusal);
+        }
+        let (parser, output, header) = (self.parser, self.output, self.header);
+        self.stream
+            .take()
+            .unwrap_or_else(|| super::vcf_stream::VcfStream::open(parser, output, &header.write()))
+            .finish()
+    }
+}
+
+/// A run that ends early leaves no partial file behind.
+impl Drop for StreamedVcf<'_> {
+    fn drop(&mut self) {
+        if let Some(stream) = self.stream.take() {
+            stream.abandon();
+        }
+    }
 }
 
 /// `--gvcf-gq-bands`, which defaults to every GQ from 1 to 60 and then 70, 80, 90 and 99.
