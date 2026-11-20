@@ -1,0 +1,63 @@
+# Scratch: HtsgetReader against GATK on real x86-64 and arm64, all cores and two. Not for main.
+name: HtsgetReader bench
+on:
+  push:
+    branches: [perf/htsgetreader-bench]
+jobs:
+  bench:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq nasm samtools
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.1"
+      - name: The port, before (origin/main) and after (this branch's parent)
+        run: |
+          git worktree add ../after HEAD~1
+          git worktree add ../before origin/main
+          (cd ../after && cargo build --release -p gatk-cli --bin gatk --target-dir ../t && cp ../t/release/gatk ../new)
+          (cd ../before && cargo build --release -p gatk-cli --bin gatk --target-dir ../t && cp ../t/release/gatk ../old)
+      - name: The oracle image, native
+        run: docker build -q -t gatk-rs-oracle:4.7.0.0 tools/oracle
+      - name: A 1 GB BAM and the pinned htsget-rs server
+        run: |
+          mkdir -p bench-work/htsget/data
+          python3 bench/make_bam.py 5000000 | samtools view -b -o bench-work/htsget/data/big.bam -
+          samtools index bench-work/htsget/data/big.bam
+          ls -la bench-work/htsget/data
+          cd bench-work/htsget
+          printf '%s\n' 'locations = "file://data"' 'ticket_server.addr = "0.0.0.0:8080"' 'ticket_server.tls.key = "key.pem"' \
+            'ticket_server.tls.cert = "cert.pem"' 'data_server.addr = "0.0.0.0:8081"' 'data_server.local_path = "data"' \
+            'data_server.ticket_origin = "http://htsget:8081/"' > config.toml
+          docker run --rm -v $PWD:/w -w /w gatk-rs-oracle:4.7.0.0 "openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 2 -subj /CN=htsget -addext subjectAltName=DNS:htsget -addext basicConstraints=critical,CA:FALSE && keytool -importcert -noprompt -alias htsget -file cert.pem -keystore trust.p12 -storetype PKCS12 -storepass changeit && chmod -R a+rX /w"
+          docker network create htsget-bench
+          docker run -d --name htsget --network htsget-bench --network-alias htsget -v $PWD:/work/htsget:ro -w /work/htsget \
+            ghcr.io/umccr/htsget-rs@sha256:4aac1aa8ddc1aa13ecd62f8ccd2ea941cfe3d1f08ea193dc056f49076c423098 htsget-axum --config config.toml
+          docker run --rm --network htsget-bench -v $PWD:/work/htsget:ro gatk-rs-oracle:4.7.0.0 \
+            "curl -sf --retry 30 --retry-delay 1 --retry-all-errors --cacert /work/htsget/cert.pem https://htsget:8080/reads/big | head -c 400"
+      - name: Bench, all cores
+        run: bash bench/bench.sh ../old ../new all all-cores.json
+      - name: Bench, two cores
+        run: bash bench/bench.sh ../old ../new 2 two-cores.json
+      - name: Summary
+        if: always()
+        run: |
+          grep -c . bench-work/sha256.txt && sort bench-work/sha256.txt | awk '{print $1, $2, $3}' | uniq -c -f2 | tee -a $GITHUB_STEP_SUMMARY
+          python3 bench/summary.py all-cores.json two-cores.json | tee -a $GITHUB_STEP_SUMMARY
+          nproc; grep -m1 -o -E 'avx512f|avx2' /proc/cpuinfo | sort -u; lscpu | grep -E 'Model name|Flags' | cut -c1-120
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: htsget-bench-${{ matrix.runner }}
+          path: |
+            all-cores.json
+            two-cores.json
+            bench-work/sha256.txt
