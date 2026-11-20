@@ -1,0 +1,99 @@
+name: HaplotypeCaller per architecture (scratch, PR #1467)
+
+# Temporary: GATK 4.7.0.0, main and c/streaming-regions on the same chr20 of NA12878 30x, one
+# after another on one runner, at one thread each. Not for merging.
+
+on:
+  push:
+    branches: [c/streaming-regions-bench]
+  workflow_dispatch:
+
+jobs:
+  bench:
+    name: "${{ matrix.runner }}"
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: c/streaming-regions
+          path: pr
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          path: main
+
+      - name: Tools
+        run: |
+          sudo apt-get update -qq || echo "apt refresh incomplete"
+          sudo apt-get install -y -qq nasm samtools time
+          lscpu | grep -E "Model name|Architecture|^CPU\(s\)|Flags" | cut -c1-400
+          free -g
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.1"
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Build both ports
+        run: |
+          (cd pr && cargo build --release -p gatk-cli) && cp pr/target/release/gatk gatk-pr
+          (cd main && cargo build --release -p gatk-cli) && cp main/target/release/gatk gatk-main
+
+      - name: GATK 4.7.0.0
+        run: |
+          curl -sSL -o gatk.zip https://github.com/broadinstitute/gatk/releases/download/4.7.0.0/gatk-4.7.0.0.zip
+          unzip -q gatk.zip && ls gatk-4.7.0.0/*local.jar
+
+      - name: chr20 of NA12878 30x
+        run: |
+          REF=https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta
+          CRAM=https://ftp-trace.ncbi.nlm.nih.gov/1000genomes/ftp/1000G_2504_high_coverage/data/ERR3239334/NA12878.final.cram
+          samtools faidx $REF chr20 > chr20.fasta
+          samtools faidx chr20.fasta
+          samtools dict -o chr20.dict chr20.fasta
+          samtools view -@ 4 -T chr20.fasta -b -o NA12878.chr20.bam $CRAM chr20
+          samtools index NA12878.chr20.bam
+          ls -la NA12878.chr20.bam chr20.fasta
+
+      - name: Measure
+        run: |
+          JAR=$(ls gatk-4.7.0.0/*local.jar)
+          row() { # label region build
+            out=$1-$3.vcf
+            case $3 in
+              java) cmd="java -Xmx12g -jar $JAR HaplotypeCaller --native-pair-hmm-threads 1" ;;
+              *) cmd="./gatk-$3 HaplotypeCaller" ;;
+            esac
+            /usr/bin/time -v $cmd -R chr20.fasta -I NA12878.chr20.bam -L $2 -O $out > $1-$3.log 2> $1-$3.err
+            code=$?
+            user=$(awk -F': ' '/User time/{print $2}' $1-$3.err)
+            sys=$(awk -F': ' '/System time/{print $2}' $1-$3.err)
+            wall=$(awk -F': ' '/Elapsed/{print $2}' $1-$3.err)
+            rss=$(awk -F': ' '/Maximum resident/{printf "%d MB", $2/1024}' $1-$3.err)
+            md5=$( [ -f $out ] && grep -v '^##GATKCommandLine' $out | grep -v '^##source' | md5sum | cut -c1-12 || echo none)
+            printf "| %s | %s | %s | %s | %s s | %s | %s |\n" "$1" "$3" "$code" "$rss" "$(echo "$user + $sys" | bc)" "$wall" "$md5" | tee -a table.md
+            grep -m1 -iE "pairhmm|using .* implementation" $1-$3.err | head -1 || true
+          }
+          echo "| region | build | exit | peak RSS | CPU (user+sys) | wall | body md5 |" > table.md
+          echo "|---|---|---|---|---|---|---|" >> table.md
+          for b in java pr main; do row 1Mb chr20:30000000-31000000 $b; done
+          for b in java pr main; do row 5Mb chr20:10000000-15000000 $b; done
+          grep -h "PairHMM\|Deflater\|Inflater" 1Mb-java.err | head -5
+          cat table.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: bench-${{ matrix.runner }}
+          path: |
+            table.md
+            *.err
