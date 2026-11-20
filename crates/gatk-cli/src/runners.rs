@@ -12572,8 +12572,31 @@ pub(crate) fn recalibration_table_over(
     }
     let mut known_sites = Vec::new();
     for path in &sites_paths {
-        let text = std::fs::read_to_string(path)
+        let bytes = std::fs::read(path)
             .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(path, false)))?;
+        // A bgzipped VCF (`dbsnp.vcf.gz`, the best-practices form) is inflated first. Reading it as
+        // UTF-8 failed, and the failure was reported as a missing file (#1453).
+        let text = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
+            if !std::path::Path::new(&format!("{path}.tbi")).exists() {
+                return Err(Thrown::user(format!(
+                    "An index is required but was not found for file {}. Support for \
+                     unindexed block-compressed files has been temporarily disabled. Try running \
+                     IndexFeatureFile on the input.",
+                    java_absolute_path(path)
+                )));
+            }
+            htsjdk_bgzf::read::decompress_all(&bytes)
+                .ok()
+                .and_then(|bytes| String::from_utf8(bytes).ok())
+                .ok_or_else(|| {
+                    Thrown::non_user(
+                        gatk_tools::read_walker_refusal::SAM_FORMAT,
+                        format!("{path} is not a block compressed file"),
+                    )
+                })?
+        } else {
+            String::from_utf8_lossy(&bytes).into_owned()
+        };
         // The codec is chosen by the file's NAME, which is what `FeatureManager` does. Neither is
         // read as an interval argument: these are features, so they are not checked against the
         // reference's dictionary and a site on a contig the reference does not carry is simply a

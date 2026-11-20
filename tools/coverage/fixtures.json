@@ -2257,6 +2257,9 @@
         "population VCF the corpus already carries and a BED beside it. The reference's own two",
         "runs over them produce the same table, so the two values are comparable rather than",
         "merely different.",
+        "sites.vcf.gz is the third: block-compressed and tabix-indexed, the form best practices",
+        "hand it (dbSNP, Mills). The port read every known-sites file as UTF-8 text and refused a",
+        "bgzipped one as a missing file; chr20 at scale found it (#1453).",
         "--reference has both fastas: other.fasta carries a contig the reads do not."
       ],
       "--input": [
@@ -2269,7 +2272,8 @@
       ],
       "--known-sites": [
         "/work/fixtures/population.vcf",
-        "/work/fixtures/known.bed"
+        "/work/fixtures/known.bed",
+        "/work/fixtures/sites.vcf.gz"
       ],
       "--intervals": [
         "chr1:1-6000",
