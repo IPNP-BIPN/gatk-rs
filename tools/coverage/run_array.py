@@ -334,8 +334,10 @@ def read_output(out_dir, row_args=()):
             parts.append(f"{name}: {png_shape(raw)}")
             continue
         if name.endswith(".scorer.pkl"):
-            digest = hashlib.sha256(scorer_masked(raw)).hexdigest()
-            parts.append(f"{name}: SCORER sha256={digest} bytes={len(raw)} (frames and the script's digits masked)")
+            # The masked length: the script's random digits are not always the same count.
+            masked = scorer_masked(raw)
+            digest = hashlib.sha256(masked).hexdigest()
+            parts.append(f"{name}: SCORER sha256={digest} bytes={len(masked)} (frames and the script's digits masked)")
             continue
         if name.endswith(".img"):
             masked = bwa_image_masked(raw)
