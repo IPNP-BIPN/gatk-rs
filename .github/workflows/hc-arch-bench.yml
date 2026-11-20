@@ -1,0 +1,108 @@
+name: HaplotypeCaller against GATK, per architecture
+
+# A measurement branch for PR #1474, not a gate: GATK 4.7 and the port on the same chr20 30x data
+# (tools/speed/scale.json, from #1465) on x86-64 and arm64 runners. It reports wall, CPU, peak RSS
+# and each output's md5, so the bytes can be compared across machines.
+
+on:
+  push:
+    branches: [bench/hc-arch]
+  workflow_dispatch:
+
+jobs:
+  data:
+    name: The chr20 reads and reference
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - id: cache
+        uses: actions/cache@v6
+        with:
+          path: /tmp/scale-data
+          key: hc-arch-data-${{ hashFiles('tools/speed/scale.json') }}
+      - name: Derive and verify the five files HaplotypeCaller reads
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          python3 - <<'EOF'
+          import json
+          spec = json.load(open("tools/speed/scale.json"))
+          keep = {"chr20.fasta", "chr20.fasta.fai", "chr20.dict", "NA12878.chr20.bam", "NA12878.chr20.bam.bai"}
+          spec["files"] = [f for f in spec["files"] if f["name"] in keep]
+          json.dump(spec, open("tools/speed/scale.json", "w"), indent=1)
+          EOF
+          python3 tools/speed/scale_data.py /tmp/scale-data
+      - uses: actions/upload-artifact@v7
+        with:
+          name: hc-arch-data
+          path: /tmp/scale-data
+          retention-days: 3
+
+  oracle:
+    name: The GATK 4.7 jar from the pinned oracle image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - id: cache
+        uses: actions/cache@v6
+        with:
+          path: /tmp/oracle-image.tar
+          key: gatk-rs-oracle-${{ hashFiles('tools/oracle/**') }}
+      - name: Build the oracle image
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          docker build --platform linux/amd64 -t gatk-rs-oracle:4.7.0.0 tools/oracle
+          docker save gatk-rs-oracle:4.7.0.0 -o /tmp/oracle-image.tar
+      - name: Take the jar out
+        run: |
+          docker load -i /tmp/oracle-image.tar
+          id=$(docker create gatk-rs-oracle:4.7.0.0)
+          mkdir -p /tmp/jar
+          docker cp "$id:/opt/gatk/gatk-package-4.7.0.0-local.jar" /tmp/jar/gatk.jar
+          sha256sum /tmp/jar/gatk.jar
+      - uses: actions/upload-artifact@v7
+        with:
+          name: hc-arch-jar
+          path: /tmp/jar/gatk.jar
+          retention-days: 3
+
+  bench:
+    name: ${{ matrix.runner }}
+    needs: [data, oracle]
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: nasm and time
+        run: |
+          sudo apt-get update -qq || true
+          sudo apt-get install -y -qq nasm time
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release -p gatk-cli
+      - uses: actions/download-artifact@v8
+        with:
+          name: hc-arch-data
+          path: /tmp/scale-data
+      - uses: actions/download-artifact@v8
+        with:
+          name: hc-arch-jar
+          path: /tmp/jar
+      - name: Measure
+        run: bash tools/speed/hc_arch.sh /tmp/scale-data /tmp/jar/gatk.jar target/release/gatk /tmp/out
+      - if: always()
+        run: cat /tmp/out/table.md >> "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hc-arch-${{ matrix.runner }}
+          path: |
+            /tmp/out/table.md
+            /tmp/out/*.log
+          retention-days: 7
