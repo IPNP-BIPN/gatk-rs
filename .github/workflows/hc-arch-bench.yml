@@ -65,6 +65,7 @@ jobs:
           ls -la NA12878.chr20.bam chr20.fasta
 
       - name: Measure
+        shell: bash {0}
         run: |
           JAR=$(ls gatk-4.7.0.0/*local.jar)
           row() { # label region build
@@ -73,8 +74,7 @@ jobs:
               java) cmd="java -Xmx12g -jar $JAR HaplotypeCaller --native-pair-hmm-threads 1" ;;
               *) cmd="./gatk-$3 HaplotypeCaller" ;;
             esac
-            /usr/bin/time -v $cmd -R chr20.fasta -I NA12878.chr20.bam -L $2 -O $out > $1-$3.log 2> $1-$3.err
-            code=$?
+            /usr/bin/time -v $cmd -R chr20.fasta -I NA12878.chr20.bam -L $2 -O $out > $1-$3.log 2> $1-$3.err && code=0 || code=$?
             user=$(awk -F': ' '/User time/{print $2}' $1-$3.err)
             sys=$(awk -F': ' '/System time/{print $2}' $1-$3.err)
             wall=$(awk -F': ' '/Elapsed/{print $2}' $1-$3.err)
