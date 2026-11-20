@@ -57,6 +57,9 @@ pub fn argument(parser: &Parser, long_name: &str) -> Option<String> {
         .and_then(|definition| match &definition.value {
             Value::Tagged { value, .. } => Some(value.clone()),
             Value::Str(text) => Some(text.clone()),
+            // An enum's constant is its name; without this, `--restrict-alleles-to` and
+            // `--read-validation-stringency` read as never given.
+            Value::Enum(name) => Some(name.clone()),
             _ => None,
         })
 }
@@ -16703,13 +16706,9 @@ pub(crate) fn dictionary_from_any(
 /// is filtered, subset, filtered again, no-called and dropped from, and joins the queue rather
 /// than the file.
 ///
-/// # What this refuses rather than approximates
-///
-/// Six argument groups reach behaviour no static in this repository reproduces: a pedigree and
-/// its Mendelian violations, the two random fractions, the GenomicsDB-only decoding, the
-/// concordance tracks, `--variant-output-filtering` and `--fully-decode`. Each is refused when it
-/// is SET, which is a port limitation with the tool's name on it rather than a silent difference:
-/// a run that ignored `--select-random-fraction 0.5` would answer a question it was not asked.
+/// The random fraction draws from `Utils.getRandomGenerator()`, which is seeded once per JVM, so
+/// it is [`gatk_engine::java_random::JavaRandom::gatk`] here and one draw per record that reaches
+/// it reproduces the reference's selection.
 pub fn select_variants(parser: &Parser) -> Outcome {
     let VariantWalkerStart {
         input,
@@ -16717,8 +16716,6 @@ pub fn select_variants(parser: &Parser) -> Outcome {
         codec: _,
         intervals,
     } = variant_walker_startup(parser, "SelectVariants")?;
-
-    select_variants_limits(parser)?;
 
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
@@ -16764,8 +16761,11 @@ pub fn select_variants(parser: &Parser) -> Outcome {
         preserve_alleles: flag(parser, "preserve-alleles"),
         keep_original_chr_counts: flag(parser, "keep-original-ac"),
         keep_original_depth: flag(parser, "keep-original-dp"),
+        remove_fraction_genotypes: fraction(parser, "remove-fraction-genotypes", 0.0),
     };
     let filter_arguments = select_variants_filters(parser)?;
+    let tracks = select_variants_tracks(parser, &selection.samples)?;
+    let mut random = gatk_engine::java_random::JavaRandom::gatk();
     let output_arguments = gatk_tools::select_variants::OutputArguments {
         set_filtered_genotypes_to_no_call: flag(parser, "set-filtered-gt-to-nocall"),
         info_annotations_to_drop: arguments(parser, "drop-info-annotation"),
@@ -16866,7 +16866,22 @@ pub fn select_variants(parser: &Parser) -> Outcome {
         }
 
         let bridged = crate::variant_bridge::to_engine(original);
-        if !gatk_tools::select_variants::keeps_before_subset(
+        if !gatk_tools::select_variants::passes_variant_filter(
+            &bridged.record,
+            &bridged.filter_record,
+            &filter_arguments,
+        ) {
+            continue;
+        }
+        if !tracks.keeps(
+            &bridged.record,
+            &selection,
+            filter_arguments.exclude_filtered,
+            &mut random,
+        ) {
+            continue;
+        }
+        if !gatk_tools::select_variants::keeps_after_tracks(
             &bridged.record,
             &bridged.filter_record,
             &filter_arguments,
@@ -17048,6 +17063,130 @@ impl gatk_engine::variant_source::Located for LocatedRecord {
     }
 }
 
+/// The gates `applyFirstRoundOfFiltering` runs between `--exclude-filtered` and the allele
+/// restriction, in its order: the random fraction, the Mendelian violations, then the two tracks.
+struct SelectTracks {
+    fraction_to_keep: f64,
+    /// The children judged, when `--mendelian-violation` is set.
+    families: Option<Vec<gatk_tools::select_variants::Family>>,
+    invert_mendelian: bool,
+    mendelian_threshold: f64,
+    discordance: Option<Vec<gatk_tools::select_variants::Record>>,
+    concordance: Option<Vec<gatk_tools::select_variants::Record>>,
+}
+
+impl SelectTracks {
+    fn keeps(
+        &self,
+        record: &gatk_tools::select_variants::Record,
+        selection: &gatk_tools::select_variants::SampleSelection,
+        exclude_filtered: bool,
+        random: &mut gatk_engine::java_random::JavaRandom,
+    ) -> bool {
+        use gatk_tools::select_variants as sv;
+        if self.fraction_to_keep < 1.0 && random.next_double() >= self.fraction_to_keep {
+            return false;
+        }
+        // `invertLogic(countFamilyViolations(...) == 0, invert)` drops the record.
+        if let Some(families) = &self.families {
+            if sv::has_mendelian_violation(record, families, self.mendelian_threshold)
+                == self.invert_mendelian
+            {
+                return false;
+            }
+        }
+        // `featureContext.getValues(track)`: the track's records overlapping this one.
+        let overlapping = |track: &[sv::Record]| -> Vec<sv::Record> {
+            track
+                .iter()
+                .filter(|comp| {
+                    comp.variant.contig == record.variant.contig
+                        && comp.variant.start <= record.variant.stop
+                        && comp.variant.stop >= record.variant.start
+                })
+                .cloned()
+                .collect()
+        };
+        let comparison = sv::ComparisonArguments {
+            exclude_filtered,
+            ..Default::default()
+        };
+        if let Some(track) = &self.discordance {
+            if !sv::is_discordant(record, &overlapping(track), selection, &comparison) {
+                return false;
+            }
+        }
+        if let Some(track) = &self.concordance {
+            if !sv::is_concordant(record, &overlapping(track), selection, &comparison) {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+/// What `onTraversalStart` reads for the gates: the PED only under `--mendelian-violation`, and
+/// with no PED an empty database, so every record is judged free of violations.
+fn select_variants_tracks(parser: &Parser, samples: &[String]) -> Result<SelectTracks, Thrown> {
+    let families = if flag(parser, "mendelian-violation") {
+        let db = match argument(parser, "pedigree") {
+            Some(path) => {
+                let text = std::fs::read_to_string(&path).map_err(|_| {
+                    Thrown::user(format!(
+                        "Couldn't read file {path}. Error was: Could not read sample file"
+                    ))
+                })?;
+                let source = format!(
+                    "java.io.InputStreamReader@{:x}",
+                    gatk_engine::java_hash::string_hash_code(&path) as u32
+                );
+                gatk_engine::sample_db::read_pedigree(&text, &source)
+                    .map_err(|error| Thrown::non_user(error.class, error.message))?
+            }
+            None => gatk_engine::sample_db::SampleDb::default(),
+        };
+        Some(
+            db.children_in(samples)
+                .into_iter()
+                .map(|child| {
+                    (
+                        child.maternal_id.clone(),
+                        child.paternal_id.clone(),
+                        child.id.clone(),
+                    )
+                })
+                .collect(),
+        )
+    } else {
+        None
+    };
+    let track = |name: &str| -> Result<Option<Vec<gatk_tools::select_variants::Record>>, Thrown> {
+        let Some(path) = argument(parser, name) else {
+            return Ok(None);
+        };
+        let (_, text) = open_feature_input(&path)?;
+        let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+            failure: Failure::User,
+            exception: "htsjdk.tribble.TribbleException",
+            message: Some(failure.error.message()),
+        })?;
+        Ok(Some(
+            file.records
+                .iter()
+                .map(|record| crate::variant_bridge::to_engine(record).record)
+                .collect(),
+        ))
+    };
+    Ok(SelectTracks {
+        fraction_to_keep: fraction(parser, "select-random-fraction", 1.0),
+        families,
+        invert_mendelian: flag(parser, "invert-mendelian-violation"),
+        mendelian_threshold: fraction(parser, "mendelian-violation-qual-threshold", 0.0),
+        discordance: track("discordance")?,
+        concordance: track("concordance")?,
+    })
+}
+
 /// A `SelectError` as the reference throws it.
 fn select_error(error: gatk_tools::select_variants::SelectError) -> Thrown {
     // Two of the three are not `UserException`s: an expression that does not compile is an
@@ -17119,59 +17258,6 @@ fn fraction(parser: &Parser, long_name: &str, default: f64) -> f64 {
     scalar(parser, long_name)
         .and_then(|text| text.parse().ok())
         .unwrap_or(default)
-}
-
-/// The six argument groups `SelectVariants` has and this port does not.
-///
-/// Each is refused when it is SET rather than ignored: a run that quietly dropped
-/// `--select-random-fraction 0.5` would answer a question it was not asked, and a refusal that
-/// names the port is the honest form of a gap (`gatk_rs::PortLimitation`).
-fn select_variants_limits(parser: &Parser) -> Result<(), Thrown> {
-    let mut refused: Vec<&str> = Vec::new();
-    if argument(parser, "pedigree").is_some() {
-        refused.push("--pedigree");
-    }
-    // `--call-genotypes` is a GenomicsDB export option, which the port reads for `gendb://` alone.
-    let genomicsdb = argument(parser, "variant")
-        .is_some_and(|variant| genomicsdb_query_runner::genomicsdb_path(&variant).is_some());
-    for flagged in [
-        "mendelian-violation",
-        "invert-mendelian-violation",
-        "call-genotypes",
-    ] {
-        if flag(parser, flagged) && !(genomicsdb && flagged == "call-genotypes") {
-            refused.push(match flagged {
-                "mendelian-violation" => "--mendelian-violation",
-                "invert-mendelian-violation" => "--invert-mendelian-violation",
-                _ => "--call-genotypes",
-            });
-        }
-    }
-    if fraction(parser, "select-random-fraction", 1.0) != 1.0 {
-        refused.push("--select-random-fraction");
-    }
-    if fraction(parser, "remove-fraction-genotypes", 0.0) != 0.0 {
-        refused.push("--remove-fraction-genotypes");
-    }
-    if argument(parser, "concordance").is_some() {
-        refused.push("--concordance");
-    }
-    if argument(parser, "discordance").is_some() {
-        refused.push("--discordance");
-    }
-    if refused.is_empty() {
-        return Ok(());
-    }
-    Err(Thrown::non_user(
-        PORT_LIMITATION,
-        format!(
-            "SelectVariants in this port does not implement {}: a pedigree's Mendelian \
-             violations, the two random fractions, the concordance tracks and the genotype caller \
-             each reach behaviour no measured static reproduces, and answering without them would \
-             be a different answer rather than a refusal",
-            refused.join(", ")
-        ),
-    ))
 }
 
 /// `##GATKCommandLine=<ID=...,CommandLine="...",Version=...,Date=...>`, or nothing.

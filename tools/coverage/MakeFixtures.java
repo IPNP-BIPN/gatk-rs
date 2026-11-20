@@ -3542,6 +3542,45 @@ public class MakeFixtures {
         Files.writeString(shifted, shiftedPopulationVcf(), StandardCharsets.UTF_8);
         new org.broadinstitute.hellbender.tools.IndexFeatureFile()
                 .instanceMain(new String[] {"-I", shifted.toString()});
+        // SelectVariants' pedigree, Mendelian and concordance arguments: a trio on reference.fasta's
+        // chr1, its PED, and a comparison track that agrees with it at some sites and not others.
+        Files.writeString(dir.resolve("sv_trio.ped"),
+                "fam1\tkid\tdad\tmom\t1\t0\nfam1\tdad\t0\t0\t1\t0\nfam1\tmom\t0\t0\t2\t0\n",
+                StandardCharsets.UTF_8);
+        for (final String[] file : new String[][] {
+                // pos, QUAL, dad, kid, mom, kid's GQ
+                {"sv_trio.vcf",
+                        "101 100 0/0 0/1 0/0 40", // de novo
+                        "201 100 0/1 0/1 0/0 40", // inherited
+                        "301 30 1/1 0/0 0/0 40", // hom-ref child of a hom-var father
+                        "401 100 0/0 0/1 0/0 10", // de novo under a quality threshold
+                        "501 100 ./. 1/1 0/0 40", // a no-called parent, which complete trios only never judge
+                        "601 100 0/1 1/1 0/1 40", // inherited
+                        "701 100 0/0 ./. 0/0 40", // child no-called
+                        "801 100 0/0 0/0 0/0 40"},
+                {"sv_trio_comp.vcf",
+                        "101 100 0/0 0/1 0/0 40", // agrees
+                        "201 100 0/1 0/0 0/0 40", // the child disagrees
+                        "301 30 1/1 0/0 0/0 40", // agrees
+                        "451 100 0/1 0/1 0/1 40", // a site the trio does not have
+                        "601 100 0/1 1/1 0/1 40"}}) { // agrees
+            final StringBuilder text = new StringBuilder("##fileformat=VCFv4.2\n");
+            text.append("##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n");
+            text.append("##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype quality\">\n");
+            text.append("##contig=<ID=chr1,length=100000>\n");
+            text.append("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tdad\tkid\tmom\n");
+            for (int row = 1; row < file.length; row++) {
+                final String[] f = file[row].split(" ");
+                text.append("chr1\t").append(f[0]).append("\t.\tA\tC\t").append(f[1])
+                        .append("\tPASS\t.\tGT:GQ\t").append(f[2]).append(":40\t")
+                        .append(f[3]).append(':').append(f[5]).append('\t')
+                        .append(f[4]).append(":40\n");
+            }
+            final Path path = dir.resolve(file[0]);
+            Files.writeString(path, text.toString(), StandardCharsets.UTF_8);
+            new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                    .instanceMain(new String[] {"-I", path.toString()});
+        }
 
         // The bins as an interval LIST, which is the only way one `-L` value can name more than
         // one of them. `FilterIntervals` intersects the requested intervals with its inputs' by
