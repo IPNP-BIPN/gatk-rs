@@ -1,0 +1,64 @@
+# Throwaway: CountReads on SAM text and CRAM, GATK 4.7.0.0 vs the port, on x86-64 and arm64.
+# Lives only on the bench/countreads-sam-cram branch; numbers go into PR #1485.
+name: bench-countreads-arch
+on:
+  push:
+    branches: [bench/countreads-sam-cram]
+jobs:
+  bench:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: CPU
+        run: |
+          uname -m; nproc
+          grep -m1 -E "model name|CPU part" /proc/cpuinfo || true
+          lscpu | grep -iE "model name|vendor|flags" | cut -c1-400
+          for f in sse4_2 avx2 avx512f avx512bw asimd sve sve2; do grep -qw $f /proc/cpuinfo && echo "has $f" || echo "no $f"; done
+      - name: tools
+        run: |
+          sudo apt-get update -qq || true
+          sudo apt-get install -y -qq nasm samtools qemu-user
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.1"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: GATK 4.7.0.0
+        run: |
+          curl -fsSL -o gatk.zip https://github.com/broadinstitute/gatk/releases/download/4.7.0.0/gatk-4.7.0.0.zip
+          echo "d093d2693b1626361a413ca59d6d4a0bf968717f280a8fd9ce060b25eb2ed1db  gatk.zip" | sha256sum -c
+          unzip -q gatk.zip
+          java -version
+      - name: build the port (default release profile, no target flags)
+        run: cargo build --release -p gatk-cli
+      - name: input
+        run: |
+          python3 tools/speed/arch/make_input.py data 2400000
+          samtools view -@2 -b -o data/reads.bam data/reads.sam
+          samtools faidx data/ref.fasta
+          samtools dict -o data/ref.dict data/ref.fasta
+          samtools view -@2 -C -T data/ref.fasta --output-fmt-option version=3.0 -o data/reads.cram data/reads.bam
+          samtools index data/reads.cram
+          ls -la data
+      - name: time
+        run: |
+          sudo mkdir -p /work && sudo chown "$USER" /work
+          python3 tools/speed/arch/run.py "$PWD/data" "$PWD/gatk-4.7.0.0/gatk-package-4.7.0.0-local.jar" "$PWD/target/release/gatk" 3 | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: same bits on other x86-64 levels (QEMU, correctness only)
+        if: matrix.runner == 'ubuntu-24.04'
+        run: |
+          for cpu in qemu64 Nehalem Haswell; do
+            for args in "--input data/reads.sam" "--input data/reads.cram -R data/ref.fasta"; do
+              out=$(qemu-x86_64 -cpu $cpu target/release/gatk CountReads $args 2>/dev/null | tail -1)
+              echo "$cpu | $args | $out" | tee -a "$GITHUB_STEP_SUMMARY"
+              test "$out" = 2400000
+            done
+          done
