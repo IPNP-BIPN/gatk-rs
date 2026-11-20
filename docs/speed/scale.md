@@ -70,4 +70,42 @@ describe the port as it is before that refactor.
 
 ## The baseline
 
-Pending: the first `Speed at scale` run on x86-64.
+**Source.** `Speed at scale` run 44629287048, on commit `720773d1`, on GitHub's x86-64 runners.
+The runner was an AMD EPYC 9V74 (Zen 4, which has AVX-512; that run did not record the flag, and
+later runs do), 4 cores, 16 GiB. Only the prep group was measured. The other four groups failed
+before any step ran, because the data cache was evicted in the hours between jobs (the workflow
+now hands the data on as an artifact). The rest of the chain, and arm64, come with the next run.
+
+| step | reference wall | port wall | port / ref | reference CPU | port CPU | reference peak RSS | port peak RSS | bytes equal | CPU and RSS ≤ GATK |
+|---|---:|---:|---:|---:|---:|---:|---:|:-:|:-:|
+| MarkDuplicatesSpark | 471 s | 14 s (killed: out of memory) | - | 1771 s | 22 s | 4.45 GiB | 13.98 GiB | - | ❌ port did not finish |
+| MarkDuplicates | 88 s | 0 s (exit 2) | - | 135 s | 0 s | 4.20 GiB | 0.01 GiB | - | ❌ port did not finish |
+| BaseRecalibrator | 208 s | 4 s (exit 2) | - | 219 s | 14 s | 0.52 GiB | 8.05 GiB | - | ❌ port did not finish |
+| ApplyBQSR | 211 s | 15 s (killed: out of memory) | - | 325 s | 34 s | 0.46 GiB | 13.92 GiB | - | ❌ port did not finish |
+
+Why each port side stopped:
+
+- **MarkDuplicatesSpark** was killed at the 14 GiB limit after 14 s. GATK peaked at 4.45 GiB.
+- **MarkDuplicates** (Picard's): the port does not carry it yet ("MarkDuplicates is a GATK tool
+  that this port does not carry yet").
+- **BaseRecalibrator** refused the bgzipped `--known-sites`, a bug, fixed by #1472. It had already
+  reached 8.05 GiB, against GATK's 0.52 GiB.
+- **ApplyBQSR** was killed at 14 GiB after 15 s. GATK peaked at 0.46 GiB.
+
+Every step that reads the BAM loads it whole today. That is S.6's streaming refactor, not this
+benchmark's to fix.
+
+**The predictions, so far.**
+
+1. Memory: confirmed, and worse than predicted. Both steps predicted to die at 14 GiB died there,
+   and BaseRecalibrator was at 15 times GATK's peak before it stopped.
+2. VCF steps, 3. pair-HMM steps: not yet measured at scale.
+4. BaseRecalibrator and ApplyBQSR below 1x on wall clock: not testable; neither finished.
+5. Bytes: no x86-64 comparison yet, because no port step finished. The local smoke run on a 2 Mb
+   slice already found two divergences, VariantRecalibrator's `##contig` lines and
+   CollectReadCounts' `@SQ` `M5`/`UR`.
+
+**Every CPU.** The workflow runs the chain on x86-64 (`ubuntu-latest`) and on arm64
+(`ubuntu-24.04-arm`), both sides native: on arm64 the reference is GATK without GKL's x86 native
+code, as an ARM user runs it. Its last job compares every output's sha256 between the two CPUs,
+the port's and GATK's. The port's bytes must be the same everywhere.

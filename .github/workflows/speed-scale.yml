@@ -1,11 +1,13 @@
 name: Speed at scale
 
-# Milestone D (D2): the best-practices chain on chr20 of a 30x WGS (tools/speed/scale.json), the
-# reference and the port in the pinned container at equal thread counts, wall clock, CPU, peak RSS
-# and whether the output bytes agree. Kept out of ci.yml for the reasons speed.yml is, and more:
-# one run is hours of runner time. It runs by hand, nightly, and when its own files change.
-# Each group is one job; a step reads the REFERENCE's outputs of the steps it needs, carried
-# between jobs as artifacts, so both sides of every step get the same input.
+# Milestone S (S.7, #1453): the best-practices chain on chr20 of a 30x WGS (tools/speed/scale.json),
+# the reference and the port in the pinned container at equal thread counts, wall clock, CPU, peak
+# RSS and whether the output bytes agree. Kept out of ci.yml for the reasons speed.yml is, and
+# more: one run is hours of runner time. It runs by hand, nightly, and when its own files change.
+#
+# Once per CPU: x86-64 (ubuntu-latest) and arm64 (ubuntu-24.04-arm), each side native, so the
+# reference on arm64 is GATK as an ARM user runs it (GKL's native code is x86 only). The last job
+# checks that every output's sha256 is the same on both.
 
 on:
   workflow_dispatch:
@@ -22,29 +24,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  oracle-image:
-    name: The pinned oracle image
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - id: cache
-        uses: actions/cache@v6
-        with:
-          path: /tmp/oracle-image.tar
-          key: gatk-rs-oracle-${{ hashFiles('tools/oracle/**') }}
-
-      - name: Build the oracle image
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: |
-          docker build --platform linux/amd64 -t gatk-rs-oracle:4.7.0.0 tools/oracle
-          docker save gatk-rs-oracle:4.7.0.0 -o /tmp/oracle-image.tar
-
   data:
     name: The chr20 data, pinned by sha256
     runs-on: ubuntu-latest
-    outputs:
-      key: ${{ steps.key.outputs.key }}
     steps:
       - uses: actions/checkout@v7
 
@@ -53,8 +35,7 @@ jobs:
         run: |
           echo "key=scale-data-$(python3 -c "import json,hashlib;print(hashlib.sha256(json.dumps(json.load(open('tools/speed/scale.json'))['files'],sort_keys=True).encode()).hexdigest()[:16])")" >> "$GITHUB_OUTPUT"
 
-      - id: cache
-        uses: actions/cache@v6
+      - uses: actions/cache@v6
         with:
           path: /tmp/scale-data
           key: ${{ steps.key.outputs.key }}
@@ -62,69 +43,33 @@ jobs:
       - name: Derive the data and check every hash
         run: python3 tools/speed/scale_data.py /tmp/scale-data
 
-  port:
-    name: The port binary
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: nasm, which is what makes GKL's igzip exact rather than merely valid
-        run: |
-          sudo apt-get update -qq || echo "apt refresh incomplete; the install below is the gate"
-          sudo apt-get install -y -qq nasm
-
-      - uses: Swatinem/rust-cache@v2
-
-      - run: cargo build --release -p gatk-cli
-
+      # Handed to the jobs as an artifact: the cache can be evicted in the hours between jobs.
       - uses: actions/upload-artifact@v7
         with:
-          name: scale-port-binary
-          path: target/release/gatk
+          name: scale-data
+          path: /tmp/scale-data
           retention-days: 3
+          compression-level: 0
 
-  prep:
-    needs: [oracle-image, data, port]
-    uses: ./.github/workflows/speed-scale-group.yml
+  x86-64:
+    needs: data
+    uses: ./.github/workflows/speed-scale-arch.yml
     with:
-      group: prep
-      data-key: ${{ needs.data.outputs.key }}
+      arch: x86-64
+      runner: ubuntu-latest
+      platform: linux/amd64
 
-  haplotypecaller:
-    needs: [data, prep]
-    if: ${{ !cancelled() && needs.data.result == 'success' }}
-    uses: ./.github/workflows/speed-scale-group.yml
+  arm64:
+    needs: data
+    uses: ./.github/workflows/speed-scale-arch.yml
     with:
-      group: haplotypecaller
-      data-key: ${{ needs.data.outputs.key }}
+      arch: arm64
+      runner: ubuntu-24.04-arm
+      platform: linux/arm64
 
-  joint:
-    needs: [data, haplotypecaller]
-    if: ${{ !cancelled() && needs.data.result == 'success' }}
-    uses: ./.github/workflows/speed-scale-group.yml
-    with:
-      group: joint
-      data-key: ${{ needs.data.outputs.key }}
-
-  mutect2:
-    needs: [data, prep]
-    if: ${{ !cancelled() && needs.data.result == 'success' }}
-    uses: ./.github/workflows/speed-scale-group.yml
-    with:
-      group: mutect2
-      data-key: ${{ needs.data.outputs.key }}
-
-  cnv:
-    needs: [data, prep]
-    if: ${{ !cancelled() && needs.data.result == 'success' }}
-    uses: ./.github/workflows/speed-scale-group.yml
-    with:
-      group: cnv
-      data-key: ${{ needs.data.outputs.key }}
-
-  table:
-    name: One table
-    needs: [prep, haplotypecaller, joint, mutect2, cnv]
+  across:
+    name: The same bytes on every CPU
+    needs: [x86-64, arm64]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
@@ -132,19 +77,10 @@ jobs:
 
       - uses: actions/download-artifact@v8
         with:
-          pattern: scale-json-*
-          path: /tmp/groups
-          merge-multiple: true
+          pattern: scale-table-*
+          path: /tmp/tables
 
-      - name: Merge the groups
+      - name: Compare every output's sha256 between the CPUs
         run: |
-          python3 tools/speed/bench.py --merge /tmp/groups/scale-*.json --out /tmp/scale.json \
-            | tee /tmp/scale.txt
-          cat /tmp/scale.txt >> "$GITHUB_STEP_SUMMARY"
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: scale
-          path: |
-            /tmp/scale.json
-            /tmp/scale.txt
+          python3 tools/speed/bench.py --across /tmp/tables/*/scale-*.json | tee /tmp/across.txt
+          cat /tmp/across.txt >> "$GITHUB_STEP_SUMMARY"

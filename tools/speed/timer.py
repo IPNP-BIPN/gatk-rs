@@ -130,15 +130,24 @@ def main(spec_path):
     result = {"cold": runs}
     if spec.get("steady"):
         result["steady"] = steady(spec["steady"], spec["iterations"], timeout)
-    cpu = ""
+    cpu, flags = "", set()
     try:
-        for line in Path("/proc/cpuinfo").read_text().splitlines():
-            if line.startswith("model name"):
-                cpu = line.split(":", 1)[1].strip()
-                break
+        info = Path("/proc/cpuinfo").read_text()
     except OSError:
-        pass
-    result["host"] = {"cpu": cpu, "cores": os.cpu_count()}
+        info = ""
+    for line in info.splitlines():
+        key, _, value = line.partition(":")
+        if key.strip() == "model name" and not cpu:
+            cpu = value.strip()
+        if key.strip() in ("flags", "Features") and not flags:
+            flags = set(value.split())
+    if not cpu:
+        # An ARM /proc/cpuinfo names no model; lscpu decodes the part number (Neoverse-N2, ...).
+        lscpu = subprocess.run(["lscpu"], capture_output=True, text=True, check=False).stdout
+        cpu = next((l.split(":", 1)[1].strip() for l in lscpu.splitlines()
+                    if l.startswith("Model name")), "")
+    result["host"] = {"cpu": cpu, "cores": os.cpu_count(), "machine": os.uname().machine,
+                      "avx512": "avx512f" in flags}
     print(json.dumps(result))
 
 

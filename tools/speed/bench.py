@@ -572,7 +572,33 @@ def target(o, p):
     return "❌ neither"
 
 
+def host_line(host):
+    if not host:
+        return "host: unknown"
+    avx = {True: "AVX-512", False: "no AVX-512"}.get(host.get("avx512"), "AVX-512 unknown")
+    return f"host: {host.get('cpu') or 'unknown'}, {host.get('machine', '?')}, {host.get('cores')} cores, {avx}"
+
+
+def across(paths):
+    """The same step's files on different CPUs: every sha256 must agree, the port's and GATK's."""
+    documents = [json.loads(Path(p).read_text()) for p in paths]
+    print("| step | file | side | " + " | ".join(host_line(d.get("host")) for d in documents) + " |")
+    print("|---|---|---|" + "---|" * len(documents))
+    differ = 0
+    for step in sorted({s for d in documents for s in d["steps"]}):
+        names = sorted({f for d in documents for f in d["steps"].get(step, {}).get("files", {})})
+        for name in names:
+            for side in ("oracle", "port"):
+                digests = [d["steps"].get(step, {}).get("files", {}).get(name, {}).get(side) for d in documents]
+                if None in digests or len(set(digests)) > 1:
+                    differ += None not in digests
+                    print(f"| {step} | {name} | {side} | " + " | ".join((x or "-")[:12] for x in digests) + " |")
+    print(f"\n{differ} file(s) whose bytes differ between CPUs; - is a side with no file there")
+    return 0
+
+
 def scale_table(document):
+    print(host_line(document.get("host")) + "\n")
     print("\n| step | reference wall | port wall | port / ref | reference CPU | port CPU | "
           "reference peak RSS | port peak RSS | bytes equal | CPU and RSS ≤ GATK |")
     print("|---|---:|---:|---:|---:|---:|---:|---:|:-:|:-:|")
@@ -601,10 +627,14 @@ def main(argv):
     parser.add_argument("--threads", type=int, default=4, help="with --scale: threads, both sides")
     parser.add_argument("--memory", default="14g", help="with --scale: the container's memory limit")
     parser.add_argument("--keep-port-output", action="store_true", help="with --scale: keep the port's files")
+    parser.add_argument("--platform", help="with --scale: the container platform (default linux/amd64)")
+    parser.add_argument("--across", nargs="+", help="scale measurements from other CPUs: do the bytes agree?")
     options = parser.parse_args(argv)
 
     if options.merge:
         return merge(options.merge, options.out or "speed.json")
+    if options.across:
+        return across(options.across)
     if options.compare:
         return compare(*options.compare)
     if not options.port:
@@ -612,6 +642,7 @@ def main(argv):
     if options.scale:
         if not options.data:
             parser.error("--scale needs --data")
+        run_array.PLATFORM = options.platform or run_array.PLATFORM
         return scale(options)
     options.timeout = options.timeout or 600
 

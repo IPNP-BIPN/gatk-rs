@@ -9,14 +9,20 @@ on:
       group:
         required: true
         type: string
-      data-key:
+      arch:
+        required: true
+        type: string
+      runner:
+        required: true
+        type: string
+      platform:
         required: true
         type: string
 
 jobs:
   group:
     name: ${{ inputs.group }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 355
     steps:
       - uses: actions/checkout@v7
@@ -26,29 +32,36 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           df -h /
 
-      - uses: actions/cache/restore@v6
+      # Restored when it is cached, built when it is not: a cache evicted between jobs is not a failure.
+      - id: image
+        uses: actions/cache@v6
         with:
           path: /tmp/oracle-image.tar
-          key: gatk-rs-oracle-${{ hashFiles('tools/oracle/**') }}
-          fail-on-cache-miss: true
+          key: gatk-rs-oracle-${{ inputs.arch == 'x86-64' && '' || format('{0}-', inputs.arch) }}${{ hashFiles('tools/oracle/**') }}
 
-      - run: docker load -i /tmp/oracle-image.tar && rm /tmp/oracle-image.tar
-
-      - uses: actions/cache/restore@v6
-        with:
-          path: /tmp/scale-data
-          key: ${{ inputs.data-key }}
-          fail-on-cache-miss: true
+      - name: The pinned oracle image
+        run: |
+          if [ -f /tmp/oracle-image.tar ]; then
+            docker load -i /tmp/oracle-image.tar
+          else
+            docker build --platform ${{ inputs.platform }} -t gatk-rs-oracle:4.7.0.0 tools/oracle
+            docker save gatk-rs-oracle:4.7.0.0 -o /tmp/oracle-image.tar
+          fi
 
       - uses: actions/download-artifact@v8
         with:
-          name: scale-port-binary
+          name: scale-data
+          path: /tmp/scale-data
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: scale-port-binary-${{ inputs.arch }}
           path: /tmp/port
 
       - name: The reference's outputs from earlier groups
         uses: actions/download-artifact@v8
         with:
-          pattern: scale-oracle-*
+          pattern: scale-oracle-${{ inputs.arch }}-*
           path: /tmp/upstream
 
       - name: Place them where the steps read them
@@ -63,7 +76,7 @@ jobs:
           chmod +x /tmp/port/gatk
 
       - name: Record the host CPU and memory
-        run: grep -m1 'model name' /proc/cpuinfo; nproc; free -g
+        run: lscpu | grep -E 'Model name|Architecture|Flags' | cut -c1-200; nproc; free -g
 
       - id: steps
         run: |
@@ -71,7 +84,7 @@ jobs:
 
       - name: Measure the group
         run: |
-          python3 tools/speed/bench.py --scale --port /tmp/port/gatk --data /tmp/scale-data \
+          python3 tools/speed/bench.py --scale --platform ${{ inputs.platform }} --port /tmp/port/gatk --data /tmp/scale-data \
             --results scale-results ${{ steps.steps.outputs.args }} \
             --out /tmp/scale-${{ inputs.group }}.json | tee /tmp/scale-${{ inputs.group }}.txt
           cat /tmp/scale-${{ inputs.group }}.txt >> "$GITHUB_STEP_SUMMARY"
@@ -79,7 +92,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
         with:
-          name: scale-json-${{ inputs.group }}
+          name: scale-json-${{ inputs.arch }}-${{ inputs.group }}
           path: /tmp/scale-${{ inputs.group }}.json
 
       - name: Name this group's reference outputs for the next groups
@@ -97,7 +110,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
         with:
-          name: scale-oracle-${{ inputs.group }}
+          name: scale-oracle-${{ inputs.arch }}-${{ inputs.group }}
           path: /tmp/own-outputs
           retention-days: 3
           compression-level: 0
