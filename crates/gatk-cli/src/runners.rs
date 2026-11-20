@@ -1852,15 +1852,34 @@ fn on_the_fly_index(
     size: i64,
     timestamp: i64,
 ) -> Vec<u8> {
-    use htsjdk_tribble::index::{TribbleIndex, INTERVAL_TREE, LINEAR, VERSION};
-    use htsjdk_tribble::index_write::{BalanceApproach, BuiltIndex, DynamicIndexCreator, Feature};
-
-    let mut creator = DynamicIndexCreator::new(BalanceApproach::ForSeekTime);
-    let mut at: i64 = 0;
+    let mut index = OnTheFlyIndex::new();
     for line in text.split_inclusive('\n') {
+        index.add(line);
+    }
+    index.finish(dictionary, path, size, timestamp)
+}
+
+/// [`on_the_fly_index`] fed one line at a time, as the writer hands its creator each record.
+pub(crate) struct OnTheFlyIndex {
+    creator: htsjdk_tribble::index_write::DynamicIndexCreator,
+    at: i64,
+}
+
+impl OnTheFlyIndex {
+    pub(crate) fn new() -> Self {
+        use htsjdk_tribble::index_write::{BalanceApproach, DynamicIndexCreator};
+        OnTheFlyIndex {
+            creator: DynamicIndexCreator::new(BalanceApproach::ForSeekTime),
+            at: 0,
+        }
+    }
+
+    /// One line of the output, its `\n` included.
+    pub(crate) fn add(&mut self, line: &str) {
         let body = line.trim_end_matches('\n');
         if !body.starts_with('#') {
-            let columns: Vec<&str> = body.split('\t').collect();
+            // Up to INFO and the rest in one piece: `len() >= 8` and the first eight are the same.
+            let columns: Vec<&str> = body.splitn(9, '\t').collect();
             if columns.len() >= 8 {
                 if let Ok(start) = columns[1].parse::<i32>() {
                     let end = columns[7]
@@ -1869,50 +1888,62 @@ fn on_the_fly_index(
                         .find(|(key, _)| *key == "END")
                         .and_then(|(_, value)| value.parse::<i32>().ok())
                         .unwrap_or(start + columns[3].len() as i32 - 1);
-                    creator.add_feature(
-                        &Feature {
+                    self.creator.add_feature(
+                        &htsjdk_tribble::index_write::Feature {
                             contig: columns[0].to_string(),
                             start,
                             end,
                         },
-                        at,
+                        self.at,
                     );
                 }
             }
         }
-        at += line.len() as i64;
+        self.at += line.len() as i64;
     }
 
-    let mut properties: Vec<(String, String)> = dictionary
-        .iter()
-        .map(|(name, length)| (format!("DICT:{name}"), length.to_string()))
-        .collect();
-    properties.extend(creator.properties());
+    pub(crate) fn finish(
+        self,
+        dictionary: &[(String, i32)],
+        path: &str,
+        size: i64,
+        timestamp: i64,
+    ) -> Vec<u8> {
+        use htsjdk_tribble::index::{TribbleIndex, INTERVAL_TREE, LINEAR, VERSION};
+        use htsjdk_tribble::index_write::BuiltIndex;
+        let OnTheFlyIndex { creator, at } = self;
 
-    let (index_type, contigs, interval_contigs) = match creator.finalize(text.len() as i64) {
-        Ok(BuiltIndex::Linear(contigs)) => (LINEAR, contigs, Vec::new()),
-        Ok(BuiltIndex::IntervalTree(intervals)) => (INTERVAL_TREE, Vec::new(), intervals),
-        Err(_) => (LINEAR, Vec::new(), Vec::new()),
-    };
+        let mut properties: Vec<(String, String)> = dictionary
+            .iter()
+            .map(|(name, length)| (format!("DICT:{name}"), length.to_string()))
+            .collect();
+        properties.extend(creator.properties());
 
-    TribbleIndex {
-        index_type,
-        version: VERSION,
-        indexed_path: format!("file://{path}"),
-        // `close()` writes the index with `writeBasedOnFeaturePath`, which STATS the file it has
-        // just finished: the size and the timestamp are the written file's. The md5 is not
-        // computed and stays empty.
-        indexed_file_size: size,
-        indexed_file_timestamp: timestamp,
-        indexed_file_md5: String::new(),
-        // Zero, not the dictionary flag: from version 3 the dictionary is properties.
-        flags: 0,
-        properties,
-        contigs,
-        interval_contigs,
+        let (index_type, contigs, interval_contigs) = match creator.finalize(at) {
+            Ok(BuiltIndex::Linear(contigs)) => (LINEAR, contigs, Vec::new()),
+            Ok(BuiltIndex::IntervalTree(intervals)) => (INTERVAL_TREE, Vec::new(), intervals),
+            Err(_) => (LINEAR, Vec::new(), Vec::new()),
+        };
+
+        TribbleIndex {
+            index_type,
+            version: VERSION,
+            indexed_path: format!("file://{path}"),
+            // `close()` writes the index with `writeBasedOnFeaturePath`, which STATS the file it has
+            // just finished: the size and the timestamp are the written file's. The md5 is not
+            // computed and stays empty.
+            indexed_file_size: size,
+            indexed_file_timestamp: timestamp,
+            indexed_file_md5: String::new(),
+            // Zero, not the dictionary flag: from version 3 the dictionary is properties.
+            flags: 0,
+            properties,
+            contigs,
+            interval_contigs,
+        }
+        .write()
+        .unwrap_or_default()
     }
-    .write()
-    .unwrap_or_default()
 }
 
 /// One input VCF, read as far as the gather looks at it.
@@ -17610,6 +17641,100 @@ fn write_unsharded_variant_output(parser: &Parser, output: &str, text: &str) -> 
         flag(parser, "create-output-variant-md5"),
         None,
     )
+}
+
+/// A plain `.vcf` written as its records come, as [`write_variant_file`] writes the same text with
+/// no md5: to a file beside the output, renamed into place by [`Self::finish`], so a run refused
+/// half way leaves the output as it was.
+pub(crate) struct StreamedVcf {
+    output: String,
+    partial: String,
+    file: std::io::BufWriter<std::fs::File>,
+    index: Option<OnTheFlyIndex>,
+    dictionary: Vec<(String, i32)>,
+    in_header: bool,
+    size: i64,
+}
+
+impl StreamedVcf {
+    pub(crate) fn create(output: &str, create_index: bool) -> Result<Self, Thrown> {
+        let partial = format!("{output}.partial");
+        let file = std::fs::File::create(&partial).map_err(|error| {
+            Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
+        })?;
+        Ok(StreamedVcf {
+            output: output.to_string(),
+            partial,
+            file: std::io::BufWriter::with_capacity(1 << 20, file),
+            index: create_index.then(OnTheFlyIndex::new),
+            dictionary: Vec::new(),
+            in_header: true,
+            size: 0,
+        })
+    }
+
+    /// Whole lines of the output, in order.
+    pub(crate) fn write(&mut self, text: &str) -> std::io::Result<()> {
+        std::io::Write::write_all(&mut self.file, text.as_bytes())?;
+        self.size += text.len() as i64;
+        if self.index.is_none() {
+            return Ok(());
+        }
+        for line in text.split_inclusive('\n') {
+            if self.in_header {
+                if !line.starts_with('#') {
+                    self.in_header = false;
+                } else if let Some(body) = line.trim_end_matches('\n').strip_prefix("##contig=<") {
+                    // The header's `##contig` lines, as `write_variant_file` reads them.
+                    let body = body.trim_end_matches('>');
+                    if let Some(name) = body.split(',').find_map(|f| f.strip_prefix("ID=")) {
+                        let length = body
+                            .split(',')
+                            .find_map(|f| f.strip_prefix("length="))
+                            .and_then(|value| value.parse().ok())
+                            .unwrap_or(0);
+                        self.dictionary.push((name.to_string(), length));
+                    }
+                }
+            }
+            if let Some(index) = &mut self.index {
+                index.add(line);
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn finish(self) -> Result<(), Thrown> {
+        let failed = |error: std::io::Error| {
+            Thrown::non_user(
+                PORT_FAILURE,
+                format!("could not write {}: {error}", self.output),
+            )
+        };
+        self.file
+            .into_inner()
+            .map_err(|error| failed(error.into_error()))?;
+        std::fs::rename(&self.partial, &self.output).map_err(failed)?;
+        let Some(index) = self.index else {
+            return Ok(());
+        };
+        let timestamp = modified_millis(&self.output);
+        // The path as given, as `write_variant_file` records it.
+        let index = index.finish(&self.dictionary, &self.output, self.size, timestamp);
+        let companion = index_feature_file::default_output(&self.output);
+        std::fs::write(&companion, index).map_err(|error| {
+            Thrown::non_user(
+                PORT_FAILURE,
+                format!("could not write {companion}: {error}"),
+            )
+        })
+    }
+
+    /// The run was refused: the partial file goes, and the output is left as it was.
+    pub(crate) fn abandon(self) {
+        drop(self.file);
+        let _ = std::fs::remove_file(&self.partial);
+    }
 }
 
 /// A VCF written as `createVCFWriter` writes it: indexed on the fly when asked, digested when
