@@ -17,7 +17,10 @@ Every number is read from a committed source, and a number that no source holds 
 * quarantined fields, from each suite's `compare` rules;
 * fuzzer coverage, from `tools/fuzz/measured.json`: the reference's JaCoCo probes the covering
   array's rows reach, how many more the fuzzer's mutants reach, and on how many kept cases the
-  port diverged.
+  port diverged;
+* test resources, from `tools/coverage/test_resources/measured.json`: of the invocations the
+  reference's `*IntegrationTest.java` make (`tools/coverage/test_resources.py`), how many the port
+  answered identically, and how many were excluded in writing or could not be read statically.
 
     python3 tools/reports/generate.py            # writes docs/VALIDATION.md
     python3 tools/reports/generate.py --check    # fails if the committed file is stale
@@ -36,6 +39,7 @@ MANIFEST = REPO / "tools" / "conformance" / "manifest.json"
 MEASURED = REPO / "tools" / "coverage" / "measured.json"
 FUZZED = REPO / "tools" / "fuzz" / "measured.json"
 FIXTURES = REPO / "tools" / "coverage" / "fixtures.json"
+TESTED = REPO / "tools" / "coverage" / "test_resources" / "measured.json"
 PORTS = REPO / "tools" / "dashboard" / "ports"
 REPORT = REPO / "docs" / "VALIDATION.md"
 
@@ -87,11 +91,13 @@ def gather():
     measured = json.loads(MEASURED.read_text()).get("tools", {})
     fixtures = json.loads(FIXTURES.read_text()).get("per_tool", {})
     fuzzed = json.loads(FUZZED.read_text()).get("tools", {}) if FUZZED.exists() else {}
+    tested = json.loads(TESTED.read_text()).get("tools", {}) if TESTED.exists() else None
     tools = {}
     for entry in inventory["tools"]:
         name = entry["name"] if isinstance(entry, dict) else entry
         tools[name] = {"suites": [], "records": 0, "files": 0, "by_suite": False, "quarantine": set(),
-                       "port": None, "coverage": None, "fuzz": fuzzed.get(name)}
+                       "port": None, "coverage": None, "fuzz": fuzzed.get(name),
+                       "tests": None if tested is None else tested.get(name, {})}
     for suite in manifest["suites"]:
         records, files, per_tool = count_suite(suite)
         for name in suite.get("tools", []):
@@ -148,6 +154,17 @@ def fuzz_text(value):
     return text
 
 
+def tests_text(value, port):
+    """The integration tests' invocations the port reproduced, and what was set aside."""
+    if value is None or port not in (None, "gatk-rs"):
+        return "not measured"
+    if not value:
+        return "no invocation"
+    text = f"{value['matched']}/{value['replayed']}"
+    notes = [f"{value[k]} {k}" for k in ("excluded", "unextracted") if value.get(k)]
+    return text + (f" ({', '.join(notes)})" if notes else "")
+
+
 def fixture_summary(entry):
     """Distinct input files an array draws on, and the arguments no array varies."""
     if not entry:
@@ -179,14 +196,17 @@ def render(inventory, tools, fixtures):
         "outcome matched the reference, at the **t** level shown. **Fuzzer branches** are the reference's JaCoCo "
         "probes reached (a proxy for branches, not a percentage), how many of them only the "
         "fuzzer's mutants reached, and how many of the cases it kept the port answered "
-        "differently, re-run out of process (`tools/fuzz/run_fuzz.py`). A sibling port's goldens are not vendored "
+        "differently, re-run out of process (`tools/fuzz/run_fuzz.py`). **Test resources** are the "
+        "invocations the reference's own integration tests make on `src/test/resources`, read from "
+        "their sources and replayed on both sides (`tools/coverage/test_resources.py`): matched over "
+        "replayed, then those excluded in writing and those the extractor could not read. A sibling port's goldens are not vendored "
         "here, so its counts read `not vendored`; its own repository holds them.",
         "",
         "Each run's inputs, toolchain and container are in the `provenance` artefact CI keeps "
         "(`tools/provenance/record.py`).",
         "",
-        "| tool | port | state | records | files | argument rows | t | fuzzer branches | inputs | held-out arguments | quarantined |",
-        "|---|---|---|---:|---:|---:|---:|---|---:|---:|---|",
+        "| tool | port | state | records | files | argument rows | t | fuzzer branches | test resources | inputs | held-out arguments | quarantined |",
+        "|---|---|---|---:|---:|---:|---:|---|---|---:|---:|---|",
     ]
     details = []
     for name in sorted(tools):
@@ -210,7 +230,7 @@ def render(inventory, tools, fixtures):
         quarantine = ", ".join(sorted(tool["quarantine"])) or "none"
         lines.append(
             f"| {name} | {tool['port'] or '-'} | {state} | {records} | {files} | {covered} | {level} "
-            f"| {fuzz_text(tool['fuzz'])} | {len(inputs)} | {len(held)} | {quarantine} |"
+            f"| {fuzz_text(tool['fuzz'])} | {tests_text(tool['tests'], tool['port'])} | {len(inputs)} | {len(held)} | {quarantine} |"
         )
         entry = fixtures.get(name)
         if entry:

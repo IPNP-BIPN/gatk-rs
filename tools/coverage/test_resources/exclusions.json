@@ -1,0 +1,4 @@
+{
+ "$comment": "Invocations of tools/coverage/test_resources/gatk.json that are not replayed, each with its reason. A divergence is fixed in the port or written here; nothing else is.",
+ "invocations": {}
+}

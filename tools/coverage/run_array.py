@@ -251,7 +251,7 @@ def clear(out_dir):
             pass
 
 
-def run_oracle(tool, row_args, workdir, positional=(), tagged=(), lists=()):
+def run_oracle(tool, row_args, workdir, positional=(), tagged=(), lists=(), setup=""):
     """Run one row in the container. Returns (exit code, output as text or digest, error line)."""
     out_dir = workdir / "out"
     out_dir.mkdir(exist_ok=True)
@@ -261,7 +261,7 @@ def run_oracle(tool, row_args, workdir, positional=(), tagged=(), lists=()):
     cli = " ".join(as_cli(row_args, positional, tagged, lists))
     # `gatk <Tool> <args>`: the tool name is the first token, which is the shape the bit-identity
     # claim is defined against, and the wrapper is what fixes the parser to Barclay.
-    command = f'rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && {copies}java {JAVA_OPENS} -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {tool} {cli}; rc=$?; chmod -R a+rwX /work/out; exit $rc'
+    command = f'rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && {setup}{copies}java {JAVA_OPENS} -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {tool} {cli}; rc=$?; chmod -R a+rwX /work/out; exit $rc'
     image = [IMAGE, command]
     if past_the_interpreter(tool):
         image = [
@@ -798,7 +798,7 @@ def first_error(text):
     return text.strip().split("\n")[-1][:200] if text.strip() else ""
 
 
-def run_port(binary, tool, row_args, workdir, positional=(), tagged=(), lists=()):
+def run_port(binary, tool, row_args, workdir, positional=(), tagged=(), lists=(), setup=""):
     """Run the port binary on the same row, IN THE CONTAINER, at the same paths.
 
     Not on the host, and the reason is the output itself: a Tribble index records the file it was
@@ -819,7 +819,7 @@ def run_port(binary, tool, row_args, workdir, positional=(), tagged=(), lists=()
     binary = Path(binary).resolve()
     copies, row_args = writable_copies(tool, row_args)
     cli = " ".join(as_cli(row_args, positional, tagged, lists))
-    command = f"rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && {copies}/work/port-binary/{binary.name} {tool} {cli}"
+    command = f"rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && {setup}{copies}/work/port-binary/{binary.name} {tool} {cli}"
     stand_in, image = [], IMAGE
     if past_the_interpreter(tool) == "Rscript":
         image = PORT_WITH_R
