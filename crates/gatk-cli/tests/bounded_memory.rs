@@ -155,10 +155,11 @@ fn sort_sam_spark_spills_a_bam_larger_than_its_address_space() {
     assert!(std::fs::metadata(&bam).expect("the file").len() > 2 * (LIMIT_KIB << 10));
 
     // One reducer: more would sample the keys, which the port refuses. The sorted file goes to
-    // the null device, where it is written in place, so the disk holds only the input and the runs.
+    // the null device, where it is written in place, so the disk holds only the input and the runs;
+    // no `.sbi`, which would be written beside it.
     let output = run_limited(
         "SortSamSpark --input \"$1\" --output /dev/null --sort-order queryname \
-         --num-reducers 1 --tmp-dir \"$2\"",
+         --num-reducers 1 --create-output-bam-splitting-index false --tmp-dir \"$2\"",
         &[&bam, &runs],
     );
     let left = std::fs::read_dir(&runs).map(Iterator::count).unwrap_or(0);

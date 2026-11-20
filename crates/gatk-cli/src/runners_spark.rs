@@ -5179,9 +5179,7 @@ fn write_spark_indexed<'a>(
             }
             Ok(())
         })?;
-        return written
-            .map(|_| ())
-            .map_err(|error| failed(output, error.to_string()));
+        return written.map_err(|error| failed(output, error.to_string()));
     }
 
     // Each partition's records, whose offsets the splitting index records relative to the whole
@@ -5266,9 +5264,7 @@ fn write_spark_indexed<'a>(
         out.write_all(&htsjdk_bgzf::EMPTY_GZIP_BLOCK).map_err(io)?;
         Ok(length)
     })?;
-    let length = written
-        .map_err(|error| failed(output, error.to_string()))?
-        .0;
+    let length = written.map_err(|error| failed(output, error.to_string()))?;
 
     if let Some(indexer) = indexer {
         std::fs::write(format!("{output}.bai"), indexer.finish())
@@ -5321,7 +5317,7 @@ fn index_read(
 type Compare = fn(&BamRecord, &BamRecord) -> std::cmp::Ordering;
 
 /// What a sorted write holds in memory, at most, before its sorted runs spill to `--tmp-dir`.
-const SORT_BUDGET: usize = 256 << 20;
+const SORT_BUDGET: usize = 128 << 20;
 
 /// The reads `sortSamRecordsToMatchHeader` takes: in the sort the header's order names, or as
 /// they came for any other order.

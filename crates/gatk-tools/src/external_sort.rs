@@ -207,7 +207,9 @@ impl Spill for htsjdk_bam::record::BamRecord {
             + self.read_bases.len()
             + self.base_qualities.len()
             + 8 * self.cigar.elements.len()
-            + 64 * self.tags.len()
+            // The size of the block a read from a file still holds: counting its tags would
+            // decode every one of them.
+            + self.tags.binary_size().unwrap_or(0)
             + 64
     }
 
