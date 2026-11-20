@@ -1376,10 +1376,10 @@ the CPU path that already exists, and no bit-identity claim may weaken to buy a 
       until now. The 28 rows a `.idx` with a returning contig used to cost (htsjdk's
       `LinkedHashMap` keeps one entry at the first place, fixed in IPNP-BIPN/htsjdk-rs#280) are
       gone, which takes five Picard VCF tools to 1.000. The 4 still below:
-      - `FilterVcf`, 7 of 20: 11 rows are `--JAVASCRIPT_FILE`, a Nashorn script the port refuses
-        as a port limitation at the point where Picard builds the filter, and 2 are
-        `--CREATE_INDEX=false`, which Picard 3.5.0 honours (b976447cf) and the port indexed anyway
-        until the writer took the flag
+      - `FilterVcf`, 9 of 20: the 11 others are `--JAVASCRIPT_FILE`, a Nashorn script the port
+        refuses as a port limitation at the point where Picard builds the filter. Two rows were
+        `--CREATE_INDEX=false`, which Picard 3.5.0 honours (b976447cf) and the port indexed
+        anyway until the writer took the flag
       - `SplitVcfs`, 22 of 26: 3 rows write an indexed `.vcf.gz` SNP output beside a text INDEL
         output, where htsjdk hands one tabix index to both writers, and 1 is a tabix out-of-order
         refusal Picard raises while streaming, which arrives after the port's SYMBOLIC refusal
