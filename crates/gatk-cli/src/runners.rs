@@ -1118,7 +1118,10 @@ fn read_walker_startup_with(
 /// A SAM text or CRAM input whose records are decoded one at a time and never held.
 enum Stream {
     Sam(std::io::BufReader<std::fs::File>),
-    Cram { bytes: Vec<u8>, reference: String },
+    Cram {
+        file: std::fs::File,
+        reference: String,
+    },
 }
 
 /// `CountReads` over SAM text or CRAM with no traversal bounds, which is every record in file
@@ -1156,11 +1159,11 @@ fn streamed_count_reads(parser: &Parser) -> Result<Option<i64>, Thrown> {
         let Some(fasta) = argument(parser, "reference") else {
             return Ok(None);
         };
-        let Ok(bytes) = std::fs::read(path) else {
+        let Ok(file) = std::fs::File::open(path) else {
             return Ok(None);
         };
         Stream::Cram {
-            bytes,
+            file,
             reference: fasta,
         }
     } else if magic == gatk_tools::read_walker_refusal::BAM_MAGIC
@@ -1180,8 +1183,11 @@ fn streamed_count_reads(parser: &Parser) -> Result<Option<i64>, Thrown> {
     };
     let mut count = 0i64;
     match stream {
-        Stream::Cram { bytes, reference } => {
-            let Ok(mut reader) = htsjdk_cram::reader::CramReader::new(&bytes) else {
+        Stream::Cram { file, reference } => {
+            // One container in memory at a time, not the file.
+            let Ok(mut reader) =
+                htsjdk_cram::reader::CramReader::from_read(std::io::BufReader::new(file))
+            else {
                 return Ok(None);
             };
             let mut fasta =
