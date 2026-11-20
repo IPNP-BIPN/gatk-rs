@@ -4410,14 +4410,11 @@ fn allelic_counts_table(
         }
     }
 
-    let sequences: Vec<(String, i32)> = header
-        .sequences
-        .iter()
-        .map(|sequence| (sequence.name.clone(), sequence.length))
-        .collect();
+    // The whole `@SQ` record, M5 and UR included: `metadata.toHeader()` keeps every attribute.
+    let sequences = &header.sequences;
     write_file(
         output,
-        allelic::write(&sequences, sample, &counts).as_bytes(),
+        allelic::write(sequences, sample, &counts).as_bytes(),
     )?;
     Ok(None)
 }
@@ -6012,11 +6009,8 @@ pub fn denoise_read_counts(parser: &Parser) -> Outcome {
             .map(|line| format!("{line}\n"))
             .collect::<String>(),
     );
-    let sequences: Vec<(String, i32)> = header
-        .sequences
-        .iter()
-        .map(|sequence| (sequence.name.clone(), sequence.length))
-        .collect();
+    // The whole `@SQ` record, M5 and UR included: `metadata.toHeader()` keeps every attribute.
+    let sequences = &header.sequences;
     let sample = header
         .read_groups
         .iter()
@@ -6047,7 +6041,7 @@ pub fn denoise_read_counts(parser: &Parser) -> Outcome {
         exception: error.java_class(),
         message: Some(error.message().to_string()),
     })?;
-    let table = denoise::write(&sequences, &sample, &intervals, &values);
+    let table = denoise::write(sequences, &sample, &intervals, &values);
     // The same bytes twice: with no panel the denoised result IS the standardised one.
     write_file(&standardized, table.as_bytes())?;
     write_file(&denoised, table.as_bytes())?;
@@ -10188,32 +10182,35 @@ pub fn collect_read_counts(parser: &Parser) -> Outcome {
 
     let sample = sample_name(&header)?;
     let filter = read_filter(parser, &filters, &header)?;
-    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
-        .map_err(|error| Thrown::user(format!("{error:?}")))?;
-    // A read with no contig cannot fall in an interval, so it counts nowhere: `apply` reads
-    // `read.getContig()`, which the wellformed filter has already guaranteed is a mapped one.
-    let starts: Vec<(&str, i32)> = records
-        .iter()
-        .filter_map(|record| {
-            contig_name(&header, record.reference_index)
-                .map(|contig| (contig, record.alignment_start))
-        })
-        .collect();
-    let counts = gatk_tools::collect_read_counts::count(&starts, &intervals);
+    // A read at a time: the counts are integers in read order, so streaming moves no byte, and
+    // memory is one read rather than the file (1.7 GiB on a 2 Mb slice of chr20).
+    let bins = gatk_tools::collect_read_counts::Bins::new(&intervals);
+    let mut counts = vec![0; intervals.len()];
+    // A BAM handed another file's index reads mid-record, which is htsjdk's own exception.
+    let reads =
+        gatk_tools::read_walker::traverse_iter(&source, &intervals, false, |read| filter(read))
+            .map_err(reads_traversal_error)?;
+    for record in reads {
+        let record = record.map_err(reads_traversal_error)?;
+        // A read with no contig cannot fall in an interval, so it counts nowhere: `apply` reads
+        // `read.getContig()`, which the wellformed filter has already guaranteed is a mapped one.
+        if let Some(index) = contig_name(&header, record.reference_index)
+            .and_then(|contig| bins.index_of(contig, record.alignment_start))
+        {
+            counts[index] += 1;
+        }
+    }
     // The TSV's `@SQ` lines are the METADATA's dictionary, which is the reads' own header rather
     // than the best available one: a `--sequence-dictionary` resolves the intervals and is only
     // warned about here when it disagrees.
-    let sequences: Vec<(String, i32)> = header
-        .sequences
-        .iter()
-        .map(|sequence| (sequence.name.clone(), sequence.length))
-        .collect();
+    // The whole `@SQ` record, M5 and UR included: `metadata.toHeader()` keeps every attribute.
+    let sequences = &header.sequences;
     if hdf5 {
         let file =
-            gatk_tools::collect_read_counts::write_hdf5(&sequences, &sample, &intervals, &counts);
+            gatk_tools::collect_read_counts::write_hdf5(sequences, &sample, &intervals, &counts);
         write_file(&output, &file.to_bytes())?;
     } else {
-        let text = gatk_tools::collect_read_counts::write(&sequences, &sample, &intervals, &counts);
+        let text = gatk_tools::collect_read_counts::write(sequences, &sample, &intervals, &counts);
         write_file(&output, text.as_bytes())?;
     }
     Ok(None)

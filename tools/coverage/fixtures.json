@@ -1025,11 +1025,13 @@
       ],
       "--input": [
         "/work/fixtures/reads.bam",
-        "/work/fixtures/reads2.bam"
+        "/work/fixtures/reads2.bam",
+        "/work/fixtures/sq_tags.bam"
       ],
       "--read-index": [
         "/work/fixtures/reads.bai",
-        "/work/fixtures/reads2.bai"
+        "/work/fixtures/reads2.bai",
+        "/work/fixtures/sq_tags.bai"
       ],
       "--intervals": [
         "chr1:1-6000",
@@ -1928,11 +1930,13 @@
     "CollectReadCounts": {
       "--input": [
         "/work/fixtures/reads.bam",
-        "/work/fixtures/reads2.bam"
+        "/work/fixtures/reads2.bam",
+        "/work/fixtures/sq_tags.bam"
       ],
       "--read-index": [
         "/work/fixtures/reads.bai",
-        "/work/fixtures/reads2.bai"
+        "/work/fixtures/reads2.bai",
+        "/work/fixtures/sq_tags.bai"
       ],
       "--intervals": [
         "chr1:1-6000",
@@ -12912,11 +12916,13 @@
       "--dont-require-soft-clips-both-ends": [],
       "--input": [
         "/work/fixtures/reads.bam",
-        "/work/fixtures/reads2.bam"
+        "/work/fixtures/reads2.bam",
+        "/work/fixtures/sq_tags.bam"
       ],
       "--read-index": [
         "/work/fixtures/reads.bai",
-        "/work/fixtures/reads2.bai"
+        "/work/fixtures/reads2.bai",
+        "/work/fixtures/sq_tags.bai"
       ],
       "--intervals": [
         "chr1:1-6000",

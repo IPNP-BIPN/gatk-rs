@@ -35,10 +35,10 @@ fn interval(contig: &str, start: i32, end: i32) -> SimpleInterval {
 
 const SEQUENCES: [(&str, i32); 2] = [("chr1", 200), ("chr2", 200)];
 
-fn sequences() -> Vec<(String, i32)> {
+fn sequences() -> Vec<htsjdk_bam::header::SequenceRecord> {
     SEQUENCES
         .iter()
-        .map(|(name, length)| (name.to_string(), *length))
+        .map(|(name, length)| htsjdk_bam::header::SequenceRecord::new(name, *length))
         .collect()
 }
 
@@ -129,4 +129,44 @@ fn the_tool_adds_four_filters() {
     assert_eq!(ADDITIONAL_READ_FILTERS.len(), 4);
     assert_eq!(ADDITIONAL_READ_FILTERS[3], "MappingQualityReadFilter");
     assert_eq!(collect_read_counts::DEFAULT_MINIMUM_MAPPING_QUALITY, 30);
+}
+
+/// `metadata.toHeader().getSAMString()` writes every attribute of an `@SQ` line, in order, as
+/// `SAMTextHeaderCodec` does; chr20 30x's BAM carries `M5` and `UR`, and the port wrote neither.
+#[test]
+fn the_header_keeps_every_sq_attribute() {
+    let mut sequence = htsjdk_bam::header::SequenceRecord::new("chr1", 100000);
+    sequence
+        .attributes
+        .set("M5", "2e46001c07f539e7af723bd52446f3f7");
+    sequence.attributes.set("UR", "file:/ref.fasta");
+    assert_eq!(
+        collect_read_counts::header(&[sequence], "S"),
+        "@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:100000\tM5:2e46001c07f539e7af723bd52446f3f7\tUR:file:/ref.fasta\n\
+         @RG\tID:GATKCopyNumber\tSM:S\nCONTIG\tSTART\tEND\tCOUNT\n"
+    );
+}
+
+/// The binary search answers what the linear first match answers, overlapping intervals included.
+#[test]
+fn bins_agree_with_the_first_match() {
+    let disjoint = vec![
+        interval("chr1", 1, 100),
+        interval("chr1", 201, 300),
+        interval("chr1", 101, 200),
+        interval("chr2", 1, 50),
+    ];
+    let overlapping = vec![interval("chr1", 1, 100), interval("chr1", 50, 150)];
+    for intervals in [&disjoint, &overlapping] {
+        let bins = collect_read_counts::Bins::new(intervals);
+        for contig in ["chr1", "chr2", "chr3"] {
+            for start in 0..320 {
+                assert_eq!(
+                    bins.index_of(contig, start),
+                    collect_read_counts::interval_of_start(contig, start, intervals),
+                    "{contig}:{start}"
+                );
+            }
+        }
+    }
 }
