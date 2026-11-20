@@ -388,7 +388,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
     let reference_path = argument(parser, "reference").ok_or_else(|| {
         Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
     })?;
-    let mut reference =
+    let reference =
         gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
             .map_err(|error| Thrown::user(format!("{error:?}")))?;
     let samples = gatk_tools::haplotype_caller::samples_from_header(&header);
@@ -414,51 +414,67 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         intervals
     };
 
-    let mut bases_of: std::collections::HashMap<String, Vec<u8>> = Default::default();
-    let mut contig_bases = |contig: &str| -> Result<Vec<u8>, String> {
-        if let Some(bases) = bases_of.get(contig) {
+    // Each contig read once and shared: the clipper asks for one per read.
+    let reference = std::cell::RefCell::new(reference);
+    let bases_of: std::cell::RefCell<std::collections::HashMap<String, std::rc::Rc<Vec<u8>>>> =
+        Default::default();
+    let shared_bases = |contig: &str| -> Result<std::rc::Rc<Vec<u8>>, String> {
+        if let Some(bases) = bases_of.borrow().get(contig) {
             return Ok(bases.clone());
         }
+        let mut reference = reference.borrow_mut();
         let length = reference
             .sequences()
             .iter()
             .find(|(name, _)| name == contig)
             .map(|(_, length)| *length as i32)
             .ok_or_else(|| format!("contig {contig} is not in the reference"))?;
-        let bases = reference
-            .query(contig, 1, length)
-            .map_err(|error| format!("{error:?}"))?;
-        bases_of.insert(contig.to_string(), bases.clone());
+        let bases = std::rc::Rc::new(
+            reference
+                .query(contig, 1, length)
+                .map_err(|error| format!("{error:?}"))?,
+        );
+        bases_of
+            .borrow_mut()
+            .insert(contig.to_string(), bases.clone());
         Ok(bases)
     };
+    let mut contig_bases = |contig: &str| shared_bases(contig).map(|bases| (*bases).clone());
 
     // The filters, then `makePostReadFilterTransformer`'s palindrome clipper.
     let filter = read_filter(parser, &filters, &header)?;
     let clip_itr = !flag(parser, "ignore-itr-artifacts");
-    let mut reads = Vec::new();
-    for read in source
-        .iter_all()
-        .map_err(|error| Thrown::user(format!("{error:?}")))?
-    {
+    let prepare = |read: BamRecord| -> Result<Option<BamRecord>, Thrown> {
         if !filter(&read) {
-            continue;
+            return Ok(None);
         }
-        let read = if clip_itr {
-            let contig = usize::try_from(read.reference_index)
-                .ok()
-                .and_then(|i| header.sequences.get(i))
-                .map(|s| s.name.clone());
-            let bases = match &contig {
-                Some(name) => contig_bases(name).ok(),
-                None => None,
-            };
-            m2::palindrome_artifact_clip(&read, &header, bases.as_deref())
-                .map_err(|e| Thrown::non_user(PORT_FAILURE, e))?
-        } else {
-            read
-        };
-        reads.push(read);
-    }
+        if !clip_itr {
+            return Ok(Some(read));
+        }
+        let bases = usize::try_from(read.reference_index)
+            .ok()
+            .and_then(|i| header.sequences.get(i))
+            .and_then(|sequence| shared_bases(&sequence.name).ok());
+        m2::palindrome_artifact_clip(&read, &header, bases.as_ref().map(|bases| bases.as_slice()))
+            .map(Some)
+            .map_err(|e| Thrown::non_user(PORT_FAILURE, e))
+    };
+    // With an index each shard is queried, and a read the filters or the clipper refuse refuses
+    // when the traversal reaches it. The clipper can move a read's start past the next one's, and
+    // a window needs the reads in order, so with it a shard is walked whole.
+    let refused = std::cell::RefCell::new(None);
+    let (reads, queried) = super::assembly_region_reads(&source, &prepare)?;
+    let walker_reads = if queried {
+        super::queried_reads(
+            &source,
+            &header,
+            &prepare,
+            &refused,
+            (!clip_itr).then_some(gatk_engine::assembly_region_walker::WINDOW),
+        )
+    } else {
+        gatk_engine::assembly_region_walker::WalkerReads::held(&reads, &header)
+    };
 
     let region = AssemblyRegionArgs {
         min_assembly_region_size: number_or(parser, "min-assembly-region-size", 50),
@@ -710,7 +726,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         )
     });
     let called = m2::call_variants(
-        &reads,
+        &walker_reads,
         &header,
         &traversal,
         &arguments,
@@ -754,7 +770,9 @@ pub fn mutect2(parser: &Parser) -> Outcome {
             error.calls_before,
             0,
             // A `UserException` is reported as a user error, by its message alone.
-            Some(if error.class.contains("UserException") {
+            Some(if let Some(thrown) = refused.take() {
+                thrown
+            } else if error.class.contains("UserException") {
                 Thrown::user(error.message)
             } else {
                 Thrown::non_user(java_class_name(&error.class), error.message)

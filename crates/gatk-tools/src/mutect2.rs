@@ -41,7 +41,7 @@ use gatk_engine::assembly_based_caller_utils::{
 use gatk_engine::assembly_region::AssemblyRegion;
 use gatk_engine::assembly_region_iterator::{group_intervals_by_contig, AssemblyRegionArgs};
 use gatk_engine::assembly_region_trimmer::{AssemblyRegionTrimmer, TrimmerArguments};
-use gatk_engine::assembly_region_walker::traverse_with_pileups;
+use gatk_engine::assembly_region_walker::{traverse_with_pileups, Downsampler, WalkerReads};
 use gatk_engine::downsampling::mutect_downsample;
 use gatk_engine::event_map::{build_event_maps_for_haplotypes, event_start_positions, Event};
 use gatk_engine::fragment::Fragment;
@@ -197,7 +197,7 @@ fn samples_of(header: &SamHeader) -> Vec<String> {
 /// The run: `reads` already filtered and in coordinate order.
 #[allow(clippy::too_many_arguments)]
 pub fn call_variants(
-    reads: &[BamRecord],
+    reads: &WalkerReads<'_>,
     header: &SamHeader,
     intervals: &[SimpleInterval],
     arguments: &Mutect2Arguments,
@@ -244,7 +244,7 @@ pub fn call_variants(
 /// [`call_variants`], with the bamout writer.
 #[allow(clippy::too_many_arguments)]
 fn call_variants_with(
-    reads: &[BamRecord],
+    reads: &WalkerReads<'_>,
     header: &SamHeader,
     intervals: &[SimpleInterval],
     arguments: &Mutect2Arguments,
@@ -287,6 +287,24 @@ fn call_variants_with(
         crate::collect_f1r2_counts::Collector::new(args, &tumor)
     });
     let mut calls = Vec::new();
+    // `MutectDownsampler` starts over at a new contig or a stride past the first read.
+    let new_batch = |first: &BamRecord, _: &BamRecord, next: &BamRecord| {
+        next.reference_index != first.reference_index
+            || next.alignment_start >= first.alignment_start + arguments.downsampling_stride.max(1)
+    };
+    let run = |reads: &[BamRecord], random: &mut JavaRandom| {
+        mutect_downsample(
+            reads,
+            arguments.region.max_reads_per_alignment_start,
+            arguments.max_suspicious_reads_per_alignment_start,
+            arguments.downsampling_stride,
+            random,
+        )
+    };
+    let downsampler = Downsampler {
+        new_batch: &new_batch,
+        run: &run,
+    };
     for group in group_intervals_by_contig(intervals) {
         let contig = group[0].contig.clone();
         let bases = contig_bases(&contig).map_err(|message| failure("UserException", message))?;
@@ -303,15 +321,8 @@ fn call_variants_with(
             &partition,
             &arguments.region,
             header,
-            &mut |reads| {
-                mutect_downsample(
-                    reads,
-                    arguments.region.max_reads_per_alignment_start,
-                    arguments.max_suspicious_reads_per_alignment_start,
-                    arguments.downsampling_stride,
-                    random,
-                )
-            },
+            downsampler,
+            random,
             &mut |locus, context| {
                 // A locus a usable given record overlaps is active, and nothing else is counted.
                 let forced = arguments
@@ -368,6 +379,13 @@ fn call_variants_with(
                 };
                 (prob, None)
             },
+            // An inactive region is read only for its reference model, its rows or its pileups.
+            &|active| {
+                active
+                    || arguments.emit_reference_confidence
+                    || region_out.is_some()
+                    || detection.use_pileup_detection
+            },
         )
         .map_err(|error| failure(error.class(), error.message()))?;
         // `isActive`'s throw ends the traversal there.
@@ -391,10 +409,8 @@ fn call_variants_with(
             assembly_variants,
         };
         for traversed in regions.into_iter().flatten() {
-            let mut traversed = traversed.map_err(|error| {
-                let error = gatk_engine::assembly_region_walker::WalkerError::from(error);
-                failure(error.class(), error.message())
-            })?;
+            let mut traversed =
+                traversed.map_err(|error| failure(error.class(), error.message()))?;
             if detection.use_pileup_detection {
                 crate::pileup_based_alleles::tag_mismatch_percentage(
                     &mut traversed.region,

@@ -23,7 +23,9 @@
 use gatk_engine::allele_frequency_calculator::{AlleleFrequencyCalculator, Priors};
 use gatk_engine::assembly_region_iterator::{group_intervals_by_contig, AssemblyRegionArgs};
 use gatk_engine::assembly_region_trimmer::{AssemblyRegionTrimmer, TrimmerArguments};
-use gatk_engine::assembly_region_walker::{needs_downsampler, traverse_with_pileups};
+use gatk_engine::assembly_region_walker::{
+    needs_downsampler, traverse_with_pileups, Downsampler, WalkerReads,
+};
 use gatk_engine::downsampling::positional_downsample_with;
 use gatk_engine::interval::SimpleInterval;
 use gatk_engine::java_random::JavaRandom;
@@ -225,7 +227,7 @@ fn thrown_class(message: &str) -> Option<&str> {
 /// intervals, and `contig_bases` a contig's whole sequence by name.
 #[allow(clippy::too_many_arguments)]
 pub fn call_variants(
-    reads: &[BamRecord],
+    reads: &WalkerReads<'_>,
     header: &SamHeader,
     intervals: &[SimpleInterval],
     arguments: &HaplotypeCallerArguments,
@@ -354,7 +356,7 @@ pub fn call_variants(
 /// [`call_variants`], appending each region's calls to `calls` as it goes.
 #[allow(clippy::too_many_arguments)]
 fn call_variants_into(
-    reads: &[BamRecord],
+    reads: &WalkerReads<'_>,
     header: &SamHeader,
     intervals: &[SimpleInterval],
     arguments: &HaplotypeCallerArguments,
@@ -491,6 +493,28 @@ fn call_variants_into(
         .map(|(kind, path)| crate::ramp_files::OnRamp::open(*kind, path))
         .transpose()
         .map_err(|message| HaplotypeCallerError::new("RuntimeException", message))?;
+    // `PositionalDownsampler` starts over at each new alignment start.
+    let new_batch = |_: &BamRecord, previous: &BamRecord, next: &BamRecord| {
+        (previous.reference_index, previous.alignment_start)
+            != (next.reference_index, next.alignment_start)
+    };
+    // `createDownsampler()`: a `PositionalDownsampler` only above zero.
+    let run = |reads: &[BamRecord], random: &mut JavaRandom| {
+        if needs_downsampler(&arguments.region) {
+            positional_downsample_with(
+                reads,
+                arguments.region.max_reads_per_alignment_start as usize,
+                random,
+                arguments.non_random_downsampling,
+            )
+        } else {
+            reads.to_vec()
+        }
+    };
+    let downsampler = Downsampler {
+        new_batch: &new_batch,
+        run: &run,
+    };
     for group in group_intervals_by_contig(intervals) {
         let contig = group[0].contig.clone();
         let bases = contig_bases(&contig)
@@ -508,19 +532,8 @@ fn call_variants_into(
             &partition,
             &arguments.region,
             header,
-            &mut |reads| {
-                // `createDownsampler()`: a `PositionalDownsampler` only above zero.
-                if needs_downsampler(&arguments.region) {
-                    positional_downsample_with(
-                        reads,
-                        arguments.region.max_reads_per_alignment_start as usize,
-                        random,
-                        arguments.non_random_downsampling,
-                    )
-                } else {
-                    reads.to_vec()
-                }
-            },
+            downsampler,
+            random,
             &mut |locus, context| {
                 let ref_base = bases[locus.start as usize - 1];
                 // A locus a usable given record overlaps is active, before anything else.
@@ -607,6 +620,13 @@ fn call_variants_into(
                     }
                 }
             },
+            // An inactive region is read only for its reference model, its rows or its pileups.
+            &|active| {
+                active
+                    || arguments.genotyping.emit_reference_confidence
+                    || region_out.is_some()
+                    || detection.use_pileup_detection
+            },
         )
         .map_err(|error| HaplotypeCallerError::new(error.class(), error.message()))?;
         if let Some(failure) = failure {
@@ -683,10 +703,8 @@ fn call_variants_into(
             },
         };
         for traversed in regions.into_iter().flatten() {
-            let mut traversed = traversed.map_err(|error| {
-                let error = gatk_engine::assembly_region_walker::WalkerError::from(error);
-                HaplotypeCallerError::new(error.class(), error.message())
-            })?;
+            let mut traversed = traversed
+                .map_err(|error| HaplotypeCallerError::new(error.class(), error.message()))?;
             if detection.use_pileup_detection {
                 crate::pileup_based_alleles::tag_mismatch_percentage(
                     &mut traversed.region,
