@@ -877,7 +877,8 @@ impl ReadsDataSource {
     /// [`Self::iter_all`], a record at a time.
     pub fn records_all(&self) -> Result<Records<'_>, ReadsError> {
         if self.split_start != 0 {
-            let cursor = BlockCursor::seek(&self.compressed, self.split_start)?;
+            let mut cursor = BlockCursor::seek(&self.compressed, self.split_start)?;
+            cursor.batched = true;
             return Ok(self.records(Kind::Tail(cursor)));
         }
         Ok(self.records(Kind::Stream(Stream::new(
@@ -1716,6 +1717,9 @@ struct BlockCursor<'a> {
     next_address: u64,
     block: Vec<u8>,
     offset: usize,
+    /// Reading on, the blocks after the first inflate a batch at a time, as [`Inflating`] does;
+    /// `block` is then the batch, so the pointer is only right for a cursor nobody asks it of.
+    batched: bool,
 }
 
 impl<'a> BlockCursor<'a> {
@@ -1728,6 +1732,7 @@ impl<'a> BlockCursor<'a> {
             next_address: address,
             block: Vec::new(),
             offset: 0,
+            batched: false,
         };
         cursor.load_block(address)?;
         cursor.offset = vfp::block_offset(pointer) as usize;
@@ -1737,6 +1742,27 @@ impl<'a> BlockCursor<'a> {
     fn load_block(&mut self, address: u64) -> Result<bool, ReadsError> {
         if address >= self.data.len() {
             return Ok(false);
+        }
+        if self.batched && address == self.next_address && address != self.block_address {
+            let end = frames(self.data, address, STREAM_BLOCKS).unwrap_or(address);
+            let bytes = match end > address {
+                true => self
+                    .data
+                    .get(address, (end - address) as usize)
+                    .ok()
+                    .flatten(),
+                false => None,
+            };
+            if let Some(Ok(inflated)) = bytes.map(|bytes| htsjdk_bgzf::read::decompress_all(&bytes))
+            {
+                self.block_address = address;
+                self.next_address = end;
+                self.block = inflated;
+                self.offset = 0;
+                // The serial reader is behind the batch now.
+                self.reader = None;
+                return Ok(true);
+            }
         }
         // The reader carries on from the block before; anywhere else is a new one.
         let reader = match &mut self.reader {
