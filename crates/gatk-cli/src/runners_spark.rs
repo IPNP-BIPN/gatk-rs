@@ -4691,46 +4691,49 @@ pub fn mark_duplicates_spark(parser: &Parser, mode: &Parser) -> Outcome {
         .enumerate()
         .map(|(index, sequence)| (sequence.name.as_str(), index as i32))
         .collect();
-    let mut partitions: Vec<Vec<BamRecord>> = Vec::new();
-    for (source, own) in sources.iter().zip(&own_headers) {
-        let translate = |record: &mut BamRecord| {
-            let index = |old: i32| match usize::try_from(old) {
-                Ok(at) => own
-                    .sequences
-                    .get(at)
-                    .and_then(|sequence| contigs.get(sequence.name.as_str()).copied())
-                    .unwrap_or(old),
-                Err(_) => old,
+    let contigs = &contigs;
+    // The reads of one input, as `getReads` gives them. The marking goes over them twice, once for
+    // the names that are not duplicates and once to mark and write, so they are never all held.
+    let traversal =
+        |at: usize| -> Result<Box<dyn Iterator<Item = Result<BamRecord, Thrown>> + '_>, Thrown> {
+            let own = &own_headers[at];
+            let translate = move |record: &mut BamRecord| {
+                let index = |old: i32| match usize::try_from(old) {
+                    Ok(at) => own
+                        .sequences
+                        .get(at)
+                        .and_then(|sequence| contigs.get(sequence.name.as_str()).copied())
+                        .unwrap_or(old),
+                    Err(_) => old,
+                };
+                record.reference_index = index(record.reference_index);
+                record.mate_reference_index = index(record.mate_reference_index);
             };
-            record.reference_index = index(record.reference_index);
-            record.mate_reference_index = index(record.mate_reference_index);
+            let translating = merged.merged_dictionaries;
+            let filter = &filter;
+            let records = gatk_tools::read_walker::traverse_iter(
+                &sources[at],
+                &intervals,
+                false,
+                move |record: &BamRecord| {
+                    if translating {
+                        let mut record = record.clone();
+                        translate(&mut record);
+                        filter(&record)
+                    } else {
+                        filter(record)
+                    }
+                },
+            )
+            .map_err(traversal_failure)?;
+            Ok(Box::new(records.map(move |record| {
+                let mut record = record.map_err(traversal_failure)?;
+                if translating {
+                    translate(&mut record);
+                }
+                Ok(record)
+            })))
         };
-        let mut records = if merged.merged_dictionaries {
-            gatk_tools::read_walker::traverse(source, &intervals, &|record: &BamRecord| {
-                let mut record = record.clone();
-                translate(&mut record);
-                filter(&record)
-            })
-        } else {
-            gatk_tools::read_walker::traverse(source, &intervals, &filter)
-        }
-        .map_err(|error| match error {
-            // Disq's query, in the executor, over a file that lacks a contig the merge has.
-            gatk_engine::reads::ReadsError::ContigNotInDictionary(contig) => {
-                eprintln!("ERROR Executor - Exception in task 0.0 in stage 0.0 (TID 0)");
-                Thrown::non_user(
-                    "org.apache.spark.SparkException",
-                    format!("Contig {contig} not present in reads sequence dictionary"),
-                )
-            }
-            error => Thrown::user(format!("{error:?}")),
-        })?;
-        if merged.merged_dictionaries {
-            records.iter_mut().for_each(translate);
-        }
-        partitions.push(records);
-    }
-    drop(filter);
 
     let (remove_all, remove_sequencing) = (
         flag(parser, "remove-all-duplicates"),
@@ -4742,7 +4745,33 @@ pub fn mark_duplicates_spark(parser: &Parser, mode: &Parser) -> Outcome {
         remove_sequencing,
         argument(parser, "read-name-regex").as_deref(),
         number_or(parser, "optical-duplicate-pixel-distance", 100),
-    )?;
+    );
+    // `querynameSortReadsIfNecessary`: one partition, sorted, unless the header promises the names
+    // are grouped, when each input is one.
+    let grouped = header.attributes.get("SO") == Some("queryname")
+        || header.attributes.get("GO") == Some("query");
+    // The first pass: what the grouping reads off each mapped read. A refusal of the traversal
+    // comes before the refusals of the arguments, as when the reads were gathered first.
+    let libraries = md::library_index(&header);
+    let mut summaries: Vec<Vec<md::Summary>> = Vec::new();
+    let mut ordinal = 0u64;
+    let mut hit_indices = false;
+    for at in 0..sources.len() {
+        let partition = if grouped { at } else { 0 };
+        summaries.resize_with(partition + 1, Vec::new);
+        for record in traversal(at)? {
+            let record = record?;
+            hit_indices |= md::hit_index(&record).is_some();
+            if let Ok(settings) = &settings {
+                if !gatk_engine::read::is_unmapped(&record) {
+                    let summary = md::summarize(&record, ordinal, &header, settings, &libraries);
+                    summaries[partition].push(summary);
+                }
+            }
+            ordinal += 1;
+        }
+    }
+    let settings = settings?;
 
     // `getHeaderReadGroupIndexMap`, on the driver.
     if header.read_groups.is_empty() {
@@ -4752,16 +4781,27 @@ pub fn mark_duplicates_spark(parser: &Parser, mode: &Parser) -> Outcome {
              your reads",
         ));
     }
-    // `querynameSortReadsIfNecessary`.
-    let grouped = header.attributes.get("SO") == Some("queryname")
-        || header.attributes.get("GO") == Some("query");
     if !grouped {
-        // One partition, sorted stably as Spark's `TimSort` sorts it.
-        let records = partitions.into_iter().flatten().map(Ok);
-        let taken = take_reads(parser, Some("queryname"), records, &output)?;
-        partitions = collect_partitions(partition_reads(taken, 1, None, &output)?)?;
+        // The sort is stable, as Spark's `TimSort` is.
+        summaries[0].sort_by(md::query_name_order);
     }
-    let marked = md::mark(partitions, &header, &settings).map_err(|failure| {
+    // A refusal that prints the reads of a name finds them by a third traversal.
+    let mut render = |_: usize, ordinals: &[u64]| -> Vec<String> {
+        let mut found: Vec<Option<String>> = vec![None; ordinals.len()];
+        let mut ordinal = 0u64;
+        for at in 0..sources.len() {
+            for record in traversal(at).into_iter().flatten().flatten() {
+                for (slot, wanted) in found.iter_mut().zip(ordinals) {
+                    if *wanted == ordinal {
+                        *slot = Some(gatk_engine::assembly_region::render_read(&record, &header));
+                    }
+                }
+                ordinal += 1;
+            }
+        }
+        found.into_iter().map(Option::unwrap_or_default).collect()
+    };
+    let failure = |failure: gatk_tools::mark_duplicates_spark::TaskFailure| {
         // Measured on one partition: a queryname sort of its own takes two stages and a task,
         // and the zip comes two stages and a task after the grouping.
         let (stage, task) = match (grouped, failure.late) {
@@ -4772,35 +4812,85 @@ pub fn mark_duplicates_spark(parser: &Parser, mode: &Parser) -> Outcome {
         };
         eprintln!("ERROR Executor - Exception in task 0.0 in stage {stage}.0 (TID {task})");
         Thrown::non_user("org.apache.spark.SparkException", failure.message)
-    })?;
-    if let Some(metrics) = argument(parser, "metrics-file") {
+    };
+    let mut answers = md::answers(&summaries, &settings, &mut render).map_err(failure)?;
+    drop(summaries);
+
+    // The second pass: each read marked, counted for the metrics, and kept unless removed.
+    let mut metrics = md::Metrics::default();
+    let traversed = (0..sources.len()).flat_map(
+        |at| -> Box<dyn Iterator<Item = (usize, Result<BamRecord, Thrown>)> + '_> {
+            let partition = if grouped { at } else { 0 };
+            match traversal(at) {
+                Ok(records) => Box::new(records.map(move |record| (partition, record))),
+                Err(error) => Box::new(std::iter::once((partition, Err(error)))),
+            }
+        },
+    );
+    let marked = traversed.filter_map(|(partition, record)| {
+        let mut record = match record {
+            Ok(record) => record,
+            Err(error) => return Some(Err(error)),
+        };
+        let optical = answers.mark(partition, &mut record);
+        metrics.add(&record, optical, &header);
+        let removed = if remove_all {
+            gatk_engine::read::is_duplicate(&record)
+        } else {
+            remove_sequencing
+                && matches!(
+                    record.tags.get(htsjdk_bam::tag::Tag::new(b"DT")),
+                    Some(htsjdk_bam::tag::TagValue::Str(kind)) if kind == "SQ"
+                )
+        };
+        (!removed).then_some(Ok(record))
+    });
+    // The marked reads come in the input's order, where the reference's come in the name order.
+    // The coordinate sort is stable, so the two only differ between reads it ties; those share a
+    // name and every flag, which the name order ties as well, except through the `HI` tag. When a
+    // read carries one, the name order is restored first.
+    let mut sorted = header.clone();
+    sorted.set_sort_order("coordinate");
+    let (written, sort_order) = disq_header(&sorted);
+    let taken = if !grouped && hit_indices {
+        let by_name = take_reads(parser, Some("queryname"), marked, &output)?;
+        let by_name = partition_reads(by_name, 1, None, &output)?.filter_map(|part| match part {
+            Ok((_, record)) => record.map(|record| Ok(record.into_owned())),
+            Err(error) => Some(Err(error)),
+        });
+        take_reads(parser, sort_order.as_deref(), by_name, &output)?
+    } else {
+        take_reads(parser, sort_order.as_deref(), marked, &output)?
+    };
+    if let Some(path) = argument(parser, "metrics-file") {
         let headers = vec![
             crate::command_line::expanded(tool, parser),
             format!("Started on: {}", java_display_now()),
         ];
-        std::fs::write(&metrics, md::metrics_file(&marked, &header, &headers)).map_err(
-            |error| Thrown::non_user(PORT_FAILURE, format!("could not write {metrics}: {error}")),
-        )?;
+        std::fs::write(&path, metrics.file(&header, &headers)).map_err(|error| {
+            Thrown::non_user(PORT_FAILURE, format!("could not write {path}: {error}"))
+        })?;
     }
-    let kept: Vec<BamRecord> = marked
-        .reads
-        .into_iter()
-        .filter(|record| {
-            if remove_all {
-                !gatk_engine::read::is_duplicate(record)
-            } else if remove_sequencing {
-                !matches!(
-                    record.tags.get(htsjdk_bam::tag::Tag::new(b"DT")),
-                    Some(htsjdk_bam::tag::TagValue::Str(kind)) if kind == "SQ"
-                )
-            } else {
-                true
-            }
-        })
-        .collect();
-    header.set_sort_order("coordinate");
-    write_spark_reads(parser, &header, &kept, &output, true)?;
+    // `write_spark_sorted` past the sort, the metrics being written before the reads.
+    refuse_spark_cram_3_0(parser, &output)?;
+    let parts = partition_reads(taken, recommended_reducers(parser), None, &output)?;
+    write_spark_partitions(parser, &written, sort_order.as_deref(), parts, &output)?;
     Ok(None)
+}
+
+/// A refusal of the traversal, as `getReads` raises it.
+fn traversal_failure(error: gatk_engine::reads::ReadsError) -> Thrown {
+    match error {
+        // Disq's query, in the executor, over a file that lacks a contig the merge has.
+        gatk_engine::reads::ReadsError::ContigNotInDictionary(contig) => {
+            eprintln!("ERROR Executor - Exception in task 0.0 in stage 0.0 (TID 0)");
+            Thrown::non_user(
+                "org.apache.spark.SparkException",
+                format!("Contig {contig} not present in reads sequence dictionary"),
+            )
+        }
+        error => Thrown::user(format!("{error:?}")),
+    }
 }
 
 /// `MarkDuplicatesSparkArgumentCollection`, with the optical finder's two settings as the caller's

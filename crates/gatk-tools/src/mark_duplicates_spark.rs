@@ -475,9 +475,9 @@ fn location(name: &str, regex: &ReadNameRegex) -> Location {
 
 /// What a `Fragment` or a `Pair` holds once the name has been parsed.
 #[derive(Debug, Clone)]
-struct Scored {
+struct Scored<'a> {
     partition: usize,
-    name: String,
+    name: &'a str,
     score: i16,
     first_reverse: bool,
     second_reverse: bool,
@@ -487,7 +487,7 @@ struct Scored {
     end: i32,
 }
 
-impl Scored {
+impl Scored<'_> {
     /// `Pair.getOrientationForOpticalDuplicates`, as far as `handlePairs` looks: an FR and an RF
     /// are the two it counts apart, and any other is neither.
     fn optical_orientation(&self) -> Option<bool> {
@@ -515,7 +515,7 @@ fn better(first: &Scored, second: &Scored) -> std::cmp::Ordering {
             .cmp(&b.location.tile)
             .then(a.location.x.cmp(&b.location.x))
             .then(a.location.y.cmp(&b.location.y))
-            .then_with(|| a.name.cmp(&b.name))
+            .then_with(|| a.name.cmp(b.name))
     };
     first.score.cmp(&second.score).then(located(second, first))
 }
@@ -701,143 +701,272 @@ pub fn library_index(header: &SamHeader) -> Vec<String> {
     libraries
 }
 
+/// What the grouping reads off a mapped read, so the read itself need not be held while the rest
+/// of the file is gathered: its name and the flags the name order looks at, the keys its starts
+/// give, its scores, and the refusal the grouping raises when it reaches the read, if any.
+pub struct Summary {
+    name: Box<str>,
+    /// The read's place in the traversal, which finds it again for a refusal that prints it.
+    ordinal: u64,
+    flags: u16,
+    hit_index: Option<i64>,
+    non_primary: bool,
+    has_mapped_mate: bool,
+    reverse: bool,
+    first_of_pair: bool,
+    reference_index: i32,
+    unclipped_start: i32,
+    /// A fragment's own start and end, which flow mode keys on instead.
+    start: i32,
+    end: i32,
+    score: i16,
+    fragment_score: i16,
+    library: u8,
+    read_group: i32,
+    failure: Option<Box<TaskFailure>>,
+}
+
+/// `SAMRecordQueryNameComparator`'s tie-break, the `HI` tag.
+pub fn hit_index(record: &BamRecord) -> Option<i64> {
+    match record.tags.find(Tag::new(b"HI")).as_deref() {
+        Some(TagValue::Int(value)) => Some(*value),
+        _ => None,
+    }
+}
+
+/// A mapped read's [`Summary`]. `libraries` is [`library_index`] of the same header.
+///
+/// The refusals are the ones the grouping makes reading a primary: the read group first, then a
+/// flow fragment's ends. A secondary or supplementary read is looked at for its name alone.
+pub fn summarize(
+    record: &BamRecord,
+    ordinal: u64,
+    header: &SamHeader,
+    arguments: &MarkArguments,
+    libraries: &[String],
+) -> Summary {
+    let mut summary = Summary {
+        name: record.read_name.as_str().into(),
+        ordinal,
+        flags: record.flags,
+        hit_index: hit_index(record),
+        non_primary: read::is_secondary_alignment(record)
+            || read::is_supplementary_alignment(record),
+        has_mapped_mate: has_mapped_mate(record),
+        reverse: read::is_reverse_strand(record),
+        first_of_pair: read::is_first_of_pair(record),
+        reference_index: record.reference_index,
+        unclipped_start: 0,
+        start: 0,
+        end: INSIGNIFICANT_END,
+        score: 0,
+        fragment_score: 0,
+        library: 0,
+        read_group: -1,
+        failure: None,
+    };
+    if summary.non_primary {
+        return summary;
+    }
+    let library = match library_of(record, header) {
+        Ok(library) => library,
+        Err(failure) => {
+            summary.failure = Some(Box::new(failure));
+            return summary;
+        }
+    };
+    summary.library = libraries.iter().position(|l| l == library).unwrap_or(0) as u8;
+    // The read group is found by the same lookup as the library, so it is there.
+    summary.read_group = read_group_of(record)
+        .and_then(|id| header.read_groups.iter().position(|rg| rg.id == id))
+        .map_or(-1, |index| i32::from(index as i16));
+    summary.unclipped_start = stranded_unclipped_start(record);
+    summary.score = score(record, arguments.scoring);
+    summary.start = summary.unclipped_start;
+    summary.fragment_score = summary.score;
+    let flow = &arguments.flow;
+    if summary.has_mapped_mate || !flow.enabled() {
+        return summary;
+    }
+    // `FlowModeFragment`, which keys on a start of its own.
+    let ends = || -> Result<(i32, i32, i16), TaskFailure> {
+        let reverse = summary.reverse;
+        let start = if reverse {
+            flow_read_end(record, false, header, flow)?
+        } else {
+            flow_read_start(record, false, header, flow)?
+        };
+        let end = if !flow.end_location_significant {
+            INSIGNIFICANT_END
+        } else if reverse {
+            flow_read_start(record, true, header, flow)?
+        } else {
+            flow_read_end(record, true, header, flow)?
+        };
+        let fragment_score = if end == INSIGNIFICANT_END {
+            -1
+        } else if flow.quality_sum_strategy && crate::flow_based_read::has_flow_tags(record) {
+            flow_fragment_sum(record, start, end).min(i32::from(i16::MAX / 2)) as i16
+        } else {
+            summary.score
+        };
+        Ok((start, end, fragment_score))
+    };
+    match ends() {
+        Ok((start, end, fragment_score)) => {
+            summary.start = start;
+            summary.end = end;
+            summary.fragment_score = fragment_score;
+        }
+        Err(failure) => summary.failure = Some(Box::new(failure)),
+    }
+    summary
+}
+
+/// `SAMRecordQueryNameComparator.compare` over two summaries, as `htsjdk_bam::query_name::compare`
+/// takes it over the reads.
+pub fn query_name_order(a: &Summary, b: &Summary) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    const PAIRED: u16 = 0x1;
+    const NEGATIVE_STRAND: u16 = 0x10;
+    const FIRST: u16 = 0x40;
+    const SECOND: u16 = 0x80;
+    const SECONDARY: u16 = 0x100;
+    const SUPPLEMENTARY: u16 = 0x800;
+    let cmp = a.name.cmp(&b.name);
+    if cmp != Ordering::Equal {
+        return cmp;
+    }
+    let has = |summary: &Summary, bit: u16| summary.flags & bit != 0;
+    let (a_paired, b_paired) = (has(a, PAIRED), has(b, PAIRED));
+    if a_paired || b_paired {
+        if !a_paired {
+            return Ordering::Greater;
+        }
+        if !b_paired {
+            return Ordering::Less;
+        }
+        if has(a, FIRST) && has(b, SECOND) {
+            return Ordering::Less;
+        }
+        if has(a, SECOND) && has(b, FIRST) {
+            return Ordering::Greater;
+        }
+    }
+    for (bit, a_after) in [
+        (NEGATIVE_STRAND, true),
+        (SECONDARY, true),
+        (SUPPLEMENTARY, true),
+    ] {
+        if has(a, bit) != has(b, bit) {
+            return if has(a, bit) == a_after {
+                Ordering::Greater
+            } else {
+                Ordering::Less
+            };
+        }
+    }
+    match (a.hit_index, b.hit_index) {
+        (Some(h1), Some(h2)) => h1.cmp(&h2),
+        (Some(_), None) => Ordering::Greater,
+        (None, Some(_)) => Ordering::Less,
+        (None, None) => Ordering::Equal,
+    }
+}
+
 /// One key's records: `splitByType`, an empty fragment counting only for being there.
 #[derive(Default)]
-struct KeyGroup {
-    fragments: Vec<Scored>,
-    pairs: Vec<Scored>,
+struct KeyGroup<'a> {
+    fragments: Vec<Scored<'a>>,
+    pairs: Vec<Scored<'a>>,
     has_empty_fragment: bool,
 }
 
 /// `transformToDuplicateNames`: for each partition, the names that are not duplicates, with what
-/// `mark` reads off each. A partition's reads must be grouped by name.
+/// `mark` reads off each, over the summaries of its mapped reads, which must be grouped by name.
+///
+/// `render` prints a partition's reads by their ordinals, for the refusal of a name with more than
+/// two primaries.
 fn names_of_non_duplicates(
-    partitions: &[Vec<BamRecord>],
-    header: &SamHeader,
+    partitions: &[Vec<Summary>],
     arguments: &MarkArguments,
     optical: bool,
+    render: &mut dyn FnMut(usize, &[u64]) -> Vec<String>,
 ) -> Result<Vec<HashMap<String, i32>>, TaskFailure> {
-    let libraries = library_index(header);
-    let library_byte = |record: &BamRecord| -> Result<u8, TaskFailure> {
-        let library = library_of(record, header)?;
-        Ok(libraries.iter().position(|l| l == library).unwrap_or(0) as u8)
-    };
-    let reference = |record: &BamRecord| record.reference_index;
-    let single_key = |record: &BamRecord, library: u8| {
-        fragment_key(
-            stranded_unclipped_start(record),
-            read::is_reverse_strand(record),
-            reference(record),
-            library,
-        )
-    };
-
     let mut groups: HashMap<Key, KeyGroup> = HashMap::new();
     let mut names: Vec<(usize, String, i32)> = Vec::new();
     for (partition, reads) in partitions.iter().enumerate() {
-        let mapped: Vec<&BamRecord> = reads.iter().filter(|r| !read::is_unmapped(r)).collect();
         // `spanByKey`: neighbours by name, so a name that comes back later is another group.
-        for span in mapped.chunk_by(|a, b| a.read_name == b.read_name) {
+        for span in reads.chunk_by(|a, b| a.name == b.name) {
             let mut had_non_primary = None;
-            let mut primaries: Vec<&BamRecord> = Vec::new();
-            for record in span {
-                if read::is_secondary_alignment(record) || read::is_supplementary_alignment(record)
-                {
-                    had_non_primary = Some(*record);
+            let mut primaries: Vec<&Summary> = Vec::new();
+            for summary in span {
+                if summary.non_primary {
+                    had_non_primary = Some(summary);
                     continue;
                 }
-                let library = library_byte(record)?;
-                if has_mapped_mate(record) {
-                    let key = Key::Fragment(single_key(record, library));
+                if let Some(failure) = &summary.failure {
+                    return Err((**failure).clone());
+                }
+                if summary.has_mapped_mate {
+                    let key = Key::Fragment(fragment_key(
+                        summary.unclipped_start,
+                        summary.reverse,
+                        summary.reference_index,
+                        summary.library,
+                    ));
                     groups.entry(key).or_default().has_empty_fragment = true;
                 } else {
-                    let flow = &arguments.flow;
-                    let (start, end, fragment_score) = if flow.enabled() {
-                        // `FlowModeFragment`, which keys on a start of its own.
-                        let reverse = read::is_reverse_strand(record);
-                        let start = if reverse {
-                            flow_read_end(record, false, header, flow)?
-                        } else {
-                            flow_read_start(record, false, header, flow)?
-                        };
-                        let end = if !flow.end_location_significant {
-                            INSIGNIFICANT_END
-                        } else if reverse {
-                            flow_read_start(record, true, header, flow)?
-                        } else {
-                            flow_read_end(record, true, header, flow)?
-                        };
-                        let fragment_score = if end == INSIGNIFICANT_END {
-                            -1
-                        } else if flow.quality_sum_strategy
-                            && crate::flow_based_read::has_flow_tags(record)
-                        {
-                            flow_fragment_sum(record, start, end).min(i32::from(i16::MAX / 2))
-                                as i16
-                        } else {
-                            score(record, arguments.scoring)
-                        };
-                        (start, end, fragment_score)
-                    } else {
-                        (
-                            stranded_unclipped_start(record),
-                            INSIGNIFICANT_END,
-                            score(record, arguments.scoring),
-                        )
-                    };
                     let key = Key::Fragment(fragment_key(
-                        start,
-                        read::is_reverse_strand(record),
-                        reference(record),
-                        library,
+                        summary.start,
+                        summary.reverse,
+                        summary.reference_index,
+                        summary.library,
                     ));
                     groups.entry(key).or_default().fragments.push(Scored {
                         partition,
-                        name: record.read_name.clone(),
-                        score: fragment_score,
-                        first_reverse: read::is_reverse_strand(record),
+                        name: &summary.name,
+                        score: summary.fragment_score,
+                        first_reverse: summary.reverse,
                         second_reverse: false,
                         was_flipped: false,
                         read_group: -1,
                         location: Location::NONE,
-                        end,
+                        end: summary.end,
                     });
                 }
-                primaries.push(record);
+                primaries.push(summary);
             }
             if primaries.is_empty() {
                 if let Some(read) = had_non_primary {
-                    names.push((partition, read.read_name.clone(), NO_OPTICAL_MARKER));
+                    names.push((partition, read.name.to_string(), NO_OPTICAL_MARKER));
                 }
                 continue;
             }
             if primaries.len() > 2 {
+                let ordinals: Vec<u64> = primaries.iter().map(|summary| summary.ordinal).collect();
                 return Err(early(format!(
                     "MarkDuplicatesSpark only supports singleton fragments and pairs. We found the \
                      following group with >2 primary reads: ( {} number of reads). \n{}.",
                     primaries.len(),
-                    primaries
+                    render(partition, &ordinals)
                         .iter()
-                        .map(|record| format!(
-                                "indexpair[{partition},{}]",
-                                gatk_engine::assembly_region::render_read(record, header)
-                            ))
+                        .map(|read| format!("indexpair[{partition},{read}]"))
                         .collect::<Vec<_>>()
                         .join("\n")
                 )));
             }
-            let mates: Vec<&BamRecord> = primaries
+            let mates: Vec<&Summary> = primaries
                 .iter()
                 .copied()
-                .filter(|record| has_mapped_mate(record))
+                .filter(|summary| summary.has_mapped_mate)
                 .collect();
             match mates[..] {
                 [read1, read2] => {
-                    let (key, scored) =
-                        new_pair(read1, read2, partition, header, arguments, &library_byte)?;
+                    let (key, scored) = new_pair(read1, read2, partition);
                     groups.entry(key).or_default().pairs.push(scored);
                 }
-                [only] => names.push((partition, only.read_name.clone(), NO_OPTICAL_MARKER)),
+                [only] => names.push((partition, only.name.to_string(), NO_OPTICAL_MARKER)),
                 _ => {}
             }
         }
@@ -858,15 +987,22 @@ fn names_of_non_duplicates(
 
     let mut answers: Vec<HashMap<String, i32>> = vec![HashMap::new(); partitions.len()];
     for (partition, name, value) in names {
-        if answers[partition].insert(name.clone(), value).is_some() {
-            return Err(TaskFailure {
-                message: format!(
-                    "Detected multiple mark duplicate records objects corresponding to read with \
-                     name '{name}', this could be the result of the file sort order being \
-                     incorrect or that a previous tool has let readnames span multiple partitions"
-                ),
-                late: true,
-            });
+        match answers[partition].entry(name) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(value);
+            }
+            std::collections::hash_map::Entry::Occupied(entry) => {
+                return Err(TaskFailure {
+                    message: format!(
+                        "Detected multiple mark duplicate records objects corresponding to read \
+                         with name '{}', this could be the result of the file sort order being \
+                         incorrect or that a previous tool has let readnames span multiple \
+                         partitions",
+                        entry.key()
+                    ),
+                    late: true,
+                });
+            }
         }
     }
     Ok(answers)
@@ -877,12 +1013,12 @@ fn handle_fragments(fragments: Vec<Scored>, arguments: &MarkArguments) -> (usize
     let located: Vec<Scored> = fragments
         .into_iter()
         .map(|fragment| Scored {
-            location: location(&fragment.name, &arguments.read_name_regex),
+            location: location(fragment.name, &arguments.read_name_regex),
             ..fragment
         })
         .collect();
     let kept = &located[best(&located)];
-    (kept.partition, kept.name.clone(), NO_OPTICAL_MARKER)
+    (kept.partition, kept.name.to_string(), NO_OPTICAL_MARKER)
 }
 
 /// `handleFragmentsWithEndPosition`: by end, then runs whose ends lie within the uncertainty of
@@ -893,7 +1029,7 @@ fn handle_fragments_with_end(
     names: &mut Vec<(usize, String, i32)>,
 ) {
     if let [only] = &fragments[..] {
-        names.push((only.partition, only.name.clone(), 0));
+        names.push((only.partition, only.name.to_string(), 0));
         return;
     }
     fragments.sort_by_key(|fragment| fragment.end);
@@ -928,18 +1064,8 @@ fn handle_fragments_with_end(
 }
 
 /// `Pair`'s constructor: the read further left first, with FR forced when both start alike.
-fn new_pair(
-    read1: &BamRecord,
-    read2: &BamRecord,
-    partition: usize,
-    header: &SamHeader,
-    arguments: &MarkArguments,
-    library_byte: &dyn Fn(&BamRecord) -> Result<u8, TaskFailure>,
-) -> Result<(Key, Scored), TaskFailure> {
-    let (start1, start2) = (
-        stranded_unclipped_start(read1),
-        stranded_unclipped_start(read2),
-    );
+fn new_pair<'a>(read1: &'a Summary, read2: &'a Summary, partition: usize) -> (Key, Scored<'a>) {
+    let (start1, start2) = (read1.unclipped_start, read2.unclipped_start);
     let (index1, index2) = (read1.reference_index, read2.reference_index);
     let in_order = if index1 != index2 {
         index1 < index2
@@ -951,42 +1077,35 @@ fn new_pair(
     } else {
         (read2, read1)
     };
-    if index1 == index2
-        && start1 == start2
-        && read::is_reverse_strand(first)
-        && !read::is_reverse_strand(second)
-    {
+    if index1 == index2 && start1 == start2 && first.reverse && !second.reverse {
         std::mem::swap(&mut first, &mut second);
     }
     let key = Key::Pair(
         fragment_key(
-            stranded_unclipped_start(first),
-            read::is_reverse_strand(first),
+            first.unclipped_start,
+            first.reverse,
             first.reference_index,
-            library_byte(first)?,
+            first.library,
         ),
         pair_key(
-            stranded_unclipped_start(second),
-            read::is_reverse_strand(second),
+            second.unclipped_start,
+            second.reverse,
             second.reference_index,
         ),
     );
-    // The read group is the FIRST read's in the template's order, not the leftmost's.
-    let read_group = read_group_of(read1)
-        .and_then(|id| header.read_groups.iter().position(|rg| rg.id == id))
-        .ok_or_else(|| early(missing_read_group(read1)))?;
     let scored = Scored {
         partition,
-        name: read1.read_name.clone(),
-        score: score(read1, arguments.scoring).wrapping_add(score(read2, arguments.scoring)),
-        first_reverse: read::is_reverse_strand(first),
-        second_reverse: read::is_reverse_strand(second),
-        was_flipped: read::is_first_of_pair(second),
-        read_group: i32::from(read_group as i16),
+        name: &read1.name,
+        score: read1.score.wrapping_add(read2.score),
+        first_reverse: first.reverse,
+        second_reverse: second.reverse,
+        was_flipped: second.first_of_pair,
+        // The FIRST read's in the template's order, not the leftmost's.
+        read_group: read1.read_group,
         location: Location::NONE,
         end: INSIGNIFICANT_END,
     };
-    Ok((key, scored))
+    (key, scored)
 }
 
 /// `handlePairs`, and `countOpticalDuplicates` under it. One pair is settled before any name is
@@ -998,11 +1117,11 @@ fn handle_pairs(
     names: &mut Vec<(usize, String, i32)>,
 ) {
     if pairs.len() == 1 {
-        names.push((pairs[0].partition, pairs[0].name.clone(), 0));
+        names.push((pairs[0].partition, pairs[0].name.to_string(), 0));
         return;
     }
     for pair in &mut pairs {
-        pair.location = location(&pair.name, &arguments.read_name_regex);
+        pair.location = location(pair.name, &arguments.read_name_regex);
     }
     let kept = best(&pairs);
     let mut count = |members: &[usize]| {
@@ -1022,7 +1141,7 @@ fn handle_pairs(
                     let flagged = list[position];
                     names.push((
                         flagged.partition,
-                        flagged.name.clone(),
+                        flagged.name.to_string(),
                         OPTICAL_DUPLICATE_MARKER,
                     ));
                 }
@@ -1041,7 +1160,70 @@ fn handle_pairs(
     } else {
         count(&(0..pairs.len()).collect::<Vec<_>>())
     };
-    names.push((pairs[kept].partition, pairs[kept].name.clone(), total));
+    names.push((pairs[kept].partition, pairs[kept].name.to_string(), total));
+}
+
+/// The names that are not duplicates, partition by partition, and what marking a read of each
+/// takes: `MarkDuplicatesSpark.mark` once the grouping has answered.
+pub struct Answers {
+    names: Vec<HashMap<String, i32>>,
+    tagging: Tagging,
+    mark_unmapped_mates: bool,
+}
+
+/// The grouping over every mapped read's [`Summary`], partitions in order, each grouped by name.
+///
+/// `render` prints a partition's reads by their ordinals, for the refusal that shows them.
+pub fn answers(
+    partitions: &[Vec<Summary>],
+    arguments: &MarkArguments,
+    render: &mut dyn FnMut(usize, &[u64]) -> Vec<String>,
+) -> Result<Answers, TaskFailure> {
+    let optical = arguments.tagging != Tagging::DontTag;
+    Ok(Answers {
+        names: names_of_non_duplicates(partitions, arguments, optical, render)?,
+        tagging: arguments.tagging,
+        mark_unmapped_mates: !arguments.dont_mark_unmapped_mates,
+    })
+}
+
+impl Answers {
+    /// Marks one read of `partition`, the reads of a partition in their order, and returns the
+    /// optical count it carries for the metrics.
+    ///
+    /// The verdict is the name's, so the reads of a name are marked alike whatever order they
+    /// come in; only which of them carries the count depends on it, and the metrics only sum it.
+    pub fn mark(&mut self, partition: usize, record: &mut BamRecord) -> i32 {
+        let tag = Tag::new(&DUPLICATE_TYPE);
+        let answers = &mut self.names[partition];
+        record.flags &= !DUPLICATE;
+        record.tags.remove(tag);
+        let mut count = NO_OPTICAL_MARKER;
+        match answers.get_mut(record.read_name.as_str()) {
+            Some(value) if *value == OPTICAL_DUPLICATE_MARKER => {
+                record.flags |= DUPLICATE;
+                record
+                    .tags
+                    .insert(tag, TagValue::Str(SEQUENCING.to_string()));
+            }
+            Some(value) => {
+                if self.mark_unmapped_mates || !read::is_unmapped(record) {
+                    count = std::mem::replace(value, NO_OPTICAL_MARKER);
+                }
+            }
+            None => {
+                let unmapped_pair = read::is_unmapped(record)
+                    && (!read::is_paired(record) || read::mate_is_unmapped(record));
+                if !unmapped_pair && (self.mark_unmapped_mates || !read::is_unmapped(record)) {
+                    record.flags |= DUPLICATE;
+                    if self.tagging == Tagging::All {
+                        record.tags.insert(tag, TagValue::Str(LIBRARY.to_string()));
+                    }
+                }
+            }
+        }
+        count
+    }
 }
 
 /// The marked reads with, for each, the optical count `mark` leaves in its transient attribute.
@@ -1050,53 +1232,43 @@ pub struct Marked {
     optical_counts: Vec<i32>,
 }
 
-/// `MarkDuplicatesSpark.mark`, over partitions already ordered and grouped by name.
+/// `MarkDuplicatesSpark.mark`, over partitions already ordered and grouped by name, in memory.
 pub fn mark(
     partitions: Vec<Vec<BamRecord>>,
     header: &SamHeader,
     arguments: &MarkArguments,
 ) -> Result<Marked, TaskFailure> {
-    let optical = arguments.tagging != Tagging::DontTag;
-    let mark_unmapped_mates = !arguments.dont_mark_unmapped_mates;
-    let mut answers = names_of_non_duplicates(&partitions, header, arguments, optical)?;
-    let tag = Tag::new(&DUPLICATE_TYPE);
+    let libraries = library_index(header);
+    let mut ordinal = 0u64;
+    let summaries: Vec<Vec<Summary>> = partitions
+        .iter()
+        .map(|reads| {
+            let mut summaries = Vec::new();
+            for record in reads {
+                if !read::is_unmapped(record) {
+                    summaries.push(summarize(record, ordinal, header, arguments, &libraries));
+                }
+                ordinal += 1;
+            }
+            summaries
+        })
+        .collect();
+    let mut verdicts = {
+        let flat: Vec<&BamRecord> = partitions.iter().flatten().collect();
+        let mut render = |_: usize, ordinals: &[u64]| -> Vec<String> {
+            ordinals
+                .iter()
+                .map(|at| gatk_engine::assembly_region::render_read(flat[*at as usize], header))
+                .collect()
+        };
+        answers(&summaries, arguments, &mut render)?
+    };
     let mut reads = Vec::new();
     let mut optical_counts = Vec::new();
     for (partition, records) in partitions.into_iter().enumerate() {
         for mut record in records {
-            let answers = &mut answers[partition];
-            record.flags &= !DUPLICATE;
-            record.tags.remove(tag);
-            let mut count = NO_OPTICAL_MARKER;
-            match answers.get(&record.read_name).copied() {
-                Some(OPTICAL_DUPLICATE_MARKER) => {
-                    record.flags |= DUPLICATE;
-                    record
-                        .tags
-                        .insert(tag, TagValue::Str(SEQUENCING.to_string()));
-                }
-                Some(_) => {
-                    if mark_unmapped_mates || !read::is_unmapped(&record) {
-                        if let Some(value) =
-                            answers.insert(record.read_name.clone(), NO_OPTICAL_MARKER)
-                        {
-                            count = value;
-                        }
-                    }
-                }
-                None => {
-                    let unmapped_pair = read::is_unmapped(&record)
-                        && (!read::is_paired(&record) || read::mate_is_unmapped(&record));
-                    if !unmapped_pair && (mark_unmapped_mates || !read::is_unmapped(&record)) {
-                        record.flags |= DUPLICATE;
-                        if arguments.tagging == Tagging::All {
-                            record.tags.insert(tag, TagValue::Str(LIBRARY.to_string()));
-                        }
-                    }
-                }
-            }
+            optical_counts.push(verdicts.mark(partition, &mut record));
             reads.push(record);
-            optical_counts.push(count);
         }
     }
     Ok(Marked {
@@ -1229,21 +1401,29 @@ fn estimate_library_size(read_pairs: i64, unique_read_pairs: i64) -> Option<i64>
     Some((unique * (low + high) / 2.0) as i64)
 }
 
-/// `generateMetrics` and `saveMetricsRDD`: a row for each library the header names or a read fell
-/// in, by name, and a histogram when exactly one library held reads.
-pub fn metrics_file(marked: &Marked, header: &SamHeader, headers: &[String]) -> String {
-    let mut rows: BTreeMap<String, DuplicationMetrics> = BTreeMap::new();
-    for (record, optical) in marked.reads.iter().zip(&marked.optical_counts) {
+/// `MarkDuplicatesSparkUtils.generateMetrics`, a marked read at a time, in any order.
+#[derive(Default)]
+pub struct Metrics {
+    rows: BTreeMap<String, DuplicationMetrics>,
+}
+
+impl Metrics {
+    /// One marked read, with the optical count [`Answers::mark`] returned for it.
+    pub fn add(&mut self, record: &BamRecord, optical: i32, header: &SamHeader) {
         let library = read_group_of(record)
             .and_then(|id| header.read_groups.iter().find(|rg| rg.id == id))
             .and_then(|group| group.attributes.get("LB"))
             .unwrap_or(UNKNOWN_LIBRARY);
-        let row = rows
-            .entry(library.to_string())
-            .or_insert_with(|| DuplicationMetrics {
-                library: library.to_string(),
-                ..Default::default()
-            });
+        if !self.rows.contains_key(library) {
+            self.rows.insert(
+                library.to_string(),
+                DuplicationMetrics {
+                    library: library.to_string(),
+                    ..Default::default()
+                },
+            );
+        }
+        let row = self.rows.get_mut(library).expect("inserted above");
         let unmapped = read::is_unmapped(record);
         let other =
             read::is_secondary_alignment(record) || read::is_supplementary_alignment(record);
@@ -1264,38 +1444,53 @@ pub fn metrics_file(marked: &Marked, header: &SamHeader, headers: &[String]) -> 
                 row.unpaired_read_duplicates += 1;
             }
         }
-        if *optical > -1 {
-            row.read_pair_optical_duplicates += i64::from(*optical);
+        if optical > -1 {
+            row.read_pair_optical_duplicates += i64::from(optical);
         }
     }
-    let held: BTreeSet<String> = rows.keys().cloned().collect();
-    for row in rows.values_mut() {
-        row.read_pairs_examined /= 2;
-        row.read_pair_duplicates /= 2;
-    }
-    for library in library_index(header) {
-        rows.entry(library.clone())
-            .or_insert_with(|| DuplicationMetrics {
-                library,
-                ..Default::default()
-            });
-    }
-    let mut file = MetricsFile::default();
-    for line in headers {
-        file.add_header(line);
-    }
-    let mut histogram = None;
-    for row in rows.values_mut() {
-        row.derive();
-        if held.len() == 1 && held.contains(&row.library) {
-            histogram = row.roi_histogram();
+
+    /// The metrics file, under `headers`.
+    pub fn file(self, header: &SamHeader, headers: &[String]) -> String {
+        let mut rows = self.rows;
+        let held: BTreeSet<String> = rows.keys().cloned().collect();
+        for row in rows.values_mut() {
+            row.read_pairs_examined /= 2;
+            row.read_pair_duplicates /= 2;
         }
+        for library in library_index(header) {
+            rows.entry(library.clone())
+                .or_insert_with(|| DuplicationMetrics {
+                    library,
+                    ..Default::default()
+                });
+        }
+        let mut file = MetricsFile::default();
+        for line in headers {
+            file.add_header(line);
+        }
+        let mut histogram = None;
+        for row in rows.values_mut() {
+            row.derive();
+            if held.len() == 1 && held.contains(&row.library) {
+                histogram = row.roi_histogram();
+            }
+        }
+        for row in rows.into_values() {
+            file.add_metric(&row);
+        }
+        file.histograms.extend(histogram);
+        file.write()
     }
-    for row in rows.into_values() {
-        file.add_metric(&row);
+}
+
+/// `generateMetrics` and `saveMetricsRDD`: a row for each library the header names or a read fell
+/// in, by name, and a histogram when exactly one library held reads.
+pub fn metrics_file(marked: &Marked, header: &SamHeader, headers: &[String]) -> String {
+    let mut metrics = Metrics::default();
+    for (record, optical) in marked.reads.iter().zip(&marked.optical_counts) {
+        metrics.add(record, *optical, header);
     }
-    file.histograms.extend(histogram);
-    file.write()
+    metrics.file(header, headers)
 }
 
 #[cfg(test)]
@@ -1309,6 +1504,56 @@ mod tests {
         assert_eq!(location("a:b:c:d:1:2:3", &default), Location::of(1, 2, 3));
         assert_eq!(location("b:1:2:3", &default), Location::NONE);
         assert_eq!(location("plain", &default), Location::NONE);
+    }
+
+    /// The summaries sort as their reads do under htsjdk's comparator, on every pair of names,
+    /// flags and `HI` values that reach one of its tie-breaks.
+    #[test]
+    fn summaries_take_the_name_order_of_their_reads() {
+        let arguments = MarkArguments {
+            scoring: Scoring::SumOfBaseQualities,
+            dont_mark_unmapped_mates: false,
+            tagging: Tagging::DontTag,
+            read_name_regex: ReadNameRegex::Default,
+            pixel_distance: 100,
+            flow: FlowArguments::default(),
+        };
+        let header = SamHeader::default();
+        let mut reads = Vec::new();
+        for name in ["a", "b"] {
+            for flags in [
+                0u16, 0x1, 0x41, 0x81, 0x51, 0x101, 0x801, 0x10, 0x100, 0x800, 0x911,
+            ] {
+                for hit in [None, Some(1), Some(2)] {
+                    let mut read = BamRecord {
+                        read_name: name.to_string(),
+                        flags,
+                        ..BamRecord::default()
+                    };
+                    if let Some(hit) = hit {
+                        read.tags.insert(Tag::new(b"HI"), TagValue::Int(hit));
+                    }
+                    reads.push(read);
+                }
+            }
+        }
+        let summaries: Vec<Summary> = reads
+            .iter()
+            .map(|read| summarize(read, 0, &header, &arguments, &[]))
+            .collect();
+        for (left, a) in reads.iter().zip(&summaries) {
+            for (right, b) in reads.iter().zip(&summaries) {
+                assert_eq!(
+                    query_name_order(a, b),
+                    htsjdk_bam::query_name::compare(left, right),
+                    "{:#x} {:?} against {:#x} {:?}",
+                    left.flags,
+                    a.hit_index,
+                    right.flags,
+                    b.hit_index
+                );
+            }
+        }
     }
 
     #[test]
