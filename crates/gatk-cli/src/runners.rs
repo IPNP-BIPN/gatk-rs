@@ -947,8 +947,9 @@ fn read_walker_startup_with(
     let reference = reference_dictionary(parser)?;
 
     // `initializeReads`: the file itself, which is a refusal only when it cannot be read at all.
-    // Only the start of the stream decides a refusal, so only the start is kept: the file's own
-    // bytes, or for BGZF the inflated ones once the whole file is known to inflate.
+    // Only the start of the stream decides a refusal, so only the start is read: the file's own
+    // bytes, or for BGZF the inflated ones. A block further on is inflated, and refused, when the
+    // traversal reads it, as `SamReaderFactory.open` reads only the header.
     let bytes = gatk_engine::reads::file_start(path);
     let compressed = bytes
         .as_deref()
@@ -957,9 +958,7 @@ fn read_walker_startup_with(
     let decompressed = match (&bytes, compressed) {
         (None, _) => None,
         (Some(bytes), false) => Some(bytes.clone()),
-        (Some(_), true) => ReadsDataSource::check(path)
-            .and_then(|()| gatk_engine::reads::inflated_start(path))
-            .ok(),
+        (Some(_), true) => gatk_engine::reads::inflated_start(path).ok(),
     };
     let reader_refusal = gatk_tools::read_walker_refusal::refusal(
         &input,

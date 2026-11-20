@@ -1051,8 +1051,8 @@ impl<'a> Stream<'a> {
         if have.len() >= 4 {
             let length = i32::from_le_bytes([have[0], have[1], have[2], have[3]]);
             if length >= FIXED_BLOCK_SIZE as i32 {
-                // shortcut: a damaged length reads the rest of the stream to report `have`; the
-                // file passed `check_blocks`, so only a corrupt record gets here.
+                // shortcut: a damaged length reads the rest of the stream to report `have`, or
+                // stops at the first block that does not inflate, whose error is the answer.
                 self.fill(4 + length as usize)?;
             }
         }
