@@ -1019,11 +1019,7 @@ def writable_copies(tool, row_args):
     refusal. Each such value is copied into the container's own `/work/tmp` first, which is not an
     output, and the row names the copy. Returns the shell prefix and the rewritten assignments.
     """
-    path = REPO / "tools" / "coverage" / "fixtures.json"
-    names = (
-        json.loads(path.read_text()).get("per_tool", {}).get(tool, {}).get("$writable", [])
-        if path.exists() else []
-    )
+    names = writable_arguments(tool)
     prefix, rewritten = "", []
     for pair in row_args:
         name, _, value = pair.partition("=")
@@ -1033,6 +1029,14 @@ def writable_copies(tool, row_args):
             pair = f"{name}={copy}"
         rewritten.append(pair)
     return prefix, rewritten
+
+
+def writable_arguments(tool):
+    """The arguments `writable_copies` copies before a row runs, per tool under `$writable`."""
+    path = REPO / "tools" / "coverage" / "fixtures.json"
+    if not path.exists():
+        return ()
+    return tuple(json.loads(path.read_text()).get("per_tool", {}).get(tool, {}).get("$writable", []))
 
 
 def list_arguments(tool):
