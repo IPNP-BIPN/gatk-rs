@@ -334,7 +334,7 @@ pub fn reads_likelihoods_given_haplotype_log10(
     ROWS.with_borrow_mut(|(previous, current)| {
         previous.resize(width, ZERO);
         current.resize(width, ZERO);
-        sweep(
+        sweep_dispatched(
             reads,
             out,
             &order,
@@ -348,8 +348,60 @@ pub fn reads_likelihoods_given_haplotype_log10(
     });
 }
 
-/// The rows of [`reads_likelihoods_given_haplotype_log10`], [`LANES`] reads at a time.
+/// [`sweep`] compiled for the widest vectors this CPU has, chosen at run time: the release build
+/// targets the x86-64 baseline, where the four lanes take two 128-bit operations. Every lane still
+/// does its own multiplies and adds in the same order, and AVX2 brings no fused multiply-add
+/// (that is the separate `fma` feature, never enabled), so each width gives the same bits.
 #[allow(clippy::too_many_arguments)]
+fn sweep_dispatched(
+    reads: &[HmmRead<'_>],
+    out: &mut [f64],
+    order: &[usize],
+    codes: &[u8],
+    distinct: &[u8],
+    priors: &mut [Lanes],
+    previous: &mut [Cell],
+    current: &mut [Cell],
+    initial: f64,
+) {
+    #[cfg(target_arch = "x86_64")]
+    if std::is_x86_feature_detected!("avx2") {
+        // SAFETY: the CPU has just been seen to support AVX2.
+        unsafe {
+            return sweep_avx2(
+                reads, out, order, codes, distinct, priors, previous, current, initial,
+            );
+        }
+    }
+    sweep(
+        reads, out, order, codes, distinct, priors, previous, current, initial,
+    );
+}
+
+/// [`sweep`] with AVX2's 256-bit registers.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[allow(clippy::too_many_arguments)]
+unsafe fn sweep_avx2(
+    reads: &[HmmRead<'_>],
+    out: &mut [f64],
+    order: &[usize],
+    codes: &[u8],
+    distinct: &[u8],
+    priors: &mut [Lanes],
+    previous: &mut [Cell],
+    current: &mut [Cell],
+    initial: f64,
+) {
+    sweep(
+        reads, out, order, codes, distinct, priors, previous, current, initial,
+    );
+}
+
+/// The rows of [`reads_likelihoods_given_haplotype_log10`], [`LANES`] reads at a time. Inlined
+/// into each of [`sweep_dispatched`]'s copies, so that each is compiled for its own width.
+#[allow(clippy::too_many_arguments)]
+#[inline(always)]
 fn sweep<'a>(
     reads: &[HmmRead<'_>],
     out: &mut [f64],
