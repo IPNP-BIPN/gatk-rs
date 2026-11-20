@@ -108,3 +108,47 @@ jobs:
           path: |
             /tmp/speed.json
             /tmp/speed.txt
+
+  filter-mutect-calls-scale:
+    # One tool at a size where JVM start-up does not dominate, on each architecture natively: the
+    # shards above run inside the amd64 oracle image, which on an arm64 host is emulation.
+    name: "FilterMutectCalls at scale, ${{ matrix.runner }}${{ matrix.baseline && ', baseline x86-64' || '' }}"
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+        baseline: [""]
+        include:
+          # glibc's AVX2/FMA/AVX-512 variants masked: what a baseline x86-64 CPU would run.
+          - runner: ubuntu-latest
+            baseline: glibc.cpu.hwcaps=-AVX2,-FMA,-AVX512F,-AVX2_Usable,-FMA_Usable,-AVX512F_Usable
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build the port binary
+        run: cargo build --release -p gatk-cli
+
+      - name: GATK 4.7.0.0, checksummed as tools/oracle/Dockerfile does
+        run: |
+          curl -fsSL -o /tmp/gatk.zip \
+            https://github.com/broadinstitute/gatk/releases/download/4.7.0.0/gatk-4.7.0.0.zip
+          echo "d093d2693b1626361a413ca59d6d4a0bf968717f280a8fd9ce060b25eb2ed1db  /tmp/gatk.zip" \
+            | sha256sum -c -
+          unzip -q /tmp/gatk.zip -d /tmp
+
+      - name: Record the host CPU
+        run: lscpu | grep -E '^(Architecture|Model name|Flags)' | cut -c1-400; nproc
+
+      - name: Time both sides natively
+        shell: bash
+        run: |
+          docker run --rm -e GLIBC_TUNABLES="${{ matrix.baseline }}" \
+            -v "$PWD":/repo:ro -v "$PWD/target/release":/b:ro -v /tmp/gatk-4.7.0.0:/jar:ro \
+            eclipse-temurin:17-jdk bash -c '
+              (apt-get update -qq && apt-get install -y -qq python3) >/dev/null
+              python3 /repo/tools/speed/fmc_scale.py /b/gatk /jar/gatk-package-4.7.0.0-local.jar 5' \
+            | tee /tmp/fmc.md
+          cat /tmp/fmc.md >> "$GITHUB_STEP_SUMMARY"
