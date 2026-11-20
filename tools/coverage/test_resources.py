@@ -1343,8 +1343,20 @@ def replay(invocation, port, gatk):
             ours = run_array.outcome(port_code, port_text, port_error)
         finally:
             run_array.empty_output_in_container(workdir)
-    return {"id": invocation["id"], "tool": invocation["tool"], "reference_exit": code,
-            "matched": ours == reference, "reference": reference[:4000], "port": ours[:4000]}
+    result = {"id": invocation["id"], "tool": invocation["tool"], "reference_exit": code,
+              "matched": ours == reference, "reference": reference[:4000], "port": ours[:4000]}
+    if ours != reference:
+        result["first_difference"] = first_difference(reference, ours)
+    return result
+
+
+def first_difference(reference, port):
+    """Where two answers part, since a head kept to 4000 characters may not reach it."""
+    left, right = reference.split("\n"), port.split("\n")
+    for line, (a, b) in enumerate(zip(left, right)):
+        if a != b:
+            return {"line": line, "reference": a[:2000], "port": b[:2000]}
+    return {"line": min(len(left), len(right)), "reference": f"{len(left)} lines", "port": f"{len(right)} lines"}
 
 
 def chosen(options):
@@ -1359,9 +1371,13 @@ def chosen(options):
 
 def run(options):
     run_array.FIXTURES_DIR = str(Path(options.gatk).resolve())
+    picked = chosen(options)
+    # The R-plot tools' port runs in the image `run_array` builds for them, as their arrays do.
+    if any(run_array.past_the_interpreter(i["tool"]) == "Rscript" for i in picked):
+        run_array.build_port_with_r()
     results = []
     with concurrent.futures.ThreadPoolExecutor(options.jobs) as pool:
-        for result in pool.map(lambda i: replay(i, options.port, options.gatk), chosen(options)):
+        for result in pool.map(lambda i: replay(i, options.port, options.gatk), picked):
             print(f"{result['id']}: {'match' if result['matched'] else 'DIFFERS'} (reference exit {result['reference_exit']})", flush=True)
             results.append(result)
     Path(options.out).write_text(json.dumps({"shard": options.shard, "results": results}, indent=1) + "\n")
@@ -1420,6 +1436,7 @@ def self_check():
     assert jdouble(0.5) == "0.5" and jdouble(1e-5) == "1.0E-5" and jdouble(3.0) == "3.0" and jdouble(1.5e7) == "1.5E7"
     assert jformat("-O %s -x %d%%", ["/a", 3]) == "-O /a -x 3%"
     assert escape_expressions("-a 1 -select 'QD > 2.0' -b") == ["-a", "1", "-select", "QD > 2.0", "-b"]
+    assert first_difference("a\nb", "a\nc") == {"line": 1, "reference": "b", "port": "c"}
     assert inject_verbosity(["-I", "x"]) == ["-I", "x", "--verbosity", "ERROR"]
     assert join_path("/a/b/", "c/") == "/a/b/c" and normalized("x//y/") == "x/y"
     assert Builder().add("O", "%s").tokens == ["--O", "%s"]
