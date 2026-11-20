@@ -8013,13 +8013,13 @@ pub fn filter_mutect_calls(parser: &Parser) -> Outcome {
             header.lines.push(line);
         }
     }
-    let write_records = |records: &[htsjdk_vcf::variant::VariantContext]| -> Result<(), Thrown> {
-        let mut header = header.clone();
-        let mut records = records.to_vec();
-        apply_sites_only(parser, &mut header, &mut records);
-        let out = write_vcf_honouring_lenient(parser, &header, &records)?;
-        write_variant_output(parser, &output, &out)
-    };
+    let write_records =
+        |mut records: Vec<htsjdk_vcf::variant::VariantContext>| -> Result<(), Thrown> {
+            let mut header = header.clone();
+            apply_sites_only(parser, &mut header, &mut records);
+            let out = write_vcf_honouring_lenient(parser, &header, &records)?;
+            write_variant_output(parser, &output, &out)
+        };
 
     // `new Mutect2FilteringEngine(...)`, after the header is written: the contamination tables,
     // the orientation priors, then (outside the two modes that drop GermlineFilter) the segments.
@@ -8027,7 +8027,7 @@ pub fn filter_mutect_calls(parser: &Parser) -> Outcome {
     let (contamination_by_sample, priors_by_sample, segments_by_sample) = match models {
         Ok(models) => models,
         Err(thrown) => {
-            write_records(&[])?;
+            write_records(Vec::new())?;
             return Err(thrown);
         }
     };
@@ -8043,7 +8043,7 @@ pub fn filter_mutect_calls(parser: &Parser) -> Outcome {
     // after the header is written.
     let stats_path = argument(parser, "stats").unwrap_or_else(|| format!("{input}.stats"));
     let Ok(stats) = std::fs::read_to_string(&stats_path) else {
-        write_records(&[])?;
+        write_records(Vec::new())?;
         let missing = fmc::MissingStatsTable { path: stats_path };
         return Err(Thrown {
             failure: Failure::User,
@@ -8072,7 +8072,12 @@ pub fn filter_mutect_calls(parser: &Parser) -> Outcome {
         })
         .collect();
 
-    let kept = variants_in_traversal(&file.records, intervals.as_deref(), &input)?;
+    drop(text);
+    let kept_indices = indices_in_traversal(&file.records, intervals.as_deref(), &input)?;
+    let kept: Vec<&htsjdk_vcf::variant::VariantContext> = kept_indices
+        .iter()
+        .map(|&index| &file.records[index])
+        .collect();
     let text_of = |value: &Value| value.format().unwrap_or_default();
     let values_of = |value: &Value| -> Vec<String> {
         match value {
@@ -8290,7 +8295,7 @@ pub fn filter_mutect_calls(parser: &Parser) -> Outcome {
                 match posterior {
                     Ok(posterior) => posteriors.push(posterior),
                     Err(error) => {
-                        write_records(&[])?;
+                        write_records(Vec::new())?;
                         return Err(Thrown::non_user(error.class, error.message));
                     }
                 }
@@ -8348,14 +8353,32 @@ pub fn filter_mutect_calls(parser: &Parser) -> Outcome {
     let result = match fmc::run(&records, &arguments) {
         Ok(result) => result,
         Err(error) => {
-            write_records(&[])?;
+            write_records(Vec::new())?;
             return Err(Thrown::non_user(error.class, error.message));
         }
     };
 
-    let mut written = Vec::new();
-    for (variant, applied) in kept.iter().zip(&result.records) {
-        let mut out = (*variant).clone();
+    drop(records);
+    drop(kept);
+    // Each input record moves into the output at its last emission and is cloned before then,
+    // so one copy of the calls is held rather than three.
+    let mut last_emission = vec![usize::MAX; file.records.len()];
+    for (emission, &index) in kept_indices.iter().enumerate() {
+        last_emission[index] = emission;
+    }
+    let mut slots: Vec<Option<htsjdk_vcf::variant::VariantContext>> =
+        file.records.into_iter().map(Some).collect();
+    let mut written = Vec::with_capacity(kept_indices.len());
+    for (emission, (&index, applied)) in kept_indices.iter().zip(&result.records).enumerate() {
+        let mut out = if last_emission[index] == emission {
+            slots[index]
+                .take()
+                .expect("moved at its last emission only")
+        } else {
+            slots[index]
+                .clone()
+                .expect("still held before its last emission")
+        };
         let mut filters = applied.filters.clone();
         filters.sort();
         filters.dedup();
@@ -8372,7 +8395,8 @@ pub fn filter_mutect_calls(parser: &Parser) -> Outcome {
         }
         written.push(out);
     }
-    write_records(&written)?;
+    drop(slots);
+    write_records(written)?;
     let stats_output = argument(parser, "filtering-stats")
         .unwrap_or_else(|| format!("{output}.filteringStats.tsv"));
     write_file(&stats_output, result.filtering_stats.as_bytes())?;
@@ -14099,6 +14123,18 @@ fn variants_in_traversal<'a>(
     intervals: Option<&[gatk_engine::interval::SimpleInterval]>,
     input: &str,
 ) -> Result<Vec<&'a htsjdk_vcf::variant::VariantContext>, Thrown> {
+    Ok(indices_in_traversal(records, intervals, input)?
+        .into_iter()
+        .map(|index| &records[index])
+        .collect())
+}
+
+/// `variants_in_traversal` as indices into `records`, in traversal order, repeats included.
+fn indices_in_traversal(
+    records: &[htsjdk_vcf::variant::VariantContext],
+    intervals: Option<&[gatk_engine::interval::SimpleInterval]>,
+    input: &str,
+) -> Result<Vec<usize>, Thrown> {
     let spans: Vec<Locus> = records
         .iter()
         .map(|record| Locus {
@@ -14117,15 +14153,11 @@ fn variants_in_traversal<'a>(
             .message(),
         ));
     }
+    // The span's offset in `spans`, where a search for it was quadratic in the record count.
+    let base = spans.as_ptr() as usize;
     Ok(gatk_engine::variant_source::traverse(&spans, intervals)
         .into_iter()
-        .map(|span| {
-            let index = spans
-                .iter()
-                .position(|other| std::ptr::eq(other, span))
-                .expect("a span of this list");
-            &records[index]
-        })
+        .map(|span| (span as *const Locus as usize - base) / std::mem::size_of::<Locus>())
         .collect())
 }
 
