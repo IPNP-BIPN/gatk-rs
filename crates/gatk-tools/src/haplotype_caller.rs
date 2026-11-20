@@ -620,6 +620,13 @@ fn call_variants_into(
                     }
                 }
             },
+            // An inactive region is read only for its reference model, its rows or its pileups.
+            &|active| {
+                active
+                    || arguments.genotyping.emit_reference_confidence
+                    || region_out.is_some()
+                    || detection.use_pileup_detection
+            },
         )
         .map_err(|error| HaplotypeCallerError::new(error.class(), error.message()))?;
         if let Some(failure) = failure {

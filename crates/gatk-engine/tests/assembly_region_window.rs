@@ -1,9 +1,9 @@
 //! `traverse_with_pileups` walking a shard a window at a time against walking it whole.
 //!
-//! The windowed walk holds only the reads overlapping its window and replays the downsampler from a
-//! copy of the generator to fill the regions, so everything a tool can see has to come out the
-//! same: every evaluator call with its pileup, every region with its reads, and the generator's
-//! state when the first region is handed out.
+//! The windowed walk holds only the reads overlapping its window, logs what the downsampler did to
+//! the piles it cut, and fills only the active regions from a second read of their spans through
+//! that log, so everything a tool can see has to come out the same: every evaluator call with its
+//! pileup, every active region with its reads in order, and the generator as the regions are drawn.
 
 use gatk_engine::assembly_region_iterator::AssemblyRegionArgs;
 use gatk_engine::assembly_region_walker::{traverse_with_pileups, Downsampler, WalkerReads};
@@ -128,16 +128,22 @@ fn run(window: Option<i32>, intervals: &[SimpleInterval]) -> Vec<String> {
                     None,
                 )
             },
+            // Only an active region's reads are read: the windowed walk reads no other.
+            &|active| active,
         )
         .expect("a traversal");
         for region in regions.into_iter().flatten() {
             let region = region.expect("a region");
-            let names: Vec<&str> = region
-                .region
-                .reads()
-                .iter()
-                .map(|r| r.read_name.as_str())
-                .collect();
+            let names: Vec<&str> = if region.is_active {
+                region
+                    .region
+                    .reads()
+                    .iter()
+                    .map(|r| r.read_name.as_str())
+                    .collect()
+            } else {
+                Vec::new()
+            };
             seen.push(format!(
                 "{:?} {:?} {} {} next={}",
                 region.region.span(),

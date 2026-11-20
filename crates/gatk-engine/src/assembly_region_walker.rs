@@ -50,6 +50,9 @@ use crate::read_utils;
 use crate::variant_source::Located;
 use htsjdk_bam::header::SamHeader;
 use htsjdk_bam::record::BamRecord;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 /// `getDefaultReadFilters()`, in the order the base class declares them.
 ///
@@ -92,8 +95,8 @@ pub fn make_read_shards(
 pub enum WalkerError {
     Region(RegionError),
     ReadState(ReadStateError),
-    /// The reads source failing under a shard's query, which a run only meets when the file
-    /// changes under it: every read was decoded once before the traversal.
+    /// The reads source failing under a shard's query: a read that does not decode, or that the
+    /// tool's transformers refuse, met when the traversal reaches it.
     Reads(String),
 }
 
@@ -259,7 +262,7 @@ pub type ReadStream<'r> = Box<dyn Iterator<Item = Result<BamRecord, String>> + '
 
 /// Where [`traverse_with_pileups`] reads a shard from: `query` answers the reads overlapping the
 /// shard's padded intervals ([`overlaps_shard`]), through the tool's transformers and filters, in
-/// file order, and is asked twice per shard.
+/// file order. A windowed walk asks it again for the spans of the regions the tool reads.
 pub struct WalkerReads<'r> {
     pub query: Box<dyn Fn(&ReadShard) -> ReadStream<'r> + 'r>,
     /// `Some(width)` when every stream is coordinate sorted: the loci are then walked `width` at a
@@ -292,9 +295,17 @@ impl<'r> WalkerReads<'r> {
 /// The shard's iterator: a read is in it when it overlaps one of the **padded** intervals.
 pub fn overlaps_shard(record: &BamRecord, shard: &ReadShard, header: &SamHeader) -> bool {
     let contig = contig_of(record, header);
-    shard.padded_intervals.iter().any(|interval| {
-        interval.overlaps(&contig, read_utils::start(record), read_utils::end(record))
-    })
+    let (start, end) = (read_utils::start(record), read_utils::end(record));
+    let intervals = &shard.padded_intervals;
+    // Sorted and merged, so the ends agreeing is one contig: on it only the last interval starting at or before the read's
+    // end can overlap it, and a shard is one contig's.
+    if intervals.first().map(|i| &i.contig) == intervals.last().map(|i| &i.contig) {
+        let after = intervals.partition_point(|interval| interval.start <= end);
+        return after > 0 && intervals[after - 1].overlaps(&contig, start, end);
+    }
+    intervals
+        .iter()
+        .any(|interval| interval.overlaps(&contig, start, end))
 }
 
 /// `createDownsampler()`, as the tool builds it, run a batch at a time: a batch ends where the
@@ -314,16 +325,143 @@ struct Downsampled<'r, R> {
     downsampler: Downsampler<'r>,
     random: R,
     out: std::collections::VecDeque<BamRecord>,
+    log: Option<Rc<RefCell<PileLog>>>,
 }
 
 impl<'r, R: std::borrow::BorrowMut<JavaRandom>> Downsampled<'r, R> {
-    fn new(input: ReadStream<'r>, downsampler: Downsampler<'r>, random: R) -> Self {
+    fn new(
+        input: ReadStream<'r>,
+        downsampler: Downsampler<'r>,
+        random: R,
+        log: Option<Rc<RefCell<PileLog>>>,
+    ) -> Self {
         Downsampled {
             input: input.peekable(),
             downsampler,
             random,
             out: Default::default(),
+            log,
         }
+    }
+}
+
+/// A read as a batch knows it: its start, name, flags, and how many identical ones came first.
+type PileKey = ((i32, i32), String, u16, u32);
+
+/// What the downsampler did to the batches it changed, so that a later read of any part of the
+/// shard hands out what it handed out without drawing again: each of their reads by its start,
+/// with its batch and its place in the batch's output, `None` where it was dropped. A batch the
+/// downsampler handed back whole and in order is not here, and costs nothing.
+#[derive(Default)]
+struct PileLog {
+    by_start: HashMap<(i32, i32), Vec<(String, u16, u32, u32, Option<u32>)>>,
+    batches: u32,
+}
+
+impl PileLog {
+    fn keys(reads: &[BamRecord]) -> Vec<PileKey> {
+        let mut seen: HashMap<PileKey, u32> = HashMap::new();
+        reads
+            .iter()
+            .map(|read| {
+                let key = (
+                    (read.reference_index, read.alignment_start),
+                    read.read_name.clone(),
+                    read.flags,
+                    0,
+                );
+                let occurrence = seen.entry(key.clone()).or_insert(0);
+                *occurrence += 1;
+                (key.0, key.1, key.2, *occurrence - 1)
+            })
+            .collect()
+    }
+
+    fn add(&mut self, batch: &[BamRecord], out: &[BamRecord]) {
+        let id = self.batches;
+        self.batches += 1;
+        let input = Self::keys(batch);
+        let mut rank: HashMap<&PileKey, u32> = HashMap::new();
+        for (place, key) in Self::keys(out).iter().enumerate() {
+            let at = input
+                .iter()
+                .find(|k| *k == key)
+                .expect("a kept read is a batch read");
+            rank.insert(at, place as u32);
+        }
+        for key in &input {
+            self.by_start.entry(key.0).or_default().push((
+                key.1.clone(),
+                key.2,
+                key.3,
+                id,
+                rank.get(key).copied(),
+            ));
+        }
+    }
+
+    /// The batch a read is in and its place in the output, for a read of a changed batch.
+    fn find(&self, read: &BamRecord, occurrence: u32) -> Option<(u32, Option<u32>)> {
+        self.by_start
+            .get(&(read.reference_index, read.alignment_start))?
+            .iter()
+            .find(|(name, flags, nth, _, _)| {
+                *name == read.read_name && *flags == read.flags && *nth == occurrence
+            })
+            .map(|&(_, _, _, batch, rank)| (batch, rank))
+    }
+}
+
+/// A later read of (part of) a shard, given what [`PileLog`] says the downsampler did: the reads
+/// of a changed batch that are here come out as it handed them out, the dropped ones not at all.
+struct Replayed<I: Iterator<Item = BamRecord>> {
+    input: std::iter::Peekable<I>,
+    log: Rc<RefCell<PileLog>>,
+    out: std::collections::VecDeque<BamRecord>,
+}
+
+impl<I: Iterator<Item = BamRecord>> Iterator for Replayed<I> {
+    type Item = BamRecord;
+
+    fn next(&mut self) -> Option<BamRecord> {
+        if let Some(read) = self.out.pop_front() {
+            return Some(read);
+        }
+        let log = self.log.borrow();
+        let read = self.input.next()?;
+        // How many reads with the same name, flags and start this batch has had: a duplicate
+        // record is told apart by its place among its copies.
+        let mut seen: HashMap<(String, u16, (i32, i32)), u32> = HashMap::new();
+        let key = |read: &BamRecord| {
+            (
+                read.read_name.clone(),
+                read.flags,
+                (read.reference_index, read.alignment_start),
+            )
+        };
+        seen.insert(key(&read), 1);
+        let Some((batch, rank)) = log.find(&read, 0) else {
+            return Some(read);
+        };
+        let mut kept: Vec<(u32, BamRecord)> = rank.map(|rank| (rank, read)).into_iter().collect();
+        // A batch's reads are next to each other in any read of the shard.
+        while let Some(next) = self.input.peek() {
+            let nth = seen.get(&key(next)).copied().unwrap_or(0);
+            match log.find(next, nth) {
+                Some((same, rank)) if same == batch => {
+                    let next = self.input.next().expect("just peeked");
+                    *seen.entry(key(&next)).or_insert(0) += 1;
+                    if let Some(rank) = rank {
+                        kept.push((rank, next));
+                    }
+                }
+                _ => break,
+            }
+        }
+        kept.sort_by_key(|(rank, _)| *rank);
+        self.out = kept.into_iter().map(|(_, read)| read).collect();
+        drop(log);
+        self.next()
     }
 }
 
@@ -350,7 +488,13 @@ impl<R: std::borrow::BorrowMut<JavaRandom>> Iterator for Downsampled<'_, R> {
                     .expect("just peeked"),
             );
         }
-        self.out = (self.downsampler.run)(&batch, self.random.borrow_mut()).into();
+        let out = (self.downsampler.run)(&batch, self.random.borrow_mut());
+        if let Some(log) = &self.log {
+            if out.len() != batch.len() {
+                log.borrow_mut().add(&batch, &out);
+            }
+        }
+        self.out = out.into();
         self.next()
     }
 }
@@ -384,8 +528,10 @@ impl Iterator for ShardRegions<'_, '_> {
 /// loci advance and calls each region as it is ready: the draws are the same, and only their
 /// interleaving with a draw the tool makes while calling a region could differ. That order is
 /// kept here without holding the shard: the loci are walked over one read of it, and the regions
-/// are filled from a second, through the downsampler again from a copy of `random` taken before
-/// the first, which draws the same reads.
+/// are filled from a second read of only the regions the tool reads (`needs_reads`, given a
+/// region's activity), through a log of what the downsampler did to the piles it cut, which draws
+/// nothing. Without a window the second read is of the whole shard, through the downsampler again
+/// from a copy of `random` taken before the first.
 #[allow(clippy::too_many_arguments)]
 pub fn traverse_with_pileups<'h, 's, 'r: 's, 'd: 's>(
     reads: &WalkerReads<'r>,
@@ -396,6 +542,7 @@ pub fn traverse_with_pileups<'h, 's, 'r: 's, 'd: 's>(
     downsampler: Downsampler<'d>,
     random: &mut JavaRandom,
     is_active: &mut dyn FnMut(&SimpleInterval, Option<&AlignmentContext<'_>>) -> ActivityAnswer,
+    needs_reads: &dyn Fn(bool) -> bool,
 ) -> Result<Vec<ShardRegions<'h, 's>>, WalkerError> {
     let shards = make_read_shards(intervals, args.assembly_region_padding, header)
         .expect("a padding validate() has already accepted");
@@ -403,6 +550,9 @@ pub fn traverse_with_pileups<'h, 's, 'r: 's, 'd: 's>(
     let mut out = Vec::new();
     for shard in &shards {
         let replay = random.clone();
+        let log = reads
+            .window
+            .map(|_| Rc::new(RefCell::new(PileLog::default())));
         let regions = walk_loci(
             reads,
             shard,
@@ -412,14 +562,50 @@ pub fn traverse_with_pileups<'h, 's, 'r: 's, 'd: 's>(
             downsampler,
             random,
             is_active,
+            log.clone(),
         )?;
-        let failure = std::rc::Rc::new(std::cell::RefCell::new(None));
+        let failure = Rc::new(RefCell::new(None));
         let slot = failure.clone();
-        let input: ReadStream<'s> = (reads.query)(shard);
-        let stream: Box<dyn Iterator<Item = BamRecord> + 's> = Box::new(
-            Downsampled::new(input, downsampler, replay)
-                .map_while(move |read| read.map_err(|error| *slot.borrow_mut() = Some(error)).ok()),
-        );
+        let fill = move |read: Result<BamRecord, String>| {
+            read.map_err(|error| *slot.borrow_mut() = Some(error)).ok()
+        };
+        let stream: Box<dyn Iterator<Item = BamRecord> + 's> = match log {
+            // The second read is of the regions whose reads the tool reads, and draws nothing:
+            // what the downsampler did to them is in the log. A region the tool does not read
+            // gets what of those overlaps it, which it never looks at.
+            Some(log) => {
+                // In region order, so sorted; merged where they overlap or touch.
+                let mut needed: Vec<SimpleInterval> = Vec::new();
+                for region in regions
+                    .iter()
+                    .filter(|region| args.force_active || needs_reads(region.is_active()))
+                {
+                    let span = region.padded_span();
+                    match needed.last_mut() {
+                        Some(last) if last.contig == span.contig && span.start <= last.end + 1 => {
+                            last.end = last.end.max(span.end);
+                        }
+                        _ => needed.push(span.clone()),
+                    }
+                }
+                let input: ReadStream<'s> = if needed.is_empty() {
+                    Box::new(std::iter::empty())
+                } else {
+                    (reads.query)(&ReadShard {
+                        intervals: shard.intervals.clone(),
+                        padded_intervals: needed,
+                    })
+                };
+                Box::new(Replayed {
+                    input: input.map_while(fill).peekable(),
+                    log,
+                    out: Default::default(),
+                })
+            }
+            None => Box::new(
+                Downsampled::new((reads.query)(shard), downsampler, replay, None).map_while(fill),
+            ),
+        };
         out.push(ShardRegions {
             filler: RegionFiller::new(stream, regions, args.force_active, header),
             failure,
@@ -444,6 +630,7 @@ fn walk_loci(
     downsampler: Downsampler<'_>,
     random: &mut JavaRandom,
     is_active: &mut dyn FnMut(&SimpleInterval, Option<&AlignmentContext<'_>>) -> ActivityAnswer,
+    log: Option<Rc<RefCell<PileLog>>>,
 ) -> Result<Vec<crate::assembly_region::AssemblyRegion>, WalkerError> {
     // Each window is its loci and the bounds of its contexts, none for a whole shard.
     type Window = (Vec<SimpleInterval>, Option<(i32, i32)>);
@@ -470,7 +657,8 @@ fn walk_loci(
             .collect(),
     };
 
-    let mut stream = Downsampled::new((reads.query)(shard), downsampler, &mut *random).peekable();
+    let mut stream =
+        Downsampled::new((reads.query)(shard), downsampler, &mut *random, log).peekable();
     let mut held: Vec<BamRecord> = Vec::new();
     let mut cutter = RegionCutter::new(shard, args, header);
     for (loci, bounds) in &windows {

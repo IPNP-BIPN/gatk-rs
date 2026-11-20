@@ -379,6 +379,13 @@ fn call_variants_with(
                 };
                 (prob, None)
             },
+            // An inactive region is read only for its reference model, its rows or its pileups.
+            &|active| {
+                active
+                    || arguments.emit_reference_confidence
+                    || region_out.is_some()
+                    || detection.use_pileup_detection
+            },
         )
         .map_err(|error| failure(error.class(), error.message()))?;
         // `isActive`'s throw ends the traversal there.
