@@ -515,7 +515,26 @@ impl<'h, I: Iterator<Item = BamRecord>> RegionFiller<'h, I> {
             }
         }
 
-        self.previous_region_reads = region.reads().to_vec();
+        // `previousRegionReads`, of which the next fill adds back only those that overlap its padded
+        // span, in this order: those are the only ones copied.
+        self.previous_region_reads = match self.ready.as_slice().first() {
+            Some(next) => {
+                let next = next.padded_span();
+                region
+                    .reads()
+                    .iter()
+                    .filter(|read| {
+                        next.overlaps(
+                            &contig_of(read, header),
+                            read_utils::start(read),
+                            read_utils::end(read),
+                        )
+                    })
+                    .cloned()
+                    .collect()
+            }
+            None => Vec::new(),
+        };
         let is_active = if self.force_active {
             region.set_is_active(true);
             true
