@@ -1301,11 +1301,21 @@ pub fn score_variant_annotations(parser: &Parser) -> Outcome {
         ..
     } = variant_walker_startup(parser, "ScoreVariantAnnotations")?;
     let prefix = require(parser, "output");
-    let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+    let mut file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
         failure: Failure::User,
         exception: "htsjdk.tribble.TribbleException",
         message: Some(failure.error.message()),
     })?;
+    // The records are not held while the resources load: each pass reads them again from the
+    // text, which this read has already refused if it is malformed.
+    let records_read = std::mem::take(&mut file.records).len();
+    let read_records = || -> Result<Vec<htsjdk_vcf::variant::VariantContext>, Thrown> {
+        let records = htsjdk_vcf::reader::read_vcf(&text)
+            .map_err(|failure| Thrown::user(failure.error.message()))?
+            .records;
+        debug_assert_eq!(records.len(), records_read);
+        Ok(records)
+    };
     let LabelledStart {
         annotations_path,
         vcf_path,
@@ -1409,10 +1419,25 @@ pub fn score_variant_annotations(parser: &Parser) -> Outcome {
     validate_output_files(&[&scores_path])?;
 
     // The first pass. The annotations file is written before anything scores it.
-    let traversed = variants_in_traversal(&file.records, intervals.as_deref(), &input)?;
+    let records = read_records()?;
+    let traversed = traversal_indices(&records, intervals.as_deref(), &input)?;
+    let mut uses = vec![0usize; records.len()];
+    for &index in &traversed {
+        uses[index] += 1;
+    }
+    let mut slots: Vec<Option<htsjdk_vcf::variant::VariantContext>> =
+        records.into_iter().map(Some).collect();
     let mut extracted: Vec<Vec<extract::Row>> = Vec::new();
-    for record in &traversed {
-        let reduced_record = reduced(record);
+    for &index in &traversed {
+        // Freed on its last use: the second pass reads the records again.
+        uses[index] -= 1;
+        let record = if uses[index] == 0 {
+            slots[index].take()
+        } else {
+            slots[index].clone()
+        }
+        .expect("a record not yet moved out");
+        let reduced_record = reduced(&record);
         let found = metadata(&reduced_record, &resources, &walker_arguments, true)?;
         if !found.is_empty() {
             extracted.push(
@@ -1423,7 +1448,9 @@ pub fn score_variant_annotations(parser: &Parser) -> Outcome {
             );
         }
     }
-    if !extracted.is_empty() {
+    drop(slots);
+    let any_extracted = !extracted.is_empty();
+    if any_extracted {
         write_file(
             &annotations_path,
             &matrix(
@@ -1438,11 +1465,12 @@ pub fn score_variant_annotations(parser: &Parser) -> Outcome {
             return Err(stop_at("python", "Running --python-script"));
         }
     }
+    drop(extracted);
 
     // `readAnnotationsAndWriteScoresToHDF5`, from the file the pass just wrote.
     let mut scores = Vec::new().into_iter();
     let mut is_snp = Vec::new().into_iter();
-    if !extracted.is_empty() {
+    if any_extracted {
         let names = read_annotation_names(&annotations_path)?;
         let rows = read_annotation_rows(&annotations_path)?;
         let snp = read_label(&annotations_path, extract::SNP_LABEL)?;
@@ -1473,11 +1501,32 @@ pub fn score_variant_annotations(parser: &Parser) -> Outcome {
 
     // The second pass: `writeExtractedVariantToVCF`, and an unextracted record as it was read.
     use htsjdk_vcf::variant::Value;
-    let mut written: Vec<htsjdk_vcf::variant::VariantContext> = Vec::with_capacity(traversed.len());
-    for record in traversed {
-        let reduced_record = reduced(record);
+    // Each record is moved out of the file on its last use rather than cloned, so the input and the
+    // output are not both held whole.
+    let records = read_records()?;
+    let mut uses = vec![0usize; records.len()];
+    for &index in &traversed {
+        uses[index] += 1;
+    }
+    let mut slots: Vec<Option<htsjdk_vcf::variant::VariantContext>> =
+        records.into_iter().map(Some).collect();
+    // `write_vcf`, a record at a time, so a scored record is dropped once it is text. The first
+    // encoding failure is kept and returned after the loop, where `write_vcf` would have met it.
+    let sites_only = flag(parser, "sites-only-vcf-output");
+    apply_sites_only(parser, &mut header, &mut []);
+    let encoder = htsjdk_vcf::encoder::VcfEncoder::new(&header);
+    let mut vcf = header.write();
+    let mut encoded = Ok(());
+    for index in traversed {
+        uses[index] -= 1;
+        let mut out = if uses[index] == 0 {
+            slots[index].take()
+        } else {
+            slots[index].clone()
+        }
+        .expect("a record not yet moved out");
+        let reduced_record = reduced(&out);
         let found = metadata(&reduced_record, &resources, &walker_arguments, true)?;
-        let mut out = record.clone();
         if !found.is_empty() {
             let labels: std::collections::BTreeSet<&String> =
                 found.iter().flat_map(|e| &e.labels).collect();
@@ -1535,11 +1584,15 @@ pub fn score_variant_annotations(parser: &Parser) -> Outcome {
                 }
             }
         }
-        written.push(out);
+        if sites_only {
+            out.genotypes = Vec::new().into();
+        }
+        if encoded.is_ok() {
+            encoded = encoder.encode_into(&out, &mut vcf);
+            vcf.push('\n');
+        }
     }
-    apply_sites_only(parser, &mut header, &mut written);
-    let vcf = htsjdk_vcf::vcf_file::write_vcf(&header, &written)
-        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    encoded.map_err(|error| Thrown::user(format!("{error:?}")))?;
     write_variant_output(parser, &vcf_path, &vcf)?;
     Ok(None)
 }
