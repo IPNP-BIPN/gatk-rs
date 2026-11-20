@@ -1095,11 +1095,12 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         }
         Ok(Some(read))
     };
-    // Every read goes through the transformers before the traversal, so a read that refuses
-    // refuses there, wherever it is in the file.
+    // With an index each shard is queried, and a read the transformers refuse refuses when the
+    // traversal reaches it, its class kept here.
+    let refused = std::cell::RefCell::new(None);
     let (mut reads, queried) = match pipeline_reads {
         Some(given) => (given, false),
-        None if spark => (super::prepare_reads(&source, &prepare, true)?.0, false),
+        None if spark => (super::prepare_reads(&source, &prepare)?, false),
         None => super::assembly_region_reads(&source, &prepare)?,
     };
 
@@ -1543,7 +1544,13 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         }
     } else {
         let walker_reads = if queried {
-            super::queried_reads(&source, &header, &prepare)
+            super::queried_reads(
+                &source,
+                &header,
+                &prepare,
+                &refused,
+                Some(gatk_engine::assembly_region_walker::WINDOW),
+            )
         } else {
             gatk_engine::assembly_region_walker::WalkerReads::held(&reads, &header)
         };
@@ -1580,7 +1587,9 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         Err(error) => (
             error.calls_before,
             // A `UserException` is reported as a user error, by its message alone.
-            Some(if error.class.contains("UserException") {
+            Some(if let Some(thrown) = refused.take() {
+                thrown
+            } else if error.class.contains("UserException") {
                 Thrown::user(error.message)
             } else {
                 Thrown::non_user(java_class_name(&error.class), error.message)

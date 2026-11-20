@@ -435,15 +435,13 @@ type PrepareRead<'a> = dyn Fn(BamRecord) -> Result<Option<BamRecord>, Thrown> + 
 
 /// Every read of the file through `prepare`, as a walker that read the file whole and then
 /// transformed it refuses: a read the file cannot decode first, wherever it is, then the first read
-/// `prepare` refuses. The prepared reads are kept only with `keep`; the flag is whether they come
-/// in coordinate order, so a shard can be walked a window at a time.
+/// `prepare` refuses. These are the reads a walker holds when no index lets it query a shard.
 fn prepare_reads(
     source: &ReadsDataSource,
     prepare: &PrepareRead<'_>,
-    keep: bool,
-) -> Result<(Vec<BamRecord>, bool), Thrown> {
+) -> Result<Vec<BamRecord>, Thrown> {
     let reads_error = |error: gatk_engine::reads::ReadsError| Thrown::user(format!("{error:?}"));
-    let (mut kept, mut sorted, mut last, mut refused) = (Vec::new(), true, (i32::MIN, 0), None);
+    let (mut kept, mut refused) = (Vec::new(), None);
     for read in source.records_all().map_err(reads_error)? {
         let read = read.map_err(reads_error)?;
         if refused.is_some() {
@@ -452,48 +450,39 @@ fn prepare_reads(
         match prepare(read) {
             Err(thrown) => refused = Some(thrown),
             Ok(None) => {}
-            Ok(Some(read)) => {
-                let here = (read.reference_index, gatk_engine::read_utils::start(&read));
-                // An unmapped read is in no shard.
-                if here.1 != gatk_engine::read_utils::UNSET_POSITION {
-                    sorted &= here >= last;
-                    last = last.max(here);
-                }
-                if keep {
-                    kept.push(read);
-                }
-            }
+            Ok(Some(read)) => kept.push(read),
         }
     }
     match refused {
         Some(thrown) => Err(thrown),
-        None => Ok((kept, sorted)),
+        None => Ok(kept),
     }
 }
 
-/// The reads an `AssemblyRegionWalker` holds, and whether it holds none because each shard can be
-/// queried instead: the source has an index and the prepared reads are coordinate sorted. Either
-/// way every read has been through `prepare` once, so nothing refuses mid-traversal.
+/// The reads an `AssemblyRegionWalker` holds, and whether it holds none because each shard is
+/// queried instead, as `ReadsPathDataSource` does with an index: then only the reads a shard
+/// overlaps are read, and one that refuses refuses when the traversal reaches it.
 fn assembly_region_reads(
     source: &ReadsDataSource,
     prepare: &PrepareRead<'_>,
 ) -> Result<(Vec<BamRecord>, bool), Thrown> {
-    let indexed = source.has_index();
-    let (reads, sorted) = prepare_reads(source, prepare, !indexed)?;
-    Ok(match (indexed, sorted) {
-        (true, true) => (reads, true),
-        (true, false) => (prepare_reads(source, prepare, true)?.0, false),
-        (false, _) => (reads, false),
-    })
+    if source.has_index() {
+        return Ok((Vec::new(), true));
+    }
+    Ok((prepare_reads(source, prepare)?, false))
 }
 
-/// [`assembly_region_reads`]' query: a shard's reads straight from the file, through `prepare`.
+/// [`assembly_region_reads`]' query: a shard's reads straight from the file, through `prepare`,
+/// walked `window` loci at a time. A read `prepare` refuses ends the shard's stream, and the
+/// refusal itself, with its class, is left in `refused` for the runner to report.
 fn queried_reads<'a>(
     source: &'a ReadsDataSource,
     header: &'a SamHeader,
     prepare: &'a PrepareRead<'a>,
+    refused: &'a std::cell::RefCell<Option<Thrown>>,
+    window: Option<i32>,
 ) -> gatk_engine::assembly_region_walker::WalkerReads<'a> {
-    use gatk_engine::assembly_region_walker::{overlaps_shard, ReadStream, WalkerReads, WINDOW};
+    use gatk_engine::assembly_region_walker::{overlaps_shard, ReadStream, WalkerReads};
     WalkerReads {
         query: Box::new(move |shard| -> ReadStream<'a> {
             let records = match source.query_iter(&shard.padded_intervals) {
@@ -505,7 +494,11 @@ fn queried_reads<'a>(
                 records
                     .map(move |read| {
                         let read = read.map_err(|error| format!("{error:?}"))?;
-                        prepare(read).map_err(|thrown| thrown.message.unwrap_or_default())
+                        prepare(read).map_err(|thrown| {
+                            let message = thrown.message.clone().unwrap_or_default();
+                            refused.borrow_mut().get_or_insert(thrown);
+                            message
+                        })
                     })
                     .filter_map(Result::transpose)
                     .filter(move |read| {
@@ -514,7 +507,7 @@ fn queried_reads<'a>(
                     }),
             )
         }),
-        window: Some(WINDOW),
+        window,
     }
 }
 

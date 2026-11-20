@@ -459,12 +459,19 @@ pub fn mutect2(parser: &Parser) -> Outcome {
             .map(Some)
             .map_err(|e| Thrown::non_user(PORT_FAILURE, e))
     };
-    // Every read goes through the filters and the clipper before the traversal, so a read that
-    // refuses refuses there. Held when no index lets a shard be queried, or when the clipper
-    // leaves the reads out of coordinate order.
+    // With an index each shard is queried, and a read the filters or the clipper refuse refuses
+    // when the traversal reaches it. The clipper can move a read's start past the next one's, and
+    // a window needs the reads in order, so with it a shard is walked whole.
+    let refused = std::cell::RefCell::new(None);
     let (reads, queried) = super::assembly_region_reads(&source, &prepare)?;
     let walker_reads = if queried {
-        super::queried_reads(&source, &header, &prepare)
+        super::queried_reads(
+            &source,
+            &header,
+            &prepare,
+            &refused,
+            (!clip_itr).then_some(gatk_engine::assembly_region_walker::WINDOW),
+        )
     } else {
         gatk_engine::assembly_region_walker::WalkerReads::held(&reads, &header)
     };
@@ -763,7 +770,9 @@ pub fn mutect2(parser: &Parser) -> Outcome {
             error.calls_before,
             0,
             // A `UserException` is reported as a user error, by its message alone.
-            Some(if error.class.contains("UserException") {
+            Some(if let Some(thrown) = refused.take() {
+                thrown
+            } else if error.class.contains("UserException") {
                 Thrown::user(error.message)
             } else {
                 Thrown::non_user(java_class_name(&error.class), error.message)
