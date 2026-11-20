@@ -133,7 +133,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | CrosscheckReadGroupFingerprints | picard-rs | oracle-backed | not vendored | not vendored | 20/20 (100.0%) | 2 | not measured | 0 | 0 | none |
 | DenoiseReadCounts | gatk-rs | oracle-backed | 13 suite | 0 suite | 6/6 (100.0%) | 2 | 1458 probes (+0), 0/3 diverge | 1 | 3 | none |
 | DepthOfCoverage | gatk-rs | oracle-backed | 60 suite | 0 suite | 20/20 (100.0%) | 2 | 3023 probes (+74), 0/14 diverge | 2 | 1 | none |
-| DetermineGermlineContigPloidy | gatk-rs | oracle-backed | 306 suite | 150 suite | 32/32 (100.0%) | 2 | 1046 probes (+2), 0/4 diverge | 4 | 0 | none |
+| DetermineGermlineContigPloidy | gatk-rs | oracle-backed | 306 suite | 150 suite | 18/18 (100.0%) | 2 | 1046 probes (+2), 0/4 diverge | 4 | 0 | none |
 | DiscoverVariantsFromContigAlignmentsSAMSpark | gatk-rs | oracle-backed | 96 | 12 | 19/19 (100.0%) | 2 | 3995 probes (+6), 0/12 diverge | 5 | 5 | none |
 | DownsampleByDuplicateSet | gatk-rs | oracle-backed | 23 suite | 0 suite | 18/18 (100.0%) | 2 | 1955 probes (+0), 0/9 diverge | 2 | 6 | none |
 | DownsampleSam | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -182,7 +182,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | GenomicsDBImport | gatk-rs | oracle-backed | 3620 | 3341 | 19/19 (100.0%) | 2 | 2174 probes (+48), 0/9 diverge | 6 | 11 | none |
 | GenotypeConcordance | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
 | GenotypeGVCFs | gatk-rs | oracle-backed | 19 suite | 0 suite | 39/39 (100.0%) | 2 | 5528 probes (+6), 0/19 diverge | 6 | 9 | none |
-| GermlineCNVCaller | gatk-rs | oracle-backed | 297 suite | 150 suite | 46/46 (100.0%) | 2 | 1062 probes (+0), 0/3 diverge | 5 | 0 | none |
+| GermlineCNVCaller | gatk-rs | oracle-backed | 297 suite | 150 suite | 19/19 (100.0%) | 2 | 1062 probes (+0), 0/3 diverge | 5 | 0 | none |
 | GetNormalArtifactData | gatk-rs | oracle-backed | 7 suite | 0 suite | 19/19 (100.0%) | 2 | 2729 probes (+0), 0/6 diverge | 2 | 0 | none |
 | GetPileupSummaries | gatk-rs | oracle-backed | 8 suite | 0 suite | 19/19 (100.0%) | 2 | 3053 probes (+2), 0/10 diverge | 6 | 0 | none |
 | GetSampleName | gatk-rs | oracle-backed | 35 suite | 0 suite | 21/21 (100.0%) | 2 | 1824 probes (+2), 0/9 diverge | 5 | 0 | none |
@@ -989,7 +989,7 @@ Inputs: `intervals.interval_list`, `p-model`, `priors.tsv`, `sample3.counts.tsv`
 
 Held out: none.
 
-Past the interpreter: both sides run in the Broad's image, the port through the pinned image's glibc, and hand gcnvkernel GATK's own cohort or case script, under gcnv_frozen_env.sh with one pytensor compile directory between them ($environment). Four samples of make_gcnv_fixture.py (three contigs, ten intervals each) and the case-mode model under gcnv/ are made once by the reference before the rows (run_array.build_gcnv). Every numeric argument has two in-range values, the iteration, epoch and sampling counts small ones so that a row takes seconds: the parser's bounds are measured on every other tool, and a third, out-of-range value would refuse all but a row or two before the script. --mapping-error-rate keeps 0.0 for the collection's own refusal.
+Past the interpreter: both sides run in the Broad's image, the port through the pinned image's glibc, and hand gcnvkernel GATK's own cohort or case script, under gcnv_frozen_env.sh with one pytensor compile directory between them ($environment). Four samples of make_gcnv_fixture.py (three contigs, ten intervals each) and the case-mode model under gcnv/ are made once by the reference before the rows (run_array.build_gcnv). Every numeric argument has two in-range values, the iteration, epoch and sampling counts small ones so that a row takes seconds: the parser's bounds are measured on every other tool, and a third, out-of-range value would refuse all but a row or two before the script. --mapping-error-rate keeps 0.0 for the collection's own refusal. --convergence-snr-averaging-window takes 20, not 10: Java allows any window, but gcnvkernel's ELBO convergence tracker asserts one above 10.
 
 ### DiscoverVariantsFromContigAlignmentsSAMSpark
 
@@ -1359,7 +1359,7 @@ Inputs: `annotated.tsv`, `g-model`, `intervals.interval_list`, `p-calls`, `sampl
 
 Held out: none.
 
-Past the interpreter as DetermineGermlineContigPloidy is: the same image, environment and fixture, with the reference's ploidy calls, and its cohort model for case mode and as an initial model, under gcnv/. Two in-range values per numeric argument, the iteration, epoch and sampling counts small. The arguments a model fixes are refused in CASE mode once SET, and a row carries every argument it varies, so each has <unset> as a value and a constraint keeps the other off CASE rows; --num-gc-bins is left free so that the refusal is measured.
+Past the interpreter as DetermineGermlineContigPloidy is: the same image, environment and fixture, with the reference's ploidy calls, and its cohort model for case mode and as an initial model, under gcnv/. Two in-range values per numeric argument, the iteration, epoch and sampling counts small. The arguments a model fixes are refused in CASE mode once SET, and a row carries every argument it varies, so each has <unset> as a value and a constraint keeps the other off CASE rows; --num-gc-bins is left free so that the refusal is measured. --convergence-snr-averaging-window takes 20, not 10: Java allows any window, but gcnvkernel's ELBO convergence tracker asserts one above 10.
 
 ### GetNormalArtifactData
 
