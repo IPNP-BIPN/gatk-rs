@@ -24,41 +24,68 @@ from pathlib import Path
 OUT = Path("/work/out")
 
 
-def prepare():
+def prepare(out=OUT):
     """An empty output directory and the two temporary ones, as `run_array.py` gives every row."""
-    if OUT.exists():
-        for stale in OUT.iterdir():
-            if stale.is_dir() and not stale.is_symlink():
-                shutil.rmtree(stale, ignore_errors=True)
-            else:
-                stale.unlink(missing_ok=True)
-    for path in (OUT, Path("/work/tmp"), Path("/work/tmp2")):
+    for path in (out, Path("/work/tmp"), Path("/work/tmp2")):
+        if path.exists():
+            for stale in path.iterdir():
+                if stale.is_dir() and not stale.is_symlink():
+                    shutil.rmtree(stale, ignore_errors=True)
+                else:
+                    stale.unlink(missing_ok=True)
         path.mkdir(parents=True, exist_ok=True)
 
 
-def run(command, timeout):
-    """One run: wall seconds, CPU seconds (user + system), peak RSS in KiB, exit code."""
-    prepare()
+def oom_kills():
+    """How many processes the container's memory limit has killed so far (cgroup v2), or None."""
+    try:
+        for line in Path("/sys/fs/cgroup/memory.events").read_text().splitlines():
+            if line.startswith("oom_kill "):
+                return int(line.split()[1])
+    except OSError:
+        pass
+    return None
+
+
+def run(command, timeout, out=OUT, log=None):
+    """One run: wall seconds, CPU seconds (user + system), peak RSS in KiB, exit code.
+
+    A run the timeout kills says so (`timed_out`), and one the container's memory limit kills
+    says so too (`oom_killed`): at scale those are results, not errors to retry.
+    """
+    prepare(out)
+    kills = oom_kills()
+    expired = threading.Event()
     start = time.perf_counter()
+    sink = open(log, "w") if log else subprocess.DEVNULL
     child = subprocess.Popen(
         ["bash", "-c", f"exec {command}"],
         stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=sink,
+        stderr=sink,
         start_new_session=True,
     )
-    timer = threading.Timer(timeout, lambda: os.killpg(child.pid, signal.SIGKILL))
+    def expire():
+        expired.set()
+        os.killpg(child.pid, signal.SIGKILL)
+
+    timer = threading.Timer(timeout, expire)
     timer.start()
     _, status, usage = os.wait4(child.pid, 0)
     wall = time.perf_counter() - start
     timer.cancel()
+    if log:
+        sink.close()
     # Popen still holds the pid; tell it the child is gone so it does not wait again.
     child.returncode = os.waitstatus_to_exitcode(status)
+    after = oom_kills()
     return {
         "wall": wall,
         "cpu": usage.ru_utime + usage.ru_stime,
         "rss_kib": usage.ru_maxrss,
         "exit": child.returncode,
+        "timed_out": expired.is_set(),
+        "oom_killed": kills is not None and after is not None and after > kills,
     }
 
 
@@ -81,6 +108,21 @@ def main(spec_path):
     spec = json.loads(Path(spec_path).read_text())
     reps, timeout = spec["reps"], spec["timeout"]
     runs = {"oracle": [], "port": []}
+    if spec.get("scale"):
+        # One run per side at scale, each into its own kept directory; the inputs are read once
+        # first so neither side pays the page cache for the other.
+        for path in spec.get("warm", []):
+            subprocess.run(["cat", path], stdout=subprocess.DEVNULL, check=False)
+        for side in ("oracle", "port"):
+            # Both sides write to the same path, /work/out, which points at the side's own kept
+            # directory: an output records the path it was written to (a BAM's @PG CL).
+            out = Path(spec["out"][side])
+            out.mkdir(parents=True, exist_ok=True)
+            if OUT.is_symlink() or OUT.exists():
+                OUT.unlink() if OUT.is_symlink() else shutil.rmtree(OUT)
+            OUT.symlink_to(out)
+            runs[side].append(run(spec[side], timeout, out, out.with_name(f"{side}.log")))
+        reps = -1
     for rep in range(reps + 1):
         order = ("oracle", "port") if rep % 2 == 0 else ("port", "oracle")
         for side in order:
@@ -88,15 +130,24 @@ def main(spec_path):
     result = {"cold": runs}
     if spec.get("steady"):
         result["steady"] = steady(spec["steady"], spec["iterations"], timeout)
-    cpu = ""
+    cpu, flags = "", set()
     try:
-        for line in Path("/proc/cpuinfo").read_text().splitlines():
-            if line.startswith("model name"):
-                cpu = line.split(":", 1)[1].strip()
-                break
+        info = Path("/proc/cpuinfo").read_text()
     except OSError:
-        pass
-    result["host"] = {"cpu": cpu, "cores": os.cpu_count()}
+        info = ""
+    for line in info.splitlines():
+        key, _, value = line.partition(":")
+        if key.strip() == "model name" and not cpu:
+            cpu = value.strip()
+        if key.strip() in ("flags", "Features") and not flags:
+            flags = set(value.split())
+    if not cpu:
+        # An ARM /proc/cpuinfo names no model; lscpu decodes the part number (Neoverse-N2, ...).
+        lscpu = subprocess.run(["lscpu"], capture_output=True, text=True, check=False).stdout
+        cpu = next((l.split(":", 1)[1].strip() for l in lscpu.splitlines()
+                    if l.startswith("Model name")), "")
+    result["host"] = {"cpu": cpu, "cores": os.cpu_count(), "machine": os.uname().machine,
+                      "avx512": "avx512f" in flags}
     print(json.dumps(result))
 
 

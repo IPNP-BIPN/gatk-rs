@@ -1355,6 +1355,11 @@ Folklore says a Rust port is faster than the JVM. The answerable version is narr
       — each marked removable or not
 - [x] **S.5** (#112) the first targets, chosen from the baseline rather than from reading the code.
       Blocked on S.3 by construction
+- [ ] **S.7** (#1453) speed and RAM at scale: the best-practices chain on chr20 of NA12878 at 30x,
+      the data pinned by sha256 (`tools/speed/scale.json`), both sides in the pinned container at
+      equal threads, wall clock, CPU and peak RSS, and the output bytes compared at scale. The
+      `Speed at scale` workflow publishes it in `docs/speed/scale.md`, with the predictions written
+      first. A run that is killed (out of memory, timeout) is a result, recorded as such
 
 Milestone GPU is a different thing: a second implementation on other hardware. This one is about
 the CPU path that already exists, and no bit-identity claim may weaken to buy a speedup.

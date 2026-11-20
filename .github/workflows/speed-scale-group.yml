@@ -1,0 +1,116 @@
+name: Speed at scale, one group
+
+# One job of speed-scale.yml: every step of tools/speed/scale.json whose `group` is this one, in
+# order, on the reference's outputs of the steps they need from earlier groups.
+
+on:
+  workflow_call:
+    inputs:
+      group:
+        required: true
+        type: string
+      arch:
+        required: true
+        type: string
+      runner:
+        required: true
+        type: string
+      platform:
+        required: true
+        type: string
+
+jobs:
+  group:
+    name: ${{ inputs.group }}
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Room on the disk for two sides' BAMs
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      # Restored when it is cached, built when it is not: a cache evicted between jobs is not a failure.
+      - id: image
+        uses: actions/cache@v6
+        with:
+          path: /tmp/oracle-image.tar
+          key: gatk-rs-oracle-${{ inputs.arch == 'x86-64' && '' || format('{0}-', inputs.arch) }}${{ hashFiles('tools/oracle/**') }}
+
+      - name: The pinned oracle image
+        run: |
+          if [ -f /tmp/oracle-image.tar ]; then
+            docker load -i /tmp/oracle-image.tar
+          else
+            docker build --platform ${{ inputs.platform }} -t gatk-rs-oracle:4.7.0.0 tools/oracle
+            docker save gatk-rs-oracle:4.7.0.0 -o /tmp/oracle-image.tar
+          fi
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: scale-data
+          path: /tmp/scale-data
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: scale-port-binary-${{ inputs.arch }}
+          path: /tmp/port
+
+      - name: The reference's outputs from earlier groups
+        uses: actions/download-artifact@v8
+        with:
+          pattern: scale-oracle-${{ inputs.arch }}-*
+          path: /tmp/upstream
+
+      - name: Place them where the steps read them
+        run: |
+          mkdir -p scale-results
+          for dir in /tmp/upstream/scale-oracle-*/*; do
+            [ -d "$dir" ] || continue
+            step="${dir##*/}"
+            mkdir -p "scale-results/$step"
+            mv "$dir" "scale-results/$step/oracle"
+          done
+          chmod +x /tmp/port/gatk
+
+      - name: Record the host CPU and memory
+        run: lscpu | grep -E 'Model name|Architecture|Flags' | cut -c1-200; nproc; free -g
+
+      - id: steps
+        run: |
+          echo "args=$(python3 -c "import json;print(' '.join('--step ' + s['name'] for s in json.load(open('tools/speed/scale.json'))['steps'] if s['group'] == '${{ inputs.group }}'))")" >> "$GITHUB_OUTPUT"
+
+      - name: Measure the group
+        run: |
+          python3 tools/speed/bench.py --scale --platform ${{ inputs.platform }} --port /tmp/port/gatk --data /tmp/scale-data \
+            --results scale-results ${{ steps.steps.outputs.args }} \
+            --out /tmp/scale-${{ inputs.group }}.json | tee /tmp/scale-${{ inputs.group }}.txt
+          cat /tmp/scale-${{ inputs.group }}.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: scale-json-${{ inputs.arch }}-${{ inputs.group }}
+          path: /tmp/scale-${{ inputs.group }}.json
+
+      - name: Name this group's reference outputs for the next groups
+        if: ${{ !cancelled() }}
+        run: |
+          python3 -c "import json;[print(s['name']) for s in json.load(open('tools/speed/scale.json'))['steps'] if s['group'] == '${{ inputs.group }}']" > /tmp/own
+          mkdir -p /tmp/own-outputs
+          while read -r step; do
+            if [ -d "scale-results/$step/oracle" ] && [ -n "$(ls -A "scale-results/$step/oracle")" ]; then
+              mv "scale-results/$step/oracle" "/tmp/own-outputs/$step"
+            fi
+          done < /tmp/own
+          ls /tmp/own-outputs
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: scale-oracle-${{ inputs.arch }}-${{ inputs.group }}
+          path: /tmp/own-outputs
+          retention-days: 3
+          compression-level: 0

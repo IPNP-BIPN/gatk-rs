@@ -37,6 +37,7 @@ COSTS, and it holds itself to the same rules:
 import argparse
 import json
 import math
+import shutil
 import statistics
 import subprocess
 import sys
@@ -296,12 +297,22 @@ def merge(paths, out):
     document = {"tools": {}, "shards": []}
     for path in paths:
         part = json.loads(Path(path).read_text())
+        if "steps" in part:
+            document.setdefault("steps", {}).update(part["steps"])
+            for key in ("scale", "commit", "host"):
+                document.setdefault(key, part.get(key))
+            continue
         document["tools"].update(part["tools"])
         document["shards"].append(
             {key: part.get(key) for key in ("host", "container_overhead", "reps", "iterations")}
         )
         for key in ("reps", "iterations", "commit"):
             document.setdefault(key, part.get(key))
+    if "steps" in document:
+        del document["tools"], document["shards"]
+        Path(out).write_text(json.dumps(document, indent=1, sort_keys=True) + "\n")
+        scale_table(document)
+        return 0
     finish(document)
     Path(out).write_text(json.dumps(document, indent=1, sort_keys=True) + "\n")
     table(document)
@@ -330,6 +341,272 @@ def compare(first, second):
     return 0
 
 
+SCALE = SPEED / "scale.json"
+# The masks the comparison applies to a whole output directory, applied here one file at a time.
+SCALE_TEXT = (".vcf", ".vcf.gz", ".tsv", ".table", ".metrics", ".interval_list", ".seg", ".tranches",
+              ".recal", ".param", ".stats", ".hdf5")
+
+
+def scale_steps(names):
+    spec = json.loads(SCALE.read_text())
+    steps = spec["steps"]
+    unknown = set(names or ()) - {s["name"] for s in steps}
+    if unknown:
+        raise SystemExit(f"no such step in scale.json: {', '.join(sorted(unknown))}")
+    return [s for s in steps if not names or s["name"] in names]
+
+
+def scale_command(step, side, port, threads):
+    """One side's command line, with the step's placeholders resolved inside the container."""
+    args = step["args"].format(data="/work/data", out="/work/out", threads=threads, **{"in": "/work/in"})
+    if side == "oracle":
+        java = f"java {run_array.JAVA_OPENS} {step.get('java_options', '')}".strip()
+        return f'{java} -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {step["name"]} {args}'
+    return f"/work/port-binary/{Path(port).name} {step['name']} {args}"
+
+
+def time_step(step, options):
+    """Both sides of one step in the pinned container, under the memory limit, kept on disk."""
+    results = Path(options.results).resolve()
+    missing = [n for n in step["needs"] if not any((results / n / "oracle").glob("*"))]
+    if missing:
+        return None, f"no reference output from {', '.join(missing)} to run on"
+    here = results / step["name"]
+    for side in ("oracle", "port"):
+        (here / side).mkdir(parents=True, exist_ok=True)
+    binary = Path(options.port).resolve()
+    spec = {
+        "scale": True,
+        "reps": 0,
+        "timeout": options.timeout or step.get("timeout", 10800),
+        "out": {side: f"/work/result/{side}" for side in ("oracle", "port")},
+        "warm": [f"/work/in/{n}/{f.name}" for n in step["needs"] for f in (results / n / "oracle").iterdir()
+                 if f.is_file()],
+        "oracle": scale_command(step, "oracle", binary, options.threads),
+        "port": scale_command(step, "port", binary, options.threads),
+    }
+    (here / "spec.json").write_text(json.dumps(spec, indent=1))
+    mounts = []
+    for need in step["needs"]:
+        mounts += ["-v", f"{results / need / 'oracle'}:/work/in/{need}:ro"]
+    result = subprocess.run(
+        [
+            "docker", "run", "--rm", "--platform", run_array.PLATFORM,
+            f"--memory={options.memory}", f"--memory-swap={options.memory}",
+            f"--cpus={options.threads}",
+            "-e", f"RAYON_NUM_THREADS={options.threads}",
+            "-v", f"{Path(options.data).resolve()}:/work/data:ro",
+            *mounts,
+            "-v", f"{here}:/work/result",
+            "-v", f"{binary.parent}:/work/port-binary:ro",
+            "-v", f"{SPEED}:/harness:ro",
+            "-w", "/work", run_array.IMAGE,
+            "python3 /harness/timer.py /work/result/spec.json; chmod -R a+rwX /work/result",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return None, f"timer failed: {(result.stderr or result.stdout).strip()[-300:]}"
+    raw = json.loads(result.stdout.strip().splitlines()[-1])
+    return raw, None
+
+
+def one_file(path):
+    """`run_array.read_output` on one file alone: the conformance masks, file by file."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / path.name).symlink_to(path.resolve())
+        return run_array.read_output(Path(tmp))
+
+
+def first_difference(a, b):
+    """Where two outputs first part: a line for text (gzipped or not), a byte offset otherwise."""
+    import gzip
+
+    def opener(path):
+        with open(path, "rb") as handle:
+            gz = handle.read(2) == b"\x1f\x8b"
+        return gzip.open(path, "rb") if gz else open(path, "rb")
+
+    if a.name.endswith(SCALE_TEXT) or a.name.endswith(".gz") and a.name[:-3].endswith(SCALE_TEXT):
+        with opener(a) as x, opener(b) as y:
+            number = 0
+            for number, (left, right) in enumerate(zip(x, y), 1):
+                if left != right:
+                    return {"line": number, "reference": left[:300].decode(errors="replace"),
+                            "port": right[:300].decode(errors="replace")}
+            return {"line": number + 1, "note": "one file ends first"} if (x.read(1) or y.read(1)) else None
+    with opener(a) as x, opener(b) as y:
+        offset = 0
+        while True:
+            left, right = x.read(1 << 20), y.read(1 << 20)
+            if left != right:
+                at = next((i for i, (p, q) in enumerate(zip(left, right)) if p != q), min(len(left), len(right)))
+                return {"decompressed_offset": offset + at}
+            if not left:
+                return None
+            offset += len(left)
+
+
+def compare_step(here):
+    """Per file: both sides' sha256, whether they are equal under the masks, where they part."""
+    oracle, port = here / "oracle", here / "port"
+    names = sorted({p.relative_to(oracle).as_posix() for p in oracle.rglob("*") if p.is_file()}
+                   | {p.relative_to(port).as_posix() for p in port.rglob("*") if p.is_file()})
+    files = {}
+    for name in names:
+        a, b = oracle / name, port / name
+        entry = {side: sha256_of(p) for side, p in (("oracle", a), ("port", b)) if p.exists()}
+        if not (a.exists() and b.exists()):
+            entry["equal"] = False
+            entry["missing_on"] = "port" if a.exists() else "reference"
+        else:
+            entry["equal"] = entry["oracle"] == entry["port"] or one_file(a) == one_file(b)
+            if not entry["equal"]:
+                entry["first_difference"] = first_difference(a, b)
+        files[name] = entry
+    return files
+
+
+def sha256_of(path):
+    import hashlib
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def log_tail(path, lines=5):
+    return path.read_text(errors="replace").strip().splitlines()[-lines:] if path.exists() else []
+
+
+def scale(options):
+    """Milestone D, D2: the best-practices chain on chr20, step by step, both sides at scale."""
+    results = Path(options.results)
+    results.mkdir(parents=True, exist_ok=True)
+    document = {
+        "scale": {"data": json.loads(SCALE.read_text())["sources"]["reads"]["what"],
+                  "threads": options.threads, "memory": options.memory, "timeout": options.timeout},
+        "commit": subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True,
+                                 cwd=REPO).stdout.strip(),
+        "steps": {},
+    }
+    for step in scale_steps(options.step):
+        name = step["name"]
+        print(f"{name}: running", flush=True)
+        raw, reason = time_step(step, options)
+        if raw is None:
+            document["steps"][name] = {"reason": reason}
+            print(f"{name}: not measured, {reason}", flush=True)
+            continue
+        here = results / name
+        entry = {"oracle": raw["cold"]["oracle"][0], "port": raw["cold"]["port"][0], "host": raw["host"]}
+        for side, run in (("oracle", entry["oracle"]), ("port", entry["port"])):
+            if run["exit"] != 0:
+                run["log_tail"] = log_tail(here / f"{side}.log")
+        if entry["oracle"]["exit"] != 0:
+            # Nothing below may run on a reference output that did not finish.
+            shutil.rmtree(here / "oracle", ignore_errors=True)
+        if entry["oracle"]["exit"] == 0 and entry["port"]["exit"] == 0:
+            entry["files"] = compare_step(here)
+            entry["bytes_equal"] = all(f["equal"] for f in entry["files"].values())
+        document["steps"][name] = entry
+        document.setdefault("host", raw["host"])
+        print(f"{name}: {scale_row(name, entry)}", flush=True)
+        if options.out:
+            Path(options.out).write_text(json.dumps(document, indent=1, sort_keys=True) + "\n")
+        if not options.keep_port_output:
+            shutil.rmtree(here / "port", ignore_errors=True)
+    if options.out:
+        Path(options.out).write_text(json.dumps(document, indent=1, sort_keys=True) + "\n")
+    scale_table(document)
+    return 0
+
+
+def side_state(run):
+    if run["exit"] == 0:
+        return None
+    if run.get("oom_killed"):
+        return "killed: out of memory"
+    if run.get("timed_out"):
+        return "killed: timeout"
+    return f"exit {run['exit']}"
+
+
+def scale_row(name, entry):
+    if "reason" in entry:
+        return f"| {name} | not run: {entry['reason']} |"
+    o, p = entry["oracle"], entry["port"]
+
+    def cell(run, key):
+        state = side_state(run)
+        if key == "rss_kib":
+            value = f"{run[key] / 1048576:.2f} GiB"
+        else:
+            value = f"{run[key]:.0f} s"
+        return f"{value}{' (' + state + ')' if state and key == 'wall' else ''}"
+
+    ratio_wall = p["wall"] / o["wall"] if o["wall"] and not side_state(o) and not side_state(p) else None
+    equal = entry.get("bytes_equal")
+    verdict = "-" if equal is None else ("yes" if equal else "**no**")
+    return (f"| {name} | {cell(o, 'wall')} | {cell(p, 'wall')} | "
+            f"{f'{ratio_wall:.2f}' if ratio_wall else '-'} | {cell(o, 'cpu')} | {cell(p, 'cpu')} | "
+            f"{cell(o, 'rss_kib')} | {cell(p, 'rss_kib')} | {verdict} | {target(o, p)} |")
+
+
+def target(o, p):
+    """The S.7 target: port CPU <= GATK's AND port peak RSS <= GATK's, at equal threads.
+
+    Beating one and not the other is flagged red: no trading memory for time or back.
+    """
+    if side_state(o):
+        return "-"
+    if side_state(p):
+        return "❌ port did not finish"
+    cpu, rss = p["cpu"] <= o["cpu"], p["rss_kib"] <= o["rss_kib"]
+    if cpu and rss:
+        return "✅ met"
+    if cpu or rss:
+        return f"🔴 {'CPU' if cpu else 'RSS'} only"
+    return "❌ neither"
+
+
+def host_line(host):
+    if not host:
+        return "host: unknown"
+    avx = {True: "AVX-512", False: "no AVX-512"}.get(host.get("avx512"), "AVX-512 unknown")
+    return f"host: {host.get('cpu') or 'unknown'}, {host.get('machine', '?')}, {host.get('cores')} cores, {avx}"
+
+
+def across(paths):
+    """The same step's files on different CPUs: every sha256 must agree, the port's and GATK's."""
+    documents = [json.loads(Path(p).read_text()) for p in paths]
+    print("| step | file | side | " + " | ".join(host_line(d.get("host")) for d in documents) + " |")
+    print("|---|---|---|" + "---|" * len(documents))
+    differ = 0
+    for step in sorted({s for d in documents for s in d["steps"]}):
+        names = sorted({f for d in documents for f in d["steps"].get(step, {}).get("files", {})})
+        for name in names:
+            for side in ("oracle", "port"):
+                digests = [d["steps"].get(step, {}).get("files", {}).get(name, {}).get(side) for d in documents]
+                if None in digests or len(set(digests)) > 1:
+                    differ += None not in digests
+                    print(f"| {step} | {name} | {side} | " + " | ".join((x or "-")[:12] for x in digests) + " |")
+    print(f"\n{differ} file(s) whose bytes differ between CPUs; - is a side with no file there")
+    return 0
+
+
+def scale_table(document):
+    print(host_line(document.get("host")) + "\n")
+    print("\n| step | reference wall | port wall | port / ref | reference CPU | port CPU | "
+          "reference peak RSS | port peak RSS | bytes equal | CPU and RSS ≤ GATK |")
+    print("|---|---:|---:|---:|---:|---:|---:|---:|:-:|:-:|")
+    order = [s["name"] for s in json.loads(SCALE.read_text())["steps"]]
+    for name in sorted(document["steps"], key=lambda n: order.index(n) if n in order else len(order)):
+        print(scale_row(name, document["steps"][name]))
+
+
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--port", help="the linux/amd64 port binary (gatk-rs)")
@@ -338,19 +615,36 @@ def main(argv):
     parser.add_argument("--reps", type=int, default=5, help="cold repetitions per side, after a warm-up")
     parser.add_argument("--iterations", type=int, default=20, help="in-JVM iterations; 0 skips the steady state")
     parser.add_argument("--max-probe", type=int, default=6, help="accepted rows to try before giving up")
-    parser.add_argument("--timeout", type=int, default=600, help="seconds per run")
+    parser.add_argument("--timeout", type=int, help="seconds per run (default 600; with --scale, the step's own)")
     parser.add_argument("--fixtures-dir", help="a corpus MakeFixtures.java already built")
     parser.add_argument("--out", help="write the measurement here")
     parser.add_argument("--merge", nargs="+", help="combine shard outputs into one --out")
     parser.add_argument("--compare", nargs=2, help="two measurements: how far each ratio moved")
+    parser.add_argument("--scale", action="store_true", help="the chr20 chain in scale.json, not the fixtures")
+    parser.add_argument("--step", action="append", help="with --scale: run this step (default: all)")
+    parser.add_argument("--data", help="with --scale: the directory scale_data.py derived")
+    parser.add_argument("--results", default="scale-results", help="with --scale: each step's outputs")
+    parser.add_argument("--threads", type=int, default=4, help="with --scale: threads, both sides")
+    parser.add_argument("--memory", default="14g", help="with --scale: the container's memory limit")
+    parser.add_argument("--keep-port-output", action="store_true", help="with --scale: keep the port's files")
+    parser.add_argument("--platform", help="with --scale: the container platform (default linux/amd64)")
+    parser.add_argument("--across", nargs="+", help="scale measurements from other CPUs: do the bytes agree?")
     options = parser.parse_args(argv)
 
     if options.merge:
         return merge(options.merge, options.out or "speed.json")
+    if options.across:
+        return across(options.across)
     if options.compare:
         return compare(*options.compare)
     if not options.port:
         parser.error("--port is required to measure")
+    if options.scale:
+        if not options.data:
+            parser.error("--scale needs --data")
+        run_array.PLATFORM = options.platform or run_array.PLATFORM
+        return scale(options)
+    options.timeout = options.timeout or 600
 
     proven = proven_tools()
     if options.tool:
