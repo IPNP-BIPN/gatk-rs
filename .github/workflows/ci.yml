@@ -907,6 +907,110 @@ jobs:
           path: tools/fuzz/findings/
           if-no-files-found: ignore
 
+  test-resources:
+    name: "The reference's integration tests, on both sides (shard ${{ matrix.shard }}/8)"
+    # V.12, criterion (1): every invocation GATK's `*IntegrationTest.java` makes on its
+    # `src/test/resources`, read statically into tools/coverage/test_resources/gatk.json, is run
+    # against the pinned oracle and against the port and compared like an array row. The number
+    # goes to tools/coverage/test_resources/measured.json, frozen from this job's artefacts like
+    # every other measurement; a divergence is a finding to fix or exclude in writing, not a red
+    # build.
+    needs: oracle-image
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: The pinned GATK sources, without their LFS payloads
+        # The Android SDK is not ours, and the Broad's image (8.5 GB), which the R and python
+        # tools' reference runs in, does not fit beside the LFS files without the room.
+        run: |
+          sudo rm -rf /usr/local/lib/android
+          tag=$(python3 -c 'import json; print(json.load(open("tools/coverage/test_resources/gatk.json"))["source"]["tag"])')
+          sha=$(python3 -c 'import json; print(json.load(open("tools/coverage/test_resources/gatk.json"))["source"]["sha"])')
+          GIT_LFS_SKIP_SMUDGE=1 git clone -q --depth 1 --branch "$tag" https://github.com/broadinstitute/gatk.git gatk-src
+          test "$(git -C gatk-src rev-parse HEAD)" = "$sha"
+          python3 tools/coverage/test_resources.py lfs-include --shard ${{ matrix.shard }}/8 > /tmp/lfs-include
+          echo "lfs_key=$(sha256sum /tmp/lfs-include | cut -c1-16)" >> "$GITHUB_ENV"
+
+      - uses: actions/cache@v6
+        # Only the large files the shard's invocations name, kept between runs so the Broad's LFS
+        # is not downloaded from on every push.
+        with:
+          path: gatk-src/.git/lfs
+          key: gatk-test-resources-lfs-${{ env.lfs_key }}
+
+      - name: The LFS files the shard's invocations name
+        run: |
+          cd gatk-src
+          git lfs install --local
+          git lfs pull --include "$(cat /tmp/lfs-include)"
+
+      - uses: actions/cache/restore@v6
+        with:
+          path: /tmp/oracle-image.tar
+          key: gatk-rs-oracle-${{ hashFiles('tools/oracle/**') }}
+          fail-on-cache-miss: true
+
+      - run: docker load -i /tmp/oracle-image.tar
+
+      - name: nasm, which gkl-igzip needs to build, and h5py, which reads an HDF5 output back
+        run: |
+          sudo apt-get update -qq || echo "apt refresh incomplete; the install below is the gate"
+          sudo apt-get install -y -qq nasm python3-h5py
+          nasm -v
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.1"
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo build --release -p gatk-cli
+
+      - name: Replay the shard's invocations against both sides
+        run: |
+          python3 tools/coverage/test_resources.py run --gatk gatk-src --port target/release/gatk \
+            --shard ${{ matrix.shard }}/8 --jobs 2 --out test-resources-shard-${{ matrix.shard }}.json
+
+      - name: Publish the shard
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-resources-shard-${{ matrix.shard }}
+          path: test-resources-shard-${{ matrix.shard }}.json
+          if-no-files-found: ignore
+
+  test-resources-measured:
+    name: The integration tests' replay, folded into one measurement
+    needs: test-resources
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: test-resources-shard-*
+          merge-multiple: true
+
+      - name: Fold the shards
+        run: |
+          python3 tools/coverage/test_resources.py merge test-resources-shard-*.json
+          git --no-pager diff --stat tools/coverage/test_resources/measured.json
+
+      - name: Publish what the run measured
+        uses: actions/upload-artifact@v7
+        with:
+          name: candidate-test-resources
+          path: |
+            tools/coverage/test_resources/measured.json
+            test-resources-shard-*.json
+          if-no-files-found: error
+
   nvscorevariants:
     name: NVScoreVariants on real x86-64
     # The one job with broadinstitute/gatk:4.7.0.0, which is a second image next to the pinned oracle
@@ -1184,6 +1288,8 @@ jobs:
       - oracle
       - argument-coverage
       - fuzz
+      - test-resources
+      - test-resources-measured
       - nvscorevariants
       - spark-threads
       - oracle-with-r
