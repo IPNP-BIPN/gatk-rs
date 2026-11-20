@@ -348,13 +348,16 @@ impl<'r, R: std::borrow::BorrowMut<JavaRandom>> Downsampled<'r, R> {
 /// A read as a batch knows it: its start, name, flags, and how many identical ones came first.
 type PileKey = ((i32, i32), String, u16, u32);
 
+/// A logged read at its start: name, flags, occurrence, batch, output rank.
+type PileEntry = (String, u16, u32, u32, Option<u32>);
+
 /// What the downsampler did to the batches it changed, so that a later read of any part of the
 /// shard hands out what it handed out without drawing again: each of their reads by its start,
 /// with its batch and its place in the batch's output, `None` where it was dropped. A batch the
 /// downsampler handed back whole and in order is not here, and costs nothing.
 #[derive(Default)]
 struct PileLog {
-    by_start: HashMap<(i32, i32), Vec<(String, u16, u32, u32, Option<u32>)>>,
+    by_start: HashMap<(i32, i32), Vec<PileEntry>>,
     batches: u32,
 }
 
