@@ -814,6 +814,75 @@ fn sets_traversal_bounds(tool: &str) -> bool {
     )
 }
 
+/// A SAM text or CRAM input as the in-memory BAM the reads source reads.
+struct Transcoded {
+    /// BGZF BAM bytes.
+    bam: Vec<u8>,
+    /// Its `.bai`, built where the CRAM has an index of its own: a SAM text file has none.
+    bai: Option<Vec<u8>>,
+    /// The file's own header, not the one the BAM writer stamps a sort order onto.
+    header: SamHeader,
+}
+
+/// `SamReaderFactory.open` for the two formats that are not BAM: `None` for a BAM, a block
+/// compressed or empty file, text that does not parse as SAM (whose refusal is
+/// `read_walker_refusal`'s), and a CRAM with no `--reference` to decode it against.
+fn transcode_reads(
+    parser: &Parser,
+    path: &std::path::Path,
+    bytes: &[u8],
+) -> Result<Option<Transcoded>, Thrown> {
+    let (header, records, indexed) = if bytes.starts_with(b"CRAM") {
+        let Some(reference) = argument(parser, "reference") else {
+            return Ok(None);
+        };
+        let cram_refusal = |error: htsjdk_cram::reader::CramError| {
+            Thrown::non_user(error.java_exception(), error.message())
+        };
+        let mut reader = htsjdk_cram::reader::CramReader::new(bytes).map_err(cram_refusal)?;
+        let mut fasta = htsjdk_cram::reader::FastaReference::open(std::path::Path::new(&reference));
+        let records = reader.read_all(&mut fasta).map_err(cram_refusal)?;
+        let indexed = htsjdk_bam::sam_files::find_index(path).is_some();
+        (reader.header, records, indexed)
+    } else if bytes.is_empty()
+        || bytes.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC)
+        || gatk_tools::read_walker_refusal::is_block_compressed(bytes)
+    {
+        return Ok(None);
+    } else {
+        let Ok(text) = std::str::from_utf8(bytes) else {
+            return Ok(None);
+        };
+        let Ok((header, records)) = htsjdk_bam::sam_file::read_sam(text) else {
+            return Ok(None);
+        };
+        (header, records, false)
+    };
+    let failure = |error: String| Thrown::non_user(PORT_FAILURE, error);
+    let writer = htsjdk_bam::writer::BamWriter::new(Vec::new(), &header)
+        .map_err(|error| failure(error.to_string()))?;
+    let mut writer = if indexed { writer.with_index() } else { writer };
+    for record in &records {
+        writer
+            .write(record)
+            .map_err(|error| failure(format!("{error:?}")))?;
+    }
+    let (bam, bai) = if indexed {
+        let (bam, bai) = writer
+            .finish_with_index()
+            .map_err(|error| failure(error.to_string()))?;
+        (bam, Some(bai))
+    } else {
+        (
+            writer
+                .finish()
+                .map_err(|error| failure(error.to_string()))?,
+            None,
+        )
+    };
+    Ok(Some(Transcoded { bam, bai, header }))
+}
+
 fn read_walker_startup(parser: &Parser, tool: &str) -> Result<ReadWalkerStart, Thrown> {
     read_walker_startup_with(parser, tool, &mut |intervals, _| Ok(intervals))
 }
@@ -866,6 +935,15 @@ fn read_walker_startup_with(
 
     // `initializeReads`: the file itself, which is a refusal only when it cannot be read at all.
     let bytes = std::fs::read(path).ok();
+    // SAM text and CRAM are read as the BAM they transcode to; anything else goes on as before.
+    let transcoded = match &bytes {
+        Some(bytes) => transcode_reads(parser, path, bytes)?,
+        None => None,
+    };
+    let (bytes, transcoded) = match transcoded {
+        Some(mut transcoded) => (Some(std::mem::take(&mut transcoded.bam)), Some(transcoded)),
+        None => (bytes, None),
+    };
     let compressed = bytes
         .as_deref()
         .map(gatk_tools::read_walker_refusal::is_block_compressed)
@@ -945,6 +1023,17 @@ fn read_walker_startup_with(
             None => ReadsDataSource::open_unindexed(path)
                 .map_err(|error| Thrown::user(format!("{error:?}")))?,
         })
+    };
+    let source = match (source, transcoded) {
+        (Some(mut source), Some(transcoded)) => {
+            if let Some(bai) = &transcoded.bai {
+                source
+                    .load_index_bytes(bai)
+                    .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error:?}")))?;
+            }
+            Some(source.with_header(transcoded.header))
+        }
+        (source, _) => source,
     };
     let header = source
         .as_ref()
