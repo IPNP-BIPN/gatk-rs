@@ -29,32 +29,57 @@ use htsjdk_vcf::variant::VariantContext;
 /// A resource, its tags, and its records.
 struct Resource {
     set: model::TrainingSet,
-    records: Vec<VariantContext>,
+    records: AtSites,
 }
 
 impl Resource {
     /// `featureContext.getValues(source, start)`: the records overlapping the variant that start
     /// where it starts, in file order.
     fn at<'a>(&'a self, contig: &str, start: i64, stop: i64) -> Vec<&'a VariantContext> {
-        records_at(&self.records, contig, start, stop)
+        self.records.at(contig, start, stop)
     }
 }
 
-fn records_at<'a>(
-    records: &'a [VariantContext],
-    contig: &str,
-    start: i64,
-    stop: i64,
-) -> Vec<&'a VariantContext> {
-    records
-        .iter()
-        .filter(|record| {
-            record.contig == contig
-                && record.start == start
-                && record.start <= stop
-                && record.stop >= start
-        })
-        .collect()
+/// Where the driving variants start, by contig: the only places a feature input is ever asked
+/// about, since every query is `getValues(source, start)` at a driving record's start.
+type Sites = std::collections::HashMap<String, std::collections::HashSet<i64>>;
+
+/// A feature input's records at the driving sites, in file order, found by their start.
+///
+/// Java reads a resource through its index, one query per site; holding the whole file decoded
+/// cost 5.6 GiB on chr20's dbsnp and a linear scan per site.
+struct AtSites {
+    records: Vec<VariantContext>,
+    by_start: std::collections::HashMap<String, std::collections::HashMap<i64, Vec<usize>>>,
+}
+
+impl AtSites {
+    fn new(records: Vec<VariantContext>) -> AtSites {
+        let mut by_start: std::collections::HashMap<
+            String,
+            std::collections::HashMap<i64, Vec<usize>>,
+        > = std::collections::HashMap::new();
+        for (index, record) in records.iter().enumerate() {
+            by_start
+                .entry(record.contig.clone())
+                .or_default()
+                .entry(record.start)
+                .or_default()
+                .push(index);
+        }
+        AtSites { records, by_start }
+    }
+
+    fn at<'a>(&'a self, contig: &str, start: i64, stop: i64) -> Vec<&'a VariantContext> {
+        self.by_start
+            .get(contig)
+            .and_then(|starts| starts.get(&start))
+            .into_iter()
+            .flatten()
+            .map(|index| &self.records[*index])
+            .filter(|record| record.start <= stop && record.stop >= start)
+            .collect()
+    }
 }
 
 fn thrown(error: model::ModelError) -> Thrown {
@@ -326,6 +351,61 @@ fn add_datum(
 }
 
 /// The input's text read as a VCF, the way the port reads every driving file.
+/// A feature input streamed, keeping its header and the records that start at a driving site.
+///
+/// A record elsewhere is never queried, so it is never decoded, as with Java's indexed query.
+/// Anything the stream cannot read goes through [`read_feature_vcf`], whose refusal is the
+/// reference's.
+fn read_feature_vcf_at(path: &str, sites: &Sites) -> Result<AtSites, Thrown> {
+    use std::io::{BufRead, BufReader};
+    let filtered = (|| -> Option<String> {
+        gatk_tools::feature_codec::codec_for(path)?;
+        let mut file = BufReader::new(std::fs::File::open(path).ok()?);
+        let mut stream: Box<dyn BufRead> =
+            if gatk_tools::read_walker_refusal::is_block_compressed(file.fill_buf().ok()?) {
+                Box::new(BufReader::new(htsjdk_bgzf::read::BgzfReader::new(file)))
+            } else {
+                Box::new(file)
+            };
+        let mut text = String::new();
+        let mut line = Vec::new();
+        loop {
+            line.clear();
+            if stream.read_until(b'\n', &mut line).ok()? == 0 {
+                break;
+            }
+            let keep = line.first() == Some(&b'#') || {
+                let mut fields = line.splitn(3, |byte| *byte == b'\t');
+                let contig = std::str::from_utf8(fields.next()?).ok()?;
+                let start = fields
+                    .next()
+                    .and_then(|field| std::str::from_utf8(field).ok());
+                start
+                    .and_then(|start| start.parse::<i64>().ok())
+                    .is_some_and(|start| {
+                        sites
+                            .get(contig)
+                            .is_some_and(|starts| starts.contains(&start))
+                    })
+            };
+            if keep {
+                text.push_str(std::str::from_utf8(&line).ok()?);
+            }
+        }
+        // Bytes that are not UTF-8 return None: `open_feature_input` decides what they mean.
+        Some(text)
+    })();
+    let file = match filtered {
+        Some(text) => htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+            failure: Failure::User,
+            exception: "htsjdk.tribble.TribbleException",
+            message: Some(failure.error.message()),
+        })?,
+        None => read_feature_vcf(path)?,
+    };
+    Ok(AtSites::new(file.records))
+}
+
 fn read_feature_vcf(path: &str) -> Result<htsjdk_vcf::reader::VcfFile, Thrown> {
     let (_, text) = open_feature_input(path)?;
     htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
@@ -517,13 +597,26 @@ pub fn variant_recalibrator(parser: &Parser) -> Outcome {
             }
         })
         .unwrap_or_default();
+    let mut sites = Sites::new();
+    for input in &driving.inputs {
+        for record in &input.file.records {
+            sites
+                .entry(record.contig.clone())
+                .or_default()
+                .insert(record.start);
+        }
+    }
     let mut resource_files = Vec::new();
     for (path, attributes) in &resource_values {
-        resource_files.push((path.clone(), attributes.clone(), read_feature_vcf(path)?));
+        resource_files.push((
+            path.clone(),
+            attributes.clone(),
+            read_feature_vcf_at(path, &sites)?,
+        ));
     }
     let mut aggregates = Vec::new();
     for path in arguments(parser, "aggregate") {
-        aggregates.push((path.clone(), read_feature_vcf(&path)?));
+        aggregates.push((path.clone(), read_feature_vcf_at(&path, &sites)?));
     }
     // The end of `onStartup`: a `--variant-output-filtering` mode with no `-L` is refused.
     // shortcut: the recal records are not passed through the filter itself; wire `keep` into
@@ -555,10 +648,7 @@ pub fn variant_recalibrator(parser: &Parser) -> Outcome {
     let mut resources = Vec::new();
     for (_, attributes, file) in resource_files {
         let set = model::TrainingSet::from_attributes(&attributes).map_err(thrown)?;
-        resources.push(Resource {
-            set,
-            records: file.records,
-        });
+        resources.push(Resource { set, records: file });
     }
     if !resources.iter().any(|resource| resource.set.is_training) {
         return Err(Thrown::command_line(
@@ -658,7 +748,7 @@ pub fn variant_recalibrator(parser: &Parser) -> Outcome {
         if let Some(first) = queue.first() {
             // Every aggregate input's records at the first queued variant's start, input by input.
             for (_, file) in &aggregates {
-                for record in records_at(&file.records, &first.contig, first.start, first.stop) {
+                for record in file.at(&first.contig, first.start, first.stop) {
                     add_variant_datum(data, record, first, false, &context, random)?;
                 }
             }
