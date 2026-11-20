@@ -195,7 +195,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | HaplotypeBasedVariantRecaller | gatk-rs | oracle-backed | 7 suite | 0 suite | 48/48 (100.0%) | 2 | 4112 probes (+2), 0/12 diverge | 5 | 3 | none |
 | HaplotypeCaller | gatk-rs | oracle-backed | 587 suite | 50 suite | 50/50 (100.0%) | 2 | 12968 probes (+2), 0/32 diverge | 11 | 3 | mask_identity_hashes, sort_segments_with |
 | HaplotypeCallerSpark | gatk-rs | oracle-backed | 64 | 15 | 49/49 (100.0%) | 2 | 11894 probes (+2), 0/27 diverge | 11 | 15 | none |
-| HtsgetReader | gatk-rs | oracle-backed | 865 | 41 | 11/11 (100.0%) | 2 | 1084 probes (+2), 0/5 diverge | 0 | 0 | none |
+| HtsgetReader | gatk-rs | oracle-backed | 865 | 41 | 12/12 (100.0%) | 2 | 1084 probes (+2), 0/5 diverge | 0 | 0 | none |
 | IdentifyContaminant | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
 | IlluminaBasecallsToFastq | picard-rs | oracle-backed | not vendored | not vendored | not measured | - | not measured | 0 | 0 | none |
 | IlluminaBasecallsToSam | picard-rs | oracle-backed | not vendored | not vendored | 31/31 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -1475,7 +1475,7 @@ Inputs: none.
 
 Held out: none.
 
-Nothing listens on the port, and the refusal is the URI the arguments built, which is what they decide. The answers and what is done with them are the htsget-reader golden's, which starts a server. The class stays body: class=header refuses every other query parameter, and that refusal is a row of the golden.
+Every row reaches the pinned htsget-rs server run_array.py starts beside it, serving the corpus files under `$htsget_server`, and both sides fetch the blocks its tickets name. --url is its two endpoints: the id reads is a BAM at /reads and a VCF at /variants, and sites is only a VCF, so /reads answers it with the server's NotFound, and --format VCF at /reads with its UnsupportedFormat. htsget-rs answers class=header and refuses body. The tool refuses class=header beside an interval, a field or a tag before anything is sent, which the constraints keep out of the array: that refusal is a row of the htsget-reader golden. The server ignores fields and tags and sends no md5, so --check-md5 true only warns. Answers this server never gives are the golden's, which serves them itself.
 
 ### JointGermlineCNVSegmentation
 
