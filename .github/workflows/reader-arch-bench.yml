@@ -1,7 +1,8 @@
 name: Reader per architecture (scratch, PR #1482)
 
 # Temporary: GATK 4.7.0.0, main, c/streaming-guard and c/reader-prefetch on the same chr20 of
-# NA12878 30x, one after another on one runner, default threads. Not for merging.
+# NA12878 30x, one after another on one runner, default threads. main holds the whole BAM
+# (~29 GB), more than a runner has, so it is built but not run. Not for merging.
 
 on:
   push:
@@ -87,7 +88,7 @@ jobs:
             /usr/bin/time -v $cmd $tool $args > $1-$2.log 2> $1-$2.err && code=0 || code=$?
             user=$(awk -F': ' '/User time/{print $2}' $1-$2.err)
             sys=$(awk -F': ' '/System time/{print $2}' $1-$2.err)
-            wall=$(awk -F': ' '/Elapsed/{print $2}' $1-$2.err)
+            wall=$(awk '/Elapsed/{print $NF}' $1-$2.err)
             rss=$(awk -F': ' '/Maximum resident/{printf "%d MB", $2/1024}' $1-$2.err)
             case $1 in
               PrintReads) out=$( [ -f out-$2.bam ] && samtools view out-$2.bam | md5sum | cut -c1-12 || echo none); rm -f out-$2.bam out-$2.bai ;;
@@ -97,7 +98,7 @@ jobs:
           }
           echo "| tool | build | round | exit | peak RSS | CPU (user+sys) | wall | output |" > table.md
           echo "|---|---|---|---|---|---|---|---|" >> table.md
-          for r in 1 2; do for t in CountReads CountReadsL PrintReads; do for b in java main guard pr; do row $t $b $r; done; done; done
+          for r in 1 2; do for t in CountReads CountReadsL PrintReads; do for b in java guard pr; do row $t $b $r; done; done; done
           cat table.md >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v7
