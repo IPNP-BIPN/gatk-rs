@@ -331,6 +331,14 @@ pub fn default_log_indel_prior_for_mito() -> f64 {
 /// artifact priors is supplied.
 pub const READ_ORIENTATION_FILTER_CLASS: &str = "ReadOrientationFilter";
 
+/// `ReadOrientationFilter`'s identity: a per-site artifact filter reporting `orientation`.
+pub const READ_ORIENTATION_FILTER: FilterIdentity = FilterIdentity {
+    class: READ_ORIENTATION_FILTER_CLASS,
+    filter_name: "orientation",
+    error_type: ErrorType::Artifact,
+    arity: Arity::PerSite,
+};
+
 /// As much of `M2FiltersArgumentCollection` as decides which filters exist and how two of them are
 /// configured.
 #[derive(Debug, Clone, PartialEq)]
@@ -409,9 +417,8 @@ impl FilterArguments {
 /// `NormalArtifactFilter` is built in every mode, directly under a comment saying it does not apply
 /// to mitochondria. The `add` has no guard.
 ///
-/// The `ReadOrientationFilter` branch needs a tar.gz of artifact priors, which is a fixture rather
-/// than an argument; no golden exercises it, and it is written here rather than refused because it
-/// is a list membership with an unambiguous position, not an arithmetic path.
+/// The `ReadOrientationFilter` branch is taken when `--ob-priors` names a tar.gz of artifact
+/// priors, and the filter lands thirteenth, straight after `PanelOfNormalsFilter`.
 pub fn build_filters_list(arguments: &FilterArguments) -> Vec<&'static str> {
     // The first twelve, unconditionally, in the reference's order.
     let mut classes: Vec<&'static str> = FILTERS[..12].iter().map(|f| f.class).collect();

@@ -170,6 +170,7 @@ fn annotated(alternates: Vec<AccumulationAllele>) -> Record {
         repeat_unit: Some("A".to_string()),
         in_panel_of_normals: false,
         indel_lengths: None,
+        ..Default::default()
     }
 }
 
