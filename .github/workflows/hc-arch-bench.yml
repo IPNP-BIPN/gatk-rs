@@ -68,6 +68,9 @@ jobs:
             out=$1-$3.vcf
             case $3 in
               java) cmd="java -Xmx12g -jar $JAR HaplotypeCaller --native-pair-hmm-threads 1" ;;
+              # The PairHMM the goldens pin: the oracle image cannot load GKL, so FASTEST_AVAILABLE
+              # falls back to it there, while a stock install on x86 takes AVX with flush-to-zero.
+              java-scalar) cmd="java -Xmx12g -jar $JAR HaplotypeCaller --pair-hmm-implementation LOGLESS_CACHING" ;;
               *) cmd="./gatk-$3 HaplotypeCaller" ;;
             esac
             /usr/bin/time -v $cmd -R chr20.fasta -I NA12878.chr20.bam -L $2 -O $out > $1-$3.log 2> $1-$3.err && code=0 || code=$?
@@ -81,8 +84,8 @@ jobs:
           }
           echo "| region | build | exit | peak RSS | CPU (user+sys) | wall | body md5 |" > table.md
           echo "|---|---|---|---|---|---|---|" >> table.md
-          for b in java pr; do row 1Mb chr20:30000000-31000000 $b; done
-          for b in java pr; do row 5Mb chr20:10000000-15000000 $b; done
+          for b in java java-scalar pr; do row 1Mb chr20:30000000-31000000 $b; done
+          for b in java java-scalar pr; do row 5Mb chr20:10000000-15000000 $b; done
           grep -h "PairHMM\|Deflater\|Inflater" 1Mb-java.err | head -5
           cat table.md >> "$GITHUB_STEP_SUMMARY"
 
@@ -93,3 +96,4 @@ jobs:
           path: |
             table.md
             *.err
+            *.vcf
