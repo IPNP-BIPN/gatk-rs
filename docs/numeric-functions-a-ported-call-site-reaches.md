@@ -34,11 +34,31 @@ libm the machine ships.
 | `gatk-engine/src/fisher_exact.rs:109` — `pow10` | `powf` | as above |
 | `gatk-annotation/src/allele_pseudo_depth.rs:339,341` — `calculateWeights` | `powf` ×2 | as above. Which of the two runs depends on `weightDecay`, so the exposure varies with an argument |
 | `gatk-engine/src/natural_log_utils.rs:172,174` — `log1mexp` | `ln_1p`, `exp_m1` | **not exact**, and the module says so at the call site. Neither has a ported equivalent, and nothing in G1 reaches this branch |
-| `gatk-engine/src/activity_profile.rs:98` | `exp` | the **host** `exp`, not `strict_math::exp`, and now **measured to be the right one**: the `activityprofile` suite compares 266 kernel values as raw bits and the host `exp` matches every one, where `strict_math::exp` moves 10 of them by an ulp. See below |
-| `gatk-engine/src/natural_log_utils.rs` — `normalize_from_log_to_linear_space_host_exp` | `exp` | the **host** `exp`, for `LearnReadOrientationModel`'s E-step only. Built on `strict_math::exp`, two of the eight covering-array rows printed one prior an ulp from the oracle's; built on the host `exp`, every row of the array matches. The reference run with `-XX:-UseLibmIntrinsic` matches the fdlibm build exactly, which pins the difference on the `Math.exp` intrinsic. See below |
-| `gatk-engine/src/mutect_engine.rs` — `posterior_probability_of_error` | `exp` | the **host** `exp`, through `normalize_from_log_to_linear_space_host_exp`. Its callers are FilterMutectCalls' filters only (contamination, normal artifact, slippage, the clustering model's sequencing-error probability). Measured with the filters' answers as raw bits: see below |
-| `gatk-engine/src/somatic_clustering_model.rs` — `performEMIteration`, `backgroundProbGivenSomatic` | `exp` | the **host** `exp`, as above. The model's `log_sum_exp` calls keep fdlibm: no measured row depended on them |
+| `gatk-engine/src/activity_profile.rs` — `normal_distribution` | `exp` | `java_math_exp`: **exact on aarch64**, where Java's `Math.exp` is fdlibm and the helper is `strict_math::exp` (0 of 2,000,000 inputs differ, 2026-11-23). **x86-64 still uses the host (glibc) `exp`**, ~0.24% of inputs 1 ulp from the HotSpot intrinsic, which was **measured to be the closer stand-in there**: the `activityprofile` suite compares 266 kernel values as raw bits and the host `exp` matches every one, where `strict_math::exp` moves 10 of them by an ulp. See below |
+| `gatk-engine/src/natural_log_utils.rs` — `normalize_from_log_to_linear_space_host_exp` | `exp` | `java_math_exp`: **exact on aarch64** (fdlibm, as above); **x86-64 still uses the host `exp`**, for `LearnReadOrientationModel`'s E-step only. Built on `strict_math::exp`, two of the eight covering-array rows printed one prior an ulp from the oracle's; built on the host `exp`, every row of the array matches. The reference run with `-XX:-UseLibmIntrinsic` matches the fdlibm build exactly, which pins the difference on the `Math.exp` intrinsic. See below |
+| `gatk-engine/src/mutect_engine.rs` — `posterior_probability_of_error` | `exp` | `java_math_exp` (exact on aarch64, host `exp` on x86-64), through `normalize_from_log_to_linear_space_host_exp`. Its callers are FilterMutectCalls' filters only (contamination, normal artifact, slippage, the clustering model's sequencing-error probability). Measured with the filters' answers as raw bits: see below |
+| `gatk-engine/src/somatic_clustering_model.rs` — `performEMIteration`, `backgroundProbGivenSomatic` | `exp` | `java_math_exp` (exact on aarch64, host `exp` on x86-64), as above. The model's `log_sum_exp` calls keep fdlibm: no measured row depended on them |
 | `gatk-engine/src/mann_whitney.rs:167` | `powi(3)` | **exact**: an integer power of a `f64` is repeated multiplication, and the reference computes it the same way |
+
+### `java_math_exp`: exact on aarch64, host libm on x86-64 (2026-11-23)
+
+Java's `Math.exp` is not one function. On x86-64 HotSpot replaces it with its `dexp` stub; on
+aarch64 there is no such stub, so it is fdlibm, bit for bit `StrictMath.exp`. The rows above go
+through `natural_log_utils::java_math_exp`, which picks at compile time (`target_arch`, never a
+runtime CPU feature):
+
+| target | `java_math_exp` is | inputs differing from that target's Java 17 `Math.exp`, of 2,000,000 x <= 0 |
+|---|---|---:|
+| aarch64 | `jmath::strict_math::exp` | **0** (glibc's `exp` there: 192,457) |
+| x86-64 | the host libm's `exp`, unchanged | 4,860 (glibc, FMA variant; 4,494 without FMA; 2026-11-20 sweep, other inputs) |
+
+Exact on x86-64 would need a transcription of the HotSpot stub, which decision 0014 withdrew for
+licence reasons. The measurements below are all x86-64 ones and still hold there. The x86-64
+goldens are x86-64 Java's output, so on aarch64 two suites differ from them exactly where x86-64
+and aarch64 Java do, and their tests name those rows rather than skip: `activity_profile.rs` (the
+kernels at sigma 17 for sizes 25 and 50, and the band-pass profile built on one) and
+`mutect_engine_arithmetic.rs` (the posterior at `100.0,-1.0`). Re-running both dumps on arm64 Java
+17 and pointing the tests at that output passes every row.
 
 ### The activity profile's `exp`, measured (2026-08-19)
 

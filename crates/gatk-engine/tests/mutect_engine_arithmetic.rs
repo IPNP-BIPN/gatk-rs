@@ -102,7 +102,14 @@ fn every_posterior_matches_the_golden() {
     assert_eq!(answers.len() + refusals.len(), 48);
     // Built on the host `exp` every input of the grid is bit-identical; fdlibm missed "100.0,-1.0"
     // by an ulp (docs/numeric-functions-a-ported-call-site-reaches.md).
-    assert!(within_one_ulp.is_empty(), "{within_one_ulp:?}");
+    // The golden is x86-64 Java's. On aarch64 `Math.exp` is fdlibm, which the port matches there
+    // exactly, and it differs from the x86-64 intrinsic on this input (measured with arm64 Java 17).
+    let expected: &[&str] = if cfg!(target_arch = "aarch64") {
+        &["100.0,-1.0"]
+    } else {
+        &[]
+    };
+    assert_eq!(within_one_ulp, expected);
 }
 
 #[test]

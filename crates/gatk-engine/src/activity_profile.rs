@@ -38,6 +38,7 @@
 //! bypasses it and also trims every state past the profile's span first.
 
 use crate::interval::SimpleInterval;
+use crate::natural_log_utils::java_math_exp;
 
 /// `MIN_PROB_TO_KEEP_IN_FILTER`.
 pub const MIN_PROB_TO_KEEP_IN_FILTER: f64 = 1e-5;
@@ -94,7 +95,8 @@ pub struct ActivityProfile {
 /// `sd * ROOT_TWO_PI` rather than multiplied by a precomputed reciprocal. The division is a
 /// separate rounding, so folding it in would change the last bits.
 ///
-/// The `exp` is the **host** libm's, deliberately, and the choice is measured rather than assumed.
+/// The `exp` is [`java_math_exp`]: fdlibm on aarch64, where that is `Math.exp` exactly, and the
+/// **host** libm on x86-64, deliberately, and the choice is measured rather than assumed.
 /// The reference is `Math.exp` (`MathUtils.normalDistribution`), not `StrictMath.exp`, so
 /// `jmath::strict_math::exp` -- which is exact against `StrictMath` -- is faithful to a different
 /// function here. Built with it, ten of the 266 kernel values the `activityprofile` suite pins move
@@ -102,7 +104,7 @@ pub struct ActivityProfile {
 /// without redoing that measurement: `docs/numeric-functions-a-ported-call-site-reaches.md`.
 pub fn normal_distribution(mean: f64, sd: f64, x: f64) -> f64 {
     assert!(sd >= 0.0, "sd: Standard deviation of normal must be >= 0");
-    (-(x - mean) * (x - mean) / (2.0 * sd * sd)).exp() / (sd * root_two_pi())
+    java_math_exp(-(x - mean) * (x - mean) / (2.0 * sd * sd)) / (sd * root_two_pi())
 }
 
 /// `BandPassActivityProfile.makeKernel`.
