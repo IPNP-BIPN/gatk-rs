@@ -29,6 +29,10 @@ jobs:
           path: guard
       - uses: actions/checkout@v7
         with:
+          ref: c/reader-lazy-tags-try
+          path: lazy
+      - uses: actions/checkout@v7
+        with:
           ref: main
           path: main
 
@@ -53,6 +57,7 @@ jobs:
           (cd pr && cargo build --release -p gatk-cli) && cp pr/target/release/gatk gatk-pr
           (cd main && cargo build --release -p gatk-cli) && cp main/target/release/gatk gatk-main
           (cd guard && cargo build --release -p gatk-cli) && cp guard/target/release/gatk gatk-guard
+          (cd lazy && cargo build --release -p gatk-cli) && cp lazy/target/release/gatk gatk-lazy
 
       - name: GATK 4.7.0.0
         run: |
@@ -98,7 +103,7 @@ jobs:
           }
           echo "| tool | build | round | exit | peak RSS | CPU (user+sys) | wall | output |" > table.md
           echo "|---|---|---|---|---|---|---|---|" >> table.md
-          for r in 1 2; do for t in CountReads CountReadsL PrintReads; do for b in java guard pr; do row $t $b $r; done; done; done
+          for r in 1 2; do for t in CountReads CountReadsL PrintReads; do for b in java pr lazy; do row $t $b $r; done; done; done
           cat table.md >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v7
