@@ -392,6 +392,7 @@ fn annotation_for(class: &str) -> Option<&'static str> {
         "GermlineFilter" => Some("GERMQ"),
         "StrandArtifactFilter" => Some("STRANDQ"),
         "PolymeraseSlippageFilter" => Some("STRQ"),
+        "ReadOrientationFilter" => Some("ROQ"),
         _ => None,
     }
 }
@@ -480,5 +481,163 @@ impl Statistics {
             self.false_positives,
             self.false_negatives,
         )
+    }
+}
+
+// ================================================================================================
+// `ReadOrientationFilter`: the artifact priors, and one genotype's posterior of an artifact.
+// ================================================================================================
+
+/// `ArtifactPriorCollection`: one sample's prior over the twelve states, for all 64 contexts.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ArtifactPriors {
+    /// `#<METADATA>SAMPLE=`, which a table without it leaves null, keying the null sample.
+    pub sample: Option<String>,
+    pub by_context:
+        std::collections::HashMap<String, [f64; crate::learn_read_orientation_model::NUM_STATES]>,
+}
+
+/// `ArtifactPriorCollection.readArtifactPriors`: the canonical contexts' rows, each set with its
+/// reverse complement; a row for any other context is read and never used.
+pub fn read_artifact_priors(text: &str, source: &str) -> Result<ArtifactPriors, RunError> {
+    use crate::learn_read_orientation_model::{canonical_kmers, reverse_complement, State};
+    let table = gatk_engine::tsv_table::Table::parse(text, source)
+        .map_err(|error| RunError::new(error.java_class(), error.message()))?;
+    let mut by_context = std::collections::HashMap::new();
+    for context in canonical_kmers() {
+        // `priors.stream().filter(...).findAny()`, which the sequential stream answers first.
+        let row = table
+            .rows
+            .iter()
+            .find(|row| table.get(row, "context").ok() == Some(context.as_str()))
+            .ok_or_else(|| {
+                RunError::new(
+                    "org.broadinstitute.hellbender.exceptions.UserException$BadInput",
+                    format!(
+                        "Bad input: ArtifactPrior object isn't present for reference context \
+                         {context}in file {source}"
+                    ),
+                )
+            })?;
+        let mut pi = [0.0; crate::learn_read_orientation_model::NUM_STATES];
+        for state in State::all() {
+            let value = table
+                .get(row, &state.name().to_lowercase())
+                .map_err(|error| RunError::new(error.java_class(), error.message()))?;
+            pi[state.index()] = value.parse::<f64>().map_err(|_| {
+                RunError::new(
+                    "java.lang.NumberFormatException",
+                    format!("For input string: \"{value}\""),
+                )
+            })?;
+        }
+        let mut reverse = [0.0; crate::learn_read_orientation_model::NUM_STATES];
+        for state in State::all() {
+            reverse[state.index()] = pi[state.reverse_complement().index()];
+        }
+        by_context.insert(reverse_complement(&context), reverse);
+        by_context.insert(context, pi);
+    }
+    Ok(ArtifactPriors {
+        sample: table.metadata.get("SAMPLE").cloned(),
+        by_context,
+    })
+}
+
+/// One tumour genotype as `ReadOrientationFilter.artifactProbability` reads it.
+pub struct OrientationGenotype<'a> {
+    pub hom_ref: bool,
+    pub f1r2: Option<&'a [i32]>,
+    pub f2r1: Option<&'a [i32]>,
+}
+
+/// `ReadOrientationFilter.artifactProbability(referenceContext, vc, g)` for a SNP or an MNP whose
+/// sample has priors: each base of the alternate with the most `TLOD` priced on its own, and the
+/// largest posterior of either orientation kept.
+///
+/// `kmer_around(position)` is `getKmerAround(position, 1)`, `None` at a contig's end; the reference
+/// reader has already uppercased it and turned IUPAC codes into `N`.
+pub fn orientation_artifact_probability(
+    priors: &ArtifactPriors,
+    genotype: &OrientationGenotype,
+    tumor_log_10_odds: Option<&[f64]>,
+    alternate_bases: &[&[u8]],
+    start: i32,
+    mut kmer_around: impl FnMut(i32) -> Option<String>,
+) -> Result<f64, RunError> {
+    use crate::learn_read_orientation_model::{compute_responsibilities, Base, State};
+    if genotype.hom_ref {
+        return Ok(0.0);
+    }
+    let odds =
+        tumor_log_10_odds.ok_or_else(|| RunError::new("java.lang.NullPointerException", ""))?;
+    let best = gatk_engine::math_utils::max_element_index(odds, 0, odds.len());
+    let mut answer: Option<f64> = None;
+    for (n, byte) in alternate_bases[best].iter().enumerate() {
+        let alt = Base::from_byte(*byte).ok_or_else(|| {
+            RunError::new(
+                "org.broadinstitute.hellbender.exceptions.UserException",
+                format!(
+                    "Alt allele must be in {{A, C, G, T}} but got {}",
+                    *byte as char
+                ),
+            )
+        })?;
+        let probability = 'base: {
+            let Some(context) = kmer_around(start + n as i32) else {
+                break 'base 0.0;
+            };
+            if context.contains('N') {
+                break 'base 0.0;
+            }
+            let reference = Base::from_byte(context.as_bytes()[1]).expect("an ACGT context");
+            let (Some(f1r2), Some(f2r1)) = (genotype.f1r2, genotype.f2r1) else {
+                break 'base 0.0;
+            };
+            let index = |values: &[i32], at: usize| {
+                values.get(at).copied().ok_or_else(|| {
+                    RunError::new(
+                        "java.lang.ArrayIndexOutOfBoundsException",
+                        format!("Index {at} out of bounds for length {}", values.len()),
+                    )
+                })
+            };
+            let ref_count = index(f1r2, 0)? + index(f2r1, 0)?;
+            let alt_f1r2 = index(f1r2, best + 1)?;
+            let alt_count = alt_f1r2 + index(f2r1, best + 1)?;
+            let Some(pi) = priors.by_context.get(&context) else {
+                break 'base 0.0;
+            };
+            let posterior = compute_responsibilities(
+                reference,
+                alt,
+                alt_count,
+                alt_f1r2,
+                ref_count + alt_count,
+                pi,
+                true,
+            );
+            // `getF1R2StateForAlt` and `getF2R1StateForAlt`: the first four states are F1R2's.
+            let artifact = |states: &[State]| {
+                let state = states
+                    .iter()
+                    .find(|state| state.artifact_base() == Some(alt));
+                posterior[state.expect("every base has both orientations").index()]
+            };
+            let (f1r2_state, f2r1_state) =
+                (artifact(&State::all()[..4]), artifact(&State::all()[4..8]));
+            java_max(f1r2_state, f2r1_state)
+        };
+        answer = Some(answer.map_or(probability, |so_far| java_max(so_far, probability)));
+    }
+    Ok(answer.unwrap_or(0.0))
+}
+
+/// `Math.max`, which answers NaN when either side is.
+fn java_max(a: f64, b: f64) -> f64 {
+    if a.is_nan() || b.is_nan() {
+        f64::NAN
+    } else {
+        a.max(b)
     }
 }

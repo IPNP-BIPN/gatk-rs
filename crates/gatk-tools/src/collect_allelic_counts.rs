@@ -137,18 +137,18 @@ fn infer_alternate(counts: &[i32; 4], reference_index: usize) -> u8 {
 ///
 /// The read group is the tool's own -- `ID:GATKCopyNumber` -- carrying the sample the reads named,
 /// so the table is self-describing without the BAM beside it.
-pub fn header(sequences: &[(String, i32)], sample: &str) -> String {
-    let mut text = String::from("@HD\tVN:1.6\n");
-    for (name, length) in sequences {
-        text.push_str(&format!("@SQ\tSN:{name}\tLN:{length}\n"));
-    }
-    text.push_str(&format!("@RG\tID:GATKCopyNumber\tSM:{sample}\n"));
+pub fn header(sequences: &[htsjdk_bam::header::SequenceRecord], sample: &str) -> String {
+    let mut text = crate::model_segments_tool::header(sample, Some(sequences));
     text.push_str("CONTIG\tPOSITION\tREF_COUNT\tALT_COUNT\tREF_NUCLEOTIDE\tALT_NUCLEOTIDE\n");
     text
 }
 
 /// The whole file: the header, then one row per locus that was not skipped.
-pub fn write(sequences: &[(String, i32)], sample: &str, counts: &[AllelicCount]) -> String {
+pub fn write(
+    sequences: &[htsjdk_bam::header::SequenceRecord],
+    sample: &str,
+    counts: &[AllelicCount],
+) -> String {
     let mut text = header(sequences, sample);
     for count in counts {
         text.push_str(&format!(
