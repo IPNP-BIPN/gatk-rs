@@ -64,6 +64,11 @@ ENV PATH=/opt/gatk:$PATH
 # probe serves both images and neither can be built against the wrong jar.
 ENV ORACLE_GATK_VERSION=${GATK_VERSION}
 
+# Empty for every golden-making image. 1 only for the speed-at-scale arm64 image, which the probe
+# then accepts without GKL and marks `golden_capable: false`.
+ARG TIMING_ONLY=
+ENV ORACLE_TIMING_ONLY=${TIMING_ONLY}
+
 # JaCoCo for the coverage-guided fuzzer, pinned by sha256 like everything else: the fuzzer's
 # stopping condition is a coverage threshold on the reference, so a silently different JaCoCo would
 # silently change what "covered" means.

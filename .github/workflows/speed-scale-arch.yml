@@ -17,6 +17,38 @@ on:
         type: string
 
 jobs:
+  image:
+    name: The oracle image
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: cache
+        uses: actions/cache@v6
+        with:
+          path: /tmp/oracle-image.tar
+          key: gatk-rs-oracle-${{ inputs.arch == 'x86-64' && '' || format('{0}-', inputs.arch) }}${{ hashFiles('tools/oracle/**') }}
+
+      # Built once here and handed to every group, so a rate-limited mirror (Maven Central answered
+      # 429 on run 44801908819) fails one job that retries rather than each group in turn.
+      - name: Build it when the cache misses
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          for attempt in 1 2 3; do
+            docker build --platform ${{ inputs.platform }} \
+              --build-arg TIMING_ONLY=${{ inputs.arch == 'x86-64' && '' || '1' }} \
+              -t gatk-rs-oracle:4.7.0.0 tools/oracle && break
+            [ "$attempt" = 3 ] && exit 1
+            echo "build attempt $attempt failed; retrying"; sleep $((attempt * 120))
+          done
+          docker save gatk-rs-oracle:4.7.0.0 -o /tmp/oracle-image.tar
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: scale-image-${{ inputs.arch }}
+          path: /tmp/oracle-image.tar
+          retention-days: 3
+
   port:
     name: The port binary
     runs-on: ${{ inputs.runner }}
@@ -45,7 +77,7 @@ jobs:
           retention-days: 3
 
   prep:
-    needs: port
+    needs: [image, port]
     uses: ./.github/workflows/speed-scale-group.yml
     with: {group: prep, arch: "${{ inputs.arch }}", runner: "${{ inputs.runner }}", platform: "${{ inputs.platform }}"}
 
