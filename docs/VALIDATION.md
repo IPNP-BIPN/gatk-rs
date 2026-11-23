@@ -61,8 +61,8 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | ClipReads | gatk-rs | oracle-backed | 170 suite | 0 suite | 24/24 (100.0%) | 2 | 2506 probes (+2), 0/13 diverge | 5 | 0 | none |
 | ClusterCrosscheckMetrics | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CollectAlignmentSummaryMetrics | picard-rs | oracle-backed | not vendored | not vendored | 20/20 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectAllelicCounts | gatk-rs | oracle-backed | 6 suite | 0 suite | 19/19 (100.0%) | 2 | 3007 probes (+2), 0/11 diverge | 4 | 0 | none |
-| CollectAllelicCountsSpark | gatk-rs | oracle-backed | 72 | 11 | 19/19 (100.0%) | 2 | 3287 probes (+2), 0/9 diverge | 4 | 4 | none |
+| CollectAllelicCounts | gatk-rs | oracle-backed | 6 suite | 0 suite | 19/19 (100.0%) | 2 | 3007 probes (+2), 0/11 diverge | 6 | 0 | none |
+| CollectAllelicCountsSpark | gatk-rs | oracle-backed | 72 | 11 | 19/19 (100.0%) | 2 | 3287 probes (+2), 0/9 diverge | 6 | 4 | none |
 | CollectArraysVariantCallingMetrics | picard-rs | oracle-backed | not vendored | not vendored | 11/11 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CollectBaseDistributionByCycle | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CollectBaseDistributionByCycleSpark | gatk-rs | oracle-backed | 6 | 2 | 21/21 (100.0%) | 2 | 2145 probes (+4), 0/13 diverge | 4 | 2 | none |
@@ -85,7 +85,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | CollectQualityYieldMetricsSNVQ | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CollectQualityYieldMetricsSpark | gatk-rs | oracle-backed | 6 | 2 | 22/22 (100.0%) | 2 | 2128 probes (+1), 0/12 diverge | 4 | 1 | none |
 | CollectRawWgsMetrics | picard-rs | oracle-backed | not vendored | not vendored | 22/22 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectReadCounts | gatk-rs | oracle-backed | 6 suite | 0 suite | 18/18 (100.0%) | 2 | 2546 probes (+59), 0/10 diverge | 4 | 0 | none |
+| CollectReadCounts | gatk-rs | oracle-backed | 6 suite | 0 suite | 18/18 (100.0%) | 2 | 2546 probes (+59), 0/10 diverge | 6 | 0 | none |
 | CollectRnaSeqMetrics | picard-rs | oracle-backed | not vendored | not vendored | 27/27 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CollectRrbsMetrics | picard-rs | oracle-backed | not vendored | not vendored | 19/19 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CollectSVEvidence | gatk-rs | oracle-backed | 19 suite | 0 suite | 20/20 (100.0%) | 2 | 2396 probes (+3), 0/8 diverge | 5 | 2 | none |
@@ -663,7 +663,7 @@ Held out: none.
 
 Suites: `collect-allelic-counts`.
 
-Inputs: `reads.bai`, `reads.bam`, `reads2.bai`, `reads2.bam`.
+Inputs: `reads.bai`, `reads.bam`, `reads2.bai`, `reads2.bam`, `sq_tags.bai`, `sq_tags.bam`.
 
 Held out: none.
 
@@ -673,7 +673,7 @@ The read walkers' corpus, and the tool's own three knobs beside it. --minimum-ba
 
 Suites: `spark-walkers`.
 
-Inputs: `reads.bai`, `reads.bam`, `reads2.bai`, `reads2.bam`.
+Inputs: `reads.bai`, `reads.bam`, `reads2.bai`, `reads2.bam`, `sq_tags.bai`, `sq_tags.bam`.
 
 Held out: `--dont-require-soft-clips-both-ends`, `--keep-reverse-strand-only`, `--output-shard-tmp-dir`, `--read-filter-tag-op`.
 
@@ -733,7 +733,7 @@ The Spark values every record walker here has. `--chart` needs an R the pinned c
 
 Suites: `collect-read-counts`.
 
-Inputs: `reads.bai`, `reads.bam`, `reads2.bai`, `reads2.bam`.
+Inputs: `reads.bai`, `reads.bam`, `reads2.bai`, `reads2.bam`, `sq_tags.bai`, `sq_tags.bam`.
 
 Held out: none.
 
