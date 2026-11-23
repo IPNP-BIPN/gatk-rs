@@ -327,6 +327,19 @@ pub struct Record {
 /// whole-cohort run from gaining annotations. The two early exits are both the reference's: the
 /// first is `noSamplesSpecified && !removeUnusedAlternates`, before anything is decoded, and the
 /// second is the subset having as many samples and as many alleles as the original.
+/// [`subset_record`] of a record the caller is done with, which the first early exit hands back
+/// rather than copies.
+pub fn into_subset(
+    record: Record,
+    selection: &SampleSelection,
+    arguments: &SubsetArguments,
+) -> Result<Record, GenotypeIndexError> {
+    if selection.no_samples_specified && !arguments.remove_unused_alternates {
+        return Ok(record);
+    }
+    subset_record(&record, selection, arguments)
+}
+
 pub fn subset_record(
     record: &Record,
     selection: &SampleSelection,
