@@ -316,6 +316,9 @@ pub struct Posteriors {
     pub genotypes: Vec<CalledGenotype>,
 }
 
+/// A `CalledGenotype` allele index that stands for `Allele.NO_CALL`.
+pub const NO_CALL: usize = usize::MAX;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct CalledGenotype {
     pub sample: String,
@@ -422,12 +425,17 @@ pub fn calculate_posterior_probs(
                 let gq = gq_log10_from_likelihoods(best, &posterior);
                 called.push(CalledGenotype {
                     sample: genotype.sample.clone(),
-                    // A recalled genotype whose alleles include <NON_REF> is written as hom-ref.
+                    // A recalled genotype whose alleles include <NON_REF> is written as hom-ref;
+                    // a hom-ref one whose GQ is above `SUM_GL_THRESH_NOCALL` is a no-call.
                     alleles: if alleles
                         .iter()
                         .any(|index| record.alleles[*index].is_non_ref())
                     {
                         vec![0; DEFAULT_PLOIDY]
+                    } else if best == 0
+                        && gq > crate::reference_confidence_merger::SUM_GL_THRESH_NOCALL
+                    {
+                        vec![NO_CALL; DEFAULT_PLOIDY]
                     } else {
                         alleles
                     },

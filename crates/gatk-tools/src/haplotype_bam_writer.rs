@@ -31,7 +31,10 @@ const HAPLOTYPE_SAMPLE_TAG: &str = "HC";
 const BEST_HAPLOTYPE_MQ: u8 = 60;
 const OTHER_MQ: u8 = 0;
 /// `ReferenceConfidenceModel.ORIGINAL_SOFTCLIP_START_TAG` and `_END_TAG`.
-const ORIGINAL_SOFTCLIP_TAGS: [&[u8; 2]; 2] = [b"OS", b"OE"];
+const ORIGINAL_SOFTCLIP_TAGS: [&[u8; 2]; 2] = [
+    gatk_engine::assembly_based_caller_utils::ORIGINAL_SOFTCLIP_START_TAG,
+    gatk_engine::assembly_based_caller_utils::ORIGINAL_SOFTCLIP_END_TAG,
+];
 
 /// `HaplotypeBAMWriter.WriterType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -5948,7 +5948,13 @@ pub fn calculate_genotype_posteriors(parser: &Parser) -> Outcome {
             genotype.alleles = called
                 .alleles
                 .iter()
-                .filter_map(|index| original.alleles.get(*index).cloned())
+                .map(|index| {
+                    original
+                        .alleles
+                        .get(*index)
+                        .cloned()
+                        .unwrap_or_else(htsjdk_vcf::allele::Allele::no_call)
+                })
                 .collect();
             if let Some(gq) = called.gq {
                 genotype.gq = Some(gq);
