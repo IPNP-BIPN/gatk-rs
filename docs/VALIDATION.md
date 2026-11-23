@@ -61,8 +61,8 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | ClipReads | gatk-rs | oracle-backed | 170 suite | 0 suite | 24/24 (100.0%) | 2 | 2506 probes (+2), 0/13 diverge | 5 | 0 | none |
 | ClusterCrosscheckMetrics | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CollectAlignmentSummaryMetrics | picard-rs | oracle-backed | not vendored | not vendored | 20/20 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectAllelicCounts | gatk-rs | oracle-backed | 6 suite | 0 suite | 19/19 (100.0%) | 2 | 3007 probes (+2), 0/11 diverge | 4 | 0 | none |
-| CollectAllelicCountsSpark | gatk-rs | oracle-backed | 72 | 11 | 19/19 (100.0%) | 2 | 3287 probes (+2), 0/9 diverge | 4 | 4 | none |
+| CollectAllelicCounts | gatk-rs | oracle-backed | 6 suite | 0 suite | 19/19 (100.0%) | 2 | 3007 probes (+2), 0/11 diverge | 6 | 0 | none |
+| CollectAllelicCountsSpark | gatk-rs | oracle-backed | 72 | 11 | 19/19 (100.0%) | 2 | 3287 probes (+2), 0/9 diverge | 6 | 4 | none |
 | CollectArraysVariantCallingMetrics | picard-rs | oracle-backed | not vendored | not vendored | 11/11 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CollectBaseDistributionByCycle | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CollectBaseDistributionByCycleSpark | gatk-rs | oracle-backed | 6 | 2 | 21/21 (100.0%) | 2 | 2145 probes (+4), 0/13 diverge | 4 | 2 | none |
@@ -85,7 +85,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | CollectQualityYieldMetricsSNVQ | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CollectQualityYieldMetricsSpark | gatk-rs | oracle-backed | 6 | 2 | 22/22 (100.0%) | 2 | 2128 probes (+1), 0/12 diverge | 4 | 1 | none |
 | CollectRawWgsMetrics | picard-rs | oracle-backed | not vendored | not vendored | 22/22 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectReadCounts | gatk-rs | oracle-backed | 6 suite | 0 suite | 18/18 (100.0%) | 2 | 2546 probes (+59), 0/10 diverge | 4 | 0 | none |
+| CollectReadCounts | gatk-rs | oracle-backed | 6 suite | 0 suite | 18/18 (100.0%) | 2 | 2546 probes (+59), 0/10 diverge | 6 | 0 | none |
 | CollectRnaSeqMetrics | picard-rs | oracle-backed | not vendored | not vendored | 27/27 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CollectRrbsMetrics | picard-rs | oracle-backed | not vendored | not vendored | 19/19 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CollectSVEvidence | gatk-rs | oracle-backed | 19 suite | 0 suite | 20/20 (100.0%) | 2 | 2396 probes (+3), 0/8 diverge | 5 | 2 | none |
@@ -154,10 +154,10 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | FilterAlignmentArtifacts | gatk-rs | oracle-backed | 271 suite | 0 suite | 21/21 (100.0%) | 2 | 4865 probes (+2), 0/7 diverge | 6 | 3 | none |
 | FilterFuncotations | gatk-rs | oracle-backed | 10 suite | 0 suite | 16/16 (100.0%) | 2 | 2477 probes (+0), 0/6 diverge | 2 | 9 | none |
 | FilterIntervals | gatk-rs | oracle-backed | 11 suite | 0 suite | 11/11 (100.0%) | 2 | 2309 probes (+3), 0/7 diverge | 4 | 1 | none |
-| FilterMutectCalls | gatk-rs | oracle-backed | 320 suite | 0 suite | 24/24 (100.0%) | 2 | 3736 probes (+5), 0/13 diverge | 5 | 10 | none |
+| FilterMutectCalls | gatk-rs | oracle-backed | 320 suite | 0 suite | 24/24 (100.0%) | 2 | 3736 probes (+5), 0/13 diverge | 12 | 3 | none |
 | FilterSamReads | picard-rs | oracle-backed | not vendored | not vendored | 26/26 (100.0%) | 2 | not measured | 0 | 0 | none |
 | FilterVariantTranches | gatk-rs | oracle-backed | 60 suite | 0 suite | 15/15 (100.0%) | 2 | 2161 probes (+5), 0/10 diverge | 4 | 7 | none |
-| FilterVcf | gatk-rs | oracle-backed | 20 suite | 0 suite | 7/20 (35.0%) | 2 | not measured | 8 | 0 | none |
+| FilterVcf | gatk-rs | oracle-backed | 20 suite | 0 suite | 9/20 (45.0%) | 2 | not measured | 8 | 0 | none |
 | FindBadGenomicKmersSpark | gatk-rs | oracle-backed | 63 | 12 | 21/21 (100.0%) | 2 | 2120 probes (+4), 0/12 diverge | 4 | 5 | none |
 | FindBreakpointEvidenceSpark | gatk-rs | oracle-backed | 9344 | 8309 | 26/26 (100.0%) | 2 | 5309 probes (+20), 0/14 diverge | 9 | 3 | none |
 | FindMendelianViolations | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -195,7 +195,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | HaplotypeBasedVariantRecaller | gatk-rs | oracle-backed | 7 suite | 0 suite | 48/48 (100.0%) | 2 | 4112 probes (+2), 0/12 diverge | 5 | 3 | none |
 | HaplotypeCaller | gatk-rs | oracle-backed | 587 suite | 50 suite | 50/50 (100.0%) | 2 | 12968 probes (+2), 0/32 diverge | 14 | 0 | mask_identity_hashes, sort_segments_with |
 | HaplotypeCallerSpark | gatk-rs | oracle-backed | 64 | 15 | 49/49 (100.0%) | 2 | 11894 probes (+2), 0/27 diverge | 11 | 15 | none |
-| HtsgetReader | gatk-rs | oracle-backed | 865 | 41 | 11/11 (100.0%) | 2 | 1084 probes (+2), 0/5 diverge | 0 | 0 | none |
+| HtsgetReader | gatk-rs | oracle-backed | 865 | 41 | 12/12 (100.0%) | 2 | 1084 probes (+2), 0/5 diverge | 0 | 0 | none |
 | IdentifyContaminant | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
 | IlluminaBasecallsToFastq | picard-rs | oracle-backed | not vendored | not vendored | not measured | - | not measured | 0 | 0 | none |
 | IlluminaBasecallsToSam | picard-rs | oracle-backed | not vendored | not vendored | 31/31 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -282,7 +282,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | SamToFastqWithTags | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | none |
 | ScatterIntervalsByNs | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
 | ScoreVariantAnnotations | gatk-rs | oracle-backed | 210 suite | 51 suite | 27/27 (100.0%) | 2 | 2639 probes (+2), 0/14 diverge | 6 | 7 | mask_hdf5_modification_times |
-| SelectVariants | gatk-rs | oracle-backed | 36903 suite | 0 suite | 51/51 (100.0%) | 2 | 2736 probes (+5), 0/14 diverge | 2 | 10 | none |
+| SelectVariants | gatk-rs | oracle-backed | 36903 suite | 0 suite | 51/51 (100.0%) | 2 | 2736 probes (+5), 0/14 diverge | 7 | 0 | none |
 | SetNmAndUqTags | gatk-rs | oracle-backed | 10 suite | 0 suite | 16/16 (100.0%) | 2 | not measured | 7 | 0 | none |
 | SetNmMdAndUqTags | gatk-rs | oracle-backed | 10 suite | 0 suite | 16/16 (100.0%) | 2 | not measured | 7 | 0 | none |
 | ShiftFasta | gatk-rs | oracle-backed | 37 suite | 0 suite | 21/21 (100.0%) | 2 | 1855 probes (+2), 0/9 diverge | 0 | 2 | none |
@@ -663,7 +663,7 @@ Held out: none.
 
 Suites: `collect-allelic-counts`.
 
-Inputs: `reads.bai`, `reads.bam`, `reads2.bai`, `reads2.bam`.
+Inputs: `reads.bai`, `reads.bam`, `reads2.bai`, `reads2.bam`, `sq_tags.bai`, `sq_tags.bam`.
 
 Held out: none.
 
@@ -673,7 +673,7 @@ The read walkers' corpus, and the tool's own three knobs beside it. --minimum-ba
 
 Suites: `spark-walkers`.
 
-Inputs: `reads.bai`, `reads.bam`, `reads2.bai`, `reads2.bam`.
+Inputs: `reads.bai`, `reads.bam`, `reads2.bai`, `reads2.bam`, `sq_tags.bai`, `sq_tags.bam`.
 
 Held out: `--dont-require-soft-clips-both-ends`, `--keep-reverse-strand-only`, `--output-shard-tmp-dir`, `--read-filter-tag-op`.
 
@@ -733,7 +733,7 @@ The Spark values every record walker here has. `--chart` needs an R the pinned c
 
 Suites: `collect-read-counts`.
 
-Inputs: `reads.bai`, `reads.bam`, `reads2.bai`, `reads2.bam`.
+Inputs: `reads.bai`, `reads.bam`, `reads2.bai`, `reads2.bam`, `sq_tags.bai`, `sq_tags.bam`.
 
 Held out: none.
 
@@ -1123,11 +1123,11 @@ annotated.tsv and counts.tsv, both produced by the REFERENCE's own AnnotateInter
 
 Suites: `filter-mutect-calls`.
 
-Inputs: `missing.stats`, `mutect.vcf`, `mutect_nocallable.vcf`, `mutect_nocallable.vcf.stats`, `mutect_ref.fasta`.
+Inputs: `missing.stats`, `mutect.vcf`, `mutect_contaminated.table`, `mutect_contamination.table`, `mutect_nocallable.vcf`, `mutect_nocallable.vcf.stats`, `mutect_priors.tar.gz`, `mutect_ref.dict`, `mutect_ref.fasta`, `mutect_segments.table`, `mutect_tn.bai`, `mutect_tn.bam`.
 
-Held out: `--contamination-table`, `--dont-require-soft-clips-both-ends`, `--exclude-intervals`, `--input`, `--keep-reverse-strand-only`, `--orientation-bias-artifact-priors`, `--read-filter-tag-op`, `--read-index`, `--sequence-dictionary`, `--tumor-segmentation`.
+Held out: `--dont-require-soft-clips-both-ends`, `--keep-reverse-strand-only`, `--read-filter-tag-op`.
 
-mutect.vcf is the reference's own Mutect2 run over mutect_tn.bam and mutect_ref.fasta, four calls with every INFO field and header line a real run carries: a clean somatic SNV, a two-read one, one on forward reads alone and one near the reads' starts, with mutect.vcf.stats beside it. mutect_nocallable.vcf is the same calls with a stats table whose callable count is zero. --stats absent reads the table beside the VCF; a path to a missing file is refused after the header is written. The model inputs the port does not read, --contamination-table, --tumor-segmentation and --ob-priors, are held. Every numeric threshold has its default first and a value that moves a call second.
+mutect.vcf is the reference's own Mutect2 run over mutect_tn.bam and mutect_ref.fasta, four calls with every INFO field and header line a real run carries: a clean somatic SNV, a two-read one, one on forward reads alone and one near the reads' starts, with mutect.vcf.stats beside it. mutect_nocallable.vcf is the same calls with a stats table whose callable count is zero. --stats absent reads the table beside the VCF; a path to a missing file is refused after the header is written. The model inputs are the reference's own over the same reads: mutect_priors.tar.gz is LearnReadOrientationModel over f1r2_tn.tar.gz (tumour and normal priors, which turn three calls into orientation artifacts), mutect_contamination.table and mutect_segments.table are CalculateContamination over the tumour's pileups (an estimate of 0.0, one segment over the call at 1000), and mutect_contaminated.table names the tumour at 0.1 and the normal at 0.2. --input and --read-index give the calls' own BAM and its index, which a variant walker opens and never reads; --exclude-intervals drops the call at 1600. Every numeric threshold has its default first and a value that moves a call second.
 
 ### FilterVariantTranches
 
@@ -1475,7 +1475,7 @@ Inputs: none.
 
 Held out: none.
 
-Nothing listens on the port, and the refusal is the URI the arguments built, which is what they decide. The answers and what is done with them are the htsget-reader golden's, which starts a server. The class stays body: class=header refuses every other query parameter, and that refusal is a row of the golden.
+Every row reaches the pinned htsget-rs server run_array.py starts beside it, serving the corpus files under `$htsget_server`, and both sides fetch the blocks its tickets name. --url is its two endpoints: the id reads is a BAM at /reads and a VCF at /variants, and sites is only a VCF, so /reads answers it with the server's NotFound, and --format VCF at /reads with its UnsupportedFormat. htsget-rs answers class=header and refuses body. The tool refuses class=header beside an interval, a field or a tag before anything is sent, which the constraints keep out of the array: that refusal is a row of the htsget-reader golden. The server ignores fields and tags and sends no md5, so --check-md5 true only warns. Answers this server never gives are the golden's, which serves them itself.
 
 ### JointGermlineCNVSegmentation
 
@@ -2033,11 +2033,11 @@ The variants, resources, annotations and modes are ExtractVariantAnnotations': t
 
 Suites: `select-variants-samples`, `select-variants-subset`, `select-variants-filters`, `select-variants-output`, `select-variants-header`, `select-variants-concordance`, `tool-argument-declarations`, `tool-argument-enums`, `genomicsdb-query`.
 
-Inputs: `indexed.vcf`, `population.vcf`.
+Inputs: `indexed.vcf`, `population.vcf`, `reads.bai`, `reads.bam`, `sv_trio.ped`, `sv_trio.vcf`, `sv_trio_comp.vcf`.
 
-Held out: `--call-genotypes`, `--concordance`, `--discordance`, `--input`, `--invert-mendelian-violation`, `--mendelian-violation`, `--pedigree`, `--read-index`, `--remove-fraction-genotypes`, `--select-random-fraction`.
+Held out: none.
 
-indexed.vcf is the corpus's one-sample VCF and population.vcf the one with an INFO field and no samples at all, which is what makes the sample arguments and the JEXL expressions reach different branches: -sn over a file with a sample subsets and rewrites, and the same argument over a file with none is the refusal that names it. the JEXL path is measured rather than merely present. Six arguments are held out because this port refuses them rather than answering: --pedigree and its two Mendelian flags, the two random fractions, --call-genotypes, and the two concordance tracks. A row carrying one measures the port's own refusal, which is a message no golden holds and which would be the same on every row that carries it. --add-output-vcf-command-line is held at FALSE. Its ##GATKCommandLine line carries the run's own wall-clock time, and the reference and the port run minutes apart. --create-output-variant-index is held at FALSE for the reason every other variant writer holds it: the index a tool builds for its own output records that file's last-modified time. --input and --read-index are held out: this tool reads no reads, and the corpus's shared --input value is a VCF, whose refusal as a reads source is measured by CountVariants. command line, so `QUAL > 50` arrived as `--select QUAL` with the rest eaten by the shell. JEXL reads the no-space form the same way, and the second value is the bare `QUAL`, which is a Double where the reference casts to Boolean: the ClassCastException that produces is the tool's answer and is now the port's. -select carries an INTEGER literal and a real one, which take two different paths through commons-jexl's arithmetic: an integer literal sends the comparison down Integer.parseInt and a real one down the double path. Both answer now that the context is typed (#1142); before that the integer literal refused, because a rendered string reached parseInt where the reference had a Double. gendb:///work/fixtures/cg_ws is cg_a, cg_b and cg_c imported by GenomicsDBImport and read back through GenomicsDB's own query: the samples of cg_combined.g.vcf, merged the native way.
+indexed.vcf is the corpus's one-sample VCF and population.vcf the one with an INFO field and no samples at all, which is what makes the sample arguments and the JEXL expressions reach different branches: -sn over a file with a sample subsets and rewrites, and the same argument over a file with none is the refusal that names it. the JEXL path is measured rather than merely present. sv_trio.vcf is a father, mother and child on reference.fasta's chr1, sv_trio.ped their family and sv_trio_comp.vcf a comparison track that agrees at some sites, disagrees at one and has a site the trio has not, so --pedigree, the two Mendelian flags with their quality threshold, --concordance and --discordance select different records rather than all or none. --sample-name is unset first because the concordance tracks take a different branch when no sample is named. --select-random-fraction draws from Utils.getRandomGenerator(), seeded once per JVM, so 0.5 is a reproducible answer. --remove-fraction-genotypes draws from an UNSEEDED new Random(), so only the fractions no draw can decide are values: 0.0 keeps every genotype and 1.0 no-calls every one. --add-output-vcf-command-line is held at FALSE. Its ##GATKCommandLine line carries the run's own wall-clock time, and the reference and the port run minutes apart. --create-output-variant-index is held at FALSE for the reason every other variant writer holds it: the index a tool builds for its own output records that file's last-modified time. --input and --read-index name reads.bam and its index: the tool reads no reads, but the engine opens them and checks their dictionary against the variants'. command line, so `QUAL > 50` arrived as `--select QUAL` with the rest eaten by the shell. JEXL reads the no-space form the same way, and the second value is the bare `QUAL`, which is a Double where the reference casts to Boolean: the ClassCastException that produces is the tool's answer and is now the port's. -select carries an INTEGER literal and a real one, which take two different paths through commons-jexl's arithmetic: an integer literal sends the comparison down Integer.parseInt and a real one down the double path. Both answer now that the context is typed (#1142); before that the integer literal refused, because a rendered string reached parseInt where the reference had a Double. gendb:///work/fixtures/cg_ws is cg_a, cg_b and cg_c imported by GenomicsDBImport and read back through GenomicsDB's own query: the samples of cg_combined.g.vcf, merged the native way.
 
 ### SetNmAndUqTags
 

@@ -1025,11 +1025,13 @@
       ],
       "--input": [
         "/work/fixtures/reads.bam",
-        "/work/fixtures/reads2.bam"
+        "/work/fixtures/reads2.bam",
+        "/work/fixtures/sq_tags.bam"
       ],
       "--read-index": [
         "/work/fixtures/reads.bai",
-        "/work/fixtures/reads2.bai"
+        "/work/fixtures/reads2.bai",
+        "/work/fixtures/sq_tags.bai"
       ],
       "--intervals": [
         "chr1:1-6000",
@@ -1928,11 +1930,13 @@
     "CollectReadCounts": {
       "--input": [
         "/work/fixtures/reads.bam",
-        "/work/fixtures/reads2.bam"
+        "/work/fixtures/reads2.bam",
+        "/work/fixtures/sq_tags.bam"
       ],
       "--read-index": [
         "/work/fixtures/reads.bai",
-        "/work/fixtures/reads2.bai"
+        "/work/fixtures/reads2.bai",
+        "/work/fixtures/sq_tags.bai"
       ],
       "--intervals": [
         "chr1:1-6000",
@@ -2656,16 +2660,20 @@
         "different branches: -sn over a file with a sample subsets and rewrites, and the same argument",
         "over a file with none is the refusal that names it.",
         "the JEXL path is measured rather than merely present.",
-        "Six arguments are held out because this port refuses them rather than answering: --pedigree and",
-        "its two Mendelian flags, the two random fractions, --call-genotypes, and the two concordance",
-        "tracks. A row carrying one measures the port's own refusal, which is a message no golden holds",
-        "and which would be the same on every row that carries it.",
+        "sv_trio.vcf is a father, mother and child on reference.fasta's chr1, sv_trio.ped their family and",
+        "sv_trio_comp.vcf a comparison track that agrees at some sites, disagrees at one and has a site the",
+        "trio has not, so --pedigree, the two Mendelian flags with their quality threshold, --concordance",
+        "and --discordance select different records rather than all or none. --sample-name is unset first",
+        "because the concordance tracks take a different branch when no sample is named.",
+        "--select-random-fraction draws from Utils.getRandomGenerator(), seeded once per JVM, so 0.5 is a",
+        "reproducible answer. --remove-fraction-genotypes draws from an UNSEEDED new Random(), so only the",
+        "fractions no draw can decide are values: 0.0 keeps every genotype and 1.0 no-calls every one.",
         "--add-output-vcf-command-line is held at FALSE. Its ##GATKCommandLine line carries the run's own",
         "wall-clock time, and the reference and the port run minutes apart.",
         "--create-output-variant-index is held at FALSE for the reason every other variant writer holds",
         "it: the index a tool builds for its own output records that file's last-modified time.",
-        "--input and --read-index are held out: this tool reads no reads, and the corpus's shared --input",
-        "value is a VCF, whose refusal as a reads source is measured by CountVariants.",
+        "--input and --read-index name reads.bam and its index: the tool reads no reads, but the engine",
+        "opens them and checks their dictionary against the variants'.",
         "command line, so `QUAL > 50` arrived as `--select QUAL` with the rest eaten by the shell. JEXL",
         "reads the no-space form the same way, and the second value is the bare `QUAL`, which is a Double",
         "where the reference casts to Boolean: the ClassCastException that produces is the tool's answer",
@@ -2681,35 +2689,60 @@
       "--variant": [
         "/work/fixtures/indexed.vcf",
         "/work/fixtures/population.vcf",
-        "gendb:///work/fixtures/cg_ws"
+        "gendb:///work/fixtures/cg_ws",
+        "/work/fixtures/sv_trio.vcf"
       ],
       "--output": [
         "/work/out/selected.vcf",
         "/work/out/selected2.vcf"
       ],
       "--sample-name": [
+        "<unset>",
         "sample1",
-        "nosuchsample"
+        "nosuchsample",
+        "kid"
       ],
       "--select": [
         "QUAL>50",
         "QUAL>5000.0"
       ],
-      "--pedigree": [],
-      "--mendelian-violation": [],
-      "--invert-mendelian-violation": [],
-      "--select-random-fraction": [],
-      "--remove-fraction-genotypes": [],
-      "--call-genotypes": [],
-      "--concordance": [],
-      "--discordance": [],
-      "--input": [],
-      "--read-index": [],
+      "--pedigree": [
+        "<unset>",
+        "/work/fixtures/sv_trio.ped"
+      ],
+      "--select-random-fraction": [
+        "1.0",
+        "0.5"
+      ],
+      "--remove-fraction-genotypes": [
+        "0.0",
+        "1.0"
+      ],
+      "--concordance": [
+        "<unset>",
+        "/work/fixtures/sv_trio_comp.vcf"
+      ],
+      "--discordance": [
+        "<unset>",
+        "/work/fixtures/sv_trio_comp.vcf"
+      ],
+      "--input": [
+        "<unset>",
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/reads.bai"
+      ],
       "--add-output-vcf-command-line": [
         "false"
       ],
       "--create-output-variant-index": [
         "false"
+      ],
+      "--mendelian-violation-qual-threshold": [
+        "0.0",
+        "20.0"
       ]
     },
     "FastaAlternateReferenceMaker": {
@@ -4618,8 +4651,14 @@
         "one, one on forward reads alone and one near the reads' starts, with mutect.vcf.stats beside it.",
         "mutect_nocallable.vcf is the same calls with a stats table whose callable count is zero.",
         "--stats absent reads the table beside the VCF; a path to a missing file is refused after the",
-        "header is written. The model inputs the port does not read, --contamination-table,",
-        "--tumor-segmentation and --ob-priors, are held.",
+        "header is written.",
+        "The model inputs are the reference's own over the same reads: mutect_priors.tar.gz is",
+        "LearnReadOrientationModel over f1r2_tn.tar.gz (tumour and normal priors, which turn three calls",
+        "into orientation artifacts), mutect_contamination.table and mutect_segments.table are",
+        "CalculateContamination over the tumour's pileups (an estimate of 0.0, one segment over the call",
+        "at 1000), and mutect_contaminated.table names the tumour at 0.1 and the normal at 0.2.",
+        "--input and --read-index give the calls' own BAM and its index, which a variant walker opens and",
+        "never reads; --exclude-intervals drops the call at 1600.",
         "Every numeric threshold has its default first and a value that moves a call second."
       ],
       "--variant": [
@@ -4646,16 +4685,38 @@
         "chr1:1-3000",
         "chr1:1300-2000"
       ],
-      "--contamination-table": [],
-      "--tumor-segmentation": [],
-      "--orientation-bias-artifact-priors": [],
+      "--contamination-table": [
+        "null",
+        "/work/fixtures/mutect_contamination.table",
+        "/work/fixtures/mutect_contaminated.table"
+      ],
+      "--tumor-segmentation": [
+        "null",
+        "/work/fixtures/mutect_segments.table"
+      ],
+      "--orientation-bias-artifact-priors": [
+        "null",
+        "/work/fixtures/mutect_priors.tar.gz"
+      ],
       "--max-variants-per-shard": [
         "0"
       ],
-      "--sequence-dictionary": [],
-      "--input": [],
-      "--read-index": [],
-      "--exclude-intervals": [],
+      "--sequence-dictionary": [
+        "null",
+        "/work/fixtures/mutect_ref.dict"
+      ],
+      "--input": [
+        "null",
+        "/work/fixtures/mutect_tn.bam"
+      ],
+      "--read-index": [
+        "null",
+        "/work/fixtures/mutect_tn.bai"
+      ],
+      "--exclude-intervals": [
+        "null",
+        "chr1:1590-1610"
+      ],
       "--read-filter-tag-op": [],
       "--keep-reverse-strand-only": [],
       "--dont-require-soft-clips-both-ends": [],
@@ -13004,11 +13065,13 @@
       "--dont-require-soft-clips-both-ends": [],
       "--input": [
         "/work/fixtures/reads.bam",
-        "/work/fixtures/reads2.bam"
+        "/work/fixtures/reads2.bam",
+        "/work/fixtures/sq_tags.bam"
       ],
       "--read-index": [
         "/work/fixtures/reads.bai",
-        "/work/fixtures/reads2.bai"
+        "/work/fixtures/reads2.bai",
+        "/work/fixtures/sq_tags.bai"
       ],
       "--intervals": [
         "chr1:1-6000",
@@ -16557,27 +16620,27 @@
     },
     "HtsgetReader": {
       "--url": [
-        "https://localhost:1/base",
-        "https://localhost:1/other/"
+        "https://htsget:8080/reads",
+        "https://htsget:8080/variants"
       ],
       "--id": [
         "reads",
-        "sample.bai"
+        "sites"
       ],
       "--O": [
         "/work/out/htsget.bin"
       ],
       "--format": [
         "<unset>",
-        "CRAM"
+        "VCF"
       ],
       "--class": [
         "<unset>",
-        "body"
+        "header"
       ],
       "--intervals": [
         "<unset>",
-        "chr1:5-10"
+        "chr1:1500-2200"
       ],
       "--field": [
         "<unset>",
@@ -16599,8 +16662,13 @@
         "false",
         "true"
       ],
+      "$htsget_server": [
+        "reads.bam",
+        "reads.vcf.gz",
+        "sites.vcf.gz"
+      ],
       "$why": [
-        "Nothing listens on the port, and the refusal is the URI the arguments built, which is what they decide. The answers and what is done with them are the htsget-reader golden's, which starts a server. The class stays body: class=header refuses every other query parameter, and that refusal is a row of the golden."
+        "Every row reaches the pinned htsget-rs server run_array.py starts beside it, serving the corpus files under `$htsget_server`, and both sides fetch the blocks its tickets name. --url is its two endpoints: the id reads is a BAM at /reads and a VCF at /variants, and sites is only a VCF, so /reads answers it with the server's NotFound, and --format VCF at /reads with its UnsupportedFormat. htsget-rs answers class=header and refuses body. The tool refuses class=header beside an interval, a field or a tag before anything is sent, which the constraints keep out of the array: that refusal is a row of the htsget-reader golden. The server ignores fields and tags and sends no md5, so --check-md5 true only warns. Answers this server never gives are the golden's, which serves them itself."
       ]
     },
     "BwaSpark": {
@@ -18529,6 +18597,46 @@
     }
   },
   "constraints": [
+    {
+      "tools": [
+        "HtsgetReader"
+      ],
+      "forbid": {
+        "--class": "header",
+        "--intervals": "chr1:1500-2200"
+      },
+      "why": "The tool refuses a header request with an interval before it is sent, and the htsget-reader golden measures that refusal."
+    },
+    {
+      "tools": [
+        "HtsgetReader"
+      ],
+      "forbid": {
+        "--class": "header",
+        "--field": "SEQ"
+      },
+      "why": "The same refusal for a field."
+    },
+    {
+      "tools": [
+        "HtsgetReader"
+      ],
+      "forbid": {
+        "--class": "header",
+        "--tag": "NM"
+      },
+      "why": "The same refusal for a tag."
+    },
+    {
+      "tools": [
+        "HtsgetReader"
+      ],
+      "forbid": {
+        "--class": "header",
+        "--notag": "AS"
+      },
+      "why": "The same refusal for a tag left out."
+    },
     {
       "tools": [
         "Pileup"
