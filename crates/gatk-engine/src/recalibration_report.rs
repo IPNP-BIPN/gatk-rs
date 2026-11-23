@@ -459,6 +459,9 @@ fn parse_arguments(
             ("low_quality_tail", Some(value)) => {
                 arguments.low_qual_tail = value.parse().unwrap_or(2);
             }
+            ("binary_tag_name", value) => {
+                arguments.binary_tag_name = value.map(str::to_string);
+            }
             ("quantizing_levels", Some(value)) => {
                 quantizing_levels = value.parse().unwrap_or(16);
             }

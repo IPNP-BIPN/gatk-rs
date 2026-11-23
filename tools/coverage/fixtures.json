@@ -2257,7 +2257,8 @@
         "population VCF the corpus already carries and a BED beside it. The reference's own two",
         "runs over them produce the same table, so the two values are comparable rather than",
         "merely different.",
-        "--reference has both fastas: other.fasta carries a contig the reads do not."
+        "--reference has both fastas: other.fasta carries a contig the reads do not.",
+        "--binary-tag-name is null or XT: no covariate reads it, and the arguments table carries it."
       ],
       "--input": [
         "/work/fixtures/reads.bam",
@@ -2282,6 +2283,10 @@
       "--reference": [
         "/work/fixtures/reference.fasta",
         "/work/fixtures/other.fasta"
+      ],
+      "--binary-tag-name": [
+        "null",
+        "XT"
       ]
     },
     "GtfToBed": {
@@ -2651,16 +2656,20 @@
         "different branches: -sn over a file with a sample subsets and rewrites, and the same argument",
         "over a file with none is the refusal that names it.",
         "the JEXL path is measured rather than merely present.",
-        "Six arguments are held out because this port refuses them rather than answering: --pedigree and",
-        "its two Mendelian flags, the two random fractions, --call-genotypes, and the two concordance",
-        "tracks. A row carrying one measures the port's own refusal, which is a message no golden holds",
-        "and which would be the same on every row that carries it.",
+        "sv_trio.vcf is a father, mother and child on reference.fasta's chr1, sv_trio.ped their family and",
+        "sv_trio_comp.vcf a comparison track that agrees at some sites, disagrees at one and has a site the",
+        "trio has not, so --pedigree, the two Mendelian flags with their quality threshold, --concordance",
+        "and --discordance select different records rather than all or none. --sample-name is unset first",
+        "because the concordance tracks take a different branch when no sample is named.",
+        "--select-random-fraction draws from Utils.getRandomGenerator(), seeded once per JVM, so 0.5 is a",
+        "reproducible answer. --remove-fraction-genotypes draws from an UNSEEDED new Random(), so only the",
+        "fractions no draw can decide are values: 0.0 keeps every genotype and 1.0 no-calls every one.",
         "--add-output-vcf-command-line is held at FALSE. Its ##GATKCommandLine line carries the run's own",
         "wall-clock time, and the reference and the port run minutes apart.",
         "--create-output-variant-index is held at FALSE for the reason every other variant writer holds",
         "it: the index a tool builds for its own output records that file's last-modified time.",
-        "--input and --read-index are held out: this tool reads no reads, and the corpus's shared --input",
-        "value is a VCF, whose refusal as a reads source is measured by CountVariants.",
+        "--input and --read-index name reads.bam and its index: the tool reads no reads, but the engine",
+        "opens them and checks their dictionary against the variants'.",
         "command line, so `QUAL > 50` arrived as `--select QUAL` with the rest eaten by the shell. JEXL",
         "reads the no-space form the same way, and the second value is the bare `QUAL`, which is a Double",
         "where the reference casts to Boolean: the ClassCastException that produces is the tool's answer",
@@ -2676,35 +2685,60 @@
       "--variant": [
         "/work/fixtures/indexed.vcf",
         "/work/fixtures/population.vcf",
-        "gendb:///work/fixtures/cg_ws"
+        "gendb:///work/fixtures/cg_ws",
+        "/work/fixtures/sv_trio.vcf"
       ],
       "--output": [
         "/work/out/selected.vcf",
         "/work/out/selected2.vcf"
       ],
       "--sample-name": [
+        "<unset>",
         "sample1",
-        "nosuchsample"
+        "nosuchsample",
+        "kid"
       ],
       "--select": [
         "QUAL>50",
         "QUAL>5000.0"
       ],
-      "--pedigree": [],
-      "--mendelian-violation": [],
-      "--invert-mendelian-violation": [],
-      "--select-random-fraction": [],
-      "--remove-fraction-genotypes": [],
-      "--call-genotypes": [],
-      "--concordance": [],
-      "--discordance": [],
-      "--input": [],
-      "--read-index": [],
+      "--pedigree": [
+        "<unset>",
+        "/work/fixtures/sv_trio.ped"
+      ],
+      "--select-random-fraction": [
+        "1.0",
+        "0.5"
+      ],
+      "--remove-fraction-genotypes": [
+        "0.0",
+        "1.0"
+      ],
+      "--concordance": [
+        "<unset>",
+        "/work/fixtures/sv_trio_comp.vcf"
+      ],
+      "--discordance": [
+        "<unset>",
+        "/work/fixtures/sv_trio_comp.vcf"
+      ],
+      "--input": [
+        "<unset>",
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/reads.bai"
+      ],
       "--add-output-vcf-command-line": [
         "false"
       ],
       "--create-output-variant-index": [
         "false"
+      ],
+      "--mendelian-violation-qual-threshold": [
+        "0.0",
+        "20.0"
       ]
     },
     "FastaAlternateReferenceMaker": {
@@ -4613,8 +4647,14 @@
         "one, one on forward reads alone and one near the reads' starts, with mutect.vcf.stats beside it.",
         "mutect_nocallable.vcf is the same calls with a stats table whose callable count is zero.",
         "--stats absent reads the table beside the VCF; a path to a missing file is refused after the",
-        "header is written. The model inputs the port does not read, --contamination-table,",
-        "--tumor-segmentation and --ob-priors, are held.",
+        "header is written.",
+        "The model inputs are the reference's own over the same reads: mutect_priors.tar.gz is",
+        "LearnReadOrientationModel over f1r2_tn.tar.gz (tumour and normal priors, which turn three calls",
+        "into orientation artifacts), mutect_contamination.table and mutect_segments.table are",
+        "CalculateContamination over the tumour's pileups (an estimate of 0.0, one segment over the call",
+        "at 1000), and mutect_contaminated.table names the tumour at 0.1 and the normal at 0.2.",
+        "--input and --read-index give the calls' own BAM and its index, which a variant walker opens and",
+        "never reads; --exclude-intervals drops the call at 1600.",
         "Every numeric threshold has its default first and a value that moves a call second."
       ],
       "--variant": [
@@ -4641,16 +4681,38 @@
         "chr1:1-3000",
         "chr1:1300-2000"
       ],
-      "--contamination-table": [],
-      "--tumor-segmentation": [],
-      "--orientation-bias-artifact-priors": [],
+      "--contamination-table": [
+        "null",
+        "/work/fixtures/mutect_contamination.table",
+        "/work/fixtures/mutect_contaminated.table"
+      ],
+      "--tumor-segmentation": [
+        "null",
+        "/work/fixtures/mutect_segments.table"
+      ],
+      "--orientation-bias-artifact-priors": [
+        "null",
+        "/work/fixtures/mutect_priors.tar.gz"
+      ],
       "--max-variants-per-shard": [
         "0"
       ],
-      "--sequence-dictionary": [],
-      "--input": [],
-      "--read-index": [],
-      "--exclude-intervals": [],
+      "--sequence-dictionary": [
+        "null",
+        "/work/fixtures/mutect_ref.dict"
+      ],
+      "--input": [
+        "null",
+        "/work/fixtures/mutect_tn.bam"
+      ],
+      "--read-index": [
+        "null",
+        "/work/fixtures/mutect_tn.bai"
+      ],
+      "--exclude-intervals": [
+        "null",
+        "chr1:1590-1610"
+      ],
       "--read-filter-tag-op": [],
       "--keep-reverse-strand-only": [],
       "--dont-require-soft-clips-both-ends": [],
@@ -5702,25 +5764,31 @@
         "--annotation-group is the default group or the allele-specific one, whose finalisation turns",
         "each input's AS_RAW_ keys and the genotyper's AS_QUAL into AS_QD, AS_MQ, AS_FS, AS_SOR and the",
         "allele-specific rank sums. --keep-specific-combined-raw-",
-        "annotation is held out: it is mutually exclusive with --keep-combined-raw-annotations, and",
-        "every row sets every argument.",
+        "annotation is unset or RMSMappingQuality, whose raw key is RAW_MQandDP, and --keep-combined-raw-annotations false, true or unset: Barclay",
+        "refuses the two together whatever their values, so the first is forbidden beside a given second.",
         "--enable-all-annotations is held at false: with every annotation enabled, OriginalAlignment",
         "throws on the null reads GenotypeGVCFs hands it at the first variant site, and reproducing",
         "that needs every annotation's no-reads path, which the port does not carry.",
-        "--only-output-calls-starting-in-intervals is STARTS_IN by another name and mutually",
-        "exclusive with --variant-output-filtering, which is held out for it.",
+        "--only-output-calls-starting-in-intervals is STARTS_IN by another name, deprecated, and so in",
+        "no row; --variant-output-filtering is unset or each of its five modes, and every mode but ANYWHERE",
+        "is forbidden where neither -L nor -XL is given, which is one refusal at the end of startup.",
         "--dbsnp is gg_dbsnp.vcf, whose records sit at the sites cg_combined calls: the pair a split",
         "trims, the untrimmed record that matches nothing, a record with no ID, a two-alternate one,",
         "a filtered one and another alternate; or none; or its copy with no index, refused at the first",
-        "site the annotation engine queries. --population-callset, --pedigree, --founder-id and",
-        "--flow-order-for-annotations are held out: the port does not carry the population priors or",
-        "the pedigree and flow annotations for this tool. --input-is-somatic is held at false, for the",
-        "same reason.",
+        "site the annotation engine queries. --population-callset is null or gg_dbsnp.vcf: GenotypeGVCFs",
+        "declares it and never reads it, but the engine opens it as a feature input. --pedigree is null or",
+        "gg.ped, sA the child of sB and sC, with --founder-id null or sB, so ExcessHet and InbreedingCoeff",
+        "count the founders. --flow-order-for-annotations is null or ACGT, which no annotation in the rows reads, so ACGT",
+        "is the descriptor's refusal: GenotypeGVCFs computes no flow annotation. --input-is-somatic is held at",
+        "false: the port does not carry the somatic genotyping.",
         "--max-alternate-alleles is the default or 1, which reduces every two-alternate site to the",
         "one whose likelihood margins are largest before the AF calculation, matching the genotypes",
         "to it best-to-original, while the calls are still made against the site's own alleles.",
         "--reference is held at cgv_ref.fasta, the one reference carrying both contigs.",
-        "--sequence-dictionary, --input and --read-index are held out, as for CombineGVCFs.",
+        "--sequence-dictionary is unset, cgv_ref.dict, or other.dict, which shares no contig with the",
+        "inputs. --input is unset or mutect_t.bam, whose chr1 is cgv_ref's: a variant walker opens the",
+        "reads and validates their dictionary although it reads none, and --read-index is unset or its",
+        "index, the count refusal where --input is unset.",
         "--add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the",
         "reason every variant writer holds them: one writes the run's own time into the header and",
         "the other writes the output file's last-modified time into an index.",
@@ -5787,17 +5855,39 @@
         "null",
         "ExcessHet"
       ],
-      "--keep-specific-combined-raw-annotation": [],
-      "--variant-output-filtering": [],
+      "--keep-specific-combined-raw-annotation": [
+        "<unset>",
+        "RMSMappingQuality"
+      ],
+      "--variant-output-filtering": [
+        "<unset>",
+        "STARTS_IN",
+        "ENDS_IN",
+        "OVERLAPS",
+        "CONTAINED",
+        "ANYWHERE"
+      ],
       "--dbsnp": [
         "/work/fixtures/gg_dbsnp.vcf",
         "null",
         "/work/fixtures/gg_dbsnp_noidx.vcf"
       ],
-      "--population-callset": [],
-      "--pedigree": [],
-      "--founder-id": [],
-      "--flow-order-for-annotations": [],
+      "--population-callset": [
+        "null",
+        "/work/fixtures/gg_dbsnp.vcf"
+      ],
+      "--pedigree": [
+        "null",
+        "/work/fixtures/gg.ped"
+      ],
+      "--founder-id": [
+        "null",
+        "sB"
+      ],
+      "--flow-order-for-annotations": [
+        "null",
+        "ACGT"
+      ],
       "--input-is-somatic": [
         "false"
       ],
@@ -5805,9 +5895,19 @@
         "6",
         "1"
       ],
-      "--sequence-dictionary": [],
-      "--input": [],
-      "--read-index": [],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/cgv_ref.dict",
+        "/work/fixtures/other.dict"
+      ],
+      "--input": [
+        "<unset>",
+        "/work/fixtures/mutect_t.bam"
+      ],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/mutect_t.bai"
+      ],
       "--add-output-vcf-command-line": [
         "false"
       ],
@@ -5822,6 +5922,11 @@
       ],
       "--enable-all-annotations": [
         "false"
+      ],
+      "--keep-combined-raw-annotations": [
+        "false",
+        "true",
+        "<unset>"
       ]
     },
     "ReblockGVCF": {
@@ -8234,10 +8339,13 @@
         "--likelihood-calculation-engine is varied over PairHMM, FlowBased and FlowBasedHMM, the flow-based two on flow_calls.bam only.",
         "DRAGEN mode is varied (--dragen-mode, --apply-bqd, --apply-frd, --transform-dragen-mapping-quality), with",
         "DRAGstr's default table or none, a het:hom ratio of 2 or 4, the FRD depth cap off or at 4, and --sample-name",
-        "unset or naming the tumour, which both BAMs hold. --dragen-378-concordance-mode is held out: Barclay refuses it",
-        "beside --dragen-mode, which every row sets.",
+        "unset or naming the tumour, which both BAMs hold. --dragen-378-concordance-mode is unset or true, and --dragen-mode",
+        "false, true or unset: Barclay refuses the two together whatever their values, so 378 mode is forbidden beside",
+        "a --dragen-mode that is given.",
         "--disable-optimizations is listed false first: true fails every run that meets a region with no",
-        "variation, as the reference does, so as the array's filler it would turn most rows into that one refusal. --read-index and --sequence-dictionary are held out as for the other read walkers.",
+        "variation, as the reference does, so as the array's filler it would turn most rows into that one refusal. --read-index is unset or mutect_t.bai, forbidden beside the other two BAMs, whose reads it does not index.",
+        "--sequence-dictionary is unset, mutect_ref.dict, or other.dict, which shares no contig with the reads: the",
+        "validation's refusal, or with the validation off a walk whose intervals the master dictionary no longer holds.",
         "--enable-all-annotations is listed false first. True switches on every annotation GATK discovers,",
         "each computed in the caller's context, and with it the annotations' own arguments (the Dirichlet",
         "prior of AllelePseudoDepth, --assembly-complexity-reference-mode, the de novo thresholds) start to",
@@ -8257,8 +8365,8 @@
         "activity threshold, the alt thresholds, the read badness rules and the artificial haplotypes' count and k-mer",
         "size) take their default first and one value that moves the outcome.",
         "The PDHMM is ported (G3.2g) and varies with its switches (the overlap optimisation, determined haplotypes, the",
-        "GGA fallback) and its results file. --dragen-378-concordance-mode is ported too and stays held for its mutex",
-        "with --dragen-mode, which every row sets; hc-pdhmm measures it.",
+        "GGA fallback) and its results file. --dragen-378-concordance-mode is ported too and varies as above; hc-pdhmm",
+        "measures it as well.",
         "Force-calling is ported (G3.2l): --alleles is unset or given_alleles.vcf, a SNP, a filtered SNP, a deletion, an",
         "insertion and a multiallelic record over mutect_ref.fasta, with --force-call-filtered-alleles off or on.",
         "The debug outputs (G3.2m) are varied, unset first, each written under /work/out so the row compares it: --bam-output with each --bam-writer-type, --assembly-region-out, --graph-output with --debug-graph-transformations (whose per-step files land in the working directory and are measured by the hc-debug-outputs suite), --debug-assembly-variants-out, --haplotype-debug-histogram-output, --capture-assembly-failure-bam, --debug-assembly-region-state, --debug-genotyper-output, --pair-hmm-results-file and --alm-path, whose --alm-interval lists an interval first because null is the reference's refusal. --keep-rg keeps the tumour's group, or the normal's which mutect_t.bam lacks; --just-determine-active-regions and --dont-genotype are listed false first. Vertex numbers and FRD's arrays are identity hashes, masked by run_array.",
@@ -8360,7 +8468,10 @@
         "-5",
         "-6"
       ],
-      "--dragen-378-concordance-mode": [],
+      "--dragen-378-concordance-mode": [
+        "<unset>",
+        "true"
+      ],
       "--flow-mode": [
         "NONE",
         "STANDARD",
@@ -8430,8 +8541,15 @@
         "false",
         "true"
       ],
-      "--read-index": [],
-      "--sequence-dictionary": [],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/mutect_t.bai"
+      ],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/mutect_ref.dict",
+        "/work/fixtures/other.dict"
+      ],
       "--enable-all-annotations": [
         "false",
         "true"
@@ -9429,6 +9547,11 @@
         "--annotation",
         "--annotation-group",
         "--annotations-to-exclude"
+      ],
+      "--dragen-mode": [
+        "false",
+        "true",
+        "<unset>"
       ]
     },
     "Mutect2": {
@@ -9445,7 +9568,8 @@
         "--minimum-allele-fraction of zero or 0.05, which the somatic reference model's prior reads. --mitochondria-mode is",
         "varied, false first: its presets apply where the row did not set them. Held out, as features this port",
         "does not carry: pileup detection and the partially determined PairHMM.",
-        "--read-index and --sequence-dictionary are held out as for the other read walkers.",
+        "--read-index is unset or mutect_tn.bai, forbidden beside the other BAMs, whose reads it does not index;",
+        "--sequence-dictionary is unset, mutect_ref.dict, or other.dict, which shares no contig with the reads.",
         "--enable-all-annotations is listed false first. True switches on every annotation GATK discovers,",
         "each computed in the caller's context, and with it the annotations' own arguments (the Dirichlet",
         "prior of AllelePseudoDepth, --assembly-complexity-reference-mode, the de novo thresholds) start to",
@@ -9654,8 +9778,15 @@
         "false",
         "true"
       ],
-      "--read-index": [],
-      "--sequence-dictionary": [],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/mutect_tn.bai"
+      ],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/mutect_ref.dict",
+        "/work/fixtures/other.dict"
+      ],
       "--enable-all-annotations": [
         "false",
         "true"
@@ -10589,10 +10720,13 @@
         "--likelihood-calculation-engine is varied over PairHMM, FlowBased and FlowBasedHMM, the flow-based two on flow_calls.bam only.",
         "DRAGEN mode is varied (--dragen-mode, --apply-bqd, --apply-frd, --transform-dragen-mapping-quality), with",
         "DRAGstr's default table or none, a het:hom ratio of 2 or 4, the FRD depth cap off or at 4, and --sample-name",
-        "unset or naming the tumour, which both BAMs hold. --dragen-378-concordance-mode is held out: Barclay refuses it",
-        "beside --dragen-mode, which every row sets.",
+        "unset or naming the tumour, which both BAMs hold. --dragen-378-concordance-mode is unset or true, and --dragen-mode",
+        "false, true or unset: Barclay refuses the two together whatever their values, so 378 mode is forbidden beside",
+        "a --dragen-mode that is given.",
         "--disable-optimizations is listed false first: true fails every run that meets a region with no",
-        "variation, as the reference does, so as the array's filler it would turn most rows into that one refusal. --read-index and --sequence-dictionary are held out as for the other read walkers.",
+        "variation, as the reference does, so as the array's filler it would turn most rows into that one refusal. --read-index is unset or mutect_t.bai, forbidden beside the other two BAMs, whose reads it does not index.",
+        "--sequence-dictionary is unset, mutect_ref.dict, or other.dict, which shares no contig with the reads: the",
+        "validation's refusal, or with the validation off a walk whose intervals the master dictionary no longer holds.",
         "--enable-all-annotations is listed false first. True switches on every annotation GATK discovers,",
         "each computed in the caller's context, and with it the annotations' own arguments (the Dirichlet",
         "prior of AllelePseudoDepth, --assembly-complexity-reference-mode, the de novo thresholds) start to",
@@ -10616,8 +10750,8 @@
         "activity threshold, the alt thresholds, the read badness rules and the artificial haplotypes' count and k-mer",
         "size) take their default first and one value that moves the outcome.",
         "The PDHMM is ported (G3.2g) and varies with its switches (the overlap optimisation, determined haplotypes, the",
-        "GGA fallback) and its results file. --dragen-378-concordance-mode is ported too and stays held for its mutex",
-        "with --dragen-mode, which every row sets; hc-pdhmm measures it.",
+        "GGA fallback) and its results file. --dragen-378-concordance-mode is ported too and varies as above; hc-pdhmm",
+        "measures it as well.",
         "Force-calling is ported (G3.2l): --alleles is unset or given_alleles.vcf, a SNP, a filtered SNP, a deletion, an",
         "insertion and a multiallelic record over mutect_ref.fasta, with --force-call-filtered-alleles off or on.",
         "The debug outputs (G3.2m) are varied, unset first, each written under /work/out so the row compares it: --bam-output with each --bam-writer-type, --assembly-region-out, --graph-output with --debug-graph-transformations (whose per-step files land in the working directory and are measured by the hc-debug-outputs suite), --debug-assembly-variants-out, --haplotype-debug-histogram-output, --capture-assembly-failure-bam, --debug-assembly-region-state, --debug-genotyper-output, --pair-hmm-results-file and --alm-path, whose --alm-interval lists an interval first because null is the reference's refusal. --keep-rg keeps the tumour's group, or the normal's which mutect_t.bam lacks; --just-determine-active-regions and --dont-genotype are listed false first. Vertex numbers and FRD's arrays are identity hashes, masked by run_array.",
@@ -10719,7 +10853,10 @@
         "-5",
         "-6"
       ],
-      "--dragen-378-concordance-mode": [],
+      "--dragen-378-concordance-mode": [
+        "<unset>",
+        "true"
+      ],
       "--flow-mode": [
         "NONE",
         "STANDARD",
@@ -10789,8 +10926,15 @@
         "false",
         "true"
       ],
-      "--read-index": [],
-      "--sequence-dictionary": [],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/mutect_t.bai"
+      ],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/mutect_ref.dict",
+        "/work/fixtures/other.dict"
+      ],
       "--enable-all-annotations": [
         "false",
         "true"
@@ -11896,6 +12040,11 @@
         "--annotation",
         "--annotation-group",
         "--annotations-to-exclude"
+      ],
+      "--dragen-mode": [
+        "false",
+        "true",
+        "<unset>"
       ]
     },
     "CountReadsSpark": {
@@ -16487,27 +16636,27 @@
     },
     "HtsgetReader": {
       "--url": [
-        "https://localhost:1/base",
-        "https://localhost:1/other/"
+        "https://htsget:8080/reads",
+        "https://htsget:8080/variants"
       ],
       "--id": [
         "reads",
-        "sample.bai"
+        "sites"
       ],
       "--O": [
         "/work/out/htsget.bin"
       ],
       "--format": [
         "<unset>",
-        "CRAM"
+        "VCF"
       ],
       "--class": [
         "<unset>",
-        "body"
+        "header"
       ],
       "--intervals": [
         "<unset>",
-        "chr1:5-10"
+        "chr1:1500-2200"
       ],
       "--field": [
         "<unset>",
@@ -16529,8 +16678,13 @@
         "false",
         "true"
       ],
+      "$htsget_server": [
+        "reads.bam",
+        "reads.vcf.gz",
+        "sites.vcf.gz"
+      ],
       "$why": [
-        "Nothing listens on the port, and the refusal is the URI the arguments built, which is what they decide. The answers and what is done with them are the htsget-reader golden's, which starts a server. The class stays body: class=header refuses every other query parameter, and that refusal is a row of the golden."
+        "Every row reaches the pinned htsget-rs server run_array.py starts beside it, serving the corpus files under `$htsget_server`, and both sides fetch the blocks its tickets name. --url is its two endpoints: the id reads is a BAM at /reads and a VCF at /variants, and sites is only a VCF, so /reads answers it with the server's NotFound, and --format VCF at /reads with its UnsupportedFormat. htsget-rs answers class=header and refuses body. The tool refuses class=header beside an interval, a field or a tag before anything is sent, which the constraints keep out of the array: that refusal is a row of the htsget-reader golden. The server ignores fields and tags and sends no md5, so --check-md5 true only warns. Answers this server never gives are the golden's, which serves them itself."
       ]
     },
     "BwaSpark": {
@@ -18461,6 +18615,46 @@
   "constraints": [
     {
       "tools": [
+        "HtsgetReader"
+      ],
+      "forbid": {
+        "--class": "header",
+        "--intervals": "chr1:1500-2200"
+      },
+      "why": "The tool refuses a header request with an interval before it is sent, and the htsget-reader golden measures that refusal."
+    },
+    {
+      "tools": [
+        "HtsgetReader"
+      ],
+      "forbid": {
+        "--class": "header",
+        "--field": "SEQ"
+      },
+      "why": "The same refusal for a field."
+    },
+    {
+      "tools": [
+        "HtsgetReader"
+      ],
+      "forbid": {
+        "--class": "header",
+        "--tag": "NM"
+      },
+      "why": "The same refusal for a tag."
+    },
+    {
+      "tools": [
+        "HtsgetReader"
+      ],
+      "forbid": {
+        "--class": "header",
+        "--notag": "AS"
+      },
+      "why": "The same refusal for a tag left out."
+    },
+    {
+      "tools": [
         "Pileup"
       ],
       "forbid": {
@@ -19856,6 +20050,166 @@
         "--output-shard-tmp-dir": "/work/out/parts"
       },
       "why": "Barclay refuses the parts directory beside --sharded-output, whatever its value, so a row holding the pair measures only that refusal."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--dragen-378-concordance-mode": "true",
+        "--dragen-mode": "false"
+      },
+      "why": "Barclay's mutex fires on an argument being given, whatever its value: the two together are refused while the command line is parsed."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--dragen-378-concordance-mode": "true",
+        "--dragen-mode": "true"
+      },
+      "why": "The same mutex, both set."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--read-index": "/work/fixtures/mutect_t.bai",
+        "--input": "/work/fixtures/mutect_tn.bam"
+      },
+      "why": "mutect_t.bai indexes mutect_t.bam alone; over another BAM's offsets it reads whatever bytes they land on."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--read-index": "/work/fixtures/mutect_t.bai",
+        "--input": "/work/fixtures/flow_calls.bam"
+      },
+      "why": "mutect_t.bai indexes mutect_t.bam alone; over another BAM's offsets it reads whatever bytes they land on."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--read-index": "/work/fixtures/mutect_tn.bai",
+        "--input": "/work/fixtures/mutect_t.bam"
+      },
+      "why": "mutect_tn.bai indexes mutect_tn.bam alone; over another BAM's offsets it reads whatever bytes they land on."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--read-index": "/work/fixtures/mutect_tn.bai",
+        "--input": "/work/fixtures/flow_calls.bam"
+      },
+      "why": "mutect_tn.bai indexes mutect_tn.bam alone; over another BAM's offsets it reads whatever bytes they land on."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--read-index": "/work/fixtures/mutect_tn.bai",
+        "--input": "/work/fixtures/mutect_paired.bam"
+      },
+      "why": "mutect_tn.bai indexes mutect_tn.bam alone; over another BAM's offsets it reads whatever bytes they land on."
+    },
+    {
+      "tools": [
+        "GenotypeGVCFs"
+      ],
+      "forbid": {
+        "--keep-specific-combined-raw-annotation": "RMSMappingQuality",
+        "--keep-combined-raw-annotations": "false"
+      },
+      "why": "Barclay's mutex fires on an argument being given, whatever its value: refused while the command line is parsed."
+    },
+    {
+      "tools": [
+        "GenotypeGVCFs"
+      ],
+      "forbid": {
+        "--keep-specific-combined-raw-annotation": "RMSMappingQuality",
+        "--keep-combined-raw-annotations": "true"
+      },
+      "why": "The same mutex, both set."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-mode": "STANDARD",
+        "--dragen-378-concordance-mode": "true"
+      },
+      "why": "DRAGEN mode and flow mode are refused together, 3.7.8's as 3.4.12's, on every such row."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-mode": "ADVANCED",
+        "--dragen-378-concordance-mode": "true"
+      },
+      "why": "DRAGEN mode and flow mode are refused together, 3.7.8's as 3.4.12's, on every such row."
+    },
+    {
+      "tools": [
+        "GenotypeGVCFs"
+      ],
+      "forbid": {
+        "--variant-output-filtering": "STARTS_IN",
+        "--intervals": "null",
+        "--exclude-intervals": "null"
+      },
+      "why": "A filtering mode with no -L or -XL is the one MissingArgument at the end of onStartup, on every such row."
+    },
+    {
+      "tools": [
+        "GenotypeGVCFs"
+      ],
+      "forbid": {
+        "--variant-output-filtering": "ENDS_IN",
+        "--intervals": "null",
+        "--exclude-intervals": "null"
+      },
+      "why": "A filtering mode with no -L or -XL is the one MissingArgument at the end of onStartup, on every such row."
+    },
+    {
+      "tools": [
+        "GenotypeGVCFs"
+      ],
+      "forbid": {
+        "--variant-output-filtering": "OVERLAPS",
+        "--intervals": "null",
+        "--exclude-intervals": "null"
+      },
+      "why": "A filtering mode with no -L or -XL is the one MissingArgument at the end of onStartup, on every such row."
+    },
+    {
+      "tools": [
+        "GenotypeGVCFs"
+      ],
+      "forbid": {
+        "--variant-output-filtering": "CONTAINED",
+        "--intervals": "null",
+        "--exclude-intervals": "null"
+      },
+      "why": "A filtering mode with no -L or -XL is the one MissingArgument at the end of onStartup, on every such row."
     }
   ],
   "exclude": {

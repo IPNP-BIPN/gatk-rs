@@ -57,6 +57,9 @@ pub fn argument(parser: &Parser, long_name: &str) -> Option<String> {
         .and_then(|definition| match &definition.value {
             Value::Tagged { value, .. } => Some(value.clone()),
             Value::Str(text) => Some(text.clone()),
+            // An enum's constant is its name; without this, `--restrict-alleles-to` and
+            // `--read-validation-stringency` read as never given.
+            Value::Enum(name) => Some(name.clone()),
             _ => None,
         })
 }
@@ -814,6 +817,75 @@ fn sets_traversal_bounds(tool: &str) -> bool {
     )
 }
 
+/// A SAM text or CRAM input as the in-memory BAM the reads source reads.
+struct Transcoded {
+    /// BGZF BAM bytes.
+    bam: Vec<u8>,
+    /// Its `.bai`, built where the CRAM has an index of its own: a SAM text file has none.
+    bai: Option<Vec<u8>>,
+    /// The file's own header, not the one the BAM writer stamps a sort order onto.
+    header: SamHeader,
+}
+
+/// `SamReaderFactory.open` for the two formats that are not BAM: `None` for a BAM, a block
+/// compressed or empty file, text that does not parse as SAM (whose refusal is
+/// `read_walker_refusal`'s), and a CRAM with no `--reference` to decode it against.
+fn transcode_reads(
+    parser: &Parser,
+    path: &std::path::Path,
+    bytes: &[u8],
+) -> Result<Option<Transcoded>, Thrown> {
+    let (header, records, indexed) = if bytes.starts_with(b"CRAM") {
+        let Some(reference) = argument(parser, "reference") else {
+            return Ok(None);
+        };
+        let cram_refusal = |error: htsjdk_cram::reader::CramError| {
+            Thrown::non_user(error.java_exception(), error.message())
+        };
+        let mut reader = htsjdk_cram::reader::CramReader::new(bytes).map_err(cram_refusal)?;
+        let mut fasta = htsjdk_cram::reader::FastaReference::open(std::path::Path::new(&reference));
+        let records = reader.read_all(&mut fasta).map_err(cram_refusal)?;
+        let indexed = htsjdk_bam::sam_files::find_index(path).is_some();
+        (reader.header, records, indexed)
+    } else if bytes.is_empty()
+        || bytes.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC)
+        || gatk_tools::read_walker_refusal::is_block_compressed(bytes)
+    {
+        return Ok(None);
+    } else {
+        let Ok(text) = std::str::from_utf8(bytes) else {
+            return Ok(None);
+        };
+        let Ok((header, records)) = htsjdk_bam::sam_file::read_sam(text) else {
+            return Ok(None);
+        };
+        (header, records, false)
+    };
+    let failure = |error: String| Thrown::non_user(PORT_FAILURE, error);
+    let writer = htsjdk_bam::writer::BamWriter::new(Vec::new(), &header)
+        .map_err(|error| failure(error.to_string()))?;
+    let mut writer = if indexed { writer.with_index() } else { writer };
+    for record in &records {
+        writer
+            .write(record)
+            .map_err(|error| failure(format!("{error:?}")))?;
+    }
+    let (bam, bai) = if indexed {
+        let (bam, bai) = writer
+            .finish_with_index()
+            .map_err(|error| failure(error.to_string()))?;
+        (bam, Some(bai))
+    } else {
+        (
+            writer
+                .finish()
+                .map_err(|error| failure(error.to_string()))?,
+            None,
+        )
+    };
+    Ok(Some(Transcoded { bam, bai, header }))
+}
+
 fn read_walker_startup(parser: &Parser, tool: &str) -> Result<ReadWalkerStart, Thrown> {
     read_walker_startup_with(parser, tool, &mut |intervals, _| Ok(intervals))
 }
@@ -866,6 +938,15 @@ fn read_walker_startup_with(
 
     // `initializeReads`: the file itself, which is a refusal only when it cannot be read at all.
     let bytes = std::fs::read(path).ok();
+    // SAM text and CRAM are read as the BAM they transcode to; anything else goes on as before.
+    let transcoded = match &bytes {
+        Some(bytes) => transcode_reads(parser, path, bytes)?,
+        None => None,
+    };
+    let (bytes, transcoded) = match transcoded {
+        Some(mut transcoded) => (Some(std::mem::take(&mut transcoded.bam)), Some(transcoded)),
+        None => (bytes, None),
+    };
     let compressed = bytes
         .as_deref()
         .map(gatk_tools::read_walker_refusal::is_block_compressed)
@@ -945,6 +1026,17 @@ fn read_walker_startup_with(
             None => ReadsDataSource::open_unindexed(path)
                 .map_err(|error| Thrown::user(format!("{error:?}")))?,
         })
+    };
+    let source = match (source, transcoded) {
+        (Some(mut source), Some(transcoded)) => {
+            if let Some(bai) = &transcoded.bai {
+                source
+                    .load_index_bytes(bai)
+                    .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error:?}")))?;
+            }
+            Some(source.with_header(transcoded.header))
+        }
+        (source, _) => source,
     };
     let header = source
         .as_ref()
@@ -7862,8 +7954,8 @@ fn java_gzip(data: &[u8], level: u32) -> Vec<u8> {
 ///   - and each output record is the input's with its FILTER replaced, `AS_FilterStatus` set and the
 ///     phred-scaled posteriors the filters annotate, its genotypes written from the file.
 ///
-/// The three inputs that bring a second model in, `--contamination-table`, `--tumor-segmentation`
-/// and `--ob-priors`, are refused rather than ignored.
+/// The three model inputs, `--contamination-table`, `--tumor-segmentation` and `--ob-priors`, are
+/// read where the engine's constructor reads them: after the header, before the stats check.
 pub fn filter_mutect_calls(parser: &Parser) -> Outcome {
     use gatk_engine::accumulate_data::AccumulationAllele;
     use gatk_engine::allele_filter::GenotypeData;
@@ -7874,19 +7966,6 @@ pub fn filter_mutect_calls(parser: &Parser) -> Outcome {
     use gatk_tools::filter_mutect_calls as fmc;
     use htsjdk_vcf::header::HeaderLine;
     use htsjdk_vcf::variant::Value;
-
-    for held in ["contamination-table", "tumor-segmentation", "ob-priors"] {
-        if !arguments(parser, held).is_empty() {
-            return Err(Thrown::non_user(
-                PORT_LIMITATION,
-                format!(
-                    "FilterMutectCalls' --{held} is a second model this port does not read yet, \
-                     and a run that ignored it would filter differently. This message is the \
-                     port's own and not GATK's."
-                ),
-            ));
-        }
-    }
 
     let VariantWalkerStart {
         input,
@@ -7915,7 +7994,7 @@ pub fn filter_mutect_calls(parser: &Parser) -> Outcome {
         ),
         log_snv_prior: double("log-snv-prior", list_defaults.log_snv_prior),
         log_indel_prior: double("log-indel-prior", list_defaults.log_indel_prior),
-        read_orientation_priors: false,
+        read_orientation_priors: !arguments(parser, "orientation-bias-artifact-priors").is_empty(),
     };
     let min_median_mapping_quality = list.min_median_mapping_quality();
     let engine = EngineArguments {
@@ -8032,6 +8111,24 @@ pub fn filter_mutect_calls(parser: &Parser) -> Outcome {
         apply_sites_only(parser, &mut header, &mut records);
         let out = write_vcf_honouring_lenient(parser, &header, &records)?;
         write_variant_output(parser, &output, &out)
+    };
+
+    // `new Mutect2FilteringEngine(...)`, after the header is written: the contamination tables,
+    // the orientation priors, then (outside the two modes that drop GermlineFilter) the segments.
+    let models = fmc_models(parser, engine.list.mitochondria || engine.list.microbial);
+    let (contamination_by_sample, priors_by_sample, segments_by_sample) = match models {
+        Ok(models) => models,
+        Err(thrown) => {
+            write_records(&[])?;
+            return Err(thrown);
+        }
+    };
+    let mut fasta = if priors_by_sample.is_empty() {
+        None
+    } else {
+        argument(parser, "reference").and_then(|path| {
+            htsjdk_bam::fasta_index::IndexedFasta::open(std::path::Path::new(&path)).ok()
+        })
     };
 
     // `new File(statsTable == null ? drivingVariantFile + ".stats" : statsTable)`, looked for
@@ -8176,6 +8273,124 @@ pub fn filter_mutect_calls(parser: &Parser) -> Outcome {
             };
             phasing.push((field("PGT"), field("PID")));
         }
+        let samples: Vec<&str> = variant
+            .genotypes
+            .iter()
+            .map(|genotype| genotype.sample_name.as_str())
+            .collect();
+        let contaminations: Vec<f64> = if contamination_by_sample.is_empty() {
+            Vec::new()
+        } else {
+            samples
+                .iter()
+                .map(|sample| {
+                    contamination_by_sample
+                        .get(*sample)
+                        .copied()
+                        .unwrap_or(engine.contamination_estimate)
+                })
+                .collect()
+        };
+        // shortcut: the first overlapping segment in file order, where the reference takes the
+        // first of a HashSet; the two differ only for overlapping segments, which
+        // CalculateContamination never writes.
+        let minor_allele_fractions: Vec<f64> = if segments_by_sample.is_empty() {
+            Vec::new()
+        } else {
+            let end = variant.start as i32 + reference_length - 1;
+            samples
+                .iter()
+                .map(|sample| {
+                    segments_by_sample
+                        .get(&Some(sample.to_string()))
+                        .and_then(|segments| {
+                            segments.iter().find(|segment| {
+                                segment.segment.contig == variant.contig
+                                    && segment.segment.start <= end
+                                    && variant.start as i32 <= segment.segment.end
+                            })
+                        })
+                        .map_or(0.5, |segment| segment.minor_allele_fraction)
+                })
+                .collect()
+        };
+        let snp_or_mnp = !kinds.is_empty()
+            && (kinds.iter().all(|kind| *kind == "SNP") || kinds.iter().all(|kind| *kind == "MNP"));
+        let read_orientation_posteriors = if snp_or_mnp && !priors_by_sample.is_empty() {
+            let alternate_strings: Vec<String> = variant
+                .alternate_alleles()
+                .iter()
+                .map(|allele| allele.base_string())
+                .collect();
+            let alternate_bases: Vec<&[u8]> = alternate_strings
+                .iter()
+                .map(|bases| bases.as_bytes())
+                .collect();
+            let tumor_log_10_odds = doubles(variant, "TLOD");
+            let contig_length = fasta
+                .as_ref()
+                .and_then(|fasta| fasta.index().get(&variant.contig))
+                .map_or(0, |entry| entry.size as i64);
+            let mut posteriors = Vec::new();
+            for genotype in variant.genotypes.iter() {
+                let Some(priors) = priors_by_sample.get(&Some(genotype.sample_name.clone())) else {
+                    posteriors.push(0.0);
+                    continue;
+                };
+                let format_ints = |key: &str| -> Option<Vec<i32>> {
+                    genotype.get(key).map(|value| {
+                        values_of(value)
+                            .iter()
+                            .map(|text| text.trim().parse::<i32>().unwrap_or(0))
+                            .collect()
+                    })
+                };
+                let (f1r2, f2r1) = (format_ints("F1R2"), format_ints("F2R1"));
+                // `getKmerAround(position, 1)`, null where the window cannot reach both sides;
+                // the reference reader uppercases and turns IUPAC codes into N.
+                let kmer_around = |center: i32| -> Option<String> {
+                    let center = i64::from(center);
+                    if center - 1 < 1 || center + 1 > contig_length {
+                        return None;
+                    }
+                    let bases = fasta
+                        .as_mut()?
+                        .query(&variant.contig, center - 1, center + 1)
+                        .ok()?;
+                    Some(
+                        bases
+                            .iter()
+                            .map(|base| match base.to_ascii_uppercase() {
+                                base @ (b'A' | b'C' | b'G' | b'T') => base as char,
+                                _ => 'N',
+                            })
+                            .collect(),
+                    )
+                };
+                let posterior = fmc::orientation_artifact_probability(
+                    priors,
+                    &fmc::OrientationGenotype {
+                        hom_ref: genotype.is_hom_ref(),
+                        f1r2: f1r2.as_deref(),
+                        f2r1: f2r1.as_deref(),
+                    },
+                    tumor_log_10_odds.as_deref(),
+                    &alternate_bases,
+                    variant.start as i32,
+                    kmer_around,
+                );
+                match posterior {
+                    Ok(posterior) => posteriors.push(posterior),
+                    Err(error) => {
+                        write_records(&[])?;
+                        return Err(Thrown::non_user(error.class, error.message));
+                    }
+                }
+            }
+            Some(posteriors)
+        } else {
+            None
+        };
         let single_int = |key: &str| ints(variant, key).and_then(|values| values.first().copied());
         records.push(Record {
             start: variant.start as i32,
@@ -8201,6 +8416,9 @@ pub fn filter_mutect_calls(parser: &Parser) -> Outcome {
             repeat_unit: info(variant, "RU").map(|values| values.join(",")),
             in_panel_of_normals: variant.attributes.iter().any(|(key, _)| key == "PON"),
             indel_lengths,
+            contaminations,
+            minor_allele_fractions,
+            read_orientation_posteriors,
         });
     }
 
@@ -8251,6 +8469,83 @@ pub fn filter_mutect_calls(parser: &Parser) -> Outcome {
         .unwrap_or_else(|| format!("{output}.filteringStats.tsv"));
     write_file(&stats_output, result.filtering_stats.as_bytes())?;
     Ok(None)
+}
+
+/// The three tables `FilterMutectCalls`' filters read in their constructors, keyed by sample.
+type FmcModels = (
+    std::collections::HashMap<String, f64>,
+    std::collections::HashMap<Option<String>, gatk_tools::filter_mutect_calls::ArtifactPriors>,
+    std::collections::HashMap<
+        Option<String>,
+        Vec<gatk_engine::contamination_tables::MinorAlleleFractionRecord>,
+    >,
+);
+
+/// `ContaminationFilter`'s, `ReadOrientationFilter`'s and `GermlineFilter`'s constructors, in the
+/// order `buildFiltersList` calls them; `GermlineFilter` is not built in `germline_dropped` modes.
+fn fmc_models(parser: &Parser, germline_dropped: bool) -> Result<FmcModels, Thrown> {
+    use gatk_engine::contamination_tables as tables;
+    use gatk_engine::tsv_table::java_double_to_string;
+    let read = |path: &str| -> Result<String, Thrown> {
+        std::fs::read_to_string(path).map_err(|error| Thrown::user(format!("{path}: {error}")))
+    };
+    let table_error = |error: tables::ContaminationTableError| Thrown {
+        failure: Failure::User,
+        exception: error.java_class(),
+        message: Some(error.message()),
+    };
+    // `.map(file -> readFromFile(file).get(0)).collect(Collectors.toMap(...))`.
+    let mut contamination = std::collections::HashMap::new();
+    for path in arguments(parser, "contamination-table") {
+        let records = tables::read_contamination(&read(&path)?, &path).map_err(table_error)?;
+        let first = records.into_iter().next().ok_or_else(|| {
+            Thrown::non_user(
+                "java.lang.IndexOutOfBoundsException",
+                "Index 0 out of bounds for length 0",
+            )
+        })?;
+        if let Some(previous) = contamination.insert(first.sample.clone(), first.contamination) {
+            return Err(Thrown::non_user(
+                "java.lang.IllegalStateException",
+                format!(
+                    "Duplicate key {} (attempted merging values {} and {})",
+                    first.sample,
+                    java_double_to_string(previous),
+                    java_double_to_string(first.contamination)
+                ),
+            ));
+        }
+    }
+    // Every archive extracted, every table in it read; a later table for a sample replaces the
+    // earlier one, as `put` does.
+    let mut priors = std::collections::HashMap::new();
+    for path in arguments(parser, "orientation-bias-artifact-priors") {
+        let bytes =
+            std::fs::read(&path).map_err(|error| Thrown::user(format!("{path}: {error}")))?;
+        let mut tar = Vec::new();
+        std::io::Read::read_to_end(
+            &mut flate2::read::MultiGzDecoder::new(bytes.as_slice()),
+            &mut tar,
+        )
+        .map_err(|error| Thrown::user(format!("{path}: {error}")))?;
+        for (name, data) in tar_members(&tar) {
+            let table = gatk_tools::filter_mutect_calls::read_artifact_priors(
+                &String::from_utf8_lossy(&data),
+                &name,
+            )
+            .map_err(|error| Thrown::user(error.message))?;
+            priors.insert(table.sample.clone(), table);
+        }
+    }
+    let mut segments = std::collections::HashMap::new();
+    if !germline_dropped {
+        for path in arguments(parser, "tumor-segmentation") {
+            let (sample, records) =
+                tables::read_segments(&read(&path)?, &path).map_err(table_error)?;
+            segments.insert(sample, records);
+        }
+    }
+    Ok((contamination, priors, segments))
 }
 
 /// `ComposeSTRTableFile`, a `GATKTool` that scans the reference for tandem repeats and writes a zip.
@@ -12553,6 +12848,7 @@ pub(crate) fn recalibration_table_over(
             indels_context_size: number_or(parser, "indels-context-size", 3),
             maximum_cycle_value: number_or(parser, "maximum-cycle-value", 500),
             low_qual_tail: u8::try_from(number_or(parser, "low-quality-tail", 2)).unwrap_or(2),
+            binary_tag_name: argument(parser, "binary-tag-name"),
         },
         enable_baq: flag(parser, "enable-baq"),
         compute_indel_bqsr_tables: flag(parser, "compute-indel-bqsr-tables"),
@@ -15909,20 +16205,18 @@ pub fn genotype_gvcfs(parser: &Parser) -> Outcome {
             format!("{what} This message is the port's own and not GATK's."),
         )
     };
-    for configured in ["pedigree", "founder-id", "flow-order-for-annotations"] {
-        if !arguments(parser, configured).is_empty() || argument(parser, configured).is_some() {
-            return Err(limitation(&format!(
-                "--{configured} configures a pedigree or flow annotation, which this port does not \
-                 carry for GenotypeGVCFs yet."
-            )));
-        }
-    }
+    // `validateAndResolvePlugins`, while the command line is parsed. The flow order goes to no
+    // annotation GenotypeGVCFs computes, so past the refusal it changes nothing.
+    pedigree_refusal(parser, &resolved)?;
+    flow_order_for_annotations(parser, &resolved)?;
     let VariantWalkerStart {
         input,
         text,
         intervals,
         ..
     } = variant_walker_startup(parser, "GenotypeGVCFs")?;
+    // The end of `onStartup`, before `onTraversalStart`'s own refusals.
+    let keep = variant_output_filter(parser, intervals.as_deref())?;
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
@@ -15946,8 +16240,10 @@ pub fn genotype_gvcfs(parser: &Parser) -> Outcome {
         }
         None => None,
     };
-    if argument(parser, "population-callset").is_some() {
-        return Err(limitation("--population-callset is not ported."));
+    // `--population-callset` is a feature input GenotypeGVCFs declares and never queries: the
+    // engine opens it, and that is all.
+    if let Some(path) = argument(parser, "population-callset") {
+        open_feature_input(&path)?;
     }
 
     // `onTraversalStart`.
@@ -15984,7 +16280,6 @@ pub fn genotype_gvcfs(parser: &Parser) -> Outcome {
         raw_keys_to_keep.extend(entry.raw_keys.unwrap_or(&[]).iter().copied());
     }
 
-    let keep = variant_output_filter(parser, intervals.as_deref())?;
     // `--only-output-calls-starting-in-intervals` is STARTS_IN by another name.
     let starts_in = flag(parser, "only-output-calls-starting-in-intervals");
     if starts_in && intervals.as_ref().is_none_or(|list| list.is_empty()) {
@@ -16030,6 +16325,7 @@ pub fn genotype_gvcfs(parser: &Parser) -> Outcome {
         keep_combined: flag(parser, "keep-combined-raw-annotations"),
         raw_keys_to_keep,
         dbsnp: dbsnp_records,
+        founder_ids: pedigree_arguments(parser)?.founder_ids,
     };
     let allele_specific = annotations.any_allele_specific();
     let annotate_discovered = flag(parser, "annotate-with-num-discovered-alleles");
@@ -16614,13 +16910,9 @@ pub(crate) fn dictionary_from_any(
 /// is filtered, subset, filtered again, no-called and dropped from, and joins the queue rather
 /// than the file.
 ///
-/// # What this refuses rather than approximates
-///
-/// Six argument groups reach behaviour no static in this repository reproduces: a pedigree and
-/// its Mendelian violations, the two random fractions, the GenomicsDB-only decoding, the
-/// concordance tracks, `--variant-output-filtering` and `--fully-decode`. Each is refused when it
-/// is SET, which is a port limitation with the tool's name on it rather than a silent difference:
-/// a run that ignored `--select-random-fraction 0.5` would answer a question it was not asked.
+/// The random fraction draws from `Utils.getRandomGenerator()`, which is seeded once per JVM, so
+/// it is [`gatk_engine::java_random::JavaRandom::gatk`] here and one draw per record that reaches
+/// it reproduces the reference's selection.
 pub fn select_variants(parser: &Parser) -> Outcome {
     let VariantWalkerStart {
         input,
@@ -16628,8 +16920,6 @@ pub fn select_variants(parser: &Parser) -> Outcome {
         codec: _,
         intervals,
     } = variant_walker_startup(parser, "SelectVariants")?;
-
-    select_variants_limits(parser)?;
 
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
@@ -16675,8 +16965,11 @@ pub fn select_variants(parser: &Parser) -> Outcome {
         preserve_alleles: flag(parser, "preserve-alleles"),
         keep_original_chr_counts: flag(parser, "keep-original-ac"),
         keep_original_depth: flag(parser, "keep-original-dp"),
+        remove_fraction_genotypes: fraction(parser, "remove-fraction-genotypes", 0.0),
     };
     let filter_arguments = select_variants_filters(parser)?;
+    let tracks = select_variants_tracks(parser, &selection.samples)?;
+    let mut random = gatk_engine::java_random::JavaRandom::gatk();
     let output_arguments = gatk_tools::select_variants::OutputArguments {
         set_filtered_genotypes_to_no_call: flag(parser, "set-filtered-gt-to-nocall"),
         info_annotations_to_drop: arguments(parser, "drop-info-annotation"),
@@ -16777,7 +17070,22 @@ pub fn select_variants(parser: &Parser) -> Outcome {
         }
 
         let bridged = crate::variant_bridge::to_engine(original);
-        if !gatk_tools::select_variants::keeps_before_subset(
+        if !gatk_tools::select_variants::passes_variant_filter(
+            &bridged.record,
+            &bridged.filter_record,
+            &filter_arguments,
+        ) {
+            continue;
+        }
+        if !tracks.keeps(
+            &bridged.record,
+            &selection,
+            filter_arguments.exclude_filtered,
+            &mut random,
+        ) {
+            continue;
+        }
+        if !gatk_tools::select_variants::keeps_after_tracks(
             &bridged.record,
             &bridged.filter_record,
             &filter_arguments,
@@ -16959,6 +17267,130 @@ impl gatk_engine::variant_source::Located for LocatedRecord {
     }
 }
 
+/// The gates `applyFirstRoundOfFiltering` runs between `--exclude-filtered` and the allele
+/// restriction, in its order: the random fraction, the Mendelian violations, then the two tracks.
+struct SelectTracks {
+    fraction_to_keep: f64,
+    /// The children judged, when `--mendelian-violation` is set.
+    families: Option<Vec<gatk_tools::select_variants::Family>>,
+    invert_mendelian: bool,
+    mendelian_threshold: f64,
+    discordance: Option<Vec<gatk_tools::select_variants::Record>>,
+    concordance: Option<Vec<gatk_tools::select_variants::Record>>,
+}
+
+impl SelectTracks {
+    fn keeps(
+        &self,
+        record: &gatk_tools::select_variants::Record,
+        selection: &gatk_tools::select_variants::SampleSelection,
+        exclude_filtered: bool,
+        random: &mut gatk_engine::java_random::JavaRandom,
+    ) -> bool {
+        use gatk_tools::select_variants as sv;
+        if self.fraction_to_keep < 1.0 && random.next_double() >= self.fraction_to_keep {
+            return false;
+        }
+        // `invertLogic(countFamilyViolations(...) == 0, invert)` drops the record.
+        if let Some(families) = &self.families {
+            if sv::has_mendelian_violation(record, families, self.mendelian_threshold)
+                == self.invert_mendelian
+            {
+                return false;
+            }
+        }
+        // `featureContext.getValues(track)`: the track's records overlapping this one.
+        let overlapping = |track: &[sv::Record]| -> Vec<sv::Record> {
+            track
+                .iter()
+                .filter(|comp| {
+                    comp.variant.contig == record.variant.contig
+                        && comp.variant.start <= record.variant.stop
+                        && comp.variant.stop >= record.variant.start
+                })
+                .cloned()
+                .collect()
+        };
+        let comparison = sv::ComparisonArguments {
+            exclude_filtered,
+            ..Default::default()
+        };
+        if let Some(track) = &self.discordance {
+            if !sv::is_discordant(record, &overlapping(track), selection, &comparison) {
+                return false;
+            }
+        }
+        if let Some(track) = &self.concordance {
+            if !sv::is_concordant(record, &overlapping(track), selection, &comparison) {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+/// What `onTraversalStart` reads for the gates: the PED only under `--mendelian-violation`, and
+/// with no PED an empty database, so every record is judged free of violations.
+fn select_variants_tracks(parser: &Parser, samples: &[String]) -> Result<SelectTracks, Thrown> {
+    let families = if flag(parser, "mendelian-violation") {
+        let db = match argument(parser, "pedigree") {
+            Some(path) => {
+                let text = std::fs::read_to_string(&path).map_err(|_| {
+                    Thrown::user(format!(
+                        "Couldn't read file {path}. Error was: Could not read sample file"
+                    ))
+                })?;
+                let source = format!(
+                    "java.io.InputStreamReader@{:x}",
+                    gatk_engine::java_hash::string_hash_code(&path) as u32
+                );
+                gatk_engine::sample_db::read_pedigree(&text, &source)
+                    .map_err(|error| Thrown::non_user(error.class, error.message))?
+            }
+            None => gatk_engine::sample_db::SampleDb::default(),
+        };
+        Some(
+            db.children_in(samples)
+                .into_iter()
+                .map(|child| {
+                    (
+                        child.maternal_id.clone(),
+                        child.paternal_id.clone(),
+                        child.id.clone(),
+                    )
+                })
+                .collect(),
+        )
+    } else {
+        None
+    };
+    let track = |name: &str| -> Result<Option<Vec<gatk_tools::select_variants::Record>>, Thrown> {
+        let Some(path) = argument(parser, name) else {
+            return Ok(None);
+        };
+        let (_, text) = open_feature_input(&path)?;
+        let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+            failure: Failure::User,
+            exception: "htsjdk.tribble.TribbleException",
+            message: Some(failure.error.message()),
+        })?;
+        Ok(Some(
+            file.records
+                .iter()
+                .map(|record| crate::variant_bridge::to_engine(record).record)
+                .collect(),
+        ))
+    };
+    Ok(SelectTracks {
+        fraction_to_keep: fraction(parser, "select-random-fraction", 1.0),
+        families,
+        invert_mendelian: flag(parser, "invert-mendelian-violation"),
+        mendelian_threshold: fraction(parser, "mendelian-violation-qual-threshold", 0.0),
+        discordance: track("discordance")?,
+        concordance: track("concordance")?,
+    })
+}
+
 /// A `SelectError` as the reference throws it.
 fn select_error(error: gatk_tools::select_variants::SelectError) -> Thrown {
     // Two of the three are not `UserException`s: an expression that does not compile is an
@@ -17030,59 +17462,6 @@ fn fraction(parser: &Parser, long_name: &str, default: f64) -> f64 {
     scalar(parser, long_name)
         .and_then(|text| text.parse().ok())
         .unwrap_or(default)
-}
-
-/// The six argument groups `SelectVariants` has and this port does not.
-///
-/// Each is refused when it is SET rather than ignored: a run that quietly dropped
-/// `--select-random-fraction 0.5` would answer a question it was not asked, and a refusal that
-/// names the port is the honest form of a gap (`gatk_rs::PortLimitation`).
-fn select_variants_limits(parser: &Parser) -> Result<(), Thrown> {
-    let mut refused: Vec<&str> = Vec::new();
-    if argument(parser, "pedigree").is_some() {
-        refused.push("--pedigree");
-    }
-    // `--call-genotypes` is a GenomicsDB export option, which the port reads for `gendb://` alone.
-    let genomicsdb = argument(parser, "variant")
-        .is_some_and(|variant| genomicsdb_query_runner::genomicsdb_path(&variant).is_some());
-    for flagged in [
-        "mendelian-violation",
-        "invert-mendelian-violation",
-        "call-genotypes",
-    ] {
-        if flag(parser, flagged) && !(genomicsdb && flagged == "call-genotypes") {
-            refused.push(match flagged {
-                "mendelian-violation" => "--mendelian-violation",
-                "invert-mendelian-violation" => "--invert-mendelian-violation",
-                _ => "--call-genotypes",
-            });
-        }
-    }
-    if fraction(parser, "select-random-fraction", 1.0) != 1.0 {
-        refused.push("--select-random-fraction");
-    }
-    if fraction(parser, "remove-fraction-genotypes", 0.0) != 0.0 {
-        refused.push("--remove-fraction-genotypes");
-    }
-    if argument(parser, "concordance").is_some() {
-        refused.push("--concordance");
-    }
-    if argument(parser, "discordance").is_some() {
-        refused.push("--discordance");
-    }
-    if refused.is_empty() {
-        return Ok(());
-    }
-    Err(Thrown::non_user(
-        PORT_LIMITATION,
-        format!(
-            "SelectVariants in this port does not implement {}: a pedigree's Mendelian \
-             violations, the two random fractions, the concordance tracks and the genotype caller \
-             each reach behaviour no measured static reproduces, and answering without them would \
-             be a different answer rather than a refusal",
-            refused.join(", ")
-        ),
-    ))
 }
 
 /// `##GATKCommandLine=<ID=...,CommandLine="...",Version=...,Date=...>`, or nothing.

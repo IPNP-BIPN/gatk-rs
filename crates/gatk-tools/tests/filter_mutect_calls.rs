@@ -199,6 +199,7 @@ fn record(row: &Row) -> Record {
         repeat_unit: None,
         in_panel_of_normals: false,
         indel_lengths: None,
+        ..Default::default()
     }
 }
 
@@ -467,4 +468,45 @@ fn every_row_of_the_golden_is_accounted_for() {
         320,
         "the golden's row count"
     );
+}
+
+/// `readArtifactPriors` sets each canonical context and derives its reverse complement, whose
+/// F1R2 artefact of a base is the F2R1 artefact of the complement; a missing context is refused.
+#[test]
+fn artifact_priors_fill_the_reverse_complements_and_refuse_a_missing_context() {
+    use gatk_tools::filter_mutect_calls::read_artifact_priors;
+    use gatk_tools::learn_read_orientation_model::{canonical_kmers, reverse_complement, State};
+    let columns: Vec<String> = State::all()
+        .iter()
+        .map(|s| s.name().to_lowercase())
+        .collect();
+    let mut table = format!(
+        "#<METADATA>SAMPLE=tumor\ncontext\trev_comp\t{}\tnum_examples\tnum_alt_examples\n",
+        columns.join("\t")
+    );
+    for context in canonical_kmers() {
+        let pi: Vec<String> = (0..12).map(|i| format!("0.0{i}")).collect();
+        table += &format!(
+            "{context}\t{}\t{}\t0\t0\n",
+            reverse_complement(&context),
+            pi.join("\t")
+        );
+    }
+    let priors = read_artifact_priors(&table, "t").expect("a complete table");
+    assert_eq!(priors.sample.as_deref(), Some("tumor"));
+    assert_eq!(priors.by_context.len(), 64);
+    let context = &canonical_kmers()[0];
+    let reverse = &priors.by_context[&reverse_complement(context)];
+    assert_eq!(reverse[State::F1R2A.index()], 0.07, "F2R1_T's prior");
+    assert_eq!(reverse[State::HomRef.index()], 0.08);
+
+    let missing: String = table
+        .lines()
+        .filter(|line| !line.starts_with(context.as_str()))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let error = read_artifact_priors(&missing, "t").unwrap_err();
+    assert!(error
+        .message
+        .contains(&format!("reference context {context}in file t")));
 }

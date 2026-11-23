@@ -237,6 +237,44 @@ impl SortedSet {
 mod tests {
     use super::*;
 
+    /// The rows of the corpus's `sv_trio.vcf` (dad, kid, mom), against `fam1`'s one child.
+    #[test]
+    fn mendelian_violations_judge_complete_trios_only() {
+        let call = |text: &str, gq: i32| Genotype {
+            alleles: text.split('/').map(|allele| allele.parse().ok()).collect(),
+            pl: None,
+            gq: Some(gq),
+            ad: None,
+            dp: None,
+            attributes: Vec::new(),
+        };
+        let trio = |dad: &str, kid: &str, kid_gq: i32, mom: &str| Record {
+            variant: Variant {
+                genotypes: vec![call(dad, 40), call(kid, kid_gq), call(mom, 40)],
+                ..Variant::default()
+            },
+            samples: names(&["dad", "kid", "mom"]),
+        };
+        let family: Vec<Family> = vec![(Some("mom".into()), Some("dad".into()), "kid".into())];
+        let judged = |record: &Record, gq: f64| has_mendelian_violation(record, &family, gq);
+        assert!(judged(&trio("0/0", "0/1", 40, "0/0"), 0.0));
+        assert!(!judged(&trio("0/1", "0/1", 40, "0/0"), 0.0));
+        assert!(judged(&trio("1/1", "0/0", 40, "0/0"), 0.0));
+        assert!(judged(&trio("0/0", "0/1", 10, "0/0"), 0.0));
+        assert!(!judged(&trio("0/0", "0/1", 10, "0/0"), 20.0));
+        assert!(!judged(&trio(".", "1/1", 40, "0/0"), 0.0));
+        assert!(!judged(&trio("0/1", "1/1", 40, "0/1"), 0.0));
+        assert!(!judged(&trio("0/0", "./.", 40, "0/0"), 0.0));
+        assert!(!judged(&trio("0/0", "0/0", 40, "0/0"), 0.0));
+        // A child the PED names but the record does not carry is skipped, not refused.
+        let orphan: Vec<Family> = vec![(Some("mom".into()), None, "kid".into())];
+        assert!(!has_mendelian_violation(
+            &trio("0/0", "1/1", 40, "0/0"),
+            &orphan,
+            0.0
+        ));
+    }
+
     fn names(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| value.to_string()).collect()
     }
@@ -271,6 +309,8 @@ pub struct SubsetArguments {
     pub keep_original_chr_counts: bool,
     /// `--keep-original-dp`.
     pub keep_original_depth: bool,
+    /// `--remove-fraction-genotypes`, which no-calls genotypes of a record the subset rewrote.
+    pub remove_fraction_genotypes: f64,
 }
 
 /// A record and the names its genotype columns carry, which the engine's `Variant` does not hold.
@@ -349,6 +389,28 @@ pub fn subset_record(
         )?
     };
 
+    // `--remove-fraction-genotypes`: a genotype is no-called, everything but its GQ kept, unless
+    // `randomGenotypes.nextDouble() > fraction`. That generator is an UNSEEDED `new Random()`, so a
+    // fraction under one is a draw no run repeats, and one or more no-calls every genotype.
+    let genotypes = if arguments.remove_fraction_genotypes > 0.0 {
+        genotypes
+            .into_iter()
+            .map(|genotype| {
+                if unseeded_double() > arguments.remove_fraction_genotypes {
+                    genotype
+                } else {
+                    Genotype {
+                        alleles: vec![None; genotype.alleles.len()],
+                        gq: None,
+                        ..genotype
+                    }
+                }
+            })
+            .collect()
+    } else {
+        genotypes
+    };
+
     let mut subset = Variant {
         contig: record.variant.contig.clone(),
         start: record.variant.start,
@@ -386,6 +448,19 @@ pub fn subset_record(
         variant,
         samples: names,
     })
+}
+
+/// `new Random().nextDouble()`, from a generator seeded off the clock as the reference's is.
+fn unseeded_double() -> f64 {
+    thread_local! {
+        static RANDOM: std::cell::RefCell<gatk_engine::java_random::JavaRandom> =
+            std::cell::RefCell::new(gatk_engine::java_random::JavaRandom::new(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |elapsed| elapsed.as_nanos() as i64),
+            ));
+    }
+    RANDOM.with(|random| random.borrow_mut().next_double())
 }
 
 /// `addAnnotations`, in the reference's order: the originals first, then the recount, then the
@@ -841,16 +916,28 @@ pub fn genotype_jexl_context(
 
 /// `applyFirstRoundOfFiltering` plus the two genotype-count gates, which run before the subset.
 ///
-/// Returns whether the record survives. The Mendelian and random-fraction gates are not here:
-/// one needs a pedigree and the other a random generator, and neither is measured.
+/// Returns whether the record survives. It is [`passes_variant_filter`] then
+/// [`keeps_after_tracks`], without the random, Mendelian and concordance gates that sit between.
 pub fn keeps_before_subset(
     record: &Record,
     filter_record: &FilterRecord,
     arguments: &FilterArguments,
     selection: &SampleSelection,
 ) -> Result<bool, SelectError> {
-    if arguments.exclude_filtered && !filter_record.filters.is_empty() {
+    if !passes_variant_filter(record, filter_record, arguments) {
         return Ok(false);
+    }
+    keeps_after_tracks(record, filter_record, arguments, selection)
+}
+
+/// `makeVariantFilter` and `--exclude-filtered`: everything before the first random draw.
+pub fn passes_variant_filter(
+    record: &Record,
+    filter_record: &FilterRecord,
+    arguments: &FilterArguments,
+) -> bool {
+    if arguments.exclude_filtered && !filter_record.filters.is_empty() {
+        return false;
     }
 
     // `makeVariantFilter` runs before `apply` and is the same decision, so it is here.
@@ -864,15 +951,100 @@ pub fn keeps_before_subset(
     if !selected_types.is_empty()
         && !selected_types.contains(&variant_type(&record.variant.alleles))
     {
-        return Ok(false);
+        return false;
     }
     if !arguments.keep_ids.is_empty() && !arguments.keep_ids.contains(&filter_record.id) {
-        return Ok(false);
+        return false;
     }
-    if arguments.exclude_ids.contains(&filter_record.id) {
-        return Ok(false);
-    }
+    !arguments.exclude_ids.contains(&filter_record.id)
+}
 
+/// `Genotype.getType()`, which `determineType` reads off the alleles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CallType {
+    Unavailable,
+    NoCall,
+    Mixed,
+    HomRef,
+    Het,
+    HomVar,
+}
+
+fn call_type(genotype: &Genotype) -> CallType {
+    if genotype.alleles.is_empty() {
+        return CallType::Unavailable;
+    }
+    let called: Vec<usize> = genotype.alleles.iter().flatten().copied().collect();
+    match called.first() {
+        None => CallType::NoCall,
+        Some(_) if called.len() < genotype.alleles.len() => CallType::Mixed,
+        Some(first) if called.iter().any(|allele| allele != first) => CallType::Het,
+        Some(0) => CallType::HomRef,
+        Some(_) => CallType::HomVar,
+    }
+}
+
+/// `isCalled()`, which a MIXED genotype is.
+fn is_called(genotype: &Genotype) -> bool {
+    !matches!(
+        call_type(genotype),
+        CallType::NoCall | CallType::Unavailable
+    )
+}
+
+/// One child the Mendelian gate judges: `(mother, father, child)` by ID, as `updateViolations`
+/// is handed them. A parent the PED leaves out is `None`, whose genotype is never found.
+pub type Family = (Option<String>, Option<String>, String);
+
+/// `new MendelianViolation(threshold, false, true).countFamilyViolations(db, samples, vc) > 0`.
+///
+/// Complete trios only: a family with a member missing from the record, or one not called, is
+/// skipped, and so is one with a GQ under a positive threshold (an absent GQ is `-1`).
+pub fn has_mendelian_violation(record: &Record, families: &[Family], min_gq: f64) -> bool {
+    families.iter().any(|(mother, father, child)| {
+        let find = |id: Option<&str>| id.and_then(|id| genotype_of(record, id)).map(|(g, _)| g);
+        let (Some(mom), Some(dad), Some(kid)) = (
+            find(mother.as_deref()),
+            find(father.as_deref()),
+            find(Some(child)),
+        ) else {
+            return false;
+        };
+        if !is_called(mom) || !is_called(dad) || !is_called(kid) {
+            return false;
+        }
+        if min_gq > 0.0
+            && [mom, dad, kid]
+                .iter()
+                .any(|g| f64::from(g.gq.unwrap_or(-1)) < min_gq)
+        {
+            return false;
+        }
+        // `isViolation(gMom, gDad, gChild)` with all three called, so only its last branch.
+        if [mom, dad, kid]
+            .iter()
+            .all(|g| call_type(g) == CallType::HomRef)
+        {
+            return false;
+        }
+        // shortcut: a haploid child is an IndexOutOfBoundsException in the reference and no
+        // violation here; no fixture has one.
+        let (Some(first), Some(second)) = (kid.alleles.first(), kid.alleles.get(1)) else {
+            return false;
+        };
+        !(mom.alleles.contains(first) && dad.alleles.contains(second)
+            || mom.alleles.contains(second) && dad.alleles.contains(first))
+    })
+}
+
+/// The rest of `applyFirstRoundOfFiltering` after the concordance tracks, and the two
+/// genotype-count gates.
+pub fn keeps_after_tracks(
+    record: &Record,
+    filter_record: &FilterRecord,
+    arguments: &FilterArguments,
+    selection: &SampleSelection,
+) -> Result<bool, SelectError> {
     let biallelic = record.variant.alleles.len() == 2;
     match arguments.allele_restriction {
         AlleleRestriction::Biallelic if !biallelic => return Ok(false),
