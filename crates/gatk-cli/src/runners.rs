@@ -7954,8 +7954,8 @@ fn java_gzip(data: &[u8], level: u32) -> Vec<u8> {
 ///   - and each output record is the input's with its FILTER replaced, `AS_FilterStatus` set and the
 ///     phred-scaled posteriors the filters annotate, its genotypes written from the file.
 ///
-/// The three inputs that bring a second model in, `--contamination-table`, `--tumor-segmentation`
-/// and `--ob-priors`, are refused rather than ignored.
+/// The three model inputs, `--contamination-table`, `--tumor-segmentation` and `--ob-priors`, are
+/// read where the engine's constructor reads them: after the header, before the stats check.
 pub fn filter_mutect_calls(parser: &Parser) -> Outcome {
     use gatk_engine::accumulate_data::AccumulationAllele;
     use gatk_engine::allele_filter::GenotypeData;
@@ -7966,19 +7966,6 @@ pub fn filter_mutect_calls(parser: &Parser) -> Outcome {
     use gatk_tools::filter_mutect_calls as fmc;
     use htsjdk_vcf::header::HeaderLine;
     use htsjdk_vcf::variant::Value;
-
-    for held in ["contamination-table", "tumor-segmentation", "ob-priors"] {
-        if !arguments(parser, held).is_empty() {
-            return Err(Thrown::non_user(
-                PORT_LIMITATION,
-                format!(
-                    "FilterMutectCalls' --{held} is a second model this port does not read yet, \
-                     and a run that ignored it would filter differently. This message is the \
-                     port's own and not GATK's."
-                ),
-            ));
-        }
-    }
 
     let VariantWalkerStart {
         input,
@@ -8007,7 +7994,7 @@ pub fn filter_mutect_calls(parser: &Parser) -> Outcome {
         ),
         log_snv_prior: double("log-snv-prior", list_defaults.log_snv_prior),
         log_indel_prior: double("log-indel-prior", list_defaults.log_indel_prior),
-        read_orientation_priors: false,
+        read_orientation_priors: !arguments(parser, "orientation-bias-artifact-priors").is_empty(),
     };
     let min_median_mapping_quality = list.min_median_mapping_quality();
     let engine = EngineArguments {
@@ -8124,6 +8111,24 @@ pub fn filter_mutect_calls(parser: &Parser) -> Outcome {
         apply_sites_only(parser, &mut header, &mut records);
         let out = write_vcf_honouring_lenient(parser, &header, &records)?;
         write_variant_output(parser, &output, &out)
+    };
+
+    // `new Mutect2FilteringEngine(...)`, after the header is written: the contamination tables,
+    // the orientation priors, then (outside the two modes that drop GermlineFilter) the segments.
+    let models = fmc_models(parser, engine.list.mitochondria || engine.list.microbial);
+    let (contamination_by_sample, priors_by_sample, segments_by_sample) = match models {
+        Ok(models) => models,
+        Err(thrown) => {
+            write_records(&[])?;
+            return Err(thrown);
+        }
+    };
+    let mut fasta = if priors_by_sample.is_empty() {
+        None
+    } else {
+        argument(parser, "reference").and_then(|path| {
+            htsjdk_bam::fasta_index::IndexedFasta::open(std::path::Path::new(&path)).ok()
+        })
     };
 
     // `new File(statsTable == null ? drivingVariantFile + ".stats" : statsTable)`, looked for
@@ -8268,6 +8273,124 @@ pub fn filter_mutect_calls(parser: &Parser) -> Outcome {
             };
             phasing.push((field("PGT"), field("PID")));
         }
+        let samples: Vec<&str> = variant
+            .genotypes
+            .iter()
+            .map(|genotype| genotype.sample_name.as_str())
+            .collect();
+        let contaminations: Vec<f64> = if contamination_by_sample.is_empty() {
+            Vec::new()
+        } else {
+            samples
+                .iter()
+                .map(|sample| {
+                    contamination_by_sample
+                        .get(*sample)
+                        .copied()
+                        .unwrap_or(engine.contamination_estimate)
+                })
+                .collect()
+        };
+        // shortcut: the first overlapping segment in file order, where the reference takes the
+        // first of a HashSet; the two differ only for overlapping segments, which
+        // CalculateContamination never writes.
+        let minor_allele_fractions: Vec<f64> = if segments_by_sample.is_empty() {
+            Vec::new()
+        } else {
+            let end = variant.start as i32 + reference_length - 1;
+            samples
+                .iter()
+                .map(|sample| {
+                    segments_by_sample
+                        .get(&Some(sample.to_string()))
+                        .and_then(|segments| {
+                            segments.iter().find(|segment| {
+                                segment.segment.contig == variant.contig
+                                    && segment.segment.start <= end
+                                    && variant.start as i32 <= segment.segment.end
+                            })
+                        })
+                        .map_or(0.5, |segment| segment.minor_allele_fraction)
+                })
+                .collect()
+        };
+        let snp_or_mnp = !kinds.is_empty()
+            && (kinds.iter().all(|kind| *kind == "SNP") || kinds.iter().all(|kind| *kind == "MNP"));
+        let read_orientation_posteriors = if snp_or_mnp && !priors_by_sample.is_empty() {
+            let alternate_strings: Vec<String> = variant
+                .alternate_alleles()
+                .iter()
+                .map(|allele| allele.base_string())
+                .collect();
+            let alternate_bases: Vec<&[u8]> = alternate_strings
+                .iter()
+                .map(|bases| bases.as_bytes())
+                .collect();
+            let tumor_log_10_odds = doubles(variant, "TLOD");
+            let contig_length = fasta
+                .as_ref()
+                .and_then(|fasta| fasta.index().get(&variant.contig))
+                .map_or(0, |entry| entry.size as i64);
+            let mut posteriors = Vec::new();
+            for genotype in variant.genotypes.iter() {
+                let Some(priors) = priors_by_sample.get(&Some(genotype.sample_name.clone())) else {
+                    posteriors.push(0.0);
+                    continue;
+                };
+                let format_ints = |key: &str| -> Option<Vec<i32>> {
+                    genotype.get(key).map(|value| {
+                        values_of(value)
+                            .iter()
+                            .map(|text| text.trim().parse::<i32>().unwrap_or(0))
+                            .collect()
+                    })
+                };
+                let (f1r2, f2r1) = (format_ints("F1R2"), format_ints("F2R1"));
+                // `getKmerAround(position, 1)`, null where the window cannot reach both sides;
+                // the reference reader uppercases and turns IUPAC codes into N.
+                let kmer_around = |center: i32| -> Option<String> {
+                    let center = i64::from(center);
+                    if center - 1 < 1 || center + 1 > contig_length {
+                        return None;
+                    }
+                    let bases = fasta
+                        .as_mut()?
+                        .query(&variant.contig, center - 1, center + 1)
+                        .ok()?;
+                    Some(
+                        bases
+                            .iter()
+                            .map(|base| match base.to_ascii_uppercase() {
+                                base @ (b'A' | b'C' | b'G' | b'T') => base as char,
+                                _ => 'N',
+                            })
+                            .collect(),
+                    )
+                };
+                let posterior = fmc::orientation_artifact_probability(
+                    priors,
+                    &fmc::OrientationGenotype {
+                        hom_ref: genotype.is_hom_ref(),
+                        f1r2: f1r2.as_deref(),
+                        f2r1: f2r1.as_deref(),
+                    },
+                    tumor_log_10_odds.as_deref(),
+                    &alternate_bases,
+                    variant.start as i32,
+                    kmer_around,
+                );
+                match posterior {
+                    Ok(posterior) => posteriors.push(posterior),
+                    Err(error) => {
+                        write_records(&[])?;
+                        return Err(Thrown::non_user(error.class, error.message));
+                    }
+                }
+            }
+            Some(posteriors)
+        } else {
+            None
+        };
         let single_int = |key: &str| ints(variant, key).and_then(|values| values.first().copied());
         records.push(Record {
             start: variant.start as i32,
@@ -8293,6 +8416,9 @@ pub fn filter_mutect_calls(parser: &Parser) -> Outcome {
             repeat_unit: info(variant, "RU").map(|values| values.join(",")),
             in_panel_of_normals: variant.attributes.iter().any(|(key, _)| key == "PON"),
             indel_lengths,
+            contaminations,
+            minor_allele_fractions,
+            read_orientation_posteriors,
         });
     }
 
@@ -8343,6 +8469,83 @@ pub fn filter_mutect_calls(parser: &Parser) -> Outcome {
         .unwrap_or_else(|| format!("{output}.filteringStats.tsv"));
     write_file(&stats_output, result.filtering_stats.as_bytes())?;
     Ok(None)
+}
+
+/// The three tables `FilterMutectCalls`' filters read in their constructors, keyed by sample.
+type FmcModels = (
+    std::collections::HashMap<String, f64>,
+    std::collections::HashMap<Option<String>, gatk_tools::filter_mutect_calls::ArtifactPriors>,
+    std::collections::HashMap<
+        Option<String>,
+        Vec<gatk_engine::contamination_tables::MinorAlleleFractionRecord>,
+    >,
+);
+
+/// `ContaminationFilter`'s, `ReadOrientationFilter`'s and `GermlineFilter`'s constructors, in the
+/// order `buildFiltersList` calls them; `GermlineFilter` is not built in `germline_dropped` modes.
+fn fmc_models(parser: &Parser, germline_dropped: bool) -> Result<FmcModels, Thrown> {
+    use gatk_engine::contamination_tables as tables;
+    use gatk_engine::tsv_table::java_double_to_string;
+    let read = |path: &str| -> Result<String, Thrown> {
+        std::fs::read_to_string(path).map_err(|error| Thrown::user(format!("{path}: {error}")))
+    };
+    let table_error = |error: tables::ContaminationTableError| Thrown {
+        failure: Failure::User,
+        exception: error.java_class(),
+        message: Some(error.message()),
+    };
+    // `.map(file -> readFromFile(file).get(0)).collect(Collectors.toMap(...))`.
+    let mut contamination = std::collections::HashMap::new();
+    for path in arguments(parser, "contamination-table") {
+        let records = tables::read_contamination(&read(&path)?, &path).map_err(table_error)?;
+        let first = records.into_iter().next().ok_or_else(|| {
+            Thrown::non_user(
+                "java.lang.IndexOutOfBoundsException",
+                "Index 0 out of bounds for length 0",
+            )
+        })?;
+        if let Some(previous) = contamination.insert(first.sample.clone(), first.contamination) {
+            return Err(Thrown::non_user(
+                "java.lang.IllegalStateException",
+                format!(
+                    "Duplicate key {} (attempted merging values {} and {})",
+                    first.sample,
+                    java_double_to_string(previous),
+                    java_double_to_string(first.contamination)
+                ),
+            ));
+        }
+    }
+    // Every archive extracted, every table in it read; a later table for a sample replaces the
+    // earlier one, as `put` does.
+    let mut priors = std::collections::HashMap::new();
+    for path in arguments(parser, "orientation-bias-artifact-priors") {
+        let bytes =
+            std::fs::read(&path).map_err(|error| Thrown::user(format!("{path}: {error}")))?;
+        let mut tar = Vec::new();
+        std::io::Read::read_to_end(
+            &mut flate2::read::MultiGzDecoder::new(bytes.as_slice()),
+            &mut tar,
+        )
+        .map_err(|error| Thrown::user(format!("{path}: {error}")))?;
+        for (name, data) in tar_members(&tar) {
+            let table = gatk_tools::filter_mutect_calls::read_artifact_priors(
+                &String::from_utf8_lossy(&data),
+                &name,
+            )
+            .map_err(|error| Thrown::user(error.message))?;
+            priors.insert(table.sample.clone(), table);
+        }
+    }
+    let mut segments = std::collections::HashMap::new();
+    if !germline_dropped {
+        for path in arguments(parser, "tumor-segmentation") {
+            let (sample, records) =
+                tables::read_segments(&read(&path)?, &path).map_err(table_error)?;
+            segments.insert(sample, records);
+        }
+    }
+    Ok((contamination, priors, segments))
 }
 
 /// `ComposeSTRTableFile`, a `GATKTool` that scans the reference for tandem repeats and writes a zip.

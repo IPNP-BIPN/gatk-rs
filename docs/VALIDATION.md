@@ -154,7 +154,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | FilterAlignmentArtifacts | gatk-rs | oracle-backed | 271 suite | 0 suite | 21/21 (100.0%) | 2 | 4865 probes (+2), 0/7 diverge | 6 | 3 | none |
 | FilterFuncotations | gatk-rs | oracle-backed | 10 suite | 0 suite | 16/16 (100.0%) | 2 | 2477 probes (+0), 0/6 diverge | 2 | 9 | none |
 | FilterIntervals | gatk-rs | oracle-backed | 11 suite | 0 suite | 11/11 (100.0%) | 2 | 2309 probes (+3), 0/7 diverge | 4 | 1 | none |
-| FilterMutectCalls | gatk-rs | oracle-backed | 320 suite | 0 suite | 24/24 (100.0%) | 2 | 3736 probes (+5), 0/13 diverge | 5 | 10 | none |
+| FilterMutectCalls | gatk-rs | oracle-backed | 320 suite | 0 suite | 24/24 (100.0%) | 2 | 3736 probes (+5), 0/13 diverge | 12 | 3 | none |
 | FilterSamReads | picard-rs | oracle-backed | not vendored | not vendored | 26/26 (100.0%) | 2 | not measured | 0 | 0 | none |
 | FilterVariantTranches | gatk-rs | oracle-backed | 60 suite | 0 suite | 15/15 (100.0%) | 2 | 2161 probes (+5), 0/10 diverge | 4 | 7 | none |
 | FilterVcf | gatk-rs | oracle-backed | 20 suite | 0 suite | 9/20 (45.0%) | 2 | not measured | 8 | 0 | none |
@@ -1123,11 +1123,11 @@ annotated.tsv and counts.tsv, both produced by the REFERENCE's own AnnotateInter
 
 Suites: `filter-mutect-calls`.
 
-Inputs: `missing.stats`, `mutect.vcf`, `mutect_nocallable.vcf`, `mutect_nocallable.vcf.stats`, `mutect_ref.fasta`.
+Inputs: `missing.stats`, `mutect.vcf`, `mutect_contaminated.table`, `mutect_contamination.table`, `mutect_nocallable.vcf`, `mutect_nocallable.vcf.stats`, `mutect_priors.tar.gz`, `mutect_ref.dict`, `mutect_ref.fasta`, `mutect_segments.table`, `mutect_tn.bai`, `mutect_tn.bam`.
 
-Held out: `--contamination-table`, `--dont-require-soft-clips-both-ends`, `--exclude-intervals`, `--input`, `--keep-reverse-strand-only`, `--orientation-bias-artifact-priors`, `--read-filter-tag-op`, `--read-index`, `--sequence-dictionary`, `--tumor-segmentation`.
+Held out: `--dont-require-soft-clips-both-ends`, `--keep-reverse-strand-only`, `--read-filter-tag-op`.
 
-mutect.vcf is the reference's own Mutect2 run over mutect_tn.bam and mutect_ref.fasta, four calls with every INFO field and header line a real run carries: a clean somatic SNV, a two-read one, one on forward reads alone and one near the reads' starts, with mutect.vcf.stats beside it. mutect_nocallable.vcf is the same calls with a stats table whose callable count is zero. --stats absent reads the table beside the VCF; a path to a missing file is refused after the header is written. The model inputs the port does not read, --contamination-table, --tumor-segmentation and --ob-priors, are held. Every numeric threshold has its default first and a value that moves a call second.
+mutect.vcf is the reference's own Mutect2 run over mutect_tn.bam and mutect_ref.fasta, four calls with every INFO field and header line a real run carries: a clean somatic SNV, a two-read one, one on forward reads alone and one near the reads' starts, with mutect.vcf.stats beside it. mutect_nocallable.vcf is the same calls with a stats table whose callable count is zero. --stats absent reads the table beside the VCF; a path to a missing file is refused after the header is written. The model inputs are the reference's own over the same reads: mutect_priors.tar.gz is LearnReadOrientationModel over f1r2_tn.tar.gz (tumour and normal priors, which turn three calls into orientation artifacts), mutect_contamination.table and mutect_segments.table are CalculateContamination over the tumour's pileups (an estimate of 0.0, one segment over the call at 1000), and mutect_contaminated.table names the tumour at 0.1 and the normal at 0.2. --input and --read-index give the calls' own BAM and its index, which a variant walker opens and never reads; --exclude-intervals drops the call at 1600. Every numeric threshold has its default first and a value that moves a call second.
 
 ### FilterVariantTranches
 

@@ -4647,8 +4647,14 @@
         "one, one on forward reads alone and one near the reads' starts, with mutect.vcf.stats beside it.",
         "mutect_nocallable.vcf is the same calls with a stats table whose callable count is zero.",
         "--stats absent reads the table beside the VCF; a path to a missing file is refused after the",
-        "header is written. The model inputs the port does not read, --contamination-table,",
-        "--tumor-segmentation and --ob-priors, are held.",
+        "header is written.",
+        "The model inputs are the reference's own over the same reads: mutect_priors.tar.gz is",
+        "LearnReadOrientationModel over f1r2_tn.tar.gz (tumour and normal priors, which turn three calls",
+        "into orientation artifacts), mutect_contamination.table and mutect_segments.table are",
+        "CalculateContamination over the tumour's pileups (an estimate of 0.0, one segment over the call",
+        "at 1000), and mutect_contaminated.table names the tumour at 0.1 and the normal at 0.2.",
+        "--input and --read-index give the calls' own BAM and its index, which a variant walker opens and",
+        "never reads; --exclude-intervals drops the call at 1600.",
         "Every numeric threshold has its default first and a value that moves a call second."
       ],
       "--variant": [
@@ -4675,16 +4681,38 @@
         "chr1:1-3000",
         "chr1:1300-2000"
       ],
-      "--contamination-table": [],
-      "--tumor-segmentation": [],
-      "--orientation-bias-artifact-priors": [],
+      "--contamination-table": [
+        "null",
+        "/work/fixtures/mutect_contamination.table",
+        "/work/fixtures/mutect_contaminated.table"
+      ],
+      "--tumor-segmentation": [
+        "null",
+        "/work/fixtures/mutect_segments.table"
+      ],
+      "--orientation-bias-artifact-priors": [
+        "null",
+        "/work/fixtures/mutect_priors.tar.gz"
+      ],
       "--max-variants-per-shard": [
         "0"
       ],
-      "--sequence-dictionary": [],
-      "--input": [],
-      "--read-index": [],
-      "--exclude-intervals": [],
+      "--sequence-dictionary": [
+        "null",
+        "/work/fixtures/mutect_ref.dict"
+      ],
+      "--input": [
+        "null",
+        "/work/fixtures/mutect_tn.bam"
+      ],
+      "--read-index": [
+        "null",
+        "/work/fixtures/mutect_tn.bai"
+      ],
+      "--exclude-intervals": [
+        "null",
+        "chr1:1590-1610"
+      ],
       "--read-filter-tag-op": [],
       "--keep-reverse-strand-only": [],
       "--dont-require-soft-clips-both-ends": [],
