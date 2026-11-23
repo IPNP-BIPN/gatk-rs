@@ -24605,7 +24605,15 @@ pub fn htsget_reader(parser: &Parser) -> Outcome {
 
     let io_failure = || Thrown::user(format!("IOException during htsget download for {uri}"));
     let agent = ureq::AgentBuilder::new().redirects(50).build();
-    let answer = htsget_get(&agent, &uri, &[]).map_err(|_| io_failure())?;
+    let answer = htsget_get(&agent, &uri, &[])
+        .and_then(|response| {
+            let status = response.status();
+            let mut body = Vec::new();
+            std::io::Read::read_to_end(&mut response.into_reader(), &mut body)
+                .map_err(|error| error.to_string())?;
+            Ok((status, body))
+        })
+        .map_err(|_| io_failure())?;
     let body = String::from_utf8_lossy(&answer.1).into_owned();
     // `HttpEntity` is null for an answer that cannot have a body.
     if matches!(answer.0, 204 | 205 | 304) {
@@ -24645,7 +24653,16 @@ pub fn htsget_reader(parser: &Parser) -> Outcome {
                 ));
             }
             let response = htsget::read_response(&body).map_err(|_| io_failure())?;
-            htsget_write_blocks(&agent, response.blocks.as_deref(), &output, threads)?;
+            let tmp_dir = argument(parser, "tmp-dir")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(std::env::temp_dir);
+            htsget_write_blocks(
+                &agent,
+                response.blocks.as_deref(),
+                &output,
+                threads,
+                &tmp_dir,
+            )?;
             if check_md5 {
                 htsget_check_md5(response.md5.as_deref(), &output)?;
             }
@@ -24657,12 +24674,12 @@ pub fn htsget_reader(parser: &Parser) -> Outcome {
     }
 }
 
-/// One GET: the status and the body, however often a 5xx took. The error is an `IOException`.
+/// One GET, however often a 5xx took, its body still unread. The error is an `IOException`.
 fn htsget_get(
     agent: &ureq::Agent,
     uri: &str,
     headers: &[(String, String)],
-) -> Result<(u16, Vec<u8>), String> {
+) -> Result<ureq::Response, String> {
     let mut wait = 1;
     for attempt in 1.. {
         let mut request = agent.get(uri);
@@ -24674,27 +24691,33 @@ fn htsget_get(
             Err(ureq::Error::Status(_, response)) => response,
             Err(error) => return Err(error.to_string()),
         };
-        let status = response.status();
-        if (500..600).contains(&status) && attempt <= 4 {
+        if (500..600).contains(&response.status()) && attempt <= 4 {
             std::thread::sleep(std::time::Duration::from_secs(wait));
             wait *= 2;
             continue;
         }
-        let mut body = Vec::new();
-        std::io::Read::read_to_end(&mut response.into_reader(), &mut body)
-            .map_err(|error| error.to_string())?;
-        return Ok((status, body));
+        return Ok(response);
     }
     unreachable!("the loop returns by the fifth attempt")
 }
 
-/// `Block.getData`.
+/// Why a block did not reach its sink: the block's own failure, or the sink refusing a write.
+enum BlockStop {
+    Block(Thrown),
+    Sink,
+}
+
+/// `Block.getData`, streamed into `sink` rather than held: a block can be the whole file.
 fn htsget_block(
     agent: &ureq::Agent,
     block: &gatk_tools::htsget_reader::Block,
-) -> Result<Vec<u8>, Thrown> {
+    sink: &mut dyn std::io::Write,
+) -> Result<(), BlockStop> {
     use gatk_tools::htsget_reader as htsget;
-    let null = |message: &str| Thrown::non_user("java.lang.NullPointerException", message);
+    use std::io::Read;
+    let null = |message: &str| {
+        BlockStop::Block(Thrown::non_user("java.lang.NullPointerException", message))
+    };
     let uri = block.url.as_deref().ok_or_else(|| {
         null("Cannot invoke \"java.net.URI.getScheme()\" because the return value of \"org.broadinstitute.hellbender.tools.htsgetreader.HtsgetResponse$Block.getUri()\" is null")
     })?;
@@ -24706,21 +24729,38 @@ fn htsget_block(
                 .headers
                 .as_deref()
                 .ok_or_else(|| null("Cannot invoke \"Object.getClass()\" because \"m\" is null"))?;
-            htsget_get(agent, uri, headers)
-                .map(|answer| answer.1)
-                .map_err(|_| Thrown::user("Could not retrieve data from block"))
+            let retrieve = || BlockStop::Block(Thrown::user("Could not retrieve data from block"));
+            let mut body = htsget_get(agent, uri, headers)
+                .map_err(|_| retrieve())?
+                .into_reader();
+            let mut buffer = vec![0u8; 1 << 16];
+            loop {
+                let read = match body.read(&mut buffer) {
+                    Ok(0) => return Ok(()),
+                    Ok(read) => read,
+                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                    Err(_) => return Err(retrieve()),
+                };
+                sink.write_all(&buffer[..read])
+                    .map_err(|_| BlockStop::Sink)?;
+            }
         }
-        "data" => htsget::decode_data_uri(uri).map_err(|failure| match failure {
-            htsget::DataFailure::NotBase64 => {
-                Thrown::user(format!("data URI must be base64 encoded: {uri}"))
-            }
-            htsget::DataFailure::Decode(message) => {
-                Thrown::non_user("java.lang.IllegalArgumentException", message)
-            }
-        }),
-        other => Err(Thrown::user(format!(
+        "data" => {
+            let bytes = htsget::decode_data_uri(uri).map_err(|failure| {
+                BlockStop::Block(match failure {
+                    htsget::DataFailure::NotBase64 => {
+                        Thrown::user(format!("data URI must be base64 encoded: {uri}"))
+                    }
+                    htsget::DataFailure::Decode(message) => {
+                        Thrown::non_user("java.lang.IllegalArgumentException", message)
+                    }
+                })
+            })?;
+            sink.write_all(&bytes).map_err(|_| BlockStop::Sink)
+        }
+        other => Err(BlockStop::Block(Thrown::user(format!(
             "Unrecognized URI scheme in data block: {other}"
-        ))),
+        )))),
     }
 }
 
@@ -24730,8 +24770,9 @@ fn htsget_write_blocks(
     blocks: Option<&[gatk_tools::htsget_reader::Block]>,
     output: &str,
     threads: usize,
+    tmp_dir: &std::path::Path,
 ) -> Result<(), Thrown> {
-    use std::io::Write;
+    use std::io::{Seek, Write};
     let parallel = threads > 1;
     let no_blocks = || {
         Thrown::non_user(
@@ -24750,27 +24791,36 @@ fn htsget_write_blocks(
             format!("Could not create output file: {output}")
         })
     })?;
-    let copied = |result: std::io::Result<()>| {
-        result.map_err(|_| {
-            Thrown::user(if parallel {
-                "Error while copying data block to output file"
-            } else {
-                "Failed to copy data block to output file"
-            })
+    let copy_failure = || {
+        Thrown::user(if parallel {
+            "Error while copying data block to output file"
+        } else {
+            "Failed to copy data block to output file"
         })
     };
     let blocks = blocks.ok_or_else(no_blocks)?;
     if !parallel {
         for block in blocks {
-            copied(file.write_all(&htsget_block(agent, block)?))?;
+            let start = file.stream_position().map_err(|_| copy_failure())?;
+            match htsget_block(agent, block, &mut file) {
+                Ok(()) => {}
+                Err(BlockStop::Sink) => return Err(copy_failure()),
+                // The reference reads a block whole before it copies any of it, so a block that
+                // fails part-way leaves none of itself in the output.
+                Err(BlockStop::Block(thrown)) => {
+                    let _ = file.set_len(start);
+                    return Err(thrown);
+                }
+            }
         }
         return Ok(());
     }
-    // The executor's: the blocks are all asked for at once and written back in their order.
+    // The executor's: the blocks are all asked for at once, each into a temporary file as the
+    // reference's are, and copied into the output in their order.
     let next = std::sync::atomic::AtomicUsize::new(0);
     let answers: Vec<_> = blocks
         .iter()
-        .map(|_| std::sync::Mutex::new(None::<Result<Vec<u8>, Thrown>>))
+        .map(|_| std::sync::Mutex::new(None::<Option<std::fs::File>>))
         .collect();
     std::thread::scope(|scope| {
         for _ in 0..threads.min(blocks.len()) {
@@ -24779,18 +24829,36 @@ fn htsget_write_blocks(
                 let Some(block) = blocks.get(at) else {
                     return;
                 };
-                *answers[at].lock().expect("no writer panics") = Some(htsget_block(agent, block));
+                let answer = htsget_temp_file(tmp_dir, at).and_then(|mut temp| {
+                    htsget_block(agent, block, &mut temp).ok()?;
+                    temp.rewind().ok()?;
+                    Some(temp)
+                });
+                *answers[at].lock().expect("no writer panics") = Some(answer);
             });
         }
     });
     for answer in answers {
         let answer = answer.into_inner().expect("no writer panics");
-        match answer.expect("every block is answered") {
-            Ok(bytes) => copied(file.write_all(&bytes))?,
-            Err(_) => return Err(Thrown::user("Error while waiting to download block")),
-        }
+        let mut temp = answer
+            .expect("every block is answered")
+            .ok_or_else(|| Thrown::user("Error while waiting to download block"))?;
+        std::io::copy(&mut temp, &mut file).map_err(|_| copy_failure())?;
     }
-    Ok(())
+    file.flush().map_err(|_| copy_failure())
+}
+
+/// `IOUtils.createTempPath("htsget-temp", "")`, unlinked at once so nothing outlives the run.
+fn htsget_temp_file(tmp_dir: &std::path::Path, index: usize) -> Option<std::fs::File> {
+    let path = tmp_dir.join(format!("htsget-temp{}-{index}", std::process::id()));
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .ok()?;
+    let _ = std::fs::remove_file(&path);
+    Some(file)
 }
 
 /// `checkMd5`.
@@ -24798,9 +24866,9 @@ fn htsget_check_md5(expected: Option<&str>, output: &str) -> Result<(), Thrown> 
     let Some(expected) = expected else {
         return Ok(());
     };
-    let bytes =
-        std::fs::read(output).map_err(|_| Thrown::user("Unable to calculate md5 digest"))?;
-    let actual = gatk_tools::gather_bam_files::md5_file(&bytes);
+    let actual = std::fs::File::open(output)
+        .and_then(gatk_tools::gather_bam_files::md5_of_reader)
+        .map_err(|_| Thrown::user("Unable to calculate md5 digest"))?;
     if actual != expected {
         return Err(Thrown::user(format!(
             "Expected md5: {expected} did not match actual md5: {actual}"
