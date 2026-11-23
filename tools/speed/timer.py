@@ -49,8 +49,15 @@ def run(command, timeout):
     )
     timer = threading.Timer(timeout, lambda: os.killpg(child.pid, signal.SIGKILL))
     timer.start()
+    # ru_maxrss is the largest single process; a tool that waits on an interpreter holds both.
+    done = threading.Event()
+    tree = [0]
+    sampler = threading.Thread(target=sample_tree, args=(child.pid, done, tree), daemon=True)
+    sampler.start()
     _, status, usage = os.wait4(child.pid, 0)
     wall = time.perf_counter() - start
+    done.set()
+    sampler.join()
     timer.cancel()
     # Popen still holds the pid; tell it the child is gone so it does not wait again.
     child.returncode = os.waitstatus_to_exitcode(status)
@@ -58,8 +65,27 @@ def run(command, timeout):
         "wall": wall,
         "cpu": usage.ru_utime + usage.ru_stime,
         "rss_kib": usage.ru_maxrss,
+        "tree_rss_kib": max(tree[0], usage.ru_maxrss),
         "exit": child.returncode,
     }
+
+
+def sample_tree(group, done, peak):
+    """The peak, every 10 ms, of the summed resident set of the child's process group."""
+    page_kib = os.sysconf("SC_PAGE_SIZE") // 1024
+    while not done.wait(0.01):
+        total = 0
+        for pid in os.listdir("/proc"):
+            if not pid.isdigit():
+                continue
+            try:
+                fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+            except (OSError, IndexError):
+                continue
+            # fields[2] is the process group, fields[21] the resident set in pages.
+            if int(fields[2]) == group:
+                total += int(fields[21]) * page_kib
+        peak[0] = max(peak[0], total)
 
 
 def steady(command, iterations, timeout):
