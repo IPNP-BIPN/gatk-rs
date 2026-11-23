@@ -2656,16 +2656,20 @@
         "different branches: -sn over a file with a sample subsets and rewrites, and the same argument",
         "over a file with none is the refusal that names it.",
         "the JEXL path is measured rather than merely present.",
-        "Six arguments are held out because this port refuses them rather than answering: --pedigree and",
-        "its two Mendelian flags, the two random fractions, --call-genotypes, and the two concordance",
-        "tracks. A row carrying one measures the port's own refusal, which is a message no golden holds",
-        "and which would be the same on every row that carries it.",
+        "sv_trio.vcf is a father, mother and child on reference.fasta's chr1, sv_trio.ped their family and",
+        "sv_trio_comp.vcf a comparison track that agrees at some sites, disagrees at one and has a site the",
+        "trio has not, so --pedigree, the two Mendelian flags with their quality threshold, --concordance",
+        "and --discordance select different records rather than all or none. --sample-name is unset first",
+        "because the concordance tracks take a different branch when no sample is named.",
+        "--select-random-fraction draws from Utils.getRandomGenerator(), seeded once per JVM, so 0.5 is a",
+        "reproducible answer. --remove-fraction-genotypes draws from an UNSEEDED new Random(), so only the",
+        "fractions no draw can decide are values: 0.0 keeps every genotype and 1.0 no-calls every one.",
         "--add-output-vcf-command-line is held at FALSE. Its ##GATKCommandLine line carries the run's own",
         "wall-clock time, and the reference and the port run minutes apart.",
         "--create-output-variant-index is held at FALSE for the reason every other variant writer holds",
         "it: the index a tool builds for its own output records that file's last-modified time.",
-        "--input and --read-index are held out: this tool reads no reads, and the corpus's shared --input",
-        "value is a VCF, whose refusal as a reads source is measured by CountVariants.",
+        "--input and --read-index name reads.bam and its index: the tool reads no reads, but the engine",
+        "opens them and checks their dictionary against the variants'.",
         "command line, so `QUAL > 50` arrived as `--select QUAL` with the rest eaten by the shell. JEXL",
         "reads the no-space form the same way, and the second value is the bare `QUAL`, which is a Double",
         "where the reference casts to Boolean: the ClassCastException that produces is the tool's answer",
@@ -2681,35 +2685,60 @@
       "--variant": [
         "/work/fixtures/indexed.vcf",
         "/work/fixtures/population.vcf",
-        "gendb:///work/fixtures/cg_ws"
+        "gendb:///work/fixtures/cg_ws",
+        "/work/fixtures/sv_trio.vcf"
       ],
       "--output": [
         "/work/out/selected.vcf",
         "/work/out/selected2.vcf"
       ],
       "--sample-name": [
+        "<unset>",
         "sample1",
-        "nosuchsample"
+        "nosuchsample",
+        "kid"
       ],
       "--select": [
         "QUAL>50",
         "QUAL>5000.0"
       ],
-      "--pedigree": [],
-      "--mendelian-violation": [],
-      "--invert-mendelian-violation": [],
-      "--select-random-fraction": [],
-      "--remove-fraction-genotypes": [],
-      "--call-genotypes": [],
-      "--concordance": [],
-      "--discordance": [],
-      "--input": [],
-      "--read-index": [],
+      "--pedigree": [
+        "<unset>",
+        "/work/fixtures/sv_trio.ped"
+      ],
+      "--select-random-fraction": [
+        "1.0",
+        "0.5"
+      ],
+      "--remove-fraction-genotypes": [
+        "0.0",
+        "1.0"
+      ],
+      "--concordance": [
+        "<unset>",
+        "/work/fixtures/sv_trio_comp.vcf"
+      ],
+      "--discordance": [
+        "<unset>",
+        "/work/fixtures/sv_trio_comp.vcf"
+      ],
+      "--input": [
+        "<unset>",
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/reads.bai"
+      ],
       "--add-output-vcf-command-line": [
         "false"
       ],
       "--create-output-variant-index": [
         "false"
+      ],
+      "--mendelian-violation-qual-threshold": [
+        "0.0",
+        "20.0"
       ]
     },
     "FastaAlternateReferenceMaker": {
