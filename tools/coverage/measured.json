@@ -353,11 +353,11 @@
       "share": 1.0
     },
     "HtsgetReader": {
-      "rows": 11,
-      "accepted": 0,
-      "rejected": 11,
-      "distinct_outputs": 0,
-      "matched": 11,
+      "rows": 12,
+      "accepted": 9,
+      "rejected": 3,
+      "distinct_outputs": 5,
+      "matched": 12,
       "t": 2,
       "share": 1.0
     },

@@ -16465,27 +16465,27 @@
     },
     "HtsgetReader": {
       "--url": [
-        "https://localhost:1/base",
-        "https://localhost:1/other/"
+        "https://htsget:8080/reads",
+        "https://htsget:8080/variants"
       ],
       "--id": [
         "reads",
-        "sample.bai"
+        "sites"
       ],
       "--O": [
         "/work/out/htsget.bin"
       ],
       "--format": [
         "<unset>",
-        "CRAM"
+        "VCF"
       ],
       "--class": [
         "<unset>",
-        "body"
+        "header"
       ],
       "--intervals": [
         "<unset>",
-        "chr1:5-10"
+        "chr1:1500-2200"
       ],
       "--field": [
         "<unset>",
@@ -16507,8 +16507,13 @@
         "false",
         "true"
       ],
+      "$htsget_server": [
+        "reads.bam",
+        "reads.vcf.gz",
+        "sites.vcf.gz"
+      ],
       "$why": [
-        "Nothing listens on the port, and the refusal is the URI the arguments built, which is what they decide. The answers and what is done with them are the htsget-reader golden's, which starts a server. The class stays body: class=header refuses every other query parameter, and that refusal is a row of the golden."
+        "Every row reaches the pinned htsget-rs server run_array.py starts beside it, serving the corpus files under `$htsget_server`, and both sides fetch the blocks its tickets name. --url is its two endpoints: the id reads is a BAM at /reads and a VCF at /variants, and sites is only a VCF, so /reads answers it with the server's NotFound, and --format VCF at /reads with its UnsupportedFormat. htsget-rs answers class=header and refuses body. The tool refuses class=header beside an interval, a field or a tag before anything is sent, which the constraints keep out of the array: that refusal is a row of the htsget-reader golden. The server ignores fields and tags and sends no md5, so --check-md5 true only warns. Answers this server never gives are the golden's, which serves them itself."
       ]
     },
     "BwaSpark": {
@@ -18437,6 +18442,46 @@
     }
   },
   "constraints": [
+    {
+      "tools": [
+        "HtsgetReader"
+      ],
+      "forbid": {
+        "--class": "header",
+        "--intervals": "chr1:1500-2200"
+      },
+      "why": "The tool refuses a header request with an interval before it is sent, and the htsget-reader golden measures that refusal."
+    },
+    {
+      "tools": [
+        "HtsgetReader"
+      ],
+      "forbid": {
+        "--class": "header",
+        "--field": "SEQ"
+      },
+      "why": "The same refusal for a field."
+    },
+    {
+      "tools": [
+        "HtsgetReader"
+      ],
+      "forbid": {
+        "--class": "header",
+        "--tag": "NM"
+      },
+      "why": "The same refusal for a tag."
+    },
+    {
+      "tools": [
+        "HtsgetReader"
+      ],
+      "forbid": {
+        "--class": "header",
+        "--notag": "AS"
+      },
+      "why": "The same refusal for a tag left out."
+    },
     {
       "tools": [
         "Pileup"

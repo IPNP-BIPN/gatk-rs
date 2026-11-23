@@ -82,6 +82,12 @@ JAVA_OPENS = " ".join([*(f"--add-opens={module}=ALL-UNNAMED" for module in ADD_O
 PAST_THE_INTERPRETER = True
 PORT_WITH_R = "gatk-rs-port-with-r:4.7.0.0"
 BROAD = json.loads((REPO / "tools" / "conformance" / "manifest.json").read_text())["oracle_with_r"]
+# The htsget server a tool under `$htsget_server` reaches, pinned in the manifest. It runs beside the
+# rows on a docker network of its own, as `htsget`; SERVER holds what each row then adds to its
+# container (the network, the certificate's mount) and the reference's trust store, or None.
+HTSGET = json.loads((REPO / "tools" / "conformance" / "manifest.json").read_text())["htsget_server"]
+SERVER = None
+TRUST = "-Djavax.net.ssl.trustStore=/work/htsget/trust.p12 -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=PKCS12"
 NUMPY_WITHOUT_AVX512 = "AVX512F AVX512CD AVX512_SKX AVX512_CLX AVX512_CNL AVX512_ICL AVX512_SPR"
 
 # Values that mean "the argument is absent", so a held-at value carrying one must not be passed.
@@ -261,7 +267,8 @@ def run_oracle(tool, row_args, workdir, positional=(), tagged=(), lists=()):
     cli = " ".join(as_cli(row_args, positional, tagged, lists))
     # `gatk <Tool> <args>`: the tool name is the first token, which is the shape the bit-identity
     # claim is defined against, and the wrapper is what fixes the parser to Barclay.
-    command = f'rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && {copies}java {JAVA_OPENS} -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {tool} {cli}; rc=$?; chmod -R a+rwX /work/out; exit $rc'
+    trust = f" {TRUST}" if SERVER else ""
+    command = f'rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && {copies}java {JAVA_OPENS}{trust} -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {tool} {cli}; rc=$?; chmod -R a+rwX /work/out; exit $rc'
     image = [IMAGE, command]
     if past_the_interpreter(tool):
         image = [
@@ -273,6 +280,7 @@ def run_oracle(tool, row_args, workdir, positional=(), tagged=(), lists=()):
             "docker", "run", "--rm", "--platform", PLATFORM,
             "-v", f"{fixtures_of(workdir)}:/work/fixtures:ro",
             "-v", f"{out_dir}:/work/out",
+            *(SERVER or []),
             "-w", "/work", *image,
         ],
         capture_output=True,
@@ -613,6 +621,75 @@ def build_port_with_r():
         raise SystemExit("could not build the port's image with R")
 
 
+def htsget_files(tool):
+    """The corpus files a tool under `$htsget_server` has served, or none."""
+    path = REPO / "tools" / "coverage" / "fixtures.json"
+    if not path.exists():
+        return []
+    return json.loads(path.read_text()).get("per_tool", {}).get(tool, {}).get("$htsget_server", [])
+
+
+def start_htsget(files, workdir):
+    """The pinned htsget server, serving `files` of the corpus, on a network the rows then join.
+
+    HtsgetReader asks for https whatever `--url` says, so the ticket server speaks TLS under a
+    certificate made here for the name `htsget`: the reference trusts it through the trust store
+    the JVM is told of, as the htsget-reader golden does, and the port through SSL_CERT_FILE, as
+    its own test does. The data server is plain http, which a block's URL keeps. htsget-rs looks
+    for a BAM's index at `<name>.bai` and the corpus writes `<stem>.bai`, so the files are copied.
+    """
+    global SERVER
+    served = workdir / "htsget"
+    (served / "data").mkdir(parents=True, exist_ok=True)
+    (served / "config.toml").write_text(
+        'locations = "file://data"\n'
+        'ticket_server.addr = "0.0.0.0:8080"\n'
+        'ticket_server.tls.key = "key.pem"\n'
+        'ticket_server.tls.cert = "cert.pem"\n'
+        'data_server.addr = "0.0.0.0:8081"\n'
+        'data_server.local_path = "data"\n'
+        'data_server.ticket_origin = "http://htsget:8081/"\n'
+    )
+    copies = []
+    for name in files:
+        index = f"{name.removesuffix('.bam')}.bai" if name.endswith(".bam") else f"{name}.tbi"
+        copies.append(f"cp /work/fixtures/{name} data/ && cp /work/fixtures/{index} data/{name}.{index.rsplit('.', 1)[1]}")
+    prepare = (
+        "openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 2 -subj /CN=htsget "
+        "-addext subjectAltName=DNS:htsget -addext basicConstraints=critical,CA:FALSE "
+        "&& keytool -importcert -noprompt -alias htsget -file cert.pem -keystore trust.p12 "
+        f"-storetype PKCS12 -storepass changeit && {' && '.join(copies)} && chmod -R a+rX /work/htsget"
+    )
+    network = f"{workdir.name}-htsget"
+    SERVER = ["--network", network, "-v", f"{served}:/work/htsget:ro", "-e", "SSL_CERT_FILE=/work/htsget/cert.pem"]
+    steps = [
+        ["docker", "run", "--rm", "--platform", PLATFORM, "-v", f"{fixtures_of(workdir)}:/work/fixtures:ro",
+         "-v", f"{served}:/work/htsget", "-w", "/work/htsget", IMAGE, prepare],
+        ["docker", "network", "create", network],
+        ["docker", "run", "-d", "--name", network, "--network", network, "--network-alias", "htsget",
+         "--platform", HTSGET["platform"], "-v", f"{served}:/work/htsget:ro", "-w", "/work/htsget",
+         HTSGET["image"], "htsget-axum", "--config", "config.toml"],
+        # Up once its ticket server answers over TLS.
+        ["docker", "run", "--rm", "--platform", PLATFORM, "--network", network, "-v", f"{served}:/work/htsget:ro",
+         IMAGE, "curl -sf --retry 30 --retry-delay 1 --retry-all-errors --cacert /work/htsget/cert.pem "
+         "-o /dev/null https://htsget:8080/reads/service-info"],
+    ]
+    for step in steps:
+        result = subprocess.run(step, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(result.stdout[-2000:])
+            print(result.stderr[-2000:])
+            raise SystemExit("could not start the htsget server")
+
+
+def stop_htsget(workdir):
+    """Take the server and its network away again."""
+    if SERVER:
+        network = f"{workdir.name}-htsget"
+        subprocess.run(["docker", "rm", "-f", network], capture_output=True)
+        subprocess.run(["docker", "network", "rm", network], capture_output=True)
+
+
 def bwa_image_masked(raw):
     """A BWA-MEM index image with its addresses and padding zeroed, or None if it is not one.
 
@@ -839,6 +916,7 @@ def run_port(binary, tool, row_args, workdir, positional=(), tagged=(), lists=()
             "-v", f"{out_dir}:/work/out",
             "-v", f"{binary.parent}:/work/port-binary:ro",
             *stand_in,
+            *(SERVER or []),
             "-w", "/work", image, command,
         ],
         capture_output=True,
@@ -931,6 +1009,7 @@ def main(argv):
         try:
             return run_rows(options, array, held, workdir)
         finally:
+            stop_htsget(workdir)
             empty_output_in_container(workdir)
 
 
@@ -1067,6 +1146,8 @@ def run_rows(options, array, held, workdir):
             train_scorers(fixtures_of(workdir))
         if past_the_interpreter(options.tool) == "Rscript" and options.port:
             build_port_with_r()
+        if htsget_files(options.tool):
+            start_htsget(htsget_files(options.tool), workdir)
         (workdir / "tmp").mkdir(exist_ok=True)
         for row in array["array"]:
             args = row_arguments(row, held)
