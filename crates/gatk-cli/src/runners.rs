@@ -1735,6 +1735,7 @@ pub fn print_reads(parser: &Parser) -> Outcome {
         &filter,
         level,
         deflater,
+        flag(parser, "create-output-bam-md5"),
     )
     .map_err(|error| Thrown::user(format!("{error:?}")))?
     .map_err(|error| {
@@ -1750,11 +1751,11 @@ pub fn print_reads(parser: &Parser) -> Outcome {
             )
         })?;
     }
-    if flag(parser, "create-output-bam-md5") {
+    if let Some(md5) = written.md5 {
         // The digest APPENDS where the index replaces: `out.bam` is checksummed by `out.bam.md5`,
         // and the file is the thirty-two hex characters and nothing else.
         let digest = format!("{output}.md5");
-        std::fs::write(&digest, written.md5).map_err(|error| {
+        std::fs::write(&digest, md5).map_err(|error| {
             Thrown::non_user(PORT_FAILURE, format!("could not write {digest}: {error}"))
         })?;
     }
