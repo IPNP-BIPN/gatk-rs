@@ -174,11 +174,11 @@ pub fn write_stream<W: std::io::Write>(
     }
 }
 
-/// What a BAM written to disk leaves: its `.bai` when one was asked for, and the MD5 of its bytes,
-/// taken as they were written rather than read back.
+/// What a BAM written to disk leaves: its `.bai` when one was asked for, and the MD5 of its bytes
+/// when one was, taken as they were written rather than read back.
 pub struct Written {
     pub index: Option<Vec<u8>>,
-    pub md5: String,
+    pub md5: Option<String>,
 }
 
 /// [`write_stream`] to `path`, through a scratch file beside it that is renamed over `path` only
@@ -191,6 +191,7 @@ pub fn write_bam_file(
     create_index: bool,
     level: u32,
     deflater: htsjdk_bgzf::Deflater,
+    md5: bool,
 ) -> Result<Result<Written, std::io::Error>, ReadsError> {
     // A device, a pipe or a directory is written, or refused, where it is: there is nothing to
     // rename over it.
@@ -206,7 +207,8 @@ pub fn write_bam_file(
     };
     let out = Md5Writer {
         inner: std::io::BufWriter::with_capacity(1 << 20, file),
-        md5: <md5::Md5 as md5::Digest>::new(),
+        // Hashing every byte costs as much as a tenth of the deflate, so only when asked.
+        md5: md5.then(<md5::Md5 as md5::Digest>::new),
     };
     let written = write_stream(out, header, records, create_index, level, deflater);
     let (out, index) = match written {
@@ -218,10 +220,9 @@ pub fn write_bam_file(
             return Err(error);
         }
     };
-    let md5 = format!(
-        "{:032x}",
-        u128::from_be_bytes(md5::Digest::finalize(out.md5).into())
-    );
+    let md5 = out
+        .md5
+        .map(|md5| format!("{:032x}", u128::from_be_bytes(md5::Digest::finalize(md5).into())));
     let finished = out
         .inner
         .into_inner()
@@ -254,13 +255,15 @@ fn scratch_beside(path: &std::path::Path) -> std::path::PathBuf {
 /// The bytes on their way to the file, hashed as they pass.
 struct Md5Writer<W> {
     inner: W,
-    md5: md5::Md5,
+    md5: Option<md5::Md5>,
 }
 
 impl<W: std::io::Write> std::io::Write for Md5Writer<W> {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
         let written = self.inner.write(bytes)?;
-        md5::Digest::update(&mut self.md5, &bytes[..written]);
+        if let Some(md5) = &mut self.md5 {
+            md5::Digest::update(md5, &bytes[..written]);
+        }
         Ok(written)
     }
 
