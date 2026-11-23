@@ -35,8 +35,7 @@ for L in chr20:10000000-11000000 chr20:10000000-20000000; do
     common=(-I "$DATA/NA12878.chr20.bam" -R "$DATA/chr20.fasta" -L "$L" -ERC "$MODE" --add-output-vcf-command-line false)
     /usr/bin/time -v java -jar "$JAR" HaplotypeCaller "${common[@]}" -O "$OUT/java.$tag.vcf" > "$OUT/java.$tag.log" 2>&1
     row "$L" "$MODE" java default "$OUT/java.$tag.log" "$OUT/java.$tag.vcf"
-    for T in 1 2 4 "$NPROC"; do
-      [[ $T == 4 && $NPROC == 4 ]] && continue
+    for T in $(printf "%s\n" 1 2 4 "$NPROC" | sort -nu); do
       RAYON_NUM_THREADS=$T /usr/bin/time -v "$PORT" HaplotypeCaller "${common[@]}" -O "$OUT/port.$tag.$T.vcf" > "$OUT/port.$tag.$T.log" 2>&1
       row "$L" "$MODE" port "$T" "$OUT/port.$tag.$T.log" "$OUT/port.$tag.$T.vcf"
     done
