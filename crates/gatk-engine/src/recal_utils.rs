@@ -95,7 +95,16 @@ pub fn generate_argument_table(
     row("force_platform", Value::Str("null".to_string()));
     row("quantizing_levels", Value::Int(quantizing_levels as i64));
     row("recalibration_report", Value::Str("null".to_string()));
-    row("binary_tag_name", Value::Str("null".to_string()));
+    row(
+        "binary_tag_name",
+        Value::Str(
+            arguments
+                .binary_tag_name
+                .as_deref()
+                .unwrap_or("null")
+                .to_string(),
+        ),
+    );
     table
 }
 

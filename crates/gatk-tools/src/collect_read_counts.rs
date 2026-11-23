@@ -80,19 +80,15 @@ pub fn count(reads: &[(&str, i32)], intervals: &[SimpleInterval]) -> Vec<i32> {
 }
 
 /// The TSV's header: a SAM header, the tool's own read group, then the three columns.
-pub fn header(sequences: &[(String, i32)], sample: &str) -> String {
-    let mut text = String::from("@HD\tVN:1.6\n");
-    for (name, length) in sequences {
-        text.push_str(&format!("@SQ\tSN:{name}\tLN:{length}\n"));
-    }
-    text.push_str(&format!("@RG\tID:GATKCopyNumber\tSM:{sample}\n"));
+pub fn header(sequences: &[htsjdk_bam::header::SequenceRecord], sample: &str) -> String {
+    let mut text = crate::model_segments_tool::header(sample, Some(sequences));
     text.push_str("CONTIG\tSTART\tEND\tCOUNT\n");
     text
 }
 
 /// The whole TSV.
 pub fn write(
-    sequences: &[(String, i32)],
+    sequences: &[htsjdk_bam::header::SequenceRecord],
     sample: &str,
     intervals: &[SimpleInterval],
     counts: &[i32],
@@ -111,17 +107,18 @@ pub fn write(
 /// `SAMTextHeaderCodec` encodes a header holding only it, the intervals as `HDF5Utils` writes
 /// them, and the counts as a one-row matrix of doubles.
 pub fn write_hdf5(
-    sequences: &[(String, i32)],
+    sequences: &[htsjdk_bam::header::SequenceRecord],
     sample: &str,
     intervals: &[SimpleInterval],
     counts: &[i32],
 ) -> crate::hdf5_writer::Hdf5File {
     let mut file = crate::hdf5_writer::Hdf5File::new();
     file.string_array("/sample_metadata/sample_name", &[sample.to_string()]);
-    let mut dictionary = String::from("@HD\tVN:1.6\n");
-    for (name, length) in sequences {
-        dictionary.push_str(&format!("@SQ\tSN:{name}\tLN:{length}\n"));
+    let dictionary = htsjdk_bam::header::SamHeader {
+        sequences: sequences.to_vec(),
+        ..Default::default()
     }
+    .encode();
     file.string_array("/locatable_metadata/sequence_dictionary", &[dictionary]);
     let located: Vec<crate::create_read_count_panel_of_normals::Interval> = intervals
         .iter()
