@@ -21,6 +21,7 @@ Two modes, and the difference is the whole point of Milestone C:
 """
 
 import argparse
+import gzip
 import hashlib
 import json
 import os
@@ -338,6 +339,14 @@ def read_output(out_dir, row_args=()):
             # exports, whose numbers suite `r-plots` measures against the reference's own traced
             # ones, and AlleleFrequencyQC's combined figure. The same list as r_plots_end_to_end.rs.
             continue
+        if name.endswith((".vcf.gz", ".vcf.bgz")) and raw[:2] == b"\x1f\x8b":
+            # A block compressed VCF whose header holds the run's wall clock: its blocks cannot be
+            # compared, so the text is, with the date masked. One without a date stays binary.
+            text = gzip.decompress(raw).decode("utf-8", "replace")
+            if COMMAND_LINE_DATE.search(text):
+                digest = hashlib.sha256(without_start_time(text).encode()).hexdigest()
+                parts.append(f"{name}: BGZF TEXT sha256={digest} (command line date masked)")
+                continue
         if name.endswith(".png"):
             parts.append(f"{name}: {png_shape(raw)}")
             continue
@@ -502,6 +511,8 @@ def traversals_unordered(raw):
 
 
 STARTED_ON = re.compile(r"^# Started on: .*$", re.MULTILINE)
+# `##GATKCommandLine=<...,Date="<now>">`, which every VCF written with its command line carries.
+COMMAND_LINE_DATE = re.compile(r'^(##GATKCommandLine=<.*?Date=")[^"]*(")', re.MULTILINE)
 # `MafOutputRenderer.writeHeader` stamps the header with `new Date()` through the pattern
 # `yyyymmdd'T'hhmmss`, which is the wall clock again (the `mm` is minutes, not the month).
 MAF_DATE = re.compile(r"^(##  Funcotator \S+ \| Date )\d{8}T\d{6}( \| )", re.MULTILINE)
@@ -825,7 +836,7 @@ def histogram_columns_sorted(text):
 
 
 def without_start_time(text):
-    """A metrics file with the one line that is the wall clock taken out, and a MAF's too.
+    """A metrics file with its wall-clock line taken out, and a MAF's and a VCF header's dates.
 
     `CommandLineProgram.getMetricsFile` heads every metrics file with the command line and then
     `# Started on: <now>`, so two runs of the reference already differ there. The line is kept and
@@ -833,6 +844,7 @@ def without_start_time(text):
     around it is the same; only the time of day is not compared.
     """
     text = STARTED_ON.sub("# Started on: <start time>", text)
+    text = COMMAND_LINE_DATE.sub(r"\g<1><date>\g<2>", text)
     return MAF_DATE.sub(r"\g<1><date>\g<2>", text)
 
 

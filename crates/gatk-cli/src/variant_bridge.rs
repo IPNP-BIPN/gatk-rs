@@ -166,6 +166,11 @@ pub fn to_engine(vc: &VariantContext) -> Bridged {
             context
         },
         genotype_fields: vc.genotypes.iter().map(genotype_jexl_context).collect(),
+        samples: vc
+            .genotypes
+            .iter()
+            .map(|genotype| genotype.sample_name.clone())
+            .collect(),
     };
     Bridged {
         original: vc.clone(),

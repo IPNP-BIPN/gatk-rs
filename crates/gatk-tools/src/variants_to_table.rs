@@ -323,8 +323,12 @@ fn getter(record: &Record, field: &str) -> Option<String> {
             }
         }
         "ID" => record.id.clone(),
-        // `Double.toString` of the phred score, so an integer quality is written with a `.0`.
-        "QUAL" => gatk_engine::tsv_table::java_double_to_string(record.qual.unwrap_or(0.0)),
+        // `Double.toString(getPhredScaledQual())`: the codec holds `qual / -10.0` and the getter
+        // multiplies back by `-10`, which is how 469.32 becomes 469.32000000000005; a `.` is
+        // `NO_LOG10_PERROR`, 1.0, so -10.0.
+        "QUAL" => gatk_engine::tsv_table::java_double_to_string(
+            record.qual.map_or(1.0, |qual| qual / -10.0) * -10.0,
+        ),
         // `PASS` for a record whose column said `.`, which is not what the file holds.
         "FILTER" => {
             if record.filters.is_empty() {

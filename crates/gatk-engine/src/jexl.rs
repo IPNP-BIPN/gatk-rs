@@ -336,10 +336,78 @@ enum Node {
     Binary(&'static str, Box<Node>, Box<Node>),
     /// `empty(x)`, a JEXL built-in rather than a method call.
     Empty(Box<Node>),
+    /// `vc.getGenotype("S").method(...)`, keyed as [`genotype_call_key`] spells it.
+    Call(String),
+}
+
+/// The key a `vc.getGenotype(sample).method(argument)` call is answered under in a [`Context`].
+pub fn genotype_call_key(sample: &str, method: &str, argument: Option<&str>) -> String {
+    format!(
+        "vc.getGenotype({sample}).{method}({})",
+        argument.unwrap_or("")
+    )
+}
+
+/// Reads `.getGenotype(<string>).<method>(<string>?)` from `at`, which follows a `vc`.
+fn genotype_call(bytes: &[char], at: usize) -> Option<(String, usize)> {
+    let mut i = at;
+    let skip = |i: &mut usize| {
+        while bytes.get(*i).is_some_and(|c| c.is_whitespace()) {
+            *i += 1;
+        }
+    };
+    let word = |i: &mut usize, text: &str| -> bool {
+        let wanted: Vec<char> = text.chars().collect();
+        if bytes.get(*i..*i + wanted.len()) == Some(&wanted[..]) {
+            *i += wanted.len();
+            true
+        } else {
+            false
+        }
+    };
+    let string = |i: &mut usize| -> Option<String> {
+        let quote = *bytes.get(*i).filter(|c| **c == '\'' || **c == '"')?;
+        let end = (*i + 1..bytes.len()).find(|j| bytes[*j] == quote)?;
+        let value = bytes[*i + 1..end].iter().collect();
+        *i = end + 1;
+        Some(value)
+    };
+    if !word(&mut i, ".getGenotype(") {
+        return None;
+    }
+    skip(&mut i);
+    let sample = string(&mut i)?;
+    skip(&mut i);
+    if !word(&mut i, ").") {
+        return None;
+    }
+    let start = i;
+    while bytes
+        .get(i)
+        .is_some_and(|c| c.is_alphanumeric() || *c == '_')
+    {
+        i += 1;
+    }
+    let method: String = bytes[start..i].iter().collect();
+    if method.is_empty() || !word(&mut i, "(") {
+        return None;
+    }
+    skip(&mut i);
+    let argument = if bytes.get(i) == Some(&')') {
+        None
+    } else {
+        Some(string(&mut i)?)
+    };
+    skip(&mut i);
+    if !word(&mut i, ")") {
+        return None;
+    }
+    Some((genotype_call_key(&sample, &method, argument.as_deref()), i))
 }
 
 #[derive(Debug, Clone, PartialEq)]
 enum Token {
+    Call(String),
     Number(Value),
     Str(String),
     Ident(String),
@@ -411,7 +479,17 @@ fn tokenize(text: &str) -> Result<Vec<Token>, JexlError> {
             while i < bytes.len() && (bytes[i].is_alphanumeric() || bytes[i] == '_') {
                 i += 1;
             }
-            tokens.push(Token::Ident(bytes[start..i].iter().collect()));
+            let name: String = bytes[start..i].iter().collect();
+            // `vc.getGenotype("S").method(...)`, the one member access this engine reads: it
+            // becomes a [`Node::Call`] keyed by its canonical spelling, which the caller answers.
+            if name == "vc" {
+                if let Some((key, end)) = genotype_call(&bytes, i) {
+                    tokens.push(Token::Call(key));
+                    i = end;
+                    continue;
+                }
+            }
+            tokens.push(Token::Ident(name));
             // Member access (`vc.isSNP()`, `g.GQ`) is valid JEXL this engine never learned: a
             // refusal of the port's rather than a syntax error of the user's.
             if bytes.get(i) == Some(&'.') {
@@ -636,6 +714,10 @@ impl Parser {
                 self.position += 1;
                 Ok(Node::Literal(Value::Str(value)))
             }
+            Some(Token::Call(key)) => {
+                self.position += 1;
+                Ok(Node::Call(key))
+            }
             Some(Token::Ident(name)) => {
                 self.position += 1;
                 match name.as_str() {
@@ -702,6 +784,24 @@ pub fn create_expression(text: &str) -> Result<Expression, JexlError> {
 pub type Context = HashMap<String, Value>;
 
 impl Expression {
+    /// The keys of the `vc.getGenotype(...)` calls the expression makes.
+    pub fn genotype_calls(&self) -> Vec<String> {
+        fn walk(node: &Node, out: &mut Vec<String>) {
+            match node {
+                Node::Call(key) => out.push(key.clone()),
+                Node::Not(a) | Node::Negate(a) | Node::Empty(a) => walk(a, out),
+                Node::And(a, b) | Node::Or(a, b) | Node::Binary(_, a, b) => {
+                    walk(a, out);
+                    walk(b, out);
+                }
+                Node::Literal(_) | Node::Identifier(_) => {}
+            }
+        }
+        let mut out = Vec::new();
+        walk(&self.root, &mut out);
+        out
+    }
+
     /// `Expression.evaluate`.
     pub fn evaluate(&self, context: &Context) -> Result<Value, JexlError> {
         evaluate(&self.root, context)
@@ -721,6 +821,11 @@ fn evaluate(node: &Node, context: &Context) -> Result<Value, JexlError> {
             Some(value) => Ok(value.clone()),
             None => Err(JexlError::UndefinedVariable(name.clone())),
         },
+        // A call the context cannot answer is one on a null Genotype, which JEXL refuses.
+        Node::Call(key) => context
+            .get(key)
+            .cloned()
+            .ok_or_else(|| JexlError::Arithmetic(format!("{key} on a null genotype"))),
         Node::Not(inner) => Ok(Value::Bool(!to_boolean(&evaluate(inner, context)?)?)),
         Node::Negate(inner) => {
             let value = evaluate(inner, context)?;

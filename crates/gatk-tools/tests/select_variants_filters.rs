@@ -168,6 +168,7 @@ fn input(text: &str, label: &str) -> (Vec<String>, Vec<(Record, FilterRecord)>) 
                     filters,
                     info,
                     genotype_fields,
+                    samples: Vec::new(),
                 },
             )
         })
