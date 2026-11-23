@@ -35,10 +35,10 @@ fn interval(contig: &str, start: i32, end: i32) -> SimpleInterval {
 
 const SEQUENCES: [(&str, i32); 2] = [("chr1", 200), ("chr2", 200)];
 
-fn sequences() -> Vec<(String, i32)> {
+fn sequences() -> Vec<htsjdk_bam::header::SequenceRecord> {
     SEQUENCES
         .iter()
-        .map(|(name, length)| (name.to_string(), *length))
+        .map(|(name, length)| htsjdk_bam::header::SequenceRecord::new(name, *length))
         .collect()
 }
 
@@ -129,4 +129,20 @@ fn the_tool_adds_four_filters() {
     assert_eq!(ADDITIONAL_READ_FILTERS.len(), 4);
     assert_eq!(ADDITIONAL_READ_FILTERS[3], "MappingQualityReadFilter");
     assert_eq!(collect_read_counts::DEFAULT_MINIMUM_MAPPING_QUALITY, 30);
+}
+
+/// `metadata.toHeader().getSAMString()` writes every attribute of an `@SQ` line, in order, as
+/// `SAMTextHeaderCodec` does; chr20 30x's BAM carries `M5` and `UR`, and the port wrote neither.
+#[test]
+fn the_header_keeps_every_sq_attribute() {
+    let mut sequence = htsjdk_bam::header::SequenceRecord::new("chr1", 100000);
+    sequence
+        .attributes
+        .set("M5", "2e46001c07f539e7af723bd52446f3f7");
+    sequence.attributes.set("UR", "file:/ref.fasta");
+    assert_eq!(
+        collect_read_counts::header(&[sequence], "S"),
+        "@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:100000\tM5:2e46001c07f539e7af723bd52446f3f7\tUR:file:/ref.fasta\n\
+         @RG\tID:GATKCopyNumber\tSM:S\nCONTIG\tSTART\tEND\tCOUNT\n"
+    );
 }
