@@ -73,16 +73,17 @@ pub fn interval_of_start(
 ///
 /// A contig whose intervals overlap (which `OVERLAPPING_ONLY` merging rules out) keeps the linear
 /// first match, so the answer is [`interval_of_start`]'s on every input.
+/// Per contig, the intervals' `(start, end, index)` sorted by start, or `None` where two overlap.
+type ByContig<'a> = std::collections::HashMap<&'a str, Option<Vec<(i32, i32, usize)>>>;
+
 pub struct Bins<'a> {
     intervals: &'a [SimpleInterval],
-    /// Per contig, the intervals' `(start, end, index)` sorted by start, or `None` where two overlap.
-    by_contig: std::collections::HashMap<&'a str, Option<Vec<(i32, i32, usize)>>>,
+    by_contig: ByContig<'a>,
 }
 
 impl<'a> Bins<'a> {
     pub fn new(intervals: &'a [SimpleInterval]) -> Bins<'a> {
-        let mut by_contig: std::collections::HashMap<&str, Option<Vec<(i32, i32, usize)>>> =
-            std::collections::HashMap::new();
+        let mut by_contig = ByContig::new();
         for (index, interval) in intervals.iter().enumerate() {
             if let Some(bins) = by_contig
                 .entry(&interval.contig)
