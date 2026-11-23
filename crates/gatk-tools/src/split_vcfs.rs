@@ -21,7 +21,8 @@
 //!
 //! The tool writes indels to one file and SNPs to the other; a MIXED, MNP, SYMBOLIC or NO_VARIATION
 //! record is counted and dropped. `STRICT` is ON BY DEFAULT, so that count is normally a refusal
-//! instead, and the refusal comes after the earlier records have already been written.
+//! instead, and the refusal comes after the earlier records have already been written: an index
+//! refusing one of those comes first ([`split_stream`]).
 //!
 //! # Both files carry the whole input header
 //!
@@ -130,6 +131,11 @@ impl SplitError {
 pub struct Split {
     pub snps: String,
     pub indels: String,
+    /// The type of each record written, SNP or INDEL, in input order: the order the two writers
+    /// were handed them, which is what an index they share sees.
+    pub routed: Vec<RecordType>,
+    /// The record `STRICT` stopped at, after every record in `routed` was written.
+    pub unexpected: Option<RecordType>,
 }
 
 /// `doWork()`: the whole run.
@@ -137,6 +143,16 @@ pub struct Split {
 /// `strict` is the tool's `STRICT`, which defaults to true; `create_index` is `CREATE_INDEX`, which
 /// this tool also leaves on.
 pub fn split(input: &str, strict: bool, create_index: bool) -> Result<Split, SplitError> {
+    let split = split_stream(input, strict, create_index)?;
+    match split.unexpected {
+        Some(kind) => Err(SplitError::UnexpectedType(kind)),
+        None => Ok(split),
+    }
+}
+
+/// [`split`] as Picard streams it: a `STRICT` refusal stops the run at its record, and the records
+/// before it are written all the same, so what their indexes refuse comes first.
+pub fn split_stream(input: &str, strict: bool, create_index: bool) -> Result<Split, SplitError> {
     let file = read_vcf(input).map_err(|failure| {
         SplitError::Vcf(failure.error.class().to_string(), failure.error.message())
     })?;
@@ -151,17 +167,23 @@ pub fn split(input: &str, strict: bool, create_index: bool) -> Result<Split, Spl
 
     let mut snps = Vec::new();
     let mut indels = Vec::new();
+    let mut routed = Vec::new();
+    let mut unexpected = None;
     for record in &file.records {
         // The indel test runs first, though no record can answer both.
-        match record_type(record) {
+        let kind = record_type(record);
+        match kind {
             RecordType::Indel => indels.push(record.clone()),
             RecordType::Snp => snps.push(record.clone()),
             other => {
                 if strict {
-                    return Err(SplitError::UnexpectedType(other));
+                    unexpected = Some(other);
+                    break;
                 }
+                continue;
             }
         }
+        routed.push(kind);
     }
 
     let encode = |records: &[VariantContext]| {
@@ -175,5 +197,7 @@ pub fn split(input: &str, strict: bool, create_index: bool) -> Result<Split, Spl
     Ok(Split {
         snps: encode(&snps)?,
         indels: encode(&indels)?,
+        routed,
+        unexpected,
     })
 }
