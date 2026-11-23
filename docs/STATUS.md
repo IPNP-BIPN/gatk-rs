@@ -264,7 +264,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `HaplotypeBasedVariantRecaller` | assembly-caller | oracle-backed | haplotype-based-variant-recaller | 1 | t=2, 48/48 rows (100%) | 0.054 / 0.968 |
 | `HaplotypeCaller` | assembly-caller | oracle-backed | callers-all-annotations, hc-allele-filtering, hc-allele-graphs, hc-alleles, hc-bamout, hc-contamination, hc-debug-outputs, hc-disable-optimizations, hc-dragen-end-to-end, hc-end-to-end, hc-error-correction, hc-flow, hc-gvcf-end-to-end, hc-linked-graph, hc-pdhmm, hc-pedigree, hc-pileup, hc-ploidy, hc-resources | 19 | t=2, 50/50 rows (100%) | 0.025 / 0.315 |
 | `HaplotypeCallerSpark` | assembly-caller | oracle-backed | spark-walkers | 1 | t=2, 49/49 rows (100%) | not measured |
-| `HtsgetReader` | unclassified | oracle-backed | htsget-reader | 1 | t=2, 11/11 rows (100%), **1 distinct output** | not measured |
+| `HtsgetReader` | unclassified | oracle-backed | htsget-reader | 1 | t=2, 12/12 rows (100%) | not measured |
 | `IndexFeatureFile` | unclassified | oracle-backed | index-feature-file, tool-argument-declarations, tool-argument-enums | 3 | t=2, 8/8 rows (100%) | 0.002 / 0.063 |
 | `JointGermlineCNVSegmentation` | sv-caller | oracle-backed | joint-germline-cnv-segmentation, multi-variant-walker | 2 | t=2, 22/22 rows (100%) | 0.003 / 0.065 |
 | `LearnReadOrientationModel` | assembly-caller | oracle-backed | learn-read-orientation-model | 1 | t=2, 12/12 rows (100%) | 0.023 / 0.302 |

@@ -157,7 +157,10 @@ fn every_shape_the_writer_has() {
 /// What CollectReadCounts writes, through the function the tool calls.
 #[test]
 fn collect_read_counts_file() {
-    let sequences = vec![("chr1".to_string(), 1000), ("chr2".to_string(), 500)];
+    let sequences = vec![
+        htsjdk_bam::header::SequenceRecord::new("chr1", 1000),
+        htsjdk_bam::header::SequenceRecord::new("chr2", 500),
+    ];
     let intervals = vec![
         SimpleInterval::new("chr1", 1, 100).unwrap(),
         SimpleInterval::new("chr1", 101, 200).unwrap(),
