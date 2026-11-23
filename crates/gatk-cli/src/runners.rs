@@ -433,6 +433,87 @@ pub(crate) fn pedigree_arguments(
     Ok(out)
 }
 
+/// An `AssemblyRegionWalker`'s transformers and filters over one read: the read they keep, if any.
+type PrepareRead<'a> = dyn Fn(BamRecord) -> Result<Option<BamRecord>, Thrown> + 'a;
+
+/// Every read of the file through `prepare`, as a walker that read the file whole and then
+/// transformed it refuses: a read the file cannot decode first, wherever it is, then the first read
+/// `prepare` refuses. These are the reads a walker holds when no index lets it query a shard.
+fn prepare_reads(
+    source: &ReadsDataSource,
+    prepare: &PrepareRead<'_>,
+) -> Result<Vec<BamRecord>, Thrown> {
+    let reads_error = |error: gatk_engine::reads::ReadsError| Thrown::user(format!("{error:?}"));
+    let (mut kept, mut refused) = (Vec::new(), None);
+    for read in source.records_all().map_err(reads_error)? {
+        let read = read.map_err(reads_error)?;
+        if refused.is_some() {
+            continue;
+        }
+        match prepare(read) {
+            Err(thrown) => refused = Some(thrown),
+            Ok(None) => {}
+            Ok(Some(read)) => kept.push(read),
+        }
+    }
+    match refused {
+        Some(thrown) => Err(thrown),
+        None => Ok(kept),
+    }
+}
+
+/// The reads an `AssemblyRegionWalker` holds, and whether it holds none because each shard is
+/// queried instead, as `ReadsPathDataSource` does with an index: then only the reads a shard
+/// overlaps are read, and one that refuses refuses when the traversal reaches it.
+fn assembly_region_reads(
+    source: &ReadsDataSource,
+    prepare: &PrepareRead<'_>,
+) -> Result<(Vec<BamRecord>, bool), Thrown> {
+    if source.has_index() {
+        return Ok((Vec::new(), true));
+    }
+    Ok((prepare_reads(source, prepare)?, false))
+}
+
+/// [`assembly_region_reads`]' query: a shard's reads straight from the file, through `prepare`,
+/// walked `window` loci at a time. A read `prepare` refuses ends the shard's stream, and the
+/// refusal itself, with its class, is left in `refused` for the runner to report.
+fn queried_reads<'a>(
+    source: &'a ReadsDataSource,
+    header: &'a SamHeader,
+    prepare: &'a PrepareRead<'a>,
+    refused: &'a std::cell::RefCell<Option<Thrown>>,
+    window: Option<i32>,
+) -> gatk_engine::assembly_region_walker::WalkerReads<'a> {
+    use gatk_engine::assembly_region_walker::{overlaps_shard, ReadStream, WalkerReads};
+    WalkerReads {
+        query: Box::new(move |shard| -> ReadStream<'a> {
+            let records = match source.query_iter(&shard.padded_intervals) {
+                Ok(records) => records,
+                Err(error) => return Box::new(std::iter::once(Err(format!("{error:?}")))),
+            };
+            let shard = shard.clone();
+            Box::new(
+                records
+                    .map(move |read| {
+                        let read = read.map_err(|error| format!("{error:?}"))?;
+                        prepare(read).map_err(|thrown| {
+                            let message = thrown.message.clone().unwrap_or_default();
+                            refused.borrow_mut().get_or_insert(thrown);
+                            message
+                        })
+                    })
+                    .filter_map(Result::transpose)
+                    .filter(move |read| {
+                        read.as_ref()
+                            .map_or(true, |read| overlaps_shard(read, &shard, header))
+                    }),
+            )
+        }),
+        window,
+    }
+}
+
 /// The predicate the resolved list becomes, once a header exists to read a filter against.
 fn read_filter<'a>(
     parser: &'a Parser,

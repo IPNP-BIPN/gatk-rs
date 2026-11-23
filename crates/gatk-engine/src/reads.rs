@@ -757,6 +757,11 @@ impl ReadsDataSource {
         &self.header
     }
 
+    /// Whether an index was loaded, without which every query answers nothing.
+    pub fn has_index(&self) -> bool {
+        !self.index.is_empty()
+    }
+
     /// Fill in the file a `RuntimeEOFException` names, which the cursor cannot know.
     fn name_the_file(&self, error: ReadsError) -> ReadsError {
         match error {
