@@ -38,14 +38,56 @@ pub enum Codec {
 }
 
 /// `FeatureManager.getCodecForFile`, for the two formats this port reads.
+///
+/// `VCFCodec.canDecode` reads the FILE, not its name: the first bytes, raw or through a gzip
+/// stream, must be `##fileformat=VCFv4`, so `x.blockgz.gz` is a VCF and an empty `x.vcf` is not.
+/// `BEDCodec.canDecode` reads the name alone, case-insensitively, past a block compressed
+/// extension. A path that cannot be opened falls back to its name, which leaves the caller's own
+/// "could not read" refusal where it was.
 pub fn codec_for(file_name: &str) -> Option<Codec> {
+    match std::fs::File::open(file_name) {
+        Ok(file) => {
+            if is_vcf_stream(file) {
+                Some(Codec::Vcf)
+            } else {
+                is_bed_name(file_name).then_some(Codec::Bed)
+            }
+        }
+        Err(_) => codec_for_name(file_name),
+    }
+}
+
+/// `isVCFStream` over the raw bytes, then over a gzip stream (which also reads BGZF).
+fn is_vcf_stream(mut file: std::fs::File) -> bool {
+    use std::io::{Read, Seek};
+    const MAGIC: &[u8] = b"##fileformat=VCFv4";
+    let starts = |reader: &mut dyn Read| {
+        let mut buffer = [0u8; MAGIC.len()];
+        reader.read_exact(&mut buffer).is_ok() && buffer == MAGIC
+    };
+    starts(&mut file)
+        || (file.rewind().is_ok() && starts(&mut flate2::read::MultiGzDecoder::new(file)))
+}
+
+/// `BEDCodec.canDecode`: `IOUtil.hasBlockCompressedExtension` stripped, then `.bed` ignoring case.
+fn is_bed_name(file_name: &str) -> bool {
+    let lower = file_name.to_lowercase();
+    let stripped = [".gz", ".gzip", ".bgz", ".bgzf"]
+        .iter()
+        .find_map(|extension| lower.strip_suffix(extension))
+        .unwrap_or(&lower);
+    stripped.ends_with(".bed")
+}
+
+/// The codec a NAME suggests, for a path that is not (yet) on disk.
+pub fn codec_for_name(file_name: &str) -> Option<Codec> {
     let stripped = file_name
         .strip_suffix(".gz")
         .or_else(|| file_name.strip_suffix(".bgz"))
         .unwrap_or(file_name);
     if stripped.ends_with(".vcf") {
         Some(Codec::Vcf)
-    } else if stripped.ends_with(".bed") {
+    } else if is_bed_name(file_name) {
         Some(Codec::Bed)
     } else {
         None

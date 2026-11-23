@@ -167,8 +167,21 @@ pub fn print_bgzf_block_information(parser: &Parser) -> Outcome {
 /// The file's text, decompressed when the name says it is block compressed.
 fn decode(bytes: &[u8], path: &str) -> Result<String, Refusal> {
     let raw = if path.ends_with(".gz") {
-        htsjdk_bgzf::read::decompress_all(bytes).map_err(|_| Refusal::NoSuitableCodecs {
-            path: path.to_string(),
+        htsjdk_bgzf::read::decompress_all(bytes).map_err(|_| {
+            // A codec claimed the file (a plain gzip VCF), so the refusal is the tabix reader's.
+            if gatk_tools::feature_codec::codec_for(path).is_some() {
+                Refusal::CouldNotIndexFile {
+                    path: path.to_string(),
+                    detail: format!(
+                        "htsjdk.tribble.TribbleException.MalformedFeatureFile: Input file is not \
+                         in valid block compressed format., for input source: {path}"
+                    ),
+                }
+            } else {
+                Refusal::NoSuitableCodecs {
+                    path: path.to_string(),
+                }
+            }
         })?
     } else {
         bytes.to_vec()
@@ -1262,6 +1275,20 @@ fn variant_walker_startup_over(
 /// it is block compressed.
 fn open_feature_input(input: &str) -> Result<(gatk_tools::feature_codec::Codec, String), Thrown> {
     let input = input.to_string();
+    // `FeatureInput` refuses a directory before any codec is asked, naming it by its URI, which
+    // ends in a slash.
+    if std::path::Path::new(&input).is_dir() {
+        let uri = java_absolute_path(&input);
+        let slash = if uri.ends_with('/') { "" } else { "/" };
+        return Err(Thrown {
+            failure: Failure::User,
+            exception:
+                "org.broadinstitute.hellbender.exceptions.UserException$CouldNotReadInputFile",
+            message: Some(format!(
+                "Couldn't read file file://{uri}{slash}. Error was: It isn't a regular file"
+            )),
+        });
+    }
     let codec = gatk_tools::feature_codec::codec_for(&input).ok_or_else(|| {
         Thrown::user(
             index_feature_file::Refusal::NoSuitableCodecs {
@@ -1318,6 +1345,14 @@ fn variant_walker_validation(
 
     let master = master_dictionary(parser)?;
     let reference = reference_dictionary(parser)?;
+    // `FeatureDataSource.getSequenceDictionary`: the header's `##contig` lines, else the index's
+    // contig names, else none -- and `getAllSequenceDictionaries` drops a feature input with none,
+    // so a VCF without `##contig` lines or an index is checked against nothing.
+    let features: Option<Vec<htsjdk_bam::header::SequenceRecord>> = if header.sequences.is_empty() {
+        index_dictionary(&input).map(|index| index.sequences)
+    } else {
+        Some(header.sequences.clone())
+    };
     // `validateSequenceDictionaries` is ONE method and the argument turns all of it off, the
     // master block included: a guard around part of it refuses command lines the reference runs.
     if !flag(parser, "disable-sequence-dictionary-validation") {
@@ -1330,7 +1365,9 @@ fn variant_walker_validation(
             if let Some(reference) = &reference {
                 validate_against_master(master, "reference", &reference.sequences)?;
             }
-            validate_against_master(master, "features", &header.sequences)?;
+            if let Some(features) = &features {
+                validate_against_master(master, "features", features)?;
+            }
         }
         if let Some(reference) = &reference {
             // The reference against the reads, then the reference against the features.
@@ -1349,19 +1386,21 @@ fn variant_walker_validation(
                     message: Some(refusal.message()),
                 })?;
             }
-            gatk_tools::sequence_dictionary::validate(
-                "reference",
-                &reference.sequences,
-                "features",
-                &header.sequences,
-                false,
-                false,
-            )
-            .map_err(|refusal| Thrown {
-                failure: Failure::User,
-                exception: refusal.java_class(),
-                message: Some(refusal.message()),
-            })?;
+            if let Some(features) = &features {
+                gatk_tools::sequence_dictionary::validate(
+                    "reference",
+                    &reference.sequences,
+                    "features",
+                    features,
+                    false,
+                    false,
+                )
+                .map_err(|refusal| Thrown {
+                    failure: Failure::User,
+                    exception: refusal.java_class(),
+                    message: Some(refusal.message()),
+                })?;
+            }
         }
     }
     // `GATKTool.onStartup` validates the dictionaries against each other BEFORE the traversal, and
@@ -1369,15 +1408,13 @@ fn variant_walker_validation(
     // `validateDictionaries("reads", readDict, "features", featureDict)`, whose four-argument
     // overload requires no superset and does not check the contig ordering. A corpus whose BAM and
     // VCF share no contig is therefore refused whatever the intervals say (#1038).
-    if !flag(parser, "disable-sequence-dictionary-validation") {
+    if let Some(features) = features
+        .as_ref()
+        .filter(|_| !flag(parser, "disable-sequence-dictionary-validation"))
+    {
         for reads in &reads_dictionaries {
             gatk_tools::sequence_dictionary::validate(
-                "reads",
-                reads,
-                "features",
-                &header.sequences,
-                false,
-                false,
+                "reads", reads, "features", features, false, false,
             )
             .map_err(|refusal| Thrown {
                 failure: Failure::User,

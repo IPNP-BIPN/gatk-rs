@@ -23,6 +23,8 @@ tempfile = "3"
 htsjdk-bam.workspace = true
 # CheckTerminatorBlock is the tool's decision over the termination check this carries.
 htsjdk-bgzf.workspace = true
+# `VCFCodec.canDecode` sniffs a gzip stream for the VCF magic.
+flate2 = "1"
 # IndexFeatureFile writes a tribble index, which htsjdk-rs already builds byte for byte.
 # ReferenceBlockConcordance writes three metrics files, which is this crate's MetricsFile.
 htsjdk-metrics.workspace = true
