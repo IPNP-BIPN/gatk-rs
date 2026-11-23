@@ -1,4 +1,4 @@
-name: Reader per architecture (scratch, PR #1482)
+name: Inflate per architecture (scratch)
 
 # Temporary: GATK 4.7.0.0, main, c/streaming-guard and c/reader-prefetch on the same chr20 of
 # NA12878 30x, one after another on one runner, default threads. main holds the whole BAM
@@ -6,7 +6,7 @@ name: Reader per architecture (scratch, PR #1482)
 
 on:
   push:
-    branches: [c/reader-prefetch-bench]
+    branches: [scratch/inflate-bench]
   workflow_dispatch:
 
 jobs:
@@ -25,16 +25,16 @@ jobs:
           path: pr
       - uses: actions/checkout@v7
         with:
-          ref: c/streaming-guard
-          path: guard
+          ref: perf/inflate-bump
+          path: inflate
+      - uses: actions/checkout@v7
+        with:
+          ref: scratch/inflate-lazy-both
+          path: both
       - uses: actions/checkout@v7
         with:
           ref: c/reader-lazy-tags-try
           path: lazy
-      - uses: actions/checkout@v7
-        with:
-          ref: main
-          path: main
 
       - name: Tools
         run: |
@@ -55,8 +55,8 @@ jobs:
       - name: Build both ports
         run: |
           (cd pr && cargo build --release -p gatk-cli) && cp pr/target/release/gatk gatk-pr
-          (cd main && cargo build --release -p gatk-cli) && cp main/target/release/gatk gatk-main
-          (cd guard && cargo build --release -p gatk-cli) && cp guard/target/release/gatk gatk-guard
+          (cd inflate && cargo build --release -p gatk-cli) && cp inflate/target/release/gatk gatk-inflate
+          (cd both && cargo build --release -p gatk-cli) && cp both/target/release/gatk gatk-both
           (cd lazy && cargo build --release -p gatk-cli) && cp lazy/target/release/gatk gatk-lazy
 
       - name: GATK 4.7.0.0
@@ -96,14 +96,14 @@ jobs:
             wall=$(awk '/Elapsed/{print $NF}' $1-$2.err)
             rss=$(awk -F': ' '/Maximum resident/{printf "%d MB", $2/1024}' $1-$2.err)
             case $1 in
-              PrintReads) out=$( [ -f out-$2.bam ] && samtools view out-$2.bam | md5sum | cut -c1-12 || echo none); rm -f out-$2.bam out-$2.bai ;;
+              PrintReads) out=$( [ -f out-$2.bam ] && echo "records $(samtools view out-$2.bam | md5sum | cut -c1-12) file $(sha256sum out-$2.bam | cut -c1-12)" || echo none); rm -f out-$2.bam out-$2.bai ;;
               *) out=$(grep -E '^[0-9]+$' $1-$2.log | tail -1) ;;
             esac
             printf "| %s | %s | %s | %s | %s | %s s | %s | %s |\n" "$1" "$2" "$3" "$code" "$rss" "$(echo "$user + $sys" | bc)" "$wall" "$out" | tee -a table.md
           }
           echo "| tool | build | round | exit | peak RSS | CPU (user+sys) | wall | output |" > table.md
           echo "|---|---|---|---|---|---|---|---|" >> table.md
-          for r in 1 2; do for t in CountReads CountReadsL PrintReads; do for b in java pr lazy; do row $t $b $r; done; done; done
+          for r in 1 2; do for t in CountReads CountReadsL PrintReads; do for b in java pr inflate lazy both; do row $t $b $r; done; done; done
           cat table.md >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v7
