@@ -31,8 +31,11 @@ pub(super) struct Resource {
     unindexed: Option<String>,
     labels: BTreeSet<String>,
     /// By where they start, which is all a match compares first; in file order within a start.
-    records: HashMap<(String, i32), Vec<(extract::Record, bool, bool)>>,
+    records: HashMap<(String, i32), Vec<ResourceRecord>>,
 }
+
+/// A resource record, with `hasGenotypes` and `isPolymorphicInSamples`.
+type ResourceRecord = (extract::Record, bool, bool);
 
 /// The port's reduced record, from a decoded one.
 pub(super) fn reduced(record: &htsjdk_vcf::variant::VariantContext) -> extract::Record {
