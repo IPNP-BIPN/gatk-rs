@@ -353,11 +353,11 @@
       "share": 1.0
     },
     "HtsgetReader": {
-      "rows": 11,
-      "accepted": 0,
-      "rejected": 11,
-      "distinct_outputs": 0,
-      "matched": 11,
+      "rows": 12,
+      "accepted": 9,
+      "rejected": 3,
+      "distinct_outputs": 5,
+      "matched": 12,
       "t": 2,
       "share": 1.0
     },
@@ -1761,9 +1761,9 @@
       "accepted": 12,
       "rejected": 8,
       "distinct_outputs": 11,
-      "matched": 7,
+      "matched": 9,
       "t": 2,
-      "share": 0.35
+      "share": 0.45
     },
     "FixVcfHeader": {
       "rows": 21,
