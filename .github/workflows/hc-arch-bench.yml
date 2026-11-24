@@ -1,4 +1,4 @@
-name: HaplotypeCaller per architecture (scratch, PR #1467)
+name: HaplotypeCaller x86 profile (scratch, PR #1467)
 
 # Temporary: GATK 4.7.0.0 and c/streaming-regions (main holds the whole BAM, ~30 GB, more than a
 # runner has) on the same chr20 of NA12878 30x, one
@@ -6,7 +6,7 @@ name: HaplotypeCaller per architecture (scratch, PR #1467)
 
 on:
   push:
-    branches: [c/streaming-regions-bench]
+    branches: [c/streaming-regions-prof]
   workflow_dispatch:
 
 jobs:
@@ -17,17 +17,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-latest, ubuntu-24.04-arm]
+        runner: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v7
         with:
           ref: c/streaming-regions
           path: pr
+      - uses: actions/checkout@v7
+        with:
+          ref: c/hc-multicore
+          path: mc
 
       - name: Tools
         run: |
           sudo apt-get update -qq || echo "apt refresh incomplete"
-          sudo apt-get install -y -qq nasm samtools time
+          sudo apt-get install -y -qq nasm samtools time linux-tools-common linux-tools-$(uname -r) || sudo apt-get install -y -qq nasm samtools time linux-tools-generic
+          sudo sysctl -w kernel.perf_event_paranoid=-1 kernel.kptr_restrict=0
           lscpu | grep -E "Model name|Architecture|^CPU\(s\)|Flags" | cut -c1-400
           free -g
 
@@ -42,7 +47,9 @@ jobs:
 
       - name: Build both ports
         run: |
+          export CARGO_PROFILE_RELEASE_DEBUG=line-tables-only
           (cd pr && cargo build --release -p gatk-cli) && cp pr/target/release/gatk gatk-pr
+          (cd mc && cargo build --release -p gatk-cli) && cp mc/target/release/gatk gatk-mc
 
       - name: GATK 4.7.0.0
         run: |
@@ -60,40 +67,23 @@ jobs:
           samtools index NA12878.chr20.bam
           ls -la NA12878.chr20.bam chr20.fasta
 
-      - name: Measure
+      - name: Profile
         shell: bash {0}
         run: |
-          JAR=$(ls gatk-4.7.0.0/*local.jar)
-          row() { # label region build
-            out=$1-$3.vcf
-            case $3 in
-              java) cmd="java -Xmx12g -jar $JAR HaplotypeCaller --native-pair-hmm-threads 1" ;;
-              # The PairHMM the goldens pin: the oracle image cannot load GKL, so FASTEST_AVAILABLE
-              # falls back to it there, while a stock install on x86 takes AVX with flush-to-zero.
-              java-scalar) cmd="java -Xmx12g -jar $JAR HaplotypeCaller --pair-hmm-implementation LOGLESS_CACHING" ;;
-              *) cmd="./gatk-$3 HaplotypeCaller" ;;
-            esac
-            /usr/bin/time -v $cmd -R chr20.fasta -I NA12878.chr20.bam -L $2 -O $out > $1-$3.log 2> $1-$3.err && code=0 || code=$?
-            user=$(awk -F': ' '/^\tUser time/{print $2}' $1-$3.err)
-            sys=$(awk -F': ' '/^\tSystem time/{print $2}' $1-$3.err)
-            wall=$(awk -F': ' '/^\tElapsed/{print $2}' $1-$3.err)
-            rss=$(awk -F': ' '/^\tMaximum resident/{printf "%d MB", $2/1024}' $1-$3.err)
-            md5=$( [ -f $out ] && grep -v '^##GATKCommandLine' $out | grep -v '^##source' | md5sum | cut -c1-12 || echo none)
-            printf "| %s | %s | %s | %s | %s s | %s | %s |\n" "$1" "$3" "$code" "$rss" "$(echo "$user + $sys" | bc)" "$wall" "$md5" | tee -a table.md
-            grep -m1 -iE "pairhmm|using .* implementation" $1-$3.err | head -1 || true
-          }
-          echo "| region | build | exit | peak RSS | CPU (user+sys) | wall | body md5 |" > table.md
-          echo "|---|---|---|---|---|---|---|" >> table.md
-          for b in java java-scalar pr; do row 1Mb chr20:30000000-31000000 $b; done
-          for b in java java-scalar pr; do row 5Mb chr20:10000000-15000000 $b; done
-          grep -h "PairHMM\|Deflater\|Inflater" 1Mb-java.err | head -5
-          cat table.md >> "$GITHUB_STEP_SUMMARY"
+          PERF=$(ls /usr/lib/linux-tools/*/perf | head -1); echo $PERF
+          for b in pr mc; do
+            /usr/bin/time -v env RAYON_NUM_THREADS=1 ./gatk-$b HaplotypeCaller -R chr20.fasta -I NA12878.chr20.bam -L chr20:30000000-31000000 -O t-$b.vcf > /dev/null 2> t-$b.err
+            grep -E "^\t(User|System) time|^\tMaximum resident" t-$b.err
+            grep -v '^##GATKCommandLine' t-$b.vcf | grep -v '^##source' | md5sum
+            RAYON_NUM_THREADS=1 $PERF record -F 499 -g -o $b.data ./gatk-$b HaplotypeCaller -R chr20.fasta -I NA12878.chr20.bam -L chr20:30000000-31000000 -O p-$b.vcf > /dev/null 2>&1
+            echo "== $b self"; $PERF report -i $b.data --no-children --stdio --percent-limit 0.7 -g none 2>/dev/null | grep -v '^#' | grep -v '^$' | head -45 | tee $b-self.txt
+            echo "== $b children"; $PERF report -i $b.data --children --stdio --percent-limit 3 -g none 2>/dev/null | grep -v '^#' | grep -v '^$' | head -45 | tee $b-children.txt
+          done
 
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: bench-${{ matrix.runner }}
           path: |
-            table.md
+            *.txt
             *.err
-            *.vcf
