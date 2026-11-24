@@ -347,6 +347,14 @@ def read_output(out_dir, row_args=()):
                 digest = hashlib.sha256(without_start_time(text).encode()).hexdigest()
                 parts.append(f"{name}: BGZF TEXT sha256={digest} (command line date masked)")
                 continue
+        if name.endswith(".tbi") and dated_bgzf(path.with_name(path.name.removesuffix(".tbi"))):
+            # Its virtual offsets follow the compressed size of the dated blocks it indexes, so only
+            # the header before the bins is compared: format, columns, meta, skip and contig names.
+            index = gzip.decompress(raw)
+            names_end = 36 + int.from_bytes(index[32:36], "little")
+            digest = hashlib.sha256(index[:names_end]).hexdigest()
+            parts.append(f"{name}: TABIX HEADER sha256={digest} (offsets into a dated VCF not compared)")
+            continue
         if name.endswith(".png"):
             parts.append(f"{name}: {png_shape(raw)}")
             continue
@@ -508,6 +516,17 @@ def traversals_unordered(raw):
         chosen = min(forward, backward)
         records.append(f"{prefix} {chosen[0]}\n{chosen[1]}")
     return "UNORDERED " + "\n".join(sorted(records))
+
+
+def dated_bgzf(path):
+    """Whether `path` is a block compressed VCF whose header carries a `##GATKCommandLine` date."""
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return False
+    return raw[:2] == b"\x1f\x8b" and bool(
+        COMMAND_LINE_DATE.search(gzip.decompress(raw).decode("utf-8", "replace"))
+    )
 
 
 STARTED_ON = re.compile(r"^# Started on: .*$", re.MULTILINE)
