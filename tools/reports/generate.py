@@ -17,7 +17,10 @@ Every number is read from a committed source, and a number that no source holds 
 * quarantined fields, from each suite's `compare` rules;
 * fuzzer coverage, from `tools/fuzz/measured.json`: the reference's JaCoCo probes the covering
   array's rows reach, how many more the fuzzer's mutants reach, and on how many kept cases the
-  port diverged.
+  port diverged;
+* the reference's own integration tests, from `tools/coverage/test_resources/measured.json` once a
+  CI run has frozen it (#1478);
+* whether the tool meets ROADMAP.md's "What 100% repro means", criterion by criterion.
 
     python3 tools/reports/generate.py            # writes docs/VALIDATION.md
     python3 tools/reports/generate.py --check    # fails if the committed file is stale
@@ -36,6 +39,13 @@ MANIFEST = REPO / "tools" / "conformance" / "manifest.json"
 MEASURED = REPO / "tools" / "coverage" / "measured.json"
 FUZZED = REPO / "tools" / "fuzz" / "measured.json"
 FIXTURES = REPO / "tools" / "coverage" / "fixtures.json"
+REPLAYED = REPO / "tools" / "coverage" / "test_resources" / "measured.json"
+# The critical path, which ROADMAP.md holds to t=3 rather than t=2 (#1454).
+CRITICAL_PATH = {
+    "MarkDuplicatesSpark", "BaseRecalibrator", "ApplyBQSR", "HaplotypeCaller", "GenotypeGVCFs",
+    "Mutect2", "FilterMutectCalls", "SelectVariants", "VariantFiltration", "VariantRecalibrator",
+    "ApplyVQSR",
+}
 PORTS = REPO / "tools" / "dashboard" / "ports"
 REPORT = REPO / "docs" / "VALIDATION.md"
 
@@ -84,14 +94,19 @@ def quarantined(suite):
 def gather():
     inventory = json.loads(INVENTORY.read_text())
     manifest = json.loads(MANIFEST.read_text())
-    measured = json.loads(MEASURED.read_text()).get("tools", {})
+    measured_file = json.loads(MEASURED.read_text())
+    measured = measured_file.get("tools", {})
+    t3 = measured_file.get("t3", {})
+    replayed = json.loads(REPLAYED.read_text()).get("tools", {}) if REPLAYED.exists() else None
     fixtures = json.loads(FIXTURES.read_text()).get("per_tool", {})
     fuzzed = json.loads(FUZZED.read_text()).get("tools", {}) if FUZZED.exists() else {}
     tools = {}
     for entry in inventory["tools"]:
         name = entry["name"] if isinstance(entry, dict) else entry
-        tools[name] = {"suites": [], "records": 0, "files": 0, "by_suite": False, "quarantine": set(),
-                       "port": None, "coverage": None, "fuzz": fuzzed.get(name)}
+        tools[name] = {"name": name, "suites": [], "records": 0, "files": 0, "by_suite": False, "quarantine": set(),
+                       "port": None, "coverage": None, "fuzz": fuzzed.get(name), "t3": t3.get(name),
+                       # Absent from a frozen replay means no integration test names the tool.
+                       "tests": None if replayed is None else replayed.get(name, {})}
     for suite in manifest["suites"]:
         records, files, per_tool = count_suite(suite)
         for name in suite.get("tools", []):
@@ -127,6 +142,31 @@ def gather():
         if name in tools and tools[name]["coverage"] is None:
             tools[name]["coverage"] = value
     return inventory, tools, fixtures
+
+
+def missing(tool, held):
+    """The criteria of ROADMAP.md's 100% a tool does not meet yet, in the order the ROADMAP lists them.
+
+    An unmeasured criterion is not met. A held-out argument counts against the tool until its reason
+    is one the ROADMAP admits; no committed source classifies the reasons yet, so every one counts.
+    """
+    gaps = []
+    tests = tool["tests"]
+    if tests is None or tests and (tests["matched"] < tests["replayed"] or tests["unextracted"]):
+        gaps.append("tests")
+    coverage = tool["coverage"]
+    if not coverage or coverage.get("matched") != coverage.get("rows"):
+        gaps.append("t=2")
+    if held:
+        gaps.append("held-out")
+    if tool["name"] in CRITICAL_PATH and not (tool["t3"] and tool["t3"]["matched"] == tool["t3"]["rows"]):
+        gaps.append("t=3")
+    fuzz = tool["fuzz"]
+    if not fuzz or fuzz.get("diverged", 0):
+        gaps.append("fuzzer")
+    if tool["quarantine"]:
+        gaps.append("quarantine")
+    return gaps
 
 
 def coverage_text(value):
@@ -185,10 +225,19 @@ def render(inventory, tools, fixtures):
         "Each run's inputs, toolchain and container are in the `provenance` artefact CI keeps "
         "(`tools/provenance/record.py`).",
         "",
-        "| tool | port | state | records | files | argument rows | t | fuzzer branches | inputs | held-out arguments | quarantined |",
-        "|---|---|---|---:|---:|---:|---:|---|---:|---:|---|",
+        "**100%** is ROADMAP.md's \"What 100% repro means\": `yes`, or the criteria not met yet. "
+        "`tests` is the reference's integration tests replayed on both sides, `t=2` and `t=3` the "
+        "covering arrays (t=3 on the critical path only), `held-out` an argument no array varies, "
+        "`fuzzer` the differential fuzzer, and `quarantine` a field set aside. A criterion nothing "
+        "has measured is not met.",
+        "",
+        "HUNDRED",
+        "",
+        "| tool | port | state | records | files | argument rows | t | fuzzer branches | inputs | held-out arguments | quarantined | 100% |",
+        "|---|---|---|---:|---:|---:|---:|---|---:|---:|---|---|",
     ]
     details = []
+    complete = 0
     for name in sorted(tools):
         tool = tools[name]
         states = {status for _, status in tool["suites"]}
@@ -208,9 +257,12 @@ def render(inventory, tools, fixtures):
         covered, level = coverage_text(tool["coverage"])
         inputs, held = fixture_summary(fixtures.get(name))
         quarantine = ", ".join(sorted(tool["quarantine"])) or "none"
+        gaps = missing(tool, held)
+        complete += not gaps
         lines.append(
             f"| {name} | {tool['port'] or '-'} | {state} | {records} | {files} | {covered} | {level} "
-            f"| {fuzz_text(tool['fuzz'])} | {len(inputs)} | {len(held)} | {quarantine} |"
+            f"| {fuzz_text(tool['fuzz'])} | {len(inputs)} | {len(held)} | {quarantine} "
+            f"| {', '.join(gaps) or 'yes'} |"
         )
         entry = fixtures.get(name)
         if entry:
@@ -226,6 +278,7 @@ def render(inventory, tools, fixtures):
                 block.extend(["", why])
             block.append("")
             details.extend(block)
+    lines[lines.index("HUNDRED")] = f"**{complete} of {len(tools)} tools are at 100%.**"
     lines.extend(["", "## What each array draws on and leaves out", ""])
     lines.extend(details)
     return "\n".join(lines).rstrip() + "\n"
