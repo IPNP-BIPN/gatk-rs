@@ -175,8 +175,8 @@ fn every_declared_tool_answers_help_with_the_references_usage() {
         compared += 1;
         runnable += usize::from(runs);
     }
-    // 191 GATK tools and the 17 Picard tools GATK bundles that this port declares, and runs.
-    assert_eq!(compared, 208);
+    // 191 GATK tools and the 18 Picard tools GATK bundles that this port declares, and runs.
+    assert_eq!(compared, 209);
     assert_eq!(runnable, compared);
     // `-h` and `--help` are the same text in the reference too.
     assert!(text
