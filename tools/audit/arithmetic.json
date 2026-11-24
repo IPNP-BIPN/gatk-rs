@@ -3,6 +3,7 @@
  "crates/gatk-annotation/src/allele_specific_strand_bias.rs": 1,
  "crates/gatk-annotation/src/heterozygosity.rs": 1,
  "crates/gatk-barclay/src/lib.rs": 1,
+ "crates/gatk-engine/src/allele_frequency_calculator.rs": 1,
  "crates/gatk-engine/src/allele_likelihoods.rs": 1,
  "crates/gatk-engine/src/contamination_filter.rs": 1,
  "crates/gatk-engine/src/copy_number_mcmc.rs": 2,
