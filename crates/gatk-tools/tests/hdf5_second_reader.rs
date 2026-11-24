@@ -5,13 +5,17 @@
 //! harness, which needs Docker. This one runs in `cargo test`: every file is walked from the root
 //! by hdf5-pure, which verifies each object header's `lookup3` checksum, and the tree it finds
 //! (groups, datasets, datatype, shape, every value bit for bit) must be the tree that was written,
-//! and must agree with what the port's own `hdf5_reader` makes of the same bytes.
+//! and must agree with what the port's hand-written reader (`hdf5_spec_reader`, the port's own until
+//! hdf5-pure became the reader every tool uses) makes of the same bytes.
 
 use std::collections::BTreeMap;
 
 use gatk_engine::interval::SimpleInterval;
-use gatk_tools::hdf5_reader::Hdf5Reader;
 use gatk_tools::hdf5_writer::Hdf5File;
+
+/// The port's hand-written reader from before hdf5-pure, which shares no code with it.
+mod hdf5_spec_reader;
+use hdf5_spec_reader::SpecReader;
 
 /// A dataset as hdf5-pure reads it.
 #[derive(Debug, PartialEq)]
@@ -63,9 +67,9 @@ fn walk(bytes: &[u8]) -> (Vec<String>, BTreeMap<String, Leaf>) {
     (groups, datasets)
 }
 
-/// hdf5-pure's tree against the port's own reader, dataset by dataset.
+/// hdf5-pure's tree against the hand-written reader, dataset by dataset.
 fn agrees_with_ours(bytes: &[u8], datasets: &BTreeMap<String, Leaf>) {
-    let ours = Hdf5Reader::open(bytes.to_vec()).expect("the port's reader opens the file");
+    let ours = SpecReader::open(bytes.to_vec()).expect("the hand-written reader opens the file");
     for (path, leaf) in datasets {
         let ours = match leaf {
             Leaf::Doubles(..) => ours.doubles(path).map(|(shape, values)| {
@@ -183,6 +187,21 @@ fn collect_read_counts_file() {
         )
     );
     agrees_with_ours(&bytes, &datasets);
+
+    // `SimpleCountCollection.read` picks the reader by the bytes, not the name: the HDF5 file
+    // under a `.tsv` name reads as the TSV the same collection writes, and the TSV under an
+    // `.hdf5` name reads as itself.
+    let tsv = gatk_tools::collect_read_counts::write(&sequences, "sample", &intervals, &[3, 0, 17]);
+    let dir = tempfile::tempdir().unwrap();
+    let hdf5_path = dir.path().join("counts.tsv");
+    let tsv_path = dir.path().join("counts.hdf5");
+    std::fs::write(&hdf5_path, &bytes).unwrap();
+    std::fs::write(&tsv_path, &tsv).unwrap();
+    let read = |path: &std::path::Path| {
+        gatk_tools::collect_read_counts::read_text(path.to_str().unwrap()).unwrap()
+    };
+    assert_eq!(read(&hdf5_path), tsv);
+    assert_eq!(read(&tsv_path), tsv);
 }
 
 /// The control: rename the one link in the root's object header without fixing its checksum. A

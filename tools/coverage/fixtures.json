@@ -1413,16 +1413,26 @@
     "DenoiseReadCounts": {
       "$why": [
         "counts.tsv, written by the REFERENCE's own CollectReadCounts: this tool is the next link",
-        "of that chain and reads exactly what it wrote.",
-        "--count-panel-of-normals and --annotated-intervals are held OUT. The first is an HDF5",
-        "panel and the second turns on the GC-bias correction; neither is written by this port, so",
-        "a row carrying either would measure the refusal rather than the standardisation.",
-        "--number-of-eigensamples is held out with them: it only means anything with a panel.",
+        "of that chain and reads exactly what it wrote. counts.hdf5 is the same counts in the HDF5",
+        "layout the same tool writes with --format HDF5.",
+        "pon_s8 is the eighth panel sample, as TSV and as HDF5, over the forty bins the panels were",
+        "built on: the panels are the reference's own CreateReadCountPanelOfNormals over the eight",
+        "samples (pon.hdf5), the same with their GC content (pon_gc.hdf5, which corrects the sample",
+        "by it), and over the first sample alone (pon_one.hdf5, which stores no eigensamples).",
+        "A four-window counts file against a panel is refused for not matching its intervals; one",
+        "pair measures that refusal and the constraints keep it to one.",
+        "--annotated-intervals is ignored with a warning when a panel is given, and without one it",
+        "turns on a GC-bias correction this port does not carry, so it is constrained to panel rows.",
+        "--number-of-eigensamples carries zero (the standardized result twice), two, and twenty,",
+        "which is more than any panel holds and is cut to what it does.",
         "The two outputs carry two paths each, and a run with no panel writes the SAME bytes to",
         "both: the denoised result is the standardised one when there is nothing to denoise with."
       ],
       "--input": [
-        "/work/fixtures/counts.tsv"
+        "/work/fixtures/counts.tsv",
+        "/work/fixtures/counts.hdf5",
+        "/work/fixtures/pon_s8.counts.tsv",
+        "/work/fixtures/pon_s8.counts.hdf5"
       ],
       "--standardized-copy-ratios": [
         "/work/out/standardized.tsv",
@@ -1432,9 +1442,22 @@
         "/work/out/denoised.tsv",
         "/work/out/denoised2.tsv"
       ],
-      "--count-panel-of-normals": [],
-      "--annotated-intervals": [],
-      "--number-of-eigensamples": []
+      "--count-panel-of-normals": [
+        "null",
+        "/work/fixtures/pon.hdf5",
+        "/work/fixtures/pon_gc.hdf5",
+        "/work/fixtures/pon_one.hdf5"
+      ],
+      "--annotated-intervals": [
+        "null",
+        "/work/fixtures/pon_annotated.tsv"
+      ],
+      "--number-of-eigensamples": [
+        "null",
+        "0",
+        "2",
+        "20"
+      ]
     },
     "DepthOfCoverage": {
       "$why": [
@@ -1683,14 +1706,18 @@
         "The percentages, the percentiles and the two segmental-duplication bounds carry values",
         "INSIDE their declared range. The generator takes a domain from the declaration's min and",
         "max, and for these it produced -1.0 and 2.0: every one of the forty-nine rows was refused",
-        "by the parser and the array measured the range check rather than the three filters."
+        "by the parser and the array measured the range check rather than the three filters.",
+        "--input carries the same counts twice: as the TSV and as the HDF5 file the reference's own",
+        "CollectReadCounts writes with --format HDF5. SimpleCountCollection.read picks the reader by",
+        "the file's first bytes, so the second value measures the port's HDF5 reader end to end."
       ],
       "--annotated-intervals": [
         "/work/fixtures/annotated.tsv",
         ""
       ],
       "--input": [
-        "/work/fixtures/counts.tsv"
+        "/work/fixtures/counts.tsv",
+        "/work/fixtures/counts.hdf5"
       ],
       "--output": [
         "/work/out/filtered.interval_list",
@@ -4504,7 +4531,10 @@
         "drops or drops what it keeps. The bounds themselves are Barclay's check, which refuses",
         "before the tool runs and would fill a row in three with one refusal.",
         "--number-of-eigensamples 0 and the single-sample input are the two ways no decomposition",
-        "is written; 3 truncates below the panel's sample count."
+        "is written; 3 truncates below the panel's sample count.",
+        "The fifth --input is the eight samples again in HDF5, each written by the reference's own",
+        "SimpleCountCollection.writeHDF5 from its TSV, so the panel it builds is the first value's",
+        "with other file names."
       ],
       "$lists": [
         "--input"
@@ -4513,7 +4543,8 @@
         "/work/fixtures/pon_s1.counts.tsv /work/fixtures/pon_s2.counts.tsv /work/fixtures/pon_s3.counts.tsv /work/fixtures/pon_s4.counts.tsv /work/fixtures/pon_s5.counts.tsv /work/fixtures/pon_s6.counts.tsv /work/fixtures/pon_s7.counts.tsv /work/fixtures/pon_s8.counts.tsv",
         "/work/fixtures/pon_s1.counts.tsv /work/fixtures/pon_s2.counts.tsv /work/fixtures/pon_s3.counts.tsv /work/fixtures/pon_s4.counts.tsv",
         "/work/fixtures/pon_s1.counts.tsv",
-        "/work/fixtures/pon_s1.counts.tsv /work/fixtures/pon_s2.counts.tsv /work/fixtures/pon_s3.counts.tsv /work/fixtures/pon_s4.counts.tsv /work/fixtures/pon_s5.counts.tsv /work/fixtures/pon_s6.counts.tsv /work/fixtures/pon_s7.counts.tsv /work/fixtures/pon_s8.counts.tsv /work/fixtures/pon_shifted.counts.tsv"
+        "/work/fixtures/pon_s1.counts.tsv /work/fixtures/pon_s2.counts.tsv /work/fixtures/pon_s3.counts.tsv /work/fixtures/pon_s4.counts.tsv /work/fixtures/pon_s5.counts.tsv /work/fixtures/pon_s6.counts.tsv /work/fixtures/pon_s7.counts.tsv /work/fixtures/pon_s8.counts.tsv /work/fixtures/pon_shifted.counts.tsv",
+        "/work/fixtures/pon_s1.counts.hdf5 /work/fixtures/pon_s2.counts.hdf5 /work/fixtures/pon_s3.counts.hdf5 /work/fixtures/pon_s4.counts.hdf5 /work/fixtures/pon_s5.counts.hdf5 /work/fixtures/pon_s6.counts.hdf5 /work/fixtures/pon_s7.counts.hdf5 /work/fixtures/pon_s8.counts.hdf5"
       ],
       "--annotated-intervals": [
         "/work/fixtures/pon_annotated.tsv",
@@ -20116,6 +20147,66 @@
         "--exclude-intervals": "null"
       },
       "why": "A filtering mode with no -L or -XL is the one MissingArgument at the end of onStartup, on every such row."
+    },
+    {
+      "tools": [
+        "DenoiseReadCounts"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/counts.tsv",
+        "--count-panel-of-normals": "/work/fixtures/pon_gc.hdf5"
+      },
+      "why": "A four-window counts file against a forty-bin panel is refused for not matching its intervals; counts.tsv with pon.hdf5 measures that refusal once."
+    },
+    {
+      "tools": [
+        "DenoiseReadCounts"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/counts.tsv",
+        "--count-panel-of-normals": "/work/fixtures/pon_one.hdf5"
+      },
+      "why": "A four-window counts file against a forty-bin panel is refused for not matching its intervals; counts.tsv with pon.hdf5 measures that refusal once."
+    },
+    {
+      "tools": [
+        "DenoiseReadCounts"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/counts.hdf5",
+        "--count-panel-of-normals": "/work/fixtures/pon.hdf5"
+      },
+      "why": "A four-window counts file against a forty-bin panel is refused for not matching its intervals; counts.tsv with pon.hdf5 measures that refusal once."
+    },
+    {
+      "tools": [
+        "DenoiseReadCounts"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/counts.hdf5",
+        "--count-panel-of-normals": "/work/fixtures/pon_gc.hdf5"
+      },
+      "why": "A four-window counts file against a forty-bin panel is refused for not matching its intervals; counts.tsv with pon.hdf5 measures that refusal once."
+    },
+    {
+      "tools": [
+        "DenoiseReadCounts"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/counts.hdf5",
+        "--count-panel-of-normals": "/work/fixtures/pon_one.hdf5"
+      },
+      "why": "A four-window counts file against a forty-bin panel is refused for not matching its intervals; counts.tsv with pon.hdf5 measures that refusal once."
+    },
+    {
+      "tools": [
+        "DenoiseReadCounts"
+      ],
+      "forbid": {
+        "--count-panel-of-normals": "null",
+        "--annotated-intervals": "/work/fixtures/pon_annotated.tsv"
+      },
+      "why": "Without a panel, --annotated-intervals turns on a GC-bias correction this port refuses as its own limitation; with one the reference ignores it, which is what the array measures."
     }
   ],
   "exclude": {

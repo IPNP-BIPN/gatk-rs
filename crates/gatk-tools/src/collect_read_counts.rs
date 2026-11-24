@@ -103,6 +103,43 @@ pub fn write(
     text
 }
 
+/// `SimpleCountCollection.read`: the counts file at `path` as the TSV text [`write`] makes.
+///
+/// The reference picks its reader by the file's first bytes (`IOUtils.isHDF5File`), not its name.
+/// An HDF5 file is read as `readHDF5` reads it and given back as the TSV the same collection
+/// writes: the stored dictionary, the sample's read group, and each count cast with Java's
+/// `(int)`. So every reader of a counts TSV reads an HDF5 one without a second parser.
+pub fn read_text(path: &str) -> Result<String, String> {
+    if !crate::hdf5_reader::is_hdf5_file(path) {
+        return std::fs::read_to_string(path).map_err(|error| error.to_string());
+    }
+    let bytes = std::fs::read(path).map_err(|error| error.to_string())?;
+    crate::hdf5_reader::Hdf5Reader::open(bytes)
+        .and_then(|reader| hdf5_as_tsv(&reader))
+        .ok_or_else(|| "not a read-counts HDF5 file".to_string())
+}
+
+/// `HDF5SimpleCountCollection`'s four paths, rendered by [`write`].
+fn hdf5_as_tsv(reader: &crate::hdf5_reader::Hdf5Reader) -> Option<String> {
+    let first = |path: &str| reader.strings(path)?.into_iter().next();
+    let sample = first("/sample_metadata/sample_name")?;
+    let dictionary = first("/locatable_metadata/sequence_dictionary")?;
+    let sequences = htsjdk_bam::reader::parse_header_text(&dictionary).sequences;
+    let intervals: Vec<SimpleInterval> =
+        crate::create_read_count_panel_of_normals::read_intervals(reader, "/intervals")?
+            .into_iter()
+            .map(|interval| SimpleInterval {
+                contig: interval.contig,
+                start: interval.start,
+                end: interval.end,
+            })
+            .collect();
+    let (_, counts) = reader.doubles("/counts/values")?;
+    // Java's `(int)` truncates and saturates, and so does `as`.
+    let counts: Vec<i32> = counts.iter().map(|count| *count as i32).collect();
+    Some(write(&sequences, &sample, &intervals, &counts))
+}
+
 /// `HDF5SimpleCountCollection.write`: the sample name, the dictionary as
 /// `SAMTextHeaderCodec` encodes a header holding only it, the intervals as `HDF5Utils` writes
 /// them, and the counts as a one-row matrix of doubles.

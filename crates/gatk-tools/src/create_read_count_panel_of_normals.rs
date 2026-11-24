@@ -908,7 +908,7 @@ pub const MAX_NUMBER_OF_VALUES_PER_HDF5_MATRIX: i64 = i32::MAX as i64 / 8;
 pub const DEFAULT_MAXIMUM_CHUNK_SIZE: i64 = MAX_NUMBER_OF_VALUES_PER_HDF5_MATRIX / 16;
 
 /// One genomic interval, one-based and closed.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Interval {
     pub contig: String,
     pub start: i32,
@@ -974,6 +974,49 @@ pub fn write_intervals(
     }
     file.double_matrix(&format!("{path}/transposed_index_start_end"), &matrix);
     file.string_array(&format!("{path}/indexed_contig_names"), &contigs);
+}
+
+/// `HDF5Utils.readIntervals`: the contig names, and the 3 x n matrix of contig index, start and
+/// end that [`write_intervals`] writes. The doubles are cast as Java's `(int)` casts them.
+pub fn read_intervals(
+    reader: &crate::hdf5_reader::Hdf5Reader,
+    path: &str,
+) -> Option<Vec<Interval>> {
+    let contigs = reader.strings(&format!("{path}/indexed_contig_names"))?;
+    let (shape, matrix) = reader.doubles(&format!("{path}/transposed_index_start_end"))?;
+    let n = usize::try_from(*shape.get(1)?).ok()?;
+    (0..n)
+        .map(|i| {
+            Some(Interval {
+                contig: contigs.get(*matrix.get(i)? as usize)?.clone(),
+                start: *matrix.get(n + i)? as i32,
+                end: *matrix.get(2 * n + i)? as i32,
+            })
+        })
+        .collect()
+}
+
+/// `HDF5Utils.readChunkedDoubleMatrix`: the rows of every `{path}/chunk_{i}` in order, sized by
+/// `{path}/num_rows`, `num_columns` and `num_chunks`. `None` when any of those is missing.
+pub fn read_chunked_matrix(
+    reader: &crate::hdf5_reader::Hdf5Reader,
+    path: &str,
+) -> Option<Vec<Vec<f64>>> {
+    let scalar = |name: &str| -> Option<usize> {
+        let (_, values) = reader.doubles(&format!("{path}/{name}"))?;
+        values.first().map(|value| *value as usize)
+    };
+    let (rows, columns, chunks) = (
+        scalar("num_rows")?,
+        scalar("num_columns")?,
+        scalar("num_chunks")?,
+    );
+    let mut matrix = Vec::with_capacity(rows);
+    for chunk in 0..chunks {
+        let (_, values) = reader.doubles(&format!("{path}/chunk_{chunk}"))?;
+        matrix.extend(values.chunks(columns.max(1)).map(<[f64]>::to_vec));
+    }
+    Some(matrix)
 }
 
 /// Everything `HDF5SVDReadCountPanelOfNormals.create` writes, in its order.
