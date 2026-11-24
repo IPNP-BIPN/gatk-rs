@@ -280,20 +280,26 @@ pub struct HmmRead<'a> {
 /// adds, never fused, so vectorising across lanes cannot move a bit.
 const LANES: usize = 4;
 type Lanes = [f64; LANES];
+/// AVX-512's lanes: each term of a column in one 512-bit register. Eight lanes were no faster
+/// than four on an M-series core, so the other paths keep four.
+#[cfg(target_arch = "x86_64")]
+const WIDE_LANES: usize = 8;
 
 /// One column of a row: the match, insertion and deletion values of every lane, side by side.
 #[derive(Clone, Copy)]
-struct Cell {
-    m: Lanes,
-    x: Lanes,
-    y: Lanes,
+struct Cell<const N: usize> {
+    m: [f64; N],
+    x: [f64; N],
+    y: [f64; N],
 }
 
-const ZERO: Cell = Cell {
-    m: [0.0; LANES],
-    x: [0.0; LANES],
-    y: [0.0; LANES],
-};
+impl<const N: usize> Cell<N> {
+    const ZERO: Self = Cell {
+        m: [0.0; N],
+        x: [0.0; N],
+        y: [0.0; N],
+    };
+}
 
 /// [`read_likelihood_given_haplotype_log10`] for every read of `reads` against one haplotype,
 /// into `out` in read order, with the same bits.
@@ -324,16 +330,42 @@ pub fn reads_likelihoods_given_haplotype_log10(
             }
         })
         .collect();
-    let mut priors = vec![[0.0f64; LANES]; distinct.len()];
 
     thread_local! {
         // The two rows, kept between calls: allocating them per haplotype was a tenth of a call.
-        static ROWS: std::cell::RefCell<(Vec<Cell>, Vec<Cell>)> =
+        static ROWS: std::cell::RefCell<(Vec<Cell<LANES>>, Vec<Cell<LANES>>)> =
+            const { std::cell::RefCell::new((Vec::new(), Vec::new())) };
+        #[cfg(target_arch = "x86_64")]
+        static WIDE_ROWS: std::cell::RefCell<(Vec<Cell<WIDE_LANES>>, Vec<Cell<WIDE_LANES>>)> =
             const { std::cell::RefCell::new((Vec::new(), Vec::new())) };
     }
+    #[cfg(target_arch = "x86_64")]
+    if std::is_x86_feature_detected!("avx512f") {
+        WIDE_ROWS.with_borrow_mut(|(previous, current)| {
+            previous.resize(width, Cell::ZERO);
+            current.resize(width, Cell::ZERO);
+            let mut priors = vec![[0.0f64; WIDE_LANES]; distinct.len()];
+            // SAFETY: the CPU has just been seen to support AVX-512F.
+            unsafe {
+                sweep_avx512(
+                    reads,
+                    out,
+                    &order,
+                    &codes,
+                    &distinct,
+                    &mut priors,
+                    &mut previous[..width],
+                    &mut current[..width],
+                    initial,
+                );
+            }
+        });
+        return;
+    }
+    let mut priors = vec![[0.0f64; LANES]; distinct.len()];
     ROWS.with_borrow_mut(|(previous, current)| {
-        previous.resize(width, ZERO);
-        current.resize(width, ZERO);
+        previous.resize(width, Cell::ZERO);
+        current.resize(width, Cell::ZERO);
         sweep_dispatched(
             reads,
             out,
@@ -360,8 +392,8 @@ fn sweep_dispatched(
     codes: &[u8],
     distinct: &[u8],
     priors: &mut [Lanes],
-    previous: &mut [Cell],
-    current: &mut [Cell],
+    previous: &mut [Cell<LANES>],
+    current: &mut [Cell<LANES>],
     initial: f64,
 ) {
     #[cfg(target_arch = "x86_64")]
@@ -389,8 +421,29 @@ unsafe fn sweep_avx2(
     codes: &[u8],
     distinct: &[u8],
     priors: &mut [Lanes],
-    previous: &mut [Cell],
-    current: &mut [Cell],
+    previous: &mut [Cell<LANES>],
+    current: &mut [Cell<LANES>],
+    initial: f64,
+) {
+    sweep(
+        reads, out, order, codes, distinct, priors, previous, current, initial,
+    );
+}
+
+/// [`sweep`] with AVX-512's registers, [`WIDE_LANES`] reads at a time. AVX-512F brings fused
+/// multiply-add instructions, but Rust fuses only an explicit `mul_add`, which this has none of.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+#[allow(clippy::too_many_arguments)]
+unsafe fn sweep_avx512(
+    reads: &[HmmRead<'_>],
+    out: &mut [f64],
+    order: &[usize],
+    codes: &[u8],
+    distinct: &[u8],
+    priors: &mut [[f64; WIDE_LANES]],
+    previous: &mut [Cell<WIDE_LANES>],
+    current: &mut [Cell<WIDE_LANES>],
     initial: f64,
 ) {
     sweep(
@@ -402,21 +455,21 @@ unsafe fn sweep_avx2(
 /// into each of [`sweep_dispatched`]'s copies, so that each is compiled for its own width.
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
-fn sweep<'a>(
+fn sweep<'a, const N: usize>(
     reads: &[HmmRead<'_>],
     out: &mut [f64],
     order: &[usize],
     codes: &[u8],
     distinct: &[u8],
-    priors: &mut [Lanes],
-    mut previous: &'a mut [Cell],
-    mut current: &'a mut [Cell],
+    priors: &mut [[f64; N]],
+    mut previous: &'a mut [Cell<N>],
+    mut current: &'a mut [Cell<N>],
     initial: f64,
 ) {
     let tables = &*TABLES;
 
     // The last row's match and insertion terms, summed in the reference's order.
-    let answer = |row: &[Cell], lane: usize| -> f64 {
+    let answer = |row: &[Cell<N>], lane: usize| -> f64 {
         let mut total = 0.0;
         for cell in &row[1..] {
             total += cell.m[lane] + cell.x[lane];
@@ -424,10 +477,10 @@ fn sweep<'a>(
         jmath::math::log10(total) - initial_condition_log10()
     };
 
-    for chunk in order.chunks(LANES) {
+    for chunk in order.chunks(N) {
         previous.fill(Cell {
-            y: [initial; LANES],
-            ..ZERO
+            y: [initial; N],
+            ..Cell::ZERO
         });
         for (lane, &r) in chunk.iter().enumerate() {
             if reads[r].bases.is_empty() {
@@ -441,13 +494,13 @@ fn sweep<'a>(
             .max()
             .unwrap_or(0);
         for i in 0..longest {
-            let mut match_to_match = [0.0; LANES];
-            let mut indel_to_match = [0.0; LANES];
-            let mut match_to_insertion = [0.0; LANES];
-            let mut insertion_to_insertion = [0.0; LANES];
-            let mut match_to_deletion = [0.0; LANES];
+            let mut match_to_match = [0.0; N];
+            let mut indel_to_match = [0.0; N];
+            let mut match_to_insertion = [0.0; N];
+            let mut insertion_to_insertion = [0.0; N];
+            let mut match_to_deletion = [0.0; N];
             for prior in priors.iter_mut() {
-                *prior = [0.0; LANES];
+                *prior = [0.0; N];
             }
             for (lane, &r) in chunk.iter().enumerate() {
                 let read = &reads[r];
@@ -475,15 +528,15 @@ fn sweep<'a>(
             }
             let deletion_to_deletion = insertion_to_insertion;
 
-            current[0] = ZERO;
-            let mut left = ZERO;
+            current[0] = Cell::ZERO;
+            let mut left = Cell::ZERO;
             for ((cell, window), &code) in
                 current[1..].iter_mut().zip(previous.windows(2)).zip(codes)
             {
                 let (diagonal, up) = (&window[0], &window[1]);
                 let p = &priors[usize::from(code)];
-                let mut next = ZERO;
-                for lane in 0..LANES {
+                let mut next = Cell::ZERO;
+                for lane in 0..N {
                     next.m[lane] = p[lane]
                         * (diagonal.m[lane] * match_to_match[lane]
                             + diagonal.x[lane] * indel_to_match[lane]
