@@ -31,10 +31,10 @@ fn file(text: &str, kind: &str, label: &str) -> String {
 
 const SEQUENCES: [(&str, i32); 1] = [("chr1", 1000)];
 
-fn sequences() -> Vec<(String, i32)> {
+fn sequences() -> Vec<htsjdk_bam::header::SequenceRecord> {
     SEQUENCES
         .iter()
-        .map(|(name, length)| (name.to_string(), *length))
+        .map(|(name, length)| htsjdk_bam::header::SequenceRecord::new(name, *length))
         .collect()
 }
 

@@ -99,7 +99,10 @@ fn table(records: &[BamRecord], window: std::ops::RangeInclusive<i32>, minimum: 
         })
         .collect();
     collect_allelic_counts::write(
-        &[("chr1".to_string(), 200), ("chr2".to_string(), 200)],
+        &[
+            htsjdk_bam::header::SequenceRecord::new("chr1", 200),
+            htsjdk_bam::header::SequenceRecord::new("chr2", 200),
+        ],
         "NA1",
         &counts,
     )
