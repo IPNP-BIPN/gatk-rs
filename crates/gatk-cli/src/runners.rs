@@ -2216,11 +2216,13 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
         .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&recal, false)))?;
 
     let path = std::path::Path::new(&input);
-    let bytes = std::fs::read(path)
-        .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&input, false)))?;
+    // The start of the file decides what it is; for BGZF, once the whole file is known to inflate.
+    let bytes = gatk_engine::reads::file_start(path)
+        .ok_or_else(|| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&input, false)))?;
     let compressed = gatk_tools::read_walker_refusal::is_block_compressed(&bytes);
     let is_binary = if compressed {
-        htsjdk_bgzf::read::decompress_all(&bytes)
+        ReadsDataSource::check(path)
+            .and_then(|()| gatk_engine::reads::inflated_start(path))
             .map(|inflated| inflated.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC))
             .unwrap_or(false)
     } else {
@@ -2228,7 +2230,6 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
     };
     // A CRAM is indexed like a BAM: by its `.crai`, which the transcode turns into a `.bai`.
     let is_cram = bytes.starts_with(b"CRAM");
-    drop(bytes);
     let indexable = is_binary || is_cram;
     let named_index = read_index(parser, 1, indexable, compressed)?;
     let index = if indexable {
@@ -2240,6 +2241,19 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
     // opens the file, `initializeIntervals` runs next, and a query that does not resolve is
     // refused before anything asks the index what it is.
     let ((source, undecoded), bad_index) = match &index {
+        // A BAM passed the check above, so it is opened without inflating it again; the index is
+        // loaded after, and a refusal of it leaves the source unindexed.
+        Some(index) if is_binary => {
+            let mut source = ReadsDataSource::open_checked(path)
+                .map_err(|error| Thrown::user(format!("{error:?}")))?;
+            let bad_index = source.load_index(index).err().map(|_| {
+                index
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            });
+            ((source, None), bad_index)
+        }
         Some(index) => match reads_input::open_reads_deferred(parser, path, Some(index)) {
             Ok(source) => (source, None),
             Err(_) => (
@@ -2252,6 +2266,14 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
                 ),
             ),
         },
+        None if is_binary => (
+            (
+                ReadsDataSource::open_checked(path)
+                    .map_err(|error| Thrown::user(format!("{error:?}")))?,
+                None,
+            ),
+            None,
+        ),
         None => (reads_input::open_reads_deferred(parser, path, None)?, None),
     };
 
@@ -2301,7 +2323,8 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
         return Err(refusal);
     }
     let (level, deflater) = output_compression(parser);
-    let (bam, bai) = gatk_tools::apply_bqsr::apply_bqsr_with(
+    let written = gatk_tools::apply_bqsr::apply_bqsr_to(
+        std::path::Path::new(&output),
         &source,
         &recal_text,
         &bqsr,
@@ -2321,12 +2344,11 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
         },
         exception: error.java_class(),
         message: Some(error.message()),
-    })?;
-
-    std::fs::write(&output, &bam).map_err(|error| {
+    })?
+    .map_err(|error| {
         Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
     })?;
-    if let Some(bai) = bai {
+    if let Some(bai) = written.index {
         let companion = std::path::Path::new(&output).with_extension("bai");
         std::fs::write(&companion, bai).map_err(|error| {
             Thrown::non_user(
@@ -2337,7 +2359,7 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
     }
     if flag(parser, "create-output-bam-md5") {
         let digest = format!("{output}.md5");
-        std::fs::write(&digest, gatk_tools::gather_bam_files::md5_file(&bam)).map_err(|error| {
+        std::fs::write(&digest, written.md5).map_err(|error| {
             Thrown::non_user(PORT_FAILURE, format!("could not write {digest}: {error}"))
         })?;
     }

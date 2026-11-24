@@ -145,19 +145,16 @@ impl Drop for Scratch {
 /// The scratch BAM, the file's header, the `.bai` asked for, and a refusal held back.
 type Transcoded = (Scratch, SamHeader, Option<Vec<u8>>, Option<Thrown>);
 
-/// The writer of the scratch BAM. Level one: it is read once, right away, so time beats size.
-fn scratch_writer(
+/// The scratch BAM, written from `records`. Level one: it is read once, right away, so time beats
+/// size. Its `.bai`, when asked for, is built as it is written.
+fn write_scratch(
     header: &SamHeader,
+    records: impl Iterator<Item = htsjdk_bam::record::BamRecord>,
     indexed: bool,
-) -> Result<
-    (
-        Scratch,
-        htsjdk_bam::writer::BamWriter<std::io::BufWriter<std::fs::File>>,
-    ),
-    Thrown,
-> {
+) -> Result<(Scratch, Option<Vec<u8>>), Thrown> {
+    use std::io::Write;
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let failure = |error: std::io::Error| Thrown::non_user(PORT_FAILURE, error.to_string());
+    let failure = |error: String| Thrown::non_user(PORT_FAILURE, error);
     let scratch = Scratch(std::env::temp_dir().join(format!(
         ".gatk-rs-reads.{}.{}.bam",
         std::process::id(),
@@ -165,42 +162,19 @@ fn scratch_writer(
     )));
     let file = std::io::BufWriter::with_capacity(
         1 << 20,
-        std::fs::File::create(&scratch.0).map_err(failure)?,
+        std::fs::File::create(&scratch.0).map_err(|error| failure(error.to_string()))?,
     );
-    let writer = htsjdk_bam::writer::BamWriter::with_compression(
+    let (mut file, bai) = gatk_tools::sam_output::write_stream(
         file,
         header,
+        records.map(Ok),
+        indexed,
         1,
         htsjdk_bgzf::Deflater::Gkl,
     )
-    .map_err(failure)?;
-    Ok((scratch, if indexed { writer.with_index() } else { writer }))
-}
-
-/// Close the scratch BAM, with its `.bai` when one was asked for.
-fn finish(
-    writer: htsjdk_bam::writer::BamWriter<std::io::BufWriter<std::fs::File>>,
-    indexed: bool,
-) -> Result<Option<Vec<u8>>, Thrown> {
-    use std::io::Write;
-    let failure = |error: std::io::Error| Thrown::non_user(PORT_FAILURE, error.to_string());
-    let (mut file, bai) = if indexed {
-        let (file, bai) = writer.finish_with_index().map_err(failure)?;
-        (file, Some(bai))
-    } else {
-        (writer.finish().map_err(failure)?, None)
-    };
-    file.flush().map_err(failure)?;
-    Ok(bai)
-}
-
-fn write_record(
-    writer: &mut htsjdk_bam::writer::BamWriter<std::io::BufWriter<std::fs::File>>,
-    record: &htsjdk_bam::record::BamRecord,
-) -> Result<(), Thrown> {
-    writer
-        .write(record)
-        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error:?}")))
+    .map_err(|error| failure(format!("{error:?}")))?;
+    file.flush().map_err(|error| failure(error.to_string()))?;
+    Ok((scratch, bai))
 }
 
 /// A CRAM decoded against `reference` one container at a time.
@@ -226,23 +200,22 @@ fn transcode_cram(
         None => Box::new(htsjdk_cram::reader::LazyReference),
     };
     let header = reader.header.clone();
-    let (scratch, mut writer) = scratch_writer(&header, indexed)?;
     let mut pending = None;
-    loop {
+    let mut container = Vec::new().into_iter();
+    let records = std::iter::from_fn(|| loop {
+        if let Some(record) = container.next() {
+            return Some(record);
+        }
         match reader.next_container(fasta.as_mut()) {
-            Ok(Some(records)) => {
-                for record in &records {
-                    write_record(&mut writer, record)?;
-                }
-            }
-            Ok(None) => break,
+            Ok(Some(records)) => container = records.into_iter(),
+            Ok(None) => return None,
             Err(error) => {
                 pending = Some(refusal(error));
-                break;
+                return None;
             }
         }
-    }
-    let bai = finish(writer, indexed)?;
+    });
+    let (scratch, bai) = write_scratch(&header, records, indexed)?;
     Ok((scratch, header, bai, pending))
 }
 
@@ -277,26 +250,40 @@ fn transcode_sam(path: &Path) -> Result<Option<Transcoded>, Thrown> {
         .enumerate()
         .map(|(index, sequence)| (sequence.name.as_str(), index as i32))
         .collect();
-    let (scratch, mut writer) = scratch_writer(&header, false)?;
-    while !line.is_empty() {
-        let Ok(record_line) = std::str::from_utf8(&line) else {
-            return Ok(None);
-        };
-        // `str::lines`, which `read_sam` splits by, drops a trailing `\r`.
-        let record_line = record_line.trim_end_matches('\n').trim_end_matches('\r');
-        if !record_line.is_empty() {
-            let Ok(record) =
-                htsjdk_bam::text_parse::parse_line(record_line, |name| contigs.get(name).copied())
-            else {
-                return Ok(None);
-            };
-            write_record(&mut writer, &record)?;
+    // A line that does not parse makes the whole file not SAM, which is decided after the writing.
+    let mut not_sam = false;
+    let mut ended = false;
+    let records = std::iter::from_fn(|| loop {
+        if ended || line.is_empty() {
+            return None;
         }
+        let parsed = std::str::from_utf8(&line).ok().and_then(|record_line| {
+            // `str::lines`, which `read_sam` splits by, drops a trailing `\r`.
+            let record_line = record_line.trim_end_matches('\n').trim_end_matches('\r');
+            if record_line.is_empty() {
+                return Some(None);
+            }
+            htsjdk_bam::text_parse::parse_line(record_line, |name| contigs.get(name).copied())
+                .ok()
+                .map(Some)
+        });
         if !next(&mut reader, &mut line) {
-            return Ok(None);
+            not_sam = true;
         }
+        match parsed {
+            None => not_sam = true,
+            Some(Some(record)) if !not_sam => return Some(record),
+            Some(_) => {}
+        }
+        if not_sam {
+            ended = true;
+            return None;
+        }
+    });
+    let (scratch, _) = write_scratch(&header, records, false)?;
+    if not_sam {
+        return Ok(None);
     }
-    finish(writer, false)?;
     Ok(Some((scratch, header, None, None)))
 }
 

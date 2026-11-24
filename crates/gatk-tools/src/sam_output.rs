@@ -151,26 +151,216 @@ pub fn write_stream<W: std::io::Write>(
     level: u32,
     deflater: htsjdk_bgzf::Deflater,
 ) -> Result<(W, Option<Vec<u8>>), ReadsError> {
-    let writer = BamWriter::with_compression(out, header, level, deflater)
+    if create_index {
+        return write_indexed(out, header, records, level, deflater);
+    }
+    let mut writer = BamWriter::with_compression(out, header, level, deflater)
         .map_err(|e| ReadsError::Io(e.to_string()))?;
-    let mut writer = if create_index {
-        writer.with_index()
-    } else {
-        writer
-    };
     for record in records {
         writer
             .write(&record?)
             .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?;
     }
-    if create_index {
-        let (bam, bai) = writer
-            .finish_with_index()
-            .map_err(|e| ReadsError::Io(e.to_string()))?;
-        Ok((bam, Some(bai)))
-    } else {
-        let bam = writer.finish().map_err(|e| ReadsError::Io(e.to_string()))?;
-        Ok((bam, None))
+    let bam = writer.finish().map_err(|e| ReadsError::Io(e.to_string()))?;
+    Ok((bam, None))
+}
+
+/// [`write_stream`] with the `.bai` that `BamWriter::with_index` builds, byte for byte, without
+/// its cost: that writer asks for the file pointer around every record, and a pointer waits for
+/// every block being deflated, so the whole file was deflated on this thread. Here the blocks are
+/// deflated in parallel and each record's pointers are worked out once its blocks have come out:
+/// a record's place in the uncompressed stream is known as it is written, and each block's address
+/// and uncompressed size are read off its BGZF frame as it reaches `out`.
+fn write_indexed<W: std::io::Write>(
+    out: W,
+    header: &SamHeader,
+    records: impl IntoIterator<Item = Result<BamRecord, ReadsError>>,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
+) -> Result<(W, Option<Vec<u8>>), ReadsError> {
+    let io = |e: std::io::Error| ReadsError::Io(e.to_string());
+    // Where the first record starts: the header's uncompressed length, from the same writer's
+    // header alone.
+    let probe = BamWriter::with_compression(Vec::new(), header, 0, deflater)
+        .and_then(BamWriter::finish)
+        .map_err(io)?;
+    let header_length = htsjdk_bgzf::decompress_all(&probe)
+        .map_err(|e| ReadsError::Io(format!("{e:?}")))?
+        .len() as u64;
+
+    let blocks = std::rc::Rc::new(std::cell::RefCell::new(std::collections::VecDeque::new()));
+    let spy = BlockSpy {
+        inner: out,
+        partial: Vec::new(),
+        address: 0,
+        uncompressed: 0,
+        blocks: blocks.clone(),
+    };
+    let mut writer = BamWriter::with_compression(spy, header, level, deflater).map_err(io)?;
+    let lengths: Vec<i32> = header.sequences.iter().map(|s| s.length).collect();
+    let mut pending = Pointers {
+        indexer: htsjdk_bam::index::BamIndexer::new(lengths.clone()),
+        pending: std::collections::VecDeque::new(),
+        blocks,
+    };
+    let mut position = header_length;
+    let mut encoded = Vec::new();
+    for record in records {
+        let record = record?;
+        writer
+            .write(&record)
+            .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?;
+        // `BamWriter::write` encoded it already; its length is all that is wanted here.
+        encoded.clear();
+        let _ = record.encode_into(&mut encoded);
+        // `BAMRecordCodec.warnIfReferenceIsTooLargeForBinField`: bin 0 past the bin field's span.
+        let too_large = record.reference_index >= 0
+            && lengths
+                .get(record.reference_index as usize)
+                .is_some_and(|length| *length > htsjdk_bam::bin::BIN_GENOMIC_SPAN);
+        let bin = if too_large || record.alignment_start == htsjdk_bam::bin::NO_ALIGNMENT_START {
+            0
+        } else {
+            htsjdk_bam::compute_indexing_bin(record.alignment_start, record.alignment_end())
+                .unwrap_or(0)
+        };
+        let start = position;
+        position += encoded.len() as u64;
+        pending.pending.push_back(Pending {
+            reference_index: record.reference_index,
+            alignment_start: record.alignment_start,
+            alignment_end: record.alignment_end(),
+            bin,
+            unmapped: record.read_unmapped(),
+            start,
+            stop: position,
+        });
+        pending.resolve(false);
+    }
+    let spy = writer.finish().map_err(io)?;
+    pending.resolve(true);
+    debug_assert!(pending.pending.is_empty());
+    Ok((spy.inner, Some(pending.indexer.finish())))
+}
+
+/// One BGZF block as it went out: where it starts, compressed and uncompressed, and its sizes.
+struct Block {
+    address: u64,
+    uncompressed_start: u64,
+    uncompressed_size: u64,
+    compressed_size: u64,
+}
+
+/// The writer's output, passed through and cut into its BGZF blocks.
+struct BlockSpy<W> {
+    inner: W,
+    /// The bytes of a block not yet whole.
+    partial: Vec<u8>,
+    address: u64,
+    uncompressed: u64,
+    blocks: std::rc::Rc<std::cell::RefCell<std::collections::VecDeque<Block>>>,
+}
+
+impl<W: std::io::Write> std::io::Write for BlockSpy<W> {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.inner.write_all(bytes)?;
+        self.partial.extend_from_slice(bytes);
+        let mut used = 0;
+        // A BGZF frame: BSIZE (the block's length less one) at bytes 16-17, ISIZE in the last four.
+        while self.partial.len() - used >= 18 {
+            let frame = &self.partial[used..];
+            let length = usize::from(u16::from_le_bytes([frame[16], frame[17]])) + 1;
+            if frame.len() < length {
+                break;
+            }
+            let size = u32::from_le_bytes(frame[length - 4..length].try_into().unwrap());
+            self.blocks.borrow_mut().push_back(Block {
+                address: self.address,
+                uncompressed_start: self.uncompressed,
+                uncompressed_size: u64::from(size),
+                compressed_size: length as u64,
+            });
+            self.address += length as u64;
+            self.uncompressed += u64::from(size);
+            used += length;
+        }
+        self.partial.drain(..used);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+/// A written record waiting for the blocks its pointers fall in.
+struct Pending {
+    reference_index: i32,
+    alignment_start: i32,
+    alignment_end: i32,
+    bin: i32,
+    unmapped: bool,
+    start: u64,
+    stop: u64,
+}
+
+struct Pointers {
+    indexer: htsjdk_bam::index::BamIndexer,
+    pending: std::collections::VecDeque<Pending>,
+    blocks: std::rc::Rc<std::cell::RefCell<std::collections::VecDeque<Block>>>,
+}
+
+impl Pointers {
+    /// Hands the indexer every pending record whose pointers are known, in order. `finished`
+    /// says the stream is closed, so its last block, which is the only one not full, is final.
+    fn resolve(&mut self, finished: bool) {
+        while let Some(record) = self.pending.front() {
+            let (Some(start), Some(stop)) = (
+                self.pointer(record.start, finished),
+                self.pointer(record.stop, finished),
+            ) else {
+                return;
+            };
+            let record = self.pending.pop_front().unwrap();
+            self.indexer.process(
+                record.reference_index,
+                record.alignment_start,
+                record.alignment_end,
+                record.bin,
+                record.unmapped,
+                htsjdk_bam::index::Chunk { start, end: stop },
+            );
+        }
+    }
+
+    /// `BlockCompressedOutputStream.getFilePointer()` when the stream stood at `position`. A full
+    /// block is deflated the moment it fills, so the pointer at its end is the next block's start;
+    /// the last block is deflated at the close, after its last pointer was taken, which is why
+    /// that one points at its own end. Blocks no pointer can reach again are let go.
+    fn pointer(&self, position: u64, finished: bool) -> Option<u64> {
+        let mut blocks = self.blocks.borrow_mut();
+        while blocks.len() > 1
+            && blocks[0].uncompressed_start + blocks[0].uncompressed_size < position
+        {
+            blocks.pop_front();
+        }
+        let full = htsjdk_bgzf::DEFAULT_UNCOMPRESSED_BLOCK_SIZE as u64;
+        for block in blocks.iter() {
+            let end = block.uncompressed_start + block.uncompressed_size;
+            let place = if position < end {
+                Some((block.address, position - block.uncompressed_start))
+            } else if position == end && block.uncompressed_size == full {
+                Some((block.address + block.compressed_size, 0))
+            } else if position == end && finished && block.uncompressed_size > 0 {
+                Some((block.address, block.uncompressed_size))
+            } else {
+                None
+            };
+            if let Some((address, offset)) = place {
+                return htsjdk_bgzf::vfp::make_file_pointer(address, offset as u32).ok();
+            }
+        }
+        None
     }
 }
 
@@ -266,5 +456,58 @@ impl<W: std::io::Write> std::io::Write for Md5Writer<W> {
 
     fn flush(&mut self) -> std::io::Result<()> {
         self.inner.flush()
+    }
+}
+
+#[cfg(test)]
+mod indexed_writer_tests {
+    use super::*;
+
+    /// The `.bai` and the BAM are `BamWriter::with_index`'s byte for byte, over record counts that
+    /// put the last record's end at every place in a block, an unmapped tail included.
+    #[test]
+    fn the_index_is_the_one_the_indexing_writer_builds() {
+        let mut text = String::from("@HD\tVN:1.6\tSO:coordinate\n@SQ\tSN:chr1\tLN:1000000\n");
+        for index in 0..900 {
+            let length = 40 + (index * 37) % 211;
+            let bases: String = (0..length)
+                .map(|i| ['A', 'C', 'G', 'T'][(i + index) % 4])
+                .collect();
+            let qualities: String = (0..length)
+                .map(|i| (b'#' + (i % 40) as u8) as char)
+                .collect();
+            if index < 880 {
+                text.push_str(&format!(
+                    "r{index}\t0\tchr1\t{}\t60\t{length}M\t*\t0\t0\t{bases}\t{qualities}\n",
+                    1 + index * 97
+                ));
+            } else {
+                text.push_str(&format!(
+                    "u{index}\t4\t*\t0\t0\t*\t*\t0\t0\t{bases}\t{qualities}\n"
+                ));
+            }
+        }
+        let (header, records) = htsjdk_bam::sam_file::read_sam(&text).unwrap();
+        for count in (0..=records.len()).step_by(7).chain([1, 2, records.len()]) {
+            let mut expected =
+                BamWriter::with_compression(Vec::new(), &header, 5, htsjdk_bgzf::Deflater::Jdk)
+                    .unwrap()
+                    .with_index();
+            for record in &records[..count] {
+                expected.write(record).unwrap();
+            }
+            let (expected_bam, expected_bai) = expected.finish_with_index().unwrap();
+            let (bam, bai) = write_stream(
+                Vec::new(),
+                &header,
+                records[..count].iter().cloned().map(Ok),
+                true,
+                5,
+                htsjdk_bgzf::Deflater::Jdk,
+            )
+            .unwrap();
+            assert_eq!(bam, expected_bam, "{count} records");
+            assert_eq!(bai.unwrap(), expected_bai, "{count} records");
+        }
     }
 }

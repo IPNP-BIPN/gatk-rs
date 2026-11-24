@@ -140,6 +140,193 @@ pub fn apply_bqsr_with(
     .map_err(ApplyBqsrError::Reads)
 }
 
+/// [`apply_bqsr_with`] straight to `output`, a read at a time: the reads are recalibrated as the
+/// traversal hands them over and written as they are recalibrated, so neither the reads nor the
+/// output are held. A refusal, the traversal's or the transformer's, comes at the read that causes
+/// it, as in the reference's own loop, and leaves `output` as it was: see
+/// [`crate::sam_output::write_bam_file`]. The inner error is the file's.
+#[allow(clippy::too_many_arguments)]
+pub fn apply_bqsr_to(
+    output: &std::path::Path,
+    source: &ReadsDataSource,
+    recal_text: &str,
+    arguments: &ApplyBqsrArguments,
+    options: &Options,
+    filter: &dyn Fn(&BamRecord) -> bool,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
+) -> Result<Result<crate::sam_output::Written, std::io::Error>, ApplyBqsrError> {
+    // The report and the transformer are refused here, before a read is read, as the reference's
+    // constructor refuses them; the workers below build their own, which then cannot fail.
+    let mut report = RecalibrationReport::parse(recal_text).map_err(ApplyBqsrError::Report)?;
+    let transformer = BqsrReadTransformer::new(
+        source.header(),
+        &mut report.tables,
+        &mut report.quantization_info,
+        &report.covariates,
+        arguments,
+    )
+    .map_err(ApplyBqsrError::Transform)?;
+    let records = crate::read_walker::traverse_iter(source, &options.intervals, false, filter)
+        .map_err(ApplyBqsrError::Reads)?;
+    let out_header = header_for_sam_writer(source.header(), TOOL_NAME, options);
+    let write = |recalibrated: &mut dyn Iterator<Item = Result<BamRecord, ReadsError>>| {
+        crate::sam_output::write_bam_file(
+            output,
+            &out_header,
+            recalibrated,
+            options.create_output_bam_index,
+            level,
+            deflater,
+        )
+    };
+    // The writer takes reads errors only; a transformer refusal is kept here and stops it.
+    let mut refused = None;
+    let workers = std::thread::available_parallelism()
+        .map(|threads| threads.get().saturating_sub(1).min(MAX_WORKERS))
+        .unwrap_or(0);
+    let written = if workers < 2 {
+        let mut transformer = transformer;
+        let mut recalibrated = records.map(|record| {
+            let record = record?;
+            transformer.apply(&record).map_err(|error| {
+                refused = Some(error);
+                ReadsError::Malformed(String::new())
+            })
+        });
+        write(&mut recalibrated)
+    } else {
+        drop(transformer);
+        recalibrate_in_parallel(
+            records,
+            workers,
+            source.header(),
+            recal_text,
+            arguments,
+            &mut refused,
+            write,
+        )
+    };
+    match (written, refused) {
+        (_, Some(error)) => Err(ApplyBqsrError::Transform(error)),
+        (written, None) => written.map_err(ApplyBqsrError::Reads),
+    }
+}
+
+/// At most this many recalibrating threads: past it the traversal and the writer are the limit.
+const MAX_WORKERS: usize = 6;
+/// Reads per batch handed to a worker.
+const BATCH: usize = 2048;
+
+/// The recalibration of `records` on `workers` threads, each with its own report and transformer,
+/// handed to `write` in the traversal's order. Each datum computes its empirical quality once,
+/// from a prior that depends only on its own keys, so a thread's copy answers what the one
+/// transformer would. Refusals come in the traversal's order too: a batch's transformer refusal
+/// before a later batch's, and a read the traversal refuses after the batches before it.
+fn recalibrate_in_parallel<R>(
+    mut records: impl Iterator<Item = Result<BamRecord, ReadsError>>,
+    workers: usize,
+    header: &htsjdk_bam::header::SamHeader,
+    recal_text: &str,
+    arguments: &ApplyBqsrArguments,
+    refused: &mut Option<BqsrError>,
+    write: impl FnOnce(&mut dyn Iterator<Item = Result<BamRecord, ReadsError>>) -> R,
+) -> R {
+    use std::sync::mpsc;
+    std::thread::scope(|scope| {
+        let lanes: Vec<_> = (0..workers)
+            .map(|_| {
+                let (to_worker, batches) = mpsc::sync_channel::<Vec<BamRecord>>(1);
+                let (to_writer, results) = mpsc::sync_channel(1);
+                scope.spawn(move || {
+                    let Ok(mut report) = RecalibrationReport::parse(recal_text) else {
+                        return;
+                    };
+                    let Ok(mut transformer) = BqsrReadTransformer::new(
+                        header,
+                        &mut report.tables,
+                        &mut report.quantization_info,
+                        &report.covariates,
+                        arguments,
+                    ) else {
+                        return;
+                    };
+                    for batch in batches {
+                        let recalibrated: Result<Vec<BamRecord>, BqsrError> =
+                            batch.iter().map(|read| transformer.apply(read)).collect();
+                        let failed = recalibrated.is_err();
+                        if to_writer.send(recalibrated).is_err() || failed {
+                            return;
+                        }
+                    }
+                });
+                (to_worker, results)
+            })
+            .collect();
+        let mut in_flight = std::collections::VecDeque::new();
+        let mut next_lane = 0;
+        let mut traversal_refusal = None;
+        let mut exhausted = false;
+        let mut current = Vec::new().into_iter();
+        let mut stopped = false;
+        let mut recalibrated = std::iter::from_fn(|| loop {
+            if stopped {
+                return None;
+            }
+            if let Some(read) = current.next() {
+                return Some(Ok(read));
+            }
+            while !exhausted && in_flight.len() < workers {
+                let batch: Vec<BamRecord> = records
+                    .by_ref()
+                    .map_while(|record| match record {
+                        Ok(record) => Some(record),
+                        Err(error) => {
+                            traversal_refusal = Some(error);
+                            None
+                        }
+                    })
+                    .take(BATCH)
+                    .collect();
+                exhausted = traversal_refusal.is_some() || batch.len() < BATCH;
+                if batch.is_empty() {
+                    break;
+                }
+                if lanes[next_lane].0.send(batch).is_err() {
+                    stopped = true;
+                    return Some(Err(ReadsError::Malformed(
+                        "a recalibrating thread stopped".to_string(),
+                    )));
+                }
+                in_flight.push_back(next_lane);
+                next_lane = (next_lane + 1) % workers;
+            }
+            let Some(lane) = in_flight.pop_front() else {
+                stopped = true;
+                return traversal_refusal.take().map(Err);
+            };
+            match lanes[lane].1.recv() {
+                Ok(Ok(batch)) => current = batch.into_iter(),
+                Ok(Err(error)) => {
+                    *refused = Some(error);
+                    stopped = true;
+                    return Some(Err(ReadsError::Malformed(String::new())));
+                }
+                Err(_) => {
+                    stopped = true;
+                    return Some(Err(ReadsError::Malformed(
+                        "a recalibrating thread stopped".to_string(),
+                    )));
+                }
+            }
+        });
+        let written = write(&mut recalibrated);
+        // Closing the lanes ends the workers' loops, so the scope can join them.
+        drop(lanes);
+        written
+    })
+}
+
 /// `BQSRReadTransformer` over reads already filtered, which `ApplyBQSR` shares with the two Spark
 /// tools that apply a table. `ApplyBQSRSparkFn` builds one transformer per partition, and one
 /// partition is one transformer.
