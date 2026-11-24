@@ -7613,7 +7613,7 @@
         "Refusals compared by hand against the oracle, one run each, and left out of the rows they",
         "would spend: a file with no read group (svd_norg.bam, the sample refusal), a names file that",
         "is not there, copy-number calls for another sample (svd_cnv_other.vcf), a master dictionary",
-        "the reads disagree with (svd_other.dict), and -L, which every queryname-sorted file refuses",
+        "the reads disagree with (svd_other.dict), and -L (--intervals), which every queryname-sorted file refuses",
         "for want of an index; -XL alone varies instead and is refused the same way.",
         "The SVVCFWriter builds its own writer, so --create-output-variant-index, -md5,",
         "--sites-only-vcf-output and --max-variants-per-shard vary and change nothing, and a .vcf.gz",
@@ -18489,9 +18489,11 @@
     },
     "PostprocessGermlineCNVCalls": {
       "$why": [
-        "GATKTool's startup comes first, and -L there reads the shards' interval lists for its dictionary, so a -L over a shard",
-        "directory that holds none is refused ahead of the import that otherwise ends every row. --reference, --input and the rest",
-        "of the standard arguments are held out: past that import nothing reads them."
+        "GATKTool's startup comes first, and -L there reads the shards' interval lists for its dictionary, so a -L over a",
+        "shard directory that holds none is refused ahead of the import that otherwise ends every row. --input,",
+        "--read-index, --reference and --sequence-dictionary are held out: past that import nothing reads them.",
+        "--variant-output-filtering is held out too: a mode with -L ends at the same import, and the port does not refuse a",
+        "mode without -L, a port limitation."
       ],
       "--calls-shard-path": [
         "/work/fixtures/it/shard",
@@ -18604,13 +18606,19 @@
     },
     "ScoreVariantAnnotations": {
       "$why": [
-        "The variants, resources, annotations and modes are ExtractVariantAnnotations': the same walker's onTraversalStart runs,",
-        "with the reserved snp label its refusal. The header goes to a writer nothing closes, and only then the backend. The",
-        "reference runs in the Broad's image, so past the import, and the port behind a stand-in python ($past_the_interpreter);",
-        "it/both and it/snp then hold scorers the reference trained before the rows (run_array.train_scorers), and nothing holds",
-        "none. PYTHON_SCRIPT runs a script that does nothing, which the port refuses in its own words: those rows differ.",
-        "The command line is held off because it records the date. The two thresholds are not varied: their bounds refuse a null",
-        "where the parser reads one, so a row without them would stop before the pass. The dump covers their refusals."
+        "The variants, resources, annotations and modes are ExtractVariantAnnotations': the same walker's onTraversalStart",
+        "runs, with the reserved snp label its refusal. The header goes to a writer nothing closes, and only then the",
+        "backend. The reference runs in the Broad's image, so past the import, and the port behind a stand-in python",
+        "($past_the_interpreter); it/both and it/snp then hold scorers the reference trained before the rows",
+        "(run_array.train_scorers), and nothing holds none. PYTHON_SCRIPT runs a script that does nothing, which the port",
+        "refuses in its own words: those rows differ. The command line is held off because it records the date. The two",
+        "thresholds (--snp-calibration-sensitivity-threshold, --indel-calibration-sensitivity-threshold) are not varied:",
+        "their bounds refuse a null where the parser reads one, so a row without them would stop before the pass. The dump",
+        "covers their refusals.",
+        "--input, --read-index, --reference and --sequence-dictionary are not given, as for ExtractVariantAnnotations: the",
+        "tool reads no base and no read, and a reference only rewrites the ##contig lines' assembly.",
+        "--variant-output-filtering is held out: the port neither filters the scored records by it nor refuses a mode",
+        "without -L, a port limitation."
       ],
       "$past_the_interpreter": "python",
       "$output_on_failure": true,

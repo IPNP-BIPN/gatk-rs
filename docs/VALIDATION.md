@@ -8,320 +8,322 @@ How to read it: **records** and **files** count the lines of the goldens CI re-d
 
 Each run's inputs, toolchain and container are in the `provenance` artefact CI keeps (`tools/provenance/record.py`).
 
-| tool | port | state | records | files | argument rows | t | fuzzer branches | inputs | held-out arguments | quarantined |
-|---|---|---|---:|---:|---:|---:|---|---:|---:|---|
-| ASEReadCounter | gatk-rs | oracle-backed | 10 suite | 0 suite | 20/20 (100.0%) | 2 | 2762 probes (+5), 0/13 diverge | 4 | 3 | none |
-| AccumulateQualityYieldMetrics | picard-rs | oracle-backed | not vendored | not vendored | 6/6 (100.0%) | 2 | not measured | 0 | 0 | none |
-| AccumulateVariantCallingMetrics | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | none |
-| AddCommentsToBam | gatk-rs | oracle-backed | 21 suite | 0 suite | 14/14 (100.0%) | 2 | not measured | 5 | 0 | none |
-| AddFlowBaseQuality | gatk-rs | oracle-backed | 121 suite | 0 suite | 24/24 (100.0%) | 2 | 2528 probes (+1), 0/10 diverge | 2 | 3 | none |
-| AddFlowSNVQuality | gatk-rs | oracle-backed | 319 suite | 0 suite | 26/26 (100.0%) | 2 | 2631 probes (+1), 0/11 diverge | 2 | 5 | none |
-| AddOATag | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | none |
-| AddOrReplaceReadGroups | picard-rs | oracle-backed | not vendored | not vendored | 21/21 (100.0%) | 2 | not measured | 0 | 0 | none |
-| AddOriginalAlignmentTags | gatk-rs | oracle-backed | 16 suite | 0 suite | 18/18 (100.0%) | 2 | 2280 probes (+32), 0/10 diverge | 4 | 0 | none |
-| AlleleFrequencyQC | gatk-rs | oracle-backed | 408 suite | 0 suite | 26/26 (100.0%) | 2 | 3654 probes (+0), 0/14 diverge | 6 | 6 | none |
-| AnalyzeCovariates | gatk-rs | oracle-backed | 15 suite | 0 suite | 11/11 (100.0%) | 2 | 1760 probes (+1), 0/7 diverge | 2 | 1 | none |
-| AnalyzeSaturationMutagenesis | gatk-rs | oracle-backed | 30 suite | 0 suite | 21/21 (100.0%) | 2 | 3013 probes (+10), 0/13 diverge | 6 | 1 | none |
-| AnnotateIntervals | gatk-rs | oracle-backed | 8 suite | 0 suite | 19/19 (100.0%) | 2 | 2268 probes (+54), 0/11 diverge | 4 | 0 | none |
-| AnnotateVcfWithBamDepth | gatk-rs | oracle-backed | 54 suite | 0 suite | 23/23 (100.0%) | 2 | 2535 probes (+5), 0/11 diverge | 6 | 0 | none |
-| AnnotateVcfWithExpectedAlleleFraction | gatk-rs | oracle-backed | 30 suite | 0 suite | 23/23 (100.0%) | 2 | 2436 probes (+2), 0/13 diverge | 4 | 2 | none |
-| ApplyBQSR | gatk-rs | oracle-backed | 36306 suite | 0 suite | 21/21 (100.0%) | 2 | 3123 probes (+8), 0/12 diverge | 6 | 0 | none |
-| ApplyBQSRSpark | gatk-rs | oracle-backed | 5 | 3 | 20/20 (100.0%) | 2 | 3051 probes (+7), 0/12 diverge | 6 | 1 | none |
-| ApplyVQSR | gatk-rs | oracle-backed | 395 suite | 0 suite | 25/25 (100.0%) | 2 | 2638 probes (+13), 0/17 diverge | 7 | 4 | none |
-| BQSRPipelineSpark | gatk-rs | oracle-backed | 5 | 3 | 23/23 (100.0%) | 2 | 4150 probes (+0), 0/14 diverge | 8 | 1 | none |
-| BaitDesigner | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | none |
-| BamIndexStats | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | none |
-| BamToBfq | picard-rs | oracle-backed | not vendored | not vendored | 17/17 (100.0%) | 2 | not measured | 0 | 0 | none |
-| BaseRecalibrator | gatk-rs | oracle-backed | 12 suite | 0 suite | 21/21 (100.0%) | 2 | 3759 probes (+28), 0/12 diverge | 8 | 0 | none |
-| BaseRecalibratorSpark | gatk-rs | oracle-backed | 6 | 1 | 22/22 (100.0%) | 2 | 3906 probes (+2), 0/13 diverge | 8 | 1 | none |
-| BedToIntervalList | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
-| BpmToNormalizationManifestCsv | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
-| BuildBamIndex | gatk-rs | oracle-backed | 16 suite | 0 suite | 18/18 (100.0%) | 2 | not measured | 7 | 0 | none |
-| BwaAndMarkDuplicatesPipelineSpark | gatk-rs | oracle-backed | 30 | 12 | 19/19 (100.0%) | 2 | 496 probes (+0), 0/4 diverge | 4 | 2 | none |
-| BwaMemIndexImageCreator | gatk-rs | oracle-backed | 37 suite | 0 suite | 15/15 (100.0%) | 2 | 1038 probes (+2), 0/8 diverge | 5 | 0 | none |
-| BwaSpark | gatk-rs | oracle-backed | 93 | 37 | 15/15 (100.0%) | 2 | 2200 probes (+2), 0/8 diverge | 5 | 2 | none |
-| CRAMIssue8768Detector | gatk-rs | oracle-backed | 54 suite | 0 suite | 11/11 (100.0%) | 2 | 1201 probes (+0), 0/7 diverge | 5 | 0 | none |
-| CalcMetadataSpark | gatk-rs | oracle-backed | 60 | 15 | 21/21 (100.0%) | 2 | 2107 probes (+1), 0/11 diverge | 3 | 3 | none |
-| CalculateAverageCombinedAnnotations | gatk-rs | oracle-backed | 11 suite | 0 suite | 16/16 (100.0%) | 2 | 1960 probes (+2), 0/9 diverge | 4 | 4 | none |
-| CalculateContamination | gatk-rs | oracle-backed | 42 suite | 0 suite | 8/8 (100.0%) | 2 | 1304 probes (+5), 0/6 diverge | 2 | 0 | none |
-| CalculateFingerprintMetrics | picard-rs | oracle-backed | not vendored | not vendored | 19/19 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CalculateGenotypePosteriors | gatk-rs | oracle-backed | 38 suite | 0 suite | 23/23 (100.0%) | 2 | 2930 probes (+7), 0/12 diverge | 5 | 1 | none |
-| CalculateMixingFractions | gatk-rs | oracle-backed | 11 suite | 0 suite | 23/23 (100.0%) | 2 | 2699 probes (+4), 0/10 diverge | 6 | 0 | none |
-| CalculateReadGroupChecksum | picard-rs | oracle-backed | not vendored | not vendored | 6/6 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CalibrateDragstrModel | gatk-rs | oracle-backed | 132 suite | 0 suite | 20/20 (100.0%) | 2 | 2662 probes (+0), 0/8 diverge | 5 | 4 | none |
-| CallCopyRatioSegments | gatk-rs | oracle-backed | 14 suite | 0 suite | 8/8 (100.0%) | 2 | 1508 probes (+17), 0/7 diverge | 1 | 0 | none |
-| CallableLoci | gatk-rs | oracle-backed | 23 suite | 0 suite | 18/18 (100.0%) | 2 | 2776 probes (+0), 0/11 diverge | 4 | 0 | none |
-| CheckDuplicateMarking | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CheckFingerprint | picard-rs | oracle-backed | not vendored | not vendored | 19/19 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CheckIlluminaDirectory | picard-rs | oracle-backed | not vendored | not vendored | 17/17 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CheckPileup | gatk-rs | oracle-backed | 33 suite | 0 suite | 21/21 (100.0%) | 2 | 3151 probes (+33), 0/13 diverge | 6 | 0 | none |
-| CheckReferenceCompatibility | gatk-rs | oracle-backed | 25 suite | 0 suite | 20/20 (100.0%) | 2 | 2065 probes (+18), 0/10 diverge | 4 | 2 | none |
-| CheckTerminatorBlock | gatk-rs | oracle-backed | 27 suite | 0 suite | 12/12 (100.0%) | 2 | not measured | 5 | 0 | none |
-| CleanSam | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | none |
-| ClipReads | gatk-rs | oracle-backed | 170 suite | 0 suite | 24/24 (100.0%) | 2 | 2506 probes (+2), 0/13 diverge | 5 | 0 | none |
-| ClusterCrosscheckMetrics | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectAlignmentSummaryMetrics | picard-rs | oracle-backed | not vendored | not vendored | 20/20 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectAllelicCounts | gatk-rs | oracle-backed | 6 suite | 0 suite | 19/19 (100.0%) | 2 | 3007 probes (+2), 0/11 diverge | 6 | 0 | none |
-| CollectAllelicCountsSpark | gatk-rs | oracle-backed | 72 | 11 | 19/19 (100.0%) | 2 | 3287 probes (+2), 0/9 diverge | 6 | 1 | none |
-| CollectArraysVariantCallingMetrics | picard-rs | oracle-backed | not vendored | not vendored | 11/11 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectBaseDistributionByCycle | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectBaseDistributionByCycleSpark | gatk-rs | oracle-backed | 6 | 2 | 21/21 (100.0%) | 2 | 2145 probes (+4), 0/13 diverge | 4 | 2 | none |
-| CollectDuplicateMetrics | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectF1R2Counts | gatk-rs | oracle-backed | 24 suite | 12 suite | 17/17 (100.0%) | 2 | 3118 probes (+5), 0/9 diverge | 3 | 2 | none |
-| CollectGcBiasMetrics | picard-rs | oracle-backed | not vendored | not vendored | 27/27 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectHiSeqXPfFailMetrics | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectHsMetrics | picard-rs | oracle-backed | not vendored | not vendored | 17/17 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectIlluminaBasecallingMetrics | picard-rs | oracle-backed | not vendored | not vendored | 14/14 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectIlluminaLaneMetrics | picard-rs | oracle-backed | not vendored | not vendored | 14/14 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectIndependentReplicateMetrics | picard-rs | oracle-backed | not vendored | not vendored | 14/14 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectInsertSizeMetrics | picard-rs | oracle-backed | not vendored | not vendored | 22/22 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectInsertSizeMetricsSpark | gatk-rs | oracle-backed | 53 | 11 | 21/21 (100.0%) | 2 | 2286 probes (+3), 0/9 diverge | 4 | 2 | none |
-| CollectJumpingLibraryMetrics | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectMultipleMetrics | picard-rs | oracle-backed | not vendored | not vendored | 16/16 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectMultipleMetricsSpark | gatk-rs | oracle-backed | 58 | 18 | 23/23 (100.0%) | 2 | 2268 probes (+26), 0/10 diverge | 4 | 2 | none |
-| CollectOxoGMetrics | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectQualityYieldMetrics | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectQualityYieldMetricsFlow | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectQualityYieldMetricsSNVQ | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectQualityYieldMetricsSpark | gatk-rs | oracle-backed | 6 | 2 | 22/22 (100.0%) | 2 | 2128 probes (+1), 0/12 diverge | 4 | 1 | none |
-| CollectRawWgsMetrics | picard-rs | oracle-backed | not vendored | not vendored | 22/22 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectReadCounts | gatk-rs | oracle-backed | 6 suite | 0 suite | 18/18 (100.0%) | 2 | 2546 probes (+59), 0/10 diverge | 6 | 0 | none |
-| CollectRnaSeqMetrics | picard-rs | oracle-backed | not vendored | not vendored | 27/27 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectRrbsMetrics | picard-rs | oracle-backed | not vendored | not vendored | 19/19 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectSVEvidence | gatk-rs | oracle-backed | 19 suite | 0 suite | 20/20 (100.0%) | 2 | 2396 probes (+3), 0/8 diverge | 5 | 2 | none |
-| CollectSamErrorMetrics | picard-rs | oracle-backed | not vendored | not vendored | 28/28 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectSequencingArtifactMetrics | picard-rs | oracle-backed | not vendored | not vendored | 19/19 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectTargetedPcrMetrics | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectUmiPrevalenceMetrics | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectVariantCallingMetrics | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectWgsMetrics | picard-rs | oracle-backed | not vendored | not vendored | 22/22 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CollectWgsMetricsWithNonZeroCoverage | picard-rs | oracle-backed | not vendored | not vendored | 23/23 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CombineGVCFs | gatk-rs | oracle-backed | 255 suite | 0 suite | 26/26 (100.0%) | 2 | 4141 probes (+2), 0/12 diverge | 7 | 6 | none |
-| CombineGenotypingArrayVcfs | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CombineSegmentBreakpoints | gatk-rs | oracle-backed | 12 suite | 0 suite | 18/18 (100.0%) | 2 | 2260 probes (+0), 0/6 diverge | 5 | 5 | none |
-| CompareBaseQualities | gatk-rs | oracle-backed | 31 suite | 0 suite | 11/11 (100.0%) | 2 | 1102 probes (+2), 0/4 diverge | 0 | 0 | none |
-| CompareDuplicatesSpark | gatk-rs | oracle-backed | 48 | 6 | 22/22 (100.0%) | 2 | 2335 probes (+2), 0/12 diverge | 4 | 2 | none |
-| CompareGtcFiles | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CompareIntervalLists | gatk-rs | oracle-backed | 14 suite | 0 suite | 7/7 (100.0%) | 2 | 1182 probes (+6), 0/6 diverge | 0 | 0 | none |
-| CompareMetrics | picard-rs | oracle-backed | not vendored | not vendored | 32/32 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CompareReferences | gatk-rs | oracle-backed | 34 suite | 0 suite | 20/20 (100.0%) | 2 | 1991 probes (+2), 0/10 diverge | 2 | 4 | none |
-| CompareSAMs | picard-rs | oracle-backed | not vendored | not vendored | 11/11 (100.0%) | 2 | not measured | 0 | 0 | none |
-| ComposeSTRTableFile | gatk-rs | oracle-backed | 12 suite | 0 suite | 22/22 (100.0%) | 2 | 2071 probes (+0), 0/5 diverge | 3 | 5 | none |
-| Concordance | gatk-rs | oracle-backed | 84 suite | 0 suite | 16/16 (100.0%) | 2 | 2516 probes (+17), 0/7 diverge | 4 | 0 | none |
-| CondenseDepthEvidence | gatk-rs | oracle-backed | 18 suite | 0 suite | 18/18 (100.0%) | 2 | 2047 probes (+35), 0/9 diverge | 2 | 4 | none |
-| ConvertCountsToDepthFile | gatk-rs | oracle-backed | 55 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 2 | 4 | none |
-| ConvertHaplotypeDatabaseToVcf | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
-| ConvertHeaderlessHadoopBamShardToBam | gatk-rs | oracle-backed | 21 suite | 0 suite | 12/12 (100.0%) | 2 | 985 probes (+2), 0/6 diverge | 5 | 0 | none |
-| ConvertSequencingArtifactToOxoG | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CountBases | gatk-rs | oracle-backed | 50 suite | 0 suite | 21/21 (100.0%) | 2 | 2111 probes (+25), 0/12 diverge | 5 | 0 | none |
-| CountBasesInReference | gatk-rs | oracle-backed | 191 suite | 0 suite | 19/19 (100.0%) | 2 | 2046 probes (+0), 0/6 diverge | 4 | 0 | none |
-| CountBasesSpark | gatk-rs | oracle-backed | 6 | 0 | 19/19 (100.0%) | 2 | 1989 probes (+4), 0/11 diverge | 5 | 1 | none |
-| CountFalsePositives | gatk-rs | oracle-backed | 14 suite | 0 suite | 24/24 (100.0%) | 2 | 2273 probes (+30), 0/7 diverge | 2 | 2 | none |
-| CountReads | gatk-rs | oracle-backed | 36418 suite | 6 suite | 21/21 (100.0%) | 2 | 2110 probes (+25), 0/12 diverge | 5 | 0 | none |
-| CountReadsSpark | gatk-rs | oracle-backed | 9 | 1 | 19/19 (100.0%) | 2 | 2017 probes (+4), 0/11 diverge | 5 | 1 | none |
-| CountVariants | gatk-rs | oracle-backed | 36417 suite | 12 suite | 23/23 (100.0%) | 2 | 2356 probes (+4), 0/10 diverge | 4 | 0 | none |
-| CountVariantsSpark | gatk-rs | oracle-backed | 7 | 0 | 19/19 (100.0%) | 2 | 1682 probes (+8), 0/11 diverge | 7 | 1 | none |
-| CpxVariantReInterpreterSpark | gatk-rs | oracle-backed | 81 | 24 | 19/19 (100.0%) | 2 | 3828 probes (+5), 0/12 diverge | 8 | 2 | none |
-| CreateBafRegressMetricsFile | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CreateExtendedIlluminaManifest | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CreateHadoopBamSplittingIndex | gatk-rs | oracle-backed | 43 suite | 0 suite | 11/11 (100.0%) | 2 | 1012 probes (+10), 0/7 diverge | 3 | 0 | none |
-| CreateReadCountPanelOfNormals | gatk-rs | oracle-backed | 445 suite | 0 suite | 25/25 (100.0%) | 2 | 2161 probes (+22), 0/10 diverge | 5 | 0 | none |
-| CreateSequenceDictionary | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CreateSomaticPanelOfNormals | gatk-rs | oracle-backed | 29 suite | 0 suite | 21/21 (100.0%) | 2 | 2345 probes (+4), 0/8 diverge | 3 | 5 | none |
-| CreateVerifyIDIntensityContaminationMetricsFile | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CrosscheckFingerprints | picard-rs | oracle-backed | not vendored | not vendored | 24/24 (100.0%) | 2 | not measured | 0 | 0 | none |
-| CrosscheckReadGroupFingerprints | picard-rs | oracle-backed | not vendored | not vendored | 20/20 (100.0%) | 2 | not measured | 0 | 0 | none |
-| DenoiseReadCounts | gatk-rs | oracle-backed | 13 suite | 0 suite | 6/6 (100.0%) | 2 | 1458 probes (+0), 0/3 diverge | 1 | 3 | none |
-| DepthOfCoverage | gatk-rs | oracle-backed | 60 suite | 0 suite | 20/20 (100.0%) | 2 | 3023 probes (+74), 0/14 diverge | 2 | 1 | none |
-| DetermineGermlineContigPloidy | gatk-rs | oracle-backed | 306 suite | 150 suite | 32/32 (100.0%) | 2 | 1046 probes (+2), 0/4 diverge | 2 | 0 | none |
-| DiscoverVariantsFromContigAlignmentsSAMSpark | gatk-rs | oracle-backed | 96 | 12 | 19/19 (100.0%) | 2 | 3995 probes (+6), 0/12 diverge | 5 | 2 | none |
-| DownsampleByDuplicateSet | gatk-rs | oracle-backed | 23 suite | 0 suite | 18/18 (100.0%) | 2 | 1955 probes (+0), 0/9 diverge | 2 | 3 | none |
-| DownsampleSam | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
-| DumpTabixIndex | gatk-rs | oracle-backed | 11 suite | 0 suite | 7/7 (100.0%) | 2 | 1015 probes (+2), 0/5 diverge | 3 | 0 | none |
-| EstimateLibraryComplexity | picard-rs | oracle-backed | not vendored | not vendored | 14/14 (100.0%) | 2 | not measured | 0 | 0 | none |
-| EvaluateInfoFieldConcordance | gatk-rs | oracle-backed | 13 suite | 0 suite | 21/21 (100.0%) | 2 | 2234 probes (+5), 0/10 diverge | 3 | 2 | none |
-| ExampleMultiFeatureWalker | gatk-rs | oracle-backed | 36 suite | 0 suite | 16/16 (100.0%) | 2 | 2034 probes (+0), 0/7 diverge | 5 | 4 | none |
-| ExtractFingerprint | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | none |
-| ExtractIlluminaBarcodes | picard-rs | oracle-backed | not vendored | not vendored | 30/30 (100.0%) | 2 | not measured | 0 | 0 | none |
-| ExtractOriginalAlignmentRecordsByNameSpark | gatk-rs | oracle-backed | 13 | 6 | 22/22 (100.0%) | 2 | 1989 probes (+7), 0/11 diverge | 6 | 1 | none |
-| ExtractSVEvidenceSpark | gatk-rs | oracle-backed | 69 | 36 | 24/24 (100.0%) | 2 | 2970 probes (+0), 0/11 diverge | 5 | 3 | none |
-| ExtractSequences | picard-rs | oracle-backed | not vendored | not vendored | 7/7 (100.0%) | 2 | not measured | 0 | 0 | none |
-| ExtractVariantAnnotations | gatk-rs | oracle-backed | 178 suite | 0 suite | 29/29 (100.0%) | 2 | 2998 probes (+1), 0/12 diverge | 2 | 4 | none |
-| FastaAlternateReferenceMaker | gatk-rs | oracle-backed | 13 suite | 0 suite | 21/21 (100.0%) | 2 | 2488 probes (+2), 0/12 diverge | 7 | 0 | none |
-| FastaReferenceMaker | gatk-rs | oracle-backed | 28 suite | 0 suite | 21/21 (100.0%) | 2 | 2069 probes (+2), 0/11 diverge | 4 | 0 | none |
-| FastqToSam | picard-rs | oracle-backed | not vendored | not vendored | 21/21 (100.0%) | 2 | not measured | 0 | 0 | none |
-| FifoBuffer | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
-| FilterAlignmentArtifacts | gatk-rs | oracle-backed | 271 suite | 0 suite | 21/21 (100.0%) | 2 | 4865 probes (+2), 0/7 diverge | 6 | 3 | none |
-| FilterFuncotations | gatk-rs | oracle-backed | 10 suite | 0 suite | 16/16 (100.0%) | 2 | 2477 probes (+0), 0/6 diverge | 2 | 6 | none |
-| FilterIntervals | gatk-rs | oracle-backed | 11 suite | 0 suite | 11/11 (100.0%) | 2 | 2309 probes (+3), 0/7 diverge | 4 | 1 | none |
-| FilterMutectCalls | gatk-rs | oracle-backed | 320 suite | 0 suite | 24/24 (100.0%) | 2 | 3736 probes (+5), 0/13 diverge | 12 | 0 | none |
-| FilterSamReads | picard-rs | oracle-backed | not vendored | not vendored | 26/26 (100.0%) | 2 | not measured | 0 | 0 | none |
-| FilterVariantTranches | gatk-rs | oracle-backed | 60 suite | 0 suite | 15/15 (100.0%) | 2 | 2161 probes (+5), 0/10 diverge | 4 | 4 | none |
-| FilterVcf | gatk-rs | oracle-backed | 20 suite | 0 suite | 9/20 (45.0%) | 2 | not measured | 8 | 0 | none |
-| FindBadGenomicKmersSpark | gatk-rs | oracle-backed | 63 | 12 | 21/21 (100.0%) | 2 | 2120 probes (+4), 0/12 diverge | 4 | 2 | none |
-| FindBreakpointEvidenceSpark | gatk-rs | oracle-backed | 9344 | 8309 | 26/26 (100.0%) | 2 | 5309 probes (+20), 0/14 diverge | 9 | 3 | none |
-| FindMendelianViolations | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
-| FixMateInformation | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
-| FixMisencodedBaseQualityReads | gatk-rs | oracle-backed | 40 suite | 0 suite | 21/21 (100.0%) | 2 | 2155 probes (+25), 0/12 diverge | 5 | 0 | none |
-| FixVcfHeader | gatk-rs | oracle-backed | 26 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 8 | 0 | none |
-| FlagStat | gatk-rs | oracle-backed | 30 suite | 0 suite | 21/21 (100.0%) | 2 | 2124 probes (+25), 0/12 diverge | 5 | 0 | none |
-| FlagStatSpark | gatk-rs | oracle-backed | 5 | 1 | 19/19 (100.0%) | 2 | 2008 probes (+4), 0/11 diverge | 5 | 1 | none |
-| FlowFeatureMapper | gatk-rs | oracle-backed | 197 suite | 0 suite | 25/25 (100.0%) | 2 | 3066 probes (+11), 0/15 diverge | 2 | 5 | none |
-| FlowPairHMMAlignReadsToHaplotypes | gatk-rs | oracle-backed | 16 suite | 0 suite | 40/40 (100.0%) | 2 | 2646 probes (+0), 0/10 diverge | 4 | 5 | none |
-| FuncotateSegments | gatk-rs | oracle-backed | 11 suite | 0 suite | 25/25 (100.0%) | 2 | 6148 probes (+0), 0/12 diverge | 10 | 4 | none |
-| Funcotator | gatk-rs | oracle-backed | 15 suite | 0 suite | 31/31 (100.0%) | 2 | 5849 probes (+20), 0/24 diverge | 9 | 3 | none |
-| FuncotatorDataSourceDownloader | gatk-rs | oracle-backed | 54 suite | 10 suite | 8/8 (100.0%) | 2 | 1568 probes (+286), 0/4 diverge | 2 | 2 | none |
-| GatherBQSRReports | gatk-rs | oracle-backed | 9 suite | 0 suite | 6/6 (100.0%) | 2 | 1907 probes (+0), 0/3 diverge | 2 | 0 | none |
-| GatherBamFiles | gatk-rs | oracle-backed | 28 suite | 0 suite | 11/11 (100.0%) | 2 | not measured | 4 | 0 | none |
-| GatherNormalArtifactData | gatk-rs | oracle-backed | 11 suite | 0 suite | 6/6 (100.0%) | 2 | 1106 probes (+0), 0/3 diverge | 2 | 0 | none |
-| GatherPileupSummaries | gatk-rs | oracle-backed | 11 suite | 0 suite | 6/6 (100.0%) | 2 | 1199 probes (+2), 0/6 diverge | 5 | 0 | none |
-| GatherTranches | gatk-rs | oracle-backed | 11 suite | 0 suite | 8/8 (100.0%) | 2 | 1113 probes (+2), 0/7 diverge | 4 | 0 | none |
-| GatherVcfs | gatk-rs | oracle-backed | 28 suite | 0 suite | 34/34 (100.0%) | 2 | not measured | 8 | 0 | none |
-| GatherVcfsCloud | gatk-rs | oracle-backed | 36309 suite | 0 suite | 11/11 (100.0%) | 2 | 1047 probes (+2), 0/5 diverge | 2 | 0 | none |
-| GeneExpressionEvaluation | gatk-rs | oracle-backed | 21 suite | 0 suite | 19/19 (100.0%) | 2 | 2777 probes (+4), 0/12 diverge | 4 | 3 | none |
-| GenomicsDBImport | gatk-rs | oracle-backed | 3620 | 3341 | 19/19 (100.0%) | 2 | 2174 probes (+48), 0/9 diverge | 6 | 11 | none |
-| GenotypeConcordance | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
-| GenotypeGVCFs | gatk-rs | oracle-backed | 19 suite | 0 suite | 39/39 (100.0%) | 2 | 5528 probes (+6), 0/19 diverge | 11 | 0 | none |
-| GermlineCNVCaller | gatk-rs | oracle-backed | 297 suite | 150 suite | 46/46 (100.0%) | 2 | 1062 probes (+0), 0/3 diverge | 2 | 0 | none |
-| GetNormalArtifactData | gatk-rs | oracle-backed | 7 suite | 0 suite | 19/19 (100.0%) | 2 | 2729 probes (+0), 0/6 diverge | 2 | 0 | none |
-| GetPileupSummaries | gatk-rs | oracle-backed | 8 suite | 0 suite | 19/19 (100.0%) | 2 | 3053 probes (+2), 0/10 diverge | 6 | 0 | none |
-| GetSampleName | gatk-rs | oracle-backed | 35 suite | 0 suite | 21/21 (100.0%) | 2 | 1824 probes (+2), 0/9 diverge | 5 | 0 | none |
-| GnarlyGenotyper | gatk-rs | oracle-backed | 47 suite | 0 suite | 28/28 (100.0%) | 2 | 3562 probes (+2), 0/10 diverge | 4 | 5 | none |
-| GroundTruthReadsBuilder | gatk-rs | oracle-backed | 17 suite | 0 suite | 32/32 (100.0%) | 2 | 3122 probes (+3), 0/21 diverge | 5 | 5 | none |
-| GroundTruthScorer | gatk-rs | oracle-backed | 59 suite | 0 suite | 30/30 (100.0%) | 2 | 3704 probes (+0), 0/12 diverge | 6 | 5 | none |
-| GroupedSVCluster | gatk-rs | oracle-backed | 257 suite | 0 suite | 23/23 (100.0%) | 2 | 3860 probes (+0), 0/13 diverge | 9 | 5 | none |
-| GtcToVcf | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | none |
-| GtfToBed | gatk-rs | oracle-backed | 9 suite | 0 suite | 20/20 (100.0%) | 2 | 2184 probes (+4), 0/10 diverge | 3 | 4 | none |
-| HaplotypeBasedVariantRecaller | gatk-rs | oracle-backed | 7 suite | 0 suite | 48/48 (100.0%) | 2 | 4112 probes (+2), 0/12 diverge | 5 | 3 | none |
-| HaplotypeCaller | gatk-rs | oracle-backed | 587 suite | 50 suite | 50/50 (100.0%) | 2 | 12968 probes (+2), 0/32 diverge | 14 | 0 | mask_identity_hashes, sort_segments_with |
-| HaplotypeCallerSpark | gatk-rs | oracle-backed | 64 | 15 | 49/49 (100.0%) | 2 | 11894 probes (+2), 0/27 diverge | 11 | 15 | none |
-| HtsgetReader | gatk-rs | oracle-backed | 865 | 41 | 12/12 (100.0%) | 2 | 1084 probes (+2), 0/5 diverge | 0 | 0 | none |
-| IdentifyContaminant | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
-| IlluminaBasecallsToFastq | picard-rs | oracle-backed | not vendored | not vendored | not measured | - | not measured | 0 | 0 | none |
-| IlluminaBasecallsToSam | picard-rs | oracle-backed | not vendored | not vendored | 31/31 (100.0%) | 2 | not measured | 0 | 0 | none |
-| IndexFeatureFile | gatk-rs | oracle-backed | 36278 suite | 0 suite | 8/8 (100.0%) | 2 | 1219 probes (+10), 0/9 diverge | 0 | 0 | none |
-| IntervalListToBed | picard-rs | oracle-backed | not vendored | not vendored | 8/8 (100.0%) | 2 | not measured | 0 | 0 | none |
-| IntervalListTools | picard-rs | oracle-backed | not vendored | not vendored | 34/34 (100.0%) | 2 | not measured | 0 | 0 | none |
-| JointGermlineCNVSegmentation | gatk-rs | oracle-backed | 255 suite | 0 suite | 22/22 (100.0%) | 2 | 4190 probes (+0), 0/10 diverge | 6 | 5 | none |
-| LearnReadOrientationModel | gatk-rs | oracle-backed | 22 suite | 0 suite | 12/12 (100.0%) | 2 | 1836 probes (+2), 0/6 diverge | 2 | 0 | none |
-| LeftAlignAndTrimVariants | gatk-rs | oracle-backed | 128 suite | 0 suite | 22/22 (100.0%) | 2 | 2810 probes (+3), 0/15 diverge | 4 | 0 | none |
-| LeftAlignIndels | gatk-rs | oracle-backed | 40 suite | 0 suite | 19/19 (100.0%) | 2 | 2385 probes (+0), 0/7 diverge | 6 | 0 | none |
-| LiftOverHaplotypeMap | picard-rs | oracle-backed | not vendored | not vendored | 8/8 (100.0%) | 2 | not measured | 0 | 0 | none |
-| LiftOverIntervalList | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
-| LiftoverVcf | picard-rs | oracle-backed | not vendored | not vendored | 17/17 (100.0%) | 2 | not measured | 0 | 0 | none |
-| LocalAssembler | gatk-rs | oracle-backed | 30 suite | 0 suite | 21/21 (100.0%) | 2 | 3269 probes (+3), 0/12 diverge | 5 | 1 | none |
-| MTLowHeteroplasmyFilterTool | gatk-rs | oracle-backed | 24 suite | 0 suite | 15/15 (100.0%) | 2 | 2224 probes (+0), 0/10 diverge | 2 | 4 | none |
-| MakeSitesOnlyVcf | gatk-rs | oracle-backed | 20 suite | 0 suite | 16/16 (100.0%) | 2 | not measured | 4 | 0 | none |
-| MakeVcfSampleNameMap | picard-rs | oracle-backed | not vendored | not vendored | 6/6 (100.0%) | 2 | not measured | 0 | 0 | none |
-| MarkDuplicates | picard-rs | oracle-backed | not vendored | not vendored | 47/47 (100.0%) | 2 | not measured | 0 | 0 | none |
-| MarkDuplicatesSpark | gatk-rs | oracle-backed | 368 | 203 | 26/27 (96.3%) | 2 | 3023 probes (+2), 0/12 diverge | 6 | 0 | none |
-| MarkDuplicatesWithMateCigar | picard-rs | oracle-backed | not vendored | not vendored | 30/30 (100.0%) | 2 | not measured | 0 | 0 | none |
-| MarkIlluminaAdapters | picard-rs | oracle-backed | not vendored | not vendored | 28/28 (100.0%) | 2 | not measured | 0 | 0 | none |
-| MeanQualityByCycle | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
-| MeanQualityByCycleSpark | gatk-rs | oracle-backed | 9 | 2 | 21/21 (100.0%) | 2 | 2162 probes (+4), 0/13 diverge | 4 | 1 | none |
-| MergeAnnotatedRegions | gatk-rs | oracle-backed | 14 suite | 0 suite | 18/18 (100.0%) | 2 | 2040 probes (+0), 0/6 diverge | 5 | 5 | none |
-| MergeAnnotatedRegionsByAnnotation | gatk-rs | oracle-backed | 9 suite | 0 suite | 22/22 (100.0%) | 2 | 1986 probes (+0), 0/7 diverge | 5 | 5 | none |
-| MergeBamAlignment | picard-rs | oracle-backed | not vendored | not vendored | not measured | - | not measured | 0 | 0 | none |
-| MergeMutect2CallsWithMC3 | gatk-rs | oracle-backed | 12 suite | 0 suite | 16/16 (100.0%) | 2 | 1811 probes (+0), 0/6 diverge | 3 | 7 | none |
-| MergeMutectStats | gatk-rs | oracle-backed | 11 suite | 0 suite | 7/7 (100.0%) | 2 | 1126 probes (+2), 0/5 diverge | 3 | 0 | none |
-| MergePedIntoVcf | picard-rs | oracle-backed | not vendored | not vendored | 19/19 (100.0%) | 2 | not measured | 0 | 0 | none |
-| MergeSamFiles | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | none |
-| MergeVcfs | gatk-rs | oracle-backed | 38 suite | 0 suite | 27/27 (100.0%) | 2 | not measured | 8 | 0 | none |
-| MethylationTypeCaller | gatk-rs | oracle-backed | 74 suite | 0 suite | 21/21 (100.0%) | 2 | 2711 probes (+42), 0/12 diverge | 6 | 0 | none |
-| ModelSegments | gatk-rs | oracle-backed | 21 suite | 0 suite | 19/19 (100.0%) | 2 | 3526 probes (+1), 0/15 diverge | 6 | 0 | none |
-| Mutect2 | gatk-rs | oracle-backed | 617 suite | 76 suite | 40/40 (100.0%) | 2 | 14428 probes (+0), 0/26 diverge | 13 | 0 | mask_identity_hashes, sort_segments_with |
-| NVScoreVariants | gatk-rs | oracle-backed | 1373 suite | 0 suite | 10/10 (100.0%) | 2 | 962 probes (+2), 0/4 diverge | 4 | 0 | none |
-| NonNFastaSize | picard-rs | oracle-backed | not vendored | not vendored | 7/7 (100.0%) | 2 | not measured | 0 | 0 | none |
-| NormalizeFasta | picard-rs | oracle-backed | not vendored | not vendored | 8/8 (100.0%) | 2 | not measured | 0 | 0 | none |
-| NuMTFilterTool | gatk-rs | oracle-backed | 35 suite | 0 suite | 15/15 (100.0%) | 2 | 2183 probes (+0), 0/7 diverge | 2 | 4 | none |
-| ParallelCopyGCSDirectoryIntoHDFSSpark | gatk-rs | oracle-backed | 6 | 0 | 16/16 (100.0%) | 2 | 1522 probes (+3), 0/6 diverge | 2 | 0 | none |
-| PathSeqBuildKmers | gatk-rs | oracle-backed | 122 suite | 0 suite | 8/8 (100.0%) | 2 | 1256 probes (+17), 0/7 diverge | 2 | 1 | none |
-| PathSeqBuildReferenceTaxonomy | gatk-rs | oracle-backed | 161 suite | 0 suite | 9/9 (100.0%) | 2 | 1296 probes (+7), 0/9 diverge | 6 | 0 | none |
-| PathSeqBwaSpark | gatk-rs | oracle-backed | 92 | 32 | 22/22 (100.0%) | 2 | 1512 probes (+0), 0/6 diverge | 6 | 0 | none |
-| PathSeqFilterSpark | gatk-rs | oracle-backed | 188 | 109 | 20/20 (100.0%) | 2 | 2798 probes (+0), 0/9 diverge | 7 | 1 | none |
-| PathSeqPipelineSpark | gatk-rs | oracle-backed | 151 | 103 | 25/25 (100.0%) | 2 | 2830 probes (+2), 0/7 diverge | 7 | 0 | none |
-| PathSeqScoreSpark | gatk-rs | oracle-backed | 110 | 56 | 15/15 (100.0%) | 2 | 2083 probes (+0), 0/7 diverge | 6 | 0 | none |
-| Pileup | gatk-rs | oracle-backed | 9 suite | 0 suite | 18/18 (100.0%) | 2 | 2701 probes (+8), 0/10 diverge | 4 | 0 | none |
-| PileupSpark | gatk-rs | oracle-backed | 11 | 4 | 22/22 (100.0%) | 2 | 2993 probes (+19), 0/16 diverge | 6 | 0 | none |
-| PlotDenoisedCopyRatios | gatk-rs | oracle-backed | 379 | 0 | 11/11 (100.0%) | 2 | 1457 probes (+2), 0/6 diverge | 5 | 0 | none |
-| PlotModeledSegments | gatk-rs | oracle-backed | 338 | 0 | 11/11 (100.0%) | 2 | 1656 probes (+2), 0/8 diverge | 6 | 0 | none |
-| PositionBasedDownsampleSam | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
-| PostProcessReadsForRSEM | gatk-rs | oracle-backed | 43 suite | 0 suite | 20/20 (100.0%) | 2 | 2146 probes (+24), 0/10 diverge | 2 | 2 | none |
-| PostprocessGermlineCNVCalls | gatk-rs | oracle-backed | 333 suite | 150 suite | 20/20 (100.0%) | 2 | 1748 probes (+0), 0/6 diverge | 3 | 5 | none |
-| PreprocessIntervals | gatk-rs | oracle-backed | 21 suite | 0 suite | 20/20 (100.0%) | 2 | 2009 probes (+15), 0/8 diverge | 4 | 0 | none |
-| PrintBGZFBlockInformation | gatk-rs | oracle-backed | 18 suite | 8 suite | 6/6 (100.0%) | 2 | 1005 probes (+4), 0/6 diverge | 0 | 0 | none |
-| PrintDistantMates | gatk-rs | oracle-backed | 75 suite | 0 suite | 19/19 (100.0%) | 2 | 2221 probes (+0), 0/9 diverge | 4 | 0 | none |
-| PrintFileDiagnostics | gatk-rs | oracle-backed | 9 suite | 0 suite | 6/6 (100.0%) | 2 | 968 probes (+0), 0/4 diverge | 2 | 0 | none |
-| PrintReadCounts | gatk-rs | oracle-backed | 44 suite | 0 suite | 17/17 (100.0%) | 2 | 1940 probes (+0), 0/7 diverge | 2 | 4 | none |
-| PrintReads | gatk-rs | oracle-backed | 36292 suite | 0 suite | 21/21 (100.0%) | 2 | 2140 probes (+25), 0/12 diverge | 5 | 0 | none |
-| PrintReadsHeader | gatk-rs | oracle-backed | 19 suite | 0 suite | 19/19 (100.0%) | 2 | 1810 probes (+0), 0/6 diverge | 4 | 0 | none |
-| PrintReadsSpark | gatk-rs | oracle-backed | 19 | 11 | 23/23 (100.0%) | 2 | 2169 probes (+8), 0/14 diverge | 5 | 0 | none |
-| PrintSVEvidence | gatk-rs | oracle-backed | 27 suite | 0 suite | 17/17 (100.0%) | 2 | 2156 probes (+5), 0/9 diverge | 5 | 4 | none |
-| PrintVariantsSpark | gatk-rs | oracle-backed | 19 | 5 | 23/23 (100.0%) | 2 | 2097 probes (+1), 0/9 diverge | 7 | 1 | none |
-| QualityScoreDistribution | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | none |
-| QualityScoreDistributionSpark | gatk-rs | oracle-backed | 6 | 2 | 21/21 (100.0%) | 2 | 2120 probes (+2), 0/9 diverge | 4 | 1 | none |
-| RampedHaplotypeCaller | gatk-rs | oracle-backed | 576 suite | 50 suite | 54/54 (100.0%) | 2 | 14390 probes (+52), 0/34 diverge | 16 | 0 | mask_identity_hashes, sort_segments_with |
-| ReadAnonymizer | gatk-rs | oracle-backed | 28 suite | 0 suite | 22/22 (100.0%) | 2 | 2290 probes (+1), 0/9 diverge | 6 | 0 | none |
-| ReadsPipelineSpark | gatk-rs | oracle-backed | 133 | 48 | 53/53 (100.0%) | 2 | 14460 probes (+86), 0/28 diverge | 11 | 26 | none |
-| ReblockGVCF | gatk-rs | oracle-backed | 255 suite | 0 suite | 56/56 (100.0%) | 2 | 4880 probes (+0), 0/17 diverge | 8 | 7 | none |
-| ReferenceBlockConcordance | gatk-rs | oracle-backed | 18 suite | 0 suite | 17/17 (100.0%) | 2 | 1764 probes (+0), 0/5 diverge | 3 | 7 | none |
-| RemoveNearbyIndels | gatk-rs | oracle-backed | 102 suite | 0 suite | 24/24 (100.0%) | 2 | 2303 probes (+0), 0/14 diverge | 2 | 2 | none |
-| RenameSampleInVcf | gatk-rs | oracle-backed | 20 suite | 0 suite | 15/15 (100.0%) | 2 | not measured | 5 | 0 | none |
-| ReorderSam | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
-| ReplaceSamHeader | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
-| RevertBaseQualityScores | gatk-rs | oracle-backed | 49 suite | 0 suite | 19/19 (100.0%) | 2 | 2187 probes (+0), 0/7 diverge | 4 | 0 | none |
-| RevertOriginalBaseQualitiesAndAddMateCigar | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | none |
-| RevertSam | picard-rs | oracle-backed | not vendored | not vendored | 21/21 (100.0%) | 2 | not measured | 0 | 0 | none |
-| RevertSamSpark | gatk-rs | oracle-backed | 67 | 21 | 28/28 (100.0%) | 2 | 2632 probes (+8), 0/18 diverge | 4 | 2 | none |
-| SVAnnotate | gatk-rs | oracle-backed | 15 suite | 0 suite | 18/18 (100.0%) | 2 | 2777 probes (+2), 0/9 diverge | 4 | 6 | none |
-| SVCluster | gatk-rs | oracle-backed | 254 suite | 0 suite | 24/24 (100.0%) | 2 | 3563 probes (+0), 0/11 diverge | 5 | 5 | none |
-| SVConcordance | gatk-rs | oracle-backed | 10 suite | 0 suite | 40/40 (100.0%) | 2 | 3011 probes (+3), 0/8 diverge | 6 | 6 | none |
-| SVStratify | gatk-rs | oracle-backed | 286 suite | 0 suite | 16/16 (100.0%) | 2 | 2739 probes (+1), 0/9 diverge | 8 | 5 | none |
-| SamFormatConverter | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | none |
-| SamToFastq | picard-rs | oracle-backed | not vendored | not vendored | 19/19 (100.0%) | 2 | not measured | 0 | 0 | none |
-| SamToFastqWithTags | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | none |
-| ScatterIntervalsByNs | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
-| ScoreVariantAnnotations | gatk-rs | oracle-backed | 210 suite | 51 suite | 27/27 (100.0%) | 2 | 2639 probes (+2), 0/14 diverge | 6 | 7 | mask_hdf5_modification_times |
-| SelectVariants | gatk-rs | oracle-backed | 36903 suite | 0 suite | 51/51 (100.0%) | 2 | 2736 probes (+5), 0/14 diverge | 7 | 0 | none |
-| SetNmAndUqTags | gatk-rs | oracle-backed | 10 suite | 0 suite | 16/16 (100.0%) | 2 | not measured | 7 | 0 | none |
-| SetNmMdAndUqTags | gatk-rs | oracle-backed | 10 suite | 0 suite | 16/16 (100.0%) | 2 | not measured | 7 | 0 | none |
-| ShiftFasta | gatk-rs | oracle-backed | 37 suite | 0 suite | 21/21 (100.0%) | 2 | 1855 probes (+2), 0/9 diverge | 0 | 2 | none |
-| SimpleMarkDuplicatesWithMateCigar | picard-rs | oracle-backed | not vendored | not vendored | 35/35 (100.0%) | 2 | not measured | 0 | 0 | none |
-| SiteDepthtoBAF | gatk-rs | oracle-backed | 30 suite | 0 suite | 18/18 (100.0%) | 2 | 2082 probes (+0), 0/7 diverge | 5 | 6 | none |
-| SortGff | picard-rs | oracle-backed | not vendored | not vendored | 14/14 (100.0%) | 2 | not measured | 0 | 0 | none |
-| SortSam | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
-| SortSamSpark | gatk-rs | oracle-backed | 21 | 10 | 23/23 (100.0%) | 2 | 2176 probes (+11), 0/13 diverge | 5 | 0 | none |
-| SortVcf | gatk-rs | oracle-backed | 28 suite | 0 suite | 16/16 (100.0%) | 2 | not measured | 6 | 0 | none |
-| SplitCRAM | gatk-rs | oracle-backed | 31 suite | 0 suite | 11/11 (100.0%) | 2 | 983 probes (+2), 0/7 diverge | 2 | 0 | none |
-| SplitIntervals | gatk-rs | oracle-backed | 78 suite | 0 suite | 25/25 (100.0%) | 2 | 1923 probes (+6), 0/12 diverge | 4 | 0 | none |
-| SplitNCigarReads | gatk-rs | oracle-backed | 114 suite | 0 suite | 21/21 (100.0%) | 2 | 2769 probes (+4), 0/11 diverge | 6 | 0 | none |
-| SplitReads | gatk-rs | oracle-backed | 77 suite | 0 suite | 20/20 (100.0%) | 2 | 2173 probes (+3), 0/9 diverge | 4 | 0 | none |
-| SplitSamByLibrary | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | none |
-| SplitSamByNumberOfReads | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
-| SplitVcfs | gatk-rs | oracle-backed | 22 suite | 0 suite | 22/26 (84.6%) | 2 | not measured | 10 | 0 | none |
-| StructuralVariantDiscoverer | gatk-rs | oracle-backed | 3 suite | 0 suite | 23/23 (100.0%) | 2 | 3778 probes (+0), 0/14 diverge | 9 | 2 | none |
-| StructuralVariationDiscoveryPipelineSpark | gatk-rs | oracle-backed | 1037 | 733 | 27/27 (100.0%) | 2 | 7002 probes (+3), 0/19 diverge | 12 | 0 | none |
-| SvDiscoverFromLocalAssemblyContigAlignmentsSpark | gatk-rs | oracle-backed | 161 | 88 | 17/17 (100.0%) | 2 | 5831 probes (+5), 0/9 diverge | 7 | 0 | none |
-| TagGermlineEvents | gatk-rs | oracle-backed | 15 suite | 0 suite | 17/17 (100.0%) | 2 | 2085 probes (+5), 0/8 diverge | 6 | 5 | none |
-| TrainVariantAnnotationsModel | gatk-rs | oracle-backed | 131 suite | 10 suite | 11/11 (100.0%) | 2 | 1224 probes (+1), 0/10 diverge | 5 | 0 | mask_hdf5_modification_times |
-| TransferReadTags | gatk-rs | oracle-backed | 65 suite | 0 suite | 19/19 (100.0%) | 2 | 1947 probes (+2), 0/10 diverge | 3 | 1 | none |
-| UmiAwareMarkDuplicatesWithMateCigar | picard-rs | oracle-backed | not vendored | not vendored | 26/26 (100.0%) | 2 | not measured | 0 | 0 | none |
-| UnmarkDuplicates | gatk-rs | oracle-backed | 49 suite | 0 suite | 19/19 (100.0%) | 2 | 2171 probes (+0), 0/8 diverge | 4 | 0 | none |
-| UpdateVCFSequenceDictionary | gatk-rs | oracle-backed | 71 suite | 0 suite | 24/24 (100.0%) | 2 | 2247 probes (+0), 0/9 diverge | 4 | 3 | none |
-| UpdateVcfSequenceDictionary | gatk-rs | oracle-backed | 24 suite | 0 suite | 18/18 (100.0%) | 2 | not measured | 7 | 0 | none |
-| VCFComparator | gatk-rs | oracle-backed | 279 suite | 0 suite | 40/40 (100.0%) | 2 | 3370 probes (+6), 0/17 diverge | 0 | 10 | none |
-| ValidateBasicSomaticShortMutations | gatk-rs | oracle-backed | 171 suite | 0 suite | 22/22 (100.0%) | 2 | 3108 probes (+3), 0/11 diverge | 3 | 0 | none |
-| ValidateSamFile | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | none |
-| ValidateVariants | gatk-rs | oracle-backed | 25 suite | 0 suite | 40/40 (100.0%) | 2 | 2618 probes (+12), 0/15 diverge | 4 | 2 | none |
-| VariantAnnotator | gatk-rs | oracle-backed | 13 suite | 0 suite | 83/83 (100.0%) | 2 | 5219 probes (+4), 0/21 diverge | 8 | 10 | none |
-| VariantEval | gatk-rs | oracle-backed | 258 suite | 0 suite | 68/68 (100.0%) | 2 | 4051 probes (+2), 0/33 diverge | 7 | 6 | none |
-| VariantFiltration | gatk-rs | oracle-backed | 227 suite | 0 suite | 24/24 (100.0%) | 2 | 2470 probes (+0), 0/9 diverge | 3 | 2 | none |
-| VariantRecalibrator | gatk-rs | oracle-backed | 270 suite | 0 suite | 26/26 (100.0%) | 2 | 4076 probes (+2), 0/14 diverge | 4 | 4 | none |
-| VariantsToTable | gatk-rs | oracle-backed | 75 suite | 0 suite | 23/23 (100.0%) | 2 | 2355 probes (+5), 0/12 diverge | 2 | 2 | none |
-| VcfFormatConverter | gatk-rs | oracle-backed | 13 suite | 0 suite | 17/17 (100.0%) | 2 | not measured | 6 | 0 | none |
-| VcfToAdpc | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | none |
-| VcfToIntervalList | gatk-rs | oracle-backed | 12 suite | 0 suite | 12/12 (100.0%) | 2 | not measured | 4 | 0 | none |
-| ViewSam | picard-rs | oracle-backed | not vendored | not vendored | 14/14 (100.0%) | 2 | not measured | 0 | 0 | none |
+| tool | port | state | records | files | argument rows | t | fuzzer branches | inputs | held-out arguments | unreasoned | quarantined |
+|---|---|---|---:|---:|---:|---:|---|---:|---:|---:|---|
+| ASEReadCounter | gatk-rs | oracle-backed | 10 suite | 0 suite | 20/20 (100.0%) | 2 | 2762 probes (+5), 0/13 diverge | 5 | 2 | 0 | none |
+| AccumulateQualityYieldMetrics | picard-rs | oracle-backed | not vendored | not vendored | 6/6 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| AccumulateVariantCallingMetrics | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| AddCommentsToBam | gatk-rs | oracle-backed | 21 suite | 0 suite | 14/14 (100.0%) | 2 | not measured | 5 | 0 | 0 | none |
+| AddFlowBaseQuality | gatk-rs | oracle-backed | 121 suite | 0 suite | 24/24 (100.0%) | 2 | 2528 probes (+1), 0/10 diverge | 4 | 0 | 0 | none |
+| AddFlowSNVQuality | gatk-rs | oracle-backed | 319 suite | 0 suite | 26/26 (100.0%) | 2 | 2631 probes (+1), 0/11 diverge | 4 | 0 | 0 | none |
+| AddOATag | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| AddOrReplaceReadGroups | picard-rs | oracle-backed | not vendored | not vendored | 21/21 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| AddOriginalAlignmentTags | gatk-rs | oracle-backed | 16 suite | 0 suite | 18/18 (100.0%) | 2 | 2280 probes (+32), 0/10 diverge | 4 | 0 | 0 | none |
+| AlleleFrequencyQC | gatk-rs | oracle-backed | 408 suite | 0 suite | 26/26 (100.0%) | 2 | 3654 probes (+0), 0/14 diverge | 7 | 4 | 0 | none |
+| AnalyzeCovariates | gatk-rs | oracle-backed | 15 suite | 0 suite | 11/11 (100.0%) | 2 | 1760 probes (+1), 0/7 diverge | 2 | 1 | 0 | none |
+| AnalyzeSaturationMutagenesis | gatk-rs | oracle-backed | 30 suite | 0 suite | 21/21 (100.0%) | 2 | 3013 probes (+10), 0/13 diverge | 6 | 1 | 0 | none |
+| AnnotateIntervals | gatk-rs | oracle-backed | 8 suite | 0 suite | 19/19 (100.0%) | 2 | 2268 probes (+54), 0/11 diverge | 4 | 0 | 0 | none |
+| AnnotateVcfWithBamDepth | gatk-rs | oracle-backed | 54 suite | 0 suite | 23/23 (100.0%) | 2 | 2535 probes (+5), 0/11 diverge | 6 | 0 | 0 | none |
+| AnnotateVcfWithExpectedAlleleFraction | gatk-rs | oracle-backed | 30 suite | 0 suite | 23/23 (100.0%) | 2 | 2436 probes (+2), 0/13 diverge | 4 | 2 | 0 | none |
+| ApplyBQSR | gatk-rs | oracle-backed | 36306 suite | 0 suite | 21/21 (100.0%) | 2 | 3123 probes (+8), 0/12 diverge | 6 | 0 | 0 | none |
+| ApplyBQSRSpark | gatk-rs | oracle-backed | 5 | 3 | 20/20 (100.0%) | 2 | 3051 probes (+7), 0/12 diverge | 6 | 0 | 0 | none |
+| ApplyVQSR | gatk-rs | oracle-backed | 395 suite | 0 suite | 25/25 (100.0%) | 2 | 2638 probes (+13), 0/17 diverge | 7 | 4 | 0 | none |
+| BQSRPipelineSpark | gatk-rs | oracle-backed | 5 | 3 | 23/23 (100.0%) | 2 | 4150 probes (+0), 0/14 diverge | 8 | 0 | 0 | none |
+| BaitDesigner | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| BamIndexStats | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| BamToBfq | picard-rs | oracle-backed | not vendored | not vendored | 17/17 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| BaseRecalibrator | gatk-rs | oracle-backed | 12 suite | 0 suite | 21/21 (100.0%) | 2 | 3759 probes (+28), 0/12 diverge | 8 | 0 | 0 | none |
+| BaseRecalibratorSpark | gatk-rs | oracle-backed | 6 | 1 | 22/22 (100.0%) | 2 | 3906 probes (+2), 0/13 diverge | 8 | 0 | 0 | none |
+| BedToIntervalList | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| BpmToNormalizationManifestCsv | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| BuildBamIndex | gatk-rs | oracle-backed | 16 suite | 0 suite | 18/18 (100.0%) | 2 | not measured | 7 | 0 | 0 | none |
+| BwaAndMarkDuplicatesPipelineSpark | gatk-rs | oracle-backed | 30 | 12 | 19/19 (100.0%) | 2 | 496 probes (+0), 0/4 diverge | 4 | 1 | 0 | none |
+| BwaMemIndexImageCreator | gatk-rs | oracle-backed | 37 suite | 0 suite | 15/15 (100.0%) | 2 | 1038 probes (+2), 0/8 diverge | 5 | 0 | 0 | none |
+| BwaSpark | gatk-rs | oracle-backed | 93 | 37 | 15/15 (100.0%) | 2 | 2200 probes (+2), 0/8 diverge | 5 | 1 | 0 | none |
+| CRAMIssue8768Detector | gatk-rs | oracle-backed | 54 suite | 0 suite | 11/11 (100.0%) | 2 | 1201 probes (+0), 0/7 diverge | 5 | 0 | 0 | none |
+| CalcMetadataSpark | gatk-rs | oracle-backed | 60 | 15 | 21/21 (100.0%) | 2 | 2107 probes (+1), 0/11 diverge | 7 | 0 | 0 | none |
+| CalculateAverageCombinedAnnotations | gatk-rs | oracle-backed | 11 suite | 0 suite | 16/16 (100.0%) | 2 | 1960 probes (+2), 0/9 diverge | 4 | 4 | 0 | none |
+| CalculateContamination | gatk-rs | oracle-backed | 42 suite | 0 suite | 8/8 (100.0%) | 2 | 1304 probes (+5), 0/6 diverge | 2 | 0 | 0 | none |
+| CalculateFingerprintMetrics | picard-rs | oracle-backed | not vendored | not vendored | 19/19 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CalculateGenotypePosteriors | gatk-rs | oracle-backed | 38 suite | 0 suite | 23/23 (100.0%) | 2 | 2930 probes (+7), 0/12 diverge | 5 | 1 | 0 | none |
+| CalculateMixingFractions | gatk-rs | oracle-backed | 11 suite | 0 suite | 23/23 (100.0%) | 2 | 2699 probes (+4), 0/10 diverge | 6 | 0 | 0 | none |
+| CalculateReadGroupChecksum | picard-rs | oracle-backed | not vendored | not vendored | 6/6 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CalibrateDragstrModel | gatk-rs | oracle-backed | 132 suite | 0 suite | 20/20 (100.0%) | 2 | 2662 probes (+0), 0/8 diverge | 8 | 0 | 0 | none |
+| CallCopyRatioSegments | gatk-rs | oracle-backed | 14 suite | 0 suite | 8/8 (100.0%) | 2 | 1508 probes (+17), 0/7 diverge | 1 | 0 | 0 | none |
+| CallableLoci | gatk-rs | oracle-backed | 23 suite | 0 suite | 18/18 (100.0%) | 2 | 2776 probes (+0), 0/11 diverge | 4 | 0 | 0 | none |
+| CheckDuplicateMarking | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CheckFingerprint | picard-rs | oracle-backed | not vendored | not vendored | 19/19 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CheckIlluminaDirectory | picard-rs | oracle-backed | not vendored | not vendored | 17/17 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CheckPileup | gatk-rs | oracle-backed | 33 suite | 0 suite | 21/21 (100.0%) | 2 | 3151 probes (+33), 0/13 diverge | 6 | 0 | 0 | none |
+| CheckReferenceCompatibility | gatk-rs | oracle-backed | 25 suite | 0 suite | 20/20 (100.0%) | 2 | 2065 probes (+18), 0/10 diverge | 7 | 0 | 0 | none |
+| CheckTerminatorBlock | gatk-rs | oracle-backed | 27 suite | 0 suite | 12/12 (100.0%) | 2 | not measured | 5 | 0 | 0 | none |
+| CleanSam | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| ClipReads | gatk-rs | oracle-backed | 170 suite | 0 suite | 24/24 (100.0%) | 2 | 2506 probes (+2), 0/13 diverge | 5 | 0 | 0 | none |
+| ClusterCrosscheckMetrics | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CollectAlignmentSummaryMetrics | picard-rs | oracle-backed | not vendored | not vendored | 20/20 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CollectAllelicCounts | gatk-rs | oracle-backed | 6 suite | 0 suite | 19/19 (100.0%) | 2 | 3007 probes (+2), 0/11 diverge | 6 | 0 | 0 | none |
+| CollectAllelicCountsSpark | gatk-rs | oracle-backed | 72 | 11 | 19/19 (100.0%) | 2 | 3287 probes (+2), 0/9 diverge | 6 | 0 | 0 | none |
+| CollectArraysVariantCallingMetrics | picard-rs | oracle-backed | not vendored | not vendored | 11/11 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CollectBaseDistributionByCycle | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CollectBaseDistributionByCycleSpark | gatk-rs | oracle-backed | 6 | 2 | 21/21 (100.0%) | 2 | 2145 probes (+4), 0/13 diverge | 4 | 1 | 0 | none |
+| CollectDuplicateMetrics | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CollectF1R2Counts | gatk-rs | oracle-backed | 24 suite | 12 suite | 17/17 (100.0%) | 2 | 3118 probes (+5), 0/9 diverge | 6 | 0 | 0 | none |
+| CollectGcBiasMetrics | picard-rs | oracle-backed | not vendored | not vendored | 27/27 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CollectHiSeqXPfFailMetrics | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CollectHsMetrics | picard-rs | oracle-backed | not vendored | not vendored | 17/17 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CollectIlluminaBasecallingMetrics | picard-rs | oracle-backed | not vendored | not vendored | 14/14 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CollectIlluminaLaneMetrics | picard-rs | oracle-backed | not vendored | not vendored | 14/14 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CollectIndependentReplicateMetrics | picard-rs | oracle-backed | not vendored | not vendored | 14/14 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CollectInsertSizeMetrics | picard-rs | oracle-backed | not vendored | not vendored | 22/22 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CollectInsertSizeMetricsSpark | gatk-rs | oracle-backed | 53 | 11 | 21/21 (100.0%) | 2 | 2286 probes (+3), 0/9 diverge | 5 | 0 | 0 | none |
+| CollectJumpingLibraryMetrics | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CollectMultipleMetrics | picard-rs | oracle-backed | not vendored | not vendored | 16/16 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CollectMultipleMetricsSpark | gatk-rs | oracle-backed | 58 | 18 | 23/23 (100.0%) | 2 | 2268 probes (+26), 0/10 diverge | 5 | 0 | 0 | none |
+| CollectOxoGMetrics | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CollectQualityYieldMetrics | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CollectQualityYieldMetricsFlow | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CollectQualityYieldMetricsSNVQ | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CollectQualityYieldMetricsSpark | gatk-rs | oracle-backed | 6 | 2 | 22/22 (100.0%) | 2 | 2128 probes (+1), 0/12 diverge | 4 | 0 | 0 | none |
+| CollectRawWgsMetrics | picard-rs | oracle-backed | not vendored | not vendored | 22/22 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CollectReadCounts | gatk-rs | oracle-backed | 6 suite | 0 suite | 18/18 (100.0%) | 2 | 2546 probes (+59), 0/10 diverge | 6 | 0 | 0 | none |
+| CollectRnaSeqMetrics | picard-rs | oracle-backed | not vendored | not vendored | 27/27 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CollectRrbsMetrics | picard-rs | oracle-backed | not vendored | not vendored | 19/19 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CollectSVEvidence | gatk-rs | oracle-backed | 19 suite | 0 suite | 20/20 (100.0%) | 2 | 2396 probes (+3), 0/8 diverge | 5 | 0 | 0 | none |
+| CollectSamErrorMetrics | picard-rs | oracle-backed | not vendored | not vendored | 28/28 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CollectSequencingArtifactMetrics | picard-rs | oracle-backed | not vendored | not vendored | 19/19 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CollectTargetedPcrMetrics | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CollectUmiPrevalenceMetrics | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CollectVariantCallingMetrics | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CollectWgsMetrics | picard-rs | oracle-backed | not vendored | not vendored | 22/22 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CollectWgsMetricsWithNonZeroCoverage | picard-rs | oracle-backed | not vendored | not vendored | 23/23 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CombineGVCFs | gatk-rs | oracle-backed | 255 suite | 0 suite | 26/26 (100.0%) | 2 | 4141 probes (+2), 0/12 diverge | 8 | 5 | 0 | none |
+| CombineGenotypingArrayVcfs | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CombineSegmentBreakpoints | gatk-rs | oracle-backed | 12 suite | 0 suite | 18/18 (100.0%) | 2 | 2260 probes (+0), 0/6 diverge | 6 | 4 | 0 | none |
+| CompareBaseQualities | gatk-rs | oracle-backed | 31 suite | 0 suite | 11/11 (100.0%) | 2 | 1102 probes (+2), 0/4 diverge | 0 | 0 | 0 | none |
+| CompareDuplicatesSpark | gatk-rs | oracle-backed | 48 | 6 | 22/22 (100.0%) | 2 | 2335 probes (+2), 0/12 diverge | 5 | 0 | 0 | none |
+| CompareGtcFiles | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CompareIntervalLists | gatk-rs | oracle-backed | 14 suite | 0 suite | 7/7 (100.0%) | 2 | 1182 probes (+6), 0/6 diverge | 0 | 0 | 0 | none |
+| CompareMetrics | picard-rs | oracle-backed | not vendored | not vendored | 32/32 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CompareReferences | gatk-rs | oracle-backed | 34 suite | 0 suite | 20/20 (100.0%) | 2 | 1991 probes (+2), 0/10 diverge | 2 | 4 | 0 | none |
+| CompareSAMs | picard-rs | oracle-backed | not vendored | not vendored | 11/11 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| ComposeSTRTableFile | gatk-rs | oracle-backed | 12 suite | 0 suite | 22/22 (100.0%) | 2 | 2071 probes (+0), 0/5 diverge | 5 | 2 | 0 | none |
+| Concordance | gatk-rs | oracle-backed | 84 suite | 0 suite | 16/16 (100.0%) | 2 | 2516 probes (+17), 0/7 diverge | 4 | 0 | 0 | none |
+| CondenseDepthEvidence | gatk-rs | oracle-backed | 18 suite | 0 suite | 18/18 (100.0%) | 2 | 2047 probes (+35), 0/9 diverge | 2 | 4 | 0 | none |
+| ConvertCountsToDepthFile | gatk-rs | oracle-backed | 55 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 2 | 4 | 0 | none |
+| ConvertHaplotypeDatabaseToVcf | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| ConvertHeaderlessHadoopBamShardToBam | gatk-rs | oracle-backed | 21 suite | 0 suite | 12/12 (100.0%) | 2 | 985 probes (+2), 0/6 diverge | 5 | 0 | 0 | none |
+| ConvertSequencingArtifactToOxoG | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CountBases | gatk-rs | oracle-backed | 50 suite | 0 suite | 21/21 (100.0%) | 2 | 2111 probes (+25), 0/12 diverge | 5 | 0 | 0 | none |
+| CountBasesInReference | gatk-rs | oracle-backed | 191 suite | 0 suite | 19/19 (100.0%) | 2 | 2046 probes (+0), 0/6 diverge | 4 | 0 | 0 | none |
+| CountBasesSpark | gatk-rs | oracle-backed | 6 | 0 | 19/19 (100.0%) | 2 | 1989 probes (+4), 0/11 diverge | 5 | 0 | 0 | none |
+| CountFalsePositives | gatk-rs | oracle-backed | 14 suite | 0 suite | 24/24 (100.0%) | 2 | 2273 probes (+30), 0/7 diverge | 2 | 2 | 0 | none |
+| CountReads | gatk-rs | oracle-backed | 36418 suite | 6 suite | 21/21 (100.0%) | 2 | 2110 probes (+25), 0/12 diverge | 5 | 0 | 0 | none |
+| CountReadsSpark | gatk-rs | oracle-backed | 9 | 1 | 19/19 (100.0%) | 2 | 2017 probes (+4), 0/11 diverge | 5 | 0 | 0 | none |
+| CountVariants | gatk-rs | oracle-backed | 36417 suite | 12 suite | 23/23 (100.0%) | 2 | 2356 probes (+4), 0/10 diverge | 4 | 0 | 0 | none |
+| CountVariantsSpark | gatk-rs | oracle-backed | 7 | 0 | 19/19 (100.0%) | 2 | 1682 probes (+8), 0/11 diverge | 7 | 0 | 0 | none |
+| CpxVariantReInterpreterSpark | gatk-rs | oracle-backed | 81 | 24 | 19/19 (100.0%) | 2 | 3828 probes (+5), 0/12 diverge | 10 | 0 | 0 | none |
+| CreateBafRegressMetricsFile | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CreateExtendedIlluminaManifest | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CreateHadoopBamSplittingIndex | gatk-rs | oracle-backed | 43 suite | 0 suite | 11/11 (100.0%) | 2 | 1012 probes (+10), 0/7 diverge | 3 | 0 | 0 | none |
+| CreateReadCountPanelOfNormals | gatk-rs | oracle-backed | 445 suite | 0 suite | 25/25 (100.0%) | 2 | 2161 probes (+22), 0/10 diverge | 5 | 0 | 0 | none |
+| CreateSequenceDictionary | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CreateSomaticPanelOfNormals | gatk-rs | oracle-backed | 29 suite | 0 suite | 21/21 (100.0%) | 2 | 2345 probes (+4), 0/8 diverge | 5 | 2 | 0 | none |
+| CreateVerifyIDIntensityContaminationMetricsFile | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CrosscheckFingerprints | picard-rs | oracle-backed | not vendored | not vendored | 24/24 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| CrosscheckReadGroupFingerprints | picard-rs | oracle-backed | not vendored | not vendored | 20/20 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| DenoiseReadCounts | gatk-rs | oracle-backed | 13 suite | 0 suite | 6/6 (100.0%) | 2 | 1458 probes (+0), 0/3 diverge | 1 | 3 | 0 | none |
+| DepthOfCoverage | gatk-rs | oracle-backed | 60 suite | 0 suite | 20/20 (100.0%) | 2 | 3023 probes (+74), 0/14 diverge | 2 | 1 | 0 | none |
+| DetermineGermlineContigPloidy | gatk-rs | oracle-backed | 306 suite | 150 suite | 32/32 (100.0%) | 2 | 1046 probes (+2), 0/4 diverge | 2 | 0 | 0 | none |
+| DiscoverVariantsFromContigAlignmentsSAMSpark | gatk-rs | oracle-backed | 96 | 12 | 19/19 (100.0%) | 2 | 3995 probes (+6), 0/12 diverge | 7 | 0 | 0 | none |
+| DownsampleByDuplicateSet | gatk-rs | oracle-backed | 23 suite | 0 suite | 18/18 (100.0%) | 2 | 1955 probes (+0), 0/9 diverge | 2 | 3 | 0 | none |
+| DownsampleSam | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| DumpTabixIndex | gatk-rs | oracle-backed | 11 suite | 0 suite | 7/7 (100.0%) | 2 | 1015 probes (+2), 0/5 diverge | 3 | 0 | 0 | none |
+| EstimateLibraryComplexity | picard-rs | oracle-backed | not vendored | not vendored | 14/14 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| EvaluateInfoFieldConcordance | gatk-rs | oracle-backed | 13 suite | 0 suite | 21/21 (100.0%) | 2 | 2234 probes (+5), 0/10 diverge | 3 | 2 | 0 | none |
+| ExampleMultiFeatureWalker | gatk-rs | oracle-backed | 36 suite | 0 suite | 16/16 (100.0%) | 2 | 2034 probes (+0), 0/7 diverge | 5 | 4 | 0 | none |
+| ExtractFingerprint | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| ExtractIlluminaBarcodes | picard-rs | oracle-backed | not vendored | not vendored | 30/30 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| ExtractOriginalAlignmentRecordsByNameSpark | gatk-rs | oracle-backed | 13 | 6 | 22/22 (100.0%) | 2 | 1989 probes (+7), 0/11 diverge | 6 | 0 | 0 | none |
+| ExtractSVEvidenceSpark | gatk-rs | oracle-backed | 69 | 36 | 24/24 (100.0%) | 2 | 2970 probes (+0), 0/11 diverge | 8 | 1 | 0 | none |
+| ExtractSequences | picard-rs | oracle-backed | not vendored | not vendored | 7/7 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| ExtractVariantAnnotations | gatk-rs | oracle-backed | 178 suite | 0 suite | 29/29 (100.0%) | 2 | 2998 probes (+1), 0/12 diverge | 2 | 4 | 0 | none |
+| FastaAlternateReferenceMaker | gatk-rs | oracle-backed | 13 suite | 0 suite | 21/21 (100.0%) | 2 | 2488 probes (+2), 0/12 diverge | 7 | 0 | 0 | none |
+| FastaReferenceMaker | gatk-rs | oracle-backed | 28 suite | 0 suite | 21/21 (100.0%) | 2 | 2069 probes (+2), 0/11 diverge | 4 | 0 | 0 | none |
+| FastqToSam | picard-rs | oracle-backed | not vendored | not vendored | 21/21 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| FifoBuffer | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| FilterAlignmentArtifacts | gatk-rs | oracle-backed | 271 suite | 0 suite | 21/21 (100.0%) | 2 | 4865 probes (+2), 0/7 diverge | 9 | 1 | 0 | none |
+| FilterFuncotations | gatk-rs | oracle-backed | 10 suite | 0 suite | 16/16 (100.0%) | 2 | 2477 probes (+0), 0/6 diverge | 4 | 4 | 0 | none |
+| FilterIntervals | gatk-rs | oracle-backed | 11 suite | 0 suite | 11/11 (100.0%) | 2 | 2309 probes (+3), 0/7 diverge | 4 | 0 | 0 | none |
+| FilterMutectCalls | gatk-rs | oracle-backed | 320 suite | 0 suite | 24/24 (100.0%) | 2 | 3736 probes (+5), 0/13 diverge | 12 | 0 | 0 | none |
+| FilterSamReads | picard-rs | oracle-backed | not vendored | not vendored | 26/26 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| FilterVariantTranches | gatk-rs | oracle-backed | 60 suite | 0 suite | 15/15 (100.0%) | 2 | 2161 probes (+5), 0/10 diverge | 4 | 4 | 0 | none |
+| FilterVcf | gatk-rs | oracle-backed | 20 suite | 0 suite | 9/20 (45.0%) | 2 | not measured | 8 | 0 | 0 | none |
+| FindBadGenomicKmersSpark | gatk-rs | oracle-backed | 63 | 12 | 21/21 (100.0%) | 2 | 2120 probes (+4), 0/12 diverge | 5 | 0 | 0 | none |
+| FindBreakpointEvidenceSpark | gatk-rs | oracle-backed | 9344 | 8309 | 26/26 (100.0%) | 2 | 5309 probes (+20), 0/14 diverge | 13 | 0 | 0 | none |
+| FindMendelianViolations | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| FixMateInformation | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| FixMisencodedBaseQualityReads | gatk-rs | oracle-backed | 40 suite | 0 suite | 21/21 (100.0%) | 2 | 2155 probes (+25), 0/12 diverge | 5 | 0 | 0 | none |
+| FixVcfHeader | gatk-rs | oracle-backed | 26 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 8 | 0 | 0 | none |
+| FlagStat | gatk-rs | oracle-backed | 30 suite | 0 suite | 21/21 (100.0%) | 2 | 2124 probes (+25), 0/12 diverge | 5 | 0 | 0 | none |
+| FlagStatSpark | gatk-rs | oracle-backed | 5 | 1 | 19/19 (100.0%) | 2 | 2008 probes (+4), 0/11 diverge | 5 | 0 | 0 | none |
+| FlowFeatureMapper | gatk-rs | oracle-backed | 197 suite | 0 suite | 25/25 (100.0%) | 2 | 3066 probes (+11), 0/15 diverge | 4 | 2 | 0 | none |
+| FlowPairHMMAlignReadsToHaplotypes | gatk-rs | oracle-backed | 16 suite | 0 suite | 40/40 (100.0%) | 2 | 2646 probes (+0), 0/10 diverge | 6 | 2 | 0 | none |
+| FuncotateSegments | gatk-rs | oracle-backed | 11 suite | 0 suite | 25/25 (100.0%) | 2 | 6148 probes (+0), 0/12 diverge | 11 | 3 | 0 | none |
+| Funcotator | gatk-rs | oracle-backed | 15 suite | 0 suite | 31/31 (100.0%) | 2 | 5849 probes (+20), 0/24 diverge | 11 | 2 | 0 | none |
+| FuncotatorDataSourceDownloader | gatk-rs | oracle-backed | 54 suite | 10 suite | 8/8 (100.0%) | 2 | 1568 probes (+286), 0/4 diverge | 2 | 2 | 0 | none |
+| GatherBQSRReports | gatk-rs | oracle-backed | 9 suite | 0 suite | 6/6 (100.0%) | 2 | 1907 probes (+0), 0/3 diverge | 2 | 0 | 0 | none |
+| GatherBamFiles | gatk-rs | oracle-backed | 28 suite | 0 suite | 11/11 (100.0%) | 2 | not measured | 4 | 0 | 0 | none |
+| GatherNormalArtifactData | gatk-rs | oracle-backed | 11 suite | 0 suite | 6/6 (100.0%) | 2 | 1106 probes (+0), 0/3 diverge | 2 | 0 | 0 | none |
+| GatherPileupSummaries | gatk-rs | oracle-backed | 11 suite | 0 suite | 6/6 (100.0%) | 2 | 1199 probes (+2), 0/6 diverge | 5 | 0 | 0 | none |
+| GatherTranches | gatk-rs | oracle-backed | 11 suite | 0 suite | 8/8 (100.0%) | 2 | 1113 probes (+2), 0/7 diverge | 4 | 0 | 0 | none |
+| GatherVcfs | gatk-rs | oracle-backed | 28 suite | 0 suite | 34/34 (100.0%) | 2 | not measured | 8 | 0 | 0 | none |
+| GatherVcfsCloud | gatk-rs | oracle-backed | 36309 suite | 0 suite | 11/11 (100.0%) | 2 | 1047 probes (+2), 0/5 diverge | 2 | 0 | 0 | none |
+| GeneExpressionEvaluation | gatk-rs | oracle-backed | 21 suite | 0 suite | 19/19 (100.0%) | 2 | 2777 probes (+4), 0/12 diverge | 6 | 0 | 0 | none |
+| GenomicsDBImport | gatk-rs | oracle-backed | 3620 | 3341 | 19/19 (100.0%) | 2 | 2174 probes (+48), 0/9 diverge | 6 | 11 | 0 | none |
+| GenotypeConcordance | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| GenotypeGVCFs | gatk-rs | oracle-backed | 19 suite | 0 suite | 39/39 (100.0%) | 2 | 5528 probes (+6), 0/19 diverge | 11 | 0 | 0 | none |
+| GermlineCNVCaller | gatk-rs | oracle-backed | 297 suite | 150 suite | 46/46 (100.0%) | 2 | 1062 probes (+0), 0/3 diverge | 2 | 0 | 0 | none |
+| GetNormalArtifactData | gatk-rs | oracle-backed | 7 suite | 0 suite | 19/19 (100.0%) | 2 | 2729 probes (+0), 0/6 diverge | 2 | 0 | 0 | none |
+| GetPileupSummaries | gatk-rs | oracle-backed | 8 suite | 0 suite | 19/19 (100.0%) | 2 | 3053 probes (+2), 0/10 diverge | 6 | 0 | 0 | none |
+| GetSampleName | gatk-rs | oracle-backed | 35 suite | 0 suite | 21/21 (100.0%) | 2 | 1824 probes (+2), 0/9 diverge | 5 | 0 | 0 | none |
+| GnarlyGenotyper | gatk-rs | oracle-backed | 47 suite | 0 suite | 28/28 (100.0%) | 2 | 3562 probes (+2), 0/10 diverge | 5 | 3 | 0 | none |
+| GroundTruthReadsBuilder | gatk-rs | oracle-backed | 17 suite | 0 suite | 32/32 (100.0%) | 2 | 3122 probes (+3), 0/21 diverge | 7 | 2 | 0 | none |
+| GroundTruthScorer | gatk-rs | oracle-backed | 59 suite | 0 suite | 30/30 (100.0%) | 2 | 3704 probes (+0), 0/12 diverge | 9 | 2 | 0 | none |
+| GroupedSVCluster | gatk-rs | oracle-backed | 257 suite | 0 suite | 23/23 (100.0%) | 2 | 3860 probes (+0), 0/13 diverge | 10 | 4 | 0 | none |
+| GtcToVcf | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| GtfToBed | gatk-rs | oracle-backed | 9 suite | 0 suite | 20/20 (100.0%) | 2 | 2184 probes (+4), 0/10 diverge | 3 | 4 | 0 | none |
+| HaplotypeBasedVariantRecaller | gatk-rs | oracle-backed | 7 suite | 0 suite | 48/48 (100.0%) | 2 | 4112 probes (+2), 0/12 diverge | 7 | 0 | 0 | none |
+| HaplotypeCaller | gatk-rs | oracle-backed | 587 suite | 50 suite | 50/50 (100.0%) | 2 | 12968 probes (+2), 0/32 diverge | 14 | 0 | 0 | mask_identity_hashes, sort_segments_with |
+| HaplotypeCallerSpark | gatk-rs | oracle-backed | 64 | 15 | 49/49 (100.0%) | 2 | 11894 probes (+2), 0/27 diverge | 14 | 12 | 0 | none |
+| HtsgetReader | gatk-rs | oracle-backed | 865 | 41 | 12/12 (100.0%) | 2 | 1084 probes (+2), 0/5 diverge | 0 | 0 | 0 | none |
+| IdentifyContaminant | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| IlluminaBasecallsToFastq | picard-rs | oracle-backed | not vendored | not vendored | not measured | - | not measured | 0 | 0 | 0 | none |
+| IlluminaBasecallsToSam | picard-rs | oracle-backed | not vendored | not vendored | 31/31 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| IndexFeatureFile | gatk-rs | oracle-backed | 36278 suite | 0 suite | 8/8 (100.0%) | 2 | 1219 probes (+10), 0/9 diverge | 0 | 0 | 0 | none |
+| IntervalListToBed | picard-rs | oracle-backed | not vendored | not vendored | 8/8 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| IntervalListTools | picard-rs | oracle-backed | not vendored | not vendored | 34/34 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| JointGermlineCNVSegmentation | gatk-rs | oracle-backed | 255 suite | 0 suite | 22/22 (100.0%) | 2 | 4190 probes (+0), 0/10 diverge | 7 | 2 | 0 | none |
+| LearnReadOrientationModel | gatk-rs | oracle-backed | 22 suite | 0 suite | 12/12 (100.0%) | 2 | 1836 probes (+2), 0/6 diverge | 2 | 0 | 0 | none |
+| LeftAlignAndTrimVariants | gatk-rs | oracle-backed | 128 suite | 0 suite | 22/22 (100.0%) | 2 | 2810 probes (+3), 0/15 diverge | 4 | 0 | 0 | none |
+| LeftAlignIndels | gatk-rs | oracle-backed | 40 suite | 0 suite | 19/19 (100.0%) | 2 | 2385 probes (+0), 0/7 diverge | 6 | 0 | 0 | none |
+| LiftOverHaplotypeMap | picard-rs | oracle-backed | not vendored | not vendored | 8/8 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| LiftOverIntervalList | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| LiftoverVcf | picard-rs | oracle-backed | not vendored | not vendored | 17/17 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| LocalAssembler | gatk-rs | oracle-backed | 30 suite | 0 suite | 21/21 (100.0%) | 2 | 3269 probes (+3), 0/12 diverge | 7 | 0 | 0 | none |
+| MTLowHeteroplasmyFilterTool | gatk-rs | oracle-backed | 24 suite | 0 suite | 15/15 (100.0%) | 2 | 2224 probes (+0), 0/10 diverge | 4 | 0 | 0 | none |
+| MakeSitesOnlyVcf | gatk-rs | oracle-backed | 20 suite | 0 suite | 16/16 (100.0%) | 2 | not measured | 4 | 0 | 0 | none |
+| MakeVcfSampleNameMap | picard-rs | oracle-backed | not vendored | not vendored | 6/6 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| MarkDuplicates | picard-rs | oracle-backed | not vendored | not vendored | 47/47 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| MarkDuplicatesSpark | gatk-rs | oracle-backed | 368 | 203 | 26/27 (96.3%) | 2 | 3023 probes (+2), 0/12 diverge | 6 | 0 | 0 | none |
+| MarkDuplicatesWithMateCigar | picard-rs | oracle-backed | not vendored | not vendored | 30/30 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| MarkIlluminaAdapters | picard-rs | oracle-backed | not vendored | not vendored | 28/28 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| MeanQualityByCycle | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| MeanQualityByCycleSpark | gatk-rs | oracle-backed | 9 | 2 | 21/21 (100.0%) | 2 | 2162 probes (+4), 0/13 diverge | 4 | 1 | 0 | none |
+| MergeAnnotatedRegions | gatk-rs | oracle-backed | 14 suite | 0 suite | 18/18 (100.0%) | 2 | 2040 probes (+0), 0/6 diverge | 8 | 0 | 0 | none |
+| MergeAnnotatedRegionsByAnnotation | gatk-rs | oracle-backed | 9 suite | 0 suite | 22/22 (100.0%) | 2 | 1986 probes (+0), 0/7 diverge | 8 | 0 | 0 | none |
+| MergeBamAlignment | picard-rs | oracle-backed | not vendored | not vendored | not measured | - | not measured | 0 | 0 | 0 | none |
+| MergeMutect2CallsWithMC3 | gatk-rs | oracle-backed | 12 suite | 0 suite | 16/16 (100.0%) | 2 | 1811 probes (+0), 0/6 diverge | 8 | 0 | 0 | none |
+| MergeMutectStats | gatk-rs | oracle-backed | 11 suite | 0 suite | 7/7 (100.0%) | 2 | 1126 probes (+2), 0/5 diverge | 3 | 0 | 0 | none |
+| MergePedIntoVcf | picard-rs | oracle-backed | not vendored | not vendored | 19/19 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| MergeSamFiles | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| MergeVcfs | gatk-rs | oracle-backed | 38 suite | 0 suite | 27/27 (100.0%) | 2 | not measured | 8 | 0 | 0 | none |
+| MethylationTypeCaller | gatk-rs | oracle-backed | 74 suite | 0 suite | 21/21 (100.0%) | 2 | 2711 probes (+42), 0/12 diverge | 6 | 0 | 0 | none |
+| ModelSegments | gatk-rs | oracle-backed | 21 suite | 0 suite | 19/19 (100.0%) | 2 | 3526 probes (+1), 0/15 diverge | 6 | 0 | 0 | none |
+| Mutect2 | gatk-rs | oracle-backed | 617 suite | 76 suite | 40/40 (100.0%) | 2 | 14428 probes (+0), 0/26 diverge | 13 | 0 | 0 | mask_identity_hashes, sort_segments_with |
+| NVScoreVariants | gatk-rs | oracle-backed | 1373 suite | 0 suite | 10/10 (100.0%) | 2 | 962 probes (+2), 0/4 diverge | 4 | 0 | 0 | none |
+| NonNFastaSize | picard-rs | oracle-backed | not vendored | not vendored | 7/7 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| NormalizeFasta | picard-rs | oracle-backed | not vendored | not vendored | 8/8 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| NuMTFilterTool | gatk-rs | oracle-backed | 35 suite | 0 suite | 15/15 (100.0%) | 2 | 2183 probes (+0), 0/7 diverge | 4 | 0 | 0 | none |
+| ParallelCopyGCSDirectoryIntoHDFSSpark | gatk-rs | oracle-backed | 6 | 0 | 16/16 (100.0%) | 2 | 1522 probes (+3), 0/6 diverge | 2 | 0 | 0 | none |
+| PathSeqBuildKmers | gatk-rs | oracle-backed | 122 suite | 0 suite | 8/8 (100.0%) | 2 | 1256 probes (+17), 0/7 diverge | 2 | 1 | 0 | none |
+| PathSeqBuildReferenceTaxonomy | gatk-rs | oracle-backed | 161 suite | 0 suite | 9/9 (100.0%) | 2 | 1296 probes (+7), 0/9 diverge | 6 | 0 | 0 | none |
+| PathSeqBwaSpark | gatk-rs | oracle-backed | 92 | 32 | 22/22 (100.0%) | 2 | 1512 probes (+0), 0/6 diverge | 6 | 0 | 0 | none |
+| PathSeqFilterSpark | gatk-rs | oracle-backed | 188 | 109 | 20/20 (100.0%) | 2 | 2798 probes (+0), 0/9 diverge | 7 | 1 | 0 | none |
+| PathSeqPipelineSpark | gatk-rs | oracle-backed | 151 | 103 | 25/25 (100.0%) | 2 | 2830 probes (+2), 0/7 diverge | 7 | 0 | 0 | none |
+| PathSeqScoreSpark | gatk-rs | oracle-backed | 110 | 56 | 15/15 (100.0%) | 2 | 2083 probes (+0), 0/7 diverge | 6 | 0 | 0 | none |
+| Pileup | gatk-rs | oracle-backed | 9 suite | 0 suite | 18/18 (100.0%) | 2 | 2701 probes (+8), 0/10 diverge | 4 | 0 | 0 | none |
+| PileupSpark | gatk-rs | oracle-backed | 11 | 4 | 22/22 (100.0%) | 2 | 2993 probes (+19), 0/16 diverge | 6 | 0 | 0 | none |
+| PlotDenoisedCopyRatios | gatk-rs | oracle-backed | 379 | 0 | 11/11 (100.0%) | 2 | 1457 probes (+2), 0/6 diverge | 5 | 0 | 0 | none |
+| PlotModeledSegments | gatk-rs | oracle-backed | 338 | 0 | 11/11 (100.0%) | 2 | 1656 probes (+2), 0/8 diverge | 6 | 0 | 0 | none |
+| PositionBasedDownsampleSam | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| PostProcessReadsForRSEM | gatk-rs | oracle-backed | 43 suite | 0 suite | 20/20 (100.0%) | 2 | 2146 probes (+24), 0/10 diverge | 3 | 1 | 0 | none |
+| PostprocessGermlineCNVCalls | gatk-rs | oracle-backed | 333 suite | 150 suite | 20/20 (100.0%) | 2 | 1748 probes (+0), 0/6 diverge | 3 | 5 | 0 | none |
+| PreprocessIntervals | gatk-rs | oracle-backed | 21 suite | 0 suite | 20/20 (100.0%) | 2 | 2009 probes (+15), 0/8 diverge | 4 | 0 | 0 | none |
+| PrintBGZFBlockInformation | gatk-rs | oracle-backed | 18 suite | 8 suite | 6/6 (100.0%) | 2 | 1005 probes (+4), 0/6 diverge | 0 | 0 | 0 | none |
+| PrintDistantMates | gatk-rs | oracle-backed | 75 suite | 0 suite | 19/19 (100.0%) | 2 | 2221 probes (+0), 0/9 diverge | 4 | 0 | 0 | none |
+| PrintFileDiagnostics | gatk-rs | oracle-backed | 9 suite | 0 suite | 6/6 (100.0%) | 2 | 968 probes (+0), 0/4 diverge | 2 | 0 | 0 | none |
+| PrintReadCounts | gatk-rs | oracle-backed | 44 suite | 0 suite | 17/17 (100.0%) | 2 | 1940 probes (+0), 0/7 diverge | 4 | 2 | 0 | none |
+| PrintReads | gatk-rs | oracle-backed | 36292 suite | 0 suite | 21/21 (100.0%) | 2 | 2140 probes (+25), 0/12 diverge | 5 | 0 | 0 | none |
+| PrintReadsHeader | gatk-rs | oracle-backed | 19 suite | 0 suite | 19/19 (100.0%) | 2 | 1810 probes (+0), 0/6 diverge | 4 | 0 | 0 | none |
+| PrintReadsSpark | gatk-rs | oracle-backed | 19 | 11 | 23/23 (100.0%) | 2 | 2169 probes (+8), 0/14 diverge | 5 | 0 | 0 | none |
+| PrintSVEvidence | gatk-rs | oracle-backed | 27 suite | 0 suite | 17/17 (100.0%) | 2 | 2156 probes (+5), 0/9 diverge | 7 | 2 | 0 | none |
+| PrintVariantsSpark | gatk-rs | oracle-backed | 19 | 5 | 23/23 (100.0%) | 2 | 2097 probes (+1), 0/9 diverge | 7 | 1 | 0 | none |
+| QualityScoreDistribution | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| QualityScoreDistributionSpark | gatk-rs | oracle-backed | 6 | 2 | 21/21 (100.0%) | 2 | 2120 probes (+2), 0/9 diverge | 4 | 1 | 0 | none |
+| RampedHaplotypeCaller | gatk-rs | oracle-backed | 576 suite | 50 suite | 54/54 (100.0%) | 2 | 14390 probes (+52), 0/34 diverge | 16 | 0 | 0 | mask_identity_hashes, sort_segments_with |
+| ReadAnonymizer | gatk-rs | oracle-backed | 28 suite | 0 suite | 22/22 (100.0%) | 2 | 2290 probes (+1), 0/9 diverge | 6 | 0 | 0 | none |
+| ReadsPipelineSpark | gatk-rs | oracle-backed | 133 | 48 | 53/53 (100.0%) | 2 | 14460 probes (+86), 0/28 diverge | 13 | 12 | 0 | none |
+| ReblockGVCF | gatk-rs | oracle-backed | 255 suite | 0 suite | 56/56 (100.0%) | 2 | 4880 probes (+0), 0/17 diverge | 11 | 4 | 0 | none |
+| ReferenceBlockConcordance | gatk-rs | oracle-backed | 18 suite | 0 suite | 17/17 (100.0%) | 2 | 1764 probes (+0), 0/5 diverge | 8 | 0 | 0 | none |
+| RemoveNearbyIndels | gatk-rs | oracle-backed | 102 suite | 0 suite | 24/24 (100.0%) | 2 | 2303 probes (+0), 0/14 diverge | 4 | 0 | 0 | none |
+| RenameSampleInVcf | gatk-rs | oracle-backed | 20 suite | 0 suite | 15/15 (100.0%) | 2 | not measured | 5 | 0 | 0 | none |
+| ReorderSam | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| ReplaceSamHeader | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| RevertBaseQualityScores | gatk-rs | oracle-backed | 49 suite | 0 suite | 19/19 (100.0%) | 2 | 2187 probes (+0), 0/7 diverge | 4 | 0 | 0 | none |
+| RevertOriginalBaseQualitiesAndAddMateCigar | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| RevertSam | picard-rs | oracle-backed | not vendored | not vendored | 21/21 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| RevertSamSpark | gatk-rs | oracle-backed | 67 | 21 | 28/28 (100.0%) | 2 | 2632 probes (+8), 0/18 diverge | 4 | 2 | 0 | none |
+| SVAnnotate | gatk-rs | oracle-backed | 15 suite | 0 suite | 18/18 (100.0%) | 2 | 2777 probes (+2), 0/9 diverge | 8 | 0 | 0 | none |
+| SVCluster | gatk-rs | oracle-backed | 254 suite | 0 suite | 24/24 (100.0%) | 2 | 3563 probes (+0), 0/11 diverge | 8 | 0 | 0 | none |
+| SVConcordance | gatk-rs | oracle-backed | 10 suite | 0 suite | 40/40 (100.0%) | 2 | 3011 probes (+3), 0/8 diverge | 10 | 0 | 0 | none |
+| SVStratify | gatk-rs | oracle-backed | 286 suite | 0 suite | 16/16 (100.0%) | 2 | 2739 probes (+1), 0/9 diverge | 11 | 0 | 0 | none |
+| SamFormatConverter | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| SamToFastq | picard-rs | oracle-backed | not vendored | not vendored | 19/19 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| SamToFastqWithTags | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| ScatterIntervalsByNs | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| ScoreVariantAnnotations | gatk-rs | oracle-backed | 210 suite | 51 suite | 27/27 (100.0%) | 2 | 2639 probes (+2), 0/14 diverge | 6 | 7 | 0 | mask_hdf5_modification_times |
+| SelectVariants | gatk-rs | oracle-backed | 36903 suite | 0 suite | 51/51 (100.0%) | 2 | 2736 probes (+5), 0/14 diverge | 7 | 0 | 0 | none |
+| SetNmAndUqTags | gatk-rs | oracle-backed | 10 suite | 0 suite | 16/16 (100.0%) | 2 | not measured | 7 | 0 | 0 | none |
+| SetNmMdAndUqTags | gatk-rs | oracle-backed | 10 suite | 0 suite | 16/16 (100.0%) | 2 | not measured | 7 | 0 | 0 | none |
+| ShiftFasta | gatk-rs | oracle-backed | 37 suite | 0 suite | 21/21 (100.0%) | 2 | 1855 probes (+2), 0/9 diverge | 2 | 0 | 0 | none |
+| SimpleMarkDuplicatesWithMateCigar | picard-rs | oracle-backed | not vendored | not vendored | 35/35 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| SiteDepthtoBAF | gatk-rs | oracle-backed | 30 suite | 0 suite | 18/18 (100.0%) | 2 | 2082 probes (+0), 0/7 diverge | 7 | 4 | 0 | none |
+| SortGff | picard-rs | oracle-backed | not vendored | not vendored | 14/14 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| SortSam | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| SortSamSpark | gatk-rs | oracle-backed | 21 | 10 | 23/23 (100.0%) | 2 | 2176 probes (+11), 0/13 diverge | 5 | 0 | 0 | none |
+| SortVcf | gatk-rs | oracle-backed | 28 suite | 0 suite | 16/16 (100.0%) | 2 | not measured | 6 | 0 | 0 | none |
+| SplitCRAM | gatk-rs | oracle-backed | 31 suite | 0 suite | 11/11 (100.0%) | 2 | 983 probes (+2), 0/7 diverge | 2 | 0 | 0 | none |
+| SplitIntervals | gatk-rs | oracle-backed | 78 suite | 0 suite | 25/25 (100.0%) | 2 | 1923 probes (+6), 0/12 diverge | 4 | 0 | 0 | none |
+| SplitNCigarReads | gatk-rs | oracle-backed | 114 suite | 0 suite | 21/21 (100.0%) | 2 | 2769 probes (+4), 0/11 diverge | 6 | 0 | 0 | none |
+| SplitReads | gatk-rs | oracle-backed | 77 suite | 0 suite | 20/20 (100.0%) | 2 | 2173 probes (+3), 0/9 diverge | 4 | 0 | 0 | none |
+| SplitSamByLibrary | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| SplitSamByNumberOfReads | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| SplitVcfs | gatk-rs | oracle-backed | 22 suite | 0 suite | 22/26 (84.6%) | 2 | not measured | 10 | 0 | 0 | none |
+| StructuralVariantDiscoverer | gatk-rs | oracle-backed | 3 suite | 0 suite | 23/23 (100.0%) | 2 | 3778 probes (+0), 0/14 diverge | 9 | 2 | 0 | none |
+| StructuralVariationDiscoveryPipelineSpark | gatk-rs | oracle-backed | 1037 | 733 | 27/27 (100.0%) | 2 | 7002 probes (+3), 0/19 diverge | 12 | 0 | 0 | none |
+| SvDiscoverFromLocalAssemblyContigAlignmentsSpark | gatk-rs | oracle-backed | 161 | 88 | 17/17 (100.0%) | 2 | 5831 probes (+5), 0/9 diverge | 7 | 0 | 0 | none |
+| TagGermlineEvents | gatk-rs | oracle-backed | 15 suite | 0 suite | 17/17 (100.0%) | 2 | 2085 probes (+5), 0/8 diverge | 9 | 0 | 0 | none |
+| TrainVariantAnnotationsModel | gatk-rs | oracle-backed | 131 suite | 10 suite | 11/11 (100.0%) | 2 | 1224 probes (+1), 0/10 diverge | 5 | 0 | 0 | mask_hdf5_modification_times |
+| TransferReadTags | gatk-rs | oracle-backed | 65 suite | 0 suite | 19/19 (100.0%) | 2 | 1947 probes (+2), 0/10 diverge | 4 | 0 | 0 | none |
+| UmiAwareMarkDuplicatesWithMateCigar | picard-rs | oracle-backed | not vendored | not vendored | 26/26 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| UnmarkDuplicates | gatk-rs | oracle-backed | 49 suite | 0 suite | 19/19 (100.0%) | 2 | 2171 probes (+0), 0/8 diverge | 4 | 0 | 0 | none |
+| UpdateVCFSequenceDictionary | gatk-rs | oracle-backed | 71 suite | 0 suite | 24/24 (100.0%) | 2 | 2247 probes (+0), 0/9 diverge | 5 | 0 | 0 | none |
+| UpdateVcfSequenceDictionary | gatk-rs | oracle-backed | 24 suite | 0 suite | 18/18 (100.0%) | 2 | not measured | 7 | 0 | 0 | none |
+| VCFComparator | gatk-rs | oracle-backed | 279 suite | 0 suite | 40/40 (100.0%) | 2 | 3370 probes (+6), 0/17 diverge | 2 | 6 | 0 | none |
+| ValidateBasicSomaticShortMutations | gatk-rs | oracle-backed | 171 suite | 0 suite | 22/22 (100.0%) | 2 | 3108 probes (+3), 0/11 diverge | 3 | 0 | 0 | none |
+| ValidateSamFile | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| ValidateVariants | gatk-rs | oracle-backed | 25 suite | 0 suite | 40/40 (100.0%) | 2 | 2618 probes (+12), 0/15 diverge | 4 | 2 | 0 | none |
+| VariantAnnotator | gatk-rs | oracle-backed | 13 suite | 0 suite | 83/83 (100.0%) | 2 | 5219 probes (+4), 0/21 diverge | 8 | 10 | 0 | none |
+| VariantEval | gatk-rs | oracle-backed | 258 suite | 0 suite | 68/68 (100.0%) | 2 | 4051 probes (+2), 0/33 diverge | 10 | 3 | 0 | none |
+| VariantFiltration | gatk-rs | oracle-backed | 227 suite | 0 suite | 24/24 (100.0%) | 2 | 2470 probes (+0), 0/9 diverge | 5 | 0 | 0 | none |
+| VariantRecalibrator | gatk-rs | oracle-backed | 270 suite | 0 suite | 26/26 (100.0%) | 2 | 4076 probes (+2), 0/14 diverge | 6 | 2 | 0 | none |
+| VariantsToTable | gatk-rs | oracle-backed | 75 suite | 0 suite | 23/23 (100.0%) | 2 | 2355 probes (+5), 0/12 diverge | 4 | 0 | 0 | none |
+| VcfFormatConverter | gatk-rs | oracle-backed | 13 suite | 0 suite | 17/17 (100.0%) | 2 | not measured | 6 | 0 | 0 | none |
+| VcfToAdpc | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+| VcfToIntervalList | gatk-rs | oracle-backed | 12 suite | 0 suite | 12/12 (100.0%) | 2 | not measured | 4 | 0 | 0 | none |
+| ViewSam | picard-rs | oracle-backed | not vendored | not vendored | 14/14 (100.0%) | 2 | not measured | 0 | 0 | 0 | none |
+
+Held-out arguments: 196, of which 0 have no reason in their tool's `$why`.
 
 ## What each array draws on and leaves out
 
@@ -329,11 +331,11 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 
 Suites: `ase-read-counter`.
 
-Inputs: `ase.bam`, `ase_sites.vcf`, `ase_sites_unindexed.vcf`, `reference.fasta`.
+Inputs: `ase.bai`, `ase.bam`, `ase_sites.vcf`, `ase_sites_unindexed.vcf`, `reference.fasta`.
 
-Held out: `--exclude-intervals`, `--intervals`, `--read-index`.
+Held out: `--exclude-intervals`, `--intervals`.
 
---input is ase.bam, reads over four sites of reference.fasta: at 1001 two A and two G, one A at mapping quality 10, one G at base quality 2, a C that is neither allele, a pair whose mates agree, a pair whose mates disagree (which the three overlap handlings treat three ways) and an improper pair; 1102 three reads; 1203 multiallelic and 1304 homozygous in the VCF, both skipped. --variant is ase_sites.vcf, indexed, and the same file unindexed, which the locus query refuses. --reference is reference.fasta or null, and without one the first locus indexes an empty array. --min-mapping-quality and --min-base-quality are 0 and 20, --min-depth-of-non-filtered-base -1 and 3; --output is a file or null, the second writing to stdout, which the array compares. --read-index, --intervals and --exclude-intervals are held out, as for CondenseDepthEvidence.
+--input is ase.bam, reads over four sites of reference.fasta: at 1001 two A and two G, one A at mapping quality 10, one G at base quality 2, a C that is neither allele, a pair whose mates agree, a pair whose mates disagree (which the three overlap handlings treat three ways) and an improper pair; 1102 three reads; 1203 multiallelic and 1304 homozygous in the VCF, both skipped. --variant is ase_sites.vcf, indexed, and the same file unindexed, which the locus query refuses. --reference is reference.fasta or null, and without one the first locus indexes an empty array. --min-mapping-quality and --min-base-quality are 0 and 20, --min-depth-of-non-filtered-base -1 and 3; --output is a file or null, the second writing to stdout, which the array compares. --intervals and --exclude-intervals are held out, as for CondenseDepthEvidence. --read-index is each BAM's own index or unset; a row pairing a BAM with another's index is forbidden, since it would measure htsjdk reading a foreign index rather than the tool.
 
 ### AddCommentsToBam
 
@@ -349,21 +351,21 @@ picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFi
 
 Suites: `add-flow-base-quality`.
 
-Inputs: `flow.bam`, `mutect_ref.fasta`.
+Inputs: `flow.bai`, `flow.bam`, `mutect_ref.dict`, `mutect_ref.fasta`.
 
-Held out: `--exclude-intervals`, `--read-index`, `--sequence-dictionary`.
+Held out: none.
 
-flow.bam is Ultima reads in two flow groups (TGCA at the default maximal class, TACG at mc 8), every read with a signed tp array and varied qualities, every third with a t0 string, and one holding a 13-base hmer longer than either class. Each flow-matrix argument moves the matrix the tool reads its bands from; --replace-quality-mode moves the answer from XQ to OQ and QUAL. --flow-matrix-mods carries two instruction lists valid under both classes; --reference is the reads' own or none. --flow-fill-empty-bins-value 0 is the mode that estimates the floor from the read's own best quality. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags.
+flow.bam is Ultima reads in two flow groups (TGCA at the default maximal class, TACG at mc 8), every read with a signed tp array and varied qualities, every third with a t0 string, and one holding a 13-base hmer longer than either class. Each flow-matrix argument moves the matrix the tool reads its bands from; --replace-quality-mode moves the answer from XQ to OQ and QUAL. --flow-matrix-mods carries two instruction lists valid under both classes; --reference is the reads' own or none. --flow-fill-empty-bins-value 0 is the mode that estimates the floor from the read's own best quality. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags. --read-index is each BAM's own index or unset; a row pairing a BAM with another's index is forbidden, since it would measure htsjdk reading a foreign index rather than the tool. --sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference is forbidden, the dictionary check's refusal being measured elsewhere. --exclude-intervals is unset or chr1:360-440, inside the window -L names.
 
 ### AddFlowSNVQuality
 
 Suites: `add-flow-snv-quality`.
 
-Inputs: `flow.bam`, `mutect_ref.fasta`.
+Inputs: `flow.bai`, `flow.bam`, `mutect_ref.dict`, `mutect_ref.fasta`.
 
-Held out: `--debug-collect-stats-into`, `--debug-read-name`, `--exclude-intervals`, `--read-index`, `--sequence-dictionary`.
+Held out: none.
 
-flow.bam as for AddFlowBaseQuality, with one supplementary and one QC-failed read so the two keep switches drop them. --max-phred-score moves both the clamp and the floor, 90 dropping the floor to 1e-9 and 30 raising it to 1e-3. --snvq-mode picks one of four formulae; --output-quality-attribute moves the base quality to a tag and leaves QUAL. The boundary flows are spread unless --keep-boundary-flows. The debug switches are held out: one writes a statistics file beside the output, the other only matters with it.
+flow.bam as for AddFlowBaseQuality, with one supplementary and one QC-failed read so the two keep switches drop them. --max-phred-score moves both the clamp and the floor, 90 dropping the floor to 1e-9 and 30 raising it to 1e-3. --snvq-mode picks one of four formulae; --output-quality-attribute moves the base quality to a tag and leaves QUAL. The boundary flows are spread unless --keep-boundary-flows. --read-index is each BAM's own index or unset; a row pairing a BAM with another's index is forbidden, since it would measure htsjdk reading a foreign index rather than the tool. --sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference is forbidden, the dictionary check's refusal being measured elsewhere. --exclude-intervals is unset or chr1:360-440, inside the window -L names.
 
 ### AddOriginalAlignmentTags
 
@@ -379,11 +381,11 @@ Held out: none.
 
 Suites: `multi-variant-walker`, `allele-frequency-qc`, `r-plots`.
 
-Inputs: `afqc_1kg.vcf`, `afqc_1kg2.vcf`, `cgv_ref.fasta`, `gg_dbsnp.vcf`, `ve_cnv.bed`, `ve_strat.bed`.
+Inputs: `afqc_1kg.vcf`, `afqc_1kg2.vcf`, `cgv_ref.dict`, `cgv_ref.fasta`, `gg_dbsnp.vcf`, `ve_cnv.bed`, `ve_strat.bed`.
 
-Held out: `--ancestral-alignments`, `--input`, `--pedigree`, `--read-index`, `--sequence-dictionary`, `--variant-output-filtering`.
+Held out: `--ancestral-alignments`, `--input`, `--pedigree`, `--read-index`.
 
-AlleleFrequencyQC is VariantEval with its modules and stratifiers preset, so every VariantEval argument is still declared and still parsed, and --eval-module, --stratification-module and the two do-not-use flags are varied to show that the presets override them. -O is the metrics file; --debugFile is where the report goes, and null sends it to a temporary file nothing compares. --eval is tagged: the Thousand Genomes set is given again as a second eval track, which is what puts two rows in each allele-frequency bin, in either order; the call set alone leaves one row per bin and a statistic of nought; afqc_eval_noalias.vcf has no ##sampleAlias line and is the NullPointerException the tool raises before VariantEval starts. --comparison null leaves the comp-AF stratifier without a comp. The reference runs in the Broad's image and the port in one with R ($past_the_interpreter), so a run that gets as far as the plot draws it: the PNGs are compared by pixel size and resolution, and the combined figure the port adds is not. --pedigree, --ancestral-alignments and --list are held out as for VariantEval.
+AlleleFrequencyQC is VariantEval with its modules and stratifiers preset, so every VariantEval argument is still declared and still parsed, and --eval-module, --stratification-module and the two do-not-use flags are varied to show that the presets override them. -O is the metrics file; --debugFile is where the report goes, and null sends it to a temporary file nothing compares. --eval is tagged: the Thousand Genomes set is given again as a second eval track, which is what puts two rows in each allele-frequency bin, in either order; the call set alone leaves one row per bin and a statistic of nought; afqc_eval_noalias.vcf has no ##sampleAlias line and is the NullPointerException the tool raises before VariantEval starts. --comparison null leaves the comp-AF stratifier without a comp. The reference runs in the Broad's image and the port in one with R ($past_the_interpreter), so a run that gets as far as the plot draws it: the PNGs are compared by pixel size and resolution, and the combined figure the port adds is not. --pedigree, --ancestral-alignments and --list are held out as for VariantEval. --sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference is forbidden, the dictionary check's refusal being measured elsewhere. --variant-output-filtering is unset, STARTS_IN or OVERLAPS, and forbidden without -L. --input and --read-index are held out: this tool reads no reads, so a BAM would only add the reads-against-reference dictionary check, which the read walkers' arrays measure.
 
 ### AnalyzeCovariates
 
@@ -447,7 +449,7 @@ Suites: `spark-walkers`.
 
 Inputs: `reads.bai`, `reads.bam`, `reads2.bai`, `reads2.bam`, `recal.table`, `recal2.table`.
 
-Held out: `--output-shard-tmp-dir`.
+Held out: none.
 
 ApplyBQSR's fixtures and PrintReadsSpark's Spark arguments; the output is PrintReadsSpark's writer.
 
@@ -459,7 +461,7 @@ Inputs: `indel.tranches`, `snp.tranches`, `vqsr_alleles.recal.vcf`, `vqsr_input.
 
 Held out: `--exclude-intervals`, `--input`, `--intervals`, `--read-index`.
 
---variant is vqsr_input.vcf: SNPs, an insertion, a deletion, a MIXED site, a multiallelic SNP, a SNP beside a spanning deletion, and a SNP filtered LowQual; and vqsr_snp_applied.vcf, the REFERENCE's own -AS SNP pass over it, which makes a row a second run. --recal-file is the per-allele recal file first (which -AS matches allele by allele and a site run takes at the right end), then the site file, which -AS refuses at its first allele, and the site file without its index, refused at the first record. --tranches-file is SNP or INDEL, read only with a --truth-sensitivity-filter-level (99.0 or none), and absent in the third value, the reference's NullPointerException. --lod-score-cutoff is none or 1.0, the pair of them the mutual exclusion. --ignore-filter lets LowQual through or is absent. --output is plain or BGZF. The index, the filtering mode, the command line and the engine's read and interval arguments are held as for FilterVariantTranches.
+--variant is vqsr_input.vcf: SNPs, an insertion, a deletion, a MIXED site, a multiallelic SNP, a SNP beside a spanning deletion, and a SNP filtered LowQual; and vqsr_snp_applied.vcf, the REFERENCE's own -AS SNP pass over it, which makes a row a second run. --recal-file is the per-allele recal file first (which -AS matches allele by allele and a site run takes at the right end), then the site file, which -AS refuses at its first allele, and the site file without its index, refused at the first record. --tranches-file is SNP or INDEL, read only with a --truth-sensitivity-filter-level (99.0 or none), and absent in the third value, the reference's NullPointerException. --lod-score-cutoff is none or 1.0, the pair of them the mutual exclusion. --ignore-filter lets LowQual through or is absent. --output is plain or BGZF. The index, the filtering mode, the command line and the engine's read and interval arguments are held as for FilterVariantTranches. --input and --read-index are held out: this tool reads no reads, so a BAM would only add the reads-against-reference dictionary check, which the read walkers' arrays measure. --intervals and --exclude-intervals are held out: the file the tool walks has no index in the corpus, so any interval turns the traversal into a query the reference refuses before the first record.
 
 ### BQSRPipelineSpark
 
@@ -467,7 +469,7 @@ Suites: `spark-walkers`.
 
 Inputs: `groups.bai`, `groups.bam`, `known.bed`, `other.fasta`, `population.vcf`, `reads.bai`, `reads.bam`, `reference.fasta`.
 
-Held out: `--output-shard-tmp-dir`.
+Held out: none.
 
 BaseRecalibrator's fixtures for the table, PrintReadsSpark's Spark arguments for the job, and PrintReadsSpark's writer for the output.
 
@@ -487,7 +489,7 @@ Suites: `spark-walkers`.
 
 Inputs: `groups.bai`, `groups.bam`, `known.bed`, `other.fasta`, `population.vcf`, `reads.bai`, `reads.bam`, `reference.fasta`.
 
-Held out: `--output-shard-tmp-dir`.
+Held out: none.
 
 BaseRecalibrator's fixtures and PrintReadsSpark's Spark arguments: one partition is the walker's engine, so its values are the ones the twin's table was measured over, and -L takes <unset> so rows read the whole file through Disq's guessed start.
 
@@ -507,9 +509,9 @@ Suites: `spark-walkers`.
 
 Inputs: `bwa.fasta`, `bwa_named.img`, `bwa_reads.bam`, `bwa_reads_no_group.bam`.
 
-Held out: `--output-shard-tmp-dir`, `--read-index`.
+Held out: `--read-index`.
 
-The same reads with the marking over them, which is why the fixture repeats fragments. The flow arguments are held out: they read flow reads, and these are not.
+The same reads with the marking over them, which is why the fixture repeats fragments. The flow arguments are held out: they read flow reads, and these are not. --read-index is held out: the reads are unaligned, and no input BAM has an index.
 
 ### BwaMemIndexImageCreator
 
@@ -527,9 +529,9 @@ Suites: `spark-walkers`.
 
 Inputs: `bwa.fasta`, `bwa_named.img`, `bwa_reads.bam`, `bwa_reads_dictionary.bam`, `bwa_reads_unsorted.bam`.
 
-Held out: `--output-shard-tmp-dir`, `--read-index`.
+Held out: `--read-index`.
 
-Reads as a sequencer leaves them, paired and single-ended, on a reference with its own image and one named by the argument. A filter that a paired run applies after alignment is the suite's, as is the non-image, which kills the reference's JVM. --sharded-output is held out: the reference then writes one part per reducer with its Hadoop checksums, which the suite measures.
+Reads as a sequencer leaves them, paired and single-ended, on a reference with its own image and one named by the argument. A filter that a paired run applies after alignment is the suite's, as is the non-image, which kills the reference's JVM. --sharded-output is held out: the reference then writes one part per reducer with its Hadoop checksums, which the suite measures. --read-index is held out: the reads are unaligned, and no input BAM has an index.
 
 ### CRAMIssue8768Detector
 
@@ -545,11 +547,11 @@ issue8768.cram has its first container on each of two contigs opening at positio
 
 Suites: `spark-walkers`.
 
-Inputs: `insert_pairs.bam`, `insert_pairs2.bam`, `reads.bam`.
+Inputs: `insert_pairs.bai`, `insert_pairs.bam`, `insert_pairs2.bai`, `insert_pairs2.bam`, `reads.bai`, `reads.bam`, `reference.fasta`.
 
-Held out: `--output-shard-tmp-dir`, `--read-index`, `--reference`.
+Held out: none.
 
-Paired reads, for the fragment sizes, and an unpaired BAM, which keeps the refusal of a read with no mate in the array.
+Paired reads, for the fragment sizes, and an unpaired BAM, which keeps the refusal of a read with no mate in the array. --read-index is each BAM's own index or unset; a row pairing a BAM with another's index is forbidden, since it would measure htsjdk reading a foreign index rather than the tool. --reference is unset or reference.fasta, whose dictionary is the reads'.
 
 ### CalculateAverageCombinedAnnotations
 
@@ -559,7 +561,7 @@ Inputs: `summed.vcf`, `summed_missing.vcf`, `sums.list`, `sums_two.list`.
 
 Held out: `--exclude-intervals`, `--input`, `--intervals`, `--read-index`.
 
---variant is summed.vcf, sites with RAW_GT_COUNT and two summed annotations (one site's divisor zero, one missing a sum), and summed_missing.vcf, whose third site lacks RAW_GT_COUNT and is refused where the walk reaches it, leaving the header and two records. --summed-annotation-to- divide is sums_two.list, naming MQ_SUM and QD_SUM, and sums.list, naming them the other way round with one annotation no site carries, which still gains its header line. The index and the output filtering mode are held for the reasons NuMTFilterTool gives, and the engine's read arguments are held out likewise. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags.
+--variant is summed.vcf, sites with RAW_GT_COUNT and two summed annotations (one site's divisor zero, one missing a sum), and summed_missing.vcf, whose third site lacks RAW_GT_COUNT and is refused where the walk reaches it, leaving the header and two records. --summed-annotation-to- divide is sums_two.list, naming MQ_SUM and QD_SUM, and sums.list, naming them the other way round with one annotation no site carries, which still gains its header line. The index and the output filtering mode are held for the reasons NuMTFilterTool gives, and the engine's read arguments are held out likewise. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags. --input and --read-index are held out: this tool reads no reads, so a BAM would only add the reads-against-reference dictionary check, which the read walkers' arrays measure. --intervals and --exclude-intervals are held out: the file the tool walks has no index in the corpus, so any interval turns the traversal into a query the reference refuses before the first record.
 
 ### CalculateContamination
 
@@ -593,11 +595,11 @@ duo.vcf is the corpus's TWO-sample VCF, whose singleton hets alternate between t
 
 Suites: `calibrate-dragstr-model`.
 
-Inputs: `dragstr.bam`, `dragstr_str.zip`, `dragstr_str_all.zip`, `mutect_ref.fasta`, `mutect_tn.bam`.
+Inputs: `dragstr.bai`, `dragstr.bam`, `dragstr_str.zip`, `dragstr_str_all.zip`, `mutect_ref.dict`, `mutect_ref.fasta`, `mutect_tn.bai`, `mutect_tn.bam`.
 
-Held out: `--exclude-intervals`, `--read-index`, `--sequence-dictionary`, `--shard-size`.
+Held out: none.
 
-dragstr.bam is one sample's reads tiled over mutect_ref.fasta, some carrying a one-base deletion or insertion in a homopolymer, some with XQ, some supplementary, some at MQ 10; mutect_tn.bam has two samples, which the tool refuses. dragstr_str.zip and dragstr_str_all.zip are the reference's own ComposeSTRTableFile over mutect_ref.fasta with the default decimation and with none. --force-estimation true estimates from what little data there is; false writes the defaults. --max-period 2 is below the table's periods, which the reference indexes past. --parallel and --threads are held: the parallel collection is not ported.
+dragstr.bam is one sample's reads tiled over mutect_ref.fasta, some carrying a one-base deletion or insertion in a homopolymer, some with XQ, some supplementary, some at MQ 10; mutect_tn.bam has two samples, which the tool refuses. dragstr_str.zip and dragstr_str_all.zip are the reference's own ComposeSTRTableFile over mutect_ref.fasta with the default decimation and with none. --force-estimation true estimates from what little data there is; false writes the defaults. --max-period 2 is below the table's periods, which the reference indexes past. --parallel and --threads are held: the parallel collection is not ported. --read-index is each BAM's own index or unset; a row pairing a BAM with another's index is forbidden, since it would measure htsjdk reading a foreign index rather than the tool. --sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference is forbidden, the dictionary check's refusal being measured elsewhere. --exclude-intervals is unset or chr1:900-1100, inside the window -L names. --shard-size is the default or 100, the smallest it accepts, which cuts the contig into many shards.
 
 ### CallCopyRatioSegments
 
@@ -633,11 +635,11 @@ Held out: none.
 
 Suites: `check-reference-compatibility`.
 
-Inputs: `md5header.bam`, `other.fasta`, `reads.bam`, `reference.fasta`.
+Inputs: `indexed.vcf`, `md5header.bai`, `md5header.bam`, `other.fasta`, `reads.bai`, `reads.bam`, `reference.fasta`.
 
-Held out: `--read-index`, `--variant`.
+Held out: none.
 
---input carries md5header.bam and reads.bam, which is the whole point of this tool's array: one property of the input decides the algorithm. md5header.bam is the corpus's only reads file whose @SQ line carries an M5, so it takes the MD5 path and compares bases through CompareReferences' table; reads.bam has none, so it compares names and lengths alone and says so in every summary it writes. --references-to-compare carries reference.fasta, whose dictionary md5header.bam's was copied from, and other.fasta, which shares no contig with either input and whose hand-written dict has no M5 at all. Between them the rows reach COMPATIBLE, NOT_COMPATIBLE and the USE_DICT refusal that a reference with no M5 produces once the input has one. --variant is held out. The tool refuses a command line naming both a BAM and a VCF, and every row carries every argument in the domain, so an array holding both would measure that one refusal twenty times. The VCF path is measured by the tool's suite, which has five VCF runs including one whose M5 is a lie. --read-index is held out: it is counted against the reads inputs and refuses on a mismatch, which is a refusal the read walkers' arrays already measure.
+--input carries md5header.bam and reads.bam, which is the whole point of this tool's array: one property of the input decides the algorithm. md5header.bam is the corpus's only reads file whose @SQ line carries an M5, so it takes the MD5 path and compares bases through CompareReferences' table; reads.bam has none, so it compares names and lengths alone and says so in every summary it writes. --references-to-compare carries reference.fasta, whose dictionary md5header.bam's was copied from, and other.fasta, which shares no contig with either input and whose hand-written dict has no M5 at all. Between them the rows reach COMPATIBLE, NOT_COMPATIBLE and the USE_DICT refusal that a reference with no M5 produces once the input has one. --variant is unset or indexed.vcf, and --input takes <unset> too: the tool refuses a BAM and a VCF together, so that pair is forbidden. The VCF path is measured by the tool's suite, which has five VCF runs including one whose M5 is a lie. --read-index is each BAM's own index or unset; a row pairing a BAM with another's index is forbidden, since it would measure htsjdk reading a foreign index rather than the tool.
 
 ### CheckTerminatorBlock
 
@@ -675,7 +677,7 @@ Suites: `spark-walkers`.
 
 Inputs: `reads.bai`, `reads.bam`, `reads2.bai`, `reads2.bam`, `sq_tags.bai`, `sq_tags.bam`.
 
-Held out: `--output-shard-tmp-dir`.
+Held out: none.
 
 CollectAllelicCounts' values over the Spark engine's arguments. Intervals are required, so -L has no <unset>. The far window is one shard: two would fail two tasks at once on local[2], and the log line that comes first is a race. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags.
 
@@ -685,7 +687,7 @@ Suites: `spark-walkers`.
 
 Inputs: `reads.bai`, `reads.bam`, `reads2.bai`, `reads2.bam`.
 
-Held out: `--chart`, `--output-shard-tmp-dir`.
+Held out: `--chart`.
 
 The Spark values every record walker here has. `--chart` needs an R the pinned container does not have, so it is measured nowhere.
 
@@ -693,31 +695,31 @@ The Spark values every record walker here has. `--chart` needs an R the pinned c
 
 Suites: `collect-f1r2-counts`.
 
-Inputs: `f1r2.bam`, `reference.fasta`, `tumor_normal.bam`.
+Inputs: `f1r2.bai`, `f1r2.bam`, `reference.dict`, `reference.fasta`, `tumor_normal.bai`, `tumor_normal.bam`.
 
-Held out: `--read-index`, `--sequence-dictionary`.
+Held out: none.
 
-f1r2.bam is one sample over reference.fasta's ACGT repeat, forty-base pairs so Mutect2's length filter keeps them, built to reach every place a site can go: the alt table, a depth-one histogram, a reference histogram, a tie between alt bases, a site under the median mapping quality, an indel site and a k-mer cut short at each end of the contig. tumor_normal.bam is the second input because it carries two samples, which is the path that splits the pileup and stops at the first sample in hash order that returns. --read-index is held out so each BAM finds its own index beside it. --f1r2-min-bq 5 lets the two low-quality alt bases at 1031 through; --f1r2-median-mq 30 lets the block at 2001 in; --f1r2-max-depth 3 caps the depth bins where the default does not. --intervals keeps the window over the reads, and its second value leaves the far end out. --max-depth-per-sample is held at zero: this port does not reproduce the downsampler's stream. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags.
+f1r2.bam is one sample over reference.fasta's ACGT repeat, forty-base pairs so Mutect2's length filter keeps them, built to reach every place a site can go: the alt table, a depth-one histogram, a reference histogram, a tie between alt bases, a site under the median mapping quality, an indel site and a k-mer cut short at each end of the contig. tumor_normal.bam is the second input because it carries two samples, which is the path that splits the pileup and stops at the first sample in hash order that returns. --f1r2-min-bq 5 lets the two low-quality alt bases at 1031 through; --f1r2-median-mq 30 lets the block at 2001 in; --f1r2-max-depth 3 caps the depth bins where the default does not. --intervals keeps the window over the reads, and its second value leaves the far end out. --max-depth-per-sample is held at zero: this port does not reproduce the downsampler's stream. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags. --read-index is each BAM's own index or unset; a row pairing a BAM with another's index is forbidden, since it would measure htsjdk reading a foreign index rather than the tool. --sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference is forbidden, the dictionary check's refusal being measured elsewhere.
 
 ### CollectInsertSizeMetricsSpark
 
 Suites: `spark-walkers`.
 
-Inputs: `insert_pairs.bai`, `insert_pairs.bam`, `insert_pairs2.bai`, `insert_pairs2.bam`.
+Inputs: `insert_pairs.bai`, `insert_pairs.bam`, `insert_pairs2.bai`, `insert_pairs2.bam`, `reference.fasta`.
 
-Held out: `--output-shard-tmp-dir`, `--reference`.
+Held out: none.
 
-Pairs in every orientation and two read groups, so a level and a threshold change what the file holds. --produce-plot holds at false: the plot runs R, which the pinned container does not have, and -H names a file nothing then writes. No --reference: no dictionary of the corpus matches these BAMs, and the startup's refusal is the other Spark tools' to measure. An inverted filter keeps only what passes the ten defaults: inverting one of them is refused, and inverting most others empties the tool, so the value here keeps the TANDEM pair.
+Pairs in every orientation and two read groups, so a level and a threshold change what the file holds. --produce-plot holds at false: the plot runs R, which the pinned container does not have, and -H names a file nothing then writes. An inverted filter keeps only what passes the ten defaults: inverting one of them is refused, and inverting most others empties the tool, so the value here keeps the TANDEM pair. --reference is unset or reference.fasta, whose dictionary is the reads'.
 
 ### CollectMultipleMetricsSpark
 
 Suites: `spark-walkers`.
 
-Inputs: `insert_pairs.bai`, `insert_pairs.bam`, `insert_pairs2.bai`, `insert_pairs2.bam`.
+Inputs: `insert_pairs.bai`, `insert_pairs.bam`, `insert_pairs2.bai`, `insert_pairs2.bam`, `reference.fasta`.
 
-Held out: `--output-shard-tmp-dir`, `--reference`.
+Held out: none.
 
-Pairs in every orientation and two read groups, so a level and the collectors change what the two files hold. No --reference: no dictionary of the corpus matches these BAMs. A filter on the command line is parsed and then bypassed, so a value here only has to survive the descriptor.
+Pairs in every orientation and two read groups, so a level and the collectors change what the two files hold. A filter on the command line is parsed and then bypassed, so a value here only has to survive the descriptor. --reference is unset or reference.fasta, whose dictionary is the reads'.
 
 ### CollectQualityYieldMetricsSpark
 
@@ -725,7 +727,7 @@ Suites: `spark-walkers`.
 
 Inputs: `reads.bai`, `reads.bam`, `reads2.bai`, `reads2.bam`.
 
-Held out: `--output-shard-tmp-dir`.
+Held out: none.
 
 The Spark values every record walker here has. `--chart` needs an R the pinned container does not have, so it is measured nowhere.
 
@@ -743,29 +745,29 @@ Suites: `collect-sv-evidence`.
 
 Inputs: `indexed.vcf`, `matching.dict`, `pairs.bai`, `pairs.bam`, `regions.bed`.
 
-Held out: `--exclude-intervals`, `--intervals`.
+Held out: none.
 
-pairs.bam, whose reads are PAIRED: the discordant-pair and split-read evidence both need a mate, and the corpus's plain reads.bam has none. Every output name carries the extension its writer tests for, and ONE of them carries a name that does not: each of the four writers refuses a file it could not read back, before the traversal, and `--sd-file` is where that refusal is measured. Giving every argument a bad value would have refused every row; giving none would have measured none. Every accepted name is plain `.txt`, so the claim excludes block-compressed (`.txt.gz`) and `.bci` outputs: the port refuses both as its own limitation, and no row measures them. --site-depth-locs-vcf carries the corpus's indexed VCF, whose records are biallelic SNVs: the site-depth walk keeps those and steps past everything else. --depth-evidence-intervals carries the corpus's BED, because the depth counts are per interval and an interval file with no intervals is its own refusal. --site-depth-min-mapq and --depth-evidence-min-mapq carry their two different defaults and a value above them: the three floors are what let one read be counted for depth and not for site depth. --sequence-dictionary is pinned to the one that AGREES with the reads. The site-depth writer asserts that the dictionary it was given and the BAM's are the same object, and the corpus's other dictionary makes that an AssertionError rather than a user error.
+pairs.bam, whose reads are PAIRED: the discordant-pair and split-read evidence both need a mate, and the corpus's plain reads.bam has none. Every output name carries the extension its writer tests for, and ONE of them carries a name that does not: each of the four writers refuses a file it could not read back, before the traversal, and `--sd-file` is where that refusal is measured. Giving every argument a bad value would have refused every row; giving none would have measured none. Every accepted name is plain `.txt`, so the claim excludes block-compressed (`.txt.gz`) and `.bci` outputs: the port refuses both as its own limitation, and no row measures them. --site-depth-locs-vcf carries the corpus's indexed VCF, whose records are biallelic SNVs: the site-depth walk keeps those and steps past everything else. --depth-evidence-intervals carries the corpus's BED, because the depth counts are per interval and an interval file with no intervals is its own refusal. --site-depth-min-mapq and --depth-evidence-min-mapq carry their two different defaults and a value above them: the three floors are what let one read be counted for depth and not for site depth. --sequence-dictionary is pinned to the one that AGREES with the reads. The site-depth writer asserts that the dictionary it was given and the BAM's are the same object, and the corpus's other dictionary makes that an AssertionError rather than a user error. --intervals is unset or chr1:1-3000, which keeps four of pairs.bam's six reads, and --exclude-intervals unset or chr1:900-1100, which drops the read at 1000.
 
 ### CombineGVCFs
 
 Suites: `multi-variant-walker`, `combine-gvcfs`.
 
-Inputs: `cg_ab.list`, `cg_abc.list`, `cg_bc.list`, `cg_dbsnp.vcf`, `cg_mnp_pair.list`, `cg_nonref_pair.list`, `cgv_ref.fasta`.
+Inputs: `cg_ab.list`, `cg_abc.list`, `cg_bc.list`, `cg_dbsnp.vcf`, `cg_mnp_pair.list`, `cg_nonref_pair.list`, `cgv_ref.dict`, `cgv_ref.fasta`.
 
-Held out: `--flow-order-for-annotations`, `--founder-id`, `--input`, `--pedigree`, `--read-index`, `--sequence-dictionary`.
+Held out: `--flow-order-for-annotations`, `--founder-id`, `--input`, `--pedigree`, `--read-index`.
 
-The corpus is combineGvcfsFixtures in MakeFixtures.java: GVCFs over cgv_ref.fasta, whose chr1 is mutect_ref.fasta's and whose chr2 is 500 fixed bases. --variant is a collection and a row gives it one value, so each value is a .list of the files one run merges: cg_abc.list is the three that merge (a diploid sample with a deletion, a multiallelic SNP, a phased pair and a zero-depth block; a second diploid sample whose blocks run into that deletion, with a SNP under it and an insertion at the multiallelic site; and a haploid sample with a longer deletion), cg_ab.list and cg_bc.list two of them each, so the diploid pair merges without the haploid sample and the haploid one merges with a single diploid. cg_mnp_pair.list puts cg_a beside an MNP, which apply() refuses, and cg_nonref_pair.list beside a variant with no <NON_REF>, which the merger refuses. Both refusals sit at chr1:100, so a row whose interval misses that site answers instead. --intervals is absent, a window starting inside cg_a's deletion (so --ignore-variants-starting-outside-interval has a record to drop and the merger a deletion to trim), or a window on chr2 over the hom-var SNP. --exclude-intervals cuts the phased pair out or nothing. --break-bands-at-multiples-of is 0 or 100, which splits the chr1 blocks at 100, 200 and 300; --convert-to-base-pair-resolution is the special case of 1. --annotation-group, --annotation and --annotations-to-exclude decide which raw keys the merger combines: the default group, the allele-specific one, AS_RMSMappingQuality added, and ExcessHet or RMSMappingQuality removed. Every input carries both the raw and the allele-specific keys. Removing RMSMappingQuality is refused whenever a group selects it: Barclay records every selected annotation that declares an argument as a predecessor, given or not, and GATK refuses to disable one the tool does not name individually. --dbsnp is cg_dbsnp.vcf or absent. The merger never reads its records; it adds the DB header line, which is what a row can observe. --reference is held at cgv_ref.fasta: the corpus has no second reference carrying both contigs at these lengths, and any other refuses every row on the dictionary check. --sequence-dictionary is held out for the same reason: both shared dictionaries name chr1 at 100 kb or chrOther, which the dictionary check refuses on every row. --input and --read-index are held out: this tool reads no reads. --pedigree and --founder-id are held out: they feed only the pedigree annotations (InbreedingCoeff, ExcessHet, PossibleDeNovo), none of which is reducible, and the merger combines reducible annotations alone, so no row could observe them. --flow-order-for-annotations is held out: it feeds only the flow-based annotations, and the corpus holds no flow data. --variant-output-filtering is held at ANYWHERE: any other mode needs -L, and a third of the rows have none. --max-variants-per-shard is held at 0: above it the reference writes one file per shard, a writer this port does not carry, and the generator's other value is -1, which the parser refuses. --disable-read-filter is held at WellformedReadFilter: the shared MappedReadFilter is also a --read-filter value, and a row naming it on both sides is refused for the conflict. No read filter reaches a variant walker. --add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the reason every variant writer holds them: one writes the run's own time into the header and the other writes the output file's last-modified time into an index.
+The corpus is combineGvcfsFixtures in MakeFixtures.java: GVCFs over cgv_ref.fasta, whose chr1 is mutect_ref.fasta's and whose chr2 is 500 fixed bases. --variant is a collection and a row gives it one value, so each value is a .list of the files one run merges: cg_abc.list is the three that merge (a diploid sample with a deletion, a multiallelic SNP, a phased pair and a zero-depth block; a second diploid sample whose blocks run into that deletion, with a SNP under it and an insertion at the multiallelic site; and a haploid sample with a longer deletion), cg_ab.list and cg_bc.list two of them each, so the diploid pair merges without the haploid sample and the haploid one merges with a single diploid. cg_mnp_pair.list puts cg_a beside an MNP, which apply() refuses, and cg_nonref_pair.list beside a variant with no <NON_REF>, which the merger refuses. Both refusals sit at chr1:100, so a row whose interval misses that site answers instead. --intervals is absent, a window starting inside cg_a's deletion (so --ignore-variants-starting-outside-interval has a record to drop and the merger a deletion to trim), or a window on chr2 over the hom-var SNP. --exclude-intervals cuts the phased pair out or nothing. --break-bands-at-multiples-of is 0 or 100, which splits the chr1 blocks at 100, 200 and 300; --convert-to-base-pair-resolution is the special case of 1. --annotation-group, --annotation and --annotations-to-exclude decide which raw keys the merger combines: the default group, the allele-specific one, AS_RMSMappingQuality added, and ExcessHet or RMSMappingQuality removed. Every input carries both the raw and the allele-specific keys. Removing RMSMappingQuality is refused whenever a group selects it: Barclay records every selected annotation that declares an argument as a predecessor, given or not, and GATK refuses to disable one the tool does not name individually. --dbsnp is cg_dbsnp.vcf or absent. The merger never reads its records; it adds the DB header line, which is what a row can observe. --reference is held at cgv_ref.fasta: the corpus has no second reference carrying both contigs at these lengths, and any other refuses every row on the dictionary check. --input and --read-index are held out: this tool reads no reads. --pedigree and --founder-id are held out: they feed only the pedigree annotations (InbreedingCoeff, ExcessHet, PossibleDeNovo), none of which is reducible, and the merger combines reducible annotations alone, so no row could observe them. --flow-order-for-annotations is held out: it feeds only the flow-based annotations, and the corpus holds no flow data. --variant-output-filtering is held at ANYWHERE: any other mode needs -L, and a third of the rows have none. --max-variants-per-shard is held at 0: above it the reference writes one file per shard, a writer this port does not carry, and the generator's other value is -1, which the parser refuses. --disable-read-filter is held at WellformedReadFilter: the shared MappedReadFilter is also a --read-filter value, and a row naming it on both sides is refused for the conflict. No read filter reaches a variant walker. --add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the reason every variant writer holds them: one writes the run's own time into the header and the other writes the output file's last-modified time into an index. --sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference is forbidden, the dictionary check's refusal being measured elsewhere.
 
 ### CombineSegmentBreakpoints
 
 Suites: `combine-segment-breakpoints`.
 
-Inputs: `csb_columns.list`, `csb_labels.list`, `csb_pair.list`, `csb_pair_header.list`, `two_contigs.fasta`.
+Inputs: `csb_columns.list`, `csb_labels.list`, `csb_pair.list`, `csb_pair_header.list`, `two_contigs.dict`, `two_contigs.fasta`.
 
-Held out: `--exclude-intervals`, `--input`, `--intervals`, `--read-index`, `--sequence-dictionary`.
+Held out: `--exclude-intervals`, `--input`, `--intervals`, `--read-index`.
 
---segments takes exactly two files, so each value is a .list of two: tumour.seg and normal.seg, neither with a SAM header, or tumour.seg and csb_header.seg, whose dictionary the merge takes. --labels is absent (1 and 2) or a .list of T and N. --columns-of-interest is CALL and MEAN, CALL alone (which both files carry, so it takes the labels), or a column neither has, refused. --reference is two_contigs.fasta or absent, which without a SAM header is refused. The engine's read, interval and dictionary arguments are held out. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags.
+--segments takes exactly two files, so each value is a .list of two: tumour.seg and normal.seg, neither with a SAM header, or tumour.seg and csb_header.seg, whose dictionary the merge takes. --labels is absent (1 and 2) or a .list of T and N. --columns-of-interest is CALL and MEAN, CALL alone (which both files carry, so it takes the labels), or a column neither has, refused. --reference is two_contigs.fasta or absent, which without a SAM header is refused. The engine's read and interval arguments are held out. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags. --sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference is forbidden, the dictionary check's refusal being measured elsewhere. --input and --read-index are held out: this tool reads no reads, so a BAM would only add the reads-against-reference dictionary check, which the read walkers' arrays measure. --intervals and --exclude-intervals are held out: the file the tool walks has no index in the corpus, so any interval turns the traversal into a query the reference refuses before the first record.
 
 ### CompareBaseQualities
 
@@ -781,11 +783,11 @@ The two SAM files are POSITIONAL, so they cannot come out of the array at all: e
 
 Suites: `spark-walkers`.
 
-Inputs: `dup_a.bai`, `dup_a.bam`, `dup_marks.bai`, `dup_marks.bam`.
+Inputs: `dup_a.bai`, `dup_a.bam`, `dup_marks.bai`, `dup_marks.bam`, `sv_reference.fasta`.
 
-Held out: `--output-shard-tmp-dir`, `--reference`.
+Held out: none.
 
-Two BAMs that agree or differ in their marks only, so the rows reach the summary and the writer: the differences that stop the tool are measured by the spark-walkers golden. --print-summary holds at false: with it the tool walks a HashSet of enum constants, an order two JVMs do not share, so the golden's sorted summary measures it instead. No --reference: no dictionary of the corpus matches these BAMs, and the startup's refusal is the other Spark tools' to measure.
+Two BAMs that agree or differ in their marks only, so the rows reach the summary and the writer: the differences that stop the tool are measured by the spark-walkers golden. --print-summary holds at false: with it the tool walks a HashSet of enum constants, an order two JVMs do not share, so the golden's sorted summary measures it instead. --reference is unset or sv_reference.fasta, whose dictionary is the reads'.
 
 ### CompareIntervalLists
 
@@ -809,11 +811,11 @@ Held out: `--base-comparison-output`, `--input`, `--read-index`, `--sequence-dic
 
 Suites: `compose-str-table-file`.
 
-Inputs: `decimation.txt`, `mutect_ref.fasta`, `two_contigs.fasta`.
+Inputs: `decimation.txt`, `mutect_ref.dict`, `mutect_ref.fasta`, `two_contigs.dict`, `two_contigs.fasta`.
 
-Held out: `--exclude-intervals`, `--input`, `--read-index`, `--reference-sequence-buffer-size`, `--sequence-dictionary`.
+Held out: `--input`, `--read-index`.
 
-mutect_ref.fasta is three thousand random bases, whose short tandem repeats are the ones chance makes; two_contigs.fasta repeats ACGT on two contigs, so every site is one long period-4 repeat and the second contig's masks start at one. decimation.txt is a small matrix with a comment and a blank line; DEFAULT and NONE are the two built-in tables. --intervals absent scans every contig; the two windows cut the first one. --max-period 2 and --max-repeats 3 cap what is found and what is counted.
+mutect_ref.fasta is three thousand random bases, whose short tandem repeats are the ones chance makes; two_contigs.fasta repeats ACGT on two contigs, so every site is one long period-4 repeat and the second contig's masks start at one. decimation.txt is a small matrix with a comment and a blank line; DEFAULT and NONE are the two built-in tables. --intervals absent scans every contig; the two windows cut the first one. --max-period 2 and --max-repeats 3 cap what is found and what is counted. --sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference is forbidden, the dictionary check's refusal being measured elsewhere. --exclude-intervals is unset or chr1:660-740, inside the window -L names. --input and --read-index are held out: this tool reads no reads, so a BAM would only add the reads-against-reference dictionary check, which the read walkers' arrays measure.
 
 ### Concordance
 
@@ -843,7 +845,7 @@ Inputs: `counts.tsv`, `sv.counts.tsv`.
 
 Held out: `--exclude-intervals`, `--input`, `--intervals`, `--read-index`.
 
-sv.counts.tsv is the table the REFERENCE's own CollectReadCounts wrote, under the name the codec recognises, and counts.tsv is the corpus's own, which no codec claims: the no-suitable-codec refusal. --output is a plain name and a block-compressed one, which is BGZF at --compression-level with a tabix index beside it. --sample-name replaces the read group's SM in the one-column header. --input and --read-index are held out, since the tool reads no reads, and -L/-XL are held out, since a bounded traversal of a text counts table needs an index it does not have.
+sv.counts.tsv is the table the REFERENCE's own CollectReadCounts wrote, under the name the codec recognises, and counts.tsv is the corpus's own, which no codec claims: the no-suitable-codec refusal. --output is a plain name and a block-compressed one, which is BGZF at --compression-level with a tabix index beside it. --sample-name replaces the read group's SM in the one-column header. --input and --read-index are held out, since the tool reads no reads, and -L/-XL are held out, since a bounded traversal of a text counts table needs an index it does not have. --intervals and --exclude-intervals are held out: the file the tool walks has no index in the corpus, so any interval turns the traversal into a query the reference refuses before the first record.
 
 ### ConvertHeaderlessHadoopBamShardToBam
 
@@ -877,7 +879,7 @@ Suites: `spark-walkers`.
 
 Inputs: `reads.bai`, `reads.bam`, `reads.vcf`, `reads2.bai`, `reads2.bam`.
 
-Held out: `--output-shard-tmp-dir`.
+Held out: none.
 
 ### CountFalsePositives
 
@@ -903,7 +905,7 @@ Suites: `spark-walkers`.
 
 Inputs: `reads.bai`, `reads.bam`, `reads.vcf`, `reads2.bai`, `reads2.bam`.
 
-Held out: `--output-shard-tmp-dir`.
+Held out: none.
 
 ### CountVariants
 
@@ -919,7 +921,7 @@ Suites: `spark-walkers`.
 
 Inputs: `indexed.vcf`, `reads.bai`, `reads.bam`, `reads.vcf`, `reads.vcf.gz`, `reads2.bai`, `reads2.bam`.
 
-Held out: `--output-shard-tmp-dir`.
+Held out: none.
 
 --intervals and --exclude-intervals take <unset> as a value so the array has rows that run without -L at all: Disq reads the whole file there, and the locus walker shards the whole dictionary, which no row measured while every row set -L.
 
@@ -927,11 +929,11 @@ Held out: `--output-shard-tmp-dir`.
 
 Suites: `spark-walkers`.
 
-Inputs: `sv_alt_tigs.txt`, `sv_assembly.bam`, `sv_cnv.vcf`, `sv_contigs.bam`, `sv_contigs.fasta`, `sv_cpx.vcf`, `sv_cpx_empty.vcf`, `sv_truth.vcf`.
+Inputs: `sv_alt_tigs.txt`, `sv_assembly.bai`, `sv_assembly.bam`, `sv_cnv.vcf`, `sv_contigs.bai`, `sv_contigs.bam`, `sv_contigs.fasta`, `sv_cpx.vcf`, `sv_cpx_empty.vcf`, `sv_truth.vcf`.
 
-Held out: `--output-shard-tmp-dir`, `--read-index`.
+Held out: none.
 
-A VCF of complex calls and one with none, over the contigs behind them and over others. The refusals are rows of the spark-walkers golden. -L and -XL are held unset because a query needs the VCF indexed; that refusal is a row. --cnv-calls and --truth-vcf are read by nothing here, which the array measures. --add-output-vcf-command-line is held false because its line stamps the clock.
+A VCF of complex calls and one with none, over the contigs behind them and over others. The refusals are rows of the spark-walkers golden. -L and -XL are held unset because a query needs the VCF indexed; that refusal is a row. --cnv-calls and --truth-vcf are read by nothing here, which the array measures. --add-output-vcf-command-line is held false because its line stamps the clock. --read-index is each BAM's own index or unset; a row pairing a BAM with another's index is forbidden, since it would measure htsjdk reading a foreign index rather than the tool.
 
 ### CreateHadoopBamSplittingIndex
 
@@ -955,11 +957,11 @@ pon_s1 to pon_s8 are eight counts tables over forty bins, written by MakeFixture
 
 Suites: `brent-optimizer`, `create-somatic-panel-of-normals`.
 
-Inputs: `pon_germline.vcf`, `pon_nocontig.vcf`, `pon_normals.vcf`.
+Inputs: `pon_germline.vcf`, `pon_nocontig.vcf`, `pon_normals.vcf`, `reference.dict`, `reference.fasta`.
 
-Held out: `--exclude-intervals`, `--input`, `--read-index`, `--reference`, `--sequence-dictionary`.
+Held out: `--input`, `--read-index`.
 
-pon_normals.vcf is three normals with AD at every site, built so each rule of the panel is reached: two carriers, one carrier, a multiallelic site that counts every genotype, a spanning deletion and a site with no alternate (both skipped), and sites the germline resource weighs. pon_nocontig.vcf is the same body with no contig line, which the tool reads as a null dictionary after its writer exists. --germline-resource is pon_germline.vcf or absent, whose AF values move sites 600 to 800 across --max-germline-probability's two values. --min-sample-count 1 keeps the single-carrier site and 3 keeps only the sites every normal carries.
+pon_normals.vcf is three normals with AD at every site, built so each rule of the panel is reached: two carriers, one carrier, a multiallelic site that counts every genotype, a spanning deletion and a site with no alternate (both skipped), and sites the germline resource weighs. pon_nocontig.vcf is the same body with no contig line, which the tool reads as a null dictionary after its writer exists. --germline-resource is pon_germline.vcf or absent, whose AF values move sites 600 to 800 across --max-germline-probability's two values. --min-sample-count 1 keeps the single-carrier site and 3 keeps only the sites every normal carries. --exclude-intervals is unset or chr1:410-490, inside the window -L names. --reference is unset or reference.fasta and --sequence-dictionary unset or its .dict: the variants' contig is reference.fasta's chr1. --input and --read-index are held out: this tool reads no reads, so a BAM would only add the reads-against-reference dictionary check, which the read walkers' arrays measure.
 
 ### DenoiseReadCounts
 
@@ -995,11 +997,11 @@ The import in onStartup fails for want of python before doWork, so every row the
 
 Suites: `spark-walkers`.
 
-Inputs: `sv_cnv.vcf`, `sv_contigs.bam`, `sv_contigs.fasta`, `sv_contigs_small.bam`, `sv_truth.vcf`.
+Inputs: `sv_cnv.vcf`, `sv_contigs.bai`, `sv_contigs.bam`, `sv_contigs.fasta`, `sv_contigs_small.bai`, `sv_contigs_small.bam`, `sv_truth.vcf`.
 
-Held out: `--output-shard-tmp-dir`, `--read-index`.
+Held out: none.
 
-Contigs with each signature and a smaller set; the refusals, and the contigs the interpreter cannot read, are rows of the spark-walkers golden. The interval leaves each contig whole, since a contig cut in two has no primary alignment. --add-output-vcf-command-line is held at false because its line stamps the clock.
+Contigs with each signature and a smaller set; the refusals, and the contigs the interpreter cannot read, are rows of the spark-walkers golden. The interval leaves each contig whole, since a contig cut in two has no primary alignment. --add-output-vcf-command-line is held at false because its line stamps the clock. --read-index is each BAM's own index or unset; a row pairing a BAM with another's index is forbidden, since it would measure htsjdk reading a foreign index rather than the tool.
 
 ### DownsampleByDuplicateSet
 
@@ -1039,7 +1041,7 @@ Inputs: `depth.rd.txt`, `evidence.list`, `evidence_twice.list`, `reference.fasta
 
 Held out: `--exclude-intervals`, `--input`, `--intervals`, `--read-index`.
 
---feature is depth.rd.txt alone and evidence.list, which Barclay expands into depth2 and depth3: two files sharing three bins, so the heap hands equal intervals over in its own order, and one a file names twice. --sequence-dictionary is sv.dict or null and --reference reference.fasta or null: both, one, or neither, the last refused as having no dictionary, and the reference alone misreporting chr2 as an unsorted input after printing everything before it. The engine's read arguments are held out for the reasons CondenseDepthEvidence gives. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags.
+--feature is depth.rd.txt alone and evidence.list, which Barclay expands into depth2 and depth3: two files sharing three bins, so the heap hands equal intervals over in its own order, and one a file names twice. --sequence-dictionary is sv.dict or null and --reference reference.fasta or null: both, one, or neither, the last refused as having no dictionary, and the reference alone misreporting chr2 as an unsorted input after printing everything before it. The engine's read arguments are held out for the reasons CondenseDepthEvidence gives. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags. --input and --read-index are held out: this tool reads no reads, so a BAM would only add the reads-against-reference dictionary check, which the read walkers' arrays measure. --intervals and --exclude-intervals are held out: the file the tool walks has no index in the corpus, so any interval turns the traversal into a query the reference refuses before the first record.
 
 ### ExtractOriginalAlignmentRecordsByNameSpark
 
@@ -1047,7 +1049,7 @@ Suites: `spark-walkers`.
 
 Inputs: `read_names.txt`, `read_names2.txt`, `reads.bai`, `reads.bam`, `reads2.bai`, `reads2.bam`.
 
-Held out: `--output-shard-tmp-dir`.
+Held out: none.
 
 SortSamSpark's values and writer, with a name list the corpus has.
 
@@ -1055,11 +1057,11 @@ SortSamSpark's values and writer, with a name list the corpus has.
 
 Suites: `spark-walkers`.
 
-Inputs: `sv_evidence.bam`, `sv_evidence2.bam`, `sv_evidence_lone.bam`, `sv_ignore.txt`, `sv_ignore_bad.txt`.
+Inputs: `sv_evidence.bai`, `sv_evidence.bam`, `sv_evidence2.bai`, `sv_evidence2.bam`, `sv_evidence_lone.bai`, `sv_evidence_lone.bam`, `sv_ignore.txt`, `sv_ignore_bad.txt`.
 
-Held out: `--output-shard-tmp-dir`, `--read-index`, `--reference`.
+Held out: `--reference`.
 
-Reads with every kind of evidence, another template size, and an unpaired read for the refusal. The aligner image and kmers are required and never opened by this tool.
+Reads with every kind of evidence, another template size, and an unpaired read for the refusal. The aligner image and kmers are required and never opened by this tool. --read-index is each BAM's own index or unset; a row pairing a BAM with another's index is forbidden, since it would measure htsjdk reading a foreign index rather than the tool. --reference is held out: no reference in the corpus carries the reads' three contigs, so any value is the startup's dictionary refusal.
 
 ### ExtractVariantAnnotations
 
@@ -1093,21 +1095,21 @@ Held out: none.
 
 Suites: `multi-variant-walker`, `filter-alignment-artifacts`.
 
-Inputs: `faa.bam`, `faa.img`, `faa.vcf`, `faa2.bam`, `faa2.vcf`, `faa_ref.fasta`.
+Inputs: `faa.bai`, `faa.bam`, `faa.img`, `faa.vcf`, `faa2.bai`, `faa2.bam`, `faa2.vcf`, `faa_ref.dict`, `faa_ref.fasta`.
 
-Held out: `--bam-output`, `--read-index`, `--sequence-dictionary`.
+Held out: `--bam-output`.
 
-faa_ref.fasta is two random contigs and faa.img the reference's own BwaMemIndexImageCreator over it. faa.bam and faa2.bam tile both contigs with reads that copy the reference base for base, so NO read supports any call: the realignment (the Mutect2 assembler, the PairHMM and BWA-MEM over the unitigs), which this port does not carry, has nothing to realign on any row, and what the array measures is the walker around it: which calls are read, which are skipped as filtered, and what the output carries. The realignment arguments (--kmer-size, --minimum-seed-length, --drop-ratio, --seed-split-factor, the score and mismatch thresholds, --max-reasonable-fragment-length, --num-regular-contigs, --indel-start-tolerance) are varied and answer nothing on this corpus, which is the honest reading of their rows. --bam-output is not given: it writes the assembled haplotypes. --smith-waterman leaves out AVX_ENABLED, which refuses on a machine without AVX and so measures the runner's CPU. A plain VCF output with an index is forbidden because its .idx records the output's modification time; the command line is held off because it records the date.
+faa_ref.fasta is two random contigs and faa.img the reference's own BwaMemIndexImageCreator over it. faa.bam and faa2.bam tile both contigs with reads that copy the reference base for base, so NO read supports any call: the realignment (the Mutect2 assembler, the PairHMM and BWA-MEM over the unitigs), which this port does not carry, has nothing to realign on any row, and what the array measures is the walker around it: which calls are read, which are skipped as filtered, and what the output carries. The realignment arguments (--kmer-size, --minimum-seed-length, --drop-ratio, --seed-split-factor, the score and mismatch thresholds, --max-reasonable-fragment-length, --num-regular-contigs, --indel-start-tolerance) are varied and answer nothing on this corpus, which is the honest reading of their rows. --smith-waterman leaves out AVX_ENABLED, which refuses on a machine without AVX and so measures the runner's CPU. A plain VCF output with an index is forbidden because its .idx records the output's modification time; the command line is held off because it records the date. --read-index is each BAM's own index or unset; a row pairing a BAM with another's index is forbidden, since it would measure htsjdk reading a foreign index rather than the tool. --sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference is forbidden, the dictionary check's refusal being measured elsewhere. --bam-output is held out: it writes the haplotypes the Mutect2 assembler builds, which the port refuses as its own limitation, so every row carrying it would measure that refusal.
 
 ### FilterFuncotations
 
 Suites: `filter-funcotations`.
 
-Inputs: `funcotated.vcf`, `unfuncotated.vcf`.
+Inputs: `funcotated.vcf`, `reference.dict`, `reference.fasta`, `unfuncotated.vcf`.
 
-Held out: `--exclude-intervals`, `--input`, `--intervals`, `--read-index`, `--reference`, `--sequence-dictionary`.
+Held out: `--exclude-intervals`, `--input`, `--intervals`, `--read-index`.
 
---variant is funcotated.vcf, one record per filter (ClinVar, LoF over two transcripts, LMM, an autosomal recessive compound het pair and a hom-var), one matching nothing and already filtered, and a multiallelic site; and the same records under a header with no FUNCOTATION line, refused before the writer. --ref-version is b37, whose Gencode_19 keys the file carries, or hg38, whose keys it does not. --allele-frequency-data-source is exac or gnomad. The engine's read, interval and dictionary arguments are held out, the writer's index, filtering mode and command line held.
+--variant is funcotated.vcf, one record per filter (ClinVar, LoF over two transcripts, LMM, an autosomal recessive compound het pair and a hom-var), one matching nothing and already filtered, and a multiallelic site; and the same records under a header with no FUNCOTATION line, refused before the writer. --ref-version is b37, whose Gencode_19 keys the file carries, or hg38, whose keys it does not. --allele-frequency-data-source is exac or gnomad. The engine's read and interval arguments are held out, the writer's index, filtering mode and command line held. --reference is unset or reference.fasta and --sequence-dictionary unset or its .dict: the variants' contig is reference.fasta's chr1. --input and --read-index are held out: this tool reads no reads, so a BAM would only add the reads-against-reference dictionary check, which the read walkers' arrays measure. --intervals and --exclude-intervals are held out: the file the tool walks has no index in the corpus, so any interval turns the traversal into a query the reference refuses before the first record.
 
 ### FilterIntervals
 
@@ -1115,9 +1117,9 @@ Suites: `filter-intervals`.
 
 Inputs: `annotated.tsv`, `bins.interval_list`, `bins2.interval_list`, `counts.tsv`.
 
-Held out: `--read-index`.
+Held out: none.
 
-annotated.tsv and counts.tsv, both produced by the REFERENCE's own AnnotateIntervals and CollectReadCounts over four windows of the corpus's contig. Four rather than one because this tool removes a contig's only surviving interval: a table of one row filters to none and the run is then refused for having nothing left. The counts differ between windows (2, 2, 1 and 0), and the two low-count thresholds are the two sides of them: 1 drops the empty window and 0 drops nothing. A threshold of five is above every count the corpus carries, so every row holding it ended with an empty mask and the array measured one refusal eleven times instead of the filters. --annotated-intervals carries the table and NOTHING, because the tool accepts either input alone and refuses a command line with neither: the empty value is that refusal. --input and --read-index are held out of the shared values: this tool's --input is a COUNTS table rather than reads, which is why it carries its own. --intervals takes an interval LIST rather than a window, and that is the tool rather than the fixture: the argument is REQUIRED, the intersection with the inputs is by list equality rather than by overlap, and a contig left with one interval loses it. So a window naming a single bin always ends with nothing, and only a file naming several can produce output. The two files name four bins and two. --exclude-intervals carries a window OFF the bins as well as one that cuts the first of them, for the same reason: an exclusion that clips a bin does not shrink it, it deletes it, and with every shared value clipping one, no row could produce a file at all. The four other interval arguments are HELD at what a copy-number tool accepts: it bins and pads by its own arguments and refuses the standard ones outright, so every row that varied them measured one IllegalArgumentException. That refusal is the runner's own check and is measured by the tools that share it. The percentages, the percentiles and the two segmental-duplication bounds carry values INSIDE their declared range. The generator takes a domain from the declaration's min and max, and for these it produced -1.0 and 2.0: every one of the forty-nine rows was refused by the parser and the array measured the range check rather than the three filters.
+annotated.tsv and counts.tsv, both produced by the REFERENCE's own AnnotateIntervals and CollectReadCounts over four windows of the corpus's contig. Four rather than one because this tool removes a contig's only surviving interval: a table of one row filters to none and the run is then refused for having nothing left. The counts differ between windows (2, 2, 1 and 0), and the two low-count thresholds are the two sides of them: 1 drops the empty window and 0 drops nothing. A threshold of five is above every count the corpus carries, so every row holding it ended with an empty mask and the array measured one refusal eleven times instead of the filters. --annotated-intervals carries the table and NOTHING, because the tool accepts either input alone and refuses a command line with neither: the empty value is that refusal. --input is held out of the shared values: this tool's --input is a COUNTS table rather than reads, which is why it carries its own. --intervals takes an interval LIST rather than a window, and that is the tool rather than the fixture: the argument is REQUIRED, the intersection with the inputs is by list equality rather than by overlap, and a contig left with one interval loses it. So a window naming a single bin always ends with nothing, and only a file naming several can produce output. The two files name four bins and two. --exclude-intervals carries a window OFF the bins as well as one that cuts the first of them, for the same reason: an exclusion that clips a bin does not shrink it, it deletes it, and with every shared value clipping one, no row could produce a file at all. The four other interval arguments are HELD at what a copy-number tool accepts: it bins and pads by its own arguments and refuses the standard ones outright, so every row that varied them measured one IllegalArgumentException. That refusal is the runner's own check and is measured by the tools that share it. The percentages, the percentiles and the two segmental-duplication bounds carry values INSIDE their declared range. The generator takes a domain from the declaration's min and max, and for these it produced -1.0 and 2.0: every one of the forty-nine rows was refused by the parser and the array measured the range check rather than the three filters.
 
 ### FilterMutectCalls
 
@@ -1137,7 +1139,7 @@ Inputs: `cnn.vcf`, `snp_tranches.list`, `snp_truth.vcf`, `truth.list`.
 
 Held out: `--exclude-intervals`, `--input`, `--intervals`, `--read-index`.
 
---variant is cnn.vcf: SNPs and indels scored in CNN_2D, one unscored, one already filtered. --resource is snp_truth.vcf and truth.list, which adds indel_truth.vcf, whose deletion is spelled with a longer reference so the match extends the shorter one. Without the indel resource the two scored indels have nothing to match and the tool refuses. --snp-tranche is the default 99.95 and a .list of 99.0, 90.0 and 99.0 again, deduplicated and sorted; --indel-tranche is 99.4 and 50.0. --info-key is CNN_2D and CNN_1D, which the header does not declare. --invalidate-previous-filters drops LowQual and its header line. The index and the output filtering mode are held for the reasons NuMTFilterTool gives, --add-output-vcf-command-line at false since it writes the run's own time into the header, and the engine's read arguments are held out likewise.
+--variant is cnn.vcf: SNPs and indels scored in CNN_2D, one unscored, one already filtered. --resource is snp_truth.vcf and truth.list, which adds indel_truth.vcf, whose deletion is spelled with a longer reference so the match extends the shorter one. Without the indel resource the two scored indels have nothing to match and the tool refuses. --snp-tranche is the default 99.95 and a .list of 99.0, 90.0 and 99.0 again, deduplicated and sorted; --indel-tranche is 99.4 and 50.0. --info-key is CNN_2D and CNN_1D, which the header does not declare. --invalidate-previous-filters drops LowQual and its header line. The index and the output filtering mode are held for the reasons NuMTFilterTool gives, --add-output-vcf-command-line at false since it writes the run's own time into the header, and the engine's read arguments are held out likewise. --input and --read-index are held out: this tool reads no reads, so a BAM would only add the reads-against-reference dictionary check, which the read walkers' arrays measure. --intervals and --exclude-intervals are held out: the file the tool walks has no index in the corpus, so any interval turns the traversal into a query the reference refuses before the first record.
 
 ### FilterVcf
 
@@ -1153,21 +1155,21 @@ picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFi
 
 Suites: `spark-walkers`.
 
-Inputs: `amplicon.fasta`, `pathseq_kmers.fasta`, `reads.bam`, `reference.fasta`.
+Inputs: `amplicon.fasta`, `pathseq_kmers.fasta`, `reads.bai`, `reads.bam`, `reference.fasta`.
 
-Held out: `--output-shard-tmp-dir`, `--read-index`.
+Held out: none.
 
-The tool writes what its tables hold, so the reference that repeats and the sizes that find its repeats are what vary. The reads are optional and only their dictionary matters.
+The tool writes what its tables hold, so the reference that repeats and the sizes that find its repeats are what vary. The reads are optional and only their dictionary matters. --read-index is each BAM's own index or unset; a row pairing a BAM with another's index is forbidden, since it would measure htsjdk reading a foreign index rather than the tool.
 
 ### FindBreakpointEvidenceSpark
 
 Suites: `sv-evidence`, `sv-partitions`.
 
-Inputs: `svbp_cross.txt`, `svbp_external.bed`, `svbp_gaps.txt`, `svbp_kill-wrong-length.txt`, `svbp_kill.txt`, `svbp_other.bam`, `svbp_reads.bam`, `svbp_shallow.bam`, `svbp_sv.fasta.img`.
+Inputs: `svbp_cross.txt`, `svbp_external.bed`, `svbp_gaps.txt`, `svbp_kill-wrong-length.txt`, `svbp_kill.txt`, `svbp_other.bai`, `svbp_other.bam`, `svbp_reads.bai`, `svbp_reads.bam`, `svbp_shallow.bai`, `svbp_shallow.bam`, `svbp_sv.fasta`, `svbp_sv.fasta.img`.
 
-Held out: `--output-shard-tmp-dir`, `--read-index`, `--reference`.
+Held out: none.
 
-Evidence directories and the interval file stay off: Hadoop leaves its checksums beside the one and the other prints a duration. The dump reads both. The command line records the date. The reads and reference of SvEvidenceDump's donor genome; the debug outputs are each on or off, and the numeric arguments each take a value that changes what a stage keeps.
+Evidence directories and the interval file stay off: Hadoop leaves its checksums beside the one and the other prints a duration. The dump reads both. The command line records the date. The reads and reference of SvEvidenceDump's donor genome; the debug outputs are each on or off, and the numeric arguments each take a value that changes what a stage keeps. --read-index is each BAM's own index or unset; a row pairing a BAM with another's index is forbidden, since it would measure htsjdk reading a foreign index rather than the tool. --reference is unset or svbp_sv.fasta, whose dictionary is the reads'.
 
 ### FixMisencodedBaseQualityReads
 
@@ -1201,47 +1203,47 @@ Suites: `spark-walkers`.
 
 Inputs: `reads.bai`, `reads.bam`, `reads.vcf`, `reads2.bai`, `reads2.bam`.
 
-Held out: `--output-shard-tmp-dir`.
+Held out: none.
 
 ### FlowFeatureMapper
 
 Suites: `flow-feature-mapper`.
 
-Inputs: `flow_snv.bam`, `mutect_ref.fasta`.
+Inputs: `flow_snv.bai`, `flow_snv.bam`, `mutect_ref.dict`, `mutect_ref.fasta`.
 
-Held out: `--exclude-intervals`, `--floor-blocks`, `--gvcf-gq-bands`, `--read-index`, `--sequence-dictionary`.
+Held out: `--floor-blocks`, `--gvcf-gq-bands`.
 
-flow_snv.bam is overlapping Ultima reads carrying substitutions at a few shared sites, so the feature queue emits several records at one position; one read is soft-clipped, one has an insertion, every third is reverse, one is a duplicate and one in five carries an integer XI tag. --reference is required in practice: without it the mapper indexes an empty array. The surround, the score bounds and the read switches each move which features are written; --copy-attr copies XI as an Integer or t0 as a String. GVCF output is not ported and left out. --add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the reason every variant writer holds them: one writes the run's own time into the header and the other writes the output file's last-modified time into an index.
+flow_snv.bam is overlapping Ultima reads carrying substitutions at a few shared sites, so the feature queue emits several records at one position; one read is soft-clipped, one has an insertion, every third is reverse, one is a duplicate and one in five carries an integer XI tag. --reference is required in practice: without it the mapper indexes an empty array. The surround, the score bounds and the read switches each move which features are written; --copy-attr copies XI as an Integer or t0 as a String. GVCF output is not ported and left out, and --gvcf-gq-bands and --floor-blocks with it: they shape only GVCF blocks. --add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the reason every variant writer holds them: one writes the run's own time into the header and the other writes the output file's last-modified time into an index. --read-index is each BAM's own index or unset; a row pairing a BAM with another's index is forbidden, since it would measure htsjdk reading a foreign index rather than the tool. --sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference is forbidden, the dictionary check's refusal being measured elsewhere. --exclude-intervals is unset or chr1:380-420, inside the window -L names.
 
 ### FlowPairHMMAlignReadsToHaplotypes
 
 Suites: `flow-pairhmm-align-reads-to-haplotypes`.
 
-Inputs: `flow.bam`, `haplotypes.fasta`, `haplotypes_dup.fasta`, `mutect_ref.fasta`.
+Inputs: `flow.bai`, `flow.bam`, `haplotypes.fasta`, `haplotypes_dup.fasta`, `mutect_ref.dict`, `mutect_ref.fasta`.
 
-Held out: `--dragstr-params-path`, `--exclude-intervals`, `--pair-hmm-results-file`, `--read-index`, `--sequence-dictionary`.
+Held out: `--dragstr-params-path`, `--pair-hmm-results-file`.
 
-flow.bam as for AddFlowBaseQuality: 60 reads, so one full buffer of fifty and a final one of ten, each taking the flow order and class of its first read. haplotypes.fasta is the reference stretch, a copy with three substitutions, one with a three-base deletion and one shorter than any read; haplotypes_dup.fasta repeats the reference's bases under a second name. --ref-haplotype names the first, the second, or nothing in the file. --aligner PairHMM is the engine refusal; FlowBasedHMM is not ported and left out. The PairHMM engine's own paths are held.
+flow.bam as for AddFlowBaseQuality: 60 reads, so one full buffer of fifty and a final one of ten, each taking the flow order and class of its first read. haplotypes.fasta is the reference stretch, a copy with three substitutions, one with a three-base deletion and one shorter than any read; haplotypes_dup.fasta repeats the reference's bases under a second name. --ref-haplotype names the first, the second, or nothing in the file. --aligner PairHMM is the engine refusal; FlowBasedHMM is not ported and left out. The PairHMM engine's own paths are held. --read-index is each BAM's own index or unset; a row pairing a BAM with another's index is forbidden, since it would measure htsjdk reading a foreign index rather than the tool. --sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference is forbidden, the dictionary check's refusal being measured elsewhere. --exclude-intervals is unset or chr1:360-440, inside the window -L names. --pair-hmm-results-file and --dragstr-params-path belong to the PairHMM engine, which this tool does not run, so no row could reach them.
 
 ### FuncotateSegments
 
 Suites: `funcotate-segments`.
 
-Inputs: `funco_ds`, `funco_ds27`, `funco_ds43`, `funco_ref.fasta`, `funco_segments.seg`, `funco_segments_alt.seg`, `funco_segments_short.seg`, `funco_severity.tsv`, `funco_transcripts.list`, `reference.fasta`.
+Inputs: `funco_ds`, `funco_ds27`, `funco_ds43`, `funco_ref.dict`, `funco_ref.fasta`, `funco_segments.seg`, `funco_segments_alt.seg`, `funco_segments_short.seg`, `funco_severity.tsv`, `funco_transcripts.list`, `reference.fasta`.
 
-Held out: `--exclude-intervals`, `--input`, `--read-index`, `--sequence-dictionary`.
+Held out: `--exclude-intervals`, `--input`, `--read-index`.
 
-funco_segments.seg is three segments over the Funcotator corpus's two genes: one from ALPHA's flank into its intron, one from ALPHA's first exon into BETA's, and one over neither; funco_segments_alt.seg names its columns another way (chr, start, end, sample, Segment_Call) with a call the converter does not know; funco_segments_short.seg holds a segment of 101 bases, which the gene list refuses at the default minimum and accepts at 50. The folders, versions and references are Funcotator's; only funco_ds and funco_ds27 have hg19. VCF output refuses a segment's undeclared INFO keys unless --lenient. -L is a refusal, because a segment file has no index, and ALL is refused before any segment is read. Reads and the master dictionary are held out, and the index and command-line line held false for the reason Funcotator's are. The MAF header's `Date` is masked by run_array.py. --exclude-intervals is held out: any interval argument makes the unindexed segment file be queried and refused with the message -L already measures, so its rows would repeat that refusal.
+funco_segments.seg is three segments over the Funcotator corpus's two genes: one from ALPHA's flank into its intron, one from ALPHA's first exon into BETA's, and one over neither; funco_segments_alt.seg names its columns another way (chr, start, end, sample, Segment_Call) with a call the converter does not know; funco_segments_short.seg holds a segment of 101 bases, which the gene list refuses at the default minimum and accepts at 50. The folders, versions and references are Funcotator's; only funco_ds and funco_ds27 have hg19. VCF output refuses a segment's undeclared INFO keys unless --lenient. -L is a refusal, because a segment file has no index, and ALL is refused before any segment is read. Reads are held out, and the index and command-line line held false for the reason Funcotator's are. The MAF header's `Date` is masked by run_array.py. --exclude-intervals is held out: any interval argument makes the unindexed segment file be queried and refused with the message -L already measures, so its rows would repeat that refusal. --sequence-dictionary is unset or funco_ref.dict, forbidden beside the other reference. --input and --read-index are held out: this tool reads no reads, so a BAM would only add the reads-against-reference dictionary check, which the read walkers' arrays measure.
 
 ### Funcotator
 
 Suites: `funcotator`.
 
-Inputs: `funco_annotated.vcf`, `funco_ds`, `funco_ds27`, `funco_ds43`, `funco_ref.fasta`, `funco_severity.tsv`, `funco_transcripts.list`, `funco_variants.vcf`, `reference.fasta`.
+Inputs: `funco_annotated.vcf`, `funco_ds`, `funco_ds27`, `funco_ds43`, `funco_ref.dict`, `funco_ref.fasta`, `funco_severity.tsv`, `funco_transcripts.list`, `funco_variants.vcf`, `reference.dict`, `reference.fasta`.
 
-Held out: `--input`, `--read-index`, `--sequence-dictionary`.
+Held out: `--input`, `--read-index`.
 
-funco_variants.vcf is eighteen SNPs over a 6 kb chr1 of seeded bases (funco_ref.fasta) holding two genes: ALPHA on + (a coding transcript of two exons with UTRs, start and stop codons, and a one-exon lncRNA) and BETA on - (its mirror, and a transcript tagged MANE_Select that is not basic). The records sit in every region the factory tells apart: both flanks, the 5' UTR, the start codon, the CDS (a multiallelic site among them), the splice-site windows either side of an exon end, the intron, the stop codon, the 3' UTR and the gaps between genes; one carries an INFO field and one is filtered. funco_annotated.vcf is the same records under a `Funcotator Version` header line, which is refused unless --reannotate-vcf. reference.fasta's chr1 has another length, which the dictionary check refuses. funco_ds holds GENCODE at version 28 under hg38 and hg19 behind an old-style manifest line the reader does not parse; funco_ds43 version 43 under hg38 alone behind a new-style line, whose swallowed date check logs an exception; funco_ds27 version 27 with no manifest. The MAF renderer aliases all three versions and rewrites chr1 as 1 under hg19. The two flank sizes, the splice window, the transcript list (a file of IDs, or one ID), the severity file and the annotation defaults and overrides each move at least one record's funcotation. Reads and the master dictionary are held out (the tool reads neither), the on-the-fly index and the command-line header line are held false because both carry the time of the run, and --variant-output-filtering is held at its default as it is for FilterFuncotations. The MAF header's `Date` is masked by run_array.py.
+funco_variants.vcf is eighteen SNPs over a 6 kb chr1 of seeded bases (funco_ref.fasta) holding two genes: ALPHA on + (a coding transcript of two exons with UTRs, start and stop codons, and a one-exon lncRNA) and BETA on - (its mirror, and a transcript tagged MANE_Select that is not basic). The records sit in every region the factory tells apart: both flanks, the 5' UTR, the start codon, the CDS (a multiallelic site among them), the splice-site windows either side of an exon end, the intron, the stop codon, the 3' UTR and the gaps between genes; one carries an INFO field and one is filtered. funco_annotated.vcf is the same records under a `Funcotator Version` header line, which is refused unless --reannotate-vcf. reference.fasta's chr1 has another length, which the dictionary check refuses. funco_ds holds GENCODE at version 28 under hg38 and hg19 behind an old-style manifest line the reader does not parse; funco_ds43 version 43 under hg38 alone behind a new-style line, whose swallowed date check logs an exception; funco_ds27 version 27 with no manifest. The MAF renderer aliases all three versions and rewrites chr1 as 1 under hg19. The two flank sizes, the splice window, the transcript list (a file of IDs, or one ID), the severity file and the annotation defaults and overrides each move at least one record's funcotation. Reads are held out (the tool reads none), the on-the-fly index and the command-line header line are held false because both carry the time of the run, and --variant-output-filtering is held at its default as it is for FilterFuncotations. The MAF header's `Date` is masked by run_array.py. --sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference is forbidden, the dictionary check's refusal being measured elsewhere. --input and --read-index are held out: this tool reads no reads, so a BAM would only add the reads-against-reference dictionary check, which the read walkers' arrays measure.
 
 ### FuncotatorDataSourceDownloader
 
@@ -1325,11 +1327,11 @@ Held out: none.
 
 Suites: `gene-expression-evaluation`.
 
-Inputs: `genes.gff3`, `genes_noname.gff3`, `mutect_ref.fasta`, `rna.bam`.
+Inputs: `genes.gff3`, `genes_noname.gff3`, `mutect_ref.dict`, `mutect_ref.fasta`, `rna.bai`, `rna.bam`.
 
-Held out: `--exclude-intervals`, `--read-index`, `--sequence-dictionary`.
+Held out: none.
 
-rna.bam is one sample's pairs over mutect_ref.fasta with MC and MQ written, some spliced across the first gene's intron, some multi-mapped (NH 2), some at MQ 5 and some duplicates. genes.gff3 holds two stranded genes with an mRNA and exons, and an unstranded one overlapping the second; genes_noname.gff3 adds a gene with no Name, refused under the default label. --read-strands, --multi-overlap-method, --multi-map-method and --unspliced each move the counts.
+rna.bam is one sample's pairs over mutect_ref.fasta with MC and MQ written, some spliced across the first gene's intron, some multi-mapped (NH 2), some at MQ 5 and some duplicates. genes.gff3 holds two stranded genes with an mRNA and exons, and an unstranded one overlapping the second; genes_noname.gff3 adds a gene with no Name, refused under the default label. --read-strands, --multi-overlap-method, --multi-map-method and --unspliced each move the counts. --read-index is each BAM's own index or unset; a row pairing a BAM with another's index is forbidden, since it would measure htsjdk reading a foreign index rather than the tool. --sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference is forbidden, the dictionary check's refusal being measured elsewhere. --exclude-intervals is unset or chr1:400-600, inside the window -L names.
 
 ### GenomicsDBImport
 
@@ -1339,7 +1341,7 @@ Inputs: `gdb_a.g.vcf`, `gdb_b.g.vcf`, `reads.bai`, `reads.bam`, `reads2.bai`, `r
 
 Held out: `--avoid-nio`, `--bypass-feature-reader`, `--consolidate`, `--disable-read-filter`, `--genomicsdb-update-workspace-path`, `--header`, `--merge-contigs-into-num-partitions`, `--output-interval-list-to-file`, `--read-filter`, `--sample-name-map`, `--validate-sample-name-map`.
 
-gdb_a.g.vcf is a gVCF with blocks, sites, a deletion with its spanning allele and allele-specific annotations, gdb_b.g.vcf a second sample of blocks across the same contigs. --variant is a list: both samples, or the first alone. The two workspace paths are what lets a row notice where it was told to write, and the fragment and row-bounds names are numbered in the comparison because they hold a UUID, a thread id and the wall clock. The arguments held out with no value are the ones the port refuses with its own message or that Barclay refuses beside --variant, which would measure that refusal on every row that carries them: an update and its interval list, the sample map, --header, the feature reader bypass, the contig merge and consolidation over batches. The refusals are in GenomicsDBImportDump.
+gdb_a.g.vcf is a gVCF with blocks, sites, a deletion with its spanning allele and allele-specific annotations, gdb_b.g.vcf a second sample of blocks across the same contigs. --variant is a list: both samples, or the first alone. The two workspace paths are what lets a row notice where it was told to write, and the fragment and row-bounds names are numbered in the comparison because they hold a UUID, a thread id and the wall clock. The arguments held out with no value are the ones the port refuses with its own message or that Barclay refuses beside --variant, which would measure that refusal on every row that carries them: an update and its interval list, the sample map, --header, the feature reader bypass, the contig merge and consolidation over batches. The refusals are in GenomicsDBImportDump. By name: --genomicsdb-update-workspace-path, --output-interval-list-to-file, --sample-name-map, --validate-sample-name-map, --header, --bypass-feature-reader, --avoid-nio, --merge-contigs-into-num-partitions and --consolidate are those the port refuses or Barclay refuses beside --variant; --read-filter and --disable-read-filter name read filters for a tool that reads no reads.
 
 ### GenotypeGVCFs
 
@@ -1391,41 +1393,41 @@ Held out: none.
 
 Suites: `gnarly-genotyper`, `genomicsdb-query`.
 
-Inputs: `cg_dbsnp.vcf`, `cgv_ref.fasta`, `gn_combined.g.vcf`, `gn_sites.g.vcf`.
+Inputs: `cg_dbsnp.vcf`, `cgv_ref.dict`, `cgv_ref.fasta`, `gn_combined.g.vcf`, `gn_sites.g.vcf`.
 
-Held out: `--input`, `--population-callset`, `--read-index`, `--sequence-dictionary`, `--variant-output-filtering`.
+Held out: `--input`, `--population-callset`, `--read-index`.
 
-gn_sites.g.vcf is three reblocked samples in the shape GenomicsDB exports: a SNP over the floor of 60, one under it, an indel between the floors, an indel with the allele-specific raw keys, a triallelic SNP, a spanning deletion, a site with no QUALapprox, one with no concrete alternate, one with DP=0, one with no RAW_GT_COUNT, a call on <NON_REF>, a GenomicsDB no-call and a GQ-0, DP-0 reference call. gn_combined.g.vcf is the reference's own ReblockGVCF and CombineGVCFs over rb_s, cg_a and cg_c, whose merged RAW_GT_COUNT the engine refuses at its first site. --only-output-calls-starting-in-intervals is held at false, since any other value needs -L, and --variant-output-filtering is held out: the two are mutually exclusive, and every row sets every argument. --population-callset is held out: the port does not carry the population priors. --reference is held at cgv_ref.fasta, the one reference carrying both contigs. --sequence-dictionary, --input and --read-index are held out, as for CombineGVCFs. --add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the reason every variant writer holds them: one writes the run's own time into the header and the other writes the output file's last-modified time into an index. --max-variants-per-shard is held at 0 and --disable-read-filter at WellformedReadFilter, for the reasons CombineGVCFs gives. gendb:///work/fixtures/cg_ws is cg_a, cg_b and cg_c imported by GenomicsDBImport and read back through GenomicsDB's own query: the samples of cg_combined.g.vcf, merged the native way.
+gn_sites.g.vcf is three reblocked samples in the shape GenomicsDB exports: a SNP over the floor of 60, one under it, an indel between the floors, an indel with the allele-specific raw keys, a triallelic SNP, a spanning deletion, a site with no QUALapprox, one with no concrete alternate, one with DP=0, one with no RAW_GT_COUNT, a call on <NON_REF>, a GenomicsDB no-call and a GQ-0, DP-0 reference call. gn_combined.g.vcf is the reference's own ReblockGVCF and CombineGVCFs over rb_s, cg_a and cg_c, whose merged RAW_GT_COUNT the engine refuses at its first site. --only-output-calls-starting-in-intervals is false or unset and --variant-output-filtering unset, STARTS_IN or OVERLAPS: the two are mutually exclusive, so only one is given in a row, and a mode is forbidden without -L. --population-callset is held out: the port does not carry the population priors. --reference is held at cgv_ref.fasta, the one reference carrying both contigs. --input and --read-index are held out, as for CombineGVCFs. --add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the reason every variant writer holds them: one writes the run's own time into the header and the other writes the output file's last-modified time into an index. --max-variants-per-shard is held at 0 and --disable-read-filter at WellformedReadFilter, for the reasons CombineGVCFs gives. gendb:///work/fixtures/cg_ws is cg_a, cg_b and cg_c imported by GenomicsDBImport and read back through GenomicsDB's own query: the samples of cg_combined.g.vcf, merged the native way. --sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference is forbidden, the dictionary check's refusal being measured elsewhere.
 
 ### GroundTruthReadsBuilder
 
 Suites: `ground-truth-reads-builder`.
 
-Inputs: ``, `gt.bam`, `gt_maternal.fasta`, `gt_paternal.fasta`, `mutect_ref.fasta`.
+Inputs: ``, `gt.bai`, `gt.bam`, `gt_maternal.fasta`, `gt_paternal.fasta`, `mutect_ref.dict`, `mutect_ref.fasta`.
 
-Held out: `--dragstr-params-path`, `--exclude-intervals`, `--pair-hmm-results-file`, `--read-index`, `--sequence-dictionary`.
+Held out: `--dragstr-params-path`, `--pair-hmm-results-file`.
 
-gt.bam over its two ancestors: gt_maternal.fasta carries substitutions at 650, 700 and 820, gt_paternal.fasta a two-base insertion after 760, and gtrb/ the translation tables between them; gtrb_late/ starts its tables at 620, so the reads before it index a table at minus one. The reads carry tm tags of Q, Z and AQ, one-sided and two-sided soft clips and both strands. --subsampling-ratio is held at one: the tool draws from an unseeded java.util.Random, so any other ratio in (0, 1) is a different answer on every run of the reference itself. --gt-debug is held at false: it only logs. PairHMM is the engine refusal onTraversalStart makes after opening both ancestral references.
+gt.bam over its two ancestors: gt_maternal.fasta carries substitutions at 650, 700 and 820, gt_paternal.fasta a two-base insertion after 760, and gtrb/ the translation tables between them; gtrb_late/ starts its tables at 620, so the reads before it index a table at minus one. The reads carry tm tags of Q, Z and AQ, one-sided and two-sided soft clips and both strands. --subsampling-ratio is held at one: the tool draws from an unseeded java.util.Random, so any other ratio in (0, 1) is a different answer on every run of the reference itself. --gt-debug is held at false: it only logs. PairHMM is the engine refusal onTraversalStart makes after opening both ancestral references. --read-index is each BAM's own index or unset; a row pairing a BAM with another's index is forbidden, since it would measure htsjdk reading a foreign index rather than the tool. --sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference is forbidden, the dictionary check's refusal being measured elsewhere. --exclude-intervals is unset or chr1:694-716, inside the window -L names. --pair-hmm-results-file and --dragstr-params-path belong to the PairHMM engine, which this tool does not run, so no row could reach them.
 
 ### GroundTruthScorer
 
 Suites: `series-stats`, `ground-truth-scorer`.
 
-Inputs: `flow_snv.bam`, `gt.bam`, `gt_features.vcf`, `gt_prior.csv`, `gt_prior_short.csv`, `mutect_ref.fasta`.
+Inputs: `flow_snv.bai`, `flow_snv.bam`, `gt.bai`, `gt.bam`, `gt_features.vcf`, `gt_prior.csv`, `gt_prior_short.csv`, `mutect_ref.dict`, `mutect_ref.fasta`.
 
-Held out: `--dragstr-params-path`, `--exclude-intervals`, `--pair-hmm-results-file`, `--read-index`, `--sequence-dictionary`.
+Held out: `--dragstr-params-path`, `--pair-hmm-results-file`.
 
-gt.bam is the tool's own corpus: substitutions at shared sites, an insertion and a deletion that make cycle skips, a left, a right and a two-sided soft clip (only a one-sided clip is clipped), reverse reads and an rq tag that is a float, an integer or absent; flow_snv.bam is the mapper's. --likelihood-calculation-engine must be FlowBased: PairHMM is the refusal onTraversalStart makes before the CSV is opened. gt_prior_short.csv is the index the prior reader runs past. --report-file is never paired with --omit-zeros-from-report false: the four-level table is then five million rows whatever the reads say, so the pair measures the writer's patience; the constraint says so. --pair-hmm-results-file and --dragstr-params-path belong to the PairHMM engine, which the tool refuses, and the implementation is held at its default for the same reason. --gt-no-output, --add-mean-call and the other switches name false first, so the rows the generator fills write the CSV.
+gt.bam is the tool's own corpus: substitutions at shared sites, an insertion and a deletion that make cycle skips, a left, a right and a two-sided soft clip (only a one-sided clip is clipped), reverse reads and an rq tag that is a float, an integer or absent; flow_snv.bam is the mapper's. --likelihood-calculation-engine must be FlowBased: PairHMM is the refusal onTraversalStart makes before the CSV is opened. gt_prior_short.csv is the index the prior reader runs past. --report-file is never paired with --omit-zeros-from-report false: the four-level table is then five million rows whatever the reads say, so the pair measures the writer's patience; the constraint says so. --pair-hmm-results-file and --dragstr-params-path belong to the PairHMM engine, which the tool refuses, and the implementation is held at its default for the same reason. --gt-no-output, --add-mean-call and the other switches name false first, so the rows the generator fills write the CSV. --read-index is each BAM's own index or unset; a row pairing a BAM with another's index is forbidden, since it would measure htsjdk reading a foreign index rather than the tool. --sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference is forbidden, the dictionary check's refusal being measured elsewhere. --exclude-intervals is unset or chr1:670-680, inside the window -L names.
 
 ### GroupedSVCluster
 
 Suites: `multi-variant-walker`, `grouped-sv-cluster`.
 
-Inputs: `sv_calls.vcf`, `sv_cluster_input.vcf`, `sv_grp_clustering.tsv`, `sv_grp_clustering_short.tsv`, `sv_grp_strata.tsv`, `sv_grp_track.bed`, `sv_ploidy.tsv`, `sv_ploidy_haploid.tsv`, `sv_reference.fasta`.
+Inputs: `sv_calls.vcf`, `sv_cluster_input.vcf`, `sv_grp_clustering.tsv`, `sv_grp_clustering_short.tsv`, `sv_grp_strata.tsv`, `sv_grp_track.bed`, `sv_ploidy.tsv`, `sv_ploidy_haploid.tsv`, `sv_reference.dict`, `sv_reference.fasta`.
 
-Held out: `--exclude-intervals`, `--input`, `--intervals`, `--read-index`, `--sequence-dictionary`.
+Held out: `--exclude-intervals`, `--input`, `--intervals`, `--read-index`.
 
-SVCluster's inputs, reference and ploidy tables, stratified before they are clustered. --stratify-config is sv_grp_strata.tsv: deletions by size, duplications, insertions in the TR track, breakends; the inversion matches nothing and is written straight out. --clustering-config is the table naming every group, or the same without BND_all, which onTraversalStart refuses. --track-name and --track-intervals are held at TR and sv_grp_track.bed; the stratification thresholds are varied. The cluster parameters are the table's own, so SVCluster's command-line ones are absent here.
+SVCluster's inputs, reference and ploidy tables, stratified before they are clustered. --stratify-config is sv_grp_strata.tsv: deletions by size, duplications, insertions in the TR track, breakends; the inversion matches nothing and is written straight out. --clustering-config is the table naming every group, or the same without BND_all, which onTraversalStart refuses. --track-name and --track-intervals are held at TR and sv_grp_track.bed; the stratification thresholds are varied. The cluster parameters are the table's own, so SVCluster's command-line ones are absent here. --sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference is forbidden, the dictionary check's refusal being measured elsewhere. --input and --read-index are held out: this tool reads no reads, so a BAM would only add the reads-against-reference dictionary check, which the read walkers' arrays measure. --intervals and --exclude-intervals are held out: the file the tool walks has no index in the corpus, so any interval turns the traversal into a query the reference refuses before the first record.
 
 ### GtfToBed
 
@@ -1435,17 +1437,17 @@ Inputs: `annotation.gtf`, `gtf.dict`, `matching.dict`.
 
 Held out: `--exclude-intervals`, `--input`, `--intervals`, `--read-index`.
 
-annotation.gtf is the gtf-to-bed golden's own annotation. The reference's Gencode codec refuses anything less: a hand-written file of gene and transcript lines is `Unknown file is malformed: Decoded feature is not valid: null`, because every transcript needs its exon line and its type, name and havana attributes. It carries a gene whose transcript is WIDER than its gene line, which is what makes a gene row take the transcript's span, and one gene on a second contig. --sequence-dictionary is the tool's own requirement rather than an engine argument: the rows are sorted by the contig's index in it, so gtf.dict is the run that answers and the corpus's matching.dict, which has chr1 and not chr2, is the comparator's refusal. Four engine arguments are held out, and the first measurement is why: all twenty-three rows refused. This tool WALKS the GTF, so `--intervals` asks for random access to a file the corpus has no index for, and `--input` is reads, which this tool does not read at all: the array was handing it the corpus's VCFs and BEDs as reads and pairing them with a BAM index.
+annotation.gtf is the gtf-to-bed golden's own annotation. The reference's Gencode codec refuses anything less: a hand-written file of gene and transcript lines is `Unknown file is malformed: Decoded feature is not valid: null`, because every transcript needs its exon line and its type, name and havana attributes. It carries a gene whose transcript is WIDER than its gene line, which is what makes a gene row take the transcript's span, and one gene on a second contig. --sequence-dictionary is the tool's own requirement rather than an engine argument: the rows are sorted by the contig's index in it, so gtf.dict is the run that answers and the corpus's matching.dict, which has chr1 and not chr2, is the comparator's refusal. Four engine arguments are held out, and the first measurement is why: all twenty-three rows refused. This tool WALKS the GTF, so `--intervals` asks for random access to a file the corpus has no index for, and `--input` is reads, which this tool does not read at all: the array was handing it the corpus's VCFs and BEDs as reads and pairing them with a BAM index. --read-index goes with --input, and --exclude-intervals with --intervals, for the same reasons.
 
 ### HaplotypeBasedVariantRecaller
 
 Suites: `haplotype-based-variant-recaller`.
 
-Inputs: `hbvr_alleles.vcf`, `hbvr_alleles_noidx.vcf`, `hbvr_haps.bam`, `hbvr_reads.bam`, `mutect_ref.fasta`.
+Inputs: `hbvr_alleles.vcf`, `hbvr_alleles_noidx.vcf`, `hbvr_haps.bam`, `hbvr_reads.bai`, `hbvr_reads.bam`, `mutect_ref.dict`, `mutect_ref.fasta`.
 
-Held out: `--dragen-378-concordance-mode`, `--read-index`, `--sequence-dictionary`.
+Held out: none.
 
-hbvr_haps.bam holds four groups of HC_ haplotypes over mutect_ref.fasta (substitutions, an insertion, deletions, one spanning a later substitution, an MNP that --max-mnp-distance merges) and one record not named HC_; a wider group over the first site loses on fitness. hbvr_reads.bam is sixty reads drawn from those haplotypes, some duplicate, some at mapping quality 10 or 25, some soft-clipped, some with a low-quality error. hbvr_alleles.vcf names the sites plus one no haplotype covers and a mixed one; its unindexed copy is refused at the first query. Without --reference the tool refuses before it opens anything. The FlowBased engine refuses these reads as not flow based (FlowBasedHMM refuses them with the same message and is left out). --pair-hmm-implementation is held at LOGLESS_CACHING: FASTEST_AVAILABLE and the AVX names resolve to GKL's native kernel when the CPU has AVX, which a GitHub runner has and the emulated container this array is built in does not, and that kernel computes in single precision first, so its answer is the machine's. EXACT and ORIGINAL are the log-space Java kernel, which this port does not carry. --dragen-378-concordance-mode is held out: Barclay refuses it beside --dragen-mode, which every row sets, and --dragen-mode is the side the rows vary. --dragen-pd-pair-hmm-implementation is held at LOGLESS_CACHING, the one PDHMM kernel ported.
+hbvr_haps.bam holds four groups of HC_ haplotypes over mutect_ref.fasta (substitutions, an insertion, deletions, one spanning a later substitution, an MNP that --max-mnp-distance merges) and one record not named HC_; a wider group over the first site loses on fitness. hbvr_reads.bam is sixty reads drawn from those haplotypes, some duplicate, some at mapping quality 10 or 25, some soft-clipped, some with a low-quality error. hbvr_alleles.vcf names the sites plus one no haplotype covers and a mixed one; its unindexed copy is refused at the first query. Without --reference the tool refuses before it opens anything. The FlowBased engine refuses these reads as not flow based (FlowBasedHMM refuses them with the same message and is left out). --pair-hmm-implementation is held at LOGLESS_CACHING: FASTEST_AVAILABLE and the AVX names resolve to GKL's native kernel when the CPU has AVX, which a GitHub runner has and the emulated container this array is built in does not, and that kernel computes in single precision first, so its answer is the machine's. EXACT and ORIGINAL are the log-space Java kernel, which this port does not carry. --dragen-pd-pair-hmm-implementation is held at LOGLESS_CACHING, the one PDHMM kernel ported. --read-index is each BAM's own index or unset; a row pairing a BAM with another's index is forbidden, since it would measure htsjdk reading a foreign index rather than the tool. --sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference is forbidden, the dictionary check's refusal being measured elsewhere. --dragen-378-concordance-mode and --dragen-mode are mutually exclusive, so both take <unset> and the given pairs are forbidden.
 
 ### HaplotypeCaller
 
@@ -1461,11 +1463,11 @@ mutect_t.bam is the tumour sample of mutect_tn.bam alone, so reference-confidenc
 
 Suites: `spark-walkers`.
 
-Inputs: `callers.ped`, `contamination.txt`, `dragstr.txt`, `flow_calls.bam`, `given_alleles.vcf`, `mutect_ref.fasta`, `mutect_t.bam`, `mutect_tn.bam`, `ploidy_haploid.bed`, `ploidy_mixed.bed`, `resources.vcf`.
+Inputs: `callers.ped`, `contamination.txt`, `dragstr.txt`, `flow_calls.bai`, `flow_calls.bam`, `given_alleles.vcf`, `mutect_ref.fasta`, `mutect_t.bai`, `mutect_t.bam`, `mutect_tn.bai`, `mutect_tn.bam`, `ploidy_haploid.bed`, `ploidy_mixed.bed`, `resources.vcf`.
 
-Held out: `--alm-path`, `--create-output-bam-splitting-index`, `--debug-assembly-region-state`, `--debug-assembly-variants-out`, `--debug-genotyper-output`, `--dragen-378-concordance-mode`, `--graph-output`, `--haplotype-debug-histogram-output`, `--output-shard-tmp-dir`, `--pair-hmm-results-file`, `--pdhmm-results-file`, `--read-index`, `--sharded-output`, `--splitting-index-granularity`, `--use-nio`.
+Held out: `--alm-path`, `--create-output-bam-splitting-index`, `--debug-assembly-region-state`, `--debug-assembly-variants-out`, `--debug-genotyper-output`, `--graph-output`, `--haplotype-debug-histogram-output`, `--pair-hmm-results-file`, `--pdhmm-results-file`, `--sharded-output`, `--splitting-index-granularity`, `--use-nio`.
 
-The reads, the reference and the caller's own arguments are HaplotypeCaller's, for its reasons. What this tool adds is the sharding: --read-shard-size and --read-shard-padding cut the contig, --strict runs the band pass over it instead, and --shuffle moves the reads to the shards another way. --sharded-output and the splitting index are held out: they name the output a directory of parts and an index beside a BAM this tool refuses to write. --use-nio changes only how the input is opened. --enable-all-annotations stays off: the reference's Kryo cannot broadcast the annotation engine it builds, and which of two exceptions it reports (a lambda, a thread) moves from row to row. The port refuses it with the first. The engine's debug files are held out: under Spark nothing closes them, so they hold what their buffers flushed, and the port refuses them rather than write them complete. --dragen-pd-pair-hmm-implementation is held at LOGLESS_CACHING, the one PDHMM kernel ported.
+The reads, the reference and the caller's own arguments are HaplotypeCaller's, for its reasons. What this tool adds is the sharding: --read-shard-size and --read-shard-padding cut the contig, --strict runs the band pass over it instead, and --shuffle moves the reads to the shards another way. --sharded-output and the splitting index (--create-output-bam-splitting-index, --splitting-index-granularity) are held out: they name the output a directory of parts and an index beside a BAM this tool refuses to write. --use-nio changes only how the input is opened. --enable-all-annotations stays off: the reference's Kryo cannot broadcast the annotation engine it builds, and which of two exceptions it reports (a lambda, a thread) moves from row to row. The port refuses it with the first. The engine's debug files (--graph-output, --debug-assembly-region-state, --debug-genotyper-output, --debug-assembly-variants-out, --haplotype-debug-histogram-output, --pair-hmm-results-file, --pdhmm-results-file, --alm-path) are held out: under Spark nothing closes them, so they hold what their buffers flushed, and the port refuses them rather than write them complete. --dragen-pd-pair-hmm-implementation is held at LOGLESS_CACHING, the one PDHMM kernel ported. --read-index is each BAM's own index or unset; a row pairing a BAM with another's index is forbidden, since it would measure htsjdk reading a foreign index rather than the tool. --dragen-378-concordance-mode and --dragen-mode are mutually exclusive, so both take <unset> and the given pairs are forbidden.
 
 ### HtsgetReader
 
@@ -1481,11 +1483,11 @@ Every row reaches the pinned htsget-rs server run_array.py starts beside it, ser
 
 Suites: `multi-variant-walker`, `joint-germline-cnv-segmentation`.
 
-Inputs: `jgcs.ped`, `jgcs_bins.interval_list`, `jgcs_cohort.vcf`, `jgcs_male1.vcf`, `jgcs_ref.fasta`, `jgcs_swapped.ped`.
+Inputs: `jgcs.ped`, `jgcs_bins.interval_list`, `jgcs_cohort.vcf`, `jgcs_male1.vcf`, `jgcs_ref.dict`, `jgcs_ref.fasta`, `jgcs_swapped.ped`.
 
-Held out: `--input`, `--read-index`, `--read-validation-stringency`, `--sequence-dictionary`, `--variant-output-filtering`.
+Held out: `--input`, `--read-index`.
 
---variant is jgcs_male1.vcf, ONE sample written as GermlineCNVCaller writes segments, which is the only input the defragmenter runs on; and jgcs_cohort.vcf, three samples, which skips it and is clustered by max clique alone. The pedigree names the three sexes, or moves them round, which is what the allosomal ploidy reads. --model-call-intervals turns the defragmenter into the binned one. Every clustering and defragmentation threshold carries its default and a value that moves the answer on this corpus; --minimum-qs-score 60 drops the QS 30 call and keeps the QS 60 one. --combine-variants-distance, --max-distance and --ref-padding only regroup the records or pad a reference window the tool never reads, and --max-records-in-ram is declared and never read: each is varied to show it changes nothing. --reference is jgcs_ref.fasta, the only reference the calls fit. --input and --read-index are held out: the tool reads no reads, and a BAM would add a dictionary check over a different reference. --sequence-dictionary is held out for the same reason: the tool disables cross-validation, and the reference's own dictionary is the only one the calls fit. The command-line header line and the output index are held as for the other VCF writers. --variant-output-filtering is held out: any value is refused without -L, which would make it a one-line refusal pair with the intervals' first value rather than a measurement of the filter.
+--variant is jgcs_male1.vcf, ONE sample written as GermlineCNVCaller writes segments, which is the only input the defragmenter runs on; and jgcs_cohort.vcf, three samples, which skips it and is clustered by max clique alone. The pedigree names the three sexes, or moves them round, which is what the allosomal ploidy reads. --model-call-intervals turns the defragmenter into the binned one. Every clustering and defragmentation threshold carries its default and a value that moves the answer on this corpus; --minimum-qs-score 60 drops the QS 30 call and keeps the QS 60 one. --combine-variants-distance, --max-distance and --ref-padding only regroup the records or pad a reference window the tool never reads, and --max-records-in-ram is declared and never read: each is varied to show it changes nothing. --reference is jgcs_ref.fasta, the only reference the calls fit. --input and --read-index are held out: the tool reads no reads, and a BAM would add a dictionary check over a different reference. The command-line header line and the output index are held as for the other VCF writers. --variant-output-filtering is unset, STARTS_IN or OVERLAPS, and forbidden without -L, where any mode is refused. --sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference is forbidden, the dictionary check's refusal being measured elsewhere. --read-validation-stringency is unset, LENIENT or STRICT: no reads are read, so it is expected inert.
 
 ### LearnReadOrientationModel
 
@@ -1521,21 +1523,21 @@ indels.bam is the file the tool can do anything to: its reads carry a deletion a
 
 Suites: `local-assembler`.
 
-Inputs: `la.bam`, `la2.bam`, `la_plus.dict`, `la_ref.dict`, `la_ref.fasta`.
+Inputs: `la.bai`, `la.bam`, `la2.bai`, `la2.bam`, `la_plus.dict`, `la_ref.dict`, `la_ref.fasta`.
 
-Held out: `--read-index`.
+Held out: none.
 
-The corpus MakeFixtures.localAssembler writes: a 3000-base contig la drawn from a generator whose state carries forward, and la.bam, whose reads make two bubbles (a substitution and a 60-base deletion), a gap an N leaves, a thin contig, an overrun pair, mates outside every padded interval, duplicates and a secondary alignment. la2.bam is the same reads without the two bubbles. Each numeric argument has a second value some group of reads crosses: --q-min 35 drops the quality-30 reads, --min-thin-observations 2 keeps the two-read contig, --min-gapfill-count 6 leaves the gap open, --min-sv-size 100 finds the deletion trivially different, --too-many-traversals 1 and --too-many-scaffolds 1 take the two fallbacks, and --pair-padding 0 leaves the far mates out (and refuses the two intervals -XL splits, which no longer touch). --gfa-file is plain text in both values: its O lines are written in the order of a HashSet keyed by identity hashes, which run_array.py sorts, and a gzipped file could only be compared as a digest. --fasta-file is plain and gzipped: the scaffolds are written sorted, so the gzip bytes are compared. -L and -XL are on la; --reference is given or not, since the tool reads only its dictionary. --no-scaffolding is listed false first, so the rows it fills write the sorted scaffolds. --read-index is held out: each of the two inputs has its own index beside it, and one named index would belong to only one of them.
+The corpus MakeFixtures.localAssembler writes: a 3000-base contig la drawn from a generator whose state carries forward, and la.bam, whose reads make two bubbles (a substitution and a 60-base deletion), a gap an N leaves, a thin contig, an overrun pair, mates outside every padded interval, duplicates and a secondary alignment. la2.bam is the same reads without the two bubbles. Each numeric argument has a second value some group of reads crosses: --q-min 35 drops the quality-30 reads, --min-thin-observations 2 keeps the two-read contig, --min-gapfill-count 6 leaves the gap open, --min-sv-size 100 finds the deletion trivially different, --too-many-traversals 1 and --too-many-scaffolds 1 take the two fallbacks, and --pair-padding 0 leaves the far mates out (and refuses the two intervals -XL splits, which no longer touch). --gfa-file is plain text in both values: its O lines are written in the order of a HashSet keyed by identity hashes, which run_array.py sorts, and a gzipped file could only be compared as a digest. --fasta-file is plain and gzipped: the scaffolds are written sorted, so the gzip bytes are compared. -L and -XL are on la; --reference is given or not, since the tool reads only its dictionary. --no-scaffolding is listed false first, so the rows it fills write the sorted scaffolds. --read-index is each BAM's own index or unset; a row pairing a BAM with another's index is forbidden, since it would measure htsjdk reading a foreign index rather than the tool.
 
 ### MTLowHeteroplasmyFilterTool
 
 Suites: `mt-low-heteroplasmy`.
 
-Inputs: `mito.vcf`, `mito_plain.vcf`.
+Inputs: `mito.vcf`, `mito_plain.vcf`, `reads.bai`, `reads.bam`.
 
-Held out: `--exclude-intervals`, `--input`, `--intervals`, `--read-index`.
+Held out: none.
 
---variant is mito.vcf, whose five unfiltered sites below 0.1 are past the default allowance of three, and mito_plain.vcf, the same calls without AS_FilterStatus, whose merge the filter refuses once the file fails. --max-allowed-low-hets is 3 and 10, which the five sites do not reach, so the file comes out untouched. --low-het-threshold is 0.1 and 0.6 and changes nothing: the field is a private final with a constant initialiser, so javac folded every read of it. --create-output-variant-index is held at false and --variant-output-filtering at ANYWHERE for the reasons NuMTFilterTool gives, and the engine's read arguments are held out likewise. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags.
+--variant is mito.vcf, whose five unfiltered sites below 0.1 are past the default allowance of three, and mito_plain.vcf, the same calls without AS_FilterStatus, whose merge the filter refuses once the file fails. --max-allowed-low-hets is 3 and 10, which the five sites do not reach, so the file comes out untouched. --low-het-threshold is 0.1 and 0.6 and changes nothing: the field is a private final with a constant initialiser, so javac folded every read of it. --create-output-variant-index is held at false and --variant-output-filtering at ANYWHERE for the reasons NuMTFilterTool gives, and the engine's read arguments are each the corpus's BAM and its own index or unset; -L and -XL are a window and a site or unset, which the unindexed input refuses and the indexed one traverses. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags.
 
 ### MakeSitesOnlyVcf
 
@@ -1571,31 +1573,31 @@ The Spark values every record walker here has. `--chart` needs an R the pinned c
 
 Suites: `merge-annotated-regions`.
 
-Inputs: `reference.fasta`, `regions.seg`, `regions.tsv`, `regions2.seg`, `two_contigs.fasta`.
+Inputs: `reads.bai`, `reads.bam`, `reference.fasta`, `regions.seg`, `regions.tsv`, `regions2.seg`, `two_contigs.dict`, `two_contigs.fasta`.
 
-Held out: `--exclude-intervals`, `--input`, `--intervals`, `--read-index`, `--sequence-dictionary`.
+Held out: none.
 
---segments is regions.seg, unsorted, chained and abutting, regions2.seg with another spelling of the locatable columns and a comment, and regions.tsv, the same rows under a name the codec does not claim, which is refused before a line is read. --reference is two_contigs.fasta, naming chr1 and chr2, and reference.fasta, naming chr1 alone: a file of two or more rows with a chr2 row is then refused by the dictionary sort's compareContigs. --input, --read-index, --intervals and --exclude-intervals are held out for the reasons CondenseDepthEvidence gives, and --sequence-dictionary with them: beside a reference it is compared against that reference's, which measures the engine's validation rather than the tool. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags.
+--segments is regions.seg, unsorted, chained and abutting, regions2.seg with another spelling of the locatable columns and a comment, and regions.tsv, the same rows under a name the codec does not claim, which is refused before a line is read. --reference is two_contigs.fasta, naming chr1 and chr2, and reference.fasta, naming chr1 alone: a file of two or more rows with a chr2 row is then refused by the dictionary sort's compareContigs. --input is reads.bam or unset and --read-index its index or unset, never an index without its BAM; -L, -XL and --sequence-dictionary are a window, a site and two_contigs.dict, or unset: the tool reads no interval, so they reach the engine's validation, which the dictionary fails beside reference.fasta. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags.
 
 ### MergeAnnotatedRegionsByAnnotation
 
 Suites: `merge-annotated-regions-by-annotation`.
 
-Inputs: `annotations.list`, `reference.fasta`, `regions.seg`, `regions2.seg`, `two_contigs.fasta`.
+Inputs: `annotations.list`, `reads.bai`, `reads.bam`, `reference.fasta`, `regions.seg`, `regions2.seg`, `two_contigs.dict`, `two_contigs.fasta`.
 
-Held out: `--exclude-intervals`, `--input`, `--intervals`, `--read-index`, `--sequence-dictionary`.
+Held out: none.
 
---annotations-to-match is CALL, annotations.list naming CALL and name, and ABSENT, which the file does not carry. --max-merge-distance is the default and 50, which splits the chain. --reference is two_contigs.fasta and reference.fasta, as for MergeAnnotatedRegions. The output's locatable column names are arguments. --input, --read-index, --intervals and --exclude-intervals are held out for the reasons CondenseDepthEvidence gives, and --sequence-dictionary with them: beside a reference it is compared against that reference's, which measures the engine's validation rather than the tool. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags.
+--annotations-to-match is CALL, annotations.list naming CALL and name, and ABSENT, which the file does not carry. --max-merge-distance is the default and 50, which splits the chain. --reference is two_contigs.fasta and reference.fasta, as for MergeAnnotatedRegions. The output's locatable column names are arguments. --input is reads.bam or unset and --read-index its index or unset, never an index without its BAM; -L, -XL and --sequence-dictionary are a window, a site and two_contigs.dict, or unset: the tool reads no interval, so they reach the engine's validation, which the dictionary fails beside reference.fasta. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags.
 
 ### MergeMutect2CallsWithMC3
 
 Suites: `merge-mutect2-mc3`.
 
-Inputs: `m2.vcf`, `m2_no_tumor.vcf`, `mc3.vcf`.
+Inputs: `m2.vcf`, `m2_no_tumor.vcf`, `matching.dict`, `mc3.vcf`, `reads.bai`, `reads.bam`, `reference.fasta`, `regions.bed`.
 
-Held out: `--confidence`, `--exclude-intervals`, `--input`, `--intervals`, `--read-index`, `--reference`, `--sequence-dictionary`.
+Held out: none.
 
---truth is mc3.vcf: a site Mutect2 also calls, one it misses, one it calls filtered, and one where it calls another allele; --evaluation is m2.vcf, with those and a multiallelic call MC3 lacks and a filtered one it lacks, and the same without its ##tumor_sample line, the reference's NullPointerException. --output is plain or BGZF. The engine's read, interval and dictionary arguments are held out, and the writer's index, filtering mode and command line held. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags.
+--truth is mc3.vcf: a site Mutect2 also calls, one it misses, one it calls filtered, and one where it calls another allele; --evaluation is m2.vcf, with those and a multiallelic call MC3 lacks and a filtered one it lacks, and the same without its ##tumor_sample line, the reference's NullPointerException. --output is plain or BGZF. mc3.vcf and m2.vcf have indexes, m2_no_tumor.vcf none. --reference and --sequence-dictionary are the corpus's chr1 or unset, and --confidence a BED or unset: GATK declares it 'TO BE IMPLEMENTED' and never opens it. The engine's read arguments are each the corpus's BAM and its own index or unset; -L and -XL are a window and a site or unset, which the unindexed input refuses and the indexed one traverses. The writer's index, filtering mode and command line are held. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags.
 
 ### MergeMutectStats
 
@@ -1661,11 +1663,11 @@ The import in onStartup fails for want of python before doWork, so every row the
 
 Suites: `numt-filter`.
 
-Inputs: `mito.vcf`, `mito_plain.vcf`.
+Inputs: `mito.vcf`, `mito_plain.vcf`, `reads.bai`, `reads.bam`.
 
-Held out: `--exclude-intervals`, `--input`, `--intervals`, `--read-index`.
+Held out: none.
 
---variant is mito.vcf, Mutect2-shaped calls with AD, AF and AS_FilterStatus, and mito_plain.vcf, the same calls without AS_FilterStatus, which the filter's merge refuses as soon as it filters anything: `lists are not the same size`. --autosomal-coverage is the default 0, which leaves the cutoff at zero and the output unfiltered, and 30; --max-numt-autosomal-copies is 4 and 1, so the Poisson's mean and therefore the cutoff move. --output is a VCF and a block-compressed one. --create-output-variant-index is held at false for the reason every variant writer holds it: the index records the output's last-modified time. --variant-output-filtering is held at ANYWHERE: any other mode needs -L, and -L is held out. --input, --read-index, --intervals and --exclude-intervals are held out for the reasons CondenseDepthEvidence gives. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags.
+--variant is mito.vcf, Mutect2-shaped calls with AD, AF and AS_FilterStatus, and mito_plain.vcf, the same calls without AS_FilterStatus, which the filter's merge refuses as soon as it filters anything: `lists are not the same size`. --autosomal-coverage is the default 0, which leaves the cutoff at zero and the output unfiltered, and 30; --max-numt-autosomal-copies is 4 and 1, so the Poisson's mean and therefore the cutoff move. --output is a VCF and a block-compressed one. --create-output-variant-index is held at false for the reason every variant writer holds it: the index records the output's last-modified time. --variant-output-filtering is held at ANYWHERE. mito.vcf has an index and mito_plain.vcf none; the engine's read arguments are each the corpus's BAM and its own index or unset; -L and -XL are a window and a site or unset, which the unindexed input refuses and the indexed one traverses. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags.
 
 ### ParallelCopyGCSDirectoryIntoHDFSSpark
 
@@ -1781,11 +1783,11 @@ Past R as PlotDenoisedCopyRatios is, with the PNG the only file. Either input ma
 
 Suites: `post-process-reads-for-rsem`.
 
-Inputs: `qname.bam`, `reads.bam`.
+Inputs: `qname.bam`, `reads.bai`, `reads.bam`.
 
-Held out: `--inverted-read-filter`, `--read-index`.
+Held out: `--inverted-read-filter`.
 
-qname.bam holds the four answers passesRSEMFilter gives -- a proper pair of single-M reads with a pair of secondary alignments beside it, a pair whose second read is unmapped, a pair whose first read carries an insertion, and a first of pair with no second -- so a row's output is the groups that survive rather than the file back again. reads.bam is coordinate-sorted, which this tool refuses outright, so the argument has a row that traverses and a row that refuses. --read-index is held out for the reason it is held out of TransferReadTags: a query-name sorted BAM has no index. --inverted-read-filter is held out, and the first measurement is why: all nineteen rows were REFUSED and not one of them reached the reordering. Inverting either filter the corpus offers leaves a query-name group with no PRIMARY first-of-pair in it -- FirstOfPairReadFilter keeps the second reads and PrimaryLineReadFilter keeps the secondary ones -- and the reference then dereferences null inside the guard that exists because read1 may be null. That exception is the tool's behaviour and is measured, in the module's own tests and against the golden; what an array of nineteen refusals cannot measure is the argument surface it is for.
+qname.bam holds the four answers passesRSEMFilter gives -- a proper pair of single-M reads with a pair of secondary alignments beside it, a pair whose second read is unmapped, a pair whose first read carries an insertion, and a first of pair with no second -- so a row's output is the groups that survive rather than the file back again. reads.bam is coordinate-sorted, which this tool refuses outright, so the argument has a row that traverses and a row that refuses. --read-index is reads.bai or unset, and never beside qname.bam, which cannot have one. --inverted-read-filter is held out, and the first measurement is why: all nineteen rows were REFUSED and not one of them reached the reordering. Inverting either filter the corpus offers leaves a query-name group with no PRIMARY first-of-pair in it -- FirstOfPairReadFilter keeps the second reads and PrimaryLineReadFilter keeps the secondary ones -- and the reference then dereferences null inside the guard that exists because read1 may be null. That exception is the tool's behaviour and is measured, in the module's own tests and against the golden; what an array of nineteen refusals cannot measure is the argument surface it is for.
 
 ### PostprocessGermlineCNVCalls
 
@@ -1795,7 +1797,7 @@ Inputs: `nothing`, `nothing.vcf`, `shard`.
 
 Held out: `--input`, `--read-index`, `--reference`, `--sequence-dictionary`, `--variant-output-filtering`.
 
-GATKTool's startup comes first, and -L there reads the shards' interval lists for its dictionary, so a -L over a shard directory that holds none is refused ahead of the import that otherwise ends every row. --reference, --input and the rest of the standard arguments are held out: past that import nothing reads them.
+GATKTool's startup comes first, and -L there reads the shards' interval lists for its dictionary, so a -L over a shard directory that holds none is refused ahead of the import that otherwise ends every row. --input, --read-index, --reference and --sequence-dictionary are held out: past that import nothing reads them. --variant-output-filtering is held out too: a mode with -L ends at the same import, and the port does not refuse a mode without -L, a port limitation.
 
 ### PreprocessIntervals
 
@@ -1827,11 +1829,11 @@ The analyzer is chosen by the EXTENSION and nothing else, so the three values ar
 
 Suites: `print-read-counts`.
 
-Inputs: `counts.tsv`, `sv.counts.tsv`.
+Inputs: `counts.tsv`, `reads.bai`, `reads.bam`, `sv.counts.tsv`.
 
-Held out: `--exclude-intervals`, `--input`, `--intervals`, `--read-index`.
+Held out: `--exclude-intervals`, `--intervals`.
 
-sv.counts.tsv is the table the REFERENCE's own CollectReadCounts wrote, under the name the codec recognises: `SimpleCountCodec.canDecode` tests for the extension `.counts.tsv`, and the corpus's own `counts.tsv` does not have it, so it is the second value and the no-suitable-codec refusal. A `.counts.tsv` carries its own SAM header, so the run never consults --sequence-dictionary. --input and --read-index are held out: this tool reads a feature file and no reads, and the shared values pair a BAM index with a text table, which every row died on. --output-prefix carries a directory prefix and the empty default, because the names this tool chooses are the prefix and the sample glued together: with no prefix the files land in the working directory, which the harness compares as the output. --output-file-list carries a path and nothing: the file is written and closed BEFORE a single record, so it exists even for a run that refuses. --intervals and --exclude-intervals are held OUT. A feature file needs an index for a bounded traversal and a text counts table has none, so every row that carried one measured the random-access refusal rather than the rewrite.
+sv.counts.tsv is the table the REFERENCE's own CollectReadCounts wrote, under the name the codec recognises: `SimpleCountCodec.canDecode` tests for the extension `.counts.tsv`, and the corpus's own `counts.tsv` does not have it, so it is the second value and the no-suitable-codec refusal. A `.counts.tsv` carries its own SAM header, so the run never consults --sequence-dictionary. --input is reads.bam or unset and --read-index its index or unset, never an index without its BAM: the tool reads a feature file, so the BAM reaches only the engine. --output-prefix carries a directory prefix and the empty default, because the names this tool chooses are the prefix and the sample glued together: with no prefix the files land in the working directory, which the harness compares as the output. --output-file-list carries a path and nothing: the file is written and closed BEFORE a single record, so it exists even for a run that refuses. --intervals and --exclude-intervals are held OUT. A feature file needs an index for a bounded traversal and a text counts table has none, so every row that carried one measured the random-access refusal rather than the rewrite.
 
 ### PrintReads
 
@@ -1863,11 +1865,11 @@ Held out: none.
 
 Suites: `print-sv-evidence`.
 
-Inputs: `depth.rd.txt`, `evidence.list`, `reference.fasta`, `samples.list`, `sv.dict`.
+Inputs: `depth.rd.txt`, `evidence.list`, `reads.bai`, `reads.bam`, `reference.fasta`, `samples.list`, `sv.dict`.
 
-Held out: `--exclude-intervals`, `--input`, `--intervals`, `--read-index`.
+Held out: `--exclude-intervals`, `--intervals`.
 
---evidence-file is depth.rd.txt alone and evidence.list, which Barclay expands into depth2 and depth3: the second pair shares three bins, so the sort merger WIDENS them with bravo's counts, and every other bin carries -1 for the samples its file does not have. --sample-names is `null`, absent, so the union of the headers alphabetically, and samples.list: zulu twice, bravo, and nobody, which no file carries. The set keeps zulu once, first; nobody is a column of -1 rather than a refusal. --sequence-dictionary is sv.dict, which names both contigs the depth files use, or absent; --reference is reference.fasta, whose dictionary names chr1 alone, or absent. With both, the master is the larger and wins; with the reference alone, chr2 is in no dictionary and the sort merger's compareLocatables refuses it; with neither, the walker has no dictionary at all. --output carries a mixed-case name, which the codec lower-cases, and --compression-level is 4 and 0, which a text output never reads. A block-compressed or .bci output, and any evidence type but depth, are refusals of the port's own, so the claim is narrower by those. --input, --read-index, --intervals and --exclude-intervals are held out for the reasons CondenseDepthEvidence gives.
+--evidence-file is depth.rd.txt alone and evidence.list, which Barclay expands into depth2 and depth3: the second pair shares three bins, so the sort merger WIDENS them with bravo's counts, and every other bin carries -1 for the samples its file does not have. --sample-names is `null`, absent, so the union of the headers alphabetically, and samples.list: zulu twice, bravo, and nobody, which no file carries. The set keeps zulu once, first; nobody is a column of -1 rather than a refusal. --sequence-dictionary is sv.dict, which names both contigs the depth files use, or absent; --reference is reference.fasta, whose dictionary names chr1 alone, or absent. With both, the master is the larger and wins; with the reference alone, chr2 is in no dictionary and the sort merger's compareLocatables refuses it; with neither, the walker has no dictionary at all. --output carries a mixed-case name, which the codec lower-cases, and --compression-level is 4 and 0, which a text output never reads. A block-compressed or .bci output, and any evidence type but depth, are refusals of the port's own, so the claim is narrower by those. --input is reads.bam or unset and --read-index its index or unset, never an index without its BAM. --intervals and --exclude-intervals are held out with CondenseDepthEvidence's.
 
 ### PrintVariantsSpark
 
@@ -1913,41 +1915,41 @@ indels.bam is the input that makes the tool do something visible: its reads carr
 
 Suites: `spark-walkers`.
 
-Inputs: `callers.ped`, `contamination.txt`, `dragstr.txt`, `given_alleles.vcf`, `known.bed`, `mutect_pl.bam`, `mutect_ref.fasta`, `mutect_t.bam`, `ploidy_haploid.bed`, `ploidy_mixed.bed`, `resources.vcf`.
+Inputs: `callers.ped`, `contamination.txt`, `dragstr.txt`, `given_alleles.vcf`, `known.bed`, `mutect_pl.bai`, `mutect_pl.bam`, `mutect_ref.fasta`, `mutect_t.bai`, `mutect_t.bam`, `ploidy_haploid.bed`, `ploidy_mixed.bed`, `resources.vcf`.
 
-Held out: `--align`, `--alm-path`, `--binary-tag-name`, `--bwa-mem-index-image`, `--create-output-bam-splitting-index`, `--debug-assembly-region-state`, `--debug-assembly-variants-out`, `--debug-genotyper-output`, `--dragen-378-concordance-mode`, `--flow-end-pos-uncertainty`, `--flow-q-is-known-end`, `--flow-quality-sum-strategy`, `--flow-skip-start-homopolymers`, `--flowbased`, `--graph-output`, `--haplotype-debug-histogram-output`, `--output-shard-tmp-dir`, `--pair-hmm-results-file`, `--pdhmm-results-file`, `--read-index`, `--sharded-output`, `--single-end-alignment`, `--single-end-reads-clipping-is-end`, `--single-end-reads-end-position-significant`, `--splitting-index-granularity`, `--use-nio`.
+Held out: `--align`, `--alm-path`, `--binary-tag-name`, `--bwa-mem-index-image`, `--debug-assembly-region-state`, `--debug-assembly-variants-out`, `--debug-genotyper-output`, `--graph-output`, `--haplotype-debug-histogram-output`, `--pair-hmm-results-file`, `--pdhmm-results-file`, `--single-end-alignment`.
 
-HaplotypeCallerSpark's caller values, over mutect_pl.bam: mutect_t.bam under a read group that names a platform, which the recalibration refuses to go without, and that second input stays as the refusal. --align has its own suite rows, since it asks for a fixture of unaligned reads none of these values are. The flow arguments because the marking only reads them over flow reads, which this tool would recalibrate with nothing to compare. --binary-tag-name only reaches a table this tool never writes. --enable-all-annotations stays off: the reference's Kryo cannot broadcast the annotation engine it builds, and which of two exceptions it reports (a lambda, a thread) moves from row to row. The port refuses it with the first. The engine's debug files are held out: under Spark nothing closes them, so they hold what their buffers flushed, and the port refuses them rather than write them complete. --dragen-pd-pair-hmm-implementation is held at LOGLESS_CACHING, the one PDHMM kernel ported.
+HaplotypeCallerSpark's caller values, over mutect_pl.bam: mutect_t.bam under a read group that names a platform, which the recalibration refuses to go without, and that second input stays as the refusal. --align has its own suite rows, since it asks for a fixture of unaligned reads none of these values are. --bwa-mem-index-image and --single-end-alignment are held out with it: they configure the aligner alone. The marking's flow arguments vary, inert over these reads. --binary-tag-name only reaches a table this tool never writes. --enable-all-annotations stays off: the reference's Kryo cannot broadcast the annotation engine it builds, and which of two exceptions it reports (a lambda, a thread) moves from row to row. The port refuses it with the first. The engine's debug files (--graph-output, --debug-assembly-variants-out, --haplotype-debug-histogram-output, --pair-hmm-results-file, --pdhmm-results-file, --alm-path, --debug-assembly-region-state, --debug-genotyper-output) are held out: under Spark nothing closes them, so they hold what their buffers flushed, and the port refuses them rather than write them complete. --dragen-pd-pair-hmm-implementation is held at LOGLESS_CACHING, the one PDHMM kernel ported. --dragen-378-concordance-mode is true or unset beside a --dragen-mode that may be unset, and --output-shard-tmp-dir is given only where --sharded-output is not, both pairs being Barclay mutexes; --read-index is each BAM's own index or unset.
 
 ### ReblockGVCF
 
 Suites: `multi-variant-walker`, `reblock-gvcf`.
 
-Inputs: `cg_a.g.vcf`, `cg_ab.list`, `cg_c.g.vcf`, `cg_dbsnp.vcf`, `cgv_ref.fasta`, `rb_missing.g.vcf`, `rb_s.g.vcf`, `rb_shards.list`.
+Inputs: `cg_a.g.vcf`, `cg_ab.list`, `cg_c.g.vcf`, `cg_dbsnp.vcf`, `cgv_ref.dict`, `cgv_ref.fasta`, `mutect_t.bai`, `mutect_t.bam`, `rb_missing.g.vcf`, `rb_s.g.vcf`, `rb_shards.list`.
 
-Held out: `--flow-order-for-annotations`, `--founder-id`, `--input`, `--pedigree`, `--population-callset`, `--read-index`, `--sequence-dictionary`.
+Held out: `--flow-order-for-annotations`, `--founder-id`, `--pedigree`, `--population-callset`.
 
-The inputs are one sample, sR, over cgv_ref.fasta: rb_s.g.vcf walks every branch of regenotypeVC (blocks in three bands, a weak het, a 0/0 call with an alternate, a dropped deletion whose gap is filled with a block, a no-call called from its PLs, a block with a GQ and no PL, a LowQual SNP, a GQ0 block, TREE_SCORE, EXTRA, an A-length AFA and a FORMAT SPARE, a hom-var with MQ and no RAW_MQandDP, and a spanning deletion under a deletion); rb_shards.list is it with its chr2 shard; cg_a and cg_c are the CombineGVCFs samples; rb_missing.g.vcf has a block with neither GQ nor PL, refused unless --allow-missing-hom-ref-data; cg_ab.list is two samples, refused at startup. --gvcf-gq-bands takes one value per row, so the default [20, 100] is only ever the row's absence: 60 and 10 re-band, and 101 is refused as malformed after the output file exists. --annotations-to-keep EXTRA keeps an unrecognised key and AFA is refused as allele-length; --format-annotations-to-remove removes SPARE or SB from the genotypes and the header. --population-callset, --pedigree, --founder-id and --flow-order-for-annotations are held out: the port does not carry the population priors or the pedigree and flow annotations. --reference is held at cgv_ref.fasta, the one reference carrying both contigs. --sequence-dictionary, --input and --read-index are held out, as for CombineGVCFs. --add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the reason every variant writer holds them: one writes the run's own time into the header and the other writes the output file's last-modified time into an index. --max-variants-per-shard is held at 0 and --disable-read-filter at WellformedReadFilter, for the reasons CombineGVCFs gives. --variant-output-filtering is held at ANYWHERE: every other mode needs -L, and a row without one refuses the whole command line before the tool runs.
+The inputs are one sample, sR, over cgv_ref.fasta: rb_s.g.vcf walks every branch of regenotypeVC (blocks in three bands, a weak het, a 0/0 call with an alternate, a dropped deletion whose gap is filled with a block, a no-call called from its PLs, a block with a GQ and no PL, a LowQual SNP, a GQ0 block, TREE_SCORE, EXTRA, an A-length AFA and a FORMAT SPARE, a hom-var with MQ and no RAW_MQandDP, and a spanning deletion under a deletion); rb_shards.list is it with its chr2 shard; cg_a and cg_c are the CombineGVCFs samples; rb_missing.g.vcf has a block with neither GQ nor PL, refused unless --allow-missing-hom-ref-data; cg_ab.list is two samples, refused at startup. --gvcf-gq-bands takes one value per row, so the default [20, 100] is only ever the row's absence: 60 and 10 re-band, and 101 is refused as malformed after the output file exists. --annotations-to-keep EXTRA keeps an unrecognised key and AFA is refused as allele-length; --format-annotations-to-remove removes SPARE or SB from the genotypes and the header. --population-callset, --pedigree, --founder-id and --flow-order-for-annotations are held out: the port does not carry the population priors or the pedigree and flow annotations. --reference is held at cgv_ref.fasta, the one reference carrying both contigs. --input is mutect_t.bam or unset, --read-index its index or unset, never an index without its BAM, and --sequence-dictionary cgv_ref.dict or unset. --add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the reason every variant writer holds them: one writes the run's own time into the header and the other writes the output file's last-modified time into an index. --max-variants-per-shard is held at 0 and --disable-read-filter at WellformedReadFilter, for the reasons CombineGVCFs gives. --variant-output-filtering is held at ANYWHERE: every other mode needs -L, and a row without one refuses the whole command line before the tool runs.
 
 ### ReferenceBlockConcordance
 
 Suites: `reference-block-concordance`.
 
-Inputs: `rbc_eval.g.vcf`, `rbc_multi.g.vcf`, `rbc_truth.g.vcf`.
+Inputs: `rbc_eval.g.vcf`, `rbc_multi.g.vcf`, `rbc_truth.g.vcf`, `reads.bai`, `reads.bam`, `regions.bed`, `sv.dict`, `sv_reference.fasta`.
 
-Held out: `--confidence`, `--exclude-intervals`, `--input`, `--intervals`, `--read-index`, `--reference`, `--sequence-dictionary`.
+Held out: none.
 
---truth and --evaluation are two single-sample GVCFs whose blocks cut chr1 and chr2 differently and at different GQs, each with a variant site the hom-ref filter drops; --evaluation also takes a two-sample GVCF the length extraction refuses. The three histogram outputs carry two names each. Every metrics file is headed by the time the run started, which run_array replaces before comparing. The engine's read, interval and dictionary arguments are held out. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags.
+--truth and --evaluation are two single-sample GVCFs whose blocks cut chr1 and chr2 differently and at different GQs, each with a variant site the hom-ref filter drops; --evaluation also takes a two-sample GVCF the length extraction refuses. The three histogram outputs carry two names each. Every metrics file is headed by the time the run started, which run_array replaces before comparing. rbc_truth.g.vcf and rbc_eval.g.vcf have indexes, rbc_multi.g.vcf none. --reference and --sequence-dictionary are chr1 and chr2 or unset, --confidence a BED GATK never opens or unset, and the engine's read arguments are each the corpus's BAM and its own index or unset; -L and -XL are a window and a site or unset, which the unindexed input refuses and the indexed one traverses. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags.
 
 ### RemoveNearbyIndels
 
 Suites: `remove-nearby-indels`.
 
-Inputs: `indels.vcf`, `indexed.vcf`.
+Inputs: `indels.vcf`, `indexed.vcf`, `reads.bai`, `reads.bam`.
 
-Held out: `--input`, `--read-index`.
+Held out: none.
 
-indels.vcf is the file this tool needs, and it is written for it: the corpus's other VCFs hold SNPs alone, and a run over those emits every record whatever the spacing is. It carries pairs at several distances, a run of three, and non-indels between them, so a spacing of 10 and one of 200 keep different sets. --min-indel-spacing is REQUIRED on this tool, which is why it carries values here rather than sitting at its declared default: a row without it is refused by the parser. --input and --read-index are held out. This tool reads no reads, and the corpus's shared value for --input is a VCF, whose refusal as a reads source is measured by CountVariants.
+indels.vcf is the file this tool needs, and it is written for it: the corpus's other VCFs hold SNPs alone, and a run over those emits every record whatever the spacing is. It carries pairs at several distances, a run of three, and non-indels between them, so a spacing of 10 and one of 200 keep different sets. --min-indel-spacing is REQUIRED on this tool, which is why it carries values here rather than sitting at its declared default: a row without it is refused by the parser. --input is reads.bam or unset and --read-index its index or unset, never an index without its BAM. This tool reads no reads, and the corpus's shared value for --input is a VCF, whose refusal as a reads source is measured by CountVariants.
 
 ### RenameSampleInVcf
 
@@ -1983,41 +1985,41 @@ SortSamSpark's values and writer. `cram` is left out of the file format because 
 
 Suites: `sv-annotate`.
 
-Inputs: `sv_annotate.vcf`, `sv_calls.vcf`, `sv_genes.gtf`, `sv_noncoding.bed`.
+Inputs: `reads.bai`, `reads.bam`, `sv.dict`, `sv_annotate.vcf`, `sv_calls.vcf`, `sv_genes.gtf`, `sv_noncoding.bed`, `sv_reference.fasta`.
 
-Held out: `--exclude-intervals`, `--input`, `--intervals`, `--read-index`, `--reference`, `--sequence-dictionary`.
+Held out: none.
 
---variant is sv_annotate.vcf, one SV per rule: a deletion in a CDS, an intronic insertion, a UTR duplication, an enhancer deletion far from both genes, an inversion and a duplication spanning a gene, a multiallelic CNV, a short breakend pair, a complex dupINV and a translocation; and sv_calls.vcf, SVStratify's calls. --protein-coding-gtf and --non-coding-bed are the fixtures or absent, which turns their annotations off. --promoter-window-length is the default, a short window and zero, whose promoter interval is refused before the writer. --max-breakend-as-cnv-length is zero, which leaves a breakend a breakend, or long enough to read the pair as a deletion; the default -1 cannot be written, an int taking no null. The engine's read, interval and dictionary arguments are held out.
+--variant is sv_annotate.vcf, one SV per rule: a deletion in a CDS, an intronic insertion, a UTR duplication, an enhancer deletion far from both genes, an inversion and a duplication spanning a gene, a multiallelic CNV, a short breakend pair, a complex dupINV and a translocation; and sv_calls.vcf, SVStratify's calls. --protein-coding-gtf and --non-coding-bed are the fixtures or absent, which turns their annotations off. --promoter-window-length is the default, a short window and zero, whose promoter interval is refused before the writer. --max-breakend-as-cnv-length is zero, which leaves a breakend a breakend, or long enough to read the pair as a deletion; the default -1 cannot be written, an int taking no null. sv_calls.vcf has an index and sv_annotate.vcf none. --reference and --sequence-dictionary are sv_reference.fasta and sv.dict or unset, -L and -XL a window and a site or unset, and --input is reads.bam or unset and --read-index its index or unset, never an index without its BAM.
 
 ### SVCluster
 
 Suites: `multi-variant-walker`, `sv-cluster`.
 
-Inputs: `sv_calls.vcf`, `sv_cluster_input.vcf`, `sv_ploidy.tsv`, `sv_ploidy_haploid.tsv`, `sv_reference.fasta`.
+Inputs: `reads.bai`, `reads.bam`, `sv.dict`, `sv_calls.vcf`, `sv_cluster_input.vcf`, `sv_ploidy.tsv`, `sv_ploidy_haploid.tsv`, `sv_reference.fasta`.
 
-Held out: `--exclude-intervals`, `--input`, `--intervals`, `--read-index`, `--sequence-dictionary`.
+Held out: none.
 
---variant is sv_cluster_input.vcf, calls that group under every linkage (overlapping deletions with and without breakpoint evidence, duplications, subtyped insertions, an inversion, breakends with one far end, and a depth-only DEL/DUP pair only --enable-cnv joins); and sv_calls.vcf, whose genotypes carry no ECN, which --fast-mode's carrier test refuses. --reference is sv_reference.fasta, the only reference the calls fit. --ploidy-table gives s2 two or one copy of chr1, read for the samples --fast-mode drops. The algorithm, the two summary strategies, the flag logic (declared and never read), --variant-prefix and the four switches are all varied; --algorithm DEFRAGMENT_CNV is the port's limitation and not listed. The sample-overlap arguments are held at 0, since the carrier test they need refuses the second input differently inside the linkage. The engine's read, interval and dictionary arguments are held out as for SVStratify.
+--variant is sv_cluster_input.vcf, calls that group under every linkage (overlapping deletions with and without breakpoint evidence, duplications, subtyped insertions, an inversion, breakends with one far end, and a depth-only DEL/DUP pair only --enable-cnv joins); and sv_calls.vcf, whose genotypes carry no ECN, which --fast-mode's carrier test refuses. --reference is sv_reference.fasta, the only reference the calls fit. --ploidy-table gives s2 two or one copy of chr1, read for the samples --fast-mode drops. The algorithm, the two summary strategies, the flag logic (declared and never read), --variant-prefix and the four switches are all varied; --algorithm DEFRAGMENT_CNV is the port's limitation and not listed. The sample-overlap arguments are held at 0, since the carrier test they need refuses the second input differently inside the linkage. Both inputs have indexes. --sequence-dictionary is sv.dict or unset, -L and -XL a window and a site or unset, and --input is reads.bam or unset and --read-index its index or unset, never an index without its BAM.
 
 ### SVConcordance
 
 Suites: `sv-concordance`.
 
-Inputs: `sv.dict`, `sv_bad.vcf`, `sv_calls.vcf`, `sv_eval.vcf`, `sv_eval_sites.vcf`, `sv_truth.vcf`.
+Inputs: `reads.bai`, `reads.bam`, `regions.bed`, `sv.dict`, `sv_bad.vcf`, `sv_calls.vcf`, `sv_eval.vcf`, `sv_eval_sites.vcf`, `sv_reference.fasta`, `sv_truth.vcf`.
 
-Held out: `--confidence`, `--exclude-intervals`, `--input`, `--intervals`, `--read-index`, `--reference`.
+Held out: none.
 
---evaluation is sv_eval.vcf, one call near each truth call of its type, a deletion near nothing, and a CNV compared by copy number; and the same records without samples. --truth is sv_truth.vcf, which shares sample s1 with the eval file and carries AC/AF/AN on its insertion; sv_calls.vcf, SVStratify's calls, which share no sample; and sv_bad.vcf, whose second deletion has no ALGORITHMS and is refused unwrapped. The interval-overlap and window arguments carry their defaults and a value that breaks one pairing each; the sample-overlap ones are held at 0, since a truth genotype is stripped of its ECN and any positive threshold refuses the first comparison. --sequence-dictionary is held at sv.dict, and the reference and the engine's read and interval arguments are held out. --stratify-config, --clustering-config and --track-intervals have no fixture, so the three --stratify-* thresholds they would use are varied without a stratification to reach.
+--evaluation is sv_eval.vcf, one call near each truth call of its type, a deletion near nothing, and a CNV compared by copy number; and the same records without samples. --truth is sv_truth.vcf, which shares sample s1 with the eval file and carries AC/AF/AN on its insertion; sv_calls.vcf, SVStratify's calls, which share no sample; and sv_bad.vcf, whose second deletion has no ALGORITHMS and is refused unwrapped. The interval-overlap and window arguments carry their defaults and a value that breaks one pairing each; the sample-overlap ones are held at 0, since a truth genotype is stripped of its ECN and any positive threshold refuses the first comparison. --sequence-dictionary is held at sv.dict and --reference is sv_reference.fasta or unset; --confidence is a BED GATK never opens, or unset. sv_eval.vcf and sv_truth.vcf have indexes, the others none, and the engine's read arguments are each the corpus's BAM and its own index or unset; -L and -XL are a window and a site or unset, which the unindexed input refuses and the indexed one traverses. --stratify-config, --clustering-config and --track-intervals have no fixture, so the three --stratify-* thresholds they would use are varied without a stratification to reach.
 
 ### SVStratify
 
 Suites: `multi-variant-walker`, `sv-stratify`.
 
-Inputs: `sv.dict`, `sv_bad.vcf`, `sv_calls.vcf`, `sv_overlap.tsv`, `sv_rm.bed`, `sv_strata.tsv`, `sv_track_files.list`, `sv_track_names.list`.
+Inputs: `reads.bai`, `reads.bam`, `sv.dict`, `sv_bad.vcf`, `sv_calls.vcf`, `sv_overlap.tsv`, `sv_reference.fasta`, `sv_rm.bed`, `sv_strata.tsv`, `sv_track_files.list`, `sv_track_names.list`.
 
-Held out: `--exclude-intervals`, `--input`, `--intervals`, `--read-index`, `--reference`.
+Held out: none.
 
---variant is sv_calls.vcf, a DEL of each size, a DUP, an INS with and without a length, an INV and a BND to chr2, and sv_bad.vcf, whose second deletion has no ALGORITHMS and is refused inside apply. --stratify-config is sv_strata.tsv, exclusive strata over the RM track, and sv_overlap.tsv, two DEL strata one record can match at once over both tracks. --track-name and --track-intervals are RM and sv_rm.bed, or the two .list files naming both tracks; a row pairing one with the other is the count refusal, and sv_overlap.tsv under RM alone names an unregistered track. the output directory, which --split-output needs along with --output-prefix. The thresholds carry their defaults and a second value each. The reference and the engine's read and interval arguments are held out, the writer's index, filtering mode and command line held as elsewhere. --split-output and --allow-multiple-matches list the accepting value first, and --max-variants-per-shard is held at 0, so the rows that fill in the rest are runs rather than refusals. --sequence-dictionary is held at sv.dict: without it the tool refuses before anything else.
+--variant is sv_calls.vcf, a DEL of each size, a DUP, an INS with and without a length, an INV and a BND to chr2, and sv_bad.vcf, whose second deletion has no ALGORITHMS and is refused inside apply. --stratify-config is sv_strata.tsv, exclusive strata over the RM track, and sv_overlap.tsv, two DEL strata one record can match at once over both tracks. --track-name and --track-intervals are RM and sv_rm.bed, or the two .list files naming both tracks; a row pairing one with the other is the count refusal, and sv_overlap.tsv under RM alone names an unregistered track. the output directory, which --split-output needs along with --output-prefix. The thresholds carry their defaults and a second value each. sv_calls.vcf has an index and sv_bad.vcf none. --reference is sv_reference.fasta or unset, -L and -XL a window and a site or unset, and --input is reads.bam or unset and --read-index its index or unset, never an index without its BAM; the writer's index, filtering mode and command line are held as elsewhere. --split-output and --allow-multiple-matches list the accepting value first, and --max-variants-per-shard is held at 0, so the rows that fill in the rest are runs rather than refusals. --sequence-dictionary is held at sv.dict: without it the tool refuses before anything else.
 
 ### ScoreVariantAnnotations
 
@@ -2027,7 +2029,7 @@ Inputs: `both`, `nothing`, `score.py`, `snp`, `vr_calls.vcf`, `vr_calls2.vcf`.
 
 Held out: `--indel-calibration-sensitivity-threshold`, `--input`, `--read-index`, `--reference`, `--sequence-dictionary`, `--snp-calibration-sensitivity-threshold`, `--variant-output-filtering`.
 
-The variants, resources, annotations and modes are ExtractVariantAnnotations': the same walker's onTraversalStart runs, with the reserved snp label its refusal. The header goes to a writer nothing closes, and only then the backend. The reference runs in the Broad's image, so past the import, and the port behind a stand-in python ($past_the_interpreter); it/both and it/snp then hold scorers the reference trained before the rows (run_array.train_scorers), and nothing holds none. PYTHON_SCRIPT runs a script that does nothing, which the port refuses in its own words: those rows differ. The command line is held off because it records the date. The two thresholds are not varied: their bounds refuse a null where the parser reads one, so a row without them would stop before the pass. The dump covers their refusals.
+The variants, resources, annotations and modes are ExtractVariantAnnotations': the same walker's onTraversalStart runs, with the reserved snp label its refusal. The header goes to a writer nothing closes, and only then the backend. The reference runs in the Broad's image, so past the import, and the port behind a stand-in python ($past_the_interpreter); it/both and it/snp then hold scorers the reference trained before the rows (run_array.train_scorers), and nothing holds none. PYTHON_SCRIPT runs a script that does nothing, which the port refuses in its own words: those rows differ. The command line is held off because it records the date. The two thresholds (--snp-calibration-sensitivity-threshold, --indel-calibration-sensitivity-threshold) are not varied: their bounds refuse a null where the parser reads one, so a row without them would stop before the pass. The dump covers their refusals. --input, --read-index, --reference and --sequence-dictionary are not given, as for ExtractVariantAnnotations: the tool reads no base and no read, and a reference only rewrites the ##contig lines' assembly. --variant-output-filtering is held out: the port neither filters the scored records by it nor refuses a mode without -L, a port limitation.
 
 ### SelectVariants
 
@@ -2063,21 +2065,21 @@ Coordinate-sorted BAMs and a SAM, and queryname.bam and unmapped.bam, which the 
 
 Suites: `shift-fasta`.
 
-Inputs: none.
+Inputs: `reads.bai`, `reads.bam`.
 
-Held out: `--input`, `--read-index`.
+Held out: none.
 
-The tool overrides traverse() and loops over the reference's own dictionary, so the reference is the input and the corpus's two are the two rows: reference.fasta is one contig of a hundred thousand bases and other.fasta one of a thousand, which is a shift the chain file records at both scales. --shift-offset-list carries 100 and 0 for two different reasons. 100 shifts the contig; 0 is BELOW the range shiftContig works in, so that contig is dropped from all four outputs at once and the row measures a reference that comes out with no sequence in it. Both are lists of ONE value and both references have ONE contig, so the size check passes; the refusal it carries is measured by this tool's own golden, which is where a two-contig reference lives. --interval-file-name is a base name and not a path: the tool appends .intervals and ..shifted.intervals to it, so the fixture names the stem and the row compares two files. --line-width has a default and no bounds, so the inventory could not vary it; 7 breaks the output's lines mid-repeat, which is what makes the writer's running count observable. --input and --read-index are held out. This tool reads no reads at all, and the corpus's shared values are VCFs and BEDs, so every row would have measured a reader refusal on a file the tool never asks for.
+The tool overrides traverse() and loops over the reference's own dictionary, so the reference is the input and the corpus's two are the two rows: reference.fasta is one contig of a hundred thousand bases and other.fasta one of a thousand, which is a shift the chain file records at both scales. --shift-offset-list carries 100 and 0 for two different reasons. 100 shifts the contig; 0 is BELOW the range shiftContig works in, so that contig is dropped from all four outputs at once and the row measures a reference that comes out with no sequence in it. Both are lists of ONE value and both references have ONE contig, so the size check passes; the refusal it carries is measured by this tool's own golden, which is where a two-contig reference lives. --interval-file-name is a base name and not a path: the tool appends .intervals and ..shifted.intervals to it, so the fixture names the stem and the row compares two files. --line-width has a default and no bounds, so the inventory could not vary it; 7 breaks the output's lines mid-repeat, which is what makes the writer's running count observable. --input is reads.bam or unset and --read-index its index or unset, never an index without its BAM. This tool reads no reads at all, and the corpus's shared values are VCFs and BEDs, so every row would have measured a reader refusal on a file the tool never asks for.
 
 ### SiteDepthtoBAF
 
 Suites: `site-depth-to-baf`.
 
-Inputs: `baf_sites.vcf`, `baf_sites2.vcf`, `depth.sd.txt`, `sd.list`, `sv.dict`.
+Inputs: `baf_sites.vcf`, `baf_sites2.vcf`, `depth.sd.txt`, `reads.bai`, `reads.bam`, `sd.list`, `sv.dict`.
 
-Held out: `--exclude-intervals`, `--input`, `--intervals`, `--read-index`, `--reference`, `--sample-names`.
+Held out: `--exclude-intervals`, `--intervals`, `--reference`, `--sample-names`.
 
---site-depth is depth.sd.txt alone, one sample, or sd.list, which Barclay expands into both files: two samples per locus, so the median shift and the deviation test have something to act on, and a locus with one surviving sample is written as .50 whatever it measured. --baf-sites-vcf is baf_sites.vcf and baf_sites2.vcf, the same loci with ref and alt swapped, so the same depths give each sample the other fraction. Both hold an indel BAFSiteIterator skips. --min-total-depth 10 and 30, --max-std 0.2 and 0.05, --min-het-probability 0.5 and 0.9: each keeps a different set of the sites, since the depths are chosen to straddle each threshold. --baf-evidence-output carries a mixed-case name, which the codec lower-cases. --sequence-dictionary is held at sv.dict and --reference out: the tool asserts the sites VCF's dictionary IS the walk's, and a mismatch is an AssertionError whose message the port does not reproduce, so a row that varied either would measure that gap. --sample-names is held out: it reaches only a .bci output, and a .bci or block-compressed output is a refusal of the port's own. --input, --read-index, --intervals and --exclude-intervals are held out for the reasons CondenseDepthEvidence gives.
+--site-depth is depth.sd.txt alone, one sample, or sd.list, which Barclay expands into both files: two samples per locus, so the median shift and the deviation test have something to act on, and a locus with one surviving sample is written as .50 whatever it measured. --baf-sites-vcf is baf_sites.vcf and baf_sites2.vcf, the same loci with ref and alt swapped, so the same depths give each sample the other fraction. Both hold an indel BAFSiteIterator skips. --min-total-depth 10 and 30, --max-std 0.2 and 0.05, --min-het-probability 0.5 and 0.9: each keeps a different set of the sites, since the depths are chosen to straddle each threshold. --baf-evidence-output carries a mixed-case name, which the codec lower-cases. --sequence-dictionary is held at sv.dict and --reference out: the tool asserts the sites VCF's dictionary IS the walk's, and a mismatch is an AssertionError whose message the port does not reproduce, so a row that varied either would measure that gap. --sample-names is held out: it reaches only a .bci output, and a .bci or block-compressed output is a refusal of the port's own. --input is reads.bam or unset and --read-index its index or unset, never an index without its BAM. --intervals and --exclude-intervals are held out with CondenseDepthEvidence's.
 
 ### SortSamSpark
 
@@ -2155,7 +2157,7 @@ Inputs: `svd.bam`, `svd2.bam`, `svd_cnv.vcf`, `svd_coord.bam`, `svd_noncanonical
 
 Held out: `--intervals`, `--read-index`.
 
-svd.bam is queryname-sorted assembled contigs over svd_ref.fasta (chr1, chr2 and chrUn_alt), with their primary, supplementary and secondary lines as BWA writes them: a deletion called by two contigs, an insertion, a tandem duplication, a replacement written as a linked DEL and INS, both intra-chromosome strand switches, an inter-chromosome and a reference-order-swap breakend pair, a deletion on the reverse strand, one at MQ 25 (LOW_MQ at the default --min-mq and not at 20), one inside a single gapped alignment, a tandem contraction, a small duplication with inserted bases, a deletion whose contig also maps whole to chrUn_alt, one with a secondary line, an unmapped contig and an insertion whose middle maps at MQ 5. svd2.bam is three contigs of the same sample and no breakend; svd_coord.bam is them coordinate-sorted and indexed, the queryname refusal. --disable-read-filter NotSecondaryAlignmentReadFilter lets the secondary line in, which makes its contig ambiguous and drops a call; MappedReadFilter lets the unmapped contig in, which AlignmentInterval refuses on svd.bam and not on svd2.bam, which has none. --disable-tool-default-read-filters is forbidden with svd.bam: it is the same refusal as MappedReadFilter there, and on svd2.bam it is accepted. The contig with only supplementary lines (No primary line) is reached by --inverted-read-filter NotSupplementaryAlignmentReadFilter. --read-filter MappingQualityReadFilter drops the MQ 5 line (INSSEQ_MAP disappears) and PrimaryLineReadFilter leaves only the gapped call. --non-canonical-contig-names-file svd_noncanonical.txt names chrUn_alt, which turns an ambiguous contig into a deletion annotated with CTG_GOOD_NONCANONICAL_MAPPING; the other file names contigs the dictionary lacks, which changes nothing. --cnv-calls svd_cnv.vcf annotates svd2.bam's deletion and duplication with EXTERNAL_CNV_CALLS and refuses svd.bam, whose breakends have no end (the reference's own IllegalArgumentException). svd_other.fasta cuts chr2 to 2900 bases, which the dictionary validation refuses; it is forbidden without --disable-sequence-dictionary-validation, so its rows run on a reference that still holds every base a call asks for. The validation refusal is the read walkers' startup, measured by their arrays. Refusals compared by hand against the oracle, one run each, and left out of the rows they would spend: a file with no read group (svd_norg.bam, the sample refusal), a names file that is not there, copy-number calls for another sample (svd_cnv_other.vcf), a master dictionary the reads disagree with (svd_other.dict), and -L, which every queryname-sorted file refuses for want of an index; -XL alone varies instead and is refused the same way. The SVVCFWriter builds its own writer, so --create-output-variant-index, -md5, --sites-only-vcf-output and --max-variants-per-shard vary and change nothing, and a .vcf.gz output is plain text. --add-output-vcf-command-line is held at false for the reason every variant writer holds it: the line carries the run's date. --read-index is held out: a queryname-sorted file cannot be indexed, so the one index in the corpus belongs to the refused coordinate-sorted file. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags. The complex-event path (three or more alignments) is not in the corpus: the port refuses it as its own limitation.
+svd.bam is queryname-sorted assembled contigs over svd_ref.fasta (chr1, chr2 and chrUn_alt), with their primary, supplementary and secondary lines as BWA writes them: a deletion called by two contigs, an insertion, a tandem duplication, a replacement written as a linked DEL and INS, both intra-chromosome strand switches, an inter-chromosome and a reference-order-swap breakend pair, a deletion on the reverse strand, one at MQ 25 (LOW_MQ at the default --min-mq and not at 20), one inside a single gapped alignment, a tandem contraction, a small duplication with inserted bases, a deletion whose contig also maps whole to chrUn_alt, one with a secondary line, an unmapped contig and an insertion whose middle maps at MQ 5. svd2.bam is three contigs of the same sample and no breakend; svd_coord.bam is them coordinate-sorted and indexed, the queryname refusal. --disable-read-filter NotSecondaryAlignmentReadFilter lets the secondary line in, which makes its contig ambiguous and drops a call; MappedReadFilter lets the unmapped contig in, which AlignmentInterval refuses on svd.bam and not on svd2.bam, which has none. --disable-tool-default-read-filters is forbidden with svd.bam: it is the same refusal as MappedReadFilter there, and on svd2.bam it is accepted. The contig with only supplementary lines (No primary line) is reached by --inverted-read-filter NotSupplementaryAlignmentReadFilter. --read-filter MappingQualityReadFilter drops the MQ 5 line (INSSEQ_MAP disappears) and PrimaryLineReadFilter leaves only the gapped call. --non-canonical-contig-names-file svd_noncanonical.txt names chrUn_alt, which turns an ambiguous contig into a deletion annotated with CTG_GOOD_NONCANONICAL_MAPPING; the other file names contigs the dictionary lacks, which changes nothing. --cnv-calls svd_cnv.vcf annotates svd2.bam's deletion and duplication with EXTERNAL_CNV_CALLS and refuses svd.bam, whose breakends have no end (the reference's own IllegalArgumentException). svd_other.fasta cuts chr2 to 2900 bases, which the dictionary validation refuses; it is forbidden without --disable-sequence-dictionary-validation, so its rows run on a reference that still holds every base a call asks for. The validation refusal is the read walkers' startup, measured by their arrays. Refusals compared by hand against the oracle, one run each, and left out of the rows they would spend: a file with no read group (svd_norg.bam, the sample refusal), a names file that is not there, copy-number calls for another sample (svd_cnv_other.vcf), a master dictionary the reads disagree with (svd_other.dict), and -L (--intervals), which every queryname-sorted file refuses for want of an index; -XL alone varies instead and is refused the same way. The SVVCFWriter builds its own writer, so --create-output-variant-index, -md5, --sites-only-vcf-output and --max-variants-per-shard vary and change nothing, and a .vcf.gz output is plain text. --add-output-vcf-command-line is held at false for the reason every variant writer holds it: the line carries the run's date. --read-index is held out: a queryname-sorted file cannot be indexed, so the one index in the corpus belongs to the refused coordinate-sorted file. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags. The complex-event path (three or more alignments) is not in the corpus: the port refuses it as its own limitation.
 
 ### StructuralVariationDiscoveryPipelineSpark
 
@@ -2181,11 +2183,11 @@ The rich set of contigs, and one without breakends for --cnv-calls: a CNV file s
 
 Suites: `tag-germline-events`.
 
-Inputs: `normal.seg`, `normal2.seg`, `reference.fasta`, `regions.seg`, `tumour.seg`, `two_contigs.fasta`.
+Inputs: `normal.seg`, `normal2.seg`, `reads.bai`, `reads.bam`, `reference.fasta`, `regions.seg`, `tumour.seg`, `two_contigs.dict`, `two_contigs.fasta`.
 
-Held out: `--exclude-intervals`, `--input`, `--intervals`, `--read-index`, `--sequence-dictionary`.
+Held out: none.
 
---segments is the called tumour segments and regions.seg, whose CALL column has a neutral 0 and whose rows overlap, which the tagger refuses. --called-matched-normal-seg-file is normal.seg, one amplification matching a tumour segment's breakpoints within a few bases and one reciprocally overlapping another, and normal2.seg, a deletion matching exactly. --endpoint-padding is the default and 2, which loses the breakpoint match; --reciprocal-threshold is the default 0.75 and 0.95, which loses the overlap. --reference is two_contigs.fasta and reference.fasta, whose missing chr2 refuses regions.seg once it gets past the overlap check. --input, --read-index, --intervals and --exclude-intervals are held out for the reasons CondenseDepthEvidence gives, and --sequence-dictionary with them: beside a reference it is compared against that reference's, which measures the engine's validation rather than the tool. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags.
+--segments is the called tumour segments and regions.seg, whose CALL column has a neutral 0 and whose rows overlap, which the tagger refuses. --called-matched-normal-seg-file is normal.seg, one amplification matching a tumour segment's breakpoints within a few bases and one reciprocally overlapping another, and normal2.seg, a deletion matching exactly. --endpoint-padding is the default and 2, which loses the breakpoint match; --reciprocal-threshold is the default 0.75 and 0.95, which loses the overlap. --reference is two_contigs.fasta and reference.fasta, whose missing chr2 refuses regions.seg once it gets past the overlap check. --input is reads.bam or unset and --read-index its index or unset, never an index without its BAM; -L, -XL and --sequence-dictionary are a window, a site and two_contigs.dict, or unset: the tool reads no interval, so they reach the engine's validation, which the dictionary fails beside reference.fasta. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags.
 
 ### TrainVariantAnnotationsModel
 
@@ -2201,11 +2203,11 @@ The reference runs in the Broad's image, whose python gets it past the import, a
 
 Suites: `transfer-read-tags`.
 
-Inputs: `qname.bam`, `reads.bam`, `umi.bam`.
+Inputs: `qname.bam`, `reads.bai`, `reads.bam`, `umi.bam`.
 
-Held out: `--read-index`.
+Held out: none.
 
-qname.bam is the only QUERY-NAME sorted file in the corpus, and this tool refuses an aligned file whose header does not say so; reads.bam is the coordinate-sorted value beside it, so the argument has a row that traverses and a row that refuses. umi.bam is the unmapped side: one pair per query name, every read carrying RX and none carrying MI. reads.bam as the unmapped side is the other refusal, an aligned read whose name the unmapped file does not carry, which is the tool's IllegalStateException. --read-tags carries RX and MI for the same reason: the first is present on every unmapped read and the second on none, and a missing value is refused by name. --read-index is held out. Neither query-name sorted file can have an index, and the corpus's coordinate indexes belong to other files, so every row carrying one would measure a reader refusal rather than the tool.
+qname.bam is the only QUERY-NAME sorted file in the corpus, and this tool refuses an aligned file whose header does not say so; reads.bam is the coordinate-sorted value beside it, so the argument has a row that traverses and a row that refuses. umi.bam is the unmapped side: one pair per query name, every read carrying RX and none carrying MI. reads.bam as the unmapped side is the other refusal, an aligned read whose name the unmapped file does not carry, which is the tool's IllegalStateException. --read-tags carries RX and MI for the same reason: the first is present on every unmapped read and the second on none, and a missing value is refused by name. --read-index is reads.bai, beside reads.bam only, or unset.
 
 ### UnmarkDuplicates
 
@@ -2219,11 +2221,11 @@ Held out: none.
 
 Suites: `update-vcf-sequence-dictionary`.
 
-Inputs: `indexed.vcf`, `matching.dict`, `reads.bam`, `reads.vcf`.
+Inputs: `indexed.vcf`, `matching.dict`, `reads.bai`, `reads.bam`, `reads.vcf`.
 
-Held out: `--input`, `--read-index`, `--sequence-dictionary`.
+Held out: none.
 
---source-dictionary takes a dictionary out of four kinds of file, so it carries two of them: a `.dict` and a BAM. matching.dict agrees with the corpus's contig and reads.bam carries the same one in its header, which is what makes the two rows differ in the SOURCE rather than in the answer. indexed.vcf already declares a ##contig line, so every row needs --replace to get past onTraversalStart; reads.vcf declares none, which is the case the tool exists for. The pair is what makes the check observable. --add-output-vcf-command-line and --create-output-variant-index are held at false for the reason MethylationTypeCaller holds them: the first writes the run's own DATE into the header, and the second writes an index carrying the output file's last-modified time, so two runs minutes apart differ for a reason that is not the tool's. --input and --read-index are held out, as for RemoveNearbyIndels. --sequence-dictionary is held out, and the first measurement is why: all twenty-four rows were refused. Every row carries every argument in the domain, and this tool refuses the pair --sequence-dictionary and --source-dictionary outright, so an array holding both measures that one refusal and nothing else. The refusal itself is measured by the runner's own check and by the golden; what the array is for is the four kinds of source and the records they accept.
+--source-dictionary takes a dictionary out of four kinds of file, so it carries two of them: a `.dict` and a BAM. matching.dict agrees with the corpus's contig and reads.bam carries the same one in its header, which is what makes the two rows differ in the SOURCE rather than in the answer. indexed.vcf already declares a ##contig line, so every row needs --replace to get past onTraversalStart; reads.vcf declares none, which is the case the tool exists for. The pair is what makes the check observable. --add-output-vcf-command-line and --create-output-variant-index are held at false for the reason MethylationTypeCaller holds them: the first writes the run's own DATE into the header, and the second writes an index carrying the output file's last-modified time, so two runs minutes apart differ for a reason that is not the tool's. --input is reads.bam or unset and --read-index its index or unset, never an index without its BAM. --sequence-dictionary is matching.dict or unset; given on every row, it refused all twenty-four. Every row carries every argument in the domain, and this tool refuses the pair --sequence-dictionary and --source-dictionary outright, so an array holding both measures that one refusal and nothing else. The refusal itself is measured by the runner's own check and by the golden; what the array is for is the four kinds of source and the records they accept.
 
 ### UpdateVcfSequenceDictionary
 
@@ -2239,11 +2241,11 @@ picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFi
 
 Suites: `multi-variant-walker`, `vcf-comparator`.
 
-Inputs: none.
+Inputs: `reads.bai`, `reads.bam`.
 
-Held out: `--allow-new-stars`, `--allow-old-rms-mapping-quality-annotation-data`, `--annotation`, `--annotation-group`, `--annotations-to-exclude`, `--assembly-complexity-reference-mode`, `--dirichlet-keep-prior-in-count`, `--input`, `--positions-only`, `--read-index`.
+Held out: `--allow-old-rms-mapping-quality-annotation-data`, `--annotation`, `--annotation-group`, `--annotations-to-exclude`, `--assembly-complexity-reference-mode`, `--dirichlet-keep-prior-in-count`.
 
-Two pairs of inputs, each actual one difference away from its expected per site, in position order: a single-sample GVCF pair (QUAL, an INFO rank sum, the PLs and so the GQ, a genotype DP, the phasing, a dbSNP id, a GQ-zero variant actual lacks, a 1/2 made 0/1 and a filter) and a two-sample VCF pair (the site DP, InbreedingCoeff, QD, a multiallelic AC and a GQ). Which difference a row reaches first is what its tolerances decide, and the answer names it. --variant is TAGGED: the tool reads its inputs by tag, so each value is a whole set of tagged inputs (`$tagged`): a GVCF pair, the same GVCF twice with the tags reversed, the VCF pair, one single-sample VCF with no <NON_REF> under both tags, two inputs neither tagged expected, and one input alone. The last three are the three refusals before the comparison. No pair lets a record's genotypes leave an allele uncalled. Trimming that allele recomputes the record's annotations through GATK's annotation engine, which is not ported: the claim excludes those records, and --annotation, --annotation-group, --annotations-to-exclude, --pedigree and --founder-id, which configure that engine alone, are held out. --positions-only is mutually exclusive with eight of the other tolerances, and --allow-new-stars with --allow-extra-alleles: every row sets every argument, so both are held out, --positions-only because it has the most partners. --input and --read-index carry no value: the walker opens reads it never consults. --ignore-attribute carries the rank sum that differs and the site DP that differs, so each value silences a different complaint. --allow-old-rms-mapping-quality-annotation-data, --assembly-complexity-reference-mode and --dirichlet-keep-prior-in-count belong to annotations: each is refused without its plugin, and every row would set it. A run that finds nothing prints nothing, so every accepted row answers the same and distinct_outputs is one by construction: what varies is WHICH complaint a rejected row reports. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags.
+Two pairs of inputs, each actual one difference away from its expected per site, in position order: a single-sample GVCF pair (QUAL, an INFO rank sum, the PLs and so the GQ, a genotype DP, the phasing, a dbSNP id, a GQ-zero variant actual lacks, a 1/2 made 0/1 and a filter) and a two-sample VCF pair (the site DP, InbreedingCoeff, QD, a multiallelic AC and a GQ). Which difference a row reaches first is what its tolerances decide, and the answer names it. --variant is TAGGED: the tool reads its inputs by tag, so each value is a whole set of tagged inputs (`$tagged`): a GVCF pair, the same GVCF twice with the tags reversed, the VCF pair, one single-sample VCF with no <NON_REF> under both tags, two inputs neither tagged expected, and one input alone. The last three are the three refusals before the comparison. No pair lets a record's genotypes leave an allele uncalled. Trimming that allele recomputes the record's annotations through GATK's annotation engine, which is not ported: the claim excludes those records, and --annotation, --annotation-group, --annotations-to-exclude, --pedigree and --founder-id, which configure that engine alone, are held out. --positions-only is mutually exclusive with eight of the other tolerances, and --allow-new-stars with --allow-extra-alleles: each partner takes <unset>, and constraints keep the pairs apart. --input and --read-index carry no value: the walker opens reads it never consults. --ignore-attribute carries the rank sum that differs and the site DP that differs, so each value silences a different complaint. --allow-old-rms-mapping-quality-annotation-data, --assembly-complexity-reference-mode and --dirichlet-keep-prior-in-count belong to annotations: each is refused without its plugin, and every row would set it. A run that finds nothing prints nothing, so every accepted row answers the same and distinct_outputs is one by construction: what varies is WHICH complaint a rejected row reports. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags. --input is reads.bam or unset and --read-index its index or unset, never an index without its BAM.
 
 ### ValidateBasicSomaticShortMutations
 
@@ -2279,41 +2281,41 @@ va.vcf is three samples written out of order over va_ref.fasta (an AC repeat at 
 
 Suites: `multi-variant-walker`, `variant-eval`.
 
-Inputs: `cgv_ref.fasta`, `gg_dbsnp.vcf`, `ve_cnv.bed`, `ve_eval.vcf`, `ve_eval2.vcf`, `ve_strat.bed`, `ve_strat_noidx.bed`.
+Inputs: `cgv_ref.dict`, `cgv_ref.fasta`, `gg_dbsnp.vcf`, `mutect_t.bai`, `mutect_t.bam`, `ve_cnv.bed`, `ve_eval.vcf`, `ve_eval2.vcf`, `ve_strat.bed`, `ve_strat_noidx.bed`.
 
-Held out: `--ancestral-alignments`, `--input`, `--pedigree`, `--read-index`, `--sequence-dictionary`, `--variant-output-filtering`.
+Held out: `--ancestral-alignments`, `--pedigree`, `--variant-output-filtering`.
 
-ve_eval2.vcf is two diploid samples written by hand over cgv_ref.fasta: a SNP shared with ve_eval.vcf, a LowQual SNP, a deletion, an insertion, an MNP, an AC0 site, a doubly filtered triallelic SNP, a mixed site, a symbolic deletion, a phased SNP and a 20-base deletion on chr2. ve_eval.vcf is the reference's own GenotypeGVCFs over cg_combined.g.vcf, whose haploid sample VariantAFEvaluator refuses. It comes second, since the first value fills the rows. --stratification-module and --eval-module each name one module per row beside the standard ones, and not every module: AlleleFrequency, CpG, Contig and the rest cross into tens of thousands of states, and the reference ran out of heap on five of them together. Each was compared by hand against the oracle instead. Family and MendelianViolationEvaluator need a pedigree, which the port refuses, so --pedigree and --ancestral-alignments are held out and --list is held at false: all three are port limitations. --selectExps and --selectNames carry two paired values and no null, because a row pairing one with the other's absence measures one IllegalArgumentException on every such row. ve_strat_noidx.bed is refused at the first eval IntervalStratification queries, and ve_cnv.bed is indexed because VariantSummary queries it for a CNV with no comp. --input, --read-index, --sequence-dictionary and --variant-output-filtering are held out, as for CombineGVCFs, and the writer holds are the ones every variant tool keeps.
+ve_eval2.vcf is two diploid samples written by hand over cgv_ref.fasta: a SNP shared with ve_eval.vcf, a LowQual SNP, a deletion, an insertion, an MNP, an AC0 site, a doubly filtered triallelic SNP, a mixed site, a symbolic deletion, a phased SNP and a 20-base deletion on chr2. ve_eval.vcf is the reference's own GenotypeGVCFs over cg_combined.g.vcf, whose haploid sample VariantAFEvaluator refuses. It comes second, since the first value fills the rows. --stratification-module and --eval-module each name one module per row beside the standard ones, and not every module: AlleleFrequency, CpG, Contig and the rest cross into tens of thousands of states, and the reference ran out of heap on five of them together. Each was compared by hand against the oracle instead. Family and MendelianViolationEvaluator need a pedigree, which the port refuses, so --pedigree and --ancestral-alignments are held out and --list is held at false: all three are port limitations. --selectExps and --selectNames carry two paired values and no null, because a row pairing one with the other's absence measures one IllegalArgumentException on every such row. ve_strat_noidx.bed is refused at the first eval IntervalStratification queries, and ve_cnv.bed is indexed because VariantSummary queries it for a CNV with no comp. --input is mutect_t.bam or unset, --read-index its index or unset, never an index without its BAM, and --sequence-dictionary cgv_ref.dict or unset; --variant-output-filtering is held out, as for CombineGVCFs, and the writer holds are the ones every variant tool keeps.
 
 ### VariantFiltration
 
 Suites: `variant-filtration`.
 
-Inputs: `indexed.vcf`, `population.vcf`, `regions.bed`.
+Inputs: `indexed.vcf`, `population.vcf`, `reads.bai`, `reads.bam`, `regions.bed`.
 
-Held out: `--input`, `--read-index`.
+Held out: none.
 
-indexed.vcf and population.vcf: the first has a sample and a GT, the second an INFO field and no genotype column at all, so a genotype expression reaches something in one and nothing in the other. --filter-expression and --filter-name are read in step, and the expressions are a REAL literal comparison and a bare name, which are the two paths through commons-jexl's arithmetic that SelectVariants' array already measures. --mask takes the corpus's BED and its indexed VCF, because the tool reads a feature file of either kind and asks it only where its features are. --apply-allele-specific-filters is held at FALSE, and that is a claim about the PORT rather than about the tool: with it on, the reference writes an AS_FilterStatus VALUE per allele and applies the site filter name beside the mask one, and this port writes neither. The one row that carried it diverged in exactly that way, which is how the gap was found. --input and --read-index are held out: this tool reads no reads. --add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the reason every variant writer holds them: one writes the run's own time into the header and the other writes the output file's last-modified time into an index.
+indexed.vcf and population.vcf: the first has a sample and a GT, the second an INFO field and no genotype column at all, so a genotype expression reaches something in one and nothing in the other. --filter-expression and --filter-name are read in step, and the expressions are a REAL literal comparison and a bare name, which are the two paths through commons-jexl's arithmetic that SelectVariants' array already measures. --mask takes the corpus's BED and its indexed VCF, because the tool reads a feature file of either kind and asks it only where its features are. --apply-allele-specific-filters is held at FALSE, and that is a claim about the PORT rather than about the tool: with it on, the reference writes an AS_FilterStatus VALUE per allele and applies the site filter name beside the mask one, and this port writes neither. The one row that carried it diverged in exactly that way, which is how the gap was found. --input is reads.bam or unset and --read-index its index or unset, never an index without its BAM: this tool reads no reads, so the BAM reaches only the engine. --add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the reason every variant writer holds them: one writes the run's own time into the header and the other writes the output file's last-modified time into an index.
 
 ### VariantRecalibrator
 
 Suites: `multi-variant-walker`, `variant-recalibrator`.
 
-Inputs: `vr_aggregate.vcf`, `vr_calls.vcf`, `vr_calls2.vcf`, `vr_model.report`.
+Inputs: `reads.bai`, `reads.bam`, `vr_aggregate.vcf`, `vr_calls.vcf`, `vr_calls2.vcf`, `vr_model.report`.
 
-Held out: `--input`, `--read-index`, `--reference`, `--sequence-dictionary`.
+Held out: `--reference`, `--sequence-dictionary`.
 
---variant is vr_calls.vcf, vr_calls2.vcf (drawn from another seed, on positions of the other parity) or both, which MakeFixtures draws as 2,600 and 2,200 annotated calls over two contigs: SNPs, indels, two-allele SNPs, MIXED sites and spanning deletions, three quarters from a good cluster. --resource is a set of tagged resources: a training and truth set with a known set whose genotypes are sometimes 0/0 (which --trust-all-polymorphic decides), the same training set with a bad=true set, training and truth split over two files. --use-annotation, --variant and --truth-sensitivity-tranche are whole lists ($lists), since a model over one annotation is another model. --input-model is the reference's own --output-model over QD MQ FS SOR. The index is held off because a .idx records the output's modification time; the command line is held off because it records the date. --rscript-file without --dont-run-rscript is refused, the pinned container having no Rscript. --input, --read-index, --reference and --sequence-dictionary are not given: the tool reads no base and no read, and a reference only rewrites the ##contig lines' assembly. --output-model is held absent, and the reason is a-rank-is-not-a-byte's: the report prints every mean, covariance and weight at %.16E, and those digits come out of a variational Bayes loop that calls Math.pow millions of times. The port's pow is the host libm, which agrees with HotSpot's intrinsic on 99.94% of calls (docs/numeric-functions-a-ported-call-site-reaches.md), so a trained model matches the reference's to fifteen or sixteen digits and not always to seventeen: two of the first array's rows differed there and nowhere else. The scores the recal file carries at four decimals, the tranches and the plotting script do not reach those digits and are measured on every row; --input-model reads the reference's own report.
+--variant is vr_calls.vcf, vr_calls2.vcf (drawn from another seed, on positions of the other parity) or both, which MakeFixtures draws as 2,600 and 2,200 annotated calls over two contigs: SNPs, indels, two-allele SNPs, MIXED sites and spanning deletions, three quarters from a good cluster. --resource is a set of tagged resources: a training and truth set with a known set whose genotypes are sometimes 0/0 (which --trust-all-polymorphic decides), the same training set with a bad=true set, training and truth split over two files. --use-annotation, --variant and --truth-sensitivity-tranche are whole lists ($lists), since a model over one annotation is another model. --input-model is the reference's own --output-model over QD MQ FS SOR. The index is held off because a .idx records the output's modification time; the command line is held off because it records the date. --rscript-file without --dont-run-rscript is refused, the pinned container having no Rscript. --input is reads.bam or unset and --read-index its index or unset, never an index without its BAM. --reference and --sequence-dictionary are not given: the corpus has no reference over vr_calls.vcf's 2 Mb chr1, and a reference only rewrites the ##contig lines' assembly. --output-model is held absent, and the reason is a-rank-is-not-a-byte's: the report prints every mean, covariance and weight at %.16E, and those digits come out of a variational Bayes loop that calls Math.pow millions of times. The port's pow is the host libm, which agrees with HotSpot's intrinsic on 99.94% of calls (docs/numeric-functions-a-ported-call-site-reaches.md), so a trained model matches the reference's to fifteen or sixteen digits and not always to seventeen: two of the first array's rows differed there and nowhere else. The scores the recal file carries at four decimals, the tranches and the plotting script do not reach those digits and are measured on every row; --input-model reads the reference's own report.
 
 ### VariantsToTable
 
 Suites: `variants-to-table`.
 
-Inputs: `indexed.vcf`, `population.vcf`.
+Inputs: `indexed.vcf`, `population.vcf`, `reads.bai`, `reads.bam`.
 
-Held out: `--input`, `--read-index`.
+Held out: none.
 
-population.vcf is the corpus's only VCF with an INFO field, and it has no genotype columns at all; indexed.vcf is the other way round, one sample and a GT and no INFO. Between them every branch of onTraversalStart is reachable: the default column set differs, a field asked for by name is present in one file and missing in the other, and a genotype field asked for of a file with no samples is the run that empties the sample set and refuses when nothing else was asked for. AF is the field to ask for because population.vcf's last record carries TWO values for it, which is what --split-multi-allelic splits and what -ASF reads differently. --input and --read-index are held out. This tool reads no reads, and the corpus's shared value for --input is a VCF, which a reads source opens as a stream with no dictionary: the refusal that produces is measured by CountVariants, which shares this startup.
+population.vcf is the corpus's only VCF with an INFO field, and it has no genotype columns at all; indexed.vcf is the other way round, one sample and a GT and no INFO. Between them every branch of onTraversalStart is reachable: the default column set differs, a field asked for by name is present in one file and missing in the other, and a genotype field asked for of a file with no samples is the run that empties the sample set and refuses when nothing else was asked for. AF is the field to ask for because population.vcf's last record carries TWO values for it, which is what --split-multi-allelic splits and what -ASF reads differently. --input is reads.bam or unset and --read-index its index or unset, never an index without its BAM. This tool reads no reads, and the corpus's shared value for --input is a VCF, which a reads source opens as a stream with no dictionary: the refusal that produces is measured by CountVariants, which shares this startup.
 
 ### VcfFormatConverter
 
