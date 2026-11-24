@@ -27,10 +27,10 @@ open. Last updated 2026-11-24.
 
 | # | item | PR | state |
 |---|---|---|---|
-| R1 | Release workflow: `v*` tag → draft release, Linux x86-64, Linux arm64, macOS arm64, sha256, pinned 1.97.1, no `target-cpu=native`, smoke-tested on `qemu64` | gatk-rs #1511; picard-rs (release prep PR) | **amber**: dry run on the PR |
-| R2 | One version per workspace (`[workspace.package] version`) | the same PRs, and htsjdk-rs's | **amber** |
-| R3 | LICENSE, NOTICE and THIRD-PARTY-NOTICES cover GATK (Apache-2.0), Picard and htsjdk (MIT) and every ported third party; each archive carries the licence of every linked crate | the same PRs | **amber** |
-| R4 | README (install, usage, what is byte-identical and how it is proven), CHANGELOG, [known-limits.md](known-limits.md) | the same PRs | **amber** |
+| R1 | Release workflow: `v*` tag → draft release, Linux x86-64, Linux arm64, macOS arm64, sha256, pinned 1.97.1, no `target-cpu=native`, smoke-tested on `qemu64` | gatk-rs #1511; picard-rs #483 | **amber**: dry run on the PR |
+| R2 | One version per workspace (`[workspace.package] version`) | gatk-rs #1511, picard-rs #483, htsjdk-rs #289 | **amber** |
+| R3 | LICENSE, NOTICE and THIRD-PARTY-NOTICES cover GATK (Apache-2.0), Picard and htsjdk (MIT) and every ported third party; each archive carries the licence of every linked crate | gatk-rs #1511, picard-rs #483, htsjdk-rs #289 | **amber** |
+| R4 | README (install, usage, what is byte-identical and how it is proven), CHANGELOG, [known-limits.md](known-limits.md) | gatk-rs #1511, picard-rs #483 | **amber** |
 | R5 | crates.io | none | **later**: htsjdk-rs, picard-rs, bwa-mem4 and fgkl are git dependencies pinned by revision, which binaries accept and crates.io does not |
 
 ## Open questions for the maintainer
