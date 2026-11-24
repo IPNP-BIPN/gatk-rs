@@ -1,0 +1,157 @@
+name: Speed at scale
+
+# What the port costs against GATK 4.7.0.0 on a BAM of gigabytes, on x86-64 and on arm64
+# (Neoverse), at equal threads. `speed.yml` measures kilobyte covering-array rows on x86-64 only;
+# this measures the streaming paths (external sort, Spark writer, walkers) where memory and CPU
+# actually scale with the input. It is long (an hour or more per architecture), so it never runs on
+# a pull request or on main: run it by hand, or push a `speed-scale/**` branch to measure that
+# branch (a dispatch needs the file on the default branch; the branch trigger does not).
+#
+# GATK runs from the release zip the oracle image pins (same URL, same sha256, read from
+# tools/oracle/Dockerfile) on Temurin 17, on the host. The image itself cannot serve here: its
+# probe refuses any os.arch but amd64 by design, and running the reference on the host on both
+# architectures keeps the two the same kind of measurement.
+
+on:
+  push:
+    branches: ['speed-scale/**']
+  workflow_dispatch:
+    inputs:
+      gib:
+        description: Input BAM size in GiB
+        default: "2.5"
+      reps:
+        description: Repetitions per side (min wall/CPU, max RSS are reported)
+        default: "1"
+      java_options:
+        description: Extra --java-options for GATK (empty = JVM defaults, as a user gets them)
+        default: ""
+
+jobs:
+  measure:
+    name: "measure ${{ matrix.runner }} ${{ matrix.copy }}"
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix:
+        # ubuntu-latest lands on AMD EPYC 7763 (Zen 3, AVX2), EPYC 9V74/9V45 (Zen 4/5, AVX-512) or
+        # Intel Xeon 6975P-C (Granite Rapids, AVX-512), about one job in four on Intel in Nov 2026.
+        # The `intel-*` copies stop after the CPU check unless they land on Intel, so an Intel row is
+        # likely on each run at the price of a few seconds per miss.
+        include:
+          - { runner: ubuntu-latest, copy: any }
+          - { runner: ubuntu-24.04-arm, copy: any }
+          - { runner: ubuntu-latest, copy: intel-1, want: Intel }
+          - { runner: ubuntu-latest, copy: intel-2, want: Intel }
+          - { runner: ubuntu-latest, copy: intel-3, want: Intel }
+          - { runner: ubuntu-latest, copy: intel-4, want: Intel }
+          - { runner: ubuntu-latest, copy: intel-5, want: Intel }
+          - { runner: ubuntu-latest, copy: intel-6, want: Intel }
+    steps:
+      - name: Is this the CPU this copy wants?
+        id: cpu
+        env:
+          WANT: ${{ matrix.want }}
+        run: |
+          model=$(grep -m1 'model name' /proc/cpuinfo || echo none)
+          if [ -z "$WANT" ] || grep -q "$WANT" <<< "$model"; then echo go=1 >> "$GITHUB_OUTPUT"
+          else echo "landed on '$model', this copy wants '$WANT': nothing to measure" | tee -a "$GITHUB_STEP_SUMMARY"; fi
+
+      - uses: actions/checkout@v7
+        if: steps.cpu.outputs.go
+
+      - name: nasm, which isal-sys needs on x86-64
+        if: steps.cpu.outputs.go && runner.arch == 'X64'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq nasm
+
+      - uses: actions/setup-java@v5
+        if: steps.cpu.outputs.go
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: GATK 4.7.0.0, the oracle image's release zip
+        if: steps.cpu.outputs.go
+        run: |
+          version=$(sed -n 's/^ARG GATK_VERSION=//p' tools/oracle/Dockerfile)
+          sha=$(sed -n 's/^ARG GATK_SHA256=//p' tools/oracle/Dockerfile)
+          curl -fsSL -o /tmp/gatk.zip \
+            "https://github.com/broadinstitute/gatk/releases/download/$version/gatk-$version.zip"
+          echo "$sha  /tmp/gatk.zip" | sha256sum -c -
+          sudo unzip -q /tmp/gatk.zip -d /opt && sudo ln -s "/opt/gatk-$version" /opt/gatk
+          /opt/gatk/gatk --version
+
+      - name: rustup, if the image lacks it
+        if: steps.cpu.outputs.go
+        run: command -v rustup || { curl -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none; echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"; }
+
+      - uses: Swatinem/rust-cache@v2
+        if: steps.cpu.outputs.go
+
+      - name: Build the port binary
+        if: steps.cpu.outputs.go
+        run: cargo build --release -p gatk-cli
+
+      - name: Record the host CPU
+        if: steps.cpu.outputs.go
+        run: lscpu; grep -m1 -E '^(flags|Features)' /proc/cpuinfo; free -g; df -h / /mnt || true
+
+      - name: /work on the larger disk
+        if: steps.cpu.outputs.go
+        # timer.py works under /work; the input, the outputs and both sides' spills need ~10 GiB.
+        run: |
+          base=/
+          [ -d /mnt ] && [ "$(df --output=avail /mnt | tail -1)" -gt "$(df --output=avail / | tail -1)" ] && base=/mnt
+          sudo mkdir -p $base/work && sudo chown "$USER" $base/work
+          [ "$base" = / ] || sudo ln -s $base/work /work
+          df -h /work/
+
+      - name: The input BAM
+        if: steps.cpu.outputs.go
+        run: |
+          python3 tools/speed/scale_bam.py /work/in.bam "${{ inputs.gib || '2.5' }}"
+          ls -l /work/in.bam && cat /work/in.bam > /dev/null
+
+      - name: Measure
+        if: steps.cpu.outputs.go
+        env:
+          JAVA_OPTIONS: ${{ inputs.java_options }}
+        run: |
+          python3 tools/speed/scale.py --gatk /opt/gatk/gatk --port "$PWD/target/release/gatk" \
+            --bam /work/in.bam --threads "$(nproc)" --reps "${{ inputs.reps || '1' }}" \
+            --java-options "$JAVA_OPTIONS" --out "/tmp/scale-$(uname -m)-${{ matrix.copy }}.json" \
+            | tee /tmp/scale.txt
+          sed -n '/^\*\*/,$p' /tmp/scale.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        if: always() && steps.cpu.outputs.go
+        with:
+          name: scale-${{ matrix.runner }}-${{ matrix.copy }}
+          path: /tmp/scale-*.json
+
+  compare:
+    name: All hosts
+    needs: measure
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: scale-*
+          path: /tmp/scale
+          merge-multiple: true
+
+      - name: Tables, and the port's bytes across architectures
+        run: |
+          python3 tools/speed/scale.py --compare /tmp/scale/scale-*.json \
+            | tee /tmp/compare.md; status=${PIPESTATUS[0]}
+          cat /tmp/compare.md >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: scale-compare
+          path: /tmp/compare.md
