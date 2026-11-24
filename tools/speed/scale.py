@@ -123,7 +123,7 @@ def table(result):
 def compare(paths):
     results = [json.loads(Path(p).read_text()) for p in paths]
     out = [table(r) + "\n" for r in results]
-    out.append("| tool | " + " | ".join(r["host"]["arch"] for r in results) + " | port bytes identical |")
+    out.append("| tool | " + " | ".join(f"{r['host']['arch']} {r['host']['cpu']}" for r in results) + " | port bytes identical |")
     out.append("|---|" + "---|" * len(results) + "---|")
     same = True
     for i, row in enumerate(results[0]["rows"]):
