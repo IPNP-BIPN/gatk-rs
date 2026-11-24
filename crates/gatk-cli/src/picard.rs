@@ -412,6 +412,15 @@ pub(crate) fn write_vcf_with_dictionary(
 /// adds each record, at the stream's BGZF virtual offset BEFORE the record. The reference index of
 /// a feature is the order its contig first appeared in, not the dictionary's.
 fn tabix_order_refusal(text: &str, compressed: &[u8]) -> Option<Thrown> {
+    let offset_of = virtual_offsets(compressed);
+    let mut creator = TabixChecks::default();
+    record_features(text)
+        .find_map(|(at, contig, start, end)| creator.add(contig, start, end, offset_of(at)).err())
+}
+
+/// The BGZF virtual offset of each uncompressed offset of a block-compressed file, as
+/// `BlockCompressedOutputStream.getFilePointer` reports it while the file is written.
+fn virtual_offsets(compressed: &[u8]) -> impl Fn(usize) -> i64 {
     // (compressed address, first uncompressed byte, uncompressed length) of every block.
     let mut blocks = Vec::new();
     let (mut address, mut uncompressed) = (0usize, 0usize);
@@ -424,63 +433,116 @@ fn tabix_order_refusal(text: &str, compressed: &[u8]) -> Option<Thrown> {
         if end > compressed.len() || size < 26 {
             break;
         }
-        let length = u32::from_le_bytes(compressed[end - 4..end].try_into().ok()?) as usize;
+        let length = u32::from_le_bytes([
+            compressed[end - 4],
+            compressed[end - 3],
+            compressed[end - 2],
+            compressed[end - 1],
+        ]) as usize;
         blocks.push((address, uncompressed, length));
         address = end;
         uncompressed += length;
     }
-    let virtual_offset = |offset: usize| -> i64 {
+    move |offset: usize| -> i64 {
         blocks
             .iter()
             .find(|(_, first, length)| offset >= *first && offset < first + length)
             .map(|(block, first, _)| ((*block as i64) << 16) | (offset - first) as i64)
             .unwrap_or((address as i64) << 16)
-    };
-    let mut names: Vec<&str> = Vec::new();
-    let mut previous: Option<(usize, i64, i64, i64)> = None;
-    let mut offset = 0usize;
-    for line in text.split_inclusive('\n') {
-        let at = offset;
-        offset += line.len();
-        if line.starts_with('#') || line.trim().is_empty() {
-            continue;
-        }
-        let fields: Vec<&str> = line.trim_end_matches(['\n', '\r']).split('\t').collect();
-        let (contig, start) = (fields[0], fields.get(1)?.parse::<i64>().ok()?);
-        // `getEnd()`: the INFO `END` when there is one, else the last base of the REF allele.
-        let end = fields
-            .get(7)
-            .and_then(|info| info.split(';').find_map(|pair| pair.strip_prefix("END=")))
-            .and_then(|value| value.parse().ok())
-            .unwrap_or(start + fields.get(3).map_or(1, |reference| reference.len() as i64) - 1);
-        let index = if names.last() == Some(&contig) {
-            names.len() - 1
+    }
+}
+
+/// `(offset, contig, start, end)` of every record line of a VCF's text, up to the first whose POS
+/// does not parse.
+fn record_features(text: &str) -> impl Iterator<Item = (usize, &str, i64, i64)> {
+    text.split_inclusive('\n')
+        .scan(0usize, |offset, line| {
+            let at = *offset;
+            *offset += line.len();
+            Some((at, line))
+        })
+        .filter(|(_, line)| !line.starts_with('#') && !line.trim().is_empty())
+        .map_while(|(at, line)| {
+            let fields: Vec<&str> = line.trim_end_matches(['\n', '\r']).split('\t').collect();
+            let (contig, start) = (fields[0], fields.get(1)?.parse::<i64>().ok()?);
+            // `getEnd()`: the INFO `END` when there is one, else the last base of the REF allele.
+            let end = fields
+                .get(7)
+                .and_then(|info| info.split(';').find_map(|pair| pair.strip_prefix("END=")))
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(start + fields.get(3).map_or(1, |reference| reference.len() as i64) - 1);
+            Some((at, contig, start, end))
+        })
+}
+
+/// `TabixIndexCreator`'s refusals, fed one feature at a time by whichever writers hold it.
+#[derive(Default)]
+struct TabixChecks {
+    names: Vec<String>,
+    /// `previousFeature`: reference index, start, end, file position.
+    previous: Option<(usize, i64, i64, i64)>,
+    finalized: bool,
+}
+
+impl TabixChecks {
+    /// `addFeature(feature, filePosition)`.
+    fn add(&mut self, contig: &str, start: i64, end: i64, position: i64) -> Result<(), Thrown> {
+        let refused =
+            |message: String| Thrown::non_user("java.lang.IllegalArgumentException", message);
+        let index = if self.names.last().map(String::as_str) == Some(contig) {
+            self.names.len() - 1
         } else {
-            if names.contains(&contig) {
+            if self.names.iter().any(|name| name == contig) {
                 // shortcut: htsjdk prints the whole `VariantContext.toString()` here, which this
                 // does not reproduce; port it if a row ever reaches this before the check below.
-                return Some(Thrown::non_user(
-                    "java.lang.IllegalArgumentException",
-                    format!("Sequence {contig}:{start} added out sequence of order"),
-                ));
+                return Err(refused(format!(
+                    "Sequence {contig}:{start} added out sequence of order"
+                )));
             }
-            names.push(contig);
-            names.len() - 1
+            self.names.len()
         };
-        let position = virtual_offset(at);
-        if let Some((last_index, last_start, last_end, last_position)) = previous {
+        if let Some((last_index, last_start, last_end, last_position)) = self.previous {
             if (last_index, last_start) > (index, start) {
-                return Some(Thrown::non_user(
-                    "java.lang.IllegalArgumentException",
-                    format!(
-                        "Features added out of order: previous (TabixFeature{{referenceIndex={last_index}, start={last_start}, end={last_end}, featureStartFilePosition={last_position}, featureEndFilePosition=-1}}) > next (TabixFeature{{referenceIndex={index}, start={start}, end={end}, featureStartFilePosition={position}, featureEndFilePosition=-1}})"
-                    ),
-                ));
+                return Err(refused(format!(
+                    "Features added out of order: previous (TabixFeature{{referenceIndex={last_index}, start={last_start}, end={last_end}, featureStartFilePosition={last_position}, featureEndFilePosition=-1}}) > next (TabixFeature{{referenceIndex={index}, start={start}, end={end}, featureStartFilePosition={position}, featureEndFilePosition=-1}})"
+                )));
             }
+            Self::finalize_feature(last_position, position)?;
         }
-        previous = Some((index, start, end, position));
+        self.previous = Some((index, start, end, position));
+        if index == self.names.len() {
+            self.names.push(contig.to_string());
+        }
+        Ok(())
     }
-    None
+
+    /// `finalizeFeature`: the previous feature ends where the next one starts, in whichever file
+    /// that one went to.
+    fn finalize_feature(start: i64, end: i64) -> Result<(), Thrown> {
+        if start >= end {
+            return Err(Thrown::non_user(
+                "java.lang.IllegalArgumentException",
+                format!("Feature start position {start} >= feature end position {end}"),
+            ));
+        }
+        Ok(())
+    }
+
+    /// `finalizeIndex(finalFilePosition)`, which a creator two writers share is given once by
+    /// each. The second call adds the last contig's content again, one more than there are names.
+    fn finalize(&mut self, position: i64) -> Result<(), Thrown> {
+        if let Some((_, _, _, last_position)) = self.previous {
+            Self::finalize_feature(last_position, position)?;
+        }
+        if self.finalized && !self.names.is_empty() {
+            return Err(Thrown::non_user(
+                "java.lang.IllegalArgumentException",
+                "sequenceNames.size() != indices.length",
+            ));
+        }
+        self.finalized = true;
+        Ok(())
+    }
 }
 
 /// `COMPRESSION_LEVEL` when the command line set it, which `output_compression` reads in place of
