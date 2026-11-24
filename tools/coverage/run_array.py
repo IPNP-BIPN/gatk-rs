@@ -349,11 +349,11 @@ def read_output(out_dir, row_args=()):
                 continue
         indexed = path.with_name(path.name.removesuffix(".tbi"))
         if name.endswith(".tbi") and dated_bgzf(indexed):
-            # Its virtual offsets' block addresses follow the compressed size of the dated header
-            # block, so each is replaced by the block's ordinal; the rest is compared whole.
-            canonical = tabix_by_block_ordinal(gzip.decompress(raw), bgzf_block_starts(indexed.read_bytes()))
+            # Its virtual offsets follow the compressed size of the dated blocks and the date's
+            # width, so each is compared as the uncompressed position less the date's length.
+            canonical = tabix_canonical(gzip.decompress(raw), *bgzf_positions(indexed.read_bytes()))
             digest = hashlib.sha256(canonical.encode()).hexdigest()
-            parts.append(f"{name}: TABIX sha256={digest} (block addresses as ordinals)")
+            parts.append(f"{name}: TABIX sha256={digest} (offsets as positions, dates taken out)")
             continue
         if name.endswith(".png"):
             parts.append(f"{name}: {png_shape(raw)}")
@@ -529,26 +529,38 @@ def dated_bgzf(path):
     )
 
 
-def bgzf_block_starts(raw):
-    """Each BGZF block's compressed offset, mapped to its ordinal, the end of the file included."""
-    starts, offset = {}, 0
+def bgzf_positions(raw):
+    """Each BGZF block's compressed offset, mapped to the uncompressed position it starts at, and
+    the end of the file mapped to the total; and the uncompressed text."""
+    starts, offset, position = {}, 0, 0
     while offset + 18 <= len(raw) and raw[offset : offset + 2] == b"\x1f\x8b":
-        starts[offset] = len(starts)
-        # BSIZE, the block's size minus one, is the BC extra subfield's value (SAM spec 4.1).
-        offset += int.from_bytes(raw[offset + 16 : offset + 18], "little") + 1
-    starts[offset] = len(starts)
-    return starts
+        starts[offset] = position
+        # BSIZE, the block's size minus one, is the BC extra subfield's value; ISIZE ends the
+        # block (SAM spec 4.1).
+        end = offset + int.from_bytes(raw[offset + 16 : offset + 18], "little") + 1
+        position += int.from_bytes(raw[end - 4 : end], "little")
+        offset = end
+    starts[offset] = position
+    return starts, gzip.decompress(raw)
 
 
-def tabix_by_block_ordinal(index, starts):
-    """A tabix index (decompressed) as text, every virtual offset `block:within` by block ordinal.
+def tabix_canonical(index, starts, text):
+    """A tabix index (decompressed) as text, every virtual offset as an uncompressed position.
 
-    The layout is htsjdk's `TabixIndex.write`: eight ints and the names, then per contig the bins
-    (number, chunk count, chunk begin/end pairs) and the linear index. An offset that does not
-    start a block keeps its raw address after `?`, so a stray one still differs."""
+    The date in a `##GATKCommandLine` changes the compressed size of the blocks and, being
+    `November 24, 2026 at 9:18:21 PM UTC` wide or one wider, the uncompressed positions after it;
+    so a position counts the bytes before it minus the date's own. The layout is htsjdk's
+    `TabixIndex.write`: eight ints and the names, then per contig the bins (number, chunk count,
+    chunk begin/end pairs) and the linear index. An offset into no block start keeps its raw
+    address after `?`, so a stray one still differs."""
+    dates = [(m.end(2), m.end(2) - m.start(2)) for m in COMMAND_LINE_DATE_BYTES.finditer(text)]
+
     def voffset(value):
         block, within = value >> 16, value & 0xFFFF
-        return f"{starts[block]}:{within}" if block in starts else f"?{block}:{within}"
+        if block not in starts:
+            return f"?{block}:{within}"
+        position = starts[block] + within
+        return str(position - sum(length for end, length in dates if end <= position))
 
     def ints(at, count, width=4):
         return [int.from_bytes(index[at + i * width : at + (i + 1) * width], "little", signed=True)
@@ -573,6 +585,8 @@ def tabix_by_block_ordinal(index, starts):
 STARTED_ON = re.compile(r"^# Started on: .*$", re.MULTILINE)
 # `##GATKCommandLine=<...,Date="<now>">`, which every VCF written with its command line carries.
 COMMAND_LINE_DATE = re.compile(r'^(##GATKCommandLine=<.*?Date=")[^"]*(")', re.MULTILINE)
+# The same, on bytes, with the date itself as group 2 so its span can be measured.
+COMMAND_LINE_DATE_BYTES = re.compile(rb'^(##GATKCommandLine=<.*?Date=")([^"]*)"', re.MULTILINE)
 # `MafOutputRenderer.writeHeader` stamps the header with `new Date()` through the pattern
 # `yyyymmdd'T'hhmmss`, which is the wall clock again (the `mm` is minutes, not the month).
 MAF_DATE = re.compile(r"^(##  Funcotator \S+ \| Date )\d{8}T\d{6}( \| )", re.MULTILINE)

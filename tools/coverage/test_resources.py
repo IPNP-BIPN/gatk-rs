@@ -29,6 +29,7 @@ import json
 import re
 import sys
 import tempfile
+import zlib
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -1448,17 +1449,26 @@ def self_check():
     assert join_path("/a/b/", "c/") == "/a/b/c" and normalized("x//y/") == "x/y"
     assert Builder().add("O", "%s").tokens == ["--O", "%s"]
     assert gatk_extension("fasta") == ".fasta" and gatk_extension(".vcf") == ".vcf"
-    # Two BGZF blocks of 30 and 28 bytes: a virtual offset into the second is ordinal 1, and one
-    # that starts no block keeps its address.
-    blocks = b"\x1f\x8b" + bytes(14) + (29).to_bytes(2, "little") + bytes(12)
-    blocks += b"\x1f\x8b" + bytes(14) + (27).to_bytes(2, "little") + bytes(10)
-    starts = run_array.bgzf_block_starts(blocks)
-    assert starts == {0: 0, 30: 1, 58: 2}
-    tabix = b"".join(n.to_bytes(4, "little") for n in (0, 1, 0, 0, 0, 0, 0, 0, 2)) + b"1\x00"
-    tabix += b"".join(n.to_bytes(4, "little") for n in (1, 4681, 1))
-    tabix += ((30 << 16) | 5).to_bytes(8, "little") + ((31 << 16) | 0).to_bytes(8, "little")
-    tabix += (0).to_bytes(4, "little")
-    assert run_array.tabix_by_block_ordinal(tabix, starts).splitlines()[1] == "0 bin 4681 1:5 ?31:0"
+    # The same record behind dates of two widths, each side in two BGZF blocks: its offsets
+    # compare equal, and one into no block start keeps its address.
+    def bgzf(data):
+        deflate = zlib.compressobj(6, zlib.DEFLATED, -15)
+        body = deflate.compress(data) + deflate.flush()
+        size = (17 + len(body) + 8).to_bytes(2, "little")
+        trailer = zlib.crc32(data).to_bytes(4, "little") + len(data).to_bytes(4, "little")
+        return b"\x1f\x8b\x08\x04" + bytes(4) + b"\x00\xff\x06\x00BC\x02\x00" + size + body + trailer
+
+    canonical = []
+    for date in (b"9:00 PM", b"10:00 PM"):
+        head = b'##GATKCommandLine=<ID=X,Date="' + date + b'">\n'
+        raw = bgzf(head) + bgzf(b"1\t5\n")
+        starts, text = run_array.bgzf_positions(raw)
+        tabix = b"".join(n.to_bytes(4, "little") for n in (0, 1, 0, 0, 0, 0, 0, 0, 2)) + b"1\x00"
+        tabix += b"".join(n.to_bytes(4, "little") for n in (1, 4681, 1))
+        tabix += (len(bgzf(head)) << 16).to_bytes(8, "little") + (7 << 16).to_bytes(8, "little")
+        tabix += (0).to_bytes(4, "little")
+        canonical.append(run_array.tabix_canonical(tabix, starts, text).splitlines()[1])
+    assert canonical[0] == canonical[1] == "0 bin 4681 33 ?7:0", canonical
 
 
 def main(argv):
