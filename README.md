@@ -7,26 +7,52 @@ pinned reference build. Work in progress.
 > **This is not the official GATK.** It is an independent reimplementation, not affiliated
 > with or endorsed by the Broad Institute.
 
-## Reference version
+## Install
 
-Ported from GATK `4.6.2.0`, commit `76edc75c26504da94bbaee66584e107e76ee15de`, which pins:
+Each [release](https://github.com/IPNP-BIPN/gatk-rs/releases) carries one archive per platform:
+Linux x86-64, Linux arm64 and macOS arm64, each with its `.sha256`.
 
-| Dependency | Version |
-|---|---|
-| Picard | 3.4.0 |
-| htsjdk | 4.2.0 |
-| Barclay | 5.0.0 |
-| Intel GKL | 0.8.11 |
+```bash
+tar -xzf gatk-rs-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
+./gatk-rs-v0.1.0-x86_64-unknown-linux-gnu/bin/gatk --version
+```
 
-gatk-rs and htsjdk-rs use those exact pins. picard-rs does not: it moved ahead to Picard `3.5.0`
-(htsjdk `5.0.0`) on its own, once the cost of the move had been measured, so the three
-repositories no longer name one set of pins. What picard-rs needs from htsjdk 5.0.0 is three
-behaviours, and it ports them beside the Picard code that reaches them; see picard-rs
-[decision 0013](https://github.com/IPNP-BIPN/picard-rs/blob/main/docs/decisions/0013-picard-rs-moves-to-3.5.0-on-its-own.md).
+The Linux binaries need glibc 2.39 or later. Any x86-64 CPU will do: the binary is built without
+`target-cpu=native` and is tested on QEMU's baseline `qemu64` before it is released. To build from
+source instead, with the toolchain `rust-toolchain.toml` pins:
 
-GATK 4.7.0.0 (htsjdk 5.0.0, Picard 3.5.0) was released on 2026-08-18, and the target here
-deliberately stays at 4.6.2.0: 278 conformance suites in this repository are oracle-backed against
-it. The delta, and the order the rest of the move has to happen in, are recorded in ROADMAP.md.
+```bash
+cargo build --release -p gatk-cli
+```
+
+The crates are not on crates.io yet: htsjdk-rs, bwa-mem4 and fgkl are git dependencies pinned by
+revision, which a binary accepts and crates.io does not.
+
+## Usage
+
+`gatk` takes the reference's own command line, letter for letter, so a GATK command runs
+unchanged:
+
+```bash
+gatk HaplotypeCaller -R ref.fasta -I sample.bam -O sample.g.vcf.gz -ERC GVCF
+```
+
+What the port does not do, it refuses by name with a non-zero status (`gatk_rs::PortLimitation`) rather than
+guessing; the list is in [docs/known-limits.md](docs/known-limits.md).
+
+## What is byte-identical, and how it is proven
+
+The reference is **GATK 4.7.0.0** (`0cde69eed303`), with Picard 3.5.0 and htsjdk 5.0.0 underneath.
+htsjdk is [htsjdk-rs](https://github.com/IPNP-BIPN/htsjdk-rs), pinned by revision; the Picard tools
+GATK bundles are ported here, beside [picard-rs](https://github.com/IPNP-BIPN/picard-rs).
+
+All 312 tools of the reference's inventory are **oracle-backed**: on every CI run, the goldens are
+re-derived from the pinned GATK container on real x86-64 and the port's output is compared to them
+byte for byte. Over each tool's arguments, a t-wise covering array (t=2, t=3 on the critical path),
+a coverage-guided differential fuzzer and the reference's own integration tests say how much of
+that surface the comparison reaches. [docs/VALIDATION.md](docs/VALIDATION.md) gives the figures per
+tool; [docs/STATUS.md](docs/STATUS.md) the state and the cost against the reference. What is not
+claimed, and why, is in [docs/known-limits.md](docs/known-limits.md).
 
 ## Origin
 
@@ -111,9 +137,9 @@ matched exactly are quarantined with their measured divergence rate and reported
 
 | Repo | Ports | Depends on |
 |---|---|---|
-| `htsjdk-rs` | htsjdk 4.2.0 | (none) |
+| `htsjdk-rs` | htsjdk 5.0.0 | (none) |
 | `picard-rs` | Picard 3.5.0 | `htsjdk-rs` |
-| `gatk-rs` | GATK 4.6.2.0 | `picard-rs`, `htsjdk-rs` |
+| `gatk-rs` | GATK 4.7.0.0 | `htsjdk-rs` |
 
 The topology mirrors upstream. GATK's `Main.getPackageList()` returns
 `["org.broadinstitute.hellbender", "picard"]`, which is why `gatk MarkDuplicates` runs Picard's
@@ -144,7 +170,8 @@ longer bit-reproducible as a result. The trade was made deliberately.
 
 ## License
 
-Apache License 2.0, matching GATK. See `LICENSE`.
+Apache License 2.0, matching GATK. See `LICENSE` and `NOTICE`; the code ported from other projects
+(ISA-L, zlib, FDLIBM, Commons Math, LAPACK, numpy and others) is credited in `THIRD-PARTY-NOTICES`.
 
 Worth stating because it is easy to get wrong: GATK is **Apache 2.0**, not BSD-3-Clause.
 Several third-party descriptions (including the Homebrew formula) say BSD-3-Clause; the

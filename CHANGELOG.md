@@ -9,7 +9,7 @@ follow semantic versioning, because 0.x is what an unreleased port is.
 ## [0.1.0] - unreleased
 
 The first release. Reference: **GATK 4.7.0.0** (`0cde69eed303`), with Picard 3.5.0 and htsjdk
-5.0.0 underneath, through picard-rs and htsjdk-rs pinned by revision.
+5.0.0 underneath (htsjdk-rs pinned by revision).
 
 ### Added
 
@@ -23,5 +23,5 @@ The first release. Reference: **GATK 4.7.0.0** (`0cde69eed303`), with Picard 3.5
 
 ### Not yet
 
-- The crates are not on crates.io: htsjdk-rs, picard-rs, bwa-mem4 and fgkl are git dependencies
+- The crates are not on crates.io: htsjdk-rs, bwa-mem4 and fgkl are git dependencies
   pinned by revision, which a binary is fine with and crates.io is not. Publishing comes later.

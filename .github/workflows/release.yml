@@ -63,7 +63,7 @@ jobs:
         run: |
           mkdir -p "dist/${NAME}/bin"
           cp target/release/gatk "dist/${NAME}/bin/"
-          cp LICENSE NOTICE README.md CHANGELOG.md "dist/${NAME}/"
+          cp LICENSE NOTICE THIRD-PARTY-NOTICES README.md CHANGELOG.md "dist/${NAME}/"
           python3 tools/release/third_party.py gatk-cli "${{ matrix.target }}" > "dist/${NAME}/THIRD-PARTY-LICENSES.txt"
           tar -C dist -czf "${NAME}.tar.gz" "${NAME}"
           shasum -a 256 "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256"
