@@ -33,7 +33,9 @@ use crate::error_probabilities::{ErrorType, FilterAnswer};
 use crate::germline_filter::germline_error_probabilities;
 use crate::haplotype_filter::{FilteredHaplotypeFilter, PhasedGenotype};
 use crate::mutect_engine::round_finite_precision_errors;
-use crate::mutect_filter_list::{build_filters_list, FilterArguments, FILTERS};
+use crate::mutect_filter_list::{
+    build_filters_list, FilterArguments, FILTERS, READ_ORIENTATION_FILTER,
+};
 use crate::mutect_hard_filters as hard;
 use crate::normal_artifact_filter::normal_artifact_error_probabilities;
 use crate::slippage_filter::slippage_error_probabilities;
@@ -120,6 +122,15 @@ pub struct Record {
     pub in_panel_of_normals: bool,
     /// `getIndelLengths()`, `None` for a record that is not an indel.
     pub indel_lengths: Option<Vec<i32>>,
+    /// `ContaminationFilter`'s `contaminationBySample.getOrDefault(sample, estimate)` per genotype,
+    /// empty when no table names any sample, which is the estimate for all.
+    pub contaminations: Vec<f64>,
+    /// `GermlineFilter`'s minor allele fraction of the first segment over the record per genotype,
+    /// `0.5` without one; empty for all `0.5`.
+    pub minor_allele_fractions: Vec<f64>,
+    /// `ReadOrientationFilter.artifactProbability` per genotype, `None` for a record that is
+    /// neither a SNP nor an MNP, which the filter answers with zero.
+    pub read_orientation_posteriors: Option<Vec<f64>>,
 }
 
 impl Record {
@@ -239,6 +250,7 @@ pub fn error_probabilities_by_filter(
     for class in built {
         let identity = FILTERS
             .iter()
+            .chain([&READ_ORIENTATION_FILTER])
             .find(|filter| filter.class == class)
             .unwrap_or_else(|| panic!("no identity for {class}"));
         let outcome = answer_for(model, haplotype, strand_learned, arguments, record, class)?;
@@ -399,7 +411,11 @@ fn answer_for(
         "ContaminationFilter" => match &record.population_af {
             None => FilterOutcome::Nothing,
             Some(frequencies) => {
-                let contaminations = vec![arguments.contamination_estimate; record.genotypes.len()];
+                let contaminations = if record.contaminations.is_empty() {
+                    vec![arguments.contamination_estimate; record.genotypes.len()]
+                } else {
+                    record.contaminations.clone()
+                };
                 let probabilities = contamination_error_probabilities(
                     model,
                     Some(frequencies),
@@ -550,6 +566,29 @@ fn answer_for(
             .map_err(|error| refuse("java.lang.NumberFormatException", error))?;
             FilterOutcome::PerSite(*probabilities.first().unwrap_or(&0.0))
         }
+        // `calculateErrorProbability`: the alt-depth-weighted median of the tumour genotypes'
+        // posteriors, with no required annotation.
+        "ReadOrientationFilter" => match &record.read_orientation_posteriors {
+            None => FilterOutcome::PerSite(0.0),
+            Some(posteriors) => {
+                let mut pairs: Vec<(i32, f64)> = record
+                    .genotypes
+                    .iter()
+                    .zip(posteriors)
+                    .filter(|(genotype, _)| genotype.tumor)
+                    .map(|(genotype, posterior)| {
+                        let depths = &genotype.allele_depths;
+                        (
+                            depths.iter().sum::<i32>() - depths.first().copied().unwrap_or(0),
+                            *posterior,
+                        )
+                    })
+                    .collect();
+                FilterOutcome::PerSite(crate::allele_filter::weighted_median_posterior_probability(
+                    &mut pairs,
+                ))
+            }
+        },
         "FilteredHaplotypeFilter" => {
             let probabilities = haplotype
                 .error_probabilities(&record.phased_genotypes(), record.start, alternate_count)
@@ -557,7 +596,11 @@ fn answer_for(
             FilterOutcome::PerSite(*probabilities.first().unwrap_or(&0.0))
         }
         "GermlineFilter" => {
-            let minor = vec![0.5; record.genotypes.len()];
+            let minor = if record.minor_allele_fractions.is_empty() {
+                vec![0.5; record.genotypes.len()]
+            } else {
+                record.minor_allele_fractions.clone()
+            };
             let probabilities = germline_error_probabilities(
                 model,
                 record.tumor_log_10_odds.as_deref(),
@@ -632,6 +675,7 @@ mod tests {
             repeat_unit: Some("A".to_string()),
             in_panel_of_normals: false,
             indel_lengths: None,
+            ..Default::default()
         }
     }
 
