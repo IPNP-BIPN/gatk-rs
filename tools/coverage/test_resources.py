@@ -387,6 +387,13 @@ class Run:
         return path
 
 
+def gatk_extension(extension):
+    """`IOUtils.createTempFile`/`createTempPath` prepend the dot an extension lacks, unlike
+    `File.createTempFile`: `createTempFile("test", "fasta")` is `test<n>.fasta`."""
+    extension = jstr(extension)
+    return extension if extension.startswith(".") else f".{extension}"
+
+
 class Interpreter:
     def __init__(self, run, this):
         self.run, self.this, self.sources = run, this, run.sources
@@ -884,7 +891,7 @@ class Interpreter:
             if value is not NOT_NATIVE:
                 return value
         if name in ("createTempFile", "createTempPath"):
-            return self.run.temp(args[0] if args else "default", args[1] if len(args) > 1 else ".tmp")
+            return self.run.temp(args[0] if args else "default", gatk_extension(args[1]) if len(args) > 1 else ".tmp")
         if name == "createTempDir":
             return self.run.temp(args[0] if args else "tmp", "", directory=True)
         if name in ("getSafeNonExistentFile", "getSafeNonExistentPath", "getSafeNonExistentGATKPath"):
@@ -1001,7 +1008,7 @@ class Interpreter:
                 path = join_path(path, part)
             return path
         if cls == "IOUtils" and name in ("createTempFile", "createTempPath"):
-            return self.run.temp(args[0], args[1])
+            return self.run.temp(args[0], gatk_extension(args[1]))
         if cls in ("IOUtils", "Files") and name in ("createTempDir", "createTempDirectory"):
             return self.run.temp(args[0] if args else "tmp", "", directory=True)
         if cls == "File" and name in ("createTempFile",):
@@ -1440,6 +1447,7 @@ def self_check():
     assert inject_verbosity(["-I", "x"]) == ["-I", "x", "--verbosity", "ERROR"]
     assert join_path("/a/b/", "c/") == "/a/b/c" and normalized("x//y/") == "x/y"
     assert Builder().add("O", "%s").tokens == ["--O", "%s"]
+    assert gatk_extension("fasta") == ".fasta" and gatk_extension(".vcf") == ".vcf"
 
 
 def main(argv):

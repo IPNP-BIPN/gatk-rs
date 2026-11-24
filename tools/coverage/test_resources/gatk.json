@@ -1168,12 +1168,12 @@
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/engine/vcf_with_genotypes.vcf",
     "--sites-only-vcf-output",
     "-O",
-    "/work/out/GTStrippedOutput1vcf",
+    "/work/out/GTStrippedOutput1.vcf",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/GTStrippedOutput1vcf"
+    "/work/out/GTStrippedOutput1.vcf"
    ],
    "mkdir": []
   },
@@ -3286,7 +3286,7 @@
    "tool": "GatherVcfsCloud",
    "args": [
     "--output",
-    "/work/out/output1vcf.gz",
+    "/work/out/output1.vcf.gz",
     "--gather-type",
     "BLOCK",
     "--input",
@@ -3295,7 +3295,7 @@
     "ERROR"
    ],
    "touch": [
-    "/work/out/output1vcf.gz"
+    "/work/out/output1.vcf.gz"
    ],
    "mkdir": []
   },
@@ -10500,12 +10500,12 @@
     "-V",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/walkers/variantutils/SelectVariants/haploid-multisample.vcf",
     "-O",
-    "/work/out/output1vcf",
+    "/work/out/output1.vcf",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/output1vcf"
+    "/work/out/output1.vcf"
    ],
    "mkdir": []
   },
@@ -10715,7 +10715,7 @@
     "--variant",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/funcotator/vcfBugRepro.vcf",
     "--output",
-    "/work/out/tmpTestFilterParsing1vcf",
+    "/work/out/tmpTestFilterParsing1.vcf",
     "--reference",
     "/work/fixtures/src/test/resources/large/Homo_sapiens_assembly19.fasta.gz",
     "--data-sources-path",
@@ -10732,7 +10732,7 @@
     "true"
    ],
    "touch": [
-    "/work/out/tmpTestFilterParsing1vcf"
+    "/work/out/tmpTestFilterParsing1.vcf"
    ],
    "mkdir": []
   },
@@ -10744,7 +10744,7 @@
     "--variant",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/funcotator/FILTER_test.vcf",
     "--output",
-    "/work/out/tmpTestFilterParsing1vcf",
+    "/work/out/tmpTestFilterParsing1.vcf",
     "--reference",
     "/work/fixtures/src/test/resources/large/Homo_sapiens_assembly19.fasta.gz",
     "--data-sources-path",
@@ -10761,7 +10761,7 @@
     "true"
    ],
    "touch": [
-    "/work/out/tmpTestFilterParsing1vcf"
+    "/work/out/tmpTestFilterParsing1.vcf"
    ],
    "mkdir": []
   },
@@ -13507,14 +13507,14 @@
     "--input",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/spark/CreateHadoopBamSplittingIndex/count_reads_sorted.bam",
     "--output",
-    "/work/out/index1bam.sbi",
+    "/work/out/index1.bam.sbi",
     "--splitting-index-granularity",
     "-10",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/index1bam.sbi"
+    "/work/out/index1.bam.sbi"
    ],
    "mkdir": []
   },
@@ -13526,12 +13526,12 @@
     "--input",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/spark/CreateHadoopBamSplittingIndex/count_reads.cram",
     "--output",
-    "/work/out/index1bam.sbi",
+    "/work/out/index1.bam.sbi",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/index1bam.sbi"
+    "/work/out/index1.bam.sbi"
    ],
    "mkdir": []
   },
@@ -13543,12 +13543,12 @@
     "--input",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/spark/CreateHadoopBamSplittingIndex/count_reads.sam",
     "--output",
-    "/work/out/index1bam.sbi",
+    "/work/out/index1.bam.sbi",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/index1bam.sbi"
+    "/work/out/index1.bam.sbi"
    ],
    "mkdir": []
   },
@@ -13560,12 +13560,12 @@
     "--input",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/spark/CreateHadoopBamSplittingIndex/count_reads_sorted.bam",
     "--output",
-    "/work/out/index1bam.sbi",
+    "/work/out/index1.bam.sbi",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/index1bam.sbi"
+    "/work/out/index1.bam.sbi"
    ],
    "mkdir": []
   },
@@ -13577,14 +13577,14 @@
     "--input",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/spark/CreateHadoopBamSplittingIndex/count_reads_sorted.bam",
     "--output",
-    "/work/out/index2bam.sbi",
+    "/work/out/index2.bam.sbi",
     "--create-bai",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/index1bam.sbi",
-    "/work/out/index2bam.sbi"
+    "/work/out/index1.bam.sbi",
+    "/work/out/index2.bam.sbi"
    ],
    "mkdir": []
   },
@@ -13596,13 +13596,13 @@
     "--input",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/spark/CreateHadoopBamSplittingIndex/count_reads_sorted.bam",
     "--output",
-    "/work/out/index1bam.sbi",
+    "/work/out/index1.bam.sbi",
     "--create-bai",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/index1bam.sbi"
+    "/work/out/index1.bam.sbi"
    ],
    "mkdir": []
   },
@@ -13614,13 +13614,13 @@
     "--input",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/spark/CreateHadoopBamSplittingIndex/count_reads.bam",
     "--output",
-    "/work/out/index1bam.sbi",
+    "/work/out/index1.bam.sbi",
     "--create-bai",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/index1bam.sbi"
+    "/work/out/index1.bam.sbi"
    ],
    "mkdir": []
   },
@@ -15034,12 +15034,12 @@
     "--input",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/count_reads_sorted.bam",
     "--output",
-    "/work/out/count_reads_spark1count",
+    "/work/out/count_reads_spark1.count",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/count_reads_spark1count"
+    "/work/out/count_reads_spark1.count"
    ],
    "mkdir": []
   },
@@ -15053,12 +15053,12 @@
     "-L",
     "chr7:1-20",
     "--output",
-    "/work/out/count_reads_spark1count",
+    "/work/out/count_reads_spark1.count",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/count_reads_spark1count"
+    "/work/out/count_reads_spark1.count"
    ],
    "mkdir": []
   },
@@ -15072,12 +15072,12 @@
     "-L",
     "chr1",
     "--output",
-    "/work/out/count_reads_spark1count",
+    "/work/out/count_reads_spark1.count",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/count_reads_spark1count"
+    "/work/out/count_reads_spark1.count"
    ],
    "mkdir": []
   },
@@ -15093,12 +15093,12 @@
     "-L",
     "chr7",
     "--output",
-    "/work/out/count_reads_spark1count",
+    "/work/out/count_reads_spark1.count",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/count_reads_spark1count"
+    "/work/out/count_reads_spark1.count"
    ],
    "mkdir": []
   },
@@ -15112,12 +15112,12 @@
     "-XL",
     "chr7",
     "--output",
-    "/work/out/count_reads_spark1count",
+    "/work/out/count_reads_spark1.count",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/count_reads_spark1count"
+    "/work/out/count_reads_spark1.count"
    ],
    "mkdir": []
   },
@@ -15131,12 +15131,12 @@
     "-XL",
     "chr7:2-404",
     "--output",
-    "/work/out/count_reads_spark1count",
+    "/work/out/count_reads_spark1.count",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/count_reads_spark1count"
+    "/work/out/count_reads_spark1.count"
    ],
    "mkdir": []
   },
@@ -15154,12 +15154,12 @@
     "--interval-set-rule",
     "INTERSECTION",
     "--output",
-    "/work/out/count_reads_spark1count",
+    "/work/out/count_reads_spark1.count",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/count_reads_spark1count"
+    "/work/out/count_reads_spark1.count"
    ],
    "mkdir": []
   },
@@ -15175,12 +15175,12 @@
     "--interval-padding",
     "19",
     "--output",
-    "/work/out/count_reads_spark1count",
+    "/work/out/count_reads_spark1.count",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/count_reads_spark1count"
+    "/work/out/count_reads_spark1.count"
    ],
    "mkdir": []
   },
@@ -15194,12 +15194,12 @@
     "-L",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/chr7_1_20_interval.list",
     "--output",
-    "/work/out/count_reads_spark1count",
+    "/work/out/count_reads_spark1.count",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/count_reads_spark1count"
+    "/work/out/count_reads_spark1.count"
    ],
    "mkdir": []
   },
@@ -15215,12 +15215,12 @@
     "-XL",
     "chr7:2-100",
     "--output",
-    "/work/out/count_reads_spark1count",
+    "/work/out/count_reads_spark1.count",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/count_reads_spark1count"
+    "/work/out/count_reads_spark1.count"
    ],
    "mkdir": []
   },
@@ -15242,12 +15242,12 @@
     "-XL",
     "chr7:21-200",
     "--output",
-    "/work/out/count_reads_spark1count",
+    "/work/out/count_reads_spark1.count",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/count_reads_spark1count"
+    "/work/out/count_reads_spark1.count"
    ],
    "mkdir": []
   },
@@ -15922,14 +15922,14 @@
    "tool": "MarkDuplicatesSpark",
    "args": [
     "--output",
-    "/work/out/supplementaryReadUnmappedMate1bam",
+    "/work/out/supplementaryReadUnmappedMate1.bam",
     "--input",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/spark/pipelines/MarkDuplicatesSpark/hashCollisionedReads.bam",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/supplementaryReadUnmappedMate1bam"
+    "/work/out/supplementaryReadUnmappedMate1.bam"
    ],
    "mkdir": []
   },
@@ -15939,7 +15939,7 @@
    "tool": "MarkDuplicatesSpark",
    "args": [
     "--output",
-    "/work/out/supplementaryReadUnmappedMate1bam",
+    "/work/out/supplementaryReadUnmappedMate1.bam",
     "--input",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/walkers/MarkDuplicatesGATK/optical_dupes.bam",
     "--input",
@@ -15948,7 +15948,7 @@
     "ERROR"
    ],
    "touch": [
-    "/work/out/supplementaryReadUnmappedMate1bam"
+    "/work/out/supplementaryReadUnmappedMate1.bam"
    ],
    "mkdir": []
   },
@@ -15958,7 +15958,7 @@
    "tool": "MarkDuplicatesSpark",
    "args": [
     "--output",
-    "/work/out/supplementaryReadUnmappedMate1bam",
+    "/work/out/supplementaryReadUnmappedMate1.bam",
     "--input",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/walkers/MarkDuplicatesGATK/optical_dupes.bam",
     "--input",
@@ -15968,7 +15968,7 @@
     "ERROR"
    ],
    "touch": [
-    "/work/out/supplementaryReadUnmappedMate1bam"
+    "/work/out/supplementaryReadUnmappedMate1.bam"
    ],
    "mkdir": []
   },
@@ -15978,7 +15978,7 @@
    "tool": "MarkDuplicatesSpark",
    "args": [
     "--output",
-    "/work/out/supplementaryReadUnmappedMate1bam",
+    "/work/out/supplementaryReadUnmappedMate1.bam",
     "--input",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/walkers/MarkDuplicatesGATK/optical_dupes.bam",
     "--allow-multiple-sort-orders-in-input",
@@ -15990,7 +15990,7 @@
     "ERROR"
    ],
    "touch": [
-    "/work/out/supplementaryReadUnmappedMate1bam",
+    "/work/out/supplementaryReadUnmappedMate1.bam",
     "/work/out/markdups_metrics2.txt"
    ],
    "mkdir": []
@@ -16001,7 +16001,7 @@
    "tool": "MarkDuplicatesSpark",
    "args": [
     "--output",
-    "/work/out/supplementaryReadUnmappedMate1bam",
+    "/work/out/supplementaryReadUnmappedMate1.bam",
     "--input",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/walkers/MarkDuplicatesGATK/optical_dupes.queryname.bam",
     "--input",
@@ -16011,7 +16011,7 @@
     "ERROR"
    ],
    "touch": [
-    "/work/out/supplementaryReadUnmappedMate1bam"
+    "/work/out/supplementaryReadUnmappedMate1.bam"
    ],
    "mkdir": []
   },
@@ -16021,7 +16021,7 @@
    "tool": "MarkDuplicatesSpark",
    "args": [
     "--output",
-    "/work/out/testFlowModeFlag1bam",
+    "/work/out/testFlowModeFlag1.bam",
     "--input",
     "/work/fixtures/src/test/resources/large/input_jukebox_for_test.bam",
     "--intervals",
@@ -16033,7 +16033,7 @@
     "ERROR"
    ],
    "touch": [
-    "/work/out/testFlowModeFlag1bam",
+    "/work/out/testFlowModeFlag1.bam",
     "/work/out/testFlowModeFlag2.txt"
    ],
    "mkdir": []
@@ -16044,14 +16044,14 @@
    "tool": "MarkDuplicatesSpark",
    "args": [
     "--output",
-    "/work/out/supplementaryReadUnmappedMate1bam",
+    "/work/out/supplementaryReadUnmappedMate1.bam",
     "--input",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/spark/pipelines/MarkDuplicatesSpark/supplementaryReadUnmappedmate.bam",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/supplementaryReadUnmappedMate1bam"
+    "/work/out/supplementaryReadUnmappedMate1.bam"
    ],
    "mkdir": []
   },
@@ -16122,14 +16122,14 @@
     "--input",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/spark/pipelines/PrintReadsSpark/abam.bam",
     "--output",
-    "/work/out/prefix1out.bam",
+    "/work/out/prefix1.out.bam",
     "--splitting-index-granularity",
     "1",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/prefix1out.bam"
+    "/work/out/prefix1.out.bam"
    ],
    "mkdir": []
   },
@@ -16141,14 +16141,14 @@
     "--input",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/spark/pipelines/PrintReadsSpark/abam.bam",
     "--output",
-    "/work/out/prefix1out.bam",
+    "/work/out/prefix1.out.bam",
     "--splitting-index-granularity",
     "100",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/prefix1out.bam"
+    "/work/out/prefix1.out.bam"
    ],
    "mkdir": []
   },
@@ -18992,7 +18992,7 @@
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/validation/single.read.bam",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/validation/single.read.bam",
     "--O",
-    "/work/out/src_test_resources_org_broadinstitute_hellbender_toolstemp.diff1txt",
+    "/work/out/src_test_resources_org_broadinstitute_hellbender_toolstemp.diff1.txt",
     "--static-quantized-quals",
     "10",
     "--static-quantized-quals",
@@ -19015,7 +19015,7 @@
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/validation/single.read.bam",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/validation/another.single.read.bam",
     "--O",
-    "/work/out/src_test_resources_org_broadinstitute_hellbender_toolstemp.diff1txt",
+    "/work/out/src_test_resources_org_broadinstitute_hellbender_toolstemp.diff1.txt",
     "--static-quantized-quals",
     "10",
     "--static-quantized-quals",
@@ -19038,7 +19038,7 @@
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/validation/single.read.cram",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/validation/another.single.read.cram",
     "--O",
-    "/work/out/src_test_resources_org_broadinstitute_hellbender_toolstemp.diff1txt",
+    "/work/out/src_test_resources_org_broadinstitute_hellbender_toolstemp.diff1.txt",
     "-R",
     "/work/fixtures/src/test/resources/large/human_g1k_v37.20.21.fasta",
     "--static-quantized-quals",
@@ -19063,7 +19063,7 @@
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/validation/single.read.bam",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/validation/another.single.read.cram",
     "--O",
-    "/work/out/src_test_resources_org_broadinstitute_hellbender_toolstemp.diff1txt",
+    "/work/out/src_test_resources_org_broadinstitute_hellbender_toolstemp.diff1.txt",
     "-R",
     "/work/fixtures/src/test/resources/large/human_g1k_v37.20.21.fasta",
     "--static-quantized-quals",
@@ -19088,7 +19088,7 @@
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/validation/single.read.cram",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/validation/another.single.read.bam",
     "--O",
-    "/work/out/src_test_resources_org_broadinstitute_hellbender_toolstemp.diff1txt",
+    "/work/out/src_test_resources_org_broadinstitute_hellbender_toolstemp.diff1.txt",
     "-R",
     "/work/fixtures/src/test/resources/large/human_g1k_v37.20.21.fasta",
     "--static-quantized-quals",
@@ -21119,12 +21119,12 @@
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/engine/vcf_with_genotypes.vcf",
     "--sites-only-vcf-output",
     "-O",
-    "/work/out/GTStrippedOutput1vcf",
+    "/work/out/GTStrippedOutput1.vcf",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/GTStrippedOutput1vcf"
+    "/work/out/GTStrippedOutput1.vcf"
    ],
    "mkdir": []
   },
@@ -21426,14 +21426,14 @@
     "-I",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/BQSR/HiSeq.1mb.1RG.2k_lines.alternate_allaligned.bam",
     "--bqsr-recal-file",
-    "/work/out/emptyBqsrRecal1",
+    "/work/out/emptyBqsrRecal1.",
     "-O",
     "/dev/null",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/emptyBqsrRecal1"
+    "/work/out/emptyBqsrRecal1."
    ],
    "mkdir": []
   },
@@ -21587,12 +21587,12 @@
     "--input",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/utils/recalibration/HiSeq.1mb.1RG.sg5.table",
     "-O",
-    "/work/out/bqsr.1table",
+    "/work/out/bqsr.1.table",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/bqsr.1table"
+    "/work/out/bqsr.1.table"
    ],
    "mkdir": []
   },
@@ -21606,12 +21606,12 @@
     "--input",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/utils/recalibration/gatk4_chr21.tbl.gz",
     "-O",
-    "/work/out/bqsr2021.1table",
+    "/work/out/bqsr2021.1.table",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/bqsr2021.1table"
+    "/work/out/bqsr2021.1.table"
    ],
    "mkdir": []
   },
@@ -21623,14 +21623,14 @@
     "--I",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/downsampleByDuplicateSet/NA12878.grouped.bam",
     "--O",
-    "/work/out/downsampled1bam",
+    "/work/out/downsampled1.bam",
     "--fraction-to-keep",
     "1.0",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/downsampled1bam"
+    "/work/out/downsampled1.bam"
    ],
    "mkdir": []
   },
@@ -21644,12 +21644,12 @@
     "--fraction-to-keep",
     "0.0",
     "--O",
-    "/work/out/downasampled1bam",
+    "/work/out/downasampled1.bam",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/downasampled1bam"
+    "/work/out/downasampled1.bam"
    ],
    "mkdir": []
   },
@@ -21663,12 +21663,12 @@
     "--fraction-to-keep",
     "0.1",
     "--O",
-    "/work/out/downasampled1bam",
+    "/work/out/downasampled1.bam",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/downasampled1bam"
+    "/work/out/downasampled1.bam"
    ],
    "mkdir": []
   },
@@ -21682,12 +21682,12 @@
     "--fraction-to-keep",
     "0.3",
     "--O",
-    "/work/out/downasampled1bam",
+    "/work/out/downasampled1.bam",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/downasampled1bam"
+    "/work/out/downasampled1.bam"
    ],
    "mkdir": []
   },
@@ -21701,12 +21701,12 @@
     "--fraction-to-keep",
     "0.5",
     "--O",
-    "/work/out/downasampled1bam",
+    "/work/out/downasampled1.bam",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/downasampled1bam"
+    "/work/out/downasampled1.bam"
    ],
    "mkdir": []
   },
@@ -21720,12 +21720,12 @@
     "--fraction-to-keep",
     "1.0",
     "--O",
-    "/work/out/downasampled1bam",
+    "/work/out/downasampled1.bam",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/downasampled1bam"
+    "/work/out/downasampled1.bam"
    ],
    "mkdir": []
   },
@@ -22435,12 +22435,12 @@
     "--L",
     "1:10,000,201-10,000,301",
     "--output",
-    "/work/out/test1fasta",
+    "/work/out/test1.fasta",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/test1fasta"
+    "/work/out/test1.fasta"
    ],
    "mkdir": []
   },
@@ -22458,12 +22458,12 @@
     "--L",
     "2:10,000,201-10,000,301",
     "--output",
-    "/work/out/test1fasta",
+    "/work/out/test1.fasta",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/test1fasta"
+    "/work/out/test1.fasta"
    ],
    "mkdir": []
   },
@@ -22483,12 +22483,12 @@
     "--snp-mask-priority",
     "false",
     "--output",
-    "/work/out/test1fasta",
+    "/work/out/test1.fasta",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/test1fasta"
+    "/work/out/test1.fasta"
    ],
    "mkdir": []
   },
@@ -22508,12 +22508,12 @@
     "--snp-mask-priority",
     "true",
     "--output",
-    "/work/out/test1fasta",
+    "/work/out/test1.fasta",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/test1fasta"
+    "/work/out/test1.fasta"
    ],
    "mkdir": []
   },
@@ -22533,12 +22533,12 @@
     "--snp-mask-priority",
     "false",
     "--output",
-    "/work/out/test1fasta",
+    "/work/out/test1.fasta",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/test1fasta"
+    "/work/out/test1.fasta"
    ],
    "mkdir": []
   },
@@ -22558,12 +22558,12 @@
     "--snp-mask-priority",
     "true",
     "--output",
-    "/work/out/test1fasta",
+    "/work/out/test1.fasta",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/test1fasta"
+    "/work/out/test1.fasta"
    ],
    "mkdir": []
   },
@@ -22583,12 +22583,12 @@
     "--snp-mask-priority",
     "false",
     "--output",
-    "/work/out/test1fasta",
+    "/work/out/test1.fasta",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/test1fasta"
+    "/work/out/test1.fasta"
    ],
    "mkdir": []
   },
@@ -22608,12 +22608,12 @@
     "--snp-mask-priority",
     "true",
     "--output",
-    "/work/out/test1fasta",
+    "/work/out/test1.fasta",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/test1fasta"
+    "/work/out/test1.fasta"
    ],
    "mkdir": []
   },
@@ -22633,12 +22633,12 @@
     "--snp-mask-priority",
     "false",
     "--output",
-    "/work/out/test1fasta",
+    "/work/out/test1.fasta",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/test1fasta"
+    "/work/out/test1.fasta"
    ],
    "mkdir": []
   },
@@ -22658,12 +22658,12 @@
     "--snp-mask-priority",
     "true",
     "--output",
-    "/work/out/test1fasta",
+    "/work/out/test1.fasta",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/test1fasta"
+    "/work/out/test1.fasta"
    ],
    "mkdir": []
   },
@@ -22679,12 +22679,12 @@
     "--L",
     "1:10,000,000-10,000,100",
     "--output",
-    "/work/out/test1fasta",
+    "/work/out/test1.fasta",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/test1fasta"
+    "/work/out/test1.fasta"
    ],
    "mkdir": []
   },
@@ -22700,12 +22700,12 @@
     "--L",
     "1:10,000,000-10,000,100",
     "--output",
-    "/work/out/test1fasta",
+    "/work/out/test1.fasta",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/test1fasta"
+    "/work/out/test1.fasta"
    ],
    "mkdir": []
   },
@@ -22717,7 +22717,7 @@
     "--variant",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/walkers/fasta/FastaAlternateReferenceMaker/NA12878.WGS.b37.chr20.firstMB.vcf.gz",
     "--output",
-    "/work/out/alternate1fasta",
+    "/work/out/alternate1.fasta",
     "--reference",
     "/work/fixtures/src/test/resources/large/Homo_sapiens_assembly19.fasta.gz",
     "--use-iupac-sample",
@@ -22726,7 +22726,7 @@
     "ERROR"
    ],
    "touch": [
-    "/work/out/alternate1fasta"
+    "/work/out/alternate1.fasta"
    ],
    "mkdir": []
   },
@@ -22738,7 +22738,7 @@
     "--variant",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/walkers/fasta/FastaAlternateReferenceMaker/NA12878.WGS.b37.chr20.firstMB.vcf.gz",
     "--output",
-    "/work/out/alternate1fasta",
+    "/work/out/alternate1.fasta",
     "--reference",
     "/work/fixtures/src/test/resources/large/Homo_sapiens_assembly19.fasta.gz",
     "--use-iupac-sample",
@@ -22749,7 +22749,7 @@
     "ERROR"
    ],
    "touch": [
-    "/work/out/alternate1fasta"
+    "/work/out/alternate1.fasta"
    ],
    "mkdir": []
   },
@@ -22761,7 +22761,7 @@
     "--variant",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/walkers/fasta/FastaAlternateReferenceMaker/spanningDel.delOnly.starFirst.vcf",
     "--output",
-    "/work/out/alternate1fasta",
+    "/work/out/alternate1.fasta",
     "--reference",
     "/work/fixtures/src/test/resources/large/Homo_sapiens_assembly19.fasta.gz",
     "--L",
@@ -22770,7 +22770,7 @@
     "ERROR"
    ],
    "touch": [
-    "/work/out/alternate1fasta"
+    "/work/out/alternate1.fasta"
    ],
    "mkdir": []
   },
@@ -22782,7 +22782,7 @@
     "--variant",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/walkers/fasta/FastaAlternateReferenceMaker/spanningDel.delOnly.starFirst.vcf",
     "--output",
-    "/work/out/alternate1fasta",
+    "/work/out/alternate1.fasta",
     "--reference",
     "/work/fixtures/src/test/resources/large/Homo_sapiens_assembly19.fasta.gz",
     "--L",
@@ -22793,7 +22793,7 @@
     "ERROR"
    ],
    "touch": [
-    "/work/out/alternate1fasta"
+    "/work/out/alternate1.fasta"
    ],
    "mkdir": []
   },
@@ -22805,7 +22805,7 @@
     "--variant",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/walkers/fasta/FastaAlternateReferenceMaker/spanningDel.delOnly.starFirst.vcf",
     "--output",
-    "/work/out/alternate1fasta",
+    "/work/out/alternate1.fasta",
     "--reference",
     "/work/fixtures/src/test/resources/large/Homo_sapiens_assembly19.fasta.gz",
     "--L",
@@ -22816,7 +22816,7 @@
     "ERROR"
    ],
    "touch": [
-    "/work/out/alternate1fasta"
+    "/work/out/alternate1.fasta"
    ],
    "mkdir": []
   },
@@ -25311,7 +25311,7 @@
     "-L",
     "20:10000000-10010000",
     "-O",
-    "/work/out/GTStrippedOutput1vcf",
+    "/work/out/GTStrippedOutput1.vcf",
     "-pairHMM",
     "AVX_LOGLESS_CACHING",
     "--sites-only-vcf-output",
@@ -25323,7 +25323,7 @@
     "ERROR"
    ],
    "touch": [
-    "/work/out/GTStrippedOutput1vcf"
+    "/work/out/GTStrippedOutput1.vcf"
    ],
    "mkdir": []
   },
@@ -25339,7 +25339,7 @@
     "-L",
     "20:1-5000",
     "-O",
-    "/work/out/GTStrippedOutput1vcf",
+    "/work/out/GTStrippedOutput1.vcf",
     "-pairHMM",
     "AVX_LOGLESS_CACHING",
     "--allele-informative-reads-overlap-margin",
@@ -25354,7 +25354,7 @@
     "ERROR"
    ],
    "touch": [
-    "/work/out/GTStrippedOutput1vcf",
+    "/work/out/GTStrippedOutput1.vcf",
     "/work/out/assemblyregions2.igv"
    ],
    "mkdir": []
@@ -27921,14 +27921,14 @@
     "--input",
     "/work/fixtures/src/test/resources/transcriptome_query_sorted_abbr_header.bam",
     "--output",
-    "/work/out/output1bam",
+    "/work/out/output1.bam",
     "--XL",
     "/work/fixtures/src/test/resources/gencode_v19_MT_transcriptome_abbr_header.interval_list",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/output1bam"
+    "/work/out/output1.bam"
    ],
    "mkdir": []
   },
@@ -36081,7 +36081,7 @@
     "-V",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/walkers/variantutils/SelectVariants/hgdb_sv_multi_sample_mini.vcf",
     "-O",
-    "/work/out/multiple_jexl_test1vcf",
+    "/work/out/multiple_jexl_test1.vcf",
     "-select",
     "SVTYPE == 'DEL'",
     "-select",
@@ -36090,7 +36090,7 @@
     "ERROR"
    ],
    "touch": [
-    "/work/out/multiple_jexl_test1vcf"
+    "/work/out/multiple_jexl_test1.vcf"
    ],
    "mkdir": []
   },
@@ -36102,14 +36102,14 @@
     "-V",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/walkers/variantutils/SelectVariants/hgdb_sv_multi_sample_mini.vcf",
     "-O",
-    "/work/out/multiple_jexl_test1vcf",
+    "/work/out/multiple_jexl_test1.vcf",
     "--select",
     "SVTYPE == 'DEL' && AC > 0",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/multiple_jexl_test1vcf"
+    "/work/out/multiple_jexl_test1.vcf"
    ],
    "mkdir": []
   },
@@ -36121,14 +36121,14 @@
     "-V",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/walkers/variantutils/SelectVariants/hgdb_sv_multi_sample_mini.vcf",
     "-O",
-    "/work/out/jexl_genotype_test1vcf",
+    "/work/out/jexl_genotype_test1.vcf",
     "-select-genotype",
     "GQ > 1",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/jexl_genotype_test1vcf"
+    "/work/out/jexl_genotype_test1.vcf"
    ],
    "mkdir": []
   },
@@ -36140,14 +36140,14 @@
     "-V",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/walkers/variantutils/SelectVariants/hgdb_sv_multi_sample_mini.vcf",
     "-O",
-    "/work/out/jexl_genotype_test1vcf",
+    "/work/out/jexl_genotype_test1.vcf",
     "-select",
     "vc.getGenotype('__HGDP00029__').getGQ() > 1",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/jexl_genotype_test1vcf"
+    "/work/out/jexl_genotype_test1.vcf"
    ],
    "mkdir": []
   },
@@ -36159,15 +36159,15 @@
     "-V",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/walkers/variantutils/SelectVariants/haploid-multisample.vcf",
     "-O",
-    "/work/out/jexl_info1vcf",
+    "/work/out/jexl_info1.vcf",
     "-select",
     "DP > 20",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/jexl_info1vcf",
-    "/work/out/jexl_genotype2vcf"
+    "/work/out/jexl_info1.vcf",
+    "/work/out/jexl_genotype2.vcf"
    ],
    "mkdir": []
   },
@@ -36179,15 +36179,15 @@
     "-V",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/walkers/variantutils/SelectVariants/haploid-multisample.vcf",
     "-O",
-    "/work/out/jexl_genotype2vcf",
+    "/work/out/jexl_genotype2.vcf",
     "-select-genotype",
     "DP > 20",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/jexl_info1vcf",
-    "/work/out/jexl_genotype2vcf"
+    "/work/out/jexl_info1.vcf",
+    "/work/out/jexl_genotype2.vcf"
    ],
    "mkdir": []
   },
@@ -36199,7 +36199,7 @@
     "-V",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/walkers/variantutils/SelectVariants/hgdb_sv_multi_sample_mini.vcf",
     "-O",
-    "/work/out/jexl_genotype_info_test1vcf",
+    "/work/out/jexl_genotype_info_test1.vcf",
     "-select",
     "SVTYPE == 'DEL'",
     "-select-genotype",
@@ -36208,7 +36208,7 @@
     "ERROR"
    ],
    "touch": [
-    "/work/out/jexl_genotype_info_test1vcf"
+    "/work/out/jexl_genotype_info_test1.vcf"
    ],
    "mkdir": []
   },
@@ -36220,14 +36220,14 @@
     "-V",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/walkers/variantutils/SelectVariants/hgdb_sv_multi_sample_mini.vcf",
     "-O",
-    "/work/out/jexl_genotype_info_mixup_test1vcf",
+    "/work/out/jexl_genotype_info_mixup_test1.vcf",
     "-select-genotype",
     "SVTYPE == 'DEL'",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/jexl_genotype_info_mixup_test1vcf"
+    "/work/out/jexl_genotype_info_mixup_test1.vcf"
    ],
    "mkdir": []
   },
@@ -36239,14 +36239,14 @@
     "-V",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/walkers/variantutils/SelectVariants/hgdb_sv_multi_sample_mini.vcf",
     "-O",
-    "/work/out/jexl_genotype_info_mixup_test1vcf",
+    "/work/out/jexl_genotype_info_mixup_test1.vcf",
     "-select",
     "GQ > 60",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/jexl_genotype_info_mixup_test1vcf"
+    "/work/out/jexl_genotype_info_mixup_test1.vcf"
    ],
    "mkdir": []
   },
@@ -36258,14 +36258,14 @@
     "-V",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/walkers/variantutils/SelectVariants/tetraploid-multisample-sac.g.vcf",
     "-O",
-    "/work/out/jexl_genotype_info_test1vcf",
+    "/work/out/jexl_genotype_info_test1.vcf",
     "-fraction",
     "0.5",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/jexl_genotype_info_test1vcf"
+    "/work/out/jexl_genotype_info_test1.vcf"
    ],
    "mkdir": []
   },
@@ -36277,7 +36277,7 @@
     "-V",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/walkers/variantutils/SelectVariants/hgdb_sv_multi_sample_mini.vcf",
     "-O",
-    "/work/out/jexl_before_test1vcf",
+    "/work/out/jexl_before_test1.vcf",
     "-select",
     "SVTYPE == 'DEL'",
     "-select",
@@ -36288,8 +36288,8 @@
     "ERROR"
    ],
    "touch": [
-    "/work/out/jexl_before_test1vcf",
-    "/work/out/jexl_after_test2vcf"
+    "/work/out/jexl_before_test1.vcf",
+    "/work/out/jexl_after_test2.vcf"
    ],
    "mkdir": []
   },
@@ -36301,7 +36301,7 @@
     "-V",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/walkers/variantutils/SelectVariants/hgdb_sv_multi_sample_mini.vcf",
     "-O",
-    "/work/out/jexl_after_test2vcf",
+    "/work/out/jexl_after_test2.vcf",
     "-select",
     "SVTYPE == 'DEL'",
     "-select",
@@ -36310,8 +36310,8 @@
     "ERROR"
    ],
    "touch": [
-    "/work/out/jexl_before_test1vcf",
-    "/work/out/jexl_after_test2vcf"
+    "/work/out/jexl_before_test1.vcf",
+    "/work/out/jexl_after_test2.vcf"
    ],
    "mkdir": []
   },
