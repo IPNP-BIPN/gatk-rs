@@ -94,3 +94,24 @@ fn strict_and_the_index_are_the_two_refusals() {
         );
     }
 }
+
+#[test]
+fn a_strict_refusal_stops_the_stream_after_the_records_before_it() {
+    let text = golden();
+    let input = value(&text, "input", "strict");
+    let streamed =
+        gatk_tools::split_vcfs::split_stream(&input, true, true).expect("no reader refusal");
+    let error = split(&input, true, true).expect_err("a refusal");
+    assert_eq!(
+        streamed
+            .unexpected
+            .map(gatk_tools::split_vcfs::SplitError::UnexpectedType),
+        Some(error)
+    );
+    // Every record written went to one of the two files, in the order the writers saw them.
+    let records = |file: &str| file.lines().filter(|line| !line.starts_with('#')).count();
+    assert_eq!(
+        streamed.routed.len(),
+        records(&streamed.snps) + records(&streamed.indels)
+    );
+}

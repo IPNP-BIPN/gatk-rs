@@ -1,5 +1,8 @@
 //! What a read walker does with a file that is not a BAM.
 //!
+//! SAM text that parses and a CRAM given `--reference` are READ, transcoded to an in-memory BAM by
+//! `gatk-cli`'s `transcode_reads`; what is left here is the file that is neither.
+//!
 //! `ReadsDataSource` opens whatever it is given and only then finds out what it is, so the
 //! refusals a walker makes are the READER'S rather than the tool's, and there are three of them
 //! with different statuses.
