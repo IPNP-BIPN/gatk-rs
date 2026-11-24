@@ -18,6 +18,11 @@
     "timeout_seconds": 1500,
     "classpath": "/gatk/gatk-package-4.7.0.0-local.jar"
   },
+  "htsget_server": {
+    "$why": "HtsgetReader's covering array needs an htsget server to answer its rows, and the pinned image has none. umccr's htsget-rs 0.23.0, pinned by digest: a ticket server over TLS and a data server answering the Range headers its tickets carry, serving files of the coverage corpus from a directory. tools/coverage/run_array.py starts it on a network of its own beside the rows.",
+    "image": "ghcr.io/umccr/htsget-rs@sha256:4aac1aa8ddc1aa13ecd62f8ccd2ea941cfe3d1f08ea193dc056f49076c423098",
+    "platform": "linux/amd64"
+  },
   "ci": {
     "suites_per_job": 5,
     "$why": "Suites share a job because each job restores the oracle image once."
