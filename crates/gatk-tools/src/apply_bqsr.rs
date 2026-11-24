@@ -140,6 +140,59 @@ pub fn apply_bqsr_with(
     .map_err(ApplyBqsrError::Reads)
 }
 
+/// [`apply_bqsr_with`] written to `output` as the reads arrive: one read is held at a time, not
+/// the BAM. Each read is filtered, recalibrated and written before the next is decoded, which is
+/// the reference's own order. A refusal partway leaves `output` as it was (see
+/// [`crate::sam_output::write_bam_file`]).
+#[allow(clippy::too_many_arguments)]
+pub fn apply_bqsr_to(
+    output: &std::path::Path,
+    source: &ReadsDataSource,
+    recal_text: &str,
+    arguments: &ApplyBqsrArguments,
+    options: &Options,
+    filter: &dyn Fn(&BamRecord) -> bool,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
+) -> Result<Result<crate::sam_output::Written, std::io::Error>, ApplyBqsrError> {
+    let mut report = RecalibrationReport::parse(recal_text).map_err(ApplyBqsrError::Report)?;
+    let mut transformer = BqsrReadTransformer::new(
+        source.header(),
+        &mut report.tables,
+        &mut report.quantization_info,
+        &report.covariates,
+        arguments,
+    )
+    .map_err(ApplyBqsrError::Transform)?;
+    let records = crate::read_walker::traverse_iter(source, &options.intervals, false, filter)
+        .map_err(ApplyBqsrError::Reads)?;
+    // The writer's stream carries only a ReadsError, so a refusal of the transformer is kept here
+    // and the stream ends with a placeholder the caller never sees.
+    let refused = std::cell::RefCell::new(None);
+    let recalibrated = records.map(|record| {
+        record.and_then(|record| {
+            transformer.apply(&record).map_err(|error| {
+                *refused.borrow_mut() = Some(error);
+                ReadsError::Malformed(String::new())
+            })
+        })
+    });
+    let out_header = header_for_sam_writer(source.header(), TOOL_NAME, options);
+    let written = crate::sam_output::write_bam_file(
+        output,
+        &out_header,
+        recalibrated,
+        options.create_output_bam_index,
+        level,
+        deflater,
+    );
+    match (written, refused.into_inner()) {
+        (_, Some(error)) => Err(ApplyBqsrError::Transform(error)),
+        (Err(error), None) => Err(ApplyBqsrError::Reads(error)),
+        (Ok(written), None) => Ok(written),
+    }
+}
+
 /// `BQSRReadTransformer` over reads already filtered, which `ApplyBQSR` shares with the two Spark
 /// tools that apply a table. `ApplyBQSRSparkFn` builds one transformer per partition, and one
 /// partition is one transformer.
