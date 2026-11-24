@@ -52,11 +52,17 @@ INCLUDE = re.compile(r'include_str!\s*\(\s*"([^"]+\.metal)"\s*\)')
 
 
 def strip_comments(text: str) -> str:
+    """Return the source with `/* */` comments turned to a space and `//` comments removed."""
     text = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
     return re.sub(r"//[^\n]*", "", text)
 
 
 def check(root: pathlib.Path) -> list[str]:
+    """Every violation of the rule in the tree at `root`, as `path[:line]: reason` strings.
+
+    Covers the kernel sources against the record, the forbidden constructs, floating point in an
+    integer kernel, and the host code that compiles a kernel source.
+    """
     errors = []
     record_path = root / RECORD
     record = json.loads(record_path.read_text()) if record_path.exists() else {"sources": {}}
@@ -111,6 +117,10 @@ def check(root: pathlib.Path) -> list[str]:
 
 
 def self_test() -> int:
+    """Plant each violation in a scratch copy of the tree and check each is caught.
+
+    Also checks the clean tree passes. Returns 1 when any check failed, else 0.
+    """
     failures = []
     if check(ROOT):
         failures.append("the clean tree is not clean")
@@ -141,11 +151,13 @@ def self_test() -> int:
                 failures.append(f"not caught: {text.strip()} in {relative}")
     for failure in failures:
         print(failure)
-    print("self-test:", "FAILED" if failures else f"all {len(plants)} plants caught, clean tree clean")
+    print("self-test:",
+          "FAILED" if failures else f"all {len(plants)} plants caught, clean tree clean")
     return 1 if failures else 0
 
 
 def main() -> int:
+    """Check the tree, or run the `--self-test`; return 1 on any violation, else 0."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--self-test", action="store_true")
     if parser.parse_args().self_test:

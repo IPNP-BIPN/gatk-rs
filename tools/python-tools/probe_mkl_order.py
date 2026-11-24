@@ -1,10 +1,10 @@
 #!/usr/bin/env python
-"""In which order does MKL add the products of a dgemm, for the shapes gCNV hands it?
+"""Find the order in which MKL adds the products of a dgemm, for the shapes gCNV hands it.
 
-For each (m, k, n), A @ B through numpy (MKL), against candidate orders computed exactly with numpy
-elementwise operations: one accumulator from k=0 up, from k=K-1 down, p accumulators over k mod p
-summed in a few ways, and an FMA chain (exact via fractions). Prints the share of entries each
-candidate reproduces. Run under gcnv_frozen_env.sh.
+For each (m, k, n), A @ B through numpy (MKL), against candidate orders computed exactly with
+numpy elementwise operations: one accumulator from k=0 up, from k=K-1 down, p accumulators over
+k mod p summed in a few ways, and an FMA chain (exact via fractions). Prints the share of entries
+each candidate reproduces. Run under gcnv_frozen_env.sh.
 """
 from fractions import Fraction
 
@@ -14,19 +14,22 @@ rng = np.random.RandomState(20261105)
 
 
 def chain(a, b, ks):
+    """Return a @ b summed with one accumulator over the columns of `a` in the order `ks`."""
     s = np.zeros((a.shape[0], b.shape[1]))
     for k in ks:
-        s = s + a[:, k:k + 1] * b[k:k + 1, :]
+        s = s + a[:, k : k + 1] * b[k : k + 1, :]
     return s
 
 
 def split(a, b, p, combine):
+    """Return a @ b from `p` accumulators, one per residue of k mod p, joined by `combine`."""
     K = a.shape[1]
     parts = [chain(a, b, range(r, K, p)) for r in range(p)]
     return combine(parts)
 
 
 def seq(parts):
+    """Add `parts` one after another, from the first."""
     s = parts[0]
     for q in parts[1:]:
         s = s + q
@@ -34,12 +37,20 @@ def seq(parts):
 
 
 def tree(parts):
+    """Add `parts` pairwise, neighbour to neighbour, until one is left."""
     while len(parts) > 1:
-        parts = [parts[i] + parts[i + 1] if i + 1 < len(parts) else parts[i] for i in range(0, len(parts), 2)]
+        parts = [
+            parts[i] + parts[i + 1] if i + 1 < len(parts) else parts[i]
+            for i in range(0, len(parts), 2)
+        ]
     return parts[0]
 
 
 def fma_chain(a, b):
+    """Return a @ b with one accumulator from k=0 up, each step one fused multiply-add.
+
+    Each product and sum is formed exactly in fractions and rounded once to a double.
+    """
     out = np.zeros((a.shape[0], b.shape[1]))
     for i in range(a.shape[0]):
         for j in range(b.shape[1]):
@@ -50,7 +61,17 @@ def fma_chain(a, b):
     return out
 
 
-for m, k, n in [(6, 3, 3), (180, 5, 6), (6, 5, 180), (5, 6, 180), (180, 6, 5), (5, 180, 6), (6, 180, 5), (1, 180, 1), (180, 1, 6)]:
+for m, k, n in [
+    (6, 3, 3),
+    (180, 5, 6),
+    (6, 5, 180),
+    (5, 6, 180),
+    (180, 6, 5),
+    (5, 180, 6),
+    (6, 180, 5),
+    (1, 180, 1),
+    (180, 1, 6),
+]:
     a = rng.normal(size=(m, k))
     b = rng.normal(size=(k, n))
     got = a @ b
@@ -63,5 +84,7 @@ for m, k, n in [(6, 3, 3), (180, 5, 6), (6, 5, 180), (5, 6, 180), (180, 6, 5), (
         if k > p:
             cands[f"split{p}-seq"] = split(a, b, p, seq)
             cands[f"split{p}-tree"] = split(a, b, p, tree)
-    line = " ".join(f"{name}={np.mean(c == got):.3f}" for name, c in cands.items() if c is not None)
+    line = " ".join(
+        f"{name}={np.mean(c == got):.3f}" for name, c in cands.items() if c is not None
+    )
     print(f"m={m} k={k} n={n}: {line}")

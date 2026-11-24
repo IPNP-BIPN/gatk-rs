@@ -63,6 +63,7 @@ def proven_tools():
 
 
 def median(values):
+    """Return the median of `values`, or None when there are none."""
     return statistics.median(values) if values else None
 
 
@@ -75,6 +76,7 @@ def spread(values):
 
 
 def ratio(a, b):
+    """Return `a / b`, or None when `a` is missing or `b` is missing or zero."""
     return a / b if a is not None and b else None
 
 
@@ -100,7 +102,10 @@ def compile_steady(workdir):
 
 
 def container_overhead(samples):
-    """What `docker run --rm <image> true` costs on this host, which neither side's number holds."""
+    """Time `docker run --rm <image> true` on this host, which neither side's number holds.
+
+    Returns the sample count, the median wall time and its spread.
+    """
     times = []
     for _ in range(samples):
         start = time.perf_counter()
@@ -154,10 +159,14 @@ def time_tool(tool, row, workdir, port, classes, reps, iterations, timeout):
         "reps": reps,
         "timeout": timeout,
         "iterations": iterations,
-        "oracle": f'{java} -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {tool} {row["cli"]}',
+        "oracle": (
+            f'{java} -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main '
+            f'{tool} {row["cli"]}'
+        ),
         "port": f"/work/port-binary/{binary.name} {tool} {row['cli']}",
         "steady": (
-            f'{java} -cp "/work/steady:$ORACLE_CP" Steady {iterations} @REPORT@ {tool} {row["cli"]}'
+            f'{java} -cp "/work/steady:$ORACLE_CP" Steady {iterations} @REPORT@ '
+            f'{tool} {row["cli"]}'
             if iterations
             else None
         ),
@@ -187,7 +196,11 @@ def time_tool(tool, row, workdir, port, classes, reps, iterations, timeout):
 
 
 def summarise(raw):
-    """Medians over repetitions one onwards, the paired ratios, and the reference's steady state."""
+    """Summarise `timer.py`'s output for one tool.
+
+    The result holds the medians over repetitions one onwards, the paired ratios, and the
+    reference's steady state.
+    """
     cold = raw["cold"]
     failed = [
         side for side in ("oracle", "port") if any(run["exit"] != 0 for run in cold[side])
@@ -195,6 +208,7 @@ def summarise(raw):
     oracle, port = cold["oracle"][1:], cold["port"][1:]
 
     def side(runs):
+        """Return the median wall, CPU and peak RSS of `runs`, and the wall time's spread."""
         return {
             "wall": median([r["wall"] for r in runs]),
             "cpu": median([r["cpu"] for r in runs]),
@@ -232,7 +246,9 @@ def summarise(raw):
             )
             # The two sides are not paired here, one being a loop and the other separate
             # processes, so the ratio's spread is bounded by the sum of the two spreads.
-            if None not in (summary["oracle_steady"]["wall_spread"], summary["port"]["wall_spread"]):
+            if None not in (
+                summary["oracle_steady"]["wall_spread"], summary["port"]["wall_spread"]
+            ):
                 summary["ratio_steady_spread"] = (
                     summary["oracle_steady"]["wall_spread"] + summary["port"]["wall_spread"]
                 )
@@ -240,12 +256,17 @@ def summarise(raw):
             stopped = next((i["status"] for i in loop if i["status"] != "ok"), "no report")
             summary["oracle_steady"] = None
             summary["steady_unavailable"] = (
-                f"the in-process loop stopped after {len(loop)} of {steady['requested']}: {stopped}"
+                f"the in-process loop stopped after {len(loop)} of {steady['requested']}: "
+                f"{stopped}"
             )
     return summary
 
 
 def percentile(values, fraction):
+    """Return the nearest-rank `fraction` percentile of the values that are not None.
+
+    Returns None when no value is left.
+    """
     values = sorted(v for v in values if v is not None)
     if not values:
         return None
@@ -264,6 +285,7 @@ def finish(document):
 
 
 def table(document):
+    """Print the per-tool ratios, the noise floors and the container overhead as a table."""
     print(f"\n{'tool':44} {'cold':>7} {'steady':>7} {'cpu':>7} {'rss':>7} {'noise':>6}")
     for tool, entry in sorted(document["tools"].items()):
         if entry.get("ratio_cold_wall") is None:
@@ -271,6 +293,7 @@ def table(document):
             continue
 
         def fmt(value):
+            """Format a ratio in seven columns, or a dash when there is none."""
             return f"{value:7.3f}" if value is not None else "      -"
 
         print(
@@ -280,7 +303,8 @@ def table(document):
         )
     print(
         f"\n{document['measured']} tools measured; ratios are port / reference; "
-        f"noise floor (90th percentile of per-tool spread): cold {fmt_share(document['noise_floor'])}, "
+        f"noise floor (90th percentile of per-tool spread): "
+        f"cold {fmt_share(document['noise_floor'])}, "
         f"steady {fmt_share(document['noise_floor_steady'])}"
     )
     overhead = document.get("container_overhead") or {}
@@ -289,10 +313,15 @@ def table(document):
 
 
 def fmt_share(value):
+    """Format a fraction as a percentage, or a dash when there is none."""
     return f"{value:.1%}" if value is not None else "-"
 
 
 def merge(paths, out):
+    """Combine the shard outputs at `paths` into one measurement at `out`, then print its table.
+
+    Returns the exit status, 0.
+    """
     document = {"tools": {}, "shards": []}
     for path in paths:
         part = json.loads(Path(path).read_text())
@@ -331,13 +360,24 @@ def compare(first, second):
 
 
 def main(argv):
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+    """Measure, merge or compare as the command line `argv` asks, and return the exit status."""
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawTextHelpFormatter
+    )
     parser.add_argument("--port", help="the linux/amd64 port binary (gatk-rs)")
-    parser.add_argument("--tool", action="append", help="measure this tool (default: every proven one)")
+    parser.add_argument(
+        "--tool", action="append", help="measure this tool (default: every proven one)"
+    )
     parser.add_argument("--shard", help="i/n: measure every n-th proven tool from the i-th")
-    parser.add_argument("--reps", type=int, default=5, help="cold repetitions per side, after a warm-up")
-    parser.add_argument("--iterations", type=int, default=20, help="in-JVM iterations; 0 skips the steady state")
-    parser.add_argument("--max-probe", type=int, default=6, help="accepted rows to try before giving up")
+    parser.add_argument(
+        "--reps", type=int, default=5, help="cold repetitions per side, after a warm-up"
+    )
+    parser.add_argument(
+        "--iterations", type=int, default=20, help="in-JVM iterations; 0 skips the steady state"
+    )
+    parser.add_argument(
+        "--max-probe", type=int, default=6, help="accepted rows to try before giving up"
+    )
     parser.add_argument("--timeout", type=int, default=600, help="seconds per run")
     parser.add_argument("--fixtures-dir", help="a corpus MakeFixtures.java already built")
     parser.add_argument("--out", help="write the measurement here")
@@ -404,7 +444,9 @@ def main(argv):
                     print(f"{tool}: not measured, {reason}", flush=True)
                     continue
                 if summary["failed_runs"]:
-                    reason = f"a timed run failed on the {' and '.join(summary['failed_runs'])} side"
+                    reason = (
+                        f"a timed run failed on the {' and '.join(summary['failed_runs'])} side"
+                    )
                     document["tools"][tool] = {"row": row, "reason": reason, "raw": summary["raw"]}
                     print(f"{tool}: not measured, {reason}", flush=True)
                     continue

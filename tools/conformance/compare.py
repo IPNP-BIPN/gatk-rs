@@ -115,7 +115,9 @@ def _mask_hdf5_modification_times(payload, spec):
     """
     return "\t".join(
         HDF5_MTIME.sub(
-            lambda m: f"12000800{m.group(1)}0100000000000000" if m.start() % 2 == 0 else m.group(0),
+            lambda m: (
+                f"12000800{m.group(1)}0100000000000000" if m.start() % 2 == 0 else m.group(0)
+            ),
             field,
         )
         for field in payload.split("\t")
@@ -154,6 +156,7 @@ def canonicalize(kind, payload, rules):
 
 
 def _open(path):
+    """Open a dump for reading as text, through gzip when its name ends in `.gz`."""
     path = str(path)
     return gzip.open(path, "rt") if path.endswith(".gz") else open(path)
 
@@ -237,12 +240,14 @@ def compare_case(real_path, golden_path, compare_spec):
 
 
 def load_manifest(path=None):
+    """Load the suite manifest from `path`, or from the `manifest.json` beside this file."""
     path = Path(path or Path(__file__).with_name("manifest.json"))
     with open(path) as fh:
         return json.load(fh)
 
 
 def suite_by_id(manifest, suite_id):
+    """Return the manifest's suite with this id, or exit naming the id when there is none."""
     for suite in manifest["suites"]:
         if suite["id"] == suite_id:
             return suite
@@ -250,6 +255,10 @@ def suite_by_id(manifest, suite_id):
 
 
 def main(argv):
+    """Compare the supplied regenerated dumps of one suite with its goldens; return the exit code.
+
+    Every case of the suite needs a `--real DUMP=PATH`; a case without one counts as a failure.
+    """
     import argparse
 
     ap = argparse.ArgumentParser(description=__doc__)

@@ -109,8 +109,10 @@ pub struct EnumType {
 
 
 def unescape(text):
-    """A golden's own escaping undone: `\\\\`, `\\t` and `\\n`, read left to right, so an
-    escaped backslash in front of a `t` stays a backslash and a `t`."""
+    """Undo a golden's own escaping: `\\\\`, `\\t` and `\\n`, read left to right.
+
+    Reading left to right means an escaped backslash in front of a `t` stays a backslash and a `t`.
+    """
     return re.sub(r"\\(.)", lambda m: {"t": "\t", "n": "\n"}.get(m.group(1), m.group(1)), text)
 
 
@@ -127,7 +129,10 @@ def rust_str(body):
 
 
 def rust_double(text):
-    """`String.valueOf(Double)` renders the infinities as words, and Rust names them differently."""
+    """Return a Java double's rendering as a Rust expression.
+
+    `String.valueOf(Double)` renders the infinities as words, and Rust names them differently.
+    """
     return {
         "Infinity": "f64::INFINITY",
         "-Infinity": "f64::NEG_INFINITY",
@@ -136,6 +141,7 @@ def rust_double(text):
 
 
 def rows(text, kind, tool):
+    """Return the golden's rows of one kind for one tool, with the kind and the tool cut off."""
     prefix = f"{kind}\t{tool}\t"
     return [line[len(prefix):] for line in text.split("\n") if line.startswith(prefix)]
 
@@ -158,11 +164,11 @@ def rustfmt(text):
 def cross_check(tool, entries):
     """Check the generated list against the inventory, which reads the reference's CLI.
 
-    The two are different readings of the same reference: the golden is `getNamedArgumentDefinitions`
-    on the parser the tool hands out, the inventory is the usage text the same tool prints. Every
-    documented argument has to be in the declarations, with the same `required` and the same
-    default. The declarations hold more, because the usage text does not print the common and
-    advanced ones.
+    The two are different readings of the same reference: the golden is
+    `getNamedArgumentDefinitions` on the parser the tool hands out, the inventory is the usage text
+    the same tool prints. Every documented argument has to be in the declarations, with the same
+    `required` and the same default. The declarations hold more, because the usage text does not
+    print the common and advanced ones.
 
     One kind of argument reads differently in the two, and the difference is a fact about the
     reference rather than a disagreement: an argument owned by a plugin descriptor is declared
@@ -185,7 +191,9 @@ def cross_check(tool, entries):
             continue
         entry = by_name.get(name)
         if entry is None:
-            sys.exit(f"{tool}: the usage text documents --{name} and the parser does not declare it")
+            sys.exit(
+                f"{tool}: the usage text documents --{name} and the parser does not declare it"
+            )
         if entry["controlled_by"] is None and entry["required"] != bool(argument["required"]):
             sys.exit(f"{tool}: --{name} is required in one reading and not the other")
         written = argument.get("default")
@@ -202,7 +210,8 @@ def cross_check(tool, entries):
         if ours == "" and written == '""':
             continue
         sys.exit(
-            f"{tool}: --{name} defaults to {ours!r} in the parser and {written!r} in the usage text"
+            f"{tool}: --{name} defaults to {ours!r} in the parser and {written!r} in the usage"
+            f" text"
         )
     # The usage text never prints MORE than the parser declares. It prints fewer for a walker,
     # whose plugin descriptors and standard collections it leaves out, and exactly as many for a
@@ -222,7 +231,9 @@ def cross_check(tool, entries):
 # is written out here.
 UNDOCUMENTED_SUMMARIES = {
     "HtsgetReader": "Download a file using htsget",
-    "NVScoreVariants": "Annotate a VCF with scores from a PyTorch-based Convolutional Neural Network (CNN)",
+    "NVScoreVariants": (
+        "Annotate a VCF with scores from a PyTorch-based Convolutional Neural Network (CNN)"
+    ),
 }
 
 
@@ -346,7 +357,8 @@ def descriptor_table(tools):
         constants + "\n\n"
         "/// The possible values a plugin descriptor lists for one of its own arguments, if it\n"
         "/// answers for it, from the usage golden.\n"
-        "pub fn descriptor_values(tool: &str, long_name: &str) -> Option<&'static [&'static str]> {\n"
+        "pub fn descriptor_values(tool: &str, long_name: &str) "
+        "-> Option<&'static [&'static str]> {\n"
         "    match (tool, long_name) {\n" + "\n".join(arms) + "\n        _ => None,\n    }\n}\n"
     )
 
@@ -373,7 +385,9 @@ def mutex_field_table():
     for tool, long_name, field in usage_rows("field"):
         if fields.setdefault(long_name, field) != field:
             sys.exit(f"--{long_name} is field {field} in {tool} and {fields[long_name]} elsewhere")
-    arms = "\n".join(f'        "{name}" => Some("{field}"),' for name, field in sorted(fields.items()))
+    arms = "\n".join(
+        f'        "{name}" => Some("{field}"),' for name, field in sorted(fields.items())
+    )
     return (
         "/// The field a mutex target's long name resolves to, where the two differ, from the\n"
         "/// usage golden.\n"
@@ -426,8 +440,11 @@ def enum_table():
 
 
 def constant_name(tool):
-    """The tool's constant. GATK's `UpdateVCFSequenceDictionary` and Picard's
-    `UpdateVcfSequenceDictionary` are one name upper-cased, so a Picard tool's carries a prefix."""
+    """Return the name of the tool's Rust constant.
+
+    GATK's `UpdateVCFSequenceDictionary` and Picard's `UpdateVcfSequenceDictionary` are one name
+    upper-cased, so a Picard tool's carries a prefix.
+    """
     return ("PICARD_" if tool in PICARD_TOOLS else "") + tool.upper()
 
 
@@ -441,6 +458,11 @@ PICARD_TOOLS = {
 
 
 def main():
+    """Write the declarations module, or with `--check` fail unless it is what this would write.
+
+    Every tool's parsed declarations are cross-checked against the inventory on the way, and the
+    module is run through rustfmt before it is written or compared.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true",
                         help="fail if the generated module is not what this would write")
@@ -471,7 +493,7 @@ def main():
              min_recommended, max_recommended, mutex, plugin, type_class) = fields
             alias_list = ", ".join(f'"{a}"' for a in aliases.split(",") if a)
             default_literal = (
-                "None" if default == "null" else 'Some(%s)' % literal(default)
+                "None" if default == "null" else "Some(%s)" % literal(default)
             )
             mutex_list = "" if mutex == "none" else ", ".join(
                 f'"{name}"' for name in mutex.split(","))
@@ -502,7 +524,8 @@ def main():
                 f"        min_recommended_value: {rust_double(min_recommended)},\n"
                 f"        max_recommended_value: {rust_double(max_recommended)},\n"
                 f"        mutex: &[{mutex_list}],\n"
-                f"        controlled_by: {'None' if plugin == 'none' else 'Some(\"%s\")' % plugin},\n"
+                f"        controlled_by: "
+                f"{'None' if plugin == 'none' else 'Some(\"%s\")' % plugin},\n"
                 f"        doc: {literal(docs.get(index, ''))},\n"
                 "    },"
             )

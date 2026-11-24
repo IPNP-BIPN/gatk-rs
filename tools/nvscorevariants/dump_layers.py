@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Run the reference's own forward pass and write every tensor it passes through, bit for bit.
 
-The same steps as `nvscorevariants.py`, with the same model file, the same `ReferenceDataset` and
-the same `DataLoader`, without Lightning's progress bars: a forward hook on every module records its
-output, so the port is compared against each layer rather than only against the printed score.
+The same steps as `nvscorevariants.py`, with the same model file, the same `ReferenceDataset`
+and the same `DataLoader`, without Lightning's progress bars: a forward hook on every module
+records its output, so the port is compared against each layer rather than only against the
+printed score.
 
 Each record of the dump is, little-endian:
 
@@ -32,6 +33,10 @@ JAR = "/gatk/gatk-package-4.7.0.0-local.jar"
 
 
 def write_tensor(out, name, tensor):
+    """Append one record for `tensor` under `name` to `out`, in the format of the module docstring.
+
+    Only 32-bit floats and 64-bit integers are expected; anything else ends the script.
+    """
     tensor = tensor.detach()
     encoded = name.encode()
     out.write(struct.pack("<I", len(encoded)) + encoded)
@@ -48,6 +53,11 @@ def write_tensor(out, name, tensor):
 
 
 def main():
+    """Load the model from the GATK jar, hook every leaf module, and run the reference's batches.
+
+    Writes the inputs, every hooked layer's output, the logits, the softmax and the score of each
+    batch to the dump, and the score lines to the temporary score file.
+    """
     kind, vcf, fasta, bam, batch_size, dump, scores = sys.argv[1:8]
     torch.manual_seed(724)
     if kind == "reference":
@@ -64,7 +74,9 @@ def main():
     current = {"batch": 0}
 
     def hook(name):
+        """Return a forward hook that writes a module's output as `<batch>/<name>`."""
         def record(_module, _inputs, output):
+            """Write the hooked module's output under the current batch number."""
             write_tensor(out, f"{current['batch']}/{name}", output)
 
         return record
@@ -89,7 +101,13 @@ def main():
             for i in range(len(final)):
                 tmp.write(
                     "%s\t%d\t%s\t[%s]\t%.3f\n"
-                    % (batch["chrom"][i], batch["pos"][i], batch["ref"][i], batch["alt"][i], final[i])
+                    % (
+                        batch["chrom"][i],
+                        batch["pos"][i],
+                        batch["ref"][i],
+                        batch["alt"][i],
+                        final[i],
+                    )
                 )
     out.close()
 

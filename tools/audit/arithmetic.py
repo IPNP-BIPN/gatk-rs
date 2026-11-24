@@ -85,10 +85,16 @@ TRANSCENDENTAL = re.compile(
 
 
 def rust_sources(root: pathlib.Path) -> list[pathlib.Path]:
+    """Every `.rs` file under `root/crates`, sorted, leaving out any `target` directory."""
     return sorted(p for p in (root / "crates").rglob("*.rs") if "target" not in p.parts)
 
 
 def config_files(root: pathlib.Path) -> list[pathlib.Path]:
+    """The build configuration the config rules apply to, sorted and without duplicates.
+
+    That is every `.cargo/config*` and `Cargo.toml` outside a `target` directory, the workflows,
+    and the CI template the oracle jobs are generated from.
+    """
     found = list((root / ".cargo").glob("config*")) if (root / ".cargo").is_dir() else []
     found += [p for p in root.rglob(".cargo/config*") if "target" not in p.parts]
     found += [p for p in root.rglob("Cargo.toml") if "target" not in p.parts]
@@ -115,6 +121,7 @@ def scan(path: pathlib.Path, rules: dict[str, str], root: pathlib.Path) -> list[
 
 
 def transcendentals(root: pathlib.Path) -> dict[str, int]:
+    """Host transcendental calls per Rust source by relative path, leaving out files with none."""
     counts = {}
     for path in rust_sources(root):
         n = len(TRANSCENDENTAL.findall(path.read_text(encoding="utf-8", errors="replace")))
@@ -124,6 +131,7 @@ def transcendentals(root: pathlib.Path) -> dict[str, int]:
 
 
 def check(root: pathlib.Path, ratchet: dict[str, int]) -> list[str]:
+    """Every violation in the tree at `root`: forbidden constructs, then files over the ratchet."""
     violations = []
     for path in rust_sources(root):
         violations += scan(path, FORBIDDEN_SOURCE, root)
@@ -149,8 +157,14 @@ def self_test() -> int:
     if check(ROOT, ratchet):
         failures.append("the clean tree is not clean")
     plants = [
-        ("crates/planted/src/lib.rs", "pub fn f(a: f64, b: f64, c: f64) -> f64 { a.mul_add(b, c) }\n"),
-        ("crates/planted/src/lib.rs", "pub fn f(a: f64, b: f64) -> f64 { unsafe { fadd_fast(a, b) } }\n"),
+        (
+            "crates/planted/src/lib.rs",
+            "pub fn f(a: f64, b: f64, c: f64) -> f64 { a.mul_add(b, c) }\n",
+        ),
+        (
+            "crates/planted/src/lib.rs",
+            "pub fn f(a: f64, b: f64) -> f64 { unsafe { fadd_fast(a, b) } }\n",
+        ),
         ("crates/planted/src/lib.rs", "pub fn f(a: f64, b: f64) -> f64 { a.algebraic_add(b) }\n"),
         ("crates/planted/src/lib.rs", "#![feature(core_intrinsics)]\n"),
         ("crates/planted/src/lib.rs", "use std::simd::f64x4;\n"),
@@ -167,7 +181,9 @@ def self_test() -> int:
             if scratch.exists():
                 shutil.rmtree(scratch)
             scratch.mkdir()
-            shutil.copytree(ROOT / "crates", scratch / "crates", ignore=shutil.ignore_patterns("target"))
+            shutil.copytree(
+                ROOT / "crates", scratch / "crates", ignore=shutil.ignore_patterns("target")
+            )
             shutil.copy(ROOT / "Cargo.toml", scratch / "Cargo.toml")
             target = scratch / relative
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -182,7 +198,10 @@ def self_test() -> int:
 
 
 def main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+    """Check the tree, `--record` the ratchet or run the `--self-test`; return the exit code."""
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawTextHelpFormatter
+    )
     ap.add_argument("--record", action="store_true")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args(argv)
@@ -191,7 +210,9 @@ def main(argv: list[str]) -> int:
     if args.record:
         counts = transcendentals(ROOT)
         RATCHET.write_text(json.dumps(counts, indent=1, sort_keys=True) + "\n")
-        print(f"recorded {sum(counts.values())} host transcendental call(s) in {len(counts)} file(s)")
+        print(
+            f"recorded {sum(counts.values())} host transcendental call(s) in {len(counts)} file(s)"
+        )
         return 0
     violations = check(ROOT, json.loads(RATCHET.read_text()))
     for violation in violations:

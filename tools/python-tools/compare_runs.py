@@ -2,8 +2,8 @@
 """Which files of two run directories have the same bytes, and how far apart the rest are.
 
 Usage: compare_runs.py <first run> <second run> [more runs...]
-Files are compared by sha256; for a pair of hashes that differ the size of the difference (bytes,
-first offset) is printed. Nothing is read as HDF5 here, so this can run on the host.
+Files are compared by sha256; for a pair of hashes that differ the size of the difference
+(bytes, first offset) is printed. Nothing is read as HDF5 here, so this can run on the host.
 """
 import hashlib
 import os
@@ -11,6 +11,7 @@ import sys
 
 
 def walk(root):
+    """Map the path relative to `root` of every file under `root` to its full path."""
     found = {}
     for directory, _, names in os.walk(root):
         for name in names:
@@ -20,10 +21,19 @@ def walk(root):
 
 
 def main():
+    """Print a tab-separated table of every file in any run.
+
+    Each row has the file's short sha256 in each run ("-" where absent), then for each run after
+    the first how many bytes differ from the first run and the first offset that does.
+    """
     runs = sys.argv[1:]
     trees = [walk(run) for run in runs]
     names = sorted(set().union(*trees))
-    print("file\t" + "\t".join(os.path.basename(run.rstrip("/")) for run in runs) + "\tbytes differing vs first\tfirst offset")
+    print(
+        "file\t"
+        + "\t".join(os.path.basename(run.rstrip("/")) for run in runs)
+        + "\tbytes differing vs first\tfirst offset"
+    )
     for name in names:
         hashes = []
         contents = []
@@ -44,8 +54,13 @@ def main():
             elif first == other:
                 notes.append("0")
             else:
-                different = sum(a != b for a, b in zip(first, other)) + abs(len(first) - len(other))
-                offset = next((i for i, (a, b) in enumerate(zip(first, other)) if a != b), min(len(first), len(other)))
+                different = sum(a != b for a, b in zip(first, other)) + abs(
+                    len(first) - len(other)
+                )
+                offset = next(
+                    (i for i, (a, b) in enumerate(zip(first, other)) if a != b),
+                    min(len(first), len(other)),
+                )
                 notes.append("%d@%d" % (different, offset))
         print(name + "\t" + "\t".join(hashes) + "\t" + ",".join(notes))
 

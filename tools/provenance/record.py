@@ -58,6 +58,7 @@ def command(*argv):
 
 
 def sha256(path):
+    """Return the hex SHA-256 of a file, read in 1 MiB blocks."""
     digest = hashlib.sha256()
     with open(path, "rb") as handle:
         for block in iter(lambda: handle.read(1 << 20), b""):
@@ -134,12 +135,19 @@ def device():
 
 
 def record():
+    """Assemble the provenance record: commit, CI run, reference, oracle, toolchain and inputs.
+
+    Also the `Cargo.lock` pins, the compression providers and the device; a value that could not
+    be read is None.
+    """
     manifest = json.loads(MANIFEST.read_text())
     inventory = json.loads(INVENTORY.read_text())
     image = manifest["oracle"]["image"]
     run = {
         name: os.environ.get(name)
-        for name in ["GITHUB_REPOSITORY", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "RUNNER_OS", "RUNNER_ARCH"]
+        for name in [
+            "GITHUB_REPOSITORY", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "RUNNER_OS", "RUNNER_ARCH"
+        ]
     }
     return {
         "format": 2,
@@ -167,6 +175,7 @@ def record():
 
 
 def main():
+    """Write the record as indented JSON to the `--out` path."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", required=True)
     args = parser.parse_args()

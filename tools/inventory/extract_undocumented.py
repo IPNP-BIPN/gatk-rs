@@ -24,7 +24,10 @@ import sys
 
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 # --NAME,-S <Type>   or   --NAME <Type>
-ARG_LINE = re.compile(r"^--(?P<name>[A-Za-z0-9_.\-]+)(?:,(?P<short>-[A-Za-z0-9_\-]+))?\s+<(?P<type>[^>]+)>\s*(?P<rest>.*)$")
+ARG_LINE = re.compile(
+    r"^--(?P<name>[A-Za-z0-9_.\-]+)(?:,(?P<short>-[A-Za-z0-9_\-]+))?"
+    r"\s+<(?P<type>[^>]+)>\s*(?P<rest>.*)$"
+)
 DEFAULT_VALUE = re.compile(r"Default value:\s*(?P<v>.+?)\.(?:\s|$)")
 POSSIBLE_VALUES = re.compile(r"Possible values:\s*\{(?P<v>[^}]*)\}")
 # A `ClpEnum`'s members, which Barclay prints ONE PER LINE with their documentation instead of the
@@ -38,9 +41,10 @@ POSSIBLE_VALUES = re.compile(r"Possible values:\s*\{(?P<v>[^}]*)\}")
 # underscores, which is what tells a member from a word of the documentation it is followed by.
 DOCUMENTED_MEMBER = re.compile(r"(?<![A-Za-z0-9_])(?P<name>[A-Z][A-Z0-9_]*)\s+\(")
 # What follows the default and is NOT a member. The mutex sentence names its targets in the same
-# shape a documented member is printed in -- `SECOND_INPUT (SI)` -- and reading those as members put
-# `--MATRIX_OUTPUT: ["SECOND_INPUT"]` in the inventory, which is not an enum at all. The collection
-# sentence is here for the same reason: boilerplate after the default rather than a value.
+# shape a documented member is printed in (`SECOND_INPUT (SI)`), and reading those as members put
+# `--MATRIX_OUTPUT: ["SECOND_INPUT"]` in the inventory, which is not an enum at all. The
+# collection sentence is here for the same reason: boilerplate after the default rather than a
+# value.
 NOT_MEMBERS = re.compile(
     r"Cannot be used in conjunction with|This argument may be specified|"
     r"The --\S+ argument|Required\.")
@@ -48,6 +52,7 @@ LIST_ENTRY = re.compile(r"^ {4}([A-Za-z][A-Za-z0-9]*)\s")
 
 
 def run(jar, jvm_args, tool_args):
+    """Run `java -jar <jar>` with the given arguments; return stdout and stderr, ANSI-stripped."""
     p = subprocess.run(
         ["java", *jvm_args, "-jar", str(jar), *tool_args],
         capture_output=True, text=True,
@@ -76,6 +81,7 @@ def parse_help(text):
     args, current, buf = [], None, []
 
     def flush():
+        """Finish the argument being read: pull its default and members, then append it."""
         if current is None:
             return
         blob = " ".join(buf)
@@ -216,6 +222,10 @@ def refresh_undocumented(a, inv):
 
 
 def main():
+    """Merge the tools `--list` reports but the inventory lacks, or `--refresh` the recovered ones.
+
+    The merged inventory is written to `--out`, or over the input inventory when none is given.
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument("jar", type=pathlib.Path)
     ap.add_argument("inventory", type=pathlib.Path)
@@ -240,7 +250,10 @@ def main():
 
     phantom = sorted(set(documented) - cli)
     missing = sorted(cli - set(documented))
-    print(f"cli={len(cli)} documented={len(documented)} undocumented={len(missing)} phantom={len(phantom)}")
+    print(
+        f"cli={len(cli)} documented={len(documented)} undocumented={len(missing)} "
+        f"phantom={len(phantom)}"
+    )
     if phantom:
         print(f"  WARNING: documented but not runnable: {phantom[:5]}")
 
@@ -295,7 +308,10 @@ def main():
 
     out = a.out or a.inventory
     out.write_text(json.dumps(inv, indent=2))
-    print(f"merged: tools={inv['counts']['tools']} arguments={inv['counts']['arguments']} -> {out}")
+    print(
+        f"merged: tools={inv['counts']['tools']} arguments={inv['counts']['arguments']} "
+        f"-> {out}"
+    )
 
 
 if __name__ == "__main__":

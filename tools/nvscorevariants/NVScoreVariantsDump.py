@@ -41,6 +41,7 @@ CASES = [
 
 
 def lines_of(path):
+    """Return the lines of the file at `path` without newlines, or None when it is absent."""
     if not os.path.exists(path):
         return None
     with open(path) as text:
@@ -48,6 +49,7 @@ def lines_of(path):
 
 
 def show(kind, name, tag, lines):
+    """Print each of `lines` labelled with the case, the model and `kind`, or one `absent` line."""
     if lines is None:
         print(f"{name}\t{tag}\t{kind}\tabsent")
         return
@@ -56,6 +58,12 @@ def show(kind, name, tag, lines):
 
 
 def run(fixture, work, name, read_tensor):
+    """Run the reference NVScoreVariants on one fixture VCF with one model and print the result.
+
+    `read_tensor` picks the 2D model, which also reads `reads.bam`; otherwise the 1D reference
+    model runs. Prints the exit code, the value after "Tool returned:", the score file and the
+    output VCF, and copies the error lines of the tool's stderr to stderr.
+    """
     tag = "2d" if read_tensor else "1d"
     output = f"{work}/{name}.{tag}.vcf"
     scores = f"{work}/{name}.{tag}.tmp"
@@ -81,6 +89,7 @@ def run(fixture, work, name, read_tensor):
 
 
 def main():
+    """Run every case with both models, on the given fixture or one made in a temporary one."""
     with tempfile.TemporaryDirectory() as work:
         fixture = sys.argv[1] if len(sys.argv) > 1 else f"{work}/fixture"
         if len(sys.argv) <= 1:

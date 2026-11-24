@@ -61,12 +61,14 @@ TOOLS = {
         "--input", "/work/fixtures/mutect_t.bam", "--output", "/work/out/out.vcf",
         "--reference", "/work/fixtures/mutect_ref.fasta",
     ],
-    "PrintVariantsSpark": ["--variant", "/work/fixtures/sites.vcf", "--output", "/work/out/out.vcf"],
+    "PrintVariantsSpark": [
+        "--variant", "/work/fixtures/sites.vcf", "--output", "/work/out/out.vcf"
+    ],
 }
 
 # A setting, what it is compared with, and its arguments. `SPARK_SPLIT` makes the split fit a small
-# input. `local[4]` over one partition is not
-# parallel, so what says whether the threads matter is `split-local[4]` against `split`.
+# input. `local[4]` over one partition is not parallel, so what says whether the threads matter is
+# `split-local[4]` against `split`.
 SETTINGS = {
     "local[1]-again": ("base", ["--spark-master", "local[1]"]),
     "local[4]": ("base", ["--spark-master", "local[4]"]),
@@ -141,7 +143,12 @@ def render(out_dir):
 
 
 def run(tool, arguments, fixtures, out_dir):
-    """One run in the container, bounded from inside. `(exit, stdout, files)`."""
+    """One run in the container, bounded from inside.
+
+    Returns `(exit, stdout, files, error, partitions)`: `files` is `render`'s map of the output
+    directory, `error` the first error line of a failed run (else empty), and `partitions` the
+    largest output-partition count the run logged (0 when it logged none).
+    """
     out_dir.mkdir(parents=True)
     quoted = " ".join(run_array.shlex.quote(word) for word in arguments)
     command = (
@@ -165,6 +172,11 @@ def run(tool, arguments, fixtures, out_dir):
 
 
 def verdict(base, other):
+    """Describe in a few words how the run `other` compares with the run `base`.
+
+    Exit codes are compared first, then refusal messages, stdout, the set of files, their raw
+    bytes and last their comparable content, and the first difference found is what is returned.
+    """
     if base[0] != other[0]:
         return f"exit {base[0]} vs {other[0]}: {other[3][:100]}"
     if base[0] != 0:
@@ -182,20 +194,35 @@ def verdict(base, other):
 
 
 def measure(tool, arguments, fixtures, scratch):
-    base = run(tool, arguments + ["--spark-master", "local[1]"], fixtures, scratch / tool / "base")
-    lines = [f"{tool}\tlocal[1]\texit {base[0]}, {len(base[2])} files, {base[4]} partitions {base[3][:80]}"]
+    """Run one tool at `local[1]` and at every setting, and return one report line per run.
+
+    Each setting's run is compared with the run `SETTINGS` names for it, and the lines are also
+    printed as soon as the tool is done.
+    """
+    base = run(
+        tool, arguments + ["--spark-master", "local[1]"], fixtures, scratch / tool / "base"
+    )
+    lines = [
+        f"{tool}\tlocal[1]\texit {base[0]}, {len(base[2])} files, "
+        f"{base[4]} partitions {base[3][:80]}"
+    ]
     runs = {"base": base}
     for label, (against, setting) in SETTINGS.items():
         other = run(tool, arguments + setting, fixtures, scratch / tool / label.replace("[", "_"))
         runs[label] = other
         lines.append(
-            f"{tool}\t{label}\tvs {against}, {other[4]} partitions\t{verdict(runs[against], other)}"
+            f"{tool}\t{label}\tvs {against}, {other[4]} partitions\t"
+            f"{verdict(runs[against], other)}"
         )
     print("\n".join(lines), flush=True)
     return lines
 
 
 def main(argv):
+    """Measure every sampled tool (or those named by `--tool`) and write the lines to `--out`.
+
+    Tools run `--jobs` at a time in a scratch directory beside the output file. Returns 0.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", required=True)
     parser.add_argument("--fixtures", required=True, help="a corpus MakeFixtures built")

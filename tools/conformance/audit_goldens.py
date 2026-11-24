@@ -23,6 +23,7 @@ DATA = "crates/*/tests/data"
 
 
 def committed_goldens():
+    """Return the sorted paths of the gzipped goldens git tracks under crates/*/tests/data."""
     out = subprocess.run(
         ["git", "ls-files", "crates/*/tests/data/*.txt.gz"],
         cwd=REPO,
@@ -52,6 +53,10 @@ def collapsing_keys(golden, compare_spec):
 
 
 def main():
+    """Report undeclared, missing and key-collapsing goldens; return 1 if there is any.
+
+    Also prints the count of committed and declared goldens, and the cases per suite status.
+    """
     manifest = comparator.load_manifest()
     # A `golden-pending` case declares `golden: null` on purpose: its dump has never been produced
     # by CI, and committing one from a developer machine is what decision 0008 is about. It is

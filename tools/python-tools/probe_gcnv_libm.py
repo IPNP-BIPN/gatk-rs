@@ -1,6 +1,9 @@
-"""Inside broadinstitute/gatk:4.7.0.0 under gcnv_frozen_env.sh: locate glibc's __log_data, test
-numpy's sum order, and write libm test vectors (inputs, numpy's outputs) as raw little-endian
-float64, which crates/gatk-tools/src/glibc_libm.rs's tests read from $GCNV_LIBM_VECTORS.
+"""Locate glibc's __log_data, test numpy's sum order, and write libm test vectors.
+
+Runs inside broadinstitute/gatk:4.7.0.0 under gcnv_frozen_env.sh. The candidates for
+__log_data go to log_data_candidates.txt, with a copy of libm.so.6; the vectors (inputs, numpy's
+outputs) are written as raw little-endian float64, which crates/gatk-tools/src/glibc_libm.rs's
+tests read from $GCNV_LIBM_VECTORS.
 
 Usage: probe_gcnv_libm.py <output directory>
 """
@@ -25,6 +28,11 @@ open(f"{out}/libm.so.6", "wb").write(lib)
 
 
 def pairwise(a):
+    """Sum `a` in the pairwise order this script tests numpy's sum against.
+
+    Under 8 elements, one accumulator; up to 128, eight interleaved accumulators combined as a
+    tree, then the remainder; above that, the two halves (the first a multiple of 8) recursively.
+    """
     n = len(a)
     if n < 8:
         res = 0.0
@@ -65,10 +73,22 @@ print("sum order", counts)
 
 m = 400000
 inputs = {
-    "exp": np.concatenate([rng.uniform(-745, 709, m), rng.uniform(-40, 1, m), rng.uniform(-1e-3, 1e-3, m // 4)]),
-    "log": np.concatenate([np.exp(rng.uniform(-700, 700, m)), rng.uniform(0.9, 1.1, m), rng.uniform(0, 64, m)]),
-    "log1p": np.concatenate([-np.exp(rng.uniform(-745, 0, m)), np.exp(rng.uniform(-745, 0, m)), rng.uniform(-0.5, 2, m)]),
-    "expm1": np.concatenate([rng.uniform(-40, 0, m), -np.exp(rng.uniform(-60, 0, m)), rng.uniform(-1, 1, m)]),
+    "exp": np.concatenate(
+        [rng.uniform(-745, 709, m), rng.uniform(-40, 1, m), rng.uniform(-1e-3, 1e-3, m // 4)]
+    ),
+    "log": np.concatenate(
+        [np.exp(rng.uniform(-700, 700, m)), rng.uniform(0.9, 1.1, m), rng.uniform(0, 64, m)]
+    ),
+    "log1p": np.concatenate(
+        [
+            -np.exp(rng.uniform(-745, 0, m)),
+            np.exp(rng.uniform(-745, 0, m)),
+            rng.uniform(-0.5, 2, m),
+        ]
+    ),
+    "expm1": np.concatenate(
+        [rng.uniform(-40, 0, m), -np.exp(rng.uniform(-60, 0, m)), rng.uniform(-1, 1, m)]
+    ),
 }
 for name, x in inputs.items():
     y = getattr(np, name)(x)

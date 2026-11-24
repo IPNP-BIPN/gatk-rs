@@ -65,6 +65,11 @@ CASES = [
 
 
 def annotation_cases(work):
+    """Encode an MQ annotation for every entry of `CASES` and print the result of each.
+
+    Each case is written as a one-record VCF in `work`; the line shows the encoded value as the
+    hex of a little-endian 32-bit float, or the name of the exception the encoder raised.
+    """
     for at, (definition, value, alts) in enumerate(CASES):
         path = f"{work}/edge{at}.vcf"
         with open(path, "w") as out:
@@ -84,6 +89,10 @@ def annotation_cases(work):
 
 
 def random_cases():
+    """Print the reference's `Random.nextInt` answers for bounds 129 to 20128 from one seed.
+
+    The first eight answers, the one for bound 256, the minimum and a SHA-256 of all of them.
+    """
     Random.multiplier = np.int64(0x5DEECE66D)
     Random.addend = np.int64(0xB)
     Random.mask = np.int64((1 << 48) - 1)
@@ -97,6 +106,7 @@ def random_cases():
 
 
 def phred_cases():
+    """Print a SHA-256 of `p` and `(1 - p) / 3`, as 32-bit floats, for every quality 0 to 255."""
     table = []
     for quality in range(256):
         exponent = float(-quality) / 10.0

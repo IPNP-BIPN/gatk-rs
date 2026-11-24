@@ -3,7 +3,8 @@
 
 Run twice inside broadinstitute/gatk:4.7.0.0, with and without the knob, and compare the lines.
 libm: glibc's exp, log, pow, log1p, expm1 through ctypes; numpy's own ufuncs; MKL through numpy's
-matmul (libblas.so.3 is MKL) and through a pytensor function compiled with the session's flags.
+matmul (libblas.so.3 is MKL) and, given any argument, through a pytensor function compiled with
+the session's flags.
 """
 import ctypes
 import hashlib
@@ -20,10 +21,12 @@ libm = ctypes.CDLL("libm.so.6")
 
 
 def h(a):
+    """Return the first 16 hex digits of the SHA-256 of `a` as contiguous float64."""
     return hashlib.sha256(np.ascontiguousarray(a, dtype=np.float64).tobytes()).hexdigest()[:16]
 
 
 def via_libm(name, *args):
+    """Call libm's double function `name` on each tuple of elements of `args`; return an array."""
     f = getattr(libm, name)
     f.restype = ctypes.c_double
     f.argtypes = [ctypes.c_double] * len(args)
@@ -51,10 +54,18 @@ if len(sys.argv) > 1:
 
     u, v = pt.dvectors("u", "v")
     w = pt.dmatrix("w")
-    f = pytensor.function([u, v, w], [u * v + pt.exp(u / 10) * v - pt.log1p(v), pt.dot(w, v[:257]),
-                                      pt.logsumexp(pt.outer(u[:300], v[:300]), axis=1)])
+    f = pytensor.function(
+        [u, v, w],
+        [
+            u * v + pt.exp(u / 10) * v - pt.log1p(v),
+            pt.dot(w, v[:257]),
+            pt.logsumexp(pt.outer(u[:300], v[:300]), axis=1),
+        ],
+    )
     for name, out in zip(["pt.elemwise", "pt.gemv", "pt.logsumexp"], f(x, y, a)):
         print(name, h(out))
     from pytensor.link.c.cmodule import GCC_compiler
 
-    print("# compile_args " + " ".join(GCC_compiler.compile_args()), "openmp", pytensor.config.openmp)
+    print(
+        "# compile_args " + " ".join(GCC_compiler.compile_args()), "openmp", pytensor.config.openmp
+    )

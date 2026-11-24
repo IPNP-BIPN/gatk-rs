@@ -78,6 +78,11 @@ def steady(command, iterations, timeout):
 
 
 def main(spec_path):
+    """Run the spec at `spec_path` and print the timings as one JSON object.
+
+    The object holds the cold runs of both sides (repetition zero included), the steady-state
+    loop when the spec names one, and the host's CPU model and core count.
+    """
     spec = json.loads(Path(spec_path).read_text())
     reps, timeout = spec["reps"], spec["timeout"]
     runs = {"oracle": [], "port": []}

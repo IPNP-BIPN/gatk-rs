@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """The small corpus NVScoreVariants is compared on: a FASTA, a VCF, a BAM and its index.
 
-Runs inside `broadinstitute/gatk:4.6.2.0`, which is what has pysam, so the reference and the port
-read the same bytes and nothing here has to be committed. Everything comes from one linear
+Runs inside `broadinstitute/gatk:4.6.2.0`, which is what has pysam, so the reference and the
+port read the same bytes and nothing here has to be committed. Everything comes from one linear
 congruential generator, so the same text comes out every time. The BAM's bytes also carry the
 directory it was made in (two directories gave two files), which no record or tensor depends on.
 
-The cases are chosen for what `encoders.py` decides on rather than for realism: windows clipped by
-the start and the end of a contig, IUPAC codes and lower case in the reference, reads with
-insertions, deletions and clips, every flag `_fill_rows` reads, a pile deeper than the 128 reads the
-reservoir keeps, an `artificial` read group, annotations absent, integer, floating and missing, and
-every variant type `determine_polymorphic_type` can answer.
+The cases are chosen for what `encoders.py` decides on rather than for realism: windows clipped
+by the start and the end of a contig, IUPAC codes and lower case in the reference, reads with
+insertions, deletions and clips, every flag `_fill_rows` reads, a pile deeper than the 128 reads
+the reservoir keeps, an `artificial` read group, annotations absent, integer, floating and
+missing, and every variant type `determine_polymorphic_type` can answer.
 
     make_fixture.py <output directory>
 """
@@ -25,17 +25,25 @@ class Rand:
     """A 48-bit linear congruential generator, so no library's generator is in the fixture."""
 
     def __init__(self, seed):
+        """Start from `seed`, scrambled and masked to 48 bits as java.util.Random does."""
         self.state = (seed ^ 0x5DEECE66D) & ((1 << 48) - 1)
 
     def next(self, bound):
+        """Advance the state and return its top 31 bits modulo `bound`."""
         self.state = (self.state * 0x5DEECE66D + 0xB) & ((1 << 48) - 1)
         return (self.state >> 17) % bound
 
     def choice(self, items):
+        """Return one of `items`, picked by the next draw."""
         return items[self.next(len(items))]
 
 
 def contig_sequence(rand, length, ambiguous):
+    """Return `length` random bases.
+
+    With `ambiguous`, every third base of a stretch from the middle becomes an IUPAC code or
+    another non-ACGT character, and a stretch from the first quarter is lower case.
+    """
     bases = [rand.choice("ACGT") for _ in range(length)]
     if ambiguous:
         for at in range(length // 2, length // 2 + 40, 3):
@@ -46,6 +54,7 @@ def contig_sequence(rand, length, ambiguous):
 
 
 def write_fasta(path, contigs):
+    """Write `contigs` (name to sequence) to `path` as FASTA, 60 bases to a line."""
     with open(path, "w") as out:
         for name, sequence in contigs.items():
             out.write(f">{name} a fixture contig\n")
@@ -54,6 +63,11 @@ def write_fasta(path, contigs):
 
 
 def cigar_of(rand, length):
+    """Return a CIGAR string for a read of `length` bases.
+
+    One read in three, on average, is all matches; the rest carry an insertion, a deletion, soft
+    or hard clips, a skip, or a mix of these.
+    """
     kind = rand.next(12)
     if kind == 0:
         return f"{length // 2}M3I{length - length // 2 - 3}M"
@@ -106,6 +120,11 @@ def read_line(rand, name, contig, start, sequence, group, length):
 
 
 def write_bam(path, contigs, rand):
+    """Write random reads over `contigs` to a sorted, indexed BAM at `path`.
+
+    The reads are written as SAM next to `path`, converted and sorted with pysam, and the
+    intermediate files removed. One site on `c1` gets 180 reads, more than the reservoir keeps.
+    """
     sam = path + ".sam"
     with open(sam, "w") as out:
         out.write("@HD\tVN:1.6\tSO:coordinate\n")
@@ -200,6 +219,10 @@ def annotations(rand):
 
 
 def genotypes(rand, alts):
+    """Return a FORMAT layout and the two samples' values for a site with `alts` alternates.
+
+    One time in ten the layout is GT only, with one sample missing.
+    """
     if not rand.next(10):
         return "GT", "./.", "0/0"
     alleles = 1 + alts
@@ -218,6 +241,7 @@ def write_vcf(path, contigs, rand):
     sites = []
 
     def add(contig, pos, shape):
+        """Record a site of the given shape."""
         sites.append((contig, pos, shape))
 
     for pos in [1, 2, 3, 10, 40, 63, 64, 65, 66, 100]:
@@ -264,7 +288,9 @@ def write_vcf(path, contigs, rand):
             else:
                 ref_field, alt = ref, "."
             alts = 0 if alt == "." else alt.count(",") + 1
-            quality = rand.choice([".", "100", f"{rand.next(1000000) / 97:.2f}", "1234567.89", "0.00005"])
+            quality = rand.choice(
+                [".", "100", f"{rand.next(1000000) / 97:.2f}", "1234567.89", "0.00005"]
+            )
             status = rand.choice(["PASS", ".", "LowQual", "PASS"])
             identifier = rand.choice([".", ".", f"rs{pos}"])
             layout, one, two = genotypes(rand, max(alts, 1))
@@ -291,7 +317,7 @@ def write_symbolic(path, variants):
 
 
 def write_edges(out, contigs):
-    """A VCF for each way the reference's script ends otherwise than well, or changes what it reads.
+    """Write a VCF for each way the reference's script ends badly, or changes what it reads.
 
     All come after everything else, so no byte of the files above depends on them.
     """
@@ -300,17 +326,23 @@ def write_edges(out, contigs):
     columns = [line for line in lines if line.startswith("#CHROM")][0]
     body = [line for line in lines if line and not line.startswith("#")]
 
-    def site(pos, ref, alt, info=".", contig="c1", status="PASS", layout="GT", one="0/1", two="0/1"):
+    def site(
+        pos, ref, alt, info=".", contig="c1", status="PASS", layout="GT", one="0/1", two="0/1"
+    ):
+        """Return one record line with the given fields; ID is `.` and QUAL is 50."""
         return f"{contig}\t{pos}\t.\t{ref}\t{alt}\t50\t{status}\t{info}\t{layout}\t{one}\t{two}"
 
     def base(pos, contig="c1"):
+        """Return the upper-case reference base at the 1-based `pos` of `contig`."""
         return contigs[contig][pos - 1].upper()
 
     def write(name, records, extra=()):
+        """Write `<name>.vcf`: the header, `extra` after its first line, then `records`."""
         with open(f"{out}/{name}.vcf", "w") as vcf:
             vcf.write("\n".join(meta[:1] + list(extra) + meta[1:] + [columns] + records) + "\n")
 
     def alt(pos):
+        """Return a base that differs from the reference at `pos` of `c1`."""
         return "A" if base(pos) != "A" else "C"
 
     plain = [site(300, base(300), alt(300), "DP=10"), site(400, base(400), alt(400), "DP=11")]
@@ -321,7 +353,8 @@ def write_edges(out, contigs):
         plain,
         [
             "##source=HaplotypeCaller",
-            '##GATKCommandLine=<ID=HaplotypeCaller,CommandLine="HaplotypeCaller --x, y=1",Version="4.6.2.0">',
+            '##GATKCommandLine=<ID=HaplotypeCaller,CommandLine="HaplotypeCaller --x, y=1",'
+            'Version="4.6.2.0">',
         ],
     )
     write("breakend", plain + [site(500, base(500), f"]c1:5]{base(500)}")] + plain[:0])
@@ -338,7 +371,10 @@ def write_edges(out, contigs):
     write("undefined_info", plain + [site(500, base(500), alt(500), "NOPE=3;DP=4")] + plain[:0])
     write("undefined_filter", plain + [site(500, base(500), alt(500), status="NOPE")])
     write("undefined_contig", plain + [site(90, "A", "C", contig="c9")])
-    write("undefined_format", plain + [site(500, base(500), alt(500), layout="GT:ZZ", one="0/1:3", two="0/1:4")])
+    write(
+        "undefined_format",
+        plain + [site(500, base(500), alt(500), layout="GT:ZZ", one="0/1:3", two="0/1:4")],
+    )
     write("not_a_number", plain + [
         site(500, base(500), alt(500), "MQ=nan"),
         site(510, base(510), alt(510), "FS=inf"),
@@ -346,14 +382,22 @@ def write_edges(out, contigs):
     ])
     write("window_too_long", [site(64, contigs["c1"][63:67].upper(), base(64))])
     write("past_the_end", [site(2600, base(2600) + "A", base(2600))])
-    write("short_samples", [site(300, base(300), alt(300), layout="GT:DP:VF", one="0/1", two="0/1:7:0.12345678")])
-    write("float_annotation_tuple", [site(300, base(300), alt(300), "AF=0.5")], ['##INFO=<ID=SOR2,Number=A,Type=Float,Description="x">'])
+    write(
+        "short_samples",
+        [site(300, base(300), alt(300), layout="GT:DP:VF", one="0/1", two="0/1:7:0.12345678")],
+    )
+    write(
+        "float_annotation_tuple",
+        [site(300, base(300), alt(300), "AF=0.5")],
+        ['##INFO=<ID=SOR2,Number=A,Type=Float,Description="x">'],
+    )
     write("multiple_values", [site(300, base(300), alt(300), "MQ=1,2")])
     # Not a single line of any of them is one of the 71, which stay where they are.
     assert body
 
 
 def main():
+    """Write the FASTA, BAM and VCFs into the directory named on the command line."""
     out = sys.argv[1]
     os.makedirs(out, exist_ok=True)
     rand = Rand(47382911)

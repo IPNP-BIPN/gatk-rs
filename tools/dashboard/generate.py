@@ -66,10 +66,11 @@ MEASURED_PATH = "tools/coverage/measured.json"
 
 # This repository's own manifest is read in place, not vendored.
 #
-# The vendoring above exists for one reason: CI has only this repository checked out, so a sibling's
-# manifest has to be copied in to be readable at all. That reason does not apply to gatk-rs's own
-# manifest, which is committed three directories away. Vendoring it would create a second copy that
-# can disagree with the first, and the dashboard would then report whichever one was refreshed last.
+# The vendoring above exists for one reason: CI has only this repository checked out, so a
+# sibling's manifest has to be copied in to be readable at all. That reason does not apply to
+# gatk-rs's own manifest, which is committed three directories away. Vendoring it would create a
+# second copy that can disagree with the first, and the dashboard would then report whichever one
+# was refreshed last.
 #
 # Until this was added the list held the two siblings only, so `tool_states` never saw a gatk-rs
 # suite and every tool ported here read `not started` in the table this repository publishes about
@@ -230,7 +231,9 @@ def speed_cell(entry, speed):
     if measured.get("ratio_cold_wall") is None:
         return "not measured"
     steady = measured.get("ratio_steady_wall")
-    return f"{measured['ratio_cold_wall']:.3f} / " + (f"{steady:.3f}" if steady is not None else "-")
+    return f"{measured['ratio_cold_wall']:.3f} / " + (
+        f"{steady:.3f}" if steady is not None else "-"
+    )
 
 
 def tool_states(manifests):
@@ -251,6 +254,10 @@ def tool_states(manifests):
 
 
 def render(inventory, manifests, missing):
+    """Render docs/STATUS.md: the reference, the per-state counts and the per-origin tool tables.
+
+    `missing` lists the ports whose manifest could not be read, which get a section of their own.
+    """
     tools = inventory["tools"]
     states = tool_states(manifests)
     speed = load_speed()
@@ -308,9 +315,10 @@ def render(inventory, manifests, missing):
     lines.append(
         "The cost column is `port / reference` wall clock, cold / steady, from the latest "
         "measurement (`tools/speed/current.json`, measured by `tools/speed/bench.py` on real "
-        "x86-64; the pre-optimisation record is [speed/baseline.md](speed/baseline.md), the changes "
-        "since are [speed/targets.md](speed/targets.md)). Cold is one process per run on each side; "
-        "steady is against the reference warmed up in one JVM. Below 1 the port is cheaper."
+        "x86-64; the pre-optimisation record is [speed/baseline.md](speed/baseline.md), the "
+        "changes since are [speed/targets.md](speed/targets.md)). Cold is one process per run on "
+        "each side; steady is against the reference warmed up in one JVM. Below 1 the port is "
+        "cheaper."
     )
     lines.append("")
 
@@ -328,7 +336,8 @@ def render(inventory, manifests, missing):
         lines.append("")
         if started:
             lines.append(
-                "| tool | archetype | state | suites | cases | argument coverage | cost (cold / steady) |"
+                "| tool | archetype | state | suites | cases | argument coverage "
+                "| cost (cold / steady) |"
             )
             lines.append("|---|---|---|---|---:|---|---|")
             for tool, state, entry in started:
@@ -351,6 +360,11 @@ def render(inventory, manifests, missing):
 
 
 def main(argv):
+    """Regenerate docs/STATUS.md, or with `--check` report whether it is current.
+
+    With `--refresh` the ports' suite lists are re-vendored first. Returns the exit status: 1 when
+    the file is stale or a refresh could not read every port, else 0.
+    """
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--check", action="store_true")
     ap.add_argument(

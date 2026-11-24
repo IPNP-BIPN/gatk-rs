@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """One shot: the two shipped models' tensors, out of the pickled `nn.Module`s, into plain files.
 
-`NVScoreVariants` ships `1d_cnn_mix_train_full_bn.pt` and `small_2d.pt` inside the GATK jar. Each is
-a pickled module that only opens with the `scorevariants` classes on the path, so no Rust code can
-read it. This writes what the port needs and nothing else, little-endian:
+`NVScoreVariants` ships `1d_cnn_mix_train_full_bn.pt` and `small_2d.pt` inside the GATK jar.
+Each is a pickled module that only opens with the `scorevariants` classes on the path, so no Rust
+code can read it. This writes what the port needs and nothing else, little-endian:
 
     b"NVSW1\\n"
     u32 number of tensors
@@ -11,10 +11,12 @@ read it. This writes what the port needs and nothing else, little-endian:
         u32 name length, name, u32 dimensions, u64 each dimension, 32-bit floats in C order
 
 The two files come to about 8 MB, so they are not committed: the port checks each against the
-SHA-256 in `crates/gatk-tools/src/nv_score_variants/weights.rs`, and this script prints those hashes
-along with the hash of the model it read, so a file that moved is refused rather than scored with.
+SHA-256 in `crates/gatk-tools/src/nv_score_variants/weights.rs`, and this script prints those
+hashes along with the hash of the model it read, so a file that moved is refused rather than
+scored with.
 
-    docker run --rm --platform linux/amd64 -v "$PWD/tools/nvscorevariants:/tool:ro" -v "$OUT:/out" \\
+    docker run --rm --platform linux/amd64 \\
+        -v "$PWD/tools/nvscorevariants:/tool:ro" -v "$OUT:/out" \\
         broadinstitute/gatk:4.7.0.0 python3 /tool/extract_weights.py /out
 """
 
@@ -34,6 +36,11 @@ MODELS = {
 
 
 def main():
+    """Write each shipped model's tensors to `<out>/<target>` and print the hashes on the way.
+
+    Prints the SHA-256 of each model as read from the jar and of each weights file written. A
+    tensor that is not 32-bit floats ends the script.
+    """
     out = sys.argv[1]
     with zipfile.ZipFile(JAR) as jar:
         for model, target in MODELS.items():

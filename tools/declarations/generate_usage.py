@@ -3,9 +3,10 @@
 
 The listing `gatk` prints with no arguments is 373 lines, and 353 of them are a tool's display
 name and its one-line summary. That data is the reference's annotations, not this port's opinion,
-so it is generated from the `main-usage` golden rather than written: `@CommandLineProgramProperties`
-gives the group and the summary, `@BetaFeature` and `@ExperimentalFeature` give the marker, and
-`RuntimeUtils.toolDisplayName` gives the ` (Picard)` suffix.
+so it is generated from the `main-usage` golden rather than written:
+`@CommandLineProgramProperties` gives the group and the summary, `@BetaFeature` and
+`@ExperimentalFeature` give the marker, and `RuntimeUtils.toolDisplayName` gives the ` (Picard)`
+suffix.
 
 What is NOT generated is the layout, which is `Main.printUsage` and is ported in
 `crates/gatk-tools/src/main_usage.rs`. That is the division this file exists to keep: the data is
@@ -70,19 +71,27 @@ pub struct Group {
 
 
 def read_golden(path):
+    """Return the text of the gzipped golden dump at `path`."""
     with gzip.open(path, "rt") as handle:
         return handle.read()
 
 
 def unescape(text):
+    """Undo the dump's escaping of tab, newline and backslash in a field."""
     return text.replace("\\t", "\t").replace("\\n", "\n").replace("\\\\", "\\")
 
 
 def rust_string(text):
+    """Return `text` as a Rust string literal, with backslashes and double quotes escaped."""
     return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 def render(dump):
+    """Render the Rust catalogue module from the dump's `group` and `tool` lines.
+
+    Returns the module text: the fixed header, then the `GROUPS` and `TOOLS` constants in the
+    order the dump carries them.
+    """
     groups = []
     tools = []
     for line in dump.splitlines():
@@ -120,6 +129,11 @@ def render(dump):
 
 
 def main():
+    """Write the catalogue module, or with `--check` compare it with a fresh render.
+
+    Returns the exit status: 1 when the module is stale or there is nothing to render from, 0
+    otherwise, including a `--check` with no golden committed yet.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--dump", help="read this dump instead of the committed golden")
@@ -150,7 +164,10 @@ def main():
         return 0
 
     OUT.write_text(rendered)
-    print(f"wrote {OUT} ({rendered.count('    Tool {')} tools, {rendered.count('    Group {')} groups)")
+    print(
+        f"wrote {OUT} ({rendered.count('    Tool {')} tools, "
+        f"{rendered.count('    Group {')} groups)"
+    )
     return 0
 
 
