@@ -142,24 +142,53 @@ fn file_order(left: (i32, i32), right: (i32, i32)) -> std::cmp::Ordering {
     (last(left.0), left.1).cmp(&(last(right.0), right.1))
 }
 
-/// The input opened to be read from the start, never inflated whole.
-fn open(input: &str) -> Result<ReadsDataSource, Thrown> {
-    let path = std::path::Path::new(input);
-    let refused = |error: ReadsError| Thrown::user(format!("{error:?}"));
-    let bytes = gatk_engine::reads::file_start(path)
-        .ok_or_else(|| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(input, false)))?;
-    let binary = if is_block_compressed(&bytes) {
-        ReadsDataSource::check(path)
-            .and_then(|()| gatk_engine::reads::inflated_start(path))
-            .map(|inflated| inflated.starts_with(&BAM_MAGIC))
-            .unwrap_or(false)
-    } else {
-        bytes.starts_with(&BAM_MAGIC)
-    };
-    if binary {
-        ReadsDataSource::open_checked(path).map_err(refused)
-    } else {
-        ReadsDataSource::open_unindexed(path).map_err(refused)
+/// The input, read from the start once per pass: a BAM through `ReadsDataSource`, one record
+/// at a time and never inflated whole; anything else as `GatherBamFiles` reads it.
+enum Input {
+    Bam(ReadsDataSource),
+    // shortcut: a SAM or other text input is read whole, as the other Picard runners read it;
+    // stream it if a large SAM input ever matters.
+    Read(SamHeader, Vec<BamRecord>),
+}
+
+impl Input {
+    fn open(input: &str) -> Result<Input, Thrown> {
+        let path = std::path::Path::new(input);
+        let refused = |error: ReadsError| Thrown::user(format!("{error:?}"));
+        let bytes = gatk_engine::reads::file_start(path).ok_or_else(|| {
+            Thrown::user(gatk_tools::read_walker_refusal::cannot_read(input, false))
+        })?;
+        let binary = if is_block_compressed(&bytes) {
+            ReadsDataSource::check(path)
+                .and_then(|()| gatk_engine::reads::inflated_start(path))
+                .map(|inflated| inflated.starts_with(&BAM_MAGIC))
+                .unwrap_or(false)
+        } else {
+            bytes.starts_with(&BAM_MAGIC)
+        };
+        if binary {
+            return ReadsDataSource::open_checked(path)
+                .map(Input::Bam)
+                .map_err(refused);
+        }
+        let (header, records) = super::gather_bam_files::read_reads(input)?;
+        Ok(Input::Read(header, records))
+    }
+
+    fn header(&self) -> &SamHeader {
+        match self {
+            Input::Bam(source) => source.header(),
+            Input::Read(header, _) => header,
+        }
+    }
+
+    fn records(
+        &self,
+    ) -> Result<Box<dyn Iterator<Item = Result<BamRecord, ReadsError>> + '_>, ReadsError> {
+        Ok(match self {
+            Input::Bam(source) => Box::new(source.records_all()?),
+            Input::Read(_, records) => Box::new(records.iter().cloned().map(Ok)),
+        })
     }
 }
 
@@ -192,11 +221,16 @@ pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> 
     assert_writable(&output)?;
     assert_writable(&metrics_file)?;
 
-    let read_name_regex = ReadNameRegex::from_arg(scalar(parser, "READ_NAME_REGEX").as_deref())
-        .map_err(|message| {
-            let (class, message) = message.split_once(": ").unwrap_or(("", &message));
-            thrown(class, message.to_string())
-        })?;
+    let read_name_regex = ReadNameRegex::from_arg(Some(
+        // Its default is the "optimized capture" text, so `None` is a `null`: no locations.
+        scalar(parser, "READ_NAME_REGEX")
+            .as_deref()
+            .unwrap_or("null"),
+    ))
+    .map_err(|message| {
+        let (class, message) = message.split_once(": ").unwrap_or(("", &message));
+        thrown(class, message.to_string())
+    })?;
     let integer = |name: &str, default: i32| {
         scalar(parser, name)
             .and_then(|value| value.parse().ok())
@@ -231,7 +265,7 @@ pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> 
         .filter(|order| order != "null")
         .or_else(|| flag(parser, "ASSUME_SORTED").then(|| "coordinate".to_string()));
 
-    let source = open(input)?;
+    let source = Input::open(input)?;
     let mut header = source.header().clone();
     if let Some(order) = assumed.as_deref() {
         header.set_sort_order(order);
@@ -299,7 +333,7 @@ pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> 
     // The first pass: a read end per record, and the program ids the records carry.
     let mut seen: Vec<Option<String>> = Vec::new();
     let mut ends = ReadEndsBuilder::new(&options, queryname);
-    for record in source.records_all().map_err(malformed)? {
+    for record in source.records().map_err(malformed)? {
         let record = record.map_err(malformed)?;
         let id = string_tag(&record, b"PG");
         if !seen.contains(&id) {
@@ -341,25 +375,18 @@ pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> 
             1,
         );
     }
-    let program = |name: &str, default: &str| -> Option<String> {
-        match scalar(parser, name) {
-            Some(value) if value == "null" => None,
-            Some(value) => Some(value),
-            None => Some(default.to_string()),
-        }
-    };
-    let chained = program("PROGRAM_RECORD_ID", "MarkDuplicates").map(|record_id| {
+    // An argument set to `null` reads as `None`. PROGRAM_RECORD_ID and PROGRAM_GROUP_NAME default
+    // to the tool's name, so `None` is a `null` that turns them off; the version and the command
+    // line default to `null`, which means `getVersion()` and `getCommandLine()`.
+    let chained = scalar(parser, "PROGRAM_RECORD_ID").map(|record_id| {
         chained_pg_ids(
             &mut out_header,
             seen,
             &record_id,
-            &program(
-                "PROGRAM_GROUP_VERSION",
-                &format!("Version:{}", crate::TOOLKIT_VERSION),
-            )
-            .unwrap_or_default(),
-            &program("PROGRAM_GROUP_COMMAND_LINE", &command_line).unwrap_or_default(),
-            program("PROGRAM_GROUP_NAME", "MarkDuplicates").as_deref(),
+            &scalar(parser, "PROGRAM_GROUP_VERSION")
+                .unwrap_or_else(|| format!("Version:{}", crate::TOOLKIT_VERSION)),
+            &scalar(parser, "PROGRAM_GROUP_COMMAND_LINE").unwrap_or_else(|| command_line.clone()),
+            scalar(parser, "PROGRAM_GROUP_NAME").as_deref(),
         )
     });
     let tag_duplicate_set_members = flag(parser, "TAG_DUPLICATE_SET_MEMBERS");
@@ -378,89 +405,86 @@ pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> 
     let mut previous: Option<(i32, i32)> = None;
     let target = format!("file://{}", super::absolute(&output));
 
-    let marked = source
-        .records_all()
-        .map_err(malformed)?
-        .filter_map(|record| {
-            let record = match record {
-                Ok(record) => record,
-                Err(error) => return Some(Err(error)),
-            };
-            let summary = summary(&record);
-            let (duplicate, optical, duplicate_set) = flags.next(
-                &summary.name,
-                summary.secondary_or_supplementary() || summary.unmapped(),
-            );
-            let (duplicate_type, kept) = tally
-                .borrow_mut()
-                .add(&summary, &options, duplicate, optical);
-            if !kept {
-                return None;
-            }
-            // `SAMFileWriterImpl.assertPresorted`: the writer is presorted, so the record that goes
-            // backwards is the one that throws, and `isSorted` prints its key twice.
-            if coordinate_out {
-                let here = (record.reference_index, record.alignment_start);
-                if previous
-                    .is_some_and(|before| file_order(before, here) == std::cmp::Ordering::Greater)
-                {
-                    let contig = usize::try_from(here.0)
-                        .ok()
-                        .and_then(|i| out_header.sequences.get(i))
-                        .map_or("*", |s| s.name.as_str());
-                    let key = format!("{contig}:{}", here.1);
-                    *stopped.borrow_mut() = Some(thrown(
-                        "java.lang.IllegalArgumentException",
-                        format!(
-                            "Alignments added out of order in SAMFileWriterImpl.addAlignment for \
+    let marked = source.records().map_err(malformed)?.filter_map(|record| {
+        let record = match record {
+            Ok(record) => record,
+            Err(error) => return Some(Err(error)),
+        };
+        let summary = summary(&record);
+        let (duplicate, optical, duplicate_set) = flags.next(
+            &summary.name,
+            summary.secondary_or_supplementary() || summary.unmapped(),
+        );
+        let (duplicate_type, kept) = tally
+            .borrow_mut()
+            .add(&summary, &options, duplicate, optical);
+        if !kept {
+            return None;
+        }
+        // `SAMFileWriterImpl.assertPresorted`: the writer is presorted, so the record that goes
+        // backwards is the one that throws, and `isSorted` prints its key twice.
+        if coordinate_out {
+            let here = (record.reference_index, record.alignment_start);
+            if previous
+                .is_some_and(|before| file_order(before, here) == std::cmp::Ordering::Greater)
+            {
+                let contig = usize::try_from(here.0)
+                    .ok()
+                    .and_then(|i| out_header.sequences.get(i))
+                    .map_or("*", |s| s.name.as_str());
+                let key = format!("{contig}:{}", here.1);
+                *stopped.borrow_mut() = Some(thrown(
+                    "java.lang.IllegalArgumentException",
+                    format!(
+                        "Alignments added out of order in SAMFileWriterImpl.addAlignment for \
                          {target}. Sort order is coordinate. Offending records are at [{key}] \
                          and [{key}]"
-                        ),
-                    ));
-                    return Some(Err(ReadsError::Malformed(String::new())));
-                }
-                previous = Some(here);
+                    ),
+                ));
+                return Some(Err(ReadsError::Malformed(String::new())));
             }
+            previous = Some(here);
+        }
 
-            let original_flags = record.flags;
-            let mut written = record;
-            written.flags &= !DUPLICATE_READ;
-            if duplicate {
-                written.flags |= DUPLICATE_READ;
+        let original_flags = record.flags;
+        let mut written = record;
+        written.flags &= !DUPLICATE_READ;
+        if duplicate {
+            written.flags |= DUPLICATE_READ;
+        }
+        written.tags.remove(Tag::new(b"DT"));
+        if let Some(code) = duplicate_type {
+            written.tags.insert(Tag::new(b"DT"), TagValue::Str(code));
+        }
+        if tag_duplicate_set_members && original_flags & (0x4 | 0x100 | 0x800) == 0 {
+            if let Some((representative, size)) = duplicate_set {
+                written
+                    .tags
+                    .insert(Tag::new(b"DI"), TagValue::Int(representative as i64));
+                written
+                    .tags
+                    .insert(Tag::new(b"DS"), TagValue::Int(size as i64));
             }
-            written.tags.remove(Tag::new(b"DT"));
-            if let Some(code) = duplicate_type {
-                written.tags.insert(Tag::new(b"DT"), TagValue::Str(code));
-            }
-            if tag_duplicate_set_members && original_flags & (0x4 | 0x100 | 0x800) == 0 {
-                if let Some((representative, size)) = duplicate_set {
+        }
+        // `rec.setAttribute(PG, chainedPgIds.get(rec.getStringAttribute(PG)))`.
+        if let (true, Some(chained)) = (add_pg_tag, &chained) {
+            let old = string_tag(&written, b"PG");
+            match chained
+                .iter()
+                .find(|(id, _)| id.as_deref() == old.as_deref())
+            {
+                Some((_, id)) => {
                     written
                         .tags
-                        .insert(Tag::new(b"DI"), TagValue::Int(representative as i64));
-                    written
-                        .tags
-                        .insert(Tag::new(b"DS"), TagValue::Int(size as i64));
+                        .insert(Tag::new(b"PG"), TagValue::Str(id.clone()));
+                }
+                None => {
+                    written.tags.remove(Tag::new(b"PG"));
                 }
             }
-            // `rec.setAttribute(PG, chainedPgIds.get(rec.getStringAttribute(PG)))`.
-            if let (true, Some(chained)) = (add_pg_tag, &chained) {
-                let old = string_tag(&written, b"PG");
-                match chained
-                    .iter()
-                    .find(|(id, _)| id.as_deref() == old.as_deref())
-                {
-                    Some((_, id)) => {
-                        written
-                            .tags
-                            .insert(Tag::new(b"PG"), TagValue::Str(id.clone()));
-                    }
-                    None => {
-                        written.tags.remove(Tag::new(b"PG"));
-                    }
-                }
-            }
-            Some(Ok(written))
-        });
+        }
+        Some(Ok(written))
+    });
 
     let create_index = flag(parser, "CREATE_INDEX") && coordinate_out;
     let written = gatk_tools::sam_output::write_bam_file(

@@ -18601,7 +18601,8 @@
         "row: the port runs one input and refuses several by name, and refuses the barcode and UMI",
         "arguments the same way, so those are left out here rather than measured as one refusal.",
         "tiled.bam holds small.bam's reads under Illumina names, so the optical arguments and",
-        "READ_NAME_REGEX reach something; queryname.bam is the queryname-grouped pass."
+        "READ_NAME_REGEX reach something; queryname.bam is the queryname-grouped pass.",
+        "ASSUME_SORTED is held out: it is a mutex with ASSUME_SORT_ORDER, which says the same thing; varying both measured Barclay's refusal on 18 of 28 rows."
       ],
       "--TMP_DIR": [
         "/work/tmp"
@@ -18702,7 +18703,8 @@
       "--READ_TWO_BARCODE_TAG": [],
       "--MOLECULAR_IDENTIFIER_TAG": [],
       "--DUPLEX_UMI": [],
-      "--FLOW_MODE": []
+      "--FLOW_MODE": [],
+      "--ASSUME_SORTED": []
     }
   },
   "constraints": [
