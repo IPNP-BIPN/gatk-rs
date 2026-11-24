@@ -1,0 +1,101 @@
+name: Release
+
+# A `v*` tag gets a DRAFT GitHub release carrying `gatk` for three platforms, each archive with its
+# sha256. Nothing is published until a person reviews the draft and presses Publish.
+#
+# The binary is built exactly as `speed.yml` measures it (`cargo build --release -p gatk-cli`, the
+# pinned toolchain, no RUSTFLAGS), so the speed a release claims is the speed of the bytes it ships.
+# There is no `target-cpu=native`: the x86-64 binary is run under QEMU's baseline `qemu64` CPU
+# before it is packaged, so an instruction the oldest x86-64 lacks fails here, not on a user's host.
+#
+# A pull request that touches this file or tools/release/ runs every step except the release
+# itself: that is the dry run, and it needs no tag.
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+      - "tools/release/**"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - runner: macos-15
+            target: aarch64-apple-darwin
+    env:
+      NAME: gatk-rs-${{ github.ref_type == 'tag' && github.ref_name || 'dryrun' }}-${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          # Pinned; must match rust-toolchain.toml.
+          toolchain: "1.97.1"
+
+      - name: Build
+        run: cargo build --release --locked -p gatk-cli
+
+      - name: The binary runs on the host
+        run: tools/release/smoke.sh target/release/gatk
+
+      - name: The binary runs on a baseline x86-64 CPU (qemu64)
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update -qq || echo "apt refresh incomplete; the install below is the gate"
+          sudo apt-get install -y -qq qemu-user
+          RUN="qemu-x86_64 -cpu qemu64" tools/release/smoke.sh target/release/gatk
+
+      - name: Package
+        run: |
+          mkdir -p "dist/${NAME}/bin"
+          cp target/release/gatk "dist/${NAME}/bin/"
+          cp LICENSE NOTICE README.md CHANGELOG.md "dist/${NAME}/"
+          python3 tools/release/third_party.py gatk-cli "${{ matrix.target }}" > "dist/${NAME}/THIRD-PARTY-LICENSES.txt"
+          tar -C dist -czf "${NAME}.tar.gz" "${NAME}"
+          shasum -a 256 "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256"
+          cat "${NAME}.tar.gz.sha256"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.NAME }}
+          path: ${{ env.NAME }}.tar.gz*
+
+  release:
+    name: Draft release
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v7
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create the draft and attach the archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # The CHANGELOG section of this version is the release's notes.
+          awk -v v="${TAG#v}" '/^## /{p = index($0, "[" v "]") > 0; next} p' CHANGELOG.md > notes.md
+          gh release view "${TAG}" >/dev/null 2>&1 \
+            || gh release create "${TAG}" --draft --verify-tag --title "gatk-rs ${TAG}" --notes-file notes.md
+          gh release upload "${TAG}" dist/* --clobber

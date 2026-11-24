@@ -1,0 +1,7 @@
+gatk-rs
+Copyright 2026 Benjamin Demaille
+
+This product is a Rust port of the Genome Analysis Toolkit (GATK),
+https://github.com/broadinstitute/gatk, Copyright 2021 Broad Institute, Inc.,
+licensed under the Apache License, Version 2.0.
+It is not the official GATK and is not affiliated with or endorsed by the Broad Institute.
