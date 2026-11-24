@@ -7889,27 +7889,27 @@
     },
     "VariantRecalibrator": {
       "$why": [
-        "--variant is vr_calls.vcf, vr_calls2.vcf (drawn from another seed, on positions of the other parity)",
-        "or both, which MakeFixtures draws as 2,600 and 2,200 annotated calls over two contigs: SNPs, indels,",
-        "two-allele SNPs, MIXED sites and spanning deletions, three quarters from a good cluster. --resource",
-        "is a set of tagged resources: a training and truth set with a known set whose genotypes are",
-        "sometimes 0/0 (which --trust-all-polymorphic decides), the same training set with a bad=true set,",
-        "training and truth split over two files. --use-annotation, --variant and --truth-sensitivity-tranche",
-        "are whole lists ($lists), since a model over one annotation is another model. --input-model is the",
-        "reference's own --output-model over QD MQ FS SOR. The index is held off because a .idx records the",
-        "output's modification time; the command line is held off because it records the date. --rscript-file",
-        "without --dont-run-rscript is refused, the pinned container having no Rscript. --input is reads.bam",
-        "or unset and --read-index its index or unset, never an index without its BAM. --reference and",
-        "--sequence-dictionary are not given: the corpus has no reference over vr_calls.vcf's 2 Mb chr1, and",
-        "a reference only rewrites the ##contig lines' assembly. --output-model is held absent, and the",
-        "reason is a-rank-is-not-a-byte's: the report prints every mean, covariance and weight at %.16E, and",
-        "those digits come out of a variational Bayes loop that calls Math.pow millions of times. The port's",
-        "pow is the host libm, which agrees with HotSpot's intrinsic on 99.94% of calls",
-        "(docs/numeric-functions-a-ported-call-site-reaches.md), so a trained model matches the reference's",
-        "to fifteen or sixteen digits and not always to seventeen: two of the first array's rows differed",
-        "there and nowhere else. The scores the recal file carries at four decimals, the tranches and the",
-        "plotting script do not reach those digits and are measured on every row; --input-model reads the",
-        "reference's own report."
+        "--variant is vr_calls.vcf, vr_calls2.vcf (drawn from another seed, on positions of the other parity) or both,",
+        "which MakeFixtures draws as 2,600 and 2,200 annotated calls over two contigs: SNPs, indels, two-allele SNPs,",
+        "MIXED sites and spanning deletions, three quarters from a good cluster. --resource is a set of tagged",
+        "resources: a training and truth set with a known set whose genotypes are sometimes 0/0 (which",
+        "--trust-all-polymorphic decides), the same training set with a bad=true set, training and truth split over two",
+        "files. --use-annotation, --variant and --truth-sensitivity-tranche are whole lists ($lists), since a model",
+        "over one annotation is another model. --input-model is the reference's own --output-model over QD MQ FS SOR.",
+        "The index is held off because a .idx records the output's modification time; the command line is held off",
+        "because it records the date. --rscript-file without --dont-run-rscript is refused, the pinned container having",
+        "no Rscript. --input is reads.bam or unset and --read-index its index or unset, never an index without its BAM.",
+        "--sequence-dictionary is not given: the tool reads no base. --reference is absent or vr_ref.fasta, which holds",
+        "chr2 alone: the output's ##contig lines come from getBestAvailableSequenceDictionary, the call sets' own",
+        "dictionary, and the reference only names their assembly= and the ##reference line, by name. chr20 30x is where",
+        "the port wrote the reference's dictionary instead (gatk-rs#1453). --output-model is held absent, and the",
+        "reason is a-rank-is-not-a-byte's: the report prints every mean, covariance and weight at %.16E, and those",
+        "digits come out of a variational Bayes loop that calls Math.pow millions of times. The port's pow is the host",
+        "libm, which agrees with HotSpot's intrinsic on 99.94% of calls",
+        "(docs/numeric-functions-a-ported-call-site-reaches.md), so a trained model matches the reference's to fifteen",
+        "or sixteen digits and not always to seventeen: two of the first array's rows differed there and nowhere else.",
+        "The scores the recal file carries at four decimals, the tranches and the plotting script do not reach those",
+        "digits and are measured on every row; --input-model reads the reference's own report."
       ],
       "$tagged": [
         "--resource"
@@ -8056,7 +8056,10 @@
         "<unset>",
         "/work/fixtures/reads.bai"
       ],
-      "--reference": [],
+      "--reference": [
+        "null",
+        "/work/fixtures/vr_ref.fasta"
+      ],
       "--sequence-dictionary": [],
       "--max-variants-per-shard": [
         "0"
@@ -8892,8 +8895,11 @@
         "($lists). The HDF5 matrices are compared as their tree of datasets (run_array.py's hdf5_members), since two",
         "runs of the reference already write different bytes. A plain VCF output with an index is forbidden",
         "because its .idx records the output's modification time; the command line is held off because it records",
-        "the date. --input, --read-index, --reference and --sequence-dictionary are not given: the tool reads no base",
-        "and no read, and a reference only rewrites the ##contig lines' assembly."
+        "the date. --input, --read-index and --sequence-dictionary are not given: the tool reads no base and no read.",
+        "--reference is absent or vr_ref.fasta, which holds chr2 alone: the output's ##contig lines come from",
+        "getBestAvailableSequenceDictionary, the call sets' own dictionary, and the reference only names their",
+        "assembly= and the ##reference line, by name. chr20 30x is where the port wrote the reference's",
+        "dictionary instead (gatk-rs#1453)."
       ],
       "$tagged": [
         "--resource"
@@ -8959,7 +8965,10 @@
       ],
       "--input": [],
       "--read-index": [],
-      "--reference": [],
+      "--reference": [
+        "null",
+        "/work/fixtures/vr_ref.fasta"
+      ],
       "--sequence-dictionary": []
     },
     "FilterAlignmentArtifacts": {
@@ -18614,11 +18623,12 @@
         "refuses in its own words: those rows differ. The command line is held off because it records the date. The two",
         "thresholds (--snp-calibration-sensitivity-threshold, --indel-calibration-sensitivity-threshold) are not varied:",
         "their bounds refuse a null where the parser reads one, so a row without them would stop before the pass. The dump",
-        "covers their refusals.",
-        "--input, --read-index, --reference and --sequence-dictionary are not given, as for ExtractVariantAnnotations: the",
-        "tool reads no base and no read, and a reference only rewrites the ##contig lines' assembly.",
-        "--variant-output-filtering is held out: the port neither filters the scored records by it nor refuses a mode",
-        "without -L, a port limitation."
+        "covers their refusals. --input, --read-index and --sequence-dictionary are not given, as for",
+        "ExtractVariantAnnotations: the tool reads no base and no read. --reference is held out: it names the ##contig",
+        "lines' assembly= and the ##reference line, which ExtractVariantAnnotations varies, but the port's scored header",
+        "does not rebuild them (gatk-rs#1479 reached ExtractVariantAnnotations and VariantRecalibrator only), a port",
+        "limitation. --variant-output-filtering is held out: the port neither filters the scored records by it nor refuses a",
+        "mode without -L, a port limitation."
       ],
       "$past_the_interpreter": "python",
       "$output_on_failure": true,
