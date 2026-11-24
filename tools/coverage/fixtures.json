@@ -21611,6 +21611,26 @@
         "--sharded-output": "true"
       },
       "why": "Barclay refuses --output-shard-tmp-dir beside --sharded-output whenever both are GIVEN, so --sharded-output gets an <unset> value and the parts directory is given only where it is."
+    },
+    {
+      "tools": [
+        "PileupSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/reads.bam",
+        "--read-index": "/work/fixtures/deep.bai"
+      },
+      "why": "Disq queries -L through the index --read-index names, so a BAM given another file's index starts its traversal at that file's offsets, which is not a behaviour of the reads; each BAM is paired with its own index."
+    },
+    {
+      "tools": [
+        "PileupSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/deep.bam",
+        "--read-index": "/work/fixtures/reads.bai"
+      },
+      "why": "Disq queries -L through the index --read-index names, so a BAM given another file's index starts its traversal at that file's offsets, which is not a behaviour of the reads; each BAM is paired with its own index."
     }
   ],
   "exclude": {
