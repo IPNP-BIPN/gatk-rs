@@ -513,7 +513,7 @@ pub fn extract_variant_annotations(parser: &Parser) -> Outcome {
             ],
         });
     }
-    let header = update_header_contig_lines(
+    let header = update_header_contig_lines_best_available(
         parser,
         VcfHeader {
             lines,
