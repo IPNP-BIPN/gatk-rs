@@ -344,10 +344,15 @@ fn the_kernel_gives_the_transcriptions_bits() {
 }
 
 /// Many reads against one haplotype, lane by lane, give each read's own single-pair bits: groups
-/// of 0 to 40 reads of mixed lengths, including empty ones, at every quality.
+/// of 0 to 40 reads of mixed lengths, including empty ones, at every quality, on every kernel the
+/// host can run (each forced in turn, not only the one dispatch picks). This is the test
+/// `tools/audit/simd_kernels.json` names for `pair_hmm.rs`; it prints which kernels it ran, so a
+/// CI log says which paths that host held to the single pair.
 #[test]
 fn reads_side_by_side_give_each_reads_own_bits() {
-    use gatk_engine::pair_hmm::{reads_likelihoods_given_haplotype_log10, HmmRead};
+    use gatk_engine::pair_hmm::{reads_likelihoods_given_haplotype_log10_with, HmmRead, Kernel};
+    let kernels = Kernel::available();
+    eprintln!("PairHMM kernels held to the single pair on this host: {kernels:?}");
     let mut state = 0x2026_u64;
     let mut next = move |bound: u64| {
         state ^= state << 13;
@@ -396,23 +401,25 @@ fn reads_side_by_side_give_each_reads_own_bits() {
                 gap_continuation: gap,
             })
             .collect();
-        let mut out = vec![0.0; views.len()];
-        reads_likelihoods_given_haplotype_log10(&haplotype, &views, &mut out);
-        for (read, ours) in views.iter().zip(&out) {
-            let alone = read_likelihood_given_haplotype_log10(
-                &haplotype,
-                read.bases,
-                read.quals,
-                read.insertion_quals,
-                read.deletion_quals,
-                read.gap_continuation,
-            );
-            assert_eq!(
-                ours.to_bits(),
-                alone.to_bits(),
-                "{haplotype:?} {:?}",
-                read.bases
-            );
+        for &kernel in &kernels {
+            let mut out = vec![0.0; views.len()];
+            reads_likelihoods_given_haplotype_log10_with(kernel, &haplotype, &views, &mut out);
+            for (read, ours) in views.iter().zip(&out) {
+                let alone = read_likelihood_given_haplotype_log10(
+                    &haplotype,
+                    read.bases,
+                    read.quals,
+                    read.insertion_quals,
+                    read.deletion_quals,
+                    read.gap_continuation,
+                );
+                assert_eq!(
+                    ours.to_bits(),
+                    alone.to_bits(),
+                    "{kernel:?} {haplotype:?} {:?}",
+                    read.bases
+                );
+            }
         }
     }
 }

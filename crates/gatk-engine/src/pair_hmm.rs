@@ -276,33 +276,135 @@ pub struct HmmRead<'a> {
     pub gap_continuation: &'a [u8],
 }
 
-/// Reads computed side by side. Each lane is one read and does that read's own multiplies and
-/// adds, never fused, so vectorising across lanes cannot move a bit.
-const LANES: usize = 4;
-type Lanes = [f64; LANES];
-
 /// One column of a row: the match, insertion and deletion values of every lane, side by side.
+/// Each lane is one read and does that read's own multiplies and adds, never fused, so computing
+/// the lanes in one vector instruction cannot move a bit.
 #[derive(Clone, Copy)]
-struct Cell {
-    m: Lanes,
-    x: Lanes,
-    y: Lanes,
+struct Cell<const N: usize> {
+    m: [f64; N],
+    x: [f64; N],
+    y: [f64; N],
 }
 
-const ZERO: Cell = Cell {
-    m: [0.0; LANES],
-    x: [0.0; LANES],
-    y: [0.0; LANES],
-};
+impl<const N: usize> Cell<N> {
+    const ZERO: Self = Cell {
+        m: [0.0; N],
+        x: [0.0; N],
+        y: [0.0; N],
+    };
+}
+
+/// The two rows of each width, kept per thread between calls: allocating them per haplotype was a
+/// tenth of a call.
+type Rows<const N: usize> = std::cell::RefCell<(Vec<Cell<N>>, Vec<Cell<N>>)>;
+thread_local! {
+    static ROWS_4: Rows<4> = const { std::cell::RefCell::new((Vec::new(), Vec::new())) };
+    static ROWS_8: Rows<8> = const { std::cell::RefCell::new((Vec::new(), Vec::new())) };
+}
+
+/// How [`reads_likelihoods_given_haplotype_log10`] runs its lanes. Every kernel does each lane's
+/// scalar operations in the scalar order (`tools/audit/simd_kernels.json` declares this file), so
+/// they differ in speed only; the test forces each one the host has against the single pair.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kernel {
+    /// Four lanes, in whatever the target's baseline vectors are: SSE2 on x86-64, NEON on arm64.
+    Portable,
+    /// Four lanes in one 256-bit register.
+    Avx2,
+    /// Eight lanes in one 512-bit register.
+    Avx512,
+}
+
+impl Kernel {
+    /// Every kernel this host can run, the portable one first.
+    pub fn available() -> Vec<Kernel> {
+        #[cfg(target_arch = "x86_64")]
+        {
+            let mut kernels = vec![Kernel::Portable];
+            if std::arch::is_x86_feature_detected!("avx2") {
+                kernels.push(Kernel::Avx2);
+            }
+            if std::arch::is_x86_feature_detected!("avx512f") {
+                kernels.push(Kernel::Avx512);
+            }
+            kernels
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        vec![Kernel::Portable]
+    }
+
+    /// The widest kernel this host can run, detected once.
+    pub fn best() -> Kernel {
+        static BEST: std::sync::OnceLock<Kernel> = std::sync::OnceLock::new();
+        *BEST.get_or_init(|| *Kernel::available().last().expect("the portable kernel"))
+    }
+}
 
 /// [`read_likelihood_given_haplotype_log10`] for every read of `reads` against one haplotype,
-/// into `out` in read order, with the same bits.
-///
-/// Reads are taken in order of length, [`LANES`] at a time, so a lane rarely idles. A lane whose
-/// read has ended runs on zero transitions and priors, and its answer was taken at its last row.
-/// The prior is looked up, not chosen: each distinct haplotype byte gets a code, and every row
-/// holds the prior of each code for each lane, which keeps the inner loop free of branches.
+/// into `out` in read order, with the same bits, on the widest kernel the host has.
 pub fn reads_likelihoods_given_haplotype_log10(
+    haplotype: &[u8],
+    reads: &[HmmRead<'_>],
+    out: &mut [f64],
+) {
+    reads_likelihoods_given_haplotype_log10_with(Kernel::best(), haplotype, reads, out);
+}
+
+/// [`reads_likelihoods_given_haplotype_log10`] on a named kernel, which is how the test reaches
+/// each one.
+///
+/// # Panics
+///
+/// If the host cannot run `kernel` (it is not in [`Kernel::available`]).
+pub fn reads_likelihoods_given_haplotype_log10_with(
+    kernel: Kernel,
+    haplotype: &[u8],
+    reads: &[HmmRead<'_>],
+    out: &mut [f64],
+) {
+    assert!(
+        Kernel::available().contains(&kernel),
+        "{kernel:?} is not available here"
+    );
+    match kernel {
+        Kernel::Portable => lanes::<4>(&ROWS_4, haplotype, reads, out),
+        #[cfg(target_arch = "x86_64")]
+        // SAFETY: `available` detected the feature on this host.
+        Kernel::Avx2 => unsafe { avx2(haplotype, reads, out) },
+        #[cfg(target_arch = "x86_64")]
+        // SAFETY: as above.
+        Kernel::Avx512 => unsafe { avx512(haplotype, reads, out) },
+        #[cfg(not(target_arch = "x86_64"))]
+        Kernel::Avx2 | Kernel::Avx512 => unreachable!("refused by the assertion"),
+    }
+}
+
+/// [`lanes`] compiled with AVX2 enabled and nothing else: the same source, so the same operations
+/// per lane, in 256-bit registers. Fused multiply-add is deliberately not enabled (Rust would not contract
+/// `a * b + c` anyway, and the guard refuses it here).
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn avx2(haplotype: &[u8], reads: &[HmmRead<'_>], out: &mut [f64]) {
+    lanes::<4>(&ROWS_4, haplotype, reads, out);
+}
+
+/// [`lanes`] with eight lanes and AVX-512F enabled.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn avx512(haplotype: &[u8], reads: &[HmmRead<'_>], out: &mut [f64]) {
+    lanes::<8>(&ROWS_8, haplotype, reads, out);
+}
+
+/// The body every kernel shares, `N` reads at a time.
+///
+/// Reads are taken in order of length, `N` at a time, so a lane rarely idles. A lane whose read
+/// has ended runs on zero transitions and priors, and its answer was taken at its last row. The
+/// prior is looked up, not chosen: each distinct haplotype byte gets a code, and every row holds
+/// the prior of each code for each lane, which keeps the inner loop free of branches.
+/// `inline(always)` is what puts this body, and [`sweep`], inside each `target_feature` wrapper.
+#[inline(always)]
+fn lanes<const N: usize>(
+    rows: &'static std::thread::LocalKey<Rows<N>>,
     haplotype: &[u8],
     reads: &[HmmRead<'_>],
     out: &mut [f64],
@@ -324,47 +426,46 @@ pub fn reads_likelihoods_given_haplotype_log10(
             }
         })
         .collect();
-    let mut priors = vec![[0.0f64; LANES]; distinct.len()];
+    let mut priors = vec![[0.0f64; N]; distinct.len()];
 
-    thread_local! {
-        // The two rows, kept between calls: allocating them per haplotype was a tenth of a call.
-        static ROWS: std::cell::RefCell<(Vec<Cell>, Vec<Cell>)> =
-            const { std::cell::RefCell::new((Vec::new(), Vec::new())) };
-    }
-    ROWS.with_borrow_mut(|(previous, current)| {
-        previous.resize(width, ZERO);
-        current.resize(width, ZERO);
-        sweep(
-            reads,
-            out,
-            &order,
-            &codes,
-            &distinct,
-            &mut priors,
-            &mut previous[..width],
-            &mut current[..width],
-            initial,
-        );
-    });
+    // Taken out and put back rather than borrowed through a closure: a closure is compiled once
+    // for every caller of `lanes::<N>`, without the caller's `target_feature`, so the AVX2 path
+    // would run the portable body.
+    let (mut previous, mut current) = rows.take();
+    previous.resize(width, Cell::ZERO);
+    current.resize(width, Cell::ZERO);
+    sweep(
+        reads,
+        out,
+        &order,
+        &codes,
+        &distinct,
+        &mut priors,
+        &mut previous[..width],
+        &mut current[..width],
+        initial,
+    );
+    rows.set((previous, current));
 }
 
-/// The rows of [`reads_likelihoods_given_haplotype_log10`], [`LANES`] reads at a time.
+/// The rows of [`lanes`], `N` reads at a time.
 #[allow(clippy::too_many_arguments)]
-fn sweep<'a>(
+#[inline(always)]
+fn sweep<'a, const N: usize>(
     reads: &[HmmRead<'_>],
     out: &mut [f64],
     order: &[usize],
     codes: &[u8],
     distinct: &[u8],
-    priors: &mut [Lanes],
-    mut previous: &'a mut [Cell],
-    mut current: &'a mut [Cell],
+    priors: &mut [[f64; N]],
+    mut previous: &'a mut [Cell<N>],
+    mut current: &'a mut [Cell<N>],
     initial: f64,
 ) {
     let tables = &*TABLES;
 
     // The last row's match and insertion terms, summed in the reference's order.
-    let answer = |row: &[Cell], lane: usize| -> f64 {
+    let answer = |row: &[Cell<N>], lane: usize| -> f64 {
         let mut total = 0.0;
         for cell in &row[1..] {
             total += cell.m[lane] + cell.x[lane];
@@ -372,10 +473,10 @@ fn sweep<'a>(
         jmath::math::log10(total) - initial_condition_log10()
     };
 
-    for chunk in order.chunks(LANES) {
+    for chunk in order.chunks(N) {
         previous.fill(Cell {
-            y: [initial; LANES],
-            ..ZERO
+            y: [initial; N],
+            ..Cell::ZERO
         });
         for (lane, &r) in chunk.iter().enumerate() {
             if reads[r].bases.is_empty() {
@@ -389,13 +490,13 @@ fn sweep<'a>(
             .max()
             .unwrap_or(0);
         for i in 0..longest {
-            let mut match_to_match = [0.0; LANES];
-            let mut indel_to_match = [0.0; LANES];
-            let mut match_to_insertion = [0.0; LANES];
-            let mut insertion_to_insertion = [0.0; LANES];
-            let mut match_to_deletion = [0.0; LANES];
+            let mut match_to_match = [0.0; N];
+            let mut indel_to_match = [0.0; N];
+            let mut match_to_insertion = [0.0; N];
+            let mut insertion_to_insertion = [0.0; N];
+            let mut match_to_deletion = [0.0; N];
             for prior in priors.iter_mut() {
-                *prior = [0.0; LANES];
+                *prior = [0.0; N];
             }
             for (lane, &r) in chunk.iter().enumerate() {
                 let read = &reads[r];
@@ -423,15 +524,15 @@ fn sweep<'a>(
             }
             let deletion_to_deletion = insertion_to_insertion;
 
-            current[0] = ZERO;
-            let mut left = ZERO;
+            current[0] = Cell::ZERO;
+            let mut left = Cell::ZERO;
             for ((cell, window), &code) in
                 current[1..].iter_mut().zip(previous.windows(2)).zip(codes)
             {
                 let (diagonal, up) = (&window[0], &window[1]);
                 let p = &priors[usize::from(code)];
-                let mut next = ZERO;
-                for lane in 0..LANES {
+                let mut next = Cell::ZERO;
+                for lane in 0..N {
                     next.m[lane] = p[lane]
                         * (diagonal.m[lane] * match_to_match[lane]
                             + diagonal.x[lane] * indel_to_match[lane]
