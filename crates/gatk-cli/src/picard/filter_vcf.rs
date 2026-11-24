@@ -5,10 +5,9 @@ use gatk_tools::filter_vcf::{filter_to, Thresholds};
 use gatk_tools::main_entry::{Thrown, PORT_LIMITATION};
 use htsjdk_vcf::reader::{read_vcf, ReadError, ReadFailure};
 
-use super::fix_vcf_header::write_indexed_vcf;
 use super::vcf_format_converter::{is_bcf, output_type};
-use super::{assert_readable, assert_writable, thrown, vcf_text};
-use crate::runners::{argument, scalar};
+use super::{assert_readable, assert_writable, thrown, vcf_text, write_vcf};
+use crate::runners::{argument, flag, scalar};
 
 pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> {
     let input = argument(parser, "INPUT").unwrap_or_default();
@@ -59,7 +58,8 @@ pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> 
     let filtered = filter_to(&text, &thresholds, vcf_or_bcf)
         .map_err(|error| thrown(error.java_class(), error.message()))?;
     output_type(&output)?;
-    // `new VariantContextWriterBuilder()` keeps the default `INDEX_ON_THE_FLY`.
-    write_indexed_vcf(parser, &output, &filtered)?;
+    // Picard 3.5.0 sets or unsets `INDEX_ON_THE_FLY` from `CREATE_INDEX` (b976447cf); 3.4.0 kept
+    // the builder's default and indexed whatever it said.
+    write_vcf(parser, &output, &filtered, flag(parser, "CREATE_INDEX"))?;
     Ok(0)
 }

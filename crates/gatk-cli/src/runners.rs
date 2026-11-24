@@ -57,6 +57,9 @@ pub fn argument(parser: &Parser, long_name: &str) -> Option<String> {
         .and_then(|definition| match &definition.value {
             Value::Tagged { value, .. } => Some(value.clone()),
             Value::Str(text) => Some(text.clone()),
+            // An enum's constant is its name; without this, `--restrict-alleles-to` and
+            // `--read-validation-stringency` read as never given.
+            Value::Enum(name) => Some(name.clone()),
             _ => None,
         })
 }
@@ -814,6 +817,75 @@ fn sets_traversal_bounds(tool: &str) -> bool {
     )
 }
 
+/// A SAM text or CRAM input as the in-memory BAM the reads source reads.
+struct Transcoded {
+    /// BGZF BAM bytes.
+    bam: Vec<u8>,
+    /// Its `.bai`, built where the CRAM has an index of its own: a SAM text file has none.
+    bai: Option<Vec<u8>>,
+    /// The file's own header, not the one the BAM writer stamps a sort order onto.
+    header: SamHeader,
+}
+
+/// `SamReaderFactory.open` for the two formats that are not BAM: `None` for a BAM, a block
+/// compressed or empty file, text that does not parse as SAM (whose refusal is
+/// `read_walker_refusal`'s), and a CRAM with no `--reference` to decode it against.
+fn transcode_reads(
+    parser: &Parser,
+    path: &std::path::Path,
+    bytes: &[u8],
+) -> Result<Option<Transcoded>, Thrown> {
+    let (header, records, indexed) = if bytes.starts_with(b"CRAM") {
+        let Some(reference) = argument(parser, "reference") else {
+            return Ok(None);
+        };
+        let cram_refusal = |error: htsjdk_cram::reader::CramError| {
+            Thrown::non_user(error.java_exception(), error.message())
+        };
+        let mut reader = htsjdk_cram::reader::CramReader::new(bytes).map_err(cram_refusal)?;
+        let mut fasta = htsjdk_cram::reader::FastaReference::open(std::path::Path::new(&reference));
+        let records = reader.read_all(&mut fasta).map_err(cram_refusal)?;
+        let indexed = htsjdk_bam::sam_files::find_index(path).is_some();
+        (reader.header, records, indexed)
+    } else if bytes.is_empty()
+        || bytes.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC)
+        || gatk_tools::read_walker_refusal::is_block_compressed(bytes)
+    {
+        return Ok(None);
+    } else {
+        let Ok(text) = std::str::from_utf8(bytes) else {
+            return Ok(None);
+        };
+        let Ok((header, records)) = htsjdk_bam::sam_file::read_sam(text) else {
+            return Ok(None);
+        };
+        (header, records, false)
+    };
+    let failure = |error: String| Thrown::non_user(PORT_FAILURE, error);
+    let writer = htsjdk_bam::writer::BamWriter::new(Vec::new(), &header)
+        .map_err(|error| failure(error.to_string()))?;
+    let mut writer = if indexed { writer.with_index() } else { writer };
+    for record in &records {
+        writer
+            .write(record)
+            .map_err(|error| failure(format!("{error:?}")))?;
+    }
+    let (bam, bai) = if indexed {
+        let (bam, bai) = writer
+            .finish_with_index()
+            .map_err(|error| failure(error.to_string()))?;
+        (bam, Some(bai))
+    } else {
+        (
+            writer
+                .finish()
+                .map_err(|error| failure(error.to_string()))?,
+            None,
+        )
+    };
+    Ok(Some(Transcoded { bam, bai, header }))
+}
+
 fn read_walker_startup(parser: &Parser, tool: &str) -> Result<ReadWalkerStart, Thrown> {
     read_walker_startup_with(parser, tool, &mut |intervals, _| Ok(intervals))
 }
@@ -866,6 +938,15 @@ fn read_walker_startup_with(
 
     // `initializeReads`: the file itself, which is a refusal only when it cannot be read at all.
     let bytes = std::fs::read(path).ok();
+    // SAM text and CRAM are read as the BAM they transcode to; anything else goes on as before.
+    let transcoded = match &bytes {
+        Some(bytes) => transcode_reads(parser, path, bytes)?,
+        None => None,
+    };
+    let (bytes, transcoded) = match transcoded {
+        Some(mut transcoded) => (Some(std::mem::take(&mut transcoded.bam)), Some(transcoded)),
+        None => (bytes, None),
+    };
     let compressed = bytes
         .as_deref()
         .map(gatk_tools::read_walker_refusal::is_block_compressed)
@@ -945,6 +1026,17 @@ fn read_walker_startup_with(
             None => ReadsDataSource::open_unindexed(path)
                 .map_err(|error| Thrown::user(format!("{error:?}")))?,
         })
+    };
+    let source = match (source, transcoded) {
+        (Some(mut source), Some(transcoded)) => {
+            if let Some(bai) = &transcoded.bai {
+                source
+                    .load_index_bytes(bai)
+                    .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error:?}")))?;
+            }
+            Some(source.with_header(transcoded.header))
+        }
+        (source, _) => source,
     };
     let header = source
         .as_ref()
@@ -4397,14 +4489,11 @@ fn allelic_counts_table(
         }
     }
 
-    let sequences: Vec<(String, i32)> = header
-        .sequences
-        .iter()
-        .map(|sequence| (sequence.name.clone(), sequence.length))
-        .collect();
+    // The whole `@SQ` record, M5 and UR included: `metadata.toHeader()` keeps every attribute.
+    let sequences = &header.sequences;
     write_file(
         output,
-        allelic::write(&sequences, sample, &counts).as_bytes(),
+        allelic::write(sequences, sample, &counts).as_bytes(),
     )?;
     Ok(None)
 }
@@ -5999,11 +6088,8 @@ pub fn denoise_read_counts(parser: &Parser) -> Outcome {
             .map(|line| format!("{line}\n"))
             .collect::<String>(),
     );
-    let sequences: Vec<(String, i32)> = header
-        .sequences
-        .iter()
-        .map(|sequence| (sequence.name.clone(), sequence.length))
-        .collect();
+    // The whole `@SQ` record, M5 and UR included: `metadata.toHeader()` keeps every attribute.
+    let sequences = &header.sequences;
     let sample = header
         .read_groups
         .iter()
@@ -6034,7 +6120,7 @@ pub fn denoise_read_counts(parser: &Parser) -> Outcome {
         exception: error.java_class(),
         message: Some(error.message().to_string()),
     })?;
-    let table = denoise::write(&sequences, &sample, &intervals, &values);
+    let table = denoise::write(sequences, &sample, &intervals, &values);
     // The same bytes twice: with no panel the denoised result IS the standardised one.
     write_file(&standardized, table.as_bytes())?;
     write_file(&denoised, table.as_bytes())?;
@@ -10378,8 +10464,9 @@ pub fn collect_read_counts(parser: &Parser) -> Outcome {
 
     let sample = sample_name(&header)?;
     let filter = read_filter(parser, &filters, &header)?;
+    // A BAM handed another file's index reads mid-record, which is htsjdk's own exception.
     let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
-        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        .map_err(reads_traversal_error)?;
     // A read with no contig cannot fall in an interval, so it counts nowhere: `apply` reads
     // `read.getContig()`, which the wellformed filter has already guaranteed is a mapped one.
     let starts: Vec<(&str, i32)> = records
@@ -10393,17 +10480,14 @@ pub fn collect_read_counts(parser: &Parser) -> Outcome {
     // The TSV's `@SQ` lines are the METADATA's dictionary, which is the reads' own header rather
     // than the best available one: a `--sequence-dictionary` resolves the intervals and is only
     // warned about here when it disagrees.
-    let sequences: Vec<(String, i32)> = header
-        .sequences
-        .iter()
-        .map(|sequence| (sequence.name.clone(), sequence.length))
-        .collect();
+    // The whole `@SQ` record, M5 and UR included: `metadata.toHeader()` keeps every attribute.
+    let sequences = &header.sequences;
     if hdf5 {
         let file =
-            gatk_tools::collect_read_counts::write_hdf5(&sequences, &sample, &intervals, &counts);
+            gatk_tools::collect_read_counts::write_hdf5(sequences, &sample, &intervals, &counts);
         write_file(&output, &file.to_bytes())?;
     } else {
-        let text = gatk_tools::collect_read_counts::write(&sequences, &sample, &intervals, &counts);
+        let text = gatk_tools::collect_read_counts::write(sequences, &sample, &intervals, &counts);
         write_file(&output, text.as_bytes())?;
     }
     Ok(None)
@@ -12756,6 +12840,7 @@ pub(crate) fn recalibration_table_over(
             indels_context_size: number_or(parser, "indels-context-size", 3),
             maximum_cycle_value: number_or(parser, "maximum-cycle-value", 500),
             low_qual_tail: u8::try_from(number_or(parser, "low-quality-tail", 2)).unwrap_or(2),
+            binary_tag_name: argument(parser, "binary-tag-name"),
         },
         enable_baq: flag(parser, "enable-baq"),
         compute_indel_bqsr_tables: flag(parser, "compute-indel-bqsr-tables"),
@@ -16112,20 +16197,18 @@ pub fn genotype_gvcfs(parser: &Parser) -> Outcome {
             format!("{what} This message is the port's own and not GATK's."),
         )
     };
-    for configured in ["pedigree", "founder-id", "flow-order-for-annotations"] {
-        if !arguments(parser, configured).is_empty() || argument(parser, configured).is_some() {
-            return Err(limitation(&format!(
-                "--{configured} configures a pedigree or flow annotation, which this port does not \
-                 carry for GenotypeGVCFs yet."
-            )));
-        }
-    }
+    // `validateAndResolvePlugins`, while the command line is parsed. The flow order goes to no
+    // annotation GenotypeGVCFs computes, so past the refusal it changes nothing.
+    pedigree_refusal(parser, &resolved)?;
+    flow_order_for_annotations(parser, &resolved)?;
     let VariantWalkerStart {
         input,
         text,
         intervals,
         ..
     } = variant_walker_startup(parser, "GenotypeGVCFs")?;
+    // The end of `onStartup`, before `onTraversalStart`'s own refusals.
+    let keep = variant_output_filter(parser, intervals.as_deref())?;
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
@@ -16149,8 +16232,10 @@ pub fn genotype_gvcfs(parser: &Parser) -> Outcome {
         }
         None => None,
     };
-    if argument(parser, "population-callset").is_some() {
-        return Err(limitation("--population-callset is not ported."));
+    // `--population-callset` is a feature input GenotypeGVCFs declares and never queries: the
+    // engine opens it, and that is all.
+    if let Some(path) = argument(parser, "population-callset") {
+        open_feature_input(&path)?;
     }
 
     // `onTraversalStart`.
@@ -16187,7 +16272,6 @@ pub fn genotype_gvcfs(parser: &Parser) -> Outcome {
         raw_keys_to_keep.extend(entry.raw_keys.unwrap_or(&[]).iter().copied());
     }
 
-    let keep = variant_output_filter(parser, intervals.as_deref())?;
     // `--only-output-calls-starting-in-intervals` is STARTS_IN by another name.
     let starts_in = flag(parser, "only-output-calls-starting-in-intervals");
     if starts_in && intervals.as_ref().is_none_or(|list| list.is_empty()) {
@@ -16233,6 +16317,7 @@ pub fn genotype_gvcfs(parser: &Parser) -> Outcome {
         keep_combined: flag(parser, "keep-combined-raw-annotations"),
         raw_keys_to_keep,
         dbsnp: dbsnp_records,
+        founder_ids: pedigree_arguments(parser)?.founder_ids,
     };
     let allele_specific = annotations.any_allele_specific();
     let annotate_discovered = flag(parser, "annotate-with-num-discovered-alleles");
@@ -16817,13 +16902,9 @@ pub(crate) fn dictionary_from_any(
 /// is filtered, subset, filtered again, no-called and dropped from, and joins the queue rather
 /// than the file.
 ///
-/// # What this refuses rather than approximates
-///
-/// Six argument groups reach behaviour no static in this repository reproduces: a pedigree and
-/// its Mendelian violations, the two random fractions, the GenomicsDB-only decoding, the
-/// concordance tracks, `--variant-output-filtering` and `--fully-decode`. Each is refused when it
-/// is SET, which is a port limitation with the tool's name on it rather than a silent difference:
-/// a run that ignored `--select-random-fraction 0.5` would answer a question it was not asked.
+/// The random fraction draws from `Utils.getRandomGenerator()`, which is seeded once per JVM, so
+/// it is [`gatk_engine::java_random::JavaRandom::gatk`] here and one draw per record that reaches
+/// it reproduces the reference's selection.
 pub fn select_variants(parser: &Parser) -> Outcome {
     let VariantWalkerStart {
         input,
@@ -16831,8 +16912,6 @@ pub fn select_variants(parser: &Parser) -> Outcome {
         codec: _,
         intervals,
     } = variant_walker_startup(parser, "SelectVariants")?;
-
-    select_variants_limits(parser)?;
 
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
@@ -16878,8 +16957,11 @@ pub fn select_variants(parser: &Parser) -> Outcome {
         preserve_alleles: flag(parser, "preserve-alleles"),
         keep_original_chr_counts: flag(parser, "keep-original-ac"),
         keep_original_depth: flag(parser, "keep-original-dp"),
+        remove_fraction_genotypes: fraction(parser, "remove-fraction-genotypes", 0.0),
     };
     let filter_arguments = select_variants_filters(parser)?;
+    let tracks = select_variants_tracks(parser, &selection.samples)?;
+    let mut random = gatk_engine::java_random::JavaRandom::gatk();
     let output_arguments = gatk_tools::select_variants::OutputArguments {
         set_filtered_genotypes_to_no_call: flag(parser, "set-filtered-gt-to-nocall"),
         info_annotations_to_drop: arguments(parser, "drop-info-annotation"),
@@ -16980,7 +17062,22 @@ pub fn select_variants(parser: &Parser) -> Outcome {
         }
 
         let bridged = crate::variant_bridge::to_engine(original);
-        if !gatk_tools::select_variants::keeps_before_subset(
+        if !gatk_tools::select_variants::passes_variant_filter(
+            &bridged.record,
+            &bridged.filter_record,
+            &filter_arguments,
+        ) {
+            continue;
+        }
+        if !tracks.keeps(
+            &bridged.record,
+            &selection,
+            filter_arguments.exclude_filtered,
+            &mut random,
+        ) {
+            continue;
+        }
+        if !gatk_tools::select_variants::keeps_after_tracks(
             &bridged.record,
             &bridged.filter_record,
             &filter_arguments,
@@ -17073,8 +17170,34 @@ fn update_header_contig_lines(
     parser: &Parser,
     header: htsjdk_vcf::header::VcfHeader,
 ) -> Result<htsjdk_vcf::header::VcfHeader, Thrown> {
+    let name_only = flag(parser, "suppress-reference-path");
+    rebuild_contig_lines(parser, header, false, name_only)
+}
+
+/// The same rebuild over `getBestAvailableSequenceDictionary`, as `VariantRecalibrator` and the
+/// `LabeledVariantAnnotationsWalker`s call it, with `referenceNameOnly` true.
+///
+/// A variant walker's best dictionary is the DRIVING variants' own, and the reference's only where
+/// theirs is missing or was synthesized from an index (`IndexUtils.isSequenceDictionaryFromIndex`:
+/// every length unknown). The reference then only names the `assembly=`. Measured on chr20 30x,
+/// where a call set over the whole genome scored against `chr20.fasta` kept every contig.
+pub(crate) fn update_header_contig_lines_best_available(
+    parser: &Parser,
+    header: htsjdk_vcf::header::VcfHeader,
+) -> Result<htsjdk_vcf::header::VcfHeader, Thrown> {
+    rebuild_contig_lines(parser, header, true, true)
+}
+
+fn rebuild_contig_lines(
+    parser: &Parser,
+    header: htsjdk_vcf::header::VcfHeader,
+    prefer_own: bool,
+    name_only: bool,
+) -> Result<htsjdk_vcf::header::VcfHeader, Thrown> {
     let reference = argument(parser, "reference");
+    let own = sequence_dictionary_of(&header);
     let dictionary: Vec<(String, i32)> = match &reference {
+        _ if prefer_own && own.iter().any(|(_, length)| *length != 0) => own,
         Some(path) => {
             let source =
                 gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(path))
@@ -17085,7 +17208,7 @@ fn update_header_contig_lines(
                 .map(|sequence| (sequence.name.clone(), sequence.length))
                 .collect()
         }
-        None => sequence_dictionary_of(&header),
+        None => own,
     };
     if dictionary.is_empty() {
         return Ok(header);
@@ -17117,7 +17240,7 @@ fn update_header_contig_lines(
     if let Some(path) = &reference {
         // `referencePath.toUri()`, which is an ABSOLUTE URI: the runner is handed whatever the
         // command line wrote, so the path is resolved before it is rendered.
-        let value = if flag(parser, "suppress-reference-path") {
+        let value = if name_only {
             let name = std::path::Path::new(path)
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())
@@ -17160,6 +17283,130 @@ impl gatk_engine::variant_source::Located for LocatedRecord {
     fn stop(&self) -> i32 {
         self.stop
     }
+}
+
+/// The gates `applyFirstRoundOfFiltering` runs between `--exclude-filtered` and the allele
+/// restriction, in its order: the random fraction, the Mendelian violations, then the two tracks.
+struct SelectTracks {
+    fraction_to_keep: f64,
+    /// The children judged, when `--mendelian-violation` is set.
+    families: Option<Vec<gatk_tools::select_variants::Family>>,
+    invert_mendelian: bool,
+    mendelian_threshold: f64,
+    discordance: Option<Vec<gatk_tools::select_variants::Record>>,
+    concordance: Option<Vec<gatk_tools::select_variants::Record>>,
+}
+
+impl SelectTracks {
+    fn keeps(
+        &self,
+        record: &gatk_tools::select_variants::Record,
+        selection: &gatk_tools::select_variants::SampleSelection,
+        exclude_filtered: bool,
+        random: &mut gatk_engine::java_random::JavaRandom,
+    ) -> bool {
+        use gatk_tools::select_variants as sv;
+        if self.fraction_to_keep < 1.0 && random.next_double() >= self.fraction_to_keep {
+            return false;
+        }
+        // `invertLogic(countFamilyViolations(...) == 0, invert)` drops the record.
+        if let Some(families) = &self.families {
+            if sv::has_mendelian_violation(record, families, self.mendelian_threshold)
+                == self.invert_mendelian
+            {
+                return false;
+            }
+        }
+        // `featureContext.getValues(track)`: the track's records overlapping this one.
+        let overlapping = |track: &[sv::Record]| -> Vec<sv::Record> {
+            track
+                .iter()
+                .filter(|comp| {
+                    comp.variant.contig == record.variant.contig
+                        && comp.variant.start <= record.variant.stop
+                        && comp.variant.stop >= record.variant.start
+                })
+                .cloned()
+                .collect()
+        };
+        let comparison = sv::ComparisonArguments {
+            exclude_filtered,
+            ..Default::default()
+        };
+        if let Some(track) = &self.discordance {
+            if !sv::is_discordant(record, &overlapping(track), selection, &comparison) {
+                return false;
+            }
+        }
+        if let Some(track) = &self.concordance {
+            if !sv::is_concordant(record, &overlapping(track), selection, &comparison) {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+/// What `onTraversalStart` reads for the gates: the PED only under `--mendelian-violation`, and
+/// with no PED an empty database, so every record is judged free of violations.
+fn select_variants_tracks(parser: &Parser, samples: &[String]) -> Result<SelectTracks, Thrown> {
+    let families = if flag(parser, "mendelian-violation") {
+        let db = match argument(parser, "pedigree") {
+            Some(path) => {
+                let text = std::fs::read_to_string(&path).map_err(|_| {
+                    Thrown::user(format!(
+                        "Couldn't read file {path}. Error was: Could not read sample file"
+                    ))
+                })?;
+                let source = format!(
+                    "java.io.InputStreamReader@{:x}",
+                    gatk_engine::java_hash::string_hash_code(&path) as u32
+                );
+                gatk_engine::sample_db::read_pedigree(&text, &source)
+                    .map_err(|error| Thrown::non_user(error.class, error.message))?
+            }
+            None => gatk_engine::sample_db::SampleDb::default(),
+        };
+        Some(
+            db.children_in(samples)
+                .into_iter()
+                .map(|child| {
+                    (
+                        child.maternal_id.clone(),
+                        child.paternal_id.clone(),
+                        child.id.clone(),
+                    )
+                })
+                .collect(),
+        )
+    } else {
+        None
+    };
+    let track = |name: &str| -> Result<Option<Vec<gatk_tools::select_variants::Record>>, Thrown> {
+        let Some(path) = argument(parser, name) else {
+            return Ok(None);
+        };
+        let (_, text) = open_feature_input(&path)?;
+        let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+            failure: Failure::User,
+            exception: "htsjdk.tribble.TribbleException",
+            message: Some(failure.error.message()),
+        })?;
+        Ok(Some(
+            file.records
+                .iter()
+                .map(|record| crate::variant_bridge::to_engine(record).record)
+                .collect(),
+        ))
+    };
+    Ok(SelectTracks {
+        fraction_to_keep: fraction(parser, "select-random-fraction", 1.0),
+        families,
+        invert_mendelian: flag(parser, "invert-mendelian-violation"),
+        mendelian_threshold: fraction(parser, "mendelian-violation-qual-threshold", 0.0),
+        discordance: track("discordance")?,
+        concordance: track("concordance")?,
+    })
 }
 
 /// A `SelectError` as the reference throws it.
@@ -17233,59 +17480,6 @@ fn fraction(parser: &Parser, long_name: &str, default: f64) -> f64 {
     scalar(parser, long_name)
         .and_then(|text| text.parse().ok())
         .unwrap_or(default)
-}
-
-/// The six argument groups `SelectVariants` has and this port does not.
-///
-/// Each is refused when it is SET rather than ignored: a run that quietly dropped
-/// `--select-random-fraction 0.5` would answer a question it was not asked, and a refusal that
-/// names the port is the honest form of a gap (`gatk_rs::PortLimitation`).
-fn select_variants_limits(parser: &Parser) -> Result<(), Thrown> {
-    let mut refused: Vec<&str> = Vec::new();
-    if argument(parser, "pedigree").is_some() {
-        refused.push("--pedigree");
-    }
-    // `--call-genotypes` is a GenomicsDB export option, which the port reads for `gendb://` alone.
-    let genomicsdb = argument(parser, "variant")
-        .is_some_and(|variant| genomicsdb_query_runner::genomicsdb_path(&variant).is_some());
-    for flagged in [
-        "mendelian-violation",
-        "invert-mendelian-violation",
-        "call-genotypes",
-    ] {
-        if flag(parser, flagged) && !(genomicsdb && flagged == "call-genotypes") {
-            refused.push(match flagged {
-                "mendelian-violation" => "--mendelian-violation",
-                "invert-mendelian-violation" => "--invert-mendelian-violation",
-                _ => "--call-genotypes",
-            });
-        }
-    }
-    if fraction(parser, "select-random-fraction", 1.0) != 1.0 {
-        refused.push("--select-random-fraction");
-    }
-    if fraction(parser, "remove-fraction-genotypes", 0.0) != 0.0 {
-        refused.push("--remove-fraction-genotypes");
-    }
-    if argument(parser, "concordance").is_some() {
-        refused.push("--concordance");
-    }
-    if argument(parser, "discordance").is_some() {
-        refused.push("--discordance");
-    }
-    if refused.is_empty() {
-        return Ok(());
-    }
-    Err(Thrown::non_user(
-        PORT_LIMITATION,
-        format!(
-            "SelectVariants in this port does not implement {}: a pedigree's Mendelian \
-             violations, the two random fractions, the concordance tracks and the genotype caller \
-             each reach behaviour no measured static reproduces, and answering without them would \
-             be a different answer rather than a refusal",
-            refused.join(", ")
-        ),
-    ))
 }
 
 /// `##GATKCommandLine=<ID=...,CommandLine="...",Version=...,Date=...>`, or nothing.
@@ -24437,7 +24631,15 @@ pub fn htsget_reader(parser: &Parser) -> Outcome {
 
     let io_failure = || Thrown::user(format!("IOException during htsget download for {uri}"));
     let agent = ureq::AgentBuilder::new().redirects(50).build();
-    let answer = htsget_get(&agent, &uri, &[]).map_err(|_| io_failure())?;
+    let answer = htsget_get(&agent, &uri, &[])
+        .and_then(|response| {
+            let status = response.status();
+            let mut body = Vec::new();
+            std::io::Read::read_to_end(&mut response.into_reader(), &mut body)
+                .map_err(|error| error.to_string())?;
+            Ok((status, body))
+        })
+        .map_err(|_| io_failure())?;
     let body = String::from_utf8_lossy(&answer.1).into_owned();
     // `HttpEntity` is null for an answer that cannot have a body.
     if matches!(answer.0, 204 | 205 | 304) {
@@ -24477,7 +24679,16 @@ pub fn htsget_reader(parser: &Parser) -> Outcome {
                 ));
             }
             let response = htsget::read_response(&body).map_err(|_| io_failure())?;
-            htsget_write_blocks(&agent, response.blocks.as_deref(), &output, threads)?;
+            let tmp_dir = argument(parser, "tmp-dir")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(std::env::temp_dir);
+            htsget_write_blocks(
+                &agent,
+                response.blocks.as_deref(),
+                &output,
+                threads,
+                &tmp_dir,
+            )?;
             if check_md5 {
                 htsget_check_md5(response.md5.as_deref(), &output)?;
             }
@@ -24489,12 +24700,12 @@ pub fn htsget_reader(parser: &Parser) -> Outcome {
     }
 }
 
-/// One GET: the status and the body, however often a 5xx took. The error is an `IOException`.
+/// One GET, however often a 5xx took, its body still unread. The error is an `IOException`.
 fn htsget_get(
     agent: &ureq::Agent,
     uri: &str,
     headers: &[(String, String)],
-) -> Result<(u16, Vec<u8>), String> {
+) -> Result<ureq::Response, String> {
     let mut wait = 1;
     for attempt in 1.. {
         let mut request = agent.get(uri);
@@ -24506,27 +24717,33 @@ fn htsget_get(
             Err(ureq::Error::Status(_, response)) => response,
             Err(error) => return Err(error.to_string()),
         };
-        let status = response.status();
-        if (500..600).contains(&status) && attempt <= 4 {
+        if (500..600).contains(&response.status()) && attempt <= 4 {
             std::thread::sleep(std::time::Duration::from_secs(wait));
             wait *= 2;
             continue;
         }
-        let mut body = Vec::new();
-        std::io::Read::read_to_end(&mut response.into_reader(), &mut body)
-            .map_err(|error| error.to_string())?;
-        return Ok((status, body));
+        return Ok(response);
     }
     unreachable!("the loop returns by the fifth attempt")
 }
 
-/// `Block.getData`.
+/// Why a block did not reach its sink: the block's own failure, or the sink refusing a write.
+enum BlockStop {
+    Block(Thrown),
+    Sink,
+}
+
+/// `Block.getData`, streamed into `sink` rather than held: a block can be the whole file.
 fn htsget_block(
     agent: &ureq::Agent,
     block: &gatk_tools::htsget_reader::Block,
-) -> Result<Vec<u8>, Thrown> {
+    sink: &mut dyn std::io::Write,
+) -> Result<(), BlockStop> {
     use gatk_tools::htsget_reader as htsget;
-    let null = |message: &str| Thrown::non_user("java.lang.NullPointerException", message);
+    use std::io::Read;
+    let null = |message: &str| {
+        BlockStop::Block(Thrown::non_user("java.lang.NullPointerException", message))
+    };
     let uri = block.url.as_deref().ok_or_else(|| {
         null("Cannot invoke \"java.net.URI.getScheme()\" because the return value of \"org.broadinstitute.hellbender.tools.htsgetreader.HtsgetResponse$Block.getUri()\" is null")
     })?;
@@ -24538,21 +24755,38 @@ fn htsget_block(
                 .headers
                 .as_deref()
                 .ok_or_else(|| null("Cannot invoke \"Object.getClass()\" because \"m\" is null"))?;
-            htsget_get(agent, uri, headers)
-                .map(|answer| answer.1)
-                .map_err(|_| Thrown::user("Could not retrieve data from block"))
+            let retrieve = || BlockStop::Block(Thrown::user("Could not retrieve data from block"));
+            let mut body = htsget_get(agent, uri, headers)
+                .map_err(|_| retrieve())?
+                .into_reader();
+            let mut buffer = vec![0u8; 1 << 16];
+            loop {
+                let read = match body.read(&mut buffer) {
+                    Ok(0) => return Ok(()),
+                    Ok(read) => read,
+                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                    Err(_) => return Err(retrieve()),
+                };
+                sink.write_all(&buffer[..read])
+                    .map_err(|_| BlockStop::Sink)?;
+            }
         }
-        "data" => htsget::decode_data_uri(uri).map_err(|failure| match failure {
-            htsget::DataFailure::NotBase64 => {
-                Thrown::user(format!("data URI must be base64 encoded: {uri}"))
-            }
-            htsget::DataFailure::Decode(message) => {
-                Thrown::non_user("java.lang.IllegalArgumentException", message)
-            }
-        }),
-        other => Err(Thrown::user(format!(
+        "data" => {
+            let bytes = htsget::decode_data_uri(uri).map_err(|failure| {
+                BlockStop::Block(match failure {
+                    htsget::DataFailure::NotBase64 => {
+                        Thrown::user(format!("data URI must be base64 encoded: {uri}"))
+                    }
+                    htsget::DataFailure::Decode(message) => {
+                        Thrown::non_user("java.lang.IllegalArgumentException", message)
+                    }
+                })
+            })?;
+            sink.write_all(&bytes).map_err(|_| BlockStop::Sink)
+        }
+        other => Err(BlockStop::Block(Thrown::user(format!(
             "Unrecognized URI scheme in data block: {other}"
-        ))),
+        )))),
     }
 }
 
@@ -24562,8 +24796,9 @@ fn htsget_write_blocks(
     blocks: Option<&[gatk_tools::htsget_reader::Block]>,
     output: &str,
     threads: usize,
+    tmp_dir: &std::path::Path,
 ) -> Result<(), Thrown> {
-    use std::io::Write;
+    use std::io::{Seek, Write};
     let parallel = threads > 1;
     let no_blocks = || {
         Thrown::non_user(
@@ -24582,27 +24817,36 @@ fn htsget_write_blocks(
             format!("Could not create output file: {output}")
         })
     })?;
-    let copied = |result: std::io::Result<()>| {
-        result.map_err(|_| {
-            Thrown::user(if parallel {
-                "Error while copying data block to output file"
-            } else {
-                "Failed to copy data block to output file"
-            })
+    let copy_failure = || {
+        Thrown::user(if parallel {
+            "Error while copying data block to output file"
+        } else {
+            "Failed to copy data block to output file"
         })
     };
     let blocks = blocks.ok_or_else(no_blocks)?;
     if !parallel {
         for block in blocks {
-            copied(file.write_all(&htsget_block(agent, block)?))?;
+            let start = file.stream_position().map_err(|_| copy_failure())?;
+            match htsget_block(agent, block, &mut file) {
+                Ok(()) => {}
+                Err(BlockStop::Sink) => return Err(copy_failure()),
+                // The reference reads a block whole before it copies any of it, so a block that
+                // fails part-way leaves none of itself in the output.
+                Err(BlockStop::Block(thrown)) => {
+                    let _ = file.set_len(start);
+                    return Err(thrown);
+                }
+            }
         }
         return Ok(());
     }
-    // The executor's: the blocks are all asked for at once and written back in their order.
+    // The executor's: the blocks are all asked for at once, each into a temporary file as the
+    // reference's are, and copied into the output in their order.
     let next = std::sync::atomic::AtomicUsize::new(0);
     let answers: Vec<_> = blocks
         .iter()
-        .map(|_| std::sync::Mutex::new(None::<Result<Vec<u8>, Thrown>>))
+        .map(|_| std::sync::Mutex::new(None::<Option<std::fs::File>>))
         .collect();
     std::thread::scope(|scope| {
         for _ in 0..threads.min(blocks.len()) {
@@ -24611,18 +24855,36 @@ fn htsget_write_blocks(
                 let Some(block) = blocks.get(at) else {
                     return;
                 };
-                *answers[at].lock().expect("no writer panics") = Some(htsget_block(agent, block));
+                let answer = htsget_temp_file(tmp_dir, at).and_then(|mut temp| {
+                    htsget_block(agent, block, &mut temp).ok()?;
+                    temp.rewind().ok()?;
+                    Some(temp)
+                });
+                *answers[at].lock().expect("no writer panics") = Some(answer);
             });
         }
     });
     for answer in answers {
         let answer = answer.into_inner().expect("no writer panics");
-        match answer.expect("every block is answered") {
-            Ok(bytes) => copied(file.write_all(&bytes))?,
-            Err(_) => return Err(Thrown::user("Error while waiting to download block")),
-        }
+        let mut temp = answer
+            .expect("every block is answered")
+            .ok_or_else(|| Thrown::user("Error while waiting to download block"))?;
+        std::io::copy(&mut temp, &mut file).map_err(|_| copy_failure())?;
     }
-    Ok(())
+    file.flush().map_err(|_| copy_failure())
+}
+
+/// `IOUtils.createTempPath("htsget-temp", "")`, unlinked at once so nothing outlives the run.
+fn htsget_temp_file(tmp_dir: &std::path::Path, index: usize) -> Option<std::fs::File> {
+    let path = tmp_dir.join(format!("htsget-temp{}-{index}", std::process::id()));
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .ok()?;
+    let _ = std::fs::remove_file(&path);
+    Some(file)
 }
 
 /// `checkMd5`.
@@ -24630,9 +24892,9 @@ fn htsget_check_md5(expected: Option<&str>, output: &str) -> Result<(), Thrown> 
     let Some(expected) = expected else {
         return Ok(());
     };
-    let bytes =
-        std::fs::read(output).map_err(|_| Thrown::user("Unable to calculate md5 digest"))?;
-    let actual = gatk_tools::gather_bam_files::md5_file(&bytes);
+    let actual = std::fs::File::open(output)
+        .and_then(gatk_tools::gather_bam_files::md5_of_reader)
+        .map_err(|_| Thrown::user("Unable to calculate md5 digest"))?;
     if actual != expected {
         return Err(Thrown::user(format!(
             "Expected md5: {expected} did not match actual md5: {actual}"

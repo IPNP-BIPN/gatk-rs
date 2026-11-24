@@ -417,12 +417,16 @@ impl ReadsDataSource {
     }
 
     fn read_reference_indexes(bai: &Path) -> Result<Vec<ReferenceIndex>, ReadsError> {
+        let bai_bytes = std::fs::read(bai).map_err(|e| ReadsError::Io(e.to_string()))?;
+        Self::parse_reference_indexes(&bai_bytes)
+    }
+
+    fn parse_reference_indexes(bai_bytes: &[u8]) -> Result<Vec<ReferenceIndex>, ReadsError> {
         // The `.bai` is parsed by the port's own reader rather than by a dependency. It is the
         // same file either way; what differs is who answers for it, and htsjdk-bam's `read_bai`
         // is measured by the `textual-index` suite, which parses six `.bai` files and reprints
         // each through `TextualBAMIndexWriter`'s format.
-        let bai_bytes = std::fs::read(bai).map_err(|e| ReadsError::Io(e.to_string()))?;
-        let parsed = htsjdk_bam::index::read_bai(&bai_bytes)
+        let parsed = htsjdk_bam::index::read_bai(bai_bytes)
             .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?;
         Ok(parsed
             .references
@@ -491,6 +495,19 @@ impl ReadsDataSource {
     pub fn load_index(&mut self, bai: &Path) -> Result<(), ReadsError> {
         self.index = Self::read_reference_indexes(bai)?;
         Ok(())
+    }
+
+    /// [`Self::load_index`] from `.bai` bytes already in memory.
+    pub fn load_index_bytes(&mut self, bai: &[u8]) -> Result<(), ReadsError> {
+        self.index = Self::parse_reference_indexes(bai)?;
+        Ok(())
+    }
+
+    /// The header the tool sees, in place of the one the BAM bytes carry: a source transcoded
+    /// from SAM text or CRAM keeps its file's header rather than the one a BAM writer stamps.
+    pub fn with_header(mut self, header: SamHeader) -> Self {
+        self.header = header;
+        self
     }
 
     /// The whole file inflated: the copy opening kept, or a fresh inflate.

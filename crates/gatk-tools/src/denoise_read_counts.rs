@@ -112,19 +112,15 @@ pub fn standardize(counts: &[f64]) -> Result<Vec<f64>, DenoiseError> {
 }
 
 /// The output table's header, which is the input's with one column renamed.
-pub fn header(sequences: &[(String, i32)], sample: &str) -> String {
-    let mut text = String::from("@HD\tVN:1.6\n");
-    for (name, length) in sequences {
-        text.push_str(&format!("@SQ\tSN:{name}\tLN:{length}\n"));
-    }
-    text.push_str(&format!("@RG\tID:GATKCopyNumber\tSM:{sample}\n"));
+pub fn header(sequences: &[htsjdk_bam::header::SequenceRecord], sample: &str) -> String {
+    let mut text = crate::model_segments_tool::header(sample, Some(sequences));
     text.push_str("CONTIG\tSTART\tEND\tLOG2_COPY_RATIO\n");
     text
 }
 
 /// The whole file: the header, then one row per interval, formatted to six decimals.
 pub fn write(
-    sequences: &[(String, i32)],
+    sequences: &[htsjdk_bam::header::SequenceRecord],
     sample: &str,
     intervals: &[(String, i32, i32)],
     values: &[f64],
