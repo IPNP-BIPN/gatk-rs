@@ -863,11 +863,14 @@
       ],
       "--input": [
         "/work/fixtures/reads.bam",
-        "/work/fixtures/reads2.bam"
+        "/work/fixtures/reads2.bam",
+        "/work/fixtures/reads.sam",
+        "/work/fixtures/reads.cram"
       ],
       "--read-index": [
         "/work/fixtures/reads.bai",
-        "/work/fixtures/reads2.bai"
+        "/work/fixtures/reads2.bai",
+        "/work/fixtures/reads.cram.bai"
       ],
       "--output": [
         "/work/out/depth.vcf",
@@ -1227,10 +1230,13 @@
         "/work/fixtures/somatic.vcf"
       ],
       "--input": [
-        "/work/fixtures/tumor_normal.bam"
+        "/work/fixtures/tumor_normal.bam",
+        "/work/fixtures/tumor_normal.sam",
+        "/work/fixtures/tumor_normal.cram"
       ],
       "--read-index": [
-        "/work/fixtures/tumor_normal.bai"
+        "/work/fixtures/tumor_normal.bai",
+        "/work/fixtures/tumor_normal.cram.bai"
       ],
       "--discovery-sample-name": [
         "tumor"
@@ -1810,11 +1816,14 @@
       ],
       "--input": [
         "/work/fixtures/reads.bam",
-        "/work/fixtures/reads2.bam"
+        "/work/fixtures/reads2.bam",
+        "/work/fixtures/reads.sam",
+        "/work/fixtures/reads.cram"
       ],
       "--read-index": [
         "/work/fixtures/reads.bai",
-        "/work/fixtures/reads2.bai"
+        "/work/fixtures/reads2.bai",
+        "/work/fixtures/reads.cram.bai"
       ],
       "--output": [
         "/work/out/fractions.table",
@@ -6346,7 +6355,9 @@
       "--input": [
         "/work/fixtures/va.bam",
         "null",
-        "/work/fixtures/va2.bam"
+        "/work/fixtures/va2.bam",
+        "/work/fixtures/va.sam",
+        "/work/fixtures/va.cram"
       ],
       "--intervals": [
         "null",
@@ -7886,7 +7897,9 @@
         "/work/fixtures/hbvr_alleles_noidx.vcf"
       ],
       "--haplotypes-file-bam": [
-        "/work/fixtures/hbvr_haps.bam"
+        "/work/fixtures/hbvr_haps.bam",
+        "/work/fixtures/hbvr_haps.sam",
+        "/work/fixtures/hbvr_haps.cram"
       ],
       "--matrix-file-csv": [
         "/work/out/matrix.csv"
@@ -8108,7 +8121,9 @@
       ],
       "--input": [
         "/work/fixtures/faa.bam",
-        "/work/fixtures/faa2.bam"
+        "/work/fixtures/faa2.bam",
+        "/work/fixtures/faa.sam",
+        "/work/fixtures/faa.cram"
       ],
       "--reference": [
         "/work/fixtures/faa_ref.fasta"
@@ -20112,7 +20127,9 @@
     },
     {
       "tools": [
-        "ApplyBQSR"
+        "ApplyBQSR",
+        "CalculateMixingFractions",
+        "AnnotateVcfWithBamDepth"
       ],
       "forbid": {
         "--input": "/work/fixtures/reads.cram",
@@ -20122,7 +20139,9 @@
     },
     {
       "tools": [
-        "ApplyBQSR"
+        "ApplyBQSR",
+        "CalculateMixingFractions",
+        "AnnotateVcfWithBamDepth"
       ],
       "forbid": {
         "--input": "/work/fixtures/reads.cram",
@@ -20132,7 +20151,9 @@
     },
     {
       "tools": [
-        "ApplyBQSR"
+        "ApplyBQSR",
+        "CalculateMixingFractions",
+        "AnnotateVcfWithBamDepth"
       ],
       "forbid": {
         "--input": "/work/fixtures/reads.bam",
@@ -20142,11 +20163,33 @@
     },
     {
       "tools": [
-        "ApplyBQSR"
+        "ApplyBQSR",
+        "CalculateMixingFractions",
+        "AnnotateVcfWithBamDepth"
       ],
       "forbid": {
         "--input": "/work/fixtures/reads2.bam",
         "--read-index": "/work/fixtures/reads.cram.bai"
+      },
+      "why": "An index of another file: GATK reads the CRAM's containers at the BAM's offsets, or the reverse, which measures the fixture pairing rather than the reads."
+    },
+    {
+      "tools": [
+        "ValidateBasicSomaticShortMutations"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/tumor_normal.cram",
+        "--read-index": "/work/fixtures/tumor_normal.bai"
+      },
+      "why": "An index of another file: GATK reads the CRAM's containers at the BAM's offsets, or the reverse, which measures the fixture pairing rather than the reads."
+    },
+    {
+      "tools": [
+        "ValidateBasicSomaticShortMutations"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/tumor_normal.bam",
+        "--read-index": "/work/fixtures/tumor_normal.cram.bai"
       },
       "why": "An index of another file: GATK reads the CRAM's containers at the BAM's offsets, or the reverse, which measures the fixture pairing rather than the reads."
     }

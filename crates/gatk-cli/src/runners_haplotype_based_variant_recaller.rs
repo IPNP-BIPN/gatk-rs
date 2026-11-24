@@ -78,13 +78,14 @@ pub fn haplotype_based_variant_recaller(parser: &Parser) -> Outcome {
     let alleles_path = scalar(parser, "alleles-file-vcf").unwrap_or_default();
     let (variants, _) = feature_variants(&alleles_path)?;
     let haplotypes_path = scalar(parser, "haplotypes-file-bam").unwrap_or_default();
+    let haplotypes_are_text = reads_input::is_sam_text(std::path::Path::new(&haplotypes_path));
     let haplotype_source = {
         let path = std::path::Path::new(&haplotypes_path);
-        match htsjdk_bam::sam_files::find_index(path) {
-            Some(index) => ReadsDataSource::open(path, &index),
-            None => ReadsDataSource::open_unindexed(path),
-        }
-        .map_err(|error| Thrown::user(format!("{error:?}")))?
+        open_reads(
+            parser,
+            path,
+            htsjdk_bam::sam_files::find_index(path).as_deref(),
+        )?
     };
     let filter = read_filter(parser, &filters, &header)?;
     let intervals: Vec<SimpleInterval> = if intervals.is_empty() {
@@ -159,7 +160,14 @@ pub fn haplotype_based_variant_recaller(parser: &Parser) -> Outcome {
                 && vc.stop as i32 >= region.start
         }) {
             let vc_loc = hbvr::Span::new(&vc.contig, vc.start as i32, vc.stop as i32);
-            // forBest: the haplotype records over the variant, grouped by span.
+            // forBest: the haplotype records over the variant, grouped by span. The walker's own
+            // `SamReader.query` is what refuses SAM text, at the first variant.
+            if haplotypes_are_text {
+                return Err(Thrown::non_user(
+                    "java.lang.UnsupportedOperationException",
+                    "Cannot query SAM text files",
+                ));
+            }
             let records = haplotype_source
                 .query(&[SimpleInterval {
                     contig: vc_loc.contig.clone(),

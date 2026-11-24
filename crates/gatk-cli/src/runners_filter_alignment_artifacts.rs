@@ -100,9 +100,7 @@ pub fn filter_alignment_artifacts(parser: &Parser) -> Outcome {
     // The reads, every one that could cover a call, filtered as the tool's filters say.
     let mut reads: Vec<(String, artifacts::Read)> = Vec::new();
     for path in arguments(parser, "input") {
-        let source =
-            gatk_engine::reads::ReadsDataSource::open_unindexed(std::path::Path::new(&path))
-                .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        let source = open_reads(parser, std::path::Path::new(&path), None)?;
         let sequences = source.header().sequences.clone();
         let header = source.header().clone();
         let filter = read_filter(parser, &resolved, &header)?;
@@ -118,48 +116,6 @@ pub fn filter_alignment_artifacts(parser: &Parser) -> Outcome {
     }
 
     let mut header = driving.header();
-    let (traversed, failure) = driving.merged(intervals.as_deref())?;
-    let skip_filtered = !flag(parser, "dont-skip-filtered-variants");
-    let tolerance = number_or(parser, "indel-start-tolerance", 5);
-    let mut written = Vec::new();
-    for (_, record) in traversed {
-        if skip_filtered && record.filters.as_ref().is_some_and(|f| !f.is_empty()) {
-            continue;
-        }
-        let variant = artifacts::Variant {
-            start: record.start as i32,
-            reference: record.reference().base_string().into_bytes(),
-            alternates: record
-                .alternate_alleles()
-                .iter()
-                .map(|allele| allele.display_string().into_bytes())
-                .collect(),
-        };
-        let supported = reads.iter().any(|(contig, read)| {
-            *contig == record.contig && artifacts::supports_variant(read, &variant, tolerance)
-        });
-        if supported {
-            return Err(Thrown::non_user(
-                PORT_LIMITATION,
-                format!(
-                    "Reads support the call at {}:{}, and realigning them needs the Mutect2 \
-                     assembler and BWA-MEM, which this port does not carry yet. This message is \
-                     the port's own and not GATK's.",
-                    record.contig, record.start
-                ),
-            ));
-        }
-        let mut out = record.clone();
-        out.attributes
-            .push(("NALIGNS".to_string(), htsjdk_vcf::variant::Value::Int(0)));
-        out.attributes
-            .push(("UNITIGS".to_string(), htsjdk_vcf::variant::Value::Missing));
-        written.push(out);
-    }
-    if let Some(failure) = failure {
-        return Err(failure);
-    }
-
     // The header: the input's lines, the tool's own, and the defaults.
     use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType};
     let compound = |id: &str, number: Cardinality, description: &str| HeaderLine::Compound {
@@ -203,14 +159,113 @@ pub fn filter_alignment_artifacts(parser: &Parser) -> Outcome {
     ));
 
     let keep = variant_output_filter(parser, intervals.as_deref())?;
-    written.retain(|record| keep(record));
-    apply_sites_only(parser, &mut header, &mut written);
-    let rendered = htsjdk_vcf::vcf_file::write_vcf(&header, &written).map_err(|error| Thrown {
-        failure: Failure::User,
-        exception: "org.broadinstitute.hellbender.exceptions.UserException",
-        message: Some(format!("{error:?}")),
-    })?;
-    write_variant_output(parser, &output, &rendered)?;
+    let write = |mut written: Vec<htsjdk_vcf::variant::VariantContext>| -> Result<(), Thrown> {
+        let mut header = header.clone();
+        written.retain(|record| keep(record));
+        apply_sites_only(parser, &mut header, &mut written);
+        let rendered =
+            htsjdk_vcf::vcf_file::write_vcf(&header, &written).map_err(|error| Thrown {
+                failure: Failure::User,
+                exception: "org.broadinstitute.hellbender.exceptions.UserException",
+                message: Some(format!("{error:?}")),
+            })?;
+        write_variant_output(parser, &output, &rendered)
+    };
+    // `ReadsPathDataSource.query` refuses unless every input is indexed, which SAM text never is,
+    // and names every file that is not. It queries when `MultiVariantWalkerGroupedOnStart` hands a
+    // group to `apply`: when the next variant starts one of its own, or at the end of the traversal.
+    let unindexed: Vec<String> = arguments(parser, "input")
+        .into_iter()
+        .filter(|path| !reads_input::is_indexed(std::path::Path::new(path)))
+        .collect();
+    let unqueryable = || {
+        Thrown::user(format!(
+            "Cannot query reads data source by interval unless all files are indexed\nPlease \
+             index all input files:\n\n{}\n",
+            unindexed
+                .iter()
+                .map(|path| format!("samtools index {}", java_absolute_path(path)))
+                .collect::<Vec<_>>()
+                .join("\n")
+        ))
+    };
+    let combine = i64::from(number_or(parser, "combine-variants-distance", 0));
+    let max_span = i64::from(number_or(parser, "max-distance", i32::MAX));
+    // The group being collected: its contig, first start and last start.
+    let mut group: Option<(String, i64, i64)> = None;
+    let (traversed, failure) = driving.merged(intervals.as_deref())?;
+    let skip_filtered = !flag(parser, "dont-skip-filtered-variants");
+    let tolerance = number_or(parser, "indel-start-tolerance", 5);
+    let mut written = Vec::new();
+    for (source, record) in traversed {
+        if skip_filtered && record.filters.as_ref().is_some_and(|f| !f.is_empty()) {
+            continue;
+        }
+        if !unindexed.is_empty() {
+            let Some((contig, first, last)) = &mut group else {
+                group = Some((record.contig.clone(), record.start, record.start));
+                continue;
+            };
+            if *contig == record.contig
+                && *last >= record.start - combine
+                && *first >= record.start - max_span
+            {
+                *last = record.start;
+                continue;
+            }
+            // The header went out at `onTraversalStart`; `MultiVariantWalker.traverse` rethrows
+            // what `apply` throws as a `GATKException` naming the locus and the whole record.
+            write(Vec::new())?;
+            return Err(Thrown::non_user(
+                "org.broadinstitute.hellbender.exceptions.GATKException",
+                format!(
+                    "Exception thrown at {}:{} {}",
+                    record.contig,
+                    record.start,
+                    java_variant_context_string(record, driving.inputs[source].input.name())
+                ),
+            ));
+        }
+        let variant = artifacts::Variant {
+            start: record.start as i32,
+            reference: record.reference().base_string().into_bytes(),
+            alternates: record
+                .alternate_alleles()
+                .iter()
+                .map(|allele| allele.display_string().into_bytes())
+                .collect(),
+        };
+        let supported = reads.iter().any(|(contig, read)| {
+            *contig == record.contig && artifacts::supports_variant(read, &variant, tolerance)
+        });
+        if supported {
+            return Err(Thrown::non_user(
+                PORT_LIMITATION,
+                format!(
+                    "Reads support the call at {}:{}, and realigning them needs the Mutect2 \
+                     assembler and BWA-MEM, which this port does not carry yet. This message is \
+                     the port's own and not GATK's.",
+                    record.contig, record.start
+                ),
+            ));
+        }
+        let mut out = record.clone();
+        out.attributes
+            .push(("NALIGNS".to_string(), htsjdk_vcf::variant::Value::Int(0)));
+        out.attributes
+            .push(("UNITIGS".to_string(), htsjdk_vcf::variant::Value::Missing));
+        written.push(out);
+    }
+    if let Some(failure) = failure {
+        return Err(failure);
+    }
+    // `afterTraverse` applies the last group outside the traversal's wrapping.
+    if group.is_some() {
+        write(Vec::new())?;
+        return Err(unqueryable());
+    }
+
+    write(written)?;
     // `onTraversalSuccess` returns "SUCCESS", which `Main` prints.
     Ok(Some("SUCCESS".to_string()))
 }
