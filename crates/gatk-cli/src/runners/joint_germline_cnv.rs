@@ -652,6 +652,8 @@ pub fn joint_germline_cnv_segmentation(parser: &Parser) -> Outcome {
     let Some(dictionary) = reference_dictionary(parser)? else {
         return Err(Thrown::user("Reference sequence dictionary required"));
     };
+    // The end of `onStartup`: the writer is wrapped by `--variant-output-filtering`.
+    let keep = variant_output_filter(parser, intervals.as_deref())?;
     let reference =
         gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
             .map_err(|error| Thrown::user(format!("{error:?}")))?;
@@ -831,6 +833,7 @@ pub fn joint_germline_cnv_segmentation(parser: &Parser) -> Outcome {
 
     // `closeTool`: whatever was written before a refusal stays written.
     let mut written = std::mem::take(&mut traversal.written);
+    written.retain(|record| keep(record));
     apply_sites_only(parser, &mut header, &mut written);
     let out = write_vcf_honouring_lenient(parser, &header, &written)?;
     write_variant_output(parser, &output, &out)?;

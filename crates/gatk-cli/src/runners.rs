@@ -9117,7 +9117,13 @@ pub fn calibrate_dragstr_model(parser: &Parser) -> Outcome {
     let text = if using_defaults {
         cdm::params_file(&annotations, 20, &cdm::default_rows())
     } else {
-        let rows = cdm::estimate(&parameters, &final_sites.as_cases());
+        let rows =
+            cdm::estimate(&parameters, &final_sites.as_cases()).map_err(|(index, length)| {
+                Thrown::non_user(
+                    "java.lang.ArrayIndexOutOfBoundsException",
+                    format!("Index {index} out of bounds for length {length}"),
+                )
+            })?;
         cdm::params_file(&annotations, parameters.max_repeat_length, &rows)
     };
     if let Some(path) = &sites_output {
