@@ -140,3 +140,38 @@ fn all_gts_filtered_counts_only_variant_genotypes() {
     // Every hom-ref genotype filtered is not a filtered site; the one het filtered is.
     assert_eq!(sites, ["PASS", "AllGtsFiltered"]);
 }
+
+/// The record-at-a-time run refuses what the whole-file read refuses, in its order: a record the
+/// reader refuses, however late, beats a missing dictionary and an earlier record the encoder
+/// refuses.
+#[test]
+fn a_late_read_refusal_beats_an_earlier_one() {
+    let header = |contig: &str| {
+        format!("##fileformat=VCFv4.2\n{contig}#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
+    };
+    let unknown_key = "chr1\t10\t.\tA\tG\t.\tPASS\tXX=1\n";
+    let bad_position = "chr1\tten\t.\tA\tG\t.\tPASS\t.\n";
+    let read_refusal = |text: &str| {
+        let failure = htsjdk_vcf::reader::read_vcf(text).expect_err("a record the reader refuses");
+        format!("{}:{}", failure.error.class(), failure.error.message())
+    };
+    let ours = |text: &str| {
+        let error = filter(text, &Thresholds::default()).expect_err("refused");
+        format!("{}:{}", error.java_class(), error.message())
+    };
+
+    let no_contigs = format!("{}{bad_position}", header(""));
+    assert_eq!(ours(&no_contigs), read_refusal(&no_contigs));
+
+    let contig = "##contig=<ID=chr1,length=100>\n";
+    let encoder_then_reader = format!("{}{unknown_key}{bad_position}", header(contig));
+    assert_eq!(
+        ours(&encoder_then_reader),
+        read_refusal(&encoder_then_reader)
+    );
+
+    let encoder_only = format!("{}{unknown_key}", header(contig));
+    assert!(ours(&encoder_only).starts_with("java.lang.IllegalStateException:Key XX found"));
+    let no_contigs_only = format!("{}{unknown_key}", header(""));
+    assert!(ours(&no_contigs_only).starts_with("picard.PicardException:"));
+}
