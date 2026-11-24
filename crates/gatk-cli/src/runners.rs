@@ -2226,8 +2226,12 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
     } else {
         bytes.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC)
     };
-    let named_index = read_index(parser, 1, is_binary, compressed)?;
-    let index = if is_binary {
+    // A CRAM is indexed like a BAM: by its `.crai`, which the transcode turns into a `.bai`.
+    let is_cram = bytes.starts_with(b"CRAM");
+    drop(bytes);
+    let indexable = is_binary || is_cram;
+    let named_index = read_index(parser, 1, indexable, compressed)?;
+    let index = if indexable {
         named_index.or_else(|| htsjdk_bam::sam_files::find_index(path))
     } else {
         None
@@ -2235,12 +2239,11 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
     // An index that is not one is refused by its MAGIC, and the refusal WAITS: `initializeReads`
     // opens the file, `initializeIntervals` runs next, and a query that does not resolve is
     // refused before anything asks the index what it is.
-    let (source, bad_index) = match &index {
-        Some(index) => match ReadsDataSource::open(path, index) {
+    let ((source, undecoded), bad_index) = match &index {
+        Some(index) => match reads_input::open_reads_deferred(parser, path, Some(index)) {
             Ok(source) => (source, None),
             Err(_) => (
-                ReadsDataSource::open_unindexed(path)
-                    .map_err(|error| Thrown::user(format!("{error:?}")))?,
+                reads_input::open_reads_deferred(parser, path, None)?,
                 Some(
                     index
                         .file_name()
@@ -2249,24 +2252,13 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
                 ),
             ),
         },
-        None => (
-            ReadsDataSource::open_unindexed(path)
-                .map_err(|error| Thrown::user(format!("{error:?}")))?,
-            None,
-        ),
+        None => (reads_input::open_reads_deferred(parser, path, None)?, None),
     };
 
     let header = source.header().clone();
     let master = master_dictionary(parser)?;
     let reference = reference_dictionary(parser)?;
-    if !flag(parser, "disable-sequence-dictionary-validation") {
-        if let Some(master) = &master {
-            validate_against_master(master, "reads", &header.sequences)?;
-            if let Some(reference) = &reference {
-                validate_against_master(master, "reference", &reference.sequences)?;
-            }
-        }
-    }
+    // `initializeIntervals` runs before `validateSequenceDictionaries`.
     let best = master
         .clone()
         .or_else(|| reference.clone())
@@ -2274,6 +2266,13 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
     let intervals = interval_arguments(parser, &best)?
         .map(|parameters| parameters.intervals)
         .unwrap_or_default();
+    reads_input::validate_reads_dictionaries(
+        parser,
+        master.as_ref(),
+        reference.as_ref(),
+        &header,
+        is_cram,
+    )?;
     if !intervals.is_empty() && index.is_none() {
         return Err(Thrown::user(
             "Traversal by intervals was requested but some input files are not indexed.",
@@ -2297,6 +2296,10 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
         command_line: &command_line,
         version: crate::TOOLKIT_VERSION,
     };
+    // A CRAM that does not decode is refused where the traversal reaches the container.
+    if let Some(refusal) = undecoded {
+        return Err(refusal);
+    }
     let (level, deflater) = output_compression(parser);
     let (bam, bai) = gatk_tools::apply_bqsr::apply_bqsr_with(
         &source,
@@ -13689,9 +13692,8 @@ pub fn transfer_read_tags(parser: &Parser) -> Outcome {
         )
     })?;
     let read_tags = arguments(parser, "read-tags");
-    let unmapped =
-        gatk_engine::reads::ReadsDataSource::open_unindexed(std::path::Path::new(&unmapped_path))
-            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    // `new ReadsPathDataSource(unmappedSamFile.toPath())`: no reference reaches it.
+    let unmapped = reads_input::open_reads_without_reference(std::path::Path::new(&unmapped_path))?;
 
     let command_line = crate::command_line::expanded("TransferReadTags", parser);
     let options = gatk_tools::sam_output::Options {
@@ -25078,6 +25080,8 @@ pub use interpreter_tools_runner::{
 /// `FilterAlignmentArtifacts`, whose realignment is not ported and whose walker is.
 #[path = "runners_filter_alignment_artifacts.rs"]
 mod filter_alignment_artifacts_runner;
+#[path = "runners_reads_input.rs"]
+mod reads_input;
 pub use filter_alignment_artifacts_runner::filter_alignment_artifacts;
 
 /// `StructuralVariantDiscoverer`: a read walker over the alignments of assembled contigs.
