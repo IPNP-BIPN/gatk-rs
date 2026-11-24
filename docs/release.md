@@ -11,7 +11,7 @@ open. Last updated 2026-11-24.
 
 | # | blocker | owner (session) | PR / issue | state |
 |---|---|---|---|---|
-| 1 | The chr20 30x best-practices chain passes at scale, port against GATK 4.7.0.0, x86-64 and arm64 | d1-d2-chr20-30x-benchmar; ci-gatk-vs-port-at-scale; fix-two-chr20-divergence | gatk-rs #1465 (draft), #1493, #1479, #1472 | **red**: all open. Known at scale: VariantRecalibrator's `##contig` lines (#1479), BaseRecalibrator on bgzipped known sites (#1472), CollectReadCounts dropping `@SQ` M5/UR (no PR yet) |
+| 1 | The chr20 30x best-practices chain passes at scale, port against GATK 4.7.0.0, x86-64 and arm64 | d1-d2-chr20-30x-benchmar (end to end); ci-gatk-vs-port-at-scale; fix-two-chr20-divergence | gatk-rs #1465 (draft, `docs/speed/scale.md`), #1493; CI run 45256318760 queued | **red**: nothing measured yet with the fixes applied; per step below |
 | 2 | `main` green in all three repositories, on the commit that is tagged | everyone | CI on `main` | **amber**: the last completed `main` runs are green (gatk-rs `4d2cb248`, picard-rs `2fbd7c48`, htsjdk-rs `cb1f5804`); the runs on the current heads (`43faae30`, `c7921ed9`, `95cb236a`) are queued |
 | 3 | `measured.json` frozen from a CI run of the final tree (`tools/coverage/`, `tools/fuzz/`) | test-resources | gatk-rs #1478 (draft) | **red**: to be frozen after #1478's CI run |
 | 4 | SAM and CRAM in every tool that reads or writes reads | sam-cram-everywhere | gatk-rs #1481 (merged, read walkers); the rest in progress | **red**: CRAM is still a port limitation in Picard-origin and Spark tools ([known-limits.md](known-limits.md)) |
@@ -22,6 +22,21 @@ open. Last updated 2026-11-24.
 | 9 | t=3 on the critical path | t-3-flowbased-likelihood; b2-b3-held-out-arguments | gatk-rs #1454, #1501 | **red**: #1501 open |
 | 10 | Intel and Graviton measured: faster than Java on CPU and peak RSS, with no trade-off | unassigned | gatk-rs #1493 measures `ubuntu-latest` and `ubuntu-24.04-arm` (Neoverse N2) | **red**: no run on a named Intel part or on AWS Graviton |
 | 11 | The reference's own instabilities recorded as limits, not quarantines | quarantines | gatk-rs #1477 | **amber**: open |
+
+Blocker 1, per step (from the owner, 2026-11-24):
+
+| step | state | fix |
+|---|---|---|
+| MarkDuplicatesSpark | OOM at 14 GiB; refuses several partitions | #1473, #1490 |
+| MarkDuplicates (Picard) | not carried by gatk-rs (picard-rs has it) | PR to come |
+| BaseRecalibrator | refuses `.vcf.gz` known sites | #1472 (rebased, mergeable) |
+| ApplyBQSR | OOM at 14 GiB: reads and inflates the whole BAM | #1458-#1460 stream PrintReads only; ApplyBQSR's writer: PR to come |
+| HaplotypeCaller, Mutect2 | OOM | #1467, #1474 (multicore) |
+| VariantRecalibrator | `##contig` divergence; 118x slower | #1479, #1486 |
+| CollectReadCounts | `@SQ` M5/UR fixed on main | #1480 (merged); speed #1487 |
+| PreprocessIntervals | 70x slower; timed out at 1800 s on CI | PR to come |
+| FilterMutectCalls | speed; arm64 bytes (`Math.exp` on aarch64) | #1484, #1475; #1499 |
+| GenotypeGVCFs, ApplyVQSR, SelectVariants, VariantFiltration, DenoiseReadCounts, ModelSegments | equal bytes on the smoke slice; unmeasured at scale | none yet |
 
 ## Release engineering
 
