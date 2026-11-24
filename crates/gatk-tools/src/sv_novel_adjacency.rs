@@ -752,6 +752,9 @@ fn infer_breakpoints(
             } else {
                 &higher.reference_span
             };
+            // Assigned in two of the branches below, as the Java does, rather than folded into an
+            // `if` expression whose other branches all return.
+            #[allow(clippy::needless_late_init)]
             let complication;
             let (mut homology, mut inserted) = (String::new(), String::new());
             if distances.gap_on_ref > 0 {
