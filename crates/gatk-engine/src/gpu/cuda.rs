@@ -10,7 +10,7 @@ use cudarc::driver::{
     CudaContext, CudaFunction, CudaSlice, CudaStream, DeviceRepr, LaunchConfig, PushKernelArg,
     ValidAsZeroBits,
 };
-use cudarc::nvrtc::{CompileOptions, compile_ptx_with_opts};
+use cudarc::nvrtc::{compile_ptx_with_opts, CompileOptions};
 
 use super::{ConvShape, ReadInputs};
 
