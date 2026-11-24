@@ -4,8 +4,8 @@
   "t": 2,
   "numeric_policy": "strict",
   "arguments_total": 74,
-  "arguments_in_array": 33,
-  "arguments_excluded": 41,
+  "arguments_in_array": 34,
+  "arguments_excluded": 40,
   "excluded": [
     {
       "argument": "--arguments_file",
@@ -86,13 +86,6 @@
     },
     {
       "argument": "--read-index",
-      "type": "GATKPath",
-      "reason": "excluded by the repository: no value is declared for this tool",
-      "held_at": null,
-      "source": "none"
-    },
-    {
-      "argument": "--sequence-dictionary",
       "type": "GATKPath",
       "reason": "excluded by the repository: no value is declared for this tool",
       "held_at": null,
@@ -296,8 +289,8 @@
     }
   ],
   "rows": 28,
-  "tuples_total": 2477,
-  "tuples_covered": 2477,
+  "tuples_total": 2621,
+  "tuples_covered": 2621,
   "tuples_forbidden": 31,
   "constraint_notes": [],
   "coverage": 1.0,
@@ -335,6 +328,7 @@
         "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
         "--segments": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
@@ -370,6 +364,7 @@
         "--reference=/work/fixtures/two_contigs.fasta",
         "--seconds-between-progress-updates=10.0",
         "--segments=/work/fixtures/csb_pair.list",
+        "--sequence-dictionary=<unset>",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true"
@@ -408,6 +403,7 @@
         "--reference": "fixture[1]",
         "--seconds-between-progress-updates": "fixture[1]",
         "--segments": "fixture[1]",
+        "--sequence-dictionary": "fixture[1]",
         "--sites-only-vcf-output": "false",
         "--tmp-dir": "fixture[1]",
         "--use-jdk-deflater": "false"
@@ -443,6 +439,7 @@
         "--reference=null",
         "--seconds-between-progress-updates=60.0",
         "--segments=/work/fixtures/csb_pair_header.list",
+        "--sequence-dictionary=/work/fixtures/two_contigs.dict",
         "--sites-only-vcf-output=false",
         "--tmp-dir=/work/tmp2",
         "--use-jdk-deflater=false"
@@ -481,9 +478,10 @@
         "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
         "--segments": "fixture[1]",
-        "--sites-only-vcf-output": "true",
-        "--tmp-dir": "fixture[1]",
-        "--use-jdk-deflater": "true"
+        "--sequence-dictionary": "fixture[0]",
+        "--sites-only-vcf-output": "false",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "false"
       },
       "arguments": [
         "--add-output-sam-program-record=false",
@@ -516,9 +514,10 @@
         "--reference=/work/fixtures/two_contigs.fasta",
         "--seconds-between-progress-updates=10.0",
         "--segments=/work/fixtures/csb_pair_header.list",
-        "--sites-only-vcf-output=true",
-        "--tmp-dir=/work/tmp2",
-        "--use-jdk-deflater=true"
+        "--sequence-dictionary=<unset>",
+        "--sites-only-vcf-output=false",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=false"
       ]
     },
     {
@@ -554,9 +553,10 @@
         "--reference": "fixture[1]",
         "--seconds-between-progress-updates": "fixture[1]",
         "--segments": "fixture[0]",
-        "--sites-only-vcf-output": "false",
-        "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "false"
+        "--sequence-dictionary": "fixture[1]",
+        "--sites-only-vcf-output": "true",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--add-output-sam-program-record=false",
@@ -589,9 +589,10 @@
         "--reference=null",
         "--seconds-between-progress-updates=60.0",
         "--segments=/work/fixtures/csb_pair.list",
-        "--sites-only-vcf-output=false",
-        "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=false"
+        "--sequence-dictionary=/work/fixtures/two_contigs.dict",
+        "--sites-only-vcf-output=true",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=true"
       ]
     },
     {
@@ -627,9 +628,10 @@
         "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
         "--segments": "fixture[1]",
-        "--sites-only-vcf-output": "false",
+        "--sequence-dictionary": "fixture[1]",
+        "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "false"
       },
       "arguments": [
         "--add-output-sam-program-record=false",
@@ -662,9 +664,10 @@
         "--reference=/work/fixtures/two_contigs.fasta",
         "--seconds-between-progress-updates=10.0",
         "--segments=/work/fixtures/csb_pair_header.list",
-        "--sites-only-vcf-output=false",
+        "--sequence-dictionary=/work/fixtures/two_contigs.dict",
+        "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=false"
       ]
     },
     {
@@ -700,9 +703,10 @@
         "--reference": "fixture[1]",
         "--seconds-between-progress-updates": "fixture[0]",
         "--segments": "fixture[0]",
-        "--sites-only-vcf-output": "true",
+        "--sequence-dictionary": "fixture[0]",
+        "--sites-only-vcf-output": "false",
         "--tmp-dir": "fixture[1]",
-        "--use-jdk-deflater": "false"
+        "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -735,9 +739,10 @@
         "--reference=null",
         "--seconds-between-progress-updates=10.0",
         "--segments=/work/fixtures/csb_pair.list",
-        "--sites-only-vcf-output=true",
+        "--sequence-dictionary=<unset>",
+        "--sites-only-vcf-output=false",
         "--tmp-dir=/work/tmp2",
-        "--use-jdk-deflater=false"
+        "--use-jdk-deflater=true"
       ]
     },
     {
@@ -773,9 +778,10 @@
         "--reference": "fixture[1]",
         "--seconds-between-progress-updates": "fixture[1]",
         "--segments": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "false"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -808,9 +814,10 @@
         "--reference=null",
         "--seconds-between-progress-updates=60.0",
         "--segments=/work/fixtures/csb_pair.list",
+        "--sequence-dictionary=<unset>",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=false"
       ]
     },
     {
@@ -846,9 +853,10 @@
         "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[1]",
         "--segments": "fixture[1]",
-        "--sites-only-vcf-output": "true",
+        "--sequence-dictionary": "fixture[0]",
+        "--sites-only-vcf-output": "false",
         "--tmp-dir": "fixture[1]",
-        "--use-jdk-deflater": "false"
+        "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -881,9 +889,10 @@
         "--reference=/work/fixtures/two_contigs.fasta",
         "--seconds-between-progress-updates=60.0",
         "--segments=/work/fixtures/csb_pair_header.list",
-        "--sites-only-vcf-output=true",
+        "--sequence-dictionary=<unset>",
+        "--sites-only-vcf-output=false",
         "--tmp-dir=/work/tmp2",
-        "--use-jdk-deflater=false"
+        "--use-jdk-deflater=true"
       ]
     },
     {
@@ -919,6 +928,7 @@
         "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
         "--segments": "fixture[0]",
+        "--sequence-dictionary": "fixture[1]",
         "--sites-only-vcf-output": "false",
         "--tmp-dir": "fixture[1]",
         "--use-jdk-deflater": "false"
@@ -954,6 +964,7 @@
         "--reference=/work/fixtures/two_contigs.fasta",
         "--seconds-between-progress-updates=10.0",
         "--segments=/work/fixtures/csb_pair.list",
+        "--sequence-dictionary=/work/fixtures/two_contigs.dict",
         "--sites-only-vcf-output=false",
         "--tmp-dir=/work/tmp2",
         "--use-jdk-deflater=false"
@@ -992,7 +1003,8 @@
         "--reference": "fixture[1]",
         "--seconds-between-progress-updates": "fixture[1]",
         "--segments": "fixture[1]",
-        "--sites-only-vcf-output": "false",
+        "--sequence-dictionary": "fixture[1]",
+        "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
       },
@@ -1027,7 +1039,8 @@
         "--reference=null",
         "--seconds-between-progress-updates=60.0",
         "--segments=/work/fixtures/csb_pair_header.list",
-        "--sites-only-vcf-output=false",
+        "--sequence-dictionary=/work/fixtures/two_contigs.dict",
+        "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true"
       ]
@@ -1065,6 +1078,7 @@
         "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
         "--segments": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
@@ -1100,6 +1114,7 @@
         "--reference=/work/fixtures/two_contigs.fasta",
         "--seconds-between-progress-updates=10.0",
         "--segments=/work/fixtures/csb_pair.list",
+        "--sequence-dictionary=<unset>",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true"
@@ -1138,6 +1153,7 @@
         "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
         "--segments": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
@@ -1173,6 +1189,7 @@
         "--reference=/work/fixtures/two_contigs.fasta",
         "--seconds-between-progress-updates=10.0",
         "--segments=/work/fixtures/csb_pair.list",
+        "--sequence-dictionary=<unset>",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true"
@@ -1211,6 +1228,7 @@
         "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
         "--segments": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
@@ -1246,6 +1264,7 @@
         "--reference=/work/fixtures/two_contigs.fasta",
         "--seconds-between-progress-updates=10.0",
         "--segments=/work/fixtures/csb_pair.list",
+        "--sequence-dictionary=<unset>",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true"
@@ -1284,9 +1303,10 @@
         "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
         "--segments": "fixture[1]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
-        "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "false"
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -1319,9 +1339,10 @@
         "--reference=/work/fixtures/two_contigs.fasta",
         "--seconds-between-progress-updates=10.0",
         "--segments=/work/fixtures/csb_pair_header.list",
+        "--sequence-dictionary=<unset>",
         "--sites-only-vcf-output=true",
-        "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=false"
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=true"
       ]
     },
     {
@@ -1357,8 +1378,9 @@
         "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
         "--segments": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
-        "--tmp-dir": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
         "--use-jdk-deflater": "false"
       },
       "arguments": [
@@ -1392,8 +1414,9 @@
         "--reference=/work/fixtures/two_contigs.fasta",
         "--seconds-between-progress-updates=10.0",
         "--segments=/work/fixtures/csb_pair.list",
+        "--sequence-dictionary=<unset>",
         "--sites-only-vcf-output=true",
-        "--tmp-dir=/work/tmp",
+        "--tmp-dir=/work/tmp2",
         "--use-jdk-deflater=false"
       ]
     },
@@ -1430,6 +1453,7 @@
         "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
         "--segments": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
@@ -1465,6 +1489,7 @@
         "--reference=/work/fixtures/two_contigs.fasta",
         "--seconds-between-progress-updates=10.0",
         "--segments=/work/fixtures/csb_pair.list",
+        "--sequence-dictionary=<unset>",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true"
@@ -1503,6 +1528,7 @@
         "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
         "--segments": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
@@ -1538,6 +1564,7 @@
         "--reference=/work/fixtures/two_contigs.fasta",
         "--seconds-between-progress-updates=10.0",
         "--segments=/work/fixtures/csb_pair.list",
+        "--sequence-dictionary=<unset>",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true"
@@ -1576,6 +1603,7 @@
         "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
         "--segments": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
@@ -1611,6 +1639,7 @@
         "--reference=/work/fixtures/two_contigs.fasta",
         "--seconds-between-progress-updates=10.0",
         "--segments=/work/fixtures/csb_pair.list",
+        "--sequence-dictionary=<unset>",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true"
@@ -1649,6 +1678,7 @@
         "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
         "--segments": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
@@ -1684,6 +1714,7 @@
         "--reference=/work/fixtures/two_contigs.fasta",
         "--seconds-between-progress-updates=10.0",
         "--segments=/work/fixtures/csb_pair.list",
+        "--sequence-dictionary=<unset>",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true"
@@ -1722,6 +1753,7 @@
         "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
         "--segments": "fixture[1]",
+        "--sequence-dictionary": "fixture[1]",
         "--sites-only-vcf-output": "false",
         "--tmp-dir": "fixture[1]",
         "--use-jdk-deflater": "false"
@@ -1757,6 +1789,7 @@
         "--reference=/work/fixtures/two_contigs.fasta",
         "--seconds-between-progress-updates=10.0",
         "--segments=/work/fixtures/csb_pair_header.list",
+        "--sequence-dictionary=/work/fixtures/two_contigs.dict",
         "--sites-only-vcf-output=false",
         "--tmp-dir=/work/tmp2",
         "--use-jdk-deflater=false"
@@ -1795,6 +1828,7 @@
         "--reference": "fixture[1]",
         "--seconds-between-progress-updates": "fixture[1]",
         "--segments": "fixture[1]",
+        "--sequence-dictionary": "fixture[1]",
         "--sites-only-vcf-output": "false",
         "--tmp-dir": "fixture[1]",
         "--use-jdk-deflater": "false"
@@ -1830,6 +1864,7 @@
         "--reference=null",
         "--seconds-between-progress-updates=60.0",
         "--segments=/work/fixtures/csb_pair_header.list",
+        "--sequence-dictionary=/work/fixtures/two_contigs.dict",
         "--sites-only-vcf-output=false",
         "--tmp-dir=/work/tmp2",
         "--use-jdk-deflater=false"
@@ -1868,6 +1903,7 @@
         "--reference": "fixture[1]",
         "--seconds-between-progress-updates": "fixture[1]",
         "--segments": "fixture[1]",
+        "--sequence-dictionary": "fixture[1]",
         "--sites-only-vcf-output": "false",
         "--tmp-dir": "fixture[1]",
         "--use-jdk-deflater": "false"
@@ -1903,6 +1939,7 @@
         "--reference=null",
         "--seconds-between-progress-updates=60.0",
         "--segments=/work/fixtures/csb_pair_header.list",
+        "--sequence-dictionary=/work/fixtures/two_contigs.dict",
         "--sites-only-vcf-output=false",
         "--tmp-dir=/work/tmp2",
         "--use-jdk-deflater=false"
@@ -1941,6 +1978,7 @@
         "--reference": "fixture[1]",
         "--seconds-between-progress-updates": "fixture[1]",
         "--segments": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
@@ -1976,6 +2014,7 @@
         "--reference=null",
         "--seconds-between-progress-updates=60.0",
         "--segments=/work/fixtures/csb_pair.list",
+        "--sequence-dictionary=<unset>",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true"
@@ -2014,6 +2053,7 @@
         "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
         "--segments": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
@@ -2049,6 +2089,7 @@
         "--reference=/work/fixtures/two_contigs.fasta",
         "--seconds-between-progress-updates=10.0",
         "--segments=/work/fixtures/csb_pair.list",
+        "--sequence-dictionary=<unset>",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true"
@@ -2087,6 +2128,7 @@
         "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
         "--segments": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
@@ -2122,6 +2164,7 @@
         "--reference=/work/fixtures/two_contigs.fasta",
         "--seconds-between-progress-updates=10.0",
         "--segments=/work/fixtures/csb_pair.list",
+        "--sequence-dictionary=<unset>",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true"
@@ -2160,6 +2203,7 @@
         "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
         "--segments": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
@@ -2195,6 +2239,7 @@
         "--reference=/work/fixtures/two_contigs.fasta",
         "--seconds-between-progress-updates=10.0",
         "--segments=/work/fixtures/csb_pair.list",
+        "--sequence-dictionary=<unset>",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true"
@@ -2233,6 +2278,7 @@
         "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
         "--segments": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
@@ -2268,6 +2314,7 @@
         "--reference=/work/fixtures/two_contigs.fasta",
         "--seconds-between-progress-updates=10.0",
         "--segments=/work/fixtures/csb_pair.list",
+        "--sequence-dictionary=<unset>",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true"
@@ -2306,6 +2353,7 @@
         "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
         "--segments": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
@@ -2341,6 +2389,7 @@
         "--reference=/work/fixtures/two_contigs.fasta",
         "--seconds-between-progress-updates=10.0",
         "--segments=/work/fixtures/csb_pair.list",
+        "--sequence-dictionary=<unset>",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true"

@@ -237,10 +237,10 @@
     "level) are one-line pairs that would fill every row they enter, so they are measured by hand",
     "instead (X.1, #72).",
     "",
-    "They HOLD `--output-shard-tmp-dir` out, because Barclay refuses it beside `--sharded-output`",
-    "(a mutex), and every row sets both: the first array of nineteen rows measured that one",
-    "refusal sixteen times. The boolean keeps both its values; the directory is where a sharded BAM",
-    "write would put its parts, which no counting tool does.",
+    "`--output-shard-tmp-dir` is mutually exclusive with `--sharded-output` (Barclay refuses the",
+    "pair whenever both are given), so both take `<unset>` as a value and the pair is forbidden:",
+    "the boolean keeps both its values, and the directory, where a Spark writer puts its parts",
+    "before it merges them, is varied on the rows that leave the boolean off the command line.",
     "",
     "The Picard tools GATK bundles (AddCommentsToBam ... VcfToIntervalList) take picard-rs's own",
     "fixtures for them, written under picard/ by MakeFixtures' Picard class, which is picard-rs's",
@@ -373,7 +373,12 @@
         "a thread id and the wall clock. The arguments held out with no value are the ones the port refuses",
         "with its own message or that Barclay refuses beside --variant, which would measure that refusal on",
         "every row that carries them: an update and its interval list, the sample map, --header, the feature",
-        "reader bypass, the contig merge and consolidation over batches. The refusals are in GenomicsDBImportDump."
+        "reader bypass, the contig merge and consolidation over batches. The refusals are in GenomicsDBImportDump.",
+        "By name: --genomicsdb-update-workspace-path, --output-interval-list-to-file, --sample-name-map,",
+        "--validate-sample-name-map, --header, --bypass-feature-reader, --avoid-nio,",
+        "--merge-contigs-into-num-partitions and --consolidate are those the port refuses or Barclay refuses",
+        "beside --variant; --read-filter and --disable-read-filter name read filters for a tool that reads no",
+        "reads."
       ],
       "$lists": [
         "--variant"
@@ -1295,7 +1300,9 @@
         "for site depth.",
         "--sequence-dictionary is pinned to the one that AGREES with the reads. The site-depth",
         "writer asserts that the dictionary it was given and the BAM's are the same object, and",
-        "the corpus's other dictionary makes that an AssertionError rather than a user error."
+        "the corpus's other dictionary makes that an AssertionError rather than a user error.",
+        "--intervals is unset or chr1:1-3000, which keeps four of pairs.bam's six reads, and",
+        "--exclude-intervals unset or chr1:900-1100, which drops the read at 1000."
       ],
       "--input": [
         "/work/fixtures/pairs.bam"
@@ -1336,8 +1343,14 @@
         "0",
         "60"
       ],
-      "--intervals": [],
-      "--exclude-intervals": [],
+      "--intervals": [
+        "<unset>",
+        "chr1:1-3000"
+      ],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:900-1100"
+      ],
       "--sequence-dictionary": [
         "/work/fixtures/matching.dict"
       ]
@@ -1350,7 +1363,10 @@
         "BGZF at --compression-level with a tabix index beside it. --sample-name replaces the read",
         "group's SM in the one-column header. --input and --read-index are held out, since the tool",
         "reads no reads, and -L/-XL are held out, since a bounded traversal of a text counts table",
-        "needs an index it does not have."
+        "needs an index it does not have.",
+        "--intervals and --exclude-intervals are held out: the file the tool walks has no index in the",
+        "corpus, so any interval turns the traversal into a query the reference refuses before the first",
+        "record."
       ],
       "--counts-filename": [
         "/work/fixtures/sv.counts.tsv",
@@ -1657,33 +1673,29 @@
     "FilterIntervals": {
       "$why": [
         "annotated.tsv and counts.tsv, both produced by the REFERENCE's own AnnotateIntervals and",
-        "CollectReadCounts over four windows of the corpus's contig. Four rather than one because",
-        "this tool removes a contig's only surviving interval: a table of one row filters to none",
-        "and the run is then refused for having nothing left.",
-        "The counts differ between windows (2, 2, 1 and 0), and the two low-count thresholds are the",
-        "two sides of them: 1 drops the empty window and 0 drops nothing. A threshold of five is",
-        "above every count the corpus carries, so every row holding it ended with an empty mask and",
-        "the array measured one refusal eleven times instead of the filters.",
-        "--annotated-intervals carries the table and NOTHING, because the tool accepts either input",
-        "alone and refuses a command line with neither: the empty value is that refusal.",
-        "--input and --read-index are held out of the shared values: this tool's --input is a COUNTS",
-        "table rather than reads, which is why it carries its own.",
-        "--intervals takes an interval LIST rather than a window, and that is the tool rather than",
-        "the fixture: the argument is REQUIRED, the intersection with the inputs is by list equality",
-        "rather than by overlap, and a contig left with one interval loses it. So a window naming a",
-        "single bin always ends with nothing, and only a file naming several can produce output.",
-        "The two files name four bins and two.",
-        "--exclude-intervals carries a window OFF the bins as well as one that cuts the first of",
-        "them, for the same reason: an exclusion that clips a bin does not shrink it, it deletes it,",
-        "and with every shared value clipping one, no row could produce a file at all.",
-        "The four other interval arguments are HELD at what a copy-number tool accepts: it bins and",
-        "pads by its own arguments and refuses the standard ones outright, so every row that varied",
-        "them measured one IllegalArgumentException. That refusal is the runner's own check and is",
-        "measured by the tools that share it.",
-        "The percentages, the percentiles and the two segmental-duplication bounds carry values",
-        "INSIDE their declared range. The generator takes a domain from the declaration's min and",
-        "max, and for these it produced -1.0 and 2.0: every one of the forty-nine rows was refused",
-        "by the parser and the array measured the range check rather than the three filters."
+        "CollectReadCounts over four windows of the corpus's contig. Four rather than one because this tool",
+        "removes a contig's only surviving interval: a table of one row filters to none and the run is then",
+        "refused for having nothing left. The counts differ between windows (2, 2, 1 and 0), and the two",
+        "low-count thresholds are the two sides of them: 1 drops the empty window and 0 drops nothing. A",
+        "threshold of five is above every count the corpus carries, so every row holding it ended with an",
+        "empty mask and the array measured one refusal eleven times instead of the filters.",
+        "--annotated-intervals carries the table and NOTHING, because the tool accepts either input alone and",
+        "refuses a command line with neither: the empty value is that refusal. --input is held out of the",
+        "shared values: this tool's --input is a COUNTS table rather than reads, which is why it carries its",
+        "own. --intervals takes an interval LIST rather than a window, and that is the tool rather than the",
+        "fixture: the argument is REQUIRED, the intersection with the inputs is by list equality rather than",
+        "by overlap, and a contig left with one interval loses it. So a window naming a single bin always",
+        "ends with nothing, and only a file naming several can produce output. The two files name four bins",
+        "and two. --exclude-intervals carries a window OFF the bins as well as one that cuts the first of",
+        "them, for the same reason: an exclusion that clips a bin does not shrink it, it deletes it, and with",
+        "every shared value clipping one, no row could produce a file at all. The four other interval",
+        "arguments are HELD at what a copy-number tool accepts: it bins and pads by its own arguments and",
+        "refuses the standard ones outright, so every row that varied them measured one",
+        "IllegalArgumentException. That refusal is the runner's own check and is measured by the tools that",
+        "share it. The percentages, the percentiles and the two segmental-duplication bounds carry values",
+        "INSIDE their declared range. The generator takes a domain from the declaration's min and max, and",
+        "for these it produced -1.0 and 2.0: every one of the forty-nine rows was refused by the parser and",
+        "the array measured the range check rather than the three filters."
       ],
       "--annotated-intervals": [
         "/work/fixtures/annotated.tsv",
@@ -1752,8 +1764,7 @@
       ],
       "--interval-exclusion-padding": [
         "0"
-      ],
-      "--read-index": []
+      ]
     },
     "CountFalsePositives": {
       "$why": [
@@ -2329,7 +2340,8 @@
         "Four engine arguments are held out, and the first measurement is why: all twenty-three rows",
         "refused. This tool WALKS the GTF, so `--intervals` asks for random access to a file the",
         "corpus has no index for, and `--input` is reads, which this tool does not read at all: the",
-        "array was handing it the corpus's VCFs and BEDs as reads and pairing them with a BAM index."
+        "array was handing it the corpus's VCFs and BEDs as reads and pairing them with a BAM index.",
+        "--read-index goes with --input, and --exclude-intervals with --intervals, for the same reasons."
       ],
       "--gtf-path": [
         "/work/fixtures/annotation.gtf"
@@ -2866,25 +2878,23 @@
     },
     "CheckReferenceCompatibility": {
       "$why": [
-        "--input carries md5header.bam and reads.bam, which is the whole point of this tool's array:",
-        "one property of the input decides the algorithm. md5header.bam is the corpus's only reads",
-        "file whose @SQ line carries an M5, so it takes the MD5 path and compares bases through",
-        "CompareReferences' table; reads.bam has none, so it compares names and lengths alone and says",
-        "so in every summary it writes.",
-        "--references-to-compare carries reference.fasta, whose dictionary md5header.bam's was copied",
-        "from, and other.fasta, which shares no contig with either input and whose hand-written dict",
-        "has no M5 at all. Between them the rows reach COMPATIBLE, NOT_COMPATIBLE and the USE_DICT",
-        "refusal that a reference with no M5 produces once the input has one.",
-        "--variant is held out. The tool refuses a command line naming both a BAM and a VCF, and every",
-        "row carries every argument in the domain, so an array holding both would measure that one",
-        "refusal twenty times. The VCF path is measured by the tool's suite, which has five VCF runs",
-        "including one whose M5 is a lie.",
-        "--read-index is held out: it is counted against the reads inputs and refuses on a mismatch,",
-        "which is a refusal the read walkers' arrays already measure."
+        "--input carries md5header.bam and reads.bam, which is the whole point of this tool's array: one",
+        "property of the input decides the algorithm. md5header.bam is the corpus's only reads file whose @SQ",
+        "line carries an M5, so it takes the MD5 path and compares bases through CompareReferences' table;",
+        "reads.bam has none, so it compares names and lengths alone and says so in every summary it writes.",
+        "--references-to-compare carries reference.fasta, whose dictionary md5header.bam's was copied from,",
+        "and other.fasta, which shares no contig with either input and whose hand-written dict has no M5 at",
+        "all. Between them the rows reach COMPATIBLE, NOT_COMPATIBLE and the USE_DICT refusal that a",
+        "reference with no M5 produces once the input has one. --variant is unset or indexed.vcf, and --input",
+        "takes <unset> too: the tool refuses a BAM and a VCF together, so that pair is forbidden. The VCF",
+        "path is measured by the tool's suite, which has five VCF runs including one whose M5 is a lie.",
+        "--read-index is each BAM's own index or unset; a row pairing a BAM with another's index is",
+        "forbidden, since it would measure htsjdk reading a foreign index rather than the tool."
       ],
       "--input": [
         "/work/fixtures/md5header.bam",
-        "/work/fixtures/reads.bam"
+        "/work/fixtures/reads.bam",
+        "<unset>"
       ],
       "--references-to-compare": [
         "/work/fixtures/reference.fasta",
@@ -2894,8 +2904,15 @@
         "/work/out/compatibility.table",
         "/work/out/compatibility2.table"
       ],
-      "--variant": [],
-      "--read-index": []
+      "--variant": [
+        "<unset>",
+        "/work/fixtures/indexed.vcf"
+      ],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/md5header.bai",
+        "/work/fixtures/reads.bai"
+      ]
     },
     "PathSeqBuildReferenceTaxonomy": {
       "$why": [
@@ -3576,7 +3593,12 @@
         "null: both, one, or neither, the last refused as having no dictionary, and the reference alone",
         "misreporting chr2 as an unsorted input after printing everything before it.",
         "The engine's read arguments are held out for the reasons CondenseDepthEvidence gives.",
-        "The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags."
+        "The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags.",
+        "--input and --read-index are held out: this tool reads no reads, so a BAM would only add the",
+        "reads-against-reference dictionary check, which the read walkers' arrays measure.",
+        "--intervals and --exclude-intervals are held out: the file the tool walks has no index in the",
+        "corpus, so any interval turns the traversal into a query the reference refuses before the first",
+        "record."
       ],
       "--feature": [
         "/work/fixtures/depth.rd.txt",
@@ -3631,7 +3653,12 @@
         "divide is sums_two.list, naming MQ_SUM and QD_SUM, and sums.list, naming them the other way",
         "round with one annotation no site carries, which still gains its header line. The index and the output filtering mode are held for the reasons",
         "NuMTFilterTool gives, and the engine's read arguments are held out likewise.",
-        "The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags."
+        "The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags.",
+        "--input and --read-index are held out: this tool reads no reads, so a BAM would only add the",
+        "reads-against-reference dictionary check, which the read walkers' arrays measure.",
+        "--intervals and --exclude-intervals are held out: the file the tool walks has no index in the",
+        "corpus, so any interval turns the traversal into a query the reference refuses before the first",
+        "record."
       ],
       "--variant": [
         "/work/fixtures/summed.vcf",
@@ -3693,7 +3720,12 @@
         "--info-key is CNN_2D and CNN_1D, which the header does not declare. --invalidate-previous-filters",
         "drops LowQual and its header line. The index and the output filtering mode are held for the",
         "reasons NuMTFilterTool gives, --add-output-vcf-command-line at false since it writes the run's",
-        "own time into the header, and the engine's read arguments are held out likewise."
+        "own time into the header, and the engine's read arguments are held out likewise.",
+        "--input and --read-index are held out: this tool reads no reads, so a BAM would only add the",
+        "reads-against-reference dictionary check, which the read walkers' arrays measure.",
+        "--intervals and --exclude-intervals are held out: the file the tool walks has no index in the",
+        "corpus, so any interval turns the traversal into a query the reference refuses before the first",
+        "record."
       ],
       "--variant": [
         "/work/fixtures/cnn.vcf"
@@ -3799,14 +3831,16 @@
     "ASEReadCounter": {
       "$why": [
         "--input is ase.bam, reads over four sites of reference.fasta: at 1001 two A and two G, one A at",
-        "mapping quality 10, one G at base quality 2, a C that is neither allele, a pair whose mates agree,",
-        "a pair whose mates disagree (which the three overlap handlings treat three ways) and an improper",
-        "pair; 1102 three reads; 1203 multiallelic and 1304 homozygous in the VCF, both skipped.",
-        "--variant is ase_sites.vcf, indexed, and the same file unindexed, which the locus query refuses.",
-        "--reference is reference.fasta or null, and without one the first locus indexes an empty array.",
+        "mapping quality 10, one G at base quality 2, a C that is neither allele, a pair whose mates agree, a",
+        "pair whose mates disagree (which the three overlap handlings treat three ways) and an improper pair;",
+        "1102 three reads; 1203 multiallelic and 1304 homozygous in the VCF, both skipped. --variant is",
+        "ase_sites.vcf, indexed, and the same file unindexed, which the locus query refuses. --reference is",
+        "reference.fasta or null, and without one the first locus indexes an empty array.",
         "--min-mapping-quality and --min-base-quality are 0 and 20, --min-depth-of-non-filtered-base -1 and",
-        "3; --output is a file or null, the second writing to stdout, which the array compares.",
-        "--read-index, --intervals and --exclude-intervals are held out, as for CondenseDepthEvidence."
+        "3; --output is a file or null, the second writing to stdout, which the array compares. --intervals",
+        "and --exclude-intervals are held out, as for CondenseDepthEvidence. --read-index is each BAM's own",
+        "index or unset; a row pairing a BAM with another's index is forbidden, since it would measure htsjdk",
+        "reading a foreign index rather than the tool."
       ],
       "--input": [
         "/work/fixtures/ase.bam"
@@ -3845,7 +3879,10 @@
         "/work/out/ase.table",
         "null"
       ],
-      "--read-index": [],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/ase.bai"
+      ],
       "--intervals": [],
       "--exclude-intervals": [],
       "--max-variants-per-shard": [
@@ -3863,7 +3900,12 @@
         "reference's NullPointerException. --lod-score-cutoff is none or 1.0, the pair of them the mutual",
         "exclusion. --ignore-filter lets LowQual through or is absent. --output is plain or BGZF.",
         "The index, the filtering mode, the command line and the engine's read and interval arguments are",
-        "held as for FilterVariantTranches."
+        "held as for FilterVariantTranches.",
+        "--input and --read-index are held out: this tool reads no reads, so a BAM would only add the",
+        "reads-against-reference dictionary check, which the read walkers' arrays measure.",
+        "--intervals and --exclude-intervals are held out: the file the tool walks has no index in the",
+        "corpus, so any interval turns the traversal into a query the reference refuses before the first",
+        "record."
       ],
       "--variant": [
         "/work/fixtures/vqsr_input.vcf",
@@ -4310,7 +4352,10 @@
       "--max-records-in-ram": [
         "10000"
       ],
-      "--sequence-dictionary": [],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/sv_reference.dict"
+      ],
       "--max-variants-per-shard": [
         "0"
       ],
@@ -4333,7 +4378,14 @@
         "breakends; the inversion matches nothing and is written straight out. --clustering-config is the",
         "table naming every group, or the same without BND_all, which onTraversalStart refuses. --track-name",
         "and --track-intervals are held at TR and sv_grp_track.bed; the stratification thresholds are varied.",
-        "The cluster parameters are the table's own, so SVCluster's command-line ones are absent here."
+        "The cluster parameters are the table's own, so SVCluster's command-line ones are absent here.",
+        "--sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference",
+        "is forbidden, the dictionary check's refusal being measured elsewhere.",
+        "--input and --read-index are held out: this tool reads no reads, so a BAM would only add the",
+        "reads-against-reference dictionary check, which the read walkers' arrays measure.",
+        "--intervals and --exclude-intervals are held out: the file the tool walks has no index in the",
+        "corpus, so any interval turns the traversal into a query the reference refuses before the first",
+        "record."
       ],
       "--stratify-config": [
         "/work/fixtures/sv_grp_strata.tsv"
@@ -4487,9 +4539,15 @@
         "neither with a SAM header, or tumour.seg and csb_header.seg, whose dictionary the merge takes.",
         "--labels is absent (1 and 2) or a .list of T and N. --columns-of-interest is CALL and MEAN, CALL",
         "alone (which both files carry, so it takes the labels), or a column neither has, refused.",
-        "--reference is two_contigs.fasta or absent, which without a SAM header is refused. The engine's",
-        "read, interval and dictionary arguments are held out.",
-        "The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags."
+        "--reference is two_contigs.fasta or absent, which without a SAM header is refused. The engine's read",
+        "and interval arguments are held out. The three read-filter arguments vary with their filters, as for",
+        "AddOriginalAlignmentTags. --sequence-dictionary is unset or the reference's own .dict; a dictionary",
+        "beside another reference is forbidden, the dictionary check's refusal being measured elsewhere.",
+        "--input and --read-index are held out: this tool reads no reads, so a BAM would only add the",
+        "reads-against-reference dictionary check, which the read walkers' arrays measure.",
+        "--intervals and --exclude-intervals are held out: the file the tool walks has no index in the",
+        "corpus, so any interval turns the traversal into a query the reference refuses before the first",
+        "record."
       ],
       "--segments": [
         "/work/fixtures/csb_pair.list",
@@ -4512,7 +4570,10 @@
         "/work/out/combined.seg",
         "/work/out/other.seg"
       ],
-      "--sequence-dictionary": [],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/two_contigs.dict"
+      ],
       "--input": [],
       "--read-index": [],
       "--intervals": [],
@@ -4612,8 +4673,15 @@
         "autosomal recessive compound het pair and a hom-var), one matching nothing and already filtered, and",
         "a multiallelic site; and the same records under a header with no FUNCOTATION line, refused before",
         "the writer. --ref-version is b37, whose Gencode_19 keys the file carries, or hg38, whose keys it",
-        "does not. --allele-frequency-data-source is exac or gnomad. The engine's read, interval and",
-        "dictionary arguments are held out, the writer's index, filtering mode and command line held."
+        "does not. --allele-frequency-data-source is exac or gnomad. The engine's read and interval arguments",
+        "are held out, the writer's index, filtering mode and command line held. --reference is unset or",
+        "reference.fasta and --sequence-dictionary unset or its .dict: the variants' contig is",
+        "reference.fasta's chr1.",
+        "--input and --read-index are held out: this tool reads no reads, so a BAM would only add the",
+        "reads-against-reference dictionary check, which the read walkers' arrays measure.",
+        "--intervals and --exclude-intervals are held out: the file the tool walks has no index in the",
+        "corpus, so any interval turns the traversal into a query the reference refuses before the first",
+        "record."
       ],
       "--variant": [
         "/work/fixtures/funcotated.vcf",
@@ -4634,8 +4702,14 @@
       "--max-variants-per-shard": [
         "0"
       ],
-      "--reference": [],
-      "--sequence-dictionary": [],
+      "--reference": [
+        "<unset>",
+        "/work/fixtures/reference.fasta"
+      ],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/reference.dict"
+      ],
       "--input": [],
       "--read-index": [],
       "--intervals": [],
@@ -4679,24 +4753,30 @@
     },
     "CollectF1R2Counts": {
       "$why": [
-        "f1r2.bam is one sample over reference.fasta's ACGT repeat, forty-base pairs so Mutect2's",
-        "length filter keeps them, built to reach every place a site can go: the alt table, a",
-        "depth-one histogram, a reference histogram, a tie between alt bases, a site under the median",
-        "mapping quality, an indel site and a k-mer cut short at each end of the contig.",
-        "tumor_normal.bam is the second input because it carries two samples, which is the path that",
-        "splits the pileup and stops at the first sample in hash order that returns.",
-        "--read-index is held out so each BAM finds its own index beside it.",
-        "--f1r2-min-bq 5 lets the two low-quality alt bases at 1031 through; --f1r2-median-mq 30 lets",
-        "the block at 2001 in; --f1r2-max-depth 3 caps the depth bins where the default does not.",
-        "--intervals keeps the window over the reads, and its second value leaves the far end out.",
-        "--max-depth-per-sample is held at zero: this port does not reproduce the downsampler's stream.",
-        "The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags."
+        "f1r2.bam is one sample over reference.fasta's ACGT repeat, forty-base pairs so Mutect2's length",
+        "filter keeps them, built to reach every place a site can go: the alt table, a depth-one histogram, a",
+        "reference histogram, a tie between alt bases, a site under the median mapping quality, an indel site",
+        "and a k-mer cut short at each end of the contig. tumor_normal.bam is the second input because it",
+        "carries two samples, which is the path that splits the pileup and stops at the first sample in hash",
+        "order that returns. --f1r2-min-bq 5 lets the two low-quality alt bases at 1031 through;",
+        "--f1r2-median-mq 30 lets the block at 2001 in; --f1r2-max-depth 3 caps the depth bins where the",
+        "default does not. --intervals keeps the window over the reads, and its second value leaves the far",
+        "end out. --max-depth-per-sample is held at zero: this port does not reproduce the downsampler's",
+        "stream. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags.",
+        "--read-index is each BAM's own index or unset; a row pairing a BAM with another's index is",
+        "forbidden, since it would measure htsjdk reading a foreign index rather than the tool.",
+        "--sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference",
+        "is forbidden, the dictionary check's refusal being measured elsewhere."
       ],
       "--input": [
         "/work/fixtures/f1r2.bam",
         "/work/fixtures/tumor_normal.bam"
       ],
-      "--read-index": [],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/f1r2.bai",
+        "/work/fixtures/tumor_normal.bai"
+      ],
       "--intervals": [
         "chr1:1-100000",
         "chr1:900-3100"
@@ -4732,7 +4812,10 @@
         "<unset>",
         "true"
       ],
-      "--sequence-dictionary": [],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/reference.dict"
+      ],
       "--reference": [
         "/work/fixtures/reference.fasta"
       ],
@@ -4830,7 +4913,12 @@
         "--germline-resource is pon_germline.vcf or absent, whose AF values move sites 600 to 800",
         "across --max-germline-probability's two values.",
         "--min-sample-count 1 keeps the single-carrier site and 3 keeps only the sites every normal",
-        "carries."
+        "carries.",
+        "--exclude-intervals is unset or chr1:410-490, inside the window -L names.",
+        "--reference is unset or reference.fasta and --sequence-dictionary unset or its .dict: the variants'",
+        "contig is reference.fasta's chr1.",
+        "--input and --read-index are held out: this tool reads no reads, so a BAM would only add the",
+        "reads-against-reference dictionary check, which the read walkers' arrays measure."
       ],
       "--variant": [
         "/work/fixtures/pon_normals.vcf",
@@ -4860,11 +4948,20 @@
       "--max-variants-per-shard": [
         "0"
       ],
-      "--reference": [],
-      "--sequence-dictionary": [],
+      "--reference": [
+        "<unset>",
+        "/work/fixtures/reference.fasta"
+      ],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/reference.dict"
+      ],
       "--input": [],
       "--read-index": [],
-      "--exclude-intervals": [],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:410-490"
+      ],
       "--create-output-variant-index": [
         "false"
       ],
@@ -5085,7 +5182,12 @@
         "repeat and the second contig's masks start at one. decimation.txt is a small matrix with a",
         "comment and a blank line; DEFAULT and NONE are the two built-in tables.",
         "--intervals absent scans every contig; the two windows cut the first one.",
-        "--max-period 2 and --max-repeats 3 cap what is found and what is counted."
+        "--max-period 2 and --max-repeats 3 cap what is found and what is counted.",
+        "--sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference",
+        "is forbidden, the dictionary check's refusal being measured elsewhere. --exclude-intervals is unset",
+        "or chr1:660-740, inside the window -L names.",
+        "--input and --read-index are held out: this tool reads no reads, so a BAM would only add the",
+        "reads-against-reference dictionary check, which the read walkers' arrays measure."
       ],
       "--reference": [
         "/work/fixtures/mutect_ref.fasta",
@@ -5116,11 +5218,17 @@
         "chr1:100-600",
         "chr1:500-900"
       ],
-      "--reference-sequence-buffer-size": [],
-      "--sequence-dictionary": [],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/mutect_ref.dict",
+        "/work/fixtures/two_contigs.dict"
+      ],
       "--input": [],
       "--read-index": [],
-      "--exclude-intervals": [],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:660-740"
+      ],
       "--max-variants-per-shard": [
         "0"
       ]
@@ -5134,7 +5242,13 @@
         "the default decimation and with none.",
         "--force-estimation true estimates from what little data there is; false writes the defaults.",
         "--max-period 2 is below the table's periods, which the reference indexes past.",
-        "--parallel and --threads are held: the parallel collection is not ported."
+        "--parallel and --threads are held: the parallel collection is not ported.",
+        "--read-index is each BAM's own index or unset; a row pairing a BAM with another's index is",
+        "forbidden, since it would measure htsjdk reading a foreign index rather than the tool.",
+        "--sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference",
+        "is forbidden, the dictionary check's refusal being measured elsewhere. --exclude-intervals is unset",
+        "or chr1:900-1100, inside the window -L names.",
+        "--shard-size is the default or 100, the smallest it accepts, which cuts the contig into many shards."
       ],
       "--input": [
         "/work/fixtures/dragstr.bam",
@@ -5216,10 +5330,23 @@
       "--threads": [
         "0"
       ],
-      "--shard-size": [],
-      "--read-index": [],
-      "--sequence-dictionary": [],
-      "--exclude-intervals": [],
+      "--shard-size": [
+        "<unset>",
+        "100"
+      ],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/dragstr.bai",
+        "/work/fixtures/mutect_tn.bai"
+      ],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/mutect_ref.dict"
+      ],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:900-1100"
+      ],
       "--max-variants-per-shard": [
         "0"
       ]
@@ -5267,7 +5394,12 @@
         "across the first gene's intron, some multi-mapped (NH 2), some at MQ 5 and some duplicates.",
         "genes.gff3 holds two stranded genes with an mRNA and exons, and an unstranded one overlapping",
         "the second; genes_noname.gff3 adds a gene with no Name, refused under the default label.",
-        "--read-strands, --multi-overlap-method, --multi-map-method and --unspliced each move the counts."
+        "--read-strands, --multi-overlap-method, --multi-map-method and --unspliced each move the counts.",
+        "--read-index is each BAM's own index or unset; a row pairing a BAM with another's index is",
+        "forbidden, since it would measure htsjdk reading a foreign index rather than the tool.",
+        "--sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference",
+        "is forbidden, the dictionary check's refusal being measured elsewhere. --exclude-intervals is unset",
+        "or chr1:400-600, inside the window -L names."
       ],
       "--input": [
         "/work/fixtures/rna.bam"
@@ -5303,9 +5435,18 @@
         "10",
         "0"
       ],
-      "--read-index": [],
-      "--sequence-dictionary": [],
-      "--exclude-intervals": [],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/rna.bai"
+      ],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/mutect_ref.dict"
+      ],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:400-600"
+      ],
       "--max-variants-per-shard": [
         "0"
       ]
@@ -5341,49 +5482,43 @@
     },
     "CombineGVCFs": {
       "$why": [
-        "The corpus is combineGvcfsFixtures in MakeFixtures.java: GVCFs over cgv_ref.fasta, whose",
-        "chr1 is mutect_ref.fasta's and whose chr2 is 500 fixed bases. --variant is a collection and a",
-        "row gives it one value, so each value is a .list of the files one run merges: cg_abc.list is",
-        "the three that merge (a diploid sample with a deletion, a multiallelic SNP, a phased pair and",
-        "a zero-depth block; a second diploid sample whose blocks run into that deletion, with a SNP",
-        "under it and an insertion at the multiallelic site; and a haploid sample with a longer",
-        "deletion), cg_ab.list and cg_bc.list two of them each, so the diploid pair merges without the",
-        "haploid sample and the haploid one merges with a single diploid. cg_mnp_pair.list puts",
-        "cg_a beside an MNP, which apply() refuses, and",
-        "cg_nonref_pair.list beside a variant with no <NON_REF>, which the merger refuses. Both",
-        "refusals sit at chr1:100, so a row whose interval misses that site answers instead.",
-        "--intervals is absent, a window starting inside cg_a's deletion (so",
-        "--ignore-variants-starting-outside-interval has a record to drop and the merger a deletion",
-        "to trim), or a window on chr2 over the hom-var SNP. --exclude-intervals cuts the phased pair",
-        "out or nothing. --break-bands-at-multiples-of is 0 or 100, which splits the chr1 blocks at",
-        "100, 200 and 300; --convert-to-base-pair-resolution is the special case of 1.",
-        "--annotation-group, --annotation and --annotations-to-exclude decide which raw keys the",
+        "The corpus is combineGvcfsFixtures in MakeFixtures.java: GVCFs over cgv_ref.fasta, whose chr1 is",
+        "mutect_ref.fasta's and whose chr2 is 500 fixed bases. --variant is a collection and a row gives it",
+        "one value, so each value is a .list of the files one run merges: cg_abc.list is the three that merge",
+        "(a diploid sample with a deletion, a multiallelic SNP, a phased pair and a zero-depth block; a",
+        "second diploid sample whose blocks run into that deletion, with a SNP under it and an insertion at",
+        "the multiallelic site; and a haploid sample with a longer deletion), cg_ab.list and cg_bc.list two",
+        "of them each, so the diploid pair merges without the haploid sample and the haploid one merges with",
+        "a single diploid. cg_mnp_pair.list puts cg_a beside an MNP, which apply() refuses, and",
+        "cg_nonref_pair.list beside a variant with no <NON_REF>, which the merger refuses. Both refusals sit",
+        "at chr1:100, so a row whose interval misses that site answers instead. --intervals is absent, a",
+        "window starting inside cg_a's deletion (so --ignore-variants-starting-outside-interval has a record",
+        "to drop and the merger a deletion to trim), or a window on chr2 over the hom-var SNP.",
+        "--exclude-intervals cuts the phased pair out or nothing. --break-bands-at-multiples-of is 0 or 100,",
+        "which splits the chr1 blocks at 100, 200 and 300; --convert-to-base-pair-resolution is the special",
+        "case of 1. --annotation-group, --annotation and --annotations-to-exclude decide which raw keys the",
         "merger combines: the default group, the allele-specific one, AS_RMSMappingQuality added, and",
-        "ExcessHet or RMSMappingQuality removed. Every input carries both the raw and the",
-        "allele-specific keys. Removing RMSMappingQuality is refused whenever a group selects it:",
-        "Barclay records every selected annotation that declares an argument as a predecessor, given",
-        "or not, and GATK refuses to disable one the tool does not name individually.",
-        "--dbsnp is cg_dbsnp.vcf or absent. The merger never reads its records; it adds the DB header",
-        "line, which is what a row can observe.",
-        "--reference is held at cgv_ref.fasta: the corpus has no second reference carrying both",
-        "contigs at these lengths, and any other refuses every row on the dictionary check.",
-        "--sequence-dictionary is held out for the same reason: both shared dictionaries name chr1 at",
-        "100 kb or chrOther, which the dictionary check refuses on every row.",
-        "--input and --read-index are held out: this tool reads no reads.",
-        "--pedigree and --founder-id are held out: they feed only the pedigree annotations",
-        "(InbreedingCoeff, ExcessHet, PossibleDeNovo), none of which is reducible, and the merger",
-        "combines reducible annotations alone, so no row could observe them.",
-        "--flow-order-for-annotations is held out: it feeds only the flow-based annotations, and the",
-        "corpus holds no flow data.",
-        "--variant-output-filtering is held at ANYWHERE: any other mode needs -L, and a third of the",
-        "rows have none. --max-variants-per-shard is held at 0: above it the reference writes one file",
-        "per shard, a writer this port does not carry, and the generator's other value is -1, which the",
-        "parser refuses. --disable-read-filter is held at WellformedReadFilter: the shared",
-        "MappedReadFilter is also a --read-filter value, and a row naming it on both sides is refused",
-        "for the conflict. No read filter reaches a variant walker.",
-        "--add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the",
-        "reason every variant writer holds them: one writes the run's own time into the header and",
-        "the other writes the output file's last-modified time into an index."
+        "ExcessHet or RMSMappingQuality removed. Every input carries both the raw and the allele-specific",
+        "keys. Removing RMSMappingQuality is refused whenever a group selects it: Barclay records every",
+        "selected annotation that declares an argument as a predecessor, given or not, and GATK refuses to",
+        "disable one the tool does not name individually. --dbsnp is cg_dbsnp.vcf or absent. The merger never",
+        "reads its records; it adds the DB header line, which is what a row can observe. --reference is held",
+        "at cgv_ref.fasta: the corpus has no second reference carrying both contigs at these lengths, and any",
+        "other refuses every row on the dictionary check. --input and --read-index are held out: this tool",
+        "reads no reads. --pedigree and --founder-id are held out: they feed only the pedigree annotations",
+        "(InbreedingCoeff, ExcessHet, PossibleDeNovo), none of which is reducible, and the merger combines",
+        "reducible annotations alone, so no row could observe them. --flow-order-for-annotations is held out:",
+        "it feeds only the flow-based annotations, and the corpus holds no flow data.",
+        "--variant-output-filtering is held at ANYWHERE: any other mode needs -L, and a third of the rows",
+        "have none. --max-variants-per-shard is held at 0: above it the reference writes one file per shard,",
+        "a writer this port does not carry, and the generator's other value is -1, which the parser refuses.",
+        "--disable-read-filter is held at WellformedReadFilter: the shared MappedReadFilter is also a",
+        "--read-filter value, and a row naming it on both sides is refused for the conflict. No read filter",
+        "reaches a variant walker. --add-output-vcf-command-line and --create-output-variant-index are held",
+        "at FALSE for the reason every variant writer holds them: one writes the run's own time into the",
+        "header and the other writes the output file's last-modified time into an index.",
+        "--sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference",
+        "is forbidden, the dictionary check's refusal being measured elsewhere."
       ],
       "--variant": [
         "/work/fixtures/cg_abc.list",
@@ -5429,7 +5564,10 @@
         "ExcessHet",
         "RMSMappingQuality"
       ],
-      "--sequence-dictionary": [],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/cgv_ref.dict"
+      ],
       "--input": [],
       "--read-index": [],
       "--pedigree": [],
@@ -5460,7 +5598,12 @@
         "--flow-matrix-mods carries two instruction lists valid under both classes; --reference is the",
         "reads' own or none. --flow-fill-empty-bins-value 0 is the",
         "mode that estimates the floor from the read's own best quality.",
-        "The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags."
+        "The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags.",
+        "--read-index is each BAM's own index or unset; a row pairing a BAM with another's index is",
+        "forbidden, since it would measure htsjdk reading a foreign index rather than the tool.",
+        "--sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference",
+        "is forbidden, the dictionary check's refusal being measured elsewhere. --exclude-intervals is unset",
+        "or chr1:360-440, inside the window -L names."
       ],
       "--input": [
         "/work/fixtures/flow.bam"
@@ -5540,9 +5683,18 @@
         "true",
         "false"
       ],
-      "--read-index": [],
-      "--sequence-dictionary": [],
-      "--exclude-intervals": [],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/flow.bai"
+      ],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/mutect_ref.dict"
+      ],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:360-440"
+      ],
       "--read-filter-tag-op": [
         "<unset>",
         "GREATER"
@@ -5573,12 +5725,15 @@
     },
     "AddFlowSNVQuality": {
       "$why": [
-        "flow.bam as for AddFlowBaseQuality, with one supplementary and one QC-failed read so the two",
-        "keep switches drop them. --max-phred-score moves both the clamp and the floor, 90 dropping",
-        "the floor to 1e-9 and 30 raising it to 1e-3. --snvq-mode picks one of four",
-        "formulae; --output-quality-attribute moves the base quality to a tag and leaves QUAL. The",
-        "boundary flows are spread unless --keep-boundary-flows. The debug switches are held out: one",
-        "writes a statistics file beside the output, the other only matters with it."
+        "flow.bam as for AddFlowBaseQuality, with one supplementary and one QC-failed read so the two keep",
+        "switches drop them. --max-phred-score moves both the clamp and the floor, 90 dropping the floor to",
+        "1e-9 and 30 raising it to 1e-3. --snvq-mode picks one of four formulae; --output-quality-attribute",
+        "moves the base quality to a tag and leaves QUAL. The boundary flows are spread unless",
+        "--keep-boundary-flows. --read-index is each BAM's own index or unset; a row pairing a BAM with",
+        "another's index is forbidden, since it would measure htsjdk reading a foreign index rather than the",
+        "tool. --sequence-dictionary is unset or the reference's own .dict; a dictionary beside another",
+        "reference is forbidden, the dictionary check's refusal being measured elsewhere. --exclude-intervals",
+        "is unset or chr1:360-440, inside the window -L names."
       ],
       "--input": [
         "/work/fixtures/flow.bam"
@@ -5667,11 +5822,18 @@
         "true",
         "false"
       ],
-      "--debug-read-name": [],
-      "--debug-collect-stats-into": [],
-      "--read-index": [],
-      "--sequence-dictionary": [],
-      "--exclude-intervals": [],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/flow.bai"
+      ],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/mutect_ref.dict"
+      ],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:360-440"
+      ],
       "--max-variants-per-shard": [
         "0"
       ]
@@ -5683,7 +5845,14 @@
         "a copy with three substitutions, one with a three-base deletion and one shorter than any read;",
         "haplotypes_dup.fasta repeats the reference's bases under a second name. --ref-haplotype names",
         "the first, the second, or nothing in the file. --aligner PairHMM is the engine refusal;",
-        "FlowBasedHMM is not ported and left out. The PairHMM engine's own paths are held."
+        "FlowBasedHMM is not ported and left out. The PairHMM engine's own paths are held.",
+        "--read-index is each BAM's own index or unset; a row pairing a BAM with another's index is",
+        "forbidden, since it would measure htsjdk reading a foreign index rather than the tool.",
+        "--sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference",
+        "is forbidden, the dictionary check's refusal being measured elsewhere. --exclude-intervals is unset",
+        "or chr1:360-440, inside the window -L names.",
+        "--pair-hmm-results-file and --dragstr-params-path belong to the PairHMM engine, which this tool does",
+        "not run, so no row could reach them."
       ],
       "--input": [
         "/work/fixtures/flow.bam"
@@ -5765,9 +5934,18 @@
       ],
       "--dragstr-params-path": [],
       "--pair-hmm-results-file": [],
-      "--read-index": [],
-      "--sequence-dictionary": [],
-      "--exclude-intervals": [],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/flow.bai"
+      ],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/mutect_ref.dict"
+      ],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:360-440"
+      ],
       "--max-variants-per-shard": [
         "0"
       ]
@@ -5775,14 +5953,19 @@
     "FlowFeatureMapper": {
       "$why": [
         "flow_snv.bam is overlapping Ultima reads carrying substitutions at a few shared sites, so the",
-        "feature queue emits several records at one position; one read is soft-clipped, one has an",
-        "insertion, every third is reverse, one is a duplicate and one in five carries an integer XI tag.",
-        "--reference is required in practice: without it the mapper indexes an empty array. The",
-        "surround, the score bounds and the read switches each move which features are written;",
-        "--copy-attr copies XI as an Integer or t0 as a String. GVCF output is not ported and left out.",
-        "--add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the",
-        "reason every variant writer holds them: one writes the run's own time into the header and",
-        "the other writes the output file's last-modified time into an index."
+        "feature queue emits several records at one position; one read is soft-clipped, one has an insertion,",
+        "every third is reverse, one is a duplicate and one in five carries an integer XI tag. --reference is",
+        "required in practice: without it the mapper indexes an empty array. The surround, the score bounds",
+        "and the read switches each move which features are written; --copy-attr copies XI as an Integer or",
+        "t0 as a String. GVCF output is not ported and left out, and --gvcf-gq-bands and --floor-blocks with",
+        "it: they shape only GVCF blocks. --add-output-vcf-command-line and --create-output-variant-index are",
+        "held at FALSE for the reason every variant writer holds them: one writes the run's own time into the",
+        "header and the other writes the output file's last-modified time into an index. --read-index is each",
+        "BAM's own index or unset; a row pairing a BAM with another's index is forbidden, since it would",
+        "measure htsjdk reading a foreign index rather than the tool. --sequence-dictionary is unset or the",
+        "reference's own .dict; a dictionary beside another reference is forbidden, the dictionary check's",
+        "refusal being measured elsewhere. --exclude-intervals is unset or chr1:380-420, inside the window -L",
+        "names."
       ],
       "--input": [
         "/work/fixtures/flow_snv.bam"
@@ -5904,9 +6087,18 @@
       ],
       "--gvcf-gq-bands": [],
       "--floor-blocks": [],
-      "--read-index": [],
-      "--sequence-dictionary": [],
-      "--exclude-intervals": [],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/flow_snv.bai"
+      ],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/mutect_ref.dict"
+      ],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:380-420"
+      ],
       "--max-variants-per-shard": [
         "0"
       ],
@@ -6416,7 +6608,8 @@
         "chr1:135-155"
       ],
       "--only-output-calls-starting-in-intervals": [
-        "false"
+        "false",
+        "<unset>"
       ],
       "--merge-input-intervals": [
         "false",
@@ -6427,7 +6620,10 @@
         "/work/fixtures/cg_dbsnp.vcf"
       ],
       "--population-callset": [],
-      "--sequence-dictionary": [],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/cgv_ref.dict"
+      ],
       "--input": [],
       "--read-index": [],
       "--add-output-vcf-command-line": [
@@ -6436,7 +6632,11 @@
       "--create-output-variant-index": [
         "false"
       ],
-      "--variant-output-filtering": [],
+      "--variant-output-filtering": [
+        "<unset>",
+        "STARTS_IN",
+        "OVERLAPS"
+      ],
       "--max-variants-per-shard": [
         "0"
       ],
@@ -6444,26 +6644,25 @@
         "WellformedReadFilter"
       ],
       "$why": [
-        "gn_sites.g.vcf is three reblocked samples in the shape GenomicsDB exports: a SNP over the",
-        "floor of 60, one under it, an indel between the floors, an indel with the allele-specific",
-        "raw keys, a triallelic SNP, a spanning deletion, a site with no QUALapprox, one with no",
-        "concrete alternate, one with DP=0, one with no RAW_GT_COUNT, a call on <NON_REF>, a",
-        "GenomicsDB no-call and a GQ-0, DP-0 reference call. gn_combined.g.vcf is the reference's",
-        "own ReblockGVCF and CombineGVCFs over rb_s, cg_a and cg_c, whose merged RAW_GT_COUNT the",
-        "engine refuses at its first site.",
-        "--only-output-calls-starting-in-intervals is held at false, since any other value needs -L,",
-        "and --variant-output-filtering is held out: the two are mutually exclusive, and every row",
-        "sets every argument.",
-        "--population-callset is held out: the port does not carry the population priors.",
-        "--reference is held at cgv_ref.fasta, the one reference carrying both contigs.",
-        "--sequence-dictionary, --input and --read-index are held out, as for CombineGVCFs.",
-        "--add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the",
-        "reason every variant writer holds them: one writes the run's own time into the header and",
-        "the other writes the output file's last-modified time into an index.",
-        "--max-variants-per-shard is held at 0 and --disable-read-filter at WellformedReadFilter, for",
-        "the reasons CombineGVCFs gives.",
-        "gendb:///work/fixtures/cg_ws is cg_a, cg_b and cg_c imported by GenomicsDBImport and read",
-        "back through GenomicsDB's own query: the samples of cg_combined.g.vcf, merged the native way."
+        "gn_sites.g.vcf is three reblocked samples in the shape GenomicsDB exports: a SNP over the floor of",
+        "60, one under it, an indel between the floors, an indel with the allele-specific raw keys, a",
+        "triallelic SNP, a spanning deletion, a site with no QUALapprox, one with no concrete alternate, one",
+        "with DP=0, one with no RAW_GT_COUNT, a call on <NON_REF>, a GenomicsDB no-call and a GQ-0, DP-0",
+        "reference call. gn_combined.g.vcf is the reference's own ReblockGVCF and CombineGVCFs over rb_s,",
+        "cg_a and cg_c, whose merged RAW_GT_COUNT the engine refuses at its first site.",
+        "--only-output-calls-starting-in-intervals is false or unset and --variant-output-filtering unset,",
+        "STARTS_IN or OVERLAPS: the two are mutually exclusive, so only one is given in a row, and a mode is",
+        "forbidden without -L. --population-callset is held out: the port does not carry the population",
+        "priors. --reference is held at cgv_ref.fasta, the one reference carrying both contigs. --input and",
+        "--read-index are held out, as for CombineGVCFs. --add-output-vcf-command-line and",
+        "--create-output-variant-index are held at FALSE for the reason every variant writer holds them: one",
+        "writes the run's own time into the header and the other writes the output file's last-modified time",
+        "into an index. --max-variants-per-shard is held at 0 and --disable-read-filter at",
+        "WellformedReadFilter, for the reasons CombineGVCFs gives. gendb:///work/fixtures/cg_ws is cg_a, cg_b",
+        "and cg_c imported by GenomicsDBImport and read back through GenomicsDB's own query: the samples of",
+        "cg_combined.g.vcf, merged the native way. --sequence-dictionary is unset or the reference's own",
+        ".dict; a dictionary beside another reference is forbidden, the dictionary check's refusal being",
+        "measured elsewhere."
       ]
     },
     "VariantEval": {
@@ -6836,18 +7035,21 @@
         "records sit in every region the factory tells apart: both flanks, the 5' UTR, the start codon, the",
         "CDS (a multiallelic site among them), the splice-site windows either side of an exon end, the",
         "intron, the stop codon, the 3' UTR and the gaps between genes; one carries an INFO field and one is",
-        "filtered. funco_annotated.vcf is the same records under a `Funcotator Version` header line, which",
-        "is refused unless --reannotate-vcf. reference.fasta's chr1 has another length, which the",
-        "dictionary check refuses. funco_ds holds GENCODE at version 28 under hg38 and hg19 behind an",
-        "old-style manifest line the reader does not parse; funco_ds43 version 43 under hg38 alone behind a",
-        "new-style line, whose swallowed date check logs an exception; funco_ds27 version 27 with no",
-        "manifest. The MAF renderer aliases all three versions and rewrites chr1 as 1 under hg19. The two",
-        "flank sizes, the splice window, the transcript list (a file of IDs, or one ID), the severity file",
-        "and the annotation defaults and overrides each move at least one record's funcotation. Reads and",
-        "the master dictionary are held out (the tool reads neither), the on-the-fly index and the",
-        "command-line header line are held false because both carry the time of the run, and",
-        "--variant-output-filtering is held at its default as it is for FilterFuncotations. The MAF",
-        "header's `Date` is masked by run_array.py."
+        "filtered. funco_annotated.vcf is the same records under a `Funcotator Version` header line, which is",
+        "refused unless --reannotate-vcf. reference.fasta's chr1 has another length, which the dictionary",
+        "check refuses. funco_ds holds GENCODE at version 28 under hg38 and hg19 behind an old-style manifest",
+        "line the reader does not parse; funco_ds43 version 43 under hg38 alone behind a new-style line,",
+        "whose swallowed date check logs an exception; funco_ds27 version 27 with no manifest. The MAF",
+        "renderer aliases all three versions and rewrites chr1 as 1 under hg19. The two flank sizes, the",
+        "splice window, the transcript list (a file of IDs, or one ID), the severity file and the annotation",
+        "defaults and overrides each move at least one record's funcotation. Reads are held out (the tool",
+        "reads none), the on-the-fly index and the command-line header line are held false because both carry",
+        "the time of the run, and --variant-output-filtering is held at its default as it is for",
+        "FilterFuncotations. The MAF header's `Date` is masked by run_array.py.",
+        "--sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference",
+        "is forbidden, the dictionary check's refusal being measured elsewhere.",
+        "--input and --read-index are held out: this tool reads no reads, so a BAM would only add the",
+        "reads-against-reference dictionary check, which the read walkers' arrays measure."
       ],
       "--variant": [
         "/work/fixtures/funco_variants.vcf",
@@ -6928,7 +7130,11 @@
       "--variant-output-filtering": [
         "ANYWHERE"
       ],
-      "--sequence-dictionary": [],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/funco_ref.dict",
+        "/work/fixtures/reference.dict"
+      ],
       "--input": [],
       "--read-index": [],
       "--create-output-variant-index": [
@@ -6951,18 +7157,20 @@
     },
     "FuncotateSegments": {
       "$why": [
-        "funco_segments.seg is three segments over the Funcotator corpus's two genes: one from ALPHA's",
-        "flank into its intron, one from ALPHA's first exon into BETA's, and one over neither;",
-        "funco_segments_alt.seg names its columns another way (chr, start, end, sample, Segment_Call) with",
-        "a call the converter does not know; funco_segments_short.seg holds a segment of 101 bases, which",
-        "the gene list refuses at the default minimum and accepts at 50. The folders, versions and",
-        "references are Funcotator's; only funco_ds and funco_ds27 have hg19. VCF output refuses a",
-        "segment's undeclared INFO keys unless --lenient. -L is a refusal, because a segment file has no",
-        "index, and ALL is refused before any segment is read. Reads and the master dictionary are held",
-        "out, and the index and command-line line held false for the reason Funcotator's are. The MAF",
-        "header's `Date` is masked by run_array.py.",
-        "--exclude-intervals is held out: any interval argument makes the unindexed segment file be",
-        "queried and refused with the message -L already measures, so its rows would repeat that refusal."
+        "funco_segments.seg is three segments over the Funcotator corpus's two genes: one from ALPHA's flank",
+        "into its intron, one from ALPHA's first exon into BETA's, and one over neither;",
+        "funco_segments_alt.seg names its columns another way (chr, start, end, sample, Segment_Call) with a",
+        "call the converter does not know; funco_segments_short.seg holds a segment of 101 bases, which the",
+        "gene list refuses at the default minimum and accepts at 50. The folders, versions and references are",
+        "Funcotator's; only funco_ds and funco_ds27 have hg19. VCF output refuses a segment's undeclared INFO",
+        "keys unless --lenient. -L is a refusal, because a segment file has no index, and ALL is refused",
+        "before any segment is read. Reads are held out, and the index and command-line line held false for",
+        "the reason Funcotator's are. The MAF header's `Date` is masked by run_array.py. --exclude-intervals",
+        "is held out: any interval argument makes the unindexed segment file be queried and refused with the",
+        "message -L already measures, so its rows would repeat that refusal.",
+        "--sequence-dictionary is unset or funco_ref.dict, forbidden beside the other reference.",
+        "--input and --read-index are held out: this tool reads no reads, so a BAM would only add the",
+        "reads-against-reference dictionary check, which the read walkers' arrays measure."
       ],
       "--segments": [
         "/work/fixtures/funco_segments.seg",
@@ -7028,7 +7236,10 @@
         "chr1:1000-2000"
       ],
       "--exclude-intervals": [],
-      "--sequence-dictionary": [],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/funco_ref.dict"
+      ],
       "--input": [],
       "--read-index": [],
       "--create-output-variant-index": [
@@ -7267,17 +7478,19 @@
         "only input the defragmenter runs on; and jgcs_cohort.vcf, three samples, which skips it and is",
         "clustered by max clique alone. The pedigree names the three sexes, or moves them round, which is",
         "what the allosomal ploidy reads. --model-call-intervals turns the defragmenter into the binned one.",
-        "Every clustering and defragmentation threshold carries its default and a value that moves the",
-        "answer on this corpus; --minimum-qs-score 60 drops the QS 30 call and keeps the QS 60 one.",
+        "Every clustering and defragmentation threshold carries its default and a value that moves the answer",
+        "on this corpus; --minimum-qs-score 60 drops the QS 30 call and keeps the QS 60 one.",
         "--combine-variants-distance, --max-distance and --ref-padding only regroup the records or pad a",
         "reference window the tool never reads, and --max-records-in-ram is declared and never read: each is",
         "varied to show it changes nothing. --reference is jgcs_ref.fasta, the only reference the calls fit.",
         "--input and --read-index are held out: the tool reads no reads, and a BAM would add a dictionary",
-        "check over a different reference. --sequence-dictionary is held out for the same reason: the tool",
-        "disables cross-validation, and the reference's own dictionary is the only one the calls fit.",
-        "The command-line header line and the output index are held as for the other VCF writers.",
-        "--variant-output-filtering is held out: any value is refused without -L, which would make it a",
-        "one-line refusal pair with the intervals' first value rather than a measurement of the filter."
+        "check over a different reference. The command-line header line and the output index are held as for",
+        "the other VCF writers. --variant-output-filtering is unset, STARTS_IN or OVERLAPS, and forbidden",
+        "without -L, where any mode is refused. --sequence-dictionary is unset or the reference's own .dict;",
+        "a dictionary beside another reference is forbidden, the dictionary check's refusal being measured",
+        "elsewhere.",
+        "--read-validation-stringency is unset, LENIENT or STRICT: no reads are read, so it is expected",
+        "inert."
       ],
       "--variant": [
         "/work/fixtures/jgcs_male1.vcf",
@@ -7363,8 +7576,15 @@
         "null",
         "FirstOfPairReadFilter"
       ],
-      "--read-validation-stringency": [],
-      "--sequence-dictionary": [],
+      "--read-validation-stringency": [
+        "<unset>",
+        "LENIENT",
+        "STRICT"
+      ],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/jgcs_ref.dict"
+      ],
       "--input": [],
       "--read-index": [],
       "--add-output-vcf-command-line": [
@@ -7376,7 +7596,11 @@
       "--max-variants-per-shard": [
         "0"
       ],
-      "--variant-output-filtering": []
+      "--variant-output-filtering": [
+        "<unset>",
+        "STARTS_IN",
+        "OVERLAPS"
+      ]
     },
     "VariantRecalibrator": {
       "$why": [
@@ -7633,19 +7857,19 @@
         "The corpus MakeFixtures.localAssembler writes: a 3000-base contig la drawn from a generator whose",
         "state carries forward, and la.bam, whose reads make two bubbles (a substitution and a 60-base",
         "deletion), a gap an N leaves, a thin contig, an overrun pair, mates outside every padded interval,",
-        "duplicates and a secondary alignment. la2.bam is the same reads without the two bubbles.",
-        "Each numeric argument has a second value some group of reads crosses: --q-min 35 drops the",
-        "quality-30 reads, --min-thin-observations 2 keeps the two-read contig, --min-gapfill-count 6 leaves",
-        "the gap open, --min-sv-size 100 finds the deletion trivially different, --too-many-traversals 1",
-        "and --too-many-scaffolds 1 take the two fallbacks, and --pair-padding 0 leaves the far mates out",
-        "(and refuses the two intervals -XL splits, which no longer touch).",
-        "--gfa-file is plain text in both values: its O lines are written in the order of a HashSet keyed by",
-        "identity hashes, which run_array.py sorts, and a gzipped file could only be compared as a digest.",
-        "--fasta-file is plain and gzipped: the scaffolds are written sorted, so the gzip bytes are compared.",
-        "-L and -XL are on la; --reference is given or not, since the tool reads only its dictionary.",
-        "--no-scaffolding is listed false first, so the rows it fills write the sorted scaffolds.",
-        "--read-index is held out: each of the two inputs has its own index beside it, and one named index",
-        "would belong to only one of them."
+        "duplicates and a secondary alignment. la2.bam is the same reads without the two bubbles. Each",
+        "numeric argument has a second value some group of reads crosses: --q-min 35 drops the quality-30",
+        "reads, --min-thin-observations 2 keeps the two-read contig, --min-gapfill-count 6 leaves the gap",
+        "open, --min-sv-size 100 finds the deletion trivially different, --too-many-traversals 1 and",
+        "--too-many-scaffolds 1 take the two fallbacks, and --pair-padding 0 leaves the far mates out (and",
+        "refuses the two intervals -XL splits, which no longer touch). --gfa-file is plain text in both",
+        "values: its O lines are written in the order of a HashSet keyed by identity hashes, which",
+        "run_array.py sorts, and a gzipped file could only be compared as a digest. --fasta-file is plain and",
+        "gzipped: the scaffolds are written sorted, so the gzip bytes are compared. -L and -XL are on la;",
+        "--reference is given or not, since the tool reads only its dictionary. --no-scaffolding is listed",
+        "false first, so the rows it fills write the sorted scaffolds. --read-index is each BAM's own index",
+        "or unset; a row pairing a BAM with another's index is forbidden, since it would measure htsjdk",
+        "reading a foreign index rather than the tool."
       ],
       "--input": [
         "/work/fixtures/la.bam",
@@ -7711,7 +7935,11 @@
         "la:1-10",
         "la:1200-1210"
       ],
-      "--read-index": []
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/la.bai",
+        "/work/fixtures/la2.bai"
+      ]
     },
     "AlleleFrequencyQC": {
       "$past_the_interpreter": "Rscript",
@@ -7829,8 +8057,15 @@
       "--ancestral-alignments": [],
       "--input": [],
       "--read-index": [],
-      "--sequence-dictionary": [],
-      "--variant-output-filtering": [],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/cgv_ref.dict"
+      ],
+      "--variant-output-filtering": [
+        "<unset>",
+        "STARTS_IN",
+        "OVERLAPS"
+      ],
       "--add-output-vcf-command-line": [
         "false"
       ],
@@ -7852,7 +8087,12 @@
         "null leaves the comp-AF stratifier without a comp. The reference runs in the Broad's image and",
         "the port in one with R ($past_the_interpreter), so a run that gets as far as the plot draws it:",
         "the PNGs are compared by pixel size and resolution, and the combined figure the port adds is not.",
-        "--pedigree, --ancestral-alignments and --list are held out as for VariantEval."
+        "--pedigree, --ancestral-alignments and --list are held out as for VariantEval.",
+        "--sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference",
+        "is forbidden, the dictionary check's refusal being measured elsewhere.",
+        "--variant-output-filtering is unset, STARTS_IN or OVERLAPS, and forbidden without -L.",
+        "--input and --read-index are held out: this tool reads no reads, so a BAM would only add the",
+        "reads-against-reference dictionary check, which the read walkers' arrays measure."
       ]
     },
     "GroundTruthScorer": {
@@ -7949,9 +8189,19 @@
         "false",
         "true"
       ],
-      "--read-index": [],
-      "--sequence-dictionary": [],
-      "--exclude-intervals": [],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/gt.bai",
+        "/work/fixtures/flow_snv.bai"
+      ],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/mutect_ref.dict"
+      ],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:670-680"
+      ],
       "--max-variants-per-shard": [
         "0"
       ],
@@ -7972,7 +8222,12 @@
         "writer's patience; the constraint says so. --pair-hmm-results-file and --dragstr-params-path",
         "belong to the PairHMM engine, which the tool refuses, and the implementation is held at its",
         "default for the same reason.",
-        "--gt-no-output, --add-mean-call and the other switches name false first, so the rows the generator fills write the CSV."
+        "--gt-no-output, --add-mean-call and the other switches name false first, so the rows the generator fills write the CSV.",
+        "--read-index is each BAM's own index or unset; a row pairing a BAM with another's index is",
+        "forbidden, since it would measure htsjdk reading a foreign index rather than the tool.",
+        "--sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference",
+        "is forbidden, the dictionary check's refusal being measured elsewhere. --exclude-intervals is unset",
+        "or chr1:670-680, inside the window -L names."
       ],
       "--gt-no-output": [
         "false",
@@ -8124,9 +8379,18 @@
         "false",
         "true"
       ],
-      "--read-index": [],
-      "--sequence-dictionary": [],
-      "--exclude-intervals": [],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/gt.bai"
+      ],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/mutect_ref.dict"
+      ],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:694-716"
+      ],
       "--max-variants-per-shard": [
         "0"
       ],
@@ -8144,27 +8408,37 @@
         "--subsampling-ratio is held at one: the tool draws from an unseeded java.util.Random, so any",
         "other ratio in (0, 1) is a different answer on every run of the reference itself. --gt-debug",
         "is held at false: it only logs. PairHMM is the engine refusal onTraversalStart makes after",
-        "opening both ancestral references."
+        "opening both ancestral references.",
+        "--read-index is each BAM's own index or unset; a row pairing a BAM with another's index is",
+        "forbidden, since it would measure htsjdk reading a foreign index rather than the tool.",
+        "--sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference",
+        "is forbidden, the dictionary check's refusal being measured elsewhere. --exclude-intervals is unset",
+        "or chr1:694-716, inside the window -L names.",
+        "--pair-hmm-results-file and --dragstr-params-path belong to the PairHMM engine, which this tool does",
+        "not run, so no row could reach them."
       ]
     },
     "HaplotypeBasedVariantRecaller": {
       "$why": [
         "hbvr_haps.bam holds four groups of HC_ haplotypes over mutect_ref.fasta (substitutions, an",
-        "insertion, deletions, one spanning a later substitution, an MNP that --max-mnp-distance merges)",
-        "and one record not named HC_; a wider group over the first site loses on fitness. hbvr_reads.bam",
-        "is sixty reads drawn from those haplotypes, some duplicate, some at mapping quality 10 or 25,",
-        "some soft-clipped, some with a low-quality error. hbvr_alleles.vcf names the sites plus one no",
-        "haplotype covers and a mixed one; its unindexed copy is refused at the first query. Without",
-        "--reference the tool refuses before it opens anything. The FlowBased engine refuses these",
-        "reads as not flow based (FlowBasedHMM refuses them with the same message and is left out).",
-        "--pair-hmm-implementation is held at LOGLESS_CACHING: FASTEST_AVAILABLE and the AVX names",
-        "resolve to GKL's native kernel when the CPU has AVX, which a GitHub runner has and the",
-        "emulated container this array is built in does not, and that kernel computes in single",
-        "precision first, so its answer is the machine's. EXACT and ORIGINAL are the log-space Java",
-        "kernel, which this port does not carry.",
-        "--dragen-378-concordance-mode is held out: Barclay refuses it beside --dragen-mode,",
-        "which every row sets, and --dragen-mode is the side the rows vary.",
-        "--dragen-pd-pair-hmm-implementation is held at LOGLESS_CACHING, the one PDHMM kernel ported."
+        "insertion, deletions, one spanning a later substitution, an MNP that --max-mnp-distance merges) and",
+        "one record not named HC_; a wider group over the first site loses on fitness. hbvr_reads.bam is",
+        "sixty reads drawn from those haplotypes, some duplicate, some at mapping quality 10 or 25, some",
+        "soft-clipped, some with a low-quality error. hbvr_alleles.vcf names the sites plus one no haplotype",
+        "covers and a mixed one; its unindexed copy is refused at the first query. Without --reference the",
+        "tool refuses before it opens anything. The FlowBased engine refuses these reads as not flow based",
+        "(FlowBasedHMM refuses them with the same message and is left out). --pair-hmm-implementation is held",
+        "at LOGLESS_CACHING: FASTEST_AVAILABLE and the AVX names resolve to GKL's native kernel when the CPU",
+        "has AVX, which a GitHub runner has and the emulated container this array is built in does not, and",
+        "that kernel computes in single precision first, so its answer is the machine's. EXACT and ORIGINAL",
+        "are the log-space Java kernel, which this port does not carry. --dragen-pd-pair-hmm-implementation",
+        "is held at LOGLESS_CACHING, the one PDHMM kernel ported. --read-index is each BAM's own index or",
+        "unset; a row pairing a BAM with another's index is forbidden, since it would measure htsjdk reading",
+        "a foreign index rather than the tool. --sequence-dictionary is unset or the reference's own .dict; a",
+        "dictionary beside another reference is forbidden, the dictionary check's refusal being measured",
+        "elsewhere.",
+        "--dragen-378-concordance-mode and --dragen-mode are mutually exclusive, so both take <unset> and the",
+        "given pairs are forbidden."
       ],
       "--input": [
         "/work/fixtures/hbvr_reads.bam"
@@ -8245,8 +8519,14 @@
         "null",
         "FirstOfPairReadFilter"
       ],
-      "--read-index": [],
-      "--sequence-dictionary": [],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/hbvr_reads.bai"
+      ],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/mutect_ref.dict"
+      ],
       "--max-variants-per-shard": [
         "0"
       ],
@@ -8298,7 +8578,16 @@
         "-15",
         "-16"
       ],
-      "--dragen-378-concordance-mode": []
+      "--dragen-378-concordance-mode": [
+        "<unset>",
+        "true",
+        "false"
+      ],
+      "--dragen-mode": [
+        "false",
+        "true",
+        "<unset>"
+      ]
     },
     "ExtractVariantAnnotations": {
       "$why": [
@@ -8382,17 +8671,22 @@
     },
     "FilterAlignmentArtifacts": {
       "$why": [
-        "faa_ref.fasta is two random contigs and faa.img the reference's own BwaMemIndexImageCreator over it. faa.bam",
-        "and faa2.bam tile both contigs with reads that copy the reference base for base, so NO read supports any",
-        "call: the realignment (the Mutect2 assembler, the PairHMM and BWA-MEM over the unitigs), which this port does",
-        "not carry, has nothing to realign on any row, and what the array measures is the walker around it: which",
-        "calls are read, which are skipped as filtered, and what the output carries. The realignment arguments",
-        "(--kmer-size, --minimum-seed-length, --drop-ratio, --seed-split-factor, the score and mismatch thresholds,",
-        "--max-reasonable-fragment-length, --num-regular-contigs, --indel-start-tolerance) are varied and answer",
-        "nothing on this corpus, which is the honest reading of their rows. --bam-output is not given: it writes the",
-        "assembled haplotypes. --smith-waterman leaves out AVX_ENABLED, which refuses on a machine without AVX and so",
-        "measures the runner's CPU. A plain VCF output with an index is forbidden because its .idx records the",
-        "output's modification time; the command line is held off because it records the date."
+        "faa_ref.fasta is two random contigs and faa.img the reference's own BwaMemIndexImageCreator over it.",
+        "faa.bam and faa2.bam tile both contigs with reads that copy the reference base for base, so NO read",
+        "supports any call: the realignment (the Mutect2 assembler, the PairHMM and BWA-MEM over the",
+        "unitigs), which this port does not carry, has nothing to realign on any row, and what the array",
+        "measures is the walker around it: which calls are read, which are skipped as filtered, and what the",
+        "output carries. The realignment arguments (--kmer-size, --minimum-seed-length, --drop-ratio,",
+        "--seed-split-factor, the score and mismatch thresholds, --max-reasonable-fragment-length,",
+        "--num-regular-contigs, --indel-start-tolerance) are varied and answer nothing on this corpus, which",
+        "is the honest reading of their rows. --smith-waterman leaves out AVX_ENABLED, which refuses on a",
+        "machine without AVX and so measures the runner's CPU. A plain VCF output with an index is forbidden",
+        "because its .idx records the output's modification time; the command line is held off because it",
+        "records the date. --read-index is each BAM's own index or unset; a row pairing a BAM with another's",
+        "index is forbidden, since it would measure htsjdk reading a foreign index rather than the tool.",
+        "--sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference",
+        "is forbidden, the dictionary check's refusal being measured elsewhere.",
+        "--bam-output is unset or a BAM of the realigned reads."
       ],
       "--variant": [
         "/work/fixtures/faa.vcf",
@@ -8412,9 +8706,19 @@
         "/work/out/filtered.vcf",
         "/work/out/filtered.vcf.gz"
       ],
-      "--bam-output": [],
-      "--read-index": [],
-      "--sequence-dictionary": [],
+      "--bam-output": [
+        "<unset>",
+        "/work/out/faa_haplotypes.bam"
+      ],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/faa.bai",
+        "/work/fixtures/faa2.bai"
+      ],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/faa_ref.dict"
+      ],
       "--smith-waterman": [
         "FASTEST_AVAILABLE",
         "JAVA"
@@ -12390,7 +12694,15 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": []
+      "--output-shard-tmp-dir": [
+        "<unset>",
+        "/work/tmp/shards"
+      ],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
+      ]
     },
     "CountBasesSpark": {
       "--input": [
@@ -12434,7 +12746,15 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": []
+      "--output-shard-tmp-dir": [
+        "<unset>",
+        "/work/tmp/shards"
+      ],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
+      ]
     },
     "FlagStatSpark": {
       "--input": [
@@ -12478,7 +12798,15 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": []
+      "--output-shard-tmp-dir": [
+        "<unset>",
+        "/work/tmp/shards"
+      ],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
+      ]
     },
     "CountVariantsSpark": {
       "--variant": [
@@ -12527,7 +12855,10 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "<unset>",
+        "/work/tmp/shards"
+      ],
       "--exclude-intervals": [
         "chr1:1-500",
         "chr1:400-600",
@@ -12537,6 +12868,11 @@
         "--intervals and --exclude-intervals take <unset> as a value so the array has rows",
         "that run without -L at all: Disq reads the whole file there, and the locus walker",
         "shards the whole dictionary, which no row measured while every row set -L."
+      ],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
       ]
     },
     "PrintReadsSpark": {
@@ -12702,7 +13038,10 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "<unset>",
+        "/work/tmp/shards"
+      ],
       "--exclude-intervals": [
         "chr1:1-500",
         "chr1:400-600",
@@ -12712,6 +13051,11 @@
         "BaseRecalibrator's fixtures and PrintReadsSpark's Spark arguments: one partition is the walker's",
         "engine, so its values are the ones the twin's table was measured over, and -L takes <unset>",
         "so rows read the whole file through Disq's guessed start."
+      ],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
       ]
     },
     "ApplyBQSRSpark": {
@@ -12760,7 +13104,10 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "<unset>",
+        "/work/tmp/shards"
+      ],
       "--exclude-intervals": [
         "chr1:1-500",
         "chr1:400-600",
@@ -12768,6 +13115,11 @@
       ],
       "$why": [
         "ApplyBQSR's fixtures and PrintReadsSpark's Spark arguments; the output is PrintReadsSpark's writer."
+      ],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
       ]
     },
     "BQSRPipelineSpark": {
@@ -12820,7 +13172,10 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "<unset>",
+        "/work/tmp/shards"
+      ],
       "--exclude-intervals": [
         "chr1:1-500",
         "chr1:400-600",
@@ -12829,6 +13184,11 @@
       "$why": [
         "BaseRecalibrator's fixtures for the table, PrintReadsSpark's Spark arguments for the job, and",
         "PrintReadsSpark's writer for the output."
+      ],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
       ]
     },
     "SortSamSpark": {
@@ -13166,7 +13526,10 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "<unset>",
+        "/work/tmp/shards"
+      ],
       "--exclude-intervals": [
         "chr1:1-500",
         "chr1:400-600",
@@ -13179,6 +13542,11 @@
       "--chart": [],
       "$why": [
         "The Spark values every record walker here has. `--chart` needs an R the pinned container does not have, so it is measured nowhere."
+      ],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
       ]
     },
     "CollectQualityYieldMetricsSpark": {
@@ -13219,7 +13587,10 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "<unset>",
+        "/work/tmp/shards"
+      ],
       "--exclude-intervals": [
         "chr1:1-500",
         "chr1:400-600",
@@ -13231,6 +13602,11 @@
       ],
       "$why": [
         "The Spark values every record walker here has. `--chart` needs an R the pinned container does not have, so it is measured nowhere."
+      ],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
       ]
     },
     "ExtractOriginalAlignmentRecordsByNameSpark": {
@@ -13271,7 +13647,10 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "<unset>",
+        "/work/tmp/shards"
+      ],
       "--exclude-intervals": [
         "chr1:1-500",
         "chr1:400-600",
@@ -13287,6 +13666,11 @@
       ],
       "$why": [
         "SortSamSpark's values and writer, with a name list the corpus has."
+      ],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
       ]
     },
     "CompareDuplicatesSpark": {
@@ -13331,7 +13715,10 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "<unset>",
+        "/work/tmp/shards"
+      ],
       "--exclude-intervals": [
         "chr1:1-150",
         "chr1:250-350",
@@ -13349,11 +13736,23 @@
         "false"
       ],
       "$why": [
-        "Two BAMs that agree or differ in their marks only, so the rows reach the summary and the writer: the differences that stop the tool are measured by the spark-walkers golden. --print-summary holds at false: with it the tool walks a HashSet of enum constants, an order two JVMs do not share, so the golden's sorted summary measures it instead. No --reference: no dictionary of the corpus matches these BAMs, and the startup's refusal is the other Spark tools' to measure."
+        "Two BAMs that agree or differ in their marks only, so the rows reach the summary and the writer: the",
+        "differences that stop the tool are measured by the spark-walkers golden. --print-summary holds at",
+        "false: with it the tool walks a HashSet of enum constants, an order two JVMs do not share, so the",
+        "golden's sorted summary measures it instead.",
+        "--reference is unset or sv_reference.fasta, whose dictionary is the reads'."
       ],
-      "--reference": [],
+      "--reference": [
+        "<unset>",
+        "/work/fixtures/sv_reference.fasta"
+      ],
       "--disable-read-filter": [
         "AllowAllReadsReadFilter"
+      ],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
       ]
     },
     "CollectAllelicCountsSpark": {
@@ -13412,7 +13811,10 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "<unset>",
+        "/work/tmp/shards"
+      ],
       "--exclude-intervals": [
         "chr1:1-500",
         "<unset>"
@@ -13438,6 +13840,11 @@
       "--read-filter-tag": [
         "<unset>",
         "NM"
+      ],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
       ]
     },
     "CollectInsertSizeMetricsSpark": {
@@ -13478,7 +13885,10 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "<unset>",
+        "/work/tmp/shards"
+      ],
       "--exclude-intervals": [
         "chr1:1-200",
         "chr1:800-1000",
@@ -13512,15 +13922,28 @@
         "LIBRARY",
         "READ_GROUP"
       ],
-      "--reference": [],
+      "--reference": [
+        "<unset>",
+        "/work/fixtures/reference.fasta"
+      ],
       "--disable-read-filter": [
         "NotDuplicateReadFilter"
       ],
       "$why": [
-        "Pairs in every orientation and two read groups, so a level and a threshold change what the file holds. --produce-plot holds at false: the plot runs R, which the pinned container does not have, and -H names a file nothing then writes. No --reference: no dictionary of the corpus matches these BAMs, and the startup's refusal is the other Spark tools' to measure. An inverted filter keeps only what passes the ten defaults: inverting one of them is refused, and inverting most others empties the tool, so the value here keeps the TANDEM pair."
+        "Pairs in every orientation and two read groups, so a level and a threshold change what the file",
+        "holds. --produce-plot holds at false: the plot runs R, which the pinned container does not have, and",
+        "-H names a file nothing then writes. An inverted filter keeps only what passes the ten defaults:",
+        "inverting one of them is refused, and inverting most others empties the tool, so the value here",
+        "keeps the TANDEM pair.",
+        "--reference is unset or reference.fasta, whose dictionary is the reads'."
       ],
       "--inverted-read-filter": [
         "MateDifferentStrandReadFilter",
+        "<unset>"
+      ],
+      "--sharded-output": [
+        "false",
+        "true",
         "<unset>"
       ]
     },
@@ -13562,7 +13985,10 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "<unset>",
+        "/work/tmp/shards"
+      ],
       "--exclude-intervals": [
         "chr1:1-200",
         "chr1:800-1000",
@@ -13578,7 +14004,10 @@
         "LIBRARY",
         "READ_GROUP"
       ],
-      "--reference": [],
+      "--reference": [
+        "<unset>",
+        "/work/fixtures/reference.fasta"
+      ],
       "--disable-read-filter": [
         "WellformedReadFilter"
       ],
@@ -13596,7 +14025,15 @@
         "<unset>"
       ],
       "$why": [
-        "Pairs in every orientation and two read groups, so a level and the collectors change what the two files hold. No --reference: no dictionary of the corpus matches these BAMs. A filter on the command line is parsed and then bypassed, so a value here only has to survive the descriptor."
+        "Pairs in every orientation and two read groups, so a level and the collectors change what the two",
+        "files hold. A filter on the command line is parsed and then bypassed, so a value here only has to",
+        "survive the descriptor.",
+        "--reference is unset or reference.fasta, whose dictionary is the reads'."
+      ],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
       ]
     },
     "MarkDuplicatesSpark": {
@@ -13739,7 +14176,10 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "<unset>",
+        "/work/tmp/shards"
+      ],
       "--exclude-intervals": [
         "chr1:1-500",
         "<unset>"
@@ -13748,7 +14188,10 @@
         "/work/fixtures/reads.bam",
         "<unset>"
       ],
-      "--read-index": [],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/reads.bai"
+      ],
       "--reference": [
         "/work/fixtures/reference.fasta",
         "/work/fixtures/amplicon.fasta"
@@ -13779,7 +14222,14 @@
         "<unset>"
       ],
       "$why": [
-        "The tool writes what its tables hold, so the reference that repeats and the sizes that find its repeats are what vary. The reads are optional and only their dictionary matters."
+        "The tool writes what its tables hold, so the reference that repeats and the sizes that find its repeats are what vary. The reads are optional and only their dictionary matters.",
+        "--read-index is each BAM's own index or unset; a row pairing a BAM with another's index is",
+        "forbidden, since it would measure htsjdk reading a foreign index rather than the tool."
+      ],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
       ]
     },
     "CalcMetadataSpark": {
@@ -13803,7 +14253,10 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "<unset>",
+        "/work/tmp/shards"
+      ],
       "--exclude-intervals": [
         "chr1:1-500",
         "<unset>"
@@ -13813,8 +14266,16 @@
         "/work/fixtures/insert_pairs2.bam",
         "/work/fixtures/reads.bam"
       ],
-      "--read-index": [],
-      "--reference": [],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/insert_pairs.bai",
+        "/work/fixtures/insert_pairs2.bai",
+        "/work/fixtures/reads.bai"
+      ],
+      "--reference": [
+        "<unset>",
+        "/work/fixtures/reference.fasta"
+      ],
       "--intervals": [
         "chr1:1-1200",
         "chr1:600-2500",
@@ -13829,16 +14290,36 @@
         "metadata2"
       ],
       "$why": [
-        "Paired reads, for the fragment sizes, and an unpaired BAM, which keeps the refusal of a read with no mate in the array."
+        "Paired reads, for the fragment sizes, and an unpaired BAM, which keeps the refusal of a read with no mate in the array.",
+        "--read-index is each BAM's own index or unset; a row pairing a BAM with another's index is",
+        "forbidden, since it would measure htsjdk reading a foreign index rather than the tool.",
+        "--reference is unset or reference.fasta, whose dictionary is the reads'."
+      ],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
       ]
     },
     "HaplotypeCallerSpark": {
       "$why": [
-        "The reads, the reference and the caller's own arguments are HaplotypeCaller's, for its reasons. What this tool adds is the sharding: --read-shard-size and --read-shard-padding cut the contig, --strict runs the band pass over it instead, and --shuffle moves the reads to the shards another way.",
-        "--sharded-output and the splitting index are held out: they name the output a directory of parts and an index beside a BAM this tool refuses to write. --use-nio changes only how the input is opened.",
-        "--enable-all-annotations stays off: the reference's Kryo cannot broadcast the annotation engine it builds, and which of two exceptions it reports (a lambda, a thread) moves from row to row. The port refuses it with the first.",
-        "The engine's debug files are held out: under Spark nothing closes them, so they hold what their buffers flushed, and the port refuses them rather than write them complete.",
-        "--dragen-pd-pair-hmm-implementation is held at LOGLESS_CACHING, the one PDHMM kernel ported."
+        "The reads, the reference and the caller's own arguments are HaplotypeCaller's, for its reasons. What",
+        "this tool adds is the sharding: --read-shard-size and --read-shard-padding cut the contig, --strict",
+        "runs the band pass over it instead, and --shuffle moves the reads to the shards another way.",
+        "--sharded-output and the splitting index (--create-output-bam-splitting-index,",
+        "--splitting-index-granularity) are held out: they name the output a directory of parts and an index",
+        "beside a BAM this tool refuses to write. --use-nio changes only how the input is opened.",
+        "--enable-all-annotations stays off: the reference's Kryo cannot broadcast the annotation engine it",
+        "builds, and which of two exceptions it reports (a lambda, a thread) moves from row to row. The port",
+        "refuses it with the first. The engine's debug files (--graph-output, --debug-assembly-region-state,",
+        "--debug-genotyper-output, --debug-assembly-variants-out, --haplotype-debug-histogram-output,",
+        "--pair-hmm-results-file, --pdhmm-results-file, --alm-path) are held out: under Spark nothing closes",
+        "them, so they hold what their buffers flushed, and the port refuses them rather than write them",
+        "complete. --dragen-pd-pair-hmm-implementation is held at LOGLESS_CACHING, the one PDHMM kernel",
+        "ported. --read-index is each BAM's own index or unset; a row pairing a BAM with another's index is",
+        "forbidden, since it would measure htsjdk reading a foreign index rather than the tool.",
+        "--dragen-378-concordance-mode and --dragen-mode are mutually exclusive, so both take <unset> and the",
+        "given pairs are forbidden."
       ],
       "--input": [
         "/work/fixtures/mutect_t.bam",
@@ -13927,7 +14408,11 @@
         "-5",
         "-6"
       ],
-      "--dragen-378-concordance-mode": [],
+      "--dragen-378-concordance-mode": [
+        "<unset>",
+        "true",
+        "false"
+      ],
       "--flow-mode": [
         "NONE",
         "STANDARD",
@@ -13997,7 +14482,12 @@
         "false",
         "true"
       ],
-      "--read-index": [],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/mutect_t.bai",
+        "/work/fixtures/mutect_tn.bai",
+        "/work/fixtures/flow_calls.bai"
+      ],
       "--enable-all-annotations": [
         "false"
       ],
@@ -15006,11 +15496,19 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "<unset>",
+        "/work/tmp/shards"
+      ],
       "--sharded-output": [],
       "--create-output-bam-splitting-index": [],
       "--splitting-index-granularity": [],
-      "--use-nio": []
+      "--use-nio": [],
+      "--dragen-mode": [
+        "false",
+        "true",
+        "<unset>"
+      ]
     },
     "ReadsPipelineSpark": {
       "--use-jdk-deflater": [
@@ -16539,7 +17037,10 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "<unset>",
+        "/work/tmp/shards"
+      ],
       "--exclude-intervals": [
         "<unset>",
         "chr1:1-500"
@@ -16549,7 +17050,12 @@
         "/work/fixtures/sv_evidence2.bam",
         "/work/fixtures/sv_evidence_lone.bam"
       ],
-      "--read-index": [],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/sv_evidence.bai",
+        "/work/fixtures/sv_evidence2.bai",
+        "/work/fixtures/sv_evidence_lone.bai"
+      ],
       "--reference": [],
       "--intervals": [
         "<unset>",
@@ -16565,7 +17071,11 @@
         "evidence2"
       ],
       "$why": [
-        "Reads with every kind of evidence, another template size, and an unpaired read for the refusal. The aligner image and kmers are required and never opened by this tool."
+        "Reads with every kind of evidence, another template size, and an unpaired read for the refusal. The aligner image and kmers are required and never opened by this tool.",
+        "--read-index is each BAM's own index or unset; a row pairing a BAM with another's index is",
+        "forbidden, since it would measure htsjdk reading a foreign index rather than the tool.",
+        "--reference is held out: no reference in the corpus carries the reads' three contigs, so any value",
+        "is the startup's dictionary refusal."
       ],
       "--cross-contigs-to-ignore": [
         "<unset>",
@@ -16609,6 +17119,11 @@
       ],
       "--kmers-to-ignore": [
         "kmers.txt"
+      ],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
       ]
     },
     "DiscoverVariantsFromContigAlignmentsSAMSpark": {
@@ -16632,7 +17147,10 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "<unset>",
+        "/work/tmp/shards"
+      ],
       "--exclude-intervals": [
         "<unset>",
         "chr2:13000-20000"
@@ -16641,7 +17159,11 @@
         "/work/fixtures/sv_contigs.bam",
         "/work/fixtures/sv_contigs_small.bam"
       ],
-      "--read-index": [],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/sv_contigs.bai",
+        "/work/fixtures/sv_contigs_small.bai"
+      ],
       "--reference": [
         "/work/fixtures/sv_contigs.fasta"
       ],
@@ -16658,7 +17180,9 @@
         "discovered2"
       ],
       "$why": [
-        "Contigs with each signature and a smaller set; the refusals, and the contigs the interpreter cannot read, are rows of the spark-walkers golden. The interval leaves each contig whole, since a contig cut in two has no primary alignment. --add-output-vcf-command-line is held at false because its line stamps the clock."
+        "Contigs with each signature and a smaller set; the refusals, and the contigs the interpreter cannot read, are rows of the spark-walkers golden. The interval leaves each contig whole, since a contig cut in two has no primary alignment. --add-output-vcf-command-line is held at false because its line stamps the clock.",
+        "--read-index is each BAM's own index or unset; a row pairing a BAM with another's index is",
+        "forbidden, since it would measure htsjdk reading a foreign index rather than the tool."
       ],
       "--aligner-index-image": [
         "image.img"
@@ -16704,6 +17228,11 @@
       ],
       "--add-output-vcf-command-line": [
         "false"
+      ],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
       ]
     },
     "SvDiscoverFromLocalAssemblyContigAlignmentsSpark": {
@@ -16833,7 +17362,10 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "<unset>",
+        "/work/tmp/shards"
+      ],
       "--exclude-intervals": [
         "<unset>"
       ],
@@ -16841,7 +17373,11 @@
         "/work/fixtures/sv_assembly.bam",
         "/work/fixtures/sv_contigs.bam"
       ],
-      "--read-index": [],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/sv_assembly.bai",
+        "/work/fixtures/sv_contigs.bai"
+      ],
       "--reference": [
         "/work/fixtures/sv_contigs.fasta"
       ],
@@ -16910,7 +17446,14 @@
         "reinterpreted2"
       ],
       "$why": [
-        "A VCF of complex calls and one with none, over the contigs behind them and over others. The refusals are rows of the spark-walkers golden. -L and -XL are held unset because a query needs the VCF indexed; that refusal is a row. --cnv-calls and --truth-vcf are read by nothing here, which the array measures. --add-output-vcf-command-line is held false because its line stamps the clock."
+        "A VCF of complex calls and one with none, over the contigs behind them and over others. The refusals are rows of the spark-walkers golden. -L and -XL are held unset because a query needs the VCF indexed; that refusal is a row. --cnv-calls and --truth-vcf are read by nothing here, which the array measures. --add-output-vcf-command-line is held false because its line stamps the clock.",
+        "--read-index is each BAM's own index or unset; a row pairing a BAM with another's index is",
+        "forbidden, since it would measure htsjdk reading a foreign index rather than the tool."
+      ],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
       ]
     },
     "HtsgetReader": {
@@ -16985,7 +17528,10 @@
       "--bam-partition-size": [
         "0"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "<unset>",
+        "/work/tmp/shards"
+      ],
       "--read-index": [],
       "--intervals": [
         "<unset>"
@@ -16998,14 +17544,16 @@
         "LENIENT"
       ],
       "--sharded-output": [
-        "false"
+        "false",
+        "<unset>"
       ],
       "--use-jdk-deflater": [
         "true"
       ],
       "$why": [
         "Reads as a sequencer leaves them, paired and single-ended, on a reference with its own image and one named by the argument. A filter that a paired run applies after alignment is the suite's, as is the non-image, which kills the reference's JVM.",
-        "--sharded-output is held out: the reference then writes one part per reducer with its Hadoop checksums, which the suite measures."
+        "--sharded-output is held out: the reference then writes one part per reducer with its Hadoop checksums, which the suite measures.",
+        "--read-index is held out: the reads are unaligned, and no input BAM has an index."
       ],
       "--input": [
         "/work/fixtures/bwa_reads.bam",
@@ -17046,7 +17594,10 @@
       "--bam-partition-size": [
         "0"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "<unset>",
+        "/work/tmp/shards"
+      ],
       "--read-index": [],
       "--intervals": [
         "<unset>"
@@ -17059,13 +17610,15 @@
         "LENIENT"
       ],
       "--sharded-output": [
-        "false"
+        "false",
+        "<unset>"
       ],
       "--use-jdk-deflater": [
         "true"
       ],
       "$why": [
-        "The same reads with the marking over them, which is why the fixture repeats fragments. The flow arguments are held out: they read flow reads, and these are not."
+        "The same reads with the marking over them, which is why the fixture repeats fragments. The flow arguments are held out: they read flow reads, and these are not.",
+        "--read-index is held out: the reads are unaligned, and no input BAM has an index."
       ],
       "--input": [
         "/work/fixtures/bwa_reads.bam",
@@ -17797,7 +18350,10 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "<unset>",
+        "/work/tmp/shards"
+      ],
       "--exclude-intervals": [
         "<unset>",
         "chr1:1-500"
@@ -17807,7 +18363,12 @@
         "/work/fixtures/svbp_shallow.bam",
         "/work/fixtures/svbp_other.bam"
       ],
-      "--read-index": [],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/svbp_reads.bai",
+        "/work/fixtures/svbp_shallow.bai",
+        "/work/fixtures/svbp_other.bai"
+      ],
       "--intervals": [
         "<unset>",
         "chr1:1-9000",
@@ -17960,13 +18521,24 @@
         "coordinate",
         "queryname"
       ],
-      "--reference": [],
+      "--reference": [
+        "<unset>",
+        "/work/fixtures/svbp_sv.fasta"
+      ],
       "--output": [
         "/work/out/contigs.sam",
         "/work/out/contigs.bam"
       ],
       "$why": [
-        "Evidence directories and the interval file stay off: Hadoop leaves its checksums beside the one and the other prints a duration. The dump reads both. The command line records the date. The reads and reference of SvEvidenceDump's donor genome; the debug outputs are each on or off, and the numeric arguments each take a value that changes what a stage keeps."
+        "Evidence directories and the interval file stay off: Hadoop leaves its checksums beside the one and the other prints a duration. The dump reads both. The command line records the date. The reads and reference of SvEvidenceDump's donor genome; the debug outputs are each on or off, and the numeric arguments each take a value that changes what a stage keeps.",
+        "--read-index is each BAM's own index or unset; a row pairing a BAM with another's index is",
+        "forbidden, since it would measure htsjdk reading a foreign index rather than the tool.",
+        "--reference is unset or svbp_sv.fasta, whose dictionary is the reads'."
+      ],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
       ]
     },
     "StructuralVariationDiscoveryPipelineSpark": {
@@ -21442,6 +22014,706 @@
         "--read-filter-tag-op": "GREATER"
       },
       "why": "One --read-filter selects one filter per row, and each of these arguments needs its own filter selected, so the pair cannot occur on a row the reference accepts."
+    },
+    {
+      "tools": [
+        "ApplyBQSRSpark",
+        "BQSRPipelineSpark",
+        "BaseRecalibratorSpark",
+        "BwaAndMarkDuplicatesPipelineSpark",
+        "BwaSpark",
+        "CalcMetadataSpark",
+        "CollectAllelicCountsSpark",
+        "CollectBaseDistributionByCycleSpark",
+        "CollectInsertSizeMetricsSpark",
+        "CollectMultipleMetricsSpark",
+        "CollectQualityYieldMetricsSpark",
+        "CompareDuplicatesSpark",
+        "CountBasesSpark",
+        "CountReadsSpark",
+        "CountVariantsSpark",
+        "CpxVariantReInterpreterSpark",
+        "DiscoverVariantsFromContigAlignmentsSAMSpark",
+        "ExtractOriginalAlignmentRecordsByNameSpark",
+        "ExtractSVEvidenceSpark",
+        "FindBadGenomicKmersSpark",
+        "FindBreakpointEvidenceSpark",
+        "FlagStatSpark"
+      ],
+      "forbid": {
+        "--output-shard-tmp-dir": "/work/tmp/shards",
+        "--sharded-output": "false"
+      },
+      "why": "Barclay's mutex: --sharded-output and --output-shard-tmp-dir refuse each other when both are given, whatever the boolean says."
+    },
+    {
+      "tools": [
+        "ApplyBQSRSpark",
+        "BQSRPipelineSpark",
+        "BaseRecalibratorSpark",
+        "CalcMetadataSpark",
+        "CollectAllelicCountsSpark",
+        "CollectBaseDistributionByCycleSpark",
+        "CollectInsertSizeMetricsSpark",
+        "CollectMultipleMetricsSpark",
+        "CollectQualityYieldMetricsSpark",
+        "CompareDuplicatesSpark",
+        "CountBasesSpark",
+        "CountReadsSpark",
+        "CountVariantsSpark",
+        "CpxVariantReInterpreterSpark",
+        "DiscoverVariantsFromContigAlignmentsSAMSpark",
+        "ExtractOriginalAlignmentRecordsByNameSpark",
+        "ExtractSVEvidenceSpark",
+        "FindBadGenomicKmersSpark",
+        "FindBreakpointEvidenceSpark",
+        "FlagStatSpark"
+      ],
+      "forbid": {
+        "--output-shard-tmp-dir": "/work/tmp/shards",
+        "--sharded-output": "true"
+      },
+      "why": "Barclay's mutex: --sharded-output and --output-shard-tmp-dir refuse each other when both are given, whatever the boolean says."
+    },
+    {
+      "tools": [
+        "CalcMetadataSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/insert_pairs.bam",
+        "--read-index": "/work/fixtures/insert_pairs2.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "CalcMetadataSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/insert_pairs.bam",
+        "--read-index": "/work/fixtures/reads.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "CalcMetadataSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/insert_pairs2.bam",
+        "--read-index": "/work/fixtures/insert_pairs.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "CalcMetadataSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/insert_pairs2.bam",
+        "--read-index": "/work/fixtures/reads.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "CalcMetadataSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/reads.bam",
+        "--read-index": "/work/fixtures/insert_pairs.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "CalcMetadataSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/reads.bam",
+        "--read-index": "/work/fixtures/insert_pairs2.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "CalibrateDragstrModel"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/dragstr.bam",
+        "--read-index": "/work/fixtures/mutect_tn.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "CalibrateDragstrModel"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/mutect_tn.bam",
+        "--read-index": "/work/fixtures/dragstr.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "CheckReferenceCompatibility"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/md5header.bam",
+        "--read-index": "/work/fixtures/reads.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "CheckReferenceCompatibility"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/reads.bam",
+        "--read-index": "/work/fixtures/md5header.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "CollectF1R2Counts"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/f1r2.bam",
+        "--read-index": "/work/fixtures/tumor_normal.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "CollectF1R2Counts"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/tumor_normal.bam",
+        "--read-index": "/work/fixtures/f1r2.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "CpxVariantReInterpreterSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/sv_assembly.bam",
+        "--read-index": "/work/fixtures/sv_contigs.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "CpxVariantReInterpreterSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/sv_contigs.bam",
+        "--read-index": "/work/fixtures/sv_assembly.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "DiscoverVariantsFromContigAlignmentsSAMSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/sv_contigs.bam",
+        "--read-index": "/work/fixtures/sv_contigs_small.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "DiscoverVariantsFromContigAlignmentsSAMSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/sv_contigs_small.bam",
+        "--read-index": "/work/fixtures/sv_contigs.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "ExtractSVEvidenceSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/sv_evidence.bam",
+        "--read-index": "/work/fixtures/sv_evidence2.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "ExtractSVEvidenceSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/sv_evidence.bam",
+        "--read-index": "/work/fixtures/sv_evidence_lone.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "ExtractSVEvidenceSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/sv_evidence2.bam",
+        "--read-index": "/work/fixtures/sv_evidence.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "ExtractSVEvidenceSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/sv_evidence2.bam",
+        "--read-index": "/work/fixtures/sv_evidence_lone.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "ExtractSVEvidenceSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/sv_evidence_lone.bam",
+        "--read-index": "/work/fixtures/sv_evidence.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "ExtractSVEvidenceSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/sv_evidence_lone.bam",
+        "--read-index": "/work/fixtures/sv_evidence2.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "FilterAlignmentArtifacts"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/faa.bam",
+        "--read-index": "/work/fixtures/faa2.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "FilterAlignmentArtifacts"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/faa2.bam",
+        "--read-index": "/work/fixtures/faa.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "FindBadGenomicKmersSpark"
+      ],
+      "forbid": {
+        "--input": "<unset>",
+        "--read-index": "/work/fixtures/reads.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "FindBreakpointEvidenceSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/svbp_reads.bam",
+        "--read-index": "/work/fixtures/svbp_shallow.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "FindBreakpointEvidenceSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/svbp_reads.bam",
+        "--read-index": "/work/fixtures/svbp_other.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "FindBreakpointEvidenceSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/svbp_shallow.bam",
+        "--read-index": "/work/fixtures/svbp_reads.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "FindBreakpointEvidenceSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/svbp_shallow.bam",
+        "--read-index": "/work/fixtures/svbp_other.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "FindBreakpointEvidenceSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/svbp_other.bam",
+        "--read-index": "/work/fixtures/svbp_reads.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "FindBreakpointEvidenceSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/svbp_other.bam",
+        "--read-index": "/work/fixtures/svbp_shallow.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "GroundTruthScorer"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/gt.bam",
+        "--read-index": "/work/fixtures/flow_snv.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "GroundTruthScorer"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/flow_snv.bam",
+        "--read-index": "/work/fixtures/gt.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "HaplotypeCallerSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/mutect_t.bam",
+        "--read-index": "/work/fixtures/mutect_tn.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "HaplotypeCallerSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/mutect_t.bam",
+        "--read-index": "/work/fixtures/flow_calls.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "HaplotypeCallerSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/mutect_tn.bam",
+        "--read-index": "/work/fixtures/mutect_t.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "HaplotypeCallerSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/mutect_tn.bam",
+        "--read-index": "/work/fixtures/flow_calls.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "HaplotypeCallerSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/flow_calls.bam",
+        "--read-index": "/work/fixtures/mutect_t.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "HaplotypeCallerSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/flow_calls.bam",
+        "--read-index": "/work/fixtures/mutect_tn.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "LocalAssembler"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/la.bam",
+        "--read-index": "/work/fixtures/la2.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "LocalAssembler"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/la2.bam",
+        "--read-index": "/work/fixtures/la.bai"
+      },
+      "why": "An index that belongs to another input."
+    },
+    {
+      "tools": [
+        "ComposeSTRTableFile"
+      ],
+      "forbid": {
+        "--reference": "/work/fixtures/mutect_ref.fasta",
+        "--sequence-dictionary": "/work/fixtures/two_contigs.dict"
+      },
+      "why": "A master dictionary that belongs to the other reference."
+    },
+    {
+      "tools": [
+        "ComposeSTRTableFile"
+      ],
+      "forbid": {
+        "--reference": "/work/fixtures/two_contigs.fasta",
+        "--sequence-dictionary": "/work/fixtures/mutect_ref.dict"
+      },
+      "why": "A master dictionary that belongs to the other reference."
+    },
+    {
+      "tools": [
+        "Funcotator"
+      ],
+      "forbid": {
+        "--reference": "/work/fixtures/funco_ref.fasta",
+        "--sequence-dictionary": "/work/fixtures/reference.dict"
+      },
+      "why": "A master dictionary that belongs to the other reference."
+    },
+    {
+      "tools": [
+        "Funcotator"
+      ],
+      "forbid": {
+        "--reference": "/work/fixtures/reference.fasta",
+        "--sequence-dictionary": "/work/fixtures/funco_ref.dict"
+      },
+      "why": "A master dictionary that belongs to the other reference."
+    },
+    {
+      "tools": [
+        "HaplotypeBasedVariantRecaller"
+      ],
+      "forbid": {
+        "--dragen-378-concordance-mode": "true",
+        "--dragen-mode": "true"
+      },
+      "why": "Barclay's mutex: the two refuse each other whenever both are given."
+    },
+    {
+      "tools": [
+        "HaplotypeBasedVariantRecaller"
+      ],
+      "forbid": {
+        "--dragen-378-concordance-mode": "true",
+        "--dragen-mode": "false"
+      },
+      "why": "Barclay's mutex: the two refuse each other whenever both are given."
+    },
+    {
+      "tools": [
+        "HaplotypeBasedVariantRecaller"
+      ],
+      "forbid": {
+        "--dragen-378-concordance-mode": "false",
+        "--dragen-mode": "true"
+      },
+      "why": "Barclay's mutex: the two refuse each other whenever both are given."
+    },
+    {
+      "tools": [
+        "HaplotypeBasedVariantRecaller"
+      ],
+      "forbid": {
+        "--dragen-378-concordance-mode": "false",
+        "--dragen-mode": "false"
+      },
+      "why": "Barclay's mutex: the two refuse each other whenever both are given."
+    },
+    {
+      "tools": [
+        "HaplotypeCallerSpark"
+      ],
+      "forbid": {
+        "--dragen-378-concordance-mode": "true",
+        "--dragen-mode": "true"
+      },
+      "why": "Barclay's mutex: the two refuse each other whenever both are given."
+    },
+    {
+      "tools": [
+        "HaplotypeCallerSpark"
+      ],
+      "forbid": {
+        "--dragen-378-concordance-mode": "true",
+        "--dragen-mode": "false"
+      },
+      "why": "Barclay's mutex: the two refuse each other whenever both are given."
+    },
+    {
+      "tools": [
+        "HaplotypeCallerSpark"
+      ],
+      "forbid": {
+        "--dragen-378-concordance-mode": "false",
+        "--dragen-mode": "true"
+      },
+      "why": "Barclay's mutex: the two refuse each other whenever both are given."
+    },
+    {
+      "tools": [
+        "HaplotypeCallerSpark"
+      ],
+      "forbid": {
+        "--dragen-378-concordance-mode": "false",
+        "--dragen-mode": "false"
+      },
+      "why": "Barclay's mutex: the two refuse each other whenever both are given."
+    },
+    {
+      "tools": [
+        "AlleleFrequencyQC"
+      ],
+      "forbid": {
+        "--variant-output-filtering": "STARTS_IN",
+        "--intervals": "null"
+      },
+      "why": "A filtering mode with no -L is refused."
+    },
+    {
+      "tools": [
+        "AlleleFrequencyQC"
+      ],
+      "forbid": {
+        "--variant-output-filtering": "OVERLAPS",
+        "--intervals": "null"
+      },
+      "why": "A filtering mode with no -L is refused."
+    },
+    {
+      "tools": [
+        "JointGermlineCNVSegmentation"
+      ],
+      "forbid": {
+        "--variant-output-filtering": "STARTS_IN",
+        "--intervals": "null"
+      },
+      "why": "A filtering mode with no -L is refused."
+    },
+    {
+      "tools": [
+        "JointGermlineCNVSegmentation"
+      ],
+      "forbid": {
+        "--variant-output-filtering": "OVERLAPS",
+        "--intervals": "null"
+      },
+      "why": "A filtering mode with no -L is refused."
+    },
+    {
+      "tools": [
+        "GnarlyGenotyper"
+      ],
+      "forbid": {
+        "--variant-output-filtering": "STARTS_IN",
+        "--intervals": "null"
+      },
+      "why": "A filtering mode with no -L is refused."
+    },
+    {
+      "tools": [
+        "GnarlyGenotyper"
+      ],
+      "forbid": {
+        "--variant-output-filtering": "OVERLAPS",
+        "--intervals": "null"
+      },
+      "why": "A filtering mode with no -L is refused."
+    },
+    {
+      "tools": [
+        "GnarlyGenotyper"
+      ],
+      "forbid": {
+        "--variant-output-filtering": "STARTS_IN",
+        "--only-output-calls-starting-in-intervals": "false"
+      },
+      "why": "Barclay's mutex: the two refuse each other whenever both are given."
+    },
+    {
+      "tools": [
+        "GnarlyGenotyper"
+      ],
+      "forbid": {
+        "--variant-output-filtering": "OVERLAPS",
+        "--only-output-calls-starting-in-intervals": "false"
+      },
+      "why": "Barclay's mutex: the two refuse each other whenever both are given."
+    },
+    {
+      "tools": [
+        "CheckReferenceCompatibility"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/md5header.bam",
+        "--variant": "/work/fixtures/indexed.vcf"
+      },
+      "why": "The tool refuses a BAM and a VCF together."
+    },
+    {
+      "tools": [
+        "CheckReferenceCompatibility"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/reads.bam",
+        "--variant": "/work/fixtures/indexed.vcf"
+      },
+      "why": "The tool refuses a BAM and a VCF together."
+    },
+    {
+      "tools": [
+        "FuncotateSegments"
+      ],
+      "forbid": {
+        "--reference": "/work/fixtures/reference.fasta",
+        "--sequence-dictionary": "/work/fixtures/funco_ref.dict"
+      },
+      "why": "A master dictionary that belongs to the other reference."
     }
   ],
   "exclude": {
