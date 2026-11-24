@@ -51,3 +51,14 @@ jmath = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "cb1f5804bd83791
 md-5 = "0.11.0"
 # FuncotatorDataSourceDownloader checks the archive it copied against a SHA-256 sum.
 sha2 = "0.11.0"
+
+# The shipped binary's profile (docs/speed/targets.md, P0; docs/speed/byte-neutrality.md says why it
+# cannot move a byte). Whole-program inlining across crates and one code-generation unit: LLVM does
+# not reassociate or contract floating point without fast-math flags, which Rust never emits, so
+# this changes what is inlined and how registers are allocated, never which operations run in which
+# order. `release` stays the default profile because the 391 test binaries would each pay a fat
+# link; the arrays, the speed jobs and the release build use this one.
+[profile.dist]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
