@@ -12582,7 +12582,10 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "/work/tmp/parts",
+        "<unset>"
+      ],
       "--exclude-intervals": [
         "chr1:1-500",
         "chr1:400-600",
@@ -12592,6 +12595,11 @@
         "--intervals and --exclude-intervals take <unset> as a value so the array has rows",
         "that run without -L at all: Disq reads the whole file there, and the locus walker",
         "shards the whole dictionary, which no row measured while every row set -L."
+      ],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
       ]
     },
     "PileupSpark": {
@@ -12640,7 +12648,10 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "/work/tmp/parts",
+        "<unset>"
+      ],
       "--exclude-intervals": [
         "chr1:1-500",
         "chr1:400-600",
@@ -12650,6 +12661,11 @@
         "--intervals and --exclude-intervals take <unset> as a value so the array has rows",
         "that run without -L at all: Disq reads the whole file there, and the locus walker",
         "shards the whole dictionary, which no row measured while every row set -L."
+      ],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
       ]
     },
     "BaseRecalibratorSpark": {
@@ -12874,7 +12890,10 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "/work/tmp/parts",
+        "<unset>"
+      ],
       "--exclude-intervals": [
         "chr1:1-500",
         "chr1:400-600",
@@ -12883,6 +12902,11 @@
       "$why": [
         "PrintReadsSpark's values: SortSamSpark is its writer asked to sort to the header, so the",
         "same inputs and Spark arguments measure the sort, both orders coming from the enum itself."
+      ],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
       ]
     },
     "PrintVariantsSpark": {
@@ -12932,7 +12956,10 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "/work/tmp/parts",
+        "<unset>"
+      ],
       "--exclude-intervals": [
         "chr1:1-500",
         "chr1:400-600",
@@ -12946,6 +12973,11 @@
       "--reference": [],
       "--disable-read-filter": [
         "WellformedReadFilter"
+      ],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
       ]
     },
     "RevertSamSpark": {
@@ -13008,7 +13040,10 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "/work/tmp/parts",
+        "<unset>"
+      ],
       "--exclude-intervals": [
         "chr1:1-500",
         "chr1:400-600",
@@ -13020,7 +13055,12 @@
         "the map is measured by the `revert-sam-map` runs of the spark-walkers golden.",
         "`--remove-default-attributes-to-clear` always fails, so it would take every row it sits on; the `revert-sam-defaults` run measures it."
       ],
-      "--remove-default-attributes-to-clear": []
+      "--remove-default-attributes-to-clear": [],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
+      ]
     },
     "MeanQualityByCycleSpark": {
       "--input": [
@@ -13060,7 +13100,10 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "/work/tmp/parts",
+        "<unset>"
+      ],
       "--exclude-intervals": [
         "chr1:1-500",
         "chr1:400-600",
@@ -13073,6 +13116,11 @@
       "--chart": [],
       "$why": [
         "The Spark values every record walker here has. `--chart` needs an R the pinned container does not have, so it is measured nowhere."
+      ],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
       ]
     },
     "QualityScoreDistributionSpark": {
@@ -13113,7 +13161,10 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "/work/tmp/parts",
+        "<unset>"
+      ],
       "--exclude-intervals": [
         "chr1:1-500",
         "chr1:400-600",
@@ -13126,6 +13177,11 @@
       "--chart": [],
       "$why": [
         "The Spark values every record walker here has. `--chart` needs an R the pinned container does not have, so it is measured nowhere."
+      ],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
       ]
     },
     "CollectBaseDistributionByCycleSpark": {
@@ -16316,8 +16372,14 @@
       "--bam-partition-size": [
         "0"
       ],
-      "--output-shard-tmp-dir": [],
-      "--read-index": [],
+      "--output-shard-tmp-dir": [
+        "/work/tmp/parts",
+        "<unset>"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "<unset>"
+      ],
       "$why": [
         "An unaligned BAM with something for each transformer and a BAM with alignments and NM tags. --filter-bwa-image names a host image that holds nothing of those reads, so every read goes through BWA and the rows that drop some are the suite's. --sharded-output and the outputs' indexes are held out as for the other tools that write one BAM, and --ignore-alignment-contigs would refuse every row it fills over --is-host-aligned, so a suite row carries it.",
         "STRICT is held out: these reads carry flags a validator refuses, and it refuses inside a task whatever else the row holds. --sharded-output, --num-reducers and the partition size are held out because the reference then writes one part per reducer with Hadoop checksums, which the port refuses or writes as one part."
@@ -16326,7 +16388,10 @@
         "/work/fixtures/pathseq_filter.bam",
         "/work/fixtures/pathseq_filter_aligned.bam"
       ],
-      "--reference": [],
+      "--reference": [
+        "/work/fixtures/reference.fasta",
+        "<unset>"
+      ],
       "--intervals": [
         "<unset>"
       ],
@@ -16426,7 +16491,8 @@
         "LENIENT"
       ],
       "--sharded-output": [
-        "false"
+        "false",
+        "<unset>"
       ],
       "--use-jdk-deflater": [
         "true"
@@ -16451,16 +16517,34 @@
       "--bam-partition-size": [
         "0"
       ],
-      "--output-shard-tmp-dir": [],
-      "--read-index": [],
+      "--output-shard-tmp-dir": [
+        "/work/tmp/parts",
+        "<unset>"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "<unset>"
+      ],
       "$why": [
-        "Each input alone and both, with a contig the taxonomy does not know and alternate hits on XA and SA. --input is a refusal a suite row measures, and the intervals and the reference are never read, since the tool opens its reads through its own two arguments.",
+        "Each input alone and both, with a contig the taxonomy does not know and alternate hits on XA and SA. --input is refused, since the tool opens its reads through its own two arguments; the intervals and the reference are never read past the engine, which refuses an interval with no dictionary to place it on.",
         "STRICT is held out: these reads carry flags a validator refuses, and it refuses inside a task whatever else the row holds. --sharded-output, --num-reducers and the partition size are held out because the reference then writes one part per reducer with Hadoop checksums, which the port refuses or writes as one part."
       ],
-      "--input": [],
-      "--reference": [],
-      "--intervals": [],
-      "--exclude-intervals": [],
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "<unset>"
+      ],
+      "--reference": [
+        "/work/fixtures/reference.fasta",
+        "<unset>"
+      ],
+      "--intervals": [
+        "chr1:1-1000",
+        "<unset>"
+      ],
+      "--exclude-intervals": [
+        "chr1:400-600",
+        "<unset>"
+      ],
       "--paired-input": [
         "/work/fixtures/pathseq_score_paired.bam",
         "<unset>"
@@ -16512,7 +16596,8 @@
         "LENIENT"
       ],
       "--sharded-output": [
-        "false"
+        "false",
+        "<unset>"
       ],
       "--use-jdk-deflater": [
         "true"
@@ -16727,7 +16812,10 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "/work/tmp/parts",
+        "<unset>"
+      ],
       "--exclude-intervals": [
         "<unset>",
         "chr2:13000-20000"
@@ -16736,7 +16824,10 @@
         "/work/fixtures/sv_assembly_no_breakend.bam",
         "/work/fixtures/sv_assembly.bam"
       ],
-      "--read-index": [],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "<unset>"
+      ],
       "--reference": [
         "/work/fixtures/sv_contigs.fasta"
       ],
@@ -16810,6 +16901,11 @@
       "--non-canonical-contig-names-file": [
         "<unset>",
         "/work/fixtures/sv_alt_tigs.txt"
+      ],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
       ]
     },
     "CpxVariantReInterpreterSpark": {
@@ -17122,8 +17218,14 @@
       "--bam-partition-size": [
         "0"
       ],
-      "--output-shard-tmp-dir": [],
-      "--read-index": [],
+      "--output-shard-tmp-dir": [
+        "/work/tmp/parts",
+        "<unset>"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "<unset>"
+      ],
       "--intervals": [
         "<unset>"
       ],
@@ -17135,7 +17237,8 @@
         "LENIENT"
       ],
       "--sharded-output": [
-        "false"
+        "false",
+        "<unset>"
       ],
       "--use-jdk-deflater": [
         "true"
@@ -17196,8 +17299,14 @@
       "--bam-partition-size": [
         "0"
       ],
-      "--output-shard-tmp-dir": [],
-      "--read-index": [],
+      "--output-shard-tmp-dir": [
+        "/work/tmp/parts",
+        "<unset>"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "<unset>"
+      ],
       "--intervals": [
         "<unset>"
       ],
@@ -17209,7 +17318,8 @@
         "LENIENT"
       ],
       "--sharded-output": [
-        "false"
+        "false",
+        "<unset>"
       ],
       "--use-jdk-deflater": [
         "true"
@@ -17321,8 +17431,14 @@
       "--bam-partition-size": [
         "0"
       ],
-      "--output-shard-tmp-dir": [],
-      "--read-index": [],
+      "--output-shard-tmp-dir": [
+        "/work/tmp/parts",
+        "<unset>"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "<unset>"
+      ],
       "--intervals": [
         "<unset>"
       ],
@@ -17334,7 +17450,8 @@
         "LENIENT"
       ],
       "--sharded-output": [
-        "false"
+        "false",
+        "<unset>"
       ],
       "--use-jdk-deflater": [
         "true"
@@ -17990,7 +18107,10 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--output-shard-tmp-dir": [
+        "/work/tmp/parts",
+        "<unset>"
+      ],
       "--exclude-intervals": [
         "<unset>",
         "chr1:1-500"
@@ -18000,7 +18120,10 @@
         "/work/fixtures/svbp_shallow.bam",
         "/work/fixtures/svbp_other.bam"
       ],
-      "--read-index": [],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "<unset>"
+      ],
       "--intervals": [
         "<unset>",
         "chr1:1-9000",
@@ -18190,6 +18313,11 @@
       ],
       "$why": [
         "Evidence directories and the interval file stay off: Hadoop leaves its checksums beside the one and the other prints a duration. The dump reads both. The command line records the date. The same donor genome, with the discovery stage's reference and thresholds."
+      ],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
       ]
     },
     "AddCommentsToBam": {
@@ -21442,6 +21570,67 @@
         "--read-filter-tag-op": "GREATER"
       },
       "why": "One --read-filter selects one filter per row, and each of these arguments needs its own filter selected, so the pair cannot occur on a row the reference accepts."
+    },
+    {
+      "tools": [
+        "MeanQualityByCycleSpark",
+        "PileupSpark",
+        "PrintReadsSpark",
+        "PrintVariantsSpark",
+        "QualityScoreDistributionSpark",
+        "RevertSamSpark",
+        "SortSamSpark",
+        "StructuralVariationDiscoveryPipelineSpark",
+        "SvDiscoverFromLocalAssemblyContigAlignmentsSpark",
+        "ParallelCopyGCSDirectoryIntoHDFSSpark",
+        "PathSeqBwaSpark",
+        "PathSeqFilterSpark",
+        "PathSeqPipelineSpark",
+        "PathSeqScoreSpark"
+      ],
+      "forbid": {
+        "--output-shard-tmp-dir": "/work/tmp/parts",
+        "--sharded-output": "false"
+      },
+      "why": "Barclay refuses --output-shard-tmp-dir beside --sharded-output whenever both are GIVEN, so --sharded-output gets an <unset> value and the parts directory is given only where it is."
+    },
+    {
+      "tools": [
+        "MeanQualityByCycleSpark",
+        "PileupSpark",
+        "PrintReadsSpark",
+        "PrintVariantsSpark",
+        "QualityScoreDistributionSpark",
+        "RevertSamSpark",
+        "SortSamSpark",
+        "StructuralVariationDiscoveryPipelineSpark",
+        "SvDiscoverFromLocalAssemblyContigAlignmentsSpark"
+      ],
+      "forbid": {
+        "--output-shard-tmp-dir": "/work/tmp/parts",
+        "--sharded-output": "true"
+      },
+      "why": "Barclay refuses --output-shard-tmp-dir beside --sharded-output whenever both are GIVEN, so --sharded-output gets an <unset> value and the parts directory is given only where it is."
+    },
+    {
+      "tools": [
+        "PileupSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/reads.bam",
+        "--read-index": "/work/fixtures/deep.bai"
+      },
+      "why": "Disq queries -L through the index --read-index names, so a BAM given another file's index starts its traversal at that file's offsets, which is not a behaviour of the reads; each BAM is paired with its own index."
+    },
+    {
+      "tools": [
+        "PileupSpark"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/deep.bam",
+        "--read-index": "/work/fixtures/reads.bai"
+      },
+      "why": "Disq queries -L through the index --read-index names, so a BAM given another file's index starts its traversal at that file's offsets, which is not a behaviour of the reads; each BAM is paired with its own index."
     }
   ],
   "exclude": {

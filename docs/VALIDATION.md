@@ -218,7 +218,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | MarkDuplicatesWithMateCigar | picard-rs | oracle-backed | not vendored | not vendored | 30/30 (100.0%) | 2 | not measured | 0 | 0 | none |
 | MarkIlluminaAdapters | picard-rs | oracle-backed | not vendored | not vendored | 28/28 (100.0%) | 2 | not measured | 0 | 0 | none |
 | MeanQualityByCycle | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
-| MeanQualityByCycleSpark | gatk-rs | oracle-backed | 9 | 2 | 21/21 (100.0%) | 2 | 2162 probes (+4), 0/13 diverge | 4 | 2 | none |
+| MeanQualityByCycleSpark | gatk-rs | oracle-backed | 9 | 2 | 21/21 (100.0%) | 2 | 2162 probes (+4), 0/13 diverge | 4 | 1 | none |
 | MergeAnnotatedRegions | gatk-rs | oracle-backed | 14 suite | 0 suite | 18/18 (100.0%) | 2 | 2040 probes (+0), 0/6 diverge | 5 | 5 | none |
 | MergeAnnotatedRegionsByAnnotation | gatk-rs | oracle-backed | 9 suite | 0 suite | 22/22 (100.0%) | 2 | 1986 probes (+0), 0/7 diverge | 5 | 5 | none |
 | MergeBamAlignment | picard-rs | oracle-backed | not vendored | not vendored | not measured | - | not measured | 0 | 0 | none |
@@ -234,15 +234,15 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | NonNFastaSize | picard-rs | oracle-backed | not vendored | not vendored | 7/7 (100.0%) | 2 | not measured | 0 | 0 | none |
 | NormalizeFasta | picard-rs | oracle-backed | not vendored | not vendored | 8/8 (100.0%) | 2 | not measured | 0 | 0 | none |
 | NuMTFilterTool | gatk-rs | oracle-backed | 35 suite | 0 suite | 15/15 (100.0%) | 2 | 2183 probes (+0), 0/7 diverge | 2 | 4 | none |
-| ParallelCopyGCSDirectoryIntoHDFSSpark | gatk-rs | oracle-backed | 6 | 0 | 16/16 (100.0%) | 2 | 1522 probes (+3), 0/6 diverge | 1 | 2 | none |
+| ParallelCopyGCSDirectoryIntoHDFSSpark | gatk-rs | oracle-backed | 6 | 0 | 16/16 (100.0%) | 2 | 1522 probes (+3), 0/6 diverge | 2 | 0 | none |
 | PathSeqBuildKmers | gatk-rs | oracle-backed | 122 suite | 0 suite | 8/8 (100.0%) | 2 | 1256 probes (+17), 0/7 diverge | 2 | 1 | none |
 | PathSeqBuildReferenceTaxonomy | gatk-rs | oracle-backed | 161 suite | 0 suite | 9/9 (100.0%) | 2 | 1296 probes (+7), 0/9 diverge | 6 | 0 | none |
-| PathSeqBwaSpark | gatk-rs | oracle-backed | 92 | 32 | 22/22 (100.0%) | 2 | 1512 probes (+0), 0/6 diverge | 5 | 2 | none |
-| PathSeqFilterSpark | gatk-rs | oracle-backed | 188 | 109 | 20/20 (100.0%) | 2 | 2798 probes (+0), 0/9 diverge | 5 | 4 | none |
-| PathSeqPipelineSpark | gatk-rs | oracle-backed | 151 | 103 | 25/25 (100.0%) | 2 | 2830 probes (+2), 0/7 diverge | 6 | 2 | none |
-| PathSeqScoreSpark | gatk-rs | oracle-backed | 110 | 56 | 15/15 (100.0%) | 2 | 2083 probes (+0), 0/7 diverge | 3 | 6 | none |
+| PathSeqBwaSpark | gatk-rs | oracle-backed | 92 | 32 | 22/22 (100.0%) | 2 | 1512 probes (+0), 0/6 diverge | 6 | 0 | none |
+| PathSeqFilterSpark | gatk-rs | oracle-backed | 188 | 109 | 20/20 (100.0%) | 2 | 2798 probes (+0), 0/9 diverge | 7 | 1 | none |
+| PathSeqPipelineSpark | gatk-rs | oracle-backed | 151 | 103 | 25/25 (100.0%) | 2 | 2830 probes (+2), 0/7 diverge | 7 | 0 | none |
+| PathSeqScoreSpark | gatk-rs | oracle-backed | 110 | 56 | 15/15 (100.0%) | 2 | 2083 probes (+0), 0/7 diverge | 6 | 0 | none |
 | Pileup | gatk-rs | oracle-backed | 9 suite | 0 suite | 18/18 (100.0%) | 2 | 2701 probes (+8), 0/10 diverge | 4 | 0 | none |
-| PileupSpark | gatk-rs | oracle-backed | 11 | 4 | 22/22 (100.0%) | 2 | 2993 probes (+19), 0/16 diverge | 6 | 1 | none |
+| PileupSpark | gatk-rs | oracle-backed | 11 | 4 | 22/22 (100.0%) | 2 | 2993 probes (+19), 0/16 diverge | 6 | 0 | none |
 | PlotDenoisedCopyRatios | gatk-rs | oracle-backed | 379 | 0 | 11/11 (100.0%) | 2 | 1457 probes (+2), 0/6 diverge | 5 | 0 | none |
 | PlotModeledSegments | gatk-rs | oracle-backed | 338 | 0 | 11/11 (100.0%) | 2 | 1656 probes (+2), 0/8 diverge | 6 | 0 | none |
 | PositionBasedDownsampleSam | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -255,11 +255,11 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | PrintReadCounts | gatk-rs | oracle-backed | 44 suite | 0 suite | 17/17 (100.0%) | 2 | 1940 probes (+0), 0/7 diverge | 2 | 4 | none |
 | PrintReads | gatk-rs | oracle-backed | 36292 suite | 0 suite | 21/21 (100.0%) | 2 | 2140 probes (+25), 0/12 diverge | 5 | 0 | none |
 | PrintReadsHeader | gatk-rs | oracle-backed | 19 suite | 0 suite | 19/19 (100.0%) | 2 | 1810 probes (+0), 0/6 diverge | 4 | 0 | none |
-| PrintReadsSpark | gatk-rs | oracle-backed | 19 | 11 | 23/23 (100.0%) | 2 | 2169 probes (+8), 0/14 diverge | 5 | 1 | none |
+| PrintReadsSpark | gatk-rs | oracle-backed | 19 | 11 | 23/23 (100.0%) | 2 | 2169 probes (+8), 0/14 diverge | 5 | 0 | none |
 | PrintSVEvidence | gatk-rs | oracle-backed | 27 suite | 0 suite | 17/17 (100.0%) | 2 | 2156 probes (+5), 0/9 diverge | 5 | 4 | none |
-| PrintVariantsSpark | gatk-rs | oracle-backed | 19 | 5 | 23/23 (100.0%) | 2 | 2097 probes (+1), 0/9 diverge | 7 | 2 | none |
+| PrintVariantsSpark | gatk-rs | oracle-backed | 19 | 5 | 23/23 (100.0%) | 2 | 2097 probes (+1), 0/9 diverge | 7 | 1 | none |
 | QualityScoreDistribution | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | none |
-| QualityScoreDistributionSpark | gatk-rs | oracle-backed | 6 | 2 | 21/21 (100.0%) | 2 | 2120 probes (+2), 0/9 diverge | 4 | 2 | none |
+| QualityScoreDistributionSpark | gatk-rs | oracle-backed | 6 | 2 | 21/21 (100.0%) | 2 | 2120 probes (+2), 0/9 diverge | 4 | 1 | none |
 | RampedHaplotypeCaller | gatk-rs | oracle-backed | 576 suite | 50 suite | 54/54 (100.0%) | 2 | 14390 probes (+52), 0/34 diverge | 16 | 0 | mask_identity_hashes, sort_segments_with |
 | ReadAnonymizer | gatk-rs | oracle-backed | 28 suite | 0 suite | 22/22 (100.0%) | 2 | 2290 probes (+1), 0/9 diverge | 6 | 0 | none |
 | ReadsPipelineSpark | gatk-rs | oracle-backed | 133 | 48 | 53/53 (100.0%) | 2 | 14460 probes (+86), 0/28 diverge | 11 | 26 | none |
@@ -272,7 +272,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | RevertBaseQualityScores | gatk-rs | oracle-backed | 49 suite | 0 suite | 19/19 (100.0%) | 2 | 2187 probes (+0), 0/7 diverge | 4 | 0 | none |
 | RevertOriginalBaseQualitiesAndAddMateCigar | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | none |
 | RevertSam | picard-rs | oracle-backed | not vendored | not vendored | 21/21 (100.0%) | 2 | not measured | 0 | 0 | none |
-| RevertSamSpark | gatk-rs | oracle-backed | 67 | 21 | 28/28 (100.0%) | 2 | 2632 probes (+8), 0/18 diverge | 4 | 3 | none |
+| RevertSamSpark | gatk-rs | oracle-backed | 67 | 21 | 28/28 (100.0%) | 2 | 2632 probes (+8), 0/18 diverge | 4 | 2 | none |
 | SVAnnotate | gatk-rs | oracle-backed | 15 suite | 0 suite | 18/18 (100.0%) | 2 | 2777 probes (+2), 0/9 diverge | 4 | 6 | none |
 | SVCluster | gatk-rs | oracle-backed | 254 suite | 0 suite | 24/24 (100.0%) | 2 | 3563 probes (+0), 0/11 diverge | 5 | 5 | none |
 | SVConcordance | gatk-rs | oracle-backed | 10 suite | 0 suite | 40/40 (100.0%) | 2 | 3011 probes (+3), 0/8 diverge | 6 | 6 | none |
@@ -290,7 +290,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | SiteDepthtoBAF | gatk-rs | oracle-backed | 30 suite | 0 suite | 18/18 (100.0%) | 2 | 2082 probes (+0), 0/7 diverge | 5 | 6 | none |
 | SortGff | picard-rs | oracle-backed | not vendored | not vendored | 14/14 (100.0%) | 2 | not measured | 0 | 0 | none |
 | SortSam | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
-| SortSamSpark | gatk-rs | oracle-backed | 21 | 10 | 23/23 (100.0%) | 2 | 2176 probes (+11), 0/13 diverge | 5 | 1 | none |
+| SortSamSpark | gatk-rs | oracle-backed | 21 | 10 | 23/23 (100.0%) | 2 | 2176 probes (+11), 0/13 diverge | 5 | 0 | none |
 | SortVcf | gatk-rs | oracle-backed | 28 suite | 0 suite | 16/16 (100.0%) | 2 | not measured | 6 | 0 | none |
 | SplitCRAM | gatk-rs | oracle-backed | 31 suite | 0 suite | 11/11 (100.0%) | 2 | 983 probes (+2), 0/7 diverge | 2 | 0 | none |
 | SplitIntervals | gatk-rs | oracle-backed | 78 suite | 0 suite | 25/25 (100.0%) | 2 | 1923 probes (+6), 0/12 diverge | 4 | 0 | none |
@@ -300,8 +300,8 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | SplitSamByNumberOfReads | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
 | SplitVcfs | gatk-rs | oracle-backed | 22 suite | 0 suite | 22/26 (84.6%) | 2 | not measured | 10 | 0 | none |
 | StructuralVariantDiscoverer | gatk-rs | oracle-backed | 3 suite | 0 suite | 23/23 (100.0%) | 2 | 3778 probes (+0), 0/14 diverge | 9 | 2 | none |
-| StructuralVariationDiscoveryPipelineSpark | gatk-rs | oracle-backed | 1037 | 733 | 27/27 (100.0%) | 2 | 7002 probes (+3), 0/19 diverge | 11 | 2 | none |
-| SvDiscoverFromLocalAssemblyContigAlignmentsSpark | gatk-rs | oracle-backed | 161 | 88 | 17/17 (100.0%) | 2 | 5831 probes (+5), 0/9 diverge | 6 | 2 | none |
+| StructuralVariationDiscoveryPipelineSpark | gatk-rs | oracle-backed | 1037 | 733 | 27/27 (100.0%) | 2 | 7002 probes (+3), 0/19 diverge | 12 | 0 | none |
+| SvDiscoverFromLocalAssemblyContigAlignmentsSpark | gatk-rs | oracle-backed | 161 | 88 | 17/17 (100.0%) | 2 | 5831 probes (+5), 0/9 diverge | 7 | 0 | none |
 | TagGermlineEvents | gatk-rs | oracle-backed | 15 suite | 0 suite | 17/17 (100.0%) | 2 | 2085 probes (+5), 0/8 diverge | 6 | 5 | none |
 | TrainVariantAnnotationsModel | gatk-rs | oracle-backed | 131 suite | 10 suite | 11/11 (100.0%) | 2 | 1224 probes (+1), 0/10 diverge | 5 | 0 | mask_hdf5_modification_times |
 | TransferReadTags | gatk-rs | oracle-backed | 65 suite | 0 suite | 19/19 (100.0%) | 2 | 1947 probes (+2), 0/10 diverge | 3 | 1 | none |
@@ -1563,7 +1563,7 @@ Suites: `spark-walkers`.
 
 Inputs: `reads.bai`, `reads.bam`, `reads2.bai`, `reads2.bam`.
 
-Held out: `--chart`, `--output-shard-tmp-dir`.
+Held out: `--chart`.
 
 The Spark values every record walker here has. `--chart` needs an R the pinned container does not have, so it is measured nowhere.
 
@@ -1671,9 +1671,9 @@ Held out: `--exclude-intervals`, `--input`, `--intervals`, `--read-index`.
 
 Suites: `spark-walkers`.
 
-Inputs: `bwa.fasta`.
+Inputs: `bwa.fasta`, `reads.bai`.
 
-Held out: `--output-shard-tmp-dir`, `--read-index`.
+Held out: none.
 
 Only the two refusals can be reached: past them the reference needs a Google Cloud Storage and an HDFS. Every row names one of them.
 
@@ -1701,9 +1701,9 @@ pathseq.fasta names its contigs in every form the tool parses (ref|, taxid|, bot
 
 Suites: `spark-walkers`.
 
-Inputs: `bwa_reads.bam`, `bwa_reads_unsorted.bam`, `nowhere.bam`, `ps_microbe.dict`, `ps_microbe.img`.
+Inputs: `bwa_reads.bam`, `bwa_reads_unsorted.bam`, `nowhere.bam`, `ps_microbe.dict`, `ps_microbe.img`, `reads.bai`.
 
-Held out: `--output-shard-tmp-dir`, `--read-index`.
+Held out: none.
 
 Each input alone and both, on five contigs of which one no read reaches and one repeats another for alternate hits. --input and the other refusals are the suite's rows. --sharded-output and --num-reducers are held out as for PathSeqScoreSpark.
 
@@ -1711,9 +1711,9 @@ Each input alone and both, on five contigs of which one no read reaches and one 
 
 Suites: `spark-walkers`.
 
-Inputs: `pathseq_filter.bam`, `pathseq_filter.bfi`, `pathseq_filter.hss`, `pathseq_filter_aligned.bam`, `ps_host.img`.
+Inputs: `pathseq_filter.bam`, `pathseq_filter.bfi`, `pathseq_filter.hss`, `pathseq_filter_aligned.bam`, `ps_host.img`, `reads.bai`, `reference.fasta`.
 
-Held out: `--ignore-alignment-contigs`, `--output-shard-tmp-dir`, `--read-index`, `--reference`.
+Held out: `--ignore-alignment-contigs`.
 
 An unaligned BAM with something for each transformer and a BAM with alignments and NM tags. --filter-bwa-image names a host image that holds nothing of those reads, so every read goes through BWA and the rows that drop some are the suite's. --sharded-output and the outputs' indexes are held out as for the other tools that write one BAM, and --ignore-alignment-contigs would refuse every row it fills over --is-host-aligned, so a suite row carries it. STRICT is held out: these reads carry flags a validator refuses, and it refuses inside a task whatever else the row holds. --sharded-output, --num-reducers and the partition size are held out because the reference then writes one part per reducer with Hadoop checksums, which the port refuses or writes as one part.
 
@@ -1721,9 +1721,9 @@ An unaligned BAM with something for each transformer and a BAM with alignments a
 
 Suites: `spark-walkers`.
 
-Inputs: `bwa_reads.bam`, `bwa_reads_unsorted.bam`, `ps_host.img`, `ps_microbe.dict`, `ps_microbe.img`, `ps_taxa.db`.
+Inputs: `bwa_reads.bam`, `bwa_reads_unsorted.bam`, `ps_host.img`, `ps_microbe.dict`, `ps_microbe.img`, `ps_taxa.db`, `reads.bai`.
 
-Held out: `--output-shard-tmp-dir`, `--read-index`.
+Held out: none.
 
 The filter, the alignment and the scores over one BAM, in one batch and in several, whose order the partition size decides. --num-reducers is a refusal the suite measures.
 
@@ -1731,11 +1731,11 @@ The filter, the alignment and the scores over one BAM, in one batch and in sever
 
 Suites: `spark-walkers`.
 
-Inputs: `pathseq.db`, `pathseq_score_paired.bam`, `pathseq_score_unpaired.bam`.
+Inputs: `pathseq.db`, `pathseq_score_paired.bam`, `pathseq_score_unpaired.bam`, `reads.bai`, `reads.bam`, `reference.fasta`.
 
-Held out: `--exclude-intervals`, `--input`, `--intervals`, `--output-shard-tmp-dir`, `--read-index`, `--reference`.
+Held out: none.
 
-Each input alone and both, with a contig the taxonomy does not know and alternate hits on XA and SA. --input is a refusal a suite row measures, and the intervals and the reference are never read, since the tool opens its reads through its own two arguments. STRICT is held out: these reads carry flags a validator refuses, and it refuses inside a task whatever else the row holds. --sharded-output, --num-reducers and the partition size are held out because the reference then writes one part per reducer with Hadoop checksums, which the port refuses or writes as one part.
+Each input alone and both, with a contig the taxonomy does not know and alternate hits on XA and SA. --input is refused, since the tool opens its reads through its own two arguments; the intervals and the reference are never read past the engine, which refuses an interval with no dictionary to place it on. STRICT is held out: these reads carry flags a validator refuses, and it refuses inside a task whatever else the row holds. --sharded-output, --num-reducers and the partition size are held out because the reference then writes one part per reducer with Hadoop checksums, which the port refuses or writes as one part.
 
 ### Pileup
 
@@ -1753,7 +1753,7 @@ Suites: `spark-walkers`.
 
 Inputs: `deep.bai`, `deep.bam`, `indexed.vcf`, `reads.bai`, `reads.bam`, `regions.bed`.
 
-Held out: `--output-shard-tmp-dir`.
+Held out: none.
 
 --intervals and --exclude-intervals take <unset> as a value so the array has rows that run without -L at all: Disq reads the whole file there, and the locus walker shards the whole dictionary, which no row measured while every row set -L.
 
@@ -1855,7 +1855,7 @@ Suites: `spark-walkers`.
 
 Inputs: `reads.bai`, `reads.bam`, `reads.vcf`, `reads2.bai`, `reads2.bam`.
 
-Held out: `--output-shard-tmp-dir`.
+Held out: none.
 
 --intervals and --exclude-intervals take <unset> as a value so the array has rows that run without -L at all: Disq reads the whole file there, and the locus walker shards the whole dictionary, which no row measured while every row set -L.
 
@@ -1875,7 +1875,7 @@ Suites: `spark-walkers`.
 
 Inputs: `reads.bai`, `reads.bam`, `reads.vcf.gz`, `reads2.bai`, `reads2.bam`, `sites.vcf`, `sites.vcf.gz`.
 
-Held out: `--output-shard-tmp-dir`, `--reference`.
+Held out: `--reference`.
 
 CountVariantsSpark's values, with a plain and a block-compressed output, which Disq writes as text with no index and as BGZF with its .tbi. The sites-only VCFs reach the writer, where a record with genotypes never does, and the genotyped one is that failure. No --reference: the corpus's other dictionary only refuses, and the startup's refusal is the other Spark tools' to measure.
 
@@ -1885,7 +1885,7 @@ Suites: `spark-walkers`.
 
 Inputs: `reads.bai`, `reads.bam`, `reads2.bai`, `reads2.bam`.
 
-Held out: `--chart`, `--output-shard-tmp-dir`.
+Held out: `--chart`.
 
 The Spark values every record walker here has. `--chart` needs an R the pinned container does not have, so it is measured nowhere.
 
@@ -1975,7 +1975,7 @@ Suites: `spark-walkers`.
 
 Inputs: `reads.bai`, `reads.bam`, `reads2.bai`, `reads2.bam`.
 
-Held out: `--output-map`, `--output-shard-tmp-dir`, `--remove-default-attributes-to-clear`.
+Held out: `--output-map`, `--remove-default-attributes-to-clear`.
 
 SortSamSpark's values and writer. `cram` is left out of the file format because Disq's CRAM writer is not ported, and `--output-map` because a row cannot carry both it and `--output`; the map is measured by the `revert-sam-map` runs of the spark-walkers golden. `--remove-default-attributes-to-clear` always fails, so it would take every row it sits on; the `revert-sam-defaults` run measures it.
 
@@ -2085,7 +2085,7 @@ Suites: `spark-walkers`.
 
 Inputs: `reads.bai`, `reads.bam`, `reads.vcf`, `reads2.bai`, `reads2.bam`.
 
-Held out: `--output-shard-tmp-dir`.
+Held out: none.
 
 PrintReadsSpark's values: SortSamSpark is its writer asked to sort to the header, so the same inputs and Spark arguments measure the sort, both orders coming from the enum itself.
 
@@ -2161,9 +2161,9 @@ svd.bam is queryname-sorted assembled contigs over svd_ref.fasta (chr1, chr2 and
 
 Suites: `sv-evidence`, `sv-partitions`.
 
-Inputs: `svbp_cnv.vcf`, `svbp_cross.txt`, `svbp_external.bed`, `svbp_gaps.txt`, `svbp_kill-wrong-length.txt`, `svbp_kill.txt`, `svbp_other.bam`, `svbp_reads.bam`, `svbp_shallow.bam`, `svbp_sv.fasta`, `svbp_sv.fasta.img`.
+Inputs: `reads.bai`, `svbp_cnv.vcf`, `svbp_cross.txt`, `svbp_external.bed`, `svbp_gaps.txt`, `svbp_kill-wrong-length.txt`, `svbp_kill.txt`, `svbp_other.bam`, `svbp_reads.bam`, `svbp_shallow.bam`, `svbp_sv.fasta`, `svbp_sv.fasta.img`.
 
-Held out: `--output-shard-tmp-dir`, `--read-index`.
+Held out: none.
 
 Evidence directories and the interval file stay off: Hadoop leaves its checksums beside the one and the other prints a duration. The dump reads both. The command line records the date. The same donor genome, with the discovery stage's reference and thresholds.
 
@@ -2171,9 +2171,9 @@ Evidence directories and the interval file stay off: Hadoop leaves its checksums
 
 Suites: `spark-walkers`.
 
-Inputs: `sv_alt_tigs.txt`, `sv_assembly.bam`, `sv_assembly_no_breakend.bam`, `sv_cnv.vcf`, `sv_contigs.fasta`, `sv_truth.vcf`.
+Inputs: `reads.bai`, `sv_alt_tigs.txt`, `sv_assembly.bam`, `sv_assembly_no_breakend.bam`, `sv_cnv.vcf`, `sv_contigs.fasta`, `sv_truth.vcf`.
 
-Held out: `--output-shard-tmp-dir`, `--read-index`.
+Held out: none.
 
 The rich set of contigs, and one without breakends for --cnv-calls: a CNV file stops on a breakend, whose end is negative, so that pair is forbidden and is a row of the spark-walkers golden. --use-jdk-deflater is held true so --write-sam replays on a host without ISA-L, and --add-output-vcf-command-line false because its line stamps the clock.
 
