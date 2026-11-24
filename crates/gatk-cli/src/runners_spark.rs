@@ -3038,7 +3038,9 @@ pub fn collect_allelic_counts_spark(parser: &Parser) -> Outcome {
                     },
                     &|_| true,
                 )
-                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+                // A malformed read (a leading deletion, once WellformedReadFilter is disabled)
+                // fails the task that piles it up, so Spark reports the task, not a user error.
+                .map_err(|error| pathseq_task_failure(format!("{error:?}")))?,
             );
         }
     }
