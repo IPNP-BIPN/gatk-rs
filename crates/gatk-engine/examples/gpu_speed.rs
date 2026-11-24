@@ -115,5 +115,6 @@ fn main() {
             one_s / dev_s,
             many_s / dev_s,
         );
+        assert!(same, "the device's bits are not the CPU path's");
     }
 }
