@@ -18,8 +18,11 @@ the guard refuses the constructs that make reordering possible before a suite ha
 |---|---|---|
 | `mul_add` | Rust source | one rounding where the reference rounds twice |
 | `fadd_fast` and family, `algebraic_*`, `core_intrinsics` | Rust source | they license reassociation |
-| `std::simd`, `std::arch` | Rust source | a vector reduction is a different summation tree |
-| `rustflags`, `RUSTFLAGS`, `target-cpu`, `llvm-args`, `[profile]`, `CARGO_PROFILE_*` | `.cargo/config*`, every `Cargo.toml`, the workflows | the goldens were measured with the default release profile, and LLVM already folded `powf` of a constant differently between a debug and a release test run once |
+| `std::simd` | Rust source | a vector reduction is a different summation tree |
+| `std::arch`, `target_feature`, `is_*_feature_detected` | Rust source, outside the files `tools/audit/simd_kernels.json` declares | explicit SIMD is admitted only lane-wise, under classification (below) |
+| fused, horizontal and approximate intrinsics (`fmadd`, `vfma`, `hadd`, `_reduce_`, `vaddv`, `_rcp`, ...) and enabling `fma` | the declared SIMD files | each rounds once, sums across lanes or approximates |
+| `#[global_allocator]` | Rust source, outside `gatk-cli/src/main.rs` | admitted only in the shipped binary (below) |
+| `rustflags`, `RUSTFLAGS`, `target-cpu`, `llvm-args`, `CARGO_PROFILE_*`, any `[profile]` but the one below | `.cargo/config*`, every `Cargo.toml`, the workflows | LLVM already folded `powf` of a constant differently between a debug and a release test run once, so a profile is admitted only by name and key, and only once every suite runs on it |
 | `-ffast-math`, `-Ofast`, `-ffp-contract=fast` | `build.rs` | a C dependency compiled with fast-math reorders too |
 | a new host transcendental (`exp`, `ln`, `log10`, `powf`, `powi`, ...) | Rust source, per file | the platform libm is not the JVM's |
 
@@ -32,6 +35,50 @@ gain one unless `--record` rewrites the count in the same change, where a review
 tree and fails unless every one is reported, and fails if the clean tree is not clean. CI runs it
 next to the check, so the guard is verified in both directions on every PR, as the provenance
 guard was (#82).
+
+## What is admitted under classification (the S.2 amendment, W12)
+
+The rule above refused every profile, every allocator and every intrinsic. The user's call for
+extreme performance amended it: three things are admitted, each by name, each with the argument
+for why it cannot move a byte and the suite that would catch it if the argument were wrong. The
+guard enforces the names; the arguments are here.
+
+**One profile, `[profile.dist]`** in the workspace `Cargo.toml`, exactly `inherits = "release"`,
+`lto = "fat"`, `codegen-units = 1`; any other table or key is refused. Neither setting gives LLVM
+a licence it does not already have: Rust emits no fast-math flags and never contracts
+`a * b + c`, so inlining across crates and allocating registers over one unit cannot reorder,
+reassociate or fuse an operation. What LTO does widen is constant folding: a host transcendental
+(`powf`, `ln_1p`, ... , the 155 ratcheted call sites) whose argument becomes a constant after
+cross-crate inlining may be folded at compile time with the build host's libm instead of called at
+run time. That is the failure mode recorded above for debug against release, and the reason the
+port already hides its constant bases behind `std::hint::black_box` (`pair_hmm::jacobian_entry`).
+The proof is therefore not the argument but the suites run on the `dist` binary: every job that
+runs the port against the reference (the covering arrays, thread independence, `Speed`,
+`Speed at scale`) builds it with `--profile dist`, so a folded constant that moves a byte fails the
+array that reaches it. `release` stays the default profile, because the 391 test binaries would
+each pay a fat link, and the in-process suites keep running on it: both code generations are held
+to the same goldens.
+
+**A global allocator, in the shipped binary only** (`crates/gatk-cli/src/main.rs`). An allocator
+decides addresses and nothing else. An address reaches an output only where the code hashes,
+orders or prints a pointer; address-space layout randomisation already moves every address on
+every run, so such an output would already fail the suites run to run, and the one known case
+(`BwaMemIndexImageCreator`, [pointers-that-reach-the-output.md](../pointers-that-reach-the-output.md))
+is masked by layout. What a new allocator can change that ASLR cannot is the RELATIVE order of two
+allocations; that is checked by the `determinism` job and by every end-to-end test, which spawn the
+binary and therefore run its allocator.
+
+**`std::arch`, in the files `tools/audit/simd_kernels.json` declares**, the way
+`gpu_kernels.json` declares device kernels: each entry says what the code does and names the test
+that holds every one of its paths, each forced in turn, to the scalar function. The only admitted
+shape is lane-wise: one independent problem per lane, each lane doing the scalar operations in the
+scalar order. A lane-wise IEEE 754 multiply or add is the scalar multiply or add, bit for bit, so
+such a kernel is identical by construction, whatever width the host dispatches; that is the
+eligibility rule of `docs/gpu/eligibility.md` applied to the CPU. Inside a declared file the guard
+still refuses fused multiply-adds, horizontal operations (a reduction across lanes sums in its own
+tree), approximate reciprocals and enabling the `fma` feature. `target-cpu` stays refused: a
+declared kernel dispatches at run time, so one binary runs everywhere and every path it can take
+is tested.
 
 ## What the suites caught, and what they did not
 

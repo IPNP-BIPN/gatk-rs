@@ -56,6 +56,66 @@ now STATUS.md's cost column; the baseline stays in `baseline.json`):
 both directions, which is what an unchanged path does. The other 131 tools moved a median 7% cold
 and 10% steady, at most 45%, the same spread two runs of one commit showed in the baseline.
 
+## 2. The shipped binary's profile, `dist` (W12, P0)
+
+**Profile.** Not one tool: the whole binary. The default `release` profile compiles each crate in
+sixteen units and stops inlining at crate boundaries, so a hot call from `gatk-tools` into
+`gatk-engine`, `htsjdk-*` or `jmath` is a real call. `gatk-tools` alone is 488,000 lines in one crate.
+
+**The optimisation.** `[profile.dist]`: `inherits = "release"`, `lto = "fat"`, `codegen-units = 1`.
+Every job that runs the port against the reference builds with it; `release` stays the test
+profile.
+
+**Why it cannot move a byte.** `byte-neutrality.md`, "What is admitted under classification": no
+fast-math flag exists to be propagated, and Rust never contracts, so wider inlining changes which
+calls are made, not which operations. The one way it could move a byte, a host transcendental
+folded at compile time once its argument becomes a constant across crates, is exactly what the
+arrays check, because they run the `dist` binary.
+
+**The suites that prove it.** Every covering array, `thread_independence.py` and the end-to-end
+`Speed` rows, all on `target/dist/gatk`; the in-process suites unchanged on `release`.
+
+**Result.** Section "P0 measured" below.
+
+## 3. A global allocator (W12, P0)
+
+**Profile.** Every streaming tool allocates per record (a decoded BAM record, a VCF line's
+fields); glibc's malloc serialises its arenas under threads and keeps freed pages per arena.
+
+**The optimisation.** `mimalloc` as `#[global_allocator]` in `crates/gatk-cli/src/main.rs` only.
+
+**Why it cannot move a byte.** An allocator chooses addresses, and an address reaches no output
+the suites check (ASLR already moves every address on every run; the one known case is masked by
+layout, `pointers-that-reach-the-output.md`). The relative order of allocations is what is new,
+and the `determinism` job and every end-to-end test run the binary, so its allocator, under a
+second environment.
+
+**The suites that prove it.** Every end-to-end test and covering array, and `determinism`. Kept only
+if peak RSS does not rise against glibc on any measured tool, since the gate forbids trading RSS
+for CPU.
+
+## 4. PairHMM across pairs, dispatched at run time (W12, P3)
+
+**Profile.** HaplotypeCaller and Mutect2 spend most of their compute in
+`pair_hmm::reads_likelihoods_given_haplotype_log10`, which already computes four reads side by
+side against one haplotype. Without `target-cpu` (refused), x86-64 compiles those four lanes to
+SSE2, two per register; GKL, which GATK calls, uses AVX-512 or AVX2.
+
+**The optimisation.** The same body, generic over the lane count, compiled three times: portable
+(four lanes, SSE2 or NEON), `#[target_feature(enable = "avx2")]` (four lanes, one 256-bit register),
+`#[target_feature(enable = "avx512f")]` (eight lanes, one 512-bit register), chosen once by
+`is_x86_feature_detected!`.
+
+**Why it cannot move a byte.** One read per lane, each lane doing the single pair's multiplies and
+adds in `LoglessPairHMM`'s order; a lane-wise IEEE 754 multiply or add is the scalar one, bit for
+bit, and nothing crosses lanes (the final sum stays scalar, per read, in the reference's order).
+`fma` is not enabled and the guard refuses it in this file. Identity holds whether or not LLVM
+vectorises the body, so it does not rest on the autovectoriser.
+
+**The suites that prove it.** `reads_side_by_side_give_each_reads_own_bits` forces every kernel
+the host has against `read_likelihood_given_haplotype_log10`, which `pair_hmm_port` holds to the
+reference's transcription; then every HaplotypeCaller and Mutect2 suite and array.
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are
