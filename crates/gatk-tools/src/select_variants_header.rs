@@ -80,7 +80,34 @@ fn is_compound(line: &HeaderLine, key: &str, id: &str) -> bool {
 }
 
 /// `createVCFHeaderLineList`, then `new VCFHeader(lines, samples)`.
+/// `##ALT`, `##META` and `##SAMPLE` as htsjdk's codec reads them: ID-keyed `VCFSimpleHeaderLine`s,
+/// so that a merge keeps one per ID rather than one per key. Measured on the integration tests'
+/// hgdb_sv_multi_sample_mini.vcf, whose twelve `##ALT` lines came out as one.
+/// shortcut: htsjdk-rs's reader keeps these lines unstructured; fix `parse_meta_line` there and
+/// drop this once gatk-rs pins that fix.
+fn structure_simple_lines(header: &VcfHeader) -> VcfHeader {
+    let mut header = header.clone();
+    for line in &mut header.lines {
+        let HeaderLine::Unstructured { key, value } = line else {
+            continue;
+        };
+        if !matches!(key.as_str(), "ALT" | "META" | "SAMPLE") {
+            continue;
+        }
+        if let Ok(fields) = htsjdk_vcf::header_parse::parse_structured_value(value, None, &[]) {
+            if fields.iter().any(|(name, _)| name == "ID") {
+                *line = HeaderLine::Structured {
+                    key: key.clone(),
+                    fields,
+                };
+            }
+        }
+    }
+    header
+}
+
 pub fn output_header(input: &VcfHeader, arguments: &HeaderArguments) -> VcfHeader {
+    let input = &structure_simple_lines(input);
     // One source, which is what `Collections.singletonMap` gives `smartMergeHeaders`. The merge
     // over a single header is not the identity: it is what repairs a line whose declaration
     // disagrees with the standard one for its id.

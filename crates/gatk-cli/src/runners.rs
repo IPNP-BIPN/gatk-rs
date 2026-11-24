@@ -1278,34 +1278,36 @@ fn variant_walker_startup_over(
 /// it is block compressed.
 fn open_feature_input(input: &str) -> Result<(gatk_tools::feature_codec::Codec, String), Thrown> {
     let input = input.to_string();
-    // `FeatureInput` refuses a directory before any codec is asked, naming it by its URI, which
-    // ends in a slash.
-    if std::path::Path::new(&input).is_dir() {
+    // `IOUtils.assertFileIsReadable` runs before the codec is chosen. A directory is named by its
+    // URI, which ends in a slash.
+    let unreadable = |why: &str| {
         let uri = java_absolute_path(&input);
-        let slash = if uri.ends_with('/') { "" } else { "/" };
-        return Err(Thrown {
-            failure: Failure::User,
-            exception:
-                "org.broadinstitute.hellbender.exceptions.UserException$CouldNotReadInputFile",
-            message: Some(format!(
-                "Couldn't read file file://{uri}{slash}. Error was: It isn't a regular file"
-            )),
-        });
-    }
-    let codec = gatk_tools::feature_codec::codec_for(&input).ok_or_else(|| {
-        Thrown::user(
-            index_feature_file::Refusal::NoSuitableCodecs {
-                path: input.clone(),
-            }
-            .message(),
-        )
-    })?;
-    let bytes = std::fs::read(&input).map_err(|_| {
+        let slash = if std::path::Path::new(&input).is_dir() && !uri.ends_with('/') {
+            "/"
+        } else {
+            ""
+        };
         Thrown::user(format!(
-            "Couldn't read file file://{}. Error was: It doesn't exist.",
-            java_absolute_path(&input)
+            "Couldn't read file file://{uri}{slash}. Error was: {why}"
         ))
-    })?;
+    };
+    match std::fs::metadata(&input) {
+        Err(_) => return Err(unreadable("It doesn't exist.")),
+        Ok(metadata) if !metadata.is_file() => return Err(unreadable("It isn't a regular file")),
+        Ok(_) => {}
+    }
+    let bytes = std::fs::read(&input).map_err(|_| unreadable("It doesn't exist."))?;
+    // Codec discovery reads the file's first bytes, so an empty file has no codec either.
+    let codec = gatk_tools::feature_codec::codec_for(&input)
+        .filter(|_| !bytes.is_empty())
+        .ok_or_else(|| {
+            Thrown::user(
+                index_feature_file::Refusal::NoSuitableCodecs {
+                    path: input.clone(),
+                }
+                .message(),
+            )
+        })?;
     // A block compressed feature file is read through its own decompression, and its index is a
     // `.tbi` rather than a `.idx`; neither changes what the traversal counts.
     let text = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
@@ -12736,7 +12738,7 @@ pub fn methylation_type_caller(parser: &Parser) -> Outcome {
     } else {
         None
     };
-    write_variant_output_indexed_by(parser, &output, &text, dictionary)?;
+    write_variant_output_indexed_by(parser, &output, &text, dictionary, true)?;
     Ok(None)
 }
 
@@ -13888,7 +13890,12 @@ pub fn variants_to_table(parser: &Parser) -> Outcome {
     }
     out.push('\n');
 
-    let all = vcf_records(&text, &samples_in_file_order(&text), &declared);
+    // The genotypes in the sorted order the columns are written in: the table reads sample `i`
+    // by NAME, so a file whose columns are not sorted still lines each value up with its column.
+    let in_file = samples_in_file_order(&text);
+    let mut sorted: Vec<usize> = (0..in_file.len()).collect();
+    sorted.sort_by(|a, b| in_file[*a].cmp(&in_file[*b]));
+    let all = vcf_records(&text, &sorted, &declared);
     // `-L` is the traversal and not a filter the tool applies: the driving variants are queried by
     // interval, which is why an input with no random access is refused before a record is read.
     // Measured on rows 0, 4 and 12 of this tool's array, where the reference emitted the ONE record
@@ -13944,7 +13951,20 @@ pub fn variants_to_table(parser: &Parser) -> Outcome {
             Thrown::user(format!(
                 "Missing field {} in vc Unknown at {}",
                 missing.field,
-                variant_context_to_string(record, raw)
+                variant_context_to_string(
+                    record,
+                    // A genotype field's refusal comes after the genotypes were DECODED, and a
+                    // decoded context prints its genotypes rather than the file's text.
+                    &if table_arguments.fields.contains(&missing.field)
+                        || table_arguments
+                            .allele_specific_fields
+                            .contains(&missing.field)
+                    {
+                        raw.clone()
+                    } else {
+                        decoded_genotypes_to_string(record, &samples)
+                    }
+                )
             ))
         })?;
         for row in rows {
@@ -13972,7 +13992,14 @@ pub fn variants_to_table(parser: &Parser) -> Outcome {
     }
 
     // `-O` is optional and a null one is `System.out`, which is the same shape `CheckPileup` has.
-    write_report(&argument(parser, "output"), &out)?;
+    // An unwritable one is `CouldNotCreateOutputFile` whose message is the path alone, as
+    // CountVariants' is.
+    write_report(&argument(parser, "output"), &out).map_err(|_| Thrown {
+        failure: Failure::User,
+        exception:
+            "org.broadinstitute.hellbender.exceptions.UserException$CouldNotCreateOutputFile",
+        message: argument(parser, "output"),
+    })?;
     Ok(None)
 }
 
@@ -14028,7 +14055,9 @@ fn samples_in_file_order(text: &str) -> Vec<String> {
     text.lines()
         .find(|line| line.starts_with("#CHROM"))
         .map(|line| {
-            line.split('\t')
+            // `String.split`, which drops the empty names a trailing tab leaves.
+            line.trim_end_matches('\t')
+                .split('\t')
                 .skip(9)
                 .map(|name| name.to_string())
                 .collect()
@@ -14047,7 +14076,7 @@ fn vcf_samples(text: &str) -> Vec<String> {
 /// that happens to hold a comma.
 fn vcf_records(
     text: &str,
-    samples: &[String],
+    columns: &[usize],
     declared: &VcfDeclarations,
 ) -> Vec<(gatk_tools::variants_to_table::Record, String)> {
     let value = |text: &str, key: &str| -> gatk_tools::variants_to_table::Value {
@@ -14068,8 +14097,15 @@ fn vcf_records(
                 .map(|column| {
                     column
                         .split(';')
-                        .filter_map(|entry| entry.split_once('='))
-                        .map(|(key, text)| (key.to_string(), value(text, key)))
+                        .filter(|entry| !entry.is_empty() && *entry != ".")
+                        // A key with no value is a flag, which the codec holds as `Boolean.TRUE`.
+                        .map(|entry| match entry.split_once('=') {
+                            Some((key, text)) => (key.to_string(), value(text, key)),
+                            None => (
+                                entry.to_string(),
+                                gatk_tools::variants_to_table::Value::One("true".to_string()),
+                            ),
+                        })
                         .collect()
                 })
                 .unwrap_or_default();
@@ -14077,7 +14113,8 @@ fn vcf_records(
                 .get(8)
                 .map(|f| f.split(':').collect())
                 .unwrap_or_default();
-            let genotypes = (0..samples.len())
+            let genotypes = columns
+                .iter()
                 .map(|index| {
                     field
                         .get(9 + index)
@@ -14086,8 +14123,27 @@ fn vcf_records(
                                 .split(':')
                                 .enumerate()
                                 .filter_map(|(at, text)| {
-                                    keys.get(at)
-                                        .map(|key| ((*key).to_string(), value(text, key)))
+                                    // A FORMAT value the codec does not decode stays the
+                                    // String the file wrote, so its `toString` is the text;
+                                    // AD and PL are int arrays.
+                                    keys.get(at).map(|key| {
+                                        let held = if matches!(*key, "AD" | "PL") {
+                                            value(text, key)
+                                        } else if *key == "GQ" && text != "." {
+                                            // The codec reads GQ as `(int) Math.round(double)`.
+                                            gatk_tools::variants_to_table::Value::One(
+                                                text.parse::<f64>().map_or_else(
+                                                    |_| text.to_string(),
+                                                    |gq| ((gq + 0.5).floor() as i64).to_string(),
+                                                ),
+                                            )
+                                        } else {
+                                            gatk_tools::variants_to_table::Value::One(
+                                                text.to_string(),
+                                            )
+                                        };
+                                        ((*key).to_string(), held)
+                                    })
                                 })
                                 .collect()
                         })
@@ -14103,7 +14159,11 @@ fn vcf_records(
                     start: field[1].parse().unwrap_or(0),
                     id: field[2].to_string(),
                     reference: field[3].to_string(),
-                    alternates: field[4].split(',').map(|alt| alt.to_string()).collect(),
+                    // `.` is no alternate at all, not an allele spelled `.`.
+                    alternates: match field[4] {
+                        "." => Vec::new(),
+                        alts => alts.split(',').map(|alt| alt.to_string()).collect(),
+                    },
                     qual: field[5].parse().ok(),
                     filters: match field[6] {
                         "." | "PASS" => Vec::new(),
@@ -14200,12 +14260,14 @@ fn variant_context_to_string(
         .join(", ");
     // `ParsingUtils.sortedString(getAttributes())`: a `TreeMap`'s `toString`, so `{}` when empty and
     // `{k=v, k=v}` sorted by key otherwise.
-    let mut attributes: Vec<String> = record
-        .info
+    // By KEY, so `refseq.name` precedes `refseq.name2` whatever follows it.
+    let mut sorted: Vec<&(String, gatk_tools::variants_to_table::Value)> =
+        record.info.iter().collect();
+    sorted.sort_by(|a, b| a.0.cmp(&b.0));
+    let attributes: Vec<String> = sorted
         .iter()
         .map(|(key, value)| format!("{key}={}", attribute_to_string(value)))
         .collect();
-    attributes.sort();
     let attributes = format!("{{{}}}", attributes.join(", "));
     format!(
         "[VC Unknown @ {position} Q{qual} of type={} alleles=[{alleles}] attr={attributes} GT={} filters={}",
@@ -14213,6 +14275,88 @@ fn variant_context_to_string(
         raw_genotypes,
         record.filters.join(",")
     )
+}
+
+/// `GenotypesContext.toString` once decoded: each `Genotype.toString` in sample-name order, which
+/// is the order the table's `samples` and the record's genotypes already have.
+fn decoded_genotypes_to_string(
+    record: &gatk_tools::variants_to_table::Record,
+    samples: &[String],
+) -> String {
+    use gatk_tools::variants_to_table::Value;
+    let text = |value: &Value| match value {
+        Value::One(one) => one.clone(),
+        Value::Many(many) => many.join(","),
+    };
+    let genotypes: Vec<String> = samples
+        .iter()
+        .zip(&record.genotypes)
+        .map(|(sample, fields)| {
+            let get = |key: &str| {
+                fields
+                    .iter()
+                    .find(|(name, value)| name == key && text(value) != ".")
+                    .map(|(_, value)| text(value))
+            };
+            // `getGenotypeString(false)`: the reference marked `*`, unphased calls sorted with the
+            // reference first and the rest by their bases.
+            let call = match get("GT") {
+                None => "NA".to_string(),
+                Some(gt) => {
+                    let phased = gt.contains('|');
+                    let mut alleles: Vec<(u8, String)> = gt
+                        .split(['/', '|'])
+                        .map(|allele| match allele.parse::<usize>() {
+                            Ok(0) => (0, format!("{}*", record.reference)),
+                            Ok(index) => (
+                                1,
+                                record
+                                    .alternates
+                                    .get(index - 1)
+                                    .cloned()
+                                    .unwrap_or_else(|| ".".to_string()),
+                            ),
+                            Err(_) => (1, ".".to_string()),
+                        })
+                        .collect();
+                    if !phased {
+                        alleles.sort();
+                    }
+                    let parts: Vec<String> =
+                        alleles.into_iter().map(|(_, allele)| allele).collect();
+                    parts.join(if phased { "|" } else { "/" })
+                }
+            };
+            let mut out = format!("[{sample} {call}");
+            for key in ["GQ", "DP", "AD", "PL"] {
+                if let Some(value) = get(key) {
+                    out.push_str(&format!(" {key} {value}"));
+                }
+            }
+            if let Some(filters) = get("FT").filter(|filters| filters != "PASS") {
+                out.push_str(&format!(" FT {filters}"));
+            }
+            let mut extended: Vec<(String, String)> = fields
+                .iter()
+                .filter(|(key, value)| {
+                    !matches!(key.as_str(), "GT" | "GQ" | "DP" | "AD" | "PL" | "FT")
+                        && text(value) != "."
+                })
+                .map(|(key, value)| (key.clone(), text(value)))
+                .collect();
+            extended.sort();
+            if !extended.is_empty() {
+                let pairs: Vec<String> = extended
+                    .iter()
+                    .map(|(key, value)| format!("{key}={value}"))
+                    .collect();
+                out.push_str(&format!(" {{{}}}", pairs.join(", ")));
+            }
+            out.push(']');
+            out
+        })
+        .collect();
+    format!("[{}]", genotypes.join(","))
 }
 
 /// An attribute's `toString`, which for a list is Java's `[a, b]` and not the comma join a column
@@ -16972,6 +17116,21 @@ pub fn select_variants(parser: &Parser) -> Outcome {
         message: Some(failure.error.message()),
     })?;
 
+    // `--fail-on-unsorted-genotype`: `ParsingUtils.isSorted` over the header's sample names.
+    if flag(parser, "fail-on-unsorted-genotype")
+        && file.header.samples.windows(2).any(|pair| pair[0] > pair[1])
+    {
+        return Err(Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException$ValidationFailure",
+            message: Some(
+                "Input file genotypes are unsorted and we are in strict genotype ordering \
+                 validation mode."
+                    .to_string(),
+            ),
+        });
+    }
+
     // `createSampleNameInclusionList(vcfHeaders)`, over the driving variants' own samples.
     let sample_arguments = gatk_tools::select_variants::SampleArguments {
         sample_names: arguments(parser, "sample-name"),
@@ -17139,7 +17298,7 @@ pub fn select_variants(parser: &Parser) -> Outcome {
 
         let subset = gatk_tools::select_variants::subset_record(
             &bridged.record,
-            &selection,
+            &tracks.subset_selection(&selection),
             &subset_arguments,
         )
         .map_err(|error| Thrown {
@@ -17199,12 +17358,29 @@ pub fn select_variants(parser: &Parser) -> Outcome {
         }
     }
 
-    let text = htsjdk_vcf::vcf_file::write_vcf(&header, &written).map_err(|error| Thrown {
-        failure: Failure::User,
-        exception: "org.broadinstitute.hellbender.exceptions.UserException",
-        message: Some(format!("{error:?}")),
-    })?;
-    write_variant_output(parser, &output, &text)?;
+    // `getBestAvailableSequenceDictionary`: the header's contigs (the reference's once -R has
+    // rewritten them), else the driving input's Tribble index, whose contigs have length zero;
+    // with neither there is no dictionary and so no index. Measured on the integration tests'
+    // vcfexample2.vcf (an .idx beside it, `DICT:1=0`) and vcf4.1.example.vcf (no .idx, no index).
+    let has_contigs = header
+        .lines
+        .iter()
+        .any(|line| matches!(line, htsjdk_vcf::header::HeaderLine::Contig { .. }));
+    let from_index: Option<Vec<(String, i32)>> = if has_contigs {
+        None
+    } else {
+        index_dictionary(&input).map(|dictionary| {
+            dictionary
+                .sequences
+                .iter()
+                .map(|sequence| (sequence.name.clone(), sequence.length))
+                .collect()
+        })
+    };
+    let has_dictionary = has_contigs || from_index.is_some();
+
+    let text = write_vcf_honouring_lenient(parser, &header, &written)?;
+    write_variant_output_indexed_by(parser, &output, &text, from_index, has_dictionary)?;
     Ok(None)
 }
 
@@ -17321,6 +17497,23 @@ struct SelectTracks {
 }
 
 impl SelectTracks {
+    /// The selection `subsetGenotypesBySampleNames` acts on. `isConcordant` calls `retainAll` on
+    /// `vc.getSampleNames()`, which is the key set of the header's SHARED sample-to-offset map, so
+    /// from the first record it reaches every record's sample names are the selected ones and
+    /// `subContextFromSamples` takes its fast path: the record is written unsubset.
+    fn subset_selection<'a>(
+        &self,
+        selection: &'a gatk_tools::select_variants::SampleSelection,
+    ) -> std::borrow::Cow<'a, gatk_tools::select_variants::SampleSelection> {
+        if self.concordance.is_some() && !selection.no_samples_specified {
+            let mut unsubset = selection.clone();
+            unsubset.no_samples_specified = true;
+            std::borrow::Cow::Owned(unsubset)
+        } else {
+            std::borrow::Cow::Borrowed(selection)
+        }
+    }
+
     fn keeps(
         &self,
         record: &gatk_tools::select_variants::Record,
@@ -17478,6 +17671,7 @@ fn select_variants_filters(
     Ok(gatk_tools::select_variants::FilterArguments {
         types_to_include: types(parser, "select-type-to-include")?,
         types_to_exclude: types(parser, "select-type-to-exclude")?,
+        ignore_non_ref_in_types: flag(parser, "ignore-non-ref-in-types"),
         allele_restriction: restriction,
         max_indel_size: number_or(parser, "max-indel-size", i32::MAX),
         min_indel_size: number_or(parser, "min-indel-size", 0),
@@ -17606,7 +17800,7 @@ fn display_date_time() -> String {
 /// and a new shard is opened only when a record arrives for it, so a run with no record writes
 /// shard zero alone. Every shard gets its own index and MD5.
 fn write_variant_output(parser: &Parser, output: &str, text: &str) -> Result<(), Thrown> {
-    write_variant_output_indexed_by(parser, output, text, None)
+    write_variant_output_indexed_by(parser, output, text, None, true)
 }
 
 /// [`write_variant_output`] with the dictionary an on-the-fly index records, where the tool's
@@ -17616,8 +17810,10 @@ fn write_variant_output_indexed_by(
     output: &str,
     text: &str,
     dictionary: Option<Vec<(String, i32)>>,
+    has_dictionary: bool,
 ) -> Result<(), Thrown> {
-    let index = flag(parser, "create-output-variant-index");
+    // `createVCFWriter` drops INDEX_ON_THE_FLY, with a warning, when no dictionary is available.
+    let index = has_dictionary && flag(parser, "create-output-variant-index");
     let md5 = flag(parser, "create-output-variant-md5");
     let per_shard = number_or(parser, "max-variants-per-shard", 0);
     if per_shard <= 0 {
