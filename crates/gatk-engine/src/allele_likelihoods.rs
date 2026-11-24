@@ -1,10 +1,13 @@
 //! The read side of `org.broadinstitute.hellbender.utils.genotyper.AlleleLikelihoods`
-//! (GATK 4.6.2.0): the matrix, the evidence counts, and the best-allele search that every
-//! likelihood-reading annotation goes through.
+//! (GATK 4.7.0.0; `AlleleLikelihoods.java` is unchanged since 4.6.2.0): the matrix, the evidence
+//! counts, and the best-allele search that every likelihood-reading annotation goes through.
 //!
 //! The matrix is `[sample][allele][evidence]`, and the two axes are the ones in
-//! [`crate::allele_list`]. What is ported here is what a consumer reads; the mutators
-//! (`marginalize`, `groupEvidence`, `addMissingAlleles`, the downsamplers) are their own slices.
+//! [`crate::allele_list`]. Besides what a consumer reads, the file holds the mutators the callers
+//! reach: `marginalize`, `groupEvidence` (for fragments only), `normalizeLikelihoods`,
+//! `filterPoorlyModeledEvidence`, `contaminationDownsampling`, `retainEvidence`, `addEvidence`
+//! and `addNonReferenceAllele`. `addMissingAlleles` is not ported in general, only the one call
+//! `addNonReferenceAllele` makes of it.
 //!
 //! # `secondBestIndex` starts at zero, and is not "the second allele"
 //!
@@ -17,26 +20,51 @@
 //! anything is second. The loop only ever moves `secondBestIndex` when a candidate beats the
 //! current best or the current second best, so a matrix with one allele ends with
 //! `secondBestIndex == bestAlleleIndex`, which the tail then turns into a second-best likelihood of
-//! negative infinity. A port that initialised it to "missing" would answer the same thing by
-//! accident here and differently as soon as the priority pass runs.
+//! negative infinity. The second-best **allele** is still read from index 0, so it is the best
+//! allele itself, not null: `allele_likelihoods.txt.gz` rows `best one-allele`,
+//! `best all-infinite` and `best one-infinite` all report `A*` as both. A port that initialised
+//! the index to "missing" would get the likelihood right here and the allele wrong.
 //!
 //! # Ties go to the lower index, and the comparison is strict
 //!
 //! `candidateLikelihood > bestLikelihood` never displaces an equal one, so among equal likelihoods
-//! the earliest allele wins. That is what makes the allele **order** observable in a result that
-//! looks order-independent.
+//! the earliest allele wins: row `best tie-between-alts` gives `C` over `G`, both at -1. That is
+//! what makes the allele **order** observable in a result that looks order-independent. Two limits
+//! on how far it reaches:
+//!
+//! - with the default priorities of `bestAllelesBreakingTies` a reference less than the
+//!   threshold below the best wins wherever it sits, so the index decides only among alleles of
+//!   equal priority;
+//! - an exact tie has a confidence of 0 and is never `isInformative`, so a count that keeps only
+//!   informative evidence skips the tied read rather than crediting it to the first allele. In
+//!   `crates/gatk-annotation/tests/data/depth_per_allele.txt.gz` the `triallelic` case has four
+//!   reads, the fourth tied between `C` and `G` (the `marginal` rows), and `ad triallelic` is
+//!   `1,1,1` with `dp` 3.
+//!
+//! A NaN is the exception to "ties only": it loses every comparison, so it stays best only at
+//! index 0 (row `best with-nan`, a NaN confidence). With the same two values the other way round
+//! the finite allele is best with an infinite confidence, which is informative.
 //!
 //! # `isInformative` and the tie-breaking threshold disagree once the log base changes
 //!
 //! ```java
-//! private double getInformativeThreshold() { return isNaturalLog ? NATURAL_LOG_INFORMATIVE_THRESHOLD : LOG_10_INFORMATIVE_THRESHOLD; }
-//! public boolean isInformative() { return confidence > LOG_10_INFORMATIVE_THRESHOLD; }
+//! private double getInformativeThreshold() {
+//!     return isNaturalLog ? NATURAL_LOG_INFORMATIVE_THRESHOLD : LOG_10_INFORMATIVE_THRESHOLD;
+//! }
+//! ```
+//!
+//! ```java
+//! public boolean isInformative() {
+//!     return confidence > LOG_10_INFORMATIVE_THRESHOLD;
+//! }
 //! ```
 //!
 //! The search converts its threshold to natural log when the matrix has been switched;
 //! `BestAllele.isInformative` does not, and keeps comparing against 0.2 whatever the base. After
 //! `switch_to_natural_log`, the two questions "was this tie broken by priority" and "is this call
-//! informative" are asked at two different thresholds. Both are transcribed as they are.
+//! informative" are asked at two different thresholds. Both are transcribed as they are. Row
+//! `natural switch` shows it: a read 0.1 apart in log10 is not informative, and the same read
+//! after the switch (0.2303 apart) is.
 //!
 //! # `confidence` guards the infinite case rather than the equal case
 //!
@@ -44,8 +72,33 @@
 //! confidence = likelihood == secondBestLikelihood ? 0 : likelihood - secondBestLikelihood;
 //! ```
 //!
-//! The guard reads as "equal likelihoods mean no confidence", and its load-bearing use is the pair
-//! of negative infinities that a one-allele matrix produces, where the subtraction would be `NaN`.
+//! The guard reads as "equal likelihoods mean no confidence", and its load-bearing use is a pair
+//! of negative infinities, where the subtraction would be `NaN`. That pair comes from a best
+//! likelihood that is itself negative infinity (row `best all-infinite`, confidence 0) or from a
+//! matrix with no allele to offer (row `best no-alleles`). A one-allele matrix with a finite
+//! likelihood does not produce it: row `best one-allele` has a confidence of positive infinity.
+//!
+//! The confidence is signed and can be negative. The priority pass can make the best an allele
+//! with a lower likelihood than the second best (a reference 0.1 below an alternate), and the
+//! difference is then below zero.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<usize>` is "an index or nothing"; `None` stands where the reference writes
+//!   `MISSING_INDEX` (-1) or returns null, and the compiler makes every reader handle it;
+//! - `Result<T, LikelihoodsError>` is "a `T` or one of the refusals below", how this codebase
+//!   models a throw. `?` after a call returns its error to the caller at once, like an uncaught
+//!   exception at that one call site;
+//! - `AlleleLikelihoods<E, A: AlleleType = Allele>` is the generic class: `E` is the evidence type,
+//!   `A` the allele type, and `= Allele` is a default used when a caller names only `E`;
+//! - an `impl AlleleLikelihoods<BamRecord, A>` block (below) adds methods that exist only for that
+//!   instantiation. Java has no counterpart; there `groupEvidence` is generic over a function;
+//! - `&self` borrows the matrix read-only and `&mut self` borrows it writably; `&[E]` is a
+//!   read-only view of a list that the caller keeps;
+//! - `impl Fn(&E) -> bool` is a parameter that accepts any closure of that shape, Java's
+//!   `Predicate<EVIDENCE>`; `|x| ...` writes a closure, Java's `x -> ...`;
+//! - `let Some(x) = y else { ... }` unwraps an `Option` or takes the exit in the braces;
+//! - a body's last expression, without a semicolon, is its return value.
 
 use crate::allele_list::{AlleleList, AlleleType, SampleList};
 use htsjdk_vcf::allele::Allele;
@@ -75,6 +128,8 @@ pub fn natural_log_informative_threshold() -> f64 {
 #[derive(Debug, Clone, PartialEq)]
 pub struct BestAllele<A: AlleleType = Allele> {
     pub sample: String,
+    /// Where the reference keeps the evidence object itself (`evidence`), this keeps its index in
+    /// the sample's evidence list; the caller reads the object back with `sample_evidence`.
     pub evidence_index: usize,
     pub allele: Option<A>,
     pub second_best_allele: Option<A>,
@@ -85,19 +140,30 @@ pub struct BestAllele<A: AlleleType = Allele> {
 
 impl<A: AlleleType> BestAllele<A> {
     /// `isInformative()`: the confidence against the **log10** threshold, whatever base the matrix
-    /// is in. See the module note.
+    /// is in. See the module note. The comparison is on the signed confidence, so a negative one
+    /// (a priority win against a better likelihood) is never informative.
     pub fn is_informative(&self) -> bool {
         self.confidence > LOG_10_INFORMATIVE_THRESHOLD
     }
 }
 
-/// What the constructor refuses.
+/// What the constructor and the mutators refuse.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LikelihoodsError {
-    /// A sample in the evidence map that the sample list does not hold. The reference reaches an
-    /// `IllegalArgumentException` through `Utils.nonNull` on the lookup.
+    /// The catch-all for a structural refusal that has no variant of its own, raised in this file
+    /// only and always with an empty name: per-sample lists whose count is not the sample count
+    /// (`new`), an old allele the matrix does not hold (`marginalize`, the reference's
+    /// `IllegalArgumentException("missing old allele ...")`), and a fragment that cannot be built
+    /// (`group_by_fragment_with`).
+    ///
+    /// The first has no counterpart in the reference constructor, which looks each listed sample
+    /// up in its map and never throws on the result: a key the sample list lacks is never read,
+    /// and a listed sample the map lacks gets an empty list, from `setupIndexes`:
+    /// `sampleEvidences == null ? new ArrayList<>() : new ArrayList<>(sampleEvidences)`.
     UnknownSample(String),
-    /// A likelihood row whose length is not the sample's evidence count.
+    /// A sample whose likelihoods do not have the matrix's shape. `allele` is the allele index of a
+    /// row whose length is not the sample's evidence count, or, when the sample has the wrong
+    /// number of rows, that number of rows.
     WrongRowLength { sample: String, allele: usize },
     /// `switchToNaturalLog` called twice.
     AlreadyNaturalLog,
@@ -145,8 +211,16 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
     /// The public constructor, with the likelihood values supplied rather than left at zero.
     ///
     /// `evidence_by_sample` and `values` are given per sample **index**, not per name: the
-    /// reference's map is immediately turned into index order by `setupIndexes`, and a caller that
-    /// passed a name the sample list does not hold gets a null there.
+    /// reference's map is immediately turned into index order by `setupIndexes`, which reads only
+    /// the names the sample list holds and gives a listed sample missing from the map an empty
+    /// list. A caller here passes that empty list itself; a list of the wrong length is refused
+    /// (see [`LikelihoodsError::UnknownSample`]).
+    ///
+    /// The argument order is the public constructor's, samples before alleles; the reference's
+    /// private constructor and `createAlleleLikelihoods` take alleles first. `values` is
+    /// `[sample][allele][evidence]`, the reference's `valuesBySampleIndex`, while
+    /// `evidence_by_sample` has no allele axis. The new matrix is flagged as not natural log, with
+    /// no filtered evidence and a filtered haplotype count of zero, as the reference's starts.
     pub fn new(
         samples: SampleList,
         alleles: AlleleList<A>,
@@ -158,6 +232,8 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
         if evidence_by_sample.len() != sample_count || values.len() != sample_count {
             return Err(LikelihoodsError::UnknownSample(String::new()));
         }
+        // `.iter().enumerate()` walks a list as `(index, element)` pairs, Java's indexed `for`
+        // with the element fetched for you.
         for (index, sample_values) in values.iter().enumerate() {
             let evidence_count = evidence_by_sample[index].len();
             if sample_values.len() != allele_count {
@@ -207,12 +283,30 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
 
     /// `retainEvidence(predicate)`: every sample keeps, in order, the evidence the predicate
     /// accepts, with its likelihoods; the rest is dropped, not filtered.
+    ///
+    /// Unlike the reference, this does **not** also narrow the filtered evidence:
+    ///
+    /// ```java
+    /// final List<EVIDENCE> sampleFiltered = filteredEvidenceBySampleIndex.get(s).stream()
+    ///         .filter(predicate).collect(Collectors.toList());
+    /// ```
+    ///
+    /// In the reference that list is shared by every matrix `marginalize` makes from one source,
+    /// so narrowing it for one event narrows it for the next. `hc_genotyping` in `gatk-tools`
+    /// keeps its own copy of the list and applies each event's predicate to it, which is where
+    /// that sharing is reproduced.
     pub fn retain_evidence(&mut self, keep: impl Fn(&E) -> bool) {
+        // `.iter_mut().zip(..)` walks the evidence lists and the likelihood tables side by side,
+        // one writable pair per sample.
         for (evidence, sample_values) in self
             .evidence_by_sample
             .iter_mut()
             .zip(self.values.iter_mut())
         {
+            // The predicate is asked once per piece of evidence, and the answers are replayed in
+            // order to `retain` on the evidence and on every allele row, so all of them drop the
+            // same positions. `retain` visits elements in order, which is what makes the replay
+            // line up.
             let kept: Vec<bool> = evidence.iter().map(&keep).collect();
             let mut flags = kept.iter();
             evidence.retain(|_| *flags.next().expect("one flag per evidence"));
@@ -230,6 +324,10 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
 
     /// `addEvidence(evidenceBySample, initialLikelihood)` for one sample: each new piece of
     /// evidence not already present is appended with the initial likelihood for every allele.
+    ///
+    /// "Already present" includes an earlier copy in the same call, as in the reference's
+    /// `appendEvidence`, which reverts its index map when `put` finds a previous entry. The test
+    /// here is `==` on the evidence, where the reference's is its hash map's `equals`.
     pub fn add_evidence(&mut self, sample_index: usize, evidence: &[E], initial_likelihood: f64) {
         for item in evidence {
             if self.evidence_by_sample[sample_index].contains(item) {
@@ -243,30 +341,40 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
     }
 
     /// `indexOfReference()`: the first reference allele, `-1` (here `None`) without one.
+    ///
+    /// The value is the one cached at construction. The reference caches it with
+    /// `findReferenceAllele`, whose sequential stream ends in `findAny()`; this takes the first
+    /// match, as `AlleleList.indexOfReference` does by its loop.
     pub fn index_of_reference(&self) -> Option<usize> {
         self.reference_allele_index
     }
 
+    /// `numberOfSamples()`.
     pub fn number_of_samples(&self) -> usize {
         self.samples.number_of_samples()
     }
 
+    /// `numberOfAlleles()`.
     pub fn number_of_alleles(&self) -> usize {
         self.alleles.number_of_alleles()
     }
 
+    /// `indexOfSample(sample)`, `None` for the reference's -1.
     pub fn index_of_sample(&self, sample: &str) -> Option<usize> {
         self.samples.index_of_sample(sample)
     }
 
+    /// `indexOfAllele(allele)`, `None` for the reference's -1.
     pub fn index_of_allele(&self, allele: &A) -> Option<usize> {
         self.alleles.index_of_allele(allele)
     }
 
+    /// `getAllele(alleleIndex)`, `None` past the end where the reference throws.
     pub fn get_allele(&self, index: usize) -> Option<&A> {
         self.alleles.get_allele(index)
     }
 
+    /// `getSample(sampleIndex)`, `None` past the end where the reference throws.
     pub fn get_sample(&self, index: usize) -> Option<&String> {
         self.samples.get_sample(index)
     }
@@ -278,7 +386,8 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
             .map(|list| list.as_slice())
     }
 
-    /// `sampleEvidenceCount(sampleIndex)`.
+    /// `sampleEvidenceCount(sampleIndex)`. A bad index answers 0 here, where the reference's
+    /// `Utils.validIndex` throws.
     pub fn sample_evidence_count(&self, sample_index: usize) -> usize {
         self.evidence_by_sample
             .get(sample_index)
@@ -290,6 +399,7 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
         self.evidence_by_sample.iter().map(Vec::len).sum()
     }
 
+    /// `isNaturalLog()`.
     pub fn is_natural_log(&self) -> bool {
         self.is_natural_log
     }
@@ -303,20 +413,27 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
         }
     }
 
-    /// One likelihood.
+    /// One likelihood, `valuesBySampleIndex[s][a][e]`: the reference reaches it as
+    /// `sampleMatrix(s).get(a, e)`, so allele before evidence here too.
     pub fn value(&self, sample_index: usize, allele_index: usize, evidence_index: usize) -> f64 {
         self.values[sample_index][allele_index][evidence_index]
     }
 
-    /// The evidence `filterPoorlyModeledEvidence` removed from a sample, in removal order.
+    /// `filteredSampleEvidence(sampleIndex)`: the evidence `filterPoorlyModeledEvidence` removed
+    /// from a sample, in removal order. Only the matrix that ran the filter holds it here; see
+    /// [`Self::retain_evidence`] and [`Self::marginalize`] for where the reference shares it.
     pub fn filtered_evidence(&self, sample_index: usize) -> &[E] {
         &self.filtered_evidence[sample_index]
     }
 
-    /// `normalizeLikelihoods(maximumLikelihoodDifferenceCap, symmetricallyNormalizeAllelesToReference)`:
-    /// no likelihood of a piece of evidence may fall more than the cap below its best allele's.
-    /// The best allele may be the reference only when `symmetric`; negative infinity disables the
-    /// cap, and a matrix of fewer than two alleles is left alone.
+    /// `normalizeLikelihoods(maximumLikelihoodDifferenceCap,
+    /// symmetricallyNormalizeAllelesToReference)`: no likelihood of a piece of evidence may fall
+    /// more than the cap below its best allele's. The best allele may be the reference only when
+    /// `symmetric`; negative infinity disables the cap, and a matrix of fewer than two alleles is
+    /// left alone.
+    ///
+    /// The cap is applied to every allele, the reference included, even when the reference was
+    /// barred from being the best: `normalizeLikelihoodsPerEvidence` loops over all of them.
     pub fn normalize_likelihoods(
         &mut self,
         cap: f64,
@@ -342,7 +459,9 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
         Ok(())
     }
 
-    /// `maximumLikelihoodOverAllAlleles`.
+    /// `maximumLikelihoodOverAllAlleles`: a running maximum from negative infinity with a strict
+    /// `>`, as in the reference, so a NaN never wins and an all-NaN column answers negative
+    /// infinity rather than NaN.
     pub fn maximum_likelihood_over_all_alleles(
         &self,
         sample_index: usize,
@@ -360,7 +479,11 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
     /// `filterPoorlyModeledEvidence(log10MinTrueLikelihood)`: remove, sample by sample, the
     /// evidence whose best likelihood is under its threshold, and keep it aside. The threshold is
     /// asked of `(sample, evidence index, evidence)`, since what it reads (the read's HMM
-    /// qualities) is a transient attribute in the reference.
+    /// qualities) is a transient attribute in the reference. The reference's is a
+    /// `ToDoubleFunction<EVIDENCE>` of the evidence alone; `impl FnMut(..)` accepts a closure that
+    /// may update its own state between calls.
+    ///
+    /// The comparison is a strict `<`, so evidence exactly at its threshold stays.
     pub fn filter_poorly_modeled_evidence(
         &mut self,
         log10_min_true_likelihood: impl FnMut(usize, usize, &E) -> f64,
@@ -370,6 +493,13 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
 
     /// `filterPoorlyModeledEvidence` with `--debug-genotyper-output`, which prints each removed
     /// read by `name` and asks the threshold for it a second time.
+    ///
+    /// The second asking is the reference's: its debug line calls
+    /// `log10MinTrueLikelihood.applyAsDouble(sampleEvidence.get(idx))` again rather than reusing
+    /// the first answer, so a closure with state sees two calls per removed read when the debugger
+    /// is on. The doubles go through `java_double_to_string` because the reference concatenates
+    /// them with `+`. `&dyn Fn(&E) -> String` is a borrowed function object, Java's
+    /// `Function<EVIDENCE, String>`.
     pub fn filter_poorly_modeled_evidence_named(
         &mut self,
         mut log10_min_true_likelihood: impl FnMut(usize, usize, &E) -> f64,
@@ -386,6 +516,8 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
                 })
                 .collect();
             for &i in &remove {
+                // `Option::filter` keeps the `Some` only when the test holds, so this branch runs
+                // when a name function was given and the debugger is on.
                 if let Some(name) = name.filter(|_| crate::genotyper_debug::is_enabled()) {
                     let evidence = &self.evidence_by_sample[sample][i];
                     let maximum = self.maximum_likelihood_over_all_alleles(sample, i);
@@ -405,10 +537,16 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
         Ok(())
     }
 
-    /// `contaminationDownsampling(perSampleDownsamplingFraction)`: for each sample whose fraction is
-    /// above zero (and not NaN), all its evidence at one or more, otherwise what
+    /// `contaminationDownsampling(perSampleDownsamplingFraction)`: for each sample whose fraction
+    /// is above zero (and not NaN), all its evidence at one or more, otherwise what
     /// `selectAlleleBiasedEvidence` picks from its informative evidence grouped by best allele
     /// (reference allowed), in allele order.
+    ///
+    /// `fraction` stands for the map lookup `getOrDefault(samples.getSample(s), 0.0)`, so a caller
+    /// answers 0 for a sample it has no fraction for. The grouping searches without priorities,
+    /// as `evidenceByBestAlleleMap` does, so the reference allele gets no preference, and keeps
+    /// only informative evidence; its groups are in allele order because the reference fills a
+    /// `LinkedHashMap` in that order.
     pub fn contamination_downsampling(
         &mut self,
         fraction: impl Fn(&str) -> f64,
@@ -439,6 +577,8 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
                     &by_allele, f, random,
                 )?
             };
+            // `removeEvidence` maps the chosen evidence to indices and takes them
+            // `.sorted().distinct()`, which is what `remove_evidence_by_index` assumes.
             remove.sort_unstable();
             remove.dedup();
             self.remove_evidence_by_index(sample, &remove);
@@ -452,7 +592,11 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
         if remove.is_empty() {
             return;
         }
+        // `binary_search` is only correct on a sorted list, the same assumption the reference
+        // states for its `evidencesToRemove`.
         let keep = |i: &usize| remove.binary_search(i).is_err();
+        // `std::mem::take` moves the list out and leaves an empty one in its place, so the old
+        // list can be consumed while the field is rebuilt from it.
         let evidence = std::mem::take(&mut self.evidence_by_sample[sample_index]);
         self.evidence_by_sample[sample_index] = evidence
             .into_iter()
@@ -470,13 +614,15 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
         }
     }
 
-    /// `switchToNaturalLog()`, which refuses to run twice.
+    /// `switchToNaturalLog()`, which refuses to run twice: each value is multiplied by `LOG_10` in
+    /// place, and the flag that `informative_threshold` reads is set.
     pub fn switch_to_natural_log(&mut self) -> Result<(), LikelihoodsError> {
         if self.is_natural_log {
             return Err(LikelihoodsError::AlreadyNaturalLog);
         }
         for sample_values in &mut self.values {
             for row in sample_values.iter_mut() {
+                // `iter_mut` hands out writable references; `*value = ...` writes through one.
                 for value in row.iter_mut() {
                     *value = log10_to_log(*value);
                 }
@@ -488,9 +634,20 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
 
     /// `searchBestAllele(sampleIndex, evidenceIndex, canBeReference, priorities)`.
     ///
-    /// `priorities` is indexed by allele and is consulted only when the best and second best are
-    /// within the informative threshold of each other, which is the tie-breaking pass
-    /// `bestAllelesBreakingTies` exists for.
+    /// `priorities` is indexed by allele (`None` is the reference's null array) and is consulted
+    /// only when the best and second best are within the informative threshold of each other,
+    /// which is the tie-breaking pass `bestAllelesBreakingTies` exists for.
+    ///
+    /// The two threshold tests are not mirror images. The pass starts on
+    /// `bestLikelihood - secondBestLikelihood < getInformativeThreshold()` and skips a candidate on
+    /// `bestLikelihood - candidateLikelihood > getInformativeThreshold()`. So a pair exactly the
+    /// threshold apart does not start the pass, while inside a started pass a candidate exactly
+    /// the threshold below the best is still eligible. Both are kept.
+    ///
+    /// With `can_be_reference` false and the reference at index 0, the first pass starts at index
+    /// 1 while the second-best index stays 0, the barred reference. If no later allele displaces
+    /// it (two alleles, say), the tail reads the reference's likelihood as the second best. The
+    /// only caller passing false is `normalize_likelihoods`, which reads only `likelihood`.
     pub fn search_best_allele(
         &self,
         sample_index: usize,
@@ -546,6 +703,8 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
 
         if let Some(priorities) = priorities {
             if best_likelihood - second_best_likelihood < self.informative_threshold() {
+                // The window stays anchored on the first pass's best: `best_likelihood` is not
+                // updated when a priority moves `best_allele_index`, in the reference either.
                 let mut best_priority = priorities[best_allele_index];
                 let mut second_best_priority = priorities[second_best_index];
                 for a in 0..allele_count {
@@ -568,7 +727,8 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
                     }
                 }
                 // `bestPriority` and `secondBestPriority` are dead after the loop in the reference
-                // too: the likelihoods are re-read below from the indices.
+                // too: the likelihoods are re-read below from the indices. `let _ = ...` reads and
+                // discards them, which keeps the compiler from warning about a dead assignment.
                 let _ = (best_priority, second_best_priority);
             }
         }
@@ -590,6 +750,9 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
         )
     }
 
+    /// The private `BestAllele` constructor: an index of `None` (the reference's `MISSING_INDEX`)
+    /// gives a `None` allele, where the reference stores null, and the confidence is computed
+    /// here, from the two likelihoods it is handed.
     fn best_allele(
         &self,
         sample_index: usize,
@@ -606,6 +769,7 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
                 .cloned()
                 .unwrap_or_default(),
             evidence_index,
+            // `.and_then(..)` maps a `Some(index)` to the allele there and leaves `None` alone.
             allele: best_allele_index.and_then(|i| self.alleles.get_allele(i).cloned()),
             second_best_allele: second_best_allele_index
                 .and_then(|i| self.alleles.get_allele(i).cloned()),
@@ -622,6 +786,11 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
 
     /// `bestAllelesBreakingTies(tieBreakingPriority)` over every sample, in sample then evidence
     /// order.
+    ///
+    /// The reference takes a `Function<A, Double>` and evaluates it over the alleles in order; a
+    /// caller here passes those values already evaluated, one per allele, or `None` for the
+    /// no-argument form. `flat_map` concatenates the per-sample lists, as the reference's
+    /// `flatMap` does.
     pub fn best_alleles_breaking_ties(&self, priorities: Option<&[f64]>) -> Vec<BestAllele<A>> {
         (0..self.number_of_samples())
             .flat_map(|sample| self.best_alleles_breaking_ties_for_sample(sample, priorities))
@@ -632,24 +801,41 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
     /// the old ones it stands for.
     ///
     /// ```java
-    /// newSampleValues[newAllele][r] = oldAlleleSet.stream()
-    ///         .mapToDouble(oldA -> oldSampleValues[oldA][r]).max().orElse(NEGATIVE_INFINITY);
+    /// newSampleValues[newAllele][finalR] = oldAlleleSet.stream()
+    ///         .mapToDouble(oldA -> oldSampleValues[oldA][finalR])
+    ///         .max()
+    ///         .orElse(Double.NEGATIVE_INFINITY);
     /// ```
     ///
     /// A maximum, not a sum: marginalising two alleles a read supports equally leaves that
-    /// likelihood unchanged rather than doubling it.
+    /// likelihood unchanged rather than doubling it. The running maximum here starts at negative
+    /// infinity, which is also the reference's answer for a new allele with no old one.
     ///
-    /// The **order** of the new alleles is the caller's, and in the reference the caller is a
-    /// `Collectors.toMap` whose key set iterates in `HashMap` order. That order is observable,
-    /// because `searchBestAllele` breaks a tie by taking the first index, so which allele a tied
-    /// read is attributed to depends on `Allele.hashCode`. [`crate::java_hash::hash_map_order`]
-    /// reproduces it, and the caller passes the result here.
+    /// The **order** of the new alleles is the caller's. The reference takes a `Map` and uses its
+    /// `keySet()` order, so the order is whatever map the caller built: the annotations'
+    /// `Collectors.toMap` (`DepthPerAlleleBySample`) iterates in `HashMap` order over
+    /// `Allele.hashCode`, which [`crate::java_hash::hash_map_order`] reproduces, while
+    /// `createAlleleMapper` builds a `LinkedHashMap` in insertion order. Here `new_to_old` is an
+    /// ordered list of `(new allele, old alleles)` pairs standing in for that map, so the caller
+    /// states the order rather than inheriting it.
+    ///
+    /// That order decides which allele a tied read's `BestAllele` names, since `searchBestAllele`
+    /// keeps the first of equal likelihoods. For an exact tie it does not move an informative
+    /// count, since a tie has a confidence of 0; a NaN likelihood is different (see the module
+    /// note on ties).
     ///
     /// An old allele the map does not mention contributes to nothing, which the reference supports
     /// and calls "typically not the case".
     ///
+    /// The result carries the same evidence and the same log base as `self` (the reference's
+    /// `result.isNaturalLog = isNaturalLog`). It does **not** carry the filtered evidence: the
+    /// reference hands the new matrix its own `filteredEvidenceBySampleIndex` list, shared, and
+    /// here the new matrix starts with none. See [`Self::retain_evidence`] for the caller that
+    /// keeps the shared list itself.
+    ///
     /// The new alleles may be of another type than the old ones: `HaplotypeCaller` marginalizes a
-    /// matrix over haplotypes into one over the alleles each site genotypes.
+    /// matrix over haplotypes into one over the alleles each site genotypes. `<B: AlleleType>` is
+    /// that second type parameter, chosen by the caller.
     pub fn marginalize<B: AlleleType>(
         &self,
         new_to_old: &[(B, Vec<A>)],
@@ -694,15 +880,18 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
 
     /// `bestAllelesBreakingTies(sample, tieBreakingPriority)`.
     ///
-    /// `None` is the no-argument form, `tieBreakingPriority = a -> a.isReference() ? 1 : 0`: a tie
-    /// goes to the reference allele wherever it sits in the matrix. The reference never searches
-    /// with null priorities here, and taking the first maximum instead agrees only while the
-    /// reference is the first allele, which a haplotype matrix or a hash-ordered one need not be.
+    /// `None` is the no-argument form, `a -> a.isReference() ? 1.0 : 0`: a tie goes to the
+    /// reference allele wherever it sits in the matrix. The reference never searches with null
+    /// priorities here, and taking the first maximum instead agrees only while the reference is
+    /// the first allele, which a haplotype matrix or a hash-ordered one need not be.
     pub fn best_alleles_breaking_ties_for_sample(
         &self,
         sample_index: usize,
         priorities: Option<&[f64]>,
     ) -> Vec<BestAllele<A>> {
+        // Declared before the `match` and filled inside it, so the list lives to the end of the
+        // function and the borrow `&reference_first` taken in the `None` arm stays valid. A list
+        // created inside the arm would be freed when the arm ends.
         let reference_first: Vec<f64>;
         let priorities = match priorities {
             Some(given) => given,
@@ -726,16 +915,46 @@ impl<A: AlleleType> AlleleLikelihoods<htsjdk_bam::record::BamRecord, A> {
     /// `groupEvidence(GATKRead::getName, Fragment::createAndAvoidFailure)`, the only instantiation
     /// the annotations use.
     ///
-    /// The log likelihoods of a group are **summed**, not averaged, and the resulting evidence order
-    /// is a `HashMap`'s over the read names. Both are recorded in [`crate::fragment`].
+    /// The log likelihoods of a group are **summed**, not averaged, and the resulting evidence
+    /// order is a `HashMap`'s over the read names. Both are recorded in [`crate::fragment`].
+    ///
+    /// ```java
+    /// newLikelihoodValues[s][a][newEvidenceIndex] += oldSampleValues[a][oldEvidenceIndex];
+    /// ```
+    ///
+    /// Two consequences a reader would not guess:
+    ///
+    /// - the sum covers **every** read of the group, while the fragment built from it holds at
+    ///   most two (`createAndAvoidFailure` drops supplementary, secondary and duplicate records,
+    ///   then keeps the first two). In `crates/gatk-annotation/tests/data/fragment_counts.txt.gz`
+    ///   the `three-reads-one-name` case
+    ///   has three reads named `p` (the third supplementary, flag 0x841) at -1 for `A` and -10 for
+    ///   `C`: its `frag` row shows fragment `p` holding `p/65,p/129`, and its `grouped` row gives
+    ///   that fragment -3.0 and -30.0, the three-read sums;
+    /// - the per-read differences add up. With two alleles, mates that each favour one allele by
+    ///   0.15 give the fragment 0.3, which clears the 0.2 informative threshold that neither read
+    ///   clears alone; mates favouring opposite alleles cancel instead.
     pub fn group_by_fragment(
         &self,
     ) -> Result<AlleleLikelihoods<crate::fragment::Fragment, A>, LikelihoodsError> {
         self.group_by_fragment_with(false)
     }
 
-    /// `groupEvidence(independentMates ? read -> read : GATKRead::getName, ...)`: with independent
-    /// mates every read is a fragment of its own, in evidence order.
+    /// `groupEvidence(MTAC.independentMates ? read -> read : GATKRead::getName,
+    /// Fragment::createAndAvoidFailure)`, as `SomaticGenotypingEngine` calls it. Here, with
+    /// independent mates, every read is a fragment of its own, **in evidence order**.
+    ///
+    /// The reference does not keep that order. Its grouping is
+    /// `.collect(Collectors.groupingBy(groupingFunction)).values());`, a `HashMap`, and with
+    /// `read -> read` the key is the read itself, whose hash is `Objects.hashCode(samRecord)`
+    /// (`SAMRecordToGATKReadAdapter`), a hash over the record's fields. So the reference's
+    /// fragments come out in hash order over those records, and two records equal field for
+    /// field would share one group. This port does neither.
+    ///
+    /// Within a group the sum runs over the reads in sample order, from 0.0, as the reference's
+    /// `+=` into a fresh `double[]` does, so the floating-point sum is formed in the same order.
+    /// The new matrix keeps the log base and starts with no filtered evidence, as the reference's
+    /// does (it passes `null` for that list).
     pub fn group_by_fragment_with(
         &self,
         independent_mates: bool,
@@ -762,7 +981,8 @@ impl<A: AlleleType> AlleleLikelihoods<htsjdk_bam::record::BamRecord, A> {
                 let group_reads: Vec<htsjdk_bam::record::BamRecord> =
                     group.iter().map(|index| reads[*index].clone()).collect();
                 // `createAndAvoidFailure` never fails on a non-empty group, and a group produced by
-                // the grouping is never empty.
+                // the grouping is never empty. The `Err` arm exists because `match` must cover
+                // every case the type allows, not because it is reachable.
                 match crate::fragment::Fragment::create_and_avoid_failure(&group_reads) {
                     Ok(fragment) => fragments.push(fragment),
                     Err(_) => return Err(LikelihoodsError::UnknownSample(String::new())),
@@ -787,7 +1007,15 @@ impl<E: Clone + PartialEq> AlleleLikelihoods<E, Allele> {
     /// `addNonReferenceAllele(Allele.NON_REF_ALLELE)`: `<NON_REF>` appended as the last allele
     /// when it is missing, its row filled by [`Self::update_non_ref_allele_likelihoods`] over
     /// every allele. A matrix that already holds it is left alone.
+    ///
+    /// The reference gets there through `addMissingAlleles(Collections.singleton(nonRefAllele),
+    /// Double.NEGATIVE_INFINITY)` followed by `updateNonRefAlleleLikelihoods()`, which considers
+    /// `alleles`, the list that now includes `<NON_REF>`. This is that one call written out: the
+    /// new row starts at negative infinity, and the reference index cannot move because the
+    /// appended allele is not a reference.
     pub fn add_non_reference_allele(&mut self) {
+        // `.expect(..)` unwraps a success or stops the program with the message, an unchecked
+        // assertion; parsing this fixed literal cannot fail.
         let non_ref = Allele::from_str("<NON_REF>", false).expect("a symbolic allele");
         if self.alleles.index_of_allele(&non_ref).is_some() {
             return;
@@ -796,6 +1024,7 @@ impl<E: Clone + PartialEq> AlleleLikelihoods<E, Allele> {
         alleles.push(non_ref);
         self.alleles = AlleleList::new(&alleles);
         for sample in &mut self.values {
+            // The evidence count read off the first allele row, or 0 when there is none.
             let evidence = sample.first().map_or(0, Vec::len);
             sample.push(vec![f64::NEG_INFINITY; evidence]);
         }
@@ -808,6 +1037,14 @@ impl<E: Clone + PartialEq> AlleleLikelihoods<E, Allele> {
     /// concrete alleles' likelihoods strictly below the best one, among the alleles to consider.
     /// With none below the best, it is the best itself, or NaN when there are fewer than two
     /// concrete alleles.
+    ///
+    /// ```java
+    /// sampleValues[nonRefAlleleIndex][r] = !Double.isNaN(nonRefLikelihood) ? nonRefLikelihood
+    ///         : nonSymbolicAlleleCount <= 1 ? Double.NaN : bestAllele.likelihood;
+    /// ```
+    ///
+    /// The best is searched with the `<NON_REF>` row in place, as in the reference, and "concrete"
+    /// is every allele but `<NON_REF>` (`alleleCount - 1`), whatever else is symbolic.
     pub fn update_non_ref_allele_likelihoods(&mut self, to_consider: &[Allele]) {
         let non_ref = Allele::from_str("<NON_REF>", false).expect("a symbolic allele");
         let Some(non_ref_index) = self.alleles.index_of_allele(&non_ref) else {
