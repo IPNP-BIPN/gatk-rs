@@ -28,7 +28,7 @@ Blocker 1, per step (from the owner, 2026-11-24):
 | step | state | fix |
 |---|---|---|
 | MarkDuplicatesSpark | OOM at 14 GiB; refuses several partitions | #1473, #1490 |
-| MarkDuplicates (Picard) | not carried by gatk-rs (picard-rs has it; gatk-rs does not depend on picard-rs yet) | **no PR** |
+| MarkDuplicates (Picard) | not carried by gatk-rs | #1524 (on #1461) with picard-rs #484 (a `picard-markduplicates` crate gatk-rs pins): locally on chr20 30x, records and metrics identical, 114 s CPU and 2.55 GiB against GATK's 135 s and 4.20 GiB; one input only, barcodes/UMI/flow mode refused |
 | BaseRecalibrator | refuses `.vcf.gz` known sites; does not stream | #1472; #1515 streams and indexes known sites (on #1461), array 19/19 |
 | ApplyBQSR | OOM at 14 GiB: reads and inflates the whole BAM | #1514 streams it (on #1461): chr20 peak RSS 121 MB, every record identical, array 21/21 |
 | HaplotypeCaller, Mutect2 | OOM | #1467, #1474 (multicore) |
