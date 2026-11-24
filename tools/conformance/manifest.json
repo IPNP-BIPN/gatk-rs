@@ -6845,6 +6845,8 @@
     },
     {
       "id": "usage-text",
+      "java_props": ["-Duser.language=en", "-Duser.country=US", "-Dsamjdk.use_libdeflate=false", "-Xmx4g"],
+      "$java_props_why": "EstimateLibraryComplexity derives its MAX_RECORDS_IN_RAM default from Runtime.maxMemory(), so with the default heap the usage text moved with the runner (4448099 vs 4370179). The heap is pinned so the golden does not.",
       "status": "oracle-backed",
       "title": "what `gatk <Tool> --help` prints, for every tool `Main` can name",
       "harness": "tools/argument-conformance",
