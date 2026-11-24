@@ -4177,9 +4177,27 @@ public class MakeFixtures {
         funcotatorFixtures(dir);
         bwaIndexImage(dir);
         structuralVariantDiscovererFixtures(dir);
+        featureWalkerIndexes(dir);
         System.out.println("wrote " + dir);
         // GenomicsDBImport leaves threads behind that instanceMain, unlike main, does not exit past.
         System.exit(0);
+    }
+
+    /**
+     * Indexes beside the inputs of the feature walkers whose arrays vary `-L` and `-XL`: GATK
+     * refuses a bounded traversal over a feature file with no random access, so without one every
+     * interval row measured that refusal. Each tool keeps an unindexed value as well, so the
+     * refusal is still a row. Last, because `sv_truth.vcf` is written twice.
+     */
+    static void featureWalkerIndexes(final Path dir) throws Exception {
+        for (final String name : new String[] {"mito.vcf", "mc3.vcf", "m2.vcf", "rbc_truth.g.vcf",
+                "rbc_eval.g.vcf", "sv_eval.vcf", "sv_truth.vcf", "sv_calls.vcf",
+                "sv_cluster_input.vcf"}) {
+            htsjdk.tribble.index.IndexFactory.createDynamicIndex(
+                            dir.resolve(name), new htsjdk.variant.vcf.VCFCodec(),
+                            htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
+                    .write(dir.resolve(name + ".idx"));
+        }
     }
 
     /**
