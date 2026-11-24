@@ -6169,16 +6169,16 @@
         "ported: the claim excludes those records, and --annotation, --annotation-group,",
         "--annotations-to-exclude, --pedigree and --founder-id, which configure that engine alone, are held",
         "out. --positions-only is mutually exclusive with eight of the other tolerances, and",
-        "--allow-new-stars with --allow-extra-alleles: every row sets every argument, so both are held out,",
-        "--positions-only because it has the most partners. --input and --read-index carry no value: the",
-        "walker opens reads it never consults. --ignore-attribute carries the rank sum that differs and the",
-        "site DP that differs, so each value silences a different complaint.",
-        "--allow-old-rms-mapping-quality-annotation-data, --assembly-complexity-reference-mode and",
-        "--dirichlet-keep-prior-in-count belong to annotations: each is refused without its plugin, and every",
-        "row would set it. A run that finds nothing prints nothing, so every accepted row answers the same",
-        "and distinct_outputs is one by construction: what varies is WHICH complaint a rejected row reports.",
-        "The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags. --input is",
-        "reads.bam or unset and --read-index its index or unset, never an index without its BAM."
+        "--allow-new-stars with --allow-extra-alleles: each partner takes <unset>, and constraints keep the",
+        "pairs apart. --input and --read-index carry no value: the walker opens reads it never consults.",
+        "--ignore-attribute carries the rank sum that differs and the site DP that differs, so each value",
+        "silences a different complaint. --allow-old-rms-mapping-quality-annotation-data,",
+        "--assembly-complexity-reference-mode and --dirichlet-keep-prior-in-count belong to annotations: each",
+        "is refused without its plugin, and every row would set it. A run that finds nothing prints nothing,",
+        "so every accepted row answers the same and distinct_outputs is one by construction: what varies is",
+        "WHICH complaint a rejected row reports. The three read-filter arguments vary with their filters, as",
+        "for AddOriginalAlignmentTags. --input is reads.bam or unset and --read-index its index or unset,",
+        "never an index without its BAM."
       ],
       "$tagged": [
         "--variant"
@@ -6199,11 +6199,18 @@
         "<unset>",
         "/work/fixtures/reads.bai"
       ],
-      "--positions-only": [],
-      "--allow-new-stars": [],
+      "--positions-only": [
+        "<unset>",
+        "true"
+      ],
+      "--allow-new-stars": [
+        "<unset>",
+        "true"
+      ],
       "--ignore-attribute": [
         "ReadPosRankSum",
-        "DP"
+        "DP",
+        "<unset>"
       ],
       "--default-ploidy": [
         "2",
@@ -6223,7 +6230,8 @@
       ],
       "--dp-change-allowed": [
         "0",
-        "2"
+        "2",
+        "<unset>"
       ],
       "--ranksum-change-allowed": [
         "0.0",
@@ -6274,6 +6282,26 @@
       "--read-filter-tag": [
         "<unset>",
         "NM"
+      ],
+      "--ignore-quals": [
+        "<unset>",
+        "true"
+      ],
+      "--ignore-annotations": [
+        "<unset>",
+        "true"
+      ],
+      "--ignore-genotype-annotations": [
+        "<unset>",
+        "true"
+      ],
+      "--ignore-filters": [
+        "<unset>",
+        "true"
+      ],
+      "--allow-extra-alleles": [
+        "<unset>",
+        "true"
       ]
     },
     "GenotypeGVCFs": {
@@ -21768,6 +21796,116 @@
         "--input": "<unset>"
       },
       "why": "An index with no reads beside it is counted against zero inputs, a refusal the read walkers' arrays already measure."
+    },
+    {
+      "tools": [
+        "VCFComparator"
+      ],
+      "forbid": {
+        "--positions-only": "true",
+        "--ignore-quals": "true"
+      },
+      "why": "Barclay refuses --positions-only beside any of the eight tolerances that name it in their mutex whenever both are GIVEN, so each partner has an <unset> value and the pair is never given together."
+    },
+    {
+      "tools": [
+        "VCFComparator"
+      ],
+      "forbid": {
+        "--positions-only": "true",
+        "--dp-change-allowed": "0"
+      },
+      "why": "Barclay refuses --positions-only beside any of the eight tolerances that name it in their mutex whenever both are GIVEN, so each partner has an <unset> value and the pair is never given together."
+    },
+    {
+      "tools": [
+        "VCFComparator"
+      ],
+      "forbid": {
+        "--positions-only": "true",
+        "--dp-change-allowed": "2"
+      },
+      "why": "Barclay refuses --positions-only beside any of the eight tolerances that name it in their mutex whenever both are GIVEN, so each partner has an <unset> value and the pair is never given together."
+    },
+    {
+      "tools": [
+        "VCFComparator"
+      ],
+      "forbid": {
+        "--positions-only": "true",
+        "--ignore-annotations": "true"
+      },
+      "why": "Barclay refuses --positions-only beside any of the eight tolerances that name it in their mutex whenever both are GIVEN, so each partner has an <unset> value and the pair is never given together."
+    },
+    {
+      "tools": [
+        "VCFComparator"
+      ],
+      "forbid": {
+        "--positions-only": "true",
+        "--ignore-genotype-annotations": "true"
+      },
+      "why": "Barclay refuses --positions-only beside any of the eight tolerances that name it in their mutex whenever both are GIVEN, so each partner has an <unset> value and the pair is never given together."
+    },
+    {
+      "tools": [
+        "VCFComparator"
+      ],
+      "forbid": {
+        "--positions-only": "true",
+        "--ignore-filters": "true"
+      },
+      "why": "Barclay refuses --positions-only beside any of the eight tolerances that name it in their mutex whenever both are GIVEN, so each partner has an <unset> value and the pair is never given together."
+    },
+    {
+      "tools": [
+        "VCFComparator"
+      ],
+      "forbid": {
+        "--positions-only": "true",
+        "--ignore-attribute": "ReadPosRankSum"
+      },
+      "why": "Barclay refuses --positions-only beside any of the eight tolerances that name it in their mutex whenever both are GIVEN, so each partner has an <unset> value and the pair is never given together."
+    },
+    {
+      "tools": [
+        "VCFComparator"
+      ],
+      "forbid": {
+        "--positions-only": "true",
+        "--ignore-attribute": "DP"
+      },
+      "why": "Barclay refuses --positions-only beside any of the eight tolerances that name it in their mutex whenever both are GIVEN, so each partner has an <unset> value and the pair is never given together."
+    },
+    {
+      "tools": [
+        "VCFComparator"
+      ],
+      "forbid": {
+        "--positions-only": "true",
+        "--allow-new-stars": "true"
+      },
+      "why": "Barclay refuses --positions-only beside any of the eight tolerances that name it in their mutex whenever both are GIVEN, so each partner has an <unset> value and the pair is never given together."
+    },
+    {
+      "tools": [
+        "VCFComparator"
+      ],
+      "forbid": {
+        "--positions-only": "true",
+        "--allow-extra-alleles": "true"
+      },
+      "why": "Barclay refuses --positions-only beside any of the eight tolerances that name it in their mutex whenever both are GIVEN, so each partner has an <unset> value and the pair is never given together."
+    },
+    {
+      "tools": [
+        "VCFComparator"
+      ],
+      "forbid": {
+        "--allow-new-stars": "true",
+        "--allow-extra-alleles": "true"
+      },
+      "why": "Barclay refuses --allow-extra-alleles beside --allow-new-stars when both are GIVEN."
     }
   ],
   "exclude": {
