@@ -106,6 +106,25 @@ pub fn md5_file(output: &[u8]) -> String {
     format!("{:032x}", md5_digest(output))
 }
 
+/// [`md5_file`] of what `reader` yields, read in pieces rather than held whole.
+pub fn md5_of_reader(mut reader: impl std::io::Read) -> std::io::Result<String> {
+    use md5::{Digest, Md5};
+    let mut hasher = Md5::new();
+    let mut buffer = vec![0u8; 1 << 16];
+    loop {
+        match reader.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(read) => hasher.update(&buffer[..read]),
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(format!(
+        "{:032x}",
+        u128::from_be_bytes(hasher.finalize().into())
+    ))
+}
+
 /// The digest itself, as a 128-bit value so the hex above is exactly 32 characters.
 fn md5_digest(bytes: &[u8]) -> u128 {
     use md5::{Digest, Md5};

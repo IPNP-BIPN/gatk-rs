@@ -540,11 +540,24 @@ public class MakeFixtures {
      * line, and adding it to `reads.bam` would change a header that several goldens print.
      */
     static void md5Bam(final Path bam, final Path reference) {
+        md5Bam(bam, reference, null);
+    }
+
+    /**
+     * The same BAM with a `UR` after the `M5`, which is the `@SQ` line `CreateSequenceDictionary`
+     * and every aligner write. The copy-number collectors write their input's dictionary into
+     * their tables through `SAMTextHeaderCodec`, every attribute in order; a port writing `SN` and
+     * `LN` alone matched every row until chr20 30x, whose BAM carries both.
+     */
+    static void md5Bam(final Path bam, final Path reference, final String uri) {
         final SAMFileHeader header = new SAMFileHeader();
         // The reference's own `.dict`, M5 included, which is what makes this BAM's dictionary
         // agree with `reference.fasta` base for base rather than by name alone.
         header.setSequenceDictionary(htsjdk.samtools.reference.ReferenceSequenceFileFactory
                 .getReferenceSequenceFile(reference).getSequenceDictionary());
+        if (uri != null) {
+            header.getSequenceDictionary().getSequences().forEach(sequence -> sequence.setAttribute("UR", uri));
+        }
         header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
         final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
         group.setSample("sample1");
@@ -1146,6 +1159,8 @@ public class MakeFixtures {
         // A pedigree over the two samples, for the callers' --pedigree: the normal is the tumour's
         // mother and the only founder, and with one parent there is no trio.
         Files.writeString(dir.resolve("callers.ped"), "fam1\ttumor\t0\tnormal\t2\t2\nfam1\tnormal\t0\t0\t2\t1\n");
+        // GenotypeGVCFs' --pedigree over the CombineGVCFs samples: sA the child of sB and sC, who found.
+        Files.writeString(dir.resolve("gg.ped"), "fam1\tsA\tsB\tsC\t1\t2\nfam1\tsB\t0\t0\t1\t1\nfam1\tsC\t0\t0\t2\t1\n");
         // DRAGstr's default table, for HaplotypeCaller's --dragstr-params-path.
         org.broadinstitute.hellbender.utils.dragstr.DragstrParamUtils.print(
                 org.broadinstitute.hellbender.utils.dragstr.DragstrParams.DEFAULT,
@@ -3465,6 +3480,7 @@ public class MakeFixtures {
         // whose `@SQ` line carries an M5, which is the only way a command line reaches
         // `CheckReferenceCompatibility`'s MD5 path.
         md5Bam(dir.resolve("md5header.bam"), dir.resolve("reference.fasta"));
+        md5Bam(dir.resolve("sq_tags.bam"), dir.resolve("reference.fasta"), "file:/work/fixtures/reference.fasta");
         splitCram(dir);
         mutectFixtures(dir);
         givenAllelesFixtures(dir);
@@ -3493,6 +3509,32 @@ public class MakeFixtures {
                 "--reference", dir.resolve("reference.fasta").toString(),
                 "--output", dir.resolve("f1r2_counts.tar.gz").toString(),
         });
+        // FilterMutectCalls' three model inputs over the same reads, each the reference's own: the
+        // orientation priors LearnReadOrientationModel fits to the tumour/normal archive, and the
+        // contamination table and tumour segmentation CalculateContamination writes from the
+        // tumour's pileups at the germline resource's first three sites, every frequency let through
+        // (the resource's `AF=.` record further on is a NumberFormatException to GetPileupSummaries).
+        // That estimate is 0.0, the default, so a second table says the tumour is a tenth
+        // contaminated and the normal, which the filter skips, a fifth.
+        new org.broadinstitute.hellbender.tools.walkers.readorientation.LearnReadOrientationModel().instanceMain(new String[] {
+                "--input", dir.resolve("f1r2_tn.tar.gz").toString(),
+                "--output", dir.resolve("mutect_priors.tar.gz").toString(),
+        });
+        new org.broadinstitute.hellbender.tools.walkers.contamination.GetPileupSummaries().instanceMain(new String[] {
+                "--input", dir.resolve("mutect_t.bam").toString(),
+                "--variant", dir.resolve("m2_germline.vcf").toString(),
+                "--intervals", "chr1:1-1300",
+                "--minimum-population-allele-frequency", "0.0",
+                "--maximum-population-allele-frequency", "1.0",
+                "--output", dir.resolve("mutect_summaries.table").toString(),
+        });
+        new org.broadinstitute.hellbender.tools.walkers.contamination.CalculateContamination().instanceMain(new String[] {
+                "--input", dir.resolve("mutect_summaries.table").toString(),
+                "--tumor-segmentation", dir.resolve("mutect_segments.table").toString(),
+                "--output", dir.resolve("mutect_contamination.table").toString(),
+        });
+        Files.writeString(dir.resolve("mutect_contaminated.table"),
+                "sample\tcontamination\terror\ntumor\t0.1\t0.01\nnormal\t0.2\t0.01\n", StandardCharsets.UTF_8);
         // A decimation matrix for `ComposeSTRTableFile`, with a comment line, a blank line and a row
         // that keeps one site in two of every period-one repeat of length three.
         Files.writeString(dir.resolve("decimation.txt"), "# period by repeat\n0\n0 0 0 1 2\n\n0 0 1\n",
@@ -3542,6 +3584,45 @@ public class MakeFixtures {
         Files.writeString(shifted, shiftedPopulationVcf(), StandardCharsets.UTF_8);
         new org.broadinstitute.hellbender.tools.IndexFeatureFile()
                 .instanceMain(new String[] {"-I", shifted.toString()});
+        // SelectVariants' pedigree, Mendelian and concordance arguments: a trio on reference.fasta's
+        // chr1, its PED, and a comparison track that agrees with it at some sites and not others.
+        Files.writeString(dir.resolve("sv_trio.ped"),
+                "fam1\tkid\tdad\tmom\t1\t0\nfam1\tdad\t0\t0\t1\t0\nfam1\tmom\t0\t0\t2\t0\n",
+                StandardCharsets.UTF_8);
+        for (final String[] file : new String[][] {
+                // pos, QUAL, dad, kid, mom, kid's GQ
+                {"sv_trio.vcf",
+                        "101 100 0/0 0/1 0/0 40", // de novo
+                        "201 100 0/1 0/1 0/0 40", // inherited
+                        "301 30 1/1 0/0 0/0 40", // hom-ref child of a hom-var father
+                        "401 100 0/0 0/1 0/0 10", // de novo under a quality threshold
+                        "501 100 ./. 1/1 0/0 40", // a no-called parent, which complete trios only never judge
+                        "601 100 0/1 1/1 0/1 40", // inherited
+                        "701 100 0/0 ./. 0/0 40", // child no-called
+                        "801 100 0/0 0/0 0/0 40"},
+                {"sv_trio_comp.vcf",
+                        "101 100 0/0 0/1 0/0 40", // agrees
+                        "201 100 0/1 0/0 0/0 40", // the child disagrees
+                        "301 30 1/1 0/0 0/0 40", // agrees
+                        "451 100 0/1 0/1 0/1 40", // a site the trio does not have
+                        "601 100 0/1 1/1 0/1 40"}}) { // agrees
+            final StringBuilder text = new StringBuilder("##fileformat=VCFv4.2\n");
+            text.append("##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n");
+            text.append("##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype quality\">\n");
+            text.append("##contig=<ID=chr1,length=100000>\n");
+            text.append("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tdad\tkid\tmom\n");
+            for (int row = 1; row < file.length; row++) {
+                final String[] f = file[row].split(" ");
+                text.append("chr1\t").append(f[0]).append("\t.\tA\tC\t").append(f[1])
+                        .append("\tPASS\t.\tGT:GQ\t").append(f[2]).append(":40\t")
+                        .append(f[3]).append(':').append(f[5]).append('\t')
+                        .append(f[4]).append(":40\n");
+            }
+            final Path path = dir.resolve(file[0]);
+            Files.writeString(path, text.toString(), StandardCharsets.UTF_8);
+            new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                    .instanceMain(new String[] {"-I", path.toString()});
+        }
 
         // The bins as an interval LIST, which is the only way one `-L` value can name more than
         // one of them. `FilterIntervals` intersects the requested intervals with its inputs' by

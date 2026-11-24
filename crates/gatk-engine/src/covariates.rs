@@ -88,6 +88,8 @@ pub struct RecalibrationArguments {
     pub maximum_cycle_value: i32,
     /// `--low-quality-tail`, a byte, which the context covariate overwrites with N.
     pub low_qual_tail: u8,
+    /// `--binary-tag-name`, which no covariate reads: only the argument table carries it.
+    pub binary_tag_name: Option<String>,
 }
 
 impl Default for RecalibrationArguments {
@@ -97,6 +99,7 @@ impl Default for RecalibrationArguments {
             indels_context_size: 3,
             maximum_cycle_value: 500,
             low_qual_tail: 2,
+            binary_tag_name: None,
         }
     }
 }

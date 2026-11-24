@@ -24,7 +24,9 @@
 //! disagree, not the second path's bytes.
 
 use gatk_corpus as corpus;
-use gatk_tools::gather_bam_files::{gather, is_bam_file, md5_file, unroll, use_block_copying};
+use gatk_tools::gather_bam_files::{
+    gather, is_bam_file, md5_file, md5_of_reader, unroll, use_block_copying,
+};
 
 fn golden() -> String {
     corpus::read_golden(
@@ -161,6 +163,13 @@ fn the_md5_is_the_digest_of_those_same_bytes() {
         md5_file(&gathered(&text, &["first", "second"])),
         row(&text, "md5", "md5")
     );
+}
+
+/// Read in 64 KiB pieces, the digest is the same; a piece boundary falls inside these bytes.
+#[test]
+fn the_md5_read_in_pieces_is_the_same() {
+    let bytes: Vec<u8> = (0..200_000u32).map(|i| (i * 7 % 251) as u8).collect();
+    assert_eq!(md5_of_reader(&bytes[..]).unwrap(), md5_file(&bytes));
 }
 
 /// `IOUtil.unrollFiles` replaces a list by the paths it names and leaves a BAM alone.
