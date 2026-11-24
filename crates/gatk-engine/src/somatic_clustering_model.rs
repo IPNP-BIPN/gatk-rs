@@ -48,7 +48,7 @@ use crate::java_format::format_decimals;
 use crate::java_hash::hash_map_order;
 use crate::math_utils::normalize_sum_to_one;
 use crate::mutect_engine::{log_one_third, posterior_probability_of_error};
-use crate::natural_log_utils::normalize_from_log_to_linear_space;
+use crate::natural_log_utils::normalize_from_log_to_linear_space_host_exp;
 use crate::natural_log_utils::{log_sum_exp, NonFiniteSum};
 
 /// `MAX_INDEL_SIZE_IN_PRIOR_MAP`.
@@ -398,9 +398,11 @@ impl SomaticClusteringModel {
 
     /// `backgroundProbGivenSomatic(totalCount, altCount)`, the first cluster's normalised share.
     fn background_prob_given_somatic(&self, total_count: i32, alt_count: i32) -> f64 {
-        normalize_from_log_to_linear_space(&self.cluster_log_likelihoods(total_count, alt_count))
-            .map(|probabilities| probabilities[0])
-            .unwrap_or(f64::NAN)
+        normalize_from_log_to_linear_space_host_exp(
+            &self.cluster_log_likelihoods(total_count, alt_count),
+        )
+        .map(|probabilities| probabilities[0])
+        .unwrap_or(f64::NAN)
     }
 
     /// `learnAndClearAccumulatedData()`.
@@ -626,7 +628,7 @@ impl SomaticClusteringModel {
             }
             let cluster_log_likelihoods =
                 self.cluster_log_likelihoods(datum.total_count(), datum.alt_count());
-            let if_somatic = normalize_from_log_to_linear_space(&cluster_log_likelihoods)
+            let if_somatic = normalize_from_log_to_linear_space_host_exp(&cluster_log_likelihoods)
                 .unwrap_or_else(|_| vec![f64::NAN; cluster_log_likelihoods.len()]);
             let scaled: Vec<f64> = if_somatic
                 .iter()
