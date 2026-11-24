@@ -137,5 +137,6 @@ pub fn mapping_quality(read: &BamRecord) -> u8 {
 /// `RG` is `rg_absent` passes `HasReadGroupReadFilter` on a header that has never heard of it.
 /// The conformance corpus now carries exactly that record, and the reference keeps it.
 pub fn has_read_group(read: &BamRecord) -> bool {
-    read.tags.iter().any(|(tag, _)| tag.name() == *b"RG")
+    // Asked of the block itself: iterating would parse every tag of every read.
+    read.tags.contains(htsjdk_bam::tag::Tag::new(b"RG"))
 }
