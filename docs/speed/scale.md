@@ -68,6 +68,33 @@ describe the port as it is before that refactor.
    hundred reads does not. MarkDuplicatesSpark, whose covering array is at 0.963 and not 1.000, is
    the most likely one.
 
+## The end-to-end pass, step by step
+
+The first release needs every step below to finish on chr20 30x, with the same sha256 as GATK, on
+x86-64 and on arm64. This is where each step stands and which PR moves it. "Smoke" is the 2 Mb
+local slice, not chr20.
+
+| step | state on main | fix | after the fix |
+|---|---|---|---|
+| MarkDuplicatesSpark | killed at 14 GiB; locally refuses more than one partition | #1473 (spilling sort), #1490 (per-read summaries) | not yet measured at scale |
+| MarkDuplicates (Picard) | not carried | none yet: picard-rs has it, gatk-rs does not depend on picard-rs | - |
+| BaseRecalibrator | refuses `.vcf.gz` known sites; holds every read (8 GiB); scans every known site per read | #1472 (`.vcf.gz`); #1515 (streams the reads, indexes the sites), stacked on #1461 | not yet measured at scale |
+| ApplyBQSR | killed at 14 GiB: reads and inflates the whole BAM, holds every read | #1514 (streams read, recalibrate, write), stacked on #1461 | chr20: 121 MB peak RSS, every record identical to GATK |
+| HaplotypeCaller | OOM at 7 GiB on smoke | #1467 (window-bounded reads), #1474 (multicore) | not yet measured at scale |
+| GenotypeGVCFs | bytes equal on smoke | - | not yet measured at scale |
+| VariantRecalibrator | `##contig` from the wrong dictionary; 118x slower, 5.6 GiB on smoke | #1479 (`##contig`), #1486 (resources at the driving sites) | not yet measured at scale |
+| ApplyVQSR | bytes equal on smoke | - | not yet measured at scale |
+| SelectVariants | bytes equal on smoke | #1500 (streams records) | not yet measured at scale |
+| VariantFiltration | bytes equal on smoke | - | not yet measured at scale |
+| Mutect2 | smoke timed out on both sides (Rosetta) | #1467 | not yet measured at scale |
+| FilterMutectCalls | - | #1484 (CPU and RSS), #1475 (learned-model drift) | not yet measured at scale |
+| PreprocessIntervals | killed at 1800 s; GATK takes 2 s | #1512 (each contig read once) | chr20: 0.46 s, 151 MB, sha256 identical |
+| CollectReadCounts | dropped `@SQ` `M5`/`UR` | fixed on main (#1480); #1487 (speed) | not yet measured at scale |
+| DenoiseReadCounts | reference refuses the smoke slice (zero median) | - | not yet measured at scale |
+| ModelSegments | - | - | not yet measured at scale |
+
+On arm64, the bytes of every step that calls `exp` depend on #1499 (`Math.exp` on aarch64).
+
 ## The baseline
 
 **Source.** `Speed at scale` run 44629287048, on commit `720773d1`, on GitHub's x86-64 runners.
