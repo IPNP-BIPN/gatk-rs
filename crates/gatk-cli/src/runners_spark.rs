@@ -127,19 +127,32 @@ fn spark_verbosity(parser: &Parser) -> Result<(), Thrown> {
 }
 
 /// `ReadsSparkSource.getHeader` for a local path: Disq's format by extension, then the file.
-fn spark_reads_header(input: &str) -> Result<ReadsDataSource, Thrown> {
-    spark_reads_open(input, false)
+fn spark_reads_header(parser: &Parser, input: &str) -> Result<ReadsDataSource, Thrown> {
+    spark_reads_open(parser, input, false)
 }
 
 /// `spark_reads_header`, where the tools that take a BAM a partition at a time ask for no more of it
 /// than the header's blocks.
-fn spark_reads_open(input: &str, splits_by_itself: bool) -> Result<ReadsDataSource, Thrown> {
+fn spark_reads_open(
+    parser: &Parser,
+    input: &str,
+    splits_by_itself: bool,
+) -> Result<ReadsDataSource, Thrown> {
     let failed = |cause: String| {
         Thrown::user(format!(
             "Failed to read bam header from {input}\n Caused by:{cause}"
         ))
     };
     let lower = input.to_ascii_lowercase();
+    let path = std::path::Path::new(input);
+    // SAM text, and CRAM decoded against `--reference`, are read as the BAM they transcode to.
+    if lower.ends_with(".sam") || lower.ends_with(".cram") {
+        if let Ok(bytes) = std::fs::read(path) {
+            if let Some(transcoded) = transcode_reads(parser, path, &bytes)? {
+                return transcoded_source(path, transcoded);
+            }
+        }
+    }
     if lower.ends_with(".cram") {
         return Err(Thrown::non_user(
             PORT_LIMITATION,
@@ -150,7 +163,6 @@ fn spark_reads_open(input: &str, splits_by_itself: bool) -> Result<ReadsDataSour
     if !(lower.ends_with(".bam") || lower.ends_with(".sam")) {
         return Err(failed(format!("Cannot find format extension for {input}")));
     }
-    let path = std::path::Path::new(input);
     if !path.exists() {
         return Err(failed(format!("File {input} does not exist")));
     }
@@ -234,7 +246,7 @@ pub(super) fn spark_startup(parser: &Parser, tool: &str) -> Result<SparkStart, T
         tool,
         "FindBreakpointEvidenceSpark" | "StructuralVariationDiscoveryPipelineSpark"
     );
-    let source = spark_reads_open(&input, splits_by_itself)?;
+    let source = spark_reads_open(parser, &input, splits_by_itself)?;
     let header = source.header().clone();
     // Disq reads the header at `--read-validation-stringency`, and STRICT refuses this line.
     if let Some(group) = header.read_groups.iter().find(|group| {
@@ -308,6 +320,13 @@ fn no_spark_index(input: &str) -> Thrown {
     )
 }
 
+/// A `.sam` or `.cram` input, which [`spark_reads_open`] read as the BAM it transcodes to: a
+/// source that is reopened by its path would read the text or the CRAM as a BAM.
+fn is_transcoded(input: &str) -> bool {
+    let lower = input.to_ascii_lowercase();
+    lower.ends_with(".sam") || lower.ends_with(".cram")
+}
+
 /// The BAM a tool takes a partition at a time, with its index under intervals.
 fn spark_split_source(
     parser: &Parser,
@@ -319,6 +338,9 @@ fn spark_split_source(
     }
     let path = std::path::Path::new(input);
     let index = htsjdk_bam::sam_files::find_index(path).ok_or_else(|| no_spark_index(input))?;
+    if is_transcoded(input) {
+        return Ok(source);
+    }
     ReadsDataSource::open_for_splits(path, Some(&index))
         .map_err(|error| Thrown::user(format!("{error:?}")))
 }
@@ -333,6 +355,8 @@ fn spark_traversal_source(
     let source = if intervals_specified(parser) {
         let path = std::path::Path::new(input);
         match htsjdk_bam::sam_files::find_index(path) {
+            // The transcoded source already carries the index its CRAM's `.crai` gave it.
+            Some(_) if is_transcoded(input) => source,
             Some(index) => ReadsDataSource::open(path, &index)
                 .map_err(|error| Thrown::user(format!("{error:?}")))?,
             None => return Err(no_spark_index(input)),
@@ -396,7 +420,7 @@ fn variant_spark_startup(
         ));
     }
     let reads = match inputs.first() {
-        Some(input) => Some(spark_reads_header(input)?.header().clone()),
+        Some(input) => Some(spark_reads_header(parser, input)?.header().clone()),
         None => None,
     };
 
@@ -2337,7 +2361,7 @@ pub fn pathseq_score_spark(parser: &Parser) -> Outcome {
         if !std::path::Path::new(&path).exists() {
             return Ok(None);
         }
-        let source = spark_reads_header(&path)?;
+        let source = spark_reads_header(parser, &path)?;
         let header = source.header().clone();
         let records = gatk_tools::read_walker::traverse(&source, &[], &|_| true)
             .map_err(|error| Thrown::user(format!("{error:?}")))?;
@@ -2831,7 +2855,7 @@ pub fn find_bad_genomic_kmers_spark(parser: &Parser) -> Outcome {
         ));
     }
     let reads = match inputs.first() {
-        Some(input) => Some(spark_reads_header(input)?.header().clone()),
+        Some(input) => Some(spark_reads_header(parser, input)?.header().clone()),
         None => None,
     };
     interval_arguments(parser, &dictionary)?;
@@ -3347,7 +3371,7 @@ pub fn pathseq_bwa_spark(parser: &Parser) -> Outcome {
             continue;
         }
         loaded = true;
-        let source = spark_reads_header(&path)?;
+        let source = spark_reads_header(parser, &path)?;
         let mut header = source.header().clone();
         if !header.sequences.is_empty() {
             return Err(bad_input(
@@ -4166,7 +4190,7 @@ pub fn compare_duplicates_spark(parser: &Parser) -> Outcome {
     let input2 = argument(parser, "input2").ok_or_else(|| {
         Thrown::command_line("Argument input2 was missing: Argument 'input2' is required")
     })?;
-    let second_source = spark_reads_header(&input2)?;
+    let second_source = spark_reads_header(parser, &input2)?;
     let second_header = second_source.header().clone();
     let second_source = spark_traversal_source(parser, &input2, second_source)?;
 
@@ -4626,7 +4650,7 @@ pub fn mark_duplicates_spark(parser: &Parser, mode: &Parser) -> Outcome {
     }
     let sources = inputs
         .iter()
-        .map(|input| spark_reads_header(input))
+        .map(|input| spark_reads_header(parser, input))
         .collect::<Result<Vec<ReadsDataSource>, Thrown>>()?;
     let own_headers: Vec<SamHeader> = sources.iter().map(|s| s.header().clone()).collect();
     let merged = gatk_tools::sam_file_header_merger::merge(&own_headers)
@@ -5080,7 +5104,13 @@ fn write_spark_indexed(
     if output.ends_with(".sam") {
         // Disq's SAM writer: the text, whatever the partitions, and no index of any kind.
         let records: Vec<BamRecord> = partitions.iter().flatten().cloned().collect();
-        let text = htsjdk_bam::sam_file::write_sam(header, &records)
+        // `SAMTextHeaderCodec.encode(.., false)`: the writer prints the current version.
+        let mut header = header.clone();
+        header.attributes.set(
+            htsjdk_bam::header::VERSION_TAG,
+            htsjdk_bam::header::CURRENT_VERSION,
+        );
+        let text = htsjdk_bam::sam_file::write_sam(&header, &records)
             .ok_or_else(|| failed(output, "the SAM text could not be built".to_string()))?;
         return std::fs::write(output, text).map_err(|error| failed(output, error.to_string()));
     }

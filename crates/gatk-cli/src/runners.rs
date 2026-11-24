@@ -828,8 +828,8 @@ struct Transcoded {
 }
 
 /// `SamReaderFactory.open` for the two formats that are not BAM: `None` for a BAM, a block
-/// compressed or empty file, text that does not parse as SAM (whose refusal is
-/// `read_walker_refusal`'s), and a CRAM with no `--reference` to decode it against.
+/// compressed or empty file, and text that does not parse as SAM (whose refusal is
+/// `read_walker_refusal`'s). A CRAM with no `--reference` is refused as GATK refuses it.
 fn transcode_reads(
     parser: &Parser,
     path: &std::path::Path,
@@ -837,7 +837,11 @@ fn transcode_reads(
 ) -> Result<Option<Transcoded>, Thrown> {
     let (header, records, indexed) = if bytes.starts_with(b"CRAM") {
         let Some(reference) = argument(parser, "reference") else {
-            return Ok(None);
+            // `GATKTool.initializeReads`, before the CRAM is opened.
+            return Err(Thrown::user(
+                "A reference file is required when using CRAM files.  A reference is specified \
+                 with the -R command line argument.",
+            ));
         };
         let cram_refusal = |error: htsjdk_cram::reader::CramError| {
             Thrown::non_user(error.java_exception(), error.message())
@@ -884,6 +888,25 @@ fn transcode_reads(
         )
     };
     Ok(Some(Transcoded { bam, bai, header }))
+}
+
+/// The reads source over a [`Transcoded`] input: its BAM, its `.bai` when it has one, and the
+/// file's own header.
+fn transcoded_source(
+    path: &std::path::Path,
+    transcoded: Transcoded,
+) -> Result<ReadsDataSource, Thrown> {
+    let failure = |error: gatk_engine::reads::ReadsError| {
+        Thrown::non_user(PORT_FAILURE, format!("{error:?}"))
+    };
+    let inflated = htsjdk_bgzf::read::decompress_all(&transcoded.bam)
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error:?}")))?;
+    let mut source =
+        ReadsDataSource::from_inflated(path, transcoded.bam, inflated).map_err(failure)?;
+    if let Some(bai) = &transcoded.bai {
+        source.load_index_bytes(bai).map_err(failure)?;
+    }
+    Ok(source.with_header(transcoded.header))
 }
 
 fn read_walker_startup(parser: &Parser, tool: &str) -> Result<ReadWalkerStart, Thrown> {
@@ -1725,6 +1748,13 @@ pub fn print_reads(parser: &Parser) -> Outcome {
 
     let bytes = std::fs::read(path)
         .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&input, false)))?;
+    // SAM text and CRAM are read as the BAM they transcode to, with the index a CRAM has.
+    if let Some(transcoded) = transcode_reads(parser, path, &bytes)? {
+        read_index(parser, 1, bytes.starts_with(b"CRAM"), false)?;
+        let indexed = transcoded.bai.is_some();
+        let source = transcoded_source(path, transcoded)?;
+        return print_reads_from(parser, &resolved_filters, &output, source, indexed, None);
+    }
     let is_binary = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
         htsjdk_bgzf::read::decompress_all(&bytes)
             .map(|inflated| inflated.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC))
@@ -1766,7 +1796,25 @@ pub fn print_reads(parser: &Parser) -> Outcome {
             None,
         ),
     };
+    print_reads_from(
+        parser,
+        &resolved_filters,
+        &output,
+        source,
+        index.is_some(),
+        bad_index,
+    )
+}
 
+/// `PrintReads` once its reads are open: the dictionaries, the intervals, then the traversal.
+fn print_reads_from(
+    parser: &Parser,
+    resolved_filters: &[gatk_tools::filter_resolution::ResolvedFilter],
+    output: &str,
+    source: ReadsDataSource,
+    indexed: bool,
+    bad_index: Option<String>,
+) -> Outcome {
     let header = source.header().clone();
     let master = master_dictionary(parser)?;
     let reference = reference_dictionary(parser)?;
@@ -1785,7 +1833,7 @@ pub fn print_reads(parser: &Parser) -> Outcome {
     let intervals = interval_arguments(parser, &best)?
         .map(|parameters| parameters.intervals)
         .unwrap_or_default();
-    if !intervals.is_empty() && index.is_none() {
+    if !intervals.is_empty() && !indexed {
         return Err(Thrown::user(
             "Traversal by intervals was requested but some input files are not indexed.",
         ));
@@ -1796,7 +1844,7 @@ pub fn print_reads(parser: &Parser) -> Outcome {
             format!("Unknown BAM index file type: {name}"),
         ));
     }
-    let filter = read_filter(parser, &resolved_filters, &header)?;
+    let filter = read_filter(parser, resolved_filters, &header)?;
 
     let command_line = crate::command_line::expanded("PrintReads", parser);
     let options = gatk_tools::print_reads::Options {
@@ -1807,12 +1855,24 @@ pub fn print_reads(parser: &Parser) -> Outcome {
         version: crate::TOOLKIT_VERSION,
     };
     let (level, deflater) = output_compression(parser);
-    let (bam, bai) =
-        gatk_tools::print_reads::print_reads_with(&source, &options, &filter, level, deflater)
+    let (written, bai) = if output.ends_with(".sam") {
+        // `SAMFileWriterFactory.makeWriter` by extension: a `.sam` is the text, never indexed.
+        let records = gatk_tools::read_walker::traverse(&source, &options.intervals, &filter)
             .map_err(|error| Thrown::user(format!("{error:?}")))?;
-
-    let written = bam;
-    std::fs::write(&output, &written).map_err(|error| {
+        let mut header = gatk_tools::print_reads::header_for_sam_writer(source.header(), &options);
+        // `SAMTextHeaderCodec.encode(.., false)`: the writer prints the current version.
+        header.attributes.set(
+            htsjdk_bam::header::VERSION_TAG,
+            htsjdk_bam::header::CURRENT_VERSION,
+        );
+        let text = htsjdk_bam::sam_file::write_sam(&header, &records)
+            .ok_or_else(|| Thrown::non_user(PORT_FAILURE, "records failed to encode as SAM"))?;
+        (text.into_bytes(), None)
+    } else {
+        gatk_tools::print_reads::print_reads_with(&source, &options, &filter, level, deflater)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?
+    };
+    std::fs::write(output, &written).map_err(|error| {
         Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
     })?;
     if let Some(bai) = bai {
@@ -14085,9 +14145,16 @@ pub fn compare_base_qualities(parser: &Parser) -> Outcome {
     let (first, second) = (files[0].clone(), files[1].clone());
 
     let read = |path: &str| -> Result<Vec<htsjdk_bam::record::BamRecord>, Thrown> {
-        let source =
-            gatk_engine::reads::ReadsDataSource::open_unindexed(std::path::Path::new(path))
-                .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        let path = std::path::Path::new(path);
+        let transcoded = match std::fs::read(path) {
+            Ok(bytes) => transcode_reads(parser, path, &bytes)?,
+            Err(_) => None,
+        };
+        let source = match transcoded {
+            Some(transcoded) => transcoded_source(path, transcoded)?,
+            None => gatk_engine::reads::ReadsDataSource::open_unindexed(path)
+                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+        };
         source.iter_all().map_err(reads_traversal_error)
     };
     let left = read(&first)?;

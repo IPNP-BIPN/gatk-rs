@@ -300,3 +300,30 @@ fn a_sam_text_input_is_read() {
     assert_eq!(run.status, 0, "{}", run.stderr);
     assert!(run.stdout.contains("Tool returned:\n3"), "{}", run.stdout);
 }
+
+/// PrintReads reads the same SAM text and, to a `.sam` output, writes text at the current version
+/// with no index beside it, as `SAMFileWriterFactory.makeWriter` does by extension.
+#[test]
+fn print_reads_writes_a_sam_text_input_back_as_sam_text() {
+    let dir = scratch("print-sam");
+    let sam = dir.join("reads.sam");
+    std::fs::write(
+        &sam,
+        "@HD\tVN:1.5\tSO:unsorted\n@SQ\tSN:chr1\tLN:100000\n@RG\tID:0\tSM:s\n\
+         a\t0\tchr1\t10\t60\t4M\t*\t0\t0\tACGT\tIIII\tRG:Z:0\n",
+    )
+    .expect("the fixture");
+    let out = dir.join("out.sam");
+    let run = gatk_cli::run(&args(&[
+        "PrintReads",
+        "--input",
+        &sam.to_string_lossy(),
+        "--output",
+        &out.to_string_lossy(),
+    ]));
+    assert_eq!(run.status, 0, "{}", run.stderr);
+    let text = std::fs::read_to_string(&out).expect("the output");
+    assert!(text.starts_with("@HD\tVN:1.6\tSO:unsorted\n"), "{text}");
+    assert!(text.contains("\na\t0\tchr1\t10\t60\t4M\t"), "{text}");
+    assert!(!dir.join("out.bai").exists());
+}
