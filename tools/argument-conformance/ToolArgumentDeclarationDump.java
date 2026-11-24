@@ -671,6 +671,7 @@ public class ToolArgumentDeclarationDump {
         declarations("GatherBamFiles", new picard.sam.GatherBamFiles());
         declarations("GatherVcfs", new picard.vcf.GatherVcfs());
         declarations("MakeSitesOnlyVcf", new picard.vcf.MakeSitesOnlyVcf());
+        declarations("MarkDuplicates", new picard.sam.markduplicates.MarkDuplicates());
         declarations("MergeVcfs", new picard.vcf.MergeVcfs());
         declarations("RenameSampleInVcf", new picard.vcf.RenameSampleInVcf());
         declarations("SetNmAndUqTags", new picard.sam.SetNmAndUqTags());

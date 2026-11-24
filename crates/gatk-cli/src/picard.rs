@@ -26,6 +26,7 @@ mod fix_vcf_header;
 mod gather_bam_files;
 mod gather_vcfs;
 mod make_sites_only_vcf;
+mod mark_duplicates;
 mod merge_vcfs;
 mod rename_sample_in_vcf;
 mod set_nm_and_uq_tags;
@@ -69,6 +70,7 @@ pub fn work(name: &str) -> Option<Work> {
         "GatherBamFiles" => Some(gather_bam_files::run),
         "GatherVcfs" => Some(gather_vcfs::run),
         "MakeSitesOnlyVcf" => Some(make_sites_only_vcf::run),
+        "MarkDuplicates" => Some(mark_duplicates::run),
         "MergeVcfs" => Some(merge_vcfs::run),
         "RenameSampleInVcf" => Some(rename_sample_in_vcf::run),
         "SetNmAndUqTags" => Some(set_nm_and_uq_tags::run),
@@ -571,6 +573,7 @@ mod tests {
             "GatherBamFiles",
             "GatherVcfs",
             "MakeSitesOnlyVcf",
+            "MarkDuplicates",
             "MergeVcfs",
             "RenameSampleInVcf",
             "SetNmAndUqTags",

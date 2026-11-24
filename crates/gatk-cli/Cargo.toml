@@ -31,6 +31,8 @@ htsjdk-cram.workspace = true
 # same file: the dictionary is properties and the file's own stats are left at zero.
 htsjdk-tribble.workspace = true
 htsjdk-vcf.workspace = true
+# MarkDuplicates, which GATK runs from Picard.
+picard-markduplicates.workspace = true
 # FuncotatorDataSourceDownloader's --validate-integrity.
 sha2.workspace = true
 

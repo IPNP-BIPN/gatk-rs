@@ -22,6 +22,10 @@ repository = "https://github.com/IPNP-BIPN/gatk-rs"
 # resolved it. A pin nothing resolves is a pin nothing checks, so the line arrives with its first
 # caller.
 [workspace.dependencies]
+# `gatk MarkDuplicates` runs Picard's MarkDuplicates, whose duplicate decisions are picard-rs's:
+# its own crate, without picard-analysis's allocator, JavaScript engine and goldens. It pins an
+# older htsjdk-rs than this workspace, so no htsjdk-rs type crosses between the two.
+picard-markduplicates = { git = "https://github.com/IPNP-BIPN/picard-rs", rev = "5dacc3792eb1a063e94af9b045aa7a82e472f45a" }
 # BWA-MEM for `BwaSpark` and what is built on it (IPNP-BIPN/gatk-rs#1390): the same owner's MIT
 # reimplementation, because transcribing lh3/bwa is ruled out. Its default features are the
 # binary's allocator, htslib output and FASTQ decompressors, none of which a library call reads.

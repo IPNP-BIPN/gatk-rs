@@ -434,7 +434,8 @@ def constant_name(tool):
 # The Picard tools the dump declares, whose names can collide with a GATK tool's.
 PICARD_TOOLS = {
     "AddCommentsToBam", "BuildBamIndex", "CheckTerminatorBlock", "FilterVcf", "FixVcfHeader",
-    "GatherBamFiles", "GatherVcfs", "MakeSitesOnlyVcf", "MergeVcfs", "RenameSampleInVcf",
+    "GatherBamFiles", "GatherVcfs", "MakeSitesOnlyVcf", "MarkDuplicates", "MergeVcfs",
+    "RenameSampleInVcf",
     "SetNmAndUqTags", "SetNmMdAndUqTags", "SortVcf", "SplitVcfs", "UpdateVcfSequenceDictionary",
     "VcfFormatConverter", "VcfToIntervalList",
 }

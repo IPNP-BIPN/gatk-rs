@@ -18594,6 +18594,115 @@
       "--OUTPUT": [
         "/work/out/output.interval_list"
       ]
+    },
+    "MarkDuplicates": {
+      "$why": [
+        "picard-rs's MarkDuplicates fixtures, under the corpus's picard/ directory. One INPUT per",
+        "row: the port runs one input and refuses several by name, and refuses the barcode and UMI",
+        "arguments the same way, so those are left out here rather than measured as one refusal.",
+        "tiled.bam holds small.bam's reads under Illumina names, so the optical arguments and",
+        "READ_NAME_REGEX reach something; queryname.bam is the queryname-grouped pass."
+      ],
+      "--TMP_DIR": [
+        "/work/tmp"
+      ],
+      "--INPUT": [
+        "/work/fixtures/picard/small.bam",
+        "/work/fixtures/picard/tiled.bam",
+        "/work/fixtures/picard/queryname.bam",
+        "/work/fixtures/picard/one_read_group.bam",
+        "/work/fixtures/picard/small.sam"
+      ],
+      "--OUTPUT": [
+        "/work/out/output.bam"
+      ],
+      "--METRICS_FILE": [
+        "/work/out/metrics.txt"
+      ],
+      "--ASSUME_SORT_ORDER": [
+        "<unset>",
+        "coordinate",
+        "queryname",
+        "unsorted"
+      ],
+      "--TAG_DUPLICATE_SET_MEMBERS": [
+        "false",
+        "true"
+      ],
+      "--OPTICAL_DUPLICATE_PIXEL_DISTANCE": [
+        "100",
+        "2500"
+      ],
+      "--DUPLICATE_SCORING_STRATEGY": [
+        "SUM_OF_BASE_QUALITIES",
+        "TOTAL_MAPPED_REFERENCE_LENGTH",
+        "RANDOM"
+      ],
+      "--TAGGING_POLICY": [
+        "DontTag",
+        "OpticalOnly",
+        "All"
+      ],
+      "--REMOVE_DUPLICATES": [
+        "false",
+        "true"
+      ],
+      "--REMOVE_SEQUENCING_DUPLICATES": [
+        "false",
+        "true"
+      ],
+      "--CLEAR_DT": [
+        "true",
+        "false"
+      ],
+      "--ADD_PG_TAG_TO_READS": [
+        "true",
+        "false"
+      ],
+      "--COMMENT": [
+        "<unset>",
+        "first comment"
+      ],
+      "--MAX_OPTICAL_DUPLICATE_SET_SIZE": [
+        "300000",
+        "1"
+      ],
+      "--PROGRAM_GROUP_COMMAND_LINE": [
+        "<unset>",
+        "md --flag"
+      ],
+      "--PROGRAM_GROUP_VERSION": [
+        "<unset>",
+        "9.9"
+      ],
+      "--PROGRAM_GROUP_NAME": [
+        "<unset>",
+        "OtherName"
+      ],
+      "--PROGRAM_RECORD_ID": [
+        "<unset>",
+        "null",
+        "PGX"
+      ],
+      "--READ_NAME_REGEX": [
+        "<unset>",
+        "null",
+        "[a-zA-Z0-9]+:[0-9]+:([0-9]+):([0-9]+):([0-9]+).*"
+      ],
+      "--CREATE_INDEX": [
+        "false",
+        "true"
+      ],
+      "--COMPRESSION_LEVEL": [
+        "2",
+        "5"
+      ],
+      "--BARCODE_TAG": [],
+      "--READ_ONE_BARCODE_TAG": [],
+      "--READ_TWO_BARCODE_TAG": [],
+      "--MOLECULAR_IDENTIFIER_TAG": [],
+      "--DUPLEX_UMI": [],
+      "--FLOW_MODE": []
     }
   },
   "constraints": [

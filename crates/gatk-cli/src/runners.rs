@@ -23523,7 +23523,7 @@ pub fn reference_block_concordance(parser: &Parser) -> Outcome {
 
 /// `Utils.getDateTimeForDisplay(ZonedDateTime.now())`, in UTC: the one value a metrics header
 /// carries that no comparison reads.
-fn java_display_now() -> String {
+pub(crate) fn java_display_now() -> String {
     let seconds = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|elapsed| elapsed.as_secs() as i64)
