@@ -8686,7 +8686,8 @@
         "index is forbidden, since it would measure htsjdk reading a foreign index rather than the tool.",
         "--sequence-dictionary is unset or the reference's own .dict; a dictionary beside another reference",
         "is forbidden, the dictionary check's refusal being measured elsewhere.",
-        "--bam-output is unset or a BAM of the realigned reads."
+        "--bam-output is held out: it writes the haplotypes the Mutect2 assembler builds, which the port",
+        "refuses as its own limitation, so every row carrying it would measure that refusal."
       ],
       "--variant": [
         "/work/fixtures/faa.vcf",
@@ -8706,10 +8707,7 @@
         "/work/out/filtered.vcf",
         "/work/out/filtered.vcf.gz"
       ],
-      "--bam-output": [
-        "<unset>",
-        "/work/out/faa_haplotypes.bam"
-      ],
+      "--bam-output": [],
       "--read-index": [
         "<unset>",
         "/work/fixtures/faa.bai",
