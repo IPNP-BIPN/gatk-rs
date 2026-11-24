@@ -77,7 +77,7 @@ local slice, not chr20.
 | step | state on main | fix | after the fix |
 |---|---|---|---|
 | MarkDuplicatesSpark | killed at 14 GiB; locally refuses more than one partition | #1473 (spilling sort), #1490 (per-read summaries) | not yet measured at scale |
-| MarkDuplicates (Picard) | not carried | none yet: picard-rs has it, gatk-rs does not depend on picard-rs | - |
+| MarkDuplicates (Picard) | not carried | #1524 (Picard's decisions from picard-rs, two streamed passes), with picard-rs#484 | chr20, macOS arm64: header and every record identical to GATK, metrics equal; 114 s CPU, 2.55 GiB peak |
 | BaseRecalibrator | refuses `.vcf.gz` known sites; holds every read (8 GiB); scans every known site per read | #1472 (`.vcf.gz`); #1515 (streams the reads, indexes the sites), stacked on #1461 | not yet measured at scale |
 | ApplyBQSR | killed at 14 GiB: reads and inflates the whole BAM, holds every read | #1514 (streams read, recalibrate, write), stacked on #1461 | chr20: 121 MB peak RSS, every record identical to GATK |
 | HaplotypeCaller | OOM at 7 GiB on smoke | #1467 (window-bounded reads), #1474 (multicore) | not yet measured at scale |
