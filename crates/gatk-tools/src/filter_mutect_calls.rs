@@ -240,8 +240,8 @@ pub fn run(records: &[Record], arguments: &ToolArguments) -> Result<Output, RunE
                     &mut model,
                     &mut haplotype,
                     &mut strand_steps,
+                    &strand_learned,
                     &mut threshold,
-                    arguments,
                 );
             } else {
                 let result = apply(&answers, record, threshold.threshold())
@@ -287,8 +287,8 @@ fn accumulate(
     model: &mut SomaticClusteringModel,
     haplotype: &mut FilteredHaplotypeFilter,
     strand_steps: &mut Vec<EStep>,
+    strand_learned: &LearnedParameters,
     threshold: &mut ThresholdCalculator,
-    arguments: &ToolArguments,
 ) {
     let all: Vec<_> = answers
         .engine
@@ -315,12 +315,14 @@ fn accumulate(
                 .iter()
                 .map(|alternate| strand::indel_size(record.reference_length, alternate.allele))
                 .collect();
+            // The filter's current fields, as `calculateArtifactProbabilities` reads them: what the
+            // previous pass learned, not the initial values.
             if let Ok(steps) = strand::calculate_artifact_probabilities(
                 &parsed,
                 &sizes,
-                LearnedParameters::default().strand_artifact_prior,
-                LearnedParameters::default().alpha_strand,
-                LearnedParameters::default().beta_strand,
+                strand_learned.strand_artifact_prior,
+                strand_learned.alpha_strand,
+                strand_learned.beta_strand,
             ) {
                 strand_steps.extend(steps);
             }
@@ -343,7 +345,6 @@ fn accumulate(
         record.reference_length,
     );
     threshold.add(&accumulated);
-    let _ = arguments;
 }
 
 /// `applyFiltersAndAccumulateOutputStats`, without the statistics.
