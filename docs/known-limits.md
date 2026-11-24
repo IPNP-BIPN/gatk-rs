@@ -2,7 +2,7 @@
 
 What a release of gatk-rs does **not** claim, in one place. Everything else that
 [VALIDATION.md](VALIDATION.md) lists as oracle-backed is compared byte for byte against GATK
-4.7.0.0 in CI. A limit is one of three kinds:
+4.7.0.0 in CI. A limit is one of four kinds:
 
 1. **A port limitation**: the port refuses, by name, something it has not ported. It never answers
    with different bytes instead.
@@ -10,6 +10,8 @@ What a release of gatk-rs does **not** claim, in one place. Everything else that
    suite that the harness cannot compare, and why.
 3. **An instability of the reference**: GATK itself gives different bytes from run to run or from
    host to host, so there is no single byte to match.
+4. **A deliberate divergence**: where GATK 4.7.0.0's htsjdk 5.0.0 loses or corrupts data and a
+   later htsjdk release fixes it, the port takes the fix and differs from the reference on purpose.
 
 Counts are as of 2026-11-24 (`origin/main` `43faae30`). Two of the sources below, PR #1477 and
 PR #1478, are not merged yet; their lists may still move.
@@ -78,6 +80,27 @@ says so; nothing here is a port bug.
 | AnalyzeSaturationMutagenesis `--write-rejected-reads` | races the async BAM writer (4 of 18 reference runs differ) | held at `false` | #1477 |
 | BwaMemIndexImageCreator | writes heap pointers under ASLR (9 bytes) | compared with them masked | #1477, [pointers-that-reach-the-output.md](pointers-that-reach-the-output.md) |
 | GenomicsDBImport | names fragments by UUID, thread and clock; writes a `Date` and an absolute path | 133 of 134 files identical | #1477 |
+
+## 4. Deliberate divergences from htsjdk 5.0.0
+
+Taken from htsjdk 5.0.1, 5.0.2 and 6.0.0 because 5.0.0 loses data. Each one differs from GATK
+4.7.0.0 and Picard 3.5.0 only on inputs where the reference's output is wrong. The full table, with
+upstream issues, is htsjdk-rs `docs/htsjdk-upstream.md` (htsjdk-rs #293).
+
+| where | 5.0.0 | the port | source |
+|---|---|---|---|
+| CRAM, mapped read with SEQ `*` | writes CIGAR `0M`, drops NM/MD | keeps CIGAR, NM and MD | htsjdk-rs #298; htsjdk #1837, #1843 |
+| CRAM tags and names | loses unsigned `B` arrays and bytes 0x80–0xFF | keeps them | htsjdk-rs #298; htsjdk #1840, #1887 |
+| CRAM, unpaired read | drops mate flags and PNEXT; drops an RG naming no `@RG` | keeps them | htsjdk-rs #298; htsjdk #1891 |
+| CRAM with a mid-file EOF container (samtools cat < 1.13) | stops there | reads to the end | htsjdk-rs #298; htsjdk #1876 |
+| BCF 2.1, interior missing value | shifts later values, cuts AD/PL | keeps it in place (a trailing `.` is still padding) | htsjdk-rs #295; htsjdk #1827, #1828 |
+| BCF 2.1, Integer INFO list with a null | NullPointerException | writes it | htsjdk-rs #295; htsjdk #1889 |
+| Indexed BAM/CRAM, multi-interval query, references out of `@SQ` order | drops records | returns every record | htsjdk-rs #294; htsjdk #1877; gatk-rs #1527 |
+| Merged VCF headers, inputs' dictionaries differ | drops contigs | keeps every contig | htsjdk-rs #296; htsjdk #1878; gatk-rs #1527 |
+
+Already htsjdk 6.0.0's behaviour rather than 5.0.0's: an interior empty BGZF block does not end the
+file; ReferenceSource is keyed by contig name; `@RG DT` is copied as written. An empty interior SAM
+field is refused at every validation stringency (5.0.0 goes by stringency).
 
 ## Platforms
 
