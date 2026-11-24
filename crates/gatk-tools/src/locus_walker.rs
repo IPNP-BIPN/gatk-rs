@@ -65,6 +65,9 @@ pub enum LocusWalkerError {
     /// `Utils.nonEmpty` inside `IntervalOverlappingIterator`: intervals were given as an empty
     /// list and empty loci were not asked for.
     EmptyIntervalList,
+    /// `Utils.nonNull` in `AlignmentContext` from `IntervalAlignmentContextIterator`: empty loci
+    /// were asked for over an empty list of intervals and no read covered any locus.
+    NoLoci,
     /// The state layer refused, including the downsampling this port does not reproduce.
     States(ReadStateError),
 }
@@ -167,6 +170,12 @@ pub fn traverse<'a>(
                 })
                 .collect();
             let requested = intervals.unwrap_or(&whole);
+            // The constructor takes the first locus, then the first covered context or an empty one
+            // at that locus, which is null when there is none: `-L unmapped` alone leaves no loci,
+            // and only unplaced reads, which the locus iterator drops.
+            if requested.is_empty() && covered.is_empty() {
+                return Err(LocusWalkerError::NoLoci);
+            }
             context_iterator::with_empty_loci(covered, requested, header)
         }
         Route::RejectedEmptyIntervalList => unreachable!("checked above"),

@@ -386,6 +386,10 @@ pub struct ReadsDataSource {
     /// The virtual pointer no record before which is read: Disq's guessed first record for a
     /// Spark tool, and 0, which clips nothing, for everything else.
     split_start: u64,
+    /// `ReadsPathDataSource.traverseUnmapped`: `-L unmapped` was given, so a walker's traversal
+    /// ends with the unplaced unmapped reads. Like the reference's, it is part of the traversal
+    /// bounds the data source holds rather than an argument of each traversal.
+    traverse_unmapped: bool,
 }
 
 struct ReferenceIndex {
@@ -413,7 +417,18 @@ impl ReadsDataSource {
             path: bam.display().to_string(),
             index,
             split_start: 0,
+            traverse_unmapped: false,
         })
+    }
+
+    /// The half of `setTraversalBounds` that says whether the unplaced unmapped reads are wanted.
+    pub fn set_traverse_unmapped(&mut self, traverse_unmapped: bool) {
+        self.traverse_unmapped = traverse_unmapped;
+    }
+
+    /// Whether a walker's traversal of this source ends with the unplaced unmapped reads.
+    pub fn traverses_unmapped(&self) -> bool {
+        self.traverse_unmapped
     }
 
     fn read_reference_indexes(bai: &Path) -> Result<Vec<ReferenceIndex>, ReadsError> {
@@ -488,6 +503,7 @@ impl ReadsDataSource {
             path: bam.display().to_string(),
             index: Vec::new(),
             split_start: 0,
+            traverse_unmapped: false,
         })
     }
 
@@ -627,6 +643,9 @@ impl ReadsDataSource {
     pub fn query_unmapped(&self) -> Result<Vec<BamRecord>, ReadsError> {
         let start = match self.start_of_last_linear_bin() {
             Some(pointer) => pointer,
+            // Disq (a source with a split start is one Disq cut) asks the index for the last
+            // linear bin and, when there is none, reads no unplaced reads at all.
+            None if self.split_start != 0 => return Ok(Vec::new()),
             // No mapped reads in the file, so start at the first record.
             None => self.first_record_pointer()?,
         };
@@ -651,7 +670,7 @@ impl ReadsDataSource {
     /// The loop overwrites rather than maximising, so a reference whose linear index is shorter
     /// than an earlier one's still wins by being later. htsjdk's own comment explains the shape:
     /// no read may align to the last sequences in the dictionary.
-    fn start_of_last_linear_bin(&self) -> Option<u64> {
+    pub fn start_of_last_linear_bin(&self) -> Option<u64> {
         let mut last = None;
         for reference in &self.index {
             if let Some(&offset) = reference.linear.last() {
@@ -749,6 +768,7 @@ impl ReadsDataSource {
             path: bam.display().to_string(),
             index,
             split_start: 0,
+            traverse_unmapped: false,
         })
     }
 

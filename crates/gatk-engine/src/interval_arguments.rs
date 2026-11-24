@@ -47,9 +47,7 @@ use crate::interval::{
     load_intervals, merge_interval_locations, parse_interval, MergingRule, ParseError,
     SimpleInterval,
 };
-
-/// The string `-L` and `-XL` accept in place of an interval.
-pub const UNMAPPED: &str = "unmapped";
+use crate::interval_args::{is_unmapped_loc, is_unmapped_string, unmapped_loc};
 
 /// `IntervalSetRule`, whose default is `UNION`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -257,10 +255,16 @@ fn merge_by_set_operator(
     let (mut i, mut j) = (0usize, 0usize);
     while i < one.len() && j < two.len() {
         let (a, b) = (&one[i], &two[j]);
-        let (ai, bi) = (
-            contig_index(header, &a.contig),
-            contig_index(header, &b.contig),
-        );
+        // `compareContigs` puts `GenomeLoc.UNMAPPED`, contig index -1, before every contig here,
+        // where the sort puts it after them all: two orders, both the reference's.
+        let index = |interval: &SimpleInterval| {
+            if is_unmapped_loc(interval) {
+                -1
+            } else {
+                contig_index(header, &interval.contig) as i64
+            }
+        };
+        let (ai, bi) = (index(a), index(b));
         let b_before_a = bi < ai || (bi == ai && b.end < a.start);
         let a_before_b = ai < bi || (ai == bi && a.end < b.start);
         if b_before_a {
@@ -305,6 +309,9 @@ fn resolve_query(
         )
         .map_err(IntervalArgumentError::File);
     }
+    if is_unmapped_string(query) {
+        return Ok(vec![unmapped_loc()]);
+    }
     let parsed = parse_interval(query, header).map_err(IntervalArgumentError::Parse)?;
     // `parseGenomeLoc` creates the loc with `mustBeOnReference`, so an `-L` past the end of its
     // contig is refused here, before any `-XL` is subtracted from it.
@@ -330,6 +337,10 @@ fn load_with(
             resolved = resolved
                 .iter()
                 .filter_map(|interval| {
+                    // `createPaddedGenomeLoc` returns `UNMAPPED` as it is.
+                    if is_unmapped_loc(interval) {
+                        return Some(interval.clone());
+                    }
                     interval.expand_within_contig(padding, contig_length(header, &interval.contig))
                 })
                 .collect();
@@ -405,34 +416,11 @@ pub fn traversal_parameters(
     padding: i32,
     exclusion_padding: i32,
 ) -> Result<TraversalParameters, IntervalArgumentError> {
-    // `unmapped` is a flag rather than an interval, and the parser never sees it.
-    let mut traverse_unmapped = false;
-    let included: Vec<String> = include
-        .iter()
-        .filter(|query| {
-            if query.as_str() == UNMAPPED {
-                traverse_unmapped = true;
-                false
-            } else {
-                true
-            }
-        })
-        .cloned()
-        .collect();
-    if exclude.iter().any(|query| query == UNMAPPED) {
-        return Err(IntervalArgumentError::UnmappedExcluded);
-    }
-
-    let include_set = if included.is_empty() {
-        if include.is_empty() {
-            // No `-L` at all: the include set is the whole reference.
-            whole_reference(header)
-        } else {
-            // `-L unmapped` alone: every mapped interval is gone, and the flag is the answer.
-            Vec::new()
-        }
+    let include_set = if include.is_empty() {
+        // No `-L` at all: the include set is the whole reference.
+        whole_reference(header)
     } else {
-        load_with(&included, header, set_rule, merging_rule, padding)?
+        load_with(include, header, set_rule, merging_rule, padding)?
     };
 
     let exclude_set = load_with(
@@ -442,23 +430,29 @@ pub fn traversal_parameters(
         merging_rule,
         exclusion_padding,
     )?;
-    if exclude_set.is_empty() {
-        return Ok(TraversalParameters {
-            intervals: include_set,
-            traverse_unmapped,
-        });
+    if exclude_set.iter().any(is_unmapped_loc) {
+        return Err(IntervalArgumentError::UnmappedExcluded);
     }
+    let mut intervals = if exclude_set.is_empty() {
+        include_set
+    } else {
+        let intervals = subtract(&include_set, &exclude_set, header);
+        if intervals.is_empty() {
+            return Err(IntervalArgumentError::ExcludedEverything {
+                include: include.to_vec(),
+                exclude: exclude.to_vec(),
+            });
+        }
+        intervals
+    };
 
-    let intervals = subtract(&include_set, &exclude_set, header);
-    if intervals.is_empty() {
-        return Err(IntervalArgumentError::ExcludedEverything {
-            include: include.to_vec(),
-            exclude: exclude.to_vec(),
-        });
-    }
+    // `unmapped` became `GenomeLoc.UNMAPPED` and went through the set rule, the merge and the
+    // subtraction like any other interval; only now is it taken out and made the flag.
+    let before = intervals.len();
+    intervals.retain(|interval| !is_unmapped_loc(interval));
     Ok(TraversalParameters {
+        traverse_unmapped: intervals.len() < before,
         intervals,
-        traverse_unmapped,
     })
 }
 
@@ -469,4 +463,82 @@ pub fn intervals_only(
     merging_rule: MergingRule,
 ) -> Result<Vec<SimpleInterval>, ParseError> {
     load_intervals(include, header, merging_rule)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use htsjdk_bam::header::SequenceRecord;
+
+    fn header() -> SamHeader {
+        let mut header = SamHeader::default();
+        header.sequences.push(SequenceRecord::new("1", 1000));
+        header
+    }
+
+    fn run(
+        include: &[&str],
+        exclude: &[&str],
+        set_rule: SetRule,
+        padding: i32,
+    ) -> TraversalParameters {
+        let strings = |values: &[&str]| values.iter().map(|v| v.to_string()).collect::<Vec<_>>();
+        traversal_parameters(
+            &strings(include),
+            &strings(exclude),
+            &header(),
+            set_rule,
+            MergingRule::All,
+            padding,
+            0,
+        )
+        .expect("the traversal")
+    }
+
+    // Each case is one the pinned oracle answered the same way through PrintReads.
+    #[test]
+    fn unmapped_is_an_interval_until_the_end() {
+        let only = run(&["UNMAPPED"], &[], SetRule::Union, 0);
+        assert!(only.traverse_unmapped && only.intervals.is_empty());
+        // Padding leaves it alone, and an exclusion that misses it keeps it.
+        let padded = run(
+            &["unmapped", "1:200-300"],
+            &["1:250-260"],
+            SetRule::Union,
+            10,
+        );
+        assert!(padded.traverse_unmapped);
+        assert_eq!(padded.intervals.len(), 2);
+        // Two of them intersect to one; against a mapped interval nothing is left.
+        assert!(run(&["unmapped", "unmapped"], &[], SetRule::Intersection, 0).traverse_unmapped);
+        for order in [["1:200-300", "unmapped"], ["unmapped", "1:200-300"]] {
+            let strings: Vec<String> = order.iter().map(|v| v.to_string()).collect();
+            let result = traversal_parameters(
+                &strings,
+                &[],
+                &header(),
+                SetRule::Intersection,
+                MergingRule::All,
+                0,
+                0,
+            );
+            assert!(matches!(
+                result,
+                Err(IntervalArgumentError::EmptyIntersection { .. })
+            ));
+        }
+        let excluded = traversal_parameters(
+            &["1:200-300".to_string()],
+            &["unmapped".to_string()],
+            &header(),
+            SetRule::Union,
+            MergingRule::All,
+            0,
+            0,
+        );
+        assert!(matches!(
+            excluded,
+            Err(IntervalArgumentError::UnmappedExcluded)
+        ));
+    }
 }
