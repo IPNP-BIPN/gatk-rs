@@ -1448,6 +1448,17 @@ def self_check():
     assert join_path("/a/b/", "c/") == "/a/b/c" and normalized("x//y/") == "x/y"
     assert Builder().add("O", "%s").tokens == ["--O", "%s"]
     assert gatk_extension("fasta") == ".fasta" and gatk_extension(".vcf") == ".vcf"
+    # Two BGZF blocks of 30 and 28 bytes: a virtual offset into the second is ordinal 1, and one
+    # that starts no block keeps its address.
+    blocks = b"\x1f\x8b" + bytes(14) + (29).to_bytes(2, "little") + bytes(12)
+    blocks += b"\x1f\x8b" + bytes(14) + (27).to_bytes(2, "little") + bytes(10)
+    starts = run_array.bgzf_block_starts(blocks)
+    assert starts == {0: 0, 30: 1, 58: 2}
+    tabix = b"".join(n.to_bytes(4, "little") for n in (0, 1, 0, 0, 0, 0, 0, 0, 2)) + b"1\x00"
+    tabix += b"".join(n.to_bytes(4, "little") for n in (1, 4681, 1))
+    tabix += ((30 << 16) | 5).to_bytes(8, "little") + ((31 << 16) | 0).to_bytes(8, "little")
+    tabix += (0).to_bytes(4, "little")
+    assert run_array.tabix_by_block_ordinal(tabix, starts).splitlines()[1] == "0 bin 4681 1:5 ?31:0"
 
 
 def main(argv):
