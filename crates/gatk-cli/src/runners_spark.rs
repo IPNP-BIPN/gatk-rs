@@ -2476,7 +2476,7 @@ fn write_pathseq_bam(
             _ => None,
         };
     let partitions = match compare {
-        Some(compare) => range_partitions(reads, reducers, input_partitions, compare)?,
+        Some(compare) => range_partitions(reads, reducers, input_partitions, None, compare)?,
         None => vec![reads.to_vec()],
     };
     write_spark_indexed(
@@ -2758,12 +2758,12 @@ pub fn pathseq_filter_spark(parser: &Parser) -> Outcome {
     if !filtered.paired.is_empty() {
         cleared.set_sort_order("queryname");
         let output = argument(parser, "paired-output").ok_or_else(null_spark_tool_output)?;
-        write_spark_reads(parser, &cleared, &filtered.paired, &output, true)?;
+        write_spark_reads(parser, &cleared, &filtered.paired, &output, true, None)?;
     }
     if !filtered.unpaired.is_empty() {
         cleared.set_sort_order("unsorted");
         let output = argument(parser, "unpaired-output").ok_or_else(null_spark_tool_output)?;
-        write_spark_reads(parser, &cleared, &filtered.unpaired, &output, true)?;
+        write_spark_reads(parser, &cleared, &filtered.unpaired, &output, true, None)?;
     }
     Ok(None)
 }
@@ -3070,7 +3070,7 @@ pub fn print_reads_spark(parser: &Parser) -> Outcome {
     let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
     // `writeReads(ctx, output, reads, header, false)`: PrintReadsSpark asks for no sort.
-    write_spark_reads(parser, &header, &records, &output, false)?;
+    write_spark_reads(parser, &header, &records, &output, false, None)?;
     Ok(None)
 }
 
@@ -3418,7 +3418,12 @@ pub fn sort_sam_spark(parser: &Parser) -> Outcome {
     let order = scalar(parser, "sort-order").unwrap_or_else(|| "coordinate".to_string());
     let mut sorted = header.clone();
     sorted.set_sort_order(&order);
-    write_spark_reads(parser, &sorted, &records, &output, true)?;
+    let sizes = || disq_partition_sizes(parser, &source, &intervals, &filter, records.len());
+    let sketch = Sketch {
+        shift: 15,
+        input_partitions: &sizes,
+    };
+    write_spark_reads(parser, &sorted, &records, &output, true, Some(sketch))?;
     Ok(None)
 }
 
@@ -3677,7 +3682,7 @@ fn sanitize_reads(
     let partitions = if name_grouped {
         vec![kept]
     } else {
-        sorted_partitions(parser, Some("queryname"), &kept)?
+        sorted_partitions(parser, Some("queryname"), &kept, None)?
     };
 
     let mut out = Vec::with_capacity(partitions.len());
@@ -3986,7 +3991,7 @@ pub fn extract_original_alignment_records_by_name_spark(parser: &Parser) -> Outc
         .into_iter()
         .filter(|record| names.contains(&record.read_name) != invert)
         .collect();
-    write_spark_reads(parser, &header, &kept, &output, false)?;
+    write_spark_reads(parser, &header, &kept, &output, false, None)?;
     Ok(None)
 }
 
@@ -4276,7 +4281,7 @@ pub fn compare_duplicates_spark(parser: &Parser) -> Outcome {
                 .filter(|record| names.contains(record.read_name.as_str()))
                 .cloned()
                 .collect();
-            let partitions = sorted_partitions(parser, sort_order.as_deref(), &kept)?;
+            let partitions = sorted_partitions(parser, sort_order.as_deref(), &kept, None)?;
             write_spark_partitions(parser, &written, sort_order.as_deref(), &partitions, path)?;
         }
     }
@@ -4801,7 +4806,7 @@ pub fn mark_duplicates_spark(parser: &Parser, mode: &Parser) -> Outcome {
         })
         .collect();
     header.set_sort_order("coordinate");
-    write_spark_reads(parser, &header, &kept, &output, true)?;
+    write_spark_reads(parser, &header, &kept, &output, true, None)?;
     Ok(None)
 }
 
@@ -4947,7 +4952,7 @@ pub(super) fn reads_pipeline_reads(
         &sorted,
     )?;
     if let Some(output_bam) = argument(parser, "output-bam") {
-        write_spark_reads(parser, header, &finished, &output_bam, true)?;
+        write_spark_reads(parser, header, &finished, &output_bam, true, None)?;
     }
     let caller_filter = super::standard_hc_read_filter(header)?;
     let for_caller: Vec<BamRecord> = finished
@@ -4971,11 +4976,12 @@ fn write_spark_reads(
     records: &[BamRecord],
     output: &str,
     sort_to_header: bool,
+    sketch: Option<Sketch>,
 ) -> Result<(), Thrown> {
     refuse_spark_cram_3_0(parser, output)?;
     let (header, sort_order) = disq_header(header);
     let partitions = if sort_to_header {
-        sorted_partitions(parser, sort_order.as_deref(), records)?
+        sorted_partitions(parser, sort_order.as_deref(), records, sketch)?
     } else {
         vec![records.to_vec()]
     };
@@ -4993,7 +4999,7 @@ fn write_aligned_reads(
 ) -> Result<(), Thrown> {
     let (header, sort_order) = disq_header(header);
     let partitions = if sort_to_header {
-        sorted_partitions(parser, sort_order.as_deref(), records)?
+        sorted_partitions(parser, sort_order.as_deref(), records, None)?
     } else {
         vec![records.to_vec()]
     };
@@ -5165,6 +5171,7 @@ fn sorted_partitions(
     parser: &Parser,
     sort_order: Option<&str>,
     records: &[BamRecord],
+    sketch: Option<Sketch>,
 ) -> Result<Vec<Vec<BamRecord>>, Thrown> {
     let compare: fn(&BamRecord, &BamRecord) -> std::cmp::Ordering = match sort_order {
         Some("coordinate") => htsjdk_bam::coordinate::compare,
@@ -5184,7 +5191,46 @@ fn sorted_partitions(
             .sum();
         reducers = 1 + (size / (10 * 1024 * 1024)) as usize;
     }
-    range_partitions(records, reducers, &[records.len()], compare)
+    match sketch {
+        Some(sketch) if reducers > 1 => {
+            let sizes = (sketch.input_partitions)()?;
+            range_partitions(records, reducers, &sizes, Some(sketch.shift), compare)
+        }
+        _ => range_partitions(records, reducers, &[records.len()], None, compare),
+    }
+}
+
+/// What `RangePartitioner.sketch` needs that the reads alone do not say: `shift`, the id of the
+/// RDD it builds, which counts the RDDs the tool made before (the reference logs it plus one, as
+/// the `MapPartitionsRDD` of the `sortByKey` stage); and the input partitions' sizes, counted only
+/// when there is more than one reducer.
+struct Sketch<'a> {
+    shift: i32,
+    input_partitions: &'a dyn Fn() -> Result<Vec<usize>, Thrown>,
+}
+
+/// The reads of each partition Disq cuts the input into, as the tool's traversal keeps them: the
+/// `total` it kept when there is one partition.
+fn disq_partition_sizes(
+    parser: &Parser,
+    source: &ReadsDataSource,
+    intervals: &[gatk_engine::interval::SimpleInterval],
+    filter: &dyn Fn(&BamRecord) -> bool,
+    total: usize,
+) -> Result<Vec<usize>, Thrown> {
+    use gatk_tools::read_metadata::ReadPartitions;
+    let reads = disq_reads(parser, source, intervals)?;
+    if reads.count() == 1 {
+        return Ok(vec![total]);
+    }
+    (0..reads.count())
+        .map(|partition| {
+            reads
+                .reads(partition)
+                .map(|records| records.iter().filter(|record| filter(record)).count())
+                .map_err(|error| Thrown::user(format!("{error:?}")))
+        })
+        .collect()
 }
 
 /// The sort itself: `reducers` partitions over input partitions of the sizes given.
@@ -5192,11 +5238,12 @@ fn range_partitions(
     records: &[BamRecord],
     reducers: usize,
     input_partitions: &[usize],
+    shift: Option<i32>,
     compare: fn(&BamRecord, &BamRecord) -> std::cmp::Ordering,
 ) -> Result<Vec<Vec<BamRecord>>, Thrown> {
+    let bounds = range_bounds(records, reducers, input_partitions, shift, compare)?;
     let mut sorted = records.to_vec();
     sorted.sort_by(compare);
-    let bounds = range_bounds(&sorted, reducers, input_partitions, compare)?;
     let mut partitions: Vec<Vec<BamRecord>> = vec![Vec::new(); bounds.len() + 1];
     for record in sorted {
         // `getPartition`: the first bound the key is not greater than.
@@ -5209,52 +5256,62 @@ fn range_partitions(
     Ok(partitions)
 }
 
-/// `RangePartitioner`'s bounds, the sketch taking every key: weight one each, then
-/// `determineBounds(candidates, min(partitions, candidates))`.
+/// `RangePartitioner`'s bounds over `records` in their input order, cut into input partitions of
+/// the sizes given: each partition's reservoir sketch, then `determineBounds`.
 ///
-/// shortcut: input partitions each holding at most `sampleSizePerPartition` keys, where the sketch
-/// is the whole partition; more is a reservoir sample the port does not draw, and is refused by name.
+/// A partition no larger than `sampleSizePerPartition` is its own sketch, whatever the seed, so a
+/// caller that does not know `shift` (see [`Sketch`]) is refused only where the sample is drawn.
 fn range_bounds(
-    sorted: &[BamRecord],
+    records: &[BamRecord],
     partitions: usize,
     input_partitions: &[usize],
+    shift: Option<i32>,
     compare: fn(&BamRecord, &BamRecord) -> std::cmp::Ordering,
 ) -> Result<Vec<BamRecord>, Thrown> {
-    if partitions <= 1 || sorted.is_empty() {
+    use gatk_tools::spark_range_partitioner as range;
+    if partitions <= 1 || records.is_empty() {
         return Ok(Vec::new());
     }
-    let sample_size = (20.0 * partitions as f64).min(1e6);
-    let per_partition = (3.0 * sample_size / input_partitions.len() as f64).ceil() as usize;
-    if input_partitions.iter().any(|size| *size > per_partition) {
-        return Err(Thrown::non_user(
+    let refused = |what: &str| {
+        Thrown::non_user(
             PORT_LIMITATION,
             format!(
-                "Sorting {} reads into {partitions} partitions samples them, which this port does \
-                 not reproduce yet. This message is the port's own and not GATK's.",
-                sorted.len()
+                "Sorting {} reads into {partitions} partitions {what}, which this port does not \
+                 reproduce yet. This message is the port's own and not GATK's.",
+                records.len()
             ),
-        ));
-    }
-    let partitions = partitions.min(sorted.len());
-    let step = sorted.len() as f64 / partitions as f64;
-    let mut cumulative = 0.0f64;
-    let mut target = step;
-    let mut bounds: Vec<BamRecord> = Vec::new();
-    for key in sorted {
-        if bounds.len() >= partitions - 1 {
-            break;
-        }
-        cumulative += 1.0;
-        if cumulative >= target
-            && bounds
-                .last()
-                .is_none_or(|previous| compare(key, previous).is_gt())
-        {
-            bounds.push(key.clone());
-            target += step;
-        }
-    }
-    Ok(bounds)
+        )
+    };
+    let (per_partition, _) = range::sample_sizes(partitions, input_partitions.len());
+    // No partition holds more than all of them: every key is its sketch, however they are cut.
+    let input_partitions = if records.len() <= per_partition {
+        &[records.len()][..]
+    } else if input_partitions.iter().sum::<usize>() != records.len() {
+        return Err(refused("from input partitions it did not count"));
+    } else {
+        input_partitions
+    };
+    let shift = match shift {
+        Some(shift) => shift,
+        None if input_partitions.iter().all(|size| *size <= per_partition) => 0,
+        None => return Err(refused("samples them")),
+    };
+    let mut start = 0;
+    let sketches = input_partitions
+        .iter()
+        .enumerate()
+        .map(|(index, size)| {
+            let mut reservoir = range::Reservoir::new(per_partition, index as i32, shift);
+            records[start..start + size]
+                .iter()
+                .for_each(|record| reservoir.push(record));
+            start += size;
+            reservoir.finish()
+        })
+        .collect();
+    range::bounds(sketches, partitions, |a, b| compare(a, b))
+        .map(|bounds| bounds.into_iter().cloned().collect())
+        .map_err(|_| refused("samples an imbalanced input partition again"))
 }
 
 /// `-O`, written with `print`: the text and no newline after it.
@@ -5378,7 +5435,12 @@ pub fn apply_bqsr_spark(parser: &Parser) -> Outcome {
         &super::apply_bqsr_arguments(parser),
         &records,
     )?;
-    write_spark_reads(parser, &header, &recalibrated, &output, true)?;
+    let sizes = || disq_partition_sizes(parser, &source, &intervals, &filter, recalibrated.len());
+    let sketch = Sketch {
+        shift: 16,
+        input_partitions: &sizes,
+    };
+    write_spark_reads(parser, &header, &recalibrated, &output, true, Some(sketch))?;
     Ok(None)
 }
 
@@ -5426,7 +5488,12 @@ pub fn bqsr_pipeline_spark(parser: &Parser) -> Outcome {
         &super::apply_bqsr_arguments(parser),
         &records,
     )?;
-    write_spark_reads(parser, &header, &recalibrated, &output, true)?;
+    let sizes = || disq_partition_sizes(parser, &source, &intervals, &filter, recalibrated.len());
+    let sketch = Sketch {
+        shift: 20,
+        input_partitions: &sizes,
+    };
+    write_spark_reads(parser, &header, &recalibrated, &output, true, Some(sketch))?;
     Ok(None)
 }
 

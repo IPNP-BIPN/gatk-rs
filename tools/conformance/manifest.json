@@ -8363,7 +8363,7 @@
       "compare": {
         "mode": "lines"
       },
-      "expect_rows": 2379,
+      "expect_rows": 2406,
       "expect_contains": [
         "revert-sam-defaults\tjava.lang.UnsupportedOperationException",
         "revert-sam-sanitize\torg.apache.spark.SparkException:Base quality score -1 is invalid",

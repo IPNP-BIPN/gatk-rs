@@ -642,6 +642,35 @@ public class SparkWalkersDump {
         run("sort-sam-unsorted", "sort-sam-unsorted.bam", "SortSamSpark", "-I", i,
                 "--use-jdk-deflater", "true", "--sort-order", "unsorted",
                 "-O", out("sort-sam-unsorted", "sort-sam-unsorted.bam"));
+        // Past `sampleSizePerPartition` keys (3 * 20 * reducers / input partitions) RangePartitioner
+        // sketches each input partition by a reservoir sample seeded from its RDD's id, and the
+        // bounds it draws decide where each part, and so each BGZF block, ends: three reducers over
+        // one partition, four by name, five over the partitions Disq cuts at 64 KiB, and the BQSR
+        // writers over the caller's reads.
+        final String evidence = DIR.resolve("sv-evidence.bam").toString();
+        run("sort-sam-sampled", "sort-sam-sampled.bam", "SortSamSpark", "-I", evidence,
+                "--use-jdk-deflater", "true", "--num-reducers", "3",
+                "-O", out("sort-sam-sampled", "sort-sam-sampled.bam"));
+        run("sort-sam-sampled-queryname", "sort-sam-sampled-queryname.bam", "SortSamSpark", "-I",
+                evidence, "--use-jdk-deflater", "true", "--num-reducers", "4", "--sort-order",
+                "queryname", "-O", out("sort-sam-sampled-queryname", "sort-sam-sampled-queryname.bam"));
+        run("sort-sam-sampled-split", "sort-sam-sampled-split.bam", "SortSamSpark", "-I", evidence,
+                "--use-jdk-deflater", "true", "--num-reducers", "5", "--bam-partition-size", "65536",
+                "-O", out("sort-sam-sampled-split", "sort-sam-sampled-split.bam"));
+        final String callerBam = DIR.resolve("caller.bam").toString();
+        final String callerFasta = DIR.resolve("caller.fasta").toString();
+        final String callerSites = DIR.resolve("caller-known.vcf").toString();
+        run("base-recalibrator-caller", "recal.table", "BaseRecalibratorSpark", "-I", callerBam,
+                "-R", callerFasta, "--known-sites", callerSites,
+                "-O", out("base-recalibrator-caller", "recal.table"));
+        run("apply-bqsr-sampled", "apply-bqsr-sampled.bam", "ApplyBQSRSpark", "-I", callerBam,
+                "--use-jdk-deflater", "true", "--num-reducers", "4",
+                "--bqsr-recal-file", out("base-recalibrator-caller", "recal.table"),
+                "-O", out("apply-bqsr-sampled", "apply-bqsr-sampled.bam"));
+        run("bqsr-pipeline-sampled", "bqsr-pipeline-sampled.bam", "BQSRPipelineSpark", "-I",
+                callerBam, "-R", callerFasta, "--known-sites", callerSites, "--use-jdk-deflater",
+                "true", "--num-reducers", "4",
+                "-O", out("bqsr-pipeline-sampled", "bqsr-pipeline-sampled.bam"));
         // RevertSamSpark: the reversion and each switch that holds part of it back, the arguments
         // the tool has quirks on (`--remove-default-attributes-to-clear` fails, and the output
         // checks' answers are thrown away), `--sanitize` with its sort, and one file per read group.
