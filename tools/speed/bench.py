@@ -150,12 +150,17 @@ def time_tool(tool, row, workdir, port, classes, reps, iterations, timeout):
     spec_dir.mkdir(exist_ok=True)
     binary = Path(port).resolve()
     java = f"java {run_array.JAVA_OPENS}"
+    # A tool that runs python runs both sides in the Broad image, as its array does; the steady
+    # loop is compiled against the pinned image's classpath, so there it is not measured.
+    python = run_array.past_the_interpreter(tool) == "python"
+    loader = "/work/glibc/ld-linux-x86-64.so.2 --library-path /work/glibc " if python else ""
+    iterations = 0 if python else iterations
     spec = {
         "reps": reps,
         "timeout": timeout,
         "iterations": iterations,
         "oracle": f'{java} -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {tool} {row["cli"]}',
-        "port": f"/work/port-binary/{binary.name} {tool} {row['cli']}",
+        "port": f"{loader}/work/port-binary/{binary.name} {tool} {row['cli']}",
         "steady": (
             f'{java} -cp "/work/steady:$ORACLE_CP" Steady {iterations} @REPORT@ {tool} {row["cli"]}'
             if iterations
@@ -165,17 +170,28 @@ def time_tool(tool, row, workdir, port, classes, reps, iterations, timeout):
     (spec_dir / "spec.json").write_text(json.dumps(spec))
     out_dir = workdir / "out"
     out_dir.mkdir(exist_ok=True)
+    fixtures = run_array.fixtures_of(workdir)
+    timer = "python3 /harness/timer.py /work/spec/spec.json"
+    image = [run_array.IMAGE, timer]
+    if python:
+        image = [
+            "-v", f"{run_array.port_glibc(workdir)}:/work/glibc:ro",
+            "-e", f"ORACLE_CP={run_array.BROAD['classpath']}",
+            "-e", f"NPY_DISABLE_CPU_FEATURES={run_array.NUMPY_WITHOUT_AVX512}",
+            "--entrypoint", "sh", run_array.BROAD["image"], "-c",
+            f"{run_array.ENVIRONMENT if run_array.environment(tool) else ''}{timer}",
+        ]
     result = subprocess.run(
         [
             "docker", "run", "--rm", "--platform", run_array.PLATFORM,
-            "-v", f"{run_array.fixtures_of(workdir)}:/work/fixtures:ro",
+            "-v", f"{fixtures}:/work/fixtures:ro",
             "-v", f"{out_dir}:/work/out",
             "-v", f"{binary.parent}:/work/port-binary:ro",
             "-v", f"{classes}:/work/steady:ro",
             "-v", f"{spec_dir}:/work/spec:ro",
             "-v", f"{SPEED}:/harness:ro",
-            "-w", "/work", run_array.IMAGE,
-            "python3 /harness/timer.py /work/spec/spec.json",
+            *run_array.frozen_environment(run_array.environment(tool), fixtures),
+            "-w", "/work", *image,
         ],
         capture_output=True,
         text=True,
@@ -199,6 +215,7 @@ def summarise(raw):
             "wall": median([r["wall"] for r in runs]),
             "cpu": median([r["cpu"] for r in runs]),
             "rss_kib": median([r["rss_kib"] for r in runs]),
+            "tree_rss_kib": median([r.get("tree_rss_kib") for r in runs if r.get("tree_rss_kib")]),
             "wall_spread": spread([r["wall"] for r in runs]),
         }
 
@@ -209,6 +226,7 @@ def summarise(raw):
         "ratio_cold_wall": median(paired),
         "ratio_cold_cpu": ratio(side(port)["cpu"], side(oracle)["cpu"]),
         "ratio_rss": ratio(side(port)["rss_kib"], side(oracle)["rss_kib"]),
+        "ratio_tree_rss": ratio(side(port)["tree_rss_kib"], side(oracle)["tree_rss_kib"]),
         "ratio_spread": spread(paired),
         "failed_runs": failed,
         "host": raw["host"],
@@ -264,7 +282,7 @@ def finish(document):
 
 
 def table(document):
-    print(f"\n{'tool':44} {'cold':>7} {'steady':>7} {'cpu':>7} {'rss':>7} {'noise':>6}")
+    print(f"\n{'tool':44} {'cold':>7} {'steady':>7} {'cpu':>7} {'rss':>7} {'tree':>7} {'noise':>6}")
     for tool, entry in sorted(document["tools"].items()):
         if entry.get("ratio_cold_wall") is None:
             print(f"{tool:44} not measured: {entry.get('reason')}")
@@ -275,7 +293,7 @@ def table(document):
 
         print(
             f"{tool:44} {fmt(entry['ratio_cold_wall'])} {fmt(entry.get('ratio_steady_wall'))} "
-            f"{fmt(entry['ratio_cold_cpu'])} {fmt(entry['ratio_rss'])} "
+            f"{fmt(entry['ratio_cold_cpu'])} {fmt(entry['ratio_rss'])} {fmt(entry.get('ratio_tree_rss'))} "
             f"{fmt(entry['ratio_spread'])[1:]}"
         )
     print(
@@ -383,6 +401,8 @@ def main(argv):
                 run_array.FIXTURES_DIR = options.fixtures_dir
             else:
                 run_array.build_fixtures(workdir)
+            if any(run_array.uses_gcnv(tool) for tool in tools):
+                run_array.build_gcnv(run_array.fixtures_of(workdir))
             (workdir / "tmp").mkdir(exist_ok=True)
             classes = compile_steady(workdir) if options.iterations else workdir
             document["container_overhead"] = container_overhead(5)

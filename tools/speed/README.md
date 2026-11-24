@@ -18,7 +18,7 @@ published come from the `Speed` workflow on real x86-64.
 | File | Role |
 |---|---|
 | `bench.py` | picks the rows, runs the timer per tool, summarises, merges shards, compares runs |
-| `timer.py` | runs inside the container: alternates the two sides, reads CPU and peak RSS from `wait4` |
+| `timer.py` | runs inside the container: alternates the two sides, reads CPU and peak RSS from `wait4`, samples the process group's summed RSS |
 | `Steady.java` | the reference's steady state: one JVM, the same command line `n` times |
 
 ## What a number means
@@ -34,7 +34,13 @@ published come from the `Speed` workflow on real x86-64.
   state is its cold run; the steady ratio is `port cold / reference steady`. A tool that throws on
   a second in-process run has no steady number, and says so.
 - **Ratios.** `port / reference` for wall clock, CPU time (user + system) and peak RSS, medians
-  over the repetitions. Below 1 the port is cheaper.
+  over the repetitions. Below 1 the port is cheaper. `rss` is `wait4`'s, the largest single
+  process; `tree` is the peak of the summed resident sets of the run's process group, sampled
+  every 10 ms, which is what a tool that waits on an interpreter holds (the JVM and python at
+  once on the reference's side).
+- **Interpreters.** A tool under `$past_the_interpreter: python` runs both sides in the Broad
+  image, as its array does, its port through the pinned image's loader, under `$environment`;
+  it has no steady number, `Steady.java` being built against the pinned image's classpath.
 - **Noise.** Each repetition pairs one run of each side; the spread (max - min over median) of
   those paired ratios is the tool's cold noise, and the run's cold noise floor is its 90th
   percentile across tools. The steady ratio is not paired (a loop on one side, processes on the
