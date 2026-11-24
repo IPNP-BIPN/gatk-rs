@@ -15513,11 +15513,22 @@
         "true"
       ],
       "$why": [
-        "HaplotypeCallerSpark's caller values, over mutect_pl.bam: mutect_t.bam under a read group that names a platform, which the recalibration refuses to go without, and that second input stays as the refusal.",
-        "--align has its own suite rows, since it asks for a fixture of unaligned reads none of these values are. The flow arguments because the marking only reads them over flow reads, which this tool would recalibrate with nothing to compare. --binary-tag-name only reaches a table this tool never writes.",
-        "--enable-all-annotations stays off: the reference's Kryo cannot broadcast the annotation engine it builds, and which of two exceptions it reports (a lambda, a thread) moves from row to row. The port refuses it with the first.",
-        "The engine's debug files are held out: under Spark nothing closes them, so they hold what their buffers flushed, and the port refuses them rather than write them complete.",
-        "--dragen-pd-pair-hmm-implementation is held at LOGLESS_CACHING, the one PDHMM kernel ported."
+        "HaplotypeCallerSpark's caller values, over mutect_pl.bam: mutect_t.bam under a read group that names",
+        "a platform, which the recalibration refuses to go without, and that second input stays as the",
+        "refusal. --align has its own suite rows, since it asks for a fixture of unaligned reads none of",
+        "these values are. --bwa-mem-index-image and --single-end-alignment are held out with it: they",
+        "configure the aligner alone. The marking's flow arguments vary, inert over these reads.",
+        "--binary-tag-name only reaches a table this tool never writes. --enable-all-annotations stays off:",
+        "the reference's Kryo cannot broadcast the annotation engine it builds, and which of two exceptions",
+        "it reports (a lambda, a thread) moves from row to row. The port refuses it with the first. The",
+        "engine's debug files (--graph-output, --debug-assembly-variants-out,",
+        "--haplotype-debug-histogram-output, --pair-hmm-results-file, --pdhmm-results-file, --alm-path,",
+        "--debug-assembly-region-state, --debug-genotyper-output) are held out: under Spark nothing closes",
+        "them, so they hold what their buffers flushed, and the port refuses them rather than write them",
+        "complete. --dragen-pd-pair-hmm-implementation is held at LOGLESS_CACHING, the one PDHMM kernel",
+        "ported. --dragen-378-concordance-mode is true or unset beside a --dragen-mode that may be unset, and",
+        "--output-shard-tmp-dir is given only where --sharded-output is not, both pairs being Barclay",
+        "mutexes; --read-index is each BAM's own index or unset."
       ],
       "--input": [
         "/work/fixtures/mutect_pl.bam",
@@ -15605,7 +15616,10 @@
         "-5",
         "-6"
       ],
-      "--dragen-378-concordance-mode": [],
+      "--dragen-378-concordance-mode": [
+        "<unset>",
+        "true"
+      ],
       "--flow-mode": [
         "NONE",
         "STANDARD",
@@ -15675,7 +15689,11 @@
         "false",
         "true"
       ],
-      "--read-index": [],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/mutect_pl.bai",
+        "/work/fixtures/mutect_t.bai"
+      ],
       "--enable-all-annotations": [
         "false"
       ],
@@ -16679,11 +16697,14 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
-      "--sharded-output": [],
-      "--create-output-bam-splitting-index": [],
-      "--splitting-index-granularity": [],
-      "--use-nio": [],
+      "--output-shard-tmp-dir": [
+        "/work/tmp/parts",
+        "<unset>"
+      ],
+      "--sharded-output": [
+        "false",
+        "<unset>"
+      ],
       "--known-sites": [
         "/work/fixtures/resources.vcf",
         "/work/fixtures/known.bed"
@@ -16696,13 +16717,6 @@
       "--bwa-mem-index-image": [],
       "--single-end-alignment": [],
       "--binary-tag-name": [],
-      "--flowbased": [],
-      "--flow-end-pos-uncertainty": [],
-      "--flow-q-is-known-end": [],
-      "--flow-quality-sum-strategy": [],
-      "--flow-skip-start-homopolymers": [],
-      "--single-end-reads-clipping-is-end": [],
-      "--single-end-reads-end-position-significant": [],
       "--duplicate-scoring-strategy": [
         "SUM_OF_BASE_QUALITIES",
         "TOTAL_MAPPED_REFERENCE_LENGTH"
@@ -16791,6 +16805,11 @@
       "--use-original-qualities": [
         "false",
         "true"
+      ],
+      "--dragen-mode": [
+        "false",
+        "true",
+        "<unset>"
       ]
     },
     "PathSeqFilterSpark": {
@@ -22012,6 +22031,76 @@
         "--read-filter-tag-op": "GREATER"
       },
       "why": "One --read-filter selects one filter per row, and each of these arguments needs its own filter selected, so the pair cannot occur on a row the reference accepts."
+    },
+    {
+      "tools": [
+        "ReadsPipelineSpark"
+      ],
+      "forbid": {
+        "--dragen-378-concordance-mode": "true",
+        "--dragen-mode": "false"
+      },
+      "why": "Barclay's mutex fires on an argument being given, whatever its value: the two together are refused while the command line is parsed."
+    },
+    {
+      "tools": [
+        "ReadsPipelineSpark"
+      ],
+      "forbid": {
+        "--dragen-378-concordance-mode": "true",
+        "--dragen-mode": "true"
+      },
+      "why": "Barclay's mutex fires on an argument being given, whatever its value: the two together are refused while the command line is parsed."
+    },
+    {
+      "tools": [
+        "ReadsPipelineSpark"
+      ],
+      "forbid": {
+        "--flow-mode": "STANDARD",
+        "--dragen-378-concordance-mode": "true"
+      },
+      "why": "DRAGEN mode and flow mode are refused together, as in HaplotypeCaller."
+    },
+    {
+      "tools": [
+        "ReadsPipelineSpark"
+      ],
+      "forbid": {
+        "--flow-mode": "ADVANCED",
+        "--dragen-378-concordance-mode": "true"
+      },
+      "why": "DRAGEN mode and flow mode are refused together, as in HaplotypeCaller."
+    },
+    {
+      "tools": [
+        "ReadsPipelineSpark"
+      ],
+      "forbid": {
+        "--read-index": "/work/fixtures/mutect_pl.bai",
+        "--input": "/work/fixtures/mutect_t.bam"
+      },
+      "why": "Each BAM takes its own index; a foreign one would measure htsjdk reading it rather than the tool."
+    },
+    {
+      "tools": [
+        "ReadsPipelineSpark"
+      ],
+      "forbid": {
+        "--read-index": "/work/fixtures/mutect_t.bai",
+        "--input": "/work/fixtures/mutect_pl.bam"
+      },
+      "why": "Each BAM takes its own index; a foreign one would measure htsjdk reading it rather than the tool."
+    },
+    {
+      "tools": [
+        "ReadsPipelineSpark"
+      ],
+      "forbid": {
+        "--output-shard-tmp-dir": "/work/tmp/parts",
+        "--sharded-output": "false"
+      },
+      "why": "Barclay's mutex fires on an argument being given, whatever its value: the two together are refused while the command line is parsed."
     },
     {
       "tools": [
