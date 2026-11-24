@@ -4,8 +4,20 @@
 //! not in the repository. Set `NVSCORE_LAYERS` to `<reference|read_tensor> <vcf> <fasta> <bam or -> <batch size> <dump> <weights directory>`
 //! to get a line per layer: how many of its values differ, the largest distance in units in the last
 //! place, and the largest distance outright. Without the variable this passes having compared
-//! nothing, and says so. It asserts only what is already measured to be exact, the inputs.
+//! nothing, and says so.
+//!
+//! It asserts what the reference keeps stable and the port has been measured to match: the inputs
+//! and the batch norm everywhere, and the convolutions under a oneDNN dispatch where they were
+//! measured exact. `NVSCORE_DISPATCH` carries the reference's `ONEDNN_VERBOSE` lines; under any other
+//! dispatch the convolutions are printed and not asserted. Everything from the first `SGEMM` on is
+//! printed only: the reference moves those bits itself with the thread count and the batch
+//! (`docs/nvscorevariants.md`).
+//!
+//! For the 1D model it also recomputes each convolution of the first rows from the reference's own
+//! previous layer under several candidate orders, and prints how many values each misses: which
+//! order a dispatch the port does not model yet takes.
 
+use gatk_tools::nv_score_variants::kernels::{fused, relu, ConvWeights};
 use gatk_tools::nv_score_variants::model::Trace;
 use gatk_tools::nv_score_variants::weights::{self, Weights};
 use gatk_tools::nv_score_variants::{encode_for_comparison, score_batch, Arguments};
@@ -136,6 +148,7 @@ fn layers_against_the_reference() {
     let mut current = 0usize;
     let mut computed: Option<Trace> = None;
     let mut printed_rows = (0usize, 0usize);
+    let mut first_batch: HashMap<String, Vec<f32>> = HashMap::new();
     while let Some((name, entry)) = next_entry(&mut file) {
         let (batch_text, layer) = name.split_once('/').unwrap();
         let index: usize = batch_text.parse().unwrap();
@@ -174,6 +187,9 @@ fn layers_against_the_reference() {
                     "logits" => "dense_3",
                     other => other,
                 };
+                if index == 0 && layer.starts_with("conv.") {
+                    first_batch.insert(layer.to_string(), entry.values.clone());
+                }
                 if let Some(mine) = trace.layers.get(port_name) {
                     add(layer, mine.len(), distance(mine, &entry.values));
                     // By batch too: the last batch of a file is the short one, and the short one is
@@ -202,6 +218,226 @@ fn layers_against_the_reference() {
         "score at %.3f\t{} of {} rows differ",
         printed_rows.1, printed_rows.0
     );
+
+    let dispatch = std::env::var("NVSCORE_DISPATCH").unwrap_or_default();
+    // Measured exact: 1D under `jit:avx2` (Rosetta), 2D under `brgconv:avx2` (Rosetta) and under
+    // AVX-512 (`jit:avx512_core` reported by the 1D run, Xeon 6975P, run 44799995145).
+    let convolutions_exact = if read_tensor {
+        dispatch.contains("brgconv:avx2") || dispatch.contains("avx512_core")
+    } else {
+        dispatch.contains("jit:avx2,")
+    };
+    println!(
+        "dispatch\t{}\tconvolutions {}",
+        dispatch.lines().next().unwrap_or("not given"),
+        if convolutions_exact {
+            "asserted"
+        } else {
+            "printed only"
+        }
+    );
+    for (name, _, differ, _, _) in &totals {
+        let always = name == "normalize" || (read_tensor && name == "dense_1.0");
+        let convolution = name.starts_with("conv.");
+        if always || (convolution && convolutions_exact) {
+            assert_eq!(*differ, 0, "{name} is measured exact under this dispatch");
+        }
+    }
+    if !read_tensor {
+        probe_1d_orders(&model, &batches[0].1.tensor, &first_batch);
+    }
+}
+
+/// One candidate order of a oneDNN convolution: where the bias goes, the input channel block, the
+/// chunk of channels summed from zero and added through memory, and whether the channels of a
+/// block are taken inside or outside the kernel positions.
+struct Order {
+    name: &'static str,
+    bias_first: bool,
+    block: usize,
+    chunk: usize,
+    channels_outside: bool,
+}
+
+const ORDERS: [Order; 10] = [
+    Order {
+        name: "bias first, block 8 (jit:avx2)",
+        bias_first: true,
+        block: 8,
+        chunk: usize::MAX,
+        channels_outside: false,
+    },
+    Order {
+        name: "bias first, block 16",
+        bias_first: true,
+        block: 16,
+        chunk: usize::MAX,
+        channels_outside: false,
+    },
+    Order {
+        name: "bias first, block 16, channels outside",
+        bias_first: true,
+        block: 16,
+        chunk: usize::MAX,
+        channels_outside: true,
+    },
+    Order {
+        name: "bias last, block 8",
+        bias_first: false,
+        block: 8,
+        chunk: usize::MAX,
+        channels_outside: false,
+    },
+    Order {
+        name: "bias last, block 16",
+        bias_first: false,
+        block: 16,
+        chunk: usize::MAX,
+        channels_outside: false,
+    },
+    Order {
+        name: "bias last, block 16, channels outside",
+        bias_first: false,
+        block: 16,
+        chunk: usize::MAX,
+        channels_outside: true,
+    },
+    Order {
+        name: "bias last, block 16, chunks of 16",
+        bias_first: false,
+        block: 16,
+        chunk: 16,
+        channels_outside: false,
+    },
+    Order {
+        name: "bias last, block 16, chunks of 32",
+        bias_first: false,
+        block: 16,
+        chunk: 32,
+        channels_outside: false,
+    },
+    Order {
+        name: "bias last, block 16, chunks of 64",
+        bias_first: false,
+        block: 16,
+        chunk: 64,
+        channels_outside: false,
+    },
+    Order {
+        name: "bias last, block 16, chunks of 128",
+        bias_first: false,
+        block: 16,
+        chunk: 128,
+        channels_outside: false,
+    },
+];
+
+/// `rows` images of `src`, `(rows, inputs, 1, width)`, convolved in `order`.
+fn convolve_in(
+    order: &Order,
+    src: &[f32],
+    width: usize,
+    conv: &ConvWeights,
+    rows: usize,
+) -> Vec<f32> {
+    let out_width = width + 1 - conv.width;
+    let mut dst = vec![0f32; rows * conv.outputs * out_width];
+    for b in 0..rows {
+        let image = &src[b * conv.inputs * width..];
+        for o in 0..conv.outputs {
+            let weights = &conv.weight[o * conv.inputs * conv.width..];
+            for x in 0..out_width {
+                let term = |sum: f32, c: usize, k: usize| {
+                    fused(image[c * width + x + k], weights[c * conv.width + k], sum)
+                };
+                let mut stored = 0f32;
+                let mut chain = if order.bias_first { conv.bias[o] } else { 0.0 };
+                let mut start = 0;
+                while start < conv.inputs {
+                    let end = start.saturating_add(order.chunk).min(conv.inputs);
+                    let mut first = start;
+                    while first < end {
+                        let last = (first + order.block).min(end);
+                        if order.channels_outside {
+                            for c in first..last {
+                                for k in 0..conv.width {
+                                    chain = term(chain, c, k);
+                                }
+                            }
+                        } else {
+                            for k in 0..conv.width {
+                                for c in first..last {
+                                    chain = term(chain, c, k);
+                                }
+                            }
+                        }
+                        first = last;
+                    }
+                    if !order.bias_first {
+                        stored = if start == 0 {
+                            chain + conv.bias[o]
+                        } else {
+                            chain + stored
+                        };
+                        chain = 0.0;
+                    }
+                    start = end;
+                }
+                dst[(b * conv.outputs + o) * out_width + x] =
+                    if order.bias_first { chain } else { stored };
+            }
+        }
+    }
+    dst
+}
+
+/// Each 1D convolution of the first rows of the first batch, from the reference's own input to it.
+fn probe_1d_orders(model: &Weights, tensor: &[f32], reference: &HashMap<String, Vec<f32>>) {
+    const ROWS: usize = 4;
+    let batch = tensor.len() / (128 * 4);
+    let mut input = vec![0f32; ROWS * 4 * 128];
+    for b in 0..ROWS.min(batch) {
+        for w in 0..128 {
+            for c in 0..4 {
+                input[(b * 4 + c) * 128 + w] = tensor[(b * 128 + w) * 4 + c];
+            }
+        }
+    }
+    let mut width = 128;
+    let mut previous: Option<&str> = None;
+    for layer in ["conv.0", "conv.2", "conv.5"] {
+        let Some(want) = reference.get(layer) else {
+            return;
+        };
+        let dimensions = model.shape(&format!("{layer}.weight"));
+        let conv = ConvWeights {
+            outputs: dimensions[0],
+            inputs: dimensions[1],
+            height: 1,
+            width: *dimensions.last().unwrap(),
+            weight: model.get(&format!("{layer}.weight")),
+            bias: model.get(&format!("{layer}.bias")),
+            bias_last: false,
+        };
+        if let Some(name) = previous {
+            let before = &reference[name];
+            input = before[..ROWS * conv.inputs * width].to_vec();
+            relu(&mut input);
+        }
+        let out_width = width + 1 - conv.width;
+        let want = &want[..ROWS * conv.outputs * out_width];
+        for order in &ORDERS {
+            let got = convolve_in(order, &input, width, &conv, ROWS);
+            let missed = got
+                .iter()
+                .zip(want)
+                .filter(|(a, b)| a.to_bits() != b.to_bits())
+                .count();
+            println!("probe\t{layer}\t{}\t{missed}/{}", order.name, want.len());
+        }
+        width = out_width;
+        previous = Some(layer);
+    }
 }
 
 fn report_tensor(
