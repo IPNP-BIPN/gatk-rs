@@ -256,3 +256,42 @@ fn a_contig_the_reads_do_not_declare_is_an_error_and_not_an_empty_answer() {
 
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn references_out_of_dictionary_order_do_not_end_the_query() {
+    // htsjdk-rs#294 / samtools/htsjdk#1877, a deliberate divergence from GATK 4.7.0.0: chr2's
+    // records come before chr1's, as `samtools cat` of per-contig files writes them. 5.0.0's single
+    // cursor stepped past chr1's interval on the first chr2 record and dropped every chr1 read.
+    use gatk_engine::reads::QueryInterval;
+    let intervals = [
+        QueryInterval {
+            reference_index: 0,
+            start: 1,
+            end: 100,
+        },
+        QueryInterval {
+            reference_index: 1,
+            start: 1,
+            end: 100,
+        },
+    ];
+    let mut filter = IntervalFilter::new(&intervals, false);
+    let states: Vec<_> = [
+        mapped("a", 1, 10, vec![(Op::M, 5)]),
+        mapped("b", 1, 150, vec![(Op::M, 5)]),
+        mapped("c", 0, 10, vec![(Op::M, 5)]),
+        mapped("d", 0, 150, vec![(Op::M, 5)]),
+    ]
+    .iter()
+    .map(|record| filter.compare_to_filter(record))
+    .collect();
+    assert_eq!(
+        states,
+        [
+            FilterState::MatchesFilter,
+            FilterState::ContinueIteration,
+            FilterState::MatchesFilter,
+            FilterState::StopIteration,
+        ]
+    );
+}

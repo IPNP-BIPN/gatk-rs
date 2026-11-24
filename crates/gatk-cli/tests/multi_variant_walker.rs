@@ -395,12 +395,52 @@ fn every_run_matches_the_golden_row_for_row() {
         all.iter().map(|setup| setup.label).collect::<Vec<_>>(),
         "every run of the golden has a setup here"
     );
+    let mut lifted = 0;
     for setup in &all {
-        assert_eq!(
-            mine(setup, &dir, &bases),
-            expected(&text, setup.label),
-            "the rows of {}",
-            setup.label
-        );
+        let mut mine = mine(setup, &dir, &bases);
+        let mut expected = expected(&text, setup.label);
+        if LIFTED_HEADERS.contains(&setup.label) {
+            let at = |rows: &[String]| {
+                let prefix = format!("header\t{}\t", setup.label);
+                rows.iter()
+                    .position(|row| row.starts_with(&prefix))
+                    .expect("a header row")
+            };
+            let (row, golden_row) = (mine.remove(at(&mine)), expected.remove(at(&expected)));
+            assert_ne!(row, golden_row, "{} no longer diverges", setup.label);
+            assert_eq!(
+                header_contigs(&row),
+                dict_contigs(&mine),
+                "the header of {} writes every contig of its dictionary",
+                setup.label
+            );
+            lifted += 1;
+        }
+        assert_eq!(mine, expected, "the rows of {}", setup.label);
     }
+    assert_eq!(lifted, LIFTED_HEADERS.len());
+}
+
+/// Runs whose `header` row is a deliberate divergence from GATK 4.7.0.0 (htsjdk-rs#296, as
+/// samtools/htsjdk#1878): 5.0.0's merged contig lines keep the index of their own file, and its
+/// writer keeps one contig per index, so contigs of differing dictionaries vanish from the header.
+/// The port renumbers them and writes every one; only these rows are lifted.
+/// (`dictionaries-reordered` names the same contigs in both inputs, so its header does not move.)
+const LIFTED_HEADERS: [&str; 2] = ["dictionaries-union", "dictionaries-union-reversed"];
+
+fn header_contigs(row: &str) -> Vec<String> {
+    row.split("\\n")
+        .filter_map(|line| line.strip_prefix("##contig=<ID="))
+        .map(|rest| rest.split([',', '>']).next().unwrap().to_string())
+        .collect()
+}
+
+fn dict_contigs(rows: &[String]) -> Vec<String> {
+    let dict = rows.iter().find(|row| row.starts_with("dict\t")).unwrap();
+    dict.rsplit('\t')
+        .next()
+        .unwrap()
+        .split(',')
+        .map(|contig| contig.split(':').next().unwrap().to_string())
+        .collect()
 }

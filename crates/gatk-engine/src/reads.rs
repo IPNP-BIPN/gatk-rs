@@ -241,38 +241,73 @@ pub enum FilterState {
 
 /// `BAMQueryMultipleIntervalsIteratorFilter`: stateful, and that is the point.
 ///
-/// `interval_index` never goes backwards, and `StopIteration` ends the traversal outright.
+/// Each reference's cursor never goes backwards, and `StopIteration` ends the traversal outright.
+///
+/// Diverges from htsjdk 5.0.0 / GATK 4.7.0.0 on purpose, as htsjdk-rs#294 and htsjdk 6.0.0
+/// (samtools/htsjdk#1877) do: 5.0.0 walked one cursor over all the intervals, so on a BAM or CRAM
+/// whose references are grouped but not in @SQ order (`samtools cat` of per-contig files) it
+/// stopped early and dropped every reference that came later in the file than one sorting after
+/// it. Records are compared with the intervals of their own reference only.
 pub struct IntervalFilter<'a> {
     intervals: &'a [QueryInterval],
     contained: bool,
-    interval_index: usize,
+    /// The intervals' distinct references, ascending.
+    references: Vec<i32>,
+    /// For each of `references`, its first interval not yet behind its records, `None` once all are.
+    next_interval: Vec<Option<usize>>,
+    references_with_intervals_ahead: usize,
 }
 
 impl<'a> IntervalFilter<'a> {
+    /// `intervals` sorted by reference and then start, as [`optimize_intervals`] sorts them.
     pub fn new(intervals: &'a [QueryInterval], contained: bool) -> Self {
+        let first_intervals: Vec<usize> = (0..intervals.len())
+            .filter(|&i| i == 0 || intervals[i].reference_index != intervals[i - 1].reference_index)
+            .collect();
         IntervalFilter {
             intervals,
             contained,
-            interval_index: 0,
+            references: first_intervals
+                .iter()
+                .map(|&i| intervals[i].reference_index)
+                .collect(),
+            references_with_intervals_ahead: first_intervals.len(),
+            next_interval: first_intervals.into_iter().map(Some).collect(),
         }
     }
 
     pub fn compare_to_filter(&mut self, record: &BamRecord) -> FilterState {
-        while self.interval_index < self.intervals.len() {
-            match compare_interval_to_record(&self.intervals[self.interval_index], record) {
-                IntervalComparison::Before => self.interval_index += 1,
-                IntervalComparison::After => return FilterState::ContinueIteration,
-                IntervalComparison::Contained => return FilterState::MatchesFilter,
-                IntervalComparison::Overlapping => {
-                    return if self.contained {
-                        FilterState::ContinueIteration
-                    } else {
+        let reference = record.reference_index;
+        if let Ok(slot) = self.references.binary_search(&reference) {
+            if let Some(first) = self.next_interval[slot] {
+                for i in first..self.intervals.len() {
+                    if self.intervals[i].reference_index != reference {
+                        break;
+                    }
+                    let comparison = compare_interval_to_record(&self.intervals[i], record);
+                    // An interval behind the record is behind every later record of its reference.
+                    if comparison == IntervalComparison::Before {
+                        continue;
+                    }
+                    self.next_interval[slot] = Some(i);
+                    let matches = comparison == IntervalComparison::Contained
+                        || (comparison == IntervalComparison::Overlapping && !self.contained);
+                    return if matches {
                         FilterState::MatchesFilter
+                    } else {
+                        FilterState::ContinueIteration
                     };
                 }
+                // The record is past its reference's last interval.
+                self.next_interval[slot] = None;
+                self.references_with_intervals_ahead -= 1;
             }
         }
-        FilterState::StopIteration
+        if self.references_with_intervals_ahead == 0 {
+            FilterState::StopIteration
+        } else {
+            FilterState::ContinueIteration
+        }
     }
 }
 

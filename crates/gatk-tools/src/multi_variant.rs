@@ -23,13 +23,14 @@
 //! same two the other way round to chr1, chr3, chr2. An index-derived dictionary is written into
 //! its header before the merge, so its length-0 lines can win.
 //!
-//! # The merged header loses contig lines when it is written
+//! # The merged header keeps every contig line (a deliberate divergence)
 //!
-//! The contig lines keep the index they had in their own file, and `getMetaDataInSortedOrder` is a
-//! `TreeSet` whose contig comparison is by index alone. So chr2 from one file and chr3 from another,
-//! both at index 1, are the same element: the first one inserted stays and the other vanishes from
-//! every header written from the merge, while the dictionary still holds both. [`sorted_metadata`]
-//! reproduces that.
+//! In GATK 4.7.0.0 the merged contig lines keep the index they had in their own file, and
+//! `getMetaDataInSortedOrder` is a `TreeSet` whose contig comparison is by index alone, so chr2 from
+//! one file and chr3 from another, both at index 1, collapse and one vanishes from every header
+//! written from the merge while the dictionary still holds both. This port takes htsjdk 6.0.0's fix
+//! instead (samtools/htsjdk#1878, htsjdk-rs#296): `smart_merge_headers` renumbers the merged contigs
+//! in first-seen order, so no two share an index and every one is written.
 //!
 //! # The merge order
 //!
@@ -348,37 +349,14 @@ pub fn merge(sources: &[Source]) -> Result<Merged, Refusal> {
     })
 }
 
-/// `getMetaDataInSortedOrder` without its prepended `fileformat` line: the writer's order, where a
-/// contig line sharing its index with an earlier one is dropped, as the `TreeSet` drops it.
+/// `getMetaDataInSortedOrder` without its prepended `fileformat` line: the writer's order. Every
+/// contig line is kept, since `smart_merge_headers` gives each merged contig its own index.
 pub fn sorted_metadata(lines: &[HeaderLine]) -> Vec<HeaderLine> {
     let header = VcfHeader {
         lines: lines.to_vec(),
         samples: Vec::new(),
     };
-    let mut seen: BTreeSet<i32> = BTreeSet::new();
-    header
-        .sorted_lines()
-        .into_iter()
-        .filter(|line| match line {
-            HeaderLine::Contig { index, .. } => seen.insert(*index),
-            _ => true,
-        })
-        .cloned()
-        .collect()
-}
-
-/// The merged lines with the contig lines a writer would drop already dropped, so that a tool
-/// writing them through `VcfHeader::write` writes what the reference writes.
-pub fn written_lines(lines: &[HeaderLine]) -> Vec<HeaderLine> {
-    let kept = sorted_metadata(lines);
-    lines
-        .iter()
-        .filter(|line| match line {
-            HeaderLine::Contig { .. } => kept.contains(line),
-            _ => true,
-        })
-        .cloned()
-        .collect()
+    header.sorted_lines().into_iter().cloned().collect()
 }
 
 /// A record's place in the merge: its contig's index in the merged dictionary, `None` when the
@@ -644,6 +622,41 @@ mod tests {
 
     fn key(contig: i64, start: i64) -> Key {
         (Some(contig), start)
+    }
+
+    #[test]
+    fn differing_dictionaries_keep_every_contig_line() {
+        // htsjdk-rs#296 / samtools/htsjdk#1878, a deliberate divergence from GATK 4.7.0.0, which
+        // kept chr2 and chr3 both at index 1 and wrote only chr2.
+        let header = |names: &[&str]| VcfHeader {
+            lines: names
+                .iter()
+                .enumerate()
+                .map(|(index, name)| HeaderLine::contig(name, 1000, index as i32))
+                .collect(),
+            samples: Vec::new(),
+        };
+        let (first, second) = (header(&["chr1", "chr2"]), header(&["chr1", "chr3"]));
+        let source = |name, header| Source {
+            name,
+            header,
+            version: Some("VCFv4.2"),
+            index_contigs: None,
+        };
+        let merged = merge(&[source("a", &first), source("b", &second)]).expect("merges");
+        let written: Vec<String> = sorted_metadata(&merged.lines)
+            .iter()
+            .map(HeaderLine::render)
+            .collect();
+        assert_eq!(
+            written,
+            [
+                "contig=<ID=chr1,length=1000>",
+                "contig=<ID=chr2,length=1000>",
+                "contig=<ID=chr3,length=1000>",
+            ]
+        );
+        assert_eq!(merged.contigs(), ["chr1", "chr2", "chr3"]);
     }
 
     #[test]

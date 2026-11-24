@@ -224,7 +224,7 @@ impl DrivingVariants {
 
     /// The merged header's lines as a writer emits them.
     pub fn header_lines(&self) -> Vec<htsjdk_vcf::header::HeaderLine> {
-        engine::written_lines(&self.merged.lines)
+        self.merged.lines.clone()
     }
 
     /// Each input's records the traversal reaches, input by input: each restricted to `-L`, as
