@@ -146,3 +146,27 @@ fn the_header_keeps_every_sq_attribute() {
          @RG\tID:GATKCopyNumber\tSM:S\nCONTIG\tSTART\tEND\tCOUNT\n"
     );
 }
+
+/// The binary search answers what the linear first match answers, overlapping intervals included.
+#[test]
+fn bins_agree_with_the_first_match() {
+    let disjoint = vec![
+        interval("chr1", 1, 100),
+        interval("chr1", 201, 300),
+        interval("chr1", 101, 200),
+        interval("chr2", 1, 50),
+    ];
+    let overlapping = vec![interval("chr1", 1, 100), interval("chr1", 50, 150)];
+    for intervals in [&disjoint, &overlapping] {
+        let bins = collect_read_counts::Bins::new(intervals);
+        for contig in ["chr1", "chr2", "chr3"] {
+            for start in 0..320 {
+                assert_eq!(
+                    bins.index_of(contig, start),
+                    collect_read_counts::interval_of_start(contig, start, intervals),
+                    "{contig}:{start}"
+                );
+            }
+        }
+    }
+}
