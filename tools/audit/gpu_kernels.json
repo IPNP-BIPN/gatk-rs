@@ -24,6 +24,32 @@
         }
       },
       "allowed": {}
+    },
+    "crates/gatk-engine/src/gpu/kernels.cu": {
+      "generated_from": "crates/gatk-engine/src/gpu/kernels.metal",
+      "kernels": {
+        "f64_ops": {
+          "class": "integer",
+          "what": "IEEE 754 binary64 add and multiply on ulong bit patterns, round-to-nearest-even, subnormals kept",
+          "test": "crates/gatk-engine/tests/gpu.rs"
+        },
+        "pair_hmm": {
+          "class": "integer",
+          "what": "LoglessPairHMM's lattice and last-row sum in software binary64, one read/haplotype pair per thread",
+          "test": "crates/gatk-engine/tests/gpu.rs"
+        },
+        "f32_ops": {
+          "class": "integer",
+          "what": "NVScoreVariants' fused multiply-add (kernels::fused, via the binary64 above) and binary32 addition on uint bit patterns",
+          "test": "crates/gatk-tools/tests/nv_score_variants_gpu.rs"
+        },
+        "conv2d_fused": {
+          "class": "integer",
+          "what": "NVScoreVariants' convolutions in kernels::conv2d_on_host's order, one output element per thread, in software binary32",
+          "test": "crates/gatk-tools/tests/nv_score_variants_gpu.rs"
+        }
+      },
+      "allowed": {}
     }
   }
 }

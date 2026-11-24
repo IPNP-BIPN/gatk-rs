@@ -12,7 +12,8 @@ the test that holds it to the CPU path; this script refuses:
 * in any kernel: fused or fast-math operations (`fma`, `mad`, `fast::`, `precise::`), SIMD-group
   and threadgroup reductions and atomics, whose order is the scheduler's, unless the record lists
   the construct for that file with a reason;
-* host code that compiles a kernel source without turning fast math off, or turning it on;
+* host code that compiles a kernel source without turning fast math off (`--fmad=false` and no
+  fast math for CUDA), or turning it on;
 * a record naming a CPU-equality test that does not exist.
 
 Class `float-pinned` admits floating point only under the rule's conditions and must say how it
@@ -46,9 +47,17 @@ FORBIDDEN = {
     r"\bquad_\w+\b": "a quad-group operation depends on the execution width",
     r"\batomic\w*\b": "an atomic's order is the scheduler's",
     r"\bthreadgroup\b": "threadgroup memory shares state across threads",
+    r"\b__\w*fma\w*": "a fused multiply-add rounds once where the CPU path rounds twice",
+    r"\b__shared__|\b__(shfl|ballot|any_sync|all_sync|reduce)\w*|\bwmma\b":
+        "shared memory, warp operations and tensor-core fragments depend on the execution width",
 }
-KERNEL = re.compile(r"\bkernel\s+void\s+(\w+)")
-INCLUDE = re.compile(r'include_str!\s*\(\s*"([^"]+\.metal)"\s*\)')
+KERNEL = re.compile(r"\b(?:kernel|__global__)\s+void\s+(\w+)")
+INCLUDE = re.compile(r'include_str!\s*\(\s*"([^"]+\.(metal|cu))"\s*\)')
+# What each kernel language's host must say to compile without fast math or contraction.
+NO_FAST_MATH = {
+    "metal": ["set_fast_math_enabled(false)"],
+    "cu": ["fmad: Some(false)", "use_fast_math: Some(false)"],
+}
 
 
 def strip_comments(text: str) -> str:
@@ -61,8 +70,8 @@ def check(root: pathlib.Path) -> list[str]:
     record_path = root / RECORD
     record = json.loads(record_path.read_text()) if record_path.exists() else {"sources": {}}
     sources = record["sources"]
-    found = {p.relative_to(root).as_posix() for p in (root / "crates").rglob("*.metal")
-             if "target" not in p.parts}
+    found = {p.relative_to(root).as_posix() for pattern in ("*.metal", "*.cu")
+             for p in (root / "crates").rglob(pattern) if "target" not in p.parts}
     for path in sorted(found - set(sources)):
         errors.append(f"{path}: a kernel source {RECORD} does not declare")
     for path in sorted(set(sources) - found):
@@ -100,13 +109,15 @@ def check(root: pathlib.Path) -> list[str]:
         if "target" in rust.parts:
             continue
         text = rust.read_text()
-        if not INCLUDE.search(text):
+        include = INCLUDE.search(text)
+        if not include:
             continue
         relative = rust.relative_to(root).as_posix()
-        if "set_fast_math_enabled(false)" not in text:
-            errors.append(f"{relative}: compiles a kernel without `set_fast_math_enabled(false)`")
-        if re.search(r"set_fast_math_enabled\s*\(\s*true", text):
-            errors.append(f"{relative}: turns fast math on")
+        for required in NO_FAST_MATH[include.group(2)]:
+            if required not in text:
+                errors.append(f"{relative}: compiles a kernel without `{required}`")
+        if re.search(r"set_fast_math_enabled\s*\(\s*true|(fmad|use_fast_math): Some\(true", text):
+            errors.append(f"{relative}: turns fast math or contraction on")
     return errors
 
 
@@ -124,6 +135,8 @@ def self_test() -> int:
         (source, "static uint f(uint a) { return simd_sum(a); }\n"),
         (source, "static void f(device atomic_uint *a) { }\n"),
         (host, "fn f(o: &CompileOptions) { o.set_fast_math_enabled(true); }\n"),
+        ("crates/gatk-engine/src/gpu/cuda.rs", "const O: Option<bool> = None; // fmad: Some(true)\n"),
+        ("crates/gatk-engine/src/gpu/kernels.cu", "__device__ ulong f(ulong a) { return __fma_rn(a, a, a); }\n"),
         ("crates/planted/src/k.metal", "kernel void k(device uint *o) { o[0] = 1; }\n"),
     ]
     for relative, text in plants:

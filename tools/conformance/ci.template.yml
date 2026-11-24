@@ -88,6 +88,7 @@ jobs:
         run: |
           python3 tools/audit/gpu_kernels.py
           python3 tools/audit/gpu_kernels.py --self-test
+          python3 tools/gpu/metal_to_cuda.py --check
 
       - name: A file already explained does not lose its explanations
         # docs/COMMENTING.md. The guard is a ratchet, not a floor for the whole tree: it fails only

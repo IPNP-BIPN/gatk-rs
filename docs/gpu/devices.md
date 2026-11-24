@@ -15,22 +15,32 @@ even when it runs, it is a second driver stack rather than a second architecture
 open until a device of another family (AMD or Intel on an Intel Mac, or a non-Apple GPU behind a
 second backend) has a row.
 
-## The likeliest second backend: CUDA from Rust
+## The second architecture: an NVIDIA T4, through CUDA
 
-NVIDIA's CUDA Rust (github.com/NVIDIA/cuda-rust, announced 2026-09-08) compiles Rust kernels to
-PTX: `cuda-oxide` per thread, through a custom `rustc` backend, and `cutile-rs` per tile. The
-per-thread track fits these kernels, which are one pair or one output element per thread, and
-would let the device code be the CPU path's own Rust rather than a Metal transliteration. What it
-needs, none of which is here:
+`crates/gatk-engine/src/gpu/cuda.rs` is the Linux backend. Its kernels are not a second
+implementation: `tools/gpu/metal_to_cuda.py` derives `kernels.cu` from `kernels.metal` by rewriting
+only the address-space qualifiers, the parameter attributes and `clz`, so the arithmetic is the
+Metal file's line for line, and the `guard` job refuses a `kernels.cu` that has drifted from it.
+NVRTC compiles it at run time with `--fmad=false` and no fast math; the driver and NVRTC are
+loaded with `dlopen`, so a host without them runs the CPU path. The kernels are integer only
+(the PTX for sm_75 holds no floating-point instruction, only integer `mad.lo.s32`), so they
+need nothing newer than Turing: a T4 (sm_75) is enough. sm_80 was cuda-oxide's floor, not theirs.
 
-- an NVIDIA GPU of compute capability 8.0 or later on Linux. GitHub's hosted GPU runners are T4s
-  (7.5), below that line, so the row would come from a self-hosted or rented A10, L4 or A100;
-- a second toolchain: `cuda-oxide` pins its own `rustc` (1.99.1 at the time of writing) with
-  `rustc-dev`, against this workspace's 1.97.1, so it would build as a separate crate;
-- an eligibility check on the emitted PTX, because the project says nothing yet about contraction
-  or fast math: refuse `fma.` and any `add`, `sub` or `mul` on `f32` or `f64` without the `.rn`
-  modifier, which is what stops `ptxas` from contracting. With that, CUDA's native binary64 would
-  replace the software one, and the kernels would become `float-pinned` rather than `integer`.
+`.github/workflows/gpu-gate.yml` runs `gpu_speed`, then every suite on the CPU and the CUDA path
+on the organisation's T4 runner, as the `gpu` job does on macOS. It runs when a kernel, its host or
+the workflow changes, and by hand, because that runner is billed per minute. Setting it up is an
+organisation setting with billing, so it is done by an owner:
 
-It describes itself as an early-stage research project, so it is a candidate for the gate's second
-row, not a dependency of anything that ships.
+1. The organisation needs GitHub Team or Enterprise Cloud: larger runners are not on the Free plan.
+2. Organisation settings, Actions, Runners, New runner, New GitHub-hosted runner:
+   - name `gpu-t4` (the workflow's `runs-on` label is the runner's name);
+   - platform Linux x64, image: Partner tab, "NVIDIA GPU-Optimized Image for AI and HPC" (it
+     carries the driver, and the GPU sizes appear only once it is chosen);
+   - size GPU-powered, 4 cores, 28 GB, one Tesla T4;
+   - maximum concurrency 1, which caps the spend at one job at a time;
+   - runner group Default, with "Allow public repositories" ticked, since gatk-rs is public.
+3. Run the workflow once by hand (Actions, GPU gate, Run workflow) and add its row here.
+
+It costs $0.07 a minute, always billed, included minutes do not apply. The macOS `gpu` job takes
+26 minutes on three cores; on four, with the cache warm, a run should take 30 to 45 minutes, so
+about $2 to $3, and up to about $4 for the first, cold one.

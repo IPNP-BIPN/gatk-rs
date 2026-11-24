@@ -1,0 +1,95 @@
+# Milestone GPU.1's determinism gate (#76) on a second GPU architecture. Hand-written, apart from
+# ci.yml, because the T4 runner is billed per minute: it runs only when a kernel, its host or this
+# file changes, or by hand, not on every pull request.
+name: GPU gate
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/gatk-engine/src/gpu/**"
+      - "crates/gatk-engine/src/pair_hmm.rs"
+      - "crates/gatk-engine/tests/gpu.rs"
+      - "crates/gatk-engine/Cargo.toml"
+      - ".github/workflows/gpu-gate.yml"
+  pull_request:
+    paths:
+      - "crates/gatk-engine/src/gpu/**"
+      - "crates/gatk-engine/src/pair_hmm.rs"
+      - "crates/gatk-engine/tests/gpu.rs"
+      - "crates/gatk-engine/Cargo.toml"
+      - ".github/workflows/gpu-gate.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: gpu-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gpu-cuda:
+    name: "GPU: the same suites on a second architecture (NVIDIA T4, CUDA)"
+    # Milestone GPU.1's determinism gate (#76): the kernels of the `gpu` job, generated into CUDA
+    # by tools/gpu/metal_to_cuda.py, on a Turing GPU (sm_75) rather than an Apple one, held to the
+    # CPU path by the same tests and the same comparison. It runs on the organisation's GPU larger
+    # runner, whose label is `gpu-t4`; docs/gpu/devices.md says how that runner is set up.
+    runs-on: gpu-t4
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          # Pinned; must match rust-toolchain.toml.
+          toolchain: "1.97.1"
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: autotools and nasm, which isal-sys's build script runs, and NVRTC, which compiles the kernels
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq autoconf automake libtool nasm
+          nvidia-smi
+          ldconfig -p | grep -q libnvrtc || pip install --quiet nvidia-cuda-nvrtc-cu12
+          nvrtc=$(python3 -c "import nvidia.cuda_nvrtc, os; print(os.path.join(nvidia.cuda_nvrtc.__path__[0], 'lib'))" 2>/dev/null || true)
+          [ -n "$nvrtc" ] && echo "LD_LIBRARY_PATH=$nvrtc:${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV" || true
+
+      - name: Each kernel's speedup beside its byte-equality, then the device, driver and toolkit
+        env:
+          GATK_RS_GPU: "1"
+        run: |
+          set -o pipefail
+          cargo run --release -p gatk-engine --features gpu --example gpu_speed | tee gpu-speed.txt
+          { echo '### PairHMM on the T4'; echo; echo '```'; cat gpu-speed.txt; nvidia-smi --query-gpu=name,compute_cap,driver_version --format=csv; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Every suite on the CPU path, as this runner's own baseline
+        run: |
+          set -o pipefail
+          cargo test --workspace --release --features gatk-engine/gpu --no-fail-fast 2>&1 \
+            | tee cpu.log || true
+
+      - name: Every suite on the device path, failing exactly where the CPU path fails
+        env:
+          GATK_RS_GPU: "1"
+        run: |
+          set -o pipefail
+          cargo test --workspace --release --features gatk-engine/gpu --no-fail-fast 2>&1 \
+            | tee gpu.log || true
+          for side in cpu gpu; do
+            if grep -qE "could not compile|failed to run custom build command" $side.log; then echo "$side: build failed"; exit 1; fi
+            grep -E '^test .* \.\.\. FAILED$' $side.log | sort > $side-failed.txt || true
+            grep -c '^test result' $side.log > $side-binaries.txt
+          done
+          diff cpu-binaries.txt gpu-binaries.txt
+          test "$(cat gpu-binaries.txt)" -gt 0
+          echo "test binaries: $(cat gpu-binaries.txt); failing on both paths: $(wc -l < cpu-failed.txt)"
+          fallbacks=$(grep -c "gatk-rs: a CUDA command ended" gpu.log || true)
+          if [ "$fallbacks" -gt 0 ]; then
+            echo "::warning::$fallbacks device call(s) failed and ran on the CPU path instead"
+            grep -m5 "gatk-rs: a CUDA command ended" gpu.log
+          fi
+          diff cpu-failed.txt gpu-failed.txt
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: gpu-cuda
+          path: gpu-speed.txt
