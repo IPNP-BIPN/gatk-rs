@@ -327,6 +327,30 @@ fn transcode_sam(path: &Path) -> Result<Option<Transcoded>, Thrown> {
     Ok(Some((scratch, header, None, None)))
 }
 
+/// The header of reads that are not a BAM, from bytes already read: a CRAM's (which, like
+/// `ReadsPathDataSource`, takes a `--reference` to open), or the leading `@` lines of text, so a
+/// VCF or a BED handed over as reads has an empty one.
+pub(crate) fn non_bam_header(parser: &Parser, bytes: &[u8]) -> Result<SamHeader, Thrown> {
+    if bytes.starts_with(b"CRAM") {
+        if argument(parser, "reference").is_none() {
+            return Err(Thrown::user(
+                "A reference file is required when using CRAM files.  A reference is specified \
+                 with the -R command line argument.",
+            ));
+        }
+        return htsjdk_cram::reader::CramReader::new(bytes)
+            .map(|reader| reader.header)
+            .map_err(|error| Thrown::non_user(error.java_exception(), error.message()));
+    }
+    let text = String::from_utf8_lossy(bytes);
+    let leading: String = text
+        .lines()
+        .take_while(|line| line.starts_with('@'))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    Ok(htsjdk_bam::reader::parse_header_text(&leading))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
