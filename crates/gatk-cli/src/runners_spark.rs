@@ -2324,7 +2324,31 @@ pub fn pathseq_score_spark(parser: &Parser) -> Outcome {
     let tool = "PathSeqScoreSpark";
     resolve_read_filters(parser, tool)?;
     spark_context(parser)?;
-    if !arguments(parser, "input").is_empty() {
+    // `initializeToolInputs` runs before `runTool`: the reference, `--input` for its dictionary,
+    // and the intervals against the best of the two, which none at all cannot resolve.
+    let reference = reference_dictionary(parser)?;
+    let reads = match arguments(parser, "input").first() {
+        Some(input) => Some(spark_reads_header(input)?.header().clone()),
+        None => None,
+    };
+    match reference.as_ref().or(reads.as_ref()) {
+        Some(best) => {
+            interval_arguments(parser, best)?;
+        }
+        None if intervals_specified(parser) => {
+            return Err(Thrown::user(
+                "We require at least one input source that has a sequence dictionary (reference \
+                 or reads) when intervals are specified",
+            ))
+        }
+        None => {}
+    }
+    if !flag(parser, "disable-sequence-dictionary-validation") {
+        if let (Some(reference), Some(reads)) = (&reference, &reads) {
+            validate_reference_against_reads(reference, reads)?;
+        }
+    }
+    if reads.is_some() {
         return Err(bad_input(
             "Please use --paired-input or --unpaired-input instead of --input".to_string(),
         ));
