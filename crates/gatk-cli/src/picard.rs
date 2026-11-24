@@ -110,6 +110,15 @@ pub fn run(name: &str, args: &[String]) -> Option<crate::Outcome> {
             stderr.push('\n');
             Ok(1)
         }
+        // `instanceMain` hands COMPRESSION_LEVEL to `setDefaultCompressionLevel` before `doWork`'s
+        // `try`, which refuses a level outside 0..=9 (no FAQ line: the `finally` is not reached).
+        Ok(parser) if invalid_compression_level(&parser).is_some() => Err(thrown(
+            "java.lang.IllegalArgumentException",
+            format!(
+                "Invalid compression level: {}",
+                invalid_compression_level(&parser).unwrap_or_default()
+            ),
+        )),
         Ok(parser) => {
             let _ = gatk_tools::tool_stdout::take();
             let result = work(&parser, &mut stderr);
@@ -545,6 +554,13 @@ impl TabixChecks {
     }
 }
 
+/// `COMPRESSION_LEVEL` when it is an int `BlockCompressedOutputStream` refuses.
+fn invalid_compression_level(parser: &Parser) -> Option<i64> {
+    scalar(parser, "COMPRESSION_LEVEL")
+        .and_then(|value| value.parse::<i64>().ok())
+        .filter(|level| !(0..=9).contains(level))
+}
+
 /// `COMPRESSION_LEVEL` when the command line set it, which `output_compression` reads in place of
 /// GATK's configured level: the field's default is `Defaults.COMPRESSION_LEVEL`, which is the same
 /// configured level, so an unset one is no different from a GATK tool's.
@@ -597,5 +613,34 @@ mod tests {
         assert!(outcome
             .stderr
             .ends_with("NO_SUCH is not a recognized option\n"));
+    }
+
+    /// The fuzzer's minimized case (CI run 44631489980): the reference answered EXIT=3 with
+    /// `java.lang.IllegalArgumentException: Invalid compression level: -1`, before reading INPUT.
+    #[test]
+    fn a_compression_level_outside_zero_to_nine_is_refused_before_the_tool_runs() {
+        for level in ["-1", "10"] {
+            let args: Vec<String> = [
+                "--COMMENT",
+                "reviewed_by_qc",
+                "--INPUT",
+                "/no/such.bam",
+                "--OUTPUT",
+                "/no/out.bam",
+                "--COMPRESSION_LEVEL",
+                level,
+            ]
+            .map(String::from)
+            .to_vec();
+            let outcome = super::run("AddCommentsToBam", &args).unwrap();
+            assert_eq!(outcome.status, 3, "{level}");
+            assert!(
+                outcome.stderr.contains(&format!(
+                    "java.lang.IllegalArgumentException: Invalid compression level: {level}"
+                )),
+                "{level}: {}",
+                outcome.stderr
+            );
+        }
     }
 }
