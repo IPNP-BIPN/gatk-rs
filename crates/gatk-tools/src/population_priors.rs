@@ -75,7 +75,12 @@ impl PopulationPriors {
             genotype.alleles = called
                 .alleles
                 .iter()
-                .filter_map(|index| vc.alleles.get(*index).cloned())
+                .map(|index| {
+                    vc.alleles
+                        .get(*index)
+                        .cloned()
+                        .unwrap_or_else(htsjdk_vcf::allele::Allele::no_call)
+                })
                 .collect();
             if let Some(gq) = called.gq {
                 genotype.gq = Some(gq);

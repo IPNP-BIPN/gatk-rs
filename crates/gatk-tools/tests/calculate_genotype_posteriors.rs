@@ -508,3 +508,37 @@ fn the_dirichlet_multinomial_is_the_reference_formula() {
     // The formula, spelled out for one genotype.
     assert!((dirichlet_multinomial(&[3.001, 3.001], &[1, 1]) - prior[1]).abs() < 1e-12);
 }
+
+/// `makeGenotypeCall`: a hom-ref best guess with a GQ above `SUM_GL_THRESH_NOCALL` is a no-call.
+/// A BP-resolution site whose PLs are all zero is one (HaplotypeCaller t=3 row 191).
+#[test]
+fn an_uninformative_hom_ref_is_a_no_call() {
+    let record = Record {
+        id: ".".to_string(),
+        start: 2190,
+        alleles: alleles("T", "<NON_REF>"),
+        attributes: BTreeMap::new(),
+        genotypes: vec![Genotype {
+            sample: "s".to_string(),
+            alleles: vec![0, 0],
+            depth: Some(4),
+            likelihoods: Some(vec![0, 0, 0]),
+            posteriors: None,
+        }],
+    };
+    let options = Options {
+        indel_prior_dirichlet: 1.25e-4,
+        ignore_input_samples_for_missing_resources: true,
+        ..Options::default()
+    };
+    let called = &gatk_tools::calculate_genotype_posteriors::calculate_posterior_probs(
+        &record,
+        &[],
+        0,
+        &options,
+    )
+    .genotypes[0];
+    let no_call = gatk_tools::calculate_genotype_posteriors::NO_CALL;
+    assert_eq!(called.alleles, vec![no_call, no_call]);
+    assert_eq!(called.posteriors, Some(vec![0, 0, 0]));
+}

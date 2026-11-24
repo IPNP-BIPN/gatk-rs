@@ -927,8 +927,13 @@ pub fn call_region(
         )
         .map_err(|e| calling(format!("{e:?}")))?;
     }
-    // Each read of the first sample after realignment, with its likelihoods.
+    // Each read of the first sample, with its likelihoods: GATK prints `readLikelihoods`, which
+    // `filterAlleles` leaves alone, so under the filter it is the matrix before it (unfiltered,
+    // unrealigned, not rescored) and otherwise the realigned one.
     if debugger::is_enabled() && !ramped {
+        let likelihoods = pre_filtering
+            .as_ref()
+            .map_or(&likelihoods, |(before, _)| before);
         for (counter, read) in likelihoods
             .sample_evidence(0)
             .unwrap_or(&[])
