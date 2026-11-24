@@ -15,7 +15,8 @@ Every number is read from a committed source, and a number that no source holds 
 * inputs and held-out arguments, from `tools/coverage/fixtures.json`. An argument with no values is
   one no array varies, and the entry's `$why` says why;
 * quarantined fields, from each suite's `compare` rules;
-* fuzzer coverage, from `tools/fuzz/measured.json`: the reference's JaCoCo probes the covering
+* fuzzer coverage, from each port's `tools/fuzz/measured.json` (a sibling's as the dashboard
+  vendors it): the reference's JaCoCo probes the covering
   array's rows reach, how many more the fuzzer's mutants reach, and on how many kept cases the
   port diverged.
 
@@ -123,6 +124,9 @@ def gather():
         for name, value in port.get("coverage", {}).items():
             if name in tools and tools[name]["port"] == path.stem:
                 tools[name]["coverage"] = value
+        for name, value in port.get("fuzz", {}).items():
+            if name in tools and tools[name]["port"] == path.stem:
+                tools[name]["fuzz"] = value
     for name, value in measured.items():
         if name in tools and tools[name]["coverage"] is None:
             tools[name]["coverage"] = value
