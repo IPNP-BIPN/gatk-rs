@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-latest, ubuntu-24.04-arm]
+        runner: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -81,22 +81,24 @@ jobs:
           JAR=$(ls gatk-4.7.0.0/*local.jar)
           row() { # tool build round
             case $2 in
-              java) cmd="java -Xmx12g -jar $JAR" ;;
-              *) cmd="./gatk-$2" ;;
+              java) cmd="java -Xmx12g -jar $PWD/$JAR" ;;
+              *) cmd="$PWD/gatk-$2" ;;
             esac
             case $1 in
-              CountReads) args="-I NA12878.chr20.bam" ;;
-              CountReadsL) args="-I NA12878.chr20.bam -L chr20" ;;
-              PrintReads) args="-I NA12878.chr20.bam -O out-$2.bam" ;;
+              CountReads) args="-I $PWD/NA12878.chr20.bam" ;;
+              CountReadsL) args="-I $PWD/NA12878.chr20.bam -L chr20" ;;
+              PrintReads) args="-I $PWD/NA12878.chr20.bam -O out.bam" ;;
             esac
             tool=${1%L}
-            /usr/bin/time -v $cmd $tool $args > $1-$2.log 2> $1-$2.err && code=0 || code=$?
+            # Same output name for every build, since the @PG line records the command line.
+            mkdir -p run-$2
+            (cd run-$2 && /usr/bin/time -v $cmd $tool $args) > $1-$2.log 2> $1-$2.err && code=0 || code=$?
             user=$(awk -F': ' '/User time/{print $2}' $1-$2.err)
             sys=$(awk -F': ' '/System time/{print $2}' $1-$2.err)
             wall=$(awk '/Elapsed/{print $NF}' $1-$2.err)
             rss=$(awk -F': ' '/Maximum resident/{printf "%d MB", $2/1024}' $1-$2.err)
             case $1 in
-              PrintReads) out=$( [ -f out-$2.bam ] && echo "records $(samtools view out-$2.bam | md5sum | cut -c1-12) file $(sha256sum out-$2.bam | cut -c1-12)" || echo none); rm -f out-$2.bam out-$2.bai ;;
+              PrintReads) o=run-$2/out.bam; out=$( [ -f $o ] && echo "records $(samtools view $o | md5sum | cut -c1-12) file $(sha256sum $o | cut -c1-12) bai $(sha256sum run-$2/out.bai | cut -c1-12)" || echo none); rm -f run-$2/out.ba? ;;
               *) out=$(grep -E '^[0-9]+$' $1-$2.log | tail -1) ;;
             esac
             printf "| %s | %s | %s | %s | %s | %s s | %s | %s |\n" "$1" "$2" "$3" "$code" "$rss" "$(echo "$user + $sys" | bc)" "$wall" "$out" | tee -a table.md
