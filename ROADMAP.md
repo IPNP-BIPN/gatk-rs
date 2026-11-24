@@ -1129,23 +1129,24 @@ Everything downstream inherits these, so they are front-loaded.
       SSE ones" as the thing that could put this entry beside `Math.pow`. Measured, they do not.
       AVX512 remains untested, because QEMU's TCG drops the feature bits and no available host has
       it.
-- [~] **jmath**. The target is **not** "the corpus reaches 100%": its columns are `java.lang.Math`,
+- [x] **jmath**. The target is **not** "the corpus reaches 100%": its columns are `java.lang.Math`,
       whose remaining divergent functions can only be made exact by transcribing GPL2 source, so
       that is unreachable by construction. htsjdk-rs decision 0023 replaced it with "every function
       a ported call site reaches is exact, and every one that cannot be is named at the call site".
 
-      **The rule was written down and the list was not.** It is now, in
-      `docs/numeric-functions-a-ported-call-site-reaches.md`, built by walking the call sites rather
-      than the library. Eight functions are reached through jmath and every one is exact or
-      bounded; **six call sites reach the host libm directly**, and those are the whole of the gap:
-      four `powf`, one `exp` in the activity profile that should be `strict_math::exp`, and
-      `log1mexp`'s `ln_1p`/`expm1` pair, which nothing in G1 reaches. `StrictMath.exp` and
-      `StrictMath.pow` are exact and `Math.exp`/`Math.pow` are each bounded at **1 ulp**
-      (decisions 0025 and 0027).
+      **Met, by that definition** (W11). `docs/numeric-functions-a-ported-call-site-reaches.md`
+      walks every host transcendental in `crates/*/src`, not the six the first list named.
+      `Math.log`, `Math.log10`, `Math.log1p`, `Math.expm1` and `Math.sqrt` are exact on every host:
+      the first two correctly rounded, the next two FDLIBM because `Math` delegates to `StrictMath`
+      for them (htsjdk-rs decision 0051). The `powi` sites left are exact, measured on the oracle.
+      What cannot be exact goes through two named functions: `java_math_exp` (`Math.exp`: exact
+      on aarch64, the host `exp` on x86-64) and `java_math_pow` (`Math.pow`: the host `pow`). On
+      x86-64 both stand in for HotSpot stubs that are GPL2, at 1 ulp from fdlibm and measured
+      closer with the host libm (decisions 0014, 0025, 0027). `tools/audit/arithmetic.py` holds
+      the line: 155 counted host calls before, 75 after, none of them unnamed.
 
-      `BinomialDistribution` and SVD, the other two names this entry used to carry, are **not
-      reached by anything ported**: both are Mutect2-family and therefore Milestone G3. The honest
-      entry for them is "waits for G3" rather than "remaining" 
+      `BinomialDistribution` and SVD, the other two names this entry used to carry, are ports and
+      not libm calls: `jmath::binomial` and commons-math3's `SingularValueDecomposition`
 - [x] the BGZF surface that exists today is cross-checked on real x86-64. The `bgzf` and
       `bgzf-termination` suites run on `ubuntu-latest`, which is real hardware, so every BGZF
       golden is re-derived off emulation on every push; decision 0007's addendum measured it

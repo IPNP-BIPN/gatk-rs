@@ -49,6 +49,8 @@
 //! Seven digits, not the double nearest to log10(1/3). It is the value an uncalled member's three
 //! likelihoods are set to, so it reaches the output.
 
+use gatk_engine::math_utils::java_math_pow;
+
 /// `FamilyLikelihoods.LOG10_OF_ONE_THIRD`, as written: seven digits rather than the exact double.
 pub const LOG10_OF_ONE_THIRD: f64 = -0.4771213;
 /// `NUM_CALLED_GENOTYPETYPES`.
@@ -188,10 +190,13 @@ pub fn likelihood_matrix_index(
 /// `GeneralUtils.normalizeFromLog10(values, takeLog10OfOutput = true, keepInLogSpace = true)`.
 fn normalize_log10(values: &[f64]) -> Vec<f64> {
     let maximum = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-    let total: f64 = values.iter().map(|value| 10f64.powf(value - maximum)).sum();
+    let total: f64 = values
+        .iter()
+        .map(|value| java_math_pow(10.0, value - maximum))
+        .sum();
     values
         .iter()
-        .map(|value| value - maximum - total.log10())
+        .map(|value| value - maximum - jmath::math::log10(total))
         .collect()
 }
 
@@ -239,8 +244,11 @@ fn log10_sum_log10(values: &[f64]) -> f64 {
     if maximum.is_infinite() {
         return maximum;
     }
-    let total: f64 = values.iter().map(|value| 10f64.powf(value - maximum)).sum();
-    maximum + total.log10()
+    let total: f64 = values
+        .iter()
+        .map(|value| java_math_pow(10.0, value - maximum))
+        .sum();
+    maximum + jmath::math::log10(total)
 }
 
 /// `MathUtils.scaleLogSpaceArrayForNumericalStability`: the maximum becomes zero.
@@ -314,7 +322,7 @@ pub fn configuration_likelihoods(
                 let index =
                     likelihood_matrix_index(*mother_genotype, *father_genotype, *child_genotype)
                         .expect("a called combination");
-                matrix[index] = coefficient.log10() + joint;
+                matrix[index] = jmath::math::log10(coefficient) + joint;
             }
         }
     }
@@ -361,9 +369,9 @@ pub fn updated_genotypes(
             .collect();
         let normalized = normalize_log10(&vector);
         [
-            10f64.powf(normalized[0]),
-            10f64.powf(normalized[1]),
-            10f64.powf(normalized[2]),
+            java_math_pow(10.0, normalized[0]),
+            java_math_pow(10.0, normalized[1]),
+            java_math_pow(10.0, normalized[2]),
         ]
     };
 
@@ -378,7 +386,7 @@ pub fn updated_genotypes(
     let linearise = |values: &[f64]| -> Vec<f64> {
         normalize_log10(values)
             .iter()
-            .map(|value| 10f64.powf(*value))
+            .map(|value| java_math_pow(10.0, *value))
             .collect()
     };
     let mother_posteriors = linearise(&mother_log10);
@@ -459,7 +467,7 @@ fn phred_scale_joint(value: f64) -> i32 {
     if value == NO_JOINT_VALUE {
         return -1;
     }
-    let phred = -10.0 * (1.0 - value).log10();
+    let phred = -10.0 * jmath::math::log10(1.0 - value);
     if phred < f64::from(i8::MAX) {
         phred as i32
     } else {

@@ -533,7 +533,8 @@ pub fn summary(
             let all = total[period][repeats];
             let kept = emitted[period][repeats];
             let actual = if all > 0 {
-                std::f64::consts::LOG2_E * ((all as f64).ln() - (kept as f64).ln())
+                std::f64::consts::LOG2_E
+                    * (jmath::math::log(all as f64) - jmath::math::log(kept as f64))
             } else {
                 0.0
             };

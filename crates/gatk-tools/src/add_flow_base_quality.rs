@@ -272,7 +272,10 @@ pub fn convert_error_prob_to_phred(error_prob: &[f64], max_quality_score: i32) -
             if *probability == 0.0 {
                 max_quality_score as u8
             } else {
-                std::cmp::min(max_quality_score, (-10.0 * probability.log10()) as i32) as u8
+                std::cmp::min(
+                    max_quality_score,
+                    (-10.0 * jmath::math::log10(*probability)) as i32,
+                ) as u8
             }
         })
         .collect()

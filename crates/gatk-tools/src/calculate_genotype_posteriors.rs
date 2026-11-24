@@ -51,6 +51,7 @@
 //! `makeGenotypeCall` with `USE_PLS_TO_ASSIGN` picks the most likely posterior, so a `GT` can
 //! change and the `GQ` is recomputed from the `PP` rather than kept from the `PL`.
 
+use gatk_engine::math_utils::java_math_pow;
 use jmath::gamma::log_gamma;
 use std::collections::BTreeMap;
 
@@ -234,10 +235,10 @@ pub fn gq_log10_from_likelihoods(chosen: usize, likelihoods: &[f64]) -> f64 {
             .fold(f64::NEG_INFINITY, f64::max);
         let total: f64 = likelihoods
             .iter()
-            .map(|value| 10f64.powf(value - maximum))
+            .map(|value| java_math_pow(10.0, value - maximum))
             .sum();
-        let chosen_probability = 10f64.powf(likelihoods[chosen] - maximum) / total;
-        (1.0 - chosen_probability).log10()
+        let chosen_probability = java_math_pow(10.0, likelihoods[chosen] - maximum) / total;
+        jmath::math::log10(1.0 - chosen_probability)
     } else {
         -qual
     }

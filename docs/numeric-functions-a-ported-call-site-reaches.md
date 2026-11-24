@@ -12,9 +12,13 @@ sites rather than the library: what a ported path actually reaches, and what is 
 
 ## Reached through `jmath`
 
-| function | call sites | status |
+Counts are occurrences in `crates/*/src` on 2026-11-25, comments included.
+
+| function | occurrences | status |
 |---|---|---|
-| `math::log` | 14 | **exact**. Correctly rounded in the reference, so rounding the true result suffices (decision 0006) |
+| `math::log` | 52 | **exact**. Correctly rounded in the reference, so rounding the true result suffices (decision 0006) |
+| `math::log10` | 96 | **exact**, for the same reason |
+| `math::log1p`, `math::expm1` | 6, 3 | **exact on every host**. `Math.log1p` and `Math.expm1` delegate to `StrictMath` and have no intrinsic, so FDLIBM is the reference everywhere (htsjdk-rs decision 0051, IPNP-BIPN/htsjdk-rs#301) |
 | `math::sqrt` | 2 | **exact**. IEEE 754 mandates the rounding, so every implementation already agrees |
 | `math::round`, `fast_math::round` | 4 | **exact**, oracle-backed |
 | `strict_math::exp` | 1, in `NaturalLogUtils` | **exact** against `StrictMath.exp`; the call site's own reference is `Math.exp`, which is **1 ulp** away (decision 0025) |
@@ -23,22 +27,44 @@ sites rather than the library: what a ported path actually reaches, and what is 
 | `percentile::*` | 1 | **exact**, oracle-backed |
 | `saddle_point::hypergeometric_log_probability` | 1 | **exact**, oracle-backed |
 
-## Reached through the host libm, bypassing `jmath`
+## Reached through the host libm
 
-These are the ones the rule exists for. Each is a place where a ported output depends on whatever
-libm the machine ships.
+These are the ones the rule exists for. Since 2026-11-25 there are exactly two ways a ported call
+site reaches the host libm, and both are named functions, so `git grep java_math_` lists every
+such site:
 
-| call site | function | status |
+| named function | the Java it stands for | sites | status |
+|---|---|---|---|
+| `gatk_engine::natural_log_utils::java_math_exp` | `Math.exp` | 12 | **exact on aarch64**, where it is `strict_math::exp` (0 of 2,000,000 differ, below). **On x86-64 it is the host `exp`**, ~1 ulp from the HotSpot `dexp` stub on 0.0289% of the corpus; the stub is GPL2 and cannot be transcribed (decision 0014), and fdlibm was measured to be the worse stand-in on three suites (below) |
+| `gatk_engine::math_utils::java_math_pow` | `Math.pow` | 28, plus `pow10`'s 34 | **the host `pow` on every target**. On x86-64 `Math.pow` is the `dpow` stub (99.9378% agreement on the corpus); fdlibm is 1 ulp from it at worst (decision 0027) and was **measured to be worse here**: switching `pow10` broke a passing byte-identity claim. On aarch64 `Math.pow` *is* fdlibm (0 of 4,000,000 pairs differ, decision 0051), but the goldens are x86-64 Java's and the host is the closer stand-in for them there too, so the helper does not switch |
+
+What goes through them, by Java method:
+
+- `java_math_exp`: `MathUtils.normalDistribution` (activity profile), `NaturalLogUtils.normalizeFromLogToLinearSpace` for LROM's E-step, FilterMutectCalls' posteriors and the clustering EM (measured, below), `NaturalLogUtils.logSumExp` in ModelSegments, `MathUtils.log1mexp` in the allele frequency calculator and DRAGstr, `BetaBinomialDistribution.probability`, `SomaticClusteringModel`'s printed weights, `GCBiasCorrector`'s decay weights, `PairHMMLikelihoodCalculationEngine`'s PCR indel model.
+- `java_math_pow`: `MathUtils.pow10` and every `Math.pow(10.0, x)` it stands for (QualityUtils, BAQ, the genotype likelihood tables, the GQ of `GenotypeLikelihoods.getGQLog10FromLikelihoods` in subsetting, posteriors and GVCF merging, `log10sumLog10`, `normalizeFromLog10`), `AllelePseudoDepth.calculateWeights` (twice, by `weightDecay`), the PairHMM's `log10OneMinusPow10` and Jacobian table, `FisherExactTest`, `AddFlowSNVQuality`, `FlowBasedRead`, `CallCopyRatioSegments`' `Math.pow(2, x)`, DRAGstr's `gpMin` and `MathUtils.doubles`, and VQSR's model.
+
+Why the helpers keep the host `exp` and `pow` on x86-64 bit for bit: `java_math_pow` is
+`#[inline(always)]`, so each call site is the same IR as the `powf` it replaced, and LLVM's
+library-call rewrites (`pow(2, x)` to `exp2`, `pow(10, x)` to `exp10`) apply exactly as when the
+goldens were measured; the sites that used `black_box` still do.
+
+### Host calls that remain and are exact
+
+`arithmetic.json` still counts these, because the audit counts every host transcendental. Each is
+exact against what its Java computes, measured on `gatk-rs-oracle:4.7.0.0` (`-Xbatch` and `-Xint`,
+2026-11-25):
+
+| call site | Java | why it is exact |
 |---|---|---|
-| `gatk-engine/src/math_utils.rs:79` — `pow10` | `powf` | **99.9378% against `Math.pow`**, unbounded per call. A bounded alternative now exists (`strict_math::pow`, 1 ulp, decision 0027) and was **measured to be worse here**: switching broke a passing byte-identity claim, because on the points these suites reach the libm is simply closer |
-| `gatk-engine/src/fisher_exact.rs:109` — `pow10` | `powf` | as above |
-| `gatk-annotation/src/allele_pseudo_depth.rs:339,341` — `calculateWeights` | `powf` ×2 | as above. Which of the two runs depends on `weightDecay`, so the exposure varies with an argument |
-| `gatk-engine/src/natural_log_utils.rs:172,174` — `log1mexp` | `ln_1p`, `exp_m1` | **not exact**, and the module says so at the call site. Neither has a ported equivalent, and nothing in G1 reaches this branch |
-| `gatk-engine/src/activity_profile.rs` — `normal_distribution` | `exp` | `java_math_exp`: **exact on aarch64**, where Java's `Math.exp` is fdlibm and the helper is `strict_math::exp` (0 of 2,000,000 inputs differ, 2026-11-23). **x86-64 still uses the host (glibc) `exp`**, ~0.24% of inputs 1 ulp from the HotSpot intrinsic, which was **measured to be the closer stand-in there**: the `activityprofile` suite compares 266 kernel values as raw bits and the host `exp` matches every one, where `strict_math::exp` moves 10 of them by an ulp. See below |
-| `gatk-engine/src/natural_log_utils.rs` — `normalize_from_log_to_linear_space_host_exp` | `exp` | `java_math_exp`: **exact on aarch64** (fdlibm, as above); **x86-64 still uses the host `exp`**, for `LearnReadOrientationModel`'s E-step only. Built on `strict_math::exp`, two of the eight covering-array rows printed one prior an ulp from the oracle's; built on the host `exp`, every row of the array matches. The reference run with `-XX:-UseLibmIntrinsic` matches the fdlibm build exactly, which pins the difference on the `Math.exp` intrinsic. See below |
-| `gatk-engine/src/mutect_engine.rs` — `posterior_probability_of_error` | `exp` | `java_math_exp` (exact on aarch64, host `exp` on x86-64), through `normalize_from_log_to_linear_space_host_exp`. Its callers are FilterMutectCalls' filters only (contamination, normal artifact, slippage, the clustering model's sequencing-error probability). Measured with the filters' answers as raw bits: see below |
-| `gatk-engine/src/somatic_clustering_model.rs` — `performEMIteration`, `backgroundProbGivenSomatic` | `exp` | `java_math_exp` (exact on aarch64, host `exp` on x86-64), as above. The model's `log_sum_exp` calls keep fdlibm: no measured row depended on them |
-| `gatk-engine/src/mann_whitney.rs:167` | `powi(3)` | **exact**: an integer power of a `f64` is repeated multiplication, and the reference computes it the same way |
+| `allele_frequency_qc.rs:33,39`, `call_copy_ratio_segments.rs:153`, `series_stats.rs:182` | `Math.pow(x, 2.)` or `x * x` | `powi(2)` is `x * x`; `Math.pow(x, 2.0) == x * x` on 2,000,000 of 2,000,000 inputs |
+| `family_priors.rs:318` | `Math.pow(deNovoPrior, mvCount)`, `mvCount` 1 or 2 | `Math.pow(x, 1.0) == x` and `Math.pow(x, 2.0) == x * x` on 2,000,000 inputs each |
+| `mann_whitney.rs:167` | `Math.pow(count, 3)` | integer counts, exactly representable: equal on every count 0 to 200,000 |
+| `variant_eval_engine.rs:664,814` | `Math.pow(10.0, -6)`, `Math.pow(10, n)` | equal to `powi`'s repeated multiplication (and `1 / 10^n` for negative `n`) for every `n` in -22..=22 |
+| `pair_hmm.rs:19`, `sv_contig_alignments.rs:799` | `Math.pow(2, 1020)`, `Math.pow(2, 971)` | a power of two is exact: `Math.pow(2, k)` equals `2^k` for every `k` in -1022..=1023 |
+| `gatk-barclay/src/lib.rs:576` | `Float.parseFloat` of a hex literal, not a `Math` call | scaling by `2^exponent` is exact while the exponent is in the normal range; outside it the parse is a different question from this list's |
+| `allele_pseudo_depth.rs:470` | none | a unit test, not a call site |
+
+Nothing else in `crates/*/src` calls a host transcendental outside a comment.
 
 ### `java_math_exp`: exact on aarch64, host libm on x86-64 (2026-11-23)
 
@@ -128,12 +154,13 @@ sites reach, not that the host `exp` equals `Math.exp`.
 
 ## What this changes
 
-Nothing in the code, and two things in what is claimed.
+**The gap is two named functions, not a list of call sites.** Every ported call site that reaches
+a function no permissive source can make exact goes through `java_math_exp` or `java_math_pow`, and
+both name the measured exception in their documentation. Everything else is exact: `log`, `log10`,
+`log1p`, `expm1` and `sqrt` on every host, the `powi` sites by measurement, the commons-math and
+saddle-point ports by their oracle suites.
 
-**The gap is nine call sites, not "the corpus".** Every one is named above with the number attached,
-so a future byte claim over any of them knows what it is standing on.
-
-**`BinomialDistribution` and SVD, the other two names in H.5, are not reached by anything ported.**
-Both are Mutect2-family — read orientation, panel of normals, the somatic filters — which is
-Milestone G3. Porting them now would be work ahead of its consumer, and the honest entry for them
-is "waits for G3" rather than "remaining".
+**`BinomialDistribution` and SVD, the other two names H.5 used to carry, are ports rather than
+libm calls.** SVD is commons-math3 3.5's `SingularValueDecomposition`
+(`gatk-engine/src/singular_value_decomposition.rs`, reached through `KernelSegmenter`) and the
+binomial is `jmath::binomial`; whatever they reach of `Math` is in the tables above.

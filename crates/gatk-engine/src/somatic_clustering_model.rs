@@ -48,7 +48,7 @@ use crate::java_format::format_decimals;
 use crate::java_hash::hash_map_order;
 use crate::math_utils::normalize_sum_to_one;
 use crate::mutect_engine::{log_one_third, posterior_probability_of_error};
-use crate::natural_log_utils::normalize_from_log_to_linear_space_host_exp;
+use crate::natural_log_utils::{java_math_exp, normalize_from_log_to_linear_space_host_exp};
 use crate::natural_log_utils::{log_sum_exp, NonFiniteSum};
 
 /// `MAX_INDEL_SIZE_IN_PRIOR_MAP`.
@@ -200,7 +200,10 @@ impl SomaticClusteringModel {
                 ),
             ],
             // `log1p(0.01)` and `log(0.01)`: weights of 1.01 and 0.01, which do not sum to one.
-            log_cluster_weights: vec![INITIAL_HIGH_AF_WEIGHT.ln_1p(), INITIAL_HIGH_AF_WEIGHT.ln()],
+            log_cluster_weights: vec![
+                jmath::math::log1p(INITIAL_HIGH_AF_WEIGHT),
+                jmath::math::log(INITIAL_HIGH_AF_WEIGHT),
+            ],
             data: Vec::new(),
             obvious_artifact_count: 0,
             clusters_have_been_initialized: false,
@@ -561,10 +564,10 @@ impl SomaticClusteringModel {
             let fraction_of_background_to_split =
                 MAX_FRACTION_OF_BACKGROUND_TO_SPLIT_OFF.min(biggest_mass / total_mass);
             let new_cluster_log_weight =
-                fraction_of_background_to_split.ln() + self.log_cluster_weights[0];
+                jmath::math::log(fraction_of_background_to_split) + self.log_cluster_weights[0];
             // `log1p`, not `log(1 - x)`: the background keeps MORE weight than it had.
             let new_background_weight =
-                fraction_of_background_to_split.ln_1p() + self.log_cluster_weights[0];
+                jmath::math::log1p(fraction_of_background_to_split) + self.log_cluster_weights[0];
             self.clusters
                 .push(AlleleFractionCluster::binomial(biggest_peak)?);
             self.log_cluster_weights.push(new_cluster_log_weight);
@@ -590,8 +593,8 @@ impl SomaticClusteringModel {
             let weighted_log_likelihood = crate::somatic_likelihoods::sum(&weighted);
             let effective_somatic_count = crate::somatic_likelihoods::sum(&somatic_probs);
             let num_parameters = 2.0 * self.clusters.len() as f64;
-            let current_bic =
-                weighted_log_likelihood - num_parameters * effective_somatic_count.ln();
+            let current_bic = weighted_log_likelihood
+                - num_parameters * jmath::math::log(effective_somatic_count);
             if current_bic < previous_bic {
                 self.clusters.pop();
                 self.log_cluster_weights = old_log_cluster_weights;
@@ -645,7 +648,7 @@ impl SomaticClusteringModel {
         self.log_cluster_weights = normalize_sum_to_one(&total_cluster_responsibilities)
             .expect("the pseudocount keeps the sum positive")
             .iter()
-            .map(|value| value.ln())
+            .map(|value| jmath::math::log(*value))
             .collect();
         let technical_artifact_count = self.obvious_artifact_count as f64
             + double_stream_sum(
@@ -658,9 +661,10 @@ impl SomaticClusteringModel {
         let variant_count = double_stream_sum(&Self::hash_map_values(&counts));
 
         if update_somatic_priors {
-            self.log_variant_vs_artifact_prior = ((variant_count + REGULARIZING_PSEUDOCOUNT)
-                / (variant_count + technical_artifact_count + REGULARIZING_PSEUDOCOUNT * 2.0))
-                .ln();
+            self.log_variant_vs_artifact_prior = jmath::math::log(
+                (variant_count + REGULARIZING_PSEUDOCOUNT)
+                    / (variant_count + technical_artifact_count + REGULARIZING_PSEUDOCOUNT * 2.0),
+            );
             if let Some(callable_sites) = self.callable_sites {
                 for length in -MAX_INDEL_SIZE_IN_PRIOR_MAP..=MAX_INDEL_SIZE_IN_PRIOR_MAP {
                     let empirical_ratio = counts
@@ -670,7 +674,7 @@ impl SomaticClusteringModel {
                         .unwrap_or(0.0)
                         / callable_sites;
                     let floor = if length == 0 { 1.0e-8 } else { 1.0e-9 };
-                    let prior = empirical_ratio.max(floor).ln();
+                    let prior = jmath::math::log(empirical_ratio.max(floor));
                     if let Some(entry) = self
                         .log_variant_priors
                         .iter_mut()
@@ -758,7 +762,7 @@ impl SomaticClusteringModel {
             "Background beta-binomial cluster".to_string(),
             format!(
                 "weight = {}, {}",
-                format_decimals(self.log_cluster_weights[0].exp(), 4),
+                format_decimals(java_math_exp(self.log_cluster_weights[0]), 4),
                 Self::describe(&self.clusters[0])
             ),
         ));
@@ -766,7 +770,7 @@ impl SomaticClusteringModel {
             "High-AF beta-binomial cluster".to_string(),
             format!(
                 "weight = {}, {}",
-                format_decimals(self.log_cluster_weights[1].exp(), 4),
+                format_decimals(java_math_exp(self.log_cluster_weights[1]), 4),
                 Self::describe(&self.clusters[1])
             ),
         ));
@@ -780,7 +784,7 @@ impl SomaticClusteringModel {
                 "Binomial cluster".to_string(),
                 format!(
                     "weight = {}, {}",
-                    format_decimals(self.log_cluster_weights[index].exp(), 4),
+                    format_decimals(java_math_exp(self.log_cluster_weights[index]), 4),
                     Self::describe(&self.clusters[index])
                 ),
             ));

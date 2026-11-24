@@ -11,7 +11,7 @@
 //! `QualityUtils.qualToProb`, `QualityUtils.qualToErrorProb` and
 //! `MathUtils.approximateLog10SumLog10`.
 
-use crate::math_utils::{qual_to_error_prob, qual_to_prob};
+use crate::math_utils::{java_math_pow, qual_to_error_prob, qual_to_prob};
 
 /// `LoglessPairHMM.INITIAL_CONDITION`, which is `2^1020`: large enough that the recursion cannot
 /// underflow a double, and a power of two so that dividing it out costs no precision.
@@ -80,7 +80,7 @@ pub fn jacobian_log(difference: f64) -> f64 {
 /// rounded.
 fn jacobian_entry(index: i32) -> f64 {
     let quantised = f64::from(-index) * JACOBIAN_TABLE_STEP;
-    jmath::math::log10(1.0 + std::hint::black_box(10f64).powf(quantised))
+    jmath::math::log10(1.0 + java_math_pow(std::hint::black_box(10f64), quantised))
 }
 
 /// `MathUtils.approximateLog10SumLog10`.
@@ -115,13 +115,13 @@ pub fn match_to_match_prob(insertion_qual: i32, deletion_qual: i32) -> f64 {
     let log10_sum =
         approximate_log10_sum_log10(-0.1 * f64::from(min_qual), -0.1 * f64::from(max_qual));
     if max_qual as usize > MAX_QUAL {
-        return 1.0 - 10f64.powf(log10_sum);
+        return 1.0 - java_math_pow(10.0, log10_sum);
     }
     // `Math.log1p(-Math.min(1, Math.pow(10, log10Sum))) * INV_LN10`, then `Math.pow(10, that)`.
     // `INV_LN10` is `1.0 / Math.log(10)`, which is one ulp below `LOG10_E`.
     let inv_ln10 = 1.0 / std::f64::consts::LN_10;
-    let log10 = (-(10f64.powf(log10_sum)).min(1.0)).ln_1p() * inv_ln10;
-    10f64.powf(log10)
+    let log10 = jmath::math::log1p(-java_math_pow(10.0, log10_sum).min(1.0)) * inv_ln10;
+    java_math_pow(10.0, log10)
 }
 
 /// `PairHMMModel.qualToTransProbs` for one base.

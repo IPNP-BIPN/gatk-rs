@@ -110,7 +110,7 @@ pub fn max_number_of_places(scatter_count: i32, num_digits: i32) -> i32 {
         // reads, without a debug-build panic.
         i32::MIN.saturating_add(1)
     } else {
-        (f64::from(scatter_count - 1).log10().floor() as i32).saturating_add(1)
+        (jmath::math::log10(f64::from(scatter_count - 1)).floor() as i32).saturating_add(1)
     };
     from_count.max(num_digits)
 }

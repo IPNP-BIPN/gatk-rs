@@ -41,7 +41,7 @@ const INV_LOG_2: f64 = std::f64::consts::LOG2_E;
 
 /// `SVDDenoisingUtils.LN2_EPSILON`: the value every count below [`EPSILON`] collapses to.
 pub fn ln2_epsilon() -> f64 {
-    EPSILON.ln() * INV_LOG_2
+    jmath::math::log(EPSILON) * INV_LOG_2
 }
 
 /// `safeLog2`.
@@ -49,7 +49,7 @@ pub fn safe_log2(value: f64) -> f64 {
     if value < EPSILON {
         ln2_epsilon()
     } else {
-        value.ln() * INV_LOG_2
+        jmath::math::log(value) * INV_LOG_2
     }
 }
 

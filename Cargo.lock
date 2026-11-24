@@ -748,7 +748,7 @@ dependencies = [
  "gatk-engine",
  "htsjdk-bam",
  "htsjdk-vcf",
- "jmath",
+ "jmath 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=d923edeabba952c4afc67c99354fff0be19c4d9e)",
 ]
 
 [[package]]
@@ -756,7 +756,7 @@ name = "gatk-barclay"
 version = "0.1.0"
 dependencies = [
  "gatk-corpus",
- "jmath",
+ "jmath 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=d923edeabba952c4afc67c99354fff0be19c4d9e)",
 ]
 
 [[package]]
@@ -775,7 +775,7 @@ dependencies = [
  "htsjdk-cram",
  "htsjdk-tribble",
  "htsjdk-vcf",
- "jmath",
+ "jmath 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=d923edeabba952c4afc67c99354fff0be19c4d9e)",
  "rcgen",
  "rustls",
  "sha2",
@@ -805,7 +805,7 @@ dependencies = [
  "htsjdk-bgzf",
  "htsjdk-tribble",
  "htsjdk-vcf",
- "jmath",
+ "jmath 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=d923edeabba952c4afc67c99354fff0be19c4d9e)",
  "metal",
 ]
 
@@ -842,7 +842,7 @@ dependencies = [
  "htsjdk-metrics",
  "htsjdk-tribble",
  "htsjdk-vcf",
- "jmath",
+ "jmath 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=d923edeabba952c4afc67c99354fff0be19c4d9e)",
  "libz-sys",
  "md-5",
  "regex",
@@ -957,7 +957,7 @@ version = "0.4.0"
 source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=cb1f5804bd837914113608073a46ddc7451f5ef5#cb1f5804bd837914113608073a46ddc7451f5ef5"
 dependencies = [
  "htsjdk-bgzf",
- "jmath",
+ "jmath 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=cb1f5804bd837914113608073a46ddc7451f5ef5)",
  "md-5",
 ]
 
@@ -982,7 +982,7 @@ dependencies = [
  "bzip2 0.6.1",
  "flate2",
  "htsjdk-bam",
- "jmath",
+ "jmath 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=cb1f5804bd837914113608073a46ddc7451f5ef5)",
  "libdeflate-sys",
  "md-5",
 ]
@@ -992,7 +992,7 @@ name = "htsjdk-metrics"
 version = "0.4.0"
 source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=cb1f5804bd837914113608073a46ddc7451f5ef5#cb1f5804bd837914113608073a46ddc7451f5ef5"
 dependencies = [
- "jmath",
+ "jmath 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=cb1f5804bd837914113608073a46ddc7451f5ef5)",
 ]
 
 [[package]]
@@ -1003,7 +1003,7 @@ dependencies = [
  "flate2",
  "htsjdk-bam",
  "htsjdk-bgzf",
- "jmath",
+ "jmath 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=cb1f5804bd837914113608073a46ddc7451f5ef5)",
 ]
 
 [[package]]
@@ -1013,7 +1013,7 @@ source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=cb1f5804bd8379141136080
 dependencies = [
  "htsjdk-bgzf",
  "htsjdk-tribble",
- "jmath",
+ "jmath 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=cb1f5804bd837914113608073a46ddc7451f5ef5)",
 ]
 
 [[package]]
@@ -1155,6 +1155,11 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 name = "jmath"
 version = "0.4.0"
 source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=cb1f5804bd837914113608073a46ddc7451f5ef5#cb1f5804bd837914113608073a46ddc7451f5ef5"
+
+[[package]]
+name = "jmath"
+version = "0.4.0"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=d923edeabba952c4afc67c99354fff0be19c4d9e#d923edeabba952c4afc67c99354fff0be19c4d9e"
 
 [[package]]
 name = "jobserver"

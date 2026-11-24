@@ -104,7 +104,9 @@ impl BetaBinomialDistribution {
     /// Under decision 0014 `Math.exp` cannot be transcribed, so this is the platform's `exp` and is
     /// not asserted bit-exact anywhere. `log_probability` is the one the clustering model uses.
     pub fn probability(&self, k: i32) -> Result<f64, BetaBinomialError> {
-        Ok(self.log_probability(k)?.exp())
+        Ok(crate::natural_log_utils::java_math_exp(
+            self.log_probability(k)?,
+        ))
     }
 
     /// `cumulativeProbability(k)`: a PLAIN LOOP over `probability(i)`, summed with `+=`.

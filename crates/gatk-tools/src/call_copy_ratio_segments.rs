@@ -70,7 +70,7 @@ impl CopyRatioSegment {
 
     /// `Math.pow(2, meanLog2CopyRatio)`, which is the space every comparison happens in.
     pub fn copy_ratio(&self) -> f64 {
-        2.0f64.powf(self.mean_log2_copy_ratio)
+        gatk_engine::math_utils::java_math_pow(2.0, self.mean_log2_copy_ratio)
     }
 }
 

@@ -53,9 +53,9 @@ pub fn germline_probability(
     log_prior_somatic: f64,
 ) -> Result<f64, NonFiniteSum> {
     let log_prior_not_somatic = log1mexp(log_prior_somatic);
-    let log_prior_germline_het = (2.0 * population_af * (1.0 - population_af)).ln();
-    let log_prior_germline_hom_alt = (population_af * population_af).ln();
-    let log_prior_not_germline = ((1.0 - population_af) * (1.0 - population_af)).ln();
+    let log_prior_germline_het = jmath::math::log(2.0 * population_af * (1.0 - population_af));
+    let log_prior_germline_hom_alt = jmath::math::log(population_af * population_af);
+    let log_prior_not_germline = jmath::math::log((1.0 - population_af) * (1.0 - population_af));
 
     // Unnormalized, and the normal's odds reach both germline hypotheses and neither somatic one.
     let log_prob_germline_het = log_prior_germline_het

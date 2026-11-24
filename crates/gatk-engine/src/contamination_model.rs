@@ -591,13 +591,12 @@ fn segment_log_likelihood(
     let terms: Vec<f64> = segment
         .iter()
         .map(|site| {
-            plain_sum(&genotype_likelihoods(
+            jmath::math::log(plain_sum(&genotype_likelihoods(
                 site,
                 contamination,
                 error_rate,
                 minor_allele_fraction,
-            ))
-            .ln()
+            )))
         })
         .collect();
     double_stream_sum(&terms)

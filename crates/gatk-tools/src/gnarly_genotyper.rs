@@ -23,7 +23,7 @@ pub const DEFAULT_STANDARD_CONFIDENCE_FOR_CALLING: f64 = 30.0;
 /// reads every site under 30 as called and every site between 30 and 60 as called too, which is
 /// what makes the confusion silent.
 pub fn quality_floor(prior: f64) -> f64 {
-    DEFAULT_STANDARD_CONFIDENCE_FOR_CALLING - 10.0 * prior.log10()
+    DEFAULT_STANDARD_CONFIDENCE_FOR_CALLING - 10.0 * jmath::math::log10(prior)
 }
 
 pub fn snp_quality_floor() -> f64 {
@@ -137,7 +137,7 @@ pub fn quality_by_depth(qual_approx: f64, variant_depth: i32) -> f64 {
 /// the writer prints is ten times the negation of that: `QUALapprox + 10 * log10(prior)`. For a
 /// QUALapprox of 900 at the SNP prior that is 870, which is neither QUALapprox nor QD.
 pub fn phred_quality(qual_approx: f64, prior: f64) -> f64 {
-    qual_approx + 10.0 * prior.log10()
+    qual_approx + 10.0 * jmath::math::log10(prior)
 }
 
 /// The alternates a called site keeps: everything but `<NON_REF>`.

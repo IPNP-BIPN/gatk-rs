@@ -26,6 +26,7 @@
 //! attributes. That is a different test from the one `BEST_MATCH_TO_ORIGINAL` applies afterwards.
 
 use crate::genotype_index::{genotype_count, subsetted_pl_indices, GenotypeIndexError};
+use crate::math_utils::java_math_pow;
 
 /// `GenotypeAssignmentMethod`, as far as a split reaches it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -317,9 +318,12 @@ fn gq_log10_from_likelihoods(chosen: usize, likelihoods: &[f64]) -> f64 {
     }
     let quality = likelihoods[chosen] - other;
     if quality < 0.0 {
-        let total: f64 = likelihoods.iter().map(|value| 10f64.powf(*value)).sum();
-        let normalised = 10f64.powf(likelihoods[chosen]) / total;
-        (1.0 - normalised).log10()
+        let total: f64 = likelihoods
+            .iter()
+            .map(|value| java_math_pow(10.0, *value))
+            .sum();
+        let normalised = java_math_pow(10.0, likelihoods[chosen]) / total;
+        jmath::math::log10(1.0 - normalised)
     } else {
         -quality
     }

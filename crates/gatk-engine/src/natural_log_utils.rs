@@ -206,9 +206,9 @@ pub fn posteriors(log_priors: &[f64], log_likelihoods: &[f64]) -> Option<Vec<f64
 /// in G1.9 reaches it: the two arms are accurate in different halves of the range, and collapsing
 /// them to either one alone loses precision exactly where the other was chosen to keep it.
 ///
-/// `log1p` and `expm1` are the host libm's, which are **not** exact against the JVM (their rates
-/// are in the jmath table). A call site that reaches this function inherits that, not the 1-ulp
-/// bound `exp` carries.
+/// `log1p` and `expm1` are exact: `Math.log1p` and `Math.expm1` delegate to `StrictMath`, which is
+/// FDLIBM, and `jmath::math` ports it (htsjdk-rs decision 0051). The `exp` is fdlibm's, which is
+/// `StrictMath.exp` and one ulp from `Math.exp` at worst (decision 0025).
 pub fn log1mexp(a: f64) -> f64 {
     if a > 0.0 {
         return f64::NAN;
@@ -217,8 +217,8 @@ pub fn log1mexp(a: f64) -> f64 {
         return f64::NEG_INFINITY;
     }
     if a < log1mexp_threshold() {
-        (-exp(a)).ln_1p()
+        jmath::math::log1p(-exp(a))
     } else {
-        log(-(a.exp_m1()))
+        log(-jmath::math::expm1(a))
     }
 }

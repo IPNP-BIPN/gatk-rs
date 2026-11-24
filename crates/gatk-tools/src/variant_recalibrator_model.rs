@@ -84,7 +84,7 @@ impl ModelError {
 
 /// `Math.pow`, the host's and never folded at compile time.
 fn pow(x: f64, y: f64) -> f64 {
-    std::hint::black_box(x).powf(y)
+    gatk_engine::math_utils::java_math_pow(std::hint::black_box(x), y)
 }
 
 fn log10(x: f64) -> f64 {
