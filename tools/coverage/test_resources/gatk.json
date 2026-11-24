@@ -18642,10 +18642,10 @@
     "--F",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/walkers/sv/printevidence/output.test_hg38.rd.txt",
     "--O",
-    "/work/out/walktest.tmp_param.01rd.txt"
+    "/work/out/walktest.tmp_param.01.rd.txt"
    ],
    "touch": [
-    "/work/out/walktest.tmp_param.01rd.txt"
+    "/work/out/walktest.tmp_param.01.rd.txt"
    ],
    "mkdir": []
   },
@@ -18661,10 +18661,10 @@
     "--F",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/walkers/sv/printevidence/no_condense.rd.txt",
     "--O",
-    "/work/out/walktest.tmp_param.01rd.txt"
+    "/work/out/walktest.tmp_param.01.rd.txt"
    ],
    "touch": [
-    "/work/out/walktest.tmp_param.01rd.txt"
+    "/work/out/walktest.tmp_param.01.rd.txt"
    ],
    "mkdir": []
   },
@@ -18853,14 +18853,14 @@
    "tool": "PrintSVEvidence",
    "args": [
     "-O",
-    "/work/out/walktest.tmp_param.01baf.txt",
+    "/work/out/walktest.tmp_param.01.baf.txt",
     "-F",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/engine/tiny_hg38.baf.bci",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/walktest.tmp_param.01baf.txt"
+    "/work/out/walktest.tmp_param.01.baf.txt"
    ],
    "mkdir": []
   },
@@ -18870,14 +18870,14 @@
    "tool": "PrintSVEvidence",
    "args": [
     "-O",
-    "/work/out/walktest.tmp_param.01pe.txt",
+    "/work/out/walktest.tmp_param.01.pe.txt",
     "-F",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/engine/tiny_hg38.baf.bci",
     "--verbosity",
     "ERROR"
    ],
    "touch": [
-    "/work/out/walktest.tmp_param.01pe.txt"
+    "/work/out/walktest.tmp_param.01.pe.txt"
    ],
    "mkdir": []
   },
@@ -18897,10 +18897,10 @@
     "--F",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/walkers/sv/SiteDepthToBAF/test1.sd.txt",
     "--O",
-    "/work/out/walktest.tmp_param.01baf.txt"
+    "/work/out/walktest.tmp_param.01.baf.txt"
    ],
    "touch": [
-    "/work/out/walktest.tmp_param.01baf.txt"
+    "/work/out/walktest.tmp_param.01.baf.txt"
    ],
    "mkdir": []
   },
@@ -18918,10 +18918,10 @@
     "--F",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/walkers/sv/SiteDepthToBAF/test2.sd.txt",
     "--O",
-    "/work/out/walktest.tmp_param.01baf.txt"
+    "/work/out/walktest.tmp_param.01.baf.txt"
    ],
    "touch": [
-    "/work/out/walktest.tmp_param.01baf.txt"
+    "/work/out/walktest.tmp_param.01.baf.txt"
    ],
    "mkdir": []
   },
@@ -18939,10 +18939,10 @@
     "--F",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/walkers/sv/SiteDepthToBAF/test2.sd.txt",
     "--O",
-    "/work/out/walktest.tmp_param.01baf.txt"
+    "/work/out/walktest.tmp_param.01.baf.txt"
    ],
    "touch": [
-    "/work/out/walktest.tmp_param.01baf.txt"
+    "/work/out/walktest.tmp_param.01.baf.txt"
    ],
    "mkdir": []
   },
@@ -18960,10 +18960,10 @@
     "--F",
     "/work/fixtures/src/test/resources/org/broadinstitute/hellbender/tools/walkers/sv/SiteDepthToBAF/test3.sd.txt",
     "--O",
-    "/work/out/walktest.tmp_param.01baf.txt"
+    "/work/out/walktest.tmp_param.01.baf.txt"
    ],
    "touch": [
-    "/work/out/walktest.tmp_param.01baf.txt"
+    "/work/out/walktest.tmp_param.01.baf.txt"
    ],
    "mkdir": []
   },

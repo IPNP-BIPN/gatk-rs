@@ -946,7 +946,7 @@ class Interpreter:
             if name == "executeTest":
                 tester = args[1] if len(args) > 1 else None
                 interpreter = Interpreter(self.run, tester.info) if isinstance(tester, ClassRef) and tester.info else self
-                outputs = [self.run.temp(f"walktest.tmp_param.{i}", target.extension) for i in range(target.outputs)]
+                outputs = [self.run.temp(f"walktest.tmp_param.{i}", gatk_extension(target.extension)) for i in range(target.outputs)]
                 interpreter.record_spec(target, outputs)
                 return None
             if name == "setOutputFileExtension":
