@@ -5370,8 +5370,7 @@ pub fn apply_bqsr_spark(parser: &Parser) -> Outcome {
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
     // The report is opened in `runTool`, after the reads are defined and before any is read.
     let recal = argument(parser, "bqsr-recal-file").unwrap_or_default();
-    let recal_text = std::fs::read_to_string(&recal)
-        .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&recal, false)))?;
+    let recal_text = read_recalibration_table(&recal)?;
     let recalibrated = recalibrated(
         &header,
         &recal_text,

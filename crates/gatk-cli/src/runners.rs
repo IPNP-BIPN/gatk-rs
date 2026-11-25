@@ -2175,8 +2175,7 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
             "Argument bqsr-recal-file was missing: Argument 'bqsr-recal-file' is required",
         )
     })?;
-    let recal_text = std::fs::read_to_string(&recal)
-        .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&recal, false)))?;
+    let recal_text = read_recalibration_table(&recal)?;
 
     let path = std::path::Path::new(&input);
     let bytes = std::fs::read(path)
@@ -17887,6 +17886,16 @@ fn catalog_text(path: &str) -> Result<String, Thrown> {
         return Err(cannot_open());
     }
     gunzip(&bytes).map_err(|_| Thrown::user("Error reading from catalog file".to_string()))
+}
+
+/// A `--bqsr-recal-file`, which `GATKReport` reads through `makeZippedInputStream`: gzipped or not.
+pub(crate) fn read_recalibration_table(path: &str) -> Result<String, Thrown> {
+    let refused = || Thrown::user(gatk_tools::read_walker_refusal::cannot_read(path, false));
+    let bytes = std::fs::read(path).map_err(|_| refused())?;
+    if bytes.starts_with(&[0x1f, 0x8b]) {
+        return gunzip(&bytes).map_err(|_| refused());
+    }
+    String::from_utf8(bytes).map_err(|_| refused())
 }
 
 fn gunzip(bytes: &[u8]) -> std::io::Result<String> {
