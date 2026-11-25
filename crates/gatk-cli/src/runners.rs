@@ -17231,8 +17231,34 @@ fn update_header_contig_lines(
     parser: &Parser,
     header: htsjdk_vcf::header::VcfHeader,
 ) -> Result<htsjdk_vcf::header::VcfHeader, Thrown> {
+    let name_only = flag(parser, "suppress-reference-path");
+    rebuild_contig_lines(parser, header, false, name_only)
+}
+
+/// The same rebuild over `getBestAvailableSequenceDictionary`, as `VariantRecalibrator` and the
+/// `LabeledVariantAnnotationsWalker`s call it, with `referenceNameOnly` true.
+///
+/// A variant walker's best dictionary is the DRIVING variants' own, and the reference's only where
+/// theirs is missing or was synthesized from an index (`IndexUtils.isSequenceDictionaryFromIndex`:
+/// every length unknown). The reference then only names the `assembly=`. Measured on chr20 30x,
+/// where a call set over the whole genome scored against `chr20.fasta` kept every contig.
+pub(crate) fn update_header_contig_lines_best_available(
+    parser: &Parser,
+    header: htsjdk_vcf::header::VcfHeader,
+) -> Result<htsjdk_vcf::header::VcfHeader, Thrown> {
+    rebuild_contig_lines(parser, header, true, true)
+}
+
+fn rebuild_contig_lines(
+    parser: &Parser,
+    header: htsjdk_vcf::header::VcfHeader,
+    prefer_own: bool,
+    name_only: bool,
+) -> Result<htsjdk_vcf::header::VcfHeader, Thrown> {
     let reference = argument(parser, "reference");
+    let own = sequence_dictionary_of(&header);
     let dictionary: Vec<(String, i32)> = match &reference {
+        _ if prefer_own && own.iter().any(|(_, length)| *length != 0) => own,
         Some(path) => {
             let source =
                 gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(path))
@@ -17243,7 +17269,7 @@ fn update_header_contig_lines(
                 .map(|sequence| (sequence.name.clone(), sequence.length))
                 .collect()
         }
-        None => sequence_dictionary_of(&header),
+        None => own,
     };
     if dictionary.is_empty() {
         return Ok(header);
@@ -17275,7 +17301,7 @@ fn update_header_contig_lines(
     if let Some(path) = &reference {
         // `referencePath.toUri()`, which is an ABSOLUTE URI: the runner is handed whatever the
         // command line wrote, so the path is resolved before it is rendered.
-        let value = if flag(parser, "suppress-reference-path") {
+        let value = if name_only {
             let name = std::path::Path::new(path)
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())
