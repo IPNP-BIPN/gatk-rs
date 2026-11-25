@@ -129,6 +129,7 @@ fn file(text: &str, label: &str) -> Vec<Record> {
                 start: field[1].parse().expect("a position"),
                 reference: field[3].to_string(),
                 alternates: field[4].split(',').map(|alt| alt.to_string()).collect(),
+                ids: Vec::new(),
                 filters: match field[6] {
                     "." | "PASS" => Vec::new(),
                     names => names.split(';').map(|name| name.to_string()).collect(),
@@ -265,6 +266,7 @@ fn outcome(text: &str, run: &str) -> Result<(), ValidationError> {
             &types,
             // The reference is all `A`.
             Some("A"),
+            &[],
             &arguments,
         );
         if let Err(error) = outcome {
@@ -298,12 +300,9 @@ fn every_run_refuses_what_the_reference_refused() {
 /// One exclusion turns another check on.
 #[test]
 fn excluding_a_type_puts_ref_back_in_the_set() {
-    // `ALL` with no reference is the allele and count checks alone.
+    // `ALL` stays `ALL`, whose checks the record and the run decide.
     let plain = types_to_apply(&Arguments::default()).expect("no refusal");
-    assert_eq!(
-        plain,
-        vec![ValidationType::Alleles, ValidationType::ChrCounts]
-    );
+    assert_eq!(plain, vec![ValidationType::All]);
 
     // Excluding the allele check asks for the concrete set instead, which has REF in it.
     let excluded = types_to_apply(&Arguments {

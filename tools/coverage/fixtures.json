@@ -1617,15 +1617,16 @@
         "This tool writes NO file. Its whole answer is whether it threw and what it said, so every",
         "accepted row here has an empty output and the distinct-output count is zero by",
         "construction rather than by a weak corpus.",
-        "--dbsnp is held out: the ID check is the one validation this port does not carry, and a",
-        "dbSNP file in a row would measure a check that is not there. Without one the reference",
-        "skips it too, and says so in the log.",
+        "--dbsnp is vv_dbsnp.vcf, which names indexed.vcf's rs800 under another ID and carries a `.`",
+        "ID, so the record at 800 fails the ID check, or indexed.vcf itself, whose every ID is found, or",
+        "absent, in which case the reference skips the check and says so in the log.",
         "--intervals carries a window over the blocks and one past them, which is what moves the",
         "coverage refusal between five thousand loci and ten thousand and one.",
-        "--do-not-validate-filtered-records is held OUT: it is mutex with --validate-GVCF and with",
-        "--fail-gvcf-on-overlap, every row sets every argument, and thirty-one of thirty-six rows",
-        "measured that one refusal. The side held is the one with the most partners, which leaves",
-        "the GVCF pair in the array.",
+        "--do-not-validate-filtered-records is mutex with --validate-GVCF and with --fail-gvcf-on-overlap,",
+        "and an explicit false is set as much as a true, so all three are `<unset>` or true and the",
+        "constraints keep the mutex pairs apart. vv_filtered.vcf is indexed.vcf with the record at 800",
+        "filtered and called 0/0, so it fails the ID and the allele checks, and skipping filtered records is",
+        "what lets it pass.",
         "--max-variants-per-shard carries two values inside its declared range: the generator steps",
         "below zero and the parser refuses.",
         "--input and --read-index carry the corpus's BAM and its index. The shared values pair a",
@@ -1635,23 +1636,39 @@
       ],
       "--variant": [
         "/work/fixtures/blocks.g.vcf",
-        "/work/fixtures/indexed.vcf"
+        "/work/fixtures/indexed.vcf",
+        "/work/fixtures/vv_filtered.vcf"
       ],
       "--intervals": [
         "chr1:1-6000",
         "chr1:50000-60000"
       ],
-      "--dbsnp": [],
+      "--dbsnp": [
+        "<unset>",
+        "/work/fixtures/vv_dbsnp.vcf",
+        "/work/fixtures/indexed.vcf"
+      ],
       "--input": [
         "/work/fixtures/reads.bam"
       ],
       "--read-index": [
         "/work/fixtures/reads.bai"
       ],
-      "--do-not-validate-filtered-records": [],
+      "--do-not-validate-filtered-records": [
+        "<unset>",
+        "true"
+      ],
       "--max-variants-per-shard": [
         "0",
         "1"
+      ],
+      "--validate-GVCF": [
+        "<unset>",
+        "true"
+      ],
+      "--fail-gvcf-on-overlap": [
+        "<unset>",
+        "true"
       ]
     },
     "FilterIntervals": {
@@ -20229,6 +20246,66 @@
         "--exclude-intervals": "null"
       },
       "why": "A filtering mode with no -L or -XL is the one MissingArgument at the end of onStartup, on every such row."
+    },
+    {
+      "tools": [
+        "ValidateVariants"
+      ],
+      "forbid": {
+        "--do-not-validate-filtered-records": "true",
+        "--validate-GVCF": "true"
+      },
+      "why": "--do-not-validate-filtered-records is mutex with --validate-GVCF; the pair would measure the parser's refusal."
+    },
+    {
+      "tools": [
+        "ValidateVariants"
+      ],
+      "forbid": {
+        "--do-not-validate-filtered-records": "true",
+        "--fail-gvcf-on-overlap": "true"
+      },
+      "why": "--do-not-validate-filtered-records is mutex with --fail-gvcf-on-overlap; the pair would measure the parser's refusal."
+    },
+    {
+      "tools": [
+        "ValidateVariants"
+      ],
+      "forbid": {
+        "--dbsnp": "/work/fixtures/vv_dbsnp.vcf",
+        "--warn-on-errors": "true"
+      },
+      "why": "vv_dbsnp.vcf is there to fail the ID check; --warn-on-errors=true turns the ID refusal vv_dbsnp.vcf exists for into a log line, and the pair would measure nothing."
+    },
+    {
+      "tools": [
+        "ValidateVariants"
+      ],
+      "forbid": {
+        "--dbsnp": "/work/fixtures/vv_dbsnp.vcf",
+        "--intervals": "chr1:50000-60000"
+      },
+      "why": "vv_dbsnp.vcf is there to fail the ID check; --intervals=chr1:50000-60000 reaches no record, so no ID is checked, and the pair would measure nothing."
+    },
+    {
+      "tools": [
+        "ValidateVariants"
+      ],
+      "forbid": {
+        "--dbsnp": "/work/fixtures/vv_dbsnp.vcf",
+        "--validation-type-to-exclude": "IDS"
+      },
+      "why": "vv_dbsnp.vcf is there to fail the ID check; --validation-type-to-exclude=IDS turns the ID check off, and the pair would measure nothing."
+    },
+    {
+      "tools": [
+        "ValidateVariants"
+      ],
+      "forbid": {
+        "--dbsnp": "/work/fixtures/vv_dbsnp.vcf",
+        "--validation-type-to-exclude": "ALL"
+      },
+      "why": "vv_dbsnp.vcf is there to fail the ID check; --validation-type-to-exclude=ALL turns every check off, and the pair would measure nothing."
     }
   ],
   "exclude": {

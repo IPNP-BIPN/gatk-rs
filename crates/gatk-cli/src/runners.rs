@@ -7057,6 +7057,11 @@ fn validation_record(
             .iter()
             .map(|allele| allele.display_string())
             .collect(),
+        ids: if vc.id == "." {
+            Vec::new()
+        } else {
+            vc.id.split(';').map(str::to_string).collect()
+        },
         filters: vc.filters.clone().unwrap_or_default(),
         allele_counts: integers("AC"),
         allele_number: integers("AN").first().copied(),
@@ -7143,7 +7148,10 @@ pub fn validate_variants(parser: &Parser) -> Outcome {
         warn_on_errors: flag(parser, "warn-on-errors"),
         validate_gvcf,
         has_reference: reference_path.is_some(),
-        has_dbsnp: argument(parser, "dbsnp").is_some(),
+    };
+    let dbsnp = match argument(parser, "dbsnp") {
+        Some(path) => feature_variants(&path)?.0,
+        None => Vec::new(),
     };
 
     // `throwOrWarn`: with `--warn-on-errors` the message is logged and the traversal carries on, so
@@ -7293,9 +7301,22 @@ pub fn validate_variants(parser: &Parser) -> Outcome {
             }
             None => None,
         };
-        if let Err(error) =
-            validate::validate_record(&record, &input, &types, observed.as_deref(), &arguments)
-        {
+        // `getRSIDs`: every ID of every dbSNP record overlapping this one, `.` included.
+        let rs_ids: Vec<String> = dbsnp
+            .iter()
+            .filter(|site| {
+                site.contig == vc.contig && site.start <= vc.stop && vc.start <= site.stop
+            })
+            .flat_map(|site| site.id.split(';').map(str::to_string).collect::<Vec<_>>())
+            .collect();
+        if let Err(error) = validate::validate_record(
+            &record,
+            &input,
+            &types,
+            observed.as_deref(),
+            &rs_ids,
+            &arguments,
+        ) {
             if let Some(thrown) = refuse(error) {
                 return Err(thrown);
             }

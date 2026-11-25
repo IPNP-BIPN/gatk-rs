@@ -49,6 +49,16 @@ impl ValidationType {
             _ => None,
         }
     }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            ValidationType::All => "ALL",
+            ValidationType::Ref => "REF",
+            ValidationType::Ids => "IDS",
+            ValidationType::Alleles => "ALLELES",
+            ValidationType::ChrCounts => "CHR_COUNTS",
+        }
+    }
 }
 
 /// `CONCRETE_TYPES`, in the enum's own order, which is what an exclusion is subtracted from.
@@ -67,7 +77,6 @@ pub struct Arguments {
     pub warn_on_errors: bool,
     pub validate_gvcf: bool,
     pub has_reference: bool,
-    pub has_dbsnp: bool,
 }
 
 /// As much of a record as the validator reads.
@@ -77,6 +86,8 @@ pub struct Record {
     pub start: i32,
     pub reference: String,
     pub alternates: Vec<String>,
+    /// The ID column split at `;`, empty for `.`.
+    pub ids: Vec<String>,
     /// Empty for `.` or `PASS`.
     pub filters: Vec<String>,
     /// The `AC` entries as the record declares them, one per alternate.
@@ -99,7 +110,11 @@ pub enum ValidationError {
     /// `REF` asked for with no reference, before any record is read.
     MissingReference,
     /// One of the strict checks, which names the input file and the type that was asked for.
-    Strict { input: String, detail: String },
+    Strict {
+        input: String,
+        kind: ValidationType,
+        detail: String,
+    },
     /// A GVCF record without `<NON_REF>`.
     MissingNonRef { record: String },
     /// A GVCF record behind one already traversed.
@@ -116,8 +131,15 @@ impl ValidationError {
                  specified with the -R command line argument."
                     .to_string()
             }
-            ValidationError::Strict { input, detail } => {
-                format!("Input {input} fails strict validation of type ALL: {detail}")
+            ValidationError::Strict {
+                input,
+                kind,
+                detail,
+            } => {
+                format!(
+                    "Input {input} fails strict validation of type {}: {detail}",
+                    kind.name()
+                )
             }
             ValidationError::MissingNonRef { record } => format!(
                 "In a GVCF all records must contain a <NON_REF> allele. Offending record: {record}"
@@ -174,17 +196,8 @@ pub fn types_to_apply(arguments: &Arguments) -> Result<Vec<ValidationType>, Vali
         ..arguments.clone()
     };
     if arguments.types_to_exclude.is_empty() {
-        // `ALL` on its own: the reference-base check runs only where there is a reference, and the
-        // ID check only where there are IDs, so the set is decided by what the run has rather than
-        // by what it asked for.
-        let mut types = vec![ValidationType::Alleles, ValidationType::ChrCounts];
-        if arguments.has_reference {
-            types.insert(0, ValidationType::Ref);
-        }
-        if arguments.has_dbsnp {
-            types.push(ValidationType::Ids);
-        }
-        return Ok(types);
+        // `ALL` on its own, whose checks depend on what the run has: see `validate_record`.
+        return Ok(vec![ValidationType::All]);
     }
     let types: Vec<ValidationType> = CONCRETE_TYPES
         .iter()
@@ -199,12 +212,14 @@ pub fn types_to_apply(arguments: &Arguments) -> Result<Vec<ValidationType>, Vali
 
 /// One record against the checks the run makes.
 ///
-/// `reference_base` is what the reference holds at the record's start, where the run has one.
+/// `reference_base` is what the reference holds at the record's start, where the run has one, and
+/// `rs_ids` the IDs of the dbSNP records overlapping it, which is empty without `--dbsnp`.
 pub fn validate_record(
     record: &Record,
     input: &str,
     types: &[ValidationType],
     reference_base: Option<&str>,
+    rs_ids: &[String],
     arguments: &Arguments,
 ) -> Result<(), ValidationError> {
     if arguments.do_not_validate_filtered_records && !record.filters.is_empty() {
@@ -217,87 +232,122 @@ pub fn validate_record(
         });
     }
 
-    let strict = |detail: String| ValidationError::Strict {
-        input: input.to_string(),
-        detail,
-    };
-
     for kind in types {
-        match kind {
-            ValidationType::Ref => {
-                if let Some(observed) = reference_base {
-                    if !observed.eq_ignore_ascii_case(&record.reference) {
-                        return Err(strict(format!(
-                            "the REF allele is incorrect for the record at position {}:{}, fasta \
-                             says {observed} vs. VCF says {}",
-                            record.contig, record.start, record.reference
-                        )));
-                    }
-                }
-            }
-            ValidationType::Alleles => {
-                // The check is about the GENOTYPES rather than the ALT column: an alternate no
-                // sample calls is the failure. SYMBOLIC alleles are excluded from both sides,
-                // because a GVCF's `<NON_REF>` is expected never to be called, so the check is
-                // about the plain alternates alone.
-                let symbolic =
-                    |index: usize| index > 0 && record.alternates[index - 1].starts_with('<');
-                let observed: Vec<usize> = record
-                    .genotypes
-                    .iter()
-                    .flatten()
-                    .flatten()
-                    .copied()
-                    .filter(|index| !symbolic(*index))
-                    .collect();
-                let unused = (1..record.alternates.len() + 1)
-                    .filter(|index| !symbolic(*index))
-                    .any(|index| !observed.contains(&index));
-                if !record.genotypes.is_empty() && unused {
-                    return Err(strict(format!(
-                        "one or more of the ALT allele(s) for the record at position {}:{} are not \
-                         observed at all in the sample genotypes",
-                        record.contig, record.start
-                    )));
-                }
-            }
-            ValidationType::ChrCounts => {
-                if record.genotypes.is_empty() {
-                    continue;
-                }
-                let called: Vec<usize> = record
-                    .genotypes
-                    .iter()
-                    .flatten()
-                    .flatten()
-                    .copied()
-                    .collect();
-                for (index, declared) in record.allele_counts.iter().enumerate() {
-                    let counted =
-                        called.iter().filter(|allele| **allele == index + 1).count() as i32;
-                    if *declared != counted {
-                        return Err(strict(format!(
-                            "the Allele Count (AC) tag is incorrect for the record at position \
-                             {}:{}, {declared} vs. {counted}",
-                            record.contig, record.start
-                        )));
-                    }
-                }
-                if let Some(declared) = record.allele_number {
-                    let counted = called.len() as i32;
-                    if declared != counted {
-                        return Err(strict(format!(
-                            "the Allele Number (AN) tag is incorrect for the record at position \
-                             {}:{}, {declared} vs. {counted}",
-                            record.contig, record.start
-                        )));
-                    }
-                }
-            }
-            // Neither reaches a record: the ID check needs the dbSNP features the runner holds,
-            // and `ALL` is never in the applied set, which is concrete types only.
-            ValidationType::Ids | ValidationType::All => {}
+        let strict = |detail: String| ValidationError::Strict {
+            input: input.to_string(),
+            kind: *kind,
+            detail,
+        };
+        // `applyValidationType`: `ALL` is the concrete checks in an order that depends on whether
+        // there is a reference, and an empty ID set skips the ID check in every branch.
+        let checks: &[ValidationType] = match (kind, reference_base.is_some()) {
+            (ValidationType::All, true) => &CONCRETE_TYPES,
+            (ValidationType::All, false) => &[
+                ValidationType::Alleles,
+                ValidationType::ChrCounts,
+                ValidationType::Ids,
+            ],
+            _ => std::slice::from_ref(kind),
+        };
+        for check in checks {
+            check_one(record, *check, reference_base, rs_ids).map_err(strict)?;
         }
+    }
+    Ok(())
+}
+
+/// One concrete check, as the `VariantContext.validate*` method of that type, failing with its
+/// message.
+fn check_one(
+    record: &Record,
+    kind: ValidationType,
+    reference_base: Option<&str>,
+    rs_ids: &[String],
+) -> Result<(), String> {
+    match kind {
+        ValidationType::Ref => {
+            if let Some(observed) = reference_base {
+                if !observed.eq_ignore_ascii_case(&record.reference) {
+                    return Err(format!(
+                        "the REF allele is incorrect for the record at position {}:{}, fasta \
+                             says {observed} vs. VCF says {}",
+                        record.contig, record.start, record.reference
+                    ));
+                }
+            }
+        }
+        ValidationType::Alleles => {
+            // The check is about the GENOTYPES rather than the ALT column: an alternate no
+            // sample calls is the failure. SYMBOLIC alleles are excluded from both sides,
+            // because a GVCF's `<NON_REF>` is expected never to be called, so the check is
+            // about the plain alternates alone.
+            let symbolic =
+                |index: usize| index > 0 && record.alternates[index - 1].starts_with('<');
+            let observed: Vec<usize> = record
+                .genotypes
+                .iter()
+                .flatten()
+                .flatten()
+                .copied()
+                .filter(|index| !symbolic(*index))
+                .collect();
+            let unused = (1..record.alternates.len() + 1)
+                .filter(|index| !symbolic(*index))
+                .any(|index| !observed.contains(&index));
+            if !record.genotypes.is_empty() && unused {
+                return Err(format!(
+                    "one or more of the ALT allele(s) for the record at position {}:{} are not \
+                         observed at all in the sample genotypes",
+                    record.contig, record.start
+                ));
+            }
+        }
+        ValidationType::ChrCounts => {
+            if record.genotypes.is_empty() {
+                return Ok(());
+            }
+            let called: Vec<usize> = record
+                .genotypes
+                .iter()
+                .flatten()
+                .flatten()
+                .copied()
+                .collect();
+            for (index, declared) in record.allele_counts.iter().enumerate() {
+                let counted = called.iter().filter(|allele| **allele == index + 1).count() as i32;
+                if *declared != counted {
+                    return Err(format!(
+                        "the Allele Count (AC) tag is incorrect for the record at position \
+                             {}:{}, {declared} vs. {counted}",
+                        record.contig, record.start
+                    ));
+                }
+            }
+            if let Some(declared) = record.allele_number {
+                let counted = called.len() as i32;
+                if declared != counted {
+                    return Err(format!(
+                        "the Allele Number (AN) tag is incorrect for the record at position \
+                             {}:{}, {declared} vs. {counted}",
+                        record.contig, record.start
+                    ));
+                }
+            }
+        }
+        // `validateRSIDs`: only an `rs` ID is looked up.
+        ValidationType::Ids => {
+            if let Some(id) = record
+                .ids
+                .iter()
+                .find(|id| !rs_ids.is_empty() && id.starts_with("rs") && !rs_ids.contains(id))
+            {
+                return Err(format!(
+                    "the rsID {id} for the record at position {}:{} is not in dbSNP",
+                    record.contig, record.start
+                ));
+            }
+        }
+        ValidationType::All => {}
     }
     Ok(())
 }
