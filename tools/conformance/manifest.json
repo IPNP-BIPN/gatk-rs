@@ -8763,6 +8763,28 @@
           "why": "Frozen from the candidate artefact of run 41985302091, with AVX-512 turned off in numpy as the dump's cpu line shows. The first golden, from an AVX-512 runner, held numpy's SVML loops and the port differed on every row."
         }
       ]
+    },
+    {
+      "id": "port-limitations",
+      "status": "golden-pending",
+      "needs_fixtures": true,
+      "title": "what GATK does with what the port used to refuse as its own limitation",
+      "harness": "tools/argument-conformance",
+      "tools": [
+        "SVCluster",
+        "JointGermlineCNVSegmentation"
+      ],
+      "compare": {
+        "mode": "keyed"
+      },
+      "why": "Every site where the port answered PORT_LIMITATION is a combination of a tool and its arguments GATK answers in its own way: a refusal with its class and words, or files. Each case is one command line run from a directory of its own, and the golden carries the command line, so the port's test replays exactly what ran. SVCluster and JointGermlineCNVSegmentation require a reference, so Barclay declares -R required and refuses a run without it as MissingArgument before the tool opens anything.",
+      "cases": [
+        {
+          "dump": "PortLimitationDump",
+          "golden": "crates/gatk-cli/tests/data/port_limitations.txt.gz",
+          "why": "One command line per case, with the refusal or every file it left. Pending the candidate artefact of the CI run that adds this suite."
+        }
+      ]
     }
   ],
   "probes": []

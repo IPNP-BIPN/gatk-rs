@@ -22501,12 +22501,9 @@ impl<'p> SvClusterWalker<'p> {
         };
 
         // `onTraversalStart`: the reference and its dictionary, then the ploidy table.
-        let Some(reference_path) = argument(parser, "reference") else {
-            return Err(Thrown::non_user(
-                PORT_LIMITATION,
-                "A cluster walker without --reference is refused by the engine before it starts, which this port does not word yet. This message is the port's own and not GATK's.",
-            ));
-        };
+        let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
         let Some(dictionary) = reference_dictionary(parser)? else {
             return Err(Thrown::user("Reference sequence dictionary required"));
         };
