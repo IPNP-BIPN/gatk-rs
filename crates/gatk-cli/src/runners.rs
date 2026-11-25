@@ -5012,9 +5012,12 @@ pub fn left_align_and_trim_variants(parser: &Parser) -> Outcome {
                     false,
                 )
                 .map_err(split_refusal)?;
-            // The recomputed AF is a Double, which the writer formats: 0.25 is `0.250`.
+            // A split's recomputed AF is a Double, which the writer formats: 0.25 is `0.250`. A
+            // biallelic record comes back as it was, its AF the text the file carried.
+            let split = bridged.record.variant.alleles.len() > 2;
             for (key, value) in pieces
                 .iter_mut()
+                .filter(|_| split)
                 .flat_map(|piece| piece.attributes.iter_mut())
             {
                 if let ("AF", Ok(frequency)) = (key.as_str(), value.parse::<f64>()) {
