@@ -56,9 +56,53 @@ now STATUS.md's cost column; the baseline stays in `baseline.json`):
 both directions, which is what an unchanged path does. The other 131 tools moved a median 7% cold
 and 10% steady, at most 45%, the same spread two runs of one commit showed in the baseline.
 
+## 6. The four fixture losers, again (W12 §3b)
+
+**Ratio.** After entry 1, on x86-64 (`tools/speed/current.json`): `FlowPairHMMAlignReadsToHaplotypes`
+2.83 steady, `ModelSegments` 1.51, `VariantRecalibrator` 1.01, `HaplotypeBasedVariantRecaller` 0.97;
+peak RSS 0.04x to 0.09x the reference's on all four, so only CPU is at stake.
+
+**Where the time goes, and the optimisation.** Profiles by macOS `sample`, on longer runs of the
+same rows where the fixture is too short to sample (more MCMC samples, or the input repeated):
+
+| Tool | profile | change |
+|---|---|---|
+| `FlowPairHMMAlignReadsToHaplotypes` | `jmath::math::log10` per cell, on a few hundred distinct inputs | a per-thread direct-mapped cache of `log10` by the input's bits |
+| `ModelSegments` | `hetLogLikelihood`'s logarithms and log-gammas, a dozen per het per sampler evaluation | three per-thread caches keyed by their inputs' bits: the whole answer (a segment's hets repeat counts), the terms the outlier probability does not enter (its sampler moves `pi` alone), the outlier term's count-only parts |
+| `VariantRecalibrator` | every resource scanned whole per variant; then `Math.log(10)` per datum per Gaussian, an array per evaluation, a temporary matrix per scatter term | the resources indexed by contig and start, in file order; `log(10)` once; the cross terms and scatter terms summed in place |
+| `HaplotypeBasedVariantRecaller` | the one-read PairHMM | the engine's batched recursion, several reads side by side |
+
+**Why it cannot move a byte.** Each cache holds the value of a pure function of exactly the bits it
+is keyed by, so a hit returns the bits the computation returns, and a collision only recomputes.
+The `ModelSegments` terms are cached as the operands they were, so every sum keeps its order.
+The resource index returns the scan's records in the scan's order, filtered by the same
+predicate. The EM's in-place sums are the same multiplies and adds in the same order (a term
+added as formed is what `plusEquals` of the term matrix does element by element). The batched
+PairHMM does each lane's own unfused operations.
+
+**The suites that prove it.** `pair_hmm_port` (batched against one-read, bit for bit); new unit
+tests: the flow `log10` cache against `jmath`, the `ModelSegments` likelihood against the
+uncached body kept under `cfg(test)` over more keys than slots (a planted reordering fails it),
+the resource index against the scan. The tools' suites, and locally every output file of the four
+fixture rows, and of `ModelSegments` at 2000 samples, identical to main's. `ModelSegments`' sampler
+is otherwise covered only by the x86 conformance job: its outputs differ from an **arm64** JVM's
+on main already (its `Math.exp` is not x86's), so a local oracle run cannot vouch for it.
+
+**Result, natively (M-series, one binary each side, minimum CPU of five, alternated twice,
+identical outputs).** x86-64 pending: the `Speed` run on this branch.
+
+| Tool | main | this change | |
+|---|---:|---:|---:|
+| `FlowPairHMMAlignReadsToHaplotypes` | 169 ms | 21 ms | 8.0x |
+| `ModelSegments` | 490 ms | 216 ms | 2.3x |
+| `ModelSegments`, 2000 samples | 10.04 s | 4.16 s | 2.4x |
+| `VariantRecalibrator` | 110 ms | 56 ms | 2.0x |
+| `HaplotypeBasedVariantRecaller` | 20 ms (340M instructions) | 16.5 ms (242M) | 1.2x |
+
 ## Not targets yet
 
-`HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are
+Superseded by entry 6 for these two, kept for the record. `HaplotypeBasedVariantRecaller` (1.30
+steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are
 at or near one, and the baseline's own noise says a single tool can move by up to half between two
 runs on different runners. Neither is "slow" by a margin that survives that. Their rows take 60 to
 90 ms natively, too short for a sampling profiler to attribute, so there is also no profile to
