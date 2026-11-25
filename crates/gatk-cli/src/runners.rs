@@ -22087,7 +22087,8 @@ fn donor_header(donor: &str) -> Result<SamHeader, Thrown> {
 
 /// `SVCluster`: SV records grouped by the canonical linkage and each group written as one record.
 ///
-/// Which records group is [`gatk_tools::sv_cluster`], what a group is written as
+/// Which records group is [`gatk_tools::sv_cluster_engine`] over [`gatk_tools::sv_cluster`]'s
+/// linkage, streamed as `SVClusterEngine` streams them, what a group is written as
 /// [`gatk_tools::sv_collapser`], and both conversions [`gatk_tools::sv_call_record`]. The runner is
 /// `SVClusterWalker` around them:
 ///
@@ -22098,37 +22099,32 @@ fn donor_header(donor: &str) -> Result<SamHeader, Thrown> {
 ///   alleles, or no-calls under `--default-no-call`;
 /// * **`--fast-mode` keeps only the carriers' genotypes** of a record that is not a CNV;
 /// * **`--flag-field-logic` is declared and never read**: the factory builds the collapser with `OR`;
-/// * **the output is sorted by contig and start**, stably, and each record renamed
-///   `<prefix><8 hex digits>` in the order it was built when `--variant-prefix` is given.
+/// * **each record is renamed `<prefix><8 hex digits>` in the order the engine finalized it**,
+///   when `--variant-prefix` is given: a cluster closes when a record starts past its reach, and
+///   the clusters closed together come out in the engine's `HashMap` order, not by position. The
+///   output is then sorted by contig and start, stably.
 ///
 /// `DEFRAGMENT_CNV` is another linkage and another collapser configuration, and is the port's
-/// limitation here. A failure inside `apply` is the walker's `GATKException`; a collapse is placed
-/// at the end of its contig rather than at the record that completed it, which only a refused
-/// collapse can observe.
+/// limitation here. A failure inside `apply` is the walker's `GATKException`.
 pub fn sv_cluster(parser: &Parser) -> Outcome {
     let mut walker = SvClusterWalker::start(parser, "SVCluster", Vec::new())?;
-    let linkage = sv_cluster_linkage(parser);
+    let mut clusterer = walker.engine(sv_cluster_linkage(parser));
     let records = walker.records.clone();
-    let mut members: Vec<gatk_tools::sv_collapser::Member> = Vec::new();
-    let mut current: Option<String> = None;
+    // `applyRecord` writes whatever `addAndFlush` finalized, and `onTraversalSuccess` the rest.
     for (input, record) in &records {
         walker.input.clone_from(input);
-        let member = match walker.member(record) {
-            Ok(member) => member,
-            Err(error) => return walker.refuse(error),
-        };
-        if current.as_deref() != Some(member.call.contig_a.as_str()) {
-            if let Err(error) = walker.cluster_and_build(&mut members, &linkage) {
-                return walker.refuse(error);
-            }
-            current = Some(member.call.contig_a.clone());
+        let emitted = walker
+            .member(record)
+            .and_then(|member| clusterer.add_and_flush(member).map_err(sv_engine_error))
+            .and_then(|groups| walker.emit(groups));
+        if let Err(error) = emitted {
+            return walker.refuse(error);
         }
-        members.push(member);
     }
     if let Some(failure) = walker.failure.take() {
         return walker.refuse(failure);
     }
-    if let Err(error) = walker.cluster_and_build(&mut members, &linkage) {
+    if let Err(error) = walker.emit(clusterer.flush()) {
         return walker.refuse(error);
     }
     walker.finish()?;
@@ -22196,18 +22192,16 @@ pub fn grouped_sv_cluster(parser: &Parser) -> Outcome {
         return walker.refuse(illegal_state(error.message()));
     }
     let enable_cnv = flag(parser, "enable-cnv");
-    let mut buckets: Vec<(
-        String,
-        Option<String>,
-        Vec<gatk_tools::sv_collapser::Member>,
-    )> = engine
+    // One engine per stratum, each flushing at a new contig of its own.
+    let mut clusterers: Vec<(String, _)> = engine
         .strata
         .iter()
-        .map(|stratum| (stratum.name.clone(), None, Vec::new()))
+        .map(|stratum| {
+            let parameters = engines.get(&stratum.name).expect("a validated group");
+            let clusterer = walker.engine(grouped::linkage_for(parameters, enable_cnv));
+            (stratum.name.clone(), clusterer)
+        })
         .collect();
-    let linkage_of = |name: &str| {
-        grouped::linkage_for(engines.get(name).expect("a validated group"), enable_cnv)
-    };
 
     let records = walker.records.clone();
     for (input, record) in &records {
@@ -22256,18 +22250,17 @@ pub fn grouped_sv_cluster(parser: &Parser) -> Outcome {
                     "STRAT",
                     Value::List(vec![Value::Str(name.clone())]),
                 );
-                let bucket = buckets
+                let (_, clusterer) = clusterers
                     .iter_mut()
-                    .find(|(stratum, _, _)| *stratum == name)
-                    .expect("a bucket per stratum");
-                if bucket.1.as_deref() != Some(member.call.contig_a.as_str()) {
-                    let flushed = walker.cluster_and_build(&mut bucket.2, &linkage_of(&name));
-                    if let Err(error) = flushed {
-                        return walker.refuse(error);
-                    }
-                    bucket.1 = Some(member.call.contig_a.clone());
+                    .find(|(stratum, _)| *stratum == name)
+                    .expect("an engine per stratum");
+                let emitted = clusterer
+                    .add_and_flush(member)
+                    .map_err(sv_engine_error)
+                    .and_then(|groups| walker.emit(groups));
+                if let Err(error) = emitted {
+                    return walker.refuse(error);
                 }
-                bucket.2.push(member);
             }
             _ => return walker.refuse(walker.wrapped(record, true)),
         }
@@ -22288,11 +22281,10 @@ pub fn grouped_sv_cluster(parser: &Parser) -> Outcome {
         .collect();
     let order = gatk_engine::java_hash::hash_map_order(&hashed).expect("a hashable stratum set");
     for flushed in order {
-        let Some((name, _, members)) = buckets.iter_mut().find(|(name, _, _)| *name == flushed)
-        else {
+        let Some((_, clusterer)) = clusterers.iter_mut().find(|(name, _)| *name == flushed) else {
             continue;
         };
-        if let Err(error) = walker.cluster_and_build(members, &linkage_of(name)) {
+        if let Err(error) = walker.emit(clusterer.flush()) {
             return walker.refuse(error);
         }
     }
@@ -22389,6 +22381,11 @@ fn sv_cluster_linkage(parser: &Parser) -> gatk_tools::sv_cluster::Linkage {
         ),
         cluster_del_with_dup: flag(parser, "enable-cnv"),
     }
+}
+
+/// An `SVClusterEngine` refusal, thrown as the class it names.
+fn sv_engine_error(error: gatk_tools::sv_cluster_engine::EngineError) -> Thrown {
+    Thrown::non_user(error.class, error.message)
 }
 
 /// `SVClusterWalker`: what `SVCluster` and `GroupedSVCluster` share, from `onTraversalStart` to the
@@ -22658,60 +22655,11 @@ impl<'p> SvClusterWalker<'p> {
         })
     }
 
-    /// One engine's items clustered and collapsed, each group built as it comes out.
-    ///
-    /// The engine flushes at a new contig; a collapse is placed there rather than at the record
-    /// that completed its cluster, which only a refused collapse can observe.
-    fn cluster_and_build(
-        &mut self,
-        members: &mut Vec<gatk_tools::sv_collapser::Member>,
-        linkage: &gatk_tools::sv_cluster::Linkage,
-    ) -> Result<(), Thrown> {
+    /// `write` for each call the engine finalized, collapsed in the order it came out: the order
+    /// that numbers it.
+    fn emit(&mut self, groups: Vec<Vec<gatk_tools::sv_collapser::Member>>) -> Result<(), Thrown> {
         use gatk_tools::sv_collapser as collapser;
-        let needs_carriers = linkage.depth.sample_overlap > 0.0
-            || linkage.mixed.sample_overlap > 0.0
-            || linkage.pesr.sample_overlap > 0.0;
-        let calls: Vec<gatk_tools::sv_cluster::CallRecord> = members
-            .iter()
-            .map(|member| {
-                let carriers = if needs_carriers {
-                    let has_alt = member
-                        .alleles
-                        .iter()
-                        .any(|a| !a.is_no_call() && !a.is_reference());
-                    member
-                        .genotypes
-                        .iter()
-                        .filter(|g| {
-                            collapser::is_carrier(member.call.sv_type, has_alt, g).unwrap_or(false)
-                        })
-                        .map(|g| g.sample_name.clone())
-                        .collect()
-                } else {
-                    Vec::new()
-                };
-                gatk_tools::sv_cluster::CallRecord {
-                    id: member.call.id.clone(),
-                    sv_type: member.call.sv_type,
-                    contig_a: member.call.contig_a.clone(),
-                    position_a: member.call.position_a,
-                    contig_b: member.call.contig_b.clone(),
-                    position_b: member.call.position_b,
-                    strand_a: member.call.strand_a,
-                    strand_b: member.call.strand_b,
-                    length: member.call.length,
-                    algorithms: member.call.algorithms.clone(),
-                    carriers,
-                    cpx_subtype: member.call.cpx_subtype.clone(),
-                    cpx_intervals: member.call.cpx_intervals.clone(),
-                }
-            })
-            .collect();
-        for cluster in gatk_tools::sv_cluster::cluster_indices(&calls, linkage, self.algorithm) {
-            let group: Vec<collapser::Member> = cluster
-                .iter()
-                .map(|index| members[*index].clone())
-                .collect();
+        for group in groups {
             let reference = &mut self.reference;
             let collapsed = collapser::collapse(
                 &group,
@@ -22733,8 +22681,29 @@ impl<'p> SvClusterWalker<'p> {
                 &collapsed.filters,
             )?;
         }
-        members.clear();
         Ok(())
+    }
+
+    /// `createCanonical`'s engine over this walker's dictionary.
+    fn engine(
+        &self,
+        linkage: gatk_tools::sv_cluster::Linkage,
+    ) -> gatk_tools::sv_cluster_engine::Engine<gatk_tools::sv_cluster_engine::CanonicalLinkage>
+    {
+        use gatk_tools::sv_cluster_engine as engine;
+        let clustering = match self.algorithm {
+            gatk_tools::sv_cluster::Algorithm::SingleLinkage => {
+                engine::ClusteringType::SingleLinkage
+            }
+            gatk_tools::sv_cluster::Algorithm::MaxClique => engine::ClusteringType::MaxClique,
+        };
+        engine::Engine::new(
+            clustering,
+            engine::CanonicalLinkage {
+                dictionary: self.sequences.clone(),
+                linkage,
+            },
+        )
     }
 
     /// `buildVariantContext`: every sample filled in from the ploidy table, the new name, the

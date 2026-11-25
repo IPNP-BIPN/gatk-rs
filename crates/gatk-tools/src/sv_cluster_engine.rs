@@ -590,8 +590,7 @@ impl EngineLinkage for CnvLinkage {
     }
 }
 
-/// `CanonicalSVLinkage` over collapser members, with every sample overlap at zero so that no
-/// carrier is ever asked for.
+/// `CanonicalSVLinkage` over collapser members.
 #[derive(Debug, Clone)]
 pub struct CanonicalLinkage {
     pub dictionary: Vec<(String, i32)>,
@@ -620,9 +619,26 @@ impl CanonicalLinkage {
 
 impl EngineLinkage for CanonicalLinkage {
     fn are_clusterable(&self, a: &Member, b: &Member) -> Result<bool, EngineError> {
-        Ok(self
+        let (record_a, record_b) = (Self::record(a), Self::record(b));
+        // `computeSampleOverlap` compares copy states when either side is a CNV, which carrier
+        // sets cannot express: the records are linked with no sample overlap, and the overlap is
+        // then tested on the members.
+        let mut without_samples = self.linkage;
+        for parameters in [
+            &mut without_samples.depth,
+            &mut without_samples.mixed,
+            &mut without_samples.pesr,
+        ] {
+            parameters.sample_overlap = 0.0;
+        }
+        if !without_samples.are_clusterable(&record_a, &record_b) {
+            return Ok(false);
+        }
+        let threshold = self
             .linkage
-            .are_clusterable(&Self::record(a), &Self::record(b)))
+            .parameters_for(&record_a, &record_b)
+            .map_or(0.0, |parameters| parameters.sample_overlap);
+        has_sample_overlap(a, b, threshold)
     }
 
     fn max_clusterable_start(&self, item: &Member) -> Result<i32, EngineError> {
