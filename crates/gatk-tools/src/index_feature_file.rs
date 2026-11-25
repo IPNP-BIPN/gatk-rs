@@ -320,6 +320,93 @@ pub fn build_tabix(
     )
 }
 
+/// [`build_tabix`] in one pass over the blocks, holding a line at a time rather than the text and
+/// every feature. `None` wherever `build_tabix`, or the whole text's UTF-8 check before it, would
+/// refuse (a block that does not decode, an empty file, text that is not UTF-8, features out of
+/// order, a feature the creator refuses), so the caller then runs the whole one, which refuses in
+/// its own words and order.
+///
+/// Each line's pointer is the block its first byte is in and that byte's offset there, as
+/// `BlockMap` gives it, and the end is the address past the last block.
+pub fn build_tabix_streamed(
+    compressed: &[u8],
+    source: &Source,
+    file_name: &str,
+    deflater: Deflater,
+    level: u32,
+) -> Option<Vec<u8>> {
+    let codec = codec_for(file_name)?;
+    let mut creator = TabixIndexCreator::new(match codec {
+        Codec::Vcf => TabixFormat::VCF,
+        Codec::Bed => TabixFormat::BED,
+    });
+    // `check_ordering`'s state: each contig met, and the last feature.
+    let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut last: Option<Feature> = None;
+    let mut add = |line: &[u8], pointer: i64| -> Option<()> {
+        let line = std::str::from_utf8(line).ok()?;
+        let Some(feature) = feature_of_line(line, codec) else {
+            return Some(());
+        };
+        let same_contig = last
+            .as_ref()
+            .is_some_and(|previous| previous.contig == feature.contig);
+        if same_contig && feature.start < last.as_ref()?.start {
+            return None;
+        }
+        if !same_contig && !visited.insert(feature.contig.clone()) {
+            return None;
+        }
+        let description = format!("{}:{}-{}", feature.contig, feature.start, feature.end);
+        let entry = FeatureRef {
+            contig: &feature.contig,
+            start: feature.start,
+            end: feature.end,
+            description: &description,
+            sequence_length: 0,
+        };
+        creator.add_feature(entry, pointer).ok()?;
+        last = Some(feature);
+        Some(())
+    };
+
+    let mut reader = BgzfReader::new(compressed);
+    // The line read so far, and the pointer of its first byte.
+    let (mut line, mut line_start): (Vec<u8>, Option<i64>) = (Vec::new(), None);
+    let (mut end_address, mut any_data) = (0u64, false);
+    while let Some(block) = reader.next_block().ok()? {
+        end_address = block.block_address + block.block_compressed_size as u64;
+        any_data |= !block.data.is_empty();
+        let mut from = 0;
+        while from < block.data.len() {
+            if line_start.is_none() {
+                line_start =
+                    Some(vfp::make_file_pointer(block.block_address, from as u32).ok()? as i64);
+            }
+            match block.data[from..].iter().position(|&byte| byte == b'\n') {
+                Some(at) => {
+                    line.extend_from_slice(&block.data[from..=from + at]);
+                    add(&line, line_start.take()?)?;
+                    line.clear();
+                    from += at + 1;
+                }
+                None => {
+                    line.extend_from_slice(&block.data[from..]);
+                    from = block.data.len();
+                }
+            }
+        }
+    }
+    if !any_data && compressed.is_empty() {
+        return None;
+    }
+    if let Some(start) = line_start {
+        add(&line, start)?;
+    }
+    let end = vfp::make_file_pointer(end_address, 0).unwrap_or(0) as i64;
+    write_tabix(creator, end, source, deflater, level).ok()
+}
+
 /// A tabix creator finished at `end` and its index written, block compressed at the run's level.
 pub fn write_tabix(
     creator: TabixIndexCreator,

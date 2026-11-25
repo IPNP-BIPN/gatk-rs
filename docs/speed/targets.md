@@ -378,6 +378,43 @@ gives the same `.vcf`.
 | gnomAD chr20 | 6.64 GB | 244 MB | 18.6 s | 8.5 s | 0.06x | 0.25x |
 | it and a shuffled copy | 11.5 GB | 315 MB | 16.3 s | 16.1 s | | |
 
+## Scale U. `IndexFeatureFile` decompressed a `.vcf.gz` twice to index it
+
+**Ratio.** At scale (gnomAD chr20 sites to `.tbi`, linux/arm64), GATK takes 6.3 s CPU and
+0.67 GiB; the port 7.1 s and 1.38 GiB (2.05x).
+
+**Where the memory goes.** The compressed file, its whole text once to check it decodes and is
+UTF-8, the whole text again with a map of its blocks for the tabix pointers, and every feature in
+a `Vec` (twice, once for the order check). Natively the peak was 1.28 GB.
+
+**The optimisation.** `build_tabix_streamed`: one pass over the blocks, a line at a time. Each
+line's pointer is the block its first byte is in and that offset, the order check is
+`check_ordering`'s (the last feature and the contigs met), and each feature goes to the creator
+as it is found. Any refusal, of the decoding, the UTF-8, an empty file, the order, the creator or
+the output name, is left to the whole run, which refuses in its own words and order.
+
+**Why it cannot move a byte.** The features, their pointers and their order are `build_tabix`'s:
+`BlockMap` maps a text offset to the last non-empty block starting at or before it, which is the
+block the line's first byte is read from, and the end to the address past the last block. A line
+ends at the same `\n` whichever block holds it, so checking UTF-8 a line at a time is checking the
+whole text. The creator and `write_tabix` are the same.
+
+**The suites that prove it.** `index-feature-file`, and its unit test, which now asks the one-pass
+build for the golden's `.tbi` and for the refusal of a stream that is not BGZF. Natively, old
+against new, 56 runs give the same files and message: VCF and BED (`.gz`), sorted, unsorted, with a
+contig met twice, truncated, plain text under a `.gz` name, empty, no records, no last newline,
+CRLF, invalid UTF-8, two BGZF files concatenated, missing, by `-O`, `--use-jdk-deflater` and an
+output named as the input. gnomAD chr20 gives the same `.tbi`.
+
+**Result.** macOS native, gnomAD chr20:
+
+| | RSS | CPU | RSS vs GATK | CPU vs GATK |
+|---|---:|---:|---:|---:|
+| main | 1.28 GB | 2.3 s | | |
+| one pass | 77 MB | 1.7 s | 0.11x | 0.28x |
+
+The 77 MB is mostly the compressed file, read whole as before.
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are
