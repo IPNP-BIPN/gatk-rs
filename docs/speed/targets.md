@@ -185,6 +185,44 @@ the quadratic resource scan of entry 6, which no profile can shorten. The spread
 one binary is as large as the gain, so landing it waits on x86-64 numbers from a CI job. The release
 build then needs a training step: three builds rather than one, and training inputs it can reach.
 
+## 11. `VariantRecalibrator`'s resident set: each resource kept as what the lookup reads
+
+**Ratio.** On the 40x input (`vrbig4`: 104,000 calls and 140,120 resource records, 25 MB of
+text), with #1554's index, macOS: 1.82 s of CPU against GATK's 9.8-12.5 s (0.15-0.19), but
+502 MB of peak RSS against a 1.48 GB cgroup peak for GATK (its page cache is the 25 MB of input):
+0.34, above the programme's 0.25 bound for memory, the priority.
+
+**Where the memory goes.** A heap snapshot at the plateau: 4.19 million live blocks averaging
+73 bytes, about seventeen per record. Every resource is read whole and kept as
+`VariantContext`s: contig, ID, alleles and their bases, filters, INFO keys and values, a genotype
+with its sample name and allele copies. Clearing only the INFO and the ID, after each read,
+brought the peak to 458 MB: the rest of the record is the bulk.
+
+**The optimisation.** Each resource is reduced, right after it is read, to what the lookup reads
+of a training record, none of which depends on the variant looking it up: its start and stop, its
+reference bases and alternates' display strings (`isAlleleInList`), the class its type asks
+(`checkVariationClass(evalVC, trainVC)`), whether it is unfiltered with more than one allele, and
+whether it has no genotype or is polymorphic in its samples (`isValidVariant`). The records are
+then dropped.
+
+**Why it cannot move a byte.** Every one of those values is a pure function of the training record
+alone, computed with the functions the lookup called, and the lookup combines them in the order
+it did: `!filtered && alleles > 1 && sameClass && (trust || untyped || polymorphic)` with each
+operand already known, and pure operands make short-circuiting invisible. The one message that
+names a training record prints the variant's contig, which the index matched, and the record's
+start, which is kept. The calls are untouched, and so are the recal file and the tranches made
+from them.
+
+**The suites that prove it.** `VariantRecalibrator`'s array; the index test, now comparing each
+slim entry to the one built from the record the scan finds; locally, the 40x row's recal file and
+tranches identical before and after.
+
+**Result** (macOS, the 40x row, recal file and tranches identical; the fixture row identical too):
+peak RSS 502 MB to 435 MB (-13%), CPU unchanged at 1.85 s. Still 0.29 of GATK's peak, above 0.25:
+what remains is the calls, which `multi_variant::open` reads whole for every walker over several
+VCFs, about 3.6 million live blocks at the plateau. Streaming them is the scale session's
+multi-variant work, not this entry's.
+
 ## Not targets yet
 
 Superseded by entry 6 for these two, kept for the record. `HaplotypeBasedVariantRecaller` (1.30
