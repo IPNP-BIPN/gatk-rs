@@ -100,8 +100,9 @@ fn every_posterior_matches_the_golden() {
     }
     assert_eq!(compared, 48);
     assert_eq!(answers.len() + refusals.len(), 48);
-    // Exactly one input of the grid is not bit-identical, and it is this one.
-    assert_eq!(within_one_ulp, vec!["100.0,-1.0".to_string()]);
+    // Built on the host `exp` every input of the grid is bit-identical; fdlibm missed "100.0,-1.0"
+    // by an ulp (docs/numeric-functions-a-ported-call-site-reaches.md).
+    assert!(within_one_ulp.is_empty(), "{within_one_ulp:?}");
 }
 
 #[test]

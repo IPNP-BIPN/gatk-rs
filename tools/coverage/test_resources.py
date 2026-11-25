@@ -29,6 +29,7 @@ import json
 import re
 import sys
 import tempfile
+import zlib
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -385,6 +386,13 @@ class Run:
         path = f"{OUT}/{name}"
         (self.mkdir if directory else self.touch).append(path)
         return path
+
+
+def gatk_extension(extension):
+    """`IOUtils.createTempFile`/`createTempPath` prepend the dot an extension lacks, unlike
+    `File.createTempFile`: `createTempFile("test", "fasta")` is `test<n>.fasta`."""
+    extension = jstr(extension)
+    return extension if extension.startswith(".") else f".{extension}"
 
 
 class Interpreter:
@@ -884,7 +892,7 @@ class Interpreter:
             if value is not NOT_NATIVE:
                 return value
         if name in ("createTempFile", "createTempPath"):
-            return self.run.temp(args[0] if args else "default", args[1] if len(args) > 1 else ".tmp")
+            return self.run.temp(args[0] if args else "default", gatk_extension(args[1]) if len(args) > 1 else ".tmp")
         if name == "createTempDir":
             return self.run.temp(args[0] if args else "tmp", "", directory=True)
         if name in ("getSafeNonExistentFile", "getSafeNonExistentPath", "getSafeNonExistentGATKPath"):
@@ -939,7 +947,7 @@ class Interpreter:
             if name == "executeTest":
                 tester = args[1] if len(args) > 1 else None
                 interpreter = Interpreter(self.run, tester.info) if isinstance(tester, ClassRef) and tester.info else self
-                outputs = [self.run.temp(f"walktest.tmp_param.{i}", target.extension) for i in range(target.outputs)]
+                outputs = [self.run.temp(f"walktest.tmp_param.{i}", gatk_extension(target.extension)) for i in range(target.outputs)]
                 interpreter.record_spec(target, outputs)
                 return None
             if name == "setOutputFileExtension":
@@ -1001,7 +1009,7 @@ class Interpreter:
                 path = join_path(path, part)
             return path
         if cls == "IOUtils" and name in ("createTempFile", "createTempPath"):
-            return self.run.temp(args[0], args[1])
+            return self.run.temp(args[0], gatk_extension(args[1]))
         if cls in ("IOUtils", "Files") and name in ("createTempDir", "createTempDirectory"):
             return self.run.temp(args[0] if args else "tmp", "", directory=True)
         if cls == "File" and name in ("createTempFile",):
@@ -1440,6 +1448,27 @@ def self_check():
     assert inject_verbosity(["-I", "x"]) == ["-I", "x", "--verbosity", "ERROR"]
     assert join_path("/a/b/", "c/") == "/a/b/c" and normalized("x//y/") == "x/y"
     assert Builder().add("O", "%s").tokens == ["--O", "%s"]
+    assert gatk_extension("fasta") == ".fasta" and gatk_extension(".vcf") == ".vcf"
+    # The same record behind dates of two widths, each side in two BGZF blocks: its offsets
+    # compare equal, and one into no block start keeps its address.
+    def bgzf(data):
+        deflate = zlib.compressobj(6, zlib.DEFLATED, -15)
+        body = deflate.compress(data) + deflate.flush()
+        size = (17 + len(body) + 8).to_bytes(2, "little")
+        trailer = zlib.crc32(data).to_bytes(4, "little") + len(data).to_bytes(4, "little")
+        return b"\x1f\x8b\x08\x04" + bytes(4) + b"\x00\xff\x06\x00BC\x02\x00" + size + body + trailer
+
+    canonical = []
+    for date in (b"9:00 PM", b"10:00 PM"):
+        head = b'##GATKCommandLine=<ID=X,Date="' + date + b'">\n'
+        raw = bgzf(head) + bgzf(b"1\t5\n")
+        starts, text = run_array.bgzf_positions(raw)
+        tabix = b"".join(n.to_bytes(4, "little") for n in (0, 1, 0, 0, 0, 0, 0, 0, 2)) + b"1\x00"
+        tabix += b"".join(n.to_bytes(4, "little") for n in (1, 4681, 1))
+        tabix += (len(bgzf(head)) << 16).to_bytes(8, "little") + (7 << 16).to_bytes(8, "little")
+        tabix += (0).to_bytes(4, "little")
+        canonical.append(run_array.tabix_canonical(tabix, starts, text).splitlines()[1])
+    assert canonical[0] == canonical[1] == "0 bin 4681 33 ?7:0", canonical
 
 
 def main(argv):

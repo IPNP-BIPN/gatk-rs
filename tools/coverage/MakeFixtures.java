@@ -6088,6 +6088,11 @@ public class MakeFixtures {
                 "--create-output-variant-index", "false",
                 "-O", dir.resolve("vr_model_run.recal").toString(),
                 "--tranches-file", dir.resolve("vr_model_run.tranches").toString()});
+        // A reference holding chr2 alone: the call sets' dictionary is a strict superset of its
+        // own, so the recal file's `##contig` lines say whose dictionary the header was built
+        // from (the driving variants', `getBestAvailableSequenceDictionary`), the reference only
+        // naming the `assembly=`. The tool reads no base of it.
+        pathSeqReference(dir.resolve("vr_ref.fasta"), new String[][] {{"chr2", "600000"}});
     }
 
     /** A VCF's body lines sorted by contig and position, the header kept in front. */
