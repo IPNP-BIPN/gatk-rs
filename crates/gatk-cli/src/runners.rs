@@ -1523,6 +1523,9 @@ fn variant_walker_validation(
 }
 
 pub fn count_variants(parser: &Parser) -> Outcome {
+    if let Some(count) = count_variants_streamed(parser) {
+        return Ok(Some(count.to_string()));
+    }
     let VariantWalkerStart {
         input,
         text,
@@ -1561,6 +1564,32 @@ pub fn count_variants(parser: &Parser) -> Outcome {
         })?;
     // The tool returns the count, which `handleResult` prints.
     Ok(Some(count.to_string()))
+}
+
+/// [`count_variants`] for a VCF and no `-L`, whose count is every line `features` would find,
+/// counted as the lines are read. `None` on any refusal, with nothing written, so the whole run
+/// refuses in its own words.
+fn count_variants_streamed(parser: &Parser) -> Option<i64> {
+    let (start, stream) = variant_walker_startup_streamed(parser, "CountVariants").ok()?;
+    let (mut lines, _) = stream?;
+    let codec = gatk_tools::feature_codec::Codec::Vcf;
+    if start.codec != codec
+        || gatk_engine::variant_source::intervals_for_traversal(start.intervals.as_deref())
+            .is_some()
+        || !start.text.lines().any(|line| line.starts_with("#CHROM"))
+    {
+        return None;
+    }
+    let (mut count, mut line) = (0i64, String::new());
+    while lines.next_line(&mut line).ok()? {
+        if gatk_tools::feature_codec::feature_of_line(&line, codec).is_some() {
+            count += 1;
+        }
+    }
+    let output = argument(parser, "output");
+    gatk_tools::count_variants::write_output(output.as_deref().map(std::path::Path::new), count)
+        .ok()?;
+    Some(count)
 }
 
 /// The sequence dictionary a reads input carries, which for a file that is not a BAM is EMPTY.
