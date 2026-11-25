@@ -91,23 +91,43 @@ threads handed one read at a time, the finest split there is (a planted bug that
 share fails it); every array that runs the binary against the reference, on runners with several
 cores; and the smoke slice below, identical output on every run.
 
+**What the threads first cost, and what removed it.** Counting on seven threads first spent more
+CPU and memory than one: the same instructions took 17% more cycles, and the RSS rose by 53 MB a
+thread, whatever the batch size. Each engine built BAQ's 49 MB emission table, which a run without
+BAQ never reads. Three fixes, each byte-neutral by construction, made the threads cheaper than
+#1515's one thread:
+
+- the BAQ table is built the first time a read is BAQ'ed (`OnceCell`);
+- the per-read covariate matrix is one buffer with the same `[event][position][covariate]`
+  indexing and bounds, not one allocation per event and position (450 for a 150-base read);
+- a read with nothing to clip (no soft clip, its adaptor boundary outside it, no low-quality tail)
+  is used as it is, where three clips each handed back a full copy of it.
+
+The VCF known sites are also decoded a line at a time, keeping only each record's span: the whole
+file and its 1.4 million records with their INFO were held together, 2.8 GB for dbSNP at chr20.
+The same refusals come in the same order: eleven malformed and edge-case files (no `#CHROM`, a bad
+`POS`, missing columns, a non-UTF-8 byte after a bad record, a bad genotype, CRLF, no final newline)
+give the old binary's status, message and table.
+
 **Measured (M-series, 12 performance and 4 efficiency cores, shared with other work; chr20 smoke
-slice, `-L chr20:30000000-35000000`, dbSNP and Mills as known sites; three alternated runs, release
-builds; #1515's head against this branch).** The table is byte-identical on every run.
+slice, `-L chr20:30000000-35000000`, dbSNP and Mills as known sites; release builds).** The table is
+byte-identical on every run, and to GATK's.
 
-| | #1515 | this branch | |
-|---|---:|---:|---:|
-| wall | 17.99, 21.50, 19.77 s | 9.89, 9.66, 13.89 s | 0.56x |
-| CPU (user + sys) | 17.83, 19.27, 17.79 s | 21.84, 21.95, 22.54 s | 1.21x |
-| peak RSS | 3,051 MB | 3,392 MB | 1.11x |
-| instructions retired | 324.5 G | 323.5 G | 1.00x |
+| | GATK 4.7.0.0 | #1515 | this branch | vs GATK |
+|---|---:|---:|---:|---:|
+| CPU (user + sys) | 18.7, 20.5 s | 16.3, 17.3, 16.3 s | 12.4, 12.6, 12.3 s | 0.63x |
+| peak memory | 662, 720 MB | 3,049 to 3,051 MB | 243, 251, 248 MB | 0.36x |
+| wall | 41.3, 44.7 s | 15.8, 16.9, 15.7 s | 6.7, 6.3, 6.2 s | 0.15x |
+| instructions retired | | 324.5 G | 200.6 G | |
 
-The threads do no extra work: the instructions retired are the same. The CPU rises because the same
-instructions take 17% more cycles, which is the price of spreading the reads over cores (cold
-caches, records freed on another thread than the one that built them, efficiency cores). The RSS
-rises by the counting threads' tables and the batches in flight. The gate is against GATK, not
-against #1515, and is not measured here: `Speed at scale` measures it on x86-64 once #1515 and this
-land.
+GATK ran in the arm64 oracle image (`java -jar`, JDK 17) on the same host, with the bgzipped known
+sites and their indexes; its CPU and peak memory are the container's cgroup counters, so its
+memory includes the page cache and overstates its heap. On one counting thread this branch takes
+10.9 to 11.3 s of CPU and 214 MB, so the six threads cost about 12% more CPU for 1.7x less wall.
+
+Left for the 0.5x CPU and 0.25x memory target: the whole contig is fetched (64 MB here, 250 MB on
+chr1) where GATK reads windows; every known site keeps its contig as a `String`; and dbSNP's INFO
+is decoded on one thread before counting starts, about 4 s of the CPU.
 
 ## Not targets yet
 
