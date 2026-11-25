@@ -89,17 +89,19 @@ copies of a string are not observable in any output.
 HaplotypeCaller and Mutect2 arrays; locally, the GVCF and VCF of the profiled region identical to
 the unchanged binary's.
 
-**Result** (one thread, NA12878 chr20, user CPU and peak RSS, three interleaved rounds each,
-outputs identical to the unchanged binary's, `GATKCommandLine` aside). Linux arm64, glibc,
-rustc 1.97.1:
+**Result** (NA12878 chr20, the port on one thread, three interleaved rounds each, outputs
+identical to the unchanged binary's, `GATKCommandLine` aside). Linux arm64, glibc, rustc 1.97.1;
+CPU is user + sys, RAM the peak RSS. GATK 4.7.0.0 on the same rows, same machine, its pinned
+arm64 image, one run each: CPU from `time`, RAM the container's cgroup `memory.peak` (which counts
+its page cache, so it flatters the port slightly).
 
-| Row | before | after | RSS before | RSS after |
-|---|---:|---:|---:|---:|
-| `HaplotypeCaller -ERC GVCF`, 10-11 Mb | 13.41-13.79 s | 12.31-12.42 s (-8.6%) | 97 MiB | 96 MiB |
-| `HaplotypeCaller`, 10-11 Mb | 7.59-7.66 s | 7.19-7.24 s (-5.3%) | 95 MiB | 94 MiB |
-| `Mutect2`, 10-10.2 Mb | 2.47-2.54 s | 2.36-2.43 s (-4.4%) | 150 MiB | 150 MiB |
+| Row | port CPU before | after | GATK CPU | after / GATK | port RAM before | after | GATK RAM | after / GATK |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `HaplotypeCaller -ERC GVCF`, 10-11 Mb | 13.56-13.91 s | 12.47-12.74 s (-8.2%) | 41.43 s | 0.30 | 97 MiB | 96 MiB | 1,114 MiB | 0.086 |
+| `HaplotypeCaller`, 10-11 Mb | 7.66-7.75 s | 7.28-7.32 s (-5.2%) | 36.19 s | 0.20 | 95 MiB | 94 MiB | 1,117 MiB | 0.084 |
+| `Mutect2 --ignore-itr-artifacts`, 10-10.2 Mb | 2.58-2.64 s | 2.47-2.54 s (-4.0%) | 20.09 s | 0.12 | 150 MiB | 150 MiB | 1,076 MiB | 0.14 |
 
-On macOS, whose allocator is dearer, the GVCF row goes from 11.9-12.9 s to 10.0-10.8 s.
+On macOS, whose allocator is dearer, the GVCF row's user CPU goes from 11.9-12.9 s to 10.0-10.8 s.
 
 ## 10. Resolving a read's group by comparing ids from the end: refused
 
