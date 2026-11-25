@@ -70,11 +70,14 @@ records the old binary did not finish natively after seven minutes at 4.4 GB.
 **The optimisation.** Without `-L`, #1500's `variant_walker_startup_streamed`: the header is read,
 and the record lines come one at a time from the `LineReader`, each projected by `vcf_record` (the
 body of `vcf_records`, now per line) and turned into rows at once. With `-L`, the rest of the file
-is read into the text and the old path runs as it was.
+is read into the text and the old path runs as it was. The table, which was built whole in a
+`String`, goes to `<output>.partial` a megabyte at a time and is renamed onto `-O` at the end.
 
 **Why it cannot move a byte.** Without intervals `traverse` keeps every record in file order, so
-the rows come in the same order from the same projection of the same line. The table is still
-written once, at the end, so a refusal still leaves no output. A refusal raised before or among the
+the rows come in the same order from the same projection of the same line. The table reaches
+`-O` only by the final rename, so a refusal still leaves no output (the partial file is removed
+when it is dropped). A `-O` whose sibling cannot be created, and stdout, keep the old single
+write, so their failures and their messages are unchanged. A refusal raised before or among the
 records (no samples and no fields, a missing field) first reads the rest of the file, so a file
 that cannot be decompressed is still refused as `not_block_compressed`, as the whole-text startup
 did before anything else.
@@ -82,9 +85,9 @@ did before anything else.
 **The suites that prove it.** `variants-to-table`, the `VariantsToTable` covering array (23 of 23
 rows match on linux/amd64), and the chr20 table itself.
 
-**Result.** On gnomAD chr20 natively: 0.19 GB peak RSS and 5.1 s CPU (0.68x GATK's RSS
-in its container, 0.07x its CPU), and the table is GATK's byte for byte (md5 f5a62ccd, 5 622 160
-lines).
+**Result.** On gnomAD chr20 natively: 15 MB peak RSS and 5.4 s CPU (0.05x GATK's RSS in its
+container, 0.07x its CPU), and the table is GATK's byte for byte (md5 f5a62ccd, 5 622 160 lines).
+Streaming the records alone left 0.19 GB, which was the table in memory.
 
 ## Not targets yet
 

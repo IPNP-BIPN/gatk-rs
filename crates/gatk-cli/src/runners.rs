@@ -13941,6 +13941,15 @@ pub fn variants_to_table(parser: &Parser) -> Outcome {
         error_if_missing_data: flag(parser, "error-if-missing-data"),
     };
 
+    // The table goes to a file beside `-O` as it grows and is renamed onto it at the end, so a
+    // refusal still leaves none. A `-O` whose sibling cannot be created, and stdout, keep the
+    // whole table and write it once, as before, so their failures are unchanged.
+    let output = argument(parser, "output");
+    let mut partial = output.as_ref().and_then(|path| {
+        let partial = PartialFile(format!("{path}.partial"));
+        let file = std::fs::File::create(&partial.0).ok()?;
+        Some((partial, std::io::BufWriter::new(file)))
+    });
     let mut out = String::new();
     for column in gatk_tools::variants_to_table::header(&samples, &table_arguments) {
         if !out.is_empty() && !out.ends_with('\n') {
@@ -13996,6 +14005,17 @@ pub fn variants_to_table(parser: &Parser) -> Outcome {
                 } else {
                     out.push_str(&row.join("\t"));
                     out.push('\n');
+                }
+            }
+            if out.len() >= 1 << 20 {
+                if let Some((_, file)) = partial.as_mut() {
+                    std::io::Write::write_all(file, out.as_bytes()).map_err(|error| {
+                        Thrown::non_user(
+                            PORT_FAILURE,
+                            format!("{}: {error}", output.as_deref().unwrap_or_default()),
+                        )
+                    })?;
+                    out.clear();
                 }
             }
             Ok(())
@@ -14061,7 +14081,17 @@ pub fn variants_to_table(parser: &Parser) -> Outcome {
     }
 
     // `-O` is optional and a null one is `System.out`, which is the same shape `CheckPileup` has.
-    write_report(&argument(parser, "output"), &out)?;
+    match (partial, &output) {
+        (Some((partial, mut file)), Some(path)) => {
+            let failed =
+                |error: std::io::Error| Thrown::non_user(PORT_FAILURE, format!("{path}: {error}"));
+            std::io::Write::write_all(&mut file, out.as_bytes()).map_err(failed)?;
+            file.into_inner()
+                .map_err(|error| failed(error.into_error()))?;
+            std::fs::rename(&partial.0, path).map_err(failed)?;
+        }
+        _ => write_report(&output, &out)?,
+    }
     Ok(None)
 }
 
