@@ -332,7 +332,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `StructuralVariationDiscoveryPipelineSpark` | sv-caller | oracle-backed | sv-evidence, sv-partitions | 2 | t=2, 27/27 rows (100%) | not measured |
 | `SvDiscoverFromLocalAssemblyContigAlignmentsSpark` | sv-caller | oracle-backed | spark-walkers | 1 | t=2, 17/17 rows (100%) | not measured |
 | `TagGermlineEvents` | unclassified | oracle-backed | tag-germline-events | 1 | t=2, 17/17 rows (100%) | 0.002 / 0.054 |
-| `TrainVariantAnnotationsModel` | variant-transform | oracle-backed | interpreter-tools, vets-isolation-forest | 2 | t=2, 11/11 rows (100%), **1 distinct output** | not measured |
+| `TrainVariantAnnotationsModel` | variant-transform | oracle-backed | interpreter-tools, vets-isolation-forest | 2 | t=2, 11/11 rows (100%) | not measured |
 | `TransferReadTags` | record-transform | oracle-backed | transfer-read-tags | 1 | t=2, 19/19 rows (100%) | 0.002 / 0.035 |
 | `UnmarkDuplicates` | record-transform | oracle-backed | record-transform | 1 | t=2, 19/19 rows (100%) | 0.003 / 0.042 |
 | `UpdateVCFSequenceDictionary` | variant-transform | oracle-backed | update-vcf-sequence-dictionary | 1 | t=2, 24/24 rows (100%) | 0.002 / 0.055 |

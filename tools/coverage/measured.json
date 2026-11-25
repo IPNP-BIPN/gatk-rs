@@ -444,18 +444,18 @@
     },
     "ScoreVariantAnnotations": {
       "rows": 27,
-      "accepted": 0,
-      "rejected": 27,
-      "distinct_outputs": 9,
+      "accepted": 9,
+      "rejected": 18,
+      "distinct_outputs": 12,
       "matched": 27,
       "t": 2,
       "share": 1.0
     },
     "TrainVariantAnnotationsModel": {
       "rows": 11,
-      "accepted": 0,
-      "rejected": 11,
-      "distinct_outputs": 0,
+      "accepted": 3,
+      "rejected": 8,
+      "distinct_outputs": 3,
       "matched": 11,
       "t": 2,
       "share": 1.0
