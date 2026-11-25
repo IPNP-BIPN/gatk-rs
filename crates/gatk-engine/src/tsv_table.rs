@@ -56,6 +56,9 @@ pub enum TableError {
         column: String,
         value: String,
     },
+    /// A file that ends before its column line, which `TableReader`'s constructor refuses. `line`
+    /// counts the lines read before the end.
+    NoHeader { source: String, line: u64 },
 }
 
 impl TableError {
@@ -78,6 +81,9 @@ impl TableError {
                 value,
             } => format!(
                 "format error in '{source}' at line {line}: expected int value for column {column} but found {value}"
+            ),
+            TableError::NoHeader { source, line } => format!(
+                "format error in '{source}' at line {line}: premature end of table: header line not found"
             ),
         }
     }
@@ -150,6 +156,12 @@ impl Table {
             }
             table.rows.push(values);
             table.row_lines.push(number);
+        }
+        if !header_seen {
+            return Err(TableError::NoHeader {
+                source: source.to_string(),
+                line: text.lines().count() as u64,
+            });
         }
         Ok(table)
     }

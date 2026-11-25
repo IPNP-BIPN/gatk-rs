@@ -5844,6 +5844,35 @@ pub fn calculate_genotype_posteriors(parser: &Parser) -> Outcome {
         );
     }
 
+    // `onTraversalStart`'s checks on the driving header, after the inputs are open.
+    if file.header.samples.is_empty() {
+        return Err(bad_input("VCF has no genotypes".to_string()));
+    }
+    let mleac = file.header.lines.iter().find_map(|line| match line {
+        htsjdk_vcf::header::HeaderLine::Compound {
+            key,
+            id,
+            number,
+            line_type,
+            ..
+        } if key == "INFO" && id == "MLEAC" => Some((*number, *line_type)),
+        _ => None,
+    });
+    if let Some((count, line_type)) = mleac {
+        if count != htsjdk_vcf::header::Cardinality::A {
+            return Err(bad_input(
+                "VCF does not have a properly formatted MLEAC field: the count type should be \"A\""
+                    .to_string(),
+            ));
+        }
+        if line_type != htsjdk_vcf::header::LineType::Integer {
+            return Err(bad_input(
+                "VCF does not have a properly formatted MLEAC field: the field type should be \"Integer\""
+                    .to_string(),
+            ));
+        }
+    }
+
     let number = |name: &str, default: f64| -> f64 {
         scalar(parser, name)
             .and_then(|text| text.parse().ok())
@@ -13228,10 +13257,18 @@ fn read_pileup_table(
 > {
     let text =
         std::fs::read_to_string(path).map_err(|error| Thrown::user(format!("{path}: {error}")))?;
-    gatk_engine::pileup_summary::read_from_file(&text, path).map_err(|error| Thrown {
-        failure: Failure::User,
-        exception: error.java_class(),
-        message: Some(error.message()),
+    // A `BadInput` says so in front of its message, as `UserException.BadInput` does.
+    gatk_engine::pileup_summary::read_from_file(&text, path).map_err(|error| {
+        match error.java_class() {
+            "org.broadinstitute.hellbender.exceptions.UserException$BadInput" => {
+                bad_input(error.message())
+            }
+            exception => Thrown {
+                failure: Failure::User,
+                exception,
+                message: Some(error.message()),
+            },
+        }
     })
 }
 
@@ -18982,7 +19019,14 @@ pub fn merge_mutect_stats(parser: &Parser) -> Outcome {
     }
     let mut shards = Vec::new();
     for path in &paths {
-        shards.push(std::fs::read_to_string(path).map_err(|_| table_unreadable(path))?);
+        let text = std::fs::read_to_string(path).map_err(|_| table_unreadable(path))?;
+        // `MutectStats.readFromFile` is a `TableReader`, which refuses a file with no column line.
+        if let Err(error) = gatk_engine::tsv_table::Table::parse(&text, path) {
+            if matches!(error, gatk_engine::tsv_table::TableError::NoHeader { .. }) {
+                return Err(bad_input(error.message()));
+            }
+        }
+        shards.push(text);
     }
     let texts: Vec<&str> = shards.iter().map(String::as_str).collect();
     let merged = gatk_tools::mutect_gathers::merge_stats(&texts).map_err(gather_error)?;
