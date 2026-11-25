@@ -10357,7 +10357,12 @@ pub fn compare_references(parser: &Parser) -> Outcome {
         stdout.push('\n');
     }
     // Everything above is printed as it is produced, so a refusal below it keeps what came before,
-    // and `onTraversalSuccess` returns null: there is no `Tool returned:` line on this tool.
+    // and `onTraversalSuccess` returns null: there is no `Tool returned:` line on this tool. With no
+    // `--output` the table's writer wraps `System.out` and closes it, so nothing after the table
+    // reaches stdout at all.
+    if argument(parser, "output").is_none() {
+        stdout.truncate(rendered.len());
+    }
     print!("{stdout}");
     // `referencePairs.get(0)` is read before the switch on the base-comparison mode, so a run with
     // one reference dies here having already printed everything above.
