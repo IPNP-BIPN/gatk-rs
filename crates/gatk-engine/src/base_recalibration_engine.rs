@@ -597,6 +597,46 @@ impl BaseRecalibrationEngine {
         Ok(())
     }
 
+    /// What this engine counted, as plain values that can cross threads (a table's datum is an
+    /// `Rc`): every table's cells with their keys, and the reads it processed. Not a reference
+    /// method; it is how a counting thread hands its share to [`BaseRecalibrationEngine::absorb`].
+    pub fn counted(&self) -> Counted {
+        let cells = self
+            .tables
+            .all_tables
+            .iter()
+            .enumerate()
+            .flat_map(|(table, nested)| {
+                nested
+                    .all_leaves()
+                    .into_iter()
+                    .map(move |(keys, datum)| (table, keys, datum.borrow().clone()))
+            })
+            .collect();
+        Counted {
+            cells,
+            reads: self.num_reads_processed,
+        }
+    }
+
+    /// Adds another engine's [`counted`](BaseRecalibrationEngine::counted) cells into these
+    /// tables: summed where the cell exists, placed where it does not. The tables are indexed by
+    /// key, so the order cells arrive in changes nothing; the sums are exact only for whole-number
+    /// errors, so only a run without BAQ may count on several threads (see [`RecalDatum::absorb`]).
+    pub fn absorb(&mut self, counted: Counted) -> Result<(), EngineError> {
+        for (table, keys, datum) in counted.cells {
+            let nested = &mut self.tables.all_tables[table];
+            match nested.get(&keys).map_err(EngineError::Nested)? {
+                Some(existing) => existing.borrow_mut().absorb(&datum),
+                None => nested
+                    .put(Rc::new(RefCell::new(datum)), &keys)
+                    .map_err(EngineError::Nested)?,
+            }
+        }
+        self.num_reads_processed += counted.reads;
+        Ok(())
+    }
+
     /// `finalizeData()`: collapse the quality score table into the read group table, then round.
     pub fn finalize_data(&mut self) -> Result<(), EngineError> {
         collapse_quality_score_table_to_read_group_table(&mut self.tables)?;
@@ -608,6 +648,13 @@ impl BaseRecalibrationEngine {
     pub fn is_finalized(&self) -> bool {
         self.finalized
     }
+}
+
+/// One engine's counts, by table index and keys, as [`BaseRecalibrationEngine::counted`] gives them.
+#[derive(Debug, Clone)]
+pub struct Counted {
+    cells: Vec<(usize, Vec<i32>, RecalDatum)>,
+    reads: u64,
 }
 
 /// `RecalUtils.incrementDatum*keys`: increment where there is a datum, create one where there is

@@ -56,6 +56,41 @@ now STATUS.md's cost column; the baseline stays in `baseline.json`):
 both directions, which is what an unchanged path does. The other 131 tools moved a median 7% cold
 and 10% steady, at most 45%, the same spread two runs of one commit showed in the baseline.
 
+## 5. `BaseRecalibrator`'s counting on several threads (W12)
+
+Numbered after #1541's entries 2 to 4, which this branch does not carry yet.
+
+**Where the time goes.** A native profile of `BaseRecalibrator` on the chr20 smoke slice, on
+#1515's streaming traversal (macOS `sample`): most samples are in counting, which is
+`process_read`'s covariates and the table updates under it (`update_tables`, `increment_datum`,
+`get_checked`), and the rest is decoding and the allocator. GATK counts on one thread, so the
+counting alone is the share a second core can take, and splitting only the preparation would leave
+the table updates, the largest part, on one thread.
+
+**The optimisation.** The traversal's thread decodes, fetches each contig's bases once and hands
+batches of 1,024 reads round robin to counting threads, one per spare core and at most six. Each
+counting thread has an engine and tables of its own. At the end every thread's cells are added into
+one engine, and `finalizeData`, the quantization and the report run on it as before.
+
+**Why it cannot move a byte.**
+
+- The tables are indexed by key (`NestedIntegerArray`), so the order in which cells arrive is
+  nothing; the report walks them by key.
+- Without BAQ, each base adds one observation and an error of exactly 0 or 1, so a cell holds whole
+  numbers, its mismatch count scaled by 100,000, and these sums are exact far beyond any read
+  count; adding several threads' sums gives the one thread's sum to the bit. The empirical quality
+  is computed from the sums, after the merge, as before.
+- With BAQ on, the errors are fractional, so their sum depends on its order. Counting then stays on
+  one thread.
+- GATK stops at the first read that fails. So does this: each failure carries its read's position,
+  and the earliest one is returned, whether the traversal, the reference or a counting thread
+  raised it.
+
+**The suites that prove it.** `base_recalibrator`'s golden suite, now run on one thread and on three
+threads handed one read at a time, the finest split there is (a planted bug that drops one thread's
+share fails it); every array that runs the binary against the reference, on runners with several
+cores; and the smoke slice below, identical output on every run.
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are

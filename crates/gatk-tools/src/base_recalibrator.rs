@@ -82,6 +82,35 @@ pub fn base_recalibrator(
     filter: &dyn Fn(&BamRecord) -> bool,
     intervals: &[SimpleInterval],
 ) -> Result<String, BaseRecalibratorError> {
+    base_recalibrator_on(
+        source,
+        contig_bases,
+        known_sites,
+        arguments,
+        quantizing_levels,
+        filter,
+        intervals,
+        default_workers(),
+        BATCH,
+    )
+}
+
+/// [`base_recalibrator`] on `workers` counting threads in batches of `batch` reads, which is how
+/// the test holds the threaded path to the one-thread path on the golden's reads. Fewer than two
+/// workers, or BAQ on, counts on the traversal's thread.
+#[doc(hidden)]
+#[allow(clippy::too_many_arguments)]
+pub fn base_recalibrator_on(
+    source: &ReadsDataSource,
+    contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, BaseRecalibratorError>,
+    known_sites: &[SimpleInterval],
+    arguments: &EngineArguments,
+    quantizing_levels: i32,
+    filter: &dyn Fn(&BamRecord) -> bool,
+    intervals: &[SimpleInterval],
+    workers: usize,
+    batch: usize,
+) -> Result<String, BaseRecalibratorError> {
     let header = source.header().clone();
     // The traversal is bounded like any other walker's. Hardcoding no intervals here counted the
     // reads a command line had excluded: `--intervals chr1:1-6000 --exclude-intervals chr1:1-500`
@@ -92,14 +121,57 @@ pub fn base_recalibrator(
     // the reads before it were counted, which is the reference's own order.
     let records = crate::read_walker::traverse_iter(source, intervals, false, filter)
         .map_err(BaseRecalibratorError::Reads)?;
-    table_of_stream(
+    base_recalibrator_counted(
         &header,
         records.map(|record| record.map_err(BaseRecalibratorError::Reads)),
         contig_bases,
         known_sites,
         arguments,
         quantizing_levels,
+        workers,
+        batch,
     )
+}
+
+/// Counting threads besides the traversal's: one per spare core, at most [`MAX_WORKERS`], and none
+/// on a single core.
+fn default_workers() -> usize {
+    std::thread::available_parallelism()
+        .map(|threads| threads.get().saturating_sub(1).min(MAX_WORKERS))
+        .unwrap_or(0)
+}
+
+/// Past this many counting threads, decoding the BAM on one thread is the limit.
+const MAX_WORKERS: usize = 6;
+/// Reads per batch handed to a counting thread.
+const BATCH: usize = 1024;
+
+/// The table over `records`, counted as [`base_recalibrator_on`] says.
+#[allow(clippy::too_many_arguments)]
+fn base_recalibrator_counted<R: std::borrow::Borrow<BamRecord> + Send>(
+    header: &htsjdk_bam::header::SamHeader,
+    records: impl Iterator<Item = Result<R, BaseRecalibratorError>>,
+    contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, BaseRecalibratorError>,
+    known_sites: &[SimpleInterval],
+    arguments: &EngineArguments,
+    quantizing_levels: i32,
+    workers: usize,
+    batch: usize,
+) -> Result<String, BaseRecalibratorError> {
+    let engine = if workers < 2 || arguments.enable_baq {
+        count_here(header, records, contig_bases, known_sites, arguments)?
+    } else {
+        count_on_threads(
+            header,
+            records,
+            contig_bases,
+            known_sites,
+            arguments,
+            workers,
+            batch,
+        )?
+    };
+    report(engine, arguments, quantizing_levels)
 }
 
 /// The table over reads something else has already chosen, which is what a pipeline hands
@@ -112,57 +184,203 @@ pub fn table_of_reads(
     arguments: &EngineArguments,
     quantizing_levels: i32,
 ) -> Result<String, BaseRecalibratorError> {
-    table_of_stream(
+    let engine = count_here(
         header,
         records.iter().map(Ok),
         contig_bases,
         known_sites,
         arguments,
-        quantizing_levels,
-    )
+    )?;
+    report(engine, arguments, quantizing_levels)
 }
 
-fn table_of_stream<R: std::borrow::Borrow<BamRecord>>(
+/// The counting pass on this thread, read by read in the traversal's order.
+fn count_here<R: std::borrow::Borrow<BamRecord>>(
     header: &htsjdk_bam::header::SamHeader,
     records: impl Iterator<Item = Result<R, BaseRecalibratorError>>,
     contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, BaseRecalibratorError>,
     known_sites: &[SimpleInterval],
     arguments: &EngineArguments,
-    quantizing_levels: i32,
-) -> Result<String, BaseRecalibratorError> {
+) -> Result<BaseRecalibrationEngine, BaseRecalibratorError> {
     let sites = KnownSites::new(known_sites);
-    // The bases come once the traversal has produced a read on the contig, for the reason in the
-    // doc comment above, and once per contig.
-    let mut fetched: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
-
+    let mut fetched = Bases::default();
     let mut engine = BaseRecalibrationEngine::new(arguments.clone(), header)
         .map_err(BaseRecalibratorError::Engine)?;
     for record in records {
         let record = record?;
         let record = record.borrow();
+        let bases = fetched.of(record, header, contig_bases)?;
+        let overlapping = sites.overlapping(record, header);
+        engine
+            .process_read(record, header, &bases, &overlapping)
+            .map_err(BaseRecalibratorError::Engine)?;
+    }
+    Ok(engine)
+}
+
+/// The counting pass on `workers` threads, with the same tables as [`count_here`].
+///
+/// This thread decodes and hands batches of reads round robin to the workers; each worker counts
+/// its reads into tables of its own, and their counts are added together at the end. That is
+/// exact, so the split cannot show: the tables are indexed by key, so arrival order is nothing,
+/// and without BAQ every increment is a whole error or none, whose sums do not round (the caller
+/// keeps BAQ on one thread; `RecalDatum::absorb` says why). GATK counts on one thread and so
+/// fails at the first read that fails; so does this: every failure carries its read's position,
+/// and the earliest one is returned, whether a worker, the traversal or the reference raised it.
+fn count_on_threads<R: std::borrow::Borrow<BamRecord> + Send>(
+    header: &htsjdk_bam::header::SamHeader,
+    mut records: impl Iterator<Item = Result<R, BaseRecalibratorError>>,
+    contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, BaseRecalibratorError>,
+    known_sites: &[SimpleInterval],
+    arguments: &EngineArguments,
+    workers: usize,
+    batch: usize,
+) -> Result<BaseRecalibrationEngine, BaseRecalibratorError> {
+    use std::sync::{mpsc, Arc};
+    // A read, its position in the traversal, and its contig's bases.
+    type Item<R> = (usize, R, Arc<Vec<u8>>);
+    let sites = KnownSites::new(known_sites);
+    let mut engine = BaseRecalibrationEngine::new(arguments.clone(), header)
+        .map_err(BaseRecalibratorError::Engine)?;
+    let mut fetched = Bases::default();
+
+    let (counted, here) = std::thread::scope(|scope| {
+        let sites = &sites;
+        let lanes: Vec<_> = (0..workers)
+            .map(|_| {
+                let (to_worker, batches) = mpsc::sync_channel::<Vec<Item<R>>>(2);
+                let worker = scope.spawn(move || {
+                    // Built from the arguments and header the engine above was built from, so it
+                    // cannot fail where that one did not.
+                    let mut engine = BaseRecalibrationEngine::new(arguments.clone(), header)
+                        .expect("the engine above was built from the same arguments");
+                    let mut failed = None;
+                    for items in batches {
+                        // After a failure the lane is drained, not closed, so the traversal never
+                        // blocks on it.
+                        if failed.is_some() {
+                            continue;
+                        }
+                        for (position, record, bases) in items {
+                            let record = record.borrow();
+                            let overlapping = sites.overlapping(record, header);
+                            if let Err(error) =
+                                engine.process_read(record, header, &bases, &overlapping)
+                            {
+                                failed = Some((position, BaseRecalibratorError::Engine(error)));
+                                break;
+                            }
+                        }
+                    }
+                    (engine.counted(), failed)
+                });
+                (to_worker, worker)
+            })
+            .collect();
+
+        // The traversal: decode, fetch each contig's bases once, batch. A failure here ends it at
+        // its position.
+        let mut here = None;
+        let mut items = Vec::with_capacity(batch);
+        let mut lane = 0;
+        for (position, record) in records.by_ref().enumerate() {
+            let record = match record {
+                Ok(record) => record,
+                Err(error) => {
+                    here = Some((position, error));
+                    break;
+                }
+            };
+            let bases = match fetched.of(record.borrow(), header, contig_bases) {
+                Ok(bases) => bases,
+                Err(error) => {
+                    here = Some((position, error));
+                    break;
+                }
+            };
+            items.push((position, record, bases));
+            if items.len() == batch {
+                // A send fails only if the worker panicked, which the join below reports.
+                let _ = lanes[lane]
+                    .0
+                    .send(std::mem::replace(&mut items, Vec::with_capacity(batch)));
+                lane = (lane + 1) % workers;
+            }
+        }
+        if !items.is_empty() {
+            let _ = lanes[lane].0.send(items);
+        }
+        let counted: Vec<_> = lanes
+            .into_iter()
+            .map(|(to_worker, worker)| {
+                drop(to_worker);
+                worker.join().expect("a counting thread panicked")
+            })
+            .collect();
+        (counted, here)
+    });
+
+    let mut earliest = here;
+    let mut shares = Vec::with_capacity(counted.len());
+    for (share, failed) in counted {
+        if let Some((position, error)) = failed {
+            if earliest.as_ref().is_none_or(|(first, _)| position < *first) {
+                earliest = Some((position, error));
+            }
+        }
+        shares.push(share);
+    }
+    if let Some((_, error)) = earliest {
+        return Err(error);
+    }
+    for share in shares {
+        engine
+            .absorb(share)
+            .map_err(BaseRecalibratorError::Engine)?;
+    }
+    Ok(engine)
+}
+
+/// Each contig's bases, fetched the first time a read on it is counted, for the reason in
+/// [`base_recalibrator`]'s doc comment, and once per contig.
+#[derive(Default)]
+struct Bases {
+    by_contig: std::collections::HashMap<String, std::sync::Arc<Vec<u8>>>,
+}
+
+impl Bases {
+    fn of(
+        &mut self,
+        record: &BamRecord,
+        header: &htsjdk_bam::header::SamHeader,
+        contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, BaseRecalibratorError>,
+    ) -> Result<std::sync::Arc<Vec<u8>>, BaseRecalibratorError> {
         let contig = usize::try_from(record.reference_index)
             .ok()
             .and_then(|index| header.sequences.get(index))
-            .map(|sequence| sequence.name.clone());
-        let bases: &[u8] = match contig {
-            Some(contig) => {
-                if !fetched.contains_key(&contig) {
-                    let bases = contig_bases(&contig)?;
-                    fetched.insert(contig.clone(), bases);
-                }
-                &fetched[&contig]
-            }
-            None => &[],
+            .map(|sequence| sequence.name.as_str());
+        let Some(contig) = contig else {
+            return Ok(std::sync::Arc::default());
         };
-        let overlapping = sites.overlapping(record, header);
-        engine
-            .process_read(record, header, bases, &overlapping)
-            .map_err(BaseRecalibratorError::Engine)?;
+        if let Some(bases) = self.by_contig.get(contig) {
+            return Ok(bases.clone());
+        }
+        let bases = std::sync::Arc::new(contig_bases(contig)?);
+        self.by_contig.insert(contig.to_string(), bases.clone());
+        Ok(bases)
     }
+}
+
+/// `finalizeData`, then the report. The quantization is computed **after** `finalizeData`, so it
+/// depends on every read the traversal kept.
+fn report(
+    mut engine: BaseRecalibrationEngine,
+    arguments: &EngineArguments,
+    quantizing_levels: i32,
+) -> Result<String, BaseRecalibratorError> {
     engine
         .finalize_data()
         .map_err(BaseRecalibratorError::Engine)?;
-
     let quantization = quantization_info(&engine, quantizing_levels);
     Ok(output_recalibration_report(
         &arguments.covariates,

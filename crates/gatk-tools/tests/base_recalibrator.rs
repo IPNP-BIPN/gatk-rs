@@ -167,41 +167,47 @@ fn every_recalibration_table_is_the_reference_line_for_line() {
     assert_eq!(tables.len(), 7, "seven runs");
 
     let mut compared = 0;
-    for (label, expected) in &tables {
-        let (engine_arguments, levels) = arguments(label);
-        let source = ReadsDataSource::open(&dir.join("input.bam"), &dir.join("input.bai"))
-            .expect("the fixture opens");
-        let header = source.header().clone();
-        let filter = default_filter(&header);
+    // One thread, then three counting threads handed one read at a time, the finest split there
+    // is: the counts are added across threads, and the table must not show it.
+    for (workers, batch) in [(1, 1024), (3, 1)] {
+        for (label, expected) in &tables {
+            let (engine_arguments, levels) = arguments(label);
+            let source = ReadsDataSource::open(&dir.join("input.bam"), &dir.join("input.bai"))
+                .expect("the fixture opens");
+            let header = source.header().clone();
+            let filter = default_filter(&header);
 
-        let ours = base_recalibrator::base_recalibrator(
-            &source,
-            // The bases are read after the traversal, so the caller hands over a closure. This
-            // suite's reference is one contig from the golden and cannot fail.
-            &mut |_contig| Ok(reference.as_bytes().to_vec()),
-            &known_sites(),
-            &engine_arguments,
-            levels,
-            &filter,
-            // No `--intervals`: every golden run of this suite walks the whole file.
-            &[],
-        )
-        .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
+            let ours = base_recalibrator::base_recalibrator_on(
+                &source,
+                // The bases are read after the traversal, so the caller hands over a closure. This
+                // suite's reference is one contig from the golden and cannot fail.
+                &mut |_contig| Ok(reference.as_bytes().to_vec()),
+                &known_sites(),
+                &engine_arguments,
+                levels,
+                &filter,
+                // No `--intervals`: every golden run of this suite walks the whole file.
+                &[],
+                workers,
+                batch,
+            )
+            .unwrap_or_else(|error| panic!("{label} on {workers} threads: {}", error.message()));
 
-        let theirs = unescape(expected);
-        let ours_lines: Vec<&str> = ours.lines().collect();
-        let their_lines: Vec<&str> = theirs.lines().collect();
-        assert_eq!(
-            ours_lines.len(),
-            their_lines.len(),
-            "{label}: line count differs"
-        );
-        for (n, (ours, theirs)) in ours_lines.iter().zip(&their_lines).enumerate() {
-            assert_eq!(ours, theirs, "{label}: line {n}");
+            let theirs = unescape(expected);
+            let ours_lines: Vec<&str> = ours.lines().collect();
+            let their_lines: Vec<&str> = theirs.lines().collect();
+            assert_eq!(
+                ours_lines.len(),
+                their_lines.len(),
+                "{label}: line count differs"
+            );
+            for (n, (ours, theirs)) in ours_lines.iter().zip(&their_lines).enumerate() {
+                assert_eq!(ours, theirs, "{label} on {workers} threads: line {n}");
+            }
+            compared += 1;
         }
-        compared += 1;
     }
-    println!("base-recalibrator: {compared} tables compared line for line");
+    println!("base-recalibrator: {compared} tables compared line for line (seven runs, one and three threads)");
 }
 
 /// A BED and a VCF naming the same sites must produce the same table.

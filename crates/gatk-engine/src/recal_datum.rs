@@ -520,6 +520,19 @@ impl RecalDatum {
         self.empirical_quality = UNINITIALIZED_EMPIRICAL_QUALITY;
     }
 
+    /// Another count of the same cell added in, field for field, with no rescaling: what a datum
+    /// counted on another thread contributes. `combine` is not this, because it re-estimates the
+    /// reported quality; a cell's reported quality is its key's, so the two counts already agree.
+    ///
+    /// Exact, so independent of how the reads were split, only while every increment was a whole
+    /// number of errors: each adds `0` or `MULTIPLIER`, and a sum of those is exact far beyond any
+    /// read count. Fractional (BAQ) errors would round differently; their caller stays sequential.
+    pub fn absorb(&mut self, other: &RecalDatum) {
+        self.num_observations += other.num_observations;
+        self.num_mismatches += other.num_mismatches;
+        self.empirical_quality = UNINITIALIZED_EMPIRICAL_QUALITY;
+    }
+
     /// `increment(isError)`: one observation, and one error or none.
     pub fn increment_by_observation(&mut self, is_error: bool) {
         self.increment(1, if is_error { 1.0 } else { 0.0 });
