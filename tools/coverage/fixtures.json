@@ -5135,9 +5135,9 @@
         "--sequence-dictionary is held out for the same reason: both shared dictionaries name chr1 at",
         "100 kb or chrOther, which the dictionary check refuses on every row.",
         "--input and --read-index are held out: this tool reads no reads.",
-        "--pedigree and --founder-id are held out: they feed only the pedigree annotations",
-        "(InbreedingCoeff, ExcessHet, PossibleDeNovo), none of which is reducible, and the merger",
-        "combines reducible annotations alone, so no row could observe them.",
+        "--pedigree is gg.ped and --founder-id names one of its samples: both feed only the pedigree",
+        "annotations (InbreedingCoeff, ExcessHet), which the merger never recomputes, so a row measures",
+        "the annotation descriptor's check that a pedigree annotation was requested, and nothing else.",
         "--flow-order-for-annotations is held out: it feeds only the flow-based annotations, and the",
         "corpus holds no flow data.",
         "--variant-output-filtering is held at ANYWHERE: any other mode needs -L, and a third of the",
@@ -5197,8 +5197,14 @@
       "--sequence-dictionary": [],
       "--input": [],
       "--read-index": [],
-      "--pedigree": [],
-      "--founder-id": [],
+      "--pedigree": [
+        "<unset>",
+        "/work/fixtures/gg.ped"
+      ],
+      "--founder-id": [
+        "<unset>",
+        "sB"
+      ],
       "--flow-order-for-annotations": [],
       "--add-output-vcf-command-line": [
         "false"
@@ -5682,8 +5688,8 @@
         "input alone. The last three are the three refusals before the comparison.",
         "No pair lets a record's genotypes leave an allele uncalled. Trimming that allele recomputes the",
         "record's annotations through GATK's annotation engine, which is not ported: the claim excludes",
-        "those records, and --annotation, --annotation-group, --annotations-to-exclude, --pedigree and",
-        "--founder-id, which configure that engine alone, are held out.",
+        "those records, and --annotation, --annotation-group and --annotations-to-exclude,",
+        "which configure that engine alone, are held out. --pedigree is gg.ped and --founder-id one sample: they reach only the annotation descriptor's pedigree check over the default groups.",
         "--positions-only is mutually exclusive with eight of the other tolerances, and",
         "--allow-new-stars with --allow-extra-alleles: every row sets every argument, so both are held",
         "out, --positions-only because it has the most partners.",
@@ -5764,7 +5770,15 @@
       "--dont-require-soft-clips-both-ends": [],
       "--allow-old-rms-mapping-quality-annotation-data": [],
       "--assembly-complexity-reference-mode": [],
-      "--dirichlet-keep-prior-in-count": []
+      "--dirichlet-keep-prior-in-count": [],
+      "--pedigree": [
+        "<unset>",
+        "/work/fixtures/gg.ped"
+      ],
+      "--founder-id": [
+        "<unset>",
+        "s1"
+      ]
     },
     "GenotypeGVCFs": {
       "$why": [
@@ -6062,8 +6076,14 @@
         "ExcessHet"
       ],
       "--population-callset": [],
-      "--pedigree": [],
-      "--founder-id": [],
+      "--pedigree": [
+        "<unset>",
+        "/work/fixtures/gg.ped"
+      ],
+      "--founder-id": [
+        "<unset>",
+        "sR"
+      ],
       "--flow-order-for-annotations": [],
       "--sequence-dictionary": [],
       "--input": [],
@@ -6097,8 +6117,8 @@
         "--annotations-to-keep EXTRA keeps an unrecognised key and AFA is refused as allele-length;",
         "--format-annotations-to-remove removes SPARE or SB from the genotypes and the header.",
         "--population-callset and --flow-order-for-annotations are held out: the port does not carry",
-        "the population priors or the flow annotations. --pedigree and --founder-id are held out, as",
-        "for CombineGVCFs: they feed only annotations the reblocker never recomputes.",
+        "the population priors or the flow annotations. --pedigree is gg.ped and --founder-id one",
+        "sample, which reach only the annotation descriptor's pedigree check, as for CombineGVCFs.",
         "--reference is held at cgv_ref.fasta, the one reference carrying both contigs.",
         "--sequence-dictionary, --input and --read-index are held out, as for CombineGVCFs.",
         "--add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the",
@@ -7562,7 +7582,11 @@
       "--list": [
         "false"
       ],
-      "--pedigree": [],
+      "--pedigree": [
+        "<unset>",
+        "/work/fixtures/gg.ped",
+        "/work/fixtures/sv_trio.ped"
+      ],
       "--ancestral-alignments": [],
       "--input": [],
       "--read-index": [],
@@ -7589,7 +7613,7 @@
         "null leaves the comp-AF stratifier without a comp. The reference runs in the Broad's image and",
         "the port in one with R ($past_the_interpreter), so a run that gets as far as the plot draws it:",
         "the PNGs are compared by pixel size and resolution, and the combined figure the port adds is not.",
-        "--pedigree, --ancestral-alignments and --list are held out as for VariantEval."
+        "--ancestral-alignments and --list are held out as for VariantEval. --pedigree is gg.ped, which names the eval's samples, or sv_trio.ped, which STRICT validation refuses for lacking them."
       ]
     },
     "GroundTruthScorer": {
