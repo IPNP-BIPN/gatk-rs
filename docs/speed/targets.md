@@ -56,6 +56,36 @@ now STATUS.md's cost column; the baseline stays in `baseline.json`):
 both directions, which is what an unchanged path does. The other 131 tools moved a median 7% cold
 and 10% steady, at most 45%, the same spread two runs of one commit showed in the baseline.
 
+## Scale E. `VariantsToTable` holds the whole VCF, and finds each kept record by a linear scan
+
+**Ratio.** Measured at scale (the every-tool pass of `tools/speed/scale.json`, gnomAD chr20
+sites, five fields, linux/arm64 in the pinned container, 6 GiB limit): GATK 75 s CPU and 0.28 GiB
+peak RSS; the port 5.12 GiB (18.19x) after 32 s, then killed at the limit.
+
+**Where the time and memory go.** The runner reads the file whole (`variant_walker_startup`),
+projects every record (`vcf_records`), then maps each record `traverse` keeps back to its index
+with `position(ptr::eq)`, a scan of the whole list per record: quadratic, so on 5.6 million
+records the old binary did not finish natively after seven minutes at 4.4 GB.
+
+**The optimisation.** Without `-L`, #1500's `variant_walker_startup_streamed`: the header is read,
+and the record lines come one at a time from the `LineReader`, each projected by `vcf_record` (the
+body of `vcf_records`, now per line) and turned into rows at once. With `-L`, the rest of the file
+is read into the text and the old path runs as it was.
+
+**Why it cannot move a byte.** Without intervals `traverse` keeps every record in file order, so
+the rows come in the same order from the same projection of the same line. The table is still
+written once, at the end, so a refusal still leaves no output. A refusal raised before or among the
+records (no samples and no fields, a missing field) first reads the rest of the file, so a file
+that cannot be decompressed is still refused as `not_block_compressed`, as the whole-text startup
+did before anything else.
+
+**The suites that prove it.** `variants-to-table`, the `VariantsToTable` covering array (23 of 23
+rows match on linux/amd64), and the chr20 table itself.
+
+**Result.** On gnomAD chr20 natively: 0.19 GB peak RSS and 5.1 s CPU (0.68x GATK's RSS
+in its container, 0.07x its CPU), and the table is GATK's byte for byte (md5 f5a62ccd, 5 622 160
+lines).
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are
