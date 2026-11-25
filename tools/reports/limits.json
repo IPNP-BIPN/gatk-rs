@@ -1,0 +1,109 @@
+{
+  "$comment": "The PORT_LIMITATION sites that stay, and why. A site stays only if GATK 4.7.0.0 gives no stable bytes for that run (an unseeded generator, an identity hash, a clock, a host name, memory the reference does not own), or if the run needs a service outside the machine (a Spark cluster, Google Cloud Storage, HDFS, a remote GenomicsDB workspace). Each entry names the file and a phrase of the port's message, which outlive line numbers. Every other site is a feature to port: see the inventory in the body of IPNP-BIPN/gatk-rs#1579.",
+  "sites": [
+    {
+      "file": "crates/gatk-cli/src/runners_spark.rs",
+      "match": "submits the job to a cluster",
+      "tools": "every Spark tool",
+      "arguments": "--spark-master other than local[...]",
+      "reason": "external",
+      "why": "The job is submitted to a Spark master the port has no client for; local masters are run in process."
+    },
+    {
+      "file": "crates/gatk-cli/src/runners_spark.rs",
+      "match": "needs a Google Cloud Storage and an HDFS",
+      "tools": "ParallelCopyGCSDirectoryIntoHDFSSpark",
+      "arguments": "the tool",
+      "reason": "external",
+      "why": "The tool copies a gs:// directory into HDFS, two services outside the machine."
+    },
+    {
+      "file": "crates/gatk-cli/src/runners/funcotator.rs",
+      "match": "The Broad bucket (gs://) is not reachable",
+      "tools": "FuncotatorDataSourceDownloader",
+      "arguments": "the download from the Broad bucket",
+      "reason": "external",
+      "why": "The data sources live in a gs:// bucket."
+    },
+    {
+      "file": "crates/gatk-cli/src/runners_genomicsdb_import.rs",
+      "match": "on a remote file system needs a client",
+      "tools": "GenomicsDBImport",
+      "arguments": "a gs://, hdfs:// or other remote input or workspace",
+      "reason": "external",
+      "why": "The workspace or the inputs are on a remote file system."
+    },
+    {
+      "file": "crates/gatk-cli/src/runners_genomicsdb_query.rs",
+      "match": "is not on a local file system",
+      "tools": "GenotypeGVCFs, SelectVariants and the other walkers reading gendb://",
+      "arguments": "a remote gendb:// workspace",
+      "reason": "external",
+      "why": "The workspace is on a remote file system."
+    },
+    {
+      "file": "crates/gatk-cli/src/runners/haplotype_caller.rs",
+      "match": "writes what its buffers flushed before the JVM",
+      "tools": "HaplotypeCallerSpark, ReadsPipelineSpark",
+      "arguments": "--graph-output, --debug-assembly-variants-out, --haplotype-debug-histogram-output, --pair-hmm-results-file, --pdhmm-results-file, --alm-path, --debug-assembly-region-state, --debug-genotyper-output",
+      "reason": "no-stable-bytes",
+      "why": "Each task writes through its own buffered stream and the file holds whatever the JVM flushed before it exited."
+    },
+    {
+      "file": "crates/gatk-cli/src/runners_ground_truth_reads_builder.rs",
+      "match": "draws from an unseeded java.util.Random",
+      "tools": "GroundTruthReadsBuilder",
+      "arguments": "--subsampling-ratio strictly between 0 and 1",
+      "reason": "no-stable-bytes",
+      "why": "new Random() is seeded from the clock."
+    },
+    {
+      "file": "crates/gatk-cli/src/runners/mutect2.rs",
+      "match": "draws from an unseeded generator",
+      "tools": "Mutect2",
+      "arguments": "--genotype-germline-sites-fraction strictly between 0 and 1",
+      "reason": "no-stable-bytes",
+      "why": "The germline sites are sampled by an unseeded generator."
+    },
+    {
+      "file": "crates/gatk-tools/src/permutect_dataset.rs",
+      "match": "cut by Collections.shuffle without a generator",
+      "tools": "Mutect2",
+      "arguments": "--permutect-training-dataset or --permutect-test-dataset with a read set above its downsampling count",
+      "reason": "no-stable-bytes",
+      "why": "Collections.shuffle without a Random draws from a clock-seeded one."
+    },
+    {
+      "file": "crates/gatk-tools/src/sv_breakpoints.rs",
+      "match": "fermi-lite aborts on interval",
+      "tools": "FindBreakpointEvidenceSpark, StructuralVariationDiscoveryPipelineSpark",
+      "arguments": "an assembly fermi-lite aborts on",
+      "reason": "no-stable-bytes",
+      "why": "The native assembler's assertion ends the JVM, so the reference leaves no output to match."
+    },
+    {
+      "file": "crates/gatk-tools/src/sv_breakpoints.rs",
+      "match": "reads memory fermi-lite does not own",
+      "tools": "FindBreakpointEvidenceSpark, StructuralVariationDiscoveryPipelineSpark",
+      "arguments": "an assembly that reads past fermi-lite's buffers",
+      "reason": "no-stable-bytes",
+      "why": "The reference's answer depends on whatever its heap holds there."
+    },
+    {
+      "file": "crates/gatk-cli/src/runners_spark.rs",
+      "match": "the reference fails this inside a Spark task",
+      "tools": "RevertSamSpark",
+      "arguments": "--attributes-to-clear with a name that is not two characters",
+      "reason": "no-stable-bytes",
+      "why": "The task fails while Hadoop writes, which leaves temporary directories named by the job's clock, and with --sanitize the message names the executor's host."
+    },
+    {
+      "file": "crates/gatk-cli/src/runners.rs",
+      "match": "renders as an identity hash",
+      "tools": "DownsampleByDuplicateSet",
+      "arguments": "an MI tag that is a numeric array",
+      "reason": "no-stable-bytes",
+      "why": "getAttributeAsString falls through to Object.toString, whose identity hash is the JVM's."
+    }
+  ]
+}
