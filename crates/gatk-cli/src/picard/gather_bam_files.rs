@@ -153,10 +153,26 @@ pub(super) fn write_reads(
             .ok_or_else(|| Thrown::non_user(PORT_FAILURE, "records failed to encode as SAM"))?
             .into_bytes()
     } else if output.ends_with(".cram") {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "A CRAM output from a Picard tool is not written by this port yet. This message is the port's own.",
-        ));
+        // `CRAMFileWriter` with `CREATE_INDEX`: the factory opens `<output>.bai` whatever the
+        // order, and `CRAMBAIIndexer` refuses a header that is not coordinate-sorted, leaving
+        // both files there and empty.
+        if create_index && header.attributes.get("SO") != Some("coordinate") {
+            write(&format!("{output}.bai"), &[])?;
+            write(output, &[])?;
+            return Err(thrown(
+                "htsjdk.samtools.SAMException",
+                "CRAM file mut be coordinate-sorted for indexing.".to_string(),
+            ));
+        }
+        let reference = argument(parser, "REFERENCE_SEQUENCE");
+        crate::runners::reads_output::write_cram(
+            output,
+            reference.as_deref(),
+            header,
+            records,
+            create_index,
+            1,
+        )?
     } else {
         let (level, deflater) = output_compression(parser);
         let index = create_index && header.attributes.get("SO") == Some("coordinate");

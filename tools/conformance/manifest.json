@@ -7007,6 +7007,27 @@
       ]
     },
     {
+      "id": "cram-output",
+      "status": "golden-pending",
+      "needs_fixtures": true,
+      "title": "what a read walker writes for an output named .cram, .sam or anything else",
+      "harness": "tools/argument-conformance",
+      "tools": [
+        "PrintReads"
+      ],
+      "compare": {
+        "mode": "keyed"
+      },
+      "why": "GATKTool.createSAMWriter hands the output's name to SAMFileWriterFactory.makeWriter, which chooses the writer by extension: htsjdk 5.0.0's CRAM 3.1 under the NORMAL profile for .cram, with CRAMBAIIndexer's <output>.bai; SAM text and no index for .sam; BAM for anything else, its index named by stripping only a trailing .bam. Before the writer, a .cram output without -R is MISSING_REFERENCE_FOR_CRAM, and --output-cram-version is read for every output, so 3.2 refuses a BAM run too; 3.0 changes the file definition's minor version and nothing else.",
+      "cases": [
+        {
+          "dump": "CramOutputDump",
+          "golden": "crates/gatk-cli/tests/data/cram_output.txt.gz",
+          "why": "Twelve PrintReads runs over the corpus's reads.bam, queryname.bam and reference.fasta: every file each leaves, byte for byte, or its refusal. Pending the candidate artefact of the CI run that adds this suite."
+        }
+      ]
+    },
+    {
       "id": "read-walker-refusals",
       "status": "oracle-backed",
       "needs_fixtures": true,

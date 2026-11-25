@@ -3933,17 +3933,6 @@ fn write_reverted(
             Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
         })?;
     }
-    // `--sharded-output` is BAM parts under whatever the directory is called.
-    let sharded = flag(parser, "sharded-output");
-    if !output.ends_with(".bam") && !output.ends_with(".sam") && !sharded {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            format!(
-                "{output}: Disq's CRAM writer is not ported yet. This message is the port's own \
-                 and not GATK's."
-            ),
-        ));
-    }
     write_spark_partitions(parser, header, Some(sort_order), partitions, output)
 }
 
@@ -5077,6 +5066,10 @@ fn write_spark_indexed(
         return Ok(());
     }
 
+    if output.ends_with(".cram") {
+        return write_disq_cram(parser, header, partitions, output);
+    }
+
     if output.ends_with(".sam") {
         // Disq's SAM writer: the text, whatever the partitions, and no index of any kind.
         let records: Vec<BamRecord> = partitions.iter().flatten().cloned().collect();
@@ -5152,6 +5145,70 @@ fn write_spark_indexed(
             .map_err(|error| failed(&format!("{output}.sbi"), error.to_string()))?;
     }
     Ok(())
+}
+
+/// Disq's `CramSink`: a header part, one part per partition, and the terminator, merged.
+///
+/// * The header part is `CRAMContainerStreamWriter.writeHeader` on a stream named
+///   `<parts directory>/header`, and that NAME is the file definition's id, where a
+///   non-Spark CRAM carries its own URI. The parts directory is `--output-shard-tmp-dir`, or
+///   `<output>.parts/` as `ReadsSparkSink.getDefaultPartsDirectory` builds it.
+/// * Each partition is a fresh `CRAMContainerStreamWriter` closed by `finish(false)`: containers
+///   only, its record counter and tag blocks starting over, and nothing for an empty partition.
+/// * The terminator is `CramIO.writeCramEOF` of CRAM 3.1.
+///
+/// No index is written: `CramSink` makes only a `.crai`, which GATK never asks for, and ignores
+/// the `.bai` and `.sbi` options.
+fn write_disq_cram(
+    parser: &Parser,
+    header: &SamHeader,
+    partitions: &[Vec<BamRecord>],
+    output: &str,
+) -> Result<(), Thrown> {
+    // `ReadsSparkSource.checkCramReference`, which `ReadsSparkSink.writeReads` opens with.
+    let reference = argument(parser, "reference")
+        .ok_or_else(|| Thrown::user("A reference is required for CRAM input".to_string()))?;
+    if !std::path::Path::new(&reference).exists() {
+        return Err(Thrown::user(format!(
+            "The specified fasta file ({reference}) does not exist."
+        )));
+    }
+    let parts =
+        argument(parser, "output-shard-tmp-dir").unwrap_or_else(|| format!("{output}.parts/"));
+    let header_id = format!("{parts}/header");
+    let mut source = htsjdk_cram::reader::FastaReference::open(std::path::Path::new(&reference));
+    let refused = |error: htsjdk_cram::reader::CramError| {
+        Thrown::non_user(error.java_exception(), error.message())
+    };
+    // Disq writes CRAM 3.1 only, which `refuse_spark_cram_3_0` has made sure of.
+    let options = super::reads_output::cram_options(1);
+    // A writer given no records writes its header and the terminator; a partition's containers
+    // are what a writer of the same header writes between the two.
+    let empty =
+        htsjdk_cram::writer::write_cram_with(header, &[], &header_id, &mut source, options, false)
+            .map_err(refused)?
+            .0;
+    // `CramIO.ZERO_F_EOF_MARKER`, the version 3 terminator every writer ends with.
+    let eof = 38;
+    let header_length = empty.len() - eof;
+    let mut cram = empty[..header_length].to_vec();
+    for partition in partitions {
+        let part = htsjdk_cram::writer::write_cram_with(
+            header,
+            partition,
+            &header_id,
+            &mut source,
+            options,
+            false,
+        )
+        .map_err(refused)?
+        .0;
+        cram.extend_from_slice(&part[header_length..part.len() - eof]);
+    }
+    cram.extend_from_slice(&empty[header_length..]);
+    std::fs::write(output, cram).map_err(|error| {
+        Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
+    })
 }
 
 /// `SparkUtils.sortUsingElementsAsKeys` with `ReadsSparkSink.getSAMRecordComparator`: `sortByKey`

@@ -23,6 +23,7 @@ use htsjdk_bam::header::SamHeader;
 use htsjdk_bam::record::BamRecord;
 
 mod funcotator;
+pub(crate) mod reads_output;
 pub use funcotator::{funcotate_segments, funcotator, funcotator_data_source_downloader};
 
 /// What a runner answers: what the tool returned, or what it threw.
@@ -1812,29 +1813,7 @@ pub fn print_reads(parser: &Parser) -> Outcome {
             .map_err(|error| Thrown::user(format!("{error:?}")))?;
 
     let written = bam;
-    std::fs::write(&output, &written).map_err(|error| {
-        Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
-    })?;
-    if let Some(bai) = bai {
-        // The index REPLACES the output's extension: `out.bam` is indexed by `out.bai`.
-        let companion = std::path::Path::new(&output).with_extension("bai");
-        std::fs::write(&companion, bai).map_err(|error| {
-            Thrown::non_user(
-                PORT_FAILURE,
-                format!("could not write {}: {error}", companion.display()),
-            )
-        })?;
-    }
-    if flag(parser, "create-output-bam-md5") {
-        // The digest APPENDS where the index replaces: `out.bam` is checksummed by `out.bam.md5`,
-        // and the file is the thirty-two hex characters and nothing else.
-        let digest = format!("{output}.md5");
-        std::fs::write(&digest, gatk_tools::gather_bam_files::md5_file(&written)).map_err(
-            |error| Thrown::non_user(PORT_FAILURE, format!("could not write {digest}: {error}")),
-        )?;
-    }
-    // The tool returns nothing, so `handleResult` prints nothing.
-    Ok(None)
+    write_bam(parser, &output, &written, bai)
 }
 
 /// The `.idx` a VCF WRITER builds, which is not the one `IndexFeatureFile` builds from the file.
@@ -2283,25 +2262,7 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
         message: Some(error.message()),
     })?;
 
-    std::fs::write(&output, &bam).map_err(|error| {
-        Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
-    })?;
-    if let Some(bai) = bai {
-        let companion = std::path::Path::new(&output).with_extension("bai");
-        std::fs::write(&companion, bai).map_err(|error| {
-            Thrown::non_user(
-                PORT_FAILURE,
-                format!("could not write {}: {error}", companion.display()),
-            )
-        })?;
-    }
-    if flag(parser, "create-output-bam-md5") {
-        let digest = format!("{output}.md5");
-        std::fs::write(&digest, gatk_tools::gather_bam_files::md5_file(&bam)).map_err(|error| {
-            Thrown::non_user(PORT_FAILURE, format!("could not write {digest}: {error}"))
-        })?;
-    }
-    Ok(None)
+    write_bam(parser, &output, &bam, bai)
 }
 
 /// `ApplyBQSRArgumentCollection` as the parser read it, which ApplyBQSR and ApplyBQSRSpark share.
@@ -10578,25 +10539,7 @@ pub fn print_distant_mates(parser: &Parser) -> Outcome {
         &source, &options, &filter, level, deflater,
     )
     .map_err(|error| Thrown::user(format!("{error:?}")))?;
-    std::fs::write(&output, &bytes)
-        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
-    if let Some(bai) = bai {
-        // The index REPLACES the output's extension, and the digest APPENDS to it.
-        let companion = std::path::Path::new(&output).with_extension("bai");
-        std::fs::write(&companion, bai).map_err(|error| {
-            Thrown::non_user(
-                PORT_FAILURE,
-                format!("could not write {}: {error}", companion.display()),
-            )
-        })?;
-    }
-    if flag(parser, "create-output-bam-md5") {
-        let digest = format!("{output}.md5");
-        std::fs::write(&digest, gatk_tools::gather_bam_files::md5_file(&bytes)).map_err(
-            |error| Thrown::non_user(PORT_FAILURE, format!("could not write {digest}: {error}")),
-        )?;
-    }
-    Ok(None)
+    write_bam(parser, &output, &bytes, bai)
 }
 
 /// `CompareIntervalLists.doWork`: two interval lists, and whether they cover the same bases.
@@ -10710,24 +10653,7 @@ pub fn fix_misencoded_base_quality_reads(parser: &Parser) -> Outcome {
         }
     };
 
-    std::fs::write(&output, &bytes)
-        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
-    if let Some(bai) = bai {
-        let companion = std::path::Path::new(&output).with_extension("bai");
-        std::fs::write(&companion, bai).map_err(|error| {
-            Thrown::non_user(
-                PORT_FAILURE,
-                format!("could not write {}: {error}", companion.display()),
-            )
-        })?;
-    }
-    if flag(parser, "create-output-bam-md5") {
-        let digest = format!("{output}.md5");
-        std::fs::write(&digest, gatk_tools::gather_bam_files::md5_file(&bytes)).map_err(
-            |error| Thrown::non_user(PORT_FAILURE, format!("could not write {digest}: {error}")),
-        )?;
-    }
-    Ok(None)
+    write_bam(parser, &output, &bytes, bai)
 }
 
 /// `UnmarkDuplicates.apply`, which clears one flag bit and writes the read back.
@@ -12992,34 +12918,15 @@ fn reads_traversal_error(error: gatk_engine::reads::ReadsError) -> Thrown {
     }
 }
 
-/// A BAM and the two files that follow it, written the way every read walker here writes them.
+/// A finished BAM and the files that follow it, written the way every read walker here writes
+/// them: as SAM, BAM or CRAM by the output's name (see [`reads_output`]).
 fn write_bam(
     parser: &Parser,
     output: &str,
     bytes: &[u8],
     bai: Option<Vec<u8>>,
 ) -> Result<Option<String>, Thrown> {
-    std::fs::write(output, bytes)
-        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
-    // htsjdk's writer builds an index only for a `SO:coordinate` file, whatever
-    // `--create-output-bam-index` says: an unsorted or queryname BAM is written without one.
-    let bai = bai.filter(|_| is_coordinate_sorted(bytes));
-    if let Some(bai) = bai {
-        let companion = std::path::Path::new(output).with_extension("bai");
-        std::fs::write(&companion, bai).map_err(|error| {
-            Thrown::non_user(
-                PORT_FAILURE,
-                format!("could not write {}: {error}", companion.display()),
-            )
-        })?;
-    }
-    if flag(parser, "create-output-bam-md5") {
-        let digest = format!("{output}.md5");
-        std::fs::write(&digest, gatk_tools::gather_bam_files::md5_file(bytes)).map_err(
-            |error| Thrown::non_user(PORT_FAILURE, format!("could not write {digest}: {error}")),
-        )?;
-    }
-    Ok(None)
+    reads_output::write_reads(parser, output, bytes, bai)
 }
 
 /// `GetPileupSummaries.apply`, which writes one row per biallelic SNP the population VCF carries.
