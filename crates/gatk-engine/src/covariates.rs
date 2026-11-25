@@ -192,8 +192,11 @@ impl CovariateError {
 /// note for why the key cache is not ported.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PerReadCovariateMatrix {
-    /// `[event][position][covariate]`.
-    covariates: Vec<Vec<Vec<i32>>>,
+    /// `[event][position][covariate]`, flattened into one buffer: one allocation per read where
+    /// the nested vectors took one per event and position.
+    covariates: Vec<i32>,
+    read_length: usize,
+    number_of_covariates: usize,
     /// The column `add_covariate` writes into, set by the list before each covariate runs.
     current_covariate_index: usize,
 }
@@ -201,10 +204,9 @@ pub struct PerReadCovariateMatrix {
 impl PerReadCovariateMatrix {
     pub fn new(read_length: usize, number_of_covariates: usize) -> PerReadCovariateMatrix {
         PerReadCovariateMatrix {
-            covariates: vec![
-                vec![vec![0; number_of_covariates]; read_length];
-                EventType::VALUES.len()
-            ],
+            covariates: vec![0; EventType::VALUES.len() * read_length * number_of_covariates],
+            read_length,
+            number_of_covariates,
             current_covariate_index: 0,
         }
     }
@@ -213,11 +215,16 @@ impl PerReadCovariateMatrix {
         self.current_covariate_index = index;
     }
 
+    /// The start of `[event][position]`'s row.
+    fn row(&self, event: usize, position: usize) -> usize {
+        (event * self.read_length + position) * self.number_of_covariates
+    }
+
     /// `addCovariate(mismatch, insertion, deletion, readOffset)`.
     ///
     /// The reference performs **no bounds check**, "for performance reasons", and its own comment
-    /// says an offset past the end is an `ArrayIndexOutOfBoundsException`. Indexing a `Vec` in Rust
-    /// panics for the same reason, so the shape of the failure is the same.
+    /// says an offset past the end is an `ArrayIndexOutOfBoundsException`. An offset past the end
+    /// panics here for the same reason, so the shape of the failure is the same.
     pub fn add_covariate(
         &mut self,
         mismatch: i32,
@@ -225,20 +232,40 @@ impl PerReadCovariateMatrix {
         deletion: i32,
         read_offset: usize,
     ) {
+        assert!(
+            read_offset < self.read_length,
+            "read offset {read_offset} out of bounds"
+        );
         let column = self.current_covariate_index;
-        self.covariates[EventType::BaseSubstitution.ordinal()][read_offset][column] = mismatch;
-        self.covariates[EventType::BaseInsertion.ordinal()][read_offset][column] = insertion;
-        self.covariates[EventType::BaseDeletion.ordinal()][read_offset][column] = deletion;
+        assert!(
+            column < self.number_of_covariates,
+            "covariate {column} out of bounds"
+        );
+        for (event, value) in [
+            (EventType::BaseSubstitution, mismatch),
+            (EventType::BaseInsertion, insertion),
+            (EventType::BaseDeletion, deletion),
+        ] {
+            let at = self.row(event.ordinal(), read_offset) + column;
+            self.covariates[at] = value;
+        }
     }
 
     /// `getCovariatesAtOffset(readPosition, errorModel)`.
     pub fn covariates_at_offset(&self, read_position: usize, error_model: EventType) -> &[i32] {
-        &self.covariates[error_model.ordinal()][read_position]
+        assert!(
+            read_position < self.read_length,
+            "read position {read_position} out of bounds"
+        );
+        let start = self.row(error_model.ordinal(), read_position);
+        &self.covariates[start..start + self.number_of_covariates]
     }
 
-    /// `getMatrixForErrorModel(errorModel)`.
-    pub fn matrix_for_error_model(&self, error_model: EventType) -> &[Vec<i32>] {
-        &self.covariates[error_model.ordinal()]
+    /// `getMatrixForErrorModel(errorModel)`: its rows, one per position.
+    pub fn matrix_for_error_model(&self, error_model: EventType) -> Vec<&[i32]> {
+        (0..self.read_length)
+            .map(|position| self.covariates_at_offset(position, error_model))
+            .collect()
     }
 }
 
