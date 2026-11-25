@@ -68,20 +68,27 @@ and first record are looked at (`assertSameSamplesAndValidOrdering`) before the 
 
 **The optimisation.** On the block-copying path, `vcf_prefix(path, 2)`: the header and the first two
 record lines, read through a `BgzfReader` and no further. Two, because `VCFFileReader.iterator()`
-decodes one record ahead.
+decodes one record ahead. The block copy then reads each input a block at a time (the terminator
+check reads only the last 64 KiB, which is all `check_termination` looks at) and writes to
+`<output>.partial`, renamed onto the output at the end, instead of holding every input and the
+output in memory.
 
 **Why it cannot move a byte.** The output is the files' compressed blocks, which the text never
 fed. The checks see the same header and the same first record. The second record is decoded as
 the reference decodes it: a malformed second record still fails, with the same line number.
 Measured against the oracle on a malformed third record: GATK gathers it (exit 0) and the port
 used to refuse it (exit 4). It now gathers it, as GATK does. A non-BGZF gzip input gives the same
-message as before (`decompress_all`'s error, unwrapped from the reader's `io::Error`).
+message as before (`decompress_all`'s error, unwrapped from the reader's `io::Error`). The copied
+bytes are the same slices of the same files. A refusal still leaves no output, because the partial
+file is removed when it is dropped; if `<output>.partial` cannot be created, the bytes are gathered in
+memory and written as before, so the output's own failure keeps its place after the inputs'.
 
 **The suites that prove it.** `gather-vcfs`, `picard-gather-vcfs`, the `GatherVcfs` covering array
 (34 of 34 rows match on linux/amd64), and a unit test of `vcf_prefix`.
 
-**Result.** On gnomAD chr20 natively: 4.94 GB and 3.77 s before, 0.14 GB and 0.03 s after, and the
-same md5 (13bea3ff).
+**Result.** On gnomAD chr20 natively: 4.94 GB and 3.77 s before, 17 MB and 0.07 s after (0.06x
+GATK's RSS), and the same md5 (13bea3ff). Reading only the first records left 0.14 GB, which was
+the compressed input and the output held whole.
 
 ## Not targets yet
 
