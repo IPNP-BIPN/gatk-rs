@@ -3893,14 +3893,14 @@ pub fn revert_sam_spark(parser: &Parser) -> Outcome {
             .cloned()
             .collect();
         if groups.is_empty() {
-            // `headerMap.get(id)` is null for a group only the map names.
+            // `headerMap.get(id)` is null for a group only the map names, and the task writing
+            // that group's file dereferences it: the executor logs the task's failure, and the
+            // driver's `SparkHadoopWriter` aborts the job. The stage and task numbers are the
+            // executor's own count, which the comparison masks.
+            eprintln!("ERROR Executor - Exception in task 0.0 in stage 0.0 (TID 0)");
             return Err(Thrown::non_user(
-                PORT_LIMITATION,
-                format!(
-                    "The output map names read group {id}, which the header does not: the \
-                     reference fails on a null header. This message is the port's own and not \
-                     GATK's."
-                ),
+                "org.apache.spark.SparkException",
+                "Job aborted.",
             ));
         }
         let out = revert_out_header(&driver, &sort_order, &groups, keep_alignment);

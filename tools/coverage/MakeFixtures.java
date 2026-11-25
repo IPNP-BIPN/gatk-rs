@@ -3431,6 +3431,10 @@ public class MakeFixtures {
                         indexed, new htsjdk.variant.vcf.VCFCodec(),
                         htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
                 .write(dir.resolve("indexed.vcf.idx"));
+        // RevertSamSpark's `--output-map`: one output per read group of reads.bam and reads2.bam.
+        Files.writeString(dir.resolve("revert_map.tsv"), "READ_GROUP_ID\tOUTPUT\n"
+                + "rg1\t/work/out/mapped_rg1.bam\nrg2\t/work/out/mapped_rg2.bam\n",
+                StandardCharsets.UTF_8);
         // A reference, with the .fai and .dict beside it that GATK requires: the writer names all
         // three, so the naming is htsjdk's rather than this harness's.
         try (final htsjdk.samtools.reference.FastaReferenceWriter reference =
