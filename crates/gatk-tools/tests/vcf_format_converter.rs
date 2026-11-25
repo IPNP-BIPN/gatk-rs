@@ -15,11 +15,11 @@
 //!  * **and a conversion is a rewrite**, so every record passes through the decoder and the
 //!    encoder.
 //!
-//! # What the golden does not pin down
+//! # The BCF output
 //!
-//! The BCF output, which the golden records as a digest and a length. A BCF codec is a brick of its
-//! own; every text path is compared here, and the round trip back from BCF returns the same text as
-//! the plain conversion, which is the assertion that stands in for it.
+//! The golden records it as a digest and a length, which `BCF2Writer`'s bytes are compared to: a
+//! record from the VCF codec, through `htsjdk_vcf::bcf2`, as `gatk-cli` writes a `.bcf`. The round
+//! trip back from BCF returns the same text as the plain conversion.
 
 use gatk_corpus as corpus;
 use gatk_tools::vcf_format_converter::{convert, Arguments, Input};
@@ -120,8 +120,32 @@ fn every_converted_file_matches_the_golden() {
     assert_eq!(compared, 4, "the golden's text outputs");
 }
 
+/// `BCF2Writer` over the indexed input, whose bytes the golden digests.
+#[test]
+fn the_bcf_output_matches_the_golden_digest() {
+    use htsjdk_vcf::bcf2::writer::{Bcf2Writer, Origin};
+    use sha2::{Digest, Sha256};
+
+    let text = golden();
+    let file = htsjdk_vcf::reader::read_vcf(&value(&text, "input", "indexed")).expect("parses");
+    let mut writer = Bcf2Writer::new(&file.header, false).expect("a header BCF2Writer takes");
+    let mut bytes = writer.header_bytes();
+    for record in &file.records {
+        bytes.extend(writer.encode(record, Origin::VcfCodec).expect("encodes"));
+    }
+    let digest: String = Sha256::digest(&bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    let golden = text
+        .lines()
+        .find_map(|line| line.strip_prefix("sha256\tto-bcf="))
+        .expect("the golden carries the BCF's digest");
+    assert_eq!(format!("{digest}\t{}", bytes.len()), golden);
+}
+
 /// The block compressed run and the round trip through BCF both decompress to the plain
-/// conversion's text, which is how this port covers them without a bgzf or a BCF writer.
+/// conversion's text.
 #[test]
 fn the_other_formats_carry_the_same_text() {
     let text = golden();

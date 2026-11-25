@@ -518,6 +518,11 @@
       "--intervals": [
         "chr1:1-6000",
         "chr1:50000-60000"
+      ],
+      "--variant": [
+        "/work/fixtures/indexed.vcf",
+        "/work/fixtures/reads.vcf",
+        "/work/fixtures/indexed.bcf"
       ]
     },
     "CountReads": {
@@ -2684,17 +2689,21 @@
         "is typed (#1142); before that the integer literal refused, because a rendered string",
         "reached parseInt where the reference had a Double.",
         "gendb:///work/fixtures/cg_ws is cg_a, cg_b and cg_c imported by GenomicsDBImport and read",
-        "back through GenomicsDB's own query: the samples of cg_combined.g.vcf, merged the native way."
+        "back through GenomicsDB's own query: the samples of cg_combined.g.vcf, merged the native way.",
+        "population.bcf is population.vcf as BCF2Writer writes it, beside its .idx, and selected.bcf is",
+        "BCF2Writer's output: a record the tool passes through keeps the BCF codec's INFO and genotype block."
       ],
       "--variant": [
         "/work/fixtures/indexed.vcf",
         "/work/fixtures/population.vcf",
         "gendb:///work/fixtures/cg_ws",
-        "/work/fixtures/sv_trio.vcf"
+        "/work/fixtures/sv_trio.vcf",
+        "/work/fixtures/population.bcf"
       ],
       "--output": [
         "/work/out/selected.vcf",
-        "/work/out/selected2.vcf"
+        "/work/out/selected2.vcf",
+        "/work/out/selected.bcf"
       ],
       "--sample-name": [
         "<unset>",
@@ -18049,7 +18058,9 @@
         "single-base sites past position 1000 (a site the script rejects is filtered under the script's base name), or",
         "is not JavaScript at all.",
         "OUTPUT is also a .vcf.gz, which htsjdk block-compresses with a tabix index beside it",
-        "(picard-rs#374); the .vcf.gz and its .tbi are compared byte for byte."
+        "(picard-rs#374); the .vcf.gz and its .tbi are compared byte for byte.",
+        "filter.bcf is filter.vcf as BCF2Writer writes it, and output.bcf is BCF2Writer's: every",
+        "genotype comes back with an explicit FT of PASS or its filters, and a BCF input keeps its records' INFO."
       ],
       "--TMP_DIR": [
         "/work/tmp",
@@ -18063,11 +18074,13 @@
         "/work/fixtures/picard/trio.vcf",
         "/work/fixtures/picard/vcf_unsorted_samples.vcf",
         "/work/fixtures/picard/vcf_sites_only.vcf",
-        "/work/fixtures/picard/filter_no_contigs.vcf"
+        "/work/fixtures/picard/filter_no_contigs.vcf",
+        "/work/fixtures/picard/filter.bcf"
       ],
       "--OUTPUT": [
         "/work/out/output.vcf",
-        "/work/out/output.vcf.gz"
+        "/work/out/output.vcf.gz",
+        "/work/out/output.bcf"
       ],
       "--MIN_AB": [
         "0.0",
@@ -18113,8 +18126,8 @@
         "ENFORCE_SAME_SAMPLES lets through) and vcf_one_sample.vcf (one sample, refused unless",
         "ENFORCE_SAME_SAMPLES is false, and then missing the definitions). CHECK_FIRST_N_RECORDS is",
         "the default and 1, which scans one record, so a later undefined key reaches the writer, and",
-        "which beside a HEADER is the tool's own command-line refusal. OUTPUT is a .vcf: BCF writing",
-        "is not in htsjdk-rs.",
+        "which beside a HEADER is the tool's own command-line refusal. OUTPUT is a .vcf, a .bcf",
+        "(BCF2Writer's, which refuses a record whose fields the header still lacks).",
         "OUTPUT is also a .vcf.gz, which htsjdk block-compresses with a tabix index beside it",
         "(picard-rs#374); the .vcf.gz and its .tbi are compared byte for byte."
       ],
@@ -18133,7 +18146,8 @@
       ],
       "--OUTPUT": [
         "/work/out/output.vcf",
-        "/work/out/output.vcf.gz"
+        "/work/out/output.vcf.gz",
+        "/work/out/output.bcf"
       ],
       "--HEADER": [
         "null",
@@ -18290,7 +18304,8 @@
         "first comment (addMetaDataLine refuses a second line under one key). A `.list` INPUT is not",
         "a value: the paths inside it are the container's, and the port runs on the host. OUTPUT is a",
         ".vcf or a .vcf.gz, which htsjdk block-compresses with a tabix index beside it (picard-rs#374);",
-        "the .vcf.gz and its .tbi are compared byte for byte. BCF writing is not in htsjdk-rs."
+        "the .vcf.gz and its .tbi are compared byte for byte. A .bcf OUTPUT is BCF2Writer's, which",
+        "VcfFormatConverter's and FilterVcf's .bcf rows measure."
       ],
       "--TMP_DIR": [
         "/work/tmp",
@@ -18488,8 +18503,8 @@
         "since it only feeds the index. vcf_sites_only.vcf has no samples. The outputs are .vcf:",
         ".vcf.gz, which htsjdk block-compresses with a tabix index beside it (picard-rs#374); the",
         ".vcf.gz and its .tbi are compared byte for byte, and a row may mix a .vcf.gz with a .vcf, where",
-        "htsjdk shares one tabix creator. BCF writing is not in htsjdk-rs.",
-        "BCF writing is not in htsjdk-rs."
+        "htsjdk shares one tabix creator, a .bcf INDEL file after a .vcf.gz SNP file included.",
+        "variants.bcf is variants.vcf as BCF2Writer writes it, and snp.bcf and indel.bcf are BCF2Writer's."
       ],
       "--TMP_DIR": [
         "/work/tmp",
@@ -18505,17 +18520,20 @@
         "/work/fixtures/picard/gather_1.vcf",
         "/work/fixtures/picard/merge_b.vcf",
         "/work/fixtures/picard/vcf_no_contigs.vcf",
-        "/work/fixtures/picard/vcf_sites_only.vcf"
+        "/work/fixtures/picard/vcf_sites_only.vcf",
+        "/work/fixtures/picard/variants.bcf"
       ],
       "--SNP_OUTPUT": [
         "/work/out/snp.vcf",
         "/work/out/snp_b.vcf",
-        "/work/out/snp.vcf.gz"
+        "/work/out/snp.vcf.gz",
+        "/work/out/snp.bcf"
       ],
       "--INDEL_OUTPUT": [
         "/work/out/indel.vcf",
         "/work/out/indel_b.vcf",
-        "/work/out/indel.vcf.gz"
+        "/work/out/indel.vcf.gz",
+        "/work/out/indel.bcf"
       ],
       "--SEQUENCE_DICTIONARY": [
         "null",
@@ -18578,8 +18596,10 @@
         "compressed output, which refuses them; and two files with no index, which REQUIRE_INDEX",
         "refuses: vcf_no_contigs.vcf (which CREATE_INDEX refuses) and gather_1.vcf, gather_1.vcf.gz's",
         "own text. OUTPUT is a .vcf, a .vcf.gz (compared byte for byte) and a name the writer builder",
-        "cannot place; both output names are compared. BCF is not a value on either side: htsjdk-rs",
-        "has no BCF codec, so neither a .bcf input nor a .bcf output is ported."
+        "cannot place; both output names are compared. variants.bcf is variants.vcf as htsjdk's",
+        "BCF2Writer writes it, beside its own .idx, and filter.bcf (two float INFO keys, genotypes",
+        "with AD, DP and GQ) has no index, which REQUIRE_INDEX refuses; output.bcf is BCF2Writer's,",
+        "so a BCF read and written again copies its records' undecoded genotype blocks."
       ],
       "--TMP_DIR": [
         "/work/tmp",
@@ -18593,12 +18613,15 @@
         "/work/fixtures/picard/gather_1.vcf.gz",
         "/work/fixtures/picard/unsorted_indexed.vcf",
         "/work/fixtures/picard/vcf_no_contigs.vcf",
-        "/work/fixtures/picard/gather_1.vcf"
+        "/work/fixtures/picard/gather_1.vcf",
+        "/work/fixtures/picard/variants.bcf",
+        "/work/fixtures/picard/filter.bcf"
       ],
       "--OUTPUT": [
         "/work/out/output.vcf",
         "/work/out/output.vcf.gz",
-        "/work/out/output.txt"
+        "/work/out/output.txt",
+        "/work/out/output.bcf"
       ],
       "--COMPRESSION_LEVEL": [
         "2",
@@ -18628,6 +18651,19 @@
       ],
       "--OUTPUT": [
         "/work/out/output.interval_list"
+      ]
+    },
+    "IndexFeatureFile": {
+      "--input": [
+        "/work/fixtures/reads.vcf",
+        "/work/fixtures/regions.bed",
+        "/work/fixtures/reads.vcf.gz",
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/indexed.bcf"
+      ],
+      "$why": [
+        "The shared inputs and indexed.bcf, which BCF2Writer wrote: its .idx holds the offsets of",
+        "the BCF's own records, not of any text."
       ]
     }
   },

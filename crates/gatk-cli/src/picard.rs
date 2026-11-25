@@ -320,6 +320,10 @@ pub(crate) fn assert_writable(path: &str) -> Result<(), Thrown> {
 
 /// A VCF's whole text, block-compressed or not, as `VCFFileReader` reads it.
 pub(crate) fn vcf_text(path: &str) -> Result<String, Thrown> {
+    if crate::bcf::is_bcf(path) {
+        return crate::bcf::read_as_text(path);
+    }
+    crate::bcf::note_vcf(path);
     let bytes = std::fs::read(path)
         .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{path}: {error}")))?;
     if bytes.starts_with(&[0x1f, 0x8b]) {

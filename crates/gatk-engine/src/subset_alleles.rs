@@ -214,8 +214,14 @@ fn make_genotype_call(
     match method {
         // `DO_NOT_ASSIGN_GENOTYPES` matches none of the reference's branches, so the calls stay as
         // the builder copied them. The likelihoods and the GQ above were rewritten regardless,
-        // which is what makes it different from doing nothing at all.
-        AssignmentMethod::DoNotAssignGenotypes => {}
+        // which is what makes it different from doing nothing at all. The reference's calls are
+        // Allele objects, which the new list still holds; here they are indices, so each moves to
+        // its allele's place in the new list.
+        AssignmentMethod::DoNotAssignGenotypes => {
+            for allele in &mut result.alleles {
+                *allele = allele.and_then(|old| kept.iter().position(|index| *index == old));
+            }
+        }
         AssignmentMethod::SetToNoCall => result.alleles = vec![None; ploidy],
         AssignmentMethod::SetToNoCallNoAnnotations => {
             result.alleles = vec![None; ploidy];

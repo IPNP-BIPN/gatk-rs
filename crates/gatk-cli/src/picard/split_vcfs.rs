@@ -9,8 +9,9 @@
 use gatk_barclay::Parser;
 use gatk_tools::main_entry::{Thrown, PORT_FAILURE};
 use gatk_tools::split_vcfs::{split_stream, RecordType, Split, SplitError};
+use htsjdk_vcf::reader::read_vcf;
 
-use super::vcf_format_converter::{bcf_limitation, is_bcf, output_type};
+use super::vcf_format_converter::output_type;
 use super::{
     assert_readable, record_features, thrown, vcf_text, virtual_offsets, write_vcf, TabixChecks,
 };
@@ -25,9 +26,6 @@ pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> 
     let snp_output = argument(parser, "SNP_OUTPUT").unwrap_or_default();
     let indel_output = argument(parser, "INDEL_OUTPUT").unwrap_or_default();
     assert_readable(&input)?;
-    if is_bcf(&input) {
-        return Err(bcf_limitation());
-    }
     let text = vcf_text(&input)?;
     let create_index = flag(parser, "CREATE_INDEX");
     // Read through `SamReaderFactory`, as a SAM header.
@@ -54,6 +52,18 @@ pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> 
     // The builder hands the TabixIndexCreator it made for a `.vcf.gz` SNP file to the text INDEL
     // writer it builds next, so two files' positions reach one index.
     let shared = create_index && block(&snp_output) && !block(&indel_output);
+    // `writeHeader` on both writers comes before the first record is read, and a BCF one refuses
+    // a header with no contig line there.
+    for output in [&snp_output, &indel_output] {
+        if crate::bcf::is_bcf(output) {
+            let header = read_vcf(&written.snps)
+                .map_err(|failure| thrown(failure.error.class(), failure.error.message()))?
+                .header;
+            if let Err(error) = htsjdk_vcf::bcf2::writer::Bcf2Writer::new(&header, false) {
+                return Err(thrown(error.class, error.message));
+            }
+        }
+    }
     if create_index {
         index_refusal(parser, &snp_output, &indel_output, &written)?;
     }
@@ -110,8 +120,8 @@ fn index_refusal(
     ];
     let mut checks = [TabixChecks::default(), TabixChecks::default()];
     let positions = [
-        file_positions(parser, &written.snps, snp_block)?,
-        file_positions(parser, &written.indels, indel_block)?,
+        file_positions(parser, &written.snps, snp_output)?,
+        file_positions(parser, &written.indels, indel_output)?,
     ];
     let mut features = [
         record_features(&written.snps),
@@ -138,14 +148,22 @@ fn index_refusal(
 type Positions = (Box<dyn Fn(usize) -> i64>, i64);
 
 /// Where a writer stands at each offset of its file's text, and when it closes: the byte count of
-/// a text file; a block-compressed file's BGZF virtual offset, which at close is the start of the
-/// empty block that ends it, because the index is finalised before that block counts.
-fn file_positions(
-    parser: &Parser,
-    text: &str,
-    block_compressed: bool,
-) -> Result<Positions, Thrown> {
-    if !block_compressed {
+/// a text file; a BCF's offset of the record written from that line; a block-compressed file's
+/// BGZF virtual offset, which at close is the start of the empty block that ends it, because the
+/// index is finalised before that block counts.
+fn file_positions(parser: &Parser, text: &str, output: &str) -> Result<Positions, Thrown> {
+    if crate::bcf::is_bcf(output) {
+        let (starts, end) = crate::bcf::positions(text)?;
+        let at: std::collections::HashMap<usize, i64> = record_features(text)
+            .map(|(offset, ..)| offset)
+            .zip(starts)
+            .collect();
+        return Ok((
+            Box::new(move |offset| at.get(&offset).copied().unwrap_or(end)),
+            end,
+        ));
+    }
+    if !block(output) {
         return Ok((Box::new(|offset| offset as i64), text.len() as i64));
     }
     let (level, deflater) = output_compression(parser);

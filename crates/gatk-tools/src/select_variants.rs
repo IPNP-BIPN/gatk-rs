@@ -1278,6 +1278,19 @@ pub fn set_filtered_genotypes_to_no_call(record: &mut Record) {
     }
     if replaced {
         calculate_chromosome_counts(&mut record.variant);
+        // `removeStaleValues` is true here: a record no genotype of which is called any more loses
+        // its counts rather than carrying AN=0.
+        let uncalled = record
+            .variant
+            .attributes
+            .iter()
+            .any(|(key, value)| key == "AN" && value == "0");
+        if uncalled {
+            record
+                .variant
+                .attributes
+                .retain(|(key, _)| key != "AN" && key != "AC" && key != "AF");
+        }
     }
 }
 

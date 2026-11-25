@@ -90,7 +90,12 @@ pub fn index_feature_file(parser: &Parser) -> Outcome {
             path: input.clone(),
         })
     })?;
-    let text = decode(&bytes, &input).map_err(refused)?;
+    // A BCF's records are read by its own codec below, and its bytes are no text.
+    let text = if crate::bcf::is_bcf(&input) {
+        String::new()
+    } else {
+        decode(&bytes, &input).map_err(refused)?
+    };
     let name = output
         .clone()
         .unwrap_or_else(|| index_feature_file::default_output(&input));
@@ -122,6 +127,13 @@ pub fn index_feature_file(parser: &Parser) -> Outcome {
             index_feature_file::build_tabix(&bytes, &source, &input, deflater, level)
                 .map_err(refused)?
         }
+        _ if crate::bcf::is_bcf(&input) => index_feature_file::build_from(
+            &crate::bcf::features(&input, &bytes)?,
+            bytes.len() as i64,
+            &source,
+            &input,
+        )
+        .map_err(refused)?,
         _ => index_feature_file::build(&text, &source, &input).map_err(refused)?,
     };
     // `index.write(indexPath)`, whose `IOException` becomes this user error.
@@ -182,7 +194,7 @@ fn decode(bytes: &[u8], path: &str) -> Result<String, Refusal> {
 }
 
 /// `File.lastModified()` in milliseconds, which the index header carries.
-fn modified_millis(path: &str) -> i64 {
+pub(crate) fn modified_millis(path: &str) -> i64 {
     std::fs::metadata(path)
         .and_then(|data| data.modified())
         .ok()
@@ -1281,7 +1293,12 @@ fn open_feature_input(input: &str) -> Result<(gatk_tools::feature_codec::Codec, 
     })?;
     // A block compressed feature file is read through its own decompression, and its index is a
     // `.tbi` rather than a `.idx`; neither changes what the traversal counts.
-    let text = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
+    if !crate::bcf::is_bcf(&input) {
+        crate::bcf::note_vcf(&input);
+    }
+    let text = if crate::bcf::is_bcf(&input) {
+        crate::bcf::read_as_text(&input)?
+    } else if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
         htsjdk_bgzf::read::decompress_all(&bytes)
             .ok()
             .and_then(|bytes| String::from_utf8(bytes).ok())
@@ -1852,10 +1869,9 @@ fn on_the_fly_index(
     size: i64,
     timestamp: i64,
 ) -> Vec<u8> {
-    use htsjdk_tribble::index::{TribbleIndex, INTERVAL_TREE, LINEAR, VERSION};
-    use htsjdk_tribble::index_write::{BalanceApproach, BuiltIndex, DynamicIndexCreator, Feature};
+    use htsjdk_tribble::index_write::Feature;
 
-    let mut creator = DynamicIndexCreator::new(BalanceApproach::ForSeekTime);
+    let mut features = Vec::new();
     let mut at: i64 = 0;
     for line in text.split_inclusive('\n') {
         let body = line.trim_end_matches('\n');
@@ -1869,18 +1885,45 @@ fn on_the_fly_index(
                         .find(|(key, _)| *key == "END")
                         .and_then(|(_, value)| value.parse::<i32>().ok())
                         .unwrap_or(start + columns[3].len() as i32 - 1);
-                    creator.add_feature(
-                        &Feature {
+                    features.push((
+                        Feature {
                             contig: columns[0].to_string(),
                             start,
                             end,
                         },
                         at,
-                    );
+                    ));
                 }
             }
         }
         at += line.len() as i64;
+    }
+    tribble_on_the_fly(
+        &features,
+        text.len() as i64,
+        dictionary,
+        path,
+        size,
+        timestamp,
+    )
+}
+
+/// [`on_the_fly_index`] over features already placed: each at the stream position before it, and
+/// the stream's position at `close()` as `end`, which is how a BCF output is indexed.
+pub(crate) fn tribble_on_the_fly(
+    features: &[(htsjdk_tribble::index_write::Feature, i64)],
+    end: i64,
+    dictionary: &[(String, i32)],
+    path: &str,
+    size: i64,
+    timestamp: i64,
+) -> Vec<u8> {
+    use htsjdk_tribble::index::{TribbleIndex, INTERVAL_TREE, LINEAR, VERSION};
+    use htsjdk_tribble::index_write::{BalanceApproach, BuiltIndex, DynamicIndexCreator};
+
+    let mut creator = DynamicIndexCreator::new(BalanceApproach::ForSeekTime);
+    for (feature, at) in features {
+        creator.add_feature(feature, *at);
     }
 
     let mut properties: Vec<(String, String)> = dictionary
@@ -1889,7 +1932,7 @@ fn on_the_fly_index(
         .collect();
     properties.extend(creator.properties());
 
-    let (index_type, contigs, interval_contigs) = match creator.finalize(text.len() as i64) {
+    let (index_type, contigs, interval_contigs) = match creator.finalize(end) {
         Ok(BuiltIndex::Linear(contigs)) => (LINEAR, contigs, Vec::new()),
         Ok(BuiltIndex::IntervalTree(intervals)) => (INTERVAL_TREE, Vec::new(), intervals),
         Err(_) => (LINEAR, Vec::new(), Vec::new()),
@@ -1923,7 +1966,9 @@ fn gather_shard(name: &str) -> Result<(gatk_tools::gather_vcfs::Shard, Vec<Strin
     let bytes = std::fs::read(name)
         .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(name, false)))?;
     let compressed = gatk_tools::read_walker_refusal::is_block_compressed(&bytes);
-    let text = if compressed {
+    let text = if crate::bcf::is_bcf(name) {
+        crate::bcf::read_as_text(name)?
+    } else if compressed {
         htsjdk_bgzf::read::decompress_all(&bytes)
             .ok()
             .and_then(|bytes| String::from_utf8(bytes).ok())
@@ -2080,7 +2125,11 @@ pub fn gather_vcfs_cloud(parser: &Parser) -> Outcome {
             std::fs::read(input)
                 .ok()
                 .map(|bytes| {
-                    let text = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
+                    let text = if crate::bcf::is_bcf(input) {
+                        crate::bcf::read_as_text(input)
+                            .map(String::into_bytes)
+                            .unwrap_or_default()
+                    } else if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
                         htsjdk_bgzf::read::decompress_all(&bytes).unwrap_or_default()
                     } else {
                         bytes
@@ -3231,6 +3280,10 @@ fn feature_text(path: &str) -> Result<String, Thrown> {
             .message(),
         )
     })?;
+    if crate::bcf::is_bcf(path) {
+        return crate::bcf::read_as_text(path);
+    }
+    crate::bcf::note_vcf(path);
     if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
         htsjdk_bgzf::read::decompress_all(&bytes)
             .ok()
@@ -5218,7 +5271,9 @@ pub fn concordance(parser: &Parser) -> Outcome {
                 .message(),
             )
         })?;
-        let text = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
+        let text = if crate::bcf::is_bcf(path) {
+            crate::bcf::read_as_text(path)?
+        } else if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
             htsjdk_bgzf::read::decompress_all(&bytes)
                 .ok()
                 .and_then(|bytes| String::from_utf8(bytes).ok())
@@ -5825,7 +5880,9 @@ pub fn calculate_genotype_posteriors(parser: &Parser) -> Outcome {
                 index_feature_file::Refusal::CouldNotReadInputFile { path: path.clone() }.message(),
             )
         })?;
-        let support_text = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
+        let support_text = if crate::bcf::is_bcf(&path) {
+            crate::bcf::read_as_text(&path)?
+        } else if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
             htsjdk_bgzf::read::decompress_all(&bytes)
                 .ok()
                 .and_then(|bytes| String::from_utf8(bytes).ok())
@@ -10189,7 +10246,12 @@ fn feature_variants(
             .message(),
         )
     })?;
-    let text = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
+    if !crate::bcf::is_bcf(path) {
+        crate::bcf::note_vcf(path);
+    }
+    let text = if crate::bcf::is_bcf(path) {
+        crate::bcf::read_as_text(path)?
+    } else if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
         htsjdk_bgzf::read::decompress_all(&bytes)
             .ok()
             .and_then(|bytes| String::from_utf8(bytes).ok())
@@ -17049,10 +17111,18 @@ pub fn select_variants(parser: &Parser) -> Outcome {
         .collect();
     let sample_names: std::sync::Arc<[String]> = file.header.samples.clone().into();
 
-    let mut pending: gatk_tools::select_variants::PendingWriter<
+    // A BCF is written from records, whose INFO is in the order of the maps the tool built them in.
+    let to_bcf = crate::bcf::is_bcf(&output);
+    type Written = (
         htsjdk_vcf::variant::VariantContext,
-    > = gatk_tools::select_variants::PendingWriter::new();
-    let mut written: Vec<htsjdk_vcf::variant::VariantContext> = Vec::new();
+        Option<(
+            htsjdk_vcf::variant::VariantContext,
+            htsjdk_vcf::bcf2::writer::Origin,
+        )>,
+    );
+    let mut pending: gatk_tools::select_variants::PendingWriter<Written> =
+        gatk_tools::select_variants::PendingWriter::new();
+    let mut written: Vec<Written> = Vec::new();
     for located in gatk_engine::variant_source::traverse(&located, intervals.as_deref()) {
         let original = &file.records[located.index];
         // `apply` drains BEFORE it looks at the record, which is what lets a record trimmed onto a
@@ -17112,9 +17182,13 @@ pub fn select_variants(parser: &Parser) -> Outcome {
             continue;
         }
 
+        let subset_happened = subset != bridged.record;
         let mut record = subset;
+        let mut no_called = false;
         if output_arguments.set_filtered_genotypes_to_no_call {
+            let before = to_bcf.then(|| record.clone());
             gatk_tools::select_variants::set_filtered_genotypes_to_no_call(&mut record);
+            no_called = before.is_some_and(|before| before != record);
         }
         gatk_tools::select_variants::drop_annotations(&mut record, &output_arguments);
         // The file's own record is built HERE and carried through the queue: the queue reorders,
@@ -17133,7 +17207,27 @@ pub fn select_variants(parser: &Parser) -> Outcome {
                 );
             }
         }
-        pending.add(record, vc);
+        // A record no builder touched is the one that was read; any builder copies its map.
+        let rebuilt = (to_bcf
+            && (subset_happened
+                || output_arguments.set_filtered_genotypes_to_no_call
+                || !output_arguments.info_annotations_to_drop.is_empty()
+                || !output_arguments.genotype_annotations_to_drop.is_empty()))
+        .then(|| {
+            let source = crate::bcf::source_of(&file.header, original);
+            let rebuilt = select_variants_rebuilt(
+                &header,
+                &source,
+                &vc,
+                subset_happened,
+                no_called,
+                &subset_arguments,
+                &output_arguments,
+            );
+            rebuilt.map(|rebuilt| (rebuilt, source.1))
+        })
+        .flatten();
+        pending.add(record, (vc, rebuilt));
     }
     for (_, vc) in pending.drain() {
         written.push(vc);
@@ -17142,21 +17236,153 @@ pub fn select_variants(parser: &Parser) -> Outcome {
     // `--variant-output-filtering` wraps the writer here as it does on the other two tools that
     // write a VCF: the traversal reached the record and the writer decides whether it lands.
     let keep = variant_output_filter(parser, intervals.as_deref())?;
-    written.retain(|record| keep(record));
+    written.retain(|(record, _)| keep(record));
 
     if sites_only {
-        for record in &mut written {
+        for (record, rebuilt) in &mut written {
             record.genotypes.clear();
+            if let Some((rebuilt, _)) = rebuilt {
+                rebuilt.genotypes.clear();
+            }
         }
     }
+    let written: Vec<htsjdk_vcf::variant::VariantContext> = written
+        .into_iter()
+        .map(|(record, rebuilt)| {
+            if let Some((rebuilt, read_by)) = rebuilt {
+                crate::bcf::keep_rebuilt(&header, rebuilt, read_by, &record);
+            }
+            record
+        })
+        .collect();
 
-    let text = htsjdk_vcf::vcf_file::write_vcf(&header, &written).map_err(|error| Thrown {
-        failure: Failure::User,
-        exception: "org.broadinstitute.hellbender.exceptions.UserException",
-        message: Some(format!("{error:?}")),
-    })?;
+    // `createVCFWriter` honours `--lenient`. A BCF is encoded from this text, and `BCF2Writer`
+    // refuses an undeclared key in its own words whatever `--lenient` says.
+    let text = if to_bcf {
+        write_vcf_strict_or_lenient(true, &header, &written)?
+    } else {
+        write_vcf_honouring_lenient(parser, &header, &written)?
+    };
     write_variant_output(parser, &output, &text)?;
     Ok(None)
+}
+
+/// What `BCF2Writer` is handed for a record `SelectVariants` changed: its INFO map rebuilt as
+/// `apply` rebuilds it.
+///
+/// Every `new VariantContextBuilder(vc)` copies the map, presized for it. A subset builds two:
+/// `subContextFromSamples`' and the one `rmAttributes` drops the MLE tags from, which the `*_Orig`
+/// keys go into. `calculateChromosomeCounts(builder, false)` copies that for AN, AC and AF and
+/// hands the copy to `builder.attributes`, a third, which the depths go into. `trimAlleles` builds
+/// one more where it trims, `--set-filtered-gt-to-nocall` one on every record, and a recount into a
+/// `LinkedHashMap` where it no-calls a genotype; `dropAnnotations` builds one when anything is
+/// dropped. AF is `(double) AC / AN`, which the text keeps three decimals of.
+/// shortcut: a `*_Orig` key reordered to fewer alleles carries the text's value rather than
+/// `getReorderedAttributes`' list; upgrade if a row measures one.
+fn select_variants_rebuilt(
+    header: &htsjdk_vcf::header::VcfHeader,
+    source: &(
+        htsjdk_vcf::variant::VariantContext,
+        htsjdk_vcf::bcf2::writer::Origin,
+    ),
+    written: &htsjdk_vcf::variant::VariantContext,
+    subset_happened: bool,
+    no_called: bool,
+    arguments: &gatk_tools::select_variants::SubsetArguments,
+    output: &gatk_tools::select_variants::OutputArguments,
+) -> Option<htsjdk_vcf::variant::VariantContext> {
+    use crate::bcf::Step::{Copy, Linked, Put, Remove};
+    use htsjdk_vcf::variant::Value;
+    let mut steps = Vec::new();
+    if subset_happened {
+        // `subContextFromSamples`' builder, then the one `rmAttributes` works on.
+        steps.extend([Copy, Copy, Remove("MLEAC"), Remove("MLEAF")]);
+        if arguments.keep_original_chr_counts {
+            steps.extend([Put("AC_Orig"), Put("AF_Orig"), Put("AN_Orig")]);
+        }
+        steps.extend([
+            Copy,
+            Put("AN"),
+            Put("AC"),
+            Put("AF"),
+            Remove("AC"),
+            Remove("AF"),
+            Copy,
+        ]);
+        if arguments.keep_original_depth {
+            steps.push(Put("DP_Orig"));
+        }
+        steps.push(Put("DP"));
+        // `trimAlleles` builds a new record only where it trims.
+        let reference =
+            |record: &htsjdk_vcf::variant::VariantContext| record.alleles.first().cloned();
+        if !arguments.preserve_alleles
+            && (written.start != source.0.start || reference(written) != reference(&source.0))
+        {
+            steps.push(Copy);
+        }
+    }
+    if output.set_filtered_genotypes_to_no_call {
+        steps.push(Copy);
+        if no_called {
+            // `setFilteredGenotypeToNocall` recounts into a `LinkedHashMap` copy, with stale
+            // values removed, and hands it to `builder.attributes`.
+            steps.extend([Linked, Put("AN"), Put("AC"), Put("AF")]);
+            steps.extend([Remove("AN"), Remove("AC"), Remove("AF"), Copy]);
+        }
+    }
+    if !output.info_annotations_to_drop.is_empty()
+        || !output.genotype_annotations_to_drop.is_empty()
+    {
+        steps.push(Copy);
+        steps.extend(
+            output
+                .info_annotations_to_drop
+                .iter()
+                .map(|key| Remove(key.as_str())),
+        );
+    }
+    let text = |key: &str| {
+        written
+            .attributes
+            .iter()
+            .find(|(name, _)| name == key)
+            .and_then(|(_, value)| value.format())
+    };
+    let original = |key: &str| {
+        source
+            .0
+            .attributes
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| value.clone())
+    };
+    let same_alleles = source.0.alleles.len() == written.alleles.len();
+    crate::bcf::rebuilt(header, source, written, &steps, |key| match key {
+        "AF" if subset_happened || no_called => {
+            let number: f64 = text("AN")?.parse().ok()?;
+            let frequencies: Vec<Value> = text("AC")?
+                .split(',')
+                .map(|count| {
+                    let count: f64 = count.parse().ok()?;
+                    Some(Value::Double(if number == 0.0 {
+                        0.0
+                    } else {
+                        count / number
+                    }))
+                })
+                .collect::<Option<_>>()?;
+            Some(match <[Value; 1]>::try_from(frequencies) {
+                Ok([single]) => single,
+                Err(list) => Value::List(list),
+            })
+        }
+        "AC_Orig" if same_alleles => original("AC"),
+        "AF_Orig" if same_alleles => original("AF"),
+        "AN_Orig" => original("AN"),
+        "DP_Orig" => original("DP"),
+        _ => None,
+    })
 }
 
 /// `VcfUtils.updateHeaderContigLines`: the contig lines and the `##reference` line, rebuilt.
@@ -17638,6 +17864,24 @@ fn write_unsharded_variant_output(parser: &Parser, output: &str, text: &str) -> 
     )
 }
 
+/// The `##contig` lines of a VCF's header as `(name, length)`, which is the dictionary an index
+/// built on the fly takes when it is given none.
+fn contigs(text: &str) -> Vec<(String, i32)> {
+    text.lines()
+        .take_while(|line| line.starts_with('#'))
+        .filter_map(|line| {
+            let body = line.strip_prefix("##contig=<")?.trim_end_matches('>');
+            let name = body.split(',').find_map(|f| f.strip_prefix("ID="))?;
+            let length = body
+                .split(',')
+                .find_map(|f| f.strip_prefix("length="))
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(0);
+            Some((name.to_string(), length))
+        })
+        .collect()
+}
+
 /// A VCF written as `createVCFWriter` writes it: indexed on the fly when asked, digested when
 /// asked, with the index's dictionary the header's `##contig` lines unless one is given.
 pub(crate) fn write_variant_file(
@@ -17648,6 +17892,10 @@ pub(crate) fn write_variant_file(
     create_md5: bool,
     index_dictionary: Option<Vec<(String, i32)>>,
 ) -> Result<(), Thrown> {
+    if crate::bcf::is_bcf(output) {
+        let dictionary = create_index.then(|| index_dictionary.unwrap_or_else(|| contigs(text)));
+        return crate::bcf::write_text(output, text, dictionary.as_deref(), create_md5);
+    }
     let block_compressed = output.ends_with(".gz") || output.ends_with(".bgz");
     let bytes = if block_compressed {
         let (level, deflater) = output_compression(parser);
@@ -17676,21 +17924,7 @@ pub(crate) fn write_variant_file(
     if !create_index {
         return Ok(());
     }
-    let dictionary: Vec<(String, i32)> = index_dictionary.unwrap_or_else(|| {
-        text.lines()
-            .take_while(|line| line.starts_with('#'))
-            .filter_map(|line| {
-                let body = line.strip_prefix("##contig=<")?.trim_end_matches('>');
-                let name = body.split(',').find_map(|f| f.strip_prefix("ID="))?;
-                let length = body
-                    .split(',')
-                    .find_map(|f| f.strip_prefix("length="))
-                    .and_then(|value| value.parse().ok())
-                    .unwrap_or(0);
-                Some((name.to_string(), length))
-            })
-            .collect()
-    });
+    let dictionary: Vec<(String, i32)> = index_dictionary.unwrap_or_else(|| contigs(text));
     // The index records the output as `Path.toUri` prints it, which is always absolute.
     let mut source = index_feature_file::Source::new(&java_absolute_path(output));
     source.timestamp = modified_millis(output);
@@ -19927,7 +20161,9 @@ pub fn filter_variant_tranches(parser: &Parser) -> Outcome {
                 .message(),
             )
         })?;
-        let text = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
+        let text = if crate::bcf::is_bcf(&path) {
+            crate::bcf::read_as_text(&path)?
+        } else if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
             let mut inflated = String::new();
             std::io::Read::read_to_string(
                 &mut flate2::read::MultiGzDecoder::new(bytes.as_slice()),
@@ -21235,7 +21471,9 @@ pub fn sv_concordance(parser: &Parser) -> Outcome {
                 .message(),
             )
         })?;
-        let text = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
+        let text = if crate::bcf::is_bcf(path) {
+            crate::bcf::read_as_text(path)?
+        } else if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
             htsjdk_bgzf::read::decompress_all(&bytes)
                 .ok()
                 .and_then(|bytes| String::from_utf8(bytes).ok())
@@ -23409,7 +23647,9 @@ pub fn reference_block_concordance(parser: &Parser) -> Outcome {
                 .message(),
             )
         })?;
-        let text = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
+        let text = if crate::bcf::is_bcf(path) {
+            crate::bcf::read_as_text(path)?
+        } else if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
             htsjdk_bgzf::read::decompress_all(&bytes)
                 .ok()
                 .and_then(|bytes| String::from_utf8(bytes).ok())
@@ -23755,7 +23995,9 @@ pub fn merge_mutect2_calls_with_mc3(parser: &Parser) -> Outcome {
                 .message(),
             )
         })?;
-        let text = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
+        let text = if crate::bcf::is_bcf(path) {
+            crate::bcf::read_as_text(path)?
+        } else if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
             htsjdk_bgzf::read::decompress_all(&bytes)
                 .ok()
                 .and_then(|bytes| String::from_utf8(bytes).ok())

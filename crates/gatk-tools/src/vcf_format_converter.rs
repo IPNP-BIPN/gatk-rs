@@ -1,7 +1,7 @@
 //! `VcfFormatConverter`, ported from `picard.vcf.VcfFormatConverter` (Picard 3.4.0).
 //!
-//! A file rewritten in the format its name asks for. The port covers the text formats; the binary
-//! one is a codec of its own and the suite records it as a digest.
+//! A file rewritten in the format its name asks for. This is the text side; a `.bcf` on either side
+//! is `htsjdk_vcf::bcf2`'s, which `gatk-cli` reads into this text and writes from it.
 //!
 //! # Two defaults that both say `true` and mean different things
 //!

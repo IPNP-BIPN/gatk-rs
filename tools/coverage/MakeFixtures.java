@@ -131,6 +131,30 @@ public class MakeFixtures {
         return text.toString();
     }
 
+    /**
+     * `vcf` rewritten as htsjdk's own `BCF2Writer` writes it (BCF 2.1, uncompressed), with the
+     * `.idx` its on-the-fly indexer writes beside it when `index` says so: a BCF input is then the
+     * bytes the reference writes, and the one REQUIRE_INDEX or an interval query looks for.
+     */
+    static void writeBcf(Path vcf, Path bcf, boolean index) throws Exception {
+        try (htsjdk.variant.vcf.VCFFileReader in = new htsjdk.variant.vcf.VCFFileReader(vcf, false)) {
+            htsjdk.variant.variantcontext.writer.VariantContextWriterBuilder builder =
+                    new htsjdk.variant.variantcontext.writer.VariantContextWriterBuilder()
+                            .setOutputPath(bcf)
+                            .setReferenceDictionary(in.getFileHeader().getSequenceDictionary())
+                            .clearOptions();
+            if (index) {
+                builder.setOption(htsjdk.variant.variantcontext.writer.Options.INDEX_ON_THE_FLY);
+            }
+            try (htsjdk.variant.variantcontext.writer.VariantContextWriter out = builder.build()) {
+                out.writeHeader(in.getFileHeader());
+                for (htsjdk.variant.variantcontext.VariantContext vc : in) {
+                    out.add(vc);
+                }
+            }
+        }
+    }
+
     static String vcf() {
         final StringBuilder text = new StringBuilder("##fileformat=VCFv4.2\n");
         text.append("##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n");
@@ -3578,6 +3602,10 @@ public class MakeFixtures {
         Files.writeString(population, populationVcf(), StandardCharsets.UTF_8);
         new org.broadinstitute.hellbender.tools.IndexFeatureFile()
                 .instanceMain(new String[] {"-I", population.toString()});
+        // Both as BCF with their .idx, so a walker reads BCF2Codec's records and writes them back:
+        // one with a site per record and no INFO, one whose INFO carries floats.
+        writeBcf(dir.resolve("indexed.vcf"), dir.resolve("indexed.bcf"), true);
+        writeBcf(population, dir.resolve("population.bcf"), true);
         // The same population VCF with its frequencies moved, indexed like the rest: a feature
         // input is queried by interval, so an unindexed one is refused before the traversal.
         final Path shifted = dir.resolve("shifted.vcf");
@@ -9102,6 +9130,10 @@ public class MakeFixtures {
                 }
             }
         }
+        // The BCF side of the VCF tools: variants.bcf beside its own .idx, and filter.bcf, whose
+        // INFO holds two float keys and whose genotypes FilterVcf rewrites, with no index at all.
+        writeBcf(new File(dir, "variants.vcf").toPath(), new File(dir, "variants.bcf").toPath(), true);
+        writeBcf(new File(dir, "filter.vcf").toPath(), new File(dir, "filter.bcf").toPath(), false);
     }
 
     /**

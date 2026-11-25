@@ -269,6 +269,14 @@ pub fn filter_record(record: &VariantContext, thresholds: &Thresholds) -> Varian
     out
 }
 
+/// A site's filters in the order `FilterApplyingVariantIterator.next` adds them to its `HashSet`:
+/// the variant filters in `doWork`'s order, then `AllGtsFiltered`. The text sorts them, and a
+/// `.bcf` writes them in that set's order, which within a bucket is this one.
+pub fn in_insertion_order(filters: &mut [String]) {
+    const ADDED: [&str; 4] = [ALLELE_BALANCE, STRAND_BIAS, LOW_QD, ALL_GTS_FILTERED];
+    filters.sort_by_key(|name| ADDED.iter().position(|added| added == name));
+}
+
 /// `doWork()`: the whole run, to a `.vcf` or `.bcf` output.
 pub fn filter(input: &str, thresholds: &Thresholds) -> Result<String, FilterError> {
     filter_to(input, thresholds, true)

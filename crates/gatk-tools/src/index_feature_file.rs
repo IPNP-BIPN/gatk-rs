@@ -336,7 +336,17 @@ pub fn build(text: &str, source: &Source, file_name: &str) -> Result<Vec<u8>, Re
     let codec = codec_for(file_name).ok_or_else(|| Refusal::NoSuitableCodecs {
         path: source.path.clone(),
     })?;
-    let found = features(text, codec);
+    build_from(&features(text, codec), text.len() as i64, source, file_name)
+}
+
+/// [`build`] over features already placed, each at the file offset its record starts at, in a
+/// file `file_size` long: what a BCF is indexed from, whose offsets are not its text's.
+pub fn build_from(
+    found: &[(Feature, i64)],
+    file_size: i64,
+    source: &Source,
+    file_name: &str,
+) -> Result<Vec<u8>, Refusal> {
     let ordered: Vec<Feature> = found.iter().map(|(feature, _)| feature.clone()).collect();
     // Tribble's own complaint names the plain path here, where the index header holds a URI.
     htsjdk_tribble::index_write::check_ordering(&ordered, &source.path).map_err(|error| {
@@ -347,7 +357,6 @@ pub fn build(text: &str, source: &Source, file_name: &str) -> Result<Vec<u8>, Re
     })?;
 
     let indexed_path = format!("file://{}", source.path);
-    let file_size = text.len() as i64;
     let (index_type, properties, contigs, interval_contigs) = match index_kind(file_name) {
         IndexKind::Tabix => {
             // A tabix index is not a Tribble index with a different header, and it is not built
@@ -362,7 +371,7 @@ pub fn build(text: &str, source: &Source, file_name: &str) -> Result<Vec<u8>, Re
         }
         IndexKind::Linear => {
             let mut creator = LinearIndexCreator::new(OPTIMAL_GVCF_INDEX_BIN_SIZE);
-            for (feature, position) in &found {
+            for (feature, position) in found {
                 creator.add_feature(feature, *position);
             }
             let contigs = creator.finalize(file_size, Vec::new()).map_err(|error| {
@@ -375,7 +384,7 @@ pub fn build(text: &str, source: &Source, file_name: &str) -> Result<Vec<u8>, Re
         }
         IndexKind::Dynamic => {
             let mut creator = DynamicIndexCreator::new(BalanceApproach::ForSeekTime);
-            for (feature, position) in &found {
+            for (feature, position) in found {
                 creator.add_feature(feature, *position);
             }
             let properties = creator.properties();

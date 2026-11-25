@@ -19,6 +19,7 @@
 //!
 //! Ported from `org.broadinstitute.hellbender.Main`.
 
+mod bcf;
 pub mod command_line;
 pub mod definitions;
 pub mod picard;

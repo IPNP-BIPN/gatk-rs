@@ -78,9 +78,9 @@
       "source": "none"
     }
   ],
-  "rows": 8,
-  "tuples_total": 36,
-  "tuples_covered": 36,
+  "rows": 10,
+  "tuples_total": 42,
+  "tuples_covered": 42,
   "tuples_forbidden": 0,
   "constraint_notes": [],
   "coverage": 1.0,
@@ -200,6 +200,36 @@
       },
       "arguments": [
         "--input=/work/fixtures/reads.bam",
+        "--output=/work/out/index.tbi",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 8,
+      "labels": {
+        "--input": "fixture[4]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--input=/work/fixtures/indexed.bcf",
+        "--output=/work/out/index.idx",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 9,
+      "labels": {
+        "--input": "fixture[4]",
+        "--output": "fixture[1]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--input=/work/fixtures/indexed.bcf",
         "--output=/work/out/index.tbi",
         "--tmp-dir=/work/tmp2",
         "--use-jdk-deflater=false"
