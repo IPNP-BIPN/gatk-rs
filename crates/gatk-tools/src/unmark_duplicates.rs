@@ -93,6 +93,34 @@ pub fn unmark_duplicates_with(
     )
 }
 
+/// [`unmark_duplicates_with`] straight to `output`, a read at a time: see
+/// [`crate::sam_output::rewrite_to`].
+pub fn unmark_duplicates_to(
+    output: &std::path::Path,
+    source: &ReadsDataSource,
+    options: &Options,
+    filter: &dyn Fn(&BamRecord) -> bool,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
+) -> Result<crate::sam_output::Written, crate::sam_output::RewriteError<std::convert::Infallible>> {
+    let records = crate::read_walker::traverse_iter(source, &options.intervals, false, filter)
+        .map_err(crate::sam_output::RewriteError::Traversal)?;
+    let header = header_for_sam_writer(source.header(), TOOL_NAME, options);
+    let create_index = options.create_output_bam_index && crate::sam_output::indexes(&header);
+    crate::sam_output::rewrite_to(
+        output,
+        &header,
+        records,
+        |read| {
+            unmark(read);
+            Ok(())
+        },
+        create_index,
+        level,
+        deflater,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
