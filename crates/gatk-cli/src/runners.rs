@@ -17676,7 +17676,21 @@ pub(crate) fn write_variant_file(
     if !create_index {
         return Ok(());
     }
-    let dictionary: Vec<(String, i32)> = index_dictionary.unwrap_or_else(|| {
+    // `getBestAvailableSequenceDictionary`: the master dictionary, then the reference's, and only
+    // then the features' own, so a VCF with no `##contig` lines still indexes `-R`'s contigs.
+    let best = match index_dictionary {
+        Some(dictionary) => Some(dictionary),
+        None => master_dictionary(parser)?
+            .or(reference_dictionary(parser)?)
+            .map(|header| {
+                header
+                    .sequences
+                    .iter()
+                    .map(|sequence| (sequence.name.clone(), sequence.length))
+                    .collect()
+            }),
+    };
+    let dictionary: Vec<(String, i32)> = best.unwrap_or_else(|| {
         text.lines()
             .take_while(|line| line.starts_with('#'))
             .filter_map(|line| {
