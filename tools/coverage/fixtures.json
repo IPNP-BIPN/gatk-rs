@@ -1423,7 +1423,7 @@
         "pair measures that refusal and the constraints keep it to one.",
         "--annotated-intervals is ignored with a warning when a panel is given, and without one it",
         "turns on a GC-bias correction this port does not carry, so it is constrained to panel rows.",
-        "--number-of-eigensamples carries zero (the standardized result twice), two, and twenty,",
+        "--number-of-eigensamples is left off (every eigensample) or carries zero (the standardized result twice), two, and twenty,",
         "which is more than any panel holds and is cut to what it does.",
         "The two outputs carry two paths each, and a run with no panel writes the SAME bytes to",
         "both: the denoised result is the standardised one when there is nothing to denoise with."
@@ -1453,7 +1453,7 @@
         "/work/fixtures/pon_annotated.tsv"
       ],
       "--number-of-eigensamples": [
-        "null",
+        "<unset>",
         "0",
         "2",
         "20"
@@ -20207,6 +20207,16 @@
         "--annotated-intervals": "/work/fixtures/pon_annotated.tsv"
       },
       "why": "Without a panel, --annotated-intervals turns on a GC-bias correction this port refuses as its own limitation; with one the reference ignores it, which is what the array measures."
+    },
+    {
+      "tools": [
+        "DenoiseReadCounts"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/counts.hdf5",
+        "--annotated-intervals": "/work/fixtures/pon_annotated.tsv"
+      },
+      "why": "Implied by the two above: counts.hdf5 meets no panel, and --annotated-intervals needs one, so the pair has no row that runs. Without it the generator fills the row with a forbidden value."
     }
   ],
   "exclude": {

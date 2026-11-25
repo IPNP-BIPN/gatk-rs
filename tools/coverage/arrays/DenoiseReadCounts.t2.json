@@ -79,9 +79,9 @@
     }
   ],
   "rows": 20,
-  "tuples_total": 202,
-  "tuples_covered": 202,
-  "tuples_forbidden": 6,
+  "tuples_total": 201,
+  "tuples_covered": 201,
+  "tuples_forbidden": 7,
   "constraint_notes": [],
   "coverage": 1.0,
   "array": [
@@ -102,7 +102,7 @@
         "--count-panel-of-normals=null",
         "--denoised-copy-ratios=/work/out/denoised.tsv",
         "--input=/work/fixtures/counts.tsv",
-        "--number-of-eigensamples=null",
+        "--number-of-eigensamples=<unset>",
         "--standardized-copy-ratios=/work/out/standardized.tsv",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true"
@@ -217,7 +217,7 @@
         "--count-panel-of-normals=/work/fixtures/pon_gc.hdf5",
         "--denoised-copy-ratios=/work/out/denoised2.tsv",
         "--input=/work/fixtures/pon_s8.counts.tsv",
-        "--number-of-eigensamples=null",
+        "--number-of-eigensamples=<unset>",
         "--standardized-copy-ratios=/work/out/standardized.tsv",
         "--tmp-dir=/work/tmp2",
         "--use-jdk-deflater=false"
@@ -272,29 +272,6 @@
     {
       "row": 8,
       "labels": {
-        "--annotated-intervals": "fixture[1]",
-        "--count-panel-of-normals": "fixture[0]",
-        "--denoised-copy-ratios": "fixture[0]",
-        "--input": "fixture[1]",
-        "--number-of-eigensamples": "fixture[0]",
-        "--standardized-copy-ratios": "fixture[1]",
-        "--tmp-dir": "fixture[1]",
-        "--use-jdk-deflater": "true"
-      },
-      "arguments": [
-        "--annotated-intervals=/work/fixtures/pon_annotated.tsv",
-        "--count-panel-of-normals=null",
-        "--denoised-copy-ratios=/work/out/denoised.tsv",
-        "--input=/work/fixtures/counts.hdf5",
-        "--number-of-eigensamples=null",
-        "--standardized-copy-ratios=/work/out/standardized2.tsv",
-        "--tmp-dir=/work/tmp2",
-        "--use-jdk-deflater=true"
-      ]
-    },
-    {
-      "row": 9,
-      "labels": {
         "--annotated-intervals": "fixture[0]",
         "--count-panel-of-normals": "fixture[0]",
         "--denoised-copy-ratios": "fixture[0]",
@@ -316,7 +293,7 @@
       ]
     },
     {
-      "row": 10,
+      "row": 9,
       "labels": {
         "--annotated-intervals": "fixture[0]",
         "--count-panel-of-normals": "fixture[0]",
@@ -339,14 +316,14 @@
       ]
     },
     {
-      "row": 11,
+      "row": 10,
       "labels": {
         "--annotated-intervals": "fixture[0]",
         "--count-panel-of-normals": "fixture[1]",
         "--denoised-copy-ratios": "fixture[0]",
         "--input": "fixture[3]",
         "--number-of-eigensamples": "fixture[0]",
-        "--standardized-copy-ratios": "fixture[0]",
+        "--standardized-copy-ratios": "fixture[1]",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
       },
@@ -355,9 +332,32 @@
         "--count-panel-of-normals=/work/fixtures/pon.hdf5",
         "--denoised-copy-ratios=/work/out/denoised.tsv",
         "--input=/work/fixtures/pon_s8.counts.hdf5",
-        "--number-of-eigensamples=null",
-        "--standardized-copy-ratios=/work/out/standardized.tsv",
+        "--number-of-eigensamples=<unset>",
+        "--standardized-copy-ratios=/work/out/standardized2.tsv",
         "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 11,
+      "labels": {
+        "--annotated-intervals": "fixture[0]",
+        "--count-panel-of-normals": "fixture[0]",
+        "--denoised-copy-ratios": "fixture[0]",
+        "--input": "fixture[1]",
+        "--number-of-eigensamples": "fixture[0]",
+        "--standardized-copy-ratios": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--annotated-intervals=null",
+        "--count-panel-of-normals=null",
+        "--denoised-copy-ratios=/work/out/denoised.tsv",
+        "--input=/work/fixtures/counts.hdf5",
+        "--number-of-eigensamples=<unset>",
+        "--standardized-copy-ratios=/work/out/standardized.tsv",
+        "--tmp-dir=/work/tmp2",
         "--use-jdk-deflater=true"
       ]
     },
@@ -392,7 +392,7 @@
         "--denoised-copy-ratios": "fixture[0]",
         "--input": "fixture[0]",
         "--number-of-eigensamples": "fixture[3]",
-        "--standardized-copy-ratios": "fixture[0]",
+        "--standardized-copy-ratios": "fixture[1]",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
       },
@@ -402,7 +402,7 @@
         "--denoised-copy-ratios=/work/out/denoised.tsv",
         "--input=/work/fixtures/counts.tsv",
         "--number-of-eigensamples=20",
-        "--standardized-copy-ratios=/work/out/standardized.tsv",
+        "--standardized-copy-ratios=/work/out/standardized2.tsv",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true"
       ]
@@ -470,7 +470,7 @@
         "--count-panel-of-normals=/work/fixtures/pon_one.hdf5",
         "--denoised-copy-ratios=/work/out/denoised.tsv",
         "--input=/work/fixtures/pon_s8.counts.tsv",
-        "--number-of-eigensamples=null",
+        "--number-of-eigensamples=<unset>",
         "--standardized-copy-ratios=/work/out/standardized2.tsv",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=false"
