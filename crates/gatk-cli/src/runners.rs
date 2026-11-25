@@ -23696,7 +23696,10 @@ pub fn combine_segment_breakpoints(parser: &Parser) -> Outcome {
             .iter()
             .map(|line| format!("{line}\n"))
             .collect();
-        htsjdk_bam::reader::parse_header_text(&text)
+        // The reader keeps a `#` line as a comment of the SAM header, so the merge carries it.
+        let mut header = htsjdk_bam::reader::parse_header_text(&text);
+        header.comments.extend(collection.comments.iter().cloned());
+        header
     };
     let headers = [header_of(&first), header_of(&second)];
     match compare(&headers[0].sequences, &headers[1].sequences, true) {
