@@ -944,7 +944,7 @@ fn somatic_ref_confidence(
         ref_bases,
         span,
         padded_start,
-        evidence,
+        evidence.iter().collect(),
         &context.samples[0],
         2,
         calls,

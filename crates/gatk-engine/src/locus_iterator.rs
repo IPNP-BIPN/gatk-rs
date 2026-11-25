@@ -83,7 +83,7 @@ impl Default for LocusIteratorOptions {
 /// HaplotypeCaller cares; the order and the contents are the same either way, and collecting them
 /// is what makes the suite comparable line by line.
 pub fn contexts<'a>(
-    reads: &'a [BamRecord],
+    reads: impl IntoIterator<Item = &'a BamRecord>,
     samples: Vec<Option<String>>,
     header: &SamHeader,
     options: LocusIteratorOptions,
@@ -97,7 +97,7 @@ pub fn contexts<'a>(
 /// The filter runs before the iterator sees anything, so a filtered read is *absent* from the
 /// pileup rather than present and ignored: it changes the depth, not only the reported set.
 pub fn contexts_filtered<'a>(
-    reads: &'a [BamRecord],
+    reads: impl IntoIterator<Item = &'a BamRecord>,
     samples: Vec<Option<String>>,
     header: &SamHeader,
     options: LocusIteratorOptions,
@@ -125,7 +125,7 @@ pub struct Contexts<'a, 'h> {
 
 impl<'a, 'h> Contexts<'a, 'h> {
     pub fn new(
-        reads: &'a [BamRecord],
+        reads: impl IntoIterator<Item = &'a BamRecord>,
         samples: Vec<Option<String>>,
         header: &'h SamHeader,
         options: LocusIteratorOptions,
@@ -134,7 +134,7 @@ impl<'a, 'h> Contexts<'a, 'h> {
     ) -> Contexts<'a, 'h> {
         let _ = samples;
         Contexts {
-            pending: reads.iter().filter(|read| filter(read)).collect(),
+            pending: reads.into_iter().filter(|read| filter(read)).collect(),
             states,
             header,
             options,
@@ -161,7 +161,8 @@ impl<'a, 'h> Contexts<'a, 'h> {
                 .first()
                 .map(|state| (state.read.reference_index, state.machine.genome_position()));
 
-            let mut elements: Vec<PileupElement<'a>> = Vec::new();
+            let capacity = states.by_sample.iter().map(|s| s.states.len()).sum();
+            let mut elements: Vec<PileupElement<'a>> = Vec::with_capacity(capacity);
             for per_sample in &states.by_sample {
                 for state in &per_sample.states {
                     let op = state.machine.cigar_operator();
@@ -195,10 +196,11 @@ impl<'a, 'h> Contexts<'a, 'h> {
                     .get(reference_index as usize)
                     .map(|s| s.name.clone())
                     .unwrap_or_default();
+                let pileup = ReadPileup::new(&contig, position, elements);
                 return Ok(Some(AlignmentContext {
-                    contig: contig.clone(),
+                    contig,
                     position,
-                    pileup: ReadPileup::new(&contig, position, elements),
+                    pileup,
                 }));
             }
         }

@@ -56,6 +56,39 @@ now STATUS.md's cost column; the baseline stays in `baseline.json`):
 both directions, which is what an unchanged path does. The other 131 tools moved a median 7% cold
 and 10% steady, at most 45%, the same spread two runs of one commit showed in the baseline.
 
+## 9. HaplotypeCaller's allocations: the pileup iterator, the clipper, reference confidence
+
+**Where the time goes.** A native profile of `HaplotypeCaller -ERC GVCF` on NA12878 chr20:10-11 Mb
+(one thread, glibc kept, entry 7 of #1554): about a tenth of the samples in `malloc` and `free`.
+The first caller is the locus iterator (`Contexts::next` with what it inlines), which allocates
+at every reference base whether or not anything changed there: two `Vec`s of downsamplers and
+buckets in `collect_pending_reads` (one reservoir of the target's capacity per sample when
+downsampling is on) even when no read starts at that base, a fresh `Vec` of kept states in
+`update_read_states`, a pileup `Vec` grown by doubling, and the contig name copied three times.
+Next come whole-read copies: `ReadClipper` copied its read on construction and again in
+`clip_read` before the first op copied it a third time, and every clip in finalisation goes
+through it; `calculate_ref_confidence` copied the region's evidence twice (once to filter it by
+sample, once to sort it) for every GVCF region.
+
+**The optimisation.** `collect_pending_reads` returns before building anything when the next
+pending read does not start at the boundary; `update_read_states` compacts the states in place;
+the pileup `Vec` is sized to the number of states; the contig name is copied twice, not three
+times. `ReadClipper` borrows its read, so a clip makes the one copy its first op makes; the
+evidence is filtered and sorted as references, and the locus iterator takes any iterator of
+references rather than a slice of records.
+
+**Why it cannot move a byte.** The early return takes the path the loop already took when no read
+matched: nothing submitted, no random draw (the reservoir draws only in `submit`), every bucket
+empty, nothing admitted. The in-place compaction keeps the surviving states in the same order and
+steps each machine once, as the copy did; on an error the iteration ends either way. Sorting
+references with the same stable sort and the same comparator gives the same order as sorting
+copies. A copy that nothing mutates is the record it was copied from. Capacities and the number of
+copies of a string are not observable in any output.
+
+**The suites that prove it.** The locus-iterator and read-state suites in `gatk-engine`; the
+HaplotypeCaller and Mutect2 arrays; locally, the GVCF and VCF of the profiled region identical to
+the unchanged binary's.
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are
