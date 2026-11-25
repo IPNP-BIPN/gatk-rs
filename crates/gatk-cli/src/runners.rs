@@ -12150,6 +12150,92 @@ fn java_float_to_string(value: f32) -> String {
     jmath::to_string::float_to_string(value)
 }
 
+/// The sites of the VCF at `path`, as `read_vcf` over the whole file would give them and with the
+/// same refusals, but a line at a time: only each record's span is kept. Reading the file whole
+/// held dbSNP's text and every one of its records with their INFO at once, 3 GB at chr20 for
+/// what is 1.4 million spans.
+///
+/// A file that has samples is read whole as before, because its genotypes are parsed at the read
+/// and can be refused there.
+fn vcf_known_sites(
+    path: &str,
+    known_sites: &mut Vec<gatk_engine::interval::SimpleInterval>,
+) -> Result<(), Thrown> {
+    use std::io::BufRead;
+    let cannot_read = || Thrown::user(gatk_tools::read_walker_refusal::cannot_read(path, false));
+    let refused = |error: &htsjdk_vcf::reader::ReadError| Thrown::user(format!("{error:?}"));
+    let mut site = |record: &htsjdk_vcf::variant::VariantContext| {
+        known_sites.push(gatk_engine::interval::SimpleInterval {
+            contig: record.contig.clone(),
+            start: record.start as i32,
+            end: record.stop as i32,
+        })
+    };
+    let mut input = std::io::BufReader::new(std::fs::File::open(path).map_err(|_| cannot_read())?);
+
+    // The header is every line up to `#CHROM`, which is what the reader takes as its header.
+    let mut head = String::new();
+    let mut header_lines = 0;
+    loop {
+        let before = head.len();
+        if input.read_line(&mut head).map_err(|_| cannot_read())? == 0 {
+            break;
+        }
+        header_lines += 1;
+        if head[before..].starts_with("#CHROM") {
+            break;
+        }
+    }
+    let file = htsjdk_vcf::reader::read_vcf(&head).map_err(|failure| refused(&failure.error))?;
+    if !file.header.samples.is_empty() {
+        // The whole file, header included: a record's INFO is decoded against the declarations
+        // above it, and a reader given an empty header answers nothing at all.
+        let text = std::fs::read_to_string(path).map_err(|_| cannot_read())?;
+        let file =
+            htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| refused(&failure.error))?;
+        file.records.iter().for_each(&mut site);
+        return Ok(());
+    }
+    // Without a `#CHROM` line the header read above was the whole file.
+    file.records.iter().for_each(&mut site);
+
+    // The body, decoded as `read_vcf` decodes it, against the same header and line counter. The
+    // file is refused as unreadable if any of it is not UTF-8, wherever a record failed first,
+    // because the whole-file read refused it before decoding anything.
+    let mut line_number = header_lines;
+    let mut failed = None;
+    let mut line = String::new();
+    loop {
+        line.clear();
+        if input.read_line(&mut line).map_err(|_| cannot_read())? == 0 {
+            break;
+        }
+        if failed.is_some() {
+            continue;
+        }
+        // What `str::lines` strips.
+        let text = line.strip_suffix('\n').unwrap_or(&line);
+        let text = text.strip_suffix('\r').unwrap_or(text);
+        match htsjdk_vcf::record_parse::decode_line(
+            text,
+            &file.header,
+            line_number,
+            file.codec_version,
+        ) {
+            Ok(Some(decoded)) => {
+                line_number += 1;
+                site(&decoded.variant);
+            }
+            Ok(None) => {}
+            Err(error) => failed = Some(htsjdk_vcf::reader::ReadError::Record(error)),
+        }
+    }
+    match failed {
+        Some(error) => Err(refused(&error)),
+        None => Ok(()),
+    }
+}
+
 /// A flow read the reference throws on, or one the port does not read.
 fn flow_refusal(refusal: gatk_tools::flow_based_read::FlowReadError) -> Thrown {
     if refusal.port_limitation {
@@ -12807,13 +12893,14 @@ pub(crate) fn recalibration_table_over(
     }
     let mut known_sites = Vec::new();
     for path in &sites_paths {
-        let text = std::fs::read_to_string(path)
-            .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(path, false)))?;
         // The codec is chosen by the file's NAME, which is what `FeatureManager` does. Neither is
         // read as an interval argument: these are features, so they are not checked against the
         // reference's dictionary and a site on a contig the reference does not carry is simply a
         // site no read is at.
         if path.ends_with(".bed") {
+            let text = std::fs::read_to_string(path).map_err(|_| {
+                Thrown::user(gatk_tools::read_walker_refusal::cannot_read(path, false))
+            })?;
             for line in text.lines() {
                 // `BEDCodec` with `StartOffset.ONE`: the file is half-open and zero-based and the
                 // locus it decodes to is neither.
@@ -12828,18 +12915,7 @@ pub(crate) fn recalibration_table_over(
                 }
             }
         } else {
-            // The whole file through the VCF reader, header included: a record's INFO is decoded
-            // against the declarations above it, and a reader given an empty header answers
-            // nothing at all, which is a run with no known sites and no way to tell.
-            let file = htsjdk_vcf::reader::read_vcf(&text)
-                .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
-            for record in &file.records {
-                known_sites.push(gatk_engine::interval::SimpleInterval {
-                    contig: record.contig.clone(),
-                    start: record.start as i32,
-                    end: record.stop as i32,
-                });
-            }
+            vcf_known_sites(path, &mut known_sites)?;
         }
     }
 

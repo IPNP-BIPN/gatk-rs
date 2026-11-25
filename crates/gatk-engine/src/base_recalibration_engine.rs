@@ -529,6 +529,19 @@ impl BaseRecalibrationEngine {
             out.base_qualities =
                 vec![self.arguments.default_base_qualities as u8; out.read_bases.len()];
         }
+        // Both clips hand back a copy of the read when they have nothing to cut, which is most
+        // reads: no soft clip and an adaptor boundary outside the read (or none). Such a read is
+        // returned as it is rather than copied twice.
+        let adaptor_outside = crate::read_utils::adaptor_boundary(&out)
+            .is_none_or(|boundary| !crate::read_utils::is_inside_read(&out, boundary));
+        let soft_clipped = out
+            .cigar
+            .elements
+            .iter()
+            .any(|element| element.op == htsjdk_bam::cigar::Op::S);
+        if adaptor_outside && !soft_clipped {
+            return Ok(out);
+        }
         let clipped = crate::clipping::hard_clip_adaptor_sequence(&out, Some(header))
             .and_then(|read| crate::clipping::hard_clip_soft_clipped_bases(&read, Some(header), 0));
         Ok(clipped.unwrap_or(out))

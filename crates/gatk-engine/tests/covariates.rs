@@ -223,7 +223,7 @@ fn every_key_of_every_read_is_the_reference() {
                     .unwrap_or_else(|error| panic!("{label}/{index}: {error:?} on no bases"));
                 for event in ["M", "I", "D"] {
                     assert!(
-                        matrix.matrix_for_error_model(event_from(event)).is_empty(),
+                        matrix.matrix_for_error_model(event_from(event)).len() == 0,
                         "{label}/{index}/{event}: cells for a read with no bases"
                     );
                 }
@@ -242,7 +242,6 @@ fn every_key_of_every_read_is_the_reference() {
                         let covariate: usize = row[3].parse().unwrap();
                         let ours: Vec<String> = matrix
                             .matrix_for_error_model(event)
-                            .iter()
                             .map(|position| position[covariate].to_string())
                             .collect();
                         assert_eq!(
