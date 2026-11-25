@@ -617,7 +617,7 @@ fn reference_dictionary(parser: &Parser) -> Result<Option<SamHeader>, Thrown> {
             )),
         });
     }
-    let dictionary = std::path::Path::new(&path).with_extension("dict");
+    let dictionary = dictionary_path(&path);
     let text = std::fs::read_to_string(&dictionary)
         .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&path, false)))?;
     Ok(Some(htsjdk_bam::reader::parse_header_text(&text)))
@@ -3058,7 +3058,19 @@ fn write_outputs(
 /// `ReferenceSequenceFileFactory.getDefaultDictionaryForReferenceSequence`: the FASTA's extension
 /// replaced by `.dict`, and a name with no extension of that kind simply gains one.
 fn dictionary_path(output: &str) -> String {
-    for extension in [".fasta", ".fa", ".fna", ".fasta.gz", ".fa.gz", ".fna.gz"] {
+    // `FileExtensions.FASTA`, so `x.fasta.gz` reads `x.dict` and not `x.fasta.dict`.
+    for extension in [
+        ".fasta",
+        ".fa",
+        ".fna",
+        ".fas",
+        ".txt",
+        ".fasta.gz",
+        ".fa.gz",
+        ".fna.gz",
+        ".fas.gz",
+        ".txt.gz",
+    ] {
         if let Some(stem) = output.strip_suffix(extension) {
             return format!("{stem}.dict");
         }
@@ -3146,7 +3158,7 @@ pub fn check_reference_compatibility(parser: &Parser) -> Outcome {
 
     let mut dictionaries = Vec::new();
     for path in &references {
-        let dictionary = std::path::Path::new(path).with_extension("dict");
+        let dictionary = dictionary_path(path);
         let text = std::fs::read_to_string(&dictionary)
             .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(path, false)))?;
         dictionaries.push((
@@ -10393,7 +10405,7 @@ fn compare_references_read(
 
     let mut references = Vec::new();
     for path in paths {
-        let dictionary = std::path::Path::new(path).with_extension("dict");
+        let dictionary = dictionary_path(path);
         let text = std::fs::read_to_string(&dictionary)
             .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(path, false)))?;
         let header = htsjdk_bam::reader::parse_header_text(&text);
@@ -25287,4 +25299,17 @@ pub fn structural_variant_discoverer(parser: &Parser) -> Outcome {
         )
     })?;
     Ok(None)
+}
+
+#[cfg(test)]
+mod dictionary_path_tests {
+    #[test]
+    fn a_compressed_fasta_reads_the_dictionary_htsjdk_does() {
+        assert_eq!(
+            super::dictionary_path("/r/Homo_sapiens_assembly19.fasta.gz"),
+            "/r/Homo_sapiens_assembly19.dict"
+        );
+        assert_eq!(super::dictionary_path("/r/ref.fa"), "/r/ref.dict");
+        assert_eq!(super::dictionary_path("/r/out"), "/r/out.dict");
+    }
 }

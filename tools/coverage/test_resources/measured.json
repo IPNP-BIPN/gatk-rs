@@ -1,0 +1,2102 @@
+{
+ "source": {
+  "repository": "broadinstitute/gatk",
+  "tag": "4.7.0.0",
+  "sha": "0cde69eed30339f5978cbb1ac6e5cf3662f9e1f8",
+  "classes": 237
+ },
+ "tools": {
+  "ASEReadCounter": {
+   "extracted": 12,
+   "replayed": 12,
+   "matched": 4,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "ASEReadCounterIntegrationTest#testASEReadCounterFileFormat",
+    "ASEReadCounterIntegrationTest#testASEReadCounterImproperPairs",
+    "ASEReadCounterIntegrationTest#testASEReadCounterMinDepth70",
+    "ASEReadCounterIntegrationTest#testASEReadCounterWithCountOverlaps",
+    "ASEReadCounterIntegrationTest#testASEReadCounterWithCountReads",
+    "ASEReadCounterIntegrationTest#testASEReadCounterWithHighMQ",
+    "ASEReadCounterIntegrationTest#testASEReadCounterWithHighMQLowBQ",
+    "ASEReadCounterIntegrationTest#testASEReadCounterWithLowMQ"
+   ]
+  },
+  "AddFlowBaseQuality": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "AddFlowBaseQualityIntegrationTest#testBasic"
+   ]
+  },
+  "AddFlowSNVQuality": {
+   "extracted": 2,
+   "replayed": 2,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "AddFlowSNVQualityIntegrationTest#testBasic",
+    "AddFlowSNVQualityIntegrationTest#testBasicBQ"
+   ]
+  },
+  "AddOriginalAlignmentTags": {
+   "extracted": 2,
+   "replayed": 2,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "AddOriginalAlignmentTagsIntegrationTest#testAddingOATag",
+    "AddOriginalAlignmentTagsIntegrationTest#testUsingIntervalList"
+   ]
+  },
+  "AlleleFrequencyQC": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 1,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "AnnotateIntervals": {
+   "extracted": 9,
+   "replayed": 9,
+   "matched": 5,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "AnnotateIntervalsIntegrationTest#testAllAnnotations",
+    "AnnotateIntervalsIntegrationTest#testMappability",
+    "AnnotateIntervalsIntegrationTest#testSegmentalDuplicationContent",
+    "AnnotateIntervalsIntegrationTest#testSegmentalDuplicationContentWithOverlaps"
+   ]
+  },
+  "AnnotateVcfWithBamDepth": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "AnnotateVcfWithBamDepthIntegrationTest#test"
+   ]
+  },
+  "AnnotateVcfWithExpectedAlleleFraction": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "AnnotateVcfWithExpectedAlleleFractionIntegrationTest#test"
+   ]
+  },
+  "ApplyBQSR": {
+   "extracted": 9,
+   "replayed": 9,
+   "matched": 4,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "ApplyBQSRIntegrationTest#testAddingPG",
+    "ApplyBQSRIntegrationTest#testHelp",
+    "ApplyBQSRIntegrationTest#testOverfiltering",
+    "ApplyBQSRIntegrationTest#testPRFailWithLowMaxCycle",
+    "ApplyBQSRIntegrationTest#testPRNoFailWithHighMaxCycle"
+   ]
+  },
+  "ApplyBQSRSpark": {
+   "extracted": 2,
+   "replayed": 2,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 3,
+   "diverged": [
+    "ApplyBQSRSparkIntegrationTest#testPRFailWithLowMaxCycle",
+    "ApplyBQSRSparkIntegrationTest#testPRNoFailWithHighMaxCycle"
+   ]
+  },
+  "ApplyVQSR": {
+   "extracted": 7,
+   "replayed": 7,
+   "matched": 7,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "BaseRecalibrator": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 3,
+   "diverged": [
+    "ApplyBQSRIntegrationTest#testMissingReadGroup.0"
+   ]
+  },
+  "BwaAndMarkDuplicatesPipelineSpark": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 1,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "BwaMemIndexImageCreator": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 1,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "BwaSpark": {
+   "extracted": 2,
+   "replayed": 2,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "BwaSparkIntegrationTest#testPairedEnd",
+    "BwaSparkIntegrationTest#testSingleEnd"
+   ]
+  },
+  "CalculateAverageCombinedAnnotations": {
+   "extracted": 2,
+   "replayed": 2,
+   "matched": 2,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "CalculateContamination": {
+   "extracted": 11,
+   "replayed": 11,
+   "matched": 9,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "CalculateContaminationIntegrationTest#testArtificialData[0]",
+    "CalculateContaminationIntegrationTest#testArtificialData[1]"
+   ]
+  },
+  "CalculateGenotypePosteriors": {
+   "extracted": 14,
+   "replayed": 14,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "CalculateGenotypePosteriorsIntegrationTest#gzipOutputIsGzipped",
+    "CalculateGenotypePosteriorsIntegrationTest#testBadInputFilesAreRejectedWithReasonableError[0]",
+    "CalculateGenotypePosteriorsIntegrationTest#testBadInputFilesAreRejectedWithReasonableError[1]",
+    "CalculateGenotypePosteriorsIntegrationTest#testBadInputFilesAreRejectedWithReasonableError[2]",
+    "CalculateGenotypePosteriorsIntegrationTest#testDefaultsWithPanel",
+    "CalculateGenotypePosteriorsIntegrationTest#testFamilyPriors",
+    "CalculateGenotypePosteriorsIntegrationTest#testFamilyPriorsMixedPloidy",
+    "CalculateGenotypePosteriorsIntegrationTest#testInputINDELs",
+    "CalculateGenotypePosteriorsIntegrationTest#testMismatchedReferences",
+    "CalculateGenotypePosteriorsIntegrationTest#testMissingPriors",
+    "CalculateGenotypePosteriorsIntegrationTest#testNoDuplicatesForAdjacentInputs",
+    "CalculateGenotypePosteriorsIntegrationTest#testNumRefWithPanel",
+    "CalculateGenotypePosteriorsIntegrationTest#testSingleParentFamily",
+    "CalculateGenotypePosteriorsIntegrationTest#testUsingDiscoveredAF"
+   ]
+  },
+  "CalculateMixingFractions": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "CalculateMixingFractionsIntegrationTest#test"
+   ]
+  },
+  "CalibrateDragstrModel": {
+   "extracted": 12,
+   "replayed": 12,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "CalibrateDragstrModelIntegrationTest#testDragstrModelInferenceFailingOverToDefaults[0]",
+    "CalibrateDragstrModelIntegrationTest#testDragstrModelInferenceFailingOverToDefaults[1]",
+    "CalibrateDragstrModelIntegrationTest#testDragstrModelInferenceFailingOverToDefaults[2]",
+    "CalibrateDragstrModelIntegrationTest#testDragstrModelInferenceFailingOverToDefaults[3]",
+    "CalibrateDragstrModelIntegrationTest#testDragstrModelInferenceFailingOverToDefaults[4]",
+    "CalibrateDragstrModelIntegrationTest#testDragstrModelInferenceFailingOverToDefaults[5]",
+    "CalibrateDragstrModelIntegrationTest#testDragstrModelInferenceForcingEstimation[0]",
+    "CalibrateDragstrModelIntegrationTest#testDragstrModelInferenceForcingEstimation[1]",
+    "CalibrateDragstrModelIntegrationTest#testDragstrModelInferenceForcingEstimation[2]",
+    "CalibrateDragstrModelIntegrationTest#testDragstrModelInferenceForcingEstimation[3]",
+    "CalibrateDragstrModelIntegrationTest#testDragstrModelInferenceForcingEstimation[4]",
+    "CalibrateDragstrModelIntegrationTest#testDragstrModelInferenceForcingEstimation[5]"
+   ]
+  },
+  "CallCopyRatioSegments": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "CallCopyRatioSegmentsIntegrationTest#testCallSegments"
+   ]
+  },
+  "CallableLoci": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "CallableLociIntegrationTest#testBasicOperation"
+   ]
+  },
+  "CheckPileup": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 1,
+   "excluded": 0,
+   "unextracted": 1,
+   "diverged": []
+  },
+  "CheckReferenceCompatibility": {
+   "extracted": 16,
+   "replayed": 16,
+   "matched": 16,
+   "excluded": 0,
+   "unextracted": 1,
+   "diverged": []
+  },
+  "ClipReads": {
+   "extracted": 17,
+   "replayed": 17,
+   "matched": 15,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "ClipReadsIntegrationTest#testClipper[14]",
+    "ClipReadsIntegrationTest#testClipper[15]"
+   ]
+  },
+  "CollectBaseDistributionByCycleSpark": {
+   "extracted": 9,
+   "replayed": 9,
+   "matched": 1,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "CollectBaseDistributionByCycleSparkIntegrationTest#test[0]",
+    "CollectBaseDistributionByCycleSparkIntegrationTest#test[1]",
+    "CollectBaseDistributionByCycleSparkIntegrationTest#test[2]",
+    "CollectBaseDistributionByCycleSparkIntegrationTest#test[3]",
+    "CollectBaseDistributionByCycleSparkIntegrationTest#test[4]",
+    "CollectBaseDistributionByCycleSparkIntegrationTest#test[5]",
+    "CollectBaseDistributionByCycleSparkIntegrationTest#test[6]",
+    "CollectBaseDistributionByCycleSparkIntegrationTest#test[7]"
+   ]
+  },
+  "CollectF1R2Counts": {
+   "extracted": 6,
+   "replayed": 6,
+   "matched": 1,
+   "excluded": 0,
+   "unextracted": 3,
+   "diverged": [
+    "CollectF1R2CountsIntegrationTest#testHistograms",
+    "CollectF1R2CountsIntegrationTest#testOnSyntheticBam",
+    "CollectF1R2CountsIntegrationTest#testTwoSamples.0",
+    "CollectF1R2CountsIntegrationTest#testTwoSamples.1",
+    "CollectF1R2CountsIntegrationTest#testTwoSamples.2"
+   ]
+  },
+  "CollectInsertSizeMetricsSpark": {
+   "extracted": 6,
+   "replayed": 6,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "CollectInsertSizeMetricsSparkIntegrationTest#test[0]",
+    "CollectInsertSizeMetricsSparkIntegrationTest#test[1]",
+    "CollectInsertSizeMetricsSparkIntegrationTest#test[2]",
+    "CollectInsertSizeMetricsSparkIntegrationTest#test[3]",
+    "CollectInsertSizeMetricsSparkIntegrationTest#test[4]",
+    "CollectInsertSizeMetricsSparkIntegrationTest#test[5]"
+   ]
+  },
+  "CollectMultipleMetricsSpark": {
+   "extracted": 3,
+   "replayed": 3,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 3,
+   "diverged": [
+    "CollectMultipleMetricsSparkIntegrationTest#testBuiltInCollectors[0]",
+    "CollectMultipleMetricsSparkIntegrationTest#testBuiltInCollectors[1]",
+    "CollectMultipleMetricsSparkIntegrationTest#testBuiltInCollectors[2]"
+   ]
+  },
+  "CollectQualityYieldMetricsSpark": {
+   "extracted": 8,
+   "replayed": 8,
+   "matched": 1,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "CollectQualityYieldMetricsSparkIntegrationTest#test[1]",
+    "CollectQualityYieldMetricsSparkIntegrationTest#test[2]",
+    "CollectQualityYieldMetricsSparkIntegrationTest#test[3]",
+    "CollectQualityYieldMetricsSparkIntegrationTest#test[4]",
+    "CollectQualityYieldMetricsSparkIntegrationTest#test[5]",
+    "CollectQualityYieldMetricsSparkIntegrationTest#test[6]",
+    "CollectQualityYieldMetricsSparkIntegrationTest#test[7]"
+   ]
+  },
+  "CollectReadCounts": {
+   "extracted": 6,
+   "replayed": 6,
+   "matched": 4,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "CollectReadCountsIntegrationTest#testHDF5Output[0]",
+    "CollectReadCountsIntegrationTest#testTSVOutput[0]"
+   ]
+  },
+  "CollectSVEvidence": {
+   "extracted": 4,
+   "replayed": 4,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "CollectSVEvidenceIntegrationTest#testPECollection",
+    "CollectSVEvidenceIntegrationTest#testRDCollection",
+    "CollectSVEvidenceIntegrationTest#testSDCollection",
+    "CollectSVEvidenceIntegrationTest#testSRCollection"
+   ]
+  },
+  "CombineGVCFs": {
+   "extracted": 30,
+   "replayed": 30,
+   "matched": 16,
+   "excluded": 0,
+   "unextracted": 1,
+   "diverged": [
+    "CombineGVCFsIntegrationTest#compareToExpectedResults[14]",
+    "CombineGVCFsIntegrationTest#compareToExpectedResults[1]",
+    "CombineGVCFsIntegrationTest#compareToExpectedResults[2]",
+    "CombineGVCFsIntegrationTest#compareToExpectedResults[3]",
+    "CombineGVCFsIntegrationTest#testAddToCombinedSomaticGvcf.0",
+    "CombineGVCFsIntegrationTest#testAddToCombinedSomaticGvcf.1",
+    "CombineGVCFsIntegrationTest#testCombineDragenMtGvcfs",
+    "CombineGVCFsIntegrationTest#testCombineReblockedGVCFs",
+    "CombineGVCFsIntegrationTest#testCombineSomaticGvcfs",
+    "CombineGVCFsIntegrationTest#testDropSomaticFilteringAnnotations",
+    "CombineGVCFsIntegrationTest#testOneHasAltAndTwoHasNothing",
+    "CombineGVCFsIntegrationTest#testStartChromosome",
+    "CombineGVCFsIntegrationTest#testTetraploidRun",
+    "CombineGVCFsIntegrationTest#testTwoSpansManyBlocksInOne"
+   ]
+  },
+  "CombineSegmentBreakpoints": {
+   "extracted": 15,
+   "replayed": 15,
+   "matched": 4,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "CombineSegmentBreakpointsIntegrationTest#testOldFormats[0]",
+    "CombineSegmentBreakpointsIntegrationTest#testOldFormats[1]",
+    "CombineSegmentBreakpointsIntegrationTest#testRealFormats[0]",
+    "CombineSegmentBreakpointsIntegrationTest#testRealFormats[1]",
+    "CombineSegmentBreakpointsIntegrationTest#testRealFormats[2]",
+    "CombineSegmentBreakpointsIntegrationTest#testRunAndOneWithoutSamHeaderAndNoReference",
+    "CombineSegmentBreakpointsIntegrationTest#testRunWithExactSameFiles",
+    "CombineSegmentBreakpointsIntegrationTest#testRunWithExactSegments",
+    "CombineSegmentBreakpointsIntegrationTest#testRunWithoutExactOverlaps",
+    "CombineSegmentBreakpointsIntegrationTest#testRunWithoutExactOverlapsAndLabels",
+    "CombineSegmentBreakpointsIntegrationTest#testWithoutSamHeaderAndWithReference"
+   ]
+  },
+  "CompareBaseQualities": {
+   "extracted": 6,
+   "replayed": 6,
+   "matched": 3,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "CompareBaseQualitiesIntegrationTest#singleReadDiffTest[2]",
+    "CompareBaseQualitiesIntegrationTest#singleReadDiffTest[3]",
+    "CompareBaseQualitiesIntegrationTest#singleReadDiffTest[4]"
+   ]
+  },
+  "CompareDuplicatesSpark": {
+   "extracted": 6,
+   "replayed": 6,
+   "matched": 3,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "CompareDuplicatesSparkIntegrationTest#identicalBamTest[0]",
+    "CompareDuplicatesSparkIntegrationTest#identicalBamTest[1]",
+    "CompareDuplicatesSparkIntegrationTest#testOutputFile"
+   ]
+  },
+  "CompareIntervalLists": {
+   "extracted": 10,
+   "replayed": 10,
+   "matched": 7,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "CompareIntervalListsIntegrationTest#testCompareIntervals[7]",
+    "CompareIntervalListsIntegrationTest#testCompareIntervals[8]",
+    "CompareIntervalListsIntegrationTest#testCompareIntervals[9]"
+   ]
+  },
+  "CompareReferences": {
+   "extracted": 23,
+   "replayed": 23,
+   "matched": 9,
+   "excluded": 0,
+   "unextracted": 2,
+   "diverged": [
+    "CompareReferencesIntegrationTest#testCompareReferencesToStdOutput",
+    "CompareReferencesIntegrationTest#testFindSNPsNoOutputDir[0]",
+    "CompareReferencesIntegrationTest#testFindSNPsNoOutputDir[1]",
+    "CompareReferencesIntegrationTest#testFindSNPsNonexistentOutputDir[0]",
+    "CompareReferencesIntegrationTest#testFindSNPsNonexistentOutputDir[1]",
+    "CompareReferencesIntegrationTest#testFindSNPs[0]",
+    "CompareReferencesIntegrationTest#testFindSNPs[1]",
+    "CompareReferencesIntegrationTest#testFindSNPs[2]",
+    "CompareReferencesIntegrationTest#testFullAlignmentMode[0]",
+    "CompareReferencesIntegrationTest#testFullAlignmentMode[1]",
+    "CompareReferencesIntegrationTest#testFullAlignmentMode[2]",
+    "CompareReferencesIntegrationTest#testFullAlignmentMode[3]",
+    "CompareReferencesIntegrationTest#testFullAlignmentMode[4]",
+    "CompareReferencesIntegrationTest#testFullAlignmentMode[5]"
+   ]
+  },
+  "Concordance": {
+   "extracted": 6,
+   "replayed": 6,
+   "matched": 6,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "CondenseDepthEvidence": {
+   "extracted": 2,
+   "replayed": 2,
+   "matched": 2,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "ConvertHeaderlessHadoopBamShardToBam": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 1,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "CountBases": {
+   "extracted": 6,
+   "replayed": 6,
+   "matched": 6,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "CountBasesSpark": {
+   "extracted": 7,
+   "replayed": 7,
+   "matched": 5,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "CountBasesSparkIntegrationTest#countBases[0]",
+    "CountBasesSparkIntegrationTest#countBases[2]"
+   ]
+  },
+  "CountFalsePositives": {
+   "extracted": 2,
+   "replayed": 2,
+   "matched": 2,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "CountReads": {
+   "extracted": 38,
+   "replayed": 38,
+   "matched": 38,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "CountReadsSpark": {
+   "extracted": 19,
+   "replayed": 19,
+   "matched": 15,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "CountReadsSparkIntegrationTest#testCountReads[0]",
+    "CountReadsSparkIntegrationTest#testCountReads[2]",
+    "CountReadsSparkIntegrationTest#testCountReads[3]",
+    "CountReadsSparkIntegrationTest#testCountReads[5]"
+   ]
+  },
+  "CountVariants": {
+   "extracted": 10,
+   "replayed": 10,
+   "matched": 8,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "CountVariantsIntegrationTest#testCountVariantsWithOutputFile[1]",
+    "CountVariantsIntegrationTest#testCountVariants[1]"
+   ]
+  },
+  "CountVariantsSpark": {
+   "extracted": 28,
+   "replayed": 28,
+   "matched": 15,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "CountVariantsSparkIntegrationTest#testCountVariantsWithIntervals[10].0",
+    "CountVariantsSparkIntegrationTest#testCountVariantsWithIntervals[10].1",
+    "CountVariantsSparkIntegrationTest#testCountVariantsWithIntervals[11].0",
+    "CountVariantsSparkIntegrationTest#testCountVariantsWithIntervals[11].1",
+    "CountVariantsSparkIntegrationTest#testCountVariantsWithIntervals[6].0",
+    "CountVariantsSparkIntegrationTest#testCountVariantsWithIntervals[6].1",
+    "CountVariantsSparkIntegrationTest#testCountVariantsWithIntervals[7].0",
+    "CountVariantsSparkIntegrationTest#testCountVariantsWithIntervals[7].1",
+    "CountVariantsSparkIntegrationTest#testCountVariantsWithIntervals[8].0",
+    "CountVariantsSparkIntegrationTest#testCountVariantsWithIntervals[8].1",
+    "CountVariantsSparkIntegrationTest#testCountVariantsWithIntervals[9].0",
+    "CountVariantsSparkIntegrationTest#testCountVariantsWithIntervals[9].1",
+    "CountVariantsSparkIntegrationTest#test[1]"
+   ]
+  },
+  "CreateHadoopBamSplittingIndex": {
+   "extracted": 7,
+   "replayed": 7,
+   "matched": 7,
+   "excluded": 0,
+   "unextracted": 4,
+   "diverged": []
+  },
+  "DepthOfCoverage": {
+   "extracted": 7,
+   "replayed": 7,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "DepthOfCoverageIntegrationTest#testBaseOutputNoFiltering",
+    "DepthOfCoverageIntegrationTest#testCoverageBehaviorWhenProvidedNoIntervalFile",
+    "DepthOfCoverageIntegrationTest#testGeneListAllGenesCompletelyCoveredByIntervals",
+    "DepthOfCoverageIntegrationTest#testGeneListDataPartallylCovered",
+    "DepthOfCoverageIntegrationTest#testGeneListDataPartallylCoveredIntronGap",
+    "DepthOfCoverageIntegrationTest#testIntervalListOverlappingUniqueBehavior",
+    "DepthOfCoverageIntegrationTest#testNoCoverageDueToFiltering"
+   ]
+  },
+  "DetermineGermlineContigPloidy": {
+   "extracted": 4,
+   "replayed": 4,
+   "matched": 4,
+   "excluded": 0,
+   "unextracted": 2,
+   "diverged": []
+  },
+  "DownsampleByDuplicateSet": {
+   "extracted": 6,
+   "replayed": 6,
+   "matched": 6,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "DumpTabixIndex": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 1,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "EvaluateInfoFieldConcordance": {
+   "extracted": 2,
+   "replayed": 2,
+   "matched": 2,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "ExtractVariantAnnotations": {
+   "extracted": 4,
+   "replayed": 4,
+   "matched": 4,
+   "excluded": 0,
+   "unextracted": 1,
+   "diverged": []
+  },
+  "FastaAlternateReferenceMaker": {
+   "extracted": 17,
+   "replayed": 17,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "FastaAlternateReferenceMakerIntegrationTest#testAlternateReferenceContiguousDiffContigs",
+    "FastaAlternateReferenceMakerIntegrationTest#testAlternateReferenceContiguousSameContig",
+    "FastaAlternateReferenceMakerIntegrationTest#testBadIupacInput",
+    "FastaAlternateReferenceMakerIntegrationTest#testIupac",
+    "FastaAlternateReferenceMakerIntegrationTest#testNoMask[0]",
+    "FastaAlternateReferenceMakerIntegrationTest#testNoMask[1]",
+    "FastaAlternateReferenceMakerIntegrationTest#testSnpMask[0]",
+    "FastaAlternateReferenceMakerIntegrationTest#testSnpMask[1]",
+    "FastaAlternateReferenceMakerIntegrationTest#testSnpMask[2]",
+    "FastaAlternateReferenceMakerIntegrationTest#testSnpMask[3]",
+    "FastaAlternateReferenceMakerIntegrationTest#testSnpMask[4]",
+    "FastaAlternateReferenceMakerIntegrationTest#testSnpMask[5]",
+    "FastaAlternateReferenceMakerIntegrationTest#testSnpMask[6]",
+    "FastaAlternateReferenceMakerIntegrationTest#testSnpMask[7]",
+    "FastaAlternateReferenceMakerIntegrationTest#testSpanDel",
+    "FastaAlternateReferenceMakerIntegrationTest#testSpanDelIUPAC[0]",
+    "FastaAlternateReferenceMakerIntegrationTest#testSpanDelIUPAC[1]"
+   ]
+  },
+  "FastaReferenceMaker": {
+   "extracted": 6,
+   "replayed": 6,
+   "matched": 3,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "FastaReferenceMakerIntegrationTest#runMakeFastaTest[0]",
+    "FastaReferenceMakerIntegrationTest#runMakeFastaTest[1]",
+    "FastaReferenceMakerIntegrationTest#runMakeFastaTest[2]"
+   ]
+  },
+  "FilterAlignmentArtifacts": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "FilterAlignmentArtifactsIntegrationTest#testDreamTruthData"
+   ]
+  },
+  "FilterIntervals": {
+   "extracted": 23,
+   "replayed": 23,
+   "matched": 23,
+   "excluded": 0,
+   "unextracted": 2,
+   "diverged": []
+  },
+  "FilterMutectCalls": {
+   "extracted": 17,
+   "replayed": 17,
+   "matched": 1,
+   "excluded": 0,
+   "unextracted": 2,
+   "diverged": [
+    "LearnReadOrientationModelIntegrationTest#testFewSites.3",
+    "Mutect2IntegrationTest#testBloodBiopsyFiltering",
+    "Mutect2IntegrationTest#testFilterMicrobial[0]",
+    "Mutect2IntegrationTest#testFilterMicrobial[1]",
+    "Mutect2IntegrationTest#testFilterMicrobial[2]",
+    "Mutect2IntegrationTest#testFilterMitochondria[1]",
+    "Mutect2IntegrationTest#testFilterMitochondria[2]",
+    "Mutect2IntegrationTest#testFilteredHaplotypeAndClusteredEventsFilters.0",
+    "Mutect2IntegrationTest#testFilteredHaplotypeAndClusteredEventsFilters.1",
+    "Mutect2IntegrationTest#testFilteringHeaders",
+    "Mutect2IntegrationTest#testNA12878NormalNormalFiltering",
+    "Mutect2IntegrationTest#testPon",
+    "Mutect2IntegrationTest#testTumorNormal",
+    "Mutect2IntegrationTest#testTumorOnly",
+    "Mutect2IntegrationTest#testTwoDreamTumorSamples[0]",
+    "Mutect2IntegrationTest#testTwoDreamTumorSamples[1]"
+   ]
+  },
+  "FlagStat": {
+   "extracted": 4,
+   "replayed": 4,
+   "matched": 4,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "FlagStatSpark": {
+   "extracted": 4,
+   "replayed": 4,
+   "matched": 4,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "FlowFeatureMapper": {
+   "extracted": 6,
+   "replayed": 6,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "FlowFeatureMapperIntegrationTest#testBasic",
+    "FlowFeatureMapperIntegrationTest#testQCFailed",
+    "FlowFeatureMapperIntegrationTest#testReportAllAlts",
+    "FlowFeatureMapperIntegrationTest#testSurroundingAllQuality",
+    "FlowFeatureMapperIntegrationTest#testSurroundingMedianQuality",
+    "FlowFeatureMapperIntegrationTest#testTagBasesWithAdjacentRefDiff"
+   ]
+  },
+  "FlowPairHMMAlignReadsToHaplotypes": {
+   "extracted": 2,
+   "replayed": 2,
+   "matched": 2,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "FuncotateSegments": {
+   "extracted": 6,
+   "replayed": 6,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "FuncotateSegmentsIntegrationTest#testEmptyGatkCalledSegmentFile",
+    "FuncotateSegmentsIntegrationTest#testGatkCalledSegmentFile",
+    "FuncotateSegmentsIntegrationTest#testHg38CalledCopyRatioSegmentsGatkFile",
+    "FuncotateSegmentsIntegrationTest#testModelSegmentsGatkFile",
+    "FuncotateSegmentsIntegrationTest#testSimpleMultipleGenesOverlap[0]",
+    "FuncotateSegmentsIntegrationTest#testSimpleNoOverlap"
+   ]
+  },
+  "Funcotator": {
+   "extracted": 2,
+   "replayed": 2,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 44,
+   "diverged": [
+    "FuncotatorIntegrationTest#testFilterParsing",
+    "FuncotatorIntegrationTest#testVCFColumnsArentShuffled"
+   ]
+  },
+  "GatherBQSRReports": {
+   "extracted": 2,
+   "replayed": 2,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "GatherBQSRReportsIntegrationTest#testCombine5Reports",
+    "GatherBQSRReportsIntegrationTest#testCombineReportsFromTwoChrs"
+   ]
+  },
+  "GatherTranches": {
+   "extracted": 4,
+   "replayed": 4,
+   "matched": 4,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "GatherVcfsCloud": {
+   "extracted": 12,
+   "replayed": 12,
+   "matched": 12,
+   "excluded": 0,
+   "unextracted": 2,
+   "diverged": []
+  },
+  "GeneExpressionEvaluation": {
+   "extracted": 72,
+   "replayed": 72,
+   "matched": 72,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "GenomicsDBImport": {
+   "extracted": 66,
+   "replayed": 66,
+   "matched": 63,
+   "excluded": 0,
+   "unextracted": 15,
+   "diverged": [
+    "GenomicsDBImportIntegrationTest#testGenomicsDBImportFileInputsAgainstCombineGVCFWithNonDiploidData",
+    "GenomicsDBImportIntegrationTest#testGenomicsDBImportFileInputs_newMQ",
+    "GenomicsDBImportIntegrationTest#testIncrementalMustHaveExistingWorkspace"
+   ]
+  },
+  "GenotypeGVCFs": {
+   "extracted": 27,
+   "replayed": 27,
+   "matched": 7,
+   "excluded": 0,
+   "unextracted": 7,
+   "diverged": [
+    "GenotypeGVCFsIntegrationTest#assertDeprecatedMQThrowsUserException",
+    "GenotypeGVCFsIntegrationTest#dbSNPError",
+    "GenotypeGVCFsIntegrationTest#testForceOutput.0",
+    "GenotypeGVCFsIntegrationTest#testForceOutput.1",
+    "GenotypeGVCFsIntegrationTest#testForceOutputNonRef.0",
+    "GenotypeGVCFsIntegrationTest#testForceOutputNonRef.1",
+    "GenotypeGVCFsIntegrationTest#testForceOutputWithSpanningDeletion",
+    "GenotypeGVCFsIntegrationTest#testGenotypingForSomaticGVCFs",
+    "GenotypeGVCFsIntegrationTest#testGenotypingForSomaticGVCFs_subsetAlts",
+    "GenotypeGVCFsIntegrationTest#testGenotypingForSomaticGVCFs_withSQ",
+    "GenotypeGVCFsIntegrationTest#testIndexIsCreated",
+    "GenotypeGVCFsIntegrationTest#testMissingDPVariant.1",
+    "GenotypeGVCFsIntegrationTest#testNonRefHomVar",
+    "GenotypeGVCFsIntegrationTest#testRawAndFinalizedAlleleSpecificAnnotationsThoroughly",
+    "GenotypeGVCFsIntegrationTest#testRawGtCountAnnotation",
+    "GenotypeGVCFsIntegrationTest#testThreeDragenMtSamples.0",
+    "GenotypeGVCFsIntegrationTest#testThreeDragenMtSamples.1",
+    "GenotypeGVCFsIntegrationTest#testWithReblockedGVCF.0",
+    "GenotypeGVCFsIntegrationTest#testWithReblockedGVCF.1",
+    "GenotypeGVCFsIntegrationTest#testWithReblockedGVCF.2"
+   ]
+  },
+  "GermlineCNVCaller": {
+   "extracted": 8,
+   "replayed": 8,
+   "matched": 8,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "GetPileupSummaries": {
+   "extracted": 2,
+   "replayed": 2,
+   "matched": 2,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "GetSampleName": {
+   "extracted": 3,
+   "replayed": 3,
+   "matched": 3,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "GnarlyGenotyper": {
+   "extracted": 2,
+   "replayed": 2,
+   "matched": 2,
+   "excluded": 0,
+   "unextracted": 4,
+   "diverged": []
+  },
+  "GroundTruthReadsBuilder": {
+   "extracted": 2,
+   "replayed": 2,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "GroundTruthReadsBuilderIntegrationTest#testBasic",
+    "GroundTruthReadsBuilderIntegrationTest#testBasicLimitOutputSize"
+   ]
+  },
+  "GroundTruthScorer": {
+   "extracted": 6,
+   "replayed": 6,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "GroundTruthScorerIntegrationTest#testBasic",
+    "GroundTruthScorerIntegrationTest#testFilter",
+    "GroundTruthScorerIntegrationTest#testGenomePrior",
+    "GroundTruthScorerIntegrationTest#testMeanCall",
+    "GroundTruthScorerIntegrationTest#testReports",
+    "GroundTruthScorerIntegrationTest#testUseSoftclippedBases"
+   ]
+  },
+  "GroupedSVCluster": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "GroupedSVClusterIntegrationTest#testClusterStratified"
+   ]
+  },
+  "GtfToBed": {
+   "extracted": 2,
+   "replayed": 2,
+   "matched": 1,
+   "excluded": 0,
+   "unextracted": 1,
+   "diverged": [
+    "GtfToBedIntegrationTest#testGtfToBedSequenceDictionaryFromReference"
+   ]
+  },
+  "HaplotypeBasedVariantRecaller": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "HaplotypeBasedVariantRecallerIntegrationTest#testBasic"
+   ]
+  },
+  "HaplotypeCaller": {
+   "extracted": 88,
+   "replayed": 49,
+   "matched": 9,
+   "excluded": 39,
+   "unextracted": 16,
+   "diverged": [
+    "FlowBasedAlignmentIntegrationTest#testMatrix",
+    "HaplotypeCallerIntegrationTest#test100PercentContaminationNoCallsInGVCFMode",
+    "HaplotypeCallerIntegrationTest#test100PercentContaminationNoCallsInVCFMode",
+    "HaplotypeCallerIntegrationTest#testAdjacentIUPACBasesinReads",
+    "HaplotypeCallerIntegrationTest#testAdjacentIndels",
+    "HaplotypeCallerIntegrationTest#testContaminatedHomVarDeletions",
+    "HaplotypeCallerIntegrationTest#testCustomPloidyRegions[0]",
+    "HaplotypeCallerIntegrationTest#testCustomPloidyRegions[1]",
+    "HaplotypeCallerIntegrationTest#testGvcfFlowConsistentWithPreviousResults",
+    "HaplotypeCallerIntegrationTest#testGvcfKeepLoneAlleles",
+    "HaplotypeCallerIntegrationTest#testGvcfUsingFlowModeAdvancedConsistentWithPreviousResults",
+    "HaplotypeCallerIntegrationTest#testGvcfUsingFlowModeStandardConsistentWithPreviousResults",
+    "HaplotypeCallerIntegrationTest#testGvcfWithAssemblyComplexityAnnotationRevamp",
+    "HaplotypeCallerIntegrationTest#testHaplotypeCallerRemoveAltAlleleBasedOnHaptypeScores",
+    "HaplotypeCallerIntegrationTest#testLeadingDeletionInAltHaplotype",
+    "HaplotypeCallerIntegrationTest#testMaxAlternateAlleles[0].0",
+    "HaplotypeCallerIntegrationTest#testMaxAlternateAlleles[0].1",
+    "HaplotypeCallerIntegrationTest#testMaxAlternateAlleles[1].0",
+    "HaplotypeCallerIntegrationTest#testMaxAlternateAlleles[1].1",
+    "HaplotypeCallerIntegrationTest#testMaxAlternateAlleles[2].0",
+    "HaplotypeCallerIntegrationTest#testMaxAlternateAlleles[2].1",
+    "HaplotypeCallerIntegrationTest#testMinBaseQualityScore.0",
+    "HaplotypeCallerIntegrationTest#testMinBaseQualityScore.1",
+    "HaplotypeCallerIntegrationTest#testMnps.0",
+    "HaplotypeCallerIntegrationTest#testMnps.1",
+    "HaplotypeCallerIntegrationTest#testMnps.2",
+    "HaplotypeCallerIntegrationTest#testMnps.3",
+    "HaplotypeCallerIntegrationTest#testMnps.4",
+    "HaplotypeCallerIntegrationTest#testMnpsAreRepresentedAsSingleEvents",
+    "HaplotypeCallerIntegrationTest#testPrunedCycle",
+    "HaplotypeCallerIntegrationTest#testReadsThatConsumeZeroReferenceReads",
+    "HaplotypeCallerIntegrationTest#testSingleBaseIntervals",
+    "HaplotypeCallerIntegrationTest#testVCFModeIsConsistentWithPastResults_AlleleSpecificAnnotations[0]",
+    "HaplotypeCallerIntegrationTest#testVCFModeIsConsistentWithPastResults_AlleleSpecificAnnotations[1]",
+    "HaplotypeCallerIntegrationTest#testVcfFliowModeConsistentWithPreviousResults",
+    "HaplotypeCallerIntegrationTest#testVcfFlowBasedHMMConsistentWithPreviousResults",
+    "HaplotypeCallerIntegrationTest#testVcfFlowBasedHMMStepwiseConsistentWithPreviousResults",
+    "HaplotypeCallerIntegrationTest#testVcfFlowLikelihoodOptimizedCompConsistentWithPreviousResults",
+    "HaplotypeCallerIntegrationTest#testVcfFlowLikelihoodParralelThreadsConsistentWithPreviousResults",
+    "HaplotypeCallerIntegrationTest#testVcfWithAssemblyComplexityAnnotation"
+   ]
+  },
+  "HaplotypeCallerSpark": {
+   "extracted": 4,
+   "replayed": 2,
+   "matched": 2,
+   "excluded": 2,
+   "unextracted": 4,
+   "diverged": []
+  },
+  "IndexFeatureFile": {
+   "extracted": 22,
+   "replayed": 22,
+   "matched": 13,
+   "excluded": 0,
+   "unextracted": 2,
+   "diverged": [
+    "IndexFeatureFileIntegrationTest#testBCFIndex",
+    "IndexFeatureFileIntegrationTest#testEnsemblGtfIndex",
+    "IndexFeatureFileIntegrationTest#testNewGencodeLiftoverGtfFile",
+    "IndexFeatureFileIntegrationTest#testSAMPileupGZIndex",
+    "IndexFeatureFileIntegrationTest#testUncompressedBCF2_2Index",
+    "IndexFeatureFileIntegrationTest#testVCFGZIPIndex",
+    "IndexFeatureFileIntegrationTest#testVCFGZIPIndex_inferredName",
+    "IndexFeatureFileIntegrationTest#testVCFGZIndex_inferredName",
+    "IndexFeatureFileIntegrationTest#testVCFGZIndex_tabix"
+   ]
+  },
+  "JointGermlineCNVSegmentation": {
+   "extracted": 5,
+   "replayed": 5,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "JointGermlineCNVSegmentationIntegrationTest#testDefragmentation.0",
+    "JointGermlineCNVSegmentationIntegrationTest#testDefragmentation.1",
+    "JointGermlineCNVSegmentationIntegrationTest#testOverlappingEvents[0]",
+    "JointGermlineCNVSegmentationIntegrationTest#testThreeGCNVSamples[0].0",
+    "JointGermlineCNVSegmentationIntegrationTest#testThreeGCNVSamples[0].1"
+   ]
+  },
+  "LearnReadOrientationModel": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "LearnReadOrientationModelIntegrationTest#testFewSites.1"
+   ]
+  },
+  "LeftAlignAndTrimVariants": {
+   "extracted": 9,
+   "replayed": 9,
+   "matched": 5,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "LeftAlignAndTrimVariantsIntegrationTest#testLeftAlignment[1]",
+    "LeftAlignAndTrimVariantsIntegrationTest#testLeftAlignment[3]",
+    "LeftAlignAndTrimVariantsIntegrationTest#testLeftAlignment[4]",
+    "LeftAlignAndTrimVariantsIntegrationTest#testSplitAllelesWithASFilters"
+   ]
+  },
+  "LeftAlignIndels": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "LeftAlignIndelsIntegrationTest#testLeftAlignIndels"
+   ]
+  },
+  "MarkDuplicatesSpark": {
+   "extracted": 7,
+   "replayed": 7,
+   "matched": 4,
+   "excluded": 0,
+   "unextracted": 8,
+   "diverged": [
+    "MarkDuplicatesSparkIntegrationTest#testAssertAssumeUnsortedFilesAreQueryGroupedFiles",
+    "MarkDuplicatesSparkIntegrationTest#testAssertCorrectSortOrderMultipleBamsOverriding",
+    "MarkDuplicatesSparkIntegrationTest#testFlowModeFlag"
+   ]
+  },
+  "MeanQualityByCycleSpark": {
+   "extracted": 7,
+   "replayed": 7,
+   "matched": 5,
+   "excluded": 0,
+   "unextracted": 1,
+   "diverged": [
+    "MeanQualityByCycleSparkIntegrationTest#test[0]",
+    "MeanQualityByCycleSparkIntegrationTest#test[1]"
+   ]
+  },
+  "MergeAnnotatedRegions": {
+   "extracted": 2,
+   "replayed": 2,
+   "matched": 1,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "MergeAnnotatedRegionsIntegrationTest#basicTest"
+   ]
+  },
+  "MergeAnnotatedRegionsByAnnotation": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 1,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "MergeMutect2CallsWithMC3": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 1,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "MergeMutectStats": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "MergeMutectStatsIntegrationTest#simpleTest"
+   ]
+  },
+  "MethylationTypeCaller": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "MethylationTypeCallerIntegrationTest#testBasicMethylationCoverage[0]"
+   ]
+  },
+  "ModelSegments": {
+   "extracted": 36,
+   "replayed": 36,
+   "matched": 31,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "ModelSegmentsIntegrationTest#testValidDataModesMultipleSamples[0].1",
+    "ModelSegmentsIntegrationTest#testValidDataModesMultipleSamples[1].1",
+    "ModelSegmentsIntegrationTest#testValidDataModesMultipleSamples[2].1",
+    "ModelSegmentsIntegrationTest#testValidDataModesMultipleSamples[3].1",
+    "ModelSegmentsIntegrationTest#testValidDataModesMultipleSamples[4].1"
+   ]
+  },
+  "Mutect2": {
+   "extracted": 2,
+   "replayed": 1,
+   "matched": 0,
+   "excluded": 1,
+   "unextracted": 0,
+   "diverged": [
+    "LearnReadOrientationModelIntegrationTest#testFewSites.2"
+   ]
+  },
+  "NVScoreVariants": {
+   "extracted": 2,
+   "replayed": 2,
+   "matched": 2,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "NuMTFilterTool": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 1,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "PathSeqBuildKmers": {
+   "extracted": 12,
+   "replayed": 12,
+   "matched": 10,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "PathSeqBuildKmersSparkIntegrationTest#testBadInputs[5]",
+    "PathSeqBuildKmersSparkIntegrationTest#testBloomFilterFromFasta"
+   ]
+  },
+  "PathSeqBuildReferenceTaxonomy": {
+   "extracted": 5,
+   "replayed": 5,
+   "matched": 5,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "PathSeqBwaSpark": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "PathSeqBwaSparkIntegrationTest#testBwaTool[0]"
+   ]
+  },
+  "PathSeqFilterSpark": {
+   "extracted": 4,
+   "replayed": 4,
+   "matched": 4,
+   "excluded": 0,
+   "unextracted": 2,
+   "diverged": []
+  },
+  "PathSeqScoreSpark": {
+   "extracted": 4,
+   "replayed": 4,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "PathSeqScoreIntegrationTest#testPathSeqScoreSpark[0]",
+    "PathSeqScoreIntegrationTest#testPathSeqScoreSpark[1]",
+    "PathSeqScoreIntegrationTest#testPathSeqScoreSpark[2]",
+    "PathSeqScoreIntegrationTest#testPathSeqScoreSpark[3]"
+   ]
+  },
+  "Pileup": {
+   "extracted": 5,
+   "replayed": 5,
+   "matched": 3,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "PileupIntegrationTest#testFeaturesPileup",
+    "PileupIntegrationTest#testInvalidOutputFile"
+   ]
+  },
+  "PileupSpark": {
+   "extracted": 8,
+   "replayed": 8,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "PileupSparkIntegrationTest#testFeaturesPileup[0]",
+    "PileupSparkIntegrationTest#testFeaturesPileup[1]",
+    "PileupSparkIntegrationTest#testInsertLengthPileup[0]",
+    "PileupSparkIntegrationTest#testInsertLengthPileup[1]",
+    "PileupSparkIntegrationTest#testSimplePileup[0]",
+    "PileupSparkIntegrationTest#testSimplePileup[1]",
+    "PileupSparkIntegrationTest#testVerbosePileup[0]",
+    "PileupSparkIntegrationTest#testVerbosePileup[1]"
+   ]
+  },
+  "PlotDenoisedCopyRatios": {
+   "extracted": 9,
+   "replayed": 9,
+   "matched": 8,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "PlotDenoisedCopyRatiosIntegrationTest#testNonExistentSequenceDictionaryFile"
+   ]
+  },
+  "PlotModeledSegments": {
+   "extracted": 17,
+   "replayed": 17,
+   "matched": 16,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "PlotModeledSegmentsIntegrationTest#testNonExistentSequenceDictionaryFile"
+   ]
+  },
+  "PostProcessReadsForRSEM": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 1,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "PostprocessGermlineCNVCalls": {
+   "extracted": 4,
+   "replayed": 4,
+   "matched": 4,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "PreprocessIntervals": {
+   "extracted": 5,
+   "replayed": 5,
+   "matched": 5,
+   "excluded": 0,
+   "unextracted": 1,
+   "diverged": []
+  },
+  "PrintBGZFBlockInformation": {
+   "extracted": 8,
+   "replayed": 8,
+   "matched": 8,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "PrintReadCounts": {
+   "extracted": 3,
+   "replayed": 3,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "PrintReadCountsIntegrationTest#testBCI",
+    "PrintReadCountsIntegrationTest#testCounts",
+    "PrintReadCountsIntegrationTest#testRD"
+   ]
+  },
+  "PrintReads": {
+   "extracted": 147,
+   "replayed": 147,
+   "matched": 7,
+   "excluded": 0,
+   "unextracted": 4,
+   "diverged": [
+    "CRAMSupportIntegrationTest#testNoRefMulti[0]",
+    "CRAMSupportIntegrationTest#testNoRef[0]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[0]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[10]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[11]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[12]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[13]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[14]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[15]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[16]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[17]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[18]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[19]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[1]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[20]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[21]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[22]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[23]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[24]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[25]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[26]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[27]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[28]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[29]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[2]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[3]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[4]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[5]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[6]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[7]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[8]",
+    "CRAMSupportIntegrationTest#testReadCramWithIntervalsWithBAIIndex[9]",
+    "CRAMSupportIntegrationTest#testReadEntireCram[0]",
+    "CRAMSupportIntegrationTest#testReadEntireCram[1]",
+    "CRAMSupportIntegrationTest#testReadEntireCram[2]",
+    "CRAMSupportIntegrationTest#testReadEntireCram[3]",
+    "CRAMSupportIntegrationTest#testReadEntireCram[4]",
+    "CRAMSupportIntegrationTest#testReadEntireCram[5]",
+    "CRAMSupportIntegrationTest#testRoundTripToCRAM[0]",
+    "CRAMSupportIntegrationTest#testRoundTripToCRAM[1]",
+    "CRAMSupportIntegrationTest#testRoundTripToCRAM[2]",
+    "CRAMSupportIntegrationTest#testSamtoolsGeneratedCRAMSliceMD5Calculation",
+    "CRAMSupportIntegrationTest#testWrongRef[0]",
+    "ConfigPrintReadsIntegrationTest#testPrintReadsWithConfigFile",
+    "IntelInflaterDeflaterIntegrationTest#testIntelInflaterDeflaterWithPrintReads[0]",
+    "IntelInflaterDeflaterIntegrationTest#testIntelInflaterDeflaterWithPrintReads[1]",
+    "IntelInflaterDeflaterIntegrationTest#testIntelInflaterDeflaterWithPrintReads[2]",
+    "PrintReadsIntegrationTest#testFileToFileWithMD5[0]",
+    "PrintReadsIntegrationTest#testFileToFileWithMD5[10]",
+    "PrintReadsIntegrationTest#testFileToFileWithMD5[11]",
+    "PrintReadsIntegrationTest#testFileToFileWithMD5[12]",
+    "PrintReadsIntegrationTest#testFileToFileWithMD5[14]",
+    "PrintReadsIntegrationTest#testFileToFileWithMD5[15]",
+    "PrintReadsIntegrationTest#testFileToFileWithMD5[16]",
+    "PrintReadsIntegrationTest#testFileToFileWithMD5[17]",
+    "PrintReadsIntegrationTest#testFileToFileWithMD5[18]",
+    "PrintReadsIntegrationTest#testFileToFileWithMD5[19]",
+    "PrintReadsIntegrationTest#testFileToFileWithMD5[1]",
+    "PrintReadsIntegrationTest#testFileToFileWithMD5[20]",
+    "PrintReadsIntegrationTest#testFileToFileWithMD5[21]",
+    "PrintReadsIntegrationTest#testFileToFileWithMD5[22]",
+    "PrintReadsIntegrationTest#testFileToFileWithMD5[23]",
+    "PrintReadsIntegrationTest#testFileToFileWithMD5[24]",
+    "PrintReadsIntegrationTest#testFileToFileWithMD5[25]",
+    "PrintReadsIntegrationTest#testFileToFileWithMD5[26]",
+    "PrintReadsIntegrationTest#testFileToFileWithMD5[27]",
+    "PrintReadsIntegrationTest#testFileToFileWithMD5[28]",
+    "PrintReadsIntegrationTest#testFileToFileWithMD5[2]",
+    "PrintReadsIntegrationTest#testFileToFileWithMD5[3]",
+    "PrintReadsIntegrationTest#testFileToFileWithMD5[4]",
+    "PrintReadsIntegrationTest#testFileToFileWithMD5[5]",
+    "PrintReadsIntegrationTest#testFileToFileWithMD5[6]",
+    "PrintReadsIntegrationTest#testFileToFileWithMD5[7]",
+    "PrintReadsIntegrationTest#testFileToFileWithMD5[8]",
+    "PrintReadsIntegrationTest#testFileToFileWithMD5[9]",
+    "PrintReadsIntegrationTest#testFileToFile[0]",
+    "PrintReadsIntegrationTest#testFileToFile[10]",
+    "PrintReadsIntegrationTest#testFileToFile[11]",
+    "PrintReadsIntegrationTest#testFileToFile[12]",
+    "PrintReadsIntegrationTest#testFileToFile[14]",
+    "PrintReadsIntegrationTest#testFileToFile[15]",
+    "PrintReadsIntegrationTest#testFileToFile[16]",
+    "PrintReadsIntegrationTest#testFileToFile[17]",
+    "PrintReadsIntegrationTest#testFileToFile[18]",
+    "PrintReadsIntegrationTest#testFileToFile[19]",
+    "PrintReadsIntegrationTest#testFileToFile[1]",
+    "PrintReadsIntegrationTest#testFileToFile[20]",
+    "PrintReadsIntegrationTest#testFileToFile[21]",
+    "PrintReadsIntegrationTest#testFileToFile[22]",
+    "PrintReadsIntegrationTest#testFileToFile[23]",
+    "PrintReadsIntegrationTest#testFileToFile[24]",
+    "PrintReadsIntegrationTest#testFileToFile[25]",
+    "PrintReadsIntegrationTest#testFileToFile[26]",
+    "PrintReadsIntegrationTest#testFileToFile[27]",
+    "PrintReadsIntegrationTest#testFileToFile[28]",
+    "PrintReadsIntegrationTest#testFileToFile[2]",
+    "PrintReadsIntegrationTest#testFileToFile[3]",
+    "PrintReadsIntegrationTest#testFileToFile[4]",
+    "PrintReadsIntegrationTest#testFileToFile[5]",
+    "PrintReadsIntegrationTest#testFileToFile[6]",
+    "PrintReadsIntegrationTest#testFileToFile[7]",
+    "PrintReadsIntegrationTest#testFileToFile[8]",
+    "PrintReadsIntegrationTest#testFileToFile[9]",
+    "PrintReadsIntegrationTest#testNoConflictPG",
+    "PrintReadsIntegrationTest#testNonExistentReference",
+    "PrintReadsIntegrationTest#testOutputCramVersionRejectsBadValue",
+    "PrintReadsIntegrationTest#testOutputCramVersion[0]",
+    "PrintReadsIntegrationTest#testOutputCramVersion[1]",
+    "PrintReadsIntegrationTest#testOutputCramVersion[2]",
+    "PrintReadsIntegrationTest#testReadFiltering",
+    "PrintReadsIntegrationTest#testReadFiltering_asIntegrationTestSpec",
+    "PrintReadsIntegrationTest#testReadFilters[0]",
+    "PrintReadsIntegrationTest#testReadFilters[10]",
+    "PrintReadsIntegrationTest#testReadFilters[11]",
+    "PrintReadsIntegrationTest#testReadFilters[12]",
+    "PrintReadsIntegrationTest#testReadFilters[1]",
+    "PrintReadsIntegrationTest#testReadFilters[2]",
+    "PrintReadsIntegrationTest#testReadFilters[3]",
+    "PrintReadsIntegrationTest#testReadFilters[4]",
+    "PrintReadsIntegrationTest#testReadFilters[5]",
+    "PrintReadsIntegrationTest#testReadFilters[6]",
+    "PrintReadsIntegrationTest#testReadFilters[7]",
+    "PrintReadsIntegrationTest#testReadFilters[8]",
+    "PrintReadsIntegrationTest#testReadFilters[9]",
+    "PrintReadsIntegrationTest#testSequenceDictionaryValidation",
+    "PrintReadsIntegrationTest#testUnSorted",
+    "PrintReadsIntegrationTest#testUnmappedReadInclusion[0]",
+    "PrintReadsIntegrationTest#testUnmappedReadInclusion[10]",
+    "PrintReadsIntegrationTest#testUnmappedReadInclusion[11]",
+    "PrintReadsIntegrationTest#testUnmappedReadInclusion[1]",
+    "PrintReadsIntegrationTest#testUnmappedReadInclusion[2]",
+    "PrintReadsIntegrationTest#testUnmappedReadInclusion[3]",
+    "PrintReadsIntegrationTest#testUnmappedReadInclusion[4]",
+    "PrintReadsIntegrationTest#testUnmappedReadInclusion[5]",
+    "PrintReadsIntegrationTest#testUnmappedReadInclusion[7]",
+    "PrintReadsIntegrationTest#testUnmappedReadInclusion[8]",
+    "PrintReadsIntegrationTest#testUnmappedReadInclusion[9]",
+    "SequenceDictionaryValidationWalkerIntegrationTest#testSeqDictValIncompatible",
+    "WalkerOutputIntegrationTest#testPGOnByDefault",
+    "WellFormedFlowBasedReadFilterIntegrationTest#testBasic"
+   ]
+  },
+  "PrintReadsHeader": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 1,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "PrintReadsSpark": {
+   "extracted": 69,
+   "replayed": 69,
+   "matched": 13,
+   "excluded": 0,
+   "unextracted": 3,
+   "diverged": [
+    "PrintReadsSparkIntegrationTest#testFileToFile[0]",
+    "PrintReadsSparkIntegrationTest#testFileToFile[10]",
+    "PrintReadsSparkIntegrationTest#testFileToFile[11]",
+    "PrintReadsSparkIntegrationTest#testFileToFile[12]",
+    "PrintReadsSparkIntegrationTest#testFileToFile[14]",
+    "PrintReadsSparkIntegrationTest#testFileToFile[15]",
+    "PrintReadsSparkIntegrationTest#testFileToFile[16]",
+    "PrintReadsSparkIntegrationTest#testFileToFile[17]",
+    "PrintReadsSparkIntegrationTest#testFileToFile[18]",
+    "PrintReadsSparkIntegrationTest#testFileToFile[19]",
+    "PrintReadsSparkIntegrationTest#testFileToFile[1]",
+    "PrintReadsSparkIntegrationTest#testFileToFile[20]",
+    "PrintReadsSparkIntegrationTest#testFileToFile[21]",
+    "PrintReadsSparkIntegrationTest#testFileToFile[23]",
+    "PrintReadsSparkIntegrationTest#testFileToFile[24]",
+    "PrintReadsSparkIntegrationTest#testFileToFile[25]",
+    "PrintReadsSparkIntegrationTest#testFileToFile[26]",
+    "PrintReadsSparkIntegrationTest#testFileToFile[27]",
+    "PrintReadsSparkIntegrationTest#testFileToFile[28]",
+    "PrintReadsSparkIntegrationTest#testFileToFile[2]",
+    "PrintReadsSparkIntegrationTest#testFileToFile[3]",
+    "PrintReadsSparkIntegrationTest#testFileToFile[5]",
+    "PrintReadsSparkIntegrationTest#testFileToFile[6]",
+    "PrintReadsSparkIntegrationTest#testFileToFile[7]",
+    "PrintReadsSparkIntegrationTest#testFileToFile[8]",
+    "PrintReadsSparkIntegrationTest#testFileToFile[9]",
+    "PrintReadsSparkIntegrationTest#testNonExistentReference",
+    "PrintReadsSparkIntegrationTest#testOutputCramVersion31SucceedsOnSpark",
+    "PrintReadsSparkIntegrationTest#testReadFiltering",
+    "PrintReadsSparkIntegrationTest#testReadFiltering_asIntegrationTestSpec",
+    "PrintReadsSparkIntegrationTest#testReadFilters[0]",
+    "PrintReadsSparkIntegrationTest#testReadFilters[10]",
+    "PrintReadsSparkIntegrationTest#testReadFilters[11]",
+    "PrintReadsSparkIntegrationTest#testReadFilters[12]",
+    "PrintReadsSparkIntegrationTest#testReadFilters[1]",
+    "PrintReadsSparkIntegrationTest#testReadFilters[2]",
+    "PrintReadsSparkIntegrationTest#testReadFilters[3]",
+    "PrintReadsSparkIntegrationTest#testReadFilters[4]",
+    "PrintReadsSparkIntegrationTest#testReadFilters[5]",
+    "PrintReadsSparkIntegrationTest#testReadFilters[6]",
+    "PrintReadsSparkIntegrationTest#testReadFilters[7]",
+    "PrintReadsSparkIntegrationTest#testReadFilters[8]",
+    "PrintReadsSparkIntegrationTest#testReadFilters[9]",
+    "PrintReadsSparkIntegrationTest#testSequenceDictionaryValidation",
+    "PrintReadsSparkIntegrationTest#testUnSortedRoundTrip",
+    "PrintReadsSparkIntegrationTest#testUnmappedReadInclusion[0]",
+    "PrintReadsSparkIntegrationTest#testUnmappedReadInclusion[10]",
+    "PrintReadsSparkIntegrationTest#testUnmappedReadInclusion[11]",
+    "PrintReadsSparkIntegrationTest#testUnmappedReadInclusion[1]",
+    "PrintReadsSparkIntegrationTest#testUnmappedReadInclusion[2]",
+    "PrintReadsSparkIntegrationTest#testUnmappedReadInclusion[3]",
+    "PrintReadsSparkIntegrationTest#testUnmappedReadInclusion[4]",
+    "PrintReadsSparkIntegrationTest#testUnmappedReadInclusion[5]",
+    "PrintReadsSparkIntegrationTest#testUnmappedReadInclusion[7]",
+    "PrintReadsSparkIntegrationTest#testUnmappedReadInclusion[8]",
+    "PrintReadsSparkIntegrationTest#testUnmappedReadInclusion[9]"
+   ]
+  },
+  "PrintSVEvidence": {
+   "extracted": 8,
+   "replayed": 8,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "PrintSVEvidenceIntegrationTest#testCorrectFeatureTypes",
+    "PrintSVEvidenceIntegrationTest#testIncorrectFeatureTypes",
+    "PrintSVEvidenceIntegrationTest#testPrintSplitReads[0]",
+    "PrintSVEvidenceIntegrationTest#testPrintSplitReads[1]",
+    "PrintSVEvidenceIntegrationTest#testPrintSplitReads[2]",
+    "PrintSVEvidenceIntegrationTest#testPrintSplitReads[3]",
+    "PrintSVEvidenceIntegrationTest#testPrintSplitReads[4]",
+    "PrintSVEvidenceIntegrationTest#testPrintSplitReads[5]"
+   ]
+  },
+  "QualityScoreDistributionSpark": {
+   "extracted": 7,
+   "replayed": 7,
+   "matched": 1,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "QualityScoreDistributionSparkIntegrationTest#test[0]",
+    "QualityScoreDistributionSparkIntegrationTest#test[1]",
+    "QualityScoreDistributionSparkIntegrationTest#test[2]",
+    "QualityScoreDistributionSparkIntegrationTest#test[3]",
+    "QualityScoreDistributionSparkIntegrationTest#test[4]",
+    "QualityScoreDistributionSparkIntegrationTest#test[5]"
+   ]
+  },
+  "RampedHaplotypeCaller": {
+   "extracted": 5,
+   "replayed": 5,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "RampedHaplotypeCallerIntegrationTest#testBasicNoRamps",
+    "RampedHaplotypeCallerIntegrationTest#testOfframp[0]",
+    "RampedHaplotypeCallerIntegrationTest#testOfframp[1]",
+    "RampedHaplotypeCallerIntegrationTest#testOfframp[2]",
+    "RampedHaplotypeCallerIntegrationTest#testOnramp[0]"
+   ]
+  },
+  "ReadAnonymizer": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 1,
+   "diverged": [
+    "ReadAnonymizerIntegrationTest#testReadAnonymizer[0]"
+   ]
+  },
+  "ReblockGVCF": {
+   "extracted": 34,
+   "replayed": 34,
+   "matched": 20,
+   "excluded": 0,
+   "unextracted": 2,
+   "diverged": [
+    "ReblockGVCFIntegrationTest#testASAnnotationsAndSubsetting.2",
+    "ReblockGVCFIntegrationTest#testAddedHcAsAnnotations",
+    "ReblockGVCFIntegrationTest#testDragenGvcfs",
+    "ReblockGVCFIntegrationTest#testFirstPositionOnContigNotDropped",
+    "ReblockGVCFIntegrationTest#testHomRefCalls",
+    "ReblockGVCFIntegrationTest#testLeftContigBoundary",
+    "ReblockGVCFIntegrationTest#testMQHeadersAreUpdated",
+    "ReblockGVCFIntegrationTest#testMovingFilters",
+    "ReblockGVCFIntegrationTest#testMultipleInputs.0",
+    "ReblockGVCFIntegrationTest#testNoCallGenotypes",
+    "ReblockGVCFIntegrationTest#testNoCallWhenGQ0InNonRefAllele",
+    "ReblockGVCFIntegrationTest#testOverlappingDeletions.1",
+    "ReblockGVCFIntegrationTest#testPosteriorDisagreementNeedingSubset",
+    "ReblockGVCFIntegrationTest#testRemovingAnnotationFromEmptyAttributes"
+   ]
+  },
+  "ReferenceBlockConcordance": {
+   "extracted": 3,
+   "replayed": 3,
+   "matched": 3,
+   "excluded": 0,
+   "unextracted": 1,
+   "diverged": []
+  },
+  "RemoveNearbyIndels": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "RemoveNearbyIndelsIntegrationTest#test"
+   ]
+  },
+  "RevertBaseQualityScores": {
+   "extracted": 3,
+   "replayed": 3,
+   "matched": 1,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "RevertBaseQualityScoresIntegrationTest#testReadThatsEntirelyInsertion",
+    "RevertBaseQualityScoresIntegrationTest#testRevertQualityScores"
+   ]
+  },
+  "RevertSamSpark": {
+   "extracted": 13,
+   "replayed": 13,
+   "matched": 2,
+   "excluded": 0,
+   "unextracted": 1,
+   "diverged": [
+    "RevertSamSparkIntegrationTest#testNoRgInfoSanitize",
+    "RevertSamSparkIntegrationTest#testOutputByReadGroupWithOutputMap[0]",
+    "RevertSamSparkIntegrationTest#testOutputByReadGroupWithOutputMap[2]",
+    "RevertSamSparkIntegrationTest#testSampleLibraryOverride[0]",
+    "RevertSamSparkIntegrationTest#testSampleLibraryOverride[1]",
+    "RevertSamSparkIntegrationTest#testSampleLibraryOverride[2]",
+    "RevertSamSparkIntegrationTest#testSanitizeAndDeduplicateRecords[0]",
+    "RevertSamSparkIntegrationTest#testSanitizeAndDeduplicateRecords[1]",
+    "RevertSamSparkIntegrationTest#testSanitizeAndDeduplicateRecords[2]",
+    "RevertSamSparkIntegrationTest#testSingleEndSanitize[0]",
+    "RevertSamSparkIntegrationTest#testSingleEndSanitize[2]"
+   ]
+  },
+  "SVCluster": {
+   "extracted": 10,
+   "replayed": 10,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "SVClusterIntegrationTest#testAgainstSimpleImplementation",
+    "SVClusterIntegrationTest#testAllosome",
+    "SVClusterIntegrationTest#testCleanedVcf",
+    "SVClusterIntegrationTest#testClusterMaxClique[0]",
+    "SVClusterIntegrationTest#testClusterMaxClique[1]",
+    "SVClusterIntegrationTest#testClusterSampleOverlap",
+    "SVClusterIntegrationTest#testClusterSingleLinkage",
+    "SVClusterIntegrationTest#testDefragmentation",
+    "SVClusterIntegrationTest#testMergeHelper[0]",
+    "SVClusterIntegrationTest#testMergeHelper[1]"
+   ]
+  },
+  "SVConcordance": {
+   "extracted": 9,
+   "replayed": 9,
+   "matched": 5,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "SVConcordanceIntegrationTest#testRefPanel",
+    "SVConcordanceIntegrationTest#testRefPanelStratified",
+    "SVConcordanceIntegrationTest#testRefPanelWithSampleOverlap",
+    "SVConcordanceIntegrationTest#testSitesOnly"
+   ]
+  },
+  "SVStratify": {
+   "extracted": 6,
+   "replayed": 6,
+   "matched": 6,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "ScoreVariantAnnotations": {
+   "extracted": 4,
+   "replayed": 4,
+   "matched": 4,
+   "excluded": 0,
+   "unextracted": 2,
+   "diverged": []
+  },
+  "SelectVariants": {
+   "extracted": 93,
+   "replayed": 93,
+   "matched": 21,
+   "excluded": 0,
+   "unextracted": 4,
+   "diverged": [
+    "DirichletAlleleDepthAndFractionIntegrationTest#testSharding",
+    "DirichletAlleleDepthAndFractionIntegrationTest#testSitesOnlyMode",
+    "GatkToolIntegrationTest#testSharding",
+    "GatkToolIntegrationTest#testSitesOnlyMode",
+    "SelectVariantsIntegrationTest#testCombineInfoAndGenotypeJexl",
+    "SelectVariantsIntegrationTest#testComplexSelection",
+    "SelectVariantsIntegrationTest#testComplexSelectionWithNonExistingSamples",
+    "SelectVariantsIntegrationTest#testConcordance",
+    "SelectVariantsIntegrationTest#testDiscordance",
+    "SelectVariantsIntegrationTest#testDropAnnotations[0]",
+    "SelectVariantsIntegrationTest#testDropAnnotations[1]",
+    "SelectVariantsIntegrationTest#testDropAnnotations[2]",
+    "SelectVariantsIntegrationTest#testDropAnnotations[3]",
+    "SelectVariantsIntegrationTest#testDropAnnotations[4]",
+    "SelectVariantsIntegrationTest#testDropAnnotations[5]",
+    "SelectVariantsIntegrationTest#testEmptyVcfException",
+    "SelectVariantsIntegrationTest#testExcludeSelectionIDFromFile",
+    "SelectVariantsIntegrationTest#testExcludeSelectionIDLiteral",
+    "SelectVariantsIntegrationTest#testExcludeSelectionType",
+    "SelectVariantsIntegrationTest#testExpressionSelection",
+    "SelectVariantsIntegrationTest#testFORMATFieldGivenToSelect",
+    "SelectVariantsIntegrationTest#testFileWithoutInfoLineInHeader",
+    "SelectVariantsIntegrationTest#testFileWithoutInfoLineInHeaderWithOverride",
+    "SelectVariantsIntegrationTest#testINFOFieldGivenToSelectGenotype",
+    "SelectVariantsIntegrationTest#testInvalidJexl",
+    "SelectVariantsIntegrationTest#testInvertJexlSelection",
+    "SelectVariantsIntegrationTest#testInvertMendelianViolationSelection",
+    "SelectVariantsIntegrationTest#testInvertSelection",
+    "SelectVariantsIntegrationTest#testJEXLFilterFirst.0",
+    "SelectVariantsIntegrationTest#testJEXLFilterFirst.1",
+    "SelectVariantsIntegrationTest#testJexlDirectlyAccessGenotype",
+    "SelectVariantsIntegrationTest#testJexlGenotypeFilter",
+    "SelectVariantsIntegrationTest#testKeepOriginalAC",
+    "SelectVariantsIntegrationTest#testKeepOriginalACAndENV",
+    "SelectVariantsIntegrationTest#testKeepSelectionIDFromFile",
+    "SelectVariantsIntegrationTest#testKeepSelectionIDLiteral",
+    "SelectVariantsIntegrationTest#testLogicalAndOrInJexl",
+    "SelectVariantsIntegrationTest#testManyAllelicWithoutPLsDoesntFreeze",
+    "SelectVariantsIntegrationTest#testMaxIndelLengthSelection",
+    "SelectVariantsIntegrationTest#testMaxNoCall0_25",
+    "SelectVariantsIntegrationTest#testMaxNoCall0_5",
+    "SelectVariantsIntegrationTest#testMaxNoCall1",
+    "SelectVariantsIntegrationTest#testMaxNoCall2",
+    "SelectVariantsIntegrationTest#testMendelianViolationSelection",
+    "SelectVariantsIntegrationTest#testMinIndelLengthSelection",
+    "SelectVariantsIntegrationTest#testMultipleINFOJexls",
+    "SelectVariantsIntegrationTest#testMultipleRecordsAtOnePosition",
+    "SelectVariantsIntegrationTest#testNoGTs",
+    "SelectVariantsIntegrationTest#testNonExistingFieldSelection",
+    "SelectVariantsIntegrationTest#testNotFileVcfException",
+    "SelectVariantsIntegrationTest#testRemoveMLE",
+    "SelectVariantsIntegrationTest#testRemoveSingleSpanDelAllele",
+    "SelectVariantsIntegrationTest#testRemoveSingleSpanDelAlleleExNonVar",
+    "SelectVariantsIntegrationTest#testRemoveSingleSpanDelAlleleNoSpanDel",
+    "SelectVariantsIntegrationTest#testRepeatedLineSelectionAndExludeFiltered",
+    "SelectVariantsIntegrationTest#testResortingFileWarning",
+    "SelectVariantsIntegrationTest#testSACDiploid",
+    "SelectVariantsIntegrationTest#testSACNonDiploid",
+    "SelectVariantsIntegrationTest#testSACSimpleDiploid",
+    "SelectVariantsIntegrationTest#testSampleExclusionFromFileAndSeparateSample",
+    "SelectVariantsIntegrationTest#testSampleExclusionJustFromExpression",
+    "SelectVariantsIntegrationTest#testSampleExclusionJustFromFile",
+    "SelectVariantsIntegrationTest#testSampleExclusionJustFromNegationExpression",
+    "SelectVariantsIntegrationTest#testSampleSelection",
+    "SelectVariantsIntegrationTest#testSelectFromMultiAllelic",
+    "SelectVariantsIntegrationTest#testSelectRandomFraction",
+    "SelectVariantsIntegrationTest#testSetFilteredGtoNocall",
+    "SelectVariantsIntegrationTest#testUnusedAlleleTrimming[4]",
+    "SelectVariantsIntegrationTest#testUnusedAlleleTrimming[5]",
+    "SelectVariantsIntegrationTest#testUseCorrectDPInJexl.1",
+    "SelectVariantsIntegrationTest#testVariantTypeSelection",
+    "SelectVariantsIntegrationTest#testVariantTypeSelectionForGVCF"
+   ]
+  },
+  "ShiftFasta": {
+   "extracted": 3,
+   "replayed": 3,
+   "matched": 2,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "ShiftFastaIntegrationTest#testShift.1"
+   ]
+  },
+  "SiteDepthtoBAF": {
+   "extracted": 4,
+   "replayed": 4,
+   "matched": 4,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "SortSamSpark": {
+   "extracted": 13,
+   "replayed": 13,
+   "matched": 5,
+   "excluded": 0,
+   "unextracted": 1,
+   "diverged": [
+    "SortSamSparkIntegrationTest#testSortBAMs[0]",
+    "SortSamSparkIntegrationTest#testSortBAMs[2]",
+    "SortSamSparkIntegrationTest#testSortBAMs[3]",
+    "SortSamSparkIntegrationTest#testSortBAMs[4]",
+    "SortSamSparkIntegrationTest#testSortBAMs[5]",
+    "SortSamSparkIntegrationTest#testSortBAMs[7]",
+    "SortSamSparkIntegrationTest#testSortBAMs[8]",
+    "SortSamSparkIntegrationTest#testSortBAMs[9]"
+   ]
+  },
+  "SplitCRAM": {
+   "extracted": 1,
+   "replayed": 1,
+   "matched": 1,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "SplitIntervals": {
+   "extracted": 8,
+   "replayed": 8,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 1,
+   "diverged": [
+    "SplitIntervalsIntegrationTest#testDontMixContigs",
+    "SplitIntervalsIntegrationTest#testNoIntervals",
+    "SplitIntervalsIntegrationTest#testOneInterval",
+    "SplitIntervalsIntegrationTest#testOneIntervalAlternateExtension",
+    "SplitIntervalsIntegrationTest#testOneIntervalFilenamePrefix",
+    "SplitIntervalsIntegrationTest#testSingleScatter",
+    "SplitIntervalsIntegrationTest#testTwoIntervals",
+    "SplitIntervalsIntegrationTest#testTwoIntervalsWithDigits"
+   ]
+  },
+  "SplitNCigarReads": {
+   "extracted": 9,
+   "replayed": 9,
+   "matched": 1,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "SplitNCigarReadsIntegrationTest#testSplitsFixNDN",
+    "SplitNCigarReadsIntegrationTest#testSplitsOfUnpairedAndUnmappedReads",
+    "SplitNCigarReadsIntegrationTest#testSplitsTargetRegionFunctionality",
+    "SplitNCigarReadsIntegrationTest#testSplitsWithOverhangs",
+    "SplitNCigarReadsIntegrationTest#testSplitsWithOverhangs0Mismatches",
+    "SplitNCigarReadsIntegrationTest#testSplitsWithOverhangs5BasesInOverhang",
+    "SplitNCigarReadsIntegrationTest#testSplitsWithOverhangsNotClipping",
+    "SplitNCigarReadsIntegrationTest#testSplitsWithoutSecondaryAlignments"
+   ]
+  },
+  "TagGermlineEvents": {
+   "extracted": 5,
+   "replayed": 5,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "TagGermlineEventsIntegrationTest#testBasic",
+    "TagGermlineEventsIntegrationTest#testSlightlyDifferent",
+    "TagGermlineEventsIntegrationTest#testSlightlyDifferentAndSplit",
+    "TagGermlineEventsIntegrationTest#testSplit",
+    "TagGermlineEventsIntegrationTest#testTotallyDifferent"
+   ]
+  },
+  "UnmarkDuplicates": {
+   "extracted": 2,
+   "replayed": 2,
+   "matched": 2,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": []
+  },
+  "UpdateVCFSequenceDictionary": {
+   "extracted": 14,
+   "replayed": 14,
+   "matched": 10,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "UpdateVCFSequenceDictionaryIntegrationTest#testGoodUpdateSequenceDictionary[0]",
+    "UpdateVCFSequenceDictionaryIntegrationTest#testGoodUpdateSequenceDictionary[1]",
+    "UpdateVCFSequenceDictionaryIntegrationTest#testGoodUpdateSequenceDictionary[5]",
+    "UpdateVCFSequenceDictionaryIntegrationTest#testUseMasterDictionary"
+   ]
+  },
+  "VCFComparator": {
+   "extracted": 19,
+   "replayed": 19,
+   "matched": 9,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "VCFComparatorIntegrationTest#testAnnotationDifferences[0]",
+    "VCFComparatorIntegrationTest#testAnnotationDifferences[2]",
+    "VCFComparatorIntegrationTest#testAnnotationDifferences[4]",
+    "VCFComparatorIntegrationTest#testGvcfs[1]",
+    "VCFComparatorIntegrationTest#testGvcfs[2]",
+    "VCFComparatorIntegrationTest#testGvcfs[3]",
+    "VCFComparatorIntegrationTest#testGvcfs[4]",
+    "VCFComparatorIntegrationTest#testGvcfs[6]",
+    "VCFComparatorIntegrationTest#testMixedPloidy.0",
+    "VCFComparatorIntegrationTest#testMixedPloidy.1"
+   ]
+  },
+  "ValidateBasicSomaticShortMutations": {
+   "extracted": 2,
+   "replayed": 2,
+   "matched": 0,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "ValidateBasicSomaticShortMutationsIntegrationTest#testBasic",
+    "ValidateBasicSomaticShortMutationsIntegrationTest#testIndelCase"
+   ]
+  },
+  "ValidateVariants": {
+   "extracted": 16,
+   "replayed": 16,
+   "matched": 7,
+   "excluded": 0,
+   "unextracted": 21,
+   "diverged": [
+    "ValidateVariantsIntegrationTest#testBadGvcfMissingNON_REF",
+    "ValidateVariantsIntegrationTest#testBadGvcfOutOfOrder",
+    "ValidateVariantsIntegrationTest#testBadGvcfOverlappingHomRefBlockAndVariant",
+    "ValidateVariantsIntegrationTest#testBadGvcfOverlappingHomRefBlocks",
+    "ValidateVariantsIntegrationTest#testBadVariantsOrderThreeContigs",
+    "ValidateVariantsIntegrationTest#testBadVariantsOrderTwoContigs",
+    "ValidateVariantsIntegrationTest#testGoodVariantsOrderThreeContigs",
+    "ValidateVariantsIntegrationTest#testGoodVariantsOrderTwoContigs",
+    "ValidateVariantsIntegrationTest#testNoValidation"
+   ]
+  },
+  "VariantAnnotator": {
+   "extracted": 10,
+   "replayed": 10,
+   "matched": 1,
+   "excluded": 0,
+   "unextracted": 1,
+   "diverged": [
+    "VariantAnnotatorIntegrationTest#testComp.0",
+    "VariantAnnotatorIntegrationTest#testComp.1",
+    "VariantAnnotatorIntegrationTest#testDBSNP",
+    "VariantAnnotatorIntegrationTest#testDeNovo",
+    "VariantAnnotatorIntegrationTest#testNoReads",
+    "VariantAnnotatorIntegrationTest#testResource.0",
+    "VariantAnnotatorIntegrationTest#testResource.1",
+    "VariantAnnotatorIntegrationTest#testResource.2",
+    "VariantAnnotatorIntegrationTest#testValidationReadsDontMatch"
+   ]
+  },
+  "VariantEval": {
+   "extracted": 46,
+   "replayed": 46,
+   "matched": 28,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "VariantEvalIntegrationTest#testContigStratWithUserSuppliedIntervals[0]",
+    "VariantEvalIntegrationTest#testContigStratWithUserSuppliedIntervals[1]",
+    "VariantEvalIntegrationTest#testContigStratWithUserSuppliedIntervals[2]",
+    "VariantEvalIntegrationTest#testEvalTrackWithoutGenotypesWithSampleFieldsWrongRef",
+    "VariantEvalIntegrationTest#testFundamentalsCountVariantsNoCompRod",
+    "VariantEvalIntegrationTest#testMVEvalFamilyStrat",
+    "VariantEvalIntegrationTest#testModernVCFWithLargeIndels",
+    "VariantEvalIntegrationTest#testOutputFileCreation",
+    "VariantEvalIntegrationTest#testPedigreeValidation[0]",
+    "VariantEvalIntegrationTest#testPedigreeValidation[1]",
+    "VariantEvalIntegrationTest#testPedigreeValidation[2]",
+    "VariantEvalIntegrationTest#testPrintMissingComp",
+    "VariantEvalIntegrationTest#testSelect1",
+    "VariantEvalIntegrationTest#testVEMendelianViolationEvaluator",
+    "VariantEvalIntegrationTest#testValidationReport[0]",
+    "VariantEvalIntegrationTest#testValidationReport[1]",
+    "VariantEvalIntegrationTest#testValidationReport[2]",
+    "VariantEvalIntegrationTest#testValidationReport[3]"
+   ]
+  },
+  "VariantFiltration": {
+   "extracted": 31,
+   "replayed": 31,
+   "matched": 3,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "VariantFiltrationIntegrationTest#testClusteredSnps",
+    "VariantFiltrationIntegrationTest#testDeletions",
+    "VariantFiltrationIntegrationTest#testFilter1",
+    "VariantFiltrationIntegrationTest#testFilter2",
+    "VariantFiltrationIntegrationTest#testFilterWithSeparateNames",
+    "VariantFiltrationIntegrationTest#testFilteringDPfromFORMAT",
+    "VariantFiltrationIntegrationTest#testFilteringDPfromINFO",
+    "VariantFiltrationIntegrationTest#testFilteringZfromFORMATAndFailMissing",
+    "VariantFiltrationIntegrationTest#testFilteringZfromFORMATWithMissing",
+    "VariantFiltrationIntegrationTest#testGenotypeFilters1",
+    "VariantFiltrationIntegrationTest#testGenotypeFilters2",
+    "VariantFiltrationIntegrationTest#testIllegalFilterName",
+    "VariantFiltrationIntegrationTest#testInvertFilter",
+    "VariantFiltrationIntegrationTest#testInvertGenotypeFilterExpression",
+    "VariantFiltrationIntegrationTest#testInvertJexlFilter",
+    "VariantFiltrationIntegrationTest#testInvertJexlGenotypeFilterExpression",
+    "VariantFiltrationIntegrationTest#testMaskDescription",
+    "VariantFiltrationIntegrationTest#testMaskReversed",
+    "VariantFiltrationIntegrationTest#testMaskWithFilters[0]",
+    "VariantFiltrationIntegrationTest#testMaskWithFilters[1]",
+    "VariantFiltrationIntegrationTest#testMask[0]",
+    "VariantFiltrationIntegrationTest#testMask[1]",
+    "VariantFiltrationIntegrationTest#testMask[2]",
+    "VariantFiltrationIntegrationTest#testMask[3]",
+    "VariantFiltrationIntegrationTest#testNoAction",
+    "VariantFiltrationIntegrationTest#testSetFilteredGtoNocall",
+    "VariantFiltrationIntegrationTest#testSetFilteredGtoNocallUpdateInfo",
+    "VariantFiltrationIntegrationTest#testSetVcfFilteredGtoNocall"
+   ]
+  },
+  "VariantRecalibrator": {
+   "extracted": 8,
+   "replayed": 8,
+   "matched": 5,
+   "excluded": 0,
+   "unextracted": 3,
+   "diverged": [
+    "VariantRecalibratorIntegrationTest#testVariantRecalibratorModelInput",
+    "VariantRecalibratorIntegrationTest#testVariantRecalibratorRScriptOutput",
+    "VariantRecalibratorIntegrationTest#testVariantRecalibratorSampling"
+   ]
+  },
+  "VariantsToTable": {
+   "extracted": 23,
+   "replayed": 23,
+   "matched": 5,
+   "excluded": 0,
+   "unextracted": 0,
+   "diverged": [
+    "VariantsToTableIntegrationTest#testComplexVariantsToTable",
+    "VariantsToTableIntegrationTest#testComplexVariantsToTableFail",
+    "VariantsToTableIntegrationTest#testGenotypeFields",
+    "VariantsToTableIntegrationTest#testGenotypeFieldsWithInline",
+    "VariantsToTableIntegrationTest#testMoltenOutput",
+    "VariantsToTableIntegrationTest#testMoltenOutputWithGenotypeFields",
+    "VariantsToTableIntegrationTest#testMoltenOutputWithMultipleAlleles",
+    "VariantsToTableIntegrationTest#testMultiAllelicOneRecord",
+    "VariantsToTableIntegrationTest#testMultiAllelicSplitRecords",
+    "VariantsToTableIntegrationTest#testNoFieldsSpecifiedFormatFieldInHeaderNoSamples",
+    "VariantsToTableIntegrationTest#testNoFieldsSpecifiedNoSamples",
+    "VariantsToTableIntegrationTest#testNoFieldsSpecifiedWithSamples",
+    "VariantsToTableIntegrationTest#testNoSamples",
+    "VariantsToTableIntegrationTest#testOutputFileFail",
+    "VariantsToTableIntegrationTest#testSplitMultiallelicFields.0",
+    "VariantsToTableIntegrationTest#testSplitMultiallelicFields.1",
+    "VariantsToTableIntegrationTest#testUnfilteredGenotypeFields",
+    "VariantsToTableIntegrationTest#testUnfilteredGenotypeFieldsFail"
+   ]
+  }
+ }
+}

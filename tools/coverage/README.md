@@ -195,3 +195,49 @@ looks covered. So a value is used only when it traces to the inventory (`enum_me
 `max`, `default`) or to a declared fixture, and everything else is **excluded by name with a
 reason**. The exclusion list is part of the coverage claim: a tool at "t=2 covered" with half its
 arguments excluded is covered over half a tool.
+
+## The reference's own integration tests
+
+Criterion (1) of a bit-identical tool is every applicable input under the pinned clone's
+`src/test/resources`. The inputs that apply to a tool, with the arguments that go with them, are
+the ones its `*IntegrationTest.java` hands it, so `test_resources.py` reads those invocations out
+of the test sources and replays each on both sides, compared like an array row (`run_array.py`'s
+runners and masks):
+
+```sh
+pip install tree-sitter==0.26.1 tree-sitter-java==0.23.5     # extract only
+python3 tools/coverage/test_resources.py extract --gatk ../gatk-4.7.0.0 \
+  --constants ../htsjdk-5.0.0/src/main/java
+python3 tools/coverage/test_resources.py run --gatk ../gatk-4.7.0.0 --port target/release/gatk --tool CountReads
+python3 tools/coverage/test_resources.py merge test-resources-shard-*.json
+```
+
+| file | what it holds |
+|---|---|
+| `test_resources/gatk.json` | every invocation, generated from the pinned sources and committed like the inventory; `unextracted` lists each test the evaluator could not read, with why |
+| `test_resources/exclusions.json` | invocations not replayed, each with a written reason; hand-written |
+| `test_resources/measured.json` | per tool: matched / replayed / excluded / unextracted and the diverging ids; frozen from CI's `candidate-test-resources` |
+
+Extraction is static: the classes are parsed with tree-sitter and each `@Test` method (inherited
+ones and `@DataProvider` rows included) is partially evaluated -- constants through the main and
+test trees and their static imports, `ArgumentsBuilder`, `IntegrationTestSpec` and its `%s`
+outputs, String arrays, helper methods, loops and branches whose condition is known. The framework
+is modelled where its behaviour is fixed: `runCommandLine` appends `--verbosity ERROR` as
+`CommandLineProgramTester` does, `createTempFile`/`createTempDir` become files and directories
+under `/work/out` created before the run, and the checkout is `user.dir`, mounted read-only at
+`/work/fixtures`. Tests in a bucket group (`cloud`, `bucket`) and `enabled = false` ones are listed
+as unextracted rather than run. Only tools whose port lives here are replayed; the large files
+come from the checkout's LFS, pulled per shard (`lfs-include`).
+
+### Reusing it in picard-rs
+
+Picard's tests have the same shape and need four things changed, all at the top of the file or
+in `Interpreter.runner`/`native`: the files are `src/test/java/**/*Test.java` (Picard has almost no
+`*IntegrationTest`); the runner is `runPicardCommandLine(args)` or `(programName, args)`, and many
+tests call `new SortSam().instanceMain(args)` directly, so `instanceMain` on a tool instance
+records `ClassName` as the tool; the tool name comes from the class's
+`getCommandLineProgramName()` override, which the evaluator already runs; and the inputs are
+relative to `testdata/picard/` rather than `src/test/resources/`, with `getTempOutputFile` as the
+temp-file helper and no `--verbosity` injected. The replay side is unchanged apart from
+`run_array.IMAGE` (picard-rs's oracle) and the port binary. The bundled Picard tools gatk-rs ports
+(`FilterVcf`, `GatherVcfs`, ...) are measured there, not here.
