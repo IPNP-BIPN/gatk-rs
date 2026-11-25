@@ -351,7 +351,10 @@ fn rendered(record: &Record) -> String {
         .attributes
         .iter()
         .map(|(key, value)| match value.contains(',') {
-            true => format!("{key}=[{}]", value.split(',').collect::<Vec<_>>().join(", ")),
+            true => format!(
+                "{key}=[{}]",
+                value.split(',').collect::<Vec<_>>().join(", ")
+            ),
             false => format!("{key}={value}"),
         })
         .collect::<Vec<_>>()
