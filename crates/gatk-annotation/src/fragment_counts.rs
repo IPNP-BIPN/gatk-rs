@@ -1,4 +1,6 @@
-//! `OrientationBiasReadCounts` and `FragmentDepthPerAlleleBySample`, ported from GATK 4.6.2.0.
+//! `OrientationBiasReadCounts` and `FragmentDepthPerAlleleBySample`, ported from GATK 4.7.0.0
+//! (`OrientationBiasReadCounts.java`, `FragmentDepthPerAlleleBySample.java` and
+//! `DepthPerAlleleBySample.java` are unchanged since 4.6.2.0).
 //!
 //! `F1R2`, `F2R1` and `FAD`: the two annotations that count **fragments** rather than reads. Both
 //! are `JumboGenotypeAnnotation`s, which is the interface that receives a fragment-indexed
@@ -6,40 +8,55 @@
 //!
 //! # A read pair votes once, and the pair's orientation is read off its **first** read
 //!
-//! ```java
-//! // read orientation is a property of fragments; that is, if one read is F1 the other read is R2,
-//! // hence both reads of the fragment are F1R2.  Thus we can arbitrarily take the first read of each fragment
-//! ```
+//! The reference's comment says `read orientation is a property of fragments`, and so `Thus we
+//! can arbitrarily take the first read of each fragment`, which the code does as
+//! `ba.evidence.getReads().get(0)`.
 //!
-//! "Arbitrarily" is doing real work: the first read is the first in the sample's own order, so which
-//! of a pair is consulted depends on the order the reads were added to the matrix, and every test on
-//! that fragment (usability, base quality, orientation) is applied to that read alone. A pair whose
-//! second read has a low base quality at the site is counted; the same pair added the other way
-//! round is not.
+//! "Arbitrarily" is doing real work: the first read is the first of the fragment as it was built
+//! (`Fragment(Pair)` stores `Arrays.asList(pair.getLeft(), pair.getRight())`), and every test on
+//! that fragment (usability, base quality, orientation) is applied to that read alone. A pair
+//! whose second read has a low base quality at the site is counted; the same pair built the other
+//! way round is not.
 //!
 //! # `F1R2` and `F2R1` are **not** complementary
 //!
 //! `isF2R1` is `read.isReverseStrand() == read.isFirstOfPair()`, and an unpaired read has
 //! `isFirstOfPair()` false. So a forward unpaired read lands in `F2R1` and a reverse one in `F1R2`,
-//! which is the opposite of what the names suggest. Both keys are always written, one entry per
-//! allele of the **variant**, so the two arrays have the same length and their sum is not the depth:
-//! a fragment that fails any filter is in neither.
+//! which is the opposite of what the names suggest; the golden's `f1r2 unpaired-forward` row
+//! (`fragment_counts.txt.gz`) is `F1R2=[0, 0];F2R1=[1, 1]`. Both keys are always written, one
+//! entry per allele of the **variant**, so the two arrays have the same length and their sum is
+//! not the depth: a fragment that fails any filter is in neither.
 //!
 //! # The counts are keyed on the **matrix's** alleles and read back by the variant's
 //!
 //! ```java
-//! final int[] f1r2 = vc.getAlleles().stream().mapToInt(a -> f1r2Counts.get(a).intValue()).toArray();
+//! final int[] f1r2 = vc.getAlleles().stream()
+//!         .mapToInt(a -> f1r2Counts.get(a).intValue()).toArray();
 //! ```
 //!
-//! The maps are built from `fragmentLikelihoods.alleles()`, so an allele the variant declares and
-//! the matrix does not is a `NullPointerException` here rather than a zero. The reverse, an allele
-//! the matrix holds and the variant does not, is counted into a bucket nothing reads.
+//! (One line in `OrientationBiasReadCounts.java`, wrapped here.) The maps are built from
+//! `fragmentLikelihoods.alleles()`, so an allele the variant declares and the matrix does not is a
+//! `NullPointerException` here rather than a zero. The reverse, an allele the matrix holds and the
+//! variant does not, is counted into a bucket nothing reads.
 //!
 //! # `FAD` is `AD` over fragments, and reuses the same marginalisation
 //!
 //! `FragmentDepthPerAlleleBySample` calls `DepthPerAlleleBySample.annotateWithLikelihoods` with the
 //! fragment matrix, so it inherits the `HashMap` allele order that [`crate::depth_per_allele`]
 //! records, and differs from `AD` only in what a "one" counts.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, FragmentCountError>` is "a `T` or one of the refusals below": `Err(..)` is the
+//!   reference's throw, `Ok(..)` its return. `Result<Option<T>, E>` adds a third outcome,
+//!   `Ok(None)`, for the reference's early `return;` that writes no attribute.
+//! - `let Some(x) = expr else { ... };` unwraps an `Option` or runs the block, which must leave the
+//!   loop or the function.
+//! - The per-allele counters are a `Vec` of `(allele, count)` pairs searched with `.find(..)`
+//!   rather than Java's `Map<Allele, MutableInt>`. Nothing iterates them in map order: they are
+//!   read back by the variant's alleles, so the container's order is never observed.
+//! - `&mut f2r1` is a writable borrow; `table` names whichever of the two counters the read's
+//!   orientation picks, as the reference's ternary on `f2r1Counts : f1r2Counts` does.
 
 use gatk_engine::allele_likelihoods::AlleleLikelihoods;
 use gatk_engine::fragment::Fragment;
@@ -62,7 +79,7 @@ const MINIMUM_BASE_QUALITY: i32 = 20;
 /// `QualityUtils.MAPPING_QUALITY_UNAVAILABLE`.
 const MAPPING_QUALITY_UNAVAILABLE: u8 = 255;
 
-/// What these annotations refuse.
+/// What these annotations refuse, kept apart because they are different exception types upstream.
 #[derive(Debug, Clone, PartialEq)]
 pub enum FragmentCountError {
     /// The `NullPointerException` from reading a count for an allele the matrix does not hold.
@@ -71,7 +88,14 @@ pub enum FragmentCountError {
     AllelesNotASubset,
 }
 
-/// `OrientationBiasReadCounts.isUsableRead`.
+/// `OrientationBiasReadCounts.isUsableRead`:
+///
+/// ```java
+/// return read.getMappingQuality() != 0
+///         && read.getMappingQuality() != QualityUtils.MAPPING_QUALITY_UNAVAILABLE;
+/// ```
+///
+/// (One line in the reference, wrapped here.)
 fn is_usable_read(read: &BamRecord) -> bool {
     let quality = mapping_quality(read);
     quality != 0 && quality != MAPPING_QUALITY_UNAVAILABLE
@@ -81,6 +105,12 @@ fn is_usable_read(read: &BamRecord) -> bool {
 ///
 /// `None` is the reference's early return: a null genotype or a null fragment matrix, which writes
 /// neither key.
+///
+/// **How**: a zero for every matrix allele in each table, then one pass over the sample's best
+/// alleles (`bestAllelesBreakingTies`), keeping a fragment only if its best allele is informative,
+/// its first read is usable and that read's base quality at the variant start is at least 20, in
+/// the reference's filter order. The surviving fragment adds one to its allele in the table its
+/// first read's orientation selects.
 #[allow(clippy::type_complexity)]
 pub fn orientation_bias_counts(
     vc: &VariantContext,
@@ -96,6 +126,8 @@ pub fn orientation_bias_counts(
         return Ok(None);
     };
 
+    // `fragmentLikelihoods.alleles()`. `(0..n)` is the half-open range 0 to n - 1; `filter_map`
+    // keeps the indices that resolve to an allele, cloned out of the matrix.
     let matrix_alleles: Vec<Allele> = (0..likelihoods.number_of_alleles())
         .filter_map(|index| likelihoods.get_allele(index).cloned())
         .collect();
@@ -109,6 +141,9 @@ pub fn orientation_bias_counts(
         if !best.is_informative() {
             continue;
         }
+        // The reference holds the fragment itself (`ba.evidence`); here the best allele carries an
+        // index into the sample's evidence, looked up again. `and_then` chains a second lookup
+        // that may also be absent.
         let Some(fragment) = likelihoods
             .sample_evidence(sample_index)
             .and_then(|fragments| fragments.get(best.evidence_index))
@@ -116,6 +151,8 @@ pub fn orientation_bias_counts(
             continue;
         };
         // "arbitrarily take the first read of each fragment": every test below is on this one read.
+        // `getReads().get(0)`. A fragment with no reads, which `Fragment.create` refuses to build,
+        // is skipped rather than thrown on.
         let Some(read) = fragment.reads.first() else {
             continue;
         };
@@ -136,6 +173,8 @@ pub fn orientation_bias_counts(
         } else {
             &mut f1r2
         };
+        // `.get(ba.allele).increment()`. `iter_mut` yields writable references, and `slot.1` is
+        // the second element of the pair, the count.
         if let Some(slot) = table.iter_mut().find(|(a, _)| a == allele) {
             slot.1 += 1;
         }
@@ -164,7 +203,18 @@ pub fn orientation_bias_counts(
 /// `FragmentDepthPerAlleleBySample.annotate`: `FAD`.
 ///
 /// `None` is the reference's early return: no genotype, an uncalled one, or no fragment matrix.
-/// The subset check is an `IllegalArgumentException` rather than a quiet skip, modelled as an error.
+/// The subset check is an `IllegalArgumentException` rather than a quiet skip, modelled as an
+/// error.
+///
+/// `called` is the caller's `g.isCalled()`, so a `MIXED` genotype such as `0/.` is annotated.
+///
+/// **How**: `DepthPerAlleleBySample.annotateWithLikelihoods` over the fragment matrix. Marginalise
+/// to the variant's alleles, each mapped to itself; count each informative best allele; write the
+/// reference's count first and then each alternate's:
+///
+/// ```java
+/// counts[0] = alleleCounts.get(vc.getReference()); //first one in AD is always ref
+/// ```
 pub fn fragment_allele_depths(
     vc: &VariantContext,
     sample: &str,
@@ -185,12 +235,15 @@ pub fn fragment_allele_depths(
         return Err(FragmentCountError::AllelesNotASubset);
     }
 
-    // The same marginalisation `AD` uses, over the same `HashMap` allele order.
+    // The same marginalisation `AD` uses, over the same `HashMap` allele order:
+    // `alleles.stream().collect(Collectors.toMap(a -> a, Arrays::asList))`.
     let order = crate::depth_per_allele::marginalisation_order(&vc.alleles);
     let new_to_old: Vec<(Allele, Vec<Allele>)> = order
         .iter()
         .map(|allele| (allele.clone(), vec![allele.clone()]))
         .collect();
+    // The reference has no branch for an `Err` here or for an unknown sample below; both answer
+    // `None` in the port.
     let Ok(marginalised) = likelihoods.marginalize(&new_to_old) else {
         return Ok(None);
     };
@@ -198,6 +251,7 @@ pub fn fragment_allele_depths(
         return Ok(None);
     };
 
+    // `alleleCounts`, a `LinkedHashMap` with a zero for every variant allele in variant order.
     let mut counts: Vec<(Allele, i32)> = vc
         .alleles
         .iter()
@@ -213,6 +267,8 @@ pub fn fragment_allele_depths(
         }
     }
 
+    // The alternates follow in `getAlternateAllele(i)` order, which is the variant's order with the
+    // reference left out. `.unwrap_or(0)` never decides: every variant allele has a counter.
     let reference = vc.alleles.iter().find(|a| a.is_reference());
     let mut out = Vec::with_capacity(counts.len());
     if let Some(reference) = reference {

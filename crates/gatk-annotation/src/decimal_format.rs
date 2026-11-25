@@ -12,13 +12,15 @@
 //! This is the fact everything else follows from, and it is not in the documentation. Formatting
 //! `0.1` to forty fraction digits gives `0.1`, not `0.1000000000000000055511151231257827…`, which
 //! is what the double actually is. So the digits being rounded are the ones `Double.toString`
-//! produces — the shortest decimal that round-trips — and the true binary value is consulted only
-//! to break a tie.
+//! produces (the shortest decimal that round-trips, apart from the exceptions above 2^53 described
+//! below) and the true binary value is consulted only to break a tie.
 //!
 //! Two visible consequences, both measured:
 //!
-//!  * **past 2^53 the tail is zeros.** `-9.81505222706934e219` formats as its sixteen significant
-//!    digits followed by two hundred zeros, where the exact value continues `…087125181525995…`;
+//!  * **past 2^53 the tail is zeros.** `-9.81505222706934e219` formats as its fifteen significant
+//!    digits followed by 205 zeros, where the exact value continues `…087125181525995…`. The
+//!    golden shows the same for `Double.MAX_VALUE`: `decimal_format.txt.gz` line 315 is
+//!    `17976931348623157` and then zeros;
 //!  * **a value can have fewer fraction digits than the pattern allows.** `5.985315667820839e13`
 //!    at four fraction digits gives `59853156678208.39`, because the shortest form has run out:
 //!    the exact value's `…3906` is not available to be printed.
@@ -30,7 +32,9 @@
 //! `0.155` rounds **down** (the double is `0.15499999999999999888…`) while `0.165` rounds **up**
 //! (`0.16500000000000000777…`), and no rule that looks only at the digit string gets both right.
 //! When the shortest form **is** the value, as for `0.125`, it is a real tie and `HALF_EVEN` sends
-//! it to the even neighbour.
+//! it to the even neighbour. Golden `decimal_format.txt.gz` (after the `f` tag: bits, `#.##`,
+//! `#.####`):
+//! line 8 is `0.155` to `0.15`, line 9 is `0.165` to `0.17`, line 30 is `0.125` to `0.12`.
 //!
 //! The exception is when the rounding position falls before the first significant digit, which
 //! happens when the whole value is at or below half of the last place the pattern can show. There
@@ -42,9 +46,11 @@
 //! #.####    5e-5    index 0             0        above the tie
 //! ```
 //!
+//! (golden `decimal_format.txt.gz` lines 57 and 67)
+//!
 //! Same shape, one decade apart, opposite answers. Swept across every decade from `5e-1` to
 //! `5e-12`: patterns with **two or fewer** fraction digits follow the value, patterns with three or
-//! more round to even — and with no preceding digit, even means down. That boundary is where
+//! more round to even, and with no preceding digit, even means down. That boundary is where
 //! `DecimalFormat`'s internal fast path stops applying, so the pattern decides which rule runs.
 //! It is reproduced here because it is reachable: a pseudo-fraction of exactly `5e-5` is a legal
 //! output, and the reference would print `0` for it.
@@ -68,23 +74,45 @@
 //! -Duser.country=US`), so the decimal separator is `.` and the digits are ASCII. Grouping is off
 //! for both patterns. `minimumIntegerDigits` is 1, so a pure fraction keeps its leading `0`, and
 //! `minimumFractionDigits` is 0, so trailing zeros are dropped.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - digits are held as `u8` (an unsigned byte, 0 to 255) in a `Vec<u8>`, Java's growable
+//!   `ArrayList<Byte>` without the boxing. `b'0'` is the byte value of the character `0`, so
+//!   `b - b'0'` turns an ASCII digit into its value and `b'0' + d` turns it back;
+//! - `Ordering` is the result of a comparison (`Less`, `Equal`, `Greater`), Java's negative, zero
+//!   or positive `compareTo` as three named cases. A `match` on it must cover all three, which the
+//!   compiler checks; `Ordering::Equal if cond =>` is a case taken only when `cond` also holds;
+//! - `&mut x` passes `x` for the callee to modify in place, the role an array or holder object
+//!   plays in Java, and only one such reference can exist at a time;
+//! - `x as i32` / `x as usize` converts between integer types; the conversions here never
+//!   overflow, because a digit count is at most a few hundred;
+//! - a function's last expression, written without `;`, is its return value.
 
 use std::cmp::Ordering;
 
 /// One `DecimalFormat`, identified by the only part of its pattern that varies here.
 ///
 /// `#.##` and `#.####` differ from each other in exactly one way that the pattern language
-/// expresses — how many fraction digits they will show — and in one way it does not, which is the
+/// expresses (how many fraction digits they will show) and in one way it does not, which is the
 /// tie rule at the underflow boundary described above.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DecimalFormat {
     max_fraction_digits: usize,
 }
 
-/// `AllelePseudoDepth.DEPTH_FORMAT`, the pattern `#.##`.
+/// `AllelePseudoDepth.DEPTH_FORMAT`, the pattern `#.##` (`AllelePseudoDepth.java:31`):
+///
+/// ```java
+/// private static DecimalFormat DEPTH_FORMAT = new DecimalFormat("#.##");
+/// ```
 pub const DEPTH_FORMAT: DecimalFormat = DecimalFormat::new(2);
 
-/// `AllelePseudoDepth.FRACTION_FORMAT`, the pattern `#.####`.
+/// `AllelePseudoDepth.FRACTION_FORMAT`, the pattern `#.####` (`AllelePseudoDepth.java:32`):
+///
+/// ```java
+/// private static DecimalFormat FRACTION_FORMAT = new DecimalFormat("#.####");
+/// ```
 pub const FRACTION_FORMAT: DecimalFormat = DecimalFormat::new(4);
 
 impl DecimalFormat {
@@ -95,11 +123,16 @@ impl DecimalFormat {
     }
 
     /// `DecimalFormat.format(double)` under `en-US`.
+    ///
+    /// The special values are golden `decimal_format.txt.gz` lines 2 to 6 (`0`, `-0`, `NaN`, `∞`,
+    /// `-∞`), and line 304 is a tiny negative value printing `-0` through both patterns.
     pub fn format(&self, value: f64) -> String {
         if value.is_nan() {
             // The symbol is `NaN`, and a NaN's sign is not printed.
             return "NaN".to_string();
         }
+        // `is_sign_negative` reads the sign bit, so it is true for `-0.0` as well, which is how
+        // `-0.0` comes out as `-0` (golden line 3).
         let negative = value.is_sign_negative();
         if value.is_infinite() {
             // U+221E, and the sign comes from the negative subpattern.
@@ -187,6 +220,7 @@ impl DecimalFormat {
                         // It is short of it: round down.
                         Ordering::Less => false,
                         // A real tie, and only now does the preceding digit matter.
+                        // Round up exactly when the last kept digit is odd, which lands on even.
                         Ordering::Equal => kept.last().is_some_and(|d| d % 2 == 1),
                     },
                 };
@@ -253,15 +287,16 @@ fn render(kept: &[u8], exp10: i32) -> String {
 /// `0.<digits> * 10^exp10`. `DigitList.set` takes the same digits, and they are not always the
 /// shortest that round-trip; `jmath::to_string` reproduces them (htsjdk-rs decision 0046).
 fn shortest_decimal(value: f64) -> (String, i32) {
+    // `jmath` hands back digit values 0..=9; this turns them into the ASCII text `round` reads.
     let (digits, exp10) = jmath::to_string::double_digits(value);
     (digits.iter().map(|d| char::from(b'0' + d)).collect(), exp10)
 }
 
 /// Where the double's exact value sits relative to its own shortest decimal form.
 ///
-/// `Less` means the shortest form was rounded **up** to reach it, so a apparent tie is really below
-/// the halfway point; `Greater` means it was rounded down; `Equal` means the decimal is the value
-/// and the tie is real.
+/// `Less` means the shortest form was rounded **up** to reach it, so an apparent tie is really
+/// below the halfway point; `Greater` means it was rounded down; `Equal` means the decimal is the
+/// value and the tie is real.
 ///
 /// Every double is a finite decimal, so this is an exact comparison rather than an estimate. The
 /// expansion is computed by the schoolbook route: `m * 2^e` with `e` negative is
@@ -269,8 +304,11 @@ fn shortest_decimal(value: f64) -> (String, i32) {
 fn compare_to_exact(digits: &str, exp10: i32, magnitude: f64) -> Ordering {
     let (exact_digits, exact_exp10) = exact_decimal(magnitude);
     // Both are written as `0.<digits> * 10^exp`, with no leading zero, so the exponent orders them
-    // whenever it differs. It does differ for a value like 1e23, whose shortest form is `1` at
-    // exponent 24 while the double itself is 0.99999999999999991611392 at exponent 23.
+    // whenever it differs. It differs when the decimal digits rounded up across a power of ten:
+    // 1e23's true shortest form is `1` at exponent 24 while the double itself is
+    // 0.99999999999999991611392 at exponent 23 (the unit test below). The reference's own digits
+    // for 1e23 do not do this, they are `9999999999999999` at exponent 23 (golden
+    // `decimal_format.txt.gz` line 314), so through `format` that pair does not arise from 1e23.
     if exp10 != exact_exp10 {
         return exact_exp10.cmp(&exp10);
     }
@@ -286,8 +324,11 @@ fn compare_to_exact(digits: &str, exp10: i32, magnitude: f64) -> Ordering {
     Ordering::Equal
 }
 
-/// The double's exact decimal expansion, as `(digits, exp10)` with the value `0.<digits> * 10^exp10`.
+/// The double's exact decimal expansion, as `(digits, exp10)` with the value
+/// `0.<digits> * 10^exp10`.
 fn exact_decimal(value: f64) -> (Vec<u8>, i32) {
+    // `to_bits` is `Double.doubleToRawLongBits`. `bits` is an unsigned `u64`, so `>>` here is
+    // Java's `>>>`: no sign bit is smeared in.
     let bits = value.to_bits();
     let biased = ((bits >> 52) & 0x7ff) as i32;
     let fraction = bits & ((1u64 << 52) - 1);
@@ -365,6 +406,8 @@ mod tests {
         assert_eq!(DEPTH_FORMAT.format(0.625), "0.62");
         assert_eq!(DEPTH_FORMAT.format(0.875), "0.88");
         assert_eq!(DEPTH_FORMAT.format(1.125), "1.12");
+        // Not a tie: at four digits the first dropped digit of `0.015625` is 2, so this is a plain
+        // round down. Golden `decimal_format.txt.gz` line 42 has `0.02` and `0.0156`.
         assert_eq!(FRACTION_FORMAT.format(0.015625), "0.0156");
     }
 
@@ -374,7 +417,7 @@ mod tests {
     fn the_underflow_tie_depends_on_the_pattern() {
         // Two fraction digits: the true value decides, and 0.005 is above the tie.
         assert_eq!(DEPTH_FORMAT.format(0.005), "0.01");
-        // Four: a lone 5 is a tie with no preceding digit, and even means down — although this
+        // Four: a lone 5 is a tie with no preceding digit, and even means down, although this
         // double is also above the tie.
         assert_eq!(FRACTION_FORMAT.format(5e-5), "0");
         assert_eq!(FRACTION_FORMAT.format(1.5e-4), "0.0001");

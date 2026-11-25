@@ -1,5 +1,6 @@
 //! `ExcessHet` and `InbreedingCoeff`, and the `GenotypeUtils` counting both rest on, ported from
-//! GATK 4.6.2.0.
+//! GATK 4.7.0.0 (`ExcessHet.java`, `InbreedingCoeff.java`, `GenotypeUtils.java` and
+//! `HeterozygosityCalculator.java` are unchanged since 4.6.2.0).
 //!
 //! Two annotations that ask the same question of a cohort (is there more heterozygosity here than
 //! Hardy-Weinberg predicts?) and answer it from the same three numbers, computed by the same
@@ -11,12 +12,12 @@
 //! // ExcessHet
 //! private static final boolean ROUND_GENOTYPE_COUNTS = true;
 //! // InbreedingCoeff
-//! private static final boolean ROUND_GENOTYPE_COUNTS = false;  //if this changes update the caveats above
+//! private static final boolean ROUND_GENOTYPE_COUNTS = false;
 //! ```
 //!
-//! `ExcessHet` needs integers because its exact test indexes an array by het count; `InbreedingCoeff`
-//! keeps the fractions because it divides one by another. So the two annotations on one site can
-//! disagree about how many hets there are, and both are right.
+//! `ExcessHet` needs integers because its exact test indexes an array by het count;
+//! `InbreedingCoeff` keeps the fractions because it divides one by another. So the two annotations
+//! on one site can disagree about how many hets there are, and both are right.
 //!
 //! # The rounded branch is special-cased so that a GQ of zero cannot be counted twice
 //!
@@ -26,11 +27,18 @@
 //! if (varLikelihood != hetLikelihood) { ... }
 //! ```
 //!
-//! PLs of `[0, 0, X]` normalise to two likelihoods of one half, and half rounds **up** in
-//! [`gatk_engine::math_utils::fast_round`], so without the guards one genotype would contribute two
-//! counts. The guards are exact floating-point equality between two separate `Math.pow` results,
-//! which is the strongest possible statement that the two PLs were equal, and it holds because both
-//! calls got the same argument.
+//! PLs of `[0, 0, X]` normalise to two **equal** likelihoods. The reference's note expects them at
+//! one half, "likelihoods can come out as [0.5, 0.5, 0] and both counts round up" (half rounds up
+//! in [`gatk_engine::math_utils::fast_round`]), so without the guards one genotype would count
+//! twice. With a modest `X` they are not one half: the third likelihood keeps a share, each of the
+//! two is just under a half, and both round to zero, guards or not. `heterozygosity_and_mq.txt.gz`
+//! row `counts gq-zero-ref-het` (ten genotypes at `[0, 0, 60]`) has rounded counts `0 0 0` and raw
+//! ref and het counts of `4.99999750000125` each (bits `4617315515146852664`), so 0.49999975 a
+//! genotype; `gq-zero-het-var` (`[60, 0, 0]`) is the mirror image. The guards decide a count only
+//! for an `X` large enough that the pair rounds up, and at `X = 60` they decide nothing.
+//!
+//! The guards are exact floating-point equality between two separate `Math.pow` results, and that
+//! holds because both calls got the same argument.
 //!
 //! # `ExcessHet` cannot report worse than a p-value of 1e-16
 //!
@@ -39,8 +47,9 @@
 //! ```
 //!
 //! The saturating constant is `-10 * log10(1e-16)`, so the annotation reads `160.0000`, but the
-//! comparison that reaches it is against `10e-60`, which is `1e-59` and not `1e-60`. Between those
-//! two numbers the phred value is computed rather than clamped, so values above 160 do occur.
+//! comparison that reaches it is against `10e-60`, which is `1e-59` and not `1e-60`, nor the
+//! `1e-16` the constant is built from. A p-value from `1e-59` up to `1e-16` is computed rather than
+//! clamped, so values above 160 can occur. Row `eh saturating` (200 hets) is the clamp itself.
 //!
 //! # `InbreedingCoeff` counts samples differently from `ExcessHet`
 //!
@@ -48,6 +57,22 @@
 //! `InbreedingCoeff` counts those **or** any diploid genotype with likelihoods, so an uncalled
 //! sample with PLs raises its denominator and not the other's. The ten-sample minimum is then
 //! tested twice, once on the genotype count and once on that sample count.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[&Genotype]` is a read-only borrowed view of a list of references to genotypes; the caller
+//!   owns both the list and the genotypes. `<'a>` on [`genotype_without_likelihoods`] says the
+//!   genotype it returns is one of those borrowed ones, not a copy;
+//! - `Option<T>` is "a `T` or nothing", and stands for a reference method that returns null, throws
+//!   or declines. `x?` returns `None` at once when `x` is `None`; `let Some(x) = y else { .. }`
+//!   unwraps `y` or takes the exit in the braces;
+//! - `if let Some(slot) = list.iter_mut().find(..)` finds the first matching entry and lends it out
+//!   writable, which is how a `Map.put(a, map.get(a) + x)` reads on a list of pairs;
+//! - `.iter().enumerate().skip(1)` walks `(index, value)` pairs starting at index 1;
+//! - `as i32` and `as usize` are casts. From a `double`, `as i32` truncates towards zero like
+//!   Java's `(int)`; between integer types it reinterprets, and the code only casts values known
+//!   to fit;
+//! - a body's last expression, without a semicolon, is its value.
 
 use gatk_engine::math_utils::{
     fast_round, java_max, java_min, normalize_from_log10_to_linear_space, normalize_sum_to_one,
@@ -113,7 +138,10 @@ pub fn is_called(genotype: &Genotype) -> bool {
     !genotype.alleles.is_empty() && !genotype.alleles.iter().all(|a| a.is_no_call())
 }
 
-/// `Genotype.isHomRef()`: two or more alleles, all called, all reference.
+/// `Genotype.isHomRef()`: one or more alleles, all called, all reference.
+///
+/// htsjdk 5.0.0's `determineType` returns `HOM_REF` for a single called reference allele too, so a
+/// haploid `0` is hom-ref; the callers here have already required ploidy two.
 pub fn is_hom_ref(genotype: &Genotype) -> bool {
     !genotype.alleles.is_empty()
         && genotype
@@ -135,8 +163,8 @@ pub fn is_called_and_diploid_with_likelihoods_or_with_gq(genotype: &Genotype) ->
 }
 
 /// The genotype `computeDiploidGenotypeCounts` throws on, if any: the first that passes its guard
-/// with a GQ and no likelihoods while not being hom-ref, which `IllegalStateException("Genotype has
-/// no likelihoods: " + g)` names.
+/// with a GQ and no likelihoods while not being hom-ref, which
+/// `throw new IllegalStateException("Genotype has no likelihoods: " + g.toString());` names.
 pub fn genotype_without_likelihoods<'a>(genotypes: &[&'a Genotype]) -> Option<&'a Genotype> {
     genotypes.iter().copied().find(|genotype| {
         (is_diploid_with_likelihoods(genotype)
@@ -199,9 +227,9 @@ pub fn compute_diploid_genotype_counts(
             continue;
         }
 
-        // `throw new IllegalStateException("Genotype has no likelihoods")` otherwise: a called
-        // diploid genotype with a GQ and no PL that is not hom-ref passes the guard above and throws
-        // here. This function skips it; a caller that can meet one asks
+        // `throw new IllegalStateException("Genotype has no likelihoods: " + g.toString());`
+        // otherwise: a called diploid genotype with a GQ and no PL that is not hom-ref passes the
+        // guard above and throws here. This function skips it; a caller that can meet one asks
         // [`genotype_without_likelihoods`] first.
         let Some(log10) = log10_likelihoods(genotype) else {
             continue;
@@ -235,7 +263,9 @@ pub fn compute_diploid_genotype_counts(
                     var_index = idx_vector[2];
                 }
             }
-            // A second normalisation, over three entries of an already normalised vector.
+            // A second normalisation, over three entries of an already normalised vector. Its
+            // `None` is the reference's negative-sum throw, which three non-negative entries
+            // cannot reach, so the `continue` is never taken.
             match normalize_sum_to_one(&[
                 normalized[IDX_AA],
                 normalized[het_index],
@@ -255,11 +285,12 @@ pub fn compute_diploid_genotype_counts(
         if round_contribution_from_each_genotype {
             with_two_refs += fast_round(ref_likelihood) as f64;
             // `[0,0,X]`: the two are exactly equal, so the het count is not incremented and the
-            // genotype is counted as hom-ref alone.
+            // genotype counts as hom-ref at most. At `X = 60` it is not counted at all, since the
+            // ref likelihood is just under a half and rounds to zero (see the module note).
             if ref_likelihood != het_likelihood {
                 with_one_ref += fast_round(het_likelihood) as f64;
             }
-            // `[X,0,0]`: counted as het and not as variant.
+            // `[X,0,0]`: counted as het at most and never as variant; at `X = 60` as neither.
             if var_likelihood != het_likelihood {
                 with_no_refs += fast_round(var_likelihood) as f64;
             }
@@ -281,6 +312,9 @@ pub fn compute_diploid_genotype_counts(
 ///
 /// The mid-p correction that GATK applied up to and including 4.2.3.0 is **gone**, so this is the
 /// `P_high` of the paper and agrees with bcftools' `ExcHet`.
+///
+/// `None` is the reference's `Utils.validateArg(hetCount >= 0, ...)` and its two siblings, which
+/// throw on a negative count.
 pub fn exact_test(het_count: i32, ref_count: i32, hom_count: i32) -> Option<f64> {
     if het_count < 0 || ref_count < 0 || hom_count < 0 {
         return None;
@@ -359,9 +393,9 @@ pub fn calculate_eh(counts: GenotypeCounts, sample_count: usize) -> Option<(usiz
     if pval < 10e-60 {
         return Some((sample_count, phred_scaled_min_p_value()));
     }
-    // "We add 0. to prevent -0.0000 from being output": a p-value of exactly one gives a log of
-    // -0.0, which times -10 is 0.0 already, but a log of +0.0 times -10 is -0.0 and would print
-    // with a sign.
+    // "We add 0. to prevent -0.0000 from being output": a p-value of exactly one has a log of
+    // +0.0, and -10 times +0.0 is -0.0, which `%.4f` prints with its sign. Adding `0.` turns -0.0
+    // into +0.0. Row `eh all-hom-ref` (twenty hom-refs, so p = 1) is `0.0000`.
     Some((sample_count, -10.0 * jmath::math::log10(pval) + 0.))
 }
 
@@ -476,9 +510,10 @@ mod tests {
 /// # It is fractional, not integral
 ///
 /// The counts are sums of normalised likelihoods rather than of called genotypes, which is the
-/// point: "for a GQ10 variant, the probability of the call will be ~0.9 and the second best call
-/// will be ~0.1 so adding up those 0.1s for het counts can dramatically change the AF compared with
-/// integer counts".
+/// point, in the words of a comment in `AS_InbreedingCoeff` (not this class): "for a GQ10
+/// variant, the probability of the call will be ~0.9 and the second best call will be ~0.1 so
+/// adding up those 0.1s for het counts can dramatically change the AF compared with integer
+/// counts".
 #[derive(Debug, Clone, Default)]
 pub struct HeterozygosityCounts {
     /// Per **alternate** allele, in the variant's order.
@@ -497,8 +532,8 @@ fn ploidy_2_hom_var_scale_factor() -> i32 {
 /// `GenotypeUtils.makeApproximateDiploidLog10LikelihoodsFromGQ`.
 ///
 /// The reference's own javadoc calls this "completely bogus": it gives every heterozygote the same
-/// likelihood whatever the alternate, so a multiallelic hom-ref's quality is deflated "for no reason
-/// whatsoever".
+/// likelihood whatever the alternate, so a multiallelic hom-ref's quality is deflated "for no
+/// reason whatsoever".
 pub fn approximate_diploid_log10_likelihoods_from_gq(gq: i32, num_alleles: usize) -> Vec<f64> {
     let count = num_alleles * (num_alleles + 1) / 2;
     let hom_var = ploidy_2_hom_var_scale_factor() * gq;
@@ -523,8 +558,11 @@ pub fn approximate_diploid_log10_likelihoods_from_gq(gq: i32, num_alleles: usize
 pub fn heterozygosity_counts(vc: &VariantContext) -> HeterozygosityCounts {
     let mut counts = HeterozygosityCounts::default();
     if vc.genotypes.is_empty() || !vc.is_variant() {
-        // `sampleCount` stays at its initial **-1** in the reference, which no caller reads before
-        // the maps are built. Here it is zero, which the ten-sample guard treats the same way.
+        // On a non-variant site `sampleCount` stays at its initial **-1** in the reference, and
+        // `AS_InbreedingCoeff` reads it at once:
+        // `if (heterozygosityUtils.getSampleCount() < MIN_SAMPLES) {`. Here it is zero, which that
+        // guard treats the same way. An empty genotype list returns here too, where the reference
+        // builds zero-filled maps; every lookup answers zero either way.
         return counts;
     }
     let num_alleles = vc.alleles.len();
@@ -564,6 +602,9 @@ pub fn heterozygosity_counts(vc: &VariantContext) -> HeterozygosityCounts {
                     }
                     continue;
                 }
+                // The pair `(i, alt)`. For `i` another alternate this is a het such as `1/2`, and
+                // the reference still adds it to the reference allele's count below ("these are
+                // guaranteed to be hets"), so a non-reference het raises the reference's count.
                 let idx_ab = pl_index(i.min(alt_index), i.max(alt_index));
                 if let Some(slot) = counts.het_counts.iter_mut().find(|(a, _)| a == alt) {
                     slot.1 += normalized[idx_ab];

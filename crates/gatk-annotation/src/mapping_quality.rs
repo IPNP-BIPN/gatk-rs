@@ -1,5 +1,6 @@
 //! `RMSMappingQuality` and `MappingQualityZero`, ported from
-//! `org.broadinstitute.hellbender.tools.walkers.annotator` (GATK 4.6.2.0).
+//! `org.broadinstitute.hellbender.tools.walkers.annotator` (GATK 4.7.0.0; both files are unchanged
+//! since 4.6.2.0).
 //!
 //! `MQ` and `MQ0`: two counts over the same evidence, disagreeing about which reads exist.
 //!
@@ -7,17 +8,21 @@
 //!
 //! ```java
 //! long mq = read.getMappingQuality();
-//! if (mq != QualityUtils.MAPPING_QUALITY_UNAVAILABLE) { squareSum += mq * mq; numReadsUsed++; }
+//! if (mq != QualityUtils.MAPPING_QUALITY_UNAVAILABLE) {
+//!     squareSum += mq * mq;
+//!     numReadsUsed++;
+//! }
 //! ```
 //!
 //! Reads with a mapping quality of 255 ("unavailable") are dropped from **both** the numerator and
 //! the denominator, so they do not depress `MQ`. Reads with a mapping quality of zero are kept in
 //! both, so they do. The sum is a `long`, which is exact for any read count a genome can hold, and
-//! only the final division reaches floating point.
+//! only the final division reaches floating point. In `heterozygosity_and_mq.txt.gz`, row
+//! `rawmq mixed-unavailable` (mapping qualities 60, 255, 30) is `4500,2` and row `mq` is `47.43`.
 //!
 //! With every read unavailable the divisor is zero, `0 / 0.0` is `NaN`, and the annotation writes
-//! the four characters `NaN` into the INFO field rather than declining. That is a real record a
-//! downstream parser has to survive.
+//! the three characters `NaN` into the INFO field rather than declining (row `mq all-unavailable`
+//! is `MQ=NaN`). That is a real record a downstream parser has to survive.
 //!
 //! # The raw form is a tuple in a string, and it is not the annotation
 //!
@@ -33,8 +38,24 @@
 //! //NOTE: unlike other annotations, this one returns 0 if likelihoods are empty
 //! ```
 //!
-//! An empty matrix is a written `MQ0=0`, and a **null** matrix is an absent key. The two states are
-//! distinguishable in the output, which for every other annotation in this crate they are not.
+//! An empty matrix is a written `MQ0=0`, and a **null** matrix is an absent key (rows `mq0 empty`
+//! and `mq0 null-likelihoods`). The two states are distinguishable in the output. The note's
+//! "unlike other annotations" is not quite true of this crate: `DepthPerSampleHC` also writes
+//! `DP=0` for a sample with no reads (`gb.DP(0);`, see `depth_per_allele.rs`).
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is "a `T` or nothing"; `let Some(x) = y else { return ... };` unwraps `y` or
+//!   leaves the function, which is how the null-likelihoods early return reads;
+//! - `Result<T, RawMqError>` is "a `T` or one of the refusals below", how this codebase models a
+//!   throw. `.map_err(..)` swaps the library's parse error for this file's, and `?` after it
+//!   returns that error to the caller at once, like an exception escaping that one call;
+//! - `impl InfoFieldAnnotation for RmsMappingQuality` is `implements InfoFieldAnnotation`, with the
+//!   interface's methods in the block;
+//! - `as i64` widens the `u8` mapping quality exactly; `count() as i64` widens a `usize`;
+//! - `i64` is Java's `long`, but plain `+` and `*` on it panic on overflow in a debug build where
+//!   Java's wrap. A sum of squares would need over 10^14 reads to get there;
+//! - a body's last expression, without a semicolon, is its value.
 
 use gatk_engine::allele_likelihoods::AlleleLikelihoods;
 use gatk_engine::context::ReferenceContext;
@@ -68,7 +89,11 @@ pub enum RawMqError {
     Malformed { raw: String },
 }
 
-/// `RMSMappingQuality.calculateRawData`: the `(sum of squares, reads used)` tuple.
+/// `RMSMappingQuality.calculateRawData`: the `(sum of squares, reads used)` tuple, over every
+/// sample's reads in matrix order.
+///
+/// Where the reference stores the pair in a `ReducibleAnnotationData` under `Allele.NO_CALL`, this
+/// returns it; the key never carries meaning, since the annotation is not allele-specific.
 pub fn raw_mapping_quality_data(likelihoods: &AlleleLikelihoods<BamRecord>) -> (i64, i64) {
     let mut square_sum = 0i64;
     let mut reads_used = 0i64;
@@ -106,9 +131,12 @@ pub fn raw_annotation_string(sum_of_squares: i64, num_of_reads: i64) -> String {
 
 /// `RMSMappingQuality.parseRawDataString`.
 ///
-/// Strips every square bracket anywhere in the string, not only at the ends, then splits on a comma
-/// followed by any number of spaces, which is what `AbstractCollection.toString` produces. So
-/// `"[10, 2]"` and `"10,2"` parse the same, and `"1[0],2"` parses as ten.
+/// `rawDataString.trim().replaceAll(AnnotationUtils.BRACKET_REGEX, "").split(", *")`.
+///
+/// `BRACKET_REGEX` is `"\\[|\\]"`, so this strips every square bracket anywhere in the string,
+/// not only at the ends, then splits on a comma followed by any number of spaces, which is what
+/// `AbstractCollection.toString` produces. So `"[10, 2]"` and `"10,2"` parse the same, and
+/// `"1[0],2"` parses as ten.
 pub fn parse_raw_data_string(raw: &str) -> Result<(i64, i64), RawMqError> {
     let stripped: String = raw
         .trim()
@@ -142,6 +170,8 @@ fn split_on_comma_spaces(text: &str) -> Vec<String> {
     let mut i = 0usize;
     while i < bytes.len() {
         if bytes[i] == b',' {
+            // `text[start..i]` is the substring from byte `start` up to but excluding byte `i`.
+            // Slicing by byte is safe here because `,` and ` ` are one byte each.
             parts.push(text[start..i].to_string());
             i += 1;
             while i < bytes.len() && bytes[i] == b' ' {
@@ -153,6 +183,9 @@ fn split_on_comma_spaces(text: &str) -> Vec<String> {
         }
     }
     parts.push(text[start..].to_string());
+    // `String.split` drops trailing empty strings. Keeping the last one standing matches it on
+    // an empty input, where Java returns `[""]` because nothing matched; on an input of commas
+    // alone Java returns no strings at all, and this one, both refused as the wrong count.
     while parts.len() > 1 && parts.last().is_some_and(|part| part.is_empty()) {
         parts.pop();
     }
@@ -210,7 +243,10 @@ impl RmsMappingQuality {
         )]
     }
 
-    /// `RMSMappingQuality.combineRawData`: two tuples added componentwise.
+    /// `RMSMappingQuality.combineRawData`: the tuples added componentwise, in order.
+    ///
+    /// The reference folds them pairwise through `combineAttributeMap`, starting from an empty
+    /// `ReducibleAnnotationData`; `None` is that empty start, returned as is for an empty list.
     pub fn combine_raw_data(tuples: &[(i64, i64)]) -> Option<(i64, i64)> {
         let mut combined: Option<(i64, i64)> = None;
         for (square_sum, depth) in tuples {

@@ -1,5 +1,6 @@
 //! GATK's variant annotations, ported from
-//! `org.broadinstitute.hellbender.tools.walkers.annotator` (GATK 4.6.2.0).
+//! `org.broadinstitute.hellbender.tools.walkers.annotator` (GATK 4.7.0.0; the `annotator`
+//! package is unchanged since 4.6.2.0).
 //!
 //! An annotation is a small function from a variant context to a handful of INFO or FORMAT keys.
 //! What makes the archetype worth its own crate is not the arithmetic, which is usually a count,
@@ -15,6 +16,13 @@
 //!   that branch, and the guards are not the obvious ones;
 //! - **the key order in the returned map is not the order in the record.** The encoder sorts, so
 //!   `getKeyNames()` is the declaration order and nothing else.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `pub mod x;` declares that the file `x.rs` beside this one is a module of the crate, and
+//!   `pub` makes it visible to other crates. It is roughly a Java package listing its classes.
+//! - `pub use a::{B, C};` re-exports `B` and `C` at the crate root, so a caller can write
+//!   `gatk_annotation::AnnotationValue` instead of the full path. No code is copied.
 
 pub mod allele_pseudo_depth;
 pub mod allele_specific_rank_sum;

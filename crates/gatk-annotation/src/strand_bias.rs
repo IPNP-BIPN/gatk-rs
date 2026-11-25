@@ -1,16 +1,23 @@
-//! `StrandBiasTest` and its three members, ported from
-//! `org.broadinstitute.hellbender.tools.walkers.annotator` (GATK 4.6.2.0).
+//! `StrandBiasTest`, its two members `FisherStrand` and `StrandOddsRatio`, and
+//! `StrandBiasBySample`, ported from `org.broadinstitute.hellbender.tools.walkers.annotator`
+//! (GATK 4.7.0.0; the four Java files are unchanged since 4.6.2.0). `StrandBiasBySample` is a
+//! `GenotypeAnnotation` rather than a `StrandBiasTest`, and is here because it writes the table
+//! the other two read back.
 //!
 //! `FS`, `SOR` and `SB`: the same 2x2 contingency table of forward and reverse reads on the
 //! reference and the alternate, read three ways.
 //!
 //! # The table is built per sample and only then added up
 //!
+//! `StrandBiasTest.java:194-202`, with the stream that fills `sampleTable` elided:
+//!
 //! ```java
 //! for (final String sample : samples) {
 //!     final int[] sampleTable = new int[ARRAY_SIZE];
 //!     ...
-//!     if (passesMinimumThreshold(sampleTable, minCount)) { copyToMainTable(sampleTable, table); }
+//!     if (passesMinimumThreshold(sampleTable, minCount)) {
+//!         copyToMainTable(sampleTable, table);
+//!     }
 //! }
 //! ```
 //!
@@ -28,9 +35,14 @@
 //!
 //! # `FS` normalises the table, and the normalisation truncates
 //!
+//! `FisherStrand.java:106-110`:
+//!
 //! ```java
 //! final double normFactor = sum / TARGET_TABLE_SIZE;
-//! return new int[][]{{(int) (table[0][0] / normFactor), ...}};
+//!
+//! return new int[][]{
+//!         {(int) (table[0][0] / normFactor), (int) (table[0][1] / normFactor)},
+//!         {(int) (table[1][0] / normFactor), (int) (table[1][1] / normFactor)},
 //! ```
 //!
 //! Above 400 total reads the counts are scaled to about 200 and **truncated** to int, so `FS` on a
@@ -39,12 +51,28 @@
 //!
 //! # Both values are strings, and `FS` is phred-scaled off a floor
 //!
+//! `FisherStrand.java:85` (one line in the source, wrapped here):
+//!
 //! ```java
-//! String.format("%.3f", QualityUtils.phredScaleErrorRate(Math.max(pValue, MIN_PVALUE)))
+//! return String.format("%.3f", QualityUtils.phredScaleErrorRate(Math.max(pValue, MIN_PVALUE)));
+//!         // prevent INFINITYs
 //! ```
 //!
-//! `MIN_PVALUE = 1e-320` exists "to prevent INFINITYs", so the largest `FS` a site can report is
-//! about 3200 whatever the evidence.
+//! `MIN_PVALUE = 1e-320` is there, in the reference's trailing comment's words, to "prevent
+//! INFINITYs", so the largest `FS` a site can report is about 3200 whatever the evidence.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `[[i32; 2]; 2]` is a fixed-size two-by-two array of `int`, Java's `int[2][2]`, and
+//!   `[i32; 4]` is `int[4]`. They are values: passing one copies it.
+//! - `Option<T>` is a value or nothing; `None` stands for the reference's `null` here.
+//! - `let Some(x) = expr else { continue; };` unwraps a present value or runs the `else` branch.
+//! - `?` after an `Option` returns `None` from the whole function when the value is absent.
+//! - `&VariantContext` is a borrowed, read-only reference; the caller keeps the object.
+//! - `x as f64` and `x as i32` are Java's casts; `as i32` from a double truncates toward zero,
+//!   as Java's `(int)` does.
+//! - `|table| ...` is a lambda; `F: Fn(..) -> String` says a parameter is one.
+//! - `match` is a `switch` the compiler checks covers every case.
 
 use gatk_engine::allele_likelihoods::AlleleLikelihoods;
 use gatk_engine::context::ReferenceContext;
@@ -69,9 +97,21 @@ const TARGET_TABLE_SIZE: f64 = 200.0;
 /// `StrandOddsRatio.PSEUDOCOUNT`.
 const PSEUDOCOUNT: f64 = 1.0;
 
-/// `StrandBiasTest.getContingencyTable`, per sample and then summed.
+/// `StrandBiasTest.getContingencyTable(likelihoods, vc, minCount)`, per sample and then summed,
+/// with `updateTable` and `copyToMainTable` inlined.
 ///
-/// The rows are reference and alternate; the columns are forward and reverse.
+/// The rows are reference and alternate; the columns are forward and reverse. A variant with no
+/// reference allele gives the all-zero table here.
+///
+/// `updateTable` matches the reference allele as `StrandBiasTest.java:222` (one line in the
+/// source, wrapped here):
+///
+/// ```java
+/// final boolean matchesRef = (ref instanceof  InverseAllele) ? (ref).equals(allele)
+///         : allele.equals(ref, true);
+/// ```
+///
+/// This port has only the second branch, compared through the display strings.
 pub fn contingency_table(
     likelihoods: &AlleleLikelihoods<BamRecord>,
     vc: &VariantContext,
@@ -83,8 +123,10 @@ pub fn contingency_table(
     };
     let alternates: Vec<&Allele> = vc.alleles.iter().filter(|a| !a.is_reference()).collect();
 
+    // `likelihoods.samples()` in matrix order; `0..n` is the half-open range 0, 1, ... n - 1.
     for sample_index in 0..likelihoods.number_of_samples() {
         let mut sample_table = [0i32; 4];
+        // `bestAllelesBreakingTies(sample).stream().filter(ba -> ba.isInformative())`.
         for best in likelihoods.best_alleles_breaking_ties_for_sample(sample_index, None) {
             if !best.is_informative() {
                 continue;
@@ -105,6 +147,8 @@ pub fn contingency_table(
             }
             let offset = if matches_ref { 0 } else { 2 };
             let is_forward = !is_reverse_strand(read);
+            // `table[offset + (isForward ? 0 : 1)]++`: `usize::from(bool)` is 1 for true and
+            // 0 for false.
             sample_table[offset + usize::from(!is_forward)] += 1;
         }
         // A sample under the threshold contributes nothing at all.
@@ -130,8 +174,9 @@ fn passes_minimum_threshold(data: &[i32; 4], min_count: i32) -> bool {
 
 /// `StrandBiasTest.getTableFromSamples`, which reads the per-sample `SB` fields.
 ///
-/// `None` is the reference's null: no genotype carried `SB`, so the caller falls through to the
-/// likelihoods.
+/// `None` is the reference's null: no genotype carried `SB`. The reference sets `foundData`
+/// before parsing; here `found` is set only once `strand_counts` succeeds, so a genotype whose
+/// `SB` this port cannot parse is skipped where the reference would have thrown or counted it.
 pub fn table_from_samples(vc: &VariantContext, min_count: i32) -> Option<[[i32; 2]; 2]> {
     let mut totals = [0i32; 4];
     let mut found = false;
@@ -155,7 +200,13 @@ pub fn table_from_samples(vc: &VariantContext, min_count: i32) -> Option<[[i32; 
 
 /// `getStrandCounts`: the `SB` field, which the reference accepts as a String, a list of Integers
 /// or a list of Strings, and refuses as anything else.
+///
+/// Every shape is flattened to tokens and the first four parsed. On shapes no writer here
+/// produces this answers `None` where the reference does otherwise: a list of fewer than four
+/// Integers is zero-padded by `encodeSBBS(List)`, and a bare Integer is a `GATKException`
+/// ("Unexpected SB type").
 fn strand_counts(genotype: &htsjdk_vcf::variant::Genotype) -> Option<[i32; 4]> {
+    // `g.getAnyAttribute(SB)`; the trailing `?` returns `None` when the genotype has none.
     let value = genotype
         .extended
         .iter()
@@ -180,13 +231,16 @@ fn strand_counts(genotype: &htsjdk_vcf::variant::Genotype) -> Option<[i32; 4]> {
     };
     let mut counts = [0i32; 4];
     for (index, slot) in counts.iter_mut().enumerate() {
-        // `Integer.parseInt(tokenizer.nextToken())`: fewer than four tokens is a
-        // NoSuchElementException, which nothing here can produce from a written record.
+        // `Integer.parseInt(tokenizer.nextToken())`: for the String shape, fewer than four
+        // tokens is a NoSuchElementException, which nothing here can produce from a written
+        // record. `*slot = ..` writes through the mutable reference `iter_mut` handed out.
         *slot = parts.get(index)?.trim().parse().ok()?;
     }
     Some(counts)
 }
 
+/// A parsed field value back as text, so that every shape can be split on the comma; the
+/// reference's `o.toString()` on a list element.
 fn render_value(value: &Value) -> String {
     match value {
         Value::Str(text) => text.clone(),
@@ -202,7 +256,12 @@ fn render_value(value: &Value) -> String {
     }
 }
 
-/// `FisherStrand.normalizeContingencyTable`, which truncates rather than rounds.
+/// `FisherStrand.normalizeContingencyTable`, which truncates rather than rounds (see the module
+/// note for the Java).
+///
+/// The reference's sum is `int` through `addExact`, which throws `ArithmeticException` past
+/// 2^31 - 1 (`FisherStrand.java:101`); here it is `i64` and does not, so the two differ only on a
+/// table of more than two billion reads.
 fn normalize_contingency_table(table: [[i32; 2]; 2]) -> [[i32; 2]; 2] {
     let sum = table[0][0] as i64 + table[0][1] as i64 + table[1][0] as i64 + table[1][1] as i64;
     if sum as f64 <= TARGET_TABLE_SIZE * 2.0 {
@@ -226,11 +285,29 @@ pub fn p_value_for_contingency_table(table: [[i32; 2]; 2]) -> f64 {
     fisher_exact::two_sided_p_value(normalize_contingency_table(table))
 }
 
-/// `QualityUtils.phredScaleErrorRate`, with the floor `MIN_LOG10_SCALED_QUAL` applies.
+/// `QualityUtils.phredScaleErrorRate`, with the floor `MIN_LOG10_SCALED_QUAL` it applies.
+///
+/// `QualityUtils.java:322`, after `phredScaleErrorRate` takes the base-ten logarithm of
+/// `errorRate`:
+///
+/// ```java
+/// return Math.abs(-10.0 * Math.max(errorRateLog10, MIN_LOG10_SCALED_QUAL));
+/// ```
+///
+/// `MIN_LOG10_SCALED_QUAL` is the base-ten logarithm of `Double.MIN_VALUE`
+/// (`QualityUtils.java:25`), and `Double.MIN_VALUE` is the smallest subnormal, 2^-1074. The
+/// `floor` below is meant to be that (its trailing comment says so), but
+/// `MIN_POSITIVE * EPSILON` is already 2^-1074 and the further `/ 2.0` rounds to zero, so `floor`
+/// is negative infinity rather than about -323.3. Both callers pass `p_value.max(MIN_PVALUE)`,
+/// whose logarithm is about -320 or more, so neither
+/// floor is ever the larger and the output does not change. The reference's
+/// `Utils.validateArg(MathUtils.isValidLog10Probability(errorRateLog10), ..)` at line 319 is not
+/// ported: an error rate above one would throw there and is answered here.
 fn phred_scale_error_rate(error_rate: f64) -> f64 {
     let log10 = jmath::math::log10(error_rate);
     let floor = jmath::math::log10(f64::MIN_POSITIVE * f64::EPSILON / 2.0); // log10(Double.MIN_VALUE)
-                                                                            // `abs` is in the reference, "for edge base with errorRateLog10 = 0 producing -0.0 doubles".
+
+    // `abs` is in the reference, "for edge base with errorRateLog10 = 0 producing -0.0 doubles".
     (-10.0 * log10.max(floor)).abs()
 }
 
@@ -243,16 +320,23 @@ pub fn calculate_sor(table: [[i32; 2]; 2]) -> f64 {
     let ratio = (t00 / t01) * (t11 / t10) + (t01 / t00) * (t10 / t11);
     let ref_ratio = t00.min(t01) / t00.max(t01);
     let alt_ratio = t10.min(t11) / t10.max(t11);
-    // `Math.log`, which is the JDK's and is correctly rounded, not commons-math3's.
+    // `Math.log` (`StrandOddsRatio.java:161`), the JDK's and not commons-math3's `FastMath`.
+    // `jmath::math::log` rounds the true logarithm once, because `Math.log` was measured to be
+    // correctly rounded (see that function).
     jmath::math::log(ratio) + jmath::math::log(ref_ratio) - jmath::math::log(alt_ratio)
 }
 
-/// `String.format("%.3f", value)`, half-up on the decimal expansion.
+/// `String.format("%.3f", value)`, half-up on the digits `Double.toString` would produce (see
+/// `rank_sum::format_three_decimals`).
 fn format_three_decimals(value: f64) -> String {
     crate::rank_sum::format_three_decimals(value)
 }
 
 /// The shared template: not a variant site is nothing, then the `SB` fields, then the likelihoods.
+///
+/// `StrandBiasTest.annotate`, with the two abstract `calculateAnnotationFrom...` methods passed in
+/// as `min_count` and `value_of`: `F` is any lambda from a table to the formatted value, which is
+/// how each member supplies its override.
 fn annotate_table<F>(
     vc: &VariantContext,
     likelihoods: Option<&AlleleLikelihoods<BamRecord>>,
@@ -274,7 +358,9 @@ where
     }) {
         return match table_from_samples(vc, min_count) {
             Some(table) => vec![(key.to_string(), AnnotationValue::Str(value_of(table)))],
-            // `null` from the template method, which the caller turns into an absent key.
+            // `null` from the template method, which the caller turns into an absent key. Some
+            // genotype carries `SB` here, so the reference never returns null at this point;
+            // this port does when no `SB` could be parsed (see `table_from_samples`).
             None => Vec::new(),
         };
     }
@@ -297,6 +383,11 @@ pub fn strand_odds_ratio_value(table: [[i32; 2]; 2]) -> String {
 }
 
 /// `StrandBiasTest.decodeSBBS`: four counts as the two-by-two table, forward then reverse.
+///
+/// The reference returns null for an array whose length is not four (`StrandBiasTest.java:281`);
+/// this reads a missing count as zero and ignores any past the fourth. `.get(index)` is a bounds
+/// checked read that gives `None` past the end, and `.copied()` turns the borrowed count into a
+/// value.
 pub fn decode_sbbs(counts: &[i32]) -> [[i32; 2]; 2] {
     let at = |index: usize| counts.get(index).copied().unwrap_or(0);
     [[at(0), at(1)], [at(2), at(3)]]
@@ -351,6 +442,13 @@ pub struct StrandBiasBySample;
 impl StrandBiasBySample {
     /// `annotate(...)`, which writes nothing when the genotype is not called or there are no
     /// likelihoods, and computes the table over **that sample alone**.
+    ///
+    /// Only the likelihoods half of that guard is here (`likelihoods?`, and `?` again for a
+    /// sample or reference allele the matrix and variant lack). The not-called half,
+    /// `StrandBiasBySample.java:77`, is the caller's: `variant_annotator_engine.rs` in
+    /// `gatk-tools` skips this annotation for a genotype that is not called. The body is
+    /// `contingency_table` for one sample with `minCount` 0, as the reference's
+    /// `FisherStrand.getContingencyTable(likelihoods, vc, 0, Arrays.asList(g.getSampleName()))`.
     pub fn counts(
         &self,
         vc: &VariantContext,
