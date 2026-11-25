@@ -84,6 +84,7 @@ pub fn print_reads_to(
     filter: &dyn Fn(&BamRecord) -> bool,
     level: u32,
     deflater: htsjdk_bgzf::Deflater,
+    md5: bool,
 ) -> Result<Result<crate::sam_output::Written, std::io::Error>, ReadsError> {
     let records = crate::read_walker::traverse_iter(source, &options.intervals, false, filter)?;
     let header = header_for_sam_writer(source.header(), options);
@@ -94,5 +95,6 @@ pub fn print_reads_to(
         options.create_output_bam_index,
         level,
         deflater,
+        md5,
     )
 }

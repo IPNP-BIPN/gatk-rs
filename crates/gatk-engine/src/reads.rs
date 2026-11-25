@@ -35,10 +35,14 @@
 //! record filter. Records are decompressed by `htsjdk-bgzf` and decoded by `htsjdk-bam`, which
 //! are this programme's own ports, because what a record *is* is htsjdk's decision.
 
+use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::os::unix::fs::FileExt;
 use std::path::Path;
+use std::sync::mpsc::{sync_channel, Receiver};
+use std::sync::Arc;
+use std::thread::JoinHandle;
 
 use htsjdk_bam::header::SamHeader;
 use htsjdk_bam::reader::BamReader;
@@ -374,9 +378,11 @@ pub fn minimum_offset(linear_index: &[u64], start_pos: i32) -> u64 {
 ///
 /// Positional reads (`pread`) rather than a seek and a read, so two cursors over one source, or two
 /// threads, never move each other's position. Every read below asks for bytes `&data[at..]` would
-/// have given, so what comes back is the same as when the file was a `Vec`.
+/// have given, so what comes back is the same as when the file was a `Vec`. A clone is the same
+/// open file, which an inflating thread reads from.
+#[derive(Clone)]
 struct CompressedFile {
-    file: File,
+    file: Arc<File>,
     len: u64,
 }
 
@@ -412,7 +418,10 @@ impl CompressedFile {
         let file = File::open(path).map_err(io)?;
         file.read_at(&mut [0u8; 1], 0).map_err(io)?;
         let len = file.metadata().map_err(io)?.len();
-        Ok(CompressedFile { file, len })
+        Ok(CompressedFile {
+            file: Arc::new(file),
+            len,
+        })
     }
 
     fn len(&self) -> u64 {
@@ -456,14 +465,19 @@ fn malformed(error: impl std::fmt::Debug) -> ReadsError {
 /// How many blocks [`check_blocks`] inflates at once: at most 16 MiB either side of the inflate.
 const CHECKED_BLOCKS: usize = 256;
 
-/// `decompress_all`'s answer for the whole file, keeping none of what it inflates.
+/// Whether the file is BGZF blocks end to end, before any record is read.
 ///
 /// Opening a BAM inflated it whole, so a damaged block anywhere was refused at the open, before
-/// any argument check that follows it. The refusal stays where it was; only the inflated copy goes.
-/// The file is cut at frames `BgzfReader::next_block` would accept, so each batch's first failing
-/// block is the one the whole stream would have stopped at; where the walk cannot vouch for a
-/// frame the serial reader takes over and refuses it in its own way.
+/// any argument check that follows it. A file whose frames run cleanly to its end is now taken
+/// without inflating it: the reference reads lazily, so a block whose deflate stream or CRC is bad
+/// is refused where a reader reaches it, as `BlockCompressedInputStream` refuses it, and the
+/// traversal inflates the file once rather than twice. A file whose frames do not run to its end
+/// (cut short, not BGZF, a header the walk cannot vouch for) is checked as it was, inflating every
+/// block in batches, so its refusal stays at the open and stays the one it was.
 fn check_blocks(compressed: &CompressedFile) -> Result<(), ReadsError> {
+    if frames(compressed, 0, usize::MAX)? == compressed.len() {
+        return Ok(());
+    }
     let mut address = 0u64;
     loop {
         let end = frames(compressed, address, CHECKED_BLOCKS)?;
@@ -500,46 +514,78 @@ fn frames(compressed: &CompressedFile, address: u64, count: usize) -> Result<u64
     Ok(end)
 }
 
-/// How many blocks a stream inflates at once: at most 4 MiB either side of the inflate.
-const STREAM_BLOCKS: usize = 64;
+/// How many inflated blocks a reader is handed at once, and how many such handfuls wait ready:
+/// at most a few MiB ahead of the record being decoded.
+const AHEAD_BLOCKS: usize = 16;
+const AHEAD_BATCHES: usize = 2;
 
-/// The blocks from an address on, inflated a batch at a time on rayon's workers, which is how the
-/// whole file was inflated when it was held. The bytes are the serial reader's: where a batch
-/// does not inflate, its blocks go through the serial reader one at a time, so a refusal comes
-/// after the bytes before it, as it did.
-struct Inflating<'a> {
-    file: &'a CompressedFile,
-    address: u64,
+/// Each block's compressed length and inflated bytes, as `BgzfReader::next_block` gave them.
+type Blocks = Vec<(u64, Vec<u8>)>;
+
+/// The serial reader's blocks from an address on, inflated on a thread of its own a few blocks
+/// ahead of the decoding, so a block inflates while the one before it is decoded. One thread, and
+/// no worker pool: the inflating costs what it cost serially, only earlier. The blocks, then a
+/// refusal, are handed over in order, so a refusal reaches the decoding only once it asks for the
+/// bytes past the blocks before it, as when the decoding inflated them itself.
+struct Prefetch {
+    batches: Receiver<Result<Blocks, ReadsError>>,
+    thread: Option<JoinHandle<()>>,
 }
 
-impl Inflating<'_> {
-    /// The next blocks' bytes appended to `out`; false at the end of the stream.
-    fn next_into(&mut self, out: &mut Vec<u8>) -> Result<bool, ReadsError> {
-        let end = frames(self.file, self.address, STREAM_BLOCKS)?;
-        if end > self.address {
-            let bytes = self
-                .file
-                .get(self.address, (end - self.address) as usize)?
-                .expect("frames inside the file");
-            if let Ok(inflated) = htsjdk_bgzf::read::decompress_all(&bytes) {
-                out.extend_from_slice(&inflated);
-                self.address = end;
-                return Ok(true);
+impl Prefetch {
+    /// The blocks from `address` on, none starting past `until`: past it, the reader's own.
+    fn new(file: CompressedFile, address: u64, until: u64) -> Prefetch {
+        let (send, batches) = sync_channel(AHEAD_BATCHES);
+        let thread = std::thread::spawn(move || {
+            let mut reader = file.blocks_from(address);
+            let mut at = address;
+            loop {
+                let mut blocks = Vec::with_capacity(AHEAD_BLOCKS);
+                let mut refusal = None;
+                let mut ended = false;
+                while blocks.len() < AHEAD_BLOCKS && !ended {
+                    match reader.next_block() {
+                        Ok(Some(block)) => {
+                            let length = block.block_compressed_size as u64;
+                            at += length;
+                            blocks.push((length, block.data));
+                            ended = at > until;
+                        }
+                        Ok(None) => ended = true,
+                        Err(error) => {
+                            refusal = Some(malformed(error));
+                            ended = true;
+                        }
+                    }
+                }
+                // A send refused is the reader dropped: nothing more is wanted.
+                if !blocks.is_empty() && send.send(Ok(blocks)).is_err() {
+                    return;
+                }
+                if let Some(refusal) = refusal {
+                    let _ = send.send(Err(refusal));
+                }
+                if ended {
+                    return;
+                }
             }
+        });
+        Prefetch {
+            batches,
+            thread: Some(thread),
         }
-        match self
-            .file
-            .blocks_from(self.address)
-            .next_block()
-            .map_err(malformed)?
-        {
-            Some(block) => {
-                out.extend_from_slice(&block.data);
-                self.address += block.block_compressed_size as u64;
-                Ok(true)
-            }
-            None => Ok(false),
+    }
+
+    /// The next blocks; none at the end of the stream, past `until`, or after a refusal.
+    fn next(&mut self) -> Result<Blocks, ReadsError> {
+        if let Ok(next) = self.batches.recv() {
+            return next;
         }
+        // Hung up without a word: the thread panicked, and so does the decoding.
+        if let Some(Err(panic)) = self.thread.take().map(JoinHandle::join) {
+            std::panic::resume_unwind(panic);
+        }
+        Ok(Vec::new())
     }
 }
 
@@ -687,9 +733,9 @@ impl ReadsDataSource {
         Self::open_checked(bam)
     }
 
-    /// Whether the whole file inflates, which [`Self::open_unindexed`] asks before it reads the
-    /// header. A caller that needs the answer before it opens asks here and then opens with
-    /// [`Self::open_checked`], so the file is inflated once and not twice.
+    /// Whether the file is BGZF blocks end to end ([`check_blocks`]), which
+    /// [`Self::open_unindexed`] asks before it reads the header. A caller that needs the answer
+    /// before it opens asks here and then opens with [`Self::open_checked`], so it is asked once.
     pub fn check(bam: &Path) -> Result<(), ReadsError> {
         check_blocks(&CompressedFile::open(bam)?)
     }
@@ -866,7 +912,7 @@ impl ReadsDataSource {
             // No mapped reads in the file, so start at the first record.
             None => self.first_record_pointer()?,
         };
-        let cursor = BlockCursor::seek(&self.compressed, start)?;
+        let cursor = BlockCursor::seek(&self.compressed, start, u64::MAX)?;
         Ok(self.records(Kind::Unmapped {
             cursor,
             reached: false,
@@ -920,7 +966,7 @@ impl ReadsDataSource {
     /// [`Self::iter_all`], a record at a time.
     pub fn records_all(&self) -> Result<Records<'_>, ReadsError> {
         if self.split_start != 0 {
-            let cursor = BlockCursor::seek(&self.compressed, self.split_start)?;
+            let cursor = BlockCursor::seek(&self.compressed, self.split_start, u64::MAX)?;
             return Ok(self.records(Kind::Tail(cursor)));
         }
         Ok(self.records(Kind::Stream(Stream::new(
@@ -943,7 +989,7 @@ pub struct Records<'a> {
 
 enum Kind<'a> {
     /// The inflated stream from the first record, as `BamReader` reads it.
-    Stream(Stream<'a>),
+    Stream(Stream),
     /// From a pointer to the end of the file.
     Tail(BlockCursor<'a>),
     /// Each chunk from its start until the cursor passes its end, clipped to a split when there
@@ -1015,7 +1061,8 @@ impl Records<'_> {
                         }
                         None => (chunk.start, chunk.end),
                     };
-                    *cursor = Some((BlockCursor::seek(&source.compressed, start)?, end));
+                    let reading = BlockCursor::seek(&source.compressed, start, end)?;
+                    *cursor = Some((reading, end));
                     continue;
                 };
                 if reading.virtual_pos() >= *end {
@@ -1042,8 +1089,8 @@ impl Records<'_> {
 
 /// The inflated stream from the first record, decoded as `BamReader` decodes the whole stream: a
 /// length the stream cannot honour is `Truncated` with what was left, not `RuntimeEOFException`.
-struct Stream<'a> {
-    blocks: Inflating<'a>,
+struct Stream {
+    blocks: Prefetch,
     buffer: Vec<u8>,
     at: usize,
     ended: bool,
@@ -1052,13 +1099,10 @@ struct Stream<'a> {
 /// How much decoded stream is kept before it is dropped from the front.
 const STREAM_KEPT: usize = 4 << 20;
 
-impl<'a> Stream<'a> {
-    fn new(compressed: &'a CompressedFile, records_start: usize) -> Result<Stream<'a>, ReadsError> {
+impl Stream {
+    fn new(compressed: &CompressedFile, records_start: usize) -> Result<Stream, ReadsError> {
         let mut stream = Stream {
-            blocks: Inflating {
-                file: compressed,
-                address: 0,
-            },
+            blocks: Prefetch::new(compressed.clone(), 0, u64::MAX),
             buffer: Vec::new(),
             at: 0,
             ended: false,
@@ -1075,7 +1119,11 @@ impl<'a> Stream<'a> {
             self.at = 0;
         }
         while !self.ended && self.buffer.len() - self.at < wanted {
-            self.ended = !self.blocks.next_into(&mut self.buffer)?;
+            let blocks = self.blocks.next()?;
+            self.ended = blocks.is_empty();
+            for (_, data) in blocks {
+                self.buffer.extend_from_slice(&data);
+            }
         }
         Ok(())
     }
@@ -1745,6 +1793,31 @@ fn first_read_in_split(
     Ok(None)
 }
 
+/// The blocks a [`Prefetch`] inflated ahead of a cursor, from `address` on.
+struct Ahead {
+    prefetch: Prefetch,
+    address: u64,
+    blocks: VecDeque<(u64, Vec<u8>)>,
+}
+
+impl Ahead {
+    /// The block at `address` where it is the next one inflated ahead; `None` where there is
+    /// none, and the cursor's own reader carries on from there.
+    fn block(&mut self, address: u64) -> Result<Option<(u64, Vec<u8>)>, ReadsError> {
+        if address != self.address {
+            return Ok(None);
+        }
+        if self.blocks.is_empty() {
+            self.blocks = self.prefetch.next()?.into();
+        }
+        let block = self.blocks.pop_front();
+        if let Some((length, _)) = &block {
+            self.address += length;
+        }
+        Ok(block)
+    }
+}
+
 /// Reads records from an arbitrary virtual file pointer, crossing BGZF block boundaries.
 ///
 /// `BAMFileIndexIterator` checks the position *before* pulling a record, so a record that starts
@@ -1753,6 +1826,8 @@ struct BlockCursor<'a> {
     data: &'a CompressedFile,
     /// The blocks from `next_address` on, while the cursor reads forward.
     reader: Option<BgzfReader<BufReader<At<'a>>>>,
+    /// The blocks inflated ahead, which come before `reader`'s while they last.
+    ahead: Option<Ahead>,
     /// Byte offset of the current block in the compressed file.
     block_address: u64,
     /// Byte offset of the block after the current one.
@@ -1762,11 +1837,23 @@ struct BlockCursor<'a> {
 }
 
 impl<'a> BlockCursor<'a> {
-    fn seek(data: &'a CompressedFile, pointer: u64) -> Result<BlockCursor<'a>, ReadsError> {
+    /// A cursor at `pointer`, inflating ahead the blocks up to the one `end` points into.
+    fn seek(
+        data: &'a CompressedFile,
+        pointer: u64,
+        end: u64,
+    ) -> Result<BlockCursor<'a>, ReadsError> {
         let address = vfp::block_address(pointer);
+        let until = vfp::block_address(end);
         let mut cursor = BlockCursor {
             data,
             reader: None,
+            // One block is not worth a thread.
+            ahead: (until > address).then(|| Ahead {
+                prefetch: Prefetch::new(data.clone(), address, until),
+                address,
+                blocks: VecDeque::new(),
+            }),
             block_address: address,
             next_address: address,
             block: Vec::new(),
@@ -1780,6 +1867,18 @@ impl<'a> BlockCursor<'a> {
     fn load_block(&mut self, address: u64) -> Result<bool, ReadsError> {
         if address >= self.data.len() {
             return Ok(false);
+        }
+        if let Some(ahead) = &mut self.ahead {
+            match ahead.block(address)? {
+                Some((length, data)) => {
+                    self.block_address = address;
+                    self.next_address = address + length;
+                    self.block = data;
+                    self.offset = 0;
+                    return Ok(true);
+                }
+                None => self.ahead = None,
+            }
         }
         // The reader carries on from the block before; anywhere else is a new one.
         let reader = match &mut self.reader {
