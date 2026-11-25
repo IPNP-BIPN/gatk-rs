@@ -86,6 +86,25 @@ of the tools that reach it.
 against GATK's 2 s: `check` still inflates the whole file, which GATK never does for a tool that
 reads only the header. That is the reader's, engine-wide, and not this change's.
 
+## Scale B. `FlagStat` collected every read before counting one
+
+**Ratio.** At scale (chr20 30x BAM, linux/arm64, 6 GiB container): GATK 0.64 GiB peak RSS and
+20 s CPU, the port killed at the limit. Natively on macOS, with no limit: 19.19 GiB.
+
+**Where the memory goes.** `flag_stat` called `read_walker::traverse`, which collects the whole
+traversal into a `Vec<BamRecord>`, then folded it into `FlagStatus`.
+
+**The optimisation.** `traverse_iter`, the same traversal a read at a time, folded as it comes.
+
+**Why it cannot move a byte.** `FlagStatus::add` sees the same reads in the same order; the report
+is written only after the last one, so a refusal partway is the same `ReadsError`, printed the same
+way, with nothing written before it.
+
+**The suites that prove it.** `counting-walkers`, and `FlagStat`'s covering array.
+
+**Result.** macOS native, chr20: 19.19 GiB to 0.10 GiB peak RSS, report identical (md5
+`5434284f...`). CPU 35 s against GATK's 20 s: decoding, the engine's (W12), not this change's.
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are

@@ -2417,12 +2417,14 @@ pub fn flag_stat(parser: &Parser) -> Outcome {
     } = read_walker_startup(parser, "FlagStat")?;
 
     let filter = read_filter(parser, &filters, &header)?;
-    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
-        .map_err(|error| Thrown::user(format!("{error:?}")))?;
     let mut status = gatk_tools::counting_walkers::FlagStatus::default();
-    for record in &records {
+    // A read at a time: a refusal partway is the same refusal, and nothing is written before it.
+    let records = gatk_tools::read_walker::traverse_iter(&source, &intervals, false, &filter)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    for record in records {
+        let record = record.map_err(|error| Thrown::user(format!("{error:?}")))?;
         status.add(
-            record,
+            &record,
             contig_name(&header, record.reference_index),
             contig_name(&header, record.mate_reference_index),
         );
