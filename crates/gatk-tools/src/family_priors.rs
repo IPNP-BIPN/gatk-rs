@@ -2,8 +2,8 @@
 //!
 //! The family half of `CalculateGenotypePosteriors`: a trio's three genotypes recomputed together,
 //! every one of the twenty-seven combinations weighted by how many Mendelian violations it
-//! implies. The population half is [`crate::calculate_genotype_posteriors`]; reading the pedigree
-//! and the VCF is not ported.
+//! implies. The population half is [`crate::calculate_genotype_posteriors`]; the record-level
+//! step that runs before it is [`calculate_posterior_gls`].
 //!
 //! # The non-violation coefficient is not one
 //!
@@ -466,3 +466,231 @@ fn phred_scale_joint(value: f64) -> i32 {
         i32::from(i8::MAX)
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// The record-level step `CalculateGenotypePosteriors.apply` runs before the population priors
+// ---------------------------------------------------------------------------------------------
+
+use htsjdk_vcf::allele::Allele;
+use htsjdk_vcf::genotype_type::GenotypeType as HtsjdkType;
+use htsjdk_vcf::variant::{Genotype, Value, VariantContext};
+
+/// A trio `setTrios` keeps: the mother's, the father's and the child's sample names.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TrioIds {
+    pub mother: String,
+    pub father: String,
+    pub child: String,
+}
+
+/// `FamilyLikelihoods.setTrios`: per family of `getFamilies(vcfSamples)`, which already holds only
+/// the samples in the VCF, a family of exactly three whose member has both parents in the
+/// database and both of them in the family.
+///
+/// So a family of four (two children) gives no trio at all, and a child whose parents are in the
+/// PED but not in the VCF gives none either, where `getTrios()` would count both.
+pub fn set_trios(db: &gatk_engine::sample_db::SampleDb, vcf_samples: &[String]) -> Vec<TrioIds> {
+    let mut trios = Vec::new();
+    for (_, family) in db.families(Some(vcf_samples)) {
+        if family.len() != 3 {
+            continue;
+        }
+        for member in &family {
+            let parents = db.parents(member);
+            if parents.len() == 2 && parents.iter().all(|parent| family.contains(parent)) {
+                trios.push(TrioIds {
+                    mother: member.maternal_id.clone().expect("a mother"),
+                    father: member.paternal_id.clone().expect("a father"),
+                    child: member.id.clone(),
+                });
+            }
+        }
+    }
+    trios
+}
+
+/// `hasCalledGT`'s three types, everything else (no call, unavailable, MIXED) uncalled.
+fn genotype_type(genotype: &Genotype) -> GenotypeType {
+    match genotype.genotype_type() {
+        HtsjdkType::HomRef => GenotypeType::HomRef,
+        HtsjdkType::Het => GenotypeType::Het,
+        HtsjdkType::HomVar => GenotypeType::HomVar,
+        _ => GenotypeType::Uncalled,
+    }
+}
+
+/// The `PP` as integers, which `getLikelihoodsAsMapSafeNull` splits on commas.
+fn posteriors_of(genotype: &Genotype) -> Option<Vec<i32>> {
+    let text = genotype.get("PP")?.format()?;
+    Some(
+        text.split(',')
+            .filter_map(|piece| piece.trim().parse().ok())
+            .collect(),
+    )
+}
+
+fn member_of(genotype: &Genotype) -> Member {
+    Member {
+        sample: genotype.sample_name.clone(),
+        genotype_type: genotype_type(genotype),
+        likelihoods: genotype.pl.clone(),
+        posteriors: posteriors_of(genotype),
+    }
+}
+
+/// `getLikelihoodsAsMapSafeNull`'s refusal of anything but three values, which it reaches for each
+/// member before the trio is judged at all, so an uncalled child does not save a haploid parent.
+fn ploidy_refusal(genotype: &Genotype) -> Option<String> {
+    let called = genotype_type(genotype).is_called();
+    let count = match (called, posteriors_of(genotype), &genotype.pl) {
+        (true, Some(posteriors), _) => posteriors.len(),
+        (true, None, Some(likelihoods)) => likelihoods.len(),
+        _ => NUM_CALLED_GENOTYPE_TYPES,
+    };
+    if count == NUM_CALLED_GENOTYPE_TYPES {
+        return None;
+    }
+    let key = if genotype.get("PP").is_some() {
+        "PP"
+    } else {
+        "PL"
+    };
+    Some(format!(
+        "{} has {count} {key} values, should be {NUM_CALLED_GENOTYPE_TYPES} since only the diploid \
+         case is supported when applying family priors.",
+        crate::variant_annotator_engine::java_genotype_string(genotype)
+    ))
+}
+
+/// `calculatePosteriorGLs`: every trio read from the record as it came in and written into the
+/// copy, so a sample in two trios (a parent who is also a child) keeps the LAST trio's answer.
+/// The error is the `UserException` message a member that is not diploid raises.
+pub fn calculate_posterior_gls(
+    vc: &VariantContext,
+    trios: &[TrioIds],
+    de_novo_prior: f64,
+) -> Result<VariantContext, String> {
+    let mut out = vc.clone();
+    let find = |id: &str| vc.genotypes.iter().find(|g| g.sample_name == id);
+    let ploidy = vc.genotypes.iter().map(Genotype::ploidy).max().unwrap_or(2);
+    for trio in trios {
+        let (mother, father, child) = (find(&trio.mother), find(&trio.father), find(&trio.child));
+        if mother.is_none() && father.is_none() || child.is_none() {
+            continue;
+        }
+        for genotype in [mother, father, child].into_iter().flatten() {
+            if let Some(message) = ploidy_refusal(genotype) {
+                return Err(message);
+            }
+        }
+        let members = [
+            mother.map(member_of),
+            father.map(member_of),
+            child.map(member_of),
+        ];
+        let Some(configuration) = configuration_likelihoods(
+            members[0].as_ref(),
+            members[1].as_ref(),
+            members[2].as_ref(),
+            de_novo_prior,
+        ) else {
+            continue;
+        };
+        let updated = updated_genotypes(
+            members[0].as_ref(),
+            members[1].as_ref(),
+            members[2].as_ref(),
+            &configuration,
+        );
+        for (original, update) in [mother, father, child].into_iter().zip(updated) {
+            let (Some(original), Some(log10)) = (original, update.log10_posteriors.as_ref()) else {
+                continue;
+            };
+            let rebuilt = updated_genotype(vc, original, ploidy, log10, &update);
+            if let Some(slot) = out
+                .genotypes
+                .iter_mut()
+                .find(|g| g.sample_name == rebuilt.sample_name)
+            {
+                *slot = rebuilt;
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// `put` on the genotype's attribute map: a key already there keeps its place.
+fn put(extended: &mut Vec<(String, Value)>, key: &str, value: Value) {
+    match extended.iter_mut().find(|(k, _)| k == key) {
+        Some(slot) => slot.1 = value,
+        None => extended.push((key.to_string(), value)),
+    }
+}
+
+/// `getUpdatedGenotype` for a called member: `makeGenotypeCall(USE_PLS_TO_ASSIGN)` over the
+/// posteriors, then the `PP`, then the original attributes with `JL` and `JP`.
+///
+/// That last step is `builder.attributes(original + JL + JP)` AFTER `attribute(PP)`, so an input
+/// that already carried a `PP` keeps ITS value and the one just computed is lost.
+fn updated_genotype(
+    vc: &VariantContext,
+    original: &Genotype,
+    ploidy: usize,
+    log10: &[f64],
+    update: &Updated,
+) -> Genotype {
+    let mut genotype = original.clone();
+    let no_call = vec![Allele::no_call(); ploidy];
+    let no_data = original.is_hom_ref() && original.gq == Some(0) && original.dp == Some(0);
+    if no_data {
+        // The "no data" case: a plain no-call with everything but the attributes dropped.
+        genotype.alleles = no_call;
+        genotype.pl = None;
+        genotype.dp = None;
+        genotype.ad = None;
+        genotype.gq = None;
+        genotype.extended.clear();
+    } else {
+        let best = argmax(log10);
+        // The biallelic diploid-or-not order: `best` alternate copies.
+        let alleles: Vec<Allele> = (0..ploidy)
+            .map(|copy| vc.alleles[usize::from(copy >= ploidy - best)].clone())
+            .collect();
+        let gq = crate::calculate_genotype_posteriors::gq_log10_from_likelihoods(best, log10);
+        if alleles
+            .iter()
+            .any(|allele| allele.display_string() == "<NON_REF>")
+        {
+            genotype.alleles = vec![vc.alleles[0].clone(); ploidy];
+            genotype.pl = Some(vec![0; log10.len()]);
+        } else if best == 0 && gq > SUM_GL_THRESH_NOCALL {
+            genotype.alleles = no_call;
+        } else {
+            genotype.alleles = alleles;
+        }
+        if vc.alleles.len() > 1 {
+            // `log10PError`: `Math.round(gq * -10)`, with no cap.
+            genotype.gq = Some((gq * -10.0 + 0.5).floor() as i32);
+        }
+    }
+    let pp = Value::List(
+        update
+            .posteriors
+            .as_ref()
+            .expect("a called member's posteriors")
+            .iter()
+            .map(|value| Value::Int(i64::from(*value)))
+            .collect(),
+    );
+    put(&mut genotype.extended, "PP", pp);
+    for (key, value) in &original.extended {
+        put(&mut genotype.extended, key, value.clone());
+    }
+    let joint = |value: Option<i32>| Value::Int(i64::from(value.unwrap_or(-1)));
+    put(&mut genotype.extended, "JL", joint(update.joint_likelihood));
+    put(&mut genotype.extended, "JP", joint(update.joint_posterior));
+    genotype
+}
+
+/// `GATKVariantContextUtils.SUM_GL_THRESH_NOCALL`.
+const SUM_GL_THRESH_NOCALL: f64 = -0.1;

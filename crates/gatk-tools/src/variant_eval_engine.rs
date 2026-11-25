@@ -568,6 +568,11 @@ pub struct Arguments {
     /// [`Arguments::strat_intervals_unindexed`] is.
     pub known_cnvs_unindexed: Option<String>,
     pub gold_standard: Option<Vec<VariantContext>>,
+    /// `createSampleDBFromPedigreeAndDataSources`: the PED, with the driving inputs' samples
+    /// added. Empty without `--pedigree`.
+    pub sample_db: gatk_engine::sample_db::SampleDb,
+    /// `--mendelian-violation-qual-threshold`.
+    pub mendelian_violation_qual_threshold: f64,
 }
 
 impl Arguments {
@@ -1292,6 +1297,7 @@ pub enum Evaluator {
         results: Vec<(i64, f64)>,
     },
     IndelSummary(Box<IndelSummary>),
+    MendelianViolationEvaluator(Box<MendelianViolations>),
     MetricsCollection(Box<MetricsCollection>),
     MultiallelicSummary(Box<MultiallelicSummary>),
     PrintMissingComp {
@@ -1302,6 +1308,22 @@ pub enum Evaluator {
     ValidationReport(Box<ValidationReport>),
     VariantAFEvaluator(Box<VariantAf>),
     VariantSummary(Box<VariantSummary>),
+}
+
+/// `MendelianViolationEvaluator`'s data points, and the `inheritance` counts of the
+/// `MendelianViolation` it extends, which it re-reads after every record.
+#[derive(Debug, Clone, Default)]
+pub struct MendelianViolations {
+    variants: i64,
+    skipped: i64,
+    families_called: i64,
+    variant_families_called: i64,
+    low_qual: i64,
+    no_call: i64,
+    loci_violations: i64,
+    violations: i64,
+    /// The twenty columns from `mvRefRef_Var` on, in declaration order.
+    counts: [i64; 20],
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1507,6 +1529,7 @@ impl Evaluator {
                 results: Vec::new(),
             },
             "IndelSummary" => Evaluator::IndelSummary(Box::default()),
+            "MendelianViolationEvaluator" => Evaluator::MendelianViolationEvaluator(Box::default()),
             "MetricsCollection" => Evaluator::MetricsCollection(Box::default()),
             "MultiallelicSummary" => {
                 Evaluator::MultiallelicSummary(Box::new(MultiallelicSummary {
@@ -1561,6 +1584,7 @@ impl Evaluator {
             Evaluator::GenotypeFilterSummary { .. } => "GenotypeFilterSummary",
             Evaluator::IndelLengthHistogram { .. } => "IndelLengthHistogram",
             Evaluator::IndelSummary(_) => "IndelSummary",
+            Evaluator::MendelianViolationEvaluator(_) => "MendelianViolationEvaluator",
             Evaluator::MetricsCollection(_) => "MetricsCollection",
             Evaluator::MultiallelicSummary(_) => "MultiallelicSummary",
             Evaluator::PrintMissingComp { .. } => "PrintMissingComp",
@@ -1603,6 +1627,7 @@ impl Evaluator {
             Evaluator::CountVariants(_)
             | Evaluator::GenotypeFilterSummary { .. }
             | Evaluator::IndelLengthHistogram { .. }
+            | Evaluator::MendelianViolationEvaluator(_)
             | Evaluator::ThetaVariantEvaluator(_)
             | Evaluator::VariantAFEvaluator(_) => 1,
             _ => 2,
@@ -1686,6 +1711,16 @@ impl Evaluator {
                         }
                         GenotypeType::Mixed | GenotypeType::Unavailable => {}
                     }
+                }
+            }
+            Evaluator::MendelianViolationEvaluator(mendelian) => {
+                // `todo -- currently limited to biallelic loci`, as the reference says.
+                if is_biallelic(vc) && !vc.genotypes.is_empty() {
+                    mendelian.update(&count_family_violations(
+                        &arguments.sample_db,
+                        vc,
+                        arguments.mendelian_violation_qual_threshold,
+                    ));
                 }
             }
             Evaluator::GenotypeFilterSummary {
@@ -2342,6 +2377,22 @@ impl Evaluator {
                 ("nNoCallOrFiltered", "%d", I(*no_call_or_filtered)),
             ],
             Evaluator::IndelLengthHistogram { results, .. } => return Err(results.clone()),
+            Evaluator::MendelianViolationEvaluator(m) => {
+                let mut cells = vec![
+                    ("nVariants", "%d", I(m.variants)),
+                    ("nSkipped", "%d", I(m.skipped)),
+                    ("nFamCalled", "%d", I(m.families_called)),
+                    ("nVarFamCalled", "%d", I(m.variant_families_called)),
+                    ("nLowQual", "%d", I(m.low_qual)),
+                    ("nNoCall", "%d", I(m.no_call)),
+                    ("nLociViolations", "%d", I(m.loci_violations)),
+                    ("nViolations", "%d", I(m.violations)),
+                ];
+                for (name, value) in MENDELIAN_COLUMNS.iter().zip(m.counts) {
+                    cells.push((name, "%d", I(value)));
+                }
+                cells
+            }
             Evaluator::IndelSummary(sm) => vec![
                 ("n_SNPs", "%d", I(sm.snps)),
                 ("n_singleton_SNPs", "%d", I(sm.singleton_snps)),
@@ -2598,6 +2649,195 @@ fn hash_map_sample_order(samples: &[String]) -> Vec<String> {
     ordered.into_iter().filter(|key| key != "ALL").collect()
 }
 
+/// `MendelianViolationEvaluator`'s columns after its eight counters, in declaration order.
+const MENDELIAN_COLUMNS: [&str; 20] = [
+    "mvRefRef_Var",
+    "mvRefRef_Het",
+    "mvRefHet_Var",
+    "mvRefVar_Var",
+    "mvRefVar_Ref",
+    "mvVarHet_Ref",
+    "mvVarVar_Ref",
+    "mvVarVar_Het",
+    "HomRefHomRef_HomRef",
+    "HetHet_Het",
+    "HetHet_HomRef",
+    "HetHet_HomVar",
+    "HomVarHomVar_HomVar",
+    "HomRefHomVAR_Het",
+    "HetHet_inheritedRef",
+    "HetHet_inheritedVar",
+    "HomRefHet_inheritedRef",
+    "HomRefHet_inheritedVar",
+    "HomVarHet_inheritedRef",
+    "HomVarHet_inheritedVar",
+];
+
+/// `GenotypeType`'s position in the `EnumMap`s `MendelianViolation` counts in.
+fn type_index(genotype_type: GenotypeType) -> usize {
+    match genotype_type {
+        GenotypeType::NoCall => 0,
+        GenotypeType::HomRef => 1,
+        GenotypeType::Het => 2,
+        GenotypeType::HomVar => 3,
+        GenotypeType::Unavailable => 4,
+        GenotypeType::Mixed => 5,
+    }
+}
+
+/// What one `countFamilyViolations` leaves behind: the counters `resetCounts` zeroes, and the
+/// inheritance counts by mother, father and child type.
+#[derive(Debug, Default)]
+struct FamilyViolations {
+    no_call: i64,
+    family_called: i64,
+    var_family_called: i64,
+    low_qual: i64,
+    violations: i64,
+    inheritance: [[[i64; 6]; 6]; 6],
+}
+
+/// `MendelianViolation.isViolation(gMom, gDad, gChild)`. A parent that is not called makes it a
+/// parent/child pair, judged on homozygotes only.
+fn is_mendelian_violation(
+    mom: &htsjdk_vcf::variant::Genotype,
+    dad: &htsjdk_vcf::variant::Genotype,
+    kid: &htsjdk_vcf::variant::Genotype,
+) -> bool {
+    if kid.is_no_call() {
+        return false;
+    }
+    if mom.is_hom_ref() && dad.is_hom_ref() && kid.is_hom_ref() {
+        return false;
+    }
+    if !mom.is_called() {
+        return dad.is_hom_ref() && kid.is_hom_var() || dad.is_hom_var() && kid.is_hom_ref();
+    }
+    if !dad.is_called() {
+        return mom.is_hom_ref() && kid.is_hom_var() || mom.is_hom_var() && kid.is_hom_ref();
+    }
+    // shortcut: a haploid child is an IndexOutOfBoundsException in the reference and no
+    // violation here; no fixture has one.
+    let (Some(first), Some(second)) = (kid.alleles.first(), kid.alleles.get(1)) else {
+        return false;
+    };
+    !(mom.alleles.contains(first) && dad.alleles.contains(second)
+        || mom.alleles.contains(second) && dad.alleles.contains(first))
+}
+
+/// `new MendelianViolation(threshold, false, false).countFamilyViolations(db, null, vc)`: every
+/// member of every family with a parent in the database, a trio missing from the record skipped in
+/// silence and one with a single parent called judged as a pair.
+///
+/// Note the three buckets are exclusive and tried in order: no call (the child, or both
+/// parents), then low quality (any of the three under a POSITIVE threshold, an absent GQ being
+/// -1), and only then called, which alone counts violations and inheritance.
+fn count_family_violations(
+    db: &gatk_engine::sample_db::SampleDb,
+    vc: &VariantContext,
+    min_genotype_quality: f64,
+) -> FamilyViolations {
+    let mut out = FamilyViolations::default();
+    for (_, family) in db.families(None) {
+        for sample in family {
+            if db.parents(sample).is_empty() {
+                continue;
+            }
+            let find = |id: Option<&str>| id.and_then(|id| vc.genotype(id));
+            let (Some(mom), Some(dad), Some(kid)) = (
+                find(sample.maternal_id.as_deref()),
+                find(sample.paternal_id.as_deref()),
+                find(Some(&sample.id)),
+            ) else {
+                continue;
+            };
+            let gq =
+                |genotype: &htsjdk_vcf::variant::Genotype| f64::from(genotype.gq.unwrap_or(-1));
+            if !mom.is_called() && !dad.is_called() || !kid.is_called() {
+                out.no_call += 1;
+            } else if min_genotype_quality > 0.0
+                && [mom, dad, kid]
+                    .iter()
+                    .any(|genotype| gq(genotype) < min_genotype_quality)
+            {
+                out.low_qual += 1;
+            } else {
+                out.family_called += 1;
+                if !(mom.is_hom_ref() && dad.is_hom_ref() && kid.is_hom_ref()) {
+                    out.var_family_called += 1;
+                }
+                if is_mendelian_violation(mom, dad, kid) {
+                    out.violations += 1;
+                }
+                out.inheritance[type_index(mom.genotype_type())]
+                    [type_index(dad.genotype_type())][type_index(kid.genotype_type())] += 1;
+            }
+        }
+    }
+    out
+}
+
+impl MendelianViolations {
+    /// `update1`'s sums over one record's `countFamilyViolations`.
+    fn update(&mut self, mv: &FamilyViolations) {
+        let (r, h, v) = (
+            type_index(GenotypeType::HomRef),
+            type_index(GenotypeType::Het),
+            type_index(GenotypeType::HomVar),
+        );
+        let i = |mother: usize, father: usize, child: usize| mv.inheritance[mother][father][child];
+        if mv.violations > 0 {
+            self.loci_violations += 1;
+            self.violations += mv.violations;
+            for (slot, value) in [
+                i(r, r, v),
+                i(r, r, h),
+                i(r, h, v) + i(h, r, v),
+                i(r, v, v) + i(v, r, v),
+                i(r, v, r) + i(v, r, r),
+                i(h, v, r) + i(v, h, r),
+                i(v, v, r),
+                i(v, v, h),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                self.counts[slot] += value;
+            }
+        }
+        for (slot, value) in [
+            i(r, r, r),
+            i(h, h, h),
+            i(h, h, r),
+            i(h, h, v),
+            i(v, v, v),
+            i(r, v, h) + i(v, r, h),
+            i(h, h, h) + 2 * i(h, h, r),
+            i(h, h, h) + 2 * i(h, h, v),
+            i(r, h, r) + i(h, r, r),
+            i(r, h, h) + i(h, r, h),
+            i(v, h, h) + i(h, v, h),
+            i(v, h, v) + i(h, v, v),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            self.counts[8 + slot] += value;
+        }
+        // The reference's condition names `familyCalled` twice and the no-calls never, so a site
+        // where every family is a no call is skipped.
+        if mv.family_called > 0 || mv.low_qual > 0 {
+            self.variants += 1;
+            self.families_called += mv.family_called;
+            self.low_qual += mv.low_qual;
+            self.no_call += mv.no_call;
+            self.variant_families_called += mv.var_family_called;
+        } else {
+            self.skipped += 1;
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------------------------
 // The engine
 // ---------------------------------------------------------------------------------------------
@@ -2635,7 +2875,11 @@ pub struct Engine {
     contexts: Vec<Vec<Evaluator>>,
     by_filter: bool,
     per_sample: bool,
+    per_family: bool,
     sample_names_for_stratification: Vec<String>,
+    /// `familyNamesForStratification`: the PED's family IDs in order under `-ST Family`, then
+    /// `all`, which are the levels the evals are walked at when the Family stratifier is on.
+    family_names_for_stratification: Vec<String>,
 }
 
 impl Engine {
@@ -2703,23 +2947,23 @@ impl Engine {
             evaluator_names.push("MetricsCollection".to_string());
             evaluator_names.sort();
         }
-        if evaluator_names
-            .iter()
-            .any(|name| name == "MendelianViolationEvaluator")
-        {
-            return Err(EvalError::gatk(
-                "MendelianViolationEvaluator needs a pedigree, which this port does not carry for \
-                 VariantEval yet."
-                    .to_string(),
-            ));
-        }
-
         let mut sample_names_for_stratification = Vec::new();
         if arguments.strats_to_use.iter().any(|name| name == "Sample") {
             sample_names_for_stratification
                 .extend(arguments.samples_for_evaluation.iter().cloned());
         }
         sample_names_for_stratification.push(ALL.to_string());
+        let mut family_names_for_stratification: Vec<String> = Vec::new();
+        if arguments.strats_to_use.iter().any(|name| name == "Family") {
+            family_names_for_stratification.extend(
+                arguments
+                    .sample_db
+                    .families(None)
+                    .into_iter()
+                    .map(|(id, _)| id),
+            );
+        }
+        family_names_for_stratification.push(ALL.to_string());
 
         let mut strats = Vec::new();
         for name in &names {
@@ -2727,6 +2971,7 @@ impl Engine {
                 name,
                 &arguments,
                 &sample_names_for_stratification,
+                &family_names_for_stratification,
                 contigs_of_dictionary,
             )?);
         }
@@ -2754,7 +2999,7 @@ impl Engine {
                 "Variants cannot be stratified by sample and family at the same time",
             ));
         }
-        if per_family {
+        if per_family && arguments.sample_db.trios().is_empty() {
             return Err(EvalError::bad_argument(
                 "ST",
                 "Cannot stratify by family without *.ped file",
@@ -2790,7 +3035,9 @@ impl Engine {
             contexts,
             by_filter,
             per_sample,
+            per_family,
             sample_names_for_stratification,
+            family_names_for_stratification,
         })
     }
 
@@ -2840,6 +3087,18 @@ impl Engine {
                         let per = self.subset(vc, std::slice::from_ref(sample));
                         if self.by_filter || !is_filtered(&per) {
                             add(sample, per);
+                        }
+                    }
+                } else if !vc.genotypes.is_empty() && self.per_family {
+                    // `familyNamesForEvaluation` holds no `all`, which the mapping above covers.
+                    // The members are a `HashSet`, and `subsetToSamples` walks them in its order.
+                    for (family, members) in self.arguments.sample_db.families(None) {
+                        let names: Vec<String> =
+                            members.iter().map(|member| member.id.clone()).collect();
+                        let names = gatk_engine::java_hash::hash_set_order(&names).unwrap_or(names);
+                        let per = self.subset(vc, &names);
+                        if self.by_filter || !is_filtered(&per) {
+                            add(&family, per);
                         }
                     }
                 }
@@ -2916,7 +3175,11 @@ impl Engine {
 
         for (track, eval_name) in self.arguments.eval_names.clone().iter().enumerate() {
             let eval_set = &eval_bindings[track];
-            let levels = self.sample_names_for_stratification.clone();
+            let levels = if self.per_family {
+                self.family_names_for_stratification.clone()
+            } else {
+                self.sample_names_for_stratification.clone()
+            };
             for level in &levels {
                 let by_sample: Vec<Option<VariantContext>> =
                     match eval_set.iter().find(|(name, _)| name == level) {
@@ -2972,14 +3235,20 @@ impl Engine {
     ) -> Result<(), EvalError> {
         let comp_name = comp_index.map(|index| self.arguments.comp_names[index].clone());
         let comp = self.find_matching_comp(eval, comp_set);
-        let family = if level == ALL { Some(ALL) } else { None };
+        // Per family, the level is the family and there is no sample; otherwise the level is the
+        // sample, and only `all` names a family the Family stratifier (absent then) could read.
+        let (sample, family) = if self.per_family {
+            (None, Some(level))
+        } else {
+            (Some(level), if level == ALL { Some(ALL) } else { None })
+        };
         let keys = self.evaluation_keys(
             site,
             eval,
             eval_name,
             comp,
             comp_name.as_deref(),
-            Some(level),
+            sample,
             family,
         )?;
         let samples = self.arguments.samples_for_evaluation.clone();
@@ -3273,6 +3542,7 @@ fn make_stratifier(
     name: &str,
     arguments: &Arguments,
     sample_names_for_stratification: &[String],
+    family_names_for_stratification: &[String],
     contigs: &[String],
 ) -> Result<Stratifier, EvalError> {
     let strings = |values: &[&str]| values.iter().map(|value| s(value)).collect::<Vec<_>>();
@@ -3361,7 +3631,14 @@ fn make_stratifier(
             }
             (states, StratKind::EvalFeatureInput, "%s")
         }
-        "Family" => (vec![s(ALL)], StratKind::Family, "%s"),
+        "Family" => (
+            family_names_for_stratification
+                .iter()
+                .map(|name| s(name))
+                .collect(),
+            StratKind::Family,
+            "%s",
+        ),
         "Filter" => (
             strings(&["called", "filtered", "raw"]),
             StratKind::Filter,

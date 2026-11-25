@@ -1,9 +1,8 @@
 //! `CalculateGenotypePosteriors` and `PosteriorProbabilitiesUtils`, ported from GATK 4.6.2.0.
 //!
 //! Genotype likelihoods turned into posteriors under a Dirichlet-multinomial prior built from
-//! allele counts. Where those counts come from is the whole of the tool. Reading the VCF is not
-//! ported, and neither is the family-prior half: `FamilyLikelihoods` is a second algorithm, and a
-//! run with no pedigree skips it, which is the configuration measured here.
+//! allele counts. Where those counts come from is the whole of the tool. The family-prior half,
+//! which runs first when `--pedigree` names a trio, is [`crate::family_priors`].
 //!
 //! # A site nothing supplies counts for gets a flat prior
 //!

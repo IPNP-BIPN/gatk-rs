@@ -305,7 +305,8 @@ pub fn possible_de_novo(
     let af_cutoff =
         gatk_engine::math_utils::java_max(FLAT_NUMBER_OF_SAMPLES_CUTOFF, percent_cutoff);
     // "we assume we're biallelic above so use the first alt": read outside the loop, so a site
-    // with no alternate at all is an IndexOutOfBounds here even though the loop skipped it.
+    // with no alternate at all is an IndexOutOfBounds in Java even though the loop skipped it.
+    // VariantAnnotator's engine raises that before calling here; this answers nothing.
     let Some(first_alternate) = vc.alternate_alleles().first() else {
         return Vec::new();
     };

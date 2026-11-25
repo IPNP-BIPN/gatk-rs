@@ -3624,6 +3624,55 @@ public class MakeFixtures {
                     .instanceMain(new String[] {"-I", path.toString()});
         }
 
+        // CalculateGenotypePosteriors' family priors: the same trio with likelihoods, over the
+        // corpus's chr1 like duo.vcf. The sites reach every branch of FamilyLikelihoods: a de novo
+        // het the default prior overturns, an inherited het, a hom-ref child with neither GQ nor
+        // depth (the "no data" no-call), a no-called child (the trio is left alone), a no-called
+        // parent (a pair), a triallelic site (never a family site), a child whose input PP the
+        // reference keeps over the one it computes, and a hom-var child of het parents.
+        // cgp_trio_haploid.vcf gives the child two PLs, which the family priors refuse.
+        for (final String[] file : new String[][] {
+                // pos, ALT, dad, kid, mom; each GT:GQ:DP:PL, or with a PP after it
+                {"cgp_trio.vcf",
+                        "101 C 0/0:30:20:0,30,300 0/1:99:20:200,0,200 0/0:30:20:0,30,300",
+                        "201 C 0/1:99:20:250,0,250 0/1:99:20:200,0,200 0/0:40:20:0,40,400",
+                        "301 C 0/0:40:20:0,40,400 0/0:0:0:0,0,0 0/0:40:20:0,40,400",
+                        "401 C 0/0:40:20:0,40,400 ./.:.:.:. 0/1:99:20:300,0,300",
+                        "501 C ./.:.:.:. 1/1:60:20:600,60,0 0/1:99:20:300,0,300",
+                        "601 C,G 0/1:99:20:300,0,300,300,300,300 0/2:99:20:300,300,300,0,300,300 0/0:40:20:0,40,400,40,400,400",
+                        "701 C 0/1:99:20:300,0,300 0/1:50:20:50,0,500:7,0,40 0/0:40:20:0,40,400",
+                        "801 C 0/1:99:20:300,0,300 1/1:30:20:300,30,0 0/1:99:20:300,0,300"},
+                {"cgp_trio_haploid.vcf",
+                        "101 C 0/0:30:20:0,30,300 0:57:19:0,57 0/0:30:20:0,30,300"}}) {
+            final StringBuilder text = new StringBuilder("##fileformat=VCFv4.2\n");
+            text.append("##FORMAT=<ID=DP,Number=1,Type=Integer,Description=\"Read depth\">\n");
+            text.append("##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype quality\">\n");
+            text.append("##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n");
+            text.append("##FORMAT=<ID=PL,Number=G,Type=Integer,Description=\"Phred-scaled genotype likelihoods\">\n");
+            text.append("##FORMAT=<ID=PP,Number=G,Type=Integer,Description=\"Phred-scaled Posterior Genotype Probabilities\">\n");
+            text.append("##contig=<ID=chr1,length=100000>\n");
+            text.append("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tdad\tkid\tmom\n");
+            for (int row = 1; row < file.length; row++) {
+                final String[] f = file[row].split(" ");
+                final boolean withPp = f[3].split(":").length == 5;
+                text.append("chr1\t").append(f[0]).append("\t.\tA\t").append(f[1])
+                        .append("\t100\tPASS\t.\t").append(withPp ? "GT:GQ:DP:PL:PP" : "GT:GQ:DP:PL");
+                for (int sample = 2; sample <= 4; sample++) {
+                    final String genotype = f[sample];
+                    text.append('\t').append(withPp && genotype.split(":").length == 4 ? genotype + ":." : genotype);
+                }
+                text.append('\n');
+            }
+            final Path path = dir.resolve(file[0]);
+            Files.writeString(path, text.toString(), StandardCharsets.UTF_8);
+            new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                    .instanceMain(new String[] {"-I", path.toString()});
+        }
+        // VariantAnnotator's PossibleDeNovo: va.vcf's three samples as one trio.
+        Files.writeString(dir.resolve("va_trio.ped"),
+                "vafam\ts1\ts2\ts3\t1\t0\nvafam\ts2\t0\t0\t1\t0\nvafam\ts3\t0\t0\t2\t0\n",
+                StandardCharsets.UTF_8);
+
         // The bins as an interval LIST, which is the only way one `-L` value can name more than
         // one of them. `FilterIntervals` intersects the requested intervals with its inputs' by
         // list equality and then removes a contig's only survivor, so a window naming a single bin
@@ -4850,6 +4899,61 @@ public class MakeFixtures {
         Files.writeString(dir.resolve("ve_eval2.vcf"), text, StandardCharsets.UTF_8);
         new org.broadinstitute.hellbender.tools.IndexFeatureFile()
                 .instanceMain(new String[] {"-I", dir.resolve("ve_eval2.vcf").toString()});
+        // VariantEval's pedigree arguments: a trio, a father/child pair and an unrelated sample over
+        // the same reference, and their PED. The sites walk every bucket MendelianViolation counts:
+        // each kind of violation, an inherited het, a low-GQ child (counted under one threshold and
+        // not the other), a no-called child, a no-called parent and a triallelic site it skips.
+        // sv_trio.ped names the trio only, so STRICT validation refuses this file with it.
+        Files.writeString(dir.resolve("ve_families.ped"),
+                "fam1\tkid\tdad\tmom\t1\t0\nfam1\tdad\t0\t0\t1\t0\nfam1\tmom\t0\t0\t2\t0\n"
+                        + "fam2\tchild2\tdad2\t0\t2\t0\nfam2\tdad2\t0\t0\t1\t0\n"
+                        + "fam3\tloner\t0\t0\t0\t0\n",
+                StandardCharsets.UTF_8);
+        final StringBuilder trio = new StringBuilder("##fileformat=VCFv4.2\n"
+                + "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype Quality\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##contig=<ID=chr1,length=3000>\n"
+                + "##contig=<ID=chr2,length=500>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tdad\tkid\tmom\tdad2\tchild2\tloner\n");
+        // pos, then dad, kid, mom, dad2, child2 and loner; the kid's GQ is the last field.
+        for (final String row : new String[] {
+                "110 0/0 0/1 0/0 0/0 0/0 0/0 60", // hom-ref parents, het child
+                "120 0/0 1/1 0/0 0/0 1/1 0/0 60", // hom-var children of hom-ref parents
+                "130 0/1 1/1 0/1 0/1 0/1 0/0 60", // inherited
+                "140 1/1 0/0 0/0 1/1 0/0 0/0 60", // hom-ref children of a hom-var father
+                "150 1/1 0/1 1/1 0/0 0/0 0/1 60", // het child of hom-var parents
+                "160 0/1 0/1 0/0 0/0 0/0 0/0 20", // inherited, under a GQ threshold of 50
+                "170 0/0 ./. 0/0 0/0 0/0 0/0 60", // child no-called
+                "180 ./. 0/1 0/0 0/0 0/1 0/0 60", // a no-called father: a pair
+                "200 0/0 0/0 0/0 0/0 0/0 0/0 60",
+                "210 0/1 0/0 1/1 0/1 1/1 0/0 60"}) { // hom-ref child of het and hom-var parents
+            final String[] f = row.split(" ");
+            final int position = Integer.parseInt(f[0]);
+            final String base = ref.apply(position, 1);
+            trio.append("chr1\t").append(position).append("\t.\t").append(base).append('\t')
+                    .append(other.apply(base)).append("\t100.00\tPASS\t.\tGT:GQ");
+            for (int sample = 1; sample <= 6; sample++) {
+                trio.append('\t').append(f[sample]).append(':').append(sample == 2 ? f[7] : "60");
+            }
+            trio.append('\n');
+        }
+        final String base190 = ref.apply(190, 1);
+        trio.append("chr1\t190\t.\t").append(base190).append('\t').append(other.apply(base190))
+                .append(",G\t100.00\tPASS\t.\tGT:GQ\t0/1:60\t1/2:60\t0/2:60\t0/0:60\t0/0:60\t0/0:60\n");
+        final String[] lines = trio.toString().split("\n");
+        // The triallelic site is written last above; put it back in position order.
+        final StringBuilder sorted = new StringBuilder();
+        for (final String line : lines) {
+            if (line.startsWith("#")) {
+                sorted.append(line).append('\n');
+            }
+        }
+        java.util.Arrays.stream(lines).filter(line -> !line.startsWith("#"))
+                .sorted(java.util.Comparator.comparingInt(line -> Integer.parseInt(line.split("\t")[1])))
+                .forEach(line -> sorted.append(line).append('\n'));
+        Files.writeString(dir.resolve("ve_trio.vcf"), sorted.toString(), StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", dir.resolve("ve_trio.vcf").toString()});
         final String strat = "chr1\t90\t150\nchr1\t305\t345\nchr2\t0\t35\n";
         Files.writeString(dir.resolve("ve_strat.bed"), strat, StandardCharsets.UTF_8);
         new org.broadinstitute.hellbender.tools.IndexFeatureFile()
