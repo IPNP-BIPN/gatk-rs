@@ -140,6 +140,49 @@ pub fn apply_bqsr_with(
     .map_err(ApplyBqsrError::Reads)
 }
 
+/// [`apply_bqsr_with`] straight to `output`, a read at a time: see
+/// [`crate::sam_output::rewrite_to`]. The transformer is built before the first read here, and the
+/// first refusal stops the run and leaves `output` as it was, so a caller that must refuse as the
+/// whole-list path did (a traversal refusal before any transformer's) runs that path on any error.
+#[allow(clippy::too_many_arguments)]
+pub fn apply_bqsr_to(
+    output: &std::path::Path,
+    source: &ReadsDataSource,
+    recal_text: &str,
+    arguments: &ApplyBqsrArguments,
+    options: &Options,
+    filter: &dyn Fn(&BamRecord) -> bool,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
+) -> Result<crate::sam_output::Written, crate::sam_output::RewriteError<ApplyBqsrError>> {
+    use crate::sam_output::RewriteError;
+    let mut report = RecalibrationReport::parse(recal_text)
+        .map_err(|error| RewriteError::Refusal(ApplyBqsrError::Report(error)))?;
+    let mut transformer = BqsrReadTransformer::new(
+        source.header(),
+        &mut report.tables,
+        &mut report.quantization_info,
+        &report.covariates,
+        arguments,
+    )
+    .map_err(|error| RewriteError::Refusal(ApplyBqsrError::Transform(error)))?;
+    let records = crate::read_walker::traverse_iter(source, &options.intervals, false, filter)
+        .map_err(RewriteError::Traversal)?;
+    let header = header_for_sam_writer(source.header(), TOOL_NAME, options);
+    crate::sam_output::rewrite_to(
+        output,
+        &header,
+        records,
+        |read| {
+            *read = transformer.apply(read).map_err(ApplyBqsrError::Transform)?;
+            Ok(())
+        },
+        options.create_output_bam_index,
+        level,
+        deflater,
+    )
+}
+
 /// `BQSRReadTransformer` over reads already filtered, which `ApplyBQSR` shares with the two Spark
 /// tools that apply a table. `ApplyBQSRSparkFn` builds one transformer per partition, and one
 /// partition is one transformer.

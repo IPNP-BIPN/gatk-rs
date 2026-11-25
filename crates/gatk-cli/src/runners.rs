@@ -2225,14 +2225,16 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
     let recal_text = std::fs::read_to_string(&recal)
         .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&recal, false)))?;
 
+    // Only the start of the stream decides, as in `reads_dictionary`: the whole file was read and
+    // inflated here before. `check` refuses exactly the files `decompress_all` refused.
     let path = std::path::Path::new(&input);
-    let bytes = std::fs::read(path)
-        .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&input, false)))?;
+    let bytes = gatk_engine::reads::file_start(path)
+        .ok_or_else(|| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&input, false)))?;
     let compressed = gatk_tools::read_walker_refusal::is_block_compressed(&bytes);
     let is_binary = if compressed {
-        htsjdk_bgzf::read::decompress_all(&bytes)
-            .map(|inflated| inflated.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC))
-            .unwrap_or(false)
+        ReadsDataSource::check(path)
+            .and_then(|()| gatk_engine::reads::inflated_start(path))
+            .is_ok_and(|inflated| inflated.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC))
     } else {
         bytes.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC)
     };
@@ -2308,6 +2310,20 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
         version: crate::TOOLKIT_VERSION,
     };
     let (level, deflater) = output_compression(parser);
+    // A read at a time when nothing refuses; any refusal is left to the whole-list path below,
+    // which reads every read before it recalibrates one and refuses in that order.
+    if let Ok(written) = gatk_tools::apply_bqsr::apply_bqsr_to(
+        std::path::Path::new(&output),
+        &source,
+        &recal_text,
+        &bqsr,
+        &options,
+        &filter,
+        level,
+        deflater,
+    ) {
+        return write_bam_companions(parser, &output, written);
+    }
     let (bam, bai) = gatk_tools::apply_bqsr::apply_bqsr_with(
         &source,
         &recal_text,
