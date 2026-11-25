@@ -89,24 +89,59 @@ pub fn traverse_with_bounds_mut(
     traverse_unmapped: bool,
     filter: &mut dyn FnMut(&BamRecord) -> bool,
 ) -> Result<Vec<BamRecord>, ReadsError> {
+    traverse_iter(source, intervals, traverse_unmapped, filter)?.collect()
+}
+
+/// [`traverse_with_bounds_mut`] a read at a time, which is what keeps a traversal's memory the
+/// size of a read rather than of the file.
+///
+/// The unmapped tail is opened only once the interval query has run out, which is when the `Vec`
+/// form opened it, so a refusal of either comes in the same order.
+pub fn traverse_iter<'a, F>(
+    source: &'a ReadsDataSource,
+    intervals: &[SimpleInterval],
+    traverse_unmapped: bool,
+    mut filter: F,
+) -> Result<impl Iterator<Item = Result<BamRecord, ReadsError>> + 'a, ReadsError>
+where
+    F: FnMut(&BamRecord) -> bool + 'a,
+{
     let bounded = !intervals.is_empty() || traverse_unmapped;
-    let records = if !bounded {
-        source.iter_all()?
+    let first = if !bounded {
+        Some(source.records_all()?)
+    } else if intervals.is_empty() {
+        None
     } else {
-        let mut records = if intervals.is_empty() {
-            Vec::new()
-        } else {
-            source.query(intervals)?
-        };
-        if traverse_unmapped {
-            records.extend(source.query_unmapped()?);
-        }
-        records
+        Some(source.query_iter(intervals)?)
     };
+    let mut unmapped = (bounded && traverse_unmapped).then_some(());
+    let mut current = first;
+    let records = std::iter::from_fn(move || loop {
+        if let Some(records) = &mut current {
+            if let Some(record) = records.next() {
+                if record.is_err() {
+                    // A refusal ends the traversal: the tail is not opened after it.
+                    unmapped = None;
+                    current = None;
+                }
+                return Some(record);
+            }
+            current = None;
+        }
+        unmapped.take()?;
+        match source.query_unmapped_iter() {
+            Ok(records) => current = Some(records),
+            Err(error) => return Some(Err(error)),
+        }
+        // `unmapped` is spent, so the next pass that finds `current` empty ends the traversal.
+    });
     // map(pre).filter(f).map(post): both transformers are the identity for a tool that declares
     // none, which is every tool measured here. The order is kept because a tool that declares one
     // changes what the filter sees, not only what apply sees.
-    Ok(records.into_iter().filter(|read| filter(read)).collect())
+    Ok(records.filter(move |read| match read {
+        Ok(read) => filter(read),
+        Err(_) => true,
+    }))
 }
 
 /// The traversal with its reference contexts, which is what `apply` actually receives.
