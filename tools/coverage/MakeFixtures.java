@@ -985,6 +985,29 @@ public class MakeFixtures {
      * and one slice to a container, so the file holds four containers of 3, 3, 3 and 1 records
      * and a `--shard-records` of 3, 7 or ten million cuts it three different ways.
      */
+    /**
+     * `<name>.bam` again as SAM text and as CRAM against `reference`, with its `.crai`, both
+     * written by htsjdk from the same records, so a row can hand a reads-taking tool the three
+     * formats GATK opens.
+     */
+    static void samAndCram(final Path dir, final String name, final String reference) throws Exception {
+        final List<SAMRecord> records = new ArrayList<>();
+        final SAMFileHeader header;
+        try (final htsjdk.samtools.SamReader reader =
+                     htsjdk.samtools.SamReaderFactory.makeDefault().open(dir.resolve(name + ".bam"))) {
+            header = reader.getFileHeader();
+            reader.forEach(records::add);
+        }
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().makeSAMWriter(header, true, dir.resolve(name + ".sam").toFile())) {
+            records.forEach(writer::addAlignment);
+        }
+        try (final SAMFileWriter writer = new SAMFileWriterFactory().setCreateIndex(true)
+                .makeCRAMWriter(header, true, dir.resolve(name + ".cram"), dir.resolve(reference))) {
+            records.forEach(writer::addAlignment);
+        }
+    }
+
     static void splitCram(final Path dir) throws Exception {
         final SAMFileHeader header = new SAMFileHeader();
         final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
@@ -4177,6 +4200,11 @@ public class MakeFixtures {
         funcotatorFixtures(dir);
         bwaIndexImage(dir);
         structuralVariantDiscovererFixtures(dir);
+        for (final String[] bam : new String[][] {
+                {"reads", "reference.fasta"}, {"va", "va_ref.fasta"}, {"faa", "faa_ref.fasta"},
+                {"tumor_normal", "reference.fasta"}, {"hbvr_haps", "mutect_ref.fasta"}}) {
+            samAndCram(dir, bam[0], bam[1]);
+        }
         System.out.println("wrote " + dir);
         // GenomicsDBImport leaves threads behind that instanceMain, unlike main, does not exit past.
         System.exit(0);
