@@ -760,6 +760,14 @@ fn annotate_info(
         // not flow based and `--flow-order-for-annotations` is not carried, which is also why
         // `CycleSkipStatus`, which requires an actual flow order, writes nothing.
         // The trios come from `--pedigree`; without one the set is empty and so is the answer.
+        // `vc.getAlternateAllele(0)` is read after the loop, whatever the loop skipped, so a record
+        // with no alternate throws as soon as the pedigree holds a trio.
+        "PossibleDeNovo" if !pedigree.trios.is_empty() && vc.alleles.len() < 2 => {
+            return Err(EngineError::Runtime {
+                class: "java.lang.IndexOutOfBoundsException".to_string(),
+                message: format!("Index 1 out of bounds for length {}", vc.alleles.len()),
+            })
+        }
         "PossibleDeNovo" => a::pedigree::possible_de_novo(
             vc,
             &pedigree.trios,
