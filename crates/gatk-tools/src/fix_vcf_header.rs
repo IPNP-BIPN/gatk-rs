@@ -38,6 +38,7 @@ use htsjdk_vcf::encoder::EncodeError;
 use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType, VcfHeader};
 use htsjdk_vcf::reader::read_vcf;
 use htsjdk_vcf::standard_header_lines::{standard_format_line, PRIMARY_KEYS};
+use htsjdk_vcf::variant::VariantContext;
 use htsjdk_vcf::vcf_file::write_vcf;
 
 /// The descriptions the tool invents, one per kind of line.
@@ -154,62 +155,87 @@ pub fn fix(input: &str, check_first_n_records: i32) -> Result<String, FixError> 
     let file = read_vcf(input).map_err(|failure| {
         FixError::Vcf(failure.error.class().to_string(), failure.error.message())
     })?;
-    let existing = file.header.clone();
-    let mut added: Vec<HeaderLine> = Vec::new();
-    let mut seen: Vec<(String, String)> = Vec::new();
-
+    let mut invented = Invented::new(&file.header);
     for (index, record) in file.records.iter().enumerate() {
         if check_first_n_records > 0 && index as i32 >= check_first_n_records {
             break;
         }
+        invented.look(record);
+    }
+    let (header, samples) = invented.header();
+    // The writer reads the file again (`reader`, not `in`), so its genotypes are still the text
+    // the scan above decoded in its own copy, and they are copied through unparsed.
+    let file = read_vcf(input).map_err(|failure| {
+        FixError::Vcf(failure.error.class().to_string(), failure.error.message())
+    })?;
+    write(&header, &file, samples)
+}
+
+/// The lines [`fix`] invents for what the records use and the header does not declare, a record
+/// at a time.
+pub struct Invented {
+    existing: VcfHeader,
+    added: Vec<HeaderLine>,
+    seen: Vec<(String, String)>,
+}
+
+impl Invented {
+    pub fn new(existing: &VcfHeader) -> Self {
+        Invented {
+            existing: existing.clone(),
+            added: Vec::new(),
+            seen: Vec::new(),
+        }
+    }
+
+    pub fn look(&mut self, record: &VariantContext) {
+        let existing = &self.existing;
         // `getFilters()` is empty for a passing record, so PASS invents nothing.
         for filter in record.filters.iter().flatten() {
             let key = ("FILTER".to_string(), filter.clone());
-            if !has_line(&existing, "FILTER", filter) && !seen.contains(&key) {
-                added.push(invented_filter(filter));
-                seen.push(key);
+            if !has_line(existing, "FILTER", filter) && !self.seen.contains(&key) {
+                self.added.push(invented_filter(filter));
+                self.seen.push(key);
             }
         }
         for (id, _) in &record.attributes {
             let key = ("INFO".to_string(), id.clone());
-            if !has_line(&existing, "INFO", id) && !seen.contains(&key) {
-                added.push(invented("INFO", id, INFO_DESCRIPTION));
-                seen.push(key);
+            if !has_line(existing, "INFO", id) && !self.seen.contains(&key) {
+                self.added.push(invented("INFO", id, INFO_DESCRIPTION));
+                self.seen.push(key);
             }
         }
         for genotype in &record.genotypes {
             // `getExtendedAttributes()`, which is everything but the typed fields.
             for (id, _) in &genotype.extended {
                 let key = ("FORMAT".to_string(), id.clone());
-                if !has_line(&existing, "FORMAT", id) && !seen.contains(&key) {
-                    added.push(invented("FORMAT", id, FORMAT_DESCRIPTION));
-                    seen.push(key);
+                if !has_line(existing, "FORMAT", id) && !self.seen.contains(&key) {
+                    self.added.push(invented("FORMAT", id, FORMAT_DESCRIPTION));
+                    self.seen.push(key);
                 }
             }
         }
     }
 
-    let mut header = existing.clone();
-    // `addStandardFormatLines(headerLines, false, PRIMARY_KEYS)`, which the file need not use.
-    // The lines go into a `HashSet`, so only an equal line is a duplicate: an input's own `DP`
-    // with another description stays beside the standard one.
-    for id in PRIMARY_KEYS {
-        if let Some(line) = standard_format_line(id) {
-            if !header.lines.contains(&line) {
-                header.lines.push(line);
+    /// The fixed header, and the samples it is written with.
+    pub fn header(self) -> (VcfHeader, Vec<String>) {
+        let mut header = self.existing.clone();
+        // `addStandardFormatLines(headerLines, false, PRIMARY_KEYS)`, which the file need not
+        // use. The lines go into a `HashSet`, so only an equal line is a duplicate: an input's own
+        // `DP` with another description stays beside the standard one.
+        for id in PRIMARY_KEYS {
+            if let Some(line) = standard_format_line(id) {
+                if !header.lines.contains(&line) {
+                    header.lines.push(line);
+                }
             }
         }
+        header.lines.extend(self.added);
+        // `getSampleNamesInOrder()` is the sorted list, whatever the input's column order.
+        let mut samples = self.existing.samples;
+        samples.sort();
+        (header, samples)
     }
-    header.lines.extend(added);
-    // The writer reads the file again (`reader`, not `in`), so its genotypes are still the text
-    // the scan above decoded in its own copy, and they are copied through unparsed.
-    let file = read_vcf(input).map_err(|failure| {
-        FixError::Vcf(failure.error.class().to_string(), failure.error.message())
-    })?;
-    // `getSampleNamesInOrder()` is the sorted list, whatever the input's column order.
-    let mut samples = existing.samples.clone();
-    samples.sort();
-    write(&header, &file, samples)
 }
 
 /// `doWork()` with a `HEADER`: the replacement header, and the samples one side or the other's.
