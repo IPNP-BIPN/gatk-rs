@@ -455,6 +455,109 @@ fn merge_into(keys: &[Vec<Key>], order: &mut Vec<(usize, usize)>) -> Result<(), 
     Ok(())
 }
 
+/// [`merging_order`] as an iterator over the inputs' records as they are read: each input an
+/// iterator of `(key, record)` in its own order, each record handed out as `(input, record)` in the
+/// order `merging_order` gives, and its failure after the records handed out before it.
+///
+/// An input's own refusal comes out as `MergeStop::Input` where the merge first needs that input's
+/// next record, and ends the merge.
+pub struct Merging<T, E, I: Iterator<Item = Result<(Key, T), E>>> {
+    inputs: Vec<I>,
+    heads: Vec<Option<T>>,
+    queue: JavaQueue,
+    last: Option<Key>,
+    started: bool,
+    done: bool,
+}
+
+/// Why a [`Merging`] stopped early.
+#[derive(Debug)]
+pub enum MergeStop<E> {
+    Input(E),
+    Refusal(Refusal),
+}
+
+impl<T, E, I: Iterator<Item = Result<(Key, T), E>>> Merging<T, E, I> {
+    pub fn new(inputs: Vec<I>) -> Self {
+        let heads = inputs.iter().map(|_| None).collect();
+        Merging {
+            inputs,
+            heads,
+            queue: JavaQueue::default(),
+            last: None,
+            started: false,
+            done: false,
+        }
+    }
+
+    /// The input's next record into the queue.
+    fn pull(&mut self, input: usize) -> Result<(), MergeStop<E>> {
+        match self.inputs[input].next() {
+            None => Ok(()),
+            Some(Err(error)) => Err(MergeStop::Input(error)),
+            Some(Ok((key, record))) => {
+                self.heads[input] = Some(record);
+                self.queue.offer((key, input)).map_err(MergeStop::Refusal)
+            }
+        }
+    }
+
+    fn step(&mut self) -> Result<Option<(usize, T)>, MergeStop<E>> {
+        // A single input is handed over as it is: nothing is compared.
+        if self.inputs.len() == 1 {
+            return match self.inputs[0].next() {
+                None => Ok(None),
+                Some(Err(error)) => Err(MergeStop::Input(error)),
+                Some(Ok((_, record))) => Ok(Some((0, record))),
+            };
+        }
+        if !self.started {
+            self.started = true;
+            for input in 0..self.inputs.len() {
+                self.pull(input)?;
+            }
+        }
+        let Some((key, input)) = self.queue.poll().map_err(MergeStop::Refusal)? else {
+            return Ok(None);
+        };
+        if let Some(previous) = self.last {
+            if compare(previous, key).map_err(MergeStop::Refusal)? == std::cmp::Ordering::Greater {
+                return Err(MergeStop::Refusal(Refusal::Other {
+                    class: "java.lang.IllegalStateException".to_string(),
+                    message: "The elements of the input Iterators are not sorted according to the \
+                              comparator htsjdk.variant.variantcontext.VariantContextComparator"
+                        .to_string(),
+                }));
+            }
+        }
+        let record = self.heads[input].take().expect("a head for a queued input");
+        self.pull(input)?;
+        self.last = Some(key);
+        Ok(Some((input, record)))
+    }
+}
+
+impl<T, E, I: Iterator<Item = Result<(Key, T), E>>> Iterator for Merging<T, E, I> {
+    type Item = Result<(usize, T), MergeStop<E>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.done {
+            return None;
+        }
+        match self.step() {
+            Ok(Some(item)) => Some(Ok(item)),
+            Ok(None) => {
+                self.done = true;
+                None
+            }
+            Err(stop) => {
+                self.done = true;
+                Some(Err(stop))
+            }
+        }
+    }
+}
+
 /// `java.util.PriorityQueue` of iterators, ordered by the key alone: `siftUp` and `siftDown`
 /// transcribed, since the order of equal keys is the heap's shape.
 #[derive(Default)]
@@ -698,5 +801,65 @@ mod tests {
         }
         groups.extend(grouping.finish().map(|g| g.iter().map(|a| a.1).collect()));
         assert_eq!(groups, vec![vec![100, 105], vec![110], vec![111]]);
+    }
+}
+
+#[cfg(test)]
+mod merging_tests {
+    use super::*;
+
+    /// The lazy merge hands out what `merging_order` orders, then the same failure, over inputs
+    /// with ties, out-of-order records and a contig the dictionary does not know.
+    #[test]
+    fn merging_is_merging_order() {
+        let mut seed: u64 = 7;
+        let mut next = || {
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (seed >> 33) as i64
+        };
+        for case in 0..2000 {
+            let inputs = 1 + (next() % 4) as usize;
+            let keys: Vec<Vec<Key>> = (0..inputs)
+                .map(|_| {
+                    let length = (next() % 6) as usize;
+                    let mut list: Vec<Key> = (0..length)
+                        .map(|_| {
+                            let contig = if next() % 40 == 0 {
+                                None
+                            } else {
+                                Some(next() % 2)
+                            };
+                            (contig, next() % 4)
+                        })
+                        .collect();
+                    if next() % 3 != 0 {
+                        list.sort_by_key(|&(contig, start)| (contig.unwrap_or(9), start));
+                    }
+                    list
+                })
+                .collect();
+            let expected = merging_order(&keys);
+            let iterators: Vec<_> = keys
+                .iter()
+                .enumerate()
+                .map(|(input, list)| {
+                    list.iter()
+                        .enumerate()
+                        .map(move |(index, key)| Ok::<_, ()>((*key, (input, index))))
+                })
+                .collect();
+            let (mut order, mut failure) = (Vec::new(), None);
+            for item in Merging::new(iterators) {
+                match item {
+                    Ok((_, at)) => order.push(at),
+                    Err(MergeStop::Refusal(refusal)) => failure = Some(refusal),
+                    Err(MergeStop::Input(())) => unreachable!(),
+                }
+            }
+            assert_eq!(order, expected.order, "case {case}: {keys:?}");
+            assert_eq!(failure, expected.failure, "case {case}: {keys:?}");
+        }
     }
 }

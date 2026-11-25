@@ -25,6 +25,7 @@ use super::*;
 use gatk_tools::variant_recalibrator as tranches;
 use gatk_tools::variant_recalibrator_model as model;
 use htsjdk_vcf::variant::VariantContext;
+use std::borrow::Cow;
 
 /// A resource, its tags, and its records.
 struct Resource {
@@ -460,6 +461,44 @@ impl LoadedModel {
 }
 
 pub fn variant_recalibrator(parser: &Parser) -> Outcome {
+    // The run's random stream is the process's: a restart begins where the first attempt began.
+    // The first attempt empties the tranches file before its traversal; the restart refuses
+    // before the whole run would have, so the file goes back as it was.
+    let random = gatk_random().clone();
+    let tranches = argument(parser, "tranches-file").map(|path| {
+        let before = std::fs::read(&path).ok();
+        (path, before)
+    });
+    match recalibrate(parser, true) {
+        Err(thrown) if thrown.exception == RESTART => {
+            *gatk_random() = random;
+            if let Some((path, before)) = tranches {
+                let _ = match before {
+                    Some(bytes) => std::fs::write(&path, bytes),
+                    None => std::fs::remove_file(&path),
+                };
+            }
+            recalibrate(parser, false)
+        }
+        outcome => outcome,
+    }
+}
+
+/// A driving record and its input, as the traversal hands it out.
+type Traversed<'a> = Result<(usize, Cow<'a, VariantContext>), Thrown>;
+
+fn restart() -> Thrown {
+    Thrown::non_user(RESTART, "the streamed traversal stopped")
+}
+
+/// What [`recalibrate`] answers when its streamed traversal stops: the whole run is started again
+/// with the inputs read whole, so whatever stopped it is refused in the reference's order. Nothing
+/// has been written by then.
+const RESTART: &str = "gatk_rs::VariantRecalibratorRestart";
+
+/// The tool, the driving variants read as the traversal needs them when `stream` says so and the
+/// traversal has no `-L`, or read whole.
+fn recalibrate(parser: &Parser, stream: bool) -> Outcome {
     let _ = resolve_read_filters(parser, "VariantRecalibrator")?;
     let settings = settings(parser);
     let inputs = multi_variant::feature_inputs(parser);
@@ -479,10 +518,14 @@ pub fn variant_recalibrator(parser: &Parser) -> Outcome {
 
     // `initializeDrivingVariants`: a repeated input is refused before any is opened, then the
     // inputs' dictionaries are cross-checked and their headers merged.
-    let driving = multi_variant::open(
-        inputs,
-        !flag(parser, "disable-sequence-dictionary-validation"),
-    )?;
+    let cross_validate = !flag(parser, "disable-sequence-dictionary-validation");
+    let (driving, mut readers) = match stream
+        .then(|| multi_variant::open_streamed(inputs.clone(), cross_validate))
+        .flatten()
+    {
+        Some((driving, readers)) => (driving, Some(readers)),
+        None => (multi_variant::open(inputs, cross_validate)?, None),
+    };
     let dictionary = driving.dictionary();
     let first = &driving.inputs[0];
     let VariantWalkerStart { intervals, .. } = variant_walker_validation(
@@ -492,6 +535,12 @@ pub fn variant_recalibrator(parser: &Parser) -> Outcome {
         first.codec,
         dictionary.clone(),
     )?;
+    // Only a traversal with no `-L` is streamed, and the restart is cheapest before the resources.
+    if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()).is_some()
+        && readers.is_some()
+    {
+        return Err(restart());
+    }
     let contigs: Vec<(String, i32)> = dictionary
         .sequences
         .iter()
@@ -546,6 +595,10 @@ pub fn variant_recalibrator(parser: &Parser) -> Outcome {
     ignored.sort();
     ignored.dedup();
     std::fs::write(&tranches_path, b"").map_err(|_| {
+        if stream {
+            // The whole run reads every input before it gets here.
+            return restart();
+        }
         Thrown::user(format!(
             "Couldn't write file {} because exception {}",
             java_absolute_path(&tranches_path),
@@ -636,7 +689,24 @@ pub fn variant_recalibrator(parser: &Parser) -> Outcome {
     }
 
     // The traversal: the inputs merged, each cut to `-L`, each record queued by start.
-    let (order, failure) = driving.merged(intervals.as_deref())?;
+    let streamed = readers.is_some();
+    // A streamed traversal that stops for any reason starts again: the whole run reads every input
+    // before the first record is looked at, so a reader's refusal would come first there.
+    let records: Box<dyn Iterator<Item = Traversed<'_>>> = match readers.take() {
+        Some(readers) => Box::new(driving.stream(readers).map(|item| {
+            item.map(|(input, record)| (input, Cow::Owned(record)))
+                .map_err(|_| restart())
+        })),
+        None => {
+            let (order, failure) = driving.merged(intervals.as_deref())?;
+            Box::new(
+                order
+                    .into_iter()
+                    .map(|(input, record)| Ok((input, Cow::Borrowed(record))))
+                    .chain(failure.map(Err)),
+            )
+        }
+    };
     let context = DatumContext {
         keys: &manager.annotation_keys.clone(),
         arguments: &settings.arguments,
@@ -647,8 +717,8 @@ pub fn variant_recalibrator(parser: &Parser) -> Outcome {
         ignored_filters: &ignored,
     };
     let mut data: Vec<model::Datum> = Vec::new();
-    let mut queue: Vec<&VariantContext> = Vec::new();
-    let consume = |queue: &mut Vec<&VariantContext>,
+    let mut queue: Vec<Cow<VariantContext>> = Vec::new();
+    let consume = |queue: &mut Vec<Cow<VariantContext>>,
                    data: &mut Vec<model::Datum>,
                    random: &mut gatk_engine::java_random::JavaRandom|
      -> Result<(), Thrown> {
@@ -666,20 +736,29 @@ pub fn variant_recalibrator(parser: &Parser) -> Outcome {
         queue.clear();
         Ok(())
     };
-    for (input, record) in order {
+    for item in records {
+        let (input, record) = item?;
         let changed = queue
             .first()
             .is_some_and(|first| first.start != record.start || first.contig != record.contig);
         if changed {
-            consume(&mut queue, &mut data, &mut random)
-                .map_err(|_| driving.apply_failure(input, record))?;
+            consume(&mut queue, &mut data, &mut random).map_err(|_| {
+                if streamed {
+                    restart()
+                } else {
+                    driving.apply_failure(input, &record)
+                }
+            })?;
         }
         queue.push(record);
     }
-    if let Some(failure) = failure {
-        return Err(failure);
-    }
-    consume(&mut queue, &mut data, &mut random)?;
+    consume(&mut queue, &mut data, &mut random).map_err(|error| {
+        if streamed {
+            restart()
+        } else {
+            error
+        }
+    })?;
     manager.active = (0..data.len()).collect();
     manager.data = data;
 

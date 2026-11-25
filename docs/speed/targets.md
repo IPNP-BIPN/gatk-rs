@@ -56,6 +56,48 @@ now STATUS.md's cost column; the baseline stays in `baseline.json`):
 both directions, which is what an unchanged path does. The other 131 tools moved a median 7% cold
 and 10% steady, at most 45%, the same spread two runs of one commit showed in the baseline.
 
+## Scale W. `VariantRecalibrator` held its driving VCFs whole
+
+**Ratio.** W12's 40x row (104k calls, 86k training sites, 54k known sites, allele-specific QD, MQ,
+FS and SOR, no `-L`): GATK arm64 takes 9.8 to 12.5 s CPU and 1.48 GB at its cgroup peak; the port
+on this base, macOS native, 110.6 s CPU and 487 MB (0.33x RSS, about 10x CPU).
+
+**Where the memory goes.** `multi_variant::open` read every `--variant` file into a `Vec` of
+records before the traversal looked at the first one, then merged references into that `Vec`.
+
+**The optimisation.** With no `-L`/`-XL` and VCF inputs, the driving files are opened for their
+headers only and merged as they are read (`Merging`, the same queue as `merge_into`; one input
+passes through), so a record is held only while its start is the queue's. Anything that stops
+the streamed traversal (a reader's refusal, a datum's, an unwritable tranches file) starts the
+whole run again with the inputs read whole, so it refuses in its own words and order. Two
+things are put back first: the process's random stream, which the first attempt has drawn from,
+and the tranches file, which it has emptied.
+
+**Why it cannot move a byte.** The streamed merge pops the same records in the same order as the
+whole merge (`merging_is_merging_order`, 2000 random cases), the datum loop is the same, and every
+other path is the whole run, from the same random state and the same files.
+
+**The suites that prove it.** `variant-recalibrator`, `apply-vqsr-two-modes`. Natively, old against
+new: the 26 rows of the covering array, and 66 runs over a malformed record mid-file, an unsorted
+file, a truncated file, no records, BGZF, a bad `QD`, two inputs, the same input twice, a missing
+input and a good input with a bad one, each with and without `-L chr1` and with the tranches file
+absent, already there, or in a directory that is not. The first version failed 6 of the 26 rows
+(the restart reused the advanced random stream) and 6 of the edge runs (a tranches file left
+behind); both are fixed and covered by those runs.
+
+**Result.** macOS native, the 40x row: 487 MB to 329 MB peak RSS, 0.22x GATK's. CPU measured
+110.6 s before and 51.0 s after, but a `sample` of both is the same: `records_at`, the resources
+scanned for every record (and `memcmp` on its contig names), which this change does not touch, so
+the difference is not credited to it. #1554 (W12) takes that CPU to 1.85 s. Same `vr.recal`
+(73fa4dc355a0642ead8e76ac98a09011, GATK's too) and `vr.tranches`
+(755319ca15df339fcd4cd8db4ce0990f) as #1554.
+
+**Not met yet.** The resources (`--resource`, `--aggregate`) are still read whole. With
+phase1 chr20 driving (637k sites) and hapmap, omni and dbsnp chr20 as resources, the old binary
+passed 3.3 GB within two minutes; how much of that is the resources was not measured. A forward cursor
+over a side VCF, shared with `GetPileupSummaries`' `-V`, is the next step; `VariantRecalibrator`
+stays on the list until then.
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are

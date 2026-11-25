@@ -106,6 +106,41 @@ pub fn open_unchecked(
             file,
         });
     }
+    assemble(opened, cross_validate)
+}
+
+/// [`open`] with each input's header read and its records left in the file, for a traversal that
+/// reads them as it goes ([`DrivingVariants::stream`]): each `Driving` holds its header's text
+/// and no records. `None` on any refusal, so the caller opens them with [`open`], which refuses in
+/// its own words and order.
+pub fn open_streamed(
+    inputs: Vec<FeatureInput>,
+    cross_validate: bool,
+) -> Option<(DrivingVariants, Vec<(crate::vcf_stream::LineReader, usize)>)> {
+    engine::require_unique(&inputs).ok()?;
+    let (mut opened, mut readers) = (Vec::new(), Vec::new());
+    for input in inputs {
+        let path = input.raw.clone();
+        let (codec, mut reader) = super::open_feature_stream(&path).ok()?;
+        if codec != gatk_tools::feature_codec::Codec::Vcf {
+            return None;
+        }
+        let (text, lines) = reader.read_header().ok()?;
+        let file = htsjdk_vcf::reader::read_vcf(&text).ok()?;
+        opened.push(Driving {
+            input,
+            path,
+            codec,
+            text,
+            file,
+        });
+        readers.push((reader, lines));
+    }
+    Some((assemble(opened, cross_validate).ok()?, readers))
+}
+
+/// The opened inputs' dictionaries cross-checked unless `cross_validate` is off, and merged.
+fn assemble(opened: Vec<Driving>, cross_validate: bool) -> Result<DrivingVariants, Thrown> {
     let versions: Vec<Option<String>> = opened
         .iter()
         .map(|driving| {
@@ -288,6 +323,39 @@ impl DrivingVariants {
             .map(|(input, index)| (input, reached[input][index]))
             .collect();
         Ok((order, merge.failure.map(thrown)))
+    }
+
+    /// [`merged`](Self::merged) with no `-L`, over inputs opened by [`open_streamed`]: each record
+    /// read when the merge needs it. A reader's refusal is `MergeStop::Input`, which the whole
+    /// open would have made before the traversal: the caller starts again from [`open`].
+    pub fn stream<'a>(
+        &'a self,
+        readers: Vec<(crate::vcf_stream::LineReader, usize)>,
+    ) -> impl Iterator<
+        Item = Result<(usize, VariantContext), engine::MergeStop<crate::vcf_stream::Failure>>,
+    > + 'a {
+        let contigs = self.merged.contigs();
+        let inputs: Vec<_> = readers
+            .into_iter()
+            .zip(&self.inputs)
+            .map(|((lines, header_lines), driving)| {
+                let contigs = contigs.clone();
+                crate::vcf_stream::Records::new(
+                    crate::vcf_stream::Body::Stream(lines),
+                    &driving.file,
+                    header_lines,
+                )
+                .map(move |record| {
+                    record.map(|record| {
+                        (
+                            engine::key_of(&contigs, &record.contig, record.start),
+                            record,
+                        )
+                    })
+                })
+            })
+            .collect();
+        engine::Merging::new(inputs)
     }
 
     /// `MultiVariantWalker.traverse`'s wrapper around a failure inside `apply`.
