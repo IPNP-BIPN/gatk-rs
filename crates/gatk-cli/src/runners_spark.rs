@@ -635,6 +635,23 @@ pub(super) fn write_spark_vcf(
     Ok(None)
 }
 
+/// `JavaRDD.saveAsTextFile` of one partition. Hadoop's output spec refuses a path that exists,
+/// file or directory, before anything is written.
+fn save_as_text_file(output: &str, text: &str) -> Result<(), Thrown> {
+    let directory = std::path::Path::new(output);
+    if directory.exists() {
+        let absolute = std::path::absolute(directory).unwrap_or_else(|_| directory.to_path_buf());
+        return Err(Thrown::non_user(
+            "org.apache.hadoop.mapred.FileAlreadyExistsException",
+            format!("Output directory file:{} already exists", absolute.display()),
+        ));
+    }
+    std::fs::create_dir_all(directory)
+        .and_then(|()| std::fs::write(directory.join("part-00000"), text))
+        .and_then(|()| std::fs::write(directory.join("_SUCCESS"), b""))
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))
+}
+
 /// `PileupSpark.processAlignments`: `Pileup`'s line per locus, without its deletion filter, saved
 /// with `saveAsTextFile`.
 ///
@@ -749,11 +766,7 @@ pub fn pileup_spark(parser: &Parser) -> Outcome {
         }
     }
 
-    let directory = std::path::Path::new(&output);
-    std::fs::create_dir_all(directory)
-        .and_then(|()| std::fs::write(directory.join("part-00000"), &text))
-        .and_then(|()| std::fs::write(directory.join("_SUCCESS"), b""))
-        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
+    save_as_text_file(&output, &text)?;
     Ok(None)
 }
 
@@ -961,11 +974,7 @@ pub fn extract_sv_evidence_spark(parser: &Parser) -> Outcome {
         text.push_str(&line);
         text.push('\n');
     }
-    let directory = std::path::Path::new(&output);
-    std::fs::create_dir_all(directory)
-        .and_then(|()| std::fs::write(directory.join("part-00000"), &text))
-        .and_then(|()| std::fs::write(directory.join("_SUCCESS"), b""))
-        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
+    save_as_text_file(&output, &text)?;
     Ok(None)
 }
 
