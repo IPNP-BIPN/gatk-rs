@@ -127,6 +127,17 @@ GVCF row of entry 9 (9.51 s to 9.46-9.52 s) and the Mutect2 row (1.98-2.00 s to 
 not move beyond noise, as a 2% share predicts. The gain is for walkers that resolve per pileup
 element, `CollectF1R2Counts` first; its number belongs to the scale session's row.
 
+## 10. Resolving a read's group by comparing ids from the end: refused
+
+Tried and measured, not landed. NA12878's read-group ids share a long prefix, and in the
+HaplotypeCaller GVCF profile `memcmp` was about half of `sample_name`'s samples, so
+`read_group::resolve` compared ids from the last byte (same equality, same first match). It moved
+nothing: HaplotypeCaller GVCF and Mutect2 within noise (macOS, three rounds), and
+`CollectF1R2Counts` on chr20:10-15 Mb 20.5 s against 19.8 s (scale session, three alternated runs).
+What costs there is the lookup per pileup element as a whole (the `RG` tag, `Attributes::get("SM")`,
+the `String`), which an id-to-sample table built once per header removes: 19.8 s to 15.4 s
+(-22%), on the scale session's branch.
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are
