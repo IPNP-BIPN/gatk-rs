@@ -102,9 +102,9 @@ pub fn pow10(x: f64) -> f64 {
 /// goldens are x86-64 Java's, and against them the host libm is the closer stand-in on aarch64
 /// too, so taking fdlibm there would turn local aarch64 runs red without bringing CI closer.
 ///
-/// **Why `inline(always)`**: the call must stay the same IR as the `powf` it replaced, so LLVM's
-/// library-call rewrites (`pow(2, x)` to `exp2`, `pow(10, x)` to `exp10` where the target has it)
-/// apply exactly as they did when each golden was measured.
+/// **Why `inline(always)`**: the call must stay the same IR as the `powf` it replaced, so whatever
+/// LLVM does with a `pow` of a constant base at a given site, it still does, as when each golden
+/// was measured. That x86-64 is unchanged is held by CI's suites, not measured separately.
 #[inline(always)]
 pub fn java_math_pow(x: f64, y: f64) -> f64 {
     x.powf(y)

@@ -1142,7 +1142,8 @@ Everything downstream inherits these, so they are front-loaded.
       What cannot be exact goes through two named functions: `java_math_exp` (`Math.exp`: exact
       on aarch64, the host `exp` on x86-64) and `java_math_pow` (`Math.pow`: the host `pow`). On
       x86-64 both stand in for HotSpot stubs that are GPL2, at 1 ulp from fdlibm and measured
-      closer with the host libm (decisions 0014, 0025, 0027). `tools/audit/arithmetic.py` holds
+      closer with the host libm (decisions 0014, 0025, 0027). Four sites call `StrictMath` for a
+      `Math` function and say so at the site, each held by a suite. `tools/audit/arithmetic.py` holds
       the line: 155 counted host calls before, 77 after, none of them unnamed (two `exp`s, in
       `log10OneMinusPow10` and `BetaBinomialDistribution.probability`, stay the host's on every
       target and say why at the site).

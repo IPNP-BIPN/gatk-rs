@@ -43,10 +43,10 @@ What goes through them, by Java method:
 - `java_math_exp`: `MathUtils.normalDistribution` (activity profile), `NaturalLogUtils.normalizeFromLogToLinearSpace` for LROM's E-step, FilterMutectCalls' posteriors and the clustering EM (measured, below), `NaturalLogUtils.logSumExp` in ModelSegments, `MathUtils.log1mexp` in DRAGstr, `SomaticClusteringModel`'s printed weights, `GCBiasCorrector`'s decay weights, `PairHMMLikelihoodCalculationEngine`'s PCR indel model.
 - `java_math_pow`: `MathUtils.pow10` and every `Math.pow(10.0, x)` it stands for (QualityUtils, BAQ, the genotype likelihood tables, the GQ of `GenotypeLikelihoods.getGQLog10FromLikelihoods` in subsetting, posteriors and GVCF merging, `log10sumLog10`, `normalizeFromLog10`), `AllelePseudoDepth.calculateWeights` (twice, by `weightDecay`), the PairHMM's `log10OneMinusPow10` and Jacobian table, `FisherExactTest`, `AddFlowSNVQuality`, `FlowBasedRead`, `CallCopyRatioSegments`' `Math.pow(2, x)`, DRAGstr's `gpMin` and `MathUtils.doubles`, and VQSR's model.
 
-Why the helpers keep the host `exp` and `pow` on x86-64 bit for bit: `java_math_pow` is
-`#[inline(always)]`, so each call site is the same IR as the `powf` it replaced, and LLVM's
-library-call rewrites (`pow(2, x)` to `exp2`, `pow(10, x)` to `exp10`) apply exactly as when the
-goldens were measured; the sites that used `black_box` still do.
+Why the helpers keep x86-64 bit for bit: `java_math_pow` is `#[inline(always)]`, so each call site
+is the same IR as the `powf` it replaced, and whatever LLVM did with a constant-base `pow` there it
+still does; the sites that used `black_box` still do. This is an argument, and CI's x86-64 suites
+are what check it: every local run of this change was on aarch64.
 
 Two `Math.exp` sites keep the host `exp` on every target, each saying why at the site:
 
@@ -61,6 +61,22 @@ Two `Math.exp` sites keep the host `exp` on every target, each saying why at the
 Both were measured on 2026-11-25. They are the same finding as the three measurements below: against
 x86-64 goldens, the host `exp` is the closer stand-in even where aarch64 Java would itself be
 fdlibm.
+
+### `StrictMath` standing in for `Math`
+
+The other direction of the same rule: these call `jmath::strict_math` where the Java calls `Math`
+(or, for NVScoreVariants, Python's `**`). Each is bounded at one ulp by decisions 0025 and 0027
+and named at its site:
+
+| call site | Java | what holds it |
+|---|---|---|
+| `gatk-engine/src/natural_log_utils.rs`: `log_sum_exp`, `normalize_from_log_to_linear_space`, `log1mexp` | `Math.exp` | the `strict_math::exp` row above; three of its callers were moved to the host `exp` by measurement (below) |
+| `gatk-tools/src/mark_duplicates_spark.rs`: `DuplicationMetrics.f`, `calculateRoiHistogram` | `Math.exp` | the `markduplicatesspark` suites |
+| `gatk-tools/src/sv_breakpoints.rs`: `getAccurateKmerCoverage` | `Math.exp`, `Math.pow` | the result is narrowed to `float`, and the two forms agree at all 34,310 points measured |
+| `gatk-tools/src/nv_score_variants/encode.rs`: the phred table | Python `10.0 ** x` | `StrictMath.pow` gives the same floats for all 256 qualities, pinned by its test |
+
+`java_random.rs` calls `strict_math::log` and `sqrt` because `java.util.Random.nextGaussian` itself
+calls `StrictMath`: exact.
 
 ### Host calls that remain and are exact
 
@@ -168,11 +184,15 @@ sites reach, not that the host `exp` equals `Math.exp`.
 
 ## What this changes
 
-**The gap is two named functions, not a list of call sites.** Every ported call site that reaches
-a function no permissive source can make exact goes through `java_math_exp` or `java_math_pow`, and
-both name the measured exception in their documentation. Everything else is exact: `log`, `log10`,
-`log1p`, `expm1` and `sqrt` on every host, the `powi` sites by measurement, the commons-math and
-saddle-point ports by their oracle suites.
+**The gap is a closed list, and every entry is named at its site.** Every ported call site that
+reaches `Math.exp` or `Math.pow` goes through `java_math_exp` or `java_math_pow`, one of the two
+host `exp` sites above, or one of the four `StrictMath` stand-ins, and each says which and why.
+Everything else is exact: `log`, `log10`, `log1p`, `expm1` and `sqrt` on every host, the `powi`
+sites by measurement, the commons-math and saddle-point ports by their oracle suites.
+
+The list holds for the tree it was walked on (`main` at `b0e4552e` plus #1499). A later change
+that adds a `.ln()` or `.powf()` is caught by `tools/audit/arithmetic.py`, but one that adds a
+`strict_math::exp` for a `Math.exp` is not: grep `strict_math::` when reviewing.
 
 **`BinomialDistribution` and SVD, the other two names H.5 used to carry, are ports rather than
 libm calls.** SVD is commons-math3 3.5's `SingularValueDecomposition`
