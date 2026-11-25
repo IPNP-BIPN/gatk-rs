@@ -100,6 +100,90 @@ The RSS is 0.03x GATK's and the CPU 0.52x. Of what is left, 80% is `htsjdk-vcf`'
 `decode_line` (`parse_alleles` growing its `Vec`, the INFO split) and the single-threaded
 inflater, both of which belong to the decoder (htsjdk-io).
 
+## Scale O. The Picard VCF writers held the VCF (`MakeSitesOnlyVcf`, `MergeVcfs`, `SplitVcfs`, `UpdateVcfSequenceDictionary`)
+
+**Ratio.** At scale (linux/arm64, 6 GiB container), each killed at the limit:
+
+| Tool | input | GATK CPU | GATK RSS |
+|---|---|---:|---:|
+| `MakeSitesOnlyVcf` | dbsnp138 chr20 | 8.2 s | 0.50 GiB |
+| `MergeVcfs` | gnomAD chr20 + dbsnp138 chr20 | 17.3 s | 0.51 GiB |
+| `SplitVcfs` (`STRICT false`) | gnomAD chr20 | 13.0 s | 0.55 GiB |
+| `UpdateVcfSequenceDictionary` | gnomAD chr20, `chr20.dict` | 18.3 s | 0.63 GiB |
+
+**Where the memory goes.** Each input was inflated whole into one string, decoded whole, then
+written into a second whole string. `write_vcf` (the Picard writer) compressed that string in
+memory before the file was written.
+
+**The optimisation.** A Picard writer a record at a time (`picard::VcfStream`). It is #1500's
+`VariantStreamWriter` given `CREATE_INDEX` and the `.idx` dictionary by its caller. As with
+`SelectVariants`, a `.vcf.gz` is tabix indexed as it is written. The inputs are read with
+`vcf_lines` (Scale N).
+- `MakeSitesOnlyVcf` subsets each record's genotypes and writes it.
+- `MergeVcfs`' library is split into the steps the whole run takes:
+  - `HeaderChecks` checks each input's header in input order.
+  - `finish` builds the merged header and the comparator.
+  - `merge_sorted` is the same Java `PriorityQueue` of iterators, over the peeked heads of
+    record streams.
+  The whole-list `merge` now runs these same steps.
+- `SplitVcfs` writes each record to its file as it is read. Some cases are left to the
+  whole-text run: a `.vcf.gz` SNP file indexed beside a text INDEL file (they share one tabix
+  creator), and two outputs of one name. The dictionary is read the way the whole run reads it,
+  and `vcf_text` no longer runs first.
+- `UpdateVcfSequenceDictionary` writes each record under the updated header (`updated_header`,
+  which the whole run's `update` now builds too). It runs once the dictionary is read; the
+  refusals of a missing dictionary come first, as before.
+
+**Why it cannot move a byte.**
+- The header and records are encoded as `write_vcf` encodes them, through the writer
+  `write_variant_file` uses.
+- The refusals the Picard writer makes before writing a byte are made before anything is written:
+  a Tribble index with no dictionary, and a tabix the records' order refuses.
+- `merge_sorted` checks each stream's order against the record it last gave, which is the
+  whole-list check over each pair before the merge. Its queue makes the same comparisons in the
+  same order.
+- An input's header is its text up to `#CHROM`, which holds every line the contig checks, the
+  dictionary and `with_contigs` read.
+- On any refusal (a record, an input's header, the order, the writer) nothing is written and the
+  whole-text path runs, refusing in its own words and order.
+
+**The suites that prove it.** `make-sites-only-vcf`, `merge-vcfs` and their covering arrays.
+Natively, old against new, the outputs and their `.tbi` are byte-identical, and every `.idx` too
+except its timestamp. On the files above, and on small files with samples:
+- `MakeSitesOnlyVcf`:
+  - to `.vcf` and `.vcf.gz`, with and without `CREATE_INDEX`, with `SAMPLE` (repeated, and one
+    the file lacks);
+  - an unsorted input (tabix refusal), a malformed record, no contig lines, an undeclared FORMAT
+    key, and truncated BGZF and plain gzip input.
+- `MergeVcfs`:
+  - two and three inputs in both orders, a `.list`, `COMMENT`, `CREATE_INDEX false`;
+  - `SEQUENCE_DICTIONARY` with and without contig lines in the inputs;
+  - unsorted, malformed, different samples, incompatible contigs, no dictionary, a missing input.
+- `SplitVcfs`, over every pair of `.vcf` and `.vcf.gz` outputs including the shared index:
+  - with `STRICT` and without, `CREATE_INDEX false`, and `SEQUENCE_DICTIONARY`;
+  - a file of mixed, MNP and symbolic records, a clean one, an unsorted one, a malformed record,
+    no contig lines, two outputs of one name, and an output name with no VCF extension.
+- `UpdateVcfSequenceDictionary`, to `.vcf` and `.vcf.gz`, with and without `CREATE_INDEX`, with
+  the dictionary from a `.dict`, a VCF, a VCF with no contig lines, a FASTA and a missing file,
+  over a good input, a BGZF one, a malformed record, no contig lines and truncated BGZF.
+
+**Result.** macOS native:
+
+| Tool | main RSS | RSS | main CPU | CPU | RSS vs GATK | CPU vs GATK |
+|---|---:|---:|---:|---:|---:|---:|
+| `MakeSitesOnlyVcf` | 5.66 GB | 21 MB | 10.0 s | 6.3 s | 0.04x | 0.76x |
+| `MergeVcfs` | 13.5 GB | 28 MB | 74.0 s | 52.4 s | 0.05x | 3.0x |
+| `SplitVcfs` | 7.82 GB | 22 MB | 21.0 s | 7.7 s | 0.04x | 0.59x |
+| `UpdateVcfSequenceDictionary` | 5.25 GB | 20 MB | 6.7 s | 6.8 s | 0.03x | 0.37x |
+
+`MergeVcfs`' CPU is 70% `VcfEncoder::encode_into` checking each INFO, FORMAT and FILTER key
+against the header. htsjdk-vcf does that with a linear scan of every header line, and gnomAD's
+header has hundreds. Sent to htsjdk-io as a per-encoder set of ids, which answers the same
+booleans; it is every VCF writer's cost, not this tool's.
+
+A text `.vcf` with `CREATE_INDEX` still reads its whole output back for the `.idx`: 650 MB for
+`MakeSitesOnlyVcf` on gnomAD to `.vcf`, the shortcut `VariantStreamWriter` names.
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are

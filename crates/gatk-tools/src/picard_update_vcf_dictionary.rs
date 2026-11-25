@@ -22,7 +22,7 @@
 //! the length and `assembly` when the sequence had `AS`. A sequence's `M5` and `UR` do not reach
 //! the VCF, so a round trip through this tool loses them whichever side they started on.
 
-use htsjdk_vcf::header::HeaderLine;
+use htsjdk_vcf::header::{HeaderLine, VcfHeader};
 use htsjdk_vcf::reader::read_vcf;
 use htsjdk_vcf::vcf_file::write_vcf;
 
@@ -88,19 +88,24 @@ pub fn contig_line(sequence: &Sequence, index: i32) -> HeaderLine {
     HeaderLine::Contig { index, fields }
 }
 
-/// `doWork()`: the whole run, text in and text out.
-pub fn update(input: &str, dictionary: &[Sequence]) -> Result<String, UpdateError> {
-    let file = read_vcf(input).map_err(|failure| {
-        UpdateError::Vcf(failure.error.class().to_string(), failure.error.message())
-    })?;
-    let mut header = file.header.clone();
-    // `setSequenceDictionary` replaces the contig lines and touches nothing else.
+/// `setSequenceDictionary`, which replaces the contig lines and touches nothing else.
+pub fn updated_header(header: &VcfHeader, dictionary: &[Sequence]) -> VcfHeader {
+    let mut header = header.clone();
     header
         .lines
         .retain(|line| !matches!(line, HeaderLine::Contig { .. }));
     for (index, sequence) in dictionary.iter().enumerate() {
         header.lines.push(contig_line(sequence, index as i32));
     }
+    header
+}
+
+/// `doWork()`: the whole run, text in and text out.
+pub fn update(input: &str, dictionary: &[Sequence]) -> Result<String, UpdateError> {
+    let file = read_vcf(input).map_err(|failure| {
+        UpdateError::Vcf(failure.error.class().to_string(), failure.error.message())
+    })?;
+    let header = updated_header(&file.header, dictionary);
     write_vcf(&header, &file.records).map_err(|error| {
         UpdateError::Vcf(
             "java.lang.IllegalStateException".to_string(),

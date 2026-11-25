@@ -17861,12 +17861,17 @@ fn write_variant_companions(
 /// `IndexingVariantContextWriter` does. The rest of what the whole-text path does -- the shards of
 /// `--max-variants-per-shard`, an MD5, a `.idx`, and a tabix the records' order refuses -- is that
 /// path's, over the file read back.
-struct VariantStreamWriter {
+pub(crate) struct VariantStreamWriter {
     output: String,
     sink: VariantSink,
     tabix: Option<TabixStream>,
     create_index: bool,
     create_md5: bool,
+    /// The dictionary a `.idx` lists, when it is not the header's contig lines.
+    index_dictionary: Option<Vec<(String, i32)>>,
+    /// A Picard writer refuses an unordered tabix before it writes a byte, so a tabix the records
+    /// could not stream leaves no output and the caller writes the whole text instead.
+    refuse_unstreamed_tabix: bool,
     line: String,
     _partial: PartialFile,
 }
@@ -17929,7 +17934,24 @@ impl TabixStream {
 
 impl VariantStreamWriter {
     fn create(parser: &Parser, output: &str, header: &str) -> Result<Self, Thrown> {
-        let create_index = flag(parser, "create-output-variant-index");
+        Self::create_as(
+            parser,
+            output,
+            header,
+            flag(parser, "create-output-variant-index"),
+            flag(parser, "create-output-variant-md5"),
+        )
+    }
+
+    /// [`create`](Self::create) with the index and the digest asked for by the caller, as a Picard
+    /// tool's `CREATE_INDEX` asks.
+    pub(crate) fn create_as(
+        parser: &Parser,
+        output: &str,
+        header: &str,
+        create_index: bool,
+        create_md5: bool,
+    ) -> Result<Self, Thrown> {
         let partial = PartialFile(format!("{output}.partial"));
         let mut tabix = None;
         let sink = if number_or(parser, "max-variants-per-shard", 0) > 0 {
@@ -17968,7 +17990,9 @@ impl VariantStreamWriter {
             sink,
             tabix,
             create_index,
-            create_md5: flag(parser, "create-output-variant-md5"),
+            create_md5,
+            index_dictionary: None,
+            refuse_unstreamed_tabix: false,
             line: String::new(),
             _partial: partial,
         };
@@ -17988,7 +18012,15 @@ impl VariantStreamWriter {
         written.map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error}")))
     }
 
-    fn write(
+    /// What [`create_as`](Self::create_as) leaves out of a Picard writer: the `.idx` dictionary
+    /// given, and the refusal of a tabix the records could not stream.
+    pub(crate) fn picard(mut self, index_dictionary: Option<Vec<(String, i32)>>) -> Self {
+        self.index_dictionary = index_dictionary;
+        self.refuse_unstreamed_tabix = true;
+        self
+    }
+
+    pub(crate) fn write(
         &mut self,
         encoder: &htsjdk_vcf::encoder::VcfEncoder,
         record: &htsjdk_vcf::variant::VariantContext,
@@ -18016,7 +18048,7 @@ impl VariantStreamWriter {
         Ok(())
     }
 
-    fn finish(self, parser: &Parser) -> Result<(), Thrown> {
+    pub(crate) fn finish(self, parser: &Parser) -> Result<(), Thrown> {
         let output = self.output.as_str();
         let failed = |error: std::io::Error| {
             Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
@@ -18038,6 +18070,12 @@ impl VariantStreamWriter {
                     .into_inner()
                     .map_err(|error| failed(error.into_error()))?;
             }
+        }
+        if self.refuse_unstreamed_tabix && self.tabix.as_ref().is_some_and(|tabix| tabix.failed) {
+            return Err(Thrown::non_user(
+                PORT_FAILURE,
+                "the records could not be indexed as they were written",
+            ));
         }
         std::fs::rename(&self._partial.0, output).map_err(failed)?;
 
@@ -18063,7 +18101,7 @@ impl VariantStreamWriter {
                 &bytes,
                 index_from_file,
                 self.create_md5,
-                None,
+                self.index_dictionary,
             )?;
         }
         if let Some(tabix) = streamed {

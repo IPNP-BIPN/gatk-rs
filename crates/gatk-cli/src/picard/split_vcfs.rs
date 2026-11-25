@@ -8,13 +8,15 @@
 
 use gatk_barclay::Parser;
 use gatk_tools::main_entry::{Thrown, PORT_FAILURE};
-use gatk_tools::split_vcfs::{split_stream, RecordType, Split, SplitError};
+use gatk_tools::split_vcfs::{record_type, split_stream, RecordType, Split, SplitError};
 
 use super::vcf_format_converter::{bcf_limitation, is_bcf, output_type};
 use super::{
-    assert_readable, record_features, thrown, vcf_text, virtual_offsets, write_vcf, TabixChecks,
+    assert_readable, record_features, thrown, vcf_lines, vcf_text, virtual_offsets, write_vcf,
+    TabixChecks, VcfStream,
 };
 use crate::runners::{argument, dictionary_from_any, flag, output_compression, write_variant_file};
+use crate::vcf_stream::{Body, Records};
 
 fn block(path: &str) -> bool {
     path.ends_with(".vcf.gz") || path.ends_with(".vcf.bgz")
@@ -28,27 +30,32 @@ pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> 
     if is_bcf(&input) {
         return Err(bcf_limitation());
     }
-    let text = vcf_text(&input)?;
     let create_index = flag(parser, "CREATE_INDEX");
+    let strict = flag(parser, "STRICT");
     // Read through `SamReaderFactory`, as a SAM header.
-    let given: Option<Vec<(String, i32)>> = match argument(parser, "SEQUENCE_DICTIONARY") {
-        None => None,
-        Some(path) => Some(
-            dictionary_from_any(&path)?
-                .into_iter()
-                .map(|record| (record.name.clone(), record.length))
-                .collect(),
-        ),
+    let dictionary = || -> Result<Option<Vec<(String, i32)>>, Thrown> {
+        match argument(parser, "SEQUENCE_DICTIONARY") {
+            None => Ok(None),
+            Some(path) => Ok(Some(
+                dictionary_from_any(&path)?
+                    .into_iter()
+                    .map(|record| (record.name.clone(), record.length))
+                    .collect(),
+            )),
+        }
     };
+    if let Ok(given) = dictionary() {
+        let outputs = [snp_output.as_str(), indel_output.as_str()];
+        if streamed(parser, &input, outputs, strict, create_index, given).is_some() {
+            return Ok(0);
+        }
+    }
+    let text = vcf_text(&input)?;
+    let given = dictionary()?;
     let refuse = |error: SplitError| thrown(error.java_class(), error.message());
     // The library's own dictionary check is the header's; a given dictionary answers it instead.
     // The reader and the dictionary refuse before the two writers are built and refuse a name.
-    let written = split_stream(
-        &text,
-        flag(parser, "STRICT"),
-        create_index && given.is_none(),
-    )
-    .map_err(refuse)?;
+    let written = split_stream(&text, strict, create_index && given.is_none()).map_err(refuse)?;
     output_type(&snp_output)?;
     output_type(&indel_output)?;
     // The builder hands the TabixIndexCreator it made for a `.vcf.gz` SNP file to the text INDEL
@@ -87,6 +94,56 @@ pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> 
         })?;
     }
     Ok(0)
+}
+
+/// The run above with each record written to its file as it is read. `None` on any refusal,
+/// having written nothing, so the run above refuses in its own words and order: the reader, the
+/// dictionary, `STRICT`, an output name, an index the records' order refuses, the writers. A
+/// `.vcf.gz` SNP file indexed with a text INDEL file shares its index with it, and two outputs of
+/// one name write over each other, so both are left to the run above.
+fn streamed(
+    parser: &Parser,
+    input: &str,
+    outputs: [&str; 2],
+    strict: bool,
+    create_index: bool,
+    given: Option<Vec<(String, i32)>>,
+) -> Option<()> {
+    let [snp_output, indel_output] = outputs;
+    if (create_index && block(snp_output) && !block(indel_output)) || snp_output == indel_output {
+        return None;
+    }
+    let mut lines = vcf_lines(input)?;
+    let (text, header_lines) = lines.read_header().ok()?;
+    let file = htsjdk_vcf::reader::read_vcf(&text).ok()?;
+    let has_dictionary = file
+        .header
+        .lines
+        .iter()
+        .any(|line| matches!(line, htsjdk_vcf::header::HeaderLine::Contig { .. }));
+    if create_index && given.is_none() && !has_dictionary {
+        return None;
+    }
+    output_type(snp_output).ok()?;
+    output_type(indel_output).ok()?;
+    // A block compressed file is `write_vcf`'s, a text one `write_variant_file`'s with the
+    // dictionary given.
+    let open = |output: &str| {
+        let dictionary = if block(output) { None } else { given.clone() };
+        VcfStream::create(parser, output, &file.header, create_index, dictionary)
+    };
+    let (mut snps, mut indels) = (open(snp_output)?, open(indel_output)?);
+    for record in Records::new(Body::Stream(lines), &file, header_lines) {
+        let record = record.ok()?;
+        match record_type(&record) {
+            RecordType::Indel => indels.write(&record)?,
+            RecordType::Snp => snps.write(&record)?,
+            _ if strict => return None,
+            _ => {}
+        }
+    }
+    snps.finish(parser)?;
+    indels.finish(parser)
 }
 
 /// The on-the-fly indexes' refusals, fed as the two writers feed them: each record at its own

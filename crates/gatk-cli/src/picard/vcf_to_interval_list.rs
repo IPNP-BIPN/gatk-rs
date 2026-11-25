@@ -5,11 +5,11 @@ use gatk_tools::main_entry::Thrown;
 use gatk_tools::vcf_to_interval_list::{
     convert, dictionary, list_header, to_interval, write_interval, IdMethod, Merger,
 };
-use std::io::{BufRead, Write};
+use std::io::Write;
 
-use super::{assert_readable, assert_writable, thrown, vcf_text};
+use super::{assert_readable, assert_writable, thrown, vcf_lines, vcf_text};
 use crate::runners::{argument, flag, scalar, write_file};
-use crate::vcf_stream::{Body, LineReader, Records};
+use crate::vcf_stream::{Body, Records};
 
 pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> {
     let input = argument(parser, "INPUT").unwrap_or_default();
@@ -33,19 +33,10 @@ pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> 
 /// [`convert`] a record at a time, written beside `output` and renamed onto it at the end.
 ///
 /// `None` when anything is refused or fails: the scratch file is removed and nothing is written,
-/// so the whole-text path refuses in its own words. The text is the one [`vcf_text`] reads: a
-/// file starting with the gzip magic is inflated by the reader `decompress_all` runs serially,
-/// which refuses the same files, and both are decoded lossily, line by line here.
+/// so the whole-text path refuses in its own words. The text is the one [`vcf_text`] reads
+/// ([`vcf_lines`]).
 fn streamed(input: &str, output: &str, include_filtered: bool, method: IdMethod) -> Option<()> {
-    let mut file = std::io::BufReader::new(std::fs::File::open(input).ok()?);
-    let reader: Box<dyn BufRead> = if file.fill_buf().ok()?.starts_with(&[0x1f, 0x8b]) {
-        Box::new(std::io::BufReader::new(htsjdk_bgzf::read::BgzfReader::new(
-            file,
-        )))
-    } else {
-        Box::new(file)
-    };
-    let mut lines = LineReader::new(reader, false);
+    let mut lines = vcf_lines(input)?;
     let (header, header_lines) = lines.read_header().ok()?;
     let vcf = htsjdk_vcf::reader::read_vcf(&header).ok()?;
     let sequences = dictionary(&vcf.header)?;

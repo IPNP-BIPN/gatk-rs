@@ -7,10 +7,11 @@
 
 use gatk_barclay::Parser;
 use gatk_tools::main_entry::Thrown;
-use gatk_tools::picard_update_vcf_dictionary::{read_dictionary, update, Sequence};
+use gatk_tools::picard_update_vcf_dictionary::{read_dictionary, update, updated_header, Sequence};
 
-use super::{assert_readable, assert_writable, thrown, vcf_text, write_vcf};
+use super::{assert_readable, assert_writable, thrown, vcf_lines, vcf_text, write_vcf, VcfStream};
 use crate::runners::{argument, flag};
+use crate::vcf_stream::{Body, Records};
 
 pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> {
     let input = argument(parser, "INPUT").unwrap_or_default();
@@ -21,6 +22,11 @@ pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> 
     assert_writable(&output)?;
 
     let dictionary = extract_dictionary(&source)?;
+    if let Some(sequences) = &dictionary {
+        if streamed(parser, &input, &output, sequences).is_some() {
+            return Ok(0);
+        }
+    }
     let text = vcf_text(&input)?;
     let compressed = output.ends_with(".gz") || output.ends_with(".bgz");
     if flag(parser, "CREATE_INDEX") && dictionary.is_none() && !compressed {
@@ -42,6 +48,20 @@ pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> 
         update(&text, &dictionary).map_err(|error| thrown(error.java_class(), error.message()))?;
     write_vcf(parser, &output, &updated, flag(parser, "CREATE_INDEX"))?;
     Ok(0)
+}
+
+/// `update` and [`write_vcf`] a record at a time. `None` on any refusal, having written nothing,
+/// so the run above refuses in its own words and order.
+fn streamed(parser: &Parser, input: &str, output: &str, dictionary: &[Sequence]) -> Option<()> {
+    let mut lines = vcf_lines(input)?;
+    let (text, header_lines) = lines.read_header().ok()?;
+    let file = htsjdk_vcf::reader::read_vcf(&text).ok()?;
+    let header = updated_header(&file.header, dictionary);
+    let mut out = VcfStream::create(parser, output, &header, flag(parser, "CREATE_INDEX"), None)?;
+    for record in Records::new(Body::Stream(lines), &file, header_lines) {
+        out.write(&record.ok()?)?;
+    }
+    out.finish(parser)
 }
 
 /// `SAMSequenceDictionaryExtractor.extractDictionary`, `None` for a VCF with no contig lines.
