@@ -1391,11 +1391,14 @@ Folklore says a Rust port is faster than the JVM. The answerable version is narr
       — each marked removable or not
 - [x] **S.5** (#112) the first targets, chosen from the baseline rather than from reading the code.
       Blocked on S.3 by construction
-- [~] **S.6** (#1452) bounded memory: a streaming reader, walkers and writers, an external sort and
-      FASTA by `.fai`, so that peak RSS no longer grows with the input. At chr20 30x
-      MarkDuplicatesSpark and ApplyBQSR are killed at 14 GiB where GATK peaks at 4.45 and 0.46 GiB
-      (run 44629287048, `docs/speed/scale.md` on #1465). The stack is #1458 to #1461 and the tools
-      on it
+- [~] **S.6** (#1452) bounded memory: a streaming engine. The costs above were measured on the
+      conformance fixtures, where the port's RSS is a fraction of the reference's; at scale it was
+      the other way round, because the port held whole inputs. `CountReads` over NA12878 chr20
+      (923 MB) peaked at 28.9 GB. Record order stays the same, only where records live changes, so
+      no suite may move. Streaming reader and read-walker iterator (#1458, #1459), BGZF writer with
+      the `.bai` built on the fly (#1460), and a guard under `ulimit -v` (#1461) bring that run to
+      98 MB; the assembly-region, locus and variant walkers, the external sort and the remaining
+      whole-file reads are what is left
 - [~] **S.7** (#1453) speed and RAM at scale against GATK, at equal threads, on x86-64 and arm64:
       per tool, CPU time and peak RSS each at or below the reference's, with no trade of one for
       the other and no byte moved
