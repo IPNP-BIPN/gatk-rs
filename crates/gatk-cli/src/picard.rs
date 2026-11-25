@@ -334,6 +334,79 @@ pub(crate) fn vcf_text(path: &str) -> Result<String, Thrown> {
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
+/// The lines of the text [`vcf_text`] reads, read as they are needed; `None` when the file
+/// cannot be opened, which the whole-text path then refuses in its own words.
+///
+/// A file starting with the gzip magic is inflated by the reader `decompress_all` runs serially,
+/// which refuses the same files, and both are decoded lossily, line by line here, which is the
+/// same text because a newline is never part of a multi-byte sequence.
+pub(crate) fn vcf_lines(path: &str) -> Option<crate::vcf_stream::LineReader> {
+    use std::io::BufRead;
+    let mut file = std::io::BufReader::new(std::fs::File::open(path).ok()?);
+    let reader: Box<dyn BufRead> = if file.fill_buf().ok()?.starts_with(&[0x1f, 0x8b]) {
+        Box::new(std::io::BufReader::new(htsjdk_bgzf::read::BgzfReader::new(
+            file,
+        )))
+    } else {
+        Box::new(file)
+    };
+    Some(crate::vcf_stream::LineReader::new(reader, false))
+}
+
+/// [`write_vcf_with_dictionary`] fed one record at a time, for a Picard tool that need not hold
+/// its records.
+///
+/// The file, its index and the refusals are that path's: the header and the records as
+/// `write_vcf` encodes them, through the writer `write_variant_file` uses. Any refusal, here or
+/// in the writer, is `None` and leaves no output, and the caller then writes the whole text, which
+/// refuses in its own words.
+pub(crate) struct VcfStream<'a> {
+    writer: crate::runners::VariantStreamWriter,
+    encoder: htsjdk_vcf::encoder::VcfEncoder<'a>,
+}
+
+impl<'a> VcfStream<'a> {
+    pub(crate) fn create(
+        parser: &Parser,
+        output: &str,
+        header: &'a htsjdk_vcf::VcfHeader,
+        index: bool,
+        dictionary: Option<&[htsjdk_bam::header::SequenceRecord]>,
+    ) -> Option<Self> {
+        let text = header.write();
+        let block_compressed = output.ends_with(".gz") || output.ends_with(".bgz");
+        let has_dictionary = text
+            .lines()
+            .take_while(|line| line.starts_with("##"))
+            .any(|line| line.starts_with("##contig="));
+        if index && !block_compressed && !has_dictionary {
+            return None;
+        }
+        let dictionary = dictionary.map(|sequences| {
+            sequences
+                .iter()
+                .map(|sequence| (sequence.name.clone(), sequence.length))
+                .collect()
+        });
+        let writer =
+            crate::runners::VariantStreamWriter::create_as(parser, output, &text, index, false)
+                .ok()?
+                .picard(dictionary);
+        Some(VcfStream {
+            writer,
+            encoder: htsjdk_vcf::encoder::VcfEncoder::new(header),
+        })
+    }
+
+    pub(crate) fn write(&mut self, record: &htsjdk_vcf::variant::VariantContext) -> Option<()> {
+        self.writer.write(&self.encoder, record).ok()
+    }
+
+    pub(crate) fn finish(self, parser: &Parser) -> Option<()> {
+        self.writer.finish(parser).ok()
+    }
+}
+
 /// `VCFHeader.setSequenceDictionary` on a header that has no contig lines: the dictionary's, in
 /// front of the column line, as `VCFContigHeaderLine(record, record.getAssembly())` renders them.
 pub(crate) fn with_contigs(text: &str, sequences: &[htsjdk_bam::header::SequenceRecord]) -> String {

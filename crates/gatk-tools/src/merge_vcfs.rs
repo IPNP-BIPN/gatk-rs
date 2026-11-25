@@ -131,81 +131,17 @@ fn is_compatible(first: &[(String, i32)], later: &[(String, i32)]) -> bool {
 
 /// `doWork()`: every input's text in, one text out.
 pub fn merge(inputs: &[String], comments: &[String]) -> Result<String, MergeError> {
-    let mut headers: Vec<VcfHeader> = Vec::new();
+    let mut checks = HeaderChecks::default();
     let mut streams: Vec<Vec<VariantContext>> = Vec::new();
-    let mut samples: Option<Vec<String>> = None;
-    let mut first_contigs: Option<Vec<(String, i32)>> = None;
-
     for input in inputs {
         // `MergeVcfs` never looks at a sample column, so it never parses one, as `VCFFileReader` does.
         let file = read_vcf_with(input, GenotypeParsing::Deferred).map_err(|failure| {
             MergeError::Vcf(failure.error.class().to_string(), failure.error.message())
         })?;
-        let contigs = contig_lines(&file.header);
-        if contigs.is_empty() {
-            return Err(MergeError::MissingDictionary);
-        }
-        let indices = contig_indices(&contigs);
-        match &first_contigs {
-            None => first_contigs = Some(indices),
-            Some(first) => {
-                if !is_compatible(first, &indices) {
-                    return Err(MergeError::IncompatibleContigs);
-                }
-            }
-        }
-        let mut names = file.header.samples.clone();
-        names.sort();
-        match &samples {
-            None => samples = Some(names),
-            Some(first) if *first != names => return Err(MergeError::DifferentSamples),
-            Some(_) => {}
-        }
+        checks.add(&file.header)?;
         streams.push(file.records);
-        // `new LinkedHashSet<>(...)`: an input whose header is one the run already has adds
-        // nothing to the merge.
-        if !headers.contains(&file.header) {
-            headers.push(file.header);
-        }
     }
-
-    // `COMMENT.forEach(... addMetaDataLine)` on the FIRST header only. `addMetaDataLine` adds an
-    // unstructured line only when no line already carries its key, so of two comments the FIRST
-    // is the one kept, whatever their values sort as.
-    if let Some(header) = headers.first_mut() {
-        for comment in comments {
-            let taken = header.lines.iter().any(|line| match line {
-                HeaderLine::Unstructured { key, .. } | HeaderLine::Structured { key, .. } => {
-                    key == COMMENT_KEY
-                }
-                _ => false,
-            });
-            if !taken {
-                header.lines.push(HeaderLine::Unstructured {
-                    key: COMMENT_KEY.to_string(),
-                    value: comment.clone(),
-                });
-            }
-        }
-    }
-
-    let sources: Vec<Source> = headers
-        .iter()
-        .map(|header| Source {
-            header,
-            version: None,
-        })
-        .collect();
-    let (merged, _warnings) = smart_merge_headers(&sources, false)
-        .map_err(|error| MergeError::Vcf(error.class().to_string(), error.message().to_string()))?;
-    let mut header = VcfHeader {
-        lines: merged,
-        samples: samples.unwrap_or_default(),
-    };
-    header.samples.sort();
-
-    let comparator = VariantContextComparator::from_header_lines(&contig_lines(&header))
-        .map_err(|error| MergeError::Vcf(error.class().to_string(), error.message().to_string()))?;
+    let (header, comparator) = checks.finish(comments)?;
 
     // Each input must already be sorted, which the merging iterator checks as it goes.
     for stream in &streams {
@@ -219,44 +155,172 @@ pub fn merge(inputs: &[String], comments: &[String]) -> Result<String, MergeErro
         }
     }
 
-    // `new MergingIterator<>(comparator, iterators)`: a PriorityQueue of iterators, ordered by
-    // their peeked head. The queue is Java's, and so is the tie-breaking, which is why it is
-    // written out rather than replaced by a stable merge.
-    let mut positions = vec![0usize; streams.len()];
+    let mut records = Vec::new();
+    let streams = streams
+        .iter()
+        .map(|stream| stream.iter().cloned().map(Ok::<_, MergeError>))
+        .collect();
+    merge_sorted(streams, &comparator, |record| {
+        records.push(record);
+        Ok(())
+    })?;
+
+    write_vcf(&header, &records).map_err(|error| {
+        MergeError::Vcf(
+            "java.lang.IllegalStateException".to_string(),
+            format!("{error:?}"),
+        )
+    })
+}
+
+/// The header checks `doWork` makes of each input as it opens it, in input order, and the merged
+/// header they leave.
+#[derive(Default)]
+pub struct HeaderChecks {
+    headers: Vec<VcfHeader>,
+    samples: Option<Vec<String>>,
+    first_contigs: Option<Vec<(String, i32)>>,
+}
+
+impl HeaderChecks {
+    /// One input's header, checked against the first's.
+    pub fn add(&mut self, header: &VcfHeader) -> Result<(), MergeError> {
+        let contigs = contig_lines(header);
+        if contigs.is_empty() {
+            return Err(MergeError::MissingDictionary);
+        }
+        let indices = contig_indices(&contigs);
+        match &self.first_contigs {
+            None => self.first_contigs = Some(indices),
+            Some(first) => {
+                if !is_compatible(first, &indices) {
+                    return Err(MergeError::IncompatibleContigs);
+                }
+            }
+        }
+        let mut names = header.samples.clone();
+        names.sort();
+        match &self.samples {
+            None => self.samples = Some(names),
+            Some(first) if *first != names => return Err(MergeError::DifferentSamples),
+            Some(_) => {}
+        }
+        // `new LinkedHashSet<>(...)`: an input whose header is one the run already has adds
+        // nothing to the merge.
+        if !self.headers.contains(header) {
+            self.headers.push(header.clone());
+        }
+        Ok(())
+    }
+
+    /// The merged header, with the comments, and the comparator its contigs make.
+    pub fn finish(
+        self,
+        comments: &[String],
+    ) -> Result<(VcfHeader, VariantContextComparator), MergeError> {
+        let mut headers = self.headers;
+        // `COMMENT.forEach(... addMetaDataLine)` on the FIRST header only. `addMetaDataLine` adds
+        // an unstructured line only when no line already carries its key, so of two comments the
+        // FIRST is the one kept, whatever their values sort as.
+        if let Some(header) = headers.first_mut() {
+            for comment in comments {
+                let taken = header.lines.iter().any(|line| match line {
+                    HeaderLine::Unstructured { key, .. } | HeaderLine::Structured { key, .. } => {
+                        key == COMMENT_KEY
+                    }
+                    _ => false,
+                });
+                if !taken {
+                    header.lines.push(HeaderLine::Unstructured {
+                        key: COMMENT_KEY.to_string(),
+                        value: comment.clone(),
+                    });
+                }
+            }
+        }
+
+        let sources: Vec<Source> = headers
+            .iter()
+            .map(|header| Source {
+                header,
+                version: None,
+            })
+            .collect();
+        let (merged, _warnings) = smart_merge_headers(&sources, false).map_err(|error| {
+            MergeError::Vcf(error.class().to_string(), error.message().to_string())
+        })?;
+        let mut header = VcfHeader {
+            lines: merged,
+            samples: self.samples.unwrap_or_default(),
+        };
+        header.samples.sort();
+
+        let comparator = VariantContextComparator::from_header_lines(&contig_lines(&header))
+            .map_err(|error| {
+                MergeError::Vcf(error.class().to_string(), error.message().to_string())
+            })?;
+        Ok((header, comparator))
+    }
+}
+
+/// `new MergingIterator<>(comparator, iterators)`, drained into `emit`: a PriorityQueue of
+/// iterators, ordered by their peeked head. The queue is Java's, and so is the tie-breaking,
+/// which is why it is written out rather than replaced by a stable merge.
+///
+/// A stream whose next record sorts before the one it last gave, or cannot be compared with it,
+/// is [`MergeError::UnsortedInput`], as the whole-list check before the merge refuses it.
+pub fn merge_sorted<E: From<MergeError>>(
+    mut streams: Vec<impl Iterator<Item = Result<VariantContext, E>>>,
+    comparator: &VariantContextComparator,
+    mut emit: impl FnMut(VariantContext) -> Result<(), E>,
+) -> Result<(), E> {
+    let mut heads: Vec<Option<VariantContext>> = Vec::with_capacity(streams.len());
+    for stream in &mut streams {
+        heads.push(stream.next().transpose()?);
+    }
     let mut heap: Vec<usize> = Vec::new();
-    let head = |stream: usize, positions: &[usize]| -> Option<&VariantContext> {
-        streams[stream].get(positions[stream])
-    };
-    let order = |left: usize, right: usize, positions: &[usize]| -> Result<i32, MergeError> {
-        let first = head(left, positions).expect("a live stream");
-        let second = head(right, positions).expect("a live stream");
+    let order = |left: usize, right: usize, heads: &[Option<VariantContext>]| {
+        let first = heads[left].as_ref().expect("a live stream");
+        let second = heads[right].as_ref().expect("a live stream");
         comparator
             .compare(first, second)
             .map_err(|_| MergeError::UnsortedInput)
     };
-
     // `offer`, which sifts up while the new element is strictly less than its parent.
-    for stream in 0..streams.len() {
-        if head(stream, &positions).is_none() {
-            continue;
-        }
+    let offer = |heap: &mut Vec<usize>, stream: usize, heads: &[Option<VariantContext>]| {
         heap.push(stream);
         let mut child = heap.len() - 1;
         while child > 0 {
             let parent = (child - 1) / 2;
-            if order(heap[child], heap[parent], &positions)? >= 0 {
+            if order(heap[child], heap[parent], heads)? >= 0 {
                 break;
             }
             heap.swap(child, parent);
             child = parent;
         }
+        Ok::<_, MergeError>(())
+    };
+
+    for stream in 0..streams.len() {
+        if heads[stream].is_some() {
+            offer(&mut heap, stream, &heads)?;
+        }
     }
 
-    let mut records = Vec::new();
     while !heap.is_empty() {
         let stream = heap[0];
-        records.push(streams[stream][positions[stream]].clone());
-        positions[stream] += 1;
+        let record = heads[stream].take().expect("a live stream");
+        let next = streams[stream].next().transpose()?;
+        if let Some(next) = &next {
+            let sorted = comparator
+                .compare(&record, next)
+                .map_err(|_| MergeError::UnsortedInput)?;
+            if sorted > 0 {
+                return Err(MergeError::UnsortedInput.into());
+            }
+        }
+        heads[stream] = next;
+        emit(record)?;
 
         // `poll` then `add`: the root leaves, the last element takes its place and sifts down, and
         // the advanced iterator is offered again if it still has a record.
@@ -271,34 +335,19 @@ pub fn merge(inputs: &[String], comments: &[String]) -> Result<String, MergeErro
                 }
                 let right = left + 1;
                 let mut smallest = left;
-                if right < heap.len() && order(heap[right], heap[left], &positions)? < 0 {
+                if right < heap.len() && order(heap[right], heap[left], &heads)? < 0 {
                     smallest = right;
                 }
-                if order(heap[smallest], heap[parent], &positions)? >= 0 {
+                if order(heap[smallest], heap[parent], &heads)? >= 0 {
                     break;
                 }
                 heap.swap(parent, smallest);
                 parent = smallest;
             }
         }
-        if head(stream, &positions).is_some() {
-            heap.push(stream);
-            let mut child = heap.len() - 1;
-            while child > 0 {
-                let parent = (child - 1) / 2;
-                if order(heap[child], heap[parent], &positions)? >= 0 {
-                    break;
-                }
-                heap.swap(child, parent);
-                child = parent;
-            }
+        if heads[stream].is_some() {
+            offer(&mut heap, stream, &heads)?;
         }
     }
-
-    write_vcf(&header, &records).map_err(|error| {
-        MergeError::Vcf(
-            "java.lang.IllegalStateException".to_string(),
-            format!("{error:?}"),
-        )
-    })
+    Ok(())
 }

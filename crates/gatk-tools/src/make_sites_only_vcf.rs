@@ -59,6 +59,14 @@ impl SitesOnlyError {
     }
 }
 
+/// `SAMPLE` as the `TreeSet` holds it: sorted, and de-duplicated.
+pub fn wanted_samples(samples: &[String]) -> Vec<String> {
+    let mut wanted: Vec<String> = samples.to_vec();
+    wanted.sort();
+    wanted.dedup();
+    wanted
+}
+
 /// `doWork()`: the whole run, text in and text out.
 ///
 /// `samples` is the `SAMPLE` argument; empty means sites-only. `create_index` is on by default in
@@ -81,10 +89,7 @@ pub fn make_sites_only(
         return Err(SitesOnlyError::NoSequenceDictionary);
     }
 
-    // The `TreeSet`: sorted, and de-duplicated.
-    let mut wanted: Vec<String> = samples.to_vec();
-    wanted.sort();
-    wanted.dedup();
+    let wanted = wanted_samples(samples);
 
     let mut header = file.header.clone();
     header.samples = wanted.clone();
