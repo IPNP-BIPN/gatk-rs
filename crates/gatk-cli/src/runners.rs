@@ -4351,6 +4351,11 @@ pub fn variant_filtration(parser: &Parser) -> Outcome {
         }
     }
 
+    // `hInfo.addAll(getDefaultToolVCFHeaderLines())`, last.
+    file.header
+        .lines
+        .extend(default_tool_vcf_header_lines(parser, "VariantFiltration"));
+
     let keep = variant_output_filter(parser, intervals.as_deref())?;
     written.retain(|record| keep(record));
     apply_sites_only(parser, &mut file.header, &mut written);
