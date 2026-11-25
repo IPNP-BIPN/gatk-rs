@@ -86,11 +86,19 @@ by `%.4f`: a last-place difference in the Hipparchus distribution would not show
 * `pickle._Pickler` at protocol 4 with dill's reducers, including `_Framer`'s frame boundaries.
 * Hipparchus' `EmpiricalDistribution` for the calibration sensitivity.
 
+### `PYTHON_SCRIPT`
+
+A user's script is Python, so the port does what GATK does: it runs `python` on it, as
+`PythonScriptExecutor` does, with the arguments `PythonVariantAnnotationsModel` and
+`PythonVariantAnnotationsScorer` compose, over the same temporary files (`subset.annot<n>.hdf5`,
+`temp<n>.scores.hdf5` under `--tmp-dir`, gone at exit). A missing `python` is the executor's user
+error, a name not ending in `.py` its `IllegalArgumentException`, and a status other than nought its
+`PythonScriptExecutorException`, with the command line and both streams' first 8192 bytes.
+
 ### What is still refused
 
 Each ends with the port's own sentence.
 
-* `PYTHON_SCRIPT`: a user's script is Python. There is nothing to port.
 * `--unlabeled-annotations-hdf5` with `PYTHON_IFOREST`: the default script rejects the argument and the
   reference fails with exit status 2 and temporary names in its message.
 * Hyperparameters whose effect was not measured: anything but `random_state`, `n_estimators`, `n_jobs`
@@ -160,13 +168,16 @@ a scorer's name or for the time inside a Java-written HDF5 file.
 * ~~That any of this holds on real x86-64.~~ Done: `vets-isolation-forest` is oracle-backed, in
   `broadinstitute/gatk:4.7.0.0` pulled by the job that runs it.
 * **The arguments past the interpreter.** `TrainVariantAnnotationsModel`'s covering array runs its
-  reference in the Broad's image and the port behind a stand-in `python` (`$past_the_interpreter` in
-  `tools/coverage/fixtures.json`), so its rows reach the fit instead of stopping at the import. That
+  reference in the Broad's image, and the port there too, through the pinned image's glibc loader so
+  that the binary CI links runs on that image's older glibc while the python it starts runs on the
+  image's own (`run_array.port_glibc`, `$past_the_interpreter` in `tools/coverage/fixtures.json`), so
+  its rows reach the fit instead of stopping at the import. That
   turned up one divergence, now fixed: the scorer names the script under `--tmp-dir`, which the port
   had written as `/tmp` whatever the argument said. `ScoreVariantAnnotations` does the same, over
   scorers the reference trains into the corpus before the rows (`run_array.train_scorers`), and
   turned up a second divergence, now fixed: the port wrote the genotypes under
-  `--sites-only-vcf-output`. Its `PYTHON_SCRIPT` rows still differ, as the port's own refusal.
+  `--sites-only-vcf-output`. Its `PYTHON_SCRIPT` rows, and Train's, run `it/score.py` with each
+  side's python.
 * **AVX-512.** On an AVX-512 CPU numpy takes other loops for `power` (SVML) and `log`. The port follows
   the path without AVX-512. A first golden made on an AVX-512 runner differed from the port on every
   row, so `vets_dump.sh` sets `NPY_DISABLE_CPU_FEATURES` to the AVX-512 family: the reference then
