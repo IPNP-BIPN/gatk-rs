@@ -153,6 +153,52 @@ decoder refuses, the unpaired read now wins, as it does in GATK, which also read
 **Result.** macOS native, chr20: 32.55 GiB to 0.10 GiB peak RSS; the BAM is the old port's byte
 for byte (md5 `621eb133...`). CPU 106 s against GATK's 113 s: decoding and deflating (W12).
 
+## Scale M. `ApplyBQSR` held the BAM in, the reads and the BAM out
+
+**Ratio.** At scale (chr20 30x BAM, linux/arm64, 6 GiB container): GATK 0.60 GiB peak RSS; the
+port killed at the limit (9.9x).
+
+**Where the memory goes.** The runner read the whole input file and inflated all of it to ask
+whether it starts with the BAM magic; `apply_bqsr_with` then collected every read, recalibrated
+them into a second list, and built the output BAM in memory before writing it.
+
+**The optimisation.** The start of the file decides, as in Scale A (`file_start`, `check`,
+`inflated_start`). `apply_bqsr_to` builds the transformer, then recalibrates and writes each read
+as it comes through `rewrite_to` (Scale C), with the `.bai` and `.md5` written beside it as
+`write_bam_companions` writes them.
+
+A profile of the streamed run then put a third of the main thread in allocating and freeing
+`PerReadCovariateMatrix`, a `Vec` per event per read offset. It is now one flat `Vec<i32>` per
+read, indexed by event, offset and covariate, the same values in the same cells.
+
+**Why it cannot move a byte.** The same transformer sees the same reads in the same order, and the
+same writer writes them: the output's bytes, its index and its digest are the whole-list path's.
+`check` refuses exactly the files `decompress_all` refused. The whole-list path refused the recal
+table first, then any read the traversal refused, then the transformer's construction, then a read
+it could not recalibrate, then the write. The streamed run answers only when nothing refused; on
+any refusal it leaves no output and runs the whole-list path, which refuses as before.
+
+**The suites that prove it.** `apply-bqsr` and its covering array. Natively, old against new, with
+a table made from 5 Mb of chr20: the same BAM, `.bai` and `.md5` byte for byte on that slice, with
+`--emit-original-quals`, `--create-output-bam-index`, `--create-output-bam-md5`,
+`--static-quantized-quals`, `-L` and `--use-original-qualities`; and the same exit and message for
+a truncated table, a missing one, a malformed record, an output in a missing directory and `-L` on
+an unindexed BAM.
+
+The matrix is also what `BaseRecalibrator` fills: its table on the same 5 Mb is byte-identical,
+at 307 s CPU against 316 s, which leaves that tool's CPU a target of its own.
+
+**Result.** macOS native.
+
+| Input | main RSS | RSS | main CPU | CPU | GATK RSS | GATK CPU |
+|---|---:|---:|---:|---:|---:|---:|
+| 5 Mb of chr20 | 3.33 GB | 85 MB | 22.2 s | 13.5 s | | |
+| chr20 | | 120 MB | | 200 s | 0.60 GiB | 189 s |
+
+On chr20 the reads are the same as the first streamed build's (`samtools view` md5 `86729ce2`),
+the header differing only in the `-O` name the `@PG` line records. Against GATK the RSS is 0.19x;
+the CPU is 1.06x, the rest being BAM decoding and encoding (the engine's, W12).
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are
