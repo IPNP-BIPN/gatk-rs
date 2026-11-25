@@ -55,6 +55,7 @@ fn every_query_returns_the_bases_the_reference_returns() {
     let mut source = ReferenceFileSource::open(&fasta).expect("the fixture opens");
 
     let mut compared = 0;
+    let mut queries = Vec::new();
     for line in text.lines() {
         let parts: Vec<&str> = line.split('\t').collect();
         if parts[0] != "query" {
@@ -70,6 +71,17 @@ fn every_query_returns_the_bases_the_reference_returns() {
             .map_or_else(|_| "E".to_string(), |b| String::from_utf8(b).unwrap());
         assert_eq!(ours, parts[4], "{contig}:{start}-{stop}");
         compared += 1;
+        queries.push((contig.to_string(), start, stop, parts[4].to_string()));
+    }
+
+    // The read-ahead answers every query as `query` does, forwards and then backwards, so from a
+    // window, from a fresh read and on either side of one.
+    let mut windowed = ReferenceFileSource::open(&fasta).expect("the fixture opens");
+    for (contig, start, stop, expected) in queries.iter().chain(queries.iter().rev()) {
+        let ours = windowed
+            .query_windowed(contig, *start, *stop)
+            .map_or_else(|_| "E".to_string(), |b| String::from_utf8(b).unwrap());
+        assert_eq!(&ours, expected, "windowed {contig}:{start}-{stop}");
     }
 
     std::fs::remove_dir_all(&dir).ok();

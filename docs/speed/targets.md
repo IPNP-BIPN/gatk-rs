@@ -236,6 +236,103 @@ The 162 Scale O runs were repeated with this build and still match.
 `FixVcfHeader`'s CPU is two decodes of the file, as GATK's is; what is left is the decoder's
 (htsjdk-io).
 
+## Scale Q. `LeftAlignAndTrimVariants` held the VCF
+
+**Ratio.** At scale (gnomAD chr20 sites to `.vcf.gz`, linux/arm64, 6 GiB container), GATK takes
+15.2 s CPU and 0.86 GiB; the port was killed at the limit (4.5 GiB, as far as it got).
+
+**Where the memory goes.** The run read the whole file into one string, decoded every record, kept
+every written record in a `Vec`, then encoded the whole output as one more string: four copies of
+the file. Natively the peak was 9.30 GB.
+
+**Where the time goes.** A `sample` profile of the streamed run: most of it in the engine bridge,
+building per record a JEXL context that no expression reads (a hash map of every INFO key), and
+rendering every attribute twice to bring it back. Under that, the decoder and the encoder.
+
+**The optimisation.**
+- A run with no `-L` streams: each record is read, aligned and written before the next is read,
+  through `VariantStreamWriter`. A run with `-L` (whose traversal is the index's), GenomicsDB, or
+  any refusal is left to the whole run, which refuses in its own words and order.
+- The header and the per-record body (`LeftAligner::align`) are shared by both paths.
+- The bridge is asked for no JEXL context (`to_engine_for(.., false)`).
+- A record with no genotypes that the alignment leaves where it is (not split, and too long, not
+  an indel, or with an empty window) is written as read, with no round trip through the engine.
+
+**Why it cannot move a byte.**
+- The streamed records are the whole run's, in its order (no `-L` means the file's order), aligned
+  by the same body with the same bound from the record before, filtered by the same
+  `variant_output_filter` and written by the same encoder and writer.
+- The JEXL context is only read by `SelectVariants`' expressions.
+- For a record with no genotypes and an unchanged place, `from_engine(to_engine(record))` is the
+  record: the alleles come back by identity, every INFO value finds its own original (the decoder
+  keeps one value per key), and the id, QUAL and filters are copied. The decision is the slow
+  path's own: `largest_indel_length`, `is_indel` and the window on the same alleles.
+
+**The suites that prove it.** `left-align-and-trim-variants`, `left-align-and-trim` and
+`select-variants-output`. Natively, old against new, 243 runs give the same output, index and
+message: nine inputs (plain, BGZF with an index, a malformed record, a contig the reference lacks,
+an undeclared INFO key, unsorted, no records, missing, two samples with genotypes) by nine option
+sets (none, `--split-multi-allelics`, with `--keep-original-ac`, `--sites-only-vcf-output`,
+`--dont-trim-alleles`, `--max-indel-length 5`, `-L`, `-XL`, `--max-leading-bases 3`) by three
+outputs (`.vcf`, `.vcf.gz`, no VCF extension). gnomAD chr20 gives the same `.vcf.gz` and `.tbi`.
+
+**Result.** macOS native, gnomAD chr20:
+
+| | RSS | CPU | RSS vs GATK | CPU vs GATK |
+|---|---:|---:|---:|---:|
+| main | 9.30 GB | 17.6 s | | |
+| streamed | 152 MB | 17.3 s | | |
+| no JEXL, unchanged records as read | 152 MB | 10.0 s | 0.16x | 0.66x |
+
+The 152 MB is mostly chr20's bases, read once for the alignment, as GATK's reference cache holds
+them. What is left of the CPU is the decoder and the encoder (htsjdk-io), and the BGZF codecs.
+
+## Scale R. `ValidateVariants` held the VCF
+
+**Ratio.** At scale (gnomAD chr20 sites against chr20, linux/arm64, 6 GiB container), GATK takes
+9.1 s CPU and 1.19 GiB; the port took 5.36 GiB.
+
+**Where the memory goes.** The run read the whole file into one string and decoded every record
+before checking the first. Natively the peak was 4.94 GB.
+
+**Where the time goes.** Once streamed, a `sample` profile put the system time (1.5 s of 7.4 s) in
+`pread`: one read of the FASTA per record, for the REF check.
+
+**The optimisation.**
+- A run with no `-L` streams: each record is read and checked before the next is read. Nothing
+  is written, so any refusal, the reader's included, goes to the whole run, which refuses in its
+  own words and order. A run with `-L` or GenomicsDB is left to it as well.
+- Both paths share the checks (`validate_variant_records`), handed the records where the whole run
+  traversed them, after the arguments and the reference are checked.
+- `ReferenceFileSource::query_windowed` reads a mebibase ahead on a miss and answers the queries
+  inside that window from it.
+
+**Why it cannot move a byte.**
+- The streamed records are the whole run's, in its order, through the same checks; the run writes
+  no file, and its only output is the refusal, which the streamed path never makes.
+- The reference's flattening (upper case, IUPAC to `N`) is base by base, so a slice of a longer
+  query is the shorter query; a query `query` refuses, or a read ahead that fails, goes to `query`
+  itself. `reference_query`'s golden test now asks every query again through the window, forwards
+  and then backwards.
+
+**The suites that prove it.** `validate-variants`, and `reference_query`. Natively, old against
+new, 144 runs give the same message and status: twelve inputs (plain, BGZF with an index, a
+malformed record, a contig the reference lacks, an undeclared INFO key, unsorted, no records,
+missing, two samples with genotypes, a GVCF, an overlapping GVCF, a wrong REF) by twelve option
+sets (no reference, `-R`, `--warn-on-errors`, `--validation-type-to-exclude ALL` and `REF`,
+`--validate-GVCF` alone, with `-L` and with `--fail-gvcf-on-overlap`, `-L`, `-XL`,
+`--do-not-validate-filtered-records`).
+
+**Result.** macOS native, gnomAD chr20:
+
+| | RSS | CPU | RSS vs GATK | CPU vs GATK |
+|---|---:|---:|---:|---:|
+| main | 4.94 GB | 7.8 s | | |
+| streamed | 17 MB | 7.4 s | | |
+| reference read ahead | 22 MB | 5.4 s | 0.02x | 0.59x |
+
+What is left of the CPU is the decoder (htsjdk-io).
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are
