@@ -75,7 +75,7 @@ arrays check, because they run the `dist` binary.
 **The suites that prove it.** Every covering array, `thread_independence.py` and the end-to-end
 `Speed` rows, all on `target/dist/gatk`; the in-process suites unchanged on `release`.
 
-**Result.** Section "P0 measured" below.
+**Result.** Section "P0 and P3, measured" below.
 
 ## 3. A global allocator (W12, P0)
 
@@ -93,6 +93,13 @@ second environment.
 **The suites that prove it.** Every end-to-end test and covering array, and `determinism`. Kept only
 if peak RSS does not rise against glibc on any measured tool, since the gate forbids trading RSS
 for CPU.
+
+**Result: admitted, not landed by W12.** On the macOS measurement below it saves 3 to 13% of CPU on
+top of `dist`, but PrintReads' peak RSS rises 8% (2,478 MB against 2,294 MB), which is the condition
+above failing on the one host measured. That host's baseline is Apple's allocator, not glibc, so it
+does not settle Linux. #1474 carries the same `#[global_allocator]` line; it is decided there, on
+`Speed at scale`'s Linux rows, against this criterion. The guard admits the line in `main.rs`
+either way.
 
 ## 4. PairHMM across pairs, dispatched at run time (W12, P3)
 
@@ -115,6 +122,40 @@ vectorises the body, so it does not rest on the autovectoriser.
 **The suites that prove it.** `reads_side_by_side_give_each_reads_own_bits` forces every kernel
 the host has against `read_likelihood_given_haplotype_log10`, which `pair_hmm_port` holds to the
 reference's transcription; then every HaplotypeCaller and Mutect2 suite and array.
+
+## P0 and P3, measured (W12)
+
+Native Apple M-series (aarch64, 16 cores, shared with other jobs), toolchain 1.97.1. Input: the
+chr20 smoke slice (NA12878 30x, chr20:30-32 Mb, `tools/speed/scale.json`). Three rounds,
+alternating binaries; CPU is user + sys, median; RSS is the peak over the rounds. Every output was
+the same across all binaries and rounds, once the `##GATKCommandLine` line (it carries the run's
+date) was left out.
+
+| Tool | `release` CPU | `dist` | `dist` + mimalloc | RSS `dist` | RSS + mimalloc |
+|---|---:|---:|---:|---:|---:|
+| HaplotypeCaller, 300 kb | 11.08 s | 0.98x | 0.88x | 1.00x | 0.96x |
+| Mutect2, 100 kb, `--ignore-itr-artifacts` | 2.85 s | 0.96x | 0.84x | 1.00x | 0.97x |
+| PrintReads, whole slice | 5.97 s | 1.01x | 0.97x | 1.00x | **1.08x** |
+| SelectVariants, gnomAD chr20, SNPs | 29.19 s | 0.88x | 0.82x | 1.00x | 1.01x |
+
+`dist` costs build time: 704 s against 164 s for `release` on this host, with a 3.9 GB peak (it
+was OOM-killed in a 7.75 GB Docker VM that other jobs shared). It makes the binary smaller,
+22.1 MB against 27.9 MB. Wall time on this shared host moved by up to 2x between rounds of the same
+binary, so it is not reported.
+
+**P3 on aarch64.** The portable kernel is the one that was already there, so as expected it is
+unchanged: HaplotypeCaller 10.96 s against 11.07 s (median of three, identical output). A sampled
+HaplotypeCaller run puts 78% of its busy samples in
+`reads_likelihoods_given_haplotype_log10_with`, which bounds what the x86-64 kernels can win.
+**x86-64 is pending.** Rosetta exposes neither AVX2 nor AVX-512, so the AVX2 and AVX-512 kernels
+have been checked only by their assembly (8 `vmulpd` and 4 `vaddpd` per cell, `ymm` and `zmm`
+respectively) until CI's test log reports which kernels each runner held to the single pair and
+`Speed`/`Speed at scale` time them.
+
+**Found while measuring, owned elsewhere.** Without `--ignore-itr-artifacts`, Mutect2 on 100 kb
+ran for more than ten minutes with nearly all its CPU in `memmove`. The runner's `contig_bases`
+clones the whole contig (64 MB for chr20) for every read the palindrome clip sees. #1474 shares the
+bases through an `Rc`.
 
 ## Not targets yet
 
