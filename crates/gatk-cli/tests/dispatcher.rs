@@ -273,20 +273,22 @@ fn a_tool_asked_for_help_answers_with_its_usage() {
     for flag in ["-h", "--help"] {
         let written = gatk_cli::run(&args(&["IndexFeatureFile", flag]));
         // The tool's usage goes to STDERR and the run is a success, which is what the golden's
-        // `help-after-a-tool` shape says of the tool it measured.
+        // `help-after-a-tool` shape says of the tool it measured. Its stdout is `instanceMain`'s
+        // and so empty; the result `0` is what `mainEntry`'s `handleResult` then prints.
         assert_eq!(written.stderr, expected, "{flag}");
-        assert!(written.stdout.is_empty(), "{flag}");
+        assert_eq!(written.stdout, "Tool returned:\n0\n", "{flag}");
         assert_eq!(written.status, 0, "{flag}");
     }
     let (out, err) = shape(&text, "help-after-a-tool");
     assert_eq!(out.0, 0);
+    assert_eq!(field(&text, "result", "help-after-a-tool"), "0");
     assert!(err.1.starts_with("USAGE: CountReads [arguments]"));
     // The tool the golden measured is a walker, whose usage carries a conditional block per read
     // filter that declares an argument. The port lays those out now, so `-h` after a walker's name
     // answers with the text and not with the port's own refusal.
     let walker = gatk_cli::run(&args(&["CountReads", "-h"]));
     assert_eq!(walker.status, 0);
-    assert!(walker.stdout.is_empty());
+    assert_eq!(walker.stdout, "Tool returned:\n0\n");
     assert_eq!(
         Some(walker.stderr.as_str()),
         gatk_cli::tool_usage("CountReads").as_deref()

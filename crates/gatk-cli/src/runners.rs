@@ -4932,6 +4932,7 @@ pub fn left_align_and_trim_variants(parser: &Parser) -> Outcome {
         file.header.samples.clone()
     };
     samples.sort();
+    let driving = driving_index_dictionary(&file.header);
     let header =
         update_header_contig_lines(parser, htsjdk_vcf::header::VcfHeader { lines, samples })?;
 
@@ -5109,7 +5110,7 @@ pub fn left_align_and_trim_variants(parser: &Parser) -> Outcome {
         exception: "org.broadinstitute.hellbender.exceptions.UserException",
         message: Some(format!("{error:?}")),
     })?;
-    write_variant_output(parser, &output, &text)?;
+    write_variant_output_indexed_by(parser, &output, &text, driving)?;
     // What `doWork` returns, which `handleResult` prints after `Tool returned:`.
     Ok(Some("SUCCESS".to_string()))
 }
@@ -16024,6 +16025,7 @@ pub fn variant_annotator(parser: &Parser) -> Outcome {
             unique.push(line);
         }
     }
+    let driving = driving_index_dictionary(&file.header);
     let header = update_header_contig_lines(
         parser,
         VcfHeader {
@@ -16198,7 +16200,7 @@ pub fn variant_annotator(parser: &Parser) -> Outcome {
     let mut header = header;
     apply_sites_only(parser, &mut header, &mut written);
     let rendered = write_vcf_honouring_lenient(parser, &header, &written)?;
-    write_variant_output(parser, &output, &rendered)?;
+    write_variant_output_indexed_by(parser, &output, &rendered, driving)?;
     Ok(None)
 }
 
@@ -16776,6 +16778,15 @@ fn sequence_dictionary_of(header: &htsjdk_vcf::header::VcfHeader) -> Vec<(String
         .collect()
 }
 
+/// The dictionary `VariantWalkerBase.getBestAvailableSequenceDictionary` hands the output's index:
+/// the driving variants' own, unless every length is zero (`isSequenceDictionaryFromIndex`), in
+/// which case [`write_variant_file`] falls back to the master and reference dictionaries. A tool
+/// that rewrites the header's contigs from the reference still indexes with the input's.
+fn driving_index_dictionary(header: &htsjdk_vcf::header::VcfHeader) -> Option<Vec<(String, i32)>> {
+    let own = sequence_dictionary_of(header);
+    own.iter().any(|(_, length)| *length != 0).then_some(own)
+}
+
 /// `UpdateVCFSequenceDictionary`, which replaces a header's dictionary and passes the records
 /// through.
 ///
@@ -17036,6 +17047,7 @@ pub fn select_variants(parser: &Parser) -> Outcome {
     // calls and which rewrites two kinds of line: every `##contig` is replaced by one built from
     // the dictionary, carrying `assembly=` when a reference path is known, and the `##reference`
     // line is replaced by that path's URI. Without a reference the dictionary is the driving
+    let driving = driving_index_dictionary(&file.header);
     // VCF's own, and a file that declares none keeps the lines it had.
     let header = update_header_contig_lines(parser, header)?;
 
@@ -17200,7 +17212,7 @@ pub fn select_variants(parser: &Parser) -> Outcome {
         exception: "org.broadinstitute.hellbender.exceptions.UserException",
         message: Some(format!("{error:?}")),
     })?;
-    write_variant_output(parser, &output, &text)?;
+    write_variant_output_indexed_by(parser, &output, &text, driving)?;
     Ok(None)
 }
 
