@@ -1,18 +1,22 @@
 //! Every `Mutect2Filter`'s identity and the header lines that describe them, ported from
 //! `org.broadinstitute.hellbender.tools.walkers.mutect.filtering` and `GATKVCFConstants`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; every filter class, `Mutect2FilteringEngine.java`, `M2FiltersArgumentCollection`
+//! and `GATKVCFHeaderLines.java` are unchanged since 4.6.2.0, and `GATKVCFConstants.java` differs
+//! only by an added `SOMATIC_QUALITY_KEY`, which nothing here reads).
 //!
 //! # Three error types, and they are not decoration
 //!
 //! `ErrorProbabilities` combines the filters of one type by their **maximum** and the types with
-//! each other as **independent**. A filter's type therefore decides which other filters can mask it:
-//! `SEQUENCING` holds the tumour-evidence filter alone, `NON_SOMATIC` holds contamination and
-//! germline, and `ARTIFACT` holds the other sixteen.
+//! each other as **independent**. A filter's type therefore decides which other filters can mask
+//! it: `SEQUENCING` holds the tumour-evidence filter alone, `NON_SOMATIC` holds contamination and
+//! germline, and `ARTIFACT` holds the other sixteen (counting `ReadOrientationFilter`, which
+//! [`FILTERS`] leaves out; fifteen of the eighteen there).
 //!
 //! # Nine per allele and nine per site
 //!
 //! A per-site filter's one probability is copied to every alternate allele; a per-allele filter
 //! answers a list. The two are the `Mutect2VariantFilter` and `Mutect2AlleleFilter` subclasses.
+//! The count is over [`FILTERS`]; `ReadOrientationFilter` is a tenth per-site one.
 //!
 //! # The header's list is not the engine's list
 //!
@@ -23,13 +27,23 @@
 //! # Which filters a run builds
 //!
 //! `buildFiltersList` guards six of them with `if (!MTFAC.mitochondria && !MTFAC.microbial)`, adds
-//! one back under `if (MTFAC.microbial)`, and one more under an argument. Neither the engine nor its
-//! stats file will say which were built: the stats file names only the filters that **fired**. See
-//! [`build_filters_list`], which is measured against the `filter-list-by-mode` golden.
+//! one back under `if (MTFAC.microbial)`, and one more under an argument. Neither the engine nor
+//! its stats file will say which were built: the stats file names only the filters that **fired**.
+//! See [`build_filters_list`], which is measured against the `filter-list-by-mode` golden.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&'static str` is a string literal compiled into the program, Java's interned constant; a
+//!   `const` array of them is a `static final String[]` that cannot be modified.
+//! - `&mut self` on a method means it may write to the object's fields, which Java methods may
+//!   always do; `&self` means it only reads them.
+//! - `..FilterArguments::default()` in a struct literal fills every field not written from the
+//!   default value, as a copy-and-override would.
 
 pub use crate::error_probabilities::ErrorType;
 
-/// Whether a filter answers one probability per allele or one for the site.
+/// Whether a filter answers one probability per allele or one for the site: whether it extends
+/// `Mutect2AlleleFilter` or `Mutect2VariantFilter`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Arity {
     PerAllele,
@@ -37,6 +51,7 @@ pub enum Arity {
 }
 
 impl Arity {
+    /// A label for diagnostics and goldens; the reference has no such name.
     pub fn name(self) -> &'static str {
         match self {
             Arity::PerAllele => "per-allele",
@@ -46,6 +61,10 @@ impl Arity {
 }
 
 /// One filter's identity: its Java class, the name it reports, its error type and its arity.
+///
+/// `filter_name` is the class's `filterName()`, `error_type` its `errorType()`, and `arity` its
+/// base class. The reference reads all three off the filter object; here they are data, so the
+/// table below can be checked against the Java one class at a time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FilterIdentity {
     pub class: &'static str,
@@ -200,8 +219,13 @@ pub const MUTECT_AS_FILTER_NAMES: [&str; 1] = ["AS_FilterStatus"];
 
 /// The `Description` of each `##FILTER` line, by filter name.
 ///
-/// `normal_artifact`'s description is the string `artifact_in_normal`, which is another filter's
-/// old name rather than a sentence: the header line describes itself with an identifier.
+/// `normal_artifact`'s description is the string `artifact_in_normal`, an identifier rather than a
+/// sentence: the header line is built from the filter's own constant,
+/// `ARTIFACT_IN_NORMAL_FILTER_NAME = "normal_artifact"`, with that constant's name as its text:
+///
+/// ```java
+/// addFilterLine(new VCFFilterHeaderLine(ARTIFACT_IN_NORMAL_FILTER_NAME, "artifact_in_normal"));
+/// ```
 pub const FILTER_DESCRIPTIONS: [(&str, &str); 22] = [
     (
         "PASS",
@@ -270,6 +294,9 @@ pub const FILTER_DESCRIPTIONS: [(&str, &str); 22] = [
 ];
 
 /// The two `##INFO` lines the tool declares beside the filters, rendered as `toString` does.
+///
+/// Each pair is the key and the whole rendered line, without the leading `##`; see
+/// [`filter_line`].
 pub const INFO_LINES: [(&str, &str); 2] = [
     ("AS_FilterStatus", "INFO=<ID=AS_FilterStatus,Number=A,Type=String,Description=\"Filter status for each allele, as assessed by ApplyVQSR. Note that the VCF filter field will reflect the most lenient/sensitive status across all alleles.\">"),
     ("STRQ", "INFO=<ID=STRQ,Number=1,Type=Integer,Description=\"Phred-scaled quality that alt alleles in STRs are not polymerase slippage errors\">"),
@@ -278,11 +305,16 @@ pub const INFO_LINES: [(&str, &str); 2] = [
 /// `FilterMutectCalls.FILTERING_STATUS_VCF_KEY`.
 pub const FILTERING_STATUS_VCF_KEY: &str = "filtering_status";
 
-/// The `##filtering_status` value Mutect2 writes, which the tool strips.
+/// The `##filtering_status` value Mutect2 writes, which the tool strips. `Mutect2Engine` builds it
+/// with `FilterMutectCalls.class.getSimpleName()`, and the two spaces after "calls." are in the
+/// reference's literal.
 pub const MUTECT2_FILTERING_STATUS: &str =
     "Warning: unfiltered Mutect 2 calls.  Please run FilterMutectCalls to remove false positives.";
 
 /// The value `FilterMutectCalls` writes over it, under the same key.
+///
+/// A trailing `\` in a Rust string literal joins the next line and drops its leading spaces, so
+/// this is one line with one space between "to" and "label", as the Java concatenation gives.
 pub const FILTERED_FILTERING_STATUS: &str =
     "These calls have been filtered by FilterMutectCalls to \
      label false positives with a list of failed filters and true positives with PASS.";
@@ -291,6 +323,8 @@ pub const FILTERED_FILTERING_STATUS: &str =
 ///
 /// The rendering has **no leading `##`**: `toString` is the key and the value, and the writer adds
 /// the hashes.
+///
+/// `None` for a name the header does not declare.
 pub fn filter_line(name: &str) -> Option<String> {
     FILTER_DESCRIPTIONS
         .iter()
@@ -304,10 +338,14 @@ pub const DEFAULT_MIN_MEDIAN_MAPPING_QUALITY: i32 = 30;
 /// `DEFAULT_MIN_MEDIAN_MAPPING_QUALITY_FOR_MICROBIAL`.
 pub const DEFAULT_MIN_MEDIAN_MAPPING_QUALITY_FOR_MICROBIAL: i32 = 20;
 
-/// The sentinel `minMedianMappingQuality` carries until it is asked for.
+/// The sentinel `minMedianMappingQuality` carries until it is asked for:
+/// `public int minMedianMappingQuality = -1;`.
 pub const UNSET_MIN_MEDIAN_MAPPING_QUALITY: i32 = -1;
 
 /// `DEFAULT_LOG_SNV_PRIOR`, `MathUtils.log10ToLog(-6)`.
+///
+/// A function rather than a `const` because the conversion is a run-time call to the ported
+/// `log10ToLog`, the same conversion the reference's static initialiser runs.
 pub fn default_log_snv_prior() -> f64 {
     crate::allele_likelihoods::log10_to_log(-6.0)
 }
@@ -341,6 +379,9 @@ pub const READ_ORIENTATION_FILTER: FilterIdentity = FilterIdentity {
 
 /// As much of `M2FiltersArgumentCollection` as decides which filters exist and how two of them are
 /// configured.
+///
+/// `log_snv_prior` and `log_indel_prior` are the raw fields `logSNVPrior` and `logIndelPrior`;
+/// read them through the getters below, which apply the mitochondrial substitution.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FilterArguments {
     pub mitochondria: bool,
@@ -387,6 +428,13 @@ impl FilterArguments {
     ///
     /// So passing the default explicitly under mitochondrial mode is indistinguishable from not
     /// passing it, and yields the mitochondrial prior.
+    ///
+    /// ```java
+    /// return mitochondria && logSNVPrior == DEFAULT_LOG_SNV_PRIOR
+    ///         ? DEFAULT_LOG_SNV_PRIOR_FOR_MITO : logSNVPrior;
+    /// ```
+    ///
+    /// (One line in the reference, wrapped here.)
     pub fn log_snv_prior(&self) -> f64 {
         if self.mitochondria && self.log_snv_prior == default_log_snv_prior() {
             default_log_snv_prior_for_mito()
@@ -420,17 +468,22 @@ impl FilterArguments {
 /// The `ReadOrientationFilter` branch is taken when `--ob-priors` names a tar.gz of artifact
 /// priors, and the filter lands thirteenth, straight after `PanelOfNormalsFilter`.
 pub fn build_filters_list(arguments: &FilterArguments) -> Vec<&'static str> {
-    // The first twelve, unconditionally, in the reference's order.
+    // The first twelve, unconditionally, in the reference's order: `TumorEvidenceFilter` through
+    // `PanelOfNormalsFilter`. `FILTERS[..12]` is a slice of the first twelve entries, Java's
+    // `subList(0, 12)`, and `FILTERS[12..]` below is the rest.
     let mut classes: Vec<&'static str> = FILTERS[..12].iter().map(|f| f.class).collect();
 
     if arguments.read_orientation_priors {
         classes.push(READ_ORIENTATION_FILTER_CLASS);
     }
 
+    // `if (!MTFAC.mitochondria && !MTFAC.microbial)`: clustered events, multiallelic, fragment,
+    // slippage, haplotype and germline.
     if !arguments.mitochondria && !arguments.microbial {
         classes.extend(FILTERS[12..].iter().map(|f| f.class));
     }
 
+    // `if (MTFAC.microbial)`: slippage again, now last.
     if arguments.microbial {
         classes.push("PolymeraseSlippageFilter");
     }

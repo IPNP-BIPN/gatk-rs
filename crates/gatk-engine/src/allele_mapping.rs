@@ -1,7 +1,10 @@
-//! Ported from `org.broadinstitute.hellbender.tools.walkers.haplotypecaller.AssemblyBasedCallerUtils`
+//! Ported from
+//! `org.broadinstitute.hellbender.tools.walkers.haplotypecaller.AssemblyBasedCallerUtils`
 //! (`getVariantsFromActiveHaplotypes`, `makeMergedVariantContext`, `createAlleleMapper`), with
 //! `HaplotypeCallerGenotypingEngine.replaceSpanDels` and the allele side of
-//! `GATKVariantContextUtils.simpleMerge` (GATK 4.6.2.0): from assembled haplotypes to the alleles
+//! `GATKVariantContextUtils.simpleMerge` (GATK
+//! 4.7.0.0; the three Java files are unchanged since
+//! 4.6.2.0): from assembled haplotypes to the alleles
 //! genotyped at one event start, and which haplotypes support each.
 //!
 //! At a start, the distinct events overlapping it (by `Event.equals`, the first haplotype to carry
@@ -17,17 +20,35 @@
 //!
 //!  * `simpleMerge` takes the merged allele list from a `LinkedHashSet` in which a context with a
 //!    shorter reference adds its extended alternates **before** the reference; htsjdk's
-//!    `VariantContext` then moves the reference to the front, so the order is the reference followed
-//!    by the alternates as they arrived;
+//!    `VariantContext` then moves the reference to the front, so the order is the reference
+//!    followed by the alternates as they arrived;
 //!  * the merged context ends where its longest input ends, and among inputs of one length the
 //!    first wins;
 //!  * a haplotype with several events overlapping the start is credited once per event that starts
 //!    there and maps, but stops at the first that starts earlier (the reference's own comment asks
-//!    why that is a `break`).
+//!    why that is a `break`: `//Why is there a break here? Shouldn't this be a continue?`).
 //!
 //! The contexts built from events carry no genotypes, filters, IDs or attributes (the flow-based
 //! collapsed tag is not ported), so the rest of `simpleMerge`, which merges those, has nothing to
 //! do here and is not ported.
+//!
+//! The `allele-mapping` suite (`allele_mapping.txt.gz`, 255 rows) measures all four steps; its
+//! `mapper spanning-deletion 1020 * 2` and `mapper spanning-deletion-off 1020 A* 0,2` rows are the
+//! two branches of the spanning event.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, MappingError>` is "a value or an error", and `?` after a call returns its error
+//!   from the enclosing function at once (Java's `throws` at one call site). `impl
+//!   From<AlleleError> for MappingError` is what lets `?` convert an allele error into this file's
+//!   error type.
+//! - `let Some(first) = contexts.first() else { return ... };` unwraps an `Option` or takes the
+//!   early exit; there is no Java equivalent.
+//! - `match` with `Some(r) if ...` arms tries each guard in order and takes the first that holds,
+//!   like an `if`/`else if` chain over the cases.
+//! - `EventContext { start: loc, ..c }` builds a copy of `c` with the named fields replaced.
+//! - The `LinkedHashMap`s of the reference are `Vec`s of pairs here: insertion order is kept and a
+//!   key is found by a linear search with `==`, which is `Allele.equals`.
 
 use htsjdk_vcf::allele::{Allele, AlleleError, SPAN_DEL_STRING};
 
@@ -97,6 +118,8 @@ pub fn variants_from_active_haplotypes(
     haplotypes: &[Haplotype],
     include_spanning_events: bool,
 ) -> Result<Vec<EventContext>, MappingError> {
+    // `final Set<Event> events = new HashSet<>();`, used only for `events.add(event)`'s answer, so
+    // a list searched with `Event.equals` gives the same first-seen order and the same answers.
     let mut seen: Vec<Event> = Vec::new();
     let mut result = Vec::new();
     for (number, haplotype) in haplotypes.iter().enumerate() {
@@ -109,6 +132,8 @@ pub fn variants_from_active_haplotypes(
                 continue;
             }
             seen.push(event.clone());
+            // `"HC" + hapNumber++` counts every haplotype, so the name is the index of the first
+            // haplotype that carries the event, not a count of the events.
             result.push(EventContext {
                 source: format!("HC{number}"),
                 contig: event.contig().to_string(),
@@ -162,6 +187,8 @@ pub fn make_merged_variant_context(
             None => &c.reference,
             Some(r) if r.len() < c.reference.len() => &c.reference,
             Some(r) if c.reference.len() < r.len() => r,
+            // The reference's message goes on with `, %s vs. %s` and the two alleles, which this
+            // one leaves out; at one start of one reference the branch is not reached.
             Some(r) if *r != c.reference => {
                 return Err(MappingError::InconsistentReferences(format!(
                     "The provided variant file(s) have inconsistent references for the same \
@@ -187,6 +214,8 @@ pub fn make_merged_variant_context(
                 "attempting to merge VariantContexts with different start sites".to_string(),
             ));
         }
+        // `VariantContextUtils.getSize(vc) > getSize(longestVC)`, strictly, so of two equal lengths
+        // the first stays.
         if c.end - c.start > longest.end - longest.start {
             longest = c;
         }
@@ -204,7 +233,8 @@ pub fn make_merged_variant_context(
             add(reference.clone());
         }
     }
-    // htsjdk's `VariantContext` puts the reference first.
+    // htsjdk's `VariantContext` puts the reference first. `remove` then `insert(0, ..)` keeps
+    // the alternates in the order the `LinkedHashSet` received them.
     let position = alleles
         .iter()
         .position(|a| a.is_reference())
@@ -237,10 +267,13 @@ pub fn create_allele_mapping(
     if ref_allele.len() == input_ref.len() {
         return Ok(input_alts.iter().map(|a| (a.clone(), a.clone())).collect());
     }
+    // `Arrays.copyOfRange(refAllele.getBases(), inputRef.length(), refAllele.length())`.
     let extra = &ref_allele.display_string().into_bytes()[input_ref.len()..];
     let star = span_del();
     let mut map = Vec::new();
     for a in input_alts {
+        // `isNonSymbolicExtendableAllele(a)`, then `Allele.extend`; a reference or symbolic
+        // alternate other than `*` is left out of the map altogether.
         if !(a.is_reference() || a.is_symbolic() || *a == star) {
             let mut bases = a.display_string().into_bytes();
             bases.extend_from_slice(extra);
@@ -296,6 +329,8 @@ pub fn create_allele_mapper(
                         event.ref_allele(),
                         std::slice::from_ref(event.alt_allele()),
                     )?;
+                    // `spanningEventAlleleMappingToMergedVc.get(altAllele)`: the map has at most
+                    // the one entry, and none when the alternate was left out of it.
                     if let Some((_, remapped)) = mapping.first() {
                         if let Some(i) = slot(&mut result, remapped) {
                             result[i].1.push(h);

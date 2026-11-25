@@ -1,5 +1,6 @@
 //! `FilterStats`, ported from
-//! `org.broadinstitute.hellbender.tools.walkers.mutect.filtering.FilterStats` (GATK 4.6.2.0).
+//! `org.broadinstitute.hellbender.tools.walkers.mutect.filtering.FilterStats` (GATK 4.7.0.0;
+//! `FilterStats.java` is unchanged since 4.6.2.0).
 //!
 //! The `.filteringStats.tsv` that `FilterMutectCalls` writes beside its VCF: some metadata lines,
 //! five columns, and one row per filter.
@@ -12,8 +13,9 @@
 //! writer.writeMetadata(THRESHOLD_METADATA_TAG, Double.toString(round(threshold)));
 //! ```
 //!
-//! where `round` is `roundToNDecimalPlaces(x, 3)`. The columns keep two decimals and the metadata
-//! three, so the same number appears twice in one file at two precisions.
+//! where `round` is `roundToNDecimalPlaces(x, 3)`, and `DataLine.set(name, value, 2)` is
+//! `set(index, MathUtils.roundToNDecimalPlaces(value, numDecimals))`. The columns keep two decimals
+//! and the metadata three, so the same number appears twice in one file at two precisions.
 //!
 //! # Zero, infinity and the sign
 //!
@@ -32,19 +34,28 @@
 //! This writer filters nothing and sorts nothing. The rule that drops a filter which accounted for
 //! neither a false positive nor a false negative lives in `FilteringOutputStats`, which needs the
 //! filtering engine and is not ported here.
+//!
+//! # Reading this file without reading Rust
+//!
+//! `&[T]` is a borrowed, read-only view of an array; `&str` is the same for a string. `String` is
+//! an owned string, and `.to_string()` or `.clone()` makes one. `.expect(msg)` unwraps a `Result`
+//! and stops the program with `msg` if it is an error: it marks a refusal that cannot happen here.
 
 use crate::base_recalibration_engine::round_to_n_decimal_places;
 use crate::tsv_table::{java_double_to_string, write_table};
 
 /// `THRESHOLD_METADATA_TAG`, `FDR_METADATA_TAG` and `SENSITIVITY_METADATA_TAG`.
 pub const THRESHOLD_METADATA_TAG: &str = "threshold";
+/// `FDR_METADATA_TAG`.
 pub const FDR_METADATA_TAG: &str = "fdr";
+/// `SENSITIVITY_METADATA_TAG`.
 pub const SENSITIVITY_METADATA_TAG: &str = "sensitivity";
 
 /// `M2FilterStatsTableColumn`, in the order the enum declares.
 pub const COLUMNS: [&str; 5] = ["filter", "FP", "FDR", "FN", "FNR"];
 
-/// One row: a filter and the four numbers attributed to it.
+/// One row: a filter and the four numbers attributed to it. `FilterStats`'s five fields; the
+/// getters are the public fields.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FilterStats {
     pub filter_name: String,
@@ -55,6 +66,10 @@ pub struct FilterStats {
 }
 
 /// A column value: `DataLine.set(name, value, 2)`.
+///
+/// `roundToNDecimalPlaces` refuses only `n <= 0` (`Utils.validateArg(n > 0, ...)`), so the
+/// `expect` cannot fire. `java_double_to_string` is `Double.toString`, which `DataLine` uses to
+/// render a `double`.
 pub fn column(value: f64) -> String {
     java_double_to_string(
         round_to_n_decimal_places(value, 2).expect("two places is more than zero"),
@@ -72,6 +87,16 @@ pub fn metadata(value: f64) -> String {
 ///
 /// The three totals are divided here rather than by the caller, which is what puts `0/0` and
 /// `x/0` in front of the rounding.
+///
+/// ```java
+/// writer.writeMetadata(FDR_METADATA_TAG,
+///         Double.toString(round(expectedFalsePositives / totalCalls)));
+/// ```
+///
+/// (One line in the reference, wrapped here.)
+///
+/// The order of the lines is the reference's: the clustering metadata as given, then threshold,
+/// fdr and sensitivity, then the header and the rows from `writeAllRecords`.
 #[allow(clippy::too_many_arguments)]
 pub fn write_summary(
     filter_stats: &[FilterStats],
@@ -106,6 +131,7 @@ pub fn write_summary(
         })
         .collect();
 
+    // `write_table` takes borrowed views of the strings; this builds them without copying.
     let borrowed: Vec<(&str, &str)> = pairs
         .iter()
         .map(|(key, value)| (key.as_str(), value.as_str()))

@@ -1,5 +1,6 @@
-//! `Mutect2FilteringEngine.accumulateData` and the pass schedule `FilterMutectCalls` drives it with,
-//! ported from `org.broadinstitute.hellbender.tools.walkers.mutect.filtering` (GATK 4.6.2.0).
+//! `Mutect2FilteringEngine.accumulateData` and the pass schedule `FilterMutectCalls` drives it
+//! with, ported from `org.broadinstitute.hellbender.tools.walkers.mutect.filtering` (GATK 4.7.0.0;
+//! `Mutect2FilteringEngine.java` and `FilterMutectCalls.java` are unchanged since 4.6.2.0).
 //!
 //! # Four passes, not two
 //!
@@ -23,8 +24,8 @@
 //! ```
 //!
 //! `isNonReference()` is true of `<NON_REF>` as well, so the guard reads "no alternate other than
-//! `<NON_REF>`". A GVCF-mode site contributes to neither the clustering model nor the threshold, and
-//! a record with no alternate at all is skipped by the same test. A symbolic alternate that is
+//! `<NON_REF>`". A GVCF-mode site contributes to neither the clustering model nor the threshold,
+//! and a record with no alternate at all is skipped by the same test. A symbolic alternate that is
 //! **not** `<NON_REF>` is not skipped, and still accumulates nothing: the symbolic removal inside
 //! `ErrorProbabilities` has already emptied every list. Two records reach the same three zeroes by
 //! different routes.
@@ -43,16 +44,32 @@
 //! pass. One difference the golden cannot see: by the time it throws, `record` has already zeroed
 //! the symbolic entries of the caller's depth array. This port refuses before calling `record`, so
 //! the caller's array is untouched.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is "a value or nothing" (`Some(x)` or `None`), Java's nullable reference with the
+//!   null check enforced by the compiler. The pass schedules answer `None` where the reference
+//!   throws `ShouldNeverReachHereException`.
+//! - `Result<T, E>` is "a value or an error" (`Ok(x)` or `Err(e)`): how this codebase models a
+//!   Java exception. `?` after a call returns its error to the caller at once, Java's `throws` at
+//!   one call site.
+//! - `&mut T` is a borrowed, writable reference: the function may change what the caller passed,
+//!   as Java may write through an array or a list it is handed. `&[T]` is the read-only form.
 
 use crate::somatic_clustering_model::{AlternateAllele, RecordError, SomaticClusteringModel};
 
 /// `FilterMutectCalls.NUMBER_OF_LEARNING_PASSES`.
+///
+/// `i32` is Java's `int`, kept so the pass number `n` compares with it as it does in the reference.
 pub const NUMBER_OF_LEARNING_PASSES: i32 = 2;
 
 /// `numberOfPasses()`: the learning passes, one for the threshold, and one for calling.
 pub const NUMBER_OF_PASSES: i32 = NUMBER_OF_LEARNING_PASSES + 2;
 
 /// What `nthPassApply` does in pass `n`.
+///
+/// The reference does the work inside the walker callback; here the schedule is returned as a
+/// value and the driver acts on it, so the schedule can be tested apart from the traversal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PassAction {
     /// `filteringEngine.accumulateData(...)`, for `n <= NUMBER_OF_LEARNING_PASSES`.
@@ -73,7 +90,19 @@ pub enum AfterPassAction {
 }
 
 /// `nthPassApply`'s schedule. `None` is the `ShouldNeverReachHereException`.
+///
+/// ```java
+/// if (n <= NUMBER_OF_LEARNING_PASSES) {
+///     filteringEngine.accumulateData(variant, referenceContext);
+/// } else if (n == NUMBER_OF_LEARNING_PASSES + 1) {
+/// ```
+///
+/// The `pass < 0` arm has no counterpart in the reference, whose `n <= NUMBER_OF_LEARNING_PASSES`
+/// would accept a negative `n`. The walker counts its passes from zero, so the arm only matters to
+/// a driver that miscounts, which it then refuses rather than accumulates.
 pub fn action_for_pass(pass: i32) -> Option<PassAction> {
+    // `if ... else if ...` is an expression in Rust: the branch taken is the function's value, so
+    // no `return` is written.
     if pass < 0 {
         None
     } else if pass <= NUMBER_OF_LEARNING_PASSES {
@@ -86,6 +115,9 @@ pub fn action_for_pass(pass: i32) -> Option<PassAction> {
 }
 
 /// `afterNthPass`'s schedule. `None` is the `ShouldNeverReachHereException`.
+///
+/// Note the `<` here against the `<=` in [`action_for_pass`]: pass 2 accumulates but only relearns
+/// the threshold afterwards, which is the module note's "four passes, not two".
 pub fn action_after_pass(pass: i32) -> Option<AfterPassAction> {
     if pass < 0 {
         None
@@ -101,6 +133,9 @@ pub fn action_after_pass(pass: i32) -> Option<AfterPassAction> {
 }
 
 /// One alternate allele, as the accumulation guard and the clustering model each see it.
+///
+/// The reference reads both facts off one htsjdk `Allele`; here the caller extracts them, because
+/// `allele.symbolic` (what `record` skips) and `non_ref` (what the guard skips) are different sets.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AccumulationAllele {
     pub allele: AlternateAllele,
@@ -109,7 +144,7 @@ pub struct AccumulationAllele {
     pub non_ref: bool,
 }
 
-/// What the accumulation refuses.
+/// What the accumulation refuses: each variant stands for the Java exception named on it.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AccumulateError {
     /// The `NullPointerException` on `tumorLogOdds.length` when the record has no `TLOD`.
@@ -119,6 +154,7 @@ pub enum AccumulateError {
 }
 
 impl AccumulateError {
+    /// The fully qualified Java exception class the reference throws.
     pub fn class(&self) -> &'static str {
         match self {
             AccumulateError::NoTumorLogOdds => "java.lang.NullPointerException",
@@ -126,6 +162,9 @@ impl AccumulateError {
         }
     }
 
+    /// The exception's message, as the JVM renders it. The first is the JDK's helpful
+    /// `NullPointerException` text; the second is the `Utils.validateArg` message in
+    /// `SomaticClusteringModel.record`.
     pub fn message(&self) -> String {
         match self {
             AccumulateError::NoTumorLogOdds => {
@@ -138,6 +177,8 @@ impl AccumulateError {
     }
 }
 
+/// Lets `?` turn the clustering model's refusal into this type's `Record` variant, so a refusal
+/// inside `record` propagates as it does in the reference.
 impl From<RecordError> for AccumulateError {
     fn from(error: RecordError) -> Self {
         AccumulateError::Record(error)
@@ -146,11 +187,15 @@ impl From<RecordError> for AccumulateError {
 
 /// `accumulateData`, without the filters' own accumulation, which each filter owns.
 ///
-/// `combined_probabilities` is `errorProbabilities.getCombinedErrorProbabilities()`; the artifact and
-/// non-somatic lists are the other two the model reads. `tumor_allele_depths` is written through, as
-/// the reference writes through the array it is handed.
+/// `combined_probabilities` is `errorProbabilities.getCombinedErrorProbabilities()`; the artifact
+/// and non-somatic lists are the other two the model reads. `tumor_allele_depths` is written
+/// through, as the reference writes through the array it is handed.
 ///
 /// Returns `false` when the guard skipped the record without touching anything.
+///
+/// The order is the reference's (`Mutect2FilteringEngine.accumulateData`): guard, then
+/// `somaticClusteringModel.record(...)`, then `thresholdCalculator.addCombinedErrorProbabilites`.
+/// So a record that `record` refuses adds nothing to the threshold calculator either.
 #[allow(clippy::too_many_arguments)]
 pub fn accumulate_data(
     model: &mut SomaticClusteringModel,
@@ -169,10 +214,14 @@ pub fn accumulate_data(
         return Ok(false);
     }
 
+    // `let Some(x) = y else { ... }` unwraps the `Option` or takes the early exit; there is no Java
+    // equivalent. Here the exit is the `NullPointerException` the module note describes.
     let Some(tumor_log_odds) = tumor_log_odds else {
         return Err(AccumulateError::NoTumorLogOdds);
     };
 
+    // `.iter().map(..).collect()` is Java's `stream().map(..).collect(toList())`; `|a| a.allele` is
+    // a lambda, `a -> a.allele`.
     let alleles: Vec<AlternateAllele> = alternates.iter().map(|a| a.allele).collect();
     model.record(
         tumor_allele_depths,

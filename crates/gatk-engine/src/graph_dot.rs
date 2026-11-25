@@ -1,16 +1,21 @@
 //! `BaseGraph.printGraph`, ported for `--graph-output` and `--debug-graph-transformations`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `BaseGraph.java` is unchanged since 4.6.2.0).
 //!
 //! The reference names each vertex by `System.identityHashCode`, so no two JVM runs agree on the
 //! numbers; here a vertex's number is its index, and a comparison masks them. Everything else is
 //! the reference's text: the edges in the graph's order, each a `print` with no newline unless it
 //! is a reference edge, which is printed again in red with one; then each vertex with its added
 //! sequence, its number and its debugging text; then a linked graph's junction trees.
+//!
+//! `println` ends a line with the platform separator, `\n` on Linux.
+//! The functions build the whole text as one `String` and the caller writes it; `format!` is
+//! Java's `String.format`, with `{name}` naming a local variable and `{:x}` lower-case hex.
 
 use crate::read_threading_graph::ReadThreadingGraph;
 use crate::seq_graph::SeqGraph;
 
-/// `MultiDeBruijnVertex.toString()`.
+/// `MultiDeBruijnVertex.toString()`: `"MultiDeBruijnVertex_id_" + hashCode() + "_seq_" +
+/// getSequenceString()` (MultiDeBruijnVertex.java:63), the identity hash replaced by the index.
 pub fn read_threading_vertex_name(graph: &ReadThreadingGraph, vertex: usize) -> String {
     format!(
         "MultiDeBruijnVertex_id_{vertex}_seq_{}",
@@ -18,7 +23,7 @@ pub fn read_threading_vertex_name(graph: &ReadThreadingGraph, vertex: usize) -> 
     )
 }
 
-/// `SeqVertex.toString()`.
+/// `SeqVertex.toString()`, likewise with the index for `System.identityHashCode`.
 fn seq_vertex_name(graph: &SeqGraph, vertex: usize) -> String {
     format!(
         "SeqVertex_id_{vertex}_seq_{}",
@@ -27,7 +32,10 @@ fn seq_vertex_name(graph: &SeqGraph, vertex: usize) -> String {
 }
 
 /// One edge: `print(edgeString)`, `print(label)`, and for a reference edge
-/// `println(edgeString + " [color=red];")`.
+/// `println(edgeString + " [color=red];")` (BaseGraph.java:401-404). `edgeString` ends in a
+/// space, so the red line has two spaces before the bracket; a non-reference edge ends no line,
+/// so the next edge follows on the same line. A multiplicity strictly between zero and the prune
+/// factor is drawn dotted.
 fn edge_text(
     out: &mut String,
     source: &str,
@@ -50,7 +58,9 @@ fn edge_text(
     }
 }
 
-/// `printGraph(writer, writeHeader, pruneFactor)` for a read threading graph, with its extra lines.
+/// `printGraph(writer, writeHeader, pruneFactor)` for a read threading graph, with its extra
+/// lines (`getExtraGraphFileLines()`, the junction trees). The edge label is `getDotLabel()` of a
+/// `MultiSampleEdge`, the multiplicity and the pruning multiplicity joined by `/`.
 pub fn read_threading_graph(
     graph: &ReadThreadingGraph,
     write_header: bool,
@@ -75,7 +85,9 @@ pub fn read_threading_graph(
     }
     for v in graph.vertex_ids() {
         let vertex = graph.vertex(v);
-        // `getAdditionalSequence(isSource(v))`: a source's whole k-mer, any other vertex's last base.
+        // `getAdditionalSequence(isSource(v))`: a source's whole k-mer, any other vertex's last
+        // base. The label is `new String(getAdditionalSequence(v)) + " (" + v.hashCode() + ") "
+        // + v.getAdditionalInfo()` (BaseGraph.java:410), the hash again replaced by the index.
         let added = if graph.in_degree(v) == 0 {
             String::from_utf8_lossy(&vertex.sequence).into_owned()
         } else {
@@ -97,7 +109,10 @@ pub fn read_threading_graph(
     out
 }
 
-/// `printGraph(writer, writeHeader, pruneFactor)` for a sequence graph.
+/// `printGraph(writer, writeHeader, pruneFactor)` for a sequence graph. An edge copied from the
+/// read threading graph is still a `MultiSampleEdge` and is labelled `m/p`; one the transforms
+/// made new is a plain `BaseEdge`, labelled by its multiplicity alone. A `SeqVertex` prints its
+/// whole sequence, source or not.
 pub fn seq_graph(graph: &SeqGraph, write_header: bool, prune_factor: i32) -> String {
     let mut out = String::new();
     if write_header {

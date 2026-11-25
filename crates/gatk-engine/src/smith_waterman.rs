@@ -23,7 +23,39 @@
 //!
 //! Ported from `org.broadinstitute.hellbender.utils.smithwaterman.SmithWatermanJavaAligner`,
 //! `SmithWatermanAlignmentConstants`, the `SWParameters` and `SWOverhangStrategy` of the GATK
-//! native bindings, and `Utils.lastIndexOf`.
+//! native bindings, and `Utils.lastIndexOf` (GATK 4.7.0.0; `SmithWatermanJavaAligner.java`,
+//! `SmithWatermanAlignmentConstants.java` and `Utils.java` are unchanged since 4.6.2.0).
+//!
+//! # Why the Java aligner and not the Intel one
+//!
+//! The `smith-waterman` suite (`smith_waterman.txt.gz`, 2211 rows) records that the pinned oracle
+//! cannot load `SmithWatermanIntelAligner` (`loaded SmithWatermanIntelAligner
+//! no:HardwareFeatureException`), so `FASTEST_AVAILABLE` falls back to the Java aligner (`fastest
+//! SmithWatermanJavaAligner`) and every HaplotypeCaller and Mutect2 golden pins the Java one.
+//!
+//! # Why `align` runs fgkl's kernel
+//!
+//! `SmithWatermanJavaAligner::align` calls `fgkl-smithwaterman`, and
+//! [`SmithWatermanJavaAligner::port_align`] is the line-by-line transcription of the Java.
+//! Issue #1391 (`docs/fgkl-and-lorikeet.md`) measured fgkl against the golden, 704 of 704
+//! alignments identical in offset and CIGAR, and against the transcription, 32,000 of 32,000
+//! synthetic ones, and adopted it as fourteen times faster. Smith-Waterman is integer arithmetic,
+//! so no libm and no fused multiply-add can move its answer, which is why fgkl could be adopted
+//! here and not for the PairHMM. The unit tests' `align` helper asserts that the two agree on every
+//! case it runs.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `i32` is Java's `int`. Java's `+` on `int` wraps on overflow; Rust's stops the program in a
+//!   debug build, so the sums the reference could overflow are written `wrapping_add`, which wraps
+//!   exactly as Java does.
+//! - `vec![vec![0i32; m]; n]` is `new int[n][m]`.
+//! - `trait SmithWatermanAligner` is a Java interface, and `impl SmithWatermanAligner for
+//!   SmithWatermanJavaAligner` is the class implementing it.
+//! - `sw.split_at_mut(i)` splits the matrix into two disjoint writable halves, so the previous row
+//!   can be read while the current one is written; Rust refuses two writable references to the
+//!   same array, and this is how the reference's `lastRow` and `curRow` are both held.
+//! - `Option<usize>` is an index or nothing, the reference's `-1`.
 
 use htsjdk_bam::cigar::{Cigar, CigarElement, Op};
 
@@ -112,6 +144,10 @@ enum State {
 }
 
 /// `Utils.lastIndexOf`: the last position of `query` in `reference`, searched from the right.
+///
+/// The reference's loop starts at `reference.length - queryLength`, which is negative for a query
+/// longer than the reference, and then never runs: `-1`. An unsigned index cannot start below
+/// zero, so that case is the early `None`.
 pub fn last_index_of(reference: &[u8], query: &[u8]) -> Option<usize> {
     if query.len() > reference.len() {
         return None;
@@ -193,7 +229,9 @@ impl SmithWatermanJavaAligner {
         }
 
         // Skip the matrix when the alternate occurs exactly in the reference. Only valid for the
-        // two strategies that do not account for overhangs as indels.
+        // two strategies that do not account for overhangs as indels. The LAST occurrence wins:
+        // `align alt-occurs-twice NEW_SW_PARAMETERS SOFTCLIP ... 11 11M` against `INDEL`'s
+        // `0 11M17D` in the golden.
         if matches!(
             strategy,
             SwOverhangStrategy::SoftClip | SwOverhangStrategy::Ignore
@@ -226,6 +264,15 @@ impl SmithWatermanJavaAligner {
 }
 
 /// `calculateMatrix`: fill the score matrix and the back track matrix.
+///
+/// The back track cell is 0 for a diagonal step, `-k` for a gap of length `k` arriving from the
+/// left (an insertion) and `+k` for one arriving from above (a deletion). The best open gap is
+/// kept per column (`best_gap_v`) and per row (`best_gap_h`) instead of scanning every earlier
+/// cell; the reference's own comment says why that is allowed:
+///
+/// ```java
+/// // the optimization works ONLY for linear w(k)=wopen+(k-1)*wextend!!!!
+/// ```
 fn calculate_matrix(
     reference: &[u8],
     alternate: &[u8],
@@ -237,6 +284,7 @@ fn calculate_matrix(
     let ncol = sw[0].len();
     let nrow = sw.len();
 
+    // `Integer.MIN_VALUE/2`: low enough to lose to any real score, with room to add penalties.
     let low_init_value = i32::MIN / 2;
     let mut best_gap_v = vec![low_init_value; ncol + 1];
     let mut gap_size_v = vec![0i32; ncol + 1];
@@ -306,7 +354,9 @@ fn calculate_matrix(
             let step_right = best_gap_h[i];
             let ki = gap_size_h[i];
 
-            // Priority: diagonal, then right, then down.
+            // Priority: diagonal, then right, then down. `>=` both times, so a tie stays on the
+            // diagonal and a right-down tie goes right:
+            // `final boolean diagHighestOrEqual = (step_diag >= step_down)`.
             let diag_highest_or_equal = step_diag >= step_down && step_diag >= step_right;
             if diag_highest_or_equal {
                 cur_row[j] = MATRIX_MIN_CUTOFF.max(step_diag);
@@ -322,6 +372,7 @@ fn calculate_matrix(
     }
 }
 
+/// `makeElement`. The `as u32` reinterprets the length; every length passed is positive.
 fn make_element(state: State, length: i32) -> CigarElement {
     let op = match state {
         State::Match => Op::M,
@@ -364,7 +415,8 @@ fn calculate_cigar(
                 max_score = cur_score;
             }
         }
-        // A larger score on the bottom-most row.
+        // A larger score on the bottom-most row: strictly larger, or equal and closer to the
+        // diagonal (`Math.abs(refLength - j) < Math.abs(p1 - p2)`).
         if strategy != SwOverhangStrategy::LeadingIndel {
             let bottom_row = &sw[ref_length as usize];
             for (j, &cur_score) in bottom_row.iter().enumerate().skip(1) {
@@ -388,6 +440,7 @@ fn calculate_cigar(
     }
 
     // Insertions and deletions are placed in the alternate, so the states are named for it.
+    // `loop` with the test at the end is the reference's `do { ... } while (p1 > 0 && p2 > 0);`.
     let mut state = State::Match;
     loop {
         let btr = btrack[p1 as usize][p2 as usize];
@@ -449,6 +502,7 @@ fn calculate_cigar(
         }
     };
 
+    // `Lists.reverse(lce)`: the elements were collected from the end of the alignment.
     lce.reverse();
     SwAlignment {
         cigar: Cigar::new(lce),

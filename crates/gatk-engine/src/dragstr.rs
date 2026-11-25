@@ -1,7 +1,9 @@
 //! Ported from `org.broadinstitute.hellbender.utils.dragstr.DragstrParams` and `DragstrParamUtils`
 //! (the reader), `org.broadinstitute.hellbender.utils.pairhmm.DragstrReadSTRAnalyzer`, and the
 //! haplotypecaller's `DragstrPairHMMInputScoreImputator` and
-//! `NonSymmetricalPairHMMInputScoreImputator` (GATK 4.6.2.0): DRAGstr in the read likelihoods.
+//! `NonSymmetricalPairHMMInputScoreImputator`, with `utils.dragstr.DragstrReferenceAnalyzer`
+//! (GATK 4.7.0.0; all seven Java files are unchanged since 4.6.2.0): DRAGstr in the read
+//! likelihoods.
 //!
 //! With DRAGstr parameters, the PairHMM's gap penalties come from the read's own sequence rather
 //! than from its indel qualities: at every base but the last, the period that repeats most there
@@ -14,9 +16,10 @@
 //!  * a position inside a run is credited with the **whole** run's repeat count, and a position
 //!    between two runs with the larger of the two (the period-one pass propagates a longer run back
 //!    onto the base before it; the longer periods slide a window of `period + 1` run lengths);
-//!  * the window's maximum is kept in a heap whose entries are searched for linearly by value, and
-//!    the first run length of the read is lowered by one when it is above one, so a read that starts
-//!    inside a repeat does not count the partial unit it starts with.
+//!  * the window's maximum is kept in a heap whose entries are searched for linearly by value;
+//!  * for periods of two and above only, the first run length of the read is lowered by one when it
+//!    is above one, which the reference says it does "solely to replicate an oddity of DRAGEN's
+//!    algorithm" (`if (runLengthBuffer[0] > 1) runLengthBuffer[0]--;`).
 //!
 //! What a reader would not guess about the table file:
 //!
@@ -27,6 +30,22 @@
 //!    and one value too few is accepted and padded with zeros;
 //!  * a negative, infinite or NaN value is refused with a `NullPointerException` the reader throws
 //!    on purpose.
+//!
+//! The `dragstr-likelihoods` suite (`dragstr_likelihoods.txt.gz`, 2191 rows) measures each of
+//! these; `impute default CACACACACACACAGT 30,27,...,40,45 5,...,10,10` pins the cap at 40 and
+//! the two end-of-read values, and `error negative NullPointerException: null` the refusal.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, DragstrError>` is "a value or the reference's exception"; `?` after a call returns
+//!   the error from the enclosing function at once, Java's `throws` at that call site.
+//! - `let Some(x) = y else { return ... };` unwraps an `Option` or takes the early exit.
+//! - `&mut [i32]` is a writable view of an `int[]` the caller owns, how the reference's output
+//!   arrays are passed.
+//! - `x as usize`, `x as i64`, `x as u8` convert between integer types; `as u8` from an `i64`
+//!   keeps the low eight bits, which is Java's `(byte)` cast.
+//! - Java's indices are `int` and may go below zero before a loop stops; where the reference's
+//!   does, the loop variable here is an `i64` or `i32` and is cast to `usize` only to index.
 
 use std::collections::HashMap;
 
@@ -153,7 +172,9 @@ pub struct DragstrParams {
     api: Vec<Vec<f64>>,
 }
 
-/// `Math.round(double)`: the nearest integer, a half rounding up.
+/// `Math.round(double)`: the nearest integer, a half rounding up (towards positive infinity, so
+/// `-2.5` is `-2`), and `NaN` is zero. Rust's `f64::round` rounds a half away from zero instead,
+/// which is why it is not used.
 fn java_math_round(x: f64) -> i64 {
     if x.is_nan() {
         return 0;
@@ -212,6 +233,9 @@ impl DragstrParams {
             for j in 0..max_repeats {
                 for (matrix, label) in [(&gop, "gop"), (&gcp, "gcp"), (&api, "api")] {
                     let value = *matrix[i].get(j).ok_or(DragstrError::IndexOutOfBounds)?;
+                    // `Utils.validate(gopRow[j] >= 0 && Double.isFinite(gopRow[j]), ...)`. The
+                    // value in the message is printed by Rust's formatter, not `Double.toString`;
+                    // `parse` refuses such a value before it gets here.
                     if !(value >= 0.0 && value.is_finite()) {
                         return Err(DragstrError::IllegalState(format!(
                             "bad {label} value: {value}"
@@ -238,6 +262,9 @@ impl DragstrParams {
     }
 
     /// `lookup`: both coordinates must be positive, and are clamped to the table.
+    ///
+    /// The reference writes the clamp as `period < maxPeriod ? period - 1 : maxPeriod - 1`, which
+    /// is `min(period, maxPeriod) - 1` as written here.
     fn lookup(&self, matrix: &[Vec<f64>], period: i32, repeats: i32) -> Result<f64, DragstrError> {
         if period <= 0 {
             return Err(DragstrError::IllegalArgument("period".to_string()));
@@ -274,7 +301,8 @@ impl DragstrParams {
 }
 
 /// `String.split("\\s+")`: a leading separator gives a leading empty string, trailing empty strings
-/// are dropped.
+/// are dropped. `\s` is Java's ASCII whitespace: space, tab, newline, carriage return, vertical tab
+/// (`\u{b}`) and form feed (`\u{c}`).
 fn java_split_whitespace(line: &str) -> Vec<&str> {
     let mut parts: Vec<&str> = line
         .split(|c: char| c.is_ascii_whitespace() || c == '\u{b}' || c == '\u{c}')
@@ -334,6 +362,8 @@ fn lines_to_matrix(lines: &[&str], columns: usize) -> Result<Vec<Vec<f64>>, Drag
                     j + 1
                 )));
             };
+            // `throw new NullPointerException();`, thrown on purpose inside the `try` that only
+            // catches `NumberFormatException`, so it escapes as itself.
             if value.is_nan() || value.is_infinite() || value < 0.0 {
                 return Err(DragstrError::NullPointer);
             }
@@ -363,6 +393,9 @@ pub fn parse(text: &str, name: &str) -> Result<DragstrParams, DragstrError> {
         .into_iter()
         .filter(|p| !p.is_empty())
     {
+        // `Integer.parseInt`. Parsed as `i64`, a value past `int`'s range is refused by the
+        // header check below with its message, where the reference gives "bad format for an
+        // integer".
         repeats.push(
             part.parse::<i64>()
                 .map_err(|_| DragstrError::BadInput("bad format for an integer".to_string()))?,
@@ -385,6 +418,7 @@ pub fn parse(text: &str, name: &str) -> Result<DragstrParams, DragstrError> {
     let mut table_name = first.strip_suffix(':').unwrap_or(first).to_string();
     let mut table_lines: Vec<&str> = Vec::new();
     for line in lines {
+        // `line.charAt(line.length() - 1) == ':'`, which an empty line makes `charAt(-1)`.
         match line.chars().last() {
             None => return Err(DragstrError::StringIndexOutOfBounds),
             Some(':') => {
@@ -447,6 +481,8 @@ impl DragstrReadStrAnalyzer {
                 &mut repeats[period - 1],
             );
         }
+        // `analyzeBases`: period one first, then a longer period replaces it only when strictly
+        // more repeats, so a tie keeps the shorter period.
         let mut period_with_most = vec![1i32; n];
         let mut most = repeats[0].clone();
         for (period_index, values) in repeats.iter().enumerate().skip(1) {
@@ -547,7 +583,8 @@ fn repeats_for_period_two_and_above(
         output[..seq_length].fill(0);
         return;
     }
-    // The last `period - 1` positions cannot start a repeat.
+    // The last `period - 1` positions cannot start a repeat. `position` is `i64` because the
+    // backward phase below runs it down to -1, as the reference's `int` does.
     let mut position = seq_length as i64 - 1;
     let mut cycle_index = period;
     while cycle_index > 1 {
@@ -589,6 +626,7 @@ fn repeats_for_period_two_and_above(
             p += period;
         }
     }
+    // `if (runLengthBuffer[0] > 1) runLengthBuffer[0]--;`: DRAGEN's oddity, see the module note.
     if run_length_buffer[0] > 1 {
         run_length_buffer[0] -= 1;
     }
@@ -599,8 +637,9 @@ fn repeats_for_period_two_and_above(
     let stop0 = period.min(seq_length - 1);
     let mut position = 0usize;
     while position < stop0 {
-        // `output[position] = currentMax = Math.max(currentMax, heap[++position] = runLengthBuffer[position])`:
-        // the output index is read before the increment, the buffer index after it.
+        // `output[position] = currentMax = Math.max(currentMax, heap[++position] =
+        // runLengthBuffer[position])`: the output index is read before the increment, the buffer
+        // index after it.
         let out = position;
         position += 1;
         heap[position] = run_length_buffer[position];
@@ -608,6 +647,8 @@ fn repeats_for_period_two_and_above(
         output[out] = current_max;
         fix_heap(heap, position, heap_size);
     }
+    // The sentinel one past the last base, which the reference adds so the loop below needs no
+    // bounds test.
     run_length_buffer[seq_length] = 1;
     let mut out_position = 0usize;
     while position < seq_length {
@@ -629,6 +670,8 @@ fn repeats_for_period_two_and_above(
     }
 }
 
+/// `fixHeap`: restore the max-heap after `heap[index]` changed, down when its parent is larger
+/// (or it is the root), up otherwise.
 fn fix_heap(heap: &mut [i32], index: usize, heap_size: usize) {
     if index == 0 || heap[(index - 1) >> 1] > heap[index] {
         fix_heap_down(heap, index, heap_size);
@@ -637,6 +680,8 @@ fn fix_heap(heap: &mut [i32], index: usize, heap_size: usize) {
     }
 }
 
+/// `fixHeapUp`. The reference's `do { ... } while (idx > 0)` is the `loop` with its exit test
+/// after the move.
 fn fix_heap_up(heap: &mut [i32], mut index: usize) {
     let value = heap[index];
     loop {
@@ -654,6 +699,7 @@ fn fix_heap_up(heap: &mut [i32], mut index: usize) {
     heap[index] = value;
 }
 
+/// `fixHeapDown`: a child past the heap's size reads as -1, below any run length.
 fn fix_heap_down(heap: &mut [i32], mut index: usize, heap_size: usize) {
     let value = heap[index];
     loop {
@@ -681,6 +727,14 @@ fn fix_heap_down(heap: &mut [i32], mut index: usize, heap_size: usize) {
 
 /// `DragstrPairHMMInputScoreImputator.impute`: the gap-open penalties (the same for insertions and
 /// deletions) and the gap continuation penalties of a read.
+///
+/// ```java
+/// gop[i] = (byte) Math.round(Math.min(MAX_GOP_IN_READ, params.gop(period, repeats)));
+/// gcp[i] = (byte) Math.round(params.gcp(period, repeats));
+/// ```
+///
+/// The cap is applied before the rounding, so a GOP of 40.6 becomes 40, never 41. An empty read
+/// never reaches the `length - 1` below: the analyzer refuses it first.
 pub fn dragstr_impute(
     params: &DragstrParams,
     bases: &[u8],
@@ -700,9 +754,12 @@ pub fn dragstr_impute(
     Ok((gop, gcp))
 }
 
-/// `NonSymmetricalPairHMMInputScoreImputator.impute`: flat deletion and insertion penalties over the
-/// read's base qualities, and a flat continuation penalty over its bases, as
+/// `NonSymmetricalPairHMMInputScoreImputator.impute`: flat deletion and insertion penalties over
+/// the read's base qualities, and a flat continuation penalty over its bases, as
 /// `(deletion, insertion, continuation)`.
+///
+/// The open penalties are as long as `read.getBaseQualityCount()` and the continuation penalty as
+/// `read.getLength()`, which is why the two lengths are separate arguments.
 pub fn non_symmetrical_impute(
     constant_gcp: u8,
     flat_insertion_qual: u8,
@@ -776,6 +833,8 @@ impl DragstrReferenceAnalyzer {
             let mut remaining_to_match_unit = period;
             let mut carry_back = 1;
             while right_margin < length {
+                // `bases[position++] != bases[rightMargin]`: the increment happens even on the
+                // mismatch that ends the loop.
                 let matched = bases[position as usize] == bases[right_margin as usize];
                 position += 1;
                 if !matched {
@@ -788,6 +847,9 @@ impl DragstrReferenceAnalyzer {
                 }
                 right_margin += 1;
             }
+            // The reference also tracks `inTragetRange |= position < end` in the loop below.
+            // Every position it visits is at most `right_most_start - 1`, which is below `end`,
+            // so the flag is always true there and is left out.
             let offset = right_most_start - start;
             if offset >= 0 && carry_back > repeats[offset as usize] {
                 repeats[offset as usize] = carry_back;

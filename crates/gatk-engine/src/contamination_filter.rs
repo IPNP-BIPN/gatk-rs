@@ -1,6 +1,6 @@
 //! `ContaminationFilter`, ported from
 //! `org.broadinstitute.hellbender.tools.walkers.mutect.filtering.ContaminationFilter`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `ContaminationFilter.java` is unchanged since 4.6.2.0).
 //!
 //! "Could this allele have come from another sample rather than from this one?" One of only two
 //! filters in the `NON_SOMATIC` error type, which is what decides which other filters can mask it.
@@ -8,13 +8,18 @@
 //! # It can answer NaN
 //!
 //! ```java
-//! new IndexRange(0, vc.getNAlleles()-1).forEach(i -> depthsAndPosteriorsPerAllele.add(new ArrayList<>()));
+//! new IndexRange(0, vc.getNAlleles()-1)
+//!         .forEach(i -> depthsAndPosteriorsPerAllele.add(new ArrayList<>()));
 //! ...
-//! new IndexRange(0, alleleFrequencies.length).forEach(i -> { ... });
+//! new IndexRange(0,alleleFrequencies.length).forEach(i -> {
 //! ...
-//! return depthsAndPosteriorsPerAllele.stream()
-//!         .map(alleleData -> alleleData.isEmpty() ? Double.NaN : weightedMedianPosteriorProbability(alleleData))
+//! return depthsAndPosteriorsPerAllele.stream().map(alleleData -> alleleData.isEmpty() ?
+//!         Double.NaN : weightedMedianPosteriorProbability(alleleData))
+//!         .collect(Collectors.toList());
 //! ```
+//!
+//! (The first and last statements are one line each in the reference, wrapped here; `...` marks
+//! omitted lines.)
 //!
 //! The list is sized from the **record's** alleles and filled from **`POPAF`'s** length. An allele
 //! the annotation does not cover keeps an empty list, and an empty list is `Double.NaN`, which
@@ -30,8 +35,11 @@
 //! # Two hypotheses, compared by maximum
 //!
 //! ```java
-//! logContaminantLikelihoodPerAllele[i] = Math.log(Math.max(single, many));
+//! logContaminantLikelihoodPerAllele[i] = Math.log(Math.max(
+//!         singleContaminantLikelihoodPerAllele[i], manyContaminantLikelihoodPerAllele[i]));
 //! ```
+//!
+//! (One line in the reference, wrapped here.)
 //!
 //! One contaminating sample carrying the allele, against many contaminating samples at the
 //! population frequency. The larger likelihood wins outright rather than the two being summed, so
@@ -48,6 +56,16 @@
 //!
 //! `posteriorProbabilityOfError(vc, logOdds, i)`, so each alternate is priced with its own indel
 //! length. [`crate::slippage_filter`] hard-codes zero in the same call.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<&[f64]>` is a borrowed list of doubles or nothing; `None` is the annotation absent.
+//! - `Result<T, E>` is a value or an error, this codebase's Java exception, and `?` returns the
+//!   error to the caller at once.
+//! - `&allele_depths[1..]` is a view of the array from index 1 on, `Arrays.copyOfRange(ADs, 1,
+//!   ADs.length)` without the copy.
+//! - `f64::max` answers the other operand when one is NaN, where Java's `Math.max` answers NaN;
+//!   the code below spells the NaN case out wherever the reference relies on it.
 
 use crate::allele_filter::{weighted_median_posterior_probability, GenotypeData};
 use crate::math_utils::pow10;
@@ -60,13 +78,14 @@ use crate::somatic_clustering_model::{
 /// `ContaminationFilter`'s identity.
 pub const FILTER_NAME: &str = "contamination";
 
-/// `phredScaledPosteriorAnnotationName`, `CONTAMINATION_QUAL_KEY`.
+/// `phredScaledPosteriorAnnotationName`, `GATKVCFConstants.CONTAMINATION_QUAL_KEY`.
 pub const ANNOTATION: &str = "CONTQ";
 
 /// `M2FiltersArgumentCollection.DEFAULT_CONTAMINATION`.
 pub const DEFAULT_CONTAMINATION: f64 = 0.0;
 
-/// `EPSILON`, which is an instance field of the filter rather than a constant.
+/// `EPSILON`, which is an instance field of the filter rather than a constant:
+/// `private final double EPSILON = 1.0e-10;`.
 pub const EPSILON: f64 = 1.0e-10;
 
 /// What this filter refuses.
@@ -79,6 +98,8 @@ pub enum ContaminationError {
 }
 
 impl ContaminationError {
+    /// The Java exception class, where the refusal has one; `None` for a non-finite sum, which
+    /// nothing measured reaches.
     pub fn class(&self) -> Option<&'static str> {
         match self {
             ContaminationError::IndexOutOfRange { .. } => {
@@ -88,6 +109,7 @@ impl ContaminationError {
         }
     }
 
+    /// The JVM's `ArrayIndexOutOfBoundsException` message for the bounds refusal.
     pub fn message(&self) -> Option<String> {
         match self {
             ContaminationError::IndexOutOfRange { index, length } => {
@@ -115,6 +137,7 @@ pub fn clamp_contamination(contamination: f64) -> f64 {
     if contamination.is_nan() {
         return contamination;
     }
+    // `#[allow(...)]` silences a lint that would suggest `clamp`, for the reason above.
     #[allow(clippy::manual_clamp)]
     contamination.min(1.0 - EPSILON).max(0.0)
 }
@@ -129,6 +152,9 @@ pub fn clamp_contamination(contamination: f64) -> f64 {
 /// `contaminationBySample.getOrDefault(sampleName, defaultContamination)`. The lookup itself, and
 /// the `IllegalStateException` two tables naming one sample provoke out of `Collectors.toMap`,
 /// belong to the table reader rather than here; nothing measured reaches them.
+///
+/// Every value in the answer has been through `roundFinitePrecisionErrors`, which
+/// `Mutect2AlleleFilter.errorProbabilities` applies; a NaN comes through it unchanged.
 pub fn contamination_error_probabilities<T>(
     model: &mut SomaticClusteringModel,
     population_negative_log10_allele_frequencies: Option<&[f64]>,
@@ -149,8 +175,11 @@ pub fn contamination_error_probabilities<T>(
         if !genotype.tumor {
             continue;
         }
+        // `contaminations` is indexed by the genotype's position, one entry per sample.
         let contamination = clamp_contamination(contaminations[sample]);
         let allele_depths = &genotype.allele_depths;
+        // `(int) MathUtils.sum(ADs)`: summed as a `long`, then narrowed. `as i32` keeps the low
+        // 32 bits, as Java's `(int)` cast does.
         let total_ad = (allele_depths.iter().map(|d| i64::from(*d)).sum::<i64>()) as i32;
         let alt_allele_depths = &allele_depths[1..];
 
@@ -160,7 +189,8 @@ pub fn contamination_error_probabilities<T>(
             .map(|x| pow10(-x))
             .collect();
 
-        // Over EVERY alternate depth, not over the frequencies.
+        // Over EVERY alternate depth, not over the frequencies: `Arrays.stream(altADs)
+        // .mapToDouble(altCount -> model.logLikelihoodGivenSomatic(totalAD, altCount))`.
         let mut log_somatic_likelihood = Vec::with_capacity(alt_allele_depths.len());
         for alt_count in alt_allele_depths {
             log_somatic_likelihood.push(model.log_likelihood_given_somatic(total_ad, *alt_count)?);
@@ -168,6 +198,7 @@ pub fn contamination_error_probabilities<T>(
 
         let mut log_odds = Vec::with_capacity(allele_frequencies.len());
         for (index, frequency) in allele_frequencies.iter().enumerate() {
+            // `altADs[i]`, which throws for a `POPAF` longer than the record's alternates.
             let alt_count = *at(alt_allele_depths, index)?;
             // One contaminating sample, heterozygous or homozygous for the allele.
             let single_contaminant = 2.0
@@ -190,6 +221,8 @@ pub fn contamination_error_probabilities<T>(
         }
 
         // A second pass, as the reference writes it: the priors are read after every log-odds.
+        // `posteriorProbabilityOfError(vc, logOdds, i)` prices alternate `i` with its own indel
+        // length.
         for (index, odds) in log_odds.iter().enumerate() {
             let prior = model
                 .log_prior_of_somatic_variant(indel_length(reference_length, alternates[index]));
@@ -198,6 +231,8 @@ pub fn contamination_error_probabilities<T>(
         }
     }
 
+    // `iter_mut` because `weighted_median_posterior_probability` sorts each allele's pairs in
+    // place.
     Ok(depths_and_posteriors
         .iter_mut()
         .map(|allele_data| {

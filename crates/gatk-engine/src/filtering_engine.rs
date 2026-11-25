@@ -1,22 +1,23 @@
 //! The filtering engine assembled: the eighteen filters over one record, ported from
 //! `org.broadinstitute.hellbender.tools.walkers.mutect.filtering.Mutect2FilteringEngine`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `Mutect2FilteringEngine.java` and `ErrorProbabilities.java` are unchanged since
+//! 4.6.2.0).
 //!
-//! Every filter body is ported and measured on its own. This is the thing that holds them: it builds
-//! the list a mode calls for, asks all of them about one record in construction order, and hands the
-//! answers to [`crate::error_probabilities`] and [`crate::apply_filters`].
+//! Every filter body is ported and measured on its own. This is the thing that holds them: it
+//! builds the list a mode calls for, asks all of them about one record in construction order, and
+//! hands the answers to [`crate::error_probabilities`] and [`crate::apply_filters`].
 //!
 //! # Three different ways of saying nothing
 //!
 //! A per-allele filter whose required annotation is missing answers an **empty list**, which
 //! `ErrorProbabilities` drops. A per-site filter in the same position answers **`0.0` per allele**,
-//! which it counts. And [`crate::contamination_filter`] can answer **`NaN`**, which it combines. The
-//! engine has to keep the three apart, so [`FilterOutcome`] does.
+//! which it counts. And [`crate::contamination_filter`] can answer **`NaN`**, which it combines.
+//! The engine has to keep the three apart, so the private `FilterOutcome` does.
 //!
 //! # Seventeen of the eighteen answer a fully annotated record
 //!
-//! `StrictStrandBiasFilter` is switched off by its default of zero reads required on each strand and
-//! answers an empty list, which is dropped. A record carrying every annotation the filters read
+//! `StrictStrandBiasFilter` is switched off by its default of zero reads required on each strand
+//! and answers an empty list, which is dropped. A record carrying every annotation the filters read
 //! therefore has seventeen entries, not eighteen.
 //!
 //! # The mode reaches the arithmetic, not only the list
@@ -24,6 +25,18 @@
 //! Mitochondrial mode drops six filters *and* changes the somatic priors, so the tumour-evidence
 //! probability of one record is `2.970295405296338E-14` by default and `9.383000947252313E-18` in
 //! mitochondrial mode.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is "a value or nothing" (`Some(x)` or `None`). Every `Option` field of [`Record`]
+//!   is an INFO annotation, and `None` is `!vc.hasAttribute(key)`, which is what each filter's
+//!   `requiredInfoAnnotations` check reads. `.as_deref()` turns an owned `Option<Vec<T>>` into an
+//!   `Option<&[T]>` borrowed view without copying.
+//! - `Result<T, E>` is "a value or an error", this codebase's Java exception. `.map_err(f)`
+//!   rewrites the error, and the `?` after it returns that error to the caller at once.
+//! - `match` is Java's `switch` that must cover every case; the dispatcher's last arm,
+//!   `other => panic!(...)`, is the case no built filter reaches.
+//! - `|x| expr` is a lambda, Java's `x -> expr`.
 
 use crate::accumulate_data::AccumulationAllele;
 use crate::allele_filter::{alt_data_by_allele, sum_ads_over_samples, GenotypeData};
@@ -43,6 +56,10 @@ use crate::somatic_clustering_model::{AlternateAllele, SomaticClusteringModel};
 use crate::strand_artifact_filter as strand;
 
 /// The defaults of `M2FiltersArgumentCollection` the eighteen filters read.
+///
+/// `list` decides which filters exist; each other field is the `MTFAC` value the reference passes
+/// to a filter's constructor in `buildFiltersList`, named after it in snake case. [`Default`]
+/// holds the reference's declared defaults.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EngineArguments {
     pub list: FilterArguments,
@@ -94,6 +111,11 @@ impl Default for EngineArguments {
 }
 
 /// One record, as much of it as the eighteen filters read.
+///
+/// The reference hands every filter the whole `VariantContext`; here the caller extracts the
+/// annotations once. An `Option` field is an INFO annotation, `None` when the record lacks it.
+/// The per-genotype vectors (`genotypes`, `allele_fractions`, `phasing`, and the three resolved
+/// lookups) are indexed alike, one entry per sample in the record's genotype order.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Record {
     pub start: i32,
@@ -134,10 +156,12 @@ pub struct Record {
 }
 
 impl Record {
+    /// The alternate alleles as the clustering model reads them.
     pub fn alleles(&self) -> Vec<AlternateAllele> {
         self.alternates.iter().map(|a| a.allele).collect()
     }
 
+    /// `vc.getNAlleles() - 1`.
     pub fn alternate_count(&self) -> usize {
         self.alternates.len()
     }
@@ -150,7 +174,14 @@ impl Record {
         sum_ads_over_samples(self.alternates.len() + 1, &self.genotypes, true, false)
     }
 
-    /// `MathUtils.applyToArrayInPlace(TLOD, MathUtils::log10ToLog)`.
+    /// `Mutect2FilteringEngine.getTumorLogOdds(vc)`:
+    ///
+    /// ```java
+    /// return tumorLog10Odds == null ? null
+    ///         : MathUtils.applyToArrayInPlace(tumorLog10Odds, MathUtils::log10ToLog);
+    /// ```
+    ///
+    /// (One line in the reference, wrapped here.)
     pub fn tumor_log_odds(&self) -> Option<Vec<f64>> {
         self.tumor_log_10_odds.as_ref().map(|odds| {
             odds.iter()
@@ -159,7 +190,9 @@ impl Record {
         })
     }
 
+    /// Each genotype with its `AF`, `PGT` and `PID`, the shape `FilteredHaplotypeFilter` reads.
     pub fn phased_genotypes(&self) -> Vec<PhasedGenotype> {
+        // `.enumerate()` pairs each element with its index, as `IntStream.range` would.
         self.genotypes
             .iter()
             .enumerate()
@@ -177,7 +210,8 @@ impl Record {
 ///
 /// `Nothing` is the empty list a per-allele filter answers when its annotations are missing, which
 /// `ErrorProbabilities` drops; a per-site filter in the same position answers `PerSite(0.0)`, which
-/// it counts.
+/// it counts. A `PerAllele` list may hold `NaN` (`ContaminationFilter`'s uncovered allele), which
+/// is an answer and is kept.
 #[derive(Debug, Clone, PartialEq)]
 enum FilterOutcome {
     Nothing,
@@ -218,6 +252,9 @@ impl EngineAnswer {
 }
 
 /// What the assembly refuses: whatever the filter under it refused.
+///
+/// `class` is the Java exception the reference throws at that point; `message` is the filter's own
+/// error, rendered for diagnosis rather than as the JVM's message.
 #[derive(Debug, Clone, PartialEq)]
 pub enum EngineError {
     Filter {
@@ -226,6 +263,8 @@ pub enum EngineError {
     },
 }
 
+/// Wraps a filter's refusal with the Java exception class the caller names. `<E: Debug>` is a
+/// generic parameter: any error type that can be printed, as Java's `<E>` with a bound.
 fn refuse<E: std::fmt::Debug>(class: &'static str, error: E) -> EngineError {
     EngineError::Filter {
         class,
@@ -233,11 +272,32 @@ fn refuse<E: std::fmt::Debug>(class: &'static str, error: E) -> EngineError {
     }
 }
 
-/// `new ErrorProbabilities(filters, vc, engine, referenceContext)`, as far as the per-filter answers.
+/// `new ErrorProbabilities(filters, vc, engine, referenceContext)`, as far as the per-filter
+/// answers.
 ///
-/// The answers come back in construction order, and only the ones that were evaluated: an empty list
-/// is dropped here exactly as `ErrorProbabilities` drops it, which is why a fully annotated record
-/// has seventeen entries and not eighteen.
+/// The answers come back in construction order, and only the ones that were evaluated: an empty
+/// list is dropped here as `ErrorProbabilities` drops it (see below for when), which is why a fully
+/// annotated record has seventeen entries and not eighteen.
+///
+/// ```java
+/// // remove filters that were not applied. i.e. returned empty list
+/// .entrySet().stream().filter(entry -> !entry.getValue().isEmpty())
+/// .collect(toMap(Map.Entry::getKey, Map.Entry::getValue, (a, b) -> a, LinkedHashMap::new));
+///
+/// // if vc has symbolic alleles, remove them from each filter list
+/// alleleProbabilitiesByFilter.replaceAll((k, v) ->
+///         GATKVariantContextUtils.removeDataForSymbolicAltAlleles(vc, v));
+/// ```
+///
+/// (`ErrorProbabilities.java` lines 29 to 31 and 33 to 34; the last statement is one line there.)
+///
+/// The reference drops the empty lists **before** the symbolic removal; this drops them after it.
+/// A list that only the removal empties (a filter's answer for a record whose every alternate is
+/// symbolic) is therefore kept, empty, by the reference and absent here.
+///
+/// The rounding is the base classes': `Mutect2AlleleFilter.errorProbabilities` rounds each
+/// probability with `roundFinitePrecisionErrors`, and `Mutect2VariantFilter.errorProbabilities`
+/// rounds its one probability and then copies it with `Collections.nCopies(numAltAlleles, result)`.
 pub fn error_probabilities_by_filter(
     model: &mut SomaticClusteringModel,
     haplotype: &FilteredHaplotypeFilter,
@@ -248,12 +308,16 @@ pub fn error_probabilities_by_filter(
     let built = build_filters_list(&arguments.list);
     let mut answers = Vec::new();
     for class in built {
+        // The identity table holds the eighteen filters of `FILTERS` and, chained after them, the
+        // optional `ReadOrientationFilter`; `find` answers the first whose class matches.
         let identity = FILTERS
             .iter()
             .chain([&READ_ORIENTATION_FILTER])
             .find(|filter| filter.class == class)
             .unwrap_or_else(|| panic!("no identity for {class}"));
         let outcome = answer_for(model, haplotype, strand_learned, arguments, record, class)?;
+        // A per-site answer is rounded once and copied to every alternate, as `nCopies` copies it;
+        // the clamp is idempotent, so a filter that already rounded its own answer is unchanged.
         let (kind, probabilities) = match outcome {
             FilterOutcome::Nothing => (FilterKind::PerAllele, Vec::new()),
             FilterOutcome::PerAllele(values) => (
@@ -268,10 +332,10 @@ pub fn error_probabilities_by_filter(
                 vec![round_finite_precision_errors(value); record.alternate_count()],
             ),
         };
-        // `alleleProbabilitiesByFilter.replaceAll((k, v) -> removeDataForSymbolicAltAlleles(vc, v))`:
-        // the constructor drops every symbolic allele's entry from every filter's list, whatever that
-        // list's length. `apply_filters` removes them a SECOND time, which is the defect that module
-        // documents; the engine must remove exactly once here.
+        // `alleleProbabilitiesByFilter.replaceAll((k, v) -> removeDataForSymbolicAltAlleles(vc,
+        // v))`: the constructor drops every symbolic allele's entry from every filter's list,
+        // whatever that list's length. `apply_filters` removes them a SECOND time, which is the
+        // defect that module documents; the engine must remove exactly once here.
         let probabilities = remove_symbolic(&probabilities, record);
         if probabilities.is_empty() {
             continue;
@@ -289,6 +353,9 @@ pub fn error_probabilities_by_filter(
 
 /// `GATKVariantContextUtils.removeDataForSymbolicAltAlleles(vc, data)`: the entries at the symbolic
 /// alternates' indices, dropped.
+///
+/// The data holds no reference entry, so position `i` is alternate `i`; a position past the last
+/// alternate is kept, as `removeItemsByIndex` keeps an index nothing asked it to remove.
 fn remove_symbolic(probabilities: &[f64], record: &Record) -> Vec<f64> {
     probabilities
         .iter()
@@ -305,6 +372,10 @@ fn remove_symbolic(probabilities: &[f64], record: &Record) -> Vec<f64> {
 }
 
 /// One filter's answer, chosen by its class.
+///
+/// Each arm is one filter's `errorProbabilities`, with its `requiredInfoAnnotations` check made
+/// explicit: a per-allele filter whose annotation is `None` answers `Nothing`, a per-site one
+/// `PerSite(0.0)`. The exception class each `refuse` names is what the reference throws there.
 fn answer_for(
     model: &mut SomaticClusteringModel,
     haplotype: &FilteredHaplotypeFilter,
@@ -331,6 +402,8 @@ fn answer_for(
                 FilterOutcome::PerAllele(probabilities)
             }
         }
+        // `vc.getAttributeAsIntList(MEDIAN_BASE_QUALITY_KEY, 0)`. `f64::from` widens the `int`
+        // threshold to the `double` the filter's constructor takes, exactly.
         "BaseQualityFilter" => match &record.median_base_quality {
             None => FilterOutcome::Nothing,
             Some(qualities) => FilterOutcome::PerAllele(
@@ -437,6 +510,10 @@ fn answer_for(
             Some(table) => {
                 let parsed = strand::parse_strand_bias_table(table)
                     .map_err(|error| refuse("java.lang.NumberFormatException", error))?;
+                // Unlike the `StrandArtifactFilter` arm, the table is NOT stripped of symbolic
+                // entries here, while the reference strips it before mapping over the alternates:
+                // `sbs = GATKVariantContextUtils.removeDataForSymbolicAlleles(vc, sbs);`. The two
+                // agree when every symbolic alternate comes after every other one.
                 let artifacts =
                     hard::strict_strand_artifacts(&parsed, arguments.min_reads_on_each_strand);
                 if artifacts.is_empty() {
@@ -462,6 +539,8 @@ fn answer_for(
         },
         // No required annotation at all, so this one always answers.
         "MinAlleleFractionFilter" => {
+            // `getAltDataByAllele(vc, g -> g.hasExtendedAttribute(AF) && isTumor(g), ...)`. The
+            // allele keys only need to be distinct, so their indices stand in for the alleles.
             let alleles: Vec<String> = (0..=alternate_count).map(|i| i.to_string()).collect();
             let genotypes: Vec<GenotypeData<f64>> = record
                 .genotypes
@@ -496,8 +575,12 @@ fn answer_for(
                 arguments.normal_pileup_p_value_threshold,
             )
             .map_err(|error| refuse("java.lang.IndexOutOfBoundsException", error))?;
+            // The filter already answered one copy per alternate; take the one value back so the
+            // per-site path copies it. `unwrap_or(&0.0)` covers a record with no alternate.
             FilterOutcome::PerSite(*probabilities.first().unwrap_or(&0.0))
         }
+        // `requiredInfoAnnotations` is `N_COUNT_KEY`, so a missing `NCount` is the 0.0 of the base
+        // class before the filter is ever asked.
         "NRatioFilter" => match record.n_count {
             None => FilterOutcome::PerSite(0.0),
             Some(count) => {
@@ -516,6 +599,9 @@ fn answer_for(
         "PanelOfNormalsFilter" => FilterOutcome::PerSite(hard::error_probability(
             hard::panel_of_normals_is_artifact(record.in_panel_of_normals),
         )),
+        // Both `ECNT` and `ECNTH` are required. `ECNTH` is declared `VCFHeaderLineCount.A`, one
+        // per alternate, and the reference takes the maximum over the whole list; this record
+        // field holds one value, passed as a one-element list, so only that value reaches it.
         "ClusteredEventsFilter" => {
             match (
                 record.event_count_in_haplotype,
@@ -571,6 +657,8 @@ fn answer_for(
         "ReadOrientationFilter" => match &record.read_orientation_posteriors {
             None => FilterOutcome::PerSite(0.0),
             Some(posteriors) => {
+                // `(int) MathUtils.sum(ADs) - ADs[0]` per tumour genotype, paired with its
+                // posterior. `.zip` walks the genotypes and the posteriors in step.
                 let mut pairs: Vec<(i32, f64)> = record
                     .genotypes
                     .iter()
@@ -596,6 +684,7 @@ fn answer_for(
             FilterOutcome::PerSite(*probabilities.first().unwrap_or(&0.0))
         }
         "GermlineFilter" => {
+            // An empty vector is the caller's shorthand for 0.5 everywhere (no segment table).
             let minor = if record.minor_allele_fractions.is_empty() {
                 vec![0.5; record.genotypes.len()]
             } else {
@@ -615,6 +704,7 @@ fn answer_for(
             .map_err(|error| refuse("java.lang.IllegalArgumentException", error))?;
             FilterOutcome::PerSite(*probabilities.first().unwrap_or(&0.0))
         }
+        // `build_filters_list` names only the classes above, so this arm is a programming error.
         other => panic!("no filter named {other}"),
     };
     Ok(outcome)
@@ -700,8 +790,8 @@ mod tests {
             .expect("answered")
     }
 
-    /// Eighteen filters are built and seventeen answer: the strict-strand one is switched off by its
-    /// default and an empty list is dropped rather than counted.
+    /// Eighteen filters are built and seventeen answer: the strict-strand one is switched off by
+    /// its default and an empty list is dropped rather than counted.
     #[test]
     fn seventeen_of_the_eighteen_answer_a_fully_annotated_record() {
         let answered = answers(&annotated(), false);
