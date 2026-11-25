@@ -1365,75 +1365,7 @@ fn variant_walker_validation(
 
     let master = master_dictionary(parser)?;
     let reference = reference_dictionary(parser)?;
-    // `validateSequenceDictionaries` is ONE method and the argument turns all of it off, the
-    // master block included: a guard around part of it refuses command lines the reference runs.
-    if !flag(parser, "disable-sequence-dictionary-validation") {
-        if let Some(master) = &master {
-            // The master block runs before the reference/reads/features loop, and inside it the
-            // READS come before the reference and the reference before the features.
-            for reads in &reads_dictionaries {
-                validate_against_master(master, "reads", reads)?;
-            }
-            if let Some(reference) = &reference {
-                validate_against_master(master, "reference", &reference.sequences)?;
-            }
-            validate_against_master(master, "features", &header.sequences)?;
-        }
-        if let Some(reference) = &reference {
-            // The reference against the reads, then the reference against the features.
-            for reads in &reads_dictionaries {
-                gatk_tools::sequence_dictionary::validate(
-                    "reference",
-                    &reference.sequences,
-                    "reads",
-                    reads,
-                    false,
-                    false,
-                )
-                .map_err(|refusal| Thrown {
-                    failure: Failure::User,
-                    exception: refusal.java_class(),
-                    message: Some(refusal.message()),
-                })?;
-            }
-            gatk_tools::sequence_dictionary::validate(
-                "reference",
-                &reference.sequences,
-                "features",
-                &header.sequences,
-                false,
-                false,
-            )
-            .map_err(|refusal| Thrown {
-                failure: Failure::User,
-                exception: refusal.java_class(),
-                message: Some(refusal.message()),
-            })?;
-        }
-    }
-    // `GATKTool.onStartup` validates the dictionaries against each other BEFORE the traversal, and
-    // a variant walker still opens the reads when a command line names any: the pair goes through
-    // `validateDictionaries("reads", readDict, "features", featureDict)`, whose four-argument
-    // overload requires no superset and does not check the contig ordering. A corpus whose BAM and
-    // VCF share no contig is therefore refused whatever the intervals say (#1038).
-    if !flag(parser, "disable-sequence-dictionary-validation") {
-        for reads in &reads_dictionaries {
-            gatk_tools::sequence_dictionary::validate(
-                "reads",
-                reads,
-                "features",
-                &header.sequences,
-                false,
-                false,
-            )
-            .map_err(|refusal| Thrown {
-                failure: Failure::User,
-                exception: refusal.java_class(),
-                message: Some(refusal.message()),
-            })?;
-        }
-    }
-
+    // `initializeIntervals` comes before `validateSequenceDictionaries` in `onStartup`.
     // The master dictionary is validated against the features, and then again as `best available`.
     // What `-L` resolves against is NOT the master here: a variant walker prefers the DRIVING
     // VARIANTS' dictionary unless that one was synthesized from an index, and a VCF carrying
@@ -1457,6 +1389,82 @@ fn variant_walker_validation(
         header.clone()
     };
     let intervals = interval_arguments(parser, &best)?.map(|parameters| parameters.intervals);
+    // `getVariantSequenceDictionaries` leaves out a VCF with no `##contig` line: its header's
+    // dictionary is null, so no pair names the features at all.
+    let has_features_dictionary = !header.sequences.is_empty();
+    // `validateSequenceDictionaries` is ONE method and the argument turns all of it off, the
+    // master block included: a guard around part of it refuses command lines the reference runs.
+    if !flag(parser, "disable-sequence-dictionary-validation") {
+        if let Some(master) = &master {
+            // The master block runs before the reference/reads/features loop, and inside it the
+            // READS come before the reference and the reference before the features.
+            for reads in &reads_dictionaries {
+                validate_against_master(master, "reads", reads)?;
+            }
+            if let Some(reference) = &reference {
+                validate_against_master(master, "reference", &reference.sequences)?;
+            }
+            if has_features_dictionary {
+                validate_against_master(master, "features", &header.sequences)?;
+            }
+        }
+        if let Some(reference) = &reference {
+            // The reference against the reads, then the reference against the features.
+            for reads in &reads_dictionaries {
+                gatk_tools::sequence_dictionary::validate(
+                    "reference",
+                    &reference.sequences,
+                    "reads",
+                    reads,
+                    false,
+                    false,
+                )
+                .map_err(|refusal| Thrown {
+                    failure: Failure::User,
+                    exception: refusal.java_class(),
+                    message: Some(refusal.message()),
+                })?;
+            }
+            if has_features_dictionary {
+                gatk_tools::sequence_dictionary::validate(
+                    "reference",
+                    &reference.sequences,
+                    "features",
+                    &header.sequences,
+                    false,
+                    false,
+                )
+                .map_err(|refusal| Thrown {
+                    failure: Failure::User,
+                    exception: refusal.java_class(),
+                    message: Some(refusal.message()),
+                })?;
+            }
+        }
+    }
+    // `GATKTool.onStartup` validates the dictionaries against each other BEFORE the traversal, and
+    // a variant walker still opens the reads when a command line names any: the pair goes through
+    // `validateDictionaries("reads", readDict, "features", featureDict)`, whose four-argument
+    // overload requires no superset and does not check the contig ordering. A corpus whose BAM and
+    // VCF share no contig is therefore refused whatever the intervals say (#1038).
+    if has_features_dictionary && !flag(parser, "disable-sequence-dictionary-validation") {
+        for reads in &reads_dictionaries {
+            gatk_tools::sequence_dictionary::validate(
+                "reads",
+                reads,
+                "features",
+                &header.sequences,
+                false,
+                false,
+            )
+            .map_err(|refusal| Thrown {
+                failure: Failure::User,
+                exception: refusal.java_class(),
+                message: Some(refusal.message()),
+            })?;
+        }
+    }
+
 
     Ok(VariantWalkerStart {
         input,
@@ -3532,6 +3540,26 @@ pub fn annotate_vcf_with_expected_allele_fraction(parser: &Parser) -> Outcome {
             }
         })?;
 
+    // `-L`/`-XL` bound the traversal: a record outside them is never applied, so never written.
+    let located: Vec<LocatedRecord> = file
+        .records
+        .iter()
+        .enumerate()
+        .map(|(index, record)| LocatedRecord {
+            index,
+            contig: record.contig.clone(),
+            start: record.start as i32,
+            stop: record.stop as i32,
+        })
+        .collect();
+    let kept: Vec<usize> = gatk_engine::variant_source::traverse(&located, intervals.as_deref())
+        .into_iter()
+        .map(|located| located.index)
+        .collect();
+    file.records = kept
+        .into_iter()
+        .map(|index| file.records[index].clone())
+        .collect();
     for record in &mut file.records {
         let value = expected::annotation(record, &fractions);
         record.attributes.push((
@@ -12967,18 +12995,8 @@ pub fn gtf_to_bed(parser: &Parser) -> Outcome {
     // master dictionary and a `--reference` that disagree are refused there, and the two messages
     // are the dictionary comparison's own -- "No overlapping contigs found" for two that share
     // nothing and "Found contigs with the same name but different lengths" for two that do.
-    if !flag(parser, "disable-sequence-dictionary-validation") {
-        if let (Some(master), Some(path)) =
-            (master_dictionary(parser)?, argument(parser, "reference"))
-        {
-            let mut reference =
-                gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&path))
-                    .map_err(|error| Thrown::user(format!("{error:?}")))?;
-            let theirs = gatk_tools::reference_walker::dictionary(&reference);
-            validate_against_master(&master, "reference", &theirs.sequences)?;
-            let _ = &mut reference;
-        }
-    }
+    // A BAM under `--input` is opened too, and the master meets the reads before the reference.
+    validate_tool_dictionaries(parser)?;
     let dictionary = match master_dictionary(parser)? {
         Some(header) => Some(
             header
@@ -18234,8 +18252,8 @@ pub fn condense_depth_evidence(parser: &Parser) -> Outcome {
     // read filters resolve while the command line is parsed, and `onStartup` loads a master
     // dictionary before it opens anything else.
     let _ = resolve_read_filters(parser, "CondenseDepthEvidence")?;
-    let master = master_dictionary(parser)?;
-    let reference = reference_dictionary(parser)?;
+    master_dictionary(parser)?;
+    reference_dictionary(parser)?;
     // `getCodecForFile` tests that the path is readable before it asks a codec anything.
     let bytes = std::fs::read(&input).map_err(|_| {
         Thrown::user(
@@ -18276,12 +18294,8 @@ pub fn condense_depth_evidence(parser: &Parser) -> Outcome {
         }
     }
     // `validateSequenceDictionaries`, once the input is open: the text codec carries no
-    // dictionary, so the master against the reference is the one pair there is.
-    if !flag(parser, "disable-sequence-dictionary-validation") {
-        if let (Some(master), Some(reference)) = (&master, &reference) {
-            validate_against_master(master, "reference", &reference.sequences)?;
-        }
-    }
+    // dictionary, so the pairs are the master's, the reference's and a BAM's under `--input`.
+    validate_tool_dictionaries(parser)?;
     let text = String::from_utf8_lossy(&bytes);
     let (samples, records) = condense::read(&text).map_err(|problem| {
         Thrown::non_user(
@@ -18351,7 +18365,7 @@ pub fn convert_counts_to_depth_file(parser: &Parser) -> Outcome {
     let master = master_dictionary(parser)?;
     // `initializeReference` comes before `initializeFeatures`, so a missing reference is refused
     // before the counts are opened.
-    let reference = reference_dictionary(parser)?;
+    reference_dictionary(parser)?;
 
     let text = std::fs::read_to_string(&input).map_err(|_| {
         Thrown::user(format!(
@@ -18411,13 +18425,9 @@ pub fn convert_counts_to_depth_file(parser: &Parser) -> Outcome {
         }
     };
 
-    // `validateSequenceDictionaries`, after the features are initialized: the master against the
-    // reference. The counts header's dictionary is not one the engine collects.
-    if !flag(parser, "disable-sequence-dictionary-validation") {
-        if let (Some(master), Some(reference)) = (&master, &reference) {
-            validate_against_master(master, "reference", &reference.sequences)?;
-        }
-    }
+    // `validateSequenceDictionaries`, once the input is open: the text codec carries no
+    // dictionary, so the pairs are the master's, the reference's and a BAM's under `--input`.
+    validate_tool_dictionaries(parser)?;
 
     let intervals = match &master {
         Some(header) => interval_arguments(parser, header)?.map(|parameters| parameters.intervals),
@@ -19888,9 +19898,17 @@ pub fn example_multi_feature_walker(parser: &Parser) -> Outcome {
         exception: "org.broadinstitute.hellbender.exceptions.UserException",
         message: Some(message),
     };
+    // `getBestAvailableSequenceDictionary`: with neither a master nor a reference, the reads'.
+    let reads = match (&master, &reference, arguments(parser, "input").first()) {
+        (None, None, Some(path)) => Some(SamHeader {
+            sequences: reads_dictionary(parser, path, arguments(parser, "input").len())?,
+            ..SamHeader::default()
+        }),
+        _ => None,
+    };
     let dictionary = walker::choose_dictionary(
         source(master, "sequence-dictionary"),
-        source(reference, "reference"),
+        source(reference, "reference").or(source(reads, "reads")),
     )
     .map_err(|error| user(error.message()))?;
     // The merge is computed whole, so what a refused walk had printed is the features the heap
@@ -20761,6 +20779,9 @@ pub fn apply_vqsr(parser: &Parser) -> Outcome {
         !flag(parser, "disable-sequence-dictionary-validation"),
     )?;
     let VariantWalkerStart { intervals, .. } = driving.startup(parser)?;
+    // `initializeIntervals`, still in `onStartup`: an unindexed driving file under `-L` is refused
+    // before `onTraversalStart` reads a cutoff.
+    driving.reached(intervals.as_deref())?;
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
@@ -23760,6 +23781,8 @@ pub fn combine_segment_breakpoints(parser: &Parser) -> Outcome {
     use gatk_tools::sequence_dictionary::{compare, Compatibility};
 
     let _ = resolve_read_filters(parser, "CombineSegmentBreakpoints")?;
+    // `GATKTool.onStartup`: a BAM given to this tool is still opened, and its dictionary checked.
+    validate_tool_dictionaries(parser)?;
     let segments = arguments(parser, "segments");
     // The declaration's default is `[1, 2]`, and `--labels null` empties it.
     let labels = arguments(parser, "labels");
@@ -23810,9 +23833,16 @@ pub fn combine_segment_breakpoints(parser: &Parser) -> Outcome {
         dictionary1
     };
     if merged.is_empty() {
-        let best = master_dictionary(parser)?.or(reference_dictionary(parser)?);
+        // `getBestAvailableSequenceDictionary`: master, then reference, then the reads.
+        let best = match master_dictionary(parser)?.or(reference_dictionary(parser)?) {
+            Some(best) => Some(best.sequences),
+            None => match arguments(parser, "input").first() {
+                Some(path) => Some(reads_dictionary(parser, path, 1)?),
+                None => None,
+            },
+        };
         match best {
-            Some(best) => merged = best.sequences,
+            Some(best) => merged = best,
             None => {
                 return Err(bad_input(
                     "Cannot assemble a reference dictionary.  In order to use this tool, one of the following conditions must be satisfied:  1)  One or both input files have a SAM File header ... 2)  A reference is provided (-R)".to_string(),
