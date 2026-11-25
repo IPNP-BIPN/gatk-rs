@@ -2566,20 +2566,17 @@ pub fn split_intervals(parser: &Parser) -> Outcome {
     // carries no sort order, so the stamp `sorted()` had put on the scatterer's output is gone.
     // Measured on rows 10, 14, 20, 21 and 23 of this tool's array, which are exactly the rows that
     // pair the flag with one of the four stamping modes.
-    let sort_order =
-        if arguments.subdivision_mode.stamps_sort_order() && !arguments.dont_mix_contigs {
-            "\tSO:coordinate"
-        } else {
-            ""
-        };
+    // The `@SQ` lines are the dictionary's records whole, `UR`, `AS`, `M5` and `SP` included.
+    let mut shard_header = SamHeader {
+        sequences: best.clone(),
+        ..SamHeader::default()
+    };
+    if arguments.subdivision_mode.stamps_sort_order() && !arguments.dont_mix_contigs {
+        shard_header.set_sort_order("coordinate");
+    }
+    let shard_header = shard_header.encode();
     for (name, list) in &shards {
-        let mut text = format!("@HD\tVN:1.6{sort_order}\n");
-        for sequence in &best {
-            text.push_str(&format!(
-                "@SQ\tSN:{}\tLN:{}\n",
-                sequence.name, sequence.length
-            ));
-        }
+        let mut text = shard_header.clone();
         for interval in &list.intervals {
             text.push_str(&interval.to_file_line());
             text.push('\n');
@@ -3918,8 +3915,8 @@ pub fn call_copy_ratio_segments(parser: &Parser) -> Outcome {
 
     let text = std::fs::read_to_string(&input)
         .map_err(|error| Thrown::user(format!("{input}: {error}")))?;
-    // The file is a SAM header, a column line and the rows. The header travels into the output
-    // unchanged, which is what carries the sample name and the dictionary through.
+    // The file is a SAM header, a column line and the rows. Only the header's sample name and
+    // dictionary travel into the output, rebuilt as `metadata.toHeader()`.
     let mut header = String::new();
     let mut rows = Vec::new();
     let mut columns_seen = false;
@@ -3960,6 +3957,8 @@ pub fn call_copy_ratio_segments(parser: &Parser) -> Outcome {
     let calls = calling::make_calls(&rows, lower, upper, outlier, calling_threshold)
         .map_err(|error| Thrown::non_user(error.java_class(), error.message().to_string()))?;
 
+    let dictionary = htsjdk_bam::reader::parse_header_text(&header).sequences;
+    let header = gatk_tools::model_segments_tool::header(&sample, Some(&dictionary));
     write_file(
         &output,
         calling::write_called(&header, &rows, &calls).as_bytes(),
@@ -23629,17 +23628,16 @@ pub fn combine_segment_breakpoints(parser: &Parser) -> Outcome {
     let second = read(&segments[1])?;
 
     // `createOutputSamFileHeader`.
-    let dictionary_of =
-        |collection: &gatk_tools::annotated_interval::AnnotatedIntervalCollection| {
-            let text: String = collection
-                .header_lines
-                .iter()
-                .map(|line| format!("{line}\n"))
-                .collect();
-            htsjdk_bam::reader::parse_header_text(&text).sequences
-        };
-    let (dictionary1, dictionary2) = (dictionary_of(&first), dictionary_of(&second));
-    match compare(&dictionary1, &dictionary2, true) {
+    let header_of = |collection: &gatk_tools::annotated_interval::AnnotatedIntervalCollection| {
+        let text: String = collection
+            .header_lines
+            .iter()
+            .map(|line| format!("{line}\n"))
+            .collect();
+        htsjdk_bam::reader::parse_header_text(&text)
+    };
+    let headers = [header_of(&first), header_of(&second)];
+    match compare(&headers[0].sequences, &headers[1].sequences, true) {
         Compatibility::UnequalCommonContigs => {
             return Err(bad_input(
                 "Input files had common contigs with different lengths in the sequence dictionaries.  Were these segment files generated with the same reference?".to_string(),
@@ -23652,15 +23650,16 @@ pub fn combine_segment_breakpoints(parser: &Parser) -> Outcome {
         }
         _ => {}
     }
-    let mut merged = if dictionary1.is_empty() {
-        dictionary2
-    } else {
-        dictionary1
-    };
-    if merged.is_empty() {
+    // `SamFileHeaderMerger(coordinate, headers, true)`: the dictionaries, read groups (a clash
+    // renamed `ID.1`), programs and comments of both inputs.
+    let mut header = gatk_tools::sam_file_header_merger::merge(&headers)
+        .map_err(|message| Thrown::non_user("htsjdk.samtools.SAMException", message))?
+        .header;
+    header.set_sort_order("coordinate");
+    if header.sequences.is_empty() {
         let best = master_dictionary(parser)?.or(reference_dictionary(parser)?);
         match best {
-            Some(best) => merged = best.sequences,
+            Some(best) => header.sequences = best.sequences,
             None => {
                 return Err(bad_input(
                     "Cannot assemble a reference dictionary.  In order to use this tool, one of the following conditions must be satisfied:  1)  One or both input files have a SAM File header ... 2)  A reference is provided (-R)".to_string(),
@@ -23710,7 +23709,8 @@ pub fn combine_segment_breakpoints(parser: &Parser) -> Outcome {
         ));
     }
     let label = |index: usize| labels.get(index).map(String::as_str).unwrap_or("");
-    let names: Vec<String> = merged
+    let names: Vec<String> = header
+        .sequences
         .iter()
         .map(|sequence| sequence.name.clone())
         .collect();
@@ -23721,10 +23721,6 @@ pub fn combine_segment_breakpoints(parser: &Parser) -> Outcome {
         [label(0), label(1)],
         &columns,
     );
-    let mut header = SamHeader::default();
-    header.attributes.set("GO", "none");
-    header.attributes.set("SO", "coordinate");
-    header.sequences = merged;
     let mut annotations: Vec<String> = records
         .first()
         .map(|record| record.annotations.keys().cloned().collect())
