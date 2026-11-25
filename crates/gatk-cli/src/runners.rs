@@ -15645,14 +15645,25 @@ pub fn allele_frequency_qc(parser: &Parser) -> Outcome {
     if let Some(debug) = argument(parser, "debugFile") {
         write_file(&debug, report.as_bytes())?;
     }
+    // The report is the one this run just wrote, so a table it cannot be read back from is a bug
+    // of the port's.
     let bins = qc::bins_from_report(&report, qc::MODULE)
-        .map_err(|error| Thrown::non_user(PORT_LIMITATION, format!("{error:?}")))?;
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error:?}")))?;
     if bins.len() < 2 {
+        // `new ChiSquaredDistribution(afMap.size() - 1)` is a gamma of shape df / 2, which
+        // commons-math refuses unless positive. The allele-frequency ladder gives sixty-one bins
+        // to every report, so no run is known to reach this.
+        let shape = (bins.len() as f64 - 1.0) / 2.0;
         return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "fewer than two allele-frequency bins leave the chi-squared distribution without a \
-             positive degree of freedom. This message is the port's own and not GATK's."
-                .to_string(),
+            "org.apache.commons.math3.exception.NotStrictlyPositiveException",
+            format!(
+                "shape ({})",
+                if shape == 0.0 {
+                    "0".to_string()
+                } else {
+                    shape.to_string()
+                }
+            ),
         ));
     }
     let sample = sample.unwrap_or_default();
