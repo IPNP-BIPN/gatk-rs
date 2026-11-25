@@ -113,7 +113,12 @@ fn streamed(
         output,
         &header,
         flag(parser, "CREATE_INDEX"),
-        dictionary.as_deref(),
+        dictionary.map(|sequences| {
+            sequences
+                .into_iter()
+                .map(|sequence| (sequence.name, sequence.length))
+                .collect()
+        }),
     )?;
     let (files, readers): (Vec<_>, Vec<_>) = inputs
         .into_iter()

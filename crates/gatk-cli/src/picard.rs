@@ -371,7 +371,7 @@ impl<'a> VcfStream<'a> {
         output: &str,
         header: &'a htsjdk_vcf::VcfHeader,
         index: bool,
-        dictionary: Option<&[htsjdk_bam::header::SequenceRecord]>,
+        dictionary: Option<Vec<(String, i32)>>,
     ) -> Option<Self> {
         let text = header.write();
         let block_compressed = output.ends_with(".gz") || output.ends_with(".bgz");
@@ -382,12 +382,6 @@ impl<'a> VcfStream<'a> {
         if index && !block_compressed && !has_dictionary {
             return None;
         }
-        let dictionary = dictionary.map(|sequences| {
-            sequences
-                .iter()
-                .map(|sequence| (sequence.name.clone(), sequence.length))
-                .collect()
-        });
         let writer =
             crate::runners::VariantStreamWriter::create_as(parser, output, &text, index, false)
                 .ok()?
