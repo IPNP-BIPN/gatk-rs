@@ -461,18 +461,145 @@ fn bias_posterior_curvature(alpha: f64, f: f64, r: i32, n: i32, lambda0: f64) ->
     f64::from(n) * y * y - (f64::from(r) + alpha - 1.0) / (lambda0 * lambda0)
 }
 
+/// `(log(a + r + 1), binomialCoefficientLog(a + r, a))`, the outlier term's parts that depend on a
+/// het's counts alone, which every sampler evaluation of that het took again. Remembered by the
+/// counts in a direct-mapped per-thread cache: the same functions of the same integers, so the same
+/// bits, and a collision only recomputes.
+fn outlier_count_terms(a: i32, r: i32) -> (f64, f64) {
+    const SLOTS: usize = 4096;
+    type Slot = Option<((i32, i32), (f64, f64))>;
+    thread_local! {
+        static CACHE: std::cell::RefCell<Vec<Slot>> = std::cell::RefCell::new(vec![None; SLOTS]);
+    }
+    let slot = ((a as u32).wrapping_mul(0x9E37_79B9) ^ (r as u32)) as usize % SLOTS;
+    CACHE.with_borrow_mut(|cache| match cache[slot] {
+        Some((counts, terms)) if counts == (a, r) => terms,
+        _ => {
+            let terms = (
+                jmath::math::log(f64::from(a + r + 1)),
+                binomial_coefficient_log(a + r, a),
+            );
+            cache[slot] = Some(((a, r), terms));
+            terms
+        }
+    })
+}
+
 /// `AlleleFractionLikelihoods.hetLogLikelihood`.
+///
+/// A pure function of the parameters, the minor fraction and the het's two counts, and a segment's
+/// hets repeat counts often at one value: the answers are remembered in a direct-mapped per-thread
+/// cache keyed by those inputs' bits, so a hit is the very bits the computation gives.
 fn het_log_likelihood(parameters: &GlobalParameters, minor_fraction: f64, het: &Het) -> f64 {
+    const SLOTS: usize = 4096;
+    type Slot = Option<(([u64; 4], i32, i32), f64)>;
+    thread_local! {
+        static CACHE: std::cell::RefCell<Vec<Slot>> = std::cell::RefCell::new(vec![None; SLOTS]);
+    }
+    let key = (
+        [
+            parameters.alpha().to_bits(),
+            parameters.beta().to_bits(),
+            parameters.outlier_probability.to_bits(),
+            minor_fraction.to_bits(),
+        ],
+        het.alt_count,
+        het.ref_count,
+    );
+    let hash = key.0.iter().fold(0u64, |h, bits| {
+        (h ^ bits).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+    }) ^ (key.1 as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F)
+        ^ (key.2 as u64);
+    let slot = (hash ^ (hash >> 32)) as usize % SLOTS;
+    if let Some(value) = CACHE.with_borrow(|cache| match cache[slot] {
+        Some((cached, value)) if cached == key => Some(value),
+        _ => None,
+    }) {
+        return value;
+    }
+    let value = computed_het_log_likelihood(parameters, minor_fraction, het);
+    CACHE.with_borrow_mut(|cache| cache[slot] = Some((key, value)));
+    value
+}
+
+fn computed_het_log_likelihood(
+    parameters: &GlobalParameters,
+    minor_fraction: f64,
+    het: &Het,
+) -> f64 {
+    let pi = parameters.outlier_probability;
+    // The outlier probability's two logarithms, remembered from the last call by its bits.
+    thread_local! {
+        static LAST_PI: std::cell::Cell<Option<(u64, [f64; 2])>> =
+            const { std::cell::Cell::new(None) };
+    }
+    let [log_pi, log_not_pi] = match LAST_PI.get() {
+        Some((bits, terms)) if bits == pi.to_bits() => terms,
+        _ => {
+            let terms = [af_log(pi), af_log((1.0 - pi) / 2.0)];
+            LAST_PI.set(Some((pi.to_bits(), terms)));
+            terms
+        }
+    };
+
+    let [logc_alt, gamma_alt, tail_alt, logc_ref, gamma_ref, tail_ref] =
+        bias_terms(parameters, minor_fraction, het);
+    let alt_minor = log_not_pi + logc_alt + gamma_alt - tail_alt;
+    let ref_minor = log_not_pi + logc_ref + gamma_ref - tail_ref;
+
+    let (log_count, binomial) = outlier_count_terms(het.alt_count, het.ref_count);
+    let outlier = log_pi - log_count - binomial;
+    log_sum_exp(&[alt_minor, ref_minor, outlier])
+}
+
+/// The terms of `hetLogLikelihood` the outlier probability does not enter: per hypothesis, `logc`,
+/// `logGamma(rho)` and `rho * log(tau)`, which the likelihood adds in that order after
+/// `log((1 - pi) / 2)`. The outlier probability's sampler varies `pi` alone, so these are remembered
+/// in a direct-mapped per-thread cache keyed by the other inputs' bits: a hit is the very bits.
+fn bias_terms(parameters: &GlobalParameters, minor_fraction: f64, het: &Het) -> [f64; 6] {
+    const SLOTS: usize = 4096;
+    type Slot = Option<(([u64; 3], i32, i32), [f64; 6])>;
+    thread_local! {
+        static CACHE: std::cell::RefCell<Vec<Slot>> = std::cell::RefCell::new(vec![None; SLOTS]);
+    }
     let alpha = parameters.alpha();
     let beta = parameters.beta();
-    let pi = parameters.outlier_probability;
+    let key = (
+        [alpha.to_bits(), beta.to_bits(), minor_fraction.to_bits()],
+        het.alt_count,
+        het.ref_count,
+    );
+    let hash = key.0.iter().fold(0u64, |h, bits| {
+        (h ^ bits).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+    }) ^ (key.1 as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F)
+        ^ (key.2 as u64);
+    let slot = (hash ^ (hash >> 32)) as usize % SLOTS;
+    if let Some(terms) = CACHE.with_borrow(|cache| match cache[slot] {
+        Some((cached, terms)) if cached == key => Some(terms),
+        _ => None,
+    }) {
+        return terms;
+    }
 
-    let log_pi = af_log(pi);
-    let log_not_pi = af_log((1.0 - pi) / 2.0);
-    let logc_common = alpha * af_log(beta) - jmath::gamma::log_gamma(alpha);
     let major_fraction = 1.0 - minor_fraction;
-    let log_minor = af_log(minor_fraction);
-    let log_major = af_log(major_fraction);
+    // The terms of the parameters alone, the same for every het of a segment at one value, are
+    // remembered from the last call by their inputs' bits.
+    type Common = ([u64; 3], [f64; 3]);
+    thread_local! {
+        static LAST: std::cell::Cell<Option<Common>> = const { std::cell::Cell::new(None) };
+    }
+    let [logc_common, log_minor, log_major] = match LAST.get() {
+        Some((last, terms)) if last == key.0 => terms,
+        _ => {
+            let terms = [
+                alpha * af_log(beta) - jmath::gamma::log_gamma(alpha),
+                af_log(minor_fraction),
+                af_log(major_fraction),
+            ];
+            LAST.set(Some((key.0, terms)));
+            terms
+        }
+    };
 
     let a = het.alt_count;
     let r = het.ref_count;
@@ -489,8 +616,6 @@ fn het_log_likelihood(parameters: &GlobalParameters, minor_fraction: f64, het: &
         + (rf + alpha - rho_alt) * af_log(lambda0_alt)
         + (tau_alt - beta) * lambda0_alt
         - nf * af_log(minor_fraction + major_fraction * lambda0_alt);
-    let alt_minor =
-        log_not_pi + logc_alt + jmath::gamma::log_gamma(rho_alt) - rho_alt * af_log(tau_alt);
 
     let lambda0_ref = bias_posterior_mode(alpha, beta, major_fraction, a, r);
     let kappa_ref = bias_posterior_curvature(alpha, major_fraction, r, n, lambda0_ref);
@@ -502,12 +627,17 @@ fn het_log_likelihood(parameters: &GlobalParameters, minor_fraction: f64, het: &
         + (rf + alpha - rho_ref) * af_log(lambda0_ref)
         + (tau_ref - beta) * lambda0_ref
         - nf * af_log(major_fraction + minor_fraction * lambda0_ref);
-    let ref_minor =
-        log_not_pi + logc_ref + jmath::gamma::log_gamma(rho_ref) - rho_ref * af_log(tau_ref);
 
-    let binomial = binomial_coefficient_log(n, a);
-    let outlier = log_pi - jmath::math::log(f64::from(a + r + 1)) - binomial;
-    log_sum_exp(&[alt_minor, ref_minor, outlier])
+    let terms = [
+        logc_alt,
+        jmath::gamma::log_gamma(rho_alt),
+        rho_alt * af_log(tau_alt),
+        logc_ref,
+        jmath::gamma::log_gamma(rho_ref),
+        rho_ref * af_log(tau_ref),
+    ];
+    CACHE.with_borrow_mut(|cache| cache[slot] = Some((key, terms)));
+    terms
 }
 
 /// `CombinatoricsUtils.binomialCoefficientLog(n, k)`.
