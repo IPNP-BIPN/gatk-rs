@@ -9,7 +9,7 @@ use htsjdk_vcf::genotype_parse::{parse_genotypes, GenotypeContext};
 use htsjdk_vcf::genotypes_context::GenotypesContext;
 use htsjdk_vcf::header_parse::VcfVersion;
 use htsjdk_vcf::reader::VcfFile;
-use htsjdk_vcf::record_parse::{decode_line, RecordError};
+use htsjdk_vcf::record_parse::{decode_line_with, InfoTypes, RecordError};
 use htsjdk_vcf::variant::VariantContext;
 use htsjdk_vcf::VcfHeader;
 use std::sync::Arc;
@@ -102,6 +102,8 @@ pub struct Records<'a> {
     body: Body<'a>,
     line: String,
     header: &'a VcfHeader,
+    /// The header's INFO types, built once: `decode_line` rebuilds them for every line.
+    info_types: InfoTypes<'a>,
     version: VcfVersion,
     line_number: usize,
     samples: Arc<[String]>,
@@ -116,6 +118,7 @@ impl<'a> Records<'a> {
             body,
             line: String::new(),
             header,
+            info_types: InfoTypes::new(header),
             version: file.codec_version,
             line_number: header_lines,
             samples: Arc::from(header.samples.clone()),
@@ -145,7 +148,13 @@ impl Iterator for Records<'_> {
                 },
             }
             let line = self.line.as_str();
-            let decoded = match decode_line(line, self.header, self.line_number, self.version) {
+            let decoded = match decode_line_with(
+                line,
+                self.header,
+                &self.info_types,
+                self.line_number,
+                self.version,
+            ) {
                 Ok(Some(decoded)) => decoded,
                 // A `#` line: no record and no increment of the counter.
                 Ok(None) => continue,
