@@ -178,3 +178,31 @@ pub fn add_original_alignment_tags_with(
         deflater,
     )?))
 }
+
+/// [`add_original_alignment_tags_with`] straight to `output`, a read at a time: see
+/// [`crate::sam_output::rewrite_to`]. The first unpaired read stops the run where it comes, as it
+/// stops the reference's.
+pub fn add_original_alignment_tags_to(
+    output: &std::path::Path,
+    source: &ReadsDataSource,
+    options: &Options,
+    filter: &dyn Fn(&BamRecord) -> bool,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
+) -> Result<crate::sam_output::Written, crate::sam_output::RewriteError<UnpairedRead>> {
+    let records = crate::read_walker::traverse_iter(source, &options.intervals, false, filter)
+        .map_err(crate::sam_output::RewriteError::Traversal)?;
+    let input_header = source.header();
+    let header = header_for_sam_writer(input_header, TOOL_NAME, options);
+    // `write_bam` indexed only a coordinate-sorted output; `rewrite_to` is told the same rule.
+    let create_index = options.create_output_bam_index && crate::sam_output::indexes(&header);
+    crate::sam_output::rewrite_to(
+        output,
+        &header,
+        records,
+        |read| add_tags(read, input_header),
+        create_index,
+        level,
+        deflater,
+    )
+}

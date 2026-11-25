@@ -132,6 +132,27 @@ file.
 byte (md5 `7e673ef0...`, both written to the same path). CPU 83 s against GATK's 88 s, inside the
 noise of one run and short of 0.5x: decoding and deflating, the engine's (W12).
 
+## Scale D. `AddOriginalAlignmentTags` held the reads and the BAM it wrote
+
+**Ratio.** At scale (chr20 30x BAM, linux/arm64, 6 GiB container): GATK 0.74 GiB peak RSS and
+113 s CPU, the port killed at the limit. Natively on macOS, with no limit: 32.55 GiB.
+
+**Where the memory goes.** As in Scale C: the whole traversal collected, tagged, encoded into a
+`Vec<u8>`, then inflated again by `write_bam` for its index rule.
+
+**The optimisation.** `add_original_alignment_tags_to` over `sam_output::rewrite_to` (Scale C),
+with `add_tags` as the rewrite.
+
+**Why it cannot move a byte.** The same reads reach the same writer in the same order. On an
+unpaired read the run stops with the same `IllegalStateException` and leaves no file. One order
+changes, towards the reference's: in a file holding both an unpaired read and, later, a record the
+decoder refuses, the unpaired read now wins, as it does in GATK, which also reads as it goes.
+
+**The suites that prove it.** `add-oa-tags`, and the tool's covering array.
+
+**Result.** macOS native, chr20: 32.55 GiB to 0.10 GiB peak RSS; the BAM is the old port's byte
+for byte (md5 `621eb133...`). CPU 106 s against GATK's 113 s: decoding and deflating (W12).
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are
