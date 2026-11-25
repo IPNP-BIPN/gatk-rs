@@ -17,8 +17,7 @@ struct CountsFile {
 fn read_counts(path: &str) -> Result<CountsFile, Thrown> {
     use gatk_tools::create_read_count_panel_of_normals::Interval;
     can_read_file(path)?;
-    let text = gatk_tools::collect_read_counts::read_text(path)
-        .map_err(|error| Thrown::user(format!("{path}: {error}")))?;
+    let text = gatk_tools::collect_read_counts::read_text(path)?;
     let header: String = text
         .lines()
         .take_while(|line| line.starts_with('@'))

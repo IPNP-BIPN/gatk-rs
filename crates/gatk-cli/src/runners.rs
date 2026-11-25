@@ -4544,11 +4544,11 @@ pub fn filter_intervals(parser: &Parser) -> Outcome {
     let read_table = |path: &str, counts: bool| -> Result<Table, Thrown> {
         can_read_file(path)?;
         let text = if counts {
-            gatk_tools::collect_read_counts::read_text(path)
+            gatk_tools::collect_read_counts::read_text(path)?
         } else {
-            std::fs::read_to_string(path).map_err(|error| error.to_string())
-        }
-        .map_err(|error| Thrown::user(format!("{path}: {error}")))?;
+            std::fs::read_to_string(path)
+                .map_err(|error| Thrown::user(format!("{path}: {error}")))?
+        };
         // The `@SQ` block at the head of the table is the collection's METADATA, which is the
         // dictionary `-L` resolves against and the dictionary the output interval list carries.
         // It is the file's own and not the reference's: this tool takes no `--reference`, and a
@@ -6082,8 +6082,7 @@ pub fn denoise_read_counts(parser: &Parser) -> Outcome {
     if let Some(path) = &annotated {
         can_read_file(path)?;
     }
-    let text = gatk_tools::collect_read_counts::read_text(&input)
-        .map_err(|error| Thrown::user(format!("{input}: {error}")))?;
+    let text = gatk_tools::collect_read_counts::read_text(&input)?;
     // The `@SQ` block is the metadata, the `@RG`'s `SM` the sample, and the rows the counts.
     let header = htsjdk_bam::reader::parse_header_text(
         &text
@@ -6174,11 +6173,10 @@ pub fn denoise_read_counts(parser: &Parser) -> Outcome {
         ));
     }
 
-    let values = denoise::standardize(&counts).map_err(|error| Thrown {
-        failure: Failure::User,
-        exception: error.java_class(),
-        message: Some(error.message().to_string()),
-    })?;
+    // `ParamUtils.isPositive` throws an `IllegalArgumentException`, which is no `UserException`:
+    // status three, as the panel branch above reports the same refusal.
+    let values = denoise::standardize(&counts)
+        .map_err(|error| Thrown::non_user(error.java_class(), error.message()))?;
     let table = denoise::write(sequences, &sample, &rows(&intervals), &values);
     // The same bytes twice: with no panel the denoised result IS the standardised one.
     write_file(&standardized, table.as_bytes())?;

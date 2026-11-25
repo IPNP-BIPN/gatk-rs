@@ -38,8 +38,7 @@ struct Counts {
 
 /// `SimpleCountCollection.read`, TSV or HDF5, the second read as the TSV it would be written as.
 fn read_counts(path: &str) -> Result<Counts, Thrown> {
-    let text = gatk_tools::collect_read_counts::read_text(path)
-        .map_err(|error| Thrown::user(format!("{path}: {error}")))?;
+    let text = gatk_tools::collect_read_counts::read_text(path)?;
     let header: String = text
         .lines()
         .take_while(|line| line.starts_with('@'))
