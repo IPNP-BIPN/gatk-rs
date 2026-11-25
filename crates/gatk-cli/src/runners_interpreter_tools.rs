@@ -52,6 +52,8 @@ const NOT_IMPLEMENTED: &str = "org.apache.commons.lang3.NotImplementedException"
 const BGMM_NOT_IMPLEMENTED: &str = "BGMM module will be implemented in separate PR.";
 const GATK_EXCEPTION: &str = "org.broadinstitute.hellbender.exceptions.GATKException";
 const R_SCRIPT_EXCEPTION: &str = "org.broadinstitute.hellbender.utils.R.RScriptExecutorException";
+const PYTHON_SCRIPT_EXCEPTION: &str =
+    "org.broadinstitute.hellbender.utils.python.PythonScriptExecutorException";
 
 /// `PlottingUtils`' defaults.
 const DEFAULT_MAXIMUM_COPY_RATIO: f64 = 4.0;
@@ -73,6 +75,11 @@ fn stop_at(executable: &str, what_is_not_ported: &str) -> Thrown {
             format!("{what_is_not_ported} is not ported. This message is the port's own and not GATK's."),
         );
     }
+    executable_missing(executable)
+}
+
+/// `ScriptExecutor.executableMissing`.
+fn executable_missing(executable: &str) -> Thrown {
     Thrown::user(format!(
         "Unable to execute {executable} command: Please add the {executable} directory to your \
          environment ${{PATH}}"
@@ -347,6 +354,20 @@ fn run_r_scripts(scripts: &[RScript], args: &[String]) -> Result<(), Thrown> {
                 format!("Unable to run Rscript -e {expression}: {error}"),
             )
         })?;
+    script_failure(
+        R_SCRIPT_EXCEPTION,
+        &format!("Rscript -e {expression} {}", args.join(" ")),
+        &output,
+    )
+}
+
+/// `ScriptExecutor.getExceptionMessageFromScriptError`, as the executor's exception, where the
+/// script ended with a status other than nought.
+fn script_failure(
+    exception: &'static str,
+    command_line: &str,
+    output: &std::process::Output,
+) -> Result<(), Thrown> {
     if output.status.success() {
         return Ok(());
     }
@@ -360,15 +381,102 @@ fn run_r_scripts(scripts: &[RScript], args: &[String]) -> Result<(), Thrown> {
     } else {
         ""
     };
+    let executable = command_line.split(' ').next().unwrap_or_default();
     Err(Thrown::non_user(
-        R_SCRIPT_EXCEPTION,
+        exception,
         format!(
-            "\nRscript exited with {status}\nCommand Line: Rscript -e {expression} {}{terminated}\nStdout: {}\nStderr: {}",
-            args.join(" "),
+            "\n{executable} exited with {status}\nCommand Line: {command_line}{terminated}\nStdout: {}\nStderr: {}",
             captured(&output.stdout),
             captured(&output.stderr)
         ),
     ))
+}
+
+/// `PythonScriptExecutor(true).executeScriptAndGetOutput(script, null, args)`, and the caller's
+/// refusal of a status other than nought. The script's output only goes into that message.
+fn run_python_script(script: &str, args: &[String]) -> Result<(), Thrown> {
+    if !on_the_path("python") {
+        return Err(executable_missing("python"));
+    }
+    // `pythonScriptFile.getAbsolutePath()`, which `validateAndBuildCommand` judges by its suffix.
+    let script = java_absolute_path(script);
+    if !script.ends_with(".py") {
+        return Err(illegal(format!(
+            "Python script name ({script}) must end with \".py\""
+        )));
+    }
+    let output = std::process::Command::new("python")
+        .arg(&script)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|error| Thrown::non_user(GATK_EXCEPTION, error.to_string()))?;
+    let command_line = std::iter::once(format!("python {script}"))
+        .chain(args.iter().cloned())
+        .collect::<Vec<_>>()
+        .join(" ");
+    script_failure(PYTHON_SCRIPT_EXCEPTION, &command_line, &output)
+}
+
+/// `IOUtils.createTempFile`: `File.createTempFile` in `java.io.tmpdir`, so the file exists, empty,
+/// and `deleteOnExit`, which here is when it drops.
+struct TempFile(String);
+
+impl TempFile {
+    fn new(tmp_dir: &str, prefix: &str, suffix: &str) -> Result<Self, Thrown> {
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let path = format!(
+            "{}/{prefix}{}{}{suffix}",
+            tmp_dir.trim_end_matches('/'),
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        );
+        write_file(&path, b"")?;
+        Ok(Self(path))
+    }
+}
+
+impl Drop for TempFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// `java.io.tmpdir`, which `--tmp-dir` sets.
+fn java_tmp_dir(parser: &Parser) -> String {
+    match argument(parser, "tmp-dir") {
+        Some(dir) => std::path::absolute(&dir).map_or(dir, |path| path.display().to_string()),
+        None => "/tmp".to_string(),
+    }
+}
+
+/// `LabeledVariantAnnotationsData.subsetAnnotationsToTemporaryFile`'s file, once `subset` has
+/// made its checks: the names and the rows as one chunk.
+fn subset_file(tmp_dir: &str, names: &[String], rows: &[&Vec<f64>]) -> Result<TempFile, Thrown> {
+    let temp = TempFile::new(tmp_dir, "subset.annot", ".hdf5")?;
+    let mut file = Hdf5File::new();
+    file.string_array("/annotations/names", names);
+    file.double_array("/annotations/num_rows", &[rows.len() as f64]);
+    file.double_array("/annotations/num_columns", &[names.len() as f64]);
+    file.double_array("/annotations/num_chunks", &[1.0]);
+    file.double_matrix(
+        "/annotations/chunk_0",
+        &rows.iter().map(|row| (*row).clone()).collect::<Vec<_>>(),
+    );
+    write_file(&temp.0, &file.to_bytes())?;
+    Ok(temp)
+}
+
+/// `PythonVariantAnnotationsScorer.score`: the script, handed the scorer and where to write.
+fn python_score(script: &str, annotations: &str, scorer: &str, scores: &str) -> Result<(), Thrown> {
+    run_python_script(
+        script,
+        &[
+            format!("--annotations_file={}", canonical_path(annotations)),
+            format!("--scorer_pkl_file={}", canonical_path(scorer)),
+            format!("--output_scores_file={}", canonical_path(scores)),
+        ],
+    )
 }
 
 /// `AlleleFrequencyQC.onTraversalSuccess`'s executor: the report, the metrics file and the sample.
@@ -957,10 +1065,7 @@ pub fn train_variant_annotations_model(parser: &Parser) -> Outcome {
     let hyperparameters = argument(parser, "hyperparameters-json");
     let backend = backend_of(parser);
     // `java.io.tmpdir`, which the script's name in the scorer is under.
-    let tmp_dir = match argument(parser, "tmp-dir") {
-        Some(dir) => std::path::absolute(&dir).map_or(dir, |path| path.display().to_string()),
-        None => "/tmp".to_string(),
-    };
+    let tmp_dir = java_tmp_dir(parser);
     let script_name = scorer_pickle::script_name(&tmp_dir);
 
     // `validateArgumentsAndSetModes`.
@@ -1058,7 +1163,52 @@ pub fn train_variant_annotations_model(parser: &Parser) -> Outcome {
             return Err(Thrown::non_user(NOT_IMPLEMENTED, BGMM_NOT_IMPLEMENTED));
         }
         if backend == "PYTHON_SCRIPT" {
-            return Err(stop_at("python", "Running --python-script"));
+            let script = script.as_deref().unwrap_or_default();
+            let training_file = subset_file(&tmp_dir, &names, &training)?;
+            let unlabeled_file = match &unlabeled_rows {
+                Some(rows) => Some(subset_file(
+                    &tmp_dir,
+                    &names,
+                    &rows.iter().collect::<Vec<_>>(),
+                )?),
+                None => None,
+            };
+            // `PythonVariantAnnotationsModel.trainAndSerialize`.
+            let mut args = vec![
+                format!("--annotations_file={}", canonical_path(&training_file.0)),
+                format!(
+                    "--hyperparameters_json_file={}",
+                    canonical_path(hyperparameters.as_deref().unwrap_or_default())
+                ),
+                format!("--output_prefix={tagged}"),
+            ];
+            if let Some(file) = &unlabeled_file {
+                args.push(format!(
+                    "--unlabeled_annotations_file={}",
+                    canonical_path(&file.0)
+                ));
+            }
+            run_python_script(script, &args)?;
+            // `score`, with the scorer the script was to write.
+            let scorer = format!("{tagged}.scorer.pkl");
+            let score = |annotations: &str, suffix: &str| {
+                python_score(script, annotations, &scorer, &format!("{tagged}{suffix}"))
+            };
+            score(&training_file.0, ".trainingScores.hdf5")?;
+            let keep_calibration: Vec<bool> = is_calibration
+                .iter()
+                .zip(&is_snp)
+                .map(|(calibration, snp)| *calibration && (*snp == is_snp_model))
+                .collect();
+            if keep_calibration.iter().any(|keep| *keep) {
+                let calibration = subset(&names, &rows, &keep_calibration)?;
+                let file = subset_file(&tmp_dir, &names, &calibration)?;
+                score(&file.0, ".calibrationScores.hdf5")?;
+            }
+            if let Some(file) = &unlabeled_file {
+                score(&file.0, ".unlabeledScores.hdf5")?;
+            }
+            continue;
         }
         if unlabeled.is_some() {
             // The script has no such argument: the reference ends in `argparse`'s exit status 2.
@@ -1150,24 +1300,49 @@ fn score_variant_type(
     rows: &[Vec<f64>],
     is_type: &[bool],
     scores: &mut [f64],
+    python: Option<(&str, &str)>,
 ) -> Result<(), Thrown> {
     if !is_type.iter().any(|is_type| *is_type) {
         return Ok(());
     }
     let path = format!("{model_prefix}.{tag}.scorer.pkl");
-    let bytes = std::fs::read(&path).map_err(port_limit)?;
+    let scored = match python {
+        Some((script, tmp_dir)) => {
+            let kept = subset(names, rows, is_type)?;
+            let annotations = subset_file(tmp_dir, names, &kept)?;
+            let output = TempFile::new(tmp_dir, "temp", ".scores.hdf5")?;
+            python_score(script, &annotations.0, &path, &output.0)?;
+            // `VariantAnnotationsScorer.readScores`.
+            let reader = open_hdf5(&output.0, "scores")?;
+            reader
+                .doubles("/data/scores")
+                .ok_or_else(|| hdf5_no_dataset(&output.0, "scores", "/data/scores"))?
+                .1
+        }
+        None => isolation_forest_scores(&path, names, rows, is_type)?,
+    };
+    let mut next = scored.into_iter();
+    for (score, _) in scores.iter_mut().zip(is_type).filter(|(_, keep)| **keep) {
+        *score = next.next().unwrap_or(f64::NAN);
+    }
+    Ok(())
+}
+
+/// The default script's scores of one variant type, from the scorer it pickled.
+fn isolation_forest_scores(
+    path: &str,
+    names: &[String],
+    rows: &[Vec<f64>],
+    is_type: &[bool],
+) -> Result<Vec<f64>, Thrown> {
+    let bytes = std::fs::read(path).map_err(port_limit)?;
     let scorer = scorer_pickle::read(&bytes).ok_or_else(|| {
         port_limit(format!(
             "Loading {path}, which the default script at scikit-learn 1.3.2 did not write,"
         ))
     })?;
     let kept: Vec<Vec<f64>> = subset(names, rows, is_type)?.into_iter().cloned().collect();
-    let scored = isolation_forest::score_samples(&scorer, names, &kept).map_err(port_limit)?;
-    let mut next = scored.into_iter();
-    for (score, _) in scores.iter_mut().zip(is_type).filter(|(_, keep)| **keep) {
-        *score = next.next().unwrap_or(f64::NAN);
-    }
-    Ok(())
+    isolation_forest::score_samples(&scorer, names, &kept).map_err(port_limit)
 }
 
 /// `String.format(doubleFormat, x)`, for the formats whose rules the port carries.
@@ -1440,12 +1615,12 @@ pub fn score_variant_annotations(parser: &Parser) -> Outcome {
                 flag(parser, "omit-alleles-in-hdf5"),
             ),
         )?;
-        if backend == "PYTHON_SCRIPT" {
-            return Err(stop_at("python", "Running --python-script"));
-        }
     }
 
     // `readAnnotationsAndWriteScoresToHDF5`, from the file the pass just wrote.
+    let tmp_dir = java_tmp_dir(parser);
+    let python = (backend == "PYTHON_SCRIPT")
+        .then(|| (script.as_deref().unwrap_or_default(), tmp_dir.as_str()));
     let mut scores = Vec::new().into_iter();
     let mut is_snp = Vec::new().into_iter();
     if !extracted.is_empty() {
@@ -1454,11 +1629,19 @@ pub fn score_variant_annotations(parser: &Parser) -> Outcome {
         let snp = read_label(&annotations_path, extract::SNP_LABEL)?;
         let mut all = vec![f64::NAN; rows.len()];
         if wants(extract::VariantType::Snp) {
-            score_variant_type(&model_prefix, "snp", &names, &rows, &snp, &mut all)?;
+            score_variant_type(&model_prefix, "snp", &names, &rows, &snp, &mut all, python)?;
         }
         if wants(extract::VariantType::Indel) {
             let indel: Vec<bool> = snp.iter().map(|snp| !*snp).collect();
-            score_variant_type(&model_prefix, "indel", &names, &rows, &indel, &mut all)?;
+            score_variant_type(
+                &model_prefix,
+                "indel",
+                &names,
+                &rows,
+                &indel,
+                &mut all,
+                python,
+            )?;
         }
         let mut file = Hdf5File::new();
         file.double_array("/data/scores", &all);
