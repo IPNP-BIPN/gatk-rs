@@ -98,6 +98,36 @@ identical outputs).** x86-64 pending: the `Speed` run on this branch.
 | `ModelSegments`, 2000 samples | 10.04 s | 4.16 s | 2.4x |
 | `VariantRecalibrator` | 110 ms | 56 ms | 2.0x |
 | `HaplotypeBasedVariantRecaller` | 20 ms (340M instructions) | 16.5 ms (242M) | 1.2x |
+## 7. The allocator, measured against glibc (W12, P0)
+
+**Profile.** Entry 3 (#1541) measured mimalloc against Apple's allocator only: 3 to 13% less CPU,
+and PrintReads' peak RSS 8% higher. Its own criterion is against glibc, which is what the shipped
+Linux binary links.
+
+**The optimisation.** The same `#[global_allocator]` line in `crates/gatk-cli/src/main.rs`.
+
+**Why it cannot move a byte.** Entry 3's argument: an allocator chooses addresses, and no address
+reaches an output the suites check.
+
+**The suites that prove it.** Entry 3's. The decision rule, written before measuring: kept only if,
+on Linux against glibc, no measured tool's peak RSS rises and the CPU of each falls or holds.
+
+## 8. Profile-guided optimisation of the shipped binary (W12, P0)
+
+**Profile.** The binary's hot paths (the PairHMM, BGZF, the VCF and BAM codecs, the read
+walkers) are a small part of a 28 MB binary built without knowing which branches are taken.
+
+**The optimisation.** `-Cprofile-generate`, a training run over the speed rows and the chr20 smoke
+slice, `llvm-profdata merge`, `-Cprofile-use`. Only the build changes.
+
+**Why it cannot move a byte.** A profile steers inlining, block layout and branch weights, never the
+meaning of an operation. Rust has no fast-math, so LLVM may not reassociate, contract or otherwise
+change a floating-point result whatever it inlines; integer and memory semantics are the language's.
+What could move bytes is a miscompile, and the suites run the PGO binary to catch one, as they would
+any compiler change.
+
+**The suites that prove it.** Every end-to-end test and covering array, run on the PGO binary, and
+the smoke slice's outputs compared with the non-PGO binary's. Kept only if CPU falls with no RSS rise.
 
 ## Not targets yet
 
