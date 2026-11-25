@@ -98,6 +98,7 @@ identical outputs).** x86-64 pending: the `Speed` run on this branch.
 | `ModelSegments`, 2000 samples | 10.04 s | 4.16 s | 2.4x |
 | `VariantRecalibrator` | 110 ms | 56 ms | 2.0x |
 | `HaplotypeBasedVariantRecaller` | 20 ms (340M instructions) | 16.5 ms (242M) | 1.2x |
+
 ## 7. The allocator, measured against glibc (W12, P0)
 
 **Profile.** Entry 3 (#1541) measured mimalloc against Apple's allocator only: 3 to 13% less CPU,
