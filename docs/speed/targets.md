@@ -415,6 +415,31 @@ output named as the input. gnomAD chr20 gives the same `.tbi`.
 
 The 77 MB is mostly the compressed file, read whole as before.
 
+## Scale V. `CountVariants` held the text to count its lines
+
+**Ratio.** At scale (gnomAD chr20 sites, linux/arm64), GATK takes 6.5 s CPU and 0.61 GiB; the
+port 1.9 s and 0.73 GiB (1.19x).
+
+**Where the memory goes.** The whole decompressed text, and a `Locus` for every record. Natively
+the peak was 701 MB.
+
+**The optimisation.** A VCF with a `#CHROM` line and no `-L` is counted as its lines are read:
+each line `feature_of_line` finds a feature in counts one. Anything else, and any refusal (the
+reader, the output), is the whole run.
+
+**Why it cannot move a byte.** With no `-L` the count is the number of features `features` finds in
+the text; the header lines up to `#CHROM` all start with `#` and find none, and the lines after it
+are the same lines, read through the same reader.
+
+**The suites that prove it.** `count-variants`. Natively, old against new, 75 runs give the same
+count, file and message: fifteen inputs (plain, BGZF with an index, unsorted, truncated, plain
+text under a `.gz` name, empty, no records, no last newline, CRLF, invalid UTF-8, a malformed
+record, no `#CHROM` line, BED plain and compressed, missing) by no `-O`, `-O`, `-L`, `-XL` and an
+`-O` in a directory that is not there.
+
+**Result.** macOS native, gnomAD chr20: 701 MB to 13 MB, 1.2 s CPU either way: 0.02x RSS and 0.17x
+CPU of GATK.
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are
