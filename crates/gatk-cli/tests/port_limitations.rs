@@ -55,7 +55,17 @@ fn every_case_is_the_reference_s_answer() {
         std::fs::create_dir_all(path.parent().expect("a directory")).expect("a scratch directory");
         std::fs::write(&path, corpus::decode_base64(&row[1])).expect("a fixture");
     }
+    for row in rows(&text, "directory") {
+        std::fs::create_dir_all(root.join(&row[0])).expect("a directory input");
+    }
     std::env::set_current_dir(&root).expect("the scratch directory");
+
+    // A message naming a file by its absolute path names the dump's directory; ours is this one.
+    let theirs = rows(&text, "cwd").remove(0).remove(0);
+    let ours = std::env::current_dir()
+        .expect("the scratch directory")
+        .display()
+        .to_string();
 
     let files = rows(&text, "file");
     let errors = rows(&text, "error");
@@ -67,9 +77,13 @@ fn every_case_is_the_reference_s_answer() {
 
         match errors.iter().find(|error| error[0] == *case) {
             Some(error) => {
-                let message = error[1].split_once(':').expect("class:message").1;
+                let message = error[1]
+                    .split_once(':')
+                    .expect("class:message")
+                    .1
+                    .replace(&theirs, &ours);
                 assert_ne!(run.status, 0, "{case}");
-                assert!(run.stderr.contains(message), "{case}: {}", run.stderr);
+                assert!(run.stderr.contains(&message), "{case}: {}", run.stderr);
             }
             None => assert_eq!(run.status, 0, "{case}: {}", run.stderr),
         }

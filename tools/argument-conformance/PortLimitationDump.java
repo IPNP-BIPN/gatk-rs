@@ -9,7 +9,9 @@
  *
  * Output:
  *
+ *     cwd\t<the directory the cases ran from>
  *     input\t<input path>\t<its bytes, base64>
+ *     directory\t<an input that is a directory>
  *     argv\t<case>\t<argument>\t<argument>...
  *     error\t<case>\t<the exception class>:<its message>
  *     file\t<case>\t<file name>\t<its bytes, base64>
@@ -36,6 +38,9 @@ public class PortLimitationDump {
 
     public static void main(final String[] args) throws Exception {
         System.out.println("# PortLimitationDump: the reference's answer to what the port used to refuse");
+        // Some messages name a file by its absolute path; the port's test puts its own directory
+        // in place of this one.
+        System.out.printf("cwd\t%s%n", Paths.get("").toAbsolutePath());
 
         // A walker whose `requiresReference()` is true declares -R required, so Barclay refuses a
         // run without it before the tool opens anything; the other inputs need not exist.
@@ -65,10 +70,23 @@ public class PortLimitationDump {
         downsample("mi-not-sorted", read(1, 100, "MI:Z:1/A"), read(1, 110, "MI:Z:1/B"),
                 read(1, 120, "MI:Z:3/A"), read(1, 130, "MI:Z:3/B"), read(1, 140, "MI:Z:2/A"));
 
+        // GatherPileupSummaries loads --sequence-dictionary in `onStartup`, through a GATKPath
+        // made absolute, before any shard is read.
+        Files.createDirectories(Paths.get("inputs", "a-directory.dict"));
+        INPUTS.add("inputs/a-directory.dict");
+        run("gatherpileupsummaries-missing-dictionary", "GatherPileupSummaries",
+                "--sequence-dictionary", "inputs/absent.dict", "-I", "absent.table",
+                "-O", "{out}/out.table");
+        run("gatherpileupsummaries-dictionary-is-a-directory", "GatherPileupSummaries",
+                "--sequence-dictionary", "inputs/a-directory.dict", "-I", "absent.table",
+                "-O", "{out}/out.table");
+
         for (final String input : INPUTS) {
             final Path path = Paths.get(input);
             if (Files.isRegularFile(path)) {
                 System.out.printf("input\t%s\t%s%n", input, base64(path));
+            } else if (Files.isDirectory(path)) {
+                System.out.printf("directory\t%s%n", input);
             }
         }
     }
