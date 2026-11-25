@@ -314,7 +314,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `ReferenceBlockConcordance` | unclassified | oracle-backed | reference-block-concordance | 1 | t=2, 17/17 rows (100%) | 0.002 / 0.056 |
 | `RemoveNearbyIndels` | variant-transform | oracle-backed | remove-nearby-indels | 1 | t=2, 24/24 rows (100%) | 0.002 / 0.055 |
 | `RevertBaseQualityScores` | record-transform | oracle-backed | record-transform | 1 | t=2, 19/19 rows (100%) | 0.003 / 0.043 |
-| `RevertSamSpark` | record-transform | oracle-backed | spark-walkers | 1 | t=2, 28/28 rows (100%) | not measured |
+| `RevertSamSpark` | record-transform | oracle-backed | port-limitations, spark-walkers | 2 | t=2, 28/28 rows (100%) | not measured |
 | `SVAnnotate` | sv-caller | oracle-backed | sv-annotate | 1 | t=2, 18/18 rows (100%) | 0.003 / 0.067 |
 | `SVCluster` | sv-caller | oracle-backed | multi-variant-walker, port-limitations, sv-cluster | 3 | t=2, 24/24 rows (100%) | 0.002 / 0.048 |
 | `SVConcordance` | sv-caller | oracle-backed | sv-concordance | 1 | t=2, 40/40 rows (100%) | 0.003 / 0.064 |
