@@ -13077,22 +13077,33 @@ pub(crate) fn recalibration_table_over(
     // index AND a reference without the reads' contig answers the read failure. Querying first
     // answered the contig instead.
     let mut bases =
-        |wanted: &str| -> Result<Vec<u8>, gatk_tools::base_recalibrator::BaseRecalibratorError> {
+        |wanted: &str,
+         start: usize,
+         end: usize|
+         -> Result<(Vec<u8>, usize), gatk_tools::base_recalibrator::BaseRecalibratorError> {
             let length = dictionary
                 .sequences
                 .iter()
                 .find(|sequence| sequence.name == wanted)
-                .map(|sequence| sequence.length)
+                .map(|sequence| sequence.length.max(0) as usize)
                 .ok_or_else(|| {
                     gatk_tools::base_recalibrator::BaseRecalibratorError::Reads(
                         gatk_engine::reads::ReadsError::ContigNotInDictionary(wanted.to_string()),
                     )
                 })?;
-            reference.query(wanted, 1, length).map_err(|error| {
-                gatk_tools::base_recalibrator::BaseRecalibratorError::Reads(
-                    gatk_engine::reads::ReadsError::Malformed(format!("{error:?}")),
-                )
-            })
+            // Zero-based and half-open, cut at the contig's end; the query is one-based and closed.
+            let end = end.min(length);
+            if start >= end {
+                return Ok((Vec::new(), length));
+            }
+            let bases = reference
+                .query(wanted, start as i32 + 1, end as i32)
+                .map_err(|error| {
+                    gatk_tools::base_recalibrator::BaseRecalibratorError::Reads(
+                        gatk_engine::reads::ReadsError::Malformed(format!("{error:?}")),
+                    )
+                })?;
+            Ok((bases, length))
         };
 
     let arguments_for_engine = gatk_engine::base_recalibration_engine::EngineArguments {

@@ -358,6 +358,29 @@ pub fn calculate_skip_array(
         .collect()
 }
 
+/// Some of one contig's bases: `bases` are the contig's from the zero-based `start` on, and
+/// `contig_length` is the whole contig's, which is what spans are clamped to. A whole contig is the
+/// window that starts at zero and holds it all.
+#[derive(Debug, Clone, Copy)]
+pub struct ReferenceWindow<'a> {
+    pub bases: &'a [u8],
+    pub start: usize,
+    pub contig_length: usize,
+}
+
+impl<'a> ReferenceWindow<'a> {
+    /// The contig's bases `[from, to)`, zero-based, which the window must hold.
+    fn slice(&self, from: usize, to: usize) -> &'a [u8] {
+        assert!(
+            from >= self.start && to <= self.start + self.bases.len(),
+            "bases {from}..{to} asked of a window holding {}..{}",
+            self.start,
+            self.start + self.bases.len()
+        );
+        &self.bases[from - self.start..to - self.start]
+    }
+}
+
 /// `BaseRecalibrationEngine`.
 pub struct BaseRecalibrationEngine {
     pub arguments: EngineArguments,
@@ -404,6 +427,23 @@ impl BaseRecalibrationEngine {
         contig_bases: &[u8],
         known_sites: &[SimpleInterval],
     ) -> Result<(), EngineError> {
+        let whole = ReferenceWindow {
+            bases: contig_bases,
+            start: 0,
+            contig_length: contig_bases.len(),
+        };
+        self.process_read_in(original, header, &whole, known_sites)
+    }
+
+    /// [`process_read`](BaseRecalibrationEngine::process_read) against a window of the contig,
+    /// which must cover the read's aligned span, or, with BAQ on, the whole contig.
+    pub fn process_read_in(
+        &mut self,
+        original: &BamRecord,
+        header: &SamHeader,
+        reference: &ReferenceWindow<'_>,
+        known_sites: &[SimpleInterval],
+    ) -> Result<(), EngineError> {
         let read = self.transform(original, header)?;
         if read.read_bases.is_empty() {
             // The whole read was inside the adaptor.
@@ -417,8 +457,8 @@ impl BaseRecalibrationEngine {
         let mut is_deletion = vec![0i32; length];
         // `queryAndPrefetch(read.getContig(), read.getStart(), read.getEnd())`: the read's own span.
         let span_start = crate::read_utils::start(&read).max(1) as usize - 1;
-        let span_end = (crate::read_utils::end(&read) as usize).min(contig_bases.len());
-        let reference_bases = &contig_bases[span_start..span_end];
+        let span_end = (crate::read_utils::end(&read) as usize).min(reference.contig_length);
+        let reference_bases = reference.slice(span_start, span_end);
         let n_errors = calculate_is_snp_or_indel(
             &read,
             reference_bases,
@@ -432,7 +472,7 @@ impl BaseRecalibrationEngine {
         let baq_array = if n_errors == 0 || !self.arguments.enable_baq {
             flat_baq_array(length)
         } else {
-            match self.calculate_baq_array(&read, contig_bases) {
+            match self.calculate_baq_array(&read, reference) {
                 Some(array) => array,
                 // "some reads just can't be BAQ'ed". The read is still counted as processed and
                 // then dropped, because the reference's `if (baqArray != null)` guards only the
@@ -484,7 +524,11 @@ impl BaseRecalibrationEngine {
     ///
     /// The model runs over the **reference window**, not the read's span, and answers nothing when
     /// that window runs past the contig, which is the "some reads just can't be BAQ'ed" case.
-    fn calculate_baq_array(&self, read: &BamRecord, contig_bases: &[u8]) -> Option<Vec<u8>> {
+    fn calculate_baq_array(
+        &self,
+        read: &BamRecord,
+        reference: &ReferenceWindow<'_>,
+    ) -> Option<Vec<u8>> {
         // `excludeReadFromBAQ`: unmapped, vendor-failed or duplicate reads never get a tag, so the
         // caller sees a null and drops the read.
         if crate::read::is_unmapped(read)
@@ -495,14 +539,14 @@ impl BaseRecalibrationEngine {
         }
         let baq = self.baq.get_or_init(Baq::default);
         let window = crate::baq::reference_window_for_read(read, "", baq.band_width())?;
-        if window.end as usize > contig_bases.len() {
+        if window.end as usize > reference.contig_length {
             return None;
         }
         let from = window.start.max(1) as usize - 1;
         let to = window.end as usize;
         let offset = window.start - crate::read_utils::start(read);
         let result = baq
-            .calc_baq_from_hmm(read, &contig_bases[from..to], offset)
+            .calc_baq_from_hmm(read, reference.slice(from, to), offset)
             .ok()??;
         Some(crate::baq::encode_bq_tag(&read.base_qualities, &result.bq).into_bytes())
     }

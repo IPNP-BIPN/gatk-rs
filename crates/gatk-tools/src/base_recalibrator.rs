@@ -29,7 +29,7 @@
 //! reference refuses before reading a single read, because the traversal queries it by interval.
 
 use gatk_engine::base_recalibration_engine::{
-    BaseRecalibrationEngine, EngineArguments, EngineError,
+    BaseRecalibrationEngine, EngineArguments, EngineError, ReferenceWindow,
 };
 use gatk_engine::interval::SimpleInterval;
 use gatk_engine::qual_quantizer::{QualQuantizer, QuantizationInfo, MIN_USABLE_Q_SCORE};
@@ -42,6 +42,13 @@ pub const TOOL_NAME: &str = "GATK BaseRecalibrator";
 
 /// `RecalibrationArgumentCollection.QUANTIZING_LEVELS`.
 pub const QUANTIZING_LEVELS: i32 = 16;
+
+/// The reference as the counting pass asks for it: the bases `[start, end)` of the named contig,
+/// zero-based and cut at its end, and the contig's length. A window, not the whole contig, is what
+/// a run without BAQ holds: chr1's 249 million bases were held whole for reads that need a few
+/// hundred at a time.
+pub type ContigBases<'a> =
+    dyn FnMut(&str, usize, usize) -> Result<(Vec<u8>, usize), BaseRecalibratorError> + 'a;
 
 /// What the tool stops with.
 #[derive(Debug, Clone, PartialEq)]
@@ -61,9 +68,9 @@ impl BaseRecalibratorError {
 
 /// `BaseRecalibrator`: the recalibration table this run produced, as text.
 ///
-/// `contig_bases` answers a whole reference contig by name, because the counting pass needs the
-/// read's span for its comparison and a wider window for BAQ. Each read is compared against ITS
-/// contig: taking the reads' first one compared a chr2 read against chr1's bases.
+/// `contig_bases` answers some of a reference contig by name (see [`ContigBases`]): a window around
+/// the reads, or with BAQ the whole contig, whose model reads past the read. Each read is compared
+/// against ITS contig: taking the reads' first one compared a chr2 read against chr1's bases.
 ///
 /// The quantization is computed **after** `finalizeData`, so it depends on every read the traversal
 /// kept, and the report is written from the finalised tables.
@@ -75,7 +82,7 @@ impl BaseRecalibratorError {
 #[allow(clippy::too_many_arguments)]
 pub fn base_recalibrator(
     source: &ReadsDataSource,
-    contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, BaseRecalibratorError>,
+    contig_bases: &mut ContigBases<'_>,
     known_sites: &KnownSites,
     arguments: &EngineArguments,
     quantizing_levels: i32,
@@ -92,17 +99,19 @@ pub fn base_recalibrator(
         intervals,
         default_workers(),
         BATCH,
+        WINDOW,
     )
 }
 
-/// [`base_recalibrator`] on `workers` counting threads in batches of `batch` reads, which is how
-/// the test holds the threaded path to the one-thread path on the golden's reads. Fewer than two
-/// workers, or BAQ on, counts on the traversal's thread.
+/// [`base_recalibrator`] on `workers` counting threads in batches of `batch` reads, against
+/// reference windows of `window` bases, which is how the test holds the threaded and windowed path
+/// to the one-thread path on the golden's reads. Fewer than two workers, or BAQ on, counts on the
+/// traversal's thread.
 #[doc(hidden)]
 #[allow(clippy::too_many_arguments)]
 pub fn base_recalibrator_on(
     source: &ReadsDataSource,
-    contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, BaseRecalibratorError>,
+    contig_bases: &mut ContigBases<'_>,
     known_sites: &KnownSites,
     arguments: &EngineArguments,
     quantizing_levels: i32,
@@ -110,6 +119,7 @@ pub fn base_recalibrator_on(
     intervals: &[SimpleInterval],
     workers: usize,
     batch: usize,
+    window: usize,
 ) -> Result<String, BaseRecalibratorError> {
     let header = source.header().clone();
     // The traversal is bounded like any other walker's. Hardcoding no intervals here counted the
@@ -130,6 +140,7 @@ pub fn base_recalibrator_on(
         quantizing_levels,
         workers,
         batch,
+        window,
     )
 }
 
@@ -151,20 +162,30 @@ const BATCH: usize = 1024;
 fn base_recalibrator_counted<R: std::borrow::Borrow<BamRecord> + Send>(
     header: &htsjdk_bam::header::SamHeader,
     records: impl Iterator<Item = Result<R, BaseRecalibratorError>>,
-    contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, BaseRecalibratorError>,
+    contig_bases: &mut ContigBases<'_>,
     known_sites: &KnownSites,
     arguments: &EngineArguments,
     quantizing_levels: i32,
     workers: usize,
     batch: usize,
+    window: usize,
 ) -> Result<String, BaseRecalibratorError> {
+    let fetched = Bases::new(arguments, window);
     let engine = if workers < 2 || arguments.enable_baq {
-        count_here(header, records, contig_bases, known_sites, arguments)?
+        count_here(
+            header,
+            records,
+            contig_bases,
+            fetched,
+            known_sites,
+            arguments,
+        )?
     } else {
         count_on_threads(
             header,
             records,
             contig_bases,
+            fetched,
             known_sites,
             arguments,
             workers,
@@ -179,7 +200,7 @@ fn base_recalibrator_counted<R: std::borrow::Borrow<BamRecord> + Send>(
 pub fn table_of_reads(
     header: &htsjdk_bam::header::SamHeader,
     records: &[BamRecord],
-    contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, BaseRecalibratorError>,
+    contig_bases: &mut ContigBases<'_>,
     known_sites: &KnownSites,
     arguments: &EngineArguments,
     quantizing_levels: i32,
@@ -188,6 +209,7 @@ pub fn table_of_reads(
         header,
         records.iter().map(Ok),
         contig_bases,
+        Bases::new(arguments, WINDOW),
         known_sites,
         arguments,
     )?;
@@ -198,11 +220,11 @@ pub fn table_of_reads(
 fn count_here<R: std::borrow::Borrow<BamRecord>>(
     header: &htsjdk_bam::header::SamHeader,
     records: impl Iterator<Item = Result<R, BaseRecalibratorError>>,
-    contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, BaseRecalibratorError>,
+    contig_bases: &mut ContigBases<'_>,
+    mut fetched: Bases,
     known_sites: &KnownSites,
     arguments: &EngineArguments,
 ) -> Result<BaseRecalibrationEngine, BaseRecalibratorError> {
-    let mut fetched = Bases::default();
     let mut engine = BaseRecalibrationEngine::new(arguments.clone(), header)
         .map_err(BaseRecalibratorError::Engine)?;
     for record in records {
@@ -211,7 +233,7 @@ fn count_here<R: std::borrow::Borrow<BamRecord>>(
         let bases = fetched.of(record, header, contig_bases)?;
         let overlapping = known_sites.overlapping(record, header);
         engine
-            .process_read(record, header, &bases, &overlapping)
+            .process_read_in(record, header, &bases.view(), &overlapping)
             .map_err(BaseRecalibratorError::Engine)?;
     }
     Ok(engine)
@@ -226,10 +248,12 @@ fn count_here<R: std::borrow::Borrow<BamRecord>>(
 /// keeps BAQ on one thread; `RecalDatum::absorb` says why). GATK counts on one thread and so
 /// fails at the first read that fails; so does this: every failure carries its read's position,
 /// and the earliest one is returned, whether a worker, the traversal or the reference raised it.
+#[allow(clippy::too_many_arguments)]
 fn count_on_threads<R: std::borrow::Borrow<BamRecord> + Send>(
     header: &htsjdk_bam::header::SamHeader,
     mut records: impl Iterator<Item = Result<R, BaseRecalibratorError>>,
-    contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, BaseRecalibratorError>,
+    contig_bases: &mut ContigBases<'_>,
+    mut fetched: Bases,
     known_sites: &KnownSites,
     arguments: &EngineArguments,
     workers: usize,
@@ -237,10 +261,9 @@ fn count_on_threads<R: std::borrow::Borrow<BamRecord> + Send>(
 ) -> Result<BaseRecalibrationEngine, BaseRecalibratorError> {
     use std::sync::{mpsc, Arc};
     // A read, its position in the traversal, and its contig's bases.
-    type Item<R> = (usize, R, Arc<Vec<u8>>);
+    type Item<R> = (usize, R, Arc<Window>);
     let mut engine = BaseRecalibrationEngine::new(arguments.clone(), header)
         .map_err(BaseRecalibratorError::Engine)?;
-    let mut fetched = Bases::default();
 
     let (counted, here) = std::thread::scope(|scope| {
         let lanes: Vec<_> = (0..workers)
@@ -262,7 +285,7 @@ fn count_on_threads<R: std::borrow::Borrow<BamRecord> + Send>(
                             let record = record.borrow();
                             let overlapping = known_sites.overlapping(record, header);
                             if let Err(error) =
-                                engine.process_read(record, header, &bases, &overlapping)
+                                engine.process_read_in(record, header, &bases.view(), &overlapping)
                             {
                                 failed = Some((position, BaseRecalibratorError::Engine(error)));
                                 break;
@@ -275,7 +298,7 @@ fn count_on_threads<R: std::borrow::Borrow<BamRecord> + Send>(
             })
             .collect();
 
-        // The traversal: decode, fetch each contig's bases once, batch. A failure here ends it at
+        // The traversal: decode, fetch the reference the reads need, batch. A failure here ends it at
         // its position.
         let mut here = None;
         let mut items = Vec::with_capacity(batch);
@@ -338,20 +361,60 @@ fn count_on_threads<R: std::borrow::Borrow<BamRecord> + Send>(
     Ok(engine)
 }
 
-/// Each contig's bases, fetched the first time a read on it is counted, for the reason in
-/// [`base_recalibrator`]'s doc comment, and once per contig.
-#[derive(Default)]
+/// Bases of the contig the reads are on, fetched once a read needs them, for the reason in
+/// [`base_recalibrator`]'s doc comment: the whole contig once with BAQ on, otherwise a window of
+/// [`WINDOW`] bases from the first read the last window does not hold, which a coordinate-sorted
+/// traversal then fills read after read.
 struct Bases {
-    by_contig: std::collections::HashMap<String, std::sync::Arc<Vec<u8>>>,
+    whole: bool,
+    window: usize,
+    current: Option<(String, std::sync::Arc<Window>)>,
 }
 
+/// Bases of one contig from the zero-based `start` on.
+#[derive(Default)]
+struct Window {
+    start: usize,
+    bases: Vec<u8>,
+    contig_length: usize,
+}
+
+impl Window {
+    fn view(&self) -> ReferenceWindow<'_> {
+        ReferenceWindow {
+            bases: &self.bases,
+            start: self.start,
+            contig_length: self.contig_length,
+        }
+    }
+
+    /// Whether the window holds `[from, to)` once `to` is cut at the contig's end, which is where
+    /// the engine cuts a read's span.
+    fn holds(&self, from: usize, to: usize) -> bool {
+        from >= self.start && to.min(self.contig_length) <= self.start + self.bases.len()
+    }
+}
+
+/// How many bases a window fetches from the read that needs it.
+const WINDOW: usize = 1 << 20;
+
 impl Bases {
+    fn new(arguments: &EngineArguments, window: usize) -> Self {
+        Bases {
+            whole: arguments.enable_baq,
+            window,
+            current: None,
+        }
+    }
+
+    /// Bases that hold `record`'s aligned span, and so the span of the read the engine makes of
+    /// it, since its transforms only clip.
     fn of(
         &mut self,
         record: &BamRecord,
         header: &htsjdk_bam::header::SamHeader,
-        contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, BaseRecalibratorError>,
-    ) -> Result<std::sync::Arc<Vec<u8>>, BaseRecalibratorError> {
+        contig_bases: &mut ContigBases<'_>,
+    ) -> Result<std::sync::Arc<Window>, BaseRecalibratorError> {
         let contig = usize::try_from(record.reference_index)
             .ok()
             .and_then(|index| header.sequences.get(index))
@@ -359,12 +422,28 @@ impl Bases {
         let Some(contig) = contig else {
             return Ok(std::sync::Arc::default());
         };
-        if let Some(bases) = self.by_contig.get(contig) {
-            return Ok(bases.clone());
+        let from = gatk_engine::read_utils::start(record).max(1) as usize - 1;
+        let to = usize::try_from(gatk_engine::read_utils::end(record))
+            .unwrap_or(0)
+            .max(from);
+        if let Some((name, window)) = &self.current {
+            if name == contig && (self.whole || window.holds(from, to)) {
+                return Ok(window.clone());
+            }
         }
-        let bases = std::sync::Arc::new(contig_bases(contig)?);
-        self.by_contig.insert(contig.to_string(), bases.clone());
-        Ok(bases)
+        let (start, end) = if self.whole {
+            (0, usize::MAX)
+        } else {
+            (from, to.max(from + self.window))
+        };
+        let (bases, contig_length) = contig_bases(contig, start, end)?;
+        let window = std::sync::Arc::new(Window {
+            start: start.min(contig_length),
+            bases,
+            contig_length,
+        });
+        self.current = Some((contig.to_string(), window.clone()));
+        Ok(window)
     }
 }
 

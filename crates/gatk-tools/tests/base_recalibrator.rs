@@ -168,8 +168,9 @@ fn every_recalibration_table_is_the_reference_line_for_line() {
 
     let mut compared = 0;
     // One thread, then three counting threads handed one read at a time, the finest split there
-    // is: the counts are added across threads, and the table must not show it.
-    for (workers, batch) in [(1, 1024), (3, 1)] {
+    // is: the counts are added across threads, and the table must not show it. Each against the
+    // default reference window and a one-base window, which refetches for nearly every read.
+    for (workers, batch, window) in [(1, 1024, 1 << 20), (3, 1, 1 << 20), (1, 1024, 1), (3, 1, 1)] {
         for (label, expected) in &tables {
             let (engine_arguments, levels) = arguments(label);
             let source = ReadsDataSource::open(&dir.join("input.bam"), &dir.join("input.bai"))
@@ -181,7 +182,11 @@ fn every_recalibration_table_is_the_reference_line_for_line() {
                 &source,
                 // The bases are read after the traversal, so the caller hands over a closure. This
                 // suite's reference is one contig from the golden and cannot fail.
-                &mut |_contig| Ok(reference.as_bytes().to_vec()),
+                &mut |_contig, start, end| {
+                    let whole = reference.as_bytes();
+                    let end = end.min(whole.len());
+                    Ok((whole[start.min(end)..end].to_vec(), whole.len()))
+                },
                 &base_recalibrator::KnownSites::new(&known_sites()),
                 &engine_arguments,
                 levels,
@@ -190,8 +195,14 @@ fn every_recalibration_table_is_the_reference_line_for_line() {
                 &[],
                 workers,
                 batch,
+                window,
             )
-            .unwrap_or_else(|error| panic!("{label} on {workers} threads: {}", error.message()));
+            .unwrap_or_else(|error| {
+                panic!(
+                    "{label} on {workers} threads, window {window}: {}",
+                    error.message()
+                )
+            });
 
             let theirs = unescape(expected);
             let ours_lines: Vec<&str> = ours.lines().collect();
@@ -207,7 +218,7 @@ fn every_recalibration_table_is_the_reference_line_for_line() {
             compared += 1;
         }
     }
-    println!("base-recalibrator: {compared} tables compared line for line (seven runs, one and three threads)");
+    println!("base-recalibrator: {compared} tables compared line for line (seven runs, one and three threads, two windows)");
 }
 
 /// A BED and a VCF naming the same sites must produce the same table.
