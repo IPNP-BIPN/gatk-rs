@@ -535,6 +535,12 @@ fn recalibrate(parser: &Parser, stream: bool) -> Outcome {
         first.codec,
         dictionary.clone(),
     )?;
+    // Only a traversal with no `-L` is streamed, and the restart is cheapest before the resources.
+    if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()).is_some()
+        && readers.is_some()
+    {
+        return Err(restart());
+    }
     let contigs: Vec<(String, i32)> = dictionary
         .sequences
         .iter()
@@ -683,11 +689,6 @@ fn recalibrate(parser: &Parser, stream: bool) -> Outcome {
     }
 
     // The traversal: the inputs merged, each cut to `-L`, each record queued by start.
-    if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()).is_some()
-        && readers.is_some()
-    {
-        return Err(restart());
-    }
     let streamed = readers.is_some();
     // A streamed traversal that stops for any reason starts again: the whole run reads every input
     // before the first record is looked at, so a reader's refusal would come first there.

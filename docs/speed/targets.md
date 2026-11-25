@@ -85,10 +85,18 @@ absent, already there, or in a directory that is not. The first version failed 6
 (the restart reused the advanced random stream) and 6 of the edge runs (a tranches file left
 behind); both are fixed and covered by those runs.
 
-**Result.** macOS native, the 40x row: 487 MB to 329 MB, 110.6 s to 51.0 s CPU (the whole read
-was the larger half of the CPU): 0.22x RSS of GATK, CPU still about 4.5x on this base, where
-#1554 takes it to 1.85 s. Same `vr.recal` (73fa4dc355a0642ead8e76ac98a09011, GATK's too) and
-`vr.tranches` (755319ca15df339fcd4cd8db4ce0990f) as #1554.
+**Result.** macOS native, the 40x row: 487 MB to 329 MB peak RSS, 0.22x GATK's. CPU measured
+110.6 s before and 51.0 s after, but a `sample` of both is the same: `records_at`, the resources
+scanned for every record (and `memcmp` on its contig names), which this change does not touch, so
+the difference is not credited to it. #1554 (W12) takes that CPU to 1.85 s. Same `vr.recal`
+(73fa4dc355a0642ead8e76ac98a09011, GATK's too) and `vr.tranches`
+(755319ca15df339fcd4cd8db4ce0990f) as #1554.
+
+**Not met yet.** The resources (`--resource`, `--aggregate`) are still read whole. With
+phase1 chr20 driving (637k sites) and hapmap, omni and dbsnp chr20 as resources, the old binary
+passed 3.3 GB within two minutes; how much of that is the resources was not measured. A forward cursor
+over a side VCF, shared with `GetPileupSummaries`' `-V`, is the next step; `VariantRecalibrator`
+stays on the list until then.
 
 ## Not targets yet
 
