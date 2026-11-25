@@ -26,7 +26,8 @@
 
 use gatk_corpus as corpus;
 use gatk_tools::index_feature_file::{
-    build, build_tabix, codec_for, default_output, index_kind, IndexKind, Refusal, Source,
+    build, build_tabix, build_tabix_streamed, codec_for, default_output, index_kind, IndexKind,
+    Refusal, Source,
 };
 use htsjdk_bgzf::Deflater;
 
@@ -154,6 +155,23 @@ fn a_block_compressed_input_gets_the_reference_tabix_index() {
     )
     .expect("the tabix index");
     assert_eq!(ours, bytes(&text, "index", "compressed"));
+    // The one-pass build writes the same bytes, and declines what the whole one refuses.
+    let streamed = build_tabix_streamed(
+        &compressed,
+        &source("compressed"),
+        name("compressed"),
+        Deflater::Gkl,
+        htsjdk_bgzf::DEFAULT_COMPRESSION_LEVEL,
+    );
+    assert_eq!(streamed.as_deref(), Some(ours.as_slice()));
+    assert!(build_tabix_streamed(
+        b"not a bgzf stream at all",
+        &source("compressed"),
+        name("compressed"),
+        Deflater::Gkl,
+        htsjdk_bgzf::DEFAULT_COMPRESSION_LEVEL,
+    )
+    .is_none());
     // The explicit-output case is the same index under another name, so the same bytes answer it.
     assert_eq!(ours, bytes(&text, "index", "compressed-explicit"));
 }

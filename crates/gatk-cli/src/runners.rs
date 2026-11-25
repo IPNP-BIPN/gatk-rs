@@ -90,35 +90,34 @@ pub fn index_feature_file(parser: &Parser) -> Outcome {
             path: input.clone(),
         })
     })?;
-    let text = decode(&bytes, &input).map_err(refused)?;
     let name = output
         .clone()
         .unwrap_or_else(|| index_feature_file::default_output(&input));
-    index_feature_file::check_output(&input, &name, &input).map_err(refused)?;
     // The header records the file's own identity, and its timestamp with it: a caller that wants
     // the reference's bytes has to supply the real one, which is what this does.
     let mut source = Source::new(&input);
     source.timestamp = modified_millis(&input);
+    // A `.gz` name read a line at a time, when nothing below would refuse it: the decoding and
+    // the output name are checked on the way, and any refusal is left to the run below.
+    let (deflater, level) = index_tabix_compression(parser);
+    if input.ends_with(".gz")
+        && index_feature_file::index_kind(&input) == index_feature_file::IndexKind::Tabix
+        && index_feature_file::check_output(&input, &name, &input).is_ok()
+    {
+        if let Some(index) =
+            index_feature_file::build_tabix_streamed(&bytes, &source, &input, deflater, level)
+        {
+            if std::fs::write(&name, &index).is_ok() {
+                return Ok(Some(name));
+            }
+        }
+    }
+    let text = decode(&bytes, &input).map_err(refused)?;
+    index_feature_file::check_output(&input, &name, &input).map_err(refused)?;
     // A block compressed input gets a tabix index, whose positions are the pointers a BGZF reader
     // reports rather than offsets into the text, so it is handed the FILE and not what is in it.
     let index = match index_feature_file::index_kind(&input) {
         index_feature_file::IndexKind::Tabix => {
-            // A `.tbi` is a BGZF file, and GATK replaces htsjdk's static deflater factory: the
-            // reference's bytes are Intel's GKL unless `--use-jdk-deflater` says otherwise, which
-            // is the argument the tool declares for exactly this.
-            let deflater = if flag(parser, "use-jdk-deflater") {
-                htsjdk_bgzf::Deflater::Jdk
-            } else {
-                htsjdk_bgzf::Deflater::Gkl
-            };
-            // And the LEVEL is GATKConfig's, which is two rather than htsjdk's five: `Main`
-            // installs it as a system property before any tool runs, so every block-compressed
-            // file a real invocation writes uses it (#1032).
-            let level = gatk_tools::gatk_config::compression_level(
-                std::env::var(gatk_tools::gatk_config::COMPRESSION_LEVEL)
-                    .ok()
-                    .as_deref(),
-            );
             index_feature_file::build_tabix(&bytes, &source, &input, deflater, level)
                 .map_err(refused)?
         }
@@ -165,6 +164,27 @@ pub fn print_bgzf_block_information(parser: &Parser) -> Outcome {
         // `doWork` returns 0, which `handleResult` prints.
         None => Ok(Some("0".to_string())),
     }
+}
+
+/// How [`index_feature_file`] compresses a `.tbi`.
+///
+/// A `.tbi` is a BGZF file, and GATK replaces htsjdk's static deflater factory: the reference's
+/// bytes are Intel's GKL unless `--use-jdk-deflater` says otherwise, which is the argument the tool
+/// declares for exactly this. And the LEVEL is GATKConfig's, which is two rather than htsjdk's
+/// five: `Main` installs it as a system property before any tool runs, so every block-compressed
+/// file a real invocation writes uses it (#1032).
+fn index_tabix_compression(parser: &Parser) -> (htsjdk_bgzf::Deflater, u32) {
+    let deflater = if flag(parser, "use-jdk-deflater") {
+        htsjdk_bgzf::Deflater::Jdk
+    } else {
+        htsjdk_bgzf::Deflater::Gkl
+    };
+    let level = gatk_tools::gatk_config::compression_level(
+        std::env::var(gatk_tools::gatk_config::COMPRESSION_LEVEL)
+            .ok()
+            .as_deref(),
+    );
+    (deflater, level)
 }
 
 /// The file's text, decompressed when the name says it is block compressed.
