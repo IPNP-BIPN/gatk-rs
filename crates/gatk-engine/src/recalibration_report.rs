@@ -1,9 +1,10 @@
 //! `RecalibrationReport`, ported from `org.broadinstitute.hellbender.utils.recalibration`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `RecalibrationReport.java` and `RecalUtils.java` are unchanged since 4.6.2.0).
 //!
 //! A recalibration table read off disk: five named tables in a `GATKReport`, turned back into a
 //! [`RecalibrationTables`], a [`StandardCovariateList`] and a [`QuantizationInfo`]. Every part is
-//! measured on its own already; this is the assembly, and the assembly is where the keys are chosen.
+//! measured on its own already; this is the assembly, and the assembly is where the keys are
+//! chosen.
 //!
 //! | table | what it holds |
 //! |---|---|
@@ -30,6 +31,41 @@
 //! its empirical quality is left uncomputed on purpose, so `ApplyBQSR` can recompute it against
 //! whatever prior it is run with. A report whose `EmpiricalQuality` column is nonsense parses
 //! without complaint.
+//!
+//! # What the columns are, and what type they come back as
+//!
+//! The writer (`RecalUtils.generateReportTables`) fixes the column order: `ReadGroup`, then
+//! `QualityScore` outside `RecalTable0`, then `CovariateValue` and `CovariateName` in
+//! `RecalTable2`, then `EventType`, `EmpiricalQuality`, `EstimatedQReported` (in `RecalTable0`
+//! only), `Observations`, `Errors`. Each column carries its format in the table header, and the
+//! `GATKReport` reader types a cell by that format, not by its text (`GATKReportDataType.Parse`:
+//! `%d` is a `Long`, `%.Nf` a `Double`, `%s` a `String`). `EmpiricalQuality` and
+//! `EstimatedQReported` are `"%." + 4 + 'f'` (`EMPIRICAL_QUAL_DECIMAL_PLACES = 4`,
+//! `REPORTED_QUALITY_DECIMAL_PLACES = 4`), `Errors` is two places
+//! (`NUMBER_ERRORS_DECIMAL_PLACES = 2`), `Observations` is `"%d"`, and so is `QualityScore`
+//! (`RecalUtils.generateReportTables`, wrapped here, trailing comment omitted):
+//!
+//! ```java
+//! columnNames.add(new MutablePair<>(
+//!         covariates.getQualityScoreCovariate().parseNameForReport(), "%d"));
+//! ```
+//!
+//! So a report the reference wrote hands back `QualityScore` as a `Long`, and `EstimatedQReported`
+//! as a `Double`: the reported quality comes from columns of two different types depending on
+//! the table.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, RecalibrationReportError>` is "a `T` or one of the refusals below"; `?` after a
+//!   call rethrows its error. `.map_err(RecalibrationReportError::Report)` first wraps the callee's
+//!   error type in this file's, the way a Java method would catch and rethrow as another class.
+//! - `Option<&Value>` is a cell that may be absent (`Some(v)` or `None`), and `match` on it must
+//!   name every case; `_` is the catch-all arm.
+//! - `Rc<RefCell<RecalDatum>>` is a shared, mutable `RecalDatum`: `Rc` lets several tables hold the
+//!   same datum, as Java references do, and `RefCell` allows changing it through any of them.
+//! - `x as i64`, `x as i8`, `x as f64` are casts. From a `f64` to an integer it truncates toward
+//!   zero, as Java's `(long)` does; between integers it keeps the low bits, as `(byte)` does.
+//! - `.unwrap_or(d)` takes the value, or `d` when there is none or the parse failed.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -122,8 +158,10 @@ impl RecalibrationReport {
     /// The order matters and is the reference's. `getReadGroups` runs **first**, because the public
     /// constructor is `this(report, report.getReadGroups())` and Java evaluates the argument before
     /// the body, so a report with no `RecalTable0` is refused by that name rather than by the
-    /// argument table. Then the arguments, which size the covariates; then the quantization map;
-    /// then the three data tables, keyed by the read groups already fixed.
+    /// argument table (golden `recalibration_report.txt.gz`, `error no-read-group-table`:
+    /// `Table is not in GATKReport: RecalTable0`). Then the arguments, which size the covariates;
+    /// then the quantization map; then the three data tables, keyed by the read groups already
+    /// fixed.
     pub fn parse(text: &str) -> Result<RecalibrationReport, RecalibrationReportError> {
         RecalibrationReport::parse_with_read_groups(text, None)
     }
@@ -132,7 +170,13 @@ impl RecalibrationReport {
     ///
     /// `read_groups` is the UNION of every input's read groups, so that a shard which never saw one
     /// still numbers its keys the same way as the shard that did. `None` is the public
-    /// constructor, which takes the report's own.
+    /// constructor, which takes the report's own. `<[String]>::to_vec` copies the caller's list so
+    /// the report owns it.
+    ///
+    /// With `Some`, the reference's two-argument constructor never calls `getReadGroups` on this
+    /// report, but `gatherReports` already has on every input
+    /// (`final Set<String> readGroups = report.getReadGroups();`), so a missing `RecalTable0` is
+    /// refused by the same name on that path too.
     pub fn parse_with_read_groups(
         text: &str,
         read_groups: Option<&[String]>,
@@ -202,7 +246,10 @@ impl RecalibrationReport {
     }
 }
 
-/// The cell at one row of a named column, or the reference's missing-table error.
+/// The cell at one row of a named column, or `None` when the column or the row is absent.
+///
+/// The callers decide what an absence becomes: the numeric readers refuse it as a cell of the
+/// wrong type, and [`text_of`] reads it as the text `null`.
 fn cell<'a>(table: &'a Table, row: usize, column: &str) -> Option<&'a Value> {
     let index = table.columns.iter().position(|c| c.name == column)?;
     table.rows.get(row).and_then(|values| values.get(index))
@@ -222,7 +269,9 @@ fn as_long(value: Option<&Value>, column: &str) -> Result<i64, RecalibrationRepo
 
 /// `decodeByte(Object)`: a `Byte`, a `String` parsed, or a `Long` narrowed.
 ///
-/// The `QualityScore` column is written `%s`, so a parsed report always takes the `String` branch.
+/// The reference writes the `QualityScore` column as `%d` (see the module note), so a report it
+/// wrote takes the `Long` branch, `byteValue()`; the `String` branch is for a table built in
+/// memory with a `%s` column. For a quality from 0 to 127 the two give the same byte.
 fn decode_byte(table: &Table, row: usize, column: &str) -> Result<i8, RecalibrationReportError> {
     match cell(table, row, column) {
         Some(Value::Str(text)) => {
@@ -252,9 +301,9 @@ fn as_double(value: Option<&Value>, column: &str) -> Result<f64, RecalibrationRe
 
 /// `getRecalDatum(table, row, hasEstimatedQReportedColumn)`.
 ///
-/// The datum is built with a reported quality of **one** and then corrected, because the constructor
-/// refuses a negative quality and the setter is what the report's own value goes through. The
-/// empirical quality is deliberately left uncomputed.
+/// The datum is built with a reported quality of **one** and then corrected, because the
+/// constructor refuses a negative quality and the setter is what the report's own value goes
+/// through. The empirical quality is deliberately left uncomputed.
 fn recal_datum(
     table: &Table,
     row: usize,
@@ -276,8 +325,8 @@ fn recal_datum(
         )?
     } else {
         // `decodeByte(get(row, QUALITY_SCORE_COLUMN_NAME))`, and **not** `asDouble`. The writer
-        // declares that column `%s`, so a parsed report hands back a String and the decoder parses
-        // it as a byte; a `%d` column would have handed back a Long and taken the other branch.
+        // declares that column `%d`, so a parsed report hands back a Long and the decoder narrows
+        // it with `byteValue()`; a `%s` column would hand back a String and be parsed as a byte.
         decode_byte(table, row, QUALITY_SCORE_COLUMN_NAME)? as f64
     };
 
@@ -290,6 +339,9 @@ fn recal_datum(
 }
 
 /// `QualityScoreCovariate.keyFromValue` on a row's `QualityScore` cell.
+///
+/// Through [`decode_byte`], whose `Long` branch is `byteValue()` where `keyFromValue`'s is
+/// `((Long) value).intValue()`. They agree for a quality from 0 to 127.
 fn quality_key(table: &Table, row: usize) -> Result<i32, RecalibrationReportError> {
     decode_byte(table, row, QUALITY_SCORE_COLUMN_NAME).map(|quality| quality as i32)
 }
@@ -421,9 +473,9 @@ fn parse_quantization(table: &Table) -> Result<QuantizationInfo, RecalibrationRe
 
 /// `initializeArgumentCollectionTable`: a chain of name comparisons over the `Arguments` table.
 ///
-/// `null` is turned into a real absence first, so `binary_tag_name` of `null` is nothing rather than
-/// the four characters. The `covariate` argument is checked against the four standard class names
-/// and anything else is refused.
+/// `null` is turned into a real absence first, so `binary_tag_name` of `null` is nothing rather
+/// than the four characters. The `covariate` argument is checked against the four standard class
+/// names and anything else is refused.
 fn parse_arguments(
     table: &Table,
 ) -> Result<(RecalibrationArguments, i32), RecalibrationReportError> {

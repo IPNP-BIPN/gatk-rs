@@ -1,9 +1,10 @@
 //! `TableWriter` and `TableReader`, ported from `org.broadinstitute.hellbender.utils.tsv`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `TableReader.java`, `TableWriter.java`, `DataLine.java` and `TableUtils.java`
+//! are unchanged since 4.6.2.0).
 //!
 //! GATK's own table format, under every `.table` file the contamination tools read and write. It is
-//! not a plain TSV: it is opencsv configured with a tab separator, a quote character and a backslash
-//! escape, plus a comment convention that carries metadata.
+//! not a plain TSV: it is opencsv configured with a tab separator, a quote character and a
+//! backslash escape, plus a comment convention that carries metadata.
 //!
 //! # Metadata is a tagged comment, and the tag is easy to miss
 //!
@@ -24,7 +25,36 @@
 //! # A value is quoted only when it has to be
 //!
 //! Measured: a space and a comma pass through bare, a tab and a quote force quotes, a backslash is
-//! escaped **and** forces quotes, and a value beginning with the comment prefix is written unquoted.
+//! escaped **and** forces quotes, and a value beginning with the comment prefix is written
+//! unquoted.
+//!
+//! # The layout of a file
+//!
+//! - Comment lines (`#...`) may come before the header, between rows and after them. The first
+//!   line that is **not** a comment is the header, and it fixes the column order; every later
+//!   non-comment line is a row and must have exactly as many fields
+//!   (`TableReader.fetchNextRecord`, the `mismatch between number of values` refusal).
+//! - Metadata lines come first because the writer refuses them after the header:
+//!   `Utils.validateArg(!headerWritten, "Metadata must precede the header.");`
+//!   (`TableWriter.writeMetadata`).
+//! - The header is written even when no record follows, because `close()` calls
+//!   `writeHeaderIfApplies()` (golden `tsv_table.txt.gz`, `written empty`).
+//! - A missing value is an empty field, read back as the empty string, not as a null
+//!   (`read quoting 5 chr1,6,1.0,`). A number column with an empty field is refused only when it
+//!   is asked for as a number (`error empty-number`).
+//! - A double is `Double.toString`'s spelling, point included: `1.0`, `1.0E-7`, `1.0E21`, `NaN`,
+//!   `Infinity` (`written doubles`, `read doubles`); see [`java_double_to_string`].
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<Table, TableError>` is "a `Table` or one of the refusals in [`TableError`]"; it is how
+//!   this codebase models a method that throws. `Err(..)` is the throw, `Ok(..)` the return, and
+//!   `?` after a call rethrows the caller's error unchanged.
+//! - `match self { ... }` picks the branch for the variant at hand, and the compiler refuses a
+//!   `match` that leaves a variant out, so every refusal has a message.
+//! - `&str` is a borrowed, read-only string and `String` an owned one; `.to_string()` makes the
+//!   owned copy a struct can keep. `&[String]` is a borrowed view of a `String[]`.
+//! - `.iter().map(..).collect::<Vec<String>>()` is Java's `stream().map(..).collect(toList())`.
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -96,7 +126,8 @@ impl TableError {
 pub struct Table {
     pub columns: Vec<String>,
     pub rows: Vec<Vec<String>>,
-    /// Every `#<METADATA>key=value`, in the order they were seen: a repeated key keeps the last.
+    /// Every `#<METADATA>key=value`. A hash map, as the reference's is, so it keeps no order; a
+    /// repeated key keeps the last value, as `metadata.put` does.
     pub metadata: HashMap<String, String>,
     /// Every comment line, tagged or not, with the prefix stripped.
     pub comments: Vec<String>,
@@ -108,10 +139,24 @@ impl Table {
     /// `TableReader`: the header, the rows and the comments of one file.
     ///
     /// `source` is the name the error messages use, which is the path the reference was given.
+    ///
+    /// A line is a comment by the reference's own test, made on the parsed fields and not on the
+    /// raw text (`TableReader.isCommentLine`):
+    ///
+    /// ```java
+    /// return line.length > 0 && line[0].startsWith(TableUtils.COMMENT_PREFIX);
+    /// ```
+    ///
+    /// The first non-comment line becomes the header (`findAndProcessHeaderLine`), and each later
+    /// one a row. The line number is 1-based and counts comment lines, which is what
+    /// `LineNumberReader.getLineNumber()` gives the reference for a one-line record (golden
+    /// `tsv_table.txt.gz`, `error short-row`: one comment, the header, then `at line 3`).
     pub fn parse(text: &str, source: &str) -> Result<Table, TableError> {
         let mut table = Table::default();
         let mut header_seen = false;
 
+        // `.enumerate()` pairs each line with its 0-based index, Java's `for (int i ...)` beside
+        // the element.
         for (index, line) in text.lines().enumerate() {
             let number = index as u64 + 1;
             let values = split_line(line);
@@ -124,6 +169,8 @@ impl Table {
                     comment.push(COLUMN_SEPARATOR);
                     comment.push_str(value);
                 }
+                // `if let Some(pair) = ...` runs the block only when the tag is there, with
+                // `pair` bound to the text after it: Java's `startsWith` and `substring` in one.
                 if let Some(pair) = comment.strip_prefix(METADATA_TAG) {
                     // `split("=")` with no limit, so a value containing `=` keeps only its first
                     // piece, and the reference would throw on a line with no `=` at all.
@@ -154,7 +201,12 @@ impl Table {
         Ok(table)
     }
 
-    /// `DataLine.get(column)`.
+    /// `DataLine.get(columnName)`: the field under a named column, or `IllegalArgumentException`
+    /// with `"there is no such column: " + columnName` (`DataLine.columnIndex`).
+    ///
+    /// `.position(..)` is the index of the first column with that name, or nothing; `.ok_or_else`
+    /// turns the nothing into the refusal and `?` throws it. The `'a` marks say the returned text
+    /// is borrowed from the row, so no copy is made.
     pub fn get<'a>(&'a self, row: &'a [String], column: &str) -> Result<&'a str, TableError> {
         let index = self
             .columns
@@ -164,7 +216,16 @@ impl Table {
         Ok(&row[index])
     }
 
-    /// `DataLine.getInt(column)`, whose refusal names the value and not the column.
+    /// `DataLine.getInt(column)`, whose refusal names the column **and** the value (wrapped here):
+    ///
+    /// ```java
+    /// throw formatErrorFactory.apply(String.format(
+    ///         "expected int value for column %s but found %s",
+    ///         columns.nameAt(index), get(index)));
+    /// ```
+    ///
+    /// The value is printed bare, so an empty field ends the message with `found `
+    /// (golden `tsv_table.txt.gz`, `error empty-number`).
     pub fn get_int(
         &self,
         row: &[String],
@@ -186,6 +247,10 @@ impl Table {
 ///
 /// The header is written whether or not any record follows, which is what an empty table with a
 /// header shows.
+///
+/// Every line, metadata and header included, goes through the same quoting as a row, because the
+/// reference hands each one to `CSVWriter.writeNext(..., false)`. `writeln!` appends a line to the
+/// `String`; writing to a `String` cannot fail, and `let _ =` discards the `Result` it returns.
 pub fn write_table(columns: &[&str], rows: &[Vec<String>], metadata: &[(&str, &str)]) -> String {
     let mut out = String::new();
     for (key, value) in metadata {
@@ -232,8 +297,23 @@ pub fn write_table(columns: &[&str], rows: &[Vec<String>], metadata: &[(&str, &s
 /// ```
 ///
 /// The `return` writes over whatever the branch above chose, so the rounding is dead: `1.0` is
-/// written `1.0` and never `1`. A port that read the intent rather than the code would differ on
-/// every integral frequency, which is why this function is only `Double.toString`.
+/// written `1.0` and never `1` (golden `tsv_table.txt.gz`, `written doubles`, the `integral` row).
+/// A port that read the intent rather than the code would differ on every integral frequency,
+/// which is why this function is only `Double.toString`.
+///
+/// `DataLine.append(double)` is the method where the short form is live, because there the
+/// branches return:
+///
+/// ```java
+/// if (rounded == value) {
+///     return append(Long.toString(rounded));
+/// } else {
+///     return append(Double.toString(value));
+/// }
+/// ```
+///
+/// so a writer that fills its line with `append` prints `1` where one using `set` prints `1.0`.
+/// This function is the `set` spelling only.
 ///
 /// Java 17's `Double.toString`, which is not always the shortest decimal that round-trips: it
 /// can print a digit more, as at most powers of two, and `jmath` reproduces where.
@@ -243,9 +323,11 @@ pub fn java_double_to_string(value: f64) -> String {
 
 /// opencsv's `processLine` with `applyQuotesToAll = false`.
 ///
-/// A value is quoted when it holds the separator, a quote or a newline; a quote and a backslash are
-/// escaped with a backslash. A comma and a space force nothing, which a port that reused a CSV
-/// writer would get wrong in the other direction.
+/// A value is quoted when it holds the separator, a quote, a newline or a backslash; inside the
+/// quotes a quote and a backslash are escaped with a backslash. A comma and a space force nothing,
+/// which a port that reused a CSV writer would get wrong in the other direction. opencsv has no
+/// local source; the rule is the one the golden measures (`written quoting`: the value
+/// `has a \backslash` is written `"has a \\backslash"`).
 pub fn quote_if_needed(value: &str) -> String {
     let needs_quotes = value.contains(COLUMN_SEPARATOR)
         || value.contains('"')
@@ -267,6 +349,15 @@ pub fn quote_if_needed(value: &str) -> String {
 }
 
 /// opencsv's parser: tab-separated, with quotes and backslash escapes.
+///
+/// As written here: a `"` anywhere toggles quoting and is dropped; a backslash inside quotes is
+/// dropped and the character after it kept literally; a tab outside quotes ends the field. The
+/// result always has at least one field, so an empty line is one empty field, not a skipped line.
+///
+/// `while let Some(c) = characters.next()` loops until the iterator is exhausted (`.peekable()`
+/// would allow a look ahead; nothing here uses it). A `match` arm with
+/// `if ...` after its pattern only applies when that condition also holds.
+/// `std::mem::take(&mut current)` hands over the field built so far and leaves an empty one behind.
 pub fn split_line(line: &str) -> Vec<String> {
     let mut values = Vec::new();
     let mut current = String::new();

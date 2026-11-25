@@ -1,4 +1,7 @@
-//! `SequenceDictionaryUtils`: whether two sequence dictionaries may be used together.
+//! `SequenceDictionaryUtils`: whether two sequence dictionaries may be used together (GATK
+//! 4.7.0.0; `SequenceDictionaryUtils.java` is unchanged since 4.6.2.0, and the two exception
+//! classes and `prettyPrintSequenceRecords` lie outside every hunk of the 4.6.2.0 to 4.7.0.0
+//! diffs of `UserException.java` and `ReadUtils.java`).
 //!
 //! A walker given both a reads input and a feature input compares their dictionaries **before the
 //! traversal**, so a pair that shares no contig is refused rather than counted. That is what four
@@ -7,8 +10,12 @@
 //! # Eight outcomes, three of which need to be asked for
 //!
 //! `NON_CANONICAL_HUMAN_ORDER`, `OUT_OF_ORDER` and `DIFFERENT_INDICES` are only ever returned when
-//! the caller passed `check_contig_ordering`. Without it the same pairs come back `SUPERSET`, so
-//! an argument decides whether a dictionary pair is accepted, not the dictionaries.
+//! the caller passed `check_contig_ordering`. Without it the same pairs fall through to
+//! `IDENTICAL`, `SUPERSET` or `COMMON_SUBSET`: every such pair in the golden (`reversed`,
+//! `different-indices` and the three `lexicographic-*` rows of
+//! `sequence_dictionary_validation.txt.gz`) comes back `SUPERSET`, and a pair whose second
+//! dictionary also has a contig the first lacks would come back `COMMON_SUBSET` instead. So an
+//! argument decides whether a dictionary pair is accepted, not the dictionaries.
 //!
 //! # A length of zero is equivalent to any length
 //!
@@ -30,16 +37,37 @@
 //! # The human check is a length as much as a name
 //!
 //! `nonCanonicalHumanContigOrder` looks for chr1, chr2 and chr10 by name **and** by length, under
-//! four assemblies' spellings. The same three names in the same wrong order with lengths that are
-//! not hg19's are not human at all, and come back `OUT_OF_ORDER` instead.
+//! four assemblies' spellings. The same three names in the same wrong order with lengths that
+//! none of hg18, hg19, b36 and b37 has are not human at all, and come back `OUT_OF_ORDER` instead
+//! (golden row `lexicographic-not-human`, lengths 100, 300 and 200).
 //!
 //! Ported from `org.broadinstitute.hellbender.utils.SequenceDictionaryUtils`,
 //! `org.broadinstitute.hellbender.exceptions.UserException$IncompatibleSequenceDictionaries` and
 //! `org.broadinstitute.hellbender.utils.read.ReadUtils.prettyPrintSequenceRecords`.
+//!
+//! # Lookups are by primary name
+//!
+//! `SAMSequenceDictionary.getSequence(name)` also answers a contig's `AN` aliases, and the port's
+//! `find` does not. That cannot change an answer here: the common contigs come from
+//! `getContigNames`, which is primary names only, and the one lookup that could land on an
+//! alias (`supersets`) is followed by `sequenceRecordsAreEquivalent`, which requires the two
+//! names to be equal.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[SequenceRecord]` is a borrowed, read-only view of a dictionary's records in order; the
+//!   caller keeps ownership. A record's position in the slice is its `getSequenceIndex()`.
+//! - `Option<T>` is a value or nothing, and `Result<(), DictionaryRefusal>` is "returned
+//!   normally, or threw this": `Ok(())` is the Java's plain `return`, `Err(..)` the `throw`.
+//! - `.iter().filter(..).map(..).collect()`, `.find`, `.any`, `.all`, `.position` are Java stream
+//!   operations; `|x| ...` is a closure, Java's lambda.
+//! - `match` is a `switch` the compiler checks covers every case, which is why `validate` needs
+//!   no `default:` branch for the Java's `GATKException`.
+//! - A function's last expression is its return value; `return` is only written for early exits.
 
 use htsjdk_bam::header::SequenceRecord;
 
-/// `SequenceDictionaryCompatibility`.
+/// `SequenceDictionaryCompatibility`, the variants in the Java's declaration order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Compatibility {
     Identical,
@@ -78,6 +106,7 @@ pub enum DictionaryRefusal {
 }
 
 impl DictionaryRefusal {
+    /// The class the reference throws, as the golden prints it before the message.
     pub fn java_class(&self) -> &'static str {
         match self {
             DictionaryRefusal::Incompatible { .. } => {
@@ -89,6 +118,14 @@ impl DictionaryRefusal {
         }
     }
 
+    /// The exception's message.
+    ///
+    /// For the lexicographic case this is the `LexicographicallySortedSequenceDictionary`
+    /// constructor's format string, with
+    /// `HelpConstants.forumPost("discussion/58/companion-utilities-reordersam")` already
+    /// expanded: `LEGACY_GATK_FORUM_URL` is `"http://gatkforums.broadinstitute.org/"`. A `\` at
+    /// the end of a line inside a Rust string joins the next line and drops its leading spaces,
+    /// so the spaces that matter are the ones written before each `\`.
     pub fn message(&self) -> String {
         match self {
             DictionaryRefusal::Incompatible { message } => message.clone(),
@@ -107,6 +144,9 @@ impl DictionaryRefusal {
 }
 
 /// `ReadUtils.prettyPrintSequenceRecords`, which is `Arrays.deepToString` on the NAMES.
+///
+/// So `[chr1, chr2]`: square brackets, comma and space, no lengths, and `[]` for an empty
+/// dictionary.
 pub fn pretty_print(dictionary: &[SequenceRecord]) -> String {
     format!(
         "[{}]",
@@ -119,10 +159,17 @@ pub fn pretty_print(dictionary: &[SequenceRecord]) -> String {
 }
 
 /// `sequenceRecordsAreEquivalent`: the same name, and the same length unless one of them is zero.
+///
+/// The Java refuses only when `length1 != length2` and neither is
+/// `SAMSequenceRecord.UNKNOWN_SEQUENCE_LENGTH`, which is 0, then compares names. Attributes such
+/// as `M5` are not compared, unlike `SAMSequenceRecord.isSameSequence`; the Java's `supersets`
+/// says why: `Cannot rely on SAMSequenceRecord.equals() as it's too strict`.
 fn equivalent(a: &SequenceRecord, b: &SequenceRecord) -> bool {
     a.name == b.name && (a.length == 0 || b.length == 0 || a.length == b.length)
 }
 
+/// `SAMSequenceDictionary.getSequence(name)`, by primary name (see the module note on aliases).
+/// The lifetime `'a` says the record returned is borrowed from `dictionary`.
 fn find<'a>(dictionary: &'a [SequenceRecord], name: &str) -> Option<&'a SequenceRecord> {
     dictionary.iter().find(|record| record.name == name)
 }
@@ -130,7 +177,9 @@ fn find<'a>(dictionary: &'a [SequenceRecord], name: &str) -> Option<&'a Sequence
 /// `getCommonContigsByName`, in the FIRST dictionary's order.
 ///
 /// The order matters for the message a disequal pair produces: the reference reports the first
-/// mismatch it walks into, and it walks the intersection the same way every time.
+/// mismatch it walks into, and it walks the intersection the same way every time. The Java's set
+/// is a `LinkedHashSet` of the first dictionary's names, then
+/// `intersectingSequenceNames.retainAll(getContigNames(dict2));`, which keeps that order.
 fn common_contigs(a: &[SequenceRecord], b: &[SequenceRecord]) -> Vec<String> {
     a.iter()
         .filter(|record| find(b, &record.name).is_some())
@@ -139,6 +188,10 @@ fn common_contigs(a: &[SequenceRecord], b: &[SequenceRecord]) -> Vec<String> {
 }
 
 /// `hg18`, `hg19`, `b36` and `b37`'s chr1, chr2 and chr10, by the names and lengths the check uses.
+///
+/// The Java's `CHR1_HG18`, `CHR1_HG19`, `CHR1_B36` and `CHR1_B37` (and the same for 2 and 10),
+/// in that order. The b assemblies reuse the hg lengths under bare names, so b36 is hg18's
+/// lengths and b37 is hg19's.
 const HUMAN_CHR1: [(&str, i32); 4] = [
     ("chr1", 247249719),
     ("chr1", 249250621),
@@ -158,6 +211,7 @@ const HUMAN_CHR10: [(&str, i32); 4] = [
     ("10", 135534747),
 ];
 
+/// `isHumanSeqRecord(elt, recs...)`: an exact name and an exact length, both.
 fn is_human(record: &SequenceRecord, candidates: &[(&str, i32); 4]) -> bool {
     candidates
         .iter()
@@ -165,6 +219,10 @@ fn is_human(record: &SequenceRecord, candidates: &[(&str, i32); 4]) -> bool {
 }
 
 /// `nonCanonicalHumanContigOrder`: chr1 before chr2 before chr10, when all three are recognised.
+///
+/// The Java walks the whole dictionary and assigns `chr1 = elt` on every match, so a dictionary
+/// with two records that both pass (`chr1` and `1` with one length) is judged by the LAST.
+/// `.next_back()` takes the last of the matching indices for the same reason.
 pub fn non_canonical_human_order(dictionary: &[SequenceRecord]) -> bool {
     let index = |candidates: &[(&str, i32); 4]| {
         dictionary
@@ -181,13 +239,17 @@ pub fn non_canonical_human_order(dictionary: &[SequenceRecord]) -> bool {
     }
 }
 
-/// Whether the first dictionary holds an equivalent record for every one of the second's.
+/// `supersets(dict1, dict2)`: whether the first dictionary holds an equivalent record for every
+/// one of the second's.
 fn supersets(a: &[SequenceRecord], b: &[SequenceRecord]) -> bool {
     b.iter()
         .all(|record| find(a, &record.name).is_some_and(|theirs| equivalent(record, theirs)))
 }
 
-/// The first common contig whose lengths disagree, as the pair the message names.
+/// `findDisequalCommonContigs`: the first common contig whose lengths disagree, as the pair the
+/// message names. The Java returns `null` for none, here `None`; `find_map` stops at the first
+/// closure that answers `Some`, and the `?` inside it skips a name either side lacks (which
+/// cannot happen for a common contig).
 fn disequal_common_contig<'a>(
     common: &[String],
     a: &'a [SequenceRecord],
@@ -199,7 +261,12 @@ fn disequal_common_contig<'a>(
     })
 }
 
-/// Whether the common contigs appear in the same relative order in both dictionaries.
+/// `commonContigsAreInSameRelativeOrder`: whether the common contigs appear in the same relative
+/// order in both dictionaries.
+///
+/// The Java looks each common name up, sorts the two lists by `getSequenceIndex()` and compares
+/// names pairwise. Filtering each dictionary in its own order down to the common names is the
+/// same list without the sort.
 fn same_relative_order(common: &[String], a: &[SequenceRecord], b: &[SequenceRecord]) -> bool {
     let order = |dictionary: &[SequenceRecord]| -> Vec<String> {
         dictionary
@@ -211,7 +278,8 @@ fn same_relative_order(common: &[String], a: &[SequenceRecord], b: &[SequenceRec
     order(a) == order(b)
 }
 
-/// Whether every common contig sits at the same absolute index in both dictionaries.
+/// `commonContigsAreAtSameIndices`: whether every common contig sits at the same absolute index in
+/// both dictionaries, the index being the record's position.
 fn same_indices(common: &[String], a: &[SequenceRecord], b: &[SequenceRecord]) -> bool {
     let index = |dictionary: &[SequenceRecord], name: &str| {
         dictionary.iter().position(|record| record.name == name)
@@ -220,6 +288,13 @@ fn same_indices(common: &[String], a: &[SequenceRecord], b: &[SequenceRecord]) -
 }
 
 /// `compareDictionaries`, whose branch order is what decides which of two true things is reported.
+///
+/// The order, exactly the Java's: the human check (only when asked), no common contigs, unequal
+/// common contigs, then out of order (only when asked), identical, different indices (only when
+/// asked), superset, and common subset as what is left. So `IDENTICAL` needs the same relative
+/// order and nothing outside the intersection, and is tested before `DIFFERENT_INDICES`, which
+/// therefore needs a contig outside the intersection to be reachable (golden row
+/// `different-indices`: a leading `chrX`).
 pub fn compare(
     a: &[SequenceRecord],
     b: &[SequenceRecord],
@@ -253,7 +328,8 @@ pub fn compare(
     }
 }
 
-/// `IncompatibleSequenceDictionaries`, which wraps a reason in the names and both contig lists.
+/// `new UserException.IncompatibleSequenceDictionaries(...)`, which wraps a reason in the names
+/// and both contig lists.
 fn incompatible(
     reason: &str,
     name1: &str,
@@ -267,6 +343,12 @@ fn incompatible(
 }
 
 /// The message of `UserException.IncompatibleSequenceDictionaries`.
+///
+/// ```java
+/// "Input files %s and %s have incompatible contigs: %s.\n  %s contigs = %s\n  %s contigs = %s",
+/// ```
+///
+/// The `.` after the reason is the format's, which is where the doubled full stops come from.
 pub fn incompatible_message(
     reason: &str,
     name1: &str,
@@ -283,6 +365,10 @@ pub fn incompatible_message(
 }
 
 /// `validateDictionaries`: `Ok` where the reference returns, and the refusal where it throws.
+///
+/// The Java's `Utils.nonNull` checks on the two dictionaries have no counterpart: a slice cannot
+/// be null. `require_superset` only changes `COMMON_SUBSET`, and `check_contig_ordering` only
+/// what `compare` can return.
 pub fn validate(
     name1: &str,
     a: &[SequenceRecord],
@@ -297,6 +383,8 @@ pub fn validate(
             if !require_superset {
                 return Ok(());
             }
+            // Names of the second dictionary absent from the first, in the second's order, as
+            // the Java's stream over `dict2.getSequences()` filtered by a set of `dict1`'s names.
             let missing: Vec<&str> = b
                 .iter()
                 .filter(|record| find(a, &record.name).is_none())
@@ -324,6 +412,8 @@ pub fn validate(
             b,
         )),
         Compatibility::UnequalCommonContigs => {
+            // The Java recomputes the pair here rather than carrying it out of `compare`, and so
+            // does this. `.expect` would panic if there were none, which `compare` rules out.
             let common = common_contigs(a, b);
             let (one, two) = disequal_common_contig(&common, a, b)
                 .expect("an unequal common contig, which is what this case is");
