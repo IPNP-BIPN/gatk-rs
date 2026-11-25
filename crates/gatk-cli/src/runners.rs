@@ -1154,19 +1154,24 @@ fn vcf_dictionary(text: &str) -> SamHeader {
         };
         let body = body.trim_end_matches('>');
         let mut name = None;
-        // `getSAMSequenceRecord`: a line without a length is `UNKNOWN_SEQUENCE_LENGTH`, which is 0.
+        // `getSAMSequenceRecord`: a line without a length is `UNKNOWN_SEQUENCE_LENGTH`, which is 0,
+        // and `assembly` becomes the record's `AS`.
         let mut length = Some(0);
+        let mut assembly = None;
         for field in body.split(',') {
             match field.split_once('=') {
                 Some(("ID", value)) => name = Some(value.to_string()),
                 Some(("length", value)) => length = value.parse::<i32>().ok(),
+                Some(("assembly", value)) => assembly = Some(value.to_string()),
                 _ => {}
             }
         }
         if let (Some(name), Some(length)) = (name, length) {
-            header
-                .sequences
-                .push(htsjdk_bam::header::SequenceRecord::new(&name, length));
+            let mut record = htsjdk_bam::header::SequenceRecord::new(&name, length);
+            if let Some(assembly) = assembly {
+                record.attributes.set("AS", &assembly);
+            }
+            header.sequences.push(record);
         }
     }
     header
@@ -2175,8 +2180,7 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
             "Argument bqsr-recal-file was missing: Argument 'bqsr-recal-file' is required",
         )
     })?;
-    let recal_text = std::fs::read_to_string(&recal)
-        .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&recal, false)))?;
+    let recal_text = read_recalibration_table(&recal)?;
 
     let path = std::path::Path::new(&input);
     let bytes = std::fs::read(path)
@@ -2566,20 +2570,17 @@ pub fn split_intervals(parser: &Parser) -> Outcome {
     // carries no sort order, so the stamp `sorted()` had put on the scatterer's output is gone.
     // Measured on rows 10, 14, 20, 21 and 23 of this tool's array, which are exactly the rows that
     // pair the flag with one of the four stamping modes.
-    let sort_order =
-        if arguments.subdivision_mode.stamps_sort_order() && !arguments.dont_mix_contigs {
-            "\tSO:coordinate"
-        } else {
-            ""
-        };
+    // The `@SQ` lines are the dictionary's records whole, `UR`, `AS`, `M5` and `SP` included.
+    let mut shard_header = SamHeader {
+        sequences: best.clone(),
+        ..SamHeader::default()
+    };
+    if arguments.subdivision_mode.stamps_sort_order() && !arguments.dont_mix_contigs {
+        shard_header.set_sort_order("coordinate");
+    }
+    let shard_header = shard_header.encode();
     for (name, list) in &shards {
-        let mut text = format!("@HD\tVN:1.6{sort_order}\n");
-        for sequence in &best {
-            text.push_str(&format!(
-                "@SQ\tSN:{}\tLN:{}\n",
-                sequence.name, sequence.length
-            ));
-        }
+        let mut text = shard_header.clone();
         for interval in &list.intervals {
             text.push_str(&interval.to_file_line());
             text.push('\n');
@@ -3918,8 +3919,8 @@ pub fn call_copy_ratio_segments(parser: &Parser) -> Outcome {
 
     let text = std::fs::read_to_string(&input)
         .map_err(|error| Thrown::user(format!("{input}: {error}")))?;
-    // The file is a SAM header, a column line and the rows. The header travels into the output
-    // unchanged, which is what carries the sample name and the dictionary through.
+    // The file is a SAM header, a column line and the rows. Only the header's sample name and
+    // dictionary travel into the output, rebuilt as `metadata.toHeader()`.
     let mut header = String::new();
     let mut rows = Vec::new();
     let mut columns_seen = false;
@@ -3960,6 +3961,8 @@ pub fn call_copy_ratio_segments(parser: &Parser) -> Outcome {
     let calls = calling::make_calls(&rows, lower, upper, outlier, calling_threshold)
         .map_err(|error| Thrown::non_user(error.java_class(), error.message().to_string()))?;
 
+    let dictionary = htsjdk_bam::reader::parse_header_text(&header).sequences;
+    let header = gatk_tools::model_segments_tool::header(&sample, Some(&dictionary));
     write_file(
         &output,
         calling::write_called(&header, &rows, &calls).as_bytes(),
@@ -4934,6 +4937,7 @@ pub fn left_align_and_trim_variants(parser: &Parser) -> Outcome {
         file.header.samples.clone()
     };
     samples.sort();
+    let driving = driving_index_dictionary(&file.header);
     let header =
         update_header_contig_lines(parser, htsjdk_vcf::header::VcfHeader { lines, samples })?;
 
@@ -5002,11 +5006,25 @@ pub fn left_align_and_trim_variants(parser: &Parser) -> Outcome {
                      this port does not carry yet. This message is the port's own and not GATK's.",
                 ));
             }
-            gatk_engine::variant_context_utils::split_variant_context_to_biallelics(
-                &bridged.record.variant,
-                false,
-            )
-            .map_err(split_refusal)?
+            let mut pieces =
+                gatk_engine::variant_context_utils::split_variant_context_to_biallelics(
+                    &bridged.record.variant,
+                    false,
+                )
+                .map_err(split_refusal)?;
+            // A split's recomputed AF is a Double, which the writer formats: 0.25 is `0.250`. A
+            // biallelic record comes back as it was, its AF the text the file carried.
+            let split = bridged.record.variant.alleles.len() > 2;
+            for (key, value) in pieces
+                .iter_mut()
+                .filter(|_| split)
+                .flat_map(|piece| piece.attributes.iter_mut())
+            {
+                if let ("AF", Ok(frequency)) = (key.as_str(), value.parse::<f64>()) {
+                    *value = htsjdk_vcf::variant::format_vcf_double(frequency);
+                }
+            }
+            pieces
         } else {
             vec![bridged.record.variant.clone()]
         };
@@ -5111,7 +5129,7 @@ pub fn left_align_and_trim_variants(parser: &Parser) -> Outcome {
         exception: "org.broadinstitute.hellbender.exceptions.UserException",
         message: Some(format!("{error:?}")),
     })?;
-    write_variant_output(parser, &output, &text)?;
+    write_variant_output_indexed_by(parser, &output, &text, driving)?;
     // What `doWork` returns, which `handleResult` prints after `Tool returned:`.
     Ok(Some("SUCCESS".to_string()))
 }
@@ -5844,6 +5862,35 @@ pub fn calculate_genotype_posteriors(parser: &Parser) -> Outcome {
                 .iter()
                 .map(gatk_tools::calculate_genotype_posteriors::record_from_vc),
         );
+    }
+
+    // `onTraversalStart`'s checks on the driving header, after the inputs are open.
+    if file.header.samples.is_empty() {
+        return Err(bad_input("VCF has no genotypes".to_string()));
+    }
+    let mleac = file.header.lines.iter().find_map(|line| match line {
+        htsjdk_vcf::header::HeaderLine::Compound {
+            key,
+            id,
+            number,
+            line_type,
+            ..
+        } if key == "INFO" && id == "MLEAC" => Some((*number, *line_type)),
+        _ => None,
+    });
+    if let Some((count, line_type)) = mleac {
+        if count != htsjdk_vcf::header::Cardinality::A {
+            return Err(bad_input(
+                "VCF does not have a properly formatted MLEAC field: the count type should be \"A\""
+                    .to_string(),
+            ));
+        }
+        if line_type != htsjdk_vcf::header::LineType::Integer {
+            return Err(bad_input(
+                "VCF does not have a properly formatted MLEAC field: the field type should be \"Integer\""
+                    .to_string(),
+            ));
+        }
     }
 
     let number = |name: &str, default: f64| -> f64 {
@@ -10282,13 +10329,13 @@ pub fn compare_references(parser: &Parser) -> Outcome {
     // `onTraversalStart`, in its own order: the directory before the count.
     if base_comparison != "NO_BASE_COMPARISON" {
         let directory = argument(parser, "base-comparison-output");
+        // `CouldNotCreateOutputFile(GATKPath, message)` calls `getRawInputString()` on the path, so
+        // a missing directory is a NullPointerException before any message is built.
         match &directory {
             None => {
-                return Err(could_not_create_output_file(
-                    "null",
-                    &format!(
-                        "Output directory not provided but required in -base-comparison {base_comparison} mode."
-                    ),
+                return Err(Thrown::non_user(
+                    "java.lang.NullPointerException",
+                    "Cannot invoke \"org.broadinstitute.hellbender.engine.GATKPath.getRawInputString()\" because \"file\" is null",
                 ))
             }
             Some(path) if !std::path::Path::new(path).exists() => {
@@ -10330,7 +10377,12 @@ pub fn compare_references(parser: &Parser) -> Outcome {
         stdout.push('\n');
     }
     // Everything above is printed as it is produced, so a refusal below it keeps what came before,
-    // and `onTraversalSuccess` returns null: there is no `Tool returned:` line on this tool.
+    // and `onTraversalSuccess` returns null: there is no `Tool returned:` line on this tool. With no
+    // `--output` the table's writer wraps `System.out` and closes it, so nothing after the table
+    // reaches stdout at all.
+    if argument(parser, "output").is_none() {
+        stdout.truncate(rendered.len());
+    }
     print!("{stdout}");
     // `referencePairs.get(0)` is read before the switch on the base-comparison mode, so a run with
     // one reference dies here having already printed everything above.
@@ -10413,7 +10465,7 @@ fn could_not_create_output_file(path: &str, reason: &str) -> Thrown {
         failure: Failure::User,
         exception:
             "org.broadinstitute.hellbender.exceptions.UserException$CouldNotCreateOutputFile",
-        message: Some(format!("Could not create file {path}. {reason}")),
+        message: Some(format!("Couldn't write file {path} because {reason}")),
     }
 }
 
@@ -11327,15 +11379,7 @@ pub fn flow_feature_mapper(parser: &Parser) -> Outcome {
             unique.push(line);
         }
     }
-    for (index, sequence) in header.sequences.iter().enumerate() {
-        unique.push(HeaderLine::Contig {
-            index: index as i32,
-            fields: vec![
-                ("ID".to_string(), sequence.name.clone()),
-                ("length".to_string(), sequence.length.to_string()),
-            ],
-        });
-    }
+    unique.extend(contig_lines(&header.sequences));
     let mut vcf_header = htsjdk_vcf::header::VcfHeader::new();
     vcf_header.lines = unique;
 
@@ -12921,7 +12965,8 @@ pub fn gtf_to_bed(parser: &Parser) -> Outcome {
             let _ = &mut reference;
         }
     }
-    let dictionary = match master_dictionary(parser)? {
+    // `getBestAvailableSequenceDictionary`: the master dictionary, else the reference's.
+    let dictionary = match master_dictionary(parser)?.or(reference_dictionary(parser)?) {
         Some(header) => Some(
             header
                 .sequences
@@ -13237,10 +13282,18 @@ fn read_pileup_table(
 > {
     let text =
         std::fs::read_to_string(path).map_err(|error| Thrown::user(format!("{path}: {error}")))?;
-    gatk_engine::pileup_summary::read_from_file(&text, path).map_err(|error| Thrown {
-        failure: Failure::User,
-        exception: error.java_class(),
-        message: Some(error.message()),
+    // A `BadInput` says so in front of its message, as `UserException.BadInput` does.
+    gatk_engine::pileup_summary::read_from_file(&text, path).map_err(|error| {
+        match error.java_class() {
+            "org.broadinstitute.hellbender.exceptions.UserException$BadInput" => {
+                bad_input(error.message())
+            }
+            exception => Thrown {
+                failure: Failure::User,
+                exception,
+                message: Some(error.message()),
+            },
+        }
     })
 }
 
@@ -15973,12 +16026,25 @@ pub fn variant_annotator(parser: &Parser) -> Outcome {
         ));
     }
     lines.extend(file.header.lines.iter().cloned());
+    // Without a reference the contig lines are `getBestAvailableSequenceDictionary`'s, which for a
+    // VCF that declares no contig is the one synthesized from its index, every length zero.
+    if argument(parser, "reference").is_none()
+        && !lines
+            .iter()
+            .any(|line| matches!(line, HeaderLine::Contig { .. }))
+    {
+        // `isSequenceDictionaryFromIndex`, so a `--sequence-dictionary` outranks it.
+        if let Some(dictionary) = master_dictionary(parser)?.or_else(|| index_dictionary(&input)) {
+            lines.extend(contig_lines(&dictionary.sequences));
+        }
+    }
     let mut unique: Vec<HeaderLine> = Vec::with_capacity(lines.len());
     for line in lines {
         if !unique.contains(&line) {
             unique.push(line);
         }
     }
+    let driving = driving_index_dictionary(&file.header);
     let header = update_header_contig_lines(
         parser,
         VcfHeader {
@@ -16153,7 +16219,7 @@ pub fn variant_annotator(parser: &Parser) -> Outcome {
     let mut header = header;
     apply_sites_only(parser, &mut header, &mut written);
     let rendered = write_vcf_honouring_lenient(parser, &header, &written)?;
-    write_variant_output(parser, &output, &rendered)?;
+    write_variant_output_indexed_by(parser, &output, &rendered, driving)?;
     Ok(None)
 }
 
@@ -16731,6 +16797,15 @@ fn sequence_dictionary_of(header: &htsjdk_vcf::header::VcfHeader) -> Vec<(String
         .collect()
 }
 
+/// The dictionary `VariantWalkerBase.getBestAvailableSequenceDictionary` hands the output's index:
+/// the driving variants' own, unless every length is zero (`isSequenceDictionaryFromIndex`), in
+/// which case [`write_variant_file`] falls back to the master and reference dictionaries. A tool
+/// that rewrites the header's contigs from the reference still indexes with the input's.
+fn driving_index_dictionary(header: &htsjdk_vcf::header::VcfHeader) -> Option<Vec<(String, i32)>> {
+    let own = sequence_dictionary_of(header);
+    own.iter().any(|(_, length)| *length != 0).then_some(own)
+}
+
 /// `UpdateVCFSequenceDictionary`, which replaces a header's dictionary and passes the records
 /// through.
 ///
@@ -16836,13 +16911,7 @@ pub fn update_vcf_sequence_dictionary(parser: &Parser) -> Outcome {
     for line in default_tool_vcf_header_lines(parser, "UpdateVCFSequenceDictionary") {
         header.lines.push(line);
     }
-    for (index, record) in dictionary.iter().enumerate() {
-        header.lines.push(htsjdk_vcf::header::HeaderLine::contig(
-            &record.name,
-            i64::from(record.length),
-            index as i32,
-        ));
-    }
+    header.lines.extend(contig_lines(&dictionary));
 
     let (written, refusal) =
         gatk_tools::update_vcf_sequence_dictionary::update_dictionary(&dictionary, &records);
@@ -16991,6 +17060,7 @@ pub fn select_variants(parser: &Parser) -> Outcome {
     // calls and which rewrites two kinds of line: every `##contig` is replaced by one built from
     // the dictionary, carrying `assembly=` when a reference path is known, and the `##reference`
     // line is replaced by that path's URI. Without a reference the dictionary is the driving
+    let driving = driving_index_dictionary(&file.header);
     // VCF's own, and a file that declares none keeps the lines it had.
     let header = update_header_contig_lines(parser, header)?;
 
@@ -17155,8 +17225,32 @@ pub fn select_variants(parser: &Parser) -> Outcome {
         exception: "org.broadinstitute.hellbender.exceptions.UserException",
         message: Some(format!("{error:?}")),
     })?;
-    write_variant_output(parser, &output, &text)?;
+    write_variant_output_indexed_by(parser, &output, &text, driving)?;
     Ok(None)
+}
+
+/// `VCFHeader.setSequenceDictionary`: one contig line per sequence, the `AS`
+/// attribute as its `assembly=`.
+pub(crate) fn contig_lines(
+    dictionary: &[htsjdk_bam::header::SequenceRecord],
+) -> Vec<htsjdk_vcf::header::HeaderLine> {
+    dictionary
+        .iter()
+        .enumerate()
+        .map(|(index, sequence)| {
+            let mut fields = vec![
+                ("ID".to_string(), sequence.name.clone()),
+                ("length".to_string(), sequence.length.to_string()),
+            ];
+            if let Some(assembly) = sequence.attributes.get("AS") {
+                fields.push(("assembly".to_string(), assembly.to_string()));
+            }
+            htsjdk_vcf::header::HeaderLine::Contig {
+                index: index as i32,
+                fields,
+            }
+        })
+        .collect()
 }
 
 /// `VcfUtils.updateHeaderContigLines`: the contig lines and the `##reference` line, rebuilt.
@@ -17676,21 +17770,36 @@ pub(crate) fn write_variant_file(
     if !create_index {
         return Ok(());
     }
-    let dictionary: Vec<(String, i32)> = index_dictionary.unwrap_or_else(|| {
-        text.lines()
-            .take_while(|line| line.starts_with('#'))
-            .filter_map(|line| {
-                let body = line.strip_prefix("##contig=<")?.trim_end_matches('>');
-                let name = body.split(',').find_map(|f| f.strip_prefix("ID="))?;
-                let length = body
-                    .split(',')
-                    .find_map(|f| f.strip_prefix("length="))
-                    .and_then(|value| value.parse().ok())
-                    .unwrap_or(0);
-                Some((name.to_string(), length))
-            })
-            .collect()
-    });
+    // `getBestAvailableSequenceDictionary`. A variant walker's is the driving variants' own, which
+    // is the header's contig lines, unless every length is unknown (`isSequenceDictionaryFromIndex`):
+    // then, as for any other tool, the master dictionary and then the reference's come first. A VCF
+    // without lengths written with `-R` indexes the reference's contigs.
+    let own: Vec<(String, i32)> = text
+        .lines()
+        .take_while(|line| line.starts_with('#'))
+        .filter_map(|line| {
+            let body = line.strip_prefix("##contig=<")?.trim_end_matches('>');
+            let name = body.split(',').find_map(|f| f.strip_prefix("ID="))?;
+            let length = body
+                .split(',')
+                .find_map(|f| f.strip_prefix("length="))
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(0);
+            Some((name.to_string(), length))
+        })
+        .collect();
+    let dictionary: Vec<(String, i32)> = match index_dictionary {
+        Some(dictionary) => dictionary,
+        None if own.iter().any(|(_, length)| *length != 0) => own,
+        None => match master_dictionary(parser)?.or(reference_dictionary(parser)?) {
+            Some(header) => header
+                .sequences
+                .iter()
+                .map(|sequence| (sequence.name.clone(), sequence.length))
+                .collect(),
+            None => own,
+        },
+    };
     // The index records the output as `Path.toUri` prints it, which is always absolute.
     let mut source = index_feature_file::Source::new(&java_absolute_path(output));
     source.timestamp = modified_millis(output);
@@ -17846,6 +17955,16 @@ fn catalog_text(path: &str) -> Result<String, Thrown> {
         return Err(cannot_open());
     }
     gunzip(&bytes).map_err(|_| Thrown::user("Error reading from catalog file".to_string()))
+}
+
+/// A `--bqsr-recal-file`, which `GATKReport` reads through `makeZippedInputStream`: gzipped or not.
+pub(crate) fn read_recalibration_table(path: &str) -> Result<String, Thrown> {
+    let refused = || Thrown::user(gatk_tools::read_walker_refusal::cannot_read(path, false));
+    let bytes = std::fs::read(path).map_err(|_| refused())?;
+    if bytes.starts_with(&[0x1f, 0x8b]) {
+        return gunzip(&bytes).map_err(|_| refused());
+    }
+    String::from_utf8(bytes).map_err(|_| refused())
 }
 
 fn gunzip(bytes: &[u8]) -> std::io::Result<String> {
@@ -18931,7 +19050,14 @@ pub fn merge_mutect_stats(parser: &Parser) -> Outcome {
     }
     let mut shards = Vec::new();
     for path in &paths {
-        shards.push(std::fs::read_to_string(path).map_err(|_| table_unreadable(path))?);
+        let text = std::fs::read_to_string(path).map_err(|_| table_unreadable(path))?;
+        // `MutectStats.readFromFile` is a `TableReader`, which refuses a file with no column line.
+        if let Err(error) = gatk_engine::tsv_table::Table::parse(&text, path) {
+            if matches!(error, gatk_engine::tsv_table::TableError::NoHeader { .. }) {
+                return Err(bad_input(error.message()));
+            }
+        }
+        shards.push(text);
     }
     let texts: Vec<&str> = shards.iter().map(String::as_str).collect();
     let merged = gatk_tools::mutect_gathers::merge_stats(&texts).map_err(gather_error)?;
@@ -22495,11 +22621,7 @@ impl<'p> SvClusterWalker<'p> {
         header
             .lines
             .retain(|line| !matches!(line, HeaderLine::Contig { .. }));
-        for (index, (name, length)) in sequences.iter().enumerate() {
-            header
-                .lines
-                .push(HeaderLine::contig(name, i64::from(*length), index as i32));
-        }
+        header.lines.extend(contig_lines(&dictionary.sequences));
         let compound =
             |key: &str, id: &str, number: Cardinality, line_type: LineType, text: &str| {
                 HeaderLine::Compound {
@@ -23599,17 +23721,21 @@ pub fn combine_segment_breakpoints(parser: &Parser) -> Outcome {
     let second = read(&segments[1])?;
 
     // `createOutputSamFileHeader`.
-    let dictionary_of =
-        |collection: &gatk_tools::annotated_interval::AnnotatedIntervalCollection| {
-            let text: String = collection
-                .header_lines
-                .iter()
-                .map(|line| format!("{line}\n"))
-                .collect();
-            htsjdk_bam::reader::parse_header_text(&text).sequences
-        };
-    let (dictionary1, dictionary2) = (dictionary_of(&first), dictionary_of(&second));
-    match compare(&dictionary1, &dictionary2, true) {
+    let header_of = |collection: &gatk_tools::annotated_interval::AnnotatedIntervalCollection| {
+        let text: String = collection
+            .header_lines
+            .iter()
+            .map(|line| format!("{line}\n"))
+            .collect();
+        // The reader keeps a `#` line as a comment of the SAM header, so the merge carries it.
+        let mut header = htsjdk_bam::reader::parse_header_text(&text);
+        for comment in &collection.comments {
+            header.add_comment(comment);
+        }
+        header
+    };
+    let headers = [header_of(&first), header_of(&second)];
+    match compare(&headers[0].sequences, &headers[1].sequences, true) {
         Compatibility::UnequalCommonContigs => {
             return Err(bad_input(
                 "Input files had common contigs with different lengths in the sequence dictionaries.  Were these segment files generated with the same reference?".to_string(),
@@ -23622,15 +23748,16 @@ pub fn combine_segment_breakpoints(parser: &Parser) -> Outcome {
         }
         _ => {}
     }
-    let mut merged = if dictionary1.is_empty() {
-        dictionary2
-    } else {
-        dictionary1
-    };
-    if merged.is_empty() {
+    // `SamFileHeaderMerger(coordinate, headers, true)`: the dictionaries, read groups (a clash
+    // renamed `ID.1`), programs and comments of both inputs.
+    let mut header = gatk_tools::sam_file_header_merger::merge(&headers)
+        .map_err(|message| Thrown::non_user("htsjdk.samtools.SAMException", message))?
+        .header;
+    header.set_sort_order("coordinate");
+    if header.sequences.is_empty() {
         let best = master_dictionary(parser)?.or(reference_dictionary(parser)?);
         match best {
-            Some(best) => merged = best.sequences,
+            Some(best) => header.sequences = best.sequences,
             None => {
                 return Err(bad_input(
                     "Cannot assemble a reference dictionary.  In order to use this tool, one of the following conditions must be satisfied:  1)  One or both input files have a SAM File header ... 2)  A reference is provided (-R)".to_string(),
@@ -23680,7 +23807,8 @@ pub fn combine_segment_breakpoints(parser: &Parser) -> Outcome {
         ));
     }
     let label = |index: usize| labels.get(index).map(String::as_str).unwrap_or("");
-    let names: Vec<String> = merged
+    let names: Vec<String> = header
+        .sequences
         .iter()
         .map(|sequence| sequence.name.clone())
         .collect();
@@ -23691,10 +23819,6 @@ pub fn combine_segment_breakpoints(parser: &Parser) -> Outcome {
         [label(0), label(1)],
         &columns,
     );
-    let mut header = SamHeader::default();
-    header.attributes.set("GO", "none");
-    header.attributes.set("SO", "coordinate");
-    header.sequences = merged;
     let mut annotations: Vec<String> = records
         .first()
         .map(|record| record.annotations.keys().cloned().collect())

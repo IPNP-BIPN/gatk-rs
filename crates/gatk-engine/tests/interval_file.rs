@@ -161,7 +161,7 @@ fn genome_loc_to_string(interval: &gatk_engine::interval::SimpleInterval) -> Str
 /// The exception class the reference raised, for the refusal the port produced.
 fn class_of(error: &IntervalArgumentError) -> &'static str {
     match error {
-        IntervalArgumentError::IntervalFileEmpty => {
+        IntervalArgumentError::IntervalFileEmpty(_) => {
             "org.broadinstitute.hellbender.exceptions.UserException$MalformedFile"
         }
         IntervalArgumentError::IntervalFileMissing(_)

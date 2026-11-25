@@ -127,13 +127,16 @@ pub fn run(args: &[String]) -> Outcome {
             // The parse comes before the run, and it only happens for a tool whose whole argument
             // surface converts: a parser missing a third of its arguments would refuse a command
             // line the reference accepts, which is a worse answer than refusing to parse at all.
-            // A tool asked for its own help answers with its usage and returns nothing, which is
-            // a success: `-h` after a tool name is the tool's argument and not the dispatcher's.
+            // A tool asked for its own help answers with its usage and returns 0, which is a
+            // success that `Main.handleResult` prints: `-h` after a tool name is the tool's
+            // argument and not the dispatcher's.
             let tool_args = main_entry::tool_arguments(args);
             let help = tool_args.iter().any(|arg| arg == "-h" || arg == "--help");
             if help {
                 if let Some(usage) = tool_usage(&name) {
                     stderr.push_str(&usage);
+                    stdout.push_str(&main_entry::tool_returned(Some("0")).unwrap_or_default());
+                    stdout.push('\n');
                     return Outcome {
                         stdout,
                         stderr,

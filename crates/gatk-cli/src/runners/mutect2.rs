@@ -855,15 +855,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
             "Log 10 likelihood ratio score of variant existing versus not existing",
         ));
     }
-    for (index, sequence) in header.sequences.iter().enumerate() {
-        lines.push(HeaderLine::Contig {
-            index: index as i32,
-            fields: vec![
-                ("ID".to_string(), sequence.name.clone()),
-                ("length".to_string(), sequence.length.to_string()),
-            ],
-        });
-    }
+    lines.extend(contig_lines(&header.sequences));
     let mut vcf_header = VcfHeader { lines, samples };
     let mut written = called_calls;
     // `SomaticGVCFWriter`: the reference records combined into blocks by TLOD band.

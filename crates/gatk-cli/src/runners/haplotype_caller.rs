@@ -1729,15 +1729,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             ],
         });
     }
-    for (index, sequence) in header.sequences.iter().enumerate() {
-        lines.push(HeaderLine::Contig {
-            index: index as i32,
-            fields: vec![
-                ("ID".to_string(), sequence.name.clone()),
-                ("length".to_string(), sequence.length.to_string()),
-            ],
-        });
-    }
+    lines.extend(contig_lines(&header.sequences));
     let mut unique: Vec<HeaderLine> = Vec::with_capacity(lines.len());
     for line in lines {
         if !unique.contains(&line) {

@@ -245,21 +245,16 @@ impl AnnotatedIntervalCollection {
     /// The file this collection writes: the SAM header, the three column comments, the column
     /// line, then the records.
     ///
-    /// The `@HD` line is written whether or not the input had one, and the input's own comments
-    /// come before the three the writer adds.
+    /// The header is `SAMFileHeader.getSAMString`, so the `@HD` line is written whether or not the
+    /// input had one and always says `VN:1.6`, and the input's own comments come before the three
+    /// the writer adds.
     pub fn write(&self) -> String {
-        let mut text = String::new();
-        let mut wrote_hd = false;
-        for line in &self.header_lines {
-            if line.starts_with("@HD") {
-                wrote_hd = true;
-            }
-            text.push_str(line);
-            text.push('\n');
-        }
-        if !wrote_hd {
-            text.insert_str(0, "@HD\tVN:1.6\n");
-        }
+        let lines: String = self
+            .header_lines
+            .iter()
+            .map(|line| format!("{line}\n"))
+            .collect();
+        let mut text = htsjdk_bam::reader::parse_header_text(&lines).encode_replacing_version();
         for comment in &self.comments {
             text.push_str(&format!("@CO\t{comment}\n"));
         }
