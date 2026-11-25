@@ -30,6 +30,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Every tool is a step or has a written reason
+        run: python3 tools/speed/bench.py --check
+
       - id: key
         # The files' pins, not the whole of scale.json: editing a step must not fetch the data again.
         run: |

@@ -37,6 +37,7 @@ COSTS, and it holds itself to the same rules:
 import argparse
 import json
 import math
+import re
 import shutil
 import statistics
 import subprocess
@@ -357,12 +358,48 @@ def scale_steps(names):
 
 
 def scale_command(step, side, port, threads):
-    """One side's command line, with the step's placeholders resolved inside the container."""
+    """One side's command line, with the step's placeholders resolved inside the container.
+
+    A step runs the tool `tool` names, else the tool its name is; two steps of one tool (a BAM and
+    a CRAM input, say) differ by name only.
+    """
     args = step["args"].format(data="/work/data", out="/work/out", threads=threads, **{"in": "/work/in"})
+    tool = step.get("tool", step["name"])
     if side == "oracle":
-        java = f"java {run_array.JAVA_OPENS} {step.get('java_options', '')}".strip()
-        return f'{java} -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {step["name"]} {args}'
-    return f"/work/port-binary/{Path(port).name} {step['name']} {args}"
+        heap = json.loads(SCALE.read_text()).get("java_options", "")
+        java = f"java {run_array.JAVA_OPENS} {heap} {step.get('java_options', '')}".strip()
+        return f'{java} -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {tool} {args}'
+    return f"/work/port-binary/{Path(port).name} {tool} {args}"
+
+
+def inventory():
+    """Every tool the port answers to: one covering array each, Picard's included."""
+    arrays = run_array.ARRAYS
+    names = {p.name.split(".")[0] for p in arrays.glob("*.t*.json")}
+    names |= {p.name.split(".")[0] for p in (arrays / "picard").glob("*.t*.json")}
+    # Picard's MarkDuplicates runs through picard-rs and has no array here.
+    return names | {"MarkDuplicates"}
+
+
+def check_catalogue():
+    """Every tool is a step or carries a written reason; a step names a known tool and step."""
+    spec = json.loads(SCALE.read_text())
+    steps, reasons = spec["steps"], spec["not_measured"]
+    names = [s["name"] for s in steps]
+    tools = {s.get("tool", s["name"]) for s in steps}
+    known = inventory()
+    problems = []
+    problems += [f"{t}: neither a step nor a reason" for t in sorted(known - tools - set(reasons))]
+    problems += [f"{t}: both a step and a reason" for t in sorted(tools & set(reasons))]
+    problems += [f"{t}: not a tool of the port" for t in sorted((tools | set(reasons)) - known)]
+    problems += [f"{n}: two steps of that name" for n in sorted({n for n in names if names.count(n) > 1})]
+    for index, step in enumerate(steps):
+        for need in step["needs"]:
+            if need not in names[:index]:
+                problems.append(f"{step['name']}: needs {need}, which is not an earlier step")
+    if problems:
+        raise SystemExit("scale.json is incomplete:\n  " + "\n  ".join(problems))
+    return len(tools), len(reasons)
 
 
 def time_step(step, options):
@@ -377,11 +414,12 @@ def time_step(step, options):
     binary = Path(options.port).resolve()
     spec = {
         "scale": True,
-        "reps": 0,
+        "reps": options.scale_reps or step.get("reps", 3),
         "timeout": options.timeout or step.get("timeout", 10800),
         "out": {side: f"/work/result/{side}" for side in ("oracle", "port")},
         "warm": [f"/work/in/{n}/{f.name}" for n in step["needs"] for f in (results / n / "oracle").iterdir()
-                 if f.is_file()],
+                 if f.is_file()]
+                + [f"/work/data/{name}" for name in sorted(set(re.findall(r"\{data\}/(\S+)", step["args"])))],
         "oracle": scale_command(step, "oracle", binary, options.threads),
         "port": scale_command(step, "port", binary, options.threads),
     }
@@ -492,6 +530,9 @@ def scale(options):
                                  cwd=REPO).stdout.strip(),
         "steps": {},
     }
+    measured, reasons = check_catalogue()
+    print(f"scale.json: {measured} tools as steps, {reasons} with a reason", flush=True)
+    needed = {n for s in json.loads(SCALE.read_text())["steps"] for n in s["needs"]}
     for step in scale_steps(options.step):
         name = step["name"]
         print(f"{name}: running", flush=True)
@@ -501,7 +542,8 @@ def scale(options):
             print(f"{name}: not measured, {reason}", flush=True)
             continue
         here = results / name
-        entry = {"oracle": raw["cold"]["oracle"][0], "port": raw["cold"]["port"][0], "host": raw["host"]}
+        entry = {"tool": step.get("tool", name), "oracle": median_run(raw["cold"]["oracle"]),
+                 "port": median_run(raw["cold"]["port"]), "runs": raw["cold"], "host": raw["host"]}
         for side, run in (("oracle", entry["oracle"]), ("port", entry["port"])):
             if run["exit"] != 0:
                 run["log_tail"] = log_tail(here / f"{side}.log")
@@ -511,6 +553,9 @@ def scale(options):
         if entry["oracle"]["exit"] == 0 and entry["port"]["exit"] == 0:
             entry["files"] = compare_step(here)
             entry["bytes_equal"] = all(f["equal"] for f in entry["files"].values())
+        if name not in needed:
+            # No later step reads it: 190 steps' outputs would not fit on a runner's disk.
+            shutil.rmtree(here / "oracle", ignore_errors=True)
         document["steps"][name] = entry
         document.setdefault("host", raw["host"])
         print(f"{name}: {scale_row(name, entry)}", flush=True)
@@ -522,6 +567,16 @@ def scale(options):
         Path(options.out).write_text(json.dumps(document, indent=1, sort_keys=True) + "\n")
     scale_table(document)
     return 0
+
+
+def median_run(runs):
+    """One side's repetitions as one run: the median of each number, the worst exit."""
+    failed = [r for r in runs if r["exit"] != 0]
+    if failed:
+        return dict(failed[0], reps=len(runs))
+    return {"wall": median([r["wall"] for r in runs]), "cpu": median([r["cpu"] for r in runs]),
+            "rss_kib": median([r["rss_kib"] for r in runs]), "exit": 0, "timed_out": False,
+            "oom_killed": False, "reps": len(runs)}
 
 
 def side_state(run):
@@ -555,21 +610,82 @@ def scale_row(name, entry):
             f"{cell(o, 'rss_kib')} | {cell(p, 'rss_kib')} | {verdict} | {target(o, p)} |")
 
 
-def target(o, p):
-    """The S.7 target: port CPU <= GATK's AND port peak RSS <= GATK's, at equal threads.
+# The bar every tool is held to at scale: half GATK's CPU and a quarter of its peak RSS.
+CPU_BAR, RSS_BAR = 0.5, 0.25
 
-    Beating one and not the other is flagged red: no trading memory for time or back.
-    """
+
+def target(o, p):
+    """CPU (user + system) at most half GATK's and peak RSS at most a quarter, at equal threads."""
     if side_state(o):
         return "-"
     if side_state(p):
         return "❌ port did not finish"
-    cpu, rss = p["cpu"] <= o["cpu"], p["rss_kib"] <= o["rss_kib"]
+    cpu = p["cpu"] <= CPU_BAR * o["cpu"]
+    rss = p["rss_kib"] <= RSS_BAR * o["rss_kib"]
     if cpu and rss:
         return "✅ met"
     if cpu or rss:
         return f"🔴 {'CPU' if cpu else 'RSS'} only"
     return "❌ neither"
+
+
+INDEXES = (".bai", ".tbi", ".crai", ".sbi", ".idx", ".csi")
+
+
+def differs(entry):
+    """How a step's outputs differ, or None where only the deflater does.
+
+    GATK without GKL (any non-x86 CPU) deflates with the JDK's zlib, so a BGZF output whose
+    inflated stream is GATK's, and the index of it whose offsets follow the blocks, differ in bytes
+    and not in content. That is a ratio worth reading; any other difference is a divergence.
+    """
+    unequal = {n: f for n, f in entry.get("files", {}).items() if not f["equal"]}
+    inflated_equal = [n for n, f in unequal.items() if f.get("first_difference") is None]
+    deflate_only = all("missing_on" not in f for f in unequal.values()) and all(
+        n in inflated_equal or n.endswith(INDEXES) for n in unequal)
+    if inflated_equal and deflate_only:
+        return None
+    return "bytes differ"
+
+
+def rank(paths):
+    """The ranked table for targets.md: worst peak RSS ratio first, a port that failed above all.
+
+    Each measurement is one CPU's merged scale run; a step measured on several CPUs gets a row per
+    CPU. A row without a ratio (either side failed, or the bytes differ) ranks above every ratio,
+    since no ratio is a claim until the port finishes with GATK's bytes. Of a step measured twice
+    on one CPU, the measurement in the later path is kept.
+    """
+    rows = []
+    for path in paths:
+        document = json.loads(Path(path).read_text())
+        host = document.get("host") or {}
+        where = f"{host.get('machine', '?')} {host.get('cpu') or ''}".strip()
+        for name, entry in document["steps"].items():
+            if "reason" in entry:
+                rows.append((3, 0, name, where, f"| {name} | {where} | not run: {entry['reason']} |"))
+                continue
+            o, p = entry["oracle"], entry["port"]
+            if side_state(o):
+                rows.append((2, 0, name, where, f"| {name} | {where} | GATK did not finish ({side_state(o)}) |"))
+                continue
+            cpu = p["cpu"] / o["cpu"] if o["cpu"] else None
+            rss = p["rss_kib"] / o["rss_kib"] if o["rss_kib"] else None
+            state = side_state(p) or (differs(entry) if entry.get("bytes_equal") is False else None)
+            key = (0, -o["rss_kib"]) if state else (1, -(rss or 0))
+            reps = f"{min(o.get('reps', 1), p.get('reps', 1))}"
+            cells = [f"{o['cpu']:.0f} s", f"{p['cpu']:.0f} s", f"{cpu:.2f}" if cpu else "-",
+                     f"{o['rss_kib'] / 1048576:.2f} GiB", f"{p['rss_kib'] / 1048576:.2f} GiB",
+                     f"{rss:.2f}" if rss else "-", reps, state or target(o, p)]
+            rows.append((*key, name, where, f"| {name} | {where} | " + " | ".join(cells) + " |"))
+    print("| step | host | GATK CPU | port CPU | CPU ratio | GATK peak RSS | port peak RSS | "
+          "RSS ratio | reps | CPU ≤ 0.5x and RSS ≤ 0.25x |")
+    print("|---|---|---:|---:|---:|---:|---:|---:|---:|:-:|")
+    # A step measured again on the same CPU (a rerun after a fix) replaces its earlier row.
+    latest = {(row[2], row[3]): row for row in rows}
+    for row in sorted(latest.values(), key=lambda r: r[:4]):
+        print(row[4])
+    return 0
 
 
 def host_line(host):
@@ -629,12 +745,22 @@ def main(argv):
     parser.add_argument("--keep-port-output", action="store_true", help="with --scale: keep the port's files")
     parser.add_argument("--platform", help="with --scale: the container platform (default linux/amd64)")
     parser.add_argument("--across", nargs="+", help="scale measurements from other CPUs: do the bytes agree?")
+    parser.add_argument("--image", help="with --scale: the oracle image (default gatk-rs-oracle:4.7.0.0)")
+    parser.add_argument("--rank", nargs="+", help="merged scale measurements: the ranked table, worst RSS first")
+    parser.add_argument("--check", action="store_true", help="every tool is a scale step or has a reason")
+    parser.add_argument("--scale-reps", type=int, help="with --scale: runs per side (default: the step's, else 3)")
     options = parser.parse_args(argv)
 
     if options.merge:
         return merge(options.merge, options.out or "speed.json")
     if options.across:
         return across(options.across)
+    if options.rank:
+        return rank(options.rank)
+    if options.check:
+        measured, reasons = check_catalogue()
+        print(f"scale.json: {measured} tools as steps, {reasons} with a written reason")
+        return 0
     if options.compare:
         return compare(*options.compare)
     if not options.port:
@@ -643,6 +769,7 @@ def main(argv):
         if not options.data:
             parser.error("--scale needs --data")
         run_array.PLATFORM = options.platform or run_array.PLATFORM
+        run_array.IMAGE = options.image or run_array.IMAGE
         return scale(options)
     options.timeout = options.timeout or 600
 
