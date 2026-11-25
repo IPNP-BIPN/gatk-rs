@@ -9,7 +9,7 @@
  *
  * Output:
  *
- *     input\t<fixture path>\t<its bytes, base64>
+ *     input\t<input path>\t<its bytes, base64>
  *     argv\t<case>\t<argument>\t<argument>...
  *     error\t<case>\t<the exception class>:<its message>
  *     file\t<case>\t<file name>\t<its bytes, base64>
@@ -44,12 +44,75 @@ public class PortLimitationDump {
         run("jointgermlinecnvsegmentation-no-reference", "JointGermlineCNVSegmentation", "-V",
                 "absent.vcf", "--pedigree", "absent.ped", "-O", "{out}/out.vcf");
 
+        // DownsampleByDuplicateSet reads MI lazily: a read's number when it arrives, its strand
+        // only when it starts a set or when the set it joined is closed by a later molecule, and
+        // never for the reads of the last set after its first. What a malformed tag throws is the
+        // JVM's own exception from the place it is first read, and `closeTool` still closes the
+        // writer, so the sets applied before the failure are written.
+        downsample("mi-missing-first", read(1, 100, null));
+        downsample("mi-not-a-number", read(1, 100, "MI:Z:x/A"));
+        downsample("mi-no-strand-first", read(1, 100, "MI:Z:1"));
+        downsample("mi-slash-only", read(1, 100, "MI:Z:/"));
+        downsample("mi-integer", read(1, 100, "MI:i:3"));
+        downsample("mi-missing-later", read(1, 100, "MI:Z:1/A"), read(1, 110, "MI:Z:1/B"),
+                read(1, 120, null));
+        downsample("mi-no-strand-in-a-closed-set", read(1, 100, "MI:Z:1/A"), read(1, 110, "MI:Z:1/B"),
+                read(1, 120, "MI:Z:2/A"), read(1, 130, "MI:Z:2"), read(1, 140, "MI:Z:3/A"),
+                read(1, 150, "MI:Z:3/B"));
+        downsample("mi-no-strand-in-the-last-set", read(1, 100, "MI:Z:1/A"), read(1, 110, "MI:Z:1/B"),
+                read(1, 120, "MI:Z:2/A"), read(1, 130, "MI:Z:2"));
+        downsample("mi-another-contig", read(1, 100, "MI:Z:1/A"), read(2, 100, "MI:Z:1/B"));
+        downsample("mi-not-sorted", read(1, 100, "MI:Z:1/A"), read(1, 110, "MI:Z:1/B"),
+                read(1, 120, "MI:Z:3/A"), read(1, 130, "MI:Z:3/B"), read(1, 140, "MI:Z:2/A"));
+
         for (final String input : INPUTS) {
             final Path path = Paths.get(input);
             if (Files.isRegularFile(path)) {
                 System.out.printf("input\t%s\t%s%n", input, base64(path));
             }
         }
+    }
+
+    /** A DownsampleByDuplicateSet case over a BAM of the given reads. */
+    static void downsample(final String name, final String... reads) throws Exception {
+        final String input = bam(name, reads);
+        run(name, "DownsampleByDuplicateSet", "-I", input, "--fraction-to-keep", "1.0",
+                "-O", "{out}/out.bam");
+    }
+
+    /** One mapped read on chr1 or chr2 in the one read group, its MI tag given whole (or none). */
+    static String read(final int contig, final int start, final String tag) {
+        return String.join("\t", "r" + contig + "_" + start, "0", "chr" + contig,
+                String.valueOf(start), "60", "10M", "*", "0", "0", "ACGTACGTAC", "IIIIIIIIII", "RG:Z:rg")
+                + (tag == null ? "" : "\t" + tag);
+    }
+
+    /**
+     * The reads as a coordinate-sorted BAM, written by GATK's own PrintReads so the compression
+     * level is GATK's: htsjdk writing first would fix `Defaults` at 5 for the rest of the JVM.
+     */
+    static String bam(final String name, final String... reads) throws Exception {
+        final Path dir = Paths.get("inputs");
+        Files.createDirectories(dir);
+        final Path sam = dir.resolve(name + ".sam");
+        final StringBuilder text = new StringBuilder(
+                "@HD\tVN:1.6\tSO:coordinate\n@SQ\tSN:chr1\tLN:10000\n@SQ\tSN:chr2\tLN:10000\n@RG\tID:rg\tSM:sample\n");
+        for (final String read : reads) {
+            text.append(read).append('\n');
+        }
+        Files.writeString(sam, text.toString(), StandardCharsets.UTF_8);
+        final String bam = dir.resolve(name + ".bam").toString();
+        final PrintStream original = System.out;
+        try {
+            System.setOut(new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8));
+            new org.broadinstitute.hellbender.Main().instanceMain(
+                    new String[] {"PrintReads", "-I", sam.toString(), "-O", bam});
+        } finally {
+            System.setOut(original);
+        }
+        INPUTS.add(bam);
+        INPUTS.add(dir.resolve(name + ".bai").toString());
+        return bam;
     }
 
     static void run(final String name, final String... command) throws Exception {
