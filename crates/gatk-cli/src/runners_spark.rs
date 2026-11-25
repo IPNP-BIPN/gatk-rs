@@ -3053,6 +3053,13 @@ pub fn print_reads_spark(parser: &Parser) -> Outcome {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
     let filter = read_filter(parser, &filters, &header)?;
+    if streams_spark_output(parser, &output) {
+        let records = gatk_tools::read_walker::traverse_iter(&source, &intervals, false, &filter)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?
+            .map(|record| record.map_err(|error| Thrown::user(format!("{error:?}"))));
+        write_spark_streamed(parser, &header, records, &output)?;
+        return Ok(None);
+    }
     let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
     // `writeReads(ctx, output, reads, header, false)`: PrintReadsSpark asks for no sort.
@@ -3976,6 +3983,18 @@ pub fn extract_original_alignment_records_by_name_spark(parser: &Parser) -> Outc
         .collect();
     let invert = flag(parser, "invert-match");
     let keep_all: Filter = Box::new(|_| true);
+    if streams_spark_output(parser, &output) {
+        let kept = gatk_tools::read_walker::traverse_iter(&source, &intervals, false, &keep_all)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?
+            .map(|record| record.map_err(|error| Thrown::user(format!("{error:?}"))))
+            .filter(|record| {
+                record
+                    .as_ref()
+                    .map_or(true, |record| names.contains(&record.read_name) != invert)
+            });
+        write_spark_streamed(parser, &header, kept, &output)?;
+        return Ok(None);
+    }
     let records = gatk_tools::read_walker::traverse(&source, &intervals, &keep_all)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
     let kept: Vec<BamRecord> = records
@@ -4312,16 +4331,7 @@ pub fn compare_duplicates_spark(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
-/// The reads and headers a Spark metrics tool aggregates, and the `-O` it saves to.
-fn spark_metric_reads(
-    parser: &Parser,
-    tool: &str,
-) -> Result<(Vec<BamRecord>, Vec<String>), Thrown> {
-    let start = spark_startup(parser, tool)?;
-    spark_metric_reads_of(parser, tool, &start)
-}
-
-/// [`spark_metric_reads`] past the startup, for a tool with a check of its own between the two.
+/// The reads and headers a Spark metrics tool aggregates, past a startup the tool checks itself.
 fn spark_metric_reads_of(
     parser: &Parser,
     tool: &str,
@@ -4342,6 +4352,40 @@ fn spark_metric_reads_of(
         format!("Started on: {}", java_display_now()),
     ];
     Ok((records, headers))
+}
+
+/// [`spark_metric_reads_of`] fed to `compute` a read at a time rather than held: the first refusal
+/// of the traversal, as before, or the text `compute` made of every read.
+fn spark_metric_text(
+    parser: &Parser,
+    tool: &str,
+    compute: impl FnOnce(&mut dyn Iterator<Item = BamRecord>, &[String]) -> String,
+) -> Result<String, Thrown> {
+    let SparkStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = spark_startup(parser, tool)?;
+    let filter = read_filter(parser, &filters, &header)?;
+    let headers = vec![
+        crate::command_line::expanded(tool, parser),
+        format!("Started on: {}", java_display_now()),
+    ];
+    let mut failure = None;
+    let mut reads = gatk_tools::read_walker::traverse_iter(&source, &intervals, false, &filter)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?
+        .map_while(|record| {
+            record
+                .map_err(|error| failure = Some(Thrown::user(format!("{error:?}"))))
+                .ok()
+        });
+    let text = compute(&mut reads, &headers);
+    drop(reads);
+    match failure {
+        Some(thrown) => Err(thrown),
+        None => Ok(text),
+    }
 }
 
 /// `MetricsUtils.saveMetrics`. `-O` is optional and nothing checks it: without one,
@@ -4371,52 +4415,54 @@ fn refuse_spark_chart(parser: &Parser) -> Result<(), Thrown> {
 
 /// `MeanQualityByCycleSpark.runTool`.
 pub fn mean_quality_by_cycle_spark(parser: &Parser) -> Outcome {
-    let (records, headers) = spark_metric_reads(parser, "MeanQualityByCycleSpark")?;
-    refuse_spark_chart(parser)?;
     let (pf, aligned) = (
         flag(parser, "pfReadsOnly"),
         flag(parser, "alignedReadsOnly"),
     );
-    let kept = records
-        .iter()
-        .filter(|record| gatk_tools::spark_metrics::metrics_read_filter(record, pf, aligned));
-    let text = gatk_tools::spark_metrics::mean_quality_by_cycle(kept, &headers);
+    let text = spark_metric_text(parser, "MeanQualityByCycleSpark", |reads, headers| {
+        let kept = reads
+            .filter(|record| gatk_tools::spark_metrics::metrics_read_filter(record, pf, aligned));
+        gatk_tools::spark_metrics::mean_quality_by_cycle(kept, headers)
+    })?;
+    refuse_spark_chart(parser)?;
     save_spark_metrics(parser, &text)?;
     Ok(None)
 }
 
 /// `QualityScoreDistributionSpark.runTool`.
 pub fn quality_score_distribution_spark(parser: &Parser) -> Outcome {
-    let (records, headers) = spark_metric_reads(parser, "QualityScoreDistributionSpark")?;
-    refuse_spark_chart(parser)?;
     let (pf, aligned) = (
         flag(parser, "pfReadsOnly"),
         flag(parser, "alignedReadsOnly"),
     );
-    let kept = records
-        .iter()
-        .filter(|record| gatk_tools::spark_metrics::metrics_read_filter(record, pf, aligned));
-    let text = gatk_tools::spark_metrics::quality_score_distribution(
-        kept,
-        flag(parser, "includeNoCalls"),
-        &headers,
-    );
+    let no_calls = flag(parser, "includeNoCalls");
+    let text = spark_metric_text(parser, "QualityScoreDistributionSpark", |reads, headers| {
+        let kept = reads
+            .filter(|record| gatk_tools::spark_metrics::metrics_read_filter(record, pf, aligned));
+        gatk_tools::spark_metrics::quality_score_distribution(kept, no_calls, headers)
+    })?;
+    refuse_spark_chart(parser)?;
     save_spark_metrics(parser, &text)?;
     Ok(None)
 }
 
 /// `CollectBaseDistributionByCycleSpark.runTool`.
 pub fn collect_base_distribution_by_cycle_spark(parser: &Parser) -> Outcome {
-    let (records, headers) = spark_metric_reads(parser, "CollectBaseDistributionByCycleSpark")?;
-    refuse_spark_chart(parser)?;
     let (pf, aligned) = (
         flag(parser, "pf-reads-only"),
         flag(parser, "aligned-reads-only"),
     );
-    let kept = records
-        .iter()
-        .filter(|record| gatk_tools::spark_metrics::metrics_read_filter(record, pf, aligned));
-    let text = gatk_tools::spark_metrics::base_distribution_by_cycle(kept, &headers);
+    let text = spark_metric_text(
+        parser,
+        "CollectBaseDistributionByCycleSpark",
+        |reads, headers| {
+            let kept = reads.filter(|record| {
+                gatk_tools::spark_metrics::metrics_read_filter(record, pf, aligned)
+            });
+            gatk_tools::spark_metrics::base_distribution_by_cycle(kept, headers)
+        },
+    )?;
+    refuse_spark_chart(parser)?;
     save_spark_metrics(parser, &text)?;
     Ok(None)
 }
@@ -4425,12 +4471,12 @@ pub fn collect_base_distribution_by_cycle_spark(parser: &Parser) -> Outcome {
 /// a coordinate-sorted input because the default `getExpectedSortOrder` says so and nothing it
 /// computes depends on it.
 pub fn collect_quality_yield_metrics_spark(parser: &Parser) -> Outcome {
-    let (records, headers) = spark_metric_reads(parser, "CollectQualityYieldMetricsSpark")?;
-    let text = gatk_tools::spark_metrics::quality_yield(
-        records.iter(),
-        flag(parser, "use-original-qualities"),
-        &headers,
-    );
+    let original = flag(parser, "use-original-qualities");
+    let text = spark_metric_text(
+        parser,
+        "CollectQualityYieldMetricsSpark",
+        |reads, headers| gatk_tools::spark_metrics::quality_yield(reads, original, headers),
+    )?;
     save_spark_metrics(parser, &text)?;
     Ok(None)
 }
@@ -4982,6 +5028,38 @@ fn write_spark_reads(
         parts_of([records]),
         output,
     )
+}
+
+/// Whether an unsorted write to `output` can take its reads as they come. A sharded output writes
+/// its parts as it goes and a CRAM refuses its version only once every read is read, so a refusal
+/// partway would leave a part behind, or come before the version's; both keep the list.
+fn streams_spark_output(parser: &Parser, output: &str) -> bool {
+    !flag(parser, "sharded-output") && !output.ends_with(".cram")
+}
+
+/// [`write_spark_reads`] unsorted, the reads taken as they come, for an output
+/// [`streams_spark_output`] accepts: one partition, as `parts_of` makes of the list.
+///
+/// The list was read whole before a byte was written, so a traversal refusal is still the first
+/// one, and a refusal of the writer's own first reads the rest, where a later traversal refusal
+/// wins. Either leaves no output: the writer renames its scratch file only at the end.
+fn write_spark_streamed(
+    parser: &Parser,
+    header: &SamHeader,
+    mut records: impl Iterator<Item = Result<BamRecord, Thrown>>,
+    output: &str,
+) -> Result<(), Thrown> {
+    let (header, sort_order) = disq_header(header);
+    let read_failed = std::cell::Cell::new(false);
+    let parts = std::iter::once(Ok((0, None))).chain(records.by_ref().map(|record| {
+        record
+            .map(|record| (0, Some(std::borrow::Cow::Owned(record))))
+            .inspect_err(|_| read_failed.set(true))
+    }));
+    match write_spark_partitions(parser, &header, sort_order.as_deref(), parts, output) {
+        Err(thrown) if !read_failed.get() => Err(records.find_map(Result::err).unwrap_or(thrown)),
+        result => result,
+    }
 }
 
 /// [`write_spark_reads`] sorting to the header, the reads taken as they come: they are all taken,
@@ -5538,12 +5616,14 @@ pub fn flag_stat_spark(parser: &Parser) -> Outcome {
         filters,
     } = spark_startup(parser, "FlagStatSpark")?;
     let filter = read_filter(parser, &filters, &header)?;
-    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+    // A read at a time, as `FlagStat` reads them: a refusal partway is the same refusal.
+    let records = gatk_tools::read_walker::traverse_iter(&source, &intervals, false, &filter)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
     let mut status = gatk_tools::counting_walkers::FlagStatus::default();
-    for record in &records {
+    for record in records {
+        let record = record.map_err(|error| Thrown::user(format!("{error:?}")))?;
         status.add(
-            record,
+            &record,
             contig_name(&header, record.reference_index),
             contig_name(&header, record.mate_reference_index),
         );
