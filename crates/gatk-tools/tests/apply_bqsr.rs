@@ -220,6 +220,27 @@ fn every_output_file_is_byte_identical() {
             apply_bqsr::apply_bqsr(&source, &recal, &config.arguments, &options, &filter)
                 .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
 
+        // The streaming writer must give the same bytes as the in-memory one.
+        let streamed_path = dir.join(format!("{label}.streamed.bam"));
+        let streamed = apply_bqsr::apply_bqsr_to(
+            &streamed_path,
+            &source,
+            &recal,
+            &config.arguments,
+            &options,
+            &filter,
+            htsjdk_bgzf::DEFAULT_COMPRESSION_LEVEL,
+            htsjdk_bgzf::Deflater::Jdk,
+        )
+        .unwrap_or_else(|error| panic!("{label}: {}", error.message()))
+        .expect("the streamed BAM is written");
+        assert_eq!(
+            std::fs::read(&streamed_path).unwrap(),
+            out,
+            "{label}: streamed BAM"
+        );
+        assert_eq!(streamed.index, index, "{label}: streamed .bai");
+
         let expected = corpus::decode_base64(expected_base64);
         assert_eq!(out.len(), expected.len(), "{label}: output length differs");
         if out != expected {
@@ -281,6 +302,36 @@ fn a_read_group_the_table_does_not_name_aborts_the_run() {
     .unwrap_err();
     assert!(matches!(error, ApplyBqsrError::Transform(_)), "{error:?}");
     assert_eq!(error.message(), message);
+
+    // Streamed, the same refusal, and nothing is left where the output would have been.
+    let output = dir.join("missing-read-group.streamed.bam");
+    let Err(error) = apply_bqsr::apply_bqsr_to(
+        &output,
+        &source,
+        &recal,
+        &config.arguments,
+        &Options::default(),
+        &filter,
+        htsjdk_bgzf::DEFAULT_COMPRESSION_LEVEL,
+        htsjdk_bgzf::Deflater::Jdk,
+    ) else {
+        panic!("the streamed run was not refused");
+    };
+    assert!(matches!(error, ApplyBqsrError::Transform(_)), "{error:?}");
+    assert_eq!(error.message(), message);
+    assert!(!output.exists());
+    assert_eq!(
+        std::fs::read_dir(&dir)
+            .unwrap()
+            .filter(|e| e
+                .as_ref()
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains("streamed"))
+            .count(),
+        0
+    );
 }
 
 /// The filters run before the transformer, so a dropped read is not in the output at all.
