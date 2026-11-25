@@ -56,7 +56,7 @@ now STATUS.md's cost column; the baseline stays in `baseline.json`):
 both directions, which is what an unchanged path does. The other 131 tools moved a median 7% cold
 and 10% steady, at most 45%, the same spread two runs of one commit showed in the baseline.
 
-## Scale K. The locus walkers held every read (`Pileup`, `PileupSpark`, `CallableLoci`, `CollectF1R2Counts`, `ASEReadCounter`, `GetPileupSummaries`)
+## Scale K. The locus walkers held every read (`Pileup`, `PileupSpark`, `CallableLoci`, `CollectF1R2Counts`, `ASEReadCounter`, `GetPileupSummaries`, `CollectAllelicCounts`, `CollectAllelicCountsSpark`)
 
 **Ratio.** At scale (chr20 30x BAM, the arguments of `tools/speed/scale.json`, linux/arm64, 6 GiB
 container):
@@ -69,13 +69,15 @@ container):
 | `Pileup` (10 Mb) | 122 s | 0.46 GiB | killed at 5.15 GiB |
 | `GetPileupSummaries` | 30 s | 3.80 GiB | refused `-V` and `-L` `.vcf.gz` |
 | `PileupSpark` (10 Mb) | 83 s | 2.90 GiB | killed at 5.98 GiB |
+| `CollectAllelicCounts` | 42 s | 1.12 GiB | refused `-L` `.vcf.gz` |
+| `CollectAllelicCountsSpark` | 249 s | 4.04 GiB | refused `-L` `.vcf.gz` |
 
 **Where the memory goes.** `read_walker::traverse` collects every read, and
 `locus_walker::traverse` every alignment context over them, before the tool looks at one;
 `Pileup` and `CallableLoci` also held each contig's whole reference. Natively, on 5 Mb of chr20,
 main holds 3 to 27 GB. `ASEReadCounter` and `GetPileupSummaries` also scanned every variant at
-every locus, which never finished on the whole contig, and `PileupSpark` ran the locus traversal
-over every read once per 10 kb shard.
+every locus, which never finished on the whole contig, and the two Spark tools ran the locus
+traversal over every read once per 10 kb shard.
 
 **The optimisation.** `locus_walker::for_each_streamed`: the reads come from `traverse_iter` and
 are cut into segments of 4096 at a strictly increasing start. A read that reaches a segment's cut
@@ -84,8 +86,8 @@ previous cut were already given. `OverlapCursor` and `EmptyLociCursor` are `-L`'
 empty loci over the same stream. It holds only without downsampling (`--max-depth-per-sample 0`,
 every tool's default); with it, the whole-list path runs as before. The reference is read a
 megabase at a time (`BaseWindow`), the sites are indexed by start, with each contig's longest span,
-and `CallableLoci`'s writer takes a locus at a time. `PileupSpark` streams over its shards as one
-interval list, and still refuses no read or a read longer than a shard through the whole list.
+and `CallableLoci`'s writer takes a locus at a time. The Spark tools stream over their shards as
+one interval list, and still refuse no read or a read longer than a shard through the whole list.
 `GetPileupSummaries` inflates a `.vcf.gz` given to `-V`, as `ASEReadCounter` already did (`-L`'s
 is #1564), and `CollectF1R2Counts` resolves each read group's sample once, where it compared the
 header's twelve 40-character ids for every pileup element (40% of its samples).
@@ -96,7 +98,7 @@ into it, and the pileup at that locus is built from the same reads in the same o
 bases are the contig query's. Any refusal of the streamed path (a read, a locus, an unsorted input,
 a tool's own) drops its output and runs the whole-list path, which refuses exactly as before.
 
-**The suites that prove it.** The locus walker's suites and the six tools' covering arrays, and
+**The suites that prove it.** The locus walker's suites and the eight tools' covering arrays, and
 two tests that compare the segmented traversal with the whole one: the fixture configurations
 for every segment size from 1 to 1000, and a synthetic BAM whose cigars (deletions, insertions,
 clips, skips) reach across the cuts, with and without empty loci. Natively, old against new, on
@@ -114,10 +116,13 @@ contig, no reference, `-L`, an output in a missing directory): the same exit, me
 | `GetPileupSummaries` (`-L` hapmap) | 5 Mb | 3.24 GB | 84 MB | 3.7 s | 3.2 s |
 | `PileupSpark` | 200 kb | 2.50 GB | 131 MB | 4.5 s | 1.7 s |
 | `PileupSpark` | 100 kb of reads, whole contig | 870 MB | 103 MB | 416 s | 0.2 s |
+| `CollectAllelicCounts` (`-L` hapmap) | 5 Mb | 3.51 GB | 70 MB | 3.1 s | 2.9 s |
+| `CollectAllelicCountsSpark` (`-L` hapmap) | 100 kb | 335 MB | 44 MB | 201 s | 0.1 s |
 
 Every output is main's byte for byte (`CollectF1R2Counts`' archive by its inflated files, which
 are also identical on the whole contig before and after the sample lookup). On the whole contig,
-against GATK at scale (the GATK column of the first table):
+against GATK at scale (the GATK column of the first table; `-L` is the hapmap VCF inflated until
+#1564 lands):
 
 | Tool | RSS | CPU | RSS ratio | CPU ratio |
 |---|---:|---:|---:|---:|
@@ -127,6 +132,8 @@ against GATK at scale (the GATK column of the first table):
 | `ASEReadCounter` (hapmap) | 212 MB | 88.0 s | 0.36 | 0.69 |
 | `GetPileupSummaries` | 304 MB | 37.4 s | 0.08 | 1.25 |
 | `PileupSpark` (10 Mb) | 144 MB | 33.3 s | 0.05 | 0.40 |
+| `CollectAllelicCounts` | 169 MB | 36.1 s | 0.15 | 0.86 |
+| `CollectAllelicCountsSpark` | 174 MB | 49.3 s | 0.04 | 0.20 |
 
 The RSS left is the reader's (about 100 MB on this base, a third of that with #1482) and, for
 `ASEReadCounter` and `GetPileupSummaries`, the whole variant file decoded. The CPU left is decoding and the pileup itself, the

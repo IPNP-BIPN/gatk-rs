@@ -3092,9 +3092,77 @@ pub fn collect_allelic_counts_spark(parser: &Parser) -> Outcome {
             .map_err(|error| Thrown::user(format!("{error:?}")))?;
 
     let filter = read_filter(parser, &filters, &header)?;
+    let shard_size = number_or(parser, "read-shard-size", 10000).max(1);
+    let options = gatk_tools::locus_walker::Options {
+        max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
+        emit_empty_loci: true,
+        ..gatk_tools::locus_walker::Options::default()
+    };
+
+    // A locus at a time over the shards, as `PileupSpark` does: with `--shuffle`, no read, a read
+    // longer than a shard, a sample refusal, a base the window cannot give, or any other refusal,
+    // the whole-list path below answers.
+    if !flag(parser, "shuffle") && gatk_tools::locus_walker::streams(&options) {
+        use gatk_tools::collect_allelic_counts as allelic;
+        let reads = gatk_tools::read_walker::traverse_iter(
+            &source,
+            &intervals,
+            false,
+            |record: &BamRecord| filter(record),
+        );
+        if let (Ok(reads), Ok(sample)) = (reads, sample_name(&header)) {
+            let shards: Vec<gatk_engine::interval::SimpleInterval> =
+                shards_of(&intervals, shard_size).collect();
+            let minimum_base_quality = number_or(parser, "minimum-base-quality", 20).max(0) as u8;
+            let (any, oversized) = (std::cell::Cell::new(false), std::cell::Cell::new(false));
+            let reads = reads.take_while(|read| {
+                if let Ok(record) = read {
+                    any.set(true);
+                    let size = record.alignment_end() - record.alignment_start + 1;
+                    if !record.read_unmapped() && size > shard_size {
+                        oversized.set(true);
+                    }
+                }
+                !oversized.get()
+            });
+            let mut window = BaseWindow::default();
+            let mut counts = Vec::new();
+            let done = gatk_tools::locus_walker::for_each_streamed(
+                reads,
+                &header,
+                None,
+                Some(&shards),
+                options,
+                &|_| true,
+                gatk_tools::locus_walker::SEGMENT_READS,
+                |one| {
+                    let Ok(Some(base)) =
+                        window.base_at(&mut reference, &one.context.contig, one.context.position)
+                    else {
+                        return false;
+                    };
+                    counts.extend(allelic::collect_at_locus(
+                        base,
+                        &one.context.pileup,
+                        &one.context.contig,
+                        one.context.position,
+                        minimum_base_quality,
+                    ));
+                    true
+                },
+            );
+            if done.is_ok() && any.get() && !oversized.get() {
+                write_file(
+                    &output,
+                    allelic::write(&header.sequences, &sample, &counts).as_bytes(),
+                )?;
+                return Ok(None);
+            }
+        }
+    }
+
     let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
-    let shard_size = number_or(parser, "read-shard-size", 10000).max(1);
     no_reads_refusal(parser, &records, &intervals, shard_size)?;
     let sample = sample_name(&header)?;
     oversized_read_refusal(parser, &records, &header, shard_size)?;
@@ -3120,11 +3188,7 @@ pub fn collect_allelic_counts_spark(parser: &Parser) -> Outcome {
                     &header,
                     None,
                     Some(std::slice::from_ref(&shard)),
-                    gatk_tools::locus_walker::Options {
-                        max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
-                        emit_empty_loci: true,
-                        ..gatk_tools::locus_walker::Options::default()
-                    },
+                    options,
                     &|_| true,
                 )
                 .map_err(|error| Thrown::user(format!("{error:?}")))?,

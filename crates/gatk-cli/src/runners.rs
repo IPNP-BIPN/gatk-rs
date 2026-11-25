@@ -4601,29 +4601,71 @@ pub fn collect_allelic_counts(parser: &Parser) -> Outcome {
         .unwrap_or_default();
 
     let filter = read_filter(parser, &filters, &header)?;
+    let options = gatk_tools::locus_walker::Options {
+        max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
+        // `emitEmptyLoci()` is TRUE on this tool, which is what makes the table a row per
+        // POSITION of the interval rather than a row per pileup: a locus no read reaches is
+        // written with zero counts and an `N` alternate. Measured on this tool's array, where
+        // the reference wrote 5,505 rows over `chr1:501-6000` and the port wrote seventy-five.
+        emit_empty_loci: true,
+        ..gatk_tools::locus_walker::Options::default()
+    };
+    let bounds = if intervals.is_empty() {
+        None
+    } else {
+        Some(&intervals[..])
+    };
+
+    // A locus at a time when the traversal allows it, the reference a window at a time; a locus
+    // the window cannot answer, and any refusal, leaves the table to the whole-list path below.
+    if gatk_tools::locus_walker::streams(&options) {
+        use gatk_tools::collect_allelic_counts as allelic;
+        let minimum_base_quality = number_or(parser, "minimum-base-quality", 20).max(0) as u8;
+        let reads =
+            gatk_tools::read_walker::traverse_iter(&source, &intervals, false, &|_: &BamRecord| {
+                true
+            })
+            .map_err(reads_traversal_error)?;
+        let mut window = BaseWindow::default();
+        let mut counts = Vec::new();
+        let done = gatk_tools::locus_walker::for_each_streamed(
+            reads,
+            &header,
+            None,
+            bounds,
+            options,
+            &filter,
+            gatk_tools::locus_walker::SEGMENT_READS,
+            |one| {
+                let Ok(Some(base)) =
+                    window.base_at(&mut reference, &one.context.contig, one.context.position)
+                else {
+                    return false;
+                };
+                counts.extend(allelic::collect_at_locus(
+                    base,
+                    &one.context.pileup,
+                    &one.context.contig,
+                    one.context.position,
+                    minimum_base_quality,
+                ));
+                true
+            },
+        );
+        if done.is_ok() {
+            write_file(
+                &output,
+                allelic::write(&header.sequences, &sample, &counts).as_bytes(),
+            )?;
+            return Ok(None);
+        }
+    }
+
     let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
         .map_err(reads_traversal_error)?;
-    let applied = gatk_tools::locus_walker::traverse(
-        &records,
-        &header,
-        None,
-        if intervals.is_empty() {
-            None
-        } else {
-            Some(&intervals)
-        },
-        gatk_tools::locus_walker::Options {
-            max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
-            // `emitEmptyLoci()` is TRUE on this tool, which is what makes the table a row per
-            // POSITION of the interval rather than a row per pileup: a locus no read reaches is
-            // written with zero counts and an `N` alternate. Measured on this tool's array, where
-            // the reference wrote 5,505 rows over `chr1:501-6000` and the port wrote seventy-five.
-            emit_empty_loci: true,
-            ..gatk_tools::locus_walker::Options::default()
-        },
-        &filter,
-    )
-    .map_err(locus_traversal_error)?;
+    let applied =
+        gatk_tools::locus_walker::traverse(&records, &header, None, bounds, options, &filter)
+            .map_err(locus_traversal_error)?;
 
     allelic_counts_table(parser, &header, &mut reference, &applied, &sample, &output)
 }
