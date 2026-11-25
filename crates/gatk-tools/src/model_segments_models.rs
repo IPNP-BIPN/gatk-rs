@@ -1351,3 +1351,97 @@ fn merge_similar_segments(
     }
     merged
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `hetLogLikelihood` as written before its terms were remembered, straight through.
+    fn uncached(parameters: &GlobalParameters, minor_fraction: f64, het: &Het) -> f64 {
+        let alpha = parameters.alpha();
+        let beta = parameters.beta();
+        let pi = parameters.outlier_probability;
+
+        let log_pi = af_log(pi);
+        let log_not_pi = af_log((1.0 - pi) / 2.0);
+        let logc_common = alpha * af_log(beta) - jmath::gamma::log_gamma(alpha);
+        let major_fraction = 1.0 - minor_fraction;
+        let log_minor = af_log(minor_fraction);
+        let log_major = af_log(major_fraction);
+
+        let a = het.alt_count;
+        let r = het.ref_count;
+        let n = a + r;
+        let (af, rf, nf) = (f64::from(a), f64::from(r), f64::from(n));
+
+        let lambda0_alt = bias_posterior_mode(alpha, beta, minor_fraction, a, r);
+        let kappa_alt = bias_posterior_curvature(alpha, minor_fraction, r, n, lambda0_alt);
+        let rho_alt = java_max(1.0 - kappa_alt * lambda0_alt * lambda0_alt, AF_EPSILON);
+        let tau_alt = java_max(-kappa_alt * lambda0_alt, AF_EPSILON);
+        let logc_alt = logc_common
+            + af * log_minor
+            + rf * log_major
+            + (rf + alpha - rho_alt) * af_log(lambda0_alt)
+            + (tau_alt - beta) * lambda0_alt
+            - nf * af_log(minor_fraction + major_fraction * lambda0_alt);
+        let alt_minor =
+            log_not_pi + logc_alt + jmath::gamma::log_gamma(rho_alt) - rho_alt * af_log(tau_alt);
+
+        let lambda0_ref = bias_posterior_mode(alpha, beta, major_fraction, a, r);
+        let kappa_ref = bias_posterior_curvature(alpha, major_fraction, r, n, lambda0_ref);
+        let rho_ref = java_max(1.0 - kappa_ref * lambda0_ref * lambda0_ref, AF_EPSILON);
+        let tau_ref = java_max(-kappa_ref * lambda0_ref, AF_EPSILON);
+        let logc_ref = logc_common
+            + af * log_major
+            + rf * log_minor
+            + (rf + alpha - rho_ref) * af_log(lambda0_ref)
+            + (tau_ref - beta) * lambda0_ref
+            - nf * af_log(major_fraction + minor_fraction * lambda0_ref);
+        let ref_minor =
+            log_not_pi + logc_ref + jmath::gamma::log_gamma(rho_ref) - rho_ref * af_log(tau_ref);
+
+        let binomial = binomial_coefficient_log(n, a);
+        let outlier = log_pi - jmath::math::log(f64::from(a + r + 1)) - binomial;
+        log_sum_exp(&[alt_minor, ref_minor, outlier])
+    }
+
+    /// The remembered terms give the bits the straight computation gives: over more distinct keys
+    /// than any cache has slots, keys seen again after others evicted them, and runs where only
+    /// the outlier probability moves, as its sampler does.
+    #[test]
+    fn the_remembered_likelihood_is_the_computed_one() {
+        let hets: Vec<Het> = (0..90)
+            .map(|k| Het {
+                contig: "chr1".to_string(),
+                position: k,
+                ref_count: (k * 7) % 61,
+                alt_count: (k * 13) % 47 + (k % 3),
+            })
+            .collect();
+        let mut checked = 0;
+        for round in 0..2 {
+            for pi in [0.0, 1e-3, 0.02, 0.07, 0.1] {
+                for (b, mean_bias) in [0.7, 1.0, 1.13].iter().enumerate() {
+                    for minor_fraction in [0.0, 0.05, 0.31, 0.5] {
+                        let parameters = GlobalParameters {
+                            mean_bias: *mean_bias,
+                            bias_variance: 0.001 + 0.01 * (b + round) as f64,
+                            outlier_probability: pi,
+                        };
+                        for het in &hets {
+                            let ours = het_log_likelihood(&parameters, minor_fraction, het);
+                            let theirs = uncached(&parameters, minor_fraction, het);
+                            assert_eq!(
+                                ours.to_bits(),
+                                theirs.to_bits(),
+                                "{parameters:?} {minor_fraction} {het:?}"
+                            );
+                            checked += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert!(checked > 4096 * 2, "more keys than slots, twice over");
+    }
+}
