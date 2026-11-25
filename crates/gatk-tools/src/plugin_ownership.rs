@@ -458,6 +458,9 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
             "NotDuplicateReadFilter",
             "MappingQualityReadFilter",
         ]),
+        // `ASEReadCounter.getDefaultReadFilters` builds its eight from an empty list: no
+        // wellformed filter, and duplicates never reach the pileup.
+        "ASEReadCounter" => Some(&crate::ase_read_counter::DEFAULT_READ_FILTERS),
         "Mutect2" | "GetNormalArtifactData" | "CollectF1R2Counts" => {
             Some(&crate::get_normal_artifact_data::STANDARD_MUTECT2_READ_FILTERS)
         }
