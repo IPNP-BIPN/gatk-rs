@@ -95,7 +95,7 @@ fn write_bcf(input: &str, output: &str, filtered: &str, index: bool) -> Result<(
                 .genotype(&genotype.sample_name)
                 .and_then(|filtered| filtered.filters.clone());
         }
-        records.push((record, Origin::Bcf2Codec));
+        records.push((record, Origin::Bcf2Codec, Origin::Bcf2Codec));
     }
     let dictionary: Vec<(String, i32)> = file
         .header

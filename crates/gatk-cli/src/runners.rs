@@ -17111,10 +17111,18 @@ pub fn select_variants(parser: &Parser) -> Outcome {
         .collect();
     let sample_names: std::sync::Arc<[String]> = file.header.samples.clone().into();
 
-    let mut pending: gatk_tools::select_variants::PendingWriter<
+    // A BCF is written from records, whose INFO is in the order of the maps the tool built them in.
+    let to_bcf = crate::bcf::is_bcf(&output);
+    type Written = (
         htsjdk_vcf::variant::VariantContext,
-    > = gatk_tools::select_variants::PendingWriter::new();
-    let mut written: Vec<htsjdk_vcf::variant::VariantContext> = Vec::new();
+        Option<(
+            htsjdk_vcf::variant::VariantContext,
+            htsjdk_vcf::bcf2::writer::Origin,
+        )>,
+    );
+    let mut pending: gatk_tools::select_variants::PendingWriter<Written> =
+        gatk_tools::select_variants::PendingWriter::new();
+    let mut written: Vec<Written> = Vec::new();
     for located in gatk_engine::variant_source::traverse(&located, intervals.as_deref()) {
         let original = &file.records[located.index];
         // `apply` drains BEFORE it looks at the record, which is what lets a record trimmed onto a
@@ -17174,9 +17182,13 @@ pub fn select_variants(parser: &Parser) -> Outcome {
             continue;
         }
 
+        let subset_happened = subset != bridged.record;
         let mut record = subset;
+        let mut no_called = false;
         if output_arguments.set_filtered_genotypes_to_no_call {
+            let before = to_bcf.then(|| record.clone());
             gatk_tools::select_variants::set_filtered_genotypes_to_no_call(&mut record);
+            no_called = before.is_some_and(|before| before != record);
         }
         gatk_tools::select_variants::drop_annotations(&mut record, &output_arguments);
         // The file's own record is built HERE and carried through the queue: the queue reorders,
@@ -17195,7 +17207,27 @@ pub fn select_variants(parser: &Parser) -> Outcome {
                 );
             }
         }
-        pending.add(record, vc);
+        // A record no builder touched is the one that was read; any builder copies its map.
+        let rebuilt = (to_bcf
+            && (subset_happened
+                || output_arguments.set_filtered_genotypes_to_no_call
+                || !output_arguments.info_annotations_to_drop.is_empty()
+                || !output_arguments.genotype_annotations_to_drop.is_empty()))
+        .then(|| {
+            let source = crate::bcf::source_of(&file.header, original);
+            let rebuilt = select_variants_rebuilt(
+                &header,
+                &source,
+                &vc,
+                subset_happened,
+                no_called,
+                &subset_arguments,
+                &output_arguments,
+            );
+            rebuilt.map(|rebuilt| (rebuilt, source.1))
+        })
+        .flatten();
+        pending.add(record, (vc, rebuilt));
     }
     for (_, vc) in pending.drain() {
         written.push(vc);
@@ -17204,21 +17236,153 @@ pub fn select_variants(parser: &Parser) -> Outcome {
     // `--variant-output-filtering` wraps the writer here as it does on the other two tools that
     // write a VCF: the traversal reached the record and the writer decides whether it lands.
     let keep = variant_output_filter(parser, intervals.as_deref())?;
-    written.retain(|record| keep(record));
+    written.retain(|(record, _)| keep(record));
 
     if sites_only {
-        for record in &mut written {
+        for (record, rebuilt) in &mut written {
             record.genotypes.clear();
+            if let Some((rebuilt, _)) = rebuilt {
+                rebuilt.genotypes.clear();
+            }
         }
     }
+    let written: Vec<htsjdk_vcf::variant::VariantContext> = written
+        .into_iter()
+        .map(|(record, rebuilt)| {
+            if let Some((rebuilt, read_by)) = rebuilt {
+                crate::bcf::keep_rebuilt(&header, rebuilt, read_by, &record);
+            }
+            record
+        })
+        .collect();
 
-    let text = htsjdk_vcf::vcf_file::write_vcf(&header, &written).map_err(|error| Thrown {
-        failure: Failure::User,
-        exception: "org.broadinstitute.hellbender.exceptions.UserException",
-        message: Some(format!("{error:?}")),
-    })?;
+    // `createVCFWriter` honours `--lenient`. A BCF is encoded from this text, and `BCF2Writer`
+    // refuses an undeclared key in its own words whatever `--lenient` says.
+    let text = if to_bcf {
+        write_vcf_strict_or_lenient(true, &header, &written)?
+    } else {
+        write_vcf_honouring_lenient(parser, &header, &written)?
+    };
     write_variant_output(parser, &output, &text)?;
     Ok(None)
+}
+
+/// What `BCF2Writer` is handed for a record `SelectVariants` changed: its INFO map rebuilt as
+/// `apply` rebuilds it.
+///
+/// Every `new VariantContextBuilder(vc)` copies the map, presized for it. A subset builds two:
+/// `subContextFromSamples`' and the one `rmAttributes` drops the MLE tags from, which the `*_Orig`
+/// keys go into. `calculateChromosomeCounts(builder, false)` copies that for AN, AC and AF and
+/// hands the copy to `builder.attributes`, a third, which the depths go into. `trimAlleles` builds
+/// one more where it trims, `--set-filtered-gt-to-nocall` one on every record, and a recount into a
+/// `LinkedHashMap` where it no-calls a genotype; `dropAnnotations` builds one when anything is
+/// dropped. AF is `(double) AC / AN`, which the text keeps three decimals of.
+/// shortcut: a `*_Orig` key reordered to fewer alleles carries the text's value rather than
+/// `getReorderedAttributes`' list; upgrade if a row measures one.
+fn select_variants_rebuilt(
+    header: &htsjdk_vcf::header::VcfHeader,
+    source: &(
+        htsjdk_vcf::variant::VariantContext,
+        htsjdk_vcf::bcf2::writer::Origin,
+    ),
+    written: &htsjdk_vcf::variant::VariantContext,
+    subset_happened: bool,
+    no_called: bool,
+    arguments: &gatk_tools::select_variants::SubsetArguments,
+    output: &gatk_tools::select_variants::OutputArguments,
+) -> Option<htsjdk_vcf::variant::VariantContext> {
+    use crate::bcf::Step::{Copy, Linked, Put, Remove};
+    use htsjdk_vcf::variant::Value;
+    let mut steps = Vec::new();
+    if subset_happened {
+        // `subContextFromSamples`' builder, then the one `rmAttributes` works on.
+        steps.extend([Copy, Copy, Remove("MLEAC"), Remove("MLEAF")]);
+        if arguments.keep_original_chr_counts {
+            steps.extend([Put("AC_Orig"), Put("AF_Orig"), Put("AN_Orig")]);
+        }
+        steps.extend([
+            Copy,
+            Put("AN"),
+            Put("AC"),
+            Put("AF"),
+            Remove("AC"),
+            Remove("AF"),
+            Copy,
+        ]);
+        if arguments.keep_original_depth {
+            steps.push(Put("DP_Orig"));
+        }
+        steps.push(Put("DP"));
+        // `trimAlleles` builds a new record only where it trims.
+        let reference =
+            |record: &htsjdk_vcf::variant::VariantContext| record.alleles.first().cloned();
+        if !arguments.preserve_alleles
+            && (written.start != source.0.start || reference(written) != reference(&source.0))
+        {
+            steps.push(Copy);
+        }
+    }
+    if output.set_filtered_genotypes_to_no_call {
+        steps.push(Copy);
+        if no_called {
+            // `setFilteredGenotypeToNocall` recounts into a `LinkedHashMap` copy, with stale
+            // values removed, and hands it to `builder.attributes`.
+            steps.extend([Linked, Put("AN"), Put("AC"), Put("AF")]);
+            steps.extend([Remove("AN"), Remove("AC"), Remove("AF"), Copy]);
+        }
+    }
+    if !output.info_annotations_to_drop.is_empty()
+        || !output.genotype_annotations_to_drop.is_empty()
+    {
+        steps.push(Copy);
+        steps.extend(
+            output
+                .info_annotations_to_drop
+                .iter()
+                .map(|key| Remove(key.as_str())),
+        );
+    }
+    let text = |key: &str| {
+        written
+            .attributes
+            .iter()
+            .find(|(name, _)| name == key)
+            .and_then(|(_, value)| value.format())
+    };
+    let original = |key: &str| {
+        source
+            .0
+            .attributes
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| value.clone())
+    };
+    let same_alleles = source.0.alleles.len() == written.alleles.len();
+    crate::bcf::rebuilt(header, source, written, &steps, |key| match key {
+        "AF" if subset_happened || no_called => {
+            let number: f64 = text("AN")?.parse().ok()?;
+            let frequencies: Vec<Value> = text("AC")?
+                .split(',')
+                .map(|count| {
+                    let count: f64 = count.parse().ok()?;
+                    Some(Value::Double(if number == 0.0 {
+                        0.0
+                    } else {
+                        count / number
+                    }))
+                })
+                .collect::<Option<_>>()?;
+            Some(match <[Value; 1]>::try_from(frequencies) {
+                Ok([single]) => single,
+                Err(list) => Value::List(list),
+            })
+        }
+        "AC_Orig" if same_alleles => original("AC"),
+        "AF_Orig" if same_alleles => original("AF"),
+        "AN_Orig" => original("AN"),
+        "DP_Orig" => original("DP"),
+        _ => None,
+    })
 }
 
 /// `VcfUtils.updateHeaderContigLines`: the contig lines and the `##reference` line, rebuilt.
