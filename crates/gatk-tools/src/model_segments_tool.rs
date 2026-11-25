@@ -625,10 +625,13 @@ fn interval_list_int(text: &str) -> Result<i32, Thrown> {
 
 /// `IntervalList.fromFile`: the header's dictionary and the intervals under it.
 fn read_interval_list(path: &str) -> Result<(Vec<SequenceRecord>, Vec<Span>), Thrown> {
+    // `IOUtil.openFileForBufferedReading` opens the file unchecked, so a missing one is htsjdk's
+    // exception, not a user error.
     let text = std::fs::read_to_string(path).map_err(|_| {
-        Thrown::user(format!(
-            "Couldn't read file {path}. Error was: The input file does not exist."
-        ))
+        Thrown::non_user(
+            "htsjdk.samtools.SAMException",
+            format!("Error opening file: {path}"),
+        )
     })?;
     let header = htsjdk_bam::reader::parse_header_text(
         &text
