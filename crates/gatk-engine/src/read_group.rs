@@ -17,7 +17,15 @@ pub fn resolve<'a>(record: &BamRecord, header: &'a SamHeader) -> Option<&'a Read
             _ => "",
         })
     })?;
-    header.read_groups.iter().find(|group| group.id == id)
+    header
+        .read_groups
+        .iter()
+        .find(|group| same_id(&group.id, id))
+}
+
+/// `==` on two ids, comparing from the last byte: ids sharing a long prefix differ at the end.
+fn same_id(a: &str, b: &str) -> bool {
+    a.len() == b.len() && a.bytes().rev().eq(b.bytes().rev())
 }
 
 /// One field of the resolved `@RG` line.
@@ -28,4 +36,24 @@ pub fn attribute<'a>(record: &BamRecord, header: &'a SamHeader, key: &str) -> Op
 /// `SAMReadGroupRecord.getFlowOrder`, which is what marks a read group as flow-based.
 pub fn flow_order<'a>(record: &BamRecord, header: &'a SamHeader) -> Option<&'a str> {
     attribute(record, header, "FO")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::same_id;
+
+    #[test]
+    fn ids_compared_from_the_end_are_equal_exactly_when_they_are() {
+        for (a, b) in [
+            ("", ""),
+            ("H0164.2", "H0164.2"),
+            ("H0164.2", "H0164.1"),
+            ("H0164.2", "H0164.22"),
+            ("0164.2", "H0164.2"),
+            ("H0164", "H0164.2"),
+            ("a", ""),
+        ] {
+            assert_eq!(same_id(a, b), a == b, "{a:?} {b:?}");
+        }
+    }
 }

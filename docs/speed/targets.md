@@ -101,6 +101,32 @@ rustc 1.97.1:
 
 On macOS, whose allocator is dearer, the GVCF row goes from 11.9-12.9 s to 10.0-10.8 s.
 
+## 10. Resolving a read's group: ids compared from the end
+
+**Where the time goes.** `read_group::resolve`, under every `sample_name` / `sample_of` (once per
+read when reads are admitted, partitioned or paired, and once per pileup element in some
+walkers), scans the header's `@RG` lines comparing ids. NA12878's twelve ids are about forty
+characters sharing a long common prefix, so each comparison is a `memcmp` that runs nearly to the
+end before failing: in the GVCF profile of entry 9, `memcmp` is more than half of `sample_name`'s
+samples (about 2% of the run); in `CollectF1R2Counts`, which resolves per pileup element, the whole
+lookup was 40% of the main thread (reported by the scale session).
+
+**The optimisation.** The scan tests the length first and then compares the bytes from the last
+one backwards, where ids that share a prefix differ.
+
+**Why it cannot move a byte.** Two strings are equal exactly when they have the same length and
+the same bytes; the order the bytes are examined in does not change the answer. The scan still
+visits the groups in header order and returns the first match, as `find` did.
+
+**The suites that prove it.** The read-group tests in `gatk-engine`, with a test that the
+reverse comparison agrees with `==` on equal ids, a prefix, a suffix and a one-byte change; every
+tool's array through `sample_name`.
+
+**Result** (macOS, one thread, three interleaved rounds, outputs identical): the HaplotypeCaller
+GVCF row of entry 9 (9.51 s to 9.46-9.52 s) and the Mutect2 row (1.98-2.00 s to 2.00-2.01 s) do
+not move beyond noise, as a 2% share predicts. The gain is for walkers that resolve per pileup
+element, `CollectF1R2Counts` first; its number belongs to the scale session's row.
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are
