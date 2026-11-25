@@ -5,7 +5,7 @@ use gatk_tools::filter_vcf::{filter_to, Thresholds};
 use gatk_tools::main_entry::{Thrown, PORT_LIMITATION};
 use htsjdk_vcf::reader::{read_vcf, ReadError, ReadFailure};
 
-use super::vcf_format_converter::{is_bcf, output_type};
+use super::vcf_format_converter::output_type;
 use super::{assert_readable, assert_writable, thrown, vcf_text, write_vcf};
 use crate::runners::{argument, flag, scalar};
 
@@ -34,9 +34,6 @@ pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> 
     };
     let file_name = output.rsplit('/').next().unwrap_or_default();
     let vcf_or_bcf = file_name.ends_with(".vcf") || file_name.ends_with(".bcf");
-    if is_bcf(&output) {
-        return Err(super::vcf_format_converter::bcf_limitation());
-    }
     let text = vcf_text(&input)?;
     // The script filter is built once `new VCFFileReader` has read the header, before the first
     // record is read and before the dictionary check: only a header failure comes first.
@@ -60,6 +57,73 @@ pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> 
     output_type(&output)?;
     // Picard 3.5.0 sets or unsets `INDEX_ON_THE_FLY` from `CREATE_INDEX` (b976447cf); 3.4.0 kept
     // the builder's default and indexed whatever it said.
-    write_vcf(parser, &output, &filtered, flag(parser, "CREATE_INDEX"))?;
+    if crate::bcf::is_bcf(&input) && crate::bcf::is_bcf(&output) {
+        write_bcf(&input, &output, &filtered, flag(parser, "CREATE_INDEX"))?;
+    } else {
+        write_vcf(parser, &output, &filtered, flag(parser, "CREATE_INDEX"))?;
+    }
     Ok(0)
+}
+
+/// A BCF filtered into a BCF, as `FilterApplyingVariantIterator.next` builds each record: the BCF
+/// codec's own, with its INFO order and its 32-bit floats, under the filters the text gives it.
+///
+/// The text does not say how Java holds the site's filters, and a BCF codec record writes them in
+/// the order it holds them: a `HashSet`, or `passFilters()`'s empty set. A genotype's `PASS` is no
+/// filter to `BCF2Writer` as it is to the VCF codec, so the text's genotype filters are the
+/// record's. A VCF input is the VCF codec's records, which the text path writes as they are.
+fn write_bcf(input: &str, output: &str, filtered: &str, index: bool) -> Result<(), Thrown> {
+    use htsjdk_vcf::bcf2::java_hash::{order_through, Fill};
+    use htsjdk_vcf::bcf2::writer::Origin;
+
+    let file = read_vcf(filtered)
+        .map_err(|failure| thrown(failure.error.class(), failure.error.message()))?;
+    // FilterVcf keeps every record, in order, so the n-th filtered line is the n-th record read.
+    let sources = crate::bcf::read(input)?.records;
+    let mut records = Vec::with_capacity(sources.len());
+    for (mut record, out) in sources.into_iter().zip(&file.records) {
+        record.filters = out.filters.as_ref().map(|filters| {
+            let order = order_through(filters, &[Fill::Put]);
+            order.into_iter().map(|at| filters[at].clone()).collect()
+        });
+        let genotypes = record
+            .genotypes
+            .try_get_mut()
+            .map_err(|error| thrown(error.class, error.message))?;
+        for genotype in genotypes {
+            genotype.filters = out
+                .genotype(&genotype.sample_name)
+                .and_then(|filtered| filtered.filters.clone());
+        }
+        records.push((record, Origin::Bcf2Codec));
+    }
+    let dictionary: Vec<(String, i32)> = file
+        .header
+        .lines
+        .iter()
+        .filter_map(|line| match line {
+            htsjdk_vcf::header::HeaderLine::Contig { fields, .. } => {
+                let field = |key: &str| fields.iter().find(|(k, _)| k == key).map(|(_, v)| v);
+                Some((
+                    field("ID")?.clone(),
+                    field("length").and_then(|v| v.parse().ok()).unwrap_or(0),
+                ))
+            }
+            _ => None,
+        })
+        .collect();
+    if index && dictionary.is_empty() {
+        return Err(thrown(
+            "java.lang.IllegalArgumentException",
+            "A reference dictionary is required for creating Tribble indices on the fly"
+                .to_string(),
+        ));
+    }
+    crate::bcf::write(
+        output,
+        &file.header,
+        &records,
+        index.then_some(dictionary.as_slice()),
+        false,
+    )
 }

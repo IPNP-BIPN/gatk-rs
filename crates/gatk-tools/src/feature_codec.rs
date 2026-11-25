@@ -43,7 +43,9 @@ pub fn codec_for(file_name: &str) -> Option<Codec> {
         .strip_suffix(".gz")
         .or_else(|| file_name.strip_suffix(".bgz"))
         .unwrap_or(file_name);
-    if stripped.ends_with(".vcf") {
+    // `BCF2Codec`'s records are the ones the port reads a BCF into and renders as VCF text, so
+    // its features are the VCF codec's; only an index of the file needs its own offsets.
+    if stripped.ends_with(".vcf") || file_name.ends_with(".bcf") {
         Some(Codec::Vcf)
     } else if stripped.ends_with(".bed") {
         Some(Codec::Bed)
