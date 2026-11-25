@@ -309,6 +309,10 @@ thread_local! {
 pub enum Kernel {
     /// Four lanes, in whatever the target's baseline vectors are: SSE2 on x86-64, NEON on arm64.
     Portable,
+    /// Eight lanes in the baseline vectors: the body [`Kernel::Avx512`] runs, compiled without
+    /// AVX-512, so a host without it still holds the eight-lane body to the single pair. Never
+    /// picked by [`Kernel::best`]: eight lanes were no faster than four on an M-series core.
+    Portable8,
     /// Four lanes in one 256-bit register.
     Avx2,
     /// Eight lanes in one 512-bit register.
@@ -316,27 +320,32 @@ pub enum Kernel {
 }
 
 impl Kernel {
-    /// Every kernel this host can run, the portable one first.
-    pub fn available() -> Vec<Kernel> {
-        #[cfg(target_arch = "x86_64")]
-        {
-            let mut kernels = vec![Kernel::Portable];
-            if std::arch::is_x86_feature_detected!("avx2") {
-                kernels.push(Kernel::Avx2);
-            }
-            if std::arch::is_x86_feature_detected!("avx512f") {
-                kernels.push(Kernel::Avx512);
+    /// Every kernel this host can run, the portable ones first, detected once.
+    pub fn available() -> &'static [Kernel] {
+        static AVAILABLE: std::sync::OnceLock<Vec<Kernel>> = std::sync::OnceLock::new();
+        AVAILABLE.get_or_init(|| {
+            #[allow(unused_mut)]
+            let mut kernels = vec![Kernel::Portable, Kernel::Portable8];
+            #[cfg(target_arch = "x86_64")]
+            {
+                if std::arch::is_x86_feature_detected!("avx2") {
+                    kernels.push(Kernel::Avx2);
+                }
+                if std::arch::is_x86_feature_detected!("avx512f") {
+                    kernels.push(Kernel::Avx512);
+                }
             }
             kernels
-        }
-        #[cfg(not(target_arch = "x86_64"))]
-        vec![Kernel::Portable]
+        })
     }
 
-    /// The widest kernel this host can run, detected once.
+    /// The widest vector kernel this host can run: AVX-512, else AVX2, else the four-lane portable.
     pub fn best() -> Kernel {
-        static BEST: std::sync::OnceLock<Kernel> = std::sync::OnceLock::new();
-        *BEST.get_or_init(|| *Kernel::available().last().expect("the portable kernel"))
+        let available = Kernel::available();
+        [Kernel::Avx512, Kernel::Avx2]
+            .into_iter()
+            .find(|kernel| available.contains(kernel))
+            .unwrap_or(Kernel::Portable)
     }
 }
 
@@ -368,6 +377,7 @@ pub fn reads_likelihoods_given_haplotype_log10_with(
     );
     match kernel {
         Kernel::Portable => lanes::<4>(&ROWS_4, haplotype, reads, out),
+        Kernel::Portable8 => lanes::<8>(&ROWS_8, haplotype, reads, out),
         #[cfg(target_arch = "x86_64")]
         // SAFETY: `available` detected the feature on this host.
         Kernel::Avx2 => unsafe { avx2(haplotype, reads, out) },

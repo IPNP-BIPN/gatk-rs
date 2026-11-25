@@ -352,7 +352,8 @@ fn the_kernel_gives_the_transcriptions_bits() {
 fn reads_side_by_side_give_each_reads_own_bits() {
     use gatk_engine::pair_hmm::{reads_likelihoods_given_haplotype_log10_with, HmmRead, Kernel};
     let kernels = Kernel::available();
-    eprintln!("PairHMM kernels held to the single pair on this host: {kernels:?}");
+    // Time per kernel over the same groups, so the CI log also says what each width costs here.
+    let mut spent = vec![std::time::Duration::ZERO; kernels.len()];
     let mut state = 0x2026_u64;
     let mut next = move |bound: u64| {
         state ^= state << 13;
@@ -401,9 +402,11 @@ fn reads_side_by_side_give_each_reads_own_bits() {
                 gap_continuation: gap,
             })
             .collect();
-        for &kernel in &kernels {
+        for (k, &kernel) in kernels.iter().enumerate() {
             let mut out = vec![0.0; views.len()];
+            let start = std::time::Instant::now();
             reads_likelihoods_given_haplotype_log10_with(kernel, &haplotype, &views, &mut out);
+            spent[k] += start.elapsed();
             for (read, ours) in views.iter().zip(&out) {
                 let alone = read_likelihood_given_haplotype_log10(
                     &haplotype,
@@ -422,4 +425,11 @@ fn reads_side_by_side_give_each_reads_own_bits() {
             }
         }
     }
+    for (kernel, time) in kernels.iter().zip(&spent) {
+        eprintln!("PairHMM kernel {kernel:?} held to the single pair, {time:?} over the groups");
+    }
+    eprintln!(
+        "PairHMM kernel dispatched on this host: {:?}",
+        Kernel::best()
+    );
 }
