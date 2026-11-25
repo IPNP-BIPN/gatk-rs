@@ -25,7 +25,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | AnnotateIntervals | gatk-rs | oracle-backed | 8 suite | 0 suite | 19/19 (100.0%) | 2 | 2268 probes (+54), 0/11 diverge | 4 | 0 | none |
 | AnnotateVcfWithBamDepth | gatk-rs | oracle-backed | 54 suite | 0 suite | 23/23 (100.0%) | 2 | 2535 probes (+5), 0/11 diverge | 6 | 0 | none |
 | AnnotateVcfWithExpectedAlleleFraction | gatk-rs | oracle-backed | 30 suite | 0 suite | 23/23 (100.0%) | 2 | 2436 probes (+2), 0/13 diverge | 4 | 2 | none |
-| ApplyBQSR | gatk-rs | oracle-backed | 36306 suite | 0 suite | 21/21 (100.0%) | 2 | 3123 probes (+8), 0/12 diverge | 6 | 0 | none |
+| ApplyBQSR | gatk-rs | oracle-backed | 36306 suite | 0 suite | 21/21 (100.0%) | 2 | 3123 probes (+8), 0/12 diverge | 9 | 0 | none |
 | ApplyBQSRSpark | gatk-rs | oracle-backed | 5 | 3 | 20/20 (100.0%) | 2 | 3051 probes (+7), 0/12 diverge | 6 | 1 | none |
 | ApplyVQSR | gatk-rs | oracle-backed | 395 suite | 0 suite | 25/25 (100.0%) | 2 | 2638 probes (+13), 0/17 diverge | 7 | 7 | none |
 | BQSRPipelineSpark | gatk-rs | oracle-backed | 5 | 3 | 23/23 (100.0%) | 2 | 4150 probes (+0), 0/14 diverge | 8 | 1 | none |
@@ -304,7 +304,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | SvDiscoverFromLocalAssemblyContigAlignmentsSpark | gatk-rs | oracle-backed | 161 | 88 | 17/17 (100.0%) | 2 | 5831 probes (+5), 0/9 diverge | 6 | 5 | none |
 | TagGermlineEvents | gatk-rs | oracle-backed | 15 suite | 0 suite | 17/17 (100.0%) | 2 | 2085 probes (+5), 0/8 diverge | 6 | 8 | none |
 | TrainVariantAnnotationsModel | gatk-rs | oracle-backed | 131 suite | 10 suite | 11/11 (100.0%) | 2 | 1224 probes (+1), 0/10 diverge | 5 | 0 | mask_hdf5_modification_times |
-| TransferReadTags | gatk-rs | oracle-backed | 65 suite | 0 suite | 19/19 (100.0%) | 2 | 1947 probes (+2), 0/10 diverge | 3 | 1 | none |
+| TransferReadTags | gatk-rs | oracle-backed | 65 suite | 0 suite | 19/19 (100.0%) | 2 | 1947 probes (+2), 0/10 diverge | 5 | 1 | none |
 | UmiAwareMarkDuplicatesWithMateCigar | picard-rs | oracle-backed | not vendored | not vendored | 26/26 (100.0%) | 2 | not measured | 0 | 0 | none |
 | UnmarkDuplicates | gatk-rs | oracle-backed | 49 suite | 0 suite | 19/19 (100.0%) | 2 | 2171 probes (+0), 0/8 diverge | 4 | 0 | none |
 | UpdateVCFSequenceDictionary | gatk-rs | oracle-backed | 71 suite | 0 suite | 24/24 (100.0%) | 2 | 2247 probes (+0), 0/9 diverge | 4 | 3 | none |
@@ -437,7 +437,7 @@ The other half of the chain: --mixing-fractions takes the table CalculateMixingF
 
 Suites: `apply-bqsr`, `tool-argument-declarations`, `tool-argument-enums`.
 
-Inputs: `reads.bai`, `reads.bam`, `reads2.bai`, `reads2.bam`, `recal.table`, `recal2.table`.
+Inputs: `reads.bai`, `reads.bam`, `reads.cram`, `reads.cram.bai`, `reads.sam`, `reads2.bai`, `reads2.bam`, `recal.table`, `recal2.table`.
 
 Held out: none.
 
@@ -2201,7 +2201,7 @@ The reference runs in the Broad's image, whose python gets it past the import, a
 
 Suites: `transfer-read-tags`.
 
-Inputs: `qname.bam`, `reads.bam`, `umi.bam`.
+Inputs: `qname.bam`, `reads.bam`, `reads.cram`, `reads.sam`, `umi.bam`.
 
 Held out: `--read-index`.
 
