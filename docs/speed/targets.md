@@ -56,6 +56,50 @@ now STATUS.md's cost column; the baseline stays in `baseline.json`):
 both directions, which is what an unchanged path does. The other 131 tools moved a median 7% cold
 and 10% steady, at most 45%, the same spread two runs of one commit showed in the baseline.
 
+## Scale N. `VcfToIntervalList` held the VCF
+
+**Ratio.** At scale (gnomAD chr20 sites, 61 MB `.vcf.gz`, linux/arm64, 6 GiB container): GATK
+7.4 s CPU, 0.51 GiB peak RSS; the port killed at the limit (9.4x).
+
+**Where the memory goes.** `vcf_text` inflated the whole file into one string, `read_vcf` decoded
+every record of it, and the intervals, the merged intervals and the output text were each a
+whole list on top.
+
+**The optimisation.** The header is read alone and the records after it one at a time
+(`vcf_stream`, #1500). Each is named, merged and written as it comes, to a file beside `OUTPUT`
+that is renamed onto it at the end. The merger is `IntervalMergerIterator` a step at a time
+(`Merger`), which the whole-list `merge_intervals` now drains too. It keeps the group's least
+start and names rather than the group, and writes each line without a string of its own.
+
+**Why it cannot move a byte.** The text is the one `vcf_text` reads. A file that starts with the
+gzip magic is inflated by `BgzfReader`, which is what `decompress_all` runs serially and refuses
+the same files with. Both are decoded lossily, line by line here, which is the same text because
+a newline is never part of a multi-byte sequence. The records are `read_vcf`'s, in its order. On
+any refusal (a record, the inflater, no contig lines, an output that cannot be created) nothing is
+written, the scratch file is removed, and the whole-text path runs and refuses as before.
+
+**The suites that prove it.** `vcf-to-interval-list` and its golden, plus a new test for the one
+case the golden leaves out: a group overlapping backwards, where `CONCAT_ALL` takes the least
+start and `USE_FIRST` the first member's. Natively, old against new, the same list, exit and
+message were checked:
+- on gnomAD chr20 by default, with `INCLUDE_FILTERED` and with `USE_FIRST`;
+- on small files: an unsorted file with touching groups and repeated names, CRLF lines, a
+  malformed record in the middle, no contig lines, no `#CHROM` line, no records, a Latin-1 byte
+  in plain text and in BGZF;
+- on BGZF with trailing garbage, truncated BGZF, and plain gzip;
+- on an output in a missing directory.
+
+**Result.** macOS native, gnomAD chr20 (4.5 million intervals):
+
+| | main | this | GATK |
+|---|---:|---:|---:|
+| RSS | 6.22 GB | 16 MB | 0.51 GiB |
+| CPU | 4.85 s | 3.87 s | 7.4 s |
+
+The RSS is 0.03x GATK's and the CPU 0.52x. Of what is left, 80% is `htsjdk-vcf`'s
+`decode_line` (`parse_alleles` growing its `Vec`, the INFO split) and the single-threaded
+inflater, both of which belong to the decoder (htsjdk-io).
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are

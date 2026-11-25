@@ -122,3 +122,31 @@ fn the_numbering_and_the_bridge_move_with_include_filtered() {
     assert!(default_names.contains(&"rs7".to_string()));
     assert!(filtered_names.contains(&"rs7|bridge|rs8".to_string()));
 }
+
+/// The case the golden leaves out: a record that overlaps one starting later. `CONCAT_ALL` takes
+/// the group's least start and `USE_FIRST` its first member's, as the whole-list merger did.
+#[test]
+fn a_group_overlapping_backwards_keeps_each_method_start() {
+    let text = "##fileformat=VCFv4.2\n##contig=<ID=chr1,length=1000>\n\
+                #CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n\
+                chr1\t10\trs1\tA\tC\t.\tPASS\t.\n\
+                chr1\t11\t.\tA\tC\t.\t.\t.\n\
+                chr1\t5\trs3\tA\tG\t.\tPASS\tEND=10\n\
+                chr1\t11\trs1\tA\tG\t.\tPASS\t.\n\
+                chr1\t20\t.\tA\tC\t.\tPASS\t.\n";
+    let body = |method| {
+        let list = convert(text, false, method).expect("the file converts");
+        list.lines()
+            .filter(|line| !line.starts_with('@'))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    assert_eq!(
+        body(IdMethod::ConcatAll),
+        "chr1\t5\t11\t+\trs1|interval-1|rs3\nchr1\t20\t20\t+\tinterval-2"
+    );
+    assert_eq!(
+        body(IdMethod::UseFirst),
+        "chr1\t10\t11\t+\trs1\nchr1\t20\t20\t+\tinterval-2"
+    );
+}

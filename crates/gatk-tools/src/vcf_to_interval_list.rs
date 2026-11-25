@@ -182,121 +182,155 @@ pub fn to_intervals(records: &[VariantContext], include_filtered: bool) -> Vec<I
     let mut count = 0;
     records
         .iter()
-        .filter(|record| include_filtered || !is_filtered(record))
-        .map(|record| {
-            let name = if record.id == "." || record.id.is_empty() {
-                count += 1;
-                format!("interval-{count}")
-            } else {
-                record.id.clone()
-            };
-            Interval {
-                contig: record.contig.clone(),
-                start: record.start,
-                end: end_of(record),
-                name: Some(name),
-            }
-        })
+        .filter_map(|record| to_interval(record, include_filtered, &mut count))
         .collect()
 }
 
-/// `IntervalList.merge(intervals, true)`: the names are a `LinkedHashSet` joined with a pipe, and
-/// the bounds are the group's minimum and maximum.
-fn merge_group(group: &[Interval]) -> Interval {
-    let first = group.first().expect("a group is never empty");
-    let mut names: Vec<String> = Vec::new();
-    let mut start = first.start;
-    let mut end = first.end;
-    for interval in group {
-        if let Some(name) = &interval.name {
-            if !names.contains(name) {
-                names.push(name.clone());
-            }
-        }
-        start = start.min(interval.start);
-        end = end.max(interval.end);
+/// One record of [`to_intervals`], `count` being its counter: `None` for a record the filter
+/// drops.
+pub fn to_interval(
+    record: &VariantContext,
+    include_filtered: bool,
+    count: &mut usize,
+) -> Option<Interval> {
+    if !include_filtered && is_filtered(record) {
+        return None;
     }
-    Interval {
-        contig: first.contig.clone(),
-        start,
-        end,
-        name: if names.is_empty() {
-            None
-        } else {
-            Some(names.join("|"))
-        },
-    }
+    let name = if record.id == "." || record.id.is_empty() {
+        *count += 1;
+        format!("interval-{count}")
+    } else {
+        record.id.clone()
+    };
+    Some(Interval {
+        contig: record.contig.clone(),
+        start: record.start,
+        end: end_of(record),
+        name: Some(name),
+    })
 }
 
 /// `IntervalList.IntervalMergerIterator(intervals, true, false, concatenate_names)`, drained.
 pub fn merge_intervals(intervals: &[Interval], concatenate_names: bool) -> Vec<Interval> {
-    let mut out: Vec<Interval> = Vec::new();
-    // `current`, which is a MutableFeature: its start is the first member's and only its end moves.
-    let mut current: Option<Interval> = None;
-    let mut group: Vec<Interval> = Vec::new();
-
-    let emit = |current: &Interval, group: &[Interval]| {
-        if concatenate_names {
-            merge_group(group)
-        } else {
-            current.clone()
-        }
-    };
-
-    for next in intervals {
-        match &mut current {
-            None => {
-                if concatenate_names {
-                    group.push(next.clone());
-                }
-                current = Some(next.clone());
-            }
-            Some(held) => {
-                // `overlaps` or `withinDistanceOf(next, 1)`, both of which need the same contig.
-                let touching = held.contig == next.contig
-                    && held.start <= next.end + 1
-                    && next.start <= held.end + 1;
-                if touching {
-                    if concatenate_names {
-                        group.push(next.clone());
-                    }
-                    held.end = held.end.max(next.end);
-                } else {
-                    out.push(emit(held, &group));
-                    group.clear();
-                    // `current.setAll(next)`, which takes the contig, the start and the end.
-                    *held = next.clone();
-                    if concatenate_names {
-                        group.push(next.clone());
-                    }
-                }
-            }
-        }
-    }
-    if let Some(held) = &current {
-        out.push(emit(held, &group));
-    }
+    let mut merger = Merger::new(concatenate_names);
+    let mut out: Vec<Interval> = intervals
+        .iter()
+        .filter_map(|next| merger.push(next.clone()))
+        .collect();
+    out.extend(merger.finish());
     out
+}
+
+/// `IntervalMergerIterator` one interval at a time: [`Merger::push`] hands back the merged
+/// interval the pushed one ends, and [`Merger::finish`] the last.
+pub struct Merger {
+    concatenate_names: bool,
+    /// `current`, which is a MutableFeature: its start is the first member's and only its end
+    /// moves.
+    current: Option<Interval>,
+    /// What `IntervalList.merge(group, true)` keeps of the group when the names are concatenated:
+    /// the least start, and the names as a `LinkedHashSet`.
+    least_start: i64,
+    names: Vec<String>,
+}
+
+impl Merger {
+    pub fn new(concatenate_names: bool) -> Self {
+        Merger {
+            concatenate_names,
+            current: None,
+            least_start: 0,
+            names: Vec::new(),
+        }
+    }
+
+    fn add_name(&mut self, name: Option<String>) {
+        if let Some(name) = name {
+            if !self.names.contains(&name) {
+                self.names.push(name);
+            }
+        }
+    }
+
+    /// The group `held` ends, merged: `current` itself, or `IntervalList.merge`'s interval, whose
+    /// end is the group's greatest, which `held` already has, and whose names are joined by a
+    /// pipe.
+    fn emit(&mut self, mut held: Interval) -> Interval {
+        if self.concatenate_names {
+            held.start = self.least_start;
+            held.name = if self.names.is_empty() {
+                None
+            } else {
+                Some(self.names.join("|"))
+            };
+            self.names.clear();
+        }
+        held
+    }
+
+    pub fn push(&mut self, mut next: Interval) -> Option<Interval> {
+        if let Some(held) = &mut self.current {
+            // `overlaps` or `withinDistanceOf(next, 1)`, both of which need the same contig.
+            if held.contig == next.contig
+                && held.start <= next.end + 1
+                && next.start <= held.end + 1
+            {
+                held.end = held.end.max(next.end);
+                if self.concatenate_names {
+                    self.least_start = self.least_start.min(next.start);
+                    self.add_name(next.name);
+                }
+                return None;
+            }
+        }
+        let (start, name) = (next.start, next.name.take());
+        // `current.setAll(next)`, which takes the contig, the start and the end.
+        let out = self.current.take().map(|held| self.emit(held));
+        if self.concatenate_names {
+            self.least_start = start;
+            self.add_name(name);
+        } else {
+            next.name = name;
+        }
+        self.current = Some(next);
+        out
+    }
+
+    pub fn finish(mut self) -> Option<Interval> {
+        self.current.take().map(|held| self.emit(held))
+    }
 }
 
 /// The interval list the writer produces: the header the codec writes, then five columns per
 /// interval.
 pub fn write_list(sequences: &[Sequence], intervals: &[Interval]) -> String {
+    let mut text = list_header(sequences).into_bytes();
+    for interval in intervals {
+        write_interval(&mut text, interval).expect("a Vec takes every write");
+    }
+    String::from_utf8(text).expect("the lines are text")
+}
+
+/// The header [`write_list`] starts with.
+pub fn list_header(sequences: &[Sequence]) -> String {
     let mut text = String::from("@HD\tVN:1.6\n");
     for sequence in sequences {
         text.push_str(&sequence.line());
         text.push('\n');
     }
-    for interval in intervals {
-        text.push_str(&format!(
-            "{}\t{}\t{}\t+\t{}\n",
-            interval.contig,
-            interval.start,
-            interval.end,
-            interval.name.as_deref().unwrap_or(".")
-        ));
-    }
     text
+}
+
+/// One interval's line of [`write_list`].
+pub fn write_interval(out: &mut impl std::io::Write, interval: &Interval) -> std::io::Result<()> {
+    writeln!(
+        out,
+        "{}\t{}\t{}\t+\t{}",
+        interval.contig,
+        interval.start,
+        interval.end,
+        interval.name.as_deref().unwrap_or(".")
+    )
 }
 
 /// `doWork()`: the whole run, text in and text out.
