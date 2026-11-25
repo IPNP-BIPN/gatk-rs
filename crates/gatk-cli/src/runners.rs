@@ -10805,11 +10805,24 @@ pub fn unmark_duplicates(parser: &Parser) -> Outcome {
         version: crate::TOOLKIT_VERSION,
     };
     let (level, deflater) = output_compression(parser);
-    let (bytes, bai) = gatk_tools::unmark_duplicates::unmark_duplicates_with(
-        &source, &options, &filter, level, deflater,
-    )
-    .map_err(reads_traversal_error)?;
-    write_bam(parser, &output, &bytes, bai)
+    let written = gatk_tools::unmark_duplicates::unmark_duplicates_to(
+        std::path::Path::new(&output),
+        &source,
+        &options,
+        &filter,
+        level,
+        deflater,
+    );
+    match written {
+        Ok(written) => write_bam_companions(parser, &output, written),
+        Err(gatk_tools::sam_output::RewriteError::Traversal(error)) => {
+            Err(reads_traversal_error(error))
+        }
+        Err(gatk_tools::sam_output::RewriteError::Io(error)) => {
+            Err(Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))
+        }
+        Err(gatk_tools::sam_output::RewriteError::Refusal(never)) => match never {},
+    }
 }
 
 /// `RevertBaseQualityScores`, which is `UnmarkDuplicates`' plumbing with an abort in the middle.
@@ -13042,6 +13055,31 @@ fn reads_traversal_error(error: gatk_engine::reads::ReadsError) -> Thrown {
 }
 
 /// A BAM and the two files that follow it, written the way every read walker here writes them.
+/// [`write_bam`]'s companions for a BAM already written a read at a time: its `.bai` when the
+/// writer built one (only for a `SO:coordinate` header, as there), and its `.md5` when asked for.
+fn write_bam_companions(
+    parser: &Parser,
+    output: &str,
+    written: gatk_tools::sam_output::Written,
+) -> Result<Option<String>, Thrown> {
+    if let Some(bai) = written.index {
+        let companion = std::path::Path::new(output).with_extension("bai");
+        std::fs::write(&companion, bai).map_err(|error| {
+            Thrown::non_user(
+                PORT_FAILURE,
+                format!("could not write {}: {error}", companion.display()),
+            )
+        })?;
+    }
+    if flag(parser, "create-output-bam-md5") {
+        let digest = format!("{output}.md5");
+        std::fs::write(&digest, written.md5).map_err(|error| {
+            Thrown::non_user(PORT_FAILURE, format!("could not write {digest}: {error}"))
+        })?;
+    }
+    Ok(None)
+}
+
 fn write_bam(
     parser: &Parser,
     output: &str,

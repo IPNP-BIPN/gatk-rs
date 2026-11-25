@@ -105,6 +105,33 @@ way, with nothing written before it.
 **Result.** macOS native, chr20: 19.19 GiB to 0.10 GiB peak RSS, report identical (md5
 `5434284f...`). CPU 35 s against GATK's 20 s: decoding, the engine's (W12), not this change's.
 
+## Scale C. `UnmarkDuplicates` held the reads and the BAM it wrote (and `rewrite_to` for its archetype)
+
+**Ratio.** At scale (chr20 30x BAM, linux/arm64, 6 GiB container): GATK 0.59 GiB peak RSS and
+88 s CPU, the port killed at the limit. Natively on macOS, with no limit: 21.92 GiB.
+
+**Where the memory goes.** `unmark_duplicates_with` collected the traversal, cleared 0x400 on
+each read, and `write_records_with` encoded them into a `Vec<u8>` that `write_bam` then wrote,
+asking `is_coordinate_sorted` of it by inflating it whole once more.
+
+**The optimisation.** `sam_output::rewrite_to`: each read of `traverse_iter` through the tool's
+`apply`, into `write_bam_file` (scratch file renamed on success, MD5 hashed while writing). The
+`.bai` is kept under the rule `write_bam` applied, now read off the header (`sam_output::indexes`,
+the same `SO:coordinate` test on the same `@HD` line). Every tool of the "rewrite a read, write it"
+archetype (`AddOriginalAlignmentTags`, `RevertBaseQualityScores`, ...) can move onto it; this
+change moves the one whose `apply` cannot refuse.
+
+**Why it cannot move a byte.** The same reads reach the same `BamWriter` in the same order with the
+same level and deflater, so the stream is the same; a traversal refusal leaves no file, as before.
+A unit test checks `rewrite_to` against `write_records_with` and that a refusal partway leaves no
+file.
+
+**The suites that prove it.** `record-transform`, and `UnmarkDuplicates`' covering array.
+
+**Result.** macOS native, chr20: 21.92 GiB to 0.10 GiB peak RSS; the BAM is the old port's byte for
+byte (md5 `7e673ef0...`, both written to the same path). CPU 83 s against GATK's 88 s, inside the
+noise of one run and short of 0.5x: decoding and deflating, the engine's (W12).
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are

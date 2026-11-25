@@ -242,6 +242,59 @@ pub fn write_bam_file(
     Ok(Ok(Written { index, md5 }))
 }
 
+/// Why a [`rewrite_to`] run stopped: the traversal refused a read, the tool's own `apply` refused
+/// one, or the file could not be written.
+#[derive(Debug)]
+pub enum RewriteError<E> {
+    Traversal(ReadsError),
+    Refusal(E),
+    Io(std::io::Error),
+}
+
+/// A read walker whose `apply` rewrites a read and hands it to the writer: each read of `records`
+/// through `rewrite`, then to `path` through [`write_bam_file`], so neither the reads nor the BAM
+/// are held. The first refusal, the traversal's or `rewrite`'s, ends the run and leaves `path` as
+/// it was, as writing only once the whole traversal had been rewritten did.
+pub fn rewrite_to<E>(
+    path: &std::path::Path,
+    header: &SamHeader,
+    records: impl IntoIterator<Item = Result<BamRecord, ReadsError>>,
+    mut rewrite: impl FnMut(&mut BamRecord) -> Result<(), E>,
+    create_index: bool,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
+) -> Result<Written, RewriteError<E>> {
+    let mut refusal = None;
+    let rewritten = records.into_iter().map(|record| {
+        let mut read = record?;
+        match rewrite(&mut read) {
+            Ok(()) => Ok(read),
+            Err(error) => {
+                refusal = Some(error);
+                // Only stops the writer; the refusal itself is the one kept above.
+                Err(ReadsError::Malformed(String::new()))
+            }
+        }
+    });
+    let written = write_bam_file(path, header, rewritten, create_index, level, deflater);
+    match (written, refusal) {
+        (Err(_), Some(error)) => Err(RewriteError::Refusal(error)),
+        (Err(error), None) => Err(RewriteError::Traversal(error)),
+        (Ok(Err(error)), _) => Err(RewriteError::Io(error)),
+        (Ok(Ok(written)), _) => Ok(written),
+    }
+}
+
+/// Whether htsjdk's writer indexes a BAM with this header: only a `SO:coordinate` one, whatever
+/// `--create-output-bam-index` says. The test is the runners' own, on the `@HD` line as written.
+pub fn indexes(header: &SamHeader) -> bool {
+    let mut line = String::from("@HD");
+    for (key, value) in header.attributes.iter() {
+        line.push_str(&format!("\t{key}:{value}"));
+    }
+    line.contains("SO:coordinate")
+}
+
 /// A name in `path`'s directory that no other writer uses.
 fn scratch_beside(path: &std::path::Path) -> std::path::PathBuf {
     let name = path
@@ -266,5 +319,74 @@ impl<W: std::io::Write> std::io::Write for Md5Writer<W> {
 
     fn flush(&mut self) -> std::io::Result<()> {
         self.inner.flush()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn reads() -> Vec<BamRecord> {
+        (0..3)
+            .map(|i| BamRecord {
+                read_name: format!("r{i}"),
+                flags: 0x4 | 0x400,
+                ..BamRecord::default()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_rewrite_writes_what_the_whole_traversal_wrote() {
+        let header = SamHeader::default();
+        let mut expected = reads();
+        for read in &mut expected {
+            read.flags &= !0x400;
+        }
+        let (whole, _) =
+            write_records_with(&header, &expected, false, 2, htsjdk_bgzf::Deflater::Jdk).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("out.bam");
+        let written = rewrite_to::<()>(
+            &path,
+            &header,
+            reads().into_iter().map(Ok),
+            |read| {
+                read.flags &= !0x400;
+                Ok(())
+            },
+            false,
+            2,
+            htsjdk_bgzf::Deflater::Jdk,
+        )
+        .unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), whole);
+        assert_eq!(written.md5, crate::gather_bam_files::md5_file(&whole));
+    }
+
+    #[test]
+    fn a_refusal_partway_leaves_no_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("out.bam");
+        let mut seen = 0;
+        let result = rewrite_to(
+            &path,
+            &SamHeader::default(),
+            reads().into_iter().map(Ok),
+            |_| {
+                seen += 1;
+                if seen == 2 {
+                    Err("refused")
+                } else {
+                    Ok(())
+                }
+            },
+            false,
+            2,
+            htsjdk_bgzf::Deflater::Jdk,
+        );
+        assert!(matches!(result, Err(RewriteError::Refusal("refused"))));
+        assert!(!path.exists());
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
     }
 }
