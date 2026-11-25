@@ -214,7 +214,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | MakeSitesOnlyVcf | gatk-rs | oracle-backed | 20 suite | 0 suite | 16/16 (100.0%) | 2 | not measured | 4 | 0 | none |
 | MakeVcfSampleNameMap | picard-rs | oracle-backed | not vendored | not vendored | 6/6 (100.0%) | 2 | not measured | 0 | 0 | none |
 | MarkDuplicates | picard-rs | oracle-backed | not vendored | not vendored | 47/47 (100.0%) | 2 | not measured | 0 | 0 | none |
-| MarkDuplicatesSpark | gatk-rs | oracle-backed | 368 | 203 | 26/27 (96.3%) | 2 | 3023 probes (+2), 0/12 diverge | 3 | 5 | none |
+| MarkDuplicatesSpark | gatk-rs | oracle-backed | 368 | 203 | 26/27 (96.3%) | 2 | 3023 probes (+2), 0/12 diverge | 6 | 0 | none |
 | MarkDuplicatesWithMateCigar | picard-rs | oracle-backed | not vendored | not vendored | 30/30 (100.0%) | 2 | not measured | 0 | 0 | none |
 | MarkIlluminaAdapters | picard-rs | oracle-backed | not vendored | not vendored | 28/28 (100.0%) | 2 | not measured | 0 | 0 | none |
 | MeanQualityByCycle | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -1551,11 +1551,11 @@ picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFi
 
 Suites: `spark-walkers`.
 
-Inputs: `marking.bam`, `marking_names.bam`, `marking_one.bam`.
+Inputs: `marking.bai`, `marking.bam`, `marking_names.bam`, `marking_one.bam`, `reference.fasta`, `sv_reference.fasta`.
 
-Held out: `--output-shard-tmp-dir`, `--read-index`, `--reference`, `--remove-all-duplicates`, `--remove-sequencing-duplicates`.
+Held out: none.
 
-Every record type the tool makes, in the three orders of header it treats apart, the one-library copy being what brings the histogram. The two removals exclude --duplicate-tagging-policy, even at false, so they are measured in the spark-walkers golden and left out here. The array keeps to a single input and to fixtures without flow tags; the golden measures several inputs and a flow-tagged fixture.
+Every record type the tool makes, in the three orders of header it treats apart, the one-library copy being what brings the histogram. The two removals and --duplicate-tagging-policy exclude one another whenever two are given, so each has an `<unset>` and the pairs are forbidden. --reference is sv_reference.fasta, whose dictionary is the marking BAMs', and reference.fasta, which lacks chr2 and is still accepted, since the dictionaries are compared only on the contigs they share. A Spark tool never reads --read-index, so its row shows the argument is accepted and ignored. --output-shard-tmp-dir excludes --sharded-output, even at false, so that one has an `<unset>` too; it is where the single BAM's parts are written before they are merged; the directory is gone once the BAM is. The array keeps to a single input and to fixtures without flow tags; the spark-walkers golden measures several inputs and a flow-tagged fixture.
 
 ### MeanQualityByCycleSpark
 
