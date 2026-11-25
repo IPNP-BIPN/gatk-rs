@@ -194,6 +194,192 @@ pub fn traverse<'a>(
     Ok(applied)
 }
 
+/// The reads a segment of [`for_each_streamed`] takes before it looks for a cut: a few windows of
+/// read length at 30x, so the reads walked twice are a small share.
+pub const SEGMENT_READS: usize = 1 << 12;
+
+/// Why [`for_each_streamed`] stopped before the last locus.
+#[derive(Debug)]
+pub enum Stopped<E> {
+    /// The reads source refused a read.
+    Read(E),
+    /// The traversal refused, as [`traverse`] would have somewhere.
+    Locus(LocusWalkerError),
+    /// A read came before the one ahead of it, which the segments below rely on not happening.
+    Unsorted,
+    /// `apply` asked to stop.
+    Applied,
+}
+
+/// Whether [`for_each_streamed`] answers what [`traverse`] does for these options: no
+/// downsampling, whose random draws a read carried into the next segment would repeat.
+pub fn streams(options: &Options) -> bool {
+    options.max_depth_per_sample == 0
+}
+
+/// [`traverse`] over reads that arrive one at a time, each locus handed to `apply` in order and
+/// dropped after it, so a traversal holds a segment of reads rather than all of them and no
+/// pileup but the one `apply` is given. Only for options [`streams`] accepts.
+///
+/// The reads, filtered, are cut into segments of about `segment` reads, each cut where the next
+/// read starts strictly after the one before it. A segment answers every locus before its cut. The
+/// next one starts with the reads of that one that reach the cut, in their order, so at every
+/// locus from the cut on the same reads are in the same states in the same order as in one pass:
+/// they are admitted at their own starts and stepped base by base whatever came before. Their
+/// loci before the cut are walked again and skipped.
+///
+/// It does not reproduce WHERE [`traverse`] would have refused. A refusal, a read out of order or
+/// `apply` asking to stop ends it, and a caller then answers from [`traverse`], which refuses as it
+/// always did.
+#[allow(clippy::too_many_arguments)]
+pub fn for_each_streamed<E>(
+    reads: impl IntoIterator<Item = Result<BamRecord, E>>,
+    header: &SamHeader,
+    reference: Option<&mut ReferenceFileSource>,
+    intervals: Option<&[SimpleInterval]>,
+    options: Options,
+    filter: &dyn Fn(&BamRecord) -> bool,
+    segment: usize,
+    mut apply: impl FnMut(Applied<'_>) -> bool,
+) -> Result<(), Stopped<E>> {
+    assert!(streams(&options), "options for_each_streamed reproduces");
+    let route = context_iterator::route(options.emit_empty_loci, intervals);
+    if route == Route::RejectedEmptyIntervalList {
+        return Err(Stopped::Locus(LocusWalkerError::EmptyIntervalList));
+    }
+    let samples = samples_in_iteration_order(header);
+    let mut reference = reference;
+    let mut cursor = context_iterator::OverlapCursor::default();
+    let whole: Vec<SimpleInterval> = header
+        .sequences
+        .iter()
+        .map(|s| SimpleInterval {
+            contig: s.name.clone(),
+            start: 1,
+            end: s.length,
+        })
+        .collect();
+    let mut empty_loci = (route == Route::EmptyLoci)
+        .then(|| context_iterator::EmptyLociCursor::new(intervals.unwrap_or(&whole)));
+    // One locus to `apply`, with the reference under it.
+    let mut emit = |context: AlignmentContext<'_>| -> bool {
+        let interval = SimpleInterval {
+            contig: context.contig.clone(),
+            start: context.position,
+            end: context.position,
+        };
+        let reference_context = match reference.as_deref_mut() {
+            Some(source) => ReferenceContext::new(source, Some(interval), 0, 0),
+            None => ReferenceContext::without_source(Some(interval), 0, 0),
+        }
+        .unwrap_or_else(|_| ReferenceContext::empty());
+        apply(Applied {
+            context,
+            reference: reference_context,
+        })
+    };
+    let key = |read: &BamRecord| (read.reference_index, read.alignment_start);
+
+    let mut reads = reads.into_iter();
+    let mut carried: Vec<BamRecord> = Vec::new();
+    let mut next: Option<BamRecord> = None;
+    // The cut the segment starts at: the carried reads' loci before it were answered already.
+    let mut floor: Option<(String, i32)> = None;
+    loop {
+        let mut reads_here = std::mem::take(&mut carried);
+        let carried_count = reads_here.len();
+        reads_here.extend(next.take());
+        let mut cut = None;
+        for read in reads.by_ref() {
+            let read = read.map_err(Stopped::Read)?;
+            if !filter(&read) {
+                continue;
+            }
+            let last = reads_here[carried_count..].last().map(key);
+            if last.is_some_and(|last| key(&read) < last) {
+                return Err(Stopped::Unsorted);
+            }
+            if reads_here.len() - carried_count >= segment && last != Some(key(&read)) {
+                cut = Some(key(&read));
+                next = Some(read);
+                break;
+            }
+            reads_here.push(read);
+        }
+        let cut_contig = cut.map(|(index, position)| {
+            let name = header
+                .sequences
+                .get(index as usize)
+                .map(|sequence| sequence.name.as_str());
+            (name, position)
+        });
+
+        let states = ReadStateManager::new(
+            samples.clone(),
+            options.downsampling_info().map_err(Stopped::Locus)?,
+        )
+        .map_err(|error| Stopped::Locus(LocusWalkerError::States(error)))?;
+        let contexts = locus_iterator::Contexts::new(
+            &reads_here,
+            samples.clone(),
+            header,
+            LocusIteratorOptions {
+                include_deletions: options.include_deletions,
+                include_ns: options.include_ns,
+            },
+            states,
+            &|_| true,
+        );
+        for context in contexts {
+            let context =
+                context.map_err(|error| Stopped::Locus(LocusWalkerError::States(error)))?;
+            if let Some((name, position)) = cut_contig {
+                if name == Some(context.contig.as_str()) && context.position >= position {
+                    break;
+                }
+            }
+            if let Some((name, position)) = &floor {
+                if *name == context.contig && context.position < *position {
+                    continue;
+                }
+            }
+            let go_on = match (&route, empty_loci.as_mut()) {
+                (Route::Overlapping, _) => {
+                    match cursor.keeps(&context, intervals.expect("routed on intervals"), header) {
+                        Some(true) => emit(context),
+                        Some(false) => true,
+                        // Every interval is behind: the rest is read only for a refusal in it.
+                        None => {
+                            return match reads.find_map(Result::err) {
+                                Some(error) => Err(Stopped::Read(error)),
+                                None => Ok(()),
+                            }
+                        }
+                    }
+                }
+                (_, Some(loci)) => loci.take(context, header, &mut emit),
+                _ => emit(context),
+            };
+            if !go_on {
+                return Err(Stopped::Applied);
+            }
+        }
+        let Some((index, position)) = cut else {
+            if let Some(loci) = empty_loci.as_mut() {
+                if !loci.finish(&mut emit) {
+                    return Err(Stopped::Applied);
+                }
+            }
+            return Ok(());
+        };
+        floor = cut_contig.map(|(name, position)| (name.unwrap_or_default().to_string(), position));
+        carried = reads_here
+            .into_iter()
+            .filter(|read| read.reference_index == index && read.alignment_end() >= position)
+            .collect();
+    }
+}
+
 /// `LocusWalker.onStartup`: with user intervals the reads source is bounded before the traversal.
 ///
 /// Kept as a named function rather than folded into [`traverse`], because the bounding happens on

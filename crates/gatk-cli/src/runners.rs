@@ -2759,40 +2759,105 @@ pub fn pileup(parser: &Parser) -> Outcome {
         ),
         None => None,
     };
-    // The contigs whole, so a locus can be answered without a query per position.
-    let mut bases: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
-    if let Some(source) = reference.as_mut() {
-        for (name, length) in source.sequences().to_vec() {
-            let contig = source
-                .query(&name, 1, length as i32)
-                .map_err(|error| Thrown::user(format!("{error:?}")))?;
-            bases.insert(name, contig);
+    let options = gatk_tools::locus_walker::Options {
+        max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
+        ..gatk_tools::locus_walker::Options::default()
+    };
+    // A locus at a time into a file beside the output, when the traversal allows it; any refusal
+    // is answered by the whole-list path below, which refuses as it always did.
+    let streamable = gatk_tools::locus_walker::streams(&options)
+        && std::fs::metadata(&output).map_or(true, |metadata| metadata.is_file());
+    // The contigs whole, so a locus can be answered without a query per position. A streamed run
+    // reads each one here all the same, for the refusal it may raise, and keeps none: it reads
+    // them again a window at a time.
+    let load = |reference: &mut Option<gatk_engine::reference::ReferenceFileSource>,
+                keep: bool|
+     -> Result<std::collections::HashMap<String, Vec<u8>>, Thrown> {
+        let mut bases = std::collections::HashMap::new();
+        if let Some(source) = reference.as_mut() {
+            for (name, length) in source.sequences().to_vec() {
+                let contig = source
+                    .query(&name, 1, length as i32)
+                    .map_err(|error| Thrown::user(format!("{error:?}")))?;
+                if keep {
+                    bases.insert(name, contig);
+                }
+            }
+        }
+        Ok(bases)
+    };
+    let mut bases = load(&mut reference, !streamable)?;
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let bounds = if intervals.is_empty() {
+        None
+    } else {
+        Some(&intervals[..])
+    };
+    let output_insert_length = flag(parser, "output-insert-length");
+    let show_verbose = flag(parser, "show-verbose");
+    let known = reference
+        .as_ref()
+        .map(|source| gatk_tools::reference_walker::dictionary(source).sequences);
+
+    if streamable {
+        let scratch = format!("{output}.partial");
+        if let Ok(file) = std::fs::File::create(&scratch) {
+            let mut out = std::io::BufWriter::with_capacity(1 << 20, file);
+            let mut window = BaseWindow::default();
+            let reads = gatk_tools::read_walker::traverse_iter(
+                &source,
+                &intervals,
+                false,
+                &|_: &BamRecord| true,
+            )
+            .map_err(reads_traversal_error)?;
+            let done = gatk_tools::locus_walker::for_each_streamed(
+                reads,
+                &header,
+                None,
+                bounds,
+                options,
+                &filter,
+                gatk_tools::locus_walker::SEGMENT_READS,
+                |one| {
+                    let known = known.as_ref().is_none_or(|known| {
+                        known
+                            .iter()
+                            .any(|sequence| sequence.name == one.context.contig)
+                    });
+                    let Some(base) = window.base(reference.as_mut(), &one) else {
+                        return false;
+                    };
+                    known
+                        && std::io::Write::write_all(
+                            &mut out,
+                            pileup_line(&one, base, output_insert_length, show_verbose).as_bytes(),
+                        )
+                        .is_ok()
+                },
+            );
+            let written = done.is_ok()
+                && std::io::Write::flush(&mut out).is_ok()
+                && std::fs::rename(&scratch, &output).is_ok();
+            if written {
+                return Ok(None);
+            }
+            drop(out);
+            let _ = std::fs::remove_file(&scratch);
+            bases = load(&mut reference, true)?;
         }
     }
 
-    let filter = read_filter(parser, &filters, &header)?;
     // The records the traversal would hand `apply`, unfiltered: the locus walker applies the
     // filter itself, and it does so BEFORE the loci are built, so a filtered read is absent from
     // the pileup rather than present and ignored.
     let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
         .map_err(reads_traversal_error)?;
 
-    let applied = gatk_tools::locus_walker::traverse(
-        &records,
-        &header,
-        None,
-        if intervals.is_empty() {
-            None
-        } else {
-            Some(&intervals)
-        },
-        gatk_tools::locus_walker::Options {
-            max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
-            ..gatk_tools::locus_walker::Options::default()
-        },
-        &filter,
-    )
-    .map_err(locus_traversal_error)?;
+    let applied =
+        gatk_tools::locus_walker::traverse(&records, &header, None, bounds, options, &filter)
+            .map_err(locus_traversal_error)?;
 
     // `MissingContigInSequenceDictionary`, which is raised when a LOCUS asks the reference for its
     // base and not before. Three things follow from that, and all three are measured:
@@ -2804,24 +2869,20 @@ pub fn pileup(parser: &Parser) -> Outcome {
     //     all writes an empty file rather than refusing. Measured on row 4 of this tool's array,
     //     where `--inverted-read-filter PrimaryLineReadFilter` keeps nothing and the reference
     //     wrote an empty pileup over a reference whose only contig is not the reads'.
-    if let Some(source) = reference.as_ref() {
-        let known = gatk_tools::reference_walker::dictionary(source);
+    if let Some(known) = known.as_ref() {
         if let Some(unknown) = applied.iter().find(|one| {
             !known
-                .sequences
                 .iter()
                 .any(|sequence| sequence.name == one.context.contig)
         }) {
             return Err(Thrown::user(format!(
                 "Contig {} not present in the sequence dictionary {}\n",
                 unknown.context.contig,
-                gatk_tools::sequence_dictionary::pretty_print(&known.sequences)
+                gatk_tools::sequence_dictionary::pretty_print(known)
             )));
         }
     }
 
-    let output_insert_length = flag(parser, "output-insert-length");
-    let show_verbose = flag(parser, "show-verbose");
     let mut text = String::new();
     for one in &applied {
         let base = bases
@@ -2829,18 +2890,109 @@ pub fn pileup(parser: &Parser) -> Outcome {
             .and_then(|contig| contig.get((one.context.position - 1) as usize))
             .map(|base| *base as char)
             .unwrap_or('N');
-        text.push_str(&gatk_tools::pileup::line(
-            &one.context.pileup,
-            base,
-            &[],
-            output_insert_length,
-            show_verbose,
-        ));
+        text.push_str(&pileup_line(one, base, output_insert_length, show_verbose));
     }
 
     std::fs::write(&output, &text)
         .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
     Ok(None)
+}
+
+/// The reference a megabase at a time, for a locus walker streamed in order: the base the whole
+/// contig would give, `N` past its end, on a contig it does not have, or without a reference.
+/// `None` when the window could not be read.
+#[derive(Default)]
+struct BaseWindow {
+    contig: String,
+    start: i32,
+    bases: Vec<u8>,
+}
+
+impl BaseWindow {
+    const LENGTH: i32 = 1 << 20;
+
+    /// `query(contig, start, end)` for a span inside the contig, read from the window, which
+    /// moves to `start` when the span is not in it. `None` when the window could not be read.
+    fn bases(
+        &mut self,
+        source: &mut gatk_engine::reference::ReferenceFileSource,
+        contig: &str,
+        start: i32,
+        end: i32,
+        length: usize,
+    ) -> Option<&[u8]> {
+        let inside = self.contig == contig
+            && start >= self.start
+            && end < self.start + self.bases.len() as i32;
+        if !inside {
+            let last = (i64::from(start) + i64::from(Self::LENGTH) - 1)
+                .max(i64::from(end))
+                .min(length as i64);
+            self.bases = source.query(contig, start, last as i32).ok()?;
+            self.contig = contig.to_string();
+            self.start = start;
+        }
+        let from = (start - self.start) as usize;
+        self.bases.get(from..from + (end - start + 1) as usize)
+    }
+
+    fn base(
+        &mut self,
+        reference: Option<&mut gatk_engine::reference::ReferenceFileSource>,
+        one: &gatk_tools::locus_walker::Applied<'_>,
+    ) -> Option<char> {
+        let Some(source) = reference else {
+            return Some('N');
+        };
+        match self.base_at(source, &one.context.contig, one.context.position) {
+            Ok(base) => base.map(|base| base as char),
+            Err(()) => Some('N'),
+        }
+    }
+
+    /// The base at one position: `Err` on a contig the reference lacks or a position outside it,
+    /// `Ok(None)` when the window could not be read.
+    fn base_at(
+        &mut self,
+        source: &mut gatk_engine::reference::ReferenceFileSource,
+        contig: &str,
+        position: i32,
+    ) -> Result<Option<u8>, ()> {
+        let inside = self.contig == contig
+            && position >= self.start
+            && position < self.start + self.bases.len() as i32;
+        if inside {
+            return Ok(Some(self.bases[(position - self.start) as usize]));
+        }
+        let length = source
+            .sequences()
+            .iter()
+            .find(|(name, _)| name == contig)
+            .map(|(_, length)| *length)
+            .ok_or(())?;
+        if position < 1 || position as usize > length {
+            return Err(());
+        }
+        Ok(self
+            .bases(source, contig, position, position, length)
+            .map(|bases| bases[0]))
+    }
+}
+
+/// One `Pileup` line: the locus, the reference base under it, and the pileup.
+fn pileup_line(
+    one: &gatk_tools::locus_walker::Applied<'_>,
+    base: char,
+    output_insert_length: bool,
+    show_verbose: bool,
+) -> String {
+    gatk_tools::pileup::line(
+        &one.context.pileup,
+        base,
+        &[],
+        output_insert_length,
+        show_verbose,
+    )
 }
 
 /// `CheckPileup.apply`, once per locus, against the samtools mpileup file `--pileup` names.
@@ -4449,29 +4601,71 @@ pub fn collect_allelic_counts(parser: &Parser) -> Outcome {
         .unwrap_or_default();
 
     let filter = read_filter(parser, &filters, &header)?;
+    let options = gatk_tools::locus_walker::Options {
+        max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
+        // `emitEmptyLoci()` is TRUE on this tool, which is what makes the table a row per
+        // POSITION of the interval rather than a row per pileup: a locus no read reaches is
+        // written with zero counts and an `N` alternate. Measured on this tool's array, where
+        // the reference wrote 5,505 rows over `chr1:501-6000` and the port wrote seventy-five.
+        emit_empty_loci: true,
+        ..gatk_tools::locus_walker::Options::default()
+    };
+    let bounds = if intervals.is_empty() {
+        None
+    } else {
+        Some(&intervals[..])
+    };
+
+    // A locus at a time when the traversal allows it, the reference a window at a time; a locus
+    // the window cannot answer, and any refusal, leaves the table to the whole-list path below.
+    if gatk_tools::locus_walker::streams(&options) {
+        use gatk_tools::collect_allelic_counts as allelic;
+        let minimum_base_quality = number_or(parser, "minimum-base-quality", 20).max(0) as u8;
+        let reads =
+            gatk_tools::read_walker::traverse_iter(&source, &intervals, false, &|_: &BamRecord| {
+                true
+            })
+            .map_err(reads_traversal_error)?;
+        let mut window = BaseWindow::default();
+        let mut counts = Vec::new();
+        let done = gatk_tools::locus_walker::for_each_streamed(
+            reads,
+            &header,
+            None,
+            bounds,
+            options,
+            &filter,
+            gatk_tools::locus_walker::SEGMENT_READS,
+            |one| {
+                let Ok(Some(base)) =
+                    window.base_at(&mut reference, &one.context.contig, one.context.position)
+                else {
+                    return false;
+                };
+                counts.extend(allelic::collect_at_locus(
+                    base,
+                    &one.context.pileup,
+                    &one.context.contig,
+                    one.context.position,
+                    minimum_base_quality,
+                ));
+                true
+            },
+        );
+        if done.is_ok() {
+            write_file(
+                &output,
+                allelic::write(&header.sequences, &sample, &counts).as_bytes(),
+            )?;
+            return Ok(None);
+        }
+    }
+
     let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
         .map_err(reads_traversal_error)?;
-    let applied = gatk_tools::locus_walker::traverse(
-        &records,
-        &header,
-        None,
-        if intervals.is_empty() {
-            None
-        } else {
-            Some(&intervals)
-        },
-        gatk_tools::locus_walker::Options {
-            max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
-            // `emitEmptyLoci()` is TRUE on this tool, which is what makes the table a row per
-            // POSITION of the interval rather than a row per pileup: a locus no read reaches is
-            // written with zero counts and an `N` alternate. Measured on this tool's array, where
-            // the reference wrote 5,505 rows over `chr1:501-6000` and the port wrote seventy-five.
-            emit_empty_loci: true,
-            ..gatk_tools::locus_walker::Options::default()
-        },
-        &filter,
-    )
-    .map_err(locus_traversal_error)?;
+    let applied =
+        gatk_tools::locus_walker::traverse(&records, &header, None, bounds, options, &filter)
+            .map_err(locus_traversal_error)?;
 
     allelic_counts_table(parser, &header, &mut reference, &applied, &sample, &output)
 }
@@ -7505,6 +7699,28 @@ pub fn collect_f1r2_counts(parser: &Parser) -> Outcome {
             }
         }
     }
+    // `ReadUtils.getSampleName` per pileup element, resolved through the header once: the first
+    // `@RG` line with an id is the one `getReadGroup` finds, and its `SM` the sample.
+    let mut sample_of_group: std::collections::HashMap<&str, Option<&str>> =
+        std::collections::HashMap::new();
+    for group in &header.read_groups {
+        sample_of_group
+            .entry(group.id.as_str())
+            .or_insert_with(|| group.attributes.get("SM"));
+    }
+    let sample_name = |read: &BamRecord| -> Option<String> {
+        let id = read.tags.iter().find_map(|(tag, value)| {
+            (tag.name() == *b"RG").then_some(match value {
+                htsjdk_bam::tag::TagValue::Str(text) => text.as_str(),
+                _ => "",
+            })
+        })?;
+        sample_of_group
+            .get(id)
+            .copied()
+            .flatten()
+            .map(str::to_string)
+    };
     let mut collector = f1r2::Collector::new(args, &samples);
     let archive = |collector: &f1r2::Collector, histograms: bool| -> Result<(), Thrown> {
         let mut files = collector.files(histograms);
@@ -7517,59 +7733,52 @@ pub fn collect_f1r2_counts(parser: &Parser) -> Outcome {
     };
 
     let filter = read_filter(parser, &filters, &header)?;
-    let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
-        .map_err(reads_traversal_error)?;
-    let applied = match gatk_tools::locus_walker::traverse(
-        &records,
-        &header,
-        None,
-        if intervals.is_empty() {
-            None
-        } else {
-            Some(&intervals)
-        },
-        gatk_tools::locus_walker::Options {
-            max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
-            ..gatk_tools::locus_walker::Options::default()
-        },
-        &filter,
-    ) {
-        Ok(applied) => applied,
-        Err(error) => {
-            archive(&collector, false)?;
-            return Err(locus_traversal_error(error));
-        }
+    let options = gatk_tools::locus_walker::Options {
+        max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
+        ..gatk_tools::locus_walker::Options::default()
     };
-
+    let bounds = if intervals.is_empty() {
+        None
+    } else {
+        Some(&intervals[..])
+    };
     let sequences = gatk_tools::reference_walker::dictionary(&reference).sequences;
     let one_sample = samples.len() == 1;
-    for one in &applied {
+    // One locus into the collector, or the refusal and whether the archive is written before it.
+    let mut step = |one: &gatk_tools::locus_walker::Applied<'_>,
+                    collector: &mut f1r2::Collector,
+                    window: Option<&mut BaseWindow>|
+     -> Result<(), (Thrown, bool)> {
         let Some(length) = sequences
             .iter()
             .find(|sequence| sequence.name == one.context.contig)
             .map(|sequence| sequence.length)
         else {
-            archive(&collector, false)?;
-            return Err(Thrown::user(format!(
-                "Contig {} not present in the sequence dictionary {}\n",
-                one.context.contig,
-                gatk_tools::sequence_dictionary::pretty_print(&sequences)
-            )));
+            return Err((
+                Thrown::user(format!(
+                    "Contig {} not present in the sequence dictionary {}\n",
+                    one.context.contig,
+                    gatk_tools::sequence_dictionary::pretty_print(&sequences)
+                )),
+                true,
+            ));
         };
         let mut elements = Vec::new();
         for element in &one.context.pileup.elements {
-            let sample = gatk_engine::read_pileup::sample_name(element.read, &header);
+            let sample = sample_name(element.read);
             // `splitBySample(header, null)`: a read with no sample is refused, but only on the
             // path that splits, which is every sample count but one.
             if sample.is_none() && !one_sample {
-                archive(&collector, false)?;
-                return Err(Thrown::user(format!(
-                    "SAM/BAM/CRAM file (unknown) is malformed: Read {} is missing the read group \
-                     (RG) tag, which is required by the GATK.  Please use \
-                     http://gatkforums.broadinstitute.org/discussion/59/\
-                     companion-utilities-replacereadgroups to fix this problem",
-                    element.read.read_name
-                )));
+                return Err((
+                    Thrown::user(format!(
+                        "SAM/BAM/CRAM file (unknown) is malformed: Read {} is missing the read \
+                         group (RG) tag, which is required by the GATK.  Please use \
+                         http://gatkforums.broadinstitute.org/discussion/59/\
+                         companion-utilities-replacereadgroups to fix this problem",
+                        element.read.read_name
+                    )),
+                    true,
+                ));
             }
             elements.push(f1r2::Element::from_pileup(element, sample));
         }
@@ -7580,13 +7789,73 @@ pub fn collect_f1r2_counts(parser: &Parser) -> Outcome {
         let end = (position + 1).min(length);
         let kmer = if end - start < 2 * f1r2::REF_CONTEXT_PADDING as i32 {
             None
+        } else if let Some(window) = window {
+            // The same bases a query answers, a window at a time: a streamed run only, which an
+            // unreadable window sends back to the whole-list path.
+            let bases = window
+                .bases(
+                    &mut reference,
+                    &one.context.contig,
+                    start,
+                    end,
+                    length as usize,
+                )
+                .ok_or_else(|| (Thrown::user(String::new()), false))?;
+            Some(String::from_utf8_lossy(bases).to_ascii_uppercase())
         } else {
             let bases = reference
                 .query(&one.context.contig, start, end)
-                .map_err(|error| Thrown::user(format!("{error:?}")))?;
+                .map_err(|error| (Thrown::user(format!("{error:?}")), false))?;
             Some(String::from_utf8_lossy(&bases).to_ascii_uppercase())
         };
         collector.process(&elements, kmer.as_deref());
+        Ok(())
+    };
+
+    // A locus at a time when the traversal allows it; any refusal is answered by the whole-list
+    // path below, from a fresh collector, which refuses as it always did.
+    if gatk_tools::locus_walker::streams(&options) {
+        let mut streamed = f1r2::Collector::new(args, &samples);
+        let mut window = BaseWindow::default();
+        let reads =
+            gatk_tools::read_walker::traverse_iter(&source, &intervals, false, &|_: &BamRecord| {
+                true
+            })
+            .map_err(reads_traversal_error)?;
+        let done = gatk_tools::locus_walker::for_each_streamed(
+            reads,
+            &header,
+            None,
+            bounds,
+            options,
+            &filter,
+            gatk_tools::locus_walker::SEGMENT_READS,
+            |one| step(&one, &mut streamed, Some(&mut window)).is_ok(),
+        );
+        if done.is_ok() {
+            archive(&streamed, true)?;
+            return Ok(Some("SUCCESS".to_string()));
+        }
+    }
+
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
+        .map_err(reads_traversal_error)?;
+    let applied =
+        match gatk_tools::locus_walker::traverse(&records, &header, None, bounds, options, &filter)
+        {
+            Ok(applied) => applied,
+            Err(error) => {
+                archive(&collector, false)?;
+                return Err(locus_traversal_error(error));
+            }
+        };
+    for one in &applied {
+        if let Err((thrown, archived)) = step(one, &mut collector, None) {
+            if archived {
+                archive(&collector, false)?;
+            }
+            return Err(thrown);
+        }
     }
 
     archive(&collector, true)?;
@@ -13085,8 +13354,18 @@ pub fn get_pileup_summaries(parser: &Parser) -> Outcome {
 
     // `read_vcf` takes the file's TEXT and not its path: the reader is the thing being compared,
     // so the filesystem stays out of it and the runner does the reading.
-    let text = std::fs::read_to_string(&variants)
-        .map_err(|error| Thrown::user(format!("{variants}: {error}")))?;
+    // A `.vcf.gz` is read through the codec's inflating stream; any other file as it was.
+    let mut magic = Vec::new();
+    if let Ok(file) = std::fs::File::open(&variants) {
+        use std::io::Read;
+        file.take(64).read_to_end(&mut magic).ok();
+    }
+    let text = if gatk_tools::read_walker_refusal::is_block_compressed(&magic) {
+        feature_text(&variants)?
+    } else {
+        std::fs::read_to_string(&variants)
+            .map_err(|error| Thrown::user(format!("{variants}: {error}")))?
+    };
     let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
         failure: Failure::User,
         exception: failure.error.class(),
@@ -13110,43 +13389,86 @@ pub fn get_pileup_summaries(parser: &Parser) -> Outcome {
         .unwrap_or_default();
 
     let filter = read_filter(parser, &filters, &header)?;
-    let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
-        .map_err(|error| Thrown::user(format!("{error:?}")))?;
-    let applied = gatk_tools::locus_walker::traverse(
-        &records,
-        &header,
-        None,
-        if intervals.is_empty() {
-            None
-        } else {
-            Some(&intervals)
-        },
-        gatk_tools::locus_walker::Options {
-            max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
-            ..gatk_tools::locus_walker::Options::default()
-        },
-        &filter,
-    )
-    .map_err(locus_traversal_error)?;
+    let options = gatk_tools::locus_walker::Options {
+        max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
+        ..gatk_tools::locus_walker::Options::default()
+    };
+    let bounds = if intervals.is_empty() {
+        None
+    } else {
+        Some(&intervals[..])
+    };
 
     // `featureContext.getValues(variants)` at each locus, which is every record OVERLAPPING it in
-    // the file's own order; the tool reads the first and ignores the rest.
-    let sites: Vec<(Vec<htsjdk_vcf::variant::VariantContext>, [i32; 4])> = applied
+    // the file's own order; the tool reads the first and ignores the rest, and skips a locus with
+    // none. So only the loci with a record are kept, each with the first one in file order, found
+    // among the records sorted by contig and start, with each contig's longest span.
+    let mut by_start: Vec<(&str, i64, i64, usize)> = file
+        .records
         .iter()
-        .map(|one| {
-            let overlapping: Vec<htsjdk_vcf::variant::VariantContext> = file
-                .records
-                .iter()
-                .filter(|record| {
-                    record.contig == one.context.contig
-                        && record.start <= one.context.position as i64
-                        && one.context.position as i64 <= record.stop
-                })
-                .cloned()
-                .collect();
-            (overlapping, one.context.pileup.base_counts())
-        })
+        .enumerate()
+        .map(|(index, record)| (record.contig.as_str(), record.start, record.stop, index))
         .collect();
+    by_start.sort_by(|left, right| (left.0, left.1).cmp(&(right.0, right.1)));
+    let mut longest: std::collections::HashMap<&str, i64> = std::collections::HashMap::new();
+    for (contig, start, stop, _) in &by_start {
+        let span = longest.entry(contig).or_insert(0);
+        *span = (*span).max(stop - start);
+    }
+    let first_at = |contig: &str, position: i64| -> Option<usize> {
+        let span = longest.get(contig)?;
+        let low = by_start.partition_point(|site| (site.0, site.1) < (contig, position - span));
+        let high = by_start.partition_point(|site| (site.0, site.1) <= (contig, position));
+        by_start[low..high]
+            .iter()
+            .filter(|site| site.2 >= position)
+            .map(|site| site.3)
+            .min()
+    };
+    let site_of = |one: &gatk_tools::locus_walker::Applied<'_>| {
+        first_at(&one.context.contig, one.context.position as i64).map(|index| {
+            (
+                vec![file.records[index].clone()],
+                one.context.pileup.base_counts(),
+            )
+        })
+    };
+
+    let mut sites: Vec<(Vec<htsjdk_vcf::variant::VariantContext>, [i32; 4])> = Vec::new();
+    // A locus at a time when the traversal allows it; any refusal is answered by the whole-list
+    // path below, which refuses as it always did.
+    let mut streamed = false;
+    if gatk_tools::locus_walker::streams(&options) {
+        if let Ok(reads) =
+            gatk_tools::read_walker::traverse_iter(&source, &intervals, false, &|_: &BamRecord| {
+                true
+            })
+        {
+            streamed = gatk_tools::locus_walker::for_each_streamed(
+                reads,
+                &header,
+                None,
+                bounds,
+                options,
+                &filter,
+                gatk_tools::locus_walker::SEGMENT_READS,
+                |one| {
+                    sites.extend(site_of(&one));
+                    true
+                },
+            )
+            .is_ok();
+        }
+    }
+    if !streamed {
+        sites.clear();
+        let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        let applied =
+            gatk_tools::locus_walker::traverse(&records, &header, None, bounds, options, &filter)
+                .map_err(locus_traversal_error)?;
+        sites.extend(applied.iter().filter_map(site_of));
+    }
 
     let text = gatk_tools::get_pileup_summaries::run(
         &sites,
@@ -13457,17 +13779,6 @@ pub fn callable_loci(parser: &Parser) -> Outcome {
     }
 
     let filter = read_filter(parser, &filters, &header)?;
-    let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
-        .map_err(reads_traversal_error)?;
-
-    // The contigs whole: a state per base would otherwise be a reference query per base.
-    let mut bases: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
-    for (name, length) in reference.sequences().to_vec() {
-        let contig = reference
-            .query(&name, 1, length as i32)
-            .map_err(|error| Thrown::user(format!("{error:?}")))?;
-        bases.insert(name, contig);
-    }
     // `getTraversalIntervals()`: the user's intervals, or every interval of the reference.
     let requested: Vec<gatk_engine::interval::SimpleInterval> = if intervals.is_empty() {
         known
@@ -13481,17 +13792,132 @@ pub fn callable_loci(parser: &Parser) -> Outcome {
     } else {
         intervals.clone()
     };
+    let thresholds = gatk_tools::callable_loci::Arguments {
+        max_low_mapq: number_or(parser, "max-low-mapq", 1),
+        min_mapping_quality: number_or(parser, "min-mapping-quality", 10),
+        min_base_quality: number_or(parser, "min-base-quality", 20),
+        min_depth: number_or(parser, "min-depth", 4),
+        // `maxDepth` is an `Integer` and not an `int`: unset is null, and null is not a threshold
+        // rather than a threshold of zero. A run with `--max-depth 0` calls every covered locus
+        // excessive, and a run without it calls none.
+        max_depth: scalar(parser, "max-depth").and_then(|text| text.parse().ok()),
+        min_depth_low_mapq: number_or(parser, "min-depth-for-low-mapq", 10),
+        max_low_mapq_fraction: fraction_or(parser, "max-fraction-of-reads-with-low-mapq", 0.1),
+    };
+    let format = match scalar(parser, "format").as_deref() {
+        Some("STATE_PER_BASE") => gatk_tools::callable_loci::OutputFormat::StatePerBase,
+        _ => gatk_tools::callable_loci::OutputFormat::Bed,
+    };
+    let options = gatk_tools::locus_walker::Options {
+        include_deletions: true,
+        include_ns: true,
+        emit_empty_loci: true,
+        max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
+    };
+    // The state of one locus, over the reference base under it.
+    let state_of = |one: &gatk_tools::locus_walker::Applied<'_>, base: u8| {
+        let pileup: Vec<gatk_tools::callable_loci::Element> = one
+            .context
+            .pileup
+            .elements
+            .iter()
+            .map(|element| gatk_tools::callable_loci::Element {
+                mapping_quality: i32::from(element.read.mapping_quality),
+                base_quality: element.qual() as i32,
+                is_deletion: element.is_deletion(),
+            })
+            .collect();
+        gatk_tools::callable_loci::state_at(base, &pileup, &thresholds)
+    };
+
+    // A locus at a time into a file beside the output, when the traversal allows it; any refusal
+    // is answered by the whole-list path below, which refuses as it always did.
+    let streamable = gatk_tools::locus_walker::streams(&options)
+        && std::fs::metadata(&output).map_or(true, |metadata| metadata.is_file());
+    let scratch = format!("{output}.partial");
+    if let Some(file) = streamable
+        .then(|| std::fs::File::create(&scratch).ok())
+        .flatten()
+    {
+        let mut out = std::io::BufWriter::with_capacity(1 << 20, file);
+        let mut window = BaseWindow::default();
+        let mut writer = gatk_tools::callable_loci::Writer::new(format);
+        let mut bed = String::new();
+        let reads =
+            gatk_tools::read_walker::traverse_iter(&source, &intervals, false, &|_: &BamRecord| {
+                true
+            })
+            .map_err(reads_traversal_error)?;
+        let done = gatk_tools::locus_walker::for_each_streamed(
+            reads,
+            &header,
+            None,
+            Some(&requested),
+            options,
+            &filter,
+            gatk_tools::locus_walker::SEGMENT_READS,
+            |one| {
+                let known = known
+                    .sequences
+                    .iter()
+                    .any(|sequence| sequence.name == one.context.contig);
+                let Some(base) = window.base(Some(&mut reference), &one) else {
+                    return false;
+                };
+                if !known {
+                    return false;
+                }
+                bed.clear();
+                writer.push(
+                    &one.context.contig,
+                    one.context.position,
+                    state_of(&one, base as u8),
+                    &mut bed,
+                );
+                std::io::Write::write_all(&mut out, bed.as_bytes()).is_ok()
+            },
+        );
+        if done.is_ok() {
+            bed.clear();
+            let summary = writer.finish(&mut bed);
+            if std::io::Write::write_all(&mut out, bed.as_bytes()).is_ok()
+                && std::io::Write::flush(&mut out).is_ok()
+            {
+                drop(out);
+                // The contigs the whole-list path reads after the traversal, for the refusal one
+                // may raise there.
+                for (name, length) in reference.sequences().to_vec() {
+                    if let Err(error) = reference.query(&name, 1, length as i32) {
+                        let _ = std::fs::remove_file(&scratch);
+                        return Err(Thrown::user(format!("{error:?}")));
+                    }
+                }
+                if std::fs::rename(&scratch, &output).is_ok() {
+                    write_file(&summary_output, summary.as_bytes())?;
+                    return Ok(None);
+                }
+            }
+        }
+        let _ = std::fs::remove_file(&scratch);
+    }
+
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
+        .map_err(reads_traversal_error)?;
+
+    // The contigs whole: a state per base would otherwise be a reference query per base.
+    let mut bases: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
+    for (name, length) in reference.sequences().to_vec() {
+        let contig = reference
+            .query(&name, 1, length as i32)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        bases.insert(name, contig);
+    }
     let applied = gatk_tools::locus_walker::traverse(
         &records,
         &header,
         None,
         Some(&requested),
-        gatk_tools::locus_walker::Options {
-            include_deletions: true,
-            include_ns: true,
-            emit_empty_loci: true,
-            max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
-        },
+        options,
         &filter,
     )
     .map_err(locus_traversal_error)?;
@@ -13512,18 +13938,6 @@ pub fn callable_loci(parser: &Parser) -> Outcome {
         )));
     }
 
-    let thresholds = gatk_tools::callable_loci::Arguments {
-        max_low_mapq: number_or(parser, "max-low-mapq", 1),
-        min_mapping_quality: number_or(parser, "min-mapping-quality", 10),
-        min_base_quality: number_or(parser, "min-base-quality", 20),
-        min_depth: number_or(parser, "min-depth", 4),
-        // `maxDepth` is an `Integer` and not an `int`: unset is null, and null is not a threshold
-        // rather than a threshold of zero. A run with `--max-depth 0` calls every covered locus
-        // excessive, and a run without it calls none.
-        max_depth: scalar(parser, "max-depth").and_then(|text| text.parse().ok()),
-        min_depth_low_mapq: number_or(parser, "min-depth-for-low-mapq", 10),
-        max_low_mapq_fraction: fraction_or(parser, "max-fraction-of-reads-with-low-mapq", 0.1),
-    };
     // A locus with no reference base at all cannot be read from the map, and the reference would
     // have refused before the traversal; `N` is what the state machine answers for one.
     let loci: Vec<(String, i32, gatk_tools::callable_loci::State)> = applied
@@ -13534,29 +13948,14 @@ pub fn callable_loci(parser: &Parser) -> Outcome {
                 .and_then(|contig| contig.get((one.context.position - 1) as usize))
                 .copied()
                 .unwrap_or(b'N');
-            let pileup: Vec<gatk_tools::callable_loci::Element> = one
-                .context
-                .pileup
-                .elements
-                .iter()
-                .map(|element| gatk_tools::callable_loci::Element {
-                    mapping_quality: i32::from(element.read.mapping_quality),
-                    base_quality: element.qual() as i32,
-                    is_deletion: element.is_deletion(),
-                })
-                .collect();
             (
                 one.context.contig.clone(),
                 one.context.position,
-                gatk_tools::callable_loci::state_at(base, &pileup, &thresholds),
+                state_of(one, base),
             )
         })
         .collect();
 
-    let format = match scalar(parser, "format").as_deref() {
-        Some("STATE_PER_BASE") => gatk_tools::callable_loci::OutputFormat::StatePerBase,
-        _ => gatk_tools::callable_loci::OutputFormat::Bed,
-    };
     let (bed, summary) = gatk_tools::callable_loci::write(&loci, format);
     write_file(&output, bed.as_bytes())?;
     write_file(&summary_output, summary.as_bytes())?;
@@ -20307,28 +20706,47 @@ pub fn ase_read_counter(parser: &Parser) -> Outcome {
     };
 
     let filter = read_filter(parser, &filters, &header)?;
-    let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
-        .map_err(reads_traversal_error)?;
-    let applied = gatk_tools::locus_walker::traverse(
-        &records,
-        &header,
-        None,
-        if intervals.is_empty() {
-            None
-        } else {
-            Some(&intervals)
-        },
-        gatk_tools::locus_walker::Options {
-            max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
-            ..gatk_tools::locus_walker::Options::default()
-        },
-        &filter,
-    )
-    .map_err(locus_traversal_error)?;
+    let options = gatk_tools::locus_walker::Options {
+        max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
+        ..gatk_tools::locus_walker::Options::default()
+    };
+    let bounds = if intervals.is_empty() {
+        None
+    } else {
+        Some(&intervals[..])
+    };
+
+    // The sites by contig and start, with each contig's longest span, so a locus asks only the
+    // sites that can hold it. Their order is never observed: more than one is a refusal, and one
+    // is the site.
+    let mut sites: Vec<(&str, i64, i64, &htsjdk_vcf::variant::VariantContext)> = variants
+        .iter()
+        .flat_map(|(_, records)| records.iter())
+        .map(|record| (record.contig.as_str(), record.start, record.stop, record))
+        .collect();
+    sites.sort_by(|left, right| (left.0, left.1).cmp(&(right.0, right.1)));
+    let mut longest: std::collections::HashMap<&str, i64> = std::collections::HashMap::new();
+    for (contig, start, stop, _) in &sites {
+        let span = longest.entry(contig).or_insert(0);
+        *span = (*span).max(stop - start);
+    }
+    let sites_at = |contig: &str, position: i64| -> Vec<&htsjdk_vcf::variant::VariantContext> {
+        let Some(span) = longest.get(contig) else {
+            return Vec::new();
+        };
+        let low = sites.partition_point(|site| (site.0, site.1) < (contig, position - span));
+        let high = sites.partition_point(|site| (site.0, site.1) <= (contig, position));
+        sites[low..high]
+            .iter()
+            .filter(|site| site.2 >= position)
+            .map(|site| site.3)
+            .collect()
+    };
 
     // `onTraversalStart` opens the stream and writes the header before the first locus.
     let mut text = ase::header(format);
     text.push('\n');
+    let mut window = BaseWindow::default();
     let finish = |text: &str| -> Result<(), Thrown> {
         match &output {
             Some(path) => write_file(path, text.as_bytes()),
@@ -20338,63 +20756,51 @@ pub fn ase_read_counter(parser: &Parser) -> Outcome {
             }
         }
     };
-    let refuse = |text: &str, thrown: Thrown| -> Outcome {
-        finish(text)?;
-        Err(thrown)
-    };
-    let mut queried = false;
-    for one in &applied {
+    // One locus: its line, if any, onto `text`, or the refusal, after which what `text` holds is
+    // written.
+    let mut step = |one: &gatk_tools::locus_walker::Applied<'_>,
+                    text: &mut String,
+                    queried: &mut bool|
+     -> Result<(), Thrown> {
         let contig = &one.context.contig;
         let position = one.context.position;
         let base = match reference.as_mut() {
-            Some(source) => match source.query(contig, position, position) {
-                Ok(bases) => bases[0],
-                Err(error) => return refuse(&text, Thrown::user(format!("{error:?}"))),
+            // The window's base where it has one, and the query's own answer, a refusal among
+            // them, where it does not.
+            Some(source) => match window.base_at(source, contig, position) {
+                Ok(Some(base)) => base,
+                _ => match source.query(contig, position, position) {
+                    Ok(bases) => bases[0],
+                    Err(error) => return Err(Thrown::user(format!("{error:?}"))),
+                },
             },
             None => {
-                return refuse(
-                    &text,
-                    Thrown::non_user(
-                        "java.lang.ArrayIndexOutOfBoundsException",
-                        "Index 0 out of bounds for length 0",
-                    ),
-                )
+                return Err(Thrown::non_user(
+                    "java.lang.ArrayIndexOutOfBoundsException",
+                    "Index 0 out of bounds for length 0",
+                ))
             }
         };
-        if !queried {
-            queried = true;
+        if !*queried {
+            *queried = true;
             if let Some((path, _)) = variants.iter().find(|(path, _)| !has_feature_index(path)) {
-                return refuse(
-                    &text,
-                    Thrown::user(format!(
-                        "Input {path} must support random access to enable queries by interval. \
+                return Err(Thrown::user(format!(
+                    "Input {path} must support random access to enable queries by interval. \
                          If it's a file, please index it using the bundled tool IndexFeatureFile"
-                    )),
-                );
+                )));
             }
         }
-        let at: Vec<&htsjdk_vcf::variant::VariantContext> = variants
-            .iter()
-            .flat_map(|(_, records)| records.iter())
-            .filter(|record| {
-                record.contig == *contig
-                    && record.start <= i64::from(position)
-                    && i64::from(position) <= record.stop
-            })
-            .collect();
+        let at = sites_at(contig, i64::from(position));
         if at.len() > 1 {
-            return refuse(
-                &text,
-                Thrown::user(format!(
-                    "More then one variant context at position: {contig}:{position}"
-                )),
-            );
+            return Err(Thrown::user(format!(
+                "More then one variant context at position: {contig}:{position}"
+            )));
         }
         let Some(site) = at.first() else {
-            continue;
+            return Ok(());
         };
         if site.alleles.len() != 2 {
-            continue;
+            return Ok(());
         }
         let hets = site
             .genotypes
@@ -20402,18 +20808,15 @@ pub fn ase_read_counter(parser: &Parser) -> Outcome {
             .filter(|genotype| determine_type(genotype) == GenotypeType::Het)
             .count();
         if hets < 1 {
-            continue;
+            return Ok(());
         }
         let alternate = site.alleles[1].display_string();
         if alternate.is_empty() || site.alleles[1].is_symbolic() {
-            return refuse(
-                &text,
-                Thrown::user(
-                    "The file of variant sites must contain heterozygous sites and cannot be a \
+            return Err(Thrown::user(
+                "The file of variant sites must contain heterozygous sites and cannot be a \
                      GVCF file containing <NON_REF> alleles."
-                        .to_string(),
-                ),
-            );
+                    .to_string(),
+            ));
         }
         let alternate = alternate.as_bytes()[0];
         let pileup = ase::filter_pileup(&one.context.pileup, count_type);
@@ -20436,6 +20839,45 @@ pub fn ase_read_counter(parser: &Parser) -> Outcome {
         ) {
             text.push_str(&line);
             text.push('\n');
+        }
+        Ok(())
+    };
+
+    // A locus at a time when the traversal allows it; any refusal is answered by the whole-list
+    // path below, from the header again, which refuses as it always did.
+    if gatk_tools::locus_walker::streams(&options) {
+        let (mut streamed, mut queried) = (text.clone(), false);
+        let reads =
+            gatk_tools::read_walker::traverse_iter(&source, &intervals, false, &|_: &BamRecord| {
+                true
+            })
+            .map_err(reads_traversal_error)?;
+        let done = gatk_tools::locus_walker::for_each_streamed(
+            reads,
+            &header,
+            None,
+            bounds,
+            options,
+            &filter,
+            gatk_tools::locus_walker::SEGMENT_READS,
+            |one| step(&one, &mut streamed, &mut queried).is_ok(),
+        );
+        if done.is_ok() {
+            finish(&streamed)?;
+            return Ok(None);
+        }
+    }
+
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
+        .map_err(reads_traversal_error)?;
+    let applied =
+        gatk_tools::locus_walker::traverse(&records, &header, None, bounds, options, &filter)
+            .map_err(locus_traversal_error)?;
+    let mut queried = false;
+    for one in &applied {
+        if let Err(thrown) = step(one, &mut text, &mut queried) {
+            finish(&text)?;
+            return Err(thrown);
         }
     }
     finish(&text)?;

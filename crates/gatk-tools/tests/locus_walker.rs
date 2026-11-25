@@ -209,3 +209,224 @@ fn every_apply_call_matches_the_reference() {
         labels.len()
     );
 }
+
+/// `for_each_streamed` hands `apply` the loci `traverse` collects, the same pileups in the same
+/// order, however small its segments, on every configuration it accepts.
+#[test]
+fn streamed_segments_are_the_whole_traversal() {
+    let read_walker = corpus::read_golden(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/read_walker.txt.gz"),
+    );
+    let dir = std::env::temp_dir().join(format!("gatk-rs-locusstream-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (bam, bai, fasta) = (dir.join("r.bam"), dir.join("r.bai"), dir.join("ref.fasta"));
+    std::fs::write(&bam, corpus::decode_base64(field(&read_walker, "bam"))).unwrap();
+    std::fs::write(&bai, corpus::decode_base64(field(&read_walker, "bai"))).unwrap();
+    std::fs::write(&fasta, unescape(field(&read_walker, "fasta"))).unwrap();
+    std::fs::write(
+        dir.join("ref.fasta.fai"),
+        unescape(field(&read_walker, "fai")),
+    )
+    .unwrap();
+    let source = ReadsDataSource::open(&bam, &bai).expect("the fixture opens");
+    let header = source.header().clone();
+    let reads = source.iter_all().expect("the fixture reads");
+    let row = |call: &locus_walker::Applied<'_>| {
+        let names: Vec<&str> = call
+            .context
+            .pileup
+            .elements
+            .iter()
+            .map(|element| element.read.read_name.as_str())
+            .collect();
+        format!(
+            "{}:{}|{:?}|{:?}",
+            call.context.contig,
+            call.context.position,
+            call.context.pileup.bases(),
+            names
+        )
+    };
+
+    let mut compared = 0;
+    let configurations = [None, Some("chr1:100-130"), Some("chr1:20-70"), Some("chr2")]
+        .into_iter()
+        .flat_map(|bounds| [(bounds, false), (bounds, true)]);
+    for (bounds, emit_empty_loci) in configurations {
+        let intervals: Option<Vec<SimpleInterval>> =
+            bounds.map(|text| vec![interval::parse_interval(text, &header).unwrap()]);
+        let filter = |read: &BamRecord| locus_walker::default_filter(&header)(read);
+        let options = Options {
+            emit_empty_loci,
+            ..Options::default()
+        };
+        let whole: Vec<String> = locus_walker::traverse(
+            &reads,
+            &header,
+            None,
+            intervals.as_deref(),
+            options,
+            &filter,
+        )
+        .unwrap()
+        .iter()
+        .map(row)
+        .collect();
+        assert!(!whole.is_empty());
+        for segment in [1, 2, 3, 5, 1000] {
+            let mut streamed = Vec::new();
+            locus_walker::for_each_streamed(
+                reads.iter().cloned().map(Ok::<_, ()>),
+                &header,
+                None,
+                intervals.as_deref(),
+                options,
+                &filter,
+                segment,
+                |call| {
+                    streamed.push(row(&call));
+                    true
+                },
+            )
+            .unwrap();
+            assert_eq!(
+                streamed, whole,
+                "{bounds:?}, empty loci {emit_empty_loci}, segments of {segment}"
+            );
+            compared += 1;
+        }
+    }
+    assert_eq!(compared, 40);
+
+    // A read out of order stops it, for the caller to answer from `traverse`.
+    let mut unsorted = reads.clone();
+    unsorted.swap(0, reads.len() - 1);
+    let stopped = locus_walker::for_each_streamed(
+        unsorted.into_iter().map(Ok::<_, ()>),
+        &header,
+        None,
+        None,
+        Options::default(),
+        &|read: &BamRecord| locus_walker::default_filter(&header)(read),
+        2,
+        |_| true,
+    );
+    assert!(
+        matches!(stopped, Err(locus_walker::Stopped::Unsorted)),
+        "{stopped:?}"
+    );
+}
+
+/// The same on reads that overlap across every cut, from two samples, through deletions,
+/// insertions, clips and skips, with reads sharing a start.
+#[test]
+fn streamed_segments_carry_the_reads_that_reach_the_cut() {
+    let mut sam = String::from(
+        "@HD\tVN:1.6\tSO:coordinate\n@SQ\tSN:chr1\tLN:1000\n@SQ\tSN:chr2\tLN:1000\n\
+         @RG\tID:a\tSM:s1\n@RG\tID:b\tSM:s2\n",
+    );
+    let cigars = ["10M", "4M2D6M", "3S7M", "5M3I2M", "4M20N6M", "2M1D8M"];
+    for index in 0..40 {
+        let contig = if index < 30 { "chr1" } else { "chr2" };
+        let start = 100 + (index / 2) * 3;
+        let cigar = cigars[index % cigars.len()];
+        // The bases the cigar reads: its M, I and S lengths.
+        let (mut length, mut number) = (0usize, 0usize);
+        for c in cigar.chars() {
+            match c.to_digit(10) {
+                Some(digit) => number = number * 10 + digit as usize,
+                None => {
+                    if "MIS".contains(c) {
+                        length += number;
+                    }
+                    number = 0;
+                }
+            }
+        }
+        let group = if index % 3 == 0 { "b" } else { "a" };
+        sam.push_str(&format!(
+            "r{index}\t0\t{contig}\t{start}\t60\t{cigar}\t*\t0\t0\t{}\t{}\tRG:Z:{group}\n",
+            "ACGT".repeat(length).get(..length).unwrap(),
+            "I".repeat(length),
+        ));
+    }
+    let (header, reads) = htsjdk_bam::sam_file::read_sam(&sam).expect("the SAM parses");
+    let row = |call: &locus_walker::Applied<'_>| {
+        let names: Vec<&str> = call
+            .context
+            .pileup
+            .elements
+            .iter()
+            .map(|element| element.read.read_name.as_str())
+            .collect();
+        format!(
+            "{}:{}|{names:?}",
+            call.context.contig, call.context.position
+        )
+    };
+    let filter = |read: &BamRecord| locus_walker::default_filter(&header)(read);
+    let whole: Vec<String> =
+        locus_walker::traverse(&reads, &header, None, None, Options::default(), &filter)
+            .unwrap()
+            .iter()
+            .map(row)
+            .collect();
+    assert!(
+        whole.iter().any(|row| row.matches('r').count() > 3),
+        "reads overlap"
+    );
+    for segment in 1..=6 {
+        let mut streamed = Vec::new();
+        locus_walker::for_each_streamed(
+            reads.iter().cloned().map(Ok::<_, ()>),
+            &header,
+            None,
+            None,
+            Options::default(),
+            &filter,
+            segment,
+            |call| {
+                streamed.push(row(&call));
+                true
+            },
+        )
+        .unwrap();
+        assert_eq!(streamed, whole, "segments of {segment}");
+    }
+
+    // Empty loci over a request that starts before the reads, spans a gap and ends past them.
+    let requested = vec![
+        interval::parse_interval("chr1:90-125", &header).unwrap(),
+        interval::parse_interval("chr1:140-160", &header).unwrap(),
+        interval::parse_interval("chr2:140-170", &header).unwrap(),
+    ];
+    let options = Options {
+        emit_empty_loci: true,
+        ..Options::default()
+    };
+    let whole: Vec<String> =
+        locus_walker::traverse(&reads, &header, None, Some(&requested), options, &filter)
+            .unwrap()
+            .iter()
+            .map(row)
+            .collect();
+    assert_eq!(whole.len(), 36 + 21 + 31);
+    for segment in 1..=6 {
+        let mut streamed = Vec::new();
+        locus_walker::for_each_streamed(
+            reads.iter().cloned().map(Ok::<_, ()>),
+            &header,
+            None,
+            Some(&requested),
+            options,
+            &filter,
+            segment,
+            |call| {
+                streamed.push(row(&call));
+                true
+            },
+        )
+        .unwrap();
+        assert_eq!(streamed, whole, "empty loci, segments of {segment}");
+    }
+}
