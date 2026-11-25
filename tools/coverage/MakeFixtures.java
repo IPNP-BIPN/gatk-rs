@@ -4198,6 +4198,16 @@ public class MakeFixtures {
                             htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
                     .write(dir.resolve(name + ".idx"));
         }
+        // The text feature formats, through IndexFeatureFile, which picks each file's codec. The
+        // other file of each kind (unfuncotated.vcf, counts.tsv, summed_missing.vcf...) stays
+        // unindexed, so the refusal is still a row.
+        for (final String name : new String[] {"vqsr_input.vcf", "summed.vcf", "depth.rd.txt",
+                "depth2.rd.txt", "depth3.rd.txt", "sv.counts.tsv", "funcotated.vcf", "cnn.vcf",
+                "funco_segments.seg", "tumour.seg", "normal.seg", "annotation.gtf", "depth.sd.txt",
+                "depth2.sd.txt", "baf_sites.vcf"}) {
+            new org.broadinstitute.hellbender.tools.IndexFeatureFile().instanceMain(
+                    new String[] {"-I", dir.resolve(name).toString()});
+        }
     }
 
     /**

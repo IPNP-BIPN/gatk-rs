@@ -1386,8 +1386,14 @@
       ],
       "--input": [],
       "--read-index": [],
-      "--intervals": [],
-      "--exclude-intervals": [],
+      "--intervals": [
+        "<unset>",
+        "chr1:1-3000"
+      ],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:1001-2000"
+      ],
       "--max-variants-per-shard": [
         "0"
       ]
@@ -1430,8 +1436,14 @@
         "/work/out/files.list",
         "/work/out/files2.list"
       ],
-      "--intervals": [],
-      "--exclude-intervals": []
+      "--intervals": [
+        "<unset>",
+        "chr1:1-3000"
+      ],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:1001-2000"
+      ]
     },
     "DenoiseReadCounts": {
       "$why": [
@@ -2363,8 +2375,14 @@
       ],
       "--input": [],
       "--read-index": [],
-      "--intervals": [],
-      "--exclude-intervals": []
+      "--intervals": [
+        "<unset>",
+        "chr1:1-300"
+      ],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr2:1-50"
+      ]
     },
     "CallableLoci": {
       "$why": [
@@ -3067,8 +3085,14 @@
       "--max-variants-per-shard": [
         "0"
       ],
-      "--intervals": [],
-      "--exclude-intervals": [],
+      "--intervals": [
+        "<unset>",
+        "chr1:1-600"
+      ],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:200-300"
+      ],
       "--read-filter-tag-op": [
         "<unset>",
         "GREATER"
@@ -3146,8 +3170,14 @@
       "--max-variants-per-shard": [
         "0"
       ],
-      "--intervals": [],
-      "--exclude-intervals": []
+      "--intervals": [
+        "<unset>",
+        "chr1:1-600"
+      ],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:200-300"
+      ]
     },
     "SiteDepthtoBAF": {
       "$why": [
@@ -3210,8 +3240,14 @@
       "--max-variants-per-shard": [
         "0"
       ],
-      "--intervals": [],
-      "--exclude-intervals": []
+      "--intervals": [
+        "<unset>",
+        "chr1:1-500"
+      ],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:90-110"
+      ]
     },
     "MergeMutectStats": {
       "$why": [
@@ -3730,8 +3766,14 @@
       ],
       "--input": [],
       "--read-index": [],
-      "--intervals": [],
-      "--exclude-intervals": [],
+      "--intervals": [
+        "<unset>",
+        "chr1:1-600"
+      ],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:200-300"
+      ],
       "--read-filter-tag-op": [
         "<unset>",
         "GREATER"
@@ -3789,8 +3831,14 @@
       ],
       "--input": [],
       "--read-index": [],
-      "--intervals": [],
-      "--exclude-intervals": [],
+      "--intervals": [
+        "<unset>",
+        "chr1:1-300"
+      ],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:90-110"
+      ],
       "--read-filter-tag-op": [
         "<unset>",
         "GREATER"
@@ -3867,8 +3915,14 @@
       ],
       "--input": [],
       "--read-index": [],
-      "--intervals": [],
-      "--exclude-intervals": [],
+      "--intervals": [
+        "<unset>",
+        "chr1:1-500"
+      ],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:90-110"
+      ],
       "--create-output-variant-index": [
         "false"
       ],
@@ -3913,8 +3967,14 @@
         "/work/out/downsampled2.bam"
       ],
       "--read-index": [],
-      "--intervals": [],
-      "--exclude-intervals": [],
+      "--intervals": [
+        "<unset>",
+        "chr1:1-1000"
+      ],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:100-200"
+      ],
       "--read-filter-tag-op": [
         "<unset>",
         "GREATER"
@@ -3998,8 +4058,14 @@
         "<unset>",
         "/work/fixtures/ase.bai"
       ],
-      "--intervals": [],
-      "--exclude-intervals": [],
+      "--intervals": [
+        "<unset>",
+        "chr1:1000-1250"
+      ],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:1100-1110"
+      ],
       "--max-variants-per-shard": [
         "0"
       ]
@@ -4059,8 +4125,14 @@
       ],
       "--input": [],
       "--read-index": [],
-      "--intervals": [],
-      "--exclude-intervals": [],
+      "--intervals": [
+        "<unset>",
+        "chr1:1-500"
+      ],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:350-450"
+      ],
       "--create-output-variant-index": [
         "false"
       ],
@@ -4529,8 +4601,14 @@
       ],
       "--input": [],
       "--read-index": [],
-      "--intervals": [],
-      "--exclude-intervals": [],
+      "--intervals": [
+        "<unset>",
+        "chr1:1-25000"
+      ],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:5000-5200"
+      ],
       "--create-output-variant-index": [
         "false"
       ],
@@ -4788,8 +4866,14 @@
       ],
       "--input": [],
       "--read-index": [],
-      "--intervals": [],
-      "--exclude-intervals": [],
+      "--intervals": [
+        "<unset>",
+        "chr1:1-5000"
+      ],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:8001-8500"
+      ],
       "--read-filter-tag-op": [
         "<unset>",
         "GREATER"
@@ -4949,8 +5033,14 @@
       ],
       "--input": [],
       "--read-index": [],
-      "--intervals": [],
-      "--exclude-intervals": [],
+      "--intervals": [
+        "<unset>",
+        "chr1:1-500"
+      ],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:90-110"
+      ],
       "--create-output-variant-index": [
         "false"
       ],
@@ -7520,7 +7610,10 @@
         "null",
         "chr1:1000-2000"
       ],
-      "--exclude-intervals": [],
+      "--exclude-intervals": [
+        "<unset>",
+        "chr1:4500-4600"
+      ],
       "--sequence-dictionary": [
         "<unset>",
         "/work/fixtures/funco_ref.dict"
@@ -7676,7 +7769,10 @@
         "false",
         "true"
       ],
-      "--intervals": [],
+      "--intervals": [
+        "<unset>",
+        "chr1:1-1000"
+      ],
       "--exclude-intervals": [
         "null",
         "chr2"
