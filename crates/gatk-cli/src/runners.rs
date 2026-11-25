@@ -15964,6 +15964,17 @@ pub fn variant_annotator(parser: &Parser) -> Outcome {
         ));
     }
     lines.extend(file.header.lines.iter().cloned());
+    // Without a reference the contig lines are `getBestAvailableSequenceDictionary`'s, which for a
+    // VCF that declares no contig is the one synthesized from its index, every length zero.
+    if argument(parser, "reference").is_none()
+        && !lines
+            .iter()
+            .any(|line| matches!(line, HeaderLine::Contig { .. }))
+    {
+        if let Some(dictionary) = index_dictionary(&input) {
+            lines.extend(contig_lines(&dictionary.sequences));
+        }
+    }
     let mut unique: Vec<HeaderLine> = Vec::with_capacity(lines.len());
     for line in lines {
         if !unique.contains(&line) {
@@ -17691,35 +17702,36 @@ pub(crate) fn write_variant_file(
     if !create_index {
         return Ok(());
     }
-    // `getBestAvailableSequenceDictionary`: the master dictionary, then the reference's, and only
-    // then the features' own, so a VCF with no `##contig` lines still indexes `-R`'s contigs.
-    let best = match index_dictionary {
-        Some(dictionary) => Some(dictionary),
-        None => master_dictionary(parser)?
-            .or(reference_dictionary(parser)?)
-            .map(|header| {
-                header
-                    .sequences
-                    .iter()
-                    .map(|sequence| (sequence.name.clone(), sequence.length))
-                    .collect()
-            }),
+    // `getBestAvailableSequenceDictionary`. A variant walker's is the driving variants' own, which
+    // is the header's contig lines, unless every length is unknown (`isSequenceDictionaryFromIndex`):
+    // then, as for any other tool, the master dictionary and then the reference's come first. A VCF
+    // without lengths written with `-R` indexes the reference's contigs.
+    let own: Vec<(String, i32)> = text
+        .lines()
+        .take_while(|line| line.starts_with('#'))
+        .filter_map(|line| {
+            let body = line.strip_prefix("##contig=<")?.trim_end_matches('>');
+            let name = body.split(',').find_map(|f| f.strip_prefix("ID="))?;
+            let length = body
+                .split(',')
+                .find_map(|f| f.strip_prefix("length="))
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(0);
+            Some((name.to_string(), length))
+        })
+        .collect();
+    let dictionary: Vec<(String, i32)> = match index_dictionary {
+        Some(dictionary) => dictionary,
+        None if own.iter().any(|(_, length)| *length != 0) => own,
+        None => match master_dictionary(parser)?.or(reference_dictionary(parser)?) {
+            Some(header) => header
+                .sequences
+                .iter()
+                .map(|sequence| (sequence.name.clone(), sequence.length))
+                .collect(),
+            None => own,
+        },
     };
-    let dictionary: Vec<(String, i32)> = best.unwrap_or_else(|| {
-        text.lines()
-            .take_while(|line| line.starts_with('#'))
-            .filter_map(|line| {
-                let body = line.strip_prefix("##contig=<")?.trim_end_matches('>');
-                let name = body.split(',').find_map(|f| f.strip_prefix("ID="))?;
-                let length = body
-                    .split(',')
-                    .find_map(|f| f.strip_prefix("length="))
-                    .and_then(|value| value.parse().ok())
-                    .unwrap_or(0);
-                Some((name.to_string(), length))
-            })
-            .collect()
-    });
     // The index records the output as `Path.toUri` prints it, which is always absolute.
     let mut source = index_feature_file::Source::new(&java_absolute_path(output));
     source.timestamp = modified_millis(output);
@@ -22524,11 +22536,7 @@ impl<'p> SvClusterWalker<'p> {
         header
             .lines
             .retain(|line| !matches!(line, HeaderLine::Contig { .. }));
-        for (index, (name, length)) in sequences.iter().enumerate() {
-            header
-                .lines
-                .push(HeaderLine::contig(name, i64::from(*length), index as i32));
-        }
+        header.lines.extend(contig_lines(&dictionary.sequences));
         let compound =
             |key: &str, id: &str, number: Cardinality, line_type: LineType, text: &str| {
                 HeaderLine::Compound {
