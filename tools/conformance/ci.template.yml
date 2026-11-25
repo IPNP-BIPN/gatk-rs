@@ -99,6 +99,12 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace --release
 
+      - name: Which PairHMM kernels this runner held to the single pair, and what each costs
+        # docs/speed/targets.md, entry 4. The test above already forced every kernel the runner has;
+        # a passing test's output is captured, so this prints the list, the time per kernel and the
+        # one dispatch picks. The binaries are the step above's, so it costs seconds.
+        run: cargo test --release -p gatk-engine --test pair_hmm_port reads_side_by_side -- --nocapture
+
       - name: The ports below are pinned by revision, and every revision resolves
         # GATK's build.gradle pins picardVersion and htsjdkVersion. A floating dependency would let
         # the layer underneath change under a byte-identity claim without anything failing.
