@@ -84,6 +84,7 @@ impl SlippageError {
         match self {
             SlippageError::NumberFormat { .. } => Some("java.lang.NumberFormatException"),
             SlippageError::AlleleDepth(_) => Some("java.lang.ArrayIndexOutOfBoundsException"),
+            SlippageError::NonFiniteSum(error) => Some(error.class()),
             _ => None,
         }
     }
@@ -93,6 +94,7 @@ impl SlippageError {
         match self {
             SlippageError::NumberFormat { input } => Some(format!("For input string: \"{input}\"")),
             SlippageError::AlleleDepth(error) => Some(error.message()),
+            SlippageError::NonFiniteSum(error) => Some(error.message().to_string()),
             _ => None,
         }
     }
