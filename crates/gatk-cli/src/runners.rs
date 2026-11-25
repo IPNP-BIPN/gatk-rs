@@ -1154,19 +1154,24 @@ fn vcf_dictionary(text: &str) -> SamHeader {
         };
         let body = body.trim_end_matches('>');
         let mut name = None;
-        // `getSAMSequenceRecord`: a line without a length is `UNKNOWN_SEQUENCE_LENGTH`, which is 0.
+        // `getSAMSequenceRecord`: a line without a length is `UNKNOWN_SEQUENCE_LENGTH`, which is 0,
+        // and `assembly` becomes the record's `AS`.
         let mut length = Some(0);
+        let mut assembly = None;
         for field in body.split(',') {
             match field.split_once('=') {
                 Some(("ID", value)) => name = Some(value.to_string()),
                 Some(("length", value)) => length = value.parse::<i32>().ok(),
+                Some(("assembly", value)) => assembly = Some(value.to_string()),
                 _ => {}
             }
         }
         if let (Some(name), Some(length)) = (name, length) {
-            header
-                .sequences
-                .push(htsjdk_bam::header::SequenceRecord::new(&name, length));
+            let mut record = htsjdk_bam::header::SequenceRecord::new(&name, length);
+            if let Some(assembly) = assembly {
+                record.attributes.set("AS", &assembly);
+            }
+            header.sequences.push(record);
         }
     }
     header
@@ -16892,13 +16897,7 @@ pub fn update_vcf_sequence_dictionary(parser: &Parser) -> Outcome {
     for line in default_tool_vcf_header_lines(parser, "UpdateVCFSequenceDictionary") {
         header.lines.push(line);
     }
-    for (index, record) in dictionary.iter().enumerate() {
-        header.lines.push(htsjdk_vcf::header::HeaderLine::contig(
-            &record.name,
-            i64::from(record.length),
-            index as i32,
-        ));
-    }
+    header.lines.extend(contig_lines(&dictionary));
 
     let (written, refusal) =
         gatk_tools::update_vcf_sequence_dictionary::update_dictionary(&dictionary, &records);
