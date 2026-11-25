@@ -102,64 +102,111 @@ fn sample_names_in_order(header: &VcfHeader) -> Vec<String> {
     names
 }
 
+/// The checks [`sort`] makes of each input's header as it is read, and the header and comparator
+/// the run then writes and sorts by.
+#[derive(Default)]
+pub struct Checks {
+    headers: Vec<VcfHeader>,
+    samples: Option<Vec<String>>,
+    dictionary: Option<Vec<String>>,
+}
+
+impl Checks {
+    pub fn new() -> Self {
+        Checks::default()
+    }
+
+    /// The next input's header: its dictionary and its sorted samples against the first's.
+    pub fn add(&mut self, header: VcfHeader) -> Result<(), SortError> {
+        let contigs = contig_lines(&header);
+        if contigs.is_empty() {
+            return Err(SortError::MissingDictionary);
+        }
+        match &self.dictionary {
+            None => self.dictionary = Some(contigs),
+            Some(first) if *first != contigs => return Err(SortError::DifferentDictionaries),
+            Some(_) => {}
+        }
+        let names = sample_names_in_order(&header);
+        match &self.samples {
+            None => self.samples = Some(names),
+            Some(first) if *first != names => return Err(SortError::DifferentSamples),
+            Some(_) => {}
+        }
+        self.headers.push(header);
+        Ok(())
+    }
+
+    /// The merged header, and the comparator over its contig lines.
+    pub fn finish(self) -> Result<(VcfHeader, VariantContextComparator), SortError> {
+        let sources: Vec<Source> = self
+            .headers
+            .iter()
+            .map(|header| Source {
+                header,
+                version: None,
+            })
+            .collect();
+        let (merged, _warnings) = smart_merge_headers(&sources, false).map_err(|error| {
+            SortError::Vcf(error.class().to_string(), error.message().to_string())
+        })?;
+
+        let mut header = VcfHeader {
+            lines: merged,
+            samples: self.samples.unwrap_or_default(),
+        };
+        // `new VCFHeader(lines, sampleList)`, whose sample list is what the checks agreed on.
+        header.samples.sort();
+
+        // `from_header_lines` is given the contig lines alone: it counts its lookup against the
+        // list it was handed, so a whole header would look like a header full of duplicates.
+        let contigs: Vec<HeaderLine> = header
+            .lines
+            .iter()
+            .filter(|line| matches!(line, HeaderLine::Contig { .. }))
+            .cloned()
+            .collect();
+        let comparator =
+            VariantContextComparator::from_header_lines(&contigs).map_err(|error| {
+                SortError::Vcf(error.class().to_string(), error.message().to_string())
+            })?;
+        Ok((header, comparator))
+    }
+}
+
+/// The index the comparator gives each contig of `header`: its contig line's own.
+pub fn contig_indexes(header: &VcfHeader) -> std::collections::HashMap<String, i32> {
+    header
+        .lines
+        .iter()
+        .filter_map(|line| match line {
+            HeaderLine::Contig { index, fields } => Some((
+                fields
+                    .iter()
+                    .find(|(key, _)| key == "ID")
+                    .map(|(_, value)| value.clone())
+                    .unwrap_or_default(),
+                *index,
+            )),
+            _ => None,
+        })
+        .collect()
+}
+
 /// `doWork()`: the whole run, every input's text in and one text out.
 pub fn sort(inputs: &[String]) -> Result<String, SortError> {
-    let mut headers: Vec<VcfHeader> = Vec::new();
+    let mut checks = Checks::new();
     let mut records: Vec<VariantContext> = Vec::new();
-    let mut samples: Option<Vec<String>> = None;
-    let mut dictionary: Option<Vec<String>> = None;
-
     for input in inputs {
         // `SortVcf` never looks at a sample column, so it never parses one, as `VCFFileReader` does.
         let file = read_vcf_with(input, GenotypeParsing::Deferred).map_err(|failure| {
             SortError::Vcf(failure.error.class().to_string(), failure.error.message())
         })?;
-        let contigs = contig_lines(&file.header);
-        if contigs.is_empty() {
-            return Err(SortError::MissingDictionary);
-        }
-        match &dictionary {
-            None => dictionary = Some(contigs),
-            Some(first) if *first != contigs => return Err(SortError::DifferentDictionaries),
-            Some(_) => {}
-        }
-        let names = sample_names_in_order(&file.header);
-        match &samples {
-            None => samples = Some(names),
-            Some(first) if *first != names => return Err(SortError::DifferentSamples),
-            Some(_) => {}
-        }
+        checks.add(file.header)?;
         records.extend(file.records);
-        headers.push(file.header);
     }
+    let (header, comparator) = checks.finish()?;
 
-    let sources: Vec<Source> = headers
-        .iter()
-        .map(|header| Source {
-            header,
-            version: None,
-        })
-        .collect();
-    let (merged, _warnings) = smart_merge_headers(&sources, false)
-        .map_err(|error| SortError::Vcf(error.class().to_string(), error.message().to_string()))?;
-
-    let mut header = VcfHeader {
-        lines: merged,
-        samples: samples.unwrap_or_default(),
-    };
-    // `new VCFHeader(lines, sampleList)`, whose sample list is what the checks agreed on.
-    header.samples.sort();
-
-    // `from_header_lines` is given the contig lines alone: it counts its lookup against the list
-    // it was handed, so a whole header would look like a header full of duplicates.
-    let contigs: Vec<HeaderLine> = header
-        .lines
-        .iter()
-        .filter(|line| matches!(line, HeaderLine::Contig { .. }))
-        .cloned()
-        .collect();
-    let comparator = VariantContextComparator::from_header_lines(&contigs)
-        .map_err(|error| SortError::Vcf(error.class().to_string(), error.message().to_string()))?;
     // Every contig is looked up once before the sort: htsjdk meets the missing one inside the
     // comparator, where it is a null pointer, and a sort whose comparator can fail has nowhere to
     // put the failure.
