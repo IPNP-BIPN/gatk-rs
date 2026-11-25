@@ -487,6 +487,7 @@ pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> 
     });
 
     let create_index = flag(parser, "CREATE_INDEX") && coordinate_out;
+    let create_md5 = flag(parser, "CREATE_MD5_FILE");
     let written = gatk_tools::sam_output::write_bam_file(
         std::path::Path::new(&output),
         &out_header,
@@ -494,6 +495,7 @@ pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> 
         create_index,
         level,
         deflater,
+        create_md5,
     );
     if let Some(refusal) = stopped.take() {
         return Err(refusal);
@@ -515,8 +517,8 @@ pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> 
             &bai,
         )?;
     }
-    if flag(parser, "CREATE_MD5_FILE") {
-        write(&format!("{output}.md5"), written.md5.as_bytes())?;
+    if let Some(md5) = written.md5 {
+        write(&format!("{output}.md5"), md5.as_bytes())?;
     }
 
     let text = duplication_metrics_text(

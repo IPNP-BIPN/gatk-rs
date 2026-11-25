@@ -131,6 +131,7 @@ pub mod hdf5_reader;
 pub mod hdf5_writer;
 pub mod hopscotch;
 pub mod htsget_reader;
+pub mod in_order;
 pub mod index_feature_file;
 pub mod interval_walker;
 pub mod isolation_forest;

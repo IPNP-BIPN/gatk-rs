@@ -5,6 +5,10 @@
 
 use std::io::Write;
 
+/// Where the run's allocations go: placement only, so no output changes with it.
+#[global_allocator]
+static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let outcome = gatk_cli::run(&args);

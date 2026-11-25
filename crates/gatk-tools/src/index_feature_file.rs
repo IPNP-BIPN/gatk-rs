@@ -57,7 +57,7 @@
 // `VCFCodec.decodeLoc` and `BEDCodec.decodeLoc` are the codec's rather than this tool's, and two
 // tools reach them now, so they live in [`crate::feature_codec`]. They are re-exported here
 // because a caller that indexes a file names this module, not the codec.
-pub use crate::feature_codec::{codec_for, features, Codec};
+pub use crate::feature_codec::{codec_for, features, line_feature, Codec};
 
 use htsjdk_bgzf::read::BgzfReader;
 use htsjdk_bgzf::{vfp, Deflater};
@@ -280,55 +280,116 @@ pub fn build_tabix(
         path: source.path.clone(),
     })?;
     let (text, map) = block_map(compressed, &source.path)?;
-    let found = features(&text, codec);
-    let ordered: Vec<Feature> = found.iter().map(|(feature, _)| feature.clone()).collect();
-    // The same check the Tribble branch makes, in the same words: `createIndex` runs it before the
-    // creator sees anything, whichever creator it is.
-    htsjdk_tribble::index_write::check_ordering(&ordered, &source.path).map_err(|error| {
-        Refusal::CouldNotIndexFile {
-            path: source.path.clone(),
-            detail: wrapped(&error),
-        }
-    })?;
+    let mut tabix = TabixStream::new(codec, &source.path);
+    for (feature, offset) in features(&text, codec) {
+        tabix.add(feature, map.virtual_offset(offset as usize));
+    }
+    tabix.finish(map.virtual_offset(map.text_length), deflater, level)
+}
 
-    let mut creator = TabixIndexCreator::new(match codec {
-        Codec::Vcf => TabixFormat::VCF,
-        Codec::Bed => TabixFormat::BED,
-    });
-    for (feature, offset) in &found {
-        // `featToString`, which is what the reference's own refusal quotes.
-        let description = format!("{}:{}-{}", feature.contig, feature.start, feature.end);
-        let entry = FeatureRef {
-            contig: &feature.contig,
-            start: feature.start,
-            end: feature.end,
-            description: &description,
-            // No sequence dictionary: `IndexFeatureFile` passes one only when `--sequence-dictionary`
-            // is given, and it decides an allocation rather than any byte.
-            sequence_length: 0,
-        };
-        creator
-            .add_feature(entry, map.virtual_offset(*offset as usize))
+/// [`build_tabix`] a feature at a time, for a writer that knows each record's virtual offset as it
+/// writes it: what `IndexingVariantContextWriter` does with a `TabixIndexCreator`.
+///
+/// Tribble checks the order of every feature before the creator sees any, so a creator's refusal
+/// is reported only when no ordering refusal follows it.
+pub struct TabixStream {
+    path: String,
+    creator: TabixIndexCreator,
+    /// `checkSorted`'s last feature, and the feature that opened each contig seen.
+    last: Option<Feature>,
+    visited: Vec<Feature>,
+    ordering: Option<Refusal>,
+    creating: Option<Refusal>,
+}
+
+impl TabixStream {
+    pub fn new(codec: Codec, path: &str) -> TabixStream {
+        TabixStream {
+            path: path.to_string(),
+            creator: TabixIndexCreator::new(match codec {
+                Codec::Vcf => TabixFormat::VCF,
+                Codec::Bed => TabixFormat::BED,
+            }),
+            last: None,
+            visited: Vec::new(),
+            ordering: None,
+            creating: None,
+        }
+    }
+
+    pub fn add(&mut self, feature: Feature, virtual_offset: i64) {
+        if self.ordering.is_some() {
+            return;
+        }
+        if let Some(error) = self.out_of_order(&feature) {
+            self.ordering = Some(Refusal::CouldNotIndexFile {
+                path: self.path.clone(),
+                detail: wrapped(&error),
+            });
+            return;
+        }
+        if self.creating.is_none() {
+            // `featToString`, which is what the reference's own refusal quotes.
+            let description = format!("{}:{}-{}", feature.contig, feature.start, feature.end);
+            let entry = FeatureRef {
+                contig: &feature.contig,
+                start: feature.start,
+                end: feature.end,
+                description: &description,
+                // No sequence dictionary: `IndexFeatureFile` passes one only when
+                // `--sequence-dictionary` is given, and it decides an allocation rather than any
+                // byte.
+                sequence_length: 0,
+            };
+            if let Err(error) = self.creator.add_feature(entry, virtual_offset) {
+                self.creating = Some(Refusal::CouldNotIndexFile {
+                    path: self.path.clone(),
+                    detail: format!("{}: {}", error.java_class(), error.message()),
+                });
+            }
+        }
+        if self.last.as_ref().map(|last| &last.contig) != Some(&feature.contig) {
+            self.visited.push(feature.clone());
+        }
+        self.last = Some(feature);
+    }
+
+    /// `check_ordering`'s verdict on this feature after the ones before it.
+    fn out_of_order(&self, feature: &Feature) -> Option<htsjdk_tribble::index_write::CreateError> {
+        let previous = self.last.as_ref()?;
+        let mut witness: Vec<Feature> = Vec::new();
+        if previous.contig == feature.contig {
+            witness.push(previous.clone());
+        } else {
+            let opened = self.visited.iter().find(|f| f.contig == feature.contig)?;
+            witness.extend([opened.clone(), previous.clone()]);
+        }
+        witness.push(feature.clone());
+        htsjdk_tribble::index_write::check_ordering(&witness, &self.path).err()
+    }
+
+    /// The index, its end the virtual offset where the text ends.
+    pub fn finish(self, end: i64, deflater: Deflater, level: u32) -> Result<Vec<u8>, Refusal> {
+        if let Some(refusal) = self.ordering.or(self.creating) {
+            return Err(refusal);
+        }
+        let index = self
+            .creator
+            .finish(end)
             .map_err(|error| Refusal::CouldNotIndexFile {
-                path: source.path.clone(),
+                path: self.path.clone(),
                 detail: format!("{}: {}", error.java_class(), error.message()),
             })?;
+        // `TabixIndex.write` composes the body and hands it to a `BlockCompressedOutputStream`;
+        // the framing is done here rather than through `write_with` because the level is the
+        // RUN's and not htsjdk's, and htsjdk's own writer answers for htsjdk's default.
+        let mut writer = htsjdk_bgzf::BgzfWriter::with_deflater(Vec::new(), level, deflater);
+        std::io::Write::write_all(&mut writer, &index.write_body())
+            .expect("a vector never fails to be written to");
+        Ok(writer
+            .into_inner()
+            .expect("a vector never fails to be written to"))
     }
-    let index = creator
-        .finish(map.virtual_offset(map.text_length))
-        .map_err(|error| Refusal::CouldNotIndexFile {
-            path: source.path.clone(),
-            detail: format!("{}: {}", error.java_class(), error.message()),
-        })?;
-    // `TabixIndex.write` composes the body and hands it to a `BlockCompressedOutputStream`; the
-    // framing is done here rather than through `write_with` because the level is the RUN's and not
-    // htsjdk's, and htsjdk's own writer answers for htsjdk's default.
-    let mut writer = htsjdk_bgzf::BgzfWriter::with_deflater(Vec::new(), level, deflater);
-    std::io::Write::write_all(&mut writer, &index.write_body())
-        .expect("a vector never fails to be written to");
-    Ok(writer
-        .into_inner()
-        .expect("a vector never fails to be written to"))
 }
 
 /// `IndexFactory.createIndex` for the two branches that write a `.idx`, then `index.write(path)`.
