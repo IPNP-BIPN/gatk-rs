@@ -93,7 +93,15 @@ fn parse_record(line: &str) -> Record {
                     );
                 }
             }
-            GenotypeFields { fields, filters }
+            // `isCalled`: a GT with at least one allele that is not `.`; a mixed call counts.
+            let called = format.iter().zip(&values).any(|(key, value)| {
+                *key == "GT" && value.split(['/', '|']).any(|allele| allele != ".")
+            });
+            GenotypeFields {
+                fields,
+                called,
+                filters,
+            }
         })
         .collect();
     Record {
