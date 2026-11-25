@@ -212,25 +212,44 @@ impl SampleDb {
             .count()
     }
 
+    /// `getParents`: the mother then the father, each only when it is in the database.
+    pub fn parents(&self, sample: &Sample) -> Vec<&Sample> {
+        [&sample.maternal_id, &sample.paternal_id]
+            .iter()
+            .filter_map(|id| id.as_deref().and_then(|id| self.sample(id)))
+            .collect()
+    }
+
+    /// `getFamilies(ids)`: family ID to members, both sorted as the reference's `TreeMap` and
+    /// `TreeSet` sort them (IDs by `String.compareTo`, members by `Sample.compareTo`), over the
+    /// samples in `ids` only when it is given. A sample with no family is in none.
+    pub fn families(&self, ids: Option<&[String]>) -> Vec<(String, Vec<&Sample>)> {
+        let mut families: Vec<(String, Vec<&Sample>)> = Vec::new();
+        for sample in &self.samples {
+            if ids.is_some_and(|ids| !ids.contains(&sample.id)) {
+                continue;
+            }
+            let Some(family) = &sample.family_id else {
+                continue;
+            };
+            match families.iter_mut().find(|(id, _)| id == family) {
+                Some((_, members)) => members.push(sample),
+                None => families.push((family.clone(), vec![sample])),
+            }
+        }
+        families.sort_by(|a, b| compare_strings(&a.0, &b.0));
+        for (_, members) in &mut families {
+            members.sort_by(|a, b| a.compare(b));
+            members.dedup_by(|a, b| a.compare(b) == std::cmp::Ordering::Equal);
+        }
+        families
+    }
+
     /// `getTrios()`: per family in family-ID order, per member in sample order, a trio for each
     /// child with both parents in the database.
     pub fn trios(&self) -> Vec<Trio> {
-        let mut families: Vec<&str> = self
-            .samples
-            .iter()
-            .filter_map(|s| s.family_id.as_deref())
-            .collect();
-        families.sort_by(|a, b| compare_strings(a, b));
-        families.dedup();
         let mut trios = Vec::new();
-        for family in families {
-            let mut members: Vec<&Sample> = self
-                .samples
-                .iter()
-                .filter(|s| s.family_id.as_deref() == Some(family))
-                .collect();
-            members.sort_by(|a, b| a.compare(b));
-            members.dedup_by(|a, b| a.compare(b) == std::cmp::Ordering::Equal);
+        for (_, members) in self.families(None) {
             for sample in members {
                 if self.parent_count(sample) == 2 {
                     trios.push(Trio {
@@ -380,6 +399,42 @@ pub fn read_pedigree(text: &str, source: &str) -> Result<SampleDb, PedigreeError
     Ok(db)
 }
 
+/// `SampleDB.createSampleDBFromPedigreeAndDataSources(file, samples, strictness)`: the pedigree,
+/// then every data-source sample it does not name added with no family, then `validate`. Under
+/// STRICT a pedigree that names samples and a data source with any sample it does not name is
+/// refused, the first such sample in `samples`' order named; SILENT accepts it.
+pub fn with_data_sources(
+    mut db: SampleDb,
+    samples: &[String],
+    strict: bool,
+) -> Result<SampleDb, PedigreeError> {
+    let from_pedigree = !db.samples.is_empty();
+    let mut from_data_sources: Vec<String> = Vec::new();
+    for name in samples {
+        if db.sample(name).is_none() {
+            db.add_sample(Sample {
+                id: name.clone(),
+                family_id: None,
+                paternal_id: None,
+                maternal_id: None,
+                sex: Sex::Unknown,
+                affection: Affection::Unknown,
+            })?;
+            from_data_sources.push(name.clone());
+        }
+    }
+    // Every data-source sample is by construction one the pedigree did not name.
+    if strict && from_pedigree {
+        if let Some(first) = from_data_sources.first() {
+            return Err(PedigreeError::user(format!(
+                "Sample {first} found in data sources but not in pedigree files with STRICT \
+                 pedigree validation"
+            )));
+        }
+    }
+    Ok(db)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -399,5 +454,16 @@ mod tests {
         let implicit = read_pedigree("f1 kid dad mom 1 1\n", "").expect("a pedigree");
         assert_eq!(implicit.founder_ids(), vec!["dad", "mom"]);
         assert_eq!(implicit.trios().len(), 1);
+    }
+
+    #[test]
+    fn strict_validation_names_the_first_sample_the_pedigree_lacks() {
+        let ped = || read_pedigree("f1 kid dad mom 1 1\n", "").expect("a pedigree");
+        let samples = ["A".to_string(), "B".to_string(), "kid".to_string()];
+        let error = with_data_sources(ped(), &samples, true).expect_err("refused");
+        assert!(error.message.starts_with("Sample A found in data sources"));
+        let db = with_data_sources(ped(), &samples, false).expect("silent");
+        assert_eq!(db.families(None).len(), 1);
+        assert!(with_data_sources(SampleDb::default(), &samples, true).is_ok());
     }
 }

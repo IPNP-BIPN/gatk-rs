@@ -1160,14 +1160,18 @@
         "pseudocount of two hundred reference chromosomes.",
         "--default-to-allele-count and --discovered-allele-count-priors-off move where the counts",
         "come from: AC rather than MLEAC, and the input's own samples in or out.",
-        "--pedigree is held out and --skip-family-priors is held TRUE: the family half is a second",
-        "algorithm this port does not carry, and every row that asked for it would measure that",
-        "refusal rather than the posteriors.",
+        "--pedigree is sv_trio.ped, whose trio cgp_trio.vcf carries and duo.vcf does not: over",
+        "duo.vcf the family priors run with no trio, which only adds JL and JP to the header.",
+        "cgp_trio.vcf walks every branch of FamilyLikelihoods (see MakeFixtures.java), and",
+        "cgp_trio_haploid.vcf gives the child two PLs, the refusal the family priors raise.",
+        "--skip-family-priors and --de-novo-prior turn that half off and move its one prior.",
         "--add-output-vcf-command-line and --create-output-variant-index are held at false, as on",
         "every other variant writer here."
       ],
       "--variant": [
-        "/work/fixtures/duo.vcf"
+        "/work/fixtures/duo.vcf",
+        "/work/fixtures/cgp_trio.vcf",
+        "/work/fixtures/cgp_trio_haploid.vcf"
       ],
       "--supporting-callsets": [
         "/work/fixtures/population.vcf",
@@ -1182,9 +1186,13 @@
         "100"
       ],
       "--skip-family-priors": [
+        "false",
         "true"
       ],
-      "--pedigree": [],
+      "--pedigree": [
+        "<unset>",
+        "/work/fixtures/sv_trio.ped"
+      ],
       "--intervals": [
         "chr1:1-6000",
         "chr1:50000-60000"
@@ -1203,6 +1211,10 @@
       ],
       "--max-variants-per-shard": [
         "0"
+      ],
+      "--de-novo-prior": [
+        "1.0E-6",
+        "0.001"
       ]
     },
     "ValidateBasicSomaticShortMutations": {
@@ -6084,8 +6096,9 @@
         "absence: 60 and 10 re-band, and 101 is refused as malformed after the output file exists.",
         "--annotations-to-keep EXTRA keeps an unrecognised key and AFA is refused as allele-length;",
         "--format-annotations-to-remove removes SPARE or SB from the genotypes and the header.",
-        "--population-callset, --pedigree, --founder-id and --flow-order-for-annotations are held",
-        "out: the port does not carry the population priors or the pedigree and flow annotations.",
+        "--population-callset and --flow-order-for-annotations are held out: the port does not carry",
+        "the population priors or the flow annotations. --pedigree and --founder-id are held out, as",
+        "for CombineGVCFs: they feed only annotations the reblocker never recomputes.",
         "--reference is held at cgv_ref.fasta, the one reference carrying both contigs.",
         "--sequence-dictionary, --input and --read-index are held out, as for CombineGVCFs.",
         "--add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the",
@@ -6188,7 +6201,8 @@
     "VariantEval": {
       "--eval": [
         "/work/fixtures/ve_eval2.vcf",
-        "/work/fixtures/ve_eval.vcf"
+        "/work/fixtures/ve_eval.vcf",
+        "/work/fixtures/ve_trio.vcf"
       ],
       "--output": [
         "/work/out/ve.txt",
@@ -6227,7 +6241,8 @@
         "FilterType",
         "Sample",
         "JexlExpression",
-        "OneBPIndel"
+        "OneBPIndel",
+        "Family"
       ],
       "--eval-module": [
         "null",
@@ -6236,7 +6251,8 @@
         "IndelSummary",
         "ValidationReport",
         "GenotypeFilterSummary",
-        "IndelLengthHistogram"
+        "IndelLengthHistogram",
+        "MendelianViolationEvaluator"
       ],
       "--selectExps": [
         "QD > 5.0",
@@ -6287,7 +6303,11 @@
       "--list": [
         "false"
       ],
-      "--pedigree": [],
+      "--pedigree": [
+        "<unset>",
+        "/work/fixtures/ve_families.ped",
+        "/work/fixtures/sv_trio.ped"
+      ],
       "--ancestral-alignments": [],
       "--input": [],
       "--read-index": [],
@@ -6311,15 +6331,21 @@
         "--stratification-module and --eval-module each name one module per row beside the standard",
         "ones, and not every module: AlleleFrequency, CpG, Contig and the rest cross into tens of",
         "thousands of states, and the reference ran out of heap on five of them together. Each was",
-        "compared by hand against the oracle instead. Family and MendelianViolationEvaluator need a",
-        "pedigree, which the port refuses, so --pedigree and --ancestral-alignments are held out and",
-        "--list is held at false: all three are port limitations.",
+        "compared by hand against the oracle instead.",
+        "ve_trio.vcf is a trio, a father/child pair and an unrelated sample, and ve_families.ped",
+        "their families: MendelianViolationEvaluator and the Family stratification read it. sv_trio.ped",
+        "names the trio only, so STRICT validation refuses the other samples and SILENT lets them by.",
+        "--ancestral-alignments is held out and --list is held at false: both are port limitations.",
         "--selectExps and --selectNames carry two paired values and no null, because a row pairing",
         "one with the other's absence measures one IllegalArgumentException on every such row.",
         "ve_strat_noidx.bed is refused at the first eval IntervalStratification queries, and",
         "ve_cnv.bed is indexed because VariantSummary queries it for a CNV with no comp.",
         "--input, --read-index, --sequence-dictionary and --variant-output-filtering are held out,",
         "as for CombineGVCFs, and the writer holds are the ones every variant tool keeps."
+      ],
+      "--pedigreeValidationType": [
+        "STRICT",
+        "SILENT"
       ]
     },
     "VariantAnnotator": {
@@ -6395,7 +6421,8 @@
         "FisherStrand",
         "ReadPosRankSumTest",
         "TandemRepeat",
-        "ReferenceBases"
+        "ReferenceBases",
+        "PossibleDeNovo"
       ],
       "--annotation-group": [
         "null",
@@ -6413,8 +6440,14 @@
       "--allow-old-rms-mapping-quality-annotation-data": [],
       "--assembly-complexity-reference-mode": [],
       "--dirichlet-keep-prior-in-count": [],
-      "--pedigree": [],
-      "--founder-id": [],
+      "--pedigree": [
+        "<unset>",
+        "/work/fixtures/va_trio.ped"
+      ],
+      "--founder-id": [
+        "<unset>",
+        "s2"
+      ],
       "--flow-order-for-annotations": [],
       "--read-filter": [
         "null",
@@ -6474,10 +6507,11 @@
         "copy with no index, refused at the first site annotated.",
         "--allow-old-rms-mapping-quality-annotation-data, --assembly-complexity-reference-mode and",
         "--dirichlet-keep-prior-in-count are held out: each is refused without its annotation, and",
-        "the port's parser does not yet tie an annotation's arguments to it. --pedigree, --founder-id",
-        "and --flow-order-for-annotations are held out: the port carries no pedigree or flow",
-        "annotation for this tool. --read-filter-tag-op, --keep-reverse-strand-only and",
-        "--dont-require-soft-clips-both-ends belong to filters no row enables, and each is refused without it;",
+        "the port's parser does not yet tie an annotation's arguments to it.",
+        "--pedigree is va_trio.ped, which makes va.vcf's three samples one trio, and PossibleDeNovo is",
+        "the annotation that reads it; --founder-id names a parent. --flow-order-for-annotations is held",
+        "out: the port carries no flow annotation for this tool. --read-filter-tag-op,",
+        "--keep-reverse-strand-only and --dont-require-soft-clips-both-ends belong to filters no row enables, and each is refused without it;",
         "--read-validation-stringency, --sequence-dictionary and --read-index are held out, as for the",
         "other variant walkers that read BAMs. --variant-output-filtering is held out: every mode but",
         "ANYWHERE needs -L, and was compared by hand.",

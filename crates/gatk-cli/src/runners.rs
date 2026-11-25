@@ -403,19 +403,7 @@ pub(crate) fn pedigree_arguments(
         ..Default::default()
     };
     if let Some(path) = pedigree {
-        let text = std::fs::read_to_string(&path).map_err(|_| {
-            Thrown::user(format!(
-                "Couldn't read file {path}. Error was: Could not read sample file"
-            ))
-        })?;
-        // `PedReader` names its source by the reader's `Object.toString`, an identity hash; the
-        // path's `String.hashCode` stands in for it.
-        let source = format!(
-            "java.io.InputStreamReader@{:x}",
-            gatk_engine::java_hash::string_hash_code(&path) as u32
-        );
-        let db = gatk_engine::sample_db::read_pedigree(&text, &source)
-            .map_err(|error| Thrown::non_user(error.class, error.message))?;
+        let db = read_sample_db(&path)?;
         out.trios = db
             .trios()
             .into_iter()
@@ -431,6 +419,33 @@ pub(crate) fn pedigree_arguments(
     }
     out.founder_ids = founder_ids;
     Ok(out)
+}
+
+/// `SampleDB.createSampleDBFromPedigree(file)`: the PED read with STRICT validation and no data
+/// sources, which never refuses anything the reader itself accepts.
+pub(crate) fn read_sample_db(path: &str) -> Result<gatk_engine::sample_db::SampleDb, Thrown> {
+    let text = std::fs::read_to_string(path).map_err(|_| {
+        Thrown::user(format!(
+            "Couldn't read file {path}. Error was: Could not read sample file"
+        ))
+    })?;
+    // `PedReader` names its source by the reader's `Object.toString`, an identity hash; the
+    // path's `String.hashCode` stands in for it.
+    let source = format!(
+        "java.io.InputStreamReader@{:x}",
+        gatk_engine::java_hash::string_hash_code(path) as u32
+    );
+    gatk_engine::sample_db::read_pedigree(&text, &source).map_err(pedigree_thrown)
+}
+
+/// A `UserException` the sample database raises is the user-error banner and status two; the
+/// `GATKException` it raises for an inconsistent family is not.
+pub(crate) fn pedigree_thrown(error: gatk_engine::sample_db::PedigreeError) -> Thrown {
+    if error.class == gatk_tools::main_entry::USER_EXCEPTION {
+        Thrown::user(error.message)
+    } else {
+        Thrown::non_user(error.class, error.message)
+    }
 }
 
 /// The predicate the resolved list becomes, once a header exists to read a filter against.
@@ -1321,6 +1336,14 @@ fn variant_walker_validation(
 
     let master = master_dictionary(parser)?;
     let reference = reference_dictionary(parser)?;
+    // `FeatureManager.getAllSequenceDictionaries`: a VCF with no `##contig` line reports its
+    // Tribble index's contigs at an unknown length, and one with neither reports none and is left
+    // out of every comparison below rather than compared as an empty dictionary.
+    let features = if header.sequences.is_empty() {
+        index_dictionary(&input).map(|index| index.sequences)
+    } else {
+        Some(header.sequences.clone())
+    };
     // `validateSequenceDictionaries` is ONE method and the argument turns all of it off, the
     // master block included: a guard around part of it refuses command lines the reference runs.
     if !flag(parser, "disable-sequence-dictionary-validation") {
@@ -1333,7 +1356,9 @@ fn variant_walker_validation(
             if let Some(reference) = &reference {
                 validate_against_master(master, "reference", &reference.sequences)?;
             }
-            validate_against_master(master, "features", &header.sequences)?;
+            if let Some(features) = &features {
+                validate_against_master(master, "features", features)?;
+            }
         }
         if let Some(reference) = &reference {
             // The reference against the reads, then the reference against the features.
@@ -1352,19 +1377,21 @@ fn variant_walker_validation(
                     message: Some(refusal.message()),
                 })?;
             }
-            gatk_tools::sequence_dictionary::validate(
-                "reference",
-                &reference.sequences,
-                "features",
-                &header.sequences,
-                false,
-                false,
-            )
-            .map_err(|refusal| Thrown {
-                failure: Failure::User,
-                exception: refusal.java_class(),
-                message: Some(refusal.message()),
-            })?;
+            if let Some(features) = &features {
+                gatk_tools::sequence_dictionary::validate(
+                    "reference",
+                    &reference.sequences,
+                    "features",
+                    features,
+                    false,
+                    false,
+                )
+                .map_err(|refusal| Thrown {
+                    failure: Failure::User,
+                    exception: refusal.java_class(),
+                    message: Some(refusal.message()),
+                })?;
+            }
         }
     }
     // `GATKTool.onStartup` validates the dictionaries against each other BEFORE the traversal, and
@@ -1373,12 +1400,12 @@ fn variant_walker_validation(
     // overload requires no superset and does not check the contig ordering. A corpus whose BAM and
     // VCF share no contig is therefore refused whatever the intervals say (#1038).
     if !flag(parser, "disable-sequence-dictionary-validation") {
-        for reads in &reads_dictionaries {
+        for reads in reads_dictionaries.iter().filter(|_| features.is_some()) {
             gatk_tools::sequence_dictionary::validate(
                 "reads",
                 reads,
                 "features",
-                &header.sequences,
+                features.as_deref().unwrap_or_default(),
                 false,
                 false,
             )
@@ -5802,19 +5829,25 @@ pub fn calculate_genotype_posteriors(parser: &Parser) -> Outcome {
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
-    if argument(parser, "pedigree").is_some() && !flag(parser, "skip-family-priors") {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "--pedigree asks for the family priors, a second algorithm this port does not carry \
-             yet. Pass --skip-family-priors. This message is the port's own and not GATK's.",
-        ));
-    }
+    // `onTraversalStart`: the PED is read whether or not the family priors are skipped, and they
+    // are skipped when the file holds no trio, which is `getTrios()` over the whole PED rather
+    // than the trios `setTrios` later keeps.
+    let db = match argument(parser, "pedigree") {
+        Some(path) => read_sample_db(&path)?,
+        None => gatk_engine::sample_db::SampleDb::default(),
+    };
+    let skip_family_priors = flag(parser, "skip-family-priors") || db.trios().is_empty();
 
     let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
         failure: Failure::User,
         exception: "htsjdk.tribble.TribbleException",
         message: Some(failure.error.message()),
     })?;
+    // `getSortedSampleSet`, then `new FamilyLikelihoods(..., getFamilies(vcfSamples))`.
+    let trios = gatk_tools::family_priors::set_trios(&db, &file.header.samples);
+    let de_novo_prior = scalar(parser, "de-novo-prior")
+        .and_then(|text| text.parse().ok())
+        .unwrap_or(gatk_tools::family_priors::DEFAULT_DE_NOVO_PRIOR);
 
     // Every supporting callset, read whole: `featureContext.getValues` asks each of them for the
     // records at the driving record's locus, and only those with the SAME START are used.
@@ -5854,9 +5887,14 @@ pub fn calculate_genotype_posteriors(parser: &Parser) -> Outcome {
     let options = posteriors::Options {
         snp_prior_dirichlet: number("global-prior-snp", 0.001),
         indel_prior_dirichlet: number("global-prior-indel", 0.001),
-        use_input_samples_allele_counts: !flag(parser, "discovered-allele-count-priors-off"),
+        // `!ignoreInputSamples` and `ignoreInputSamplesForMissingResources`, which are bound to
+        // --ignore-input-samples and --discovered-allele-count-priors-off in that order.
+        use_input_samples_allele_counts: !flag(parser, "ignore-input-samples"),
         use_mleac: !flag(parser, "default-to-allele-count"),
-        ignore_input_samples_for_missing_resources: flag(parser, "ignore-input-samples"),
+        ignore_input_samples_for_missing_resources: flag(
+            parser,
+            "discovered-allele-count-priors-off",
+        ),
         use_flat_priors_for_indels: flag(parser, "use-flat-priors-for-indels"),
     };
     let missing_reference_samples = number_or(parser, "num-reference-samples-if-no-call", 0);
@@ -5888,7 +5926,19 @@ pub fn calculate_genotype_posteriors(parser: &Parser) -> Outcome {
 
     let mut written: Vec<htsjdk_vcf::variant::VariantContext> = Vec::new();
     for located in gatk_engine::variant_source::traverse(&located, intervals.as_deref()) {
-        let original = &file.records[located.index];
+        // The family priors first, and only over a biallelic record.
+        let family;
+        let original = if !skip_family_priors && file.records[located.index].alleles.len() == 2 {
+            family = gatk_tools::family_priors::calculate_posterior_gls(
+                &file.records[located.index],
+                &trios,
+                de_novo_prior,
+            )
+            .map_err(Thrown::user)?;
+            &family
+        } else {
+            &file.records[located.index]
+        };
         // `calculateChromosomeCounts(builder, false)` on every record, whatever the priors do next.
         let mut bridged = crate::variant_bridge::to_engine(original);
         gatk_tools::select_variants::calculate_chromosome_counts(&mut bridged.record.variant);
@@ -5965,7 +6015,21 @@ pub fn calculate_genotype_posteriors(parser: &Parser) -> Outcome {
     // through `calculateChromosomeCounts`, so `AC`, `AF` and `AN` are written whether the input
     // declared them or not. Measured on every accepted row of this tool's array, where the port
     // wrote a count into a header that did not declare it.
+    // `smartMergeHeaders` of the one input first, as `onTraversalStart` does: it keeps the first
+    // of several lines with one plain key, so a second `##GATKCommandLine` is dropped.
     let mut header = file.header.clone();
+    header.lines = htsjdk_vcf::merge::smart_merge_headers(
+        &[htsjdk_vcf::merge::Source {
+            header: &file.header,
+            version: None,
+        }],
+        true,
+    )
+    .map(|(lines, _warnings)| lines)
+    .unwrap_or_else(|_| file.header.lines.clone());
+    // `new VCFHeader(headerLines, vcfSamples)` with `getSortedSampleSet`: a TreeSet, so the sample
+    // columns come out sorted whatever order the input had.
+    header.samples.sort();
     for key in ["AC", "AF", "AN"] {
         header.lines.retain(|line| {
             !matches!(
@@ -6002,6 +6066,33 @@ pub fn calculate_genotype_posteriors(parser: &Parser) -> Outcome {
             description: description.to_string(),
             extra: Vec::new(),
         });
+    }
+    if !skip_family_priors {
+        for (id, description) in [
+            (
+                "JL",
+                "Phred-scaled joint likelihood of the genotype combination (before applying \
+                 family priors)",
+            ),
+            (
+                "JP",
+                "Phred-scaled joint posterior probability of the genotype combination (after \
+                 applying family priors)",
+            ),
+        ] {
+            header.lines.retain(|line| {
+                !matches!(line, htsjdk_vcf::header::HeaderLine::Compound { key, id: i, .. }
+                    if key == "FORMAT" && i == id)
+            });
+            header.lines.push(htsjdk_vcf::header::HeaderLine::Compound {
+                key: "FORMAT".to_string(),
+                id: id.to_string(),
+                number: htsjdk_vcf::header::Cardinality::Fixed(1),
+                line_type: htsjdk_vcf::header::LineType::Integer,
+                description: description.to_string(),
+                extra: Vec::new(),
+            });
+        }
     }
     if flag(parser, "add-output-vcf-command-line") {
         header
@@ -6820,9 +6911,26 @@ pub fn collect_sv_evidence(parser: &Parser) -> Outcome {
 /// * **a difference inside the traversal is wrapped** as a `GATKException` naming the record the
 ///   walker was on, and one in the last group is the plain user error.
 pub fn vcf_comparator(parser: &Parser) -> Outcome {
+    use gatk_annotation::catalogue;
     use gatk_tools::vcf_comparator as comparator;
 
     let _ = resolve_read_filters(parser, "VCFComparator")?;
+    // `validateAndResolvePlugins`, while the command line is parsed: the tool's default groups
+    // hold `ExcessHet` and `InbreedingCoeff`, so `--pedigree` alone passes. The annotations are
+    // never computed, so the PED is never read.
+    let resolved = catalogue::resolve(
+        &catalogue::AnnotationArguments {
+            annotations: arguments(parser, "annotation"),
+            groups: arguments(parser, "annotation-group"),
+            excluded: arguments(parser, "annotations-to-exclude"),
+            disable_tool_defaults: flag(parser, "disable-tool-default-annotations"),
+            enable_all: flag(parser, "enable-all-annotations"),
+        },
+        &["StandardAnnotation", "AS_StandardAnnotation"],
+        &[],
+    )
+    .map_err(|error| Thrown::command_line(error.message()))?;
+    pedigree_refusal(parser, &resolved)?;
     let inputs = multi_variant::feature_inputs(parser);
     if inputs.is_empty() {
         return Err(Thrown::command_line(
@@ -6849,13 +6957,7 @@ pub fn vcf_comparator(parser: &Parser) -> Outcome {
         .map(|input| input.input.name().to_string())
         .collect();
     comparator::check_inputs(&names).map_err(|error| Thrown::user(error.message()))?;
-    for configured in [
-        "annotation",
-        "annotation-group",
-        "annotations-to-exclude",
-        "pedigree",
-        "founder-id",
-    ] {
+    for configured in ["annotation", "annotation-group", "annotations-to-exclude"] {
         if !arguments(parser, configured).is_empty() || argument(parser, configured).is_some() {
             return Err(limitation(&format!(
                 "--{configured} configures GATK's annotation engine, which this port does not \
@@ -14274,14 +14376,14 @@ pub fn combine_gvcfs(parser: &Parser) -> Outcome {
             format!("{what} This message is the port's own and not GATK's."),
         )
     };
-    for configured in ["pedigree", "founder-id", "flow-order-for-annotations"] {
-        if !arguments(parser, configured).is_empty() || argument(parser, configured).is_some() {
-            return Err(limitation(&format!(
-                "--{configured} configures an annotation this tool never computes, and GATK \
-                 validates it against the annotations it resolved, which this port does not carry \
-                 yet."
-            )));
-        }
+    // The pedigree annotations are never computed here, so past the descriptor's check the PED is
+    // never read.
+    pedigree_refusal(parser, &resolved)?;
+    if argument(parser, "flow-order-for-annotations").is_some() {
+        return Err(limitation(
+            "--flow-order-for-annotations configures a flow annotation, which this port does not \
+             carry for CombineGVCFs yet.",
+        ));
     }
 
     let inputs = multi_variant::feature_inputs(parser);
@@ -14507,13 +14609,14 @@ pub fn reblock_gvcf(parser: &Parser) -> Outcome {
             format!("{what} This message is the port's own and not GATK's."),
         )
     };
-    for configured in ["pedigree", "founder-id", "flow-order-for-annotations"] {
-        if !arguments(parser, configured).is_empty() || argument(parser, configured).is_some() {
-            return Err(limitation(&format!(
-                "--{configured} configures a pedigree or flow annotation, which this port does not \
-                 carry for ReblockGVCF yet."
-            )));
-        }
+    // ReblockGVCF only copies and subsets annotations, so past the descriptor's check the PED is
+    // never read.
+    pedigree_refusal(parser, &resolved)?;
+    if argument(parser, "flow-order-for-annotations").is_some() {
+        return Err(limitation(
+            "--flow-order-for-annotations configures a flow annotation, which this port does not \
+             carry for ReblockGVCF yet.",
+        ));
     }
     if argument(parser, "population-callset").is_some() {
         return Err(limitation("--population-callset is not ported."));
@@ -15250,11 +15353,6 @@ fn variant_eval_report(
             "--list prints the module catalogue and exits; not ported.",
         ));
     }
-    if argument(parser, "pedigree").is_some() {
-        return Err(limitation(
-            "--pedigree (families and Mendelian violations) is not ported for VariantEval.",
-        ));
-    }
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
@@ -15530,8 +15628,32 @@ fn variant_eval_report(
         known_cnvs_unindexed: argument(parser, "known-cnvs")
             .filter(|path| !has_feature_index(path)),
         gold_standard,
+        sample_db: Default::default(),
+        mendelian_violation_qual_threshold: 50.0,
     };
     let mut arguments_for_engine = arguments_for_engine;
+    // `validateAndInitialize` opens with the sample database: the PED, then every sample of every
+    // driving input (`getSamplesForVariants`, a sorted set), validated as `-pedValidationType`
+    // says, STRICT by default.
+    let mut driving_samples: Vec<String> = opened
+        .inputs
+        .iter()
+        .flat_map(|input| input.file.header.samples.iter().cloned())
+        .collect();
+    driving_samples.sort();
+    driving_samples.dedup();
+    let pedigree = match argument(parser, "pedigree") {
+        Some(path) => read_sample_db(&path)?,
+        None => gatk_engine::sample_db::SampleDb::default(),
+    };
+    let strict = scalar(parser, "pedigreeValidationType").as_deref() != Some("SILENT");
+    arguments_for_engine.sample_db =
+        gatk_engine::sample_db::with_data_sources(pedigree, &driving_samples, strict)
+            .map_err(pedigree_thrown)?;
+    arguments_for_engine.mendelian_violation_qual_threshold =
+        scalar(parser, "mendelian-violation-qual-threshold")
+            .and_then(|text| text.parse().ok())
+            .unwrap_or(50.0);
     if qc.is_some() {
         arguments_for_engine.no_standard_modules = true;
         arguments_for_engine.modules_to_use =
@@ -15769,13 +15891,12 @@ pub fn variant_annotator(parser: &Parser) -> Outcome {
             format!("{what} This message is the port's own and not GATK's."),
         )
     };
-    for configured in ["pedigree", "founder-id", "flow-order-for-annotations"] {
-        if !arguments(parser, configured).is_empty() || argument(parser, configured).is_some() {
-            return Err(limitation(&format!(
-                "--{configured} configures a pedigree or flow annotation, which this port does not \
-                 carry for VariantAnnotator yet."
-            )));
-        }
+    pedigree_refusal(parser, &resolved)?;
+    if argument(parser, "flow-order-for-annotations").is_some() {
+        return Err(limitation(
+            "--flow-order-for-annotations configures a flow annotation, which this port does not \
+             carry for VariantAnnotator yet.",
+        ));
     }
     let reads_paths = arguments(parser, "input");
     if reads_paths.len() > 1 {
@@ -15993,7 +16114,7 @@ pub fn variant_annotator(parser: &Parser) -> Outcome {
         allele_concordance: flag(parser, "resource-allele-concordance"),
         pseudo_depth: Default::default(),
         assembly_complexity_reference_mode: false,
-        pedigree: Default::default(),
+        pedigree: pedigree_arguments(parser)?,
         flow_order_for_annotations: None,
     };
     let minimum_base_quality = number_or(parser, "min-base-quality-score", 10);
@@ -17352,19 +17473,7 @@ impl SelectTracks {
 fn select_variants_tracks(parser: &Parser, samples: &[String]) -> Result<SelectTracks, Thrown> {
     let families = if flag(parser, "mendelian-violation") {
         let db = match argument(parser, "pedigree") {
-            Some(path) => {
-                let text = std::fs::read_to_string(&path).map_err(|_| {
-                    Thrown::user(format!(
-                        "Couldn't read file {path}. Error was: Could not read sample file"
-                    ))
-                })?;
-                let source = format!(
-                    "java.io.InputStreamReader@{:x}",
-                    gatk_engine::java_hash::string_hash_code(&path) as u32
-                );
-                gatk_engine::sample_db::read_pedigree(&text, &source)
-                    .map_err(|error| Thrown::non_user(error.class, error.message))?
-            }
+            Some(path) => read_sample_db(&path)?,
             None => gatk_engine::sample_db::SampleDb::default(),
         };
         Some(
