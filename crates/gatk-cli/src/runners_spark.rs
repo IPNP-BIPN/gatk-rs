@@ -2469,24 +2469,10 @@ fn write_pathseq_bam(
     input_partitions: &[usize],
 ) -> Result<(), Thrown> {
     let sort_order = header.attributes.get("SO").map(str::to_string);
-    let compare: Option<fn(&BamRecord, &BamRecord) -> std::cmp::Ordering> =
-        match sort_order.as_deref() {
-            Some("coordinate") => Some(htsjdk_bam::coordinate::compare),
-            Some("queryname") => Some(htsjdk_bam::query_name::compare),
-            _ => None,
-        };
-    let partitions = match compare {
-        Some(compare) => range_partitions(reads, reducers, input_partitions, compare)?,
-        None => vec![reads.to_vec()],
-    };
-    write_spark_indexed(
-        parser,
-        header,
-        sort_order.as_deref(),
-        &partitions,
-        output,
-        (true, true),
-    )
+    let sort_order = sort_order.as_deref();
+    let taken = take_reads(parser, sort_order, reads.iter().cloned().map(Ok), output)?;
+    let parts = partition_reads(taken, reducers, Some(input_partitions), output)?;
+    write_spark_indexed(parser, header, sort_order, parts, output, (true, true))
 }
 
 /// `new PSFilter`'s arguments, over a dictionary `checkAndClearHeaderSequences` emptied.
@@ -3411,14 +3397,16 @@ pub fn sort_sam_spark(parser: &Parser) -> Outcome {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
     let filter = read_filter(parser, &filters, &header)?;
-    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
-        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let filter: &dyn Fn(&BamRecord) -> bool = &filter;
+    let records = gatk_tools::read_walker::traverse_iter(&source, &intervals, false, filter)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?
+        .map(|record| record.map_err(|error| Thrown::user(format!("{error:?}"))));
     // `SparkSortOrder`'s two constants, which Barclay has already checked; an enum, so read as a
     // scalar rather than as text.
     let order = scalar(parser, "sort-order").unwrap_or_else(|| "coordinate".to_string());
     let mut sorted = header.clone();
     sorted.set_sort_order(&order);
-    write_spark_reads(parser, &sorted, &records, &output, true)?;
+    write_spark_sorted(parser, &sorted, records, &output)?;
     Ok(None)
 }
 
@@ -3677,7 +3665,14 @@ fn sanitize_reads(
     let partitions = if name_grouped {
         vec![kept]
     } else {
-        sorted_partitions(parser, Some("queryname"), &kept)?
+        let output = argument(parser, "output").unwrap_or_default();
+        let records = kept.into_iter().map(Ok);
+        collect_partitions(sorted_partitions(
+            parser,
+            Some("queryname"),
+            records,
+            &output,
+        )?)?
     };
 
     let mut out = Vec::with_capacity(partitions.len());
@@ -3944,7 +3939,8 @@ fn write_reverted(
             ),
         ));
     }
-    write_spark_partitions(parser, header, Some(sort_order), partitions, output)
+    let parts = parts_of(partitions.iter().map(Vec::as_slice));
+    write_spark_partitions(parser, header, Some(sort_order), parts, output)
 }
 
 /// `ExtractOriginalAlignmentRecordsByNameSpark.runTool`: `getUnfilteredReads`, so `--read-filter`
@@ -4276,8 +4272,9 @@ pub fn compare_duplicates_spark(parser: &Parser) -> Outcome {
                 .filter(|record| names.contains(record.read_name.as_str()))
                 .cloned()
                 .collect();
-            let partitions = sorted_partitions(parser, sort_order.as_deref(), &kept)?;
-            write_spark_partitions(parser, &written, sort_order.as_deref(), &partitions, path)?;
+            let records = kept.into_iter().map(Ok);
+            let parts = sorted_partitions(parser, sort_order.as_deref(), records, path)?;
+            write_spark_partitions(parser, &written, sort_order.as_deref(), parts, path)?;
         }
     }
 
@@ -4759,9 +4756,10 @@ pub fn mark_duplicates_spark(parser: &Parser, mode: &Parser) -> Outcome {
     let grouped = header.attributes.get("SO") == Some("queryname")
         || header.attributes.get("GO") == Some("query");
     if !grouped {
-        let mut records: Vec<BamRecord> = partitions.into_iter().flatten().collect();
-        records.sort_by(htsjdk_bam::query_name::compare);
-        partitions = vec![records];
+        // One partition, sorted stably as Spark's `TimSort` sorts it.
+        let records = partitions.into_iter().flatten().map(Ok);
+        let taken = take_reads(parser, Some("queryname"), records, &output)?;
+        partitions = collect_partitions(partition_reads(taken, 1, None, &output)?)?;
     }
     let marked = md::mark(partitions, &header, &settings).map_err(|failure| {
         // Measured on one partition: a queryname sort of its own takes two stages and a task,
@@ -4972,14 +4970,34 @@ fn write_spark_reads(
     output: &str,
     sort_to_header: bool,
 ) -> Result<(), Thrown> {
+    if sort_to_header {
+        return write_spark_sorted(parser, header, records.iter().cloned().map(Ok), output);
+    }
     refuse_spark_cram_3_0(parser, output)?;
     let (header, sort_order) = disq_header(header);
-    let partitions = if sort_to_header {
-        sorted_partitions(parser, sort_order.as_deref(), records)?
-    } else {
-        vec![records.to_vec()]
-    };
-    write_spark_partitions(parser, &header, sort_order.as_deref(), &partitions, output)
+    write_spark_partitions(
+        parser,
+        &header,
+        sort_order.as_deref(),
+        parts_of([records]),
+        output,
+    )
+}
+
+/// [`write_spark_reads`] sorting to the header, the reads taken as they come: they are all taken,
+/// their refusals with them, before anything is written.
+fn write_spark_sorted(
+    parser: &Parser,
+    header: &SamHeader,
+    records: impl IntoIterator<Item = Result<BamRecord, Thrown>>,
+    output: &str,
+) -> Result<(), Thrown> {
+    let (header, sort_order) = disq_header(header);
+    let taken = take_reads(parser, sort_order.as_deref(), records, output)?;
+    refuse_spark_cram_3_0(parser, output)?;
+    let reducers = recommended_reducers(parser);
+    let parts = partition_reads(taken, reducers, None, output)?;
+    write_spark_partitions(parser, &header, sort_order.as_deref(), parts, output)
 }
 
 /// [`write_spark_reads`] for the aligners, which call `ReadsSparkSink.writeReads` themselves, by the
@@ -4992,20 +5010,21 @@ fn write_aligned_reads(
     sort_to_header: bool,
 ) -> Result<(), Thrown> {
     let (header, sort_order) = disq_header(header);
-    let partitions = if sort_to_header {
-        sorted_partitions(parser, sort_order.as_deref(), records)?
-    } else {
-        vec![records.to_vec()]
-    };
     let sort_order = sort_order.as_deref();
-    write_spark_indexed(
-        parser,
-        &header,
-        sort_order,
-        &partitions,
-        output,
-        (true, true),
-    )
+    let both = (true, true);
+    if sort_to_header {
+        let parts = sorted_partitions(parser, sort_order, records.iter().cloned().map(Ok), output)?;
+        write_spark_indexed(parser, &header, sort_order, parts, output, both)
+    } else {
+        write_spark_indexed(
+            parser,
+            &header,
+            sort_order,
+            parts_of([records]),
+            output,
+            both,
+        )
+    }
 }
 
 /// The header as Disq writes it, `GO` and then `SO` moved behind what else `@HD` holds, and its order.
@@ -5022,131 +5041,244 @@ fn disq_header(header: &SamHeader) -> (SamHeader, Option<String>) {
     (header, sort_order)
 }
 
+/// A read of the output and the partition it is written in, partitions in order; `None` opens a
+/// partition that may hold nothing, which `--sharded-output` still writes a part for.
+type Part<'a> = Result<(usize, Option<std::borrow::Cow<'a, BamRecord>>), Thrown>;
+
+/// Partitions already in memory, as [`write_spark_indexed`] takes them.
+fn parts_of<'a>(
+    partitions: impl IntoIterator<Item = &'a [BamRecord]>,
+) -> impl Iterator<Item = Part<'a>> {
+    partitions
+        .into_iter()
+        .enumerate()
+        .flat_map(|(index, partition)| {
+            std::iter::once(Ok((index, None))).chain(
+                partition
+                    .iter()
+                    .map(move |record| Ok((index, Some(std::borrow::Cow::Borrowed(record))))),
+            )
+        })
+}
+
+/// The parts back in memory, for a caller that goes over the partitions itself.
+fn collect_partitions<'a>(
+    parts: impl Iterator<Item = Part<'a>>,
+) -> Result<Vec<Vec<BamRecord>>, Thrown> {
+    let mut partitions: Vec<Vec<BamRecord>> = Vec::new();
+    for part in parts {
+        let (index, record) = part?;
+        partitions.resize_with(partitions.len().max(index + 1), Vec::new);
+        if let Some(record) = record {
+            partitions[index].push(record.into_owned());
+        }
+    }
+    Ok(partitions)
+}
+
 /// [`write_spark_reads`] past the sort: the header as Disq writes it, and one stream per partition.
-fn write_spark_partitions(
+fn write_spark_partitions<'a>(
     parser: &Parser,
     header: &SamHeader,
     sort_order: Option<&str>,
-    partitions: &[Vec<BamRecord>],
+    parts: impl IntoIterator<Item = Part<'a>>,
     output: &str,
 ) -> Result<(), Thrown> {
     let indices = (
         flag(parser, "create-output-bam-index"),
         flag(parser, "create-output-bam-splitting-index"),
     );
-    write_spark_indexed(parser, header, sort_order, partitions, output, indices)
+    write_spark_indexed(parser, header, sort_order, parts, output, indices)
 }
 
 /// [`write_spark_partitions`], told which of the `.bai` and the `.sbi` to write.
-fn write_spark_indexed(
+///
+/// The reads are written as they come, to a scratch file renamed over `output` once they all are,
+/// and both indices are built beside them.
+fn write_spark_indexed<'a>(
     parser: &Parser,
     header: &SamHeader,
     sort_order: Option<&str>,
-    partitions: &[Vec<BamRecord>],
+    parts: impl IntoIterator<Item = Part<'a>>,
     output: &str,
     (write_bai, write_sbi): (bool, bool),
 ) -> Result<(), Thrown> {
+    use std::io::Write;
     let (level, deflater) = output_compression(parser);
     let failed = |what: &str, error: String| {
         Thrown::non_user(PORT_FAILURE, format!("could not write {what}: {error}"))
     };
+    let mut parts = parts.into_iter().peekable();
     if flag(parser, "sharded-output") {
         let directory = std::path::Path::new(output);
         std::fs::create_dir_all(directory).map_err(|error| failed(output, error.to_string()))?;
-        for (index, partition) in partitions.iter().enumerate() {
-            let mut writer = htsjdk_bam::writer::BamWriter::with_compression(
-                Vec::new(),
-                header,
-                level,
-                deflater,
-            )
-            .map_err(|error| failed(output, error.to_string()))?;
-            for record in partition {
+        let open = |index: usize| {
+            std::fs::File::create(directory.join(format!("part-r-{index:05}.bam")))
+                .and_then(|file| {
+                    htsjdk_bam::writer::BamWriter::with_compression(
+                        std::io::BufWriter::new(file),
+                        header,
+                        level,
+                        deflater,
+                    )
+                })
+                .map_err(|error| failed(output, error.to_string()))
+        };
+        let close = |writer: htsjdk_bam::writer::BamWriter<std::io::BufWriter<std::fs::File>>| {
+            writer
+                .finish()
+                .and_then(|mut file| file.flush())
+                .map_err(|error| failed(output, error.to_string()))
+        };
+        let mut current: Option<(usize, _)> = None;
+        for part in parts {
+            let (index, record) = part?;
+            while current.as_ref().is_none_or(|(open, _)| *open < index) {
+                let next = current.as_ref().map_or(0, |(open, _)| open + 1);
+                if let Some((_, writer)) = current.take() {
+                    close(writer)?;
+                }
+                current = Some((next, open(next)?));
+            }
+            if let (Some(record), Some((_, writer))) = (record, current.as_mut()) {
                 writer
-                    .write(record)
+                    .write(&record)
                     .map_err(|error| failed(output, error.to_string()))?;
             }
-            let part = writer
-                .finish()
-                .map_err(|error| failed(output, error.to_string()))?;
-            std::fs::write(directory.join(format!("part-r-{index:05}.bam")), &part)
-                .map_err(|error| failed(output, error.to_string()))?;
+        }
+        if let Some((_, writer)) = current {
+            close(writer)?;
         }
         std::fs::write(directory.join("_SUCCESS"), b"")
             .map_err(|error| failed(output, error.to_string()))?;
         return Ok(());
     }
 
+    let path = std::path::Path::new(output);
     if output.ends_with(".sam") {
         // Disq's SAM writer: the text, whatever the partitions, and no index of any kind.
-        let records: Vec<BamRecord> = partitions.iter().flatten().cloned().collect();
-        let text = htsjdk_bam::sam_file::write_sam(header, &records)
-            .ok_or_else(|| failed(output, "the SAM text could not be built".to_string()))?;
-        return std::fs::write(output, text).map_err(|error| failed(output, error.to_string()));
+        let name_of = |index: i32| -> &str {
+            usize::try_from(index)
+                .ok()
+                .and_then(|index| header.sequences.get(index))
+                .map_or("*", |sequence| sequence.name.as_str())
+        };
+        let written = gatk_tools::sam_output::write_file(path, |out| {
+            let io = |error: std::io::Error| failed(output, error.to_string());
+            out.write_all(header.encode().as_bytes()).map_err(io)?;
+            for part in parts {
+                let Some(record) = part?.1 else { continue };
+                let line = htsjdk_bam::text::write_alignment(
+                    &record,
+                    name_of(record.reference_index),
+                    name_of(record.mate_reference_index),
+                )
+                .ok_or_else(|| failed(output, "the SAM text could not be built".to_string()))?;
+                out.write_all(line.as_bytes()).map_err(io)?;
+                out.write_all(b"\n").map_err(io)?;
+            }
+            Ok(())
+        })?;
+        return written.map_err(|error| failed(output, error.to_string()));
     }
-
-    // The header part: a header-only BAM without its terminator.
-    let mut header_part =
-        htsjdk_bam::writer::BamWriter::with_compression(Vec::new(), header, level, deflater)
-            .and_then(|writer| writer.finish())
-            .map_err(|error| failed(output, error.to_string()))?;
-    header_part.truncate(header_part.len() - htsjdk_bgzf::EMPTY_GZIP_BLOCK.len());
 
     // Each partition's records, whose offsets the splitting index records relative to the whole
     // file. `SBIIndexMerger` keeps every part's own offsets, counted from that part's first
     // record, shifted to where the part starts.
     let granularity = number_or(parser, "splitting-index-granularity", 4096).max(1) as u64;
-    let mut bam = header_part;
-    let mut offsets: Vec<u64> = Vec::new();
-    let mut encoded = Vec::new();
-    for partition in partitions {
-        let shift = (bam.len() as u64) << 16;
-        let mut stream = htsjdk_bgzf::BgzfWriter::with_deflater(Vec::new(), level, deflater);
-        for (index, record) in partition.iter().enumerate() {
-            encoded.clear();
-            record
-                .encode_into(&mut encoded)
-                .map_err(|error| failed(output, format!("{error:?}")))?;
-            if (index as u64).is_multiple_of(granularity) {
-                let pointer = stream
-                    .file_pointer()
-                    .map_err(|error| failed(output, error.to_string()))?;
-                offsets.push(shift + pointer);
+    // shortcut: the index is the one `BuildBamIndex` reads off the whole file; Disq merges one per
+    // part with `BAMIndexMerger`, which is the same index on every array row measured so far.
+    // Port the merger if a multi-partition row ever disagrees.
+    let mut indexer = (write_bai && sort_order == Some("coordinate")).then(|| {
+        htsjdk_bam::index::BamIndexer::new(header.sequences.iter().map(|s| s.length).collect())
+    });
+    let mut sbi = htsjdk_bam::sbi::SbiIndexWriter::new(1);
+    let mut records = 0u64;
+    let written = gatk_tools::sam_output::write_file(path, |out| {
+        let io = |error: std::io::Error| failed(output, error.to_string());
+        // The header part: a header-only BAM without its terminator.
+        let mut header_part =
+            htsjdk_bam::writer::BamWriter::with_compression(Vec::new(), header, level, deflater)
+                .and_then(|writer| writer.finish())
+                .map_err(io)?;
+        header_part.truncate(header_part.len() - htsjdk_bgzf::EMPTY_GZIP_BLOCK.len());
+        out.write_all(&header_part).map_err(io)?;
+        let mut length = header_part.len() as u64;
+        let mut encoded = Vec::new();
+        while let Some(Ok((partition, _))) = parts.peek() {
+            let partition = *partition;
+            let shift = length << 16;
+            let mut stream = htsjdk_bgzf::BgzfWriter::with_deflater(&mut *out, level, deflater);
+            // What `BuildBamIndex` records of a read: its chunk ends where the next read starts,
+            // and the last one of a part where the part ends, as a reader at the end of a block
+            // points at the next.
+            let mut last: Option<(BamRecord, htsjdk_bam::index::Chunk)> = None;
+            let mut index = 0u64;
+            while let Some(Ok((next, _))) = parts.peek() {
+                if *next != partition {
+                    break;
+                }
+                let Some(Ok((_, Some(record)))) = parts.next() else {
+                    continue;
+                };
+                encoded.clear();
+                record
+                    .encode_into(&mut encoded)
+                    .map_err(|error| failed(output, format!("{error:?}")))?;
+                let indexing = indexer.is_some();
+                if indexing || index.is_multiple_of(granularity) {
+                    let start = shift + stream.file_pointer().map_err(io)?;
+                    if index.is_multiple_of(granularity) {
+                        sbi.process_record(start)
+                            .map_err(|error| failed(&format!("{output}.sbi"), error))?;
+                    }
+                    if let (Some(indexer), Some((read, chunk))) = (&mut indexer, last.take()) {
+                        index_read(indexer, header, &read, chunk);
+                    }
+                    stream.write_all(&encoded).map_err(io)?;
+                    if indexing {
+                        let end = shift + stream.file_pointer().map_err(io)?;
+                        let chunk = htsjdk_bam::index::Chunk { start, end };
+                        last = Some((record.into_owned(), chunk));
+                    }
+                } else {
+                    stream.write_all(&encoded).map_err(io)?;
+                }
+                index += 1;
+                records += 1;
             }
-            std::io::Write::write_all(&mut stream, &encoded)
-                .map_err(|error| failed(output, error.to_string()))?;
+            stream.flush().map_err(io)?;
+            length += stream.file_pointer().map_err(io)? >> 16;
+            stream.into_inner_without_terminator().map_err(io)?;
+            if let (Some(indexer), Some((read, chunk))) = (&mut indexer, last) {
+                let chunk = htsjdk_bam::index::Chunk {
+                    end: length << 16,
+                    ..chunk
+                };
+                index_read(indexer, header, &read, chunk);
+            }
         }
-        let part = stream
-            .into_inner_without_terminator()
-            .map_err(|error| failed(output, error.to_string()))?;
-        bam.extend_from_slice(&part);
-    }
-    let terminator_offset = (bam.len() as u64) << 16;
-    bam.extend_from_slice(&htsjdk_bgzf::EMPTY_GZIP_BLOCK);
-    std::fs::write(output, &bam).map_err(|error| failed(output, error.to_string()))?;
+        if let Some(Err(_)) = parts.peek() {
+            return Err(parts.next().and_then(Result::err).expect("the refusal"));
+        }
+        out.write_all(&htsjdk_bgzf::EMPTY_GZIP_BLOCK).map_err(io)?;
+        Ok(length)
+    })?;
+    let length = written.map_err(|error| failed(output, error.to_string()))?;
 
-    if write_bai && sort_order == Some("coordinate") {
-        // shortcut: the index is built from the whole file; Disq merges one per part with
-        // `BAMIndexMerger`, which is the same index on every array row measured so far. Port the
-        // merger if a multi-partition row ever disagrees.
-        let bai = htsjdk_bam::build_index::build_bam_index(&bam)
-            .map_err(|error| failed(&format!("{output}.bai"), format!("{error:?}")))?;
-        std::fs::write(format!("{output}.bai"), bai)
+    if let Some(indexer) = indexer {
+        std::fs::write(format!("{output}.bai"), indexer.finish())
             .map_err(|error| failed(&format!("{output}.bai"), error.to_string()))?;
     }
     if write_sbi {
-        let mut sbi = htsjdk_bam::sbi::SbiIndexWriter::new(1);
-        for offset in &offsets {
-            sbi.process_record(*offset)
-                .map_err(|error| failed(&format!("{output}.sbi"), error))?;
-        }
+        let terminator_offset = length << 16;
+        let file_length = length + htsjdk_bgzf::EMPTY_GZIP_BLOCK.len() as u64;
         let mut index = sbi
-            .finish(terminator_offset, bam.len() as u64, None, None)
+            .finish(terminator_offset, file_length, None, None)
             .map_err(|error| failed(&format!("{output}.sbi"), error))?;
         // The merged header carries every record and the parts' granularity, where a writer fed
         // only the kept offsets counted those at a granularity of one.
-        let records: usize = partitions.iter().map(Vec::len).sum();
-        index[44..52].copy_from_slice(&(records as u64).to_le_bytes());
+        index[44..52].copy_from_slice(&records.to_le_bytes());
         index[52..60].copy_from_slice(&granularity.to_le_bytes());
         std::fs::write(format!("{output}.sbi"), index)
             .map_err(|error| failed(&format!("{output}.sbi"), error.to_string()))?;
@@ -5154,107 +5286,201 @@ fn write_spark_indexed(
     Ok(())
 }
 
-/// `SparkUtils.sortUsingElementsAsKeys` with `ReadsSparkSink.getSAMRecordComparator`: `sortByKey`
-/// over a `RangePartitioner` of `getRecommendedNumReducers()` partitions, with
+/// `BAMIndexer.processAlignment` for a read `BuildBamIndex` read back: bin 0 on a reference too
+/// long for the binning scheme or for a read with no start, else the read's own.
+fn index_read(
+    indexer: &mut htsjdk_bam::index::BamIndexer,
+    header: &SamHeader,
+    read: &BamRecord,
+    chunk: htsjdk_bam::index::Chunk,
+) {
+    use htsjdk_bam::bin::{compute_indexing_bin, BIN_GENOMIC_SPAN, NO_ALIGNMENT_START};
+    let too_large = usize::try_from(read.reference_index)
+        .ok()
+        .and_then(|index| header.sequences.get(index))
+        .is_some_and(|sequence| sequence.length > BIN_GENOMIC_SPAN);
+    let bin = if too_large || read.alignment_start == NO_ALIGNMENT_START {
+        0
+    } else {
+        compute_indexing_bin(read.alignment_start, read.alignment_end()).unwrap_or(0)
+    };
+    indexer.process(
+        read.reference_index,
+        read.alignment_start,
+        read.alignment_end(),
+        bin,
+        read.read_unmapped(),
+        chunk,
+    );
+}
+
+type Compare = fn(&BamRecord, &BamRecord) -> std::cmp::Ordering;
+
+/// What a sorted write holds in memory, at most, before its sorted runs spill to `--tmp-dir`.
+const SORT_BUDGET: usize = 128 << 20;
+
+/// The reads `sortSamRecordsToMatchHeader` takes: in the sort the header's order names, or as
+/// they came for any other order.
+enum Taken {
+    Sorting(
+        gatk_tools::external_sort::ExternalSorter<BamRecord, Compare>,
+        Compare,
+    ),
+    AsRead(Vec<BamRecord>),
+}
+
+/// Every read, into a stable sort with `ReadsSparkSink.getSAMRecordComparator`:
 /// `HeaderlessSAMRecordCoordinateComparator` for a coordinate-sorted header and htsjdk's
-/// `SAMRecordQueryNameComparator` for a queryname-sorted one. Any other order is written as it was
-/// read.
+/// `SAMRecordQueryNameComparator` for a queryname-sorted one. Any other order is written as it
+/// was read.
 ///
 /// The sort is stable, as Spark's `TimSort` is, so equal keys keep the traversal's order.
+fn take_reads(
+    parser: &Parser,
+    sort_order: Option<&str>,
+    records: impl IntoIterator<Item = Result<BamRecord, Thrown>>,
+    output: &str,
+) -> Result<Taken, Thrown> {
+    let compare: Compare = match sort_order {
+        Some("coordinate") => htsjdk_bam::coordinate::compare,
+        Some("queryname") => htsjdk_bam::query_name::compare,
+        _ => {
+            return records
+                .into_iter()
+                .collect::<Result<_, _>>()
+                .map(Taken::AsRead)
+        }
+    };
+    let directory = argument(parser, "tmp-dir")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    let mut sorter =
+        gatk_tools::external_sort::ExternalSorter::new(compare, SORT_BUDGET, directory);
+    for record in records {
+        sorter.push(record?).map_err(sort_failure(output))?;
+    }
+    Ok(Taken::Sorting(sorter, compare))
+}
+
+/// A run that could not be written or read back, or a read its run refused, as the writer would.
+fn sort_failure(output: &str) -> impl Fn(std::io::Error) -> Thrown + '_ {
+    move |error| Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
+}
+
+/// `getRecommendedNumReducers`: the argument, else one per ten megabytes of input.
+fn recommended_reducers(parser: &Parser) -> usize {
+    let reducers = number_or(parser, "num-reducers", 0).max(0) as usize;
+    if reducers != 0 {
+        return reducers;
+    }
+    let mut inputs = arguments(parser, "input");
+    inputs.sort();
+    inputs.dedup();
+    let size: u64 = inputs
+        .iter()
+        .filter_map(|input| std::fs::metadata(input).ok())
+        .map(|data| data.len())
+        .sum();
+    1 + (size / (10 * 1024 * 1024)) as usize
+}
+
+/// `SparkUtils.sortUsingElementsAsKeys`: `sortByKey` over a `RangePartitioner` of
+/// `getRecommendedNumReducers()` partitions, as [`take_reads`] and [`partition_reads`] do it.
 fn sorted_partitions(
     parser: &Parser,
     sort_order: Option<&str>,
-    records: &[BamRecord],
-) -> Result<Vec<Vec<BamRecord>>, Thrown> {
-    let compare: fn(&BamRecord, &BamRecord) -> std::cmp::Ordering = match sort_order {
-        Some("coordinate") => htsjdk_bam::coordinate::compare,
-        Some("queryname") => htsjdk_bam::query_name::compare,
-        _ => return Ok(vec![records.to_vec()]),
-    };
-    // `getRecommendedNumReducers`: the argument, else one per ten megabytes of input.
-    let mut reducers = number_or(parser, "num-reducers", 0).max(0) as usize;
-    if reducers == 0 {
-        let mut inputs = arguments(parser, "input");
-        inputs.sort();
-        inputs.dedup();
-        let size: u64 = inputs
-            .iter()
-            .filter_map(|input| std::fs::metadata(input).ok())
-            .map(|data| data.len())
-            .sum();
-        reducers = 1 + (size / (10 * 1024 * 1024)) as usize;
-    }
-    range_partitions(records, reducers, &[records.len()], compare)
+    records: impl IntoIterator<Item = Result<BamRecord, Thrown>>,
+    output: &str,
+) -> Result<Box<dyn Iterator<Item = Part<'static>>>, Thrown> {
+    let taken = take_reads(parser, sort_order, records, output)?;
+    partition_reads(taken, recommended_reducers(parser), None, output)
 }
 
-/// The sort itself: `reducers` partitions over input partitions of the sizes given.
-fn range_partitions(
-    records: &[BamRecord],
-    reducers: usize,
-    input_partitions: &[usize],
-    compare: fn(&BamRecord, &BamRecord) -> std::cmp::Ordering,
-) -> Result<Vec<Vec<BamRecord>>, Thrown> {
-    let mut sorted = records.to_vec();
-    sorted.sort_by(compare);
-    let bounds = range_bounds(&sorted, reducers, input_partitions, compare)?;
-    let mut partitions: Vec<Vec<BamRecord>> = vec![Vec::new(); bounds.len() + 1];
-    for record in sorted {
-        // `getPartition`: the first bound the key is not greater than.
-        let partition = bounds
-            .iter()
-            .position(|bound| compare(&record, bound).is_le())
-            .unwrap_or(bounds.len());
-        partitions[partition].push(record);
-    }
-    Ok(partitions)
-}
-
+/// The sort itself: `reducers` partitions over input partitions of the sizes given, or one
+/// holding every read.
+///
 /// `RangePartitioner`'s bounds, the sketch taking every key: weight one each, then
-/// `determineBounds(candidates, min(partitions, candidates))`.
+/// `determineBounds(candidates, min(partitions, candidates))`. A read goes to the first bound it is
+/// not greater than (`getPartition`); the reads come in order, so that is decided as they pass.
 ///
 /// shortcut: input partitions each holding at most `sampleSizePerPartition` keys, where the sketch
 /// is the whole partition; more is a reservoir sample the port does not draw, and is refused by name.
-fn range_bounds(
-    sorted: &[BamRecord],
+fn partition_reads(
+    taken: Taken,
     partitions: usize,
-    input_partitions: &[usize],
-    compare: fn(&BamRecord, &BamRecord) -> std::cmp::Ordering,
-) -> Result<Vec<BamRecord>, Thrown> {
-    if partitions <= 1 || sorted.is_empty() {
-        return Ok(Vec::new());
-    }
-    let sample_size = (20.0 * partitions as f64).min(1e6);
-    let per_partition = (3.0 * sample_size / input_partitions.len() as f64).ceil() as usize;
-    if input_partitions.iter().any(|size| *size > per_partition) {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            format!(
-                "Sorting {} reads into {partitions} partitions samples them, which this port does \
-                 not reproduce yet. This message is the port's own and not GATK's.",
-                sorted.len()
-            ),
-        ));
-    }
-    let partitions = partitions.min(sorted.len());
-    let step = sorted.len() as f64 / partitions as f64;
+    input_partitions: Option<&[usize]>,
+    output: &str,
+) -> Result<Box<dyn Iterator<Item = Part<'static>>>, Thrown> {
+    let (sorter, compare) = match taken {
+        Taken::AsRead(records) => {
+            let records = records
+                .into_iter()
+                .map(|record| Ok((0, Some(std::borrow::Cow::Owned(record)))));
+            return Ok(Box::new(std::iter::once(Ok((0, None))).chain(records)));
+        }
+        Taken::Sorting(sorter, compare) => (sorter, compare),
+    };
+    let count = sorter.len() as usize;
+    let bounds = if partitions <= 1 || count == 0 {
+        0
+    } else {
+        let single = [count];
+        let input_partitions = input_partitions.unwrap_or(&single);
+        let sample_size = (20.0 * partitions as f64).min(1e6);
+        let per_partition = (3.0 * sample_size / input_partitions.len() as f64).ceil() as usize;
+        if input_partitions.iter().any(|size| *size > per_partition) {
+            return Err(Thrown::non_user(
+                PORT_LIMITATION,
+                format!(
+                    "Sorting {count} reads into {partitions} partitions samples them, which this \
+                     port does not reproduce yet. This message is the port's own and not GATK's."
+                ),
+            ));
+        }
+        partitions.min(count) - 1
+    };
+    let step = count as f64 / (bounds + 1) as f64;
     let mut cumulative = 0.0f64;
     let mut target = step;
-    let mut bounds: Vec<BamRecord> = Vec::new();
-    for key in sorted {
-        if bounds.len() >= partitions - 1 {
-            break;
+    let mut found = 0usize;
+    let mut last_bound: Option<BamRecord> = None;
+    let mut sorted = sorter.finish().map_err(sort_failure(output))?;
+    let output = output.to_string();
+    let mut done = false;
+    Ok(Box::new(std::iter::from_fn(move || {
+        if done {
+            return None;
         }
-        cumulative += 1.0;
-        if cumulative >= target
-            && bounds
-                .last()
-                .is_none_or(|previous| compare(key, previous).is_gt())
-        {
-            bounds.push(key.clone());
-            target += step;
+        let Some(record) = sorted.next() else {
+            // The last partition, which no bound closes, may hold nothing.
+            done = true;
+            return Some(Ok((found, None)));
+        };
+        let record = match record {
+            Ok(record) => record,
+            Err(error) => {
+                done = true;
+                return Some(Err(sort_failure(&output)(error)));
+            }
+        };
+        let partition = match &last_bound {
+            Some(bound) if compare(&record, bound).is_le() => found - 1,
+            _ => found,
+        };
+        if found < bounds {
+            cumulative += 1.0;
+            if cumulative >= target
+                && last_bound
+                    .as_ref()
+                    .is_none_or(|previous| compare(&record, previous).is_gt())
+            {
+                last_bound = Some(record.clone());
+                found += 1;
+                target += step;
+            }
         }
-    }
-    Ok(bounds)
+        Some(Ok((partition, Some(std::borrow::Cow::Owned(record)))))
+    })))
 }
 
 /// `-O`, written with `print`: the text and no newline after it.

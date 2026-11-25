@@ -19,6 +19,7 @@
 //! a read *is*.
 
 use htsjdk_bam::record::BamRecord;
+use htsjdk_bam::tag::Tag;
 
 /// The SAM flag bits, as `SAMFlag` defines them.
 pub mod flags {
@@ -137,5 +138,5 @@ pub fn mapping_quality(read: &BamRecord) -> u8 {
 /// `RG` is `rg_absent` passes `HasReadGroupReadFilter` on a header that has never heard of it.
 /// The conformance corpus now carries exactly that record, and the reference keeps it.
 pub fn has_read_group(read: &BamRecord) -> bool {
-    read.tags.iter().any(|(tag, _)| tag.name() == *b"RG")
+    read.tags.contains(Tag::new(b"RG"))
 }
