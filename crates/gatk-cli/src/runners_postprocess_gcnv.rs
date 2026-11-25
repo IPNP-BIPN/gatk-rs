@@ -67,27 +67,6 @@ fn compound(
     }
 }
 
-/// `VCFHeader.setSequenceDictionary`: one contig line per sequence.
-fn contig_lines(dictionary: &[SequenceRecord]) -> Vec<HeaderLine> {
-    dictionary
-        .iter()
-        .enumerate()
-        .map(|(index, sequence)| {
-            let mut fields = vec![
-                ("ID".to_string(), sequence.name.clone()),
-                ("length".to_string(), sequence.length.to_string()),
-            ];
-            if let Some(assembly) = sequence.attributes.get("AS") {
-                fields.push(("assembly".to_string(), assembly.to_string()));
-            }
-            HeaderLine::Contig {
-                index: index as i32,
-                fields,
-            }
-        })
-        .collect()
-}
-
 fn ref_allele() -> Allele {
     Allele::from_str("N", true).expect("a base")
 }

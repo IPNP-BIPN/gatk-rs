@@ -11327,15 +11327,7 @@ pub fn flow_feature_mapper(parser: &Parser) -> Outcome {
             unique.push(line);
         }
     }
-    for (index, sequence) in header.sequences.iter().enumerate() {
-        unique.push(HeaderLine::Contig {
-            index: index as i32,
-            fields: vec![
-                ("ID".to_string(), sequence.name.clone()),
-                ("length".to_string(), sequence.length.to_string()),
-            ],
-        });
-    }
+    unique.extend(contig_lines(&header.sequences));
     let mut vcf_header = htsjdk_vcf::header::VcfHeader::new();
     vcf_header.lines = unique;
 
@@ -17157,6 +17149,30 @@ pub fn select_variants(parser: &Parser) -> Outcome {
     })?;
     write_variant_output(parser, &output, &text)?;
     Ok(None)
+}
+
+/// `VCFHeader.setSequenceDictionary`: one contig line per sequence, the `AS`
+/// attribute as its `assembly=`.
+pub(crate) fn contig_lines(
+    dictionary: &[htsjdk_bam::header::SequenceRecord],
+) -> Vec<htsjdk_vcf::header::HeaderLine> {
+    dictionary
+        .iter()
+        .enumerate()
+        .map(|(index, sequence)| {
+            let mut fields = vec![
+                ("ID".to_string(), sequence.name.clone()),
+                ("length".to_string(), sequence.length.to_string()),
+            ];
+            if let Some(assembly) = sequence.attributes.get("AS") {
+                fields.push(("assembly".to_string(), assembly.to_string()));
+            }
+            htsjdk_vcf::header::HeaderLine::Contig {
+                index: index as i32,
+                fields,
+            }
+        })
+        .collect()
 }
 
 /// `VcfUtils.updateHeaderContigLines`: the contig lines and the `##reference` line, rebuilt.
