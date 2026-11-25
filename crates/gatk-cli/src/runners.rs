@@ -1499,7 +1499,10 @@ fn reads_dictionary(
     path: &str,
     inputs: usize,
 ) -> Result<Vec<htsjdk_bam::header::SequenceRecord>, Thrown> {
-    let bytes = std::fs::read(path).map_err(|_| {
+    // Only the start of the stream decides, as in `read_walker_startup_with`: the whole file was
+    // read and inflated here before, which is the size of the BAM in memory twice over.
+    let file = std::path::Path::new(path);
+    let bytes = gatk_engine::reads::file_start(file).ok_or_else(|| {
         Thrown::user(gatk_tools::read_walker_refusal::cannot_read(
             &java_absolute_path(path),
             false,
@@ -1507,7 +1510,10 @@ fn reads_dictionary(
     })?;
     let compressed = gatk_tools::read_walker_refusal::is_block_compressed(&bytes);
     let decompressed = if compressed {
-        htsjdk_bgzf::read::decompress_all(&bytes).unwrap_or_default()
+        // A file that does not inflate whole has no dictionary, as `decompress_all` answered.
+        ReadsDataSource::check(file)
+            .and_then(|()| gatk_engine::reads::inflated_start(file))
+            .unwrap_or_default()
     } else {
         bytes
     };
@@ -1518,8 +1524,12 @@ fn reads_dictionary(
     if !is_binary {
         return Ok(Vec::new());
     }
-    let source = ReadsDataSource::open_unindexed(std::path::Path::new(path))
-        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let source = if compressed {
+        ReadsDataSource::open_checked(file)
+    } else {
+        ReadsDataSource::open_unindexed(file)
+    }
+    .map_err(|error| Thrown::user(format!("{error:?}")))?;
     Ok(source.header().sequences.clone())
 }
 
