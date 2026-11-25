@@ -9,6 +9,7 @@
 use gatk_barclay::Parser;
 use gatk_tools::main_entry::{Thrown, PORT_FAILURE};
 use gatk_tools::split_vcfs::{split_stream, RecordType, Split, SplitError};
+use htsjdk_vcf::reader::read_vcf;
 
 use super::vcf_format_converter::output_type;
 use super::{
@@ -51,6 +52,18 @@ pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> 
     // The builder hands the TabixIndexCreator it made for a `.vcf.gz` SNP file to the text INDEL
     // writer it builds next, so two files' positions reach one index.
     let shared = create_index && block(&snp_output) && !block(&indel_output);
+    // `writeHeader` on both writers comes before the first record is read, and a BCF one refuses
+    // a header with no contig line there.
+    for output in [&snp_output, &indel_output] {
+        if crate::bcf::is_bcf(output) {
+            let header = read_vcf(&written.snps)
+                .map_err(|failure| thrown(failure.error.class(), failure.error.message()))?
+                .header;
+            if let Err(error) = htsjdk_vcf::bcf2::writer::Bcf2Writer::new(&header, false) {
+                return Err(thrown(error.class, error.message));
+            }
+        }
+    }
     if create_index {
         index_refusal(parser, &snp_output, &indel_output, &written)?;
     }

@@ -414,6 +414,29 @@ pub(crate) fn keep_rebuilt(
     read_by: Origin,
     as_written: &VariantContext,
 ) {
+    let kept = Kept {
+        samples: header.samples.clone(),
+        record,
+        origin: Origin::Bcf2Codec,
+        rebuilt: Some(read_by),
+    };
+    keep_under(header, as_written, kept);
+}
+
+/// A record a tool holds as `origin` would, kept under the line it renders as, ahead of any record
+/// read with the same line: for a tool whose text loses what the record holds, as a sorted FILTER.
+pub(crate) fn keep_as(header: &VcfHeader, record: VariantContext, origin: Origin) {
+    let as_written = record.clone();
+    let kept = Kept {
+        samples: header.samples.clone(),
+        record,
+        origin,
+        rebuilt: None,
+    };
+    keep_under(header, &as_written, kept);
+}
+
+fn keep_under(header: &VcfHeader, as_written: &VariantContext, record: Kept) {
     let Ok(line) = VcfEncoder::new(header).encode(as_written) else {
         return;
     };
@@ -421,15 +444,7 @@ pub(crate) fn keep_rebuilt(
     kept.get_or_insert_with(HashMap::new)
         .entry(line)
         .or_default()
-        .insert(
-            0,
-            Kept {
-                samples: header.samples.clone(),
-                record,
-                origin: Origin::Bcf2Codec,
-                rebuilt: Some(read_by),
-            },
-        );
+        .insert(0, record);
 }
 
 /// `BCF2Writer` over records, each with where it came from, as `IndexingVariantContextWriter`

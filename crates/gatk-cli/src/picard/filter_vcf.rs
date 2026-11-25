@@ -1,8 +1,9 @@
 //! `FilterVcf.doWork`.
 
 use gatk_barclay::Parser;
-use gatk_tools::filter_vcf::{filter_to, Thresholds};
+use gatk_tools::filter_vcf::{filter_to, in_insertion_order, Thresholds};
 use gatk_tools::main_entry::{Thrown, PORT_LIMITATION};
+use htsjdk_vcf::bcf2::writer::Origin;
 use htsjdk_vcf::reader::{read_vcf, ReadError, ReadFailure};
 
 use super::vcf_format_converter::output_type;
@@ -60,6 +61,17 @@ pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> 
     if crate::bcf::is_bcf(&input) && crate::bcf::is_bcf(&output) {
         write_bcf(&input, &output, &filtered, flag(parser, "CREATE_INDEX"))?;
     } else {
+        if crate::bcf::is_bcf(&output) {
+            // The VCF codec's records, under the filters in the order the iterator adds them.
+            if let Ok(file) = read_vcf(&filtered) {
+                for mut record in file.records {
+                    if let Some(filters) = record.filters.as_mut() {
+                        in_insertion_order(filters);
+                    }
+                    crate::bcf::keep_as(&file.header, record, Origin::VcfCodec);
+                }
+            }
+        }
         write_vcf(parser, &output, &filtered, flag(parser, "CREATE_INDEX"))?;
     }
     Ok(0)
@@ -71,10 +83,9 @@ pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> 
 /// The text does not say how Java holds the site's filters, and a BCF codec record writes them in
 /// the order it holds them: a `HashSet`, or `passFilters()`'s empty set. A genotype's `PASS` is no
 /// filter to `BCF2Writer` as it is to the VCF codec, so the text's genotype filters are the
-/// record's. A VCF input is the VCF codec's records, which the text path writes as they are.
+/// record's. A VCF input is the VCF codec's records, which `run` keeps for the text path.
 fn write_bcf(input: &str, output: &str, filtered: &str, index: bool) -> Result<(), Thrown> {
     use htsjdk_vcf::bcf2::java_hash::{order_through, Fill};
-    use htsjdk_vcf::bcf2::writer::Origin;
 
     let file = read_vcf(filtered)
         .map_err(|failure| thrown(failure.error.class(), failure.error.message()))?;
@@ -83,7 +94,9 @@ fn write_bcf(input: &str, output: &str, filtered: &str, index: bool) -> Result<(
     let mut records = Vec::with_capacity(sources.len());
     for (mut record, out) in sources.into_iter().zip(&file.records) {
         record.filters = out.filters.as_ref().map(|filters| {
-            let order = order_through(filters, &[Fill::Put]);
+            let mut filters = filters.clone();
+            in_insertion_order(&mut filters);
+            let order = order_through(&filters, &[Fill::Put]);
             order.into_iter().map(|at| filters[at].clone()).collect()
         });
         let genotypes = record
