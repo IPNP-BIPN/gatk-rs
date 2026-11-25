@@ -56,6 +56,36 @@ now STATUS.md's cost column; the baseline stays in `baseline.json`):
 both directions, which is what an unchanged path does. The other 131 tools moved a median 7% cold
 and 10% steady, at most 45%, the same spread two runs of one commit showed in the baseline.
 
+## Scale A. A reads input read whole for its dictionary (`CheckReferenceCompatibility`, the variant walkers given `-I`, `GenomicsDBImport`, the interpreter tools)
+
+**Ratio.** Measured at scale (the every-tool pass of `tools/speed/scale.json`, NA12878 chr20 30x,
+968 MB BAM, linux/arm64 in the pinned container, 6 GiB limit, port at `c/streaming-guard`):
+`CheckReferenceCompatibility` peak RSS 0.28 GiB for GATK, the port killed at the 6 GiB limit.
+
+**Where the memory goes.** `runners.rs`'s `reads_dictionary` reads the whole BAM with `fs::read`
+and inflates all of it with `decompress_all`, to answer two questions that need its first bytes:
+is it block-compressed, and does it start with the BAM magic. The file is then opened again for
+its header. Every tool that only wants a reads input's dictionary goes through it.
+
+**The optimisation.** The sniff of `read_walker_startup_with`: `file_start` for the raw start,
+`ReadsDataSource::check` (the same whole-file inflate, streamed, discarded block by block) then
+`inflated_start` for the inflated start, and `open_checked` so the check is not run twice.
+
+**Why it cannot move a byte.** The dictionary is the header's `@SQ` records, read by the same
+`read_header`. The two questions get the same answers: the start is a prefix of the bytes read
+before, and `check` refuses exactly the files `decompress_all` refused (it is `decompress_all` over
+256-block batches), which both map to an empty dictionary. A file that cannot be read is refused
+with the same `cannot_read` message.
+
+**The suites that prove it.** `check-reference-compatibility`, `multi-variant-walker`,
+`annotate-vcf-with-bam-depth`, `genomicsdb-import`, `interpreter-tools`, and the covering arrays
+of the tools that reach it.
+
+**Result.** `CheckReferenceCompatibility` on the chr20 BAM: peak RSS killed at 6 GiB before,
+93 MB after (0.33x GATK's 0.28 GiB), and the table is GATK's byte for byte. CPU stays at 6.6 s
+against GATK's 2 s: `check` still inflates the whole file, which GATK never does for a tool that
+reads only the header. That is the reader's, engine-wide, and not this change's.
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are
