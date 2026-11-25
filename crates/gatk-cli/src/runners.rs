@@ -10899,13 +10899,25 @@ pub fn add_original_alignment_tags(parser: &Parser) -> Outcome {
         version: crate::TOOLKIT_VERSION,
     };
     let (level, deflater) = output_compression(parser);
-    let run = gatk_tools::add_original_alignment_tags::add_original_alignment_tags_with(
-        &source, &options, &filter, level, deflater,
-    )
-    .map_err(reads_traversal_error)?;
-    match run {
-        Ok((bytes, bai)) => write_bam(parser, &output, &bytes, bai),
-        Err(refusal) => Err(Thrown::non_user(refusal.class(), refusal.message())),
+    let written = gatk_tools::add_original_alignment_tags::add_original_alignment_tags_to(
+        std::path::Path::new(&output),
+        &source,
+        &options,
+        &filter,
+        level,
+        deflater,
+    );
+    match written {
+        Ok(written) => write_bam_companions(parser, &output, written),
+        Err(gatk_tools::sam_output::RewriteError::Traversal(error)) => {
+            Err(reads_traversal_error(error))
+        }
+        Err(gatk_tools::sam_output::RewriteError::Io(error)) => {
+            Err(Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))
+        }
+        Err(gatk_tools::sam_output::RewriteError::Refusal(refusal)) => {
+            Err(Thrown::non_user(refusal.class(), refusal.message()))
+        }
     }
 }
 
