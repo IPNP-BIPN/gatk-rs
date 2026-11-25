@@ -89,6 +89,18 @@ copies of a string are not observable in any output.
 HaplotypeCaller and Mutect2 arrays; locally, the GVCF and VCF of the profiled region identical to
 the unchanged binary's.
 
+**Result** (one thread, NA12878 chr20, user CPU and peak RSS, three interleaved rounds each,
+outputs identical to the unchanged binary's, `GATKCommandLine` aside). Linux arm64, glibc,
+rustc 1.97.1:
+
+| Row | before | after | RSS before | RSS after |
+|---|---:|---:|---:|---:|
+| `HaplotypeCaller -ERC GVCF`, 10-11 Mb | 13.41-13.79 s | 12.31-12.42 s (-8.6%) | 97 MiB | 96 MiB |
+| `HaplotypeCaller`, 10-11 Mb | 7.59-7.66 s | 7.19-7.24 s (-5.3%) | 95 MiB | 94 MiB |
+| `Mutect2`, 10-10.2 Mb | 2.47-2.54 s | 2.36-2.43 s (-4.4%) | 150 MiB | 150 MiB |
+
+On macOS, whose allocator is dearer, the GVCF row goes from 11.9-12.9 s to 10.0-10.8 s.
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are
