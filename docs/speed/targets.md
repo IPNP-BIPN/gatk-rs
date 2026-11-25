@@ -110,7 +110,8 @@ SSE2, two per register; GKL, which GATK calls, uses AVX-512 or AVX2.
 **The optimisation.** The same body, generic over the lane count, compiled three times: portable
 (four lanes, SSE2 or NEON), `#[target_feature(enable = "avx2")]` (four lanes, one 256-bit register),
 `#[target_feature(enable = "avx512f")]` (eight lanes, one 512-bit register), chosen once by
-`is_x86_feature_detected!`.
+`is_x86_feature_detected!`. A fourth, eight lanes in the baseline vectors, is never dispatched: it
+exists so that the eight-lane body is held to the single pair on a host without AVX-512.
 
 **Why it cannot move a byte.** One read per lane, each lane doing the single pair's multiplies and
 adds in `LoglessPairHMM`'s order; a lane-wise IEEE 754 multiply or add is the scalar one, bit for
