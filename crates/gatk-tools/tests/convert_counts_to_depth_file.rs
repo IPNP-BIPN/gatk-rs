@@ -148,9 +148,8 @@ fn a_header_without_a_sample_is_refused_by_the_reader() {
     let Some(text) = golden() else { return };
     // With --sample-name or without: the reader refuses before the tool reads it.
     for label in ["no-sample", "no-sample-named", "no-read-groups"] {
-        let inner = read_counts(&unescape(field(&text, "input", label)))
-            .expect_err("a header refusal")
-            .expect("of the header");
+        let inner =
+            read_counts(&unescape(field(&text, "input", label))).expect_err("a header refusal");
         let path = format!("<dir>/{label}/input.counts.tsv");
         let ours: Vec<String> = header_error_chain(&path, &inner)
             .into_iter()

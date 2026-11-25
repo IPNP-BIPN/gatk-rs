@@ -100,6 +100,19 @@ public class PortLimitationDump {
                         + OUT.resolve("revertsamspark-extra-group").resolve("rg.bam") + "\nother\t"
                         + OUT.resolve("revertsamspark-extra-group").resolve("other.bam") + "\n"));
 
+        // ConvertCountsToDepthFile reads its counts through SimpleCountCodec, whose decode turns
+        // a NumberFormatException into MalformedFile and lets every other failure through, after
+        // the writer has been opened.
+        final String countsHeader = "@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:10000\n@RG\tID:rg\tSM:sample\n"
+                + "CONTIG\tSTART\tEND\tCOUNT\n";
+        counts("counts-not-a-number", countsHeader + "chr1\t1\t100\t5\nchr1\t101\t200\tx\n");
+        // Tribble decodes one record ahead, so the record before the refused line is not written.
+        counts("counts-not-a-number-third", countsHeader
+                + "chr1\t1\t100\t5\nchr1\t101\t200\t6\nchr1\t201\t300\tx\n");
+        counts("counts-short-row", countsHeader + "chr1\t1\t100\n");
+        counts("counts-start-after-end", countsHeader + "chr1\t200\t100\t5\n");
+        counts("counts-start-zero", countsHeader + "chr1\t0\t100\t5\n");
+
         for (final String input : INPUTS) {
             final Path path = Paths.get(input);
             if (Files.isRegularFile(path)) {
@@ -150,6 +163,12 @@ public class PortLimitationDump {
         INPUTS.add(bam);
         INPUTS.add(dir.resolve(name + ".bai").toString());
         return bam;
+    }
+
+    /** A ConvertCountsToDepthFile case over a counts file of the given text. */
+    static void counts(final String name, final String content) throws Exception {
+        run(name, "ConvertCountsToDepthFile", "--counts-filename",
+                text(name + ".counts.tsv", content), "-O", "{out}/out.rd.txt");
     }
 
     /** A text input, recorded with the others. */
