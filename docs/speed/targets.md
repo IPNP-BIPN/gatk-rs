@@ -100,7 +100,7 @@ The RSS is 0.03x GATK's and the CPU 0.52x. Of what is left, 80% is `htsjdk-vcf`'
 `decode_line` (`parse_alleles` growing its `Vec`, the INFO split) and the single-threaded
 inflater, both of which belong to the decoder (htsjdk-io).
 
-## Scale O. The Picard VCF writers held the VCF (`MakeSitesOnlyVcf`, `MergeVcfs`, `SplitVcfs`)
+## Scale O. The Picard VCF writers held the VCF (`MakeSitesOnlyVcf`, `MergeVcfs`, `SplitVcfs`, `UpdateVcfSequenceDictionary`)
 
 **Ratio.** At scale (linux/arm64, 6 GiB container), each killed at the limit:
 
@@ -109,6 +109,7 @@ inflater, both of which belong to the decoder (htsjdk-io).
 | `MakeSitesOnlyVcf` | dbsnp138 chr20 | 8.2 s | 0.50 GiB |
 | `MergeVcfs` | gnomAD chr20 + dbsnp138 chr20 | 17.3 s | 0.51 GiB |
 | `SplitVcfs` (`STRICT false`) | gnomAD chr20 | 13.0 s | 0.55 GiB |
+| `UpdateVcfSequenceDictionary` | gnomAD chr20, `chr20.dict` | 18.3 s | 0.63 GiB |
 
 **Where the memory goes.** Each input was inflated whole into one string, decoded whole, then
 written into a second whole string. `write_vcf` (the Picard writer) compressed that string in
@@ -129,6 +130,9 @@ memory before the file was written.
   whole-text run: a `.vcf.gz` SNP file indexed beside a text INDEL file (they share one tabix
   creator), and two outputs of one name. The dictionary is read the way the whole run reads it,
   and `vcf_text` no longer runs first.
+- `UpdateVcfSequenceDictionary` writes each record under the updated header (`updated_header`,
+  which the whole run's `update` now builds too). It runs once the dictionary is read; the
+  refusals of a missing dictionary come first, as before.
 
 **Why it cannot move a byte.**
 - The header and records are encoded as `write_vcf` encodes them, through the writer
@@ -159,6 +163,9 @@ except its timestamp. On the files above, and on small files with samples:
   - with `STRICT` and without, `CREATE_INDEX false`, and `SEQUENCE_DICTIONARY`;
   - a file of mixed, MNP and symbolic records, a clean one, an unsorted one, a malformed record,
     no contig lines, two outputs of one name, and an output name with no VCF extension.
+- `UpdateVcfSequenceDictionary`, to `.vcf` and `.vcf.gz`, with and without `CREATE_INDEX`, with
+  the dictionary from a `.dict`, a VCF, a VCF with no contig lines, a FASTA and a missing file,
+  over a good input, a BGZF one, a malformed record, no contig lines and truncated BGZF.
 
 **Result.** macOS native:
 
@@ -167,6 +174,7 @@ except its timestamp. On the files above, and on small files with samples:
 | `MakeSitesOnlyVcf` | 5.66 GB | 21 MB | 10.0 s | 6.3 s | 0.04x | 0.76x |
 | `MergeVcfs` | 13.5 GB | 28 MB | 74.0 s | 52.4 s | 0.05x | 3.0x |
 | `SplitVcfs` | 7.82 GB | 22 MB | 21.0 s | 7.7 s | 0.04x | 0.59x |
+| `UpdateVcfSequenceDictionary` | 5.25 GB | 20 MB | 6.7 s | 6.8 s | 0.03x | 0.37x |
 
 `MergeVcfs`' CPU is 70% `VcfEncoder::encode_into` checking each INFO, FORMAT and FILTER key
 against the header. htsjdk-vcf does that with a linear scan of every header line, and gnomAD's
