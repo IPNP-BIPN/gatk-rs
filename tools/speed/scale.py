@@ -30,8 +30,7 @@ import timer  # noqa: E402
 OUT_BAM = "/work/out/out.bam"
 SORT = "SortSamSpark --input {bam} --output " + OUT_BAM + " --sort-order {order} --num-reducers 1"
 TOOLS = [
-    ("SortSamSpark queryname", SORT.replace("{order}", "queryname"), True),
-    ("SortSamSpark coordinate", SORT.replace("{order}", "coordinate"), True),
+    # SortSamSpark left out: this branch predates the streaming sort, and holding the BAM kills the runner.
     ("CountReads", "CountReads --input {bam}", False),
     ("PrintReads", "PrintReads --input {bam} --output " + OUT_BAM, False),
 ]
