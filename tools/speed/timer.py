@@ -109,19 +109,32 @@ def main(spec_path):
     reps, timeout = spec["reps"], spec["timeout"]
     runs = {"oracle": [], "port": []}
     if spec.get("scale"):
-        # One run per side at scale, each into its own kept directory; the inputs are read once
-        # first so neither side pays the page cache for the other.
+        # At scale, `reps` runs per side, the sides alternating (oracle first on even repetitions).
+        # The first run of each side writes into its kept directory, the later ones into a
+        # scratch directory emptied every time. The inputs are read once first so neither side
+        # pays the page cache for the other.
         for path in spec.get("warm", []):
             subprocess.run(["cat", path], stdout=subprocess.DEVNULL, check=False)
+        for rep in range(max(1, reps)):
+            order = ("oracle", "port") if rep % 2 == 0 else ("port", "oracle")
+            for side in order:
+                # Both sides write to the same path, /work/out, which points at the side's own
+                # directory: an output records the path it was written to (a BAM's @PG CL).
+                kept = Path(spec["out"][side])
+                out = kept if rep == 0 else kept.with_name(f"{side}-scratch")
+                out.mkdir(parents=True, exist_ok=True)
+                if OUT.is_symlink() or OUT.exists():
+                    OUT.unlink() if OUT.is_symlink() else shutil.rmtree(OUT)
+                OUT.symlink_to(out)
+                log = kept.with_name(f"{side}.log") if rep == 0 else None
+                runs[side].append(run(spec[side], timeout, out, log))
+                if rep and runs[side][-1]["exit"] != 0:
+                    break
+            if any(r["exit"] != 0 for side in runs for r in runs[side]):
+                # A side that failed once fails again; its time is not worth another hour.
+                break
         for side in ("oracle", "port"):
-            # Both sides write to the same path, /work/out, which points at the side's own kept
-            # directory: an output records the path it was written to (a BAM's @PG CL).
-            out = Path(spec["out"][side])
-            out.mkdir(parents=True, exist_ok=True)
-            if OUT.is_symlink() or OUT.exists():
-                OUT.unlink() if OUT.is_symlink() else shutil.rmtree(OUT)
-            OUT.symlink_to(out)
-            runs[side].append(run(spec[side], timeout, out, out.with_name(f"{side}.log")))
+            shutil.rmtree(Path(spec["out"][side]).with_name(f"{side}-scratch"), ignore_errors=True)
         reps = -1
     for rep in range(reps + 1):
         order = ("oracle", "port") if rep % 2 == 0 else ("port", "oracle")

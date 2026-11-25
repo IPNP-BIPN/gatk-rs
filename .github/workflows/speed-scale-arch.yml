@@ -81,11 +81,23 @@ jobs:
     uses: ./.github/workflows/speed-scale-group.yml
     with: {group: prep, arch: "${{ inputs.arch }}", runner: "${{ inputs.runner }}", platform: "${{ inputs.platform }}"}
 
+  prep-b:
+    needs: prep
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/speed-scale-group.yml
+    with: {group: prep-b, arch: "${{ inputs.arch }}", runner: "${{ inputs.runner }}", platform: "${{ inputs.platform }}"}
+
   haplotypecaller:
     needs: prep
     if: ${{ !cancelled() }}
     uses: ./.github/workflows/speed-scale-group.yml
     with: {group: haplotypecaller, arch: "${{ inputs.arch }}", runner: "${{ inputs.runner }}", platform: "${{ inputs.platform }}"}
+
+  haplotypecaller-b:
+    needs: prep
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/speed-scale-group.yml
+    with: {group: haplotypecaller-b, arch: "${{ inputs.arch }}", runner: "${{ inputs.runner }}", platform: "${{ inputs.platform }}"}
 
   joint:
     needs: haplotypecaller
@@ -93,11 +105,23 @@ jobs:
     uses: ./.github/workflows/speed-scale-group.yml
     with: {group: joint, arch: "${{ inputs.arch }}", runner: "${{ inputs.runner }}", platform: "${{ inputs.platform }}"}
 
+  joint-b:
+    needs: joint
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/speed-scale-group.yml
+    with: {group: joint-b, arch: "${{ inputs.arch }}", runner: "${{ inputs.runner }}", platform: "${{ inputs.platform }}"}
+
   mutect2:
     needs: prep
     if: ${{ !cancelled() }}
     uses: ./.github/workflows/speed-scale-group.yml
     with: {group: mutect2, arch: "${{ inputs.arch }}", runner: "${{ inputs.runner }}", platform: "${{ inputs.platform }}"}
+
+  mutect2-b:
+    needs: mutect2
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/speed-scale-group.yml
+    with: {group: mutect2-b, arch: "${{ inputs.arch }}", runner: "${{ inputs.runner }}", platform: "${{ inputs.platform }}"}
 
   cnv:
     needs: prep
@@ -105,9 +129,43 @@ jobs:
     uses: ./.github/workflows/speed-scale-group.yml
     with: {group: cnv, arch: "${{ inputs.arch }}", runner: "${{ inputs.runner }}", platform: "${{ inputs.platform }}"}
 
+  cnv-b:
+    needs: cnv
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/speed-scale-group.yml
+    with: {group: cnv-b, arch: "${{ inputs.arch }}", runner: "${{ inputs.runner }}", platform: "${{ inputs.platform }}"}
+
+  bwa:
+    needs: [image, port]
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/speed-scale-group.yml
+    with: {group: bwa, arch: "${{ inputs.arch }}", runner: "${{ inputs.runner }}", platform: "${{ inputs.platform }}"}
+
+  sv:
+    needs: bwa
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/speed-scale-group.yml
+    with: {group: sv, arch: "${{ inputs.arch }}", runner: "${{ inputs.runner }}", platform: "${{ inputs.platform }}"}
+
+  late:
+    needs: [joint, mutect2, bwa]
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/speed-scale-group.yml
+    with: {group: late, arch: "${{ inputs.arch }}", runner: "${{ inputs.runner }}", platform: "${{ inputs.platform }}"}
+
+  # The groups that read only the pinned data, side by side.
+  independent:
+    needs: [image, port]
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [reads-a, reads-b, spark-a, spark-b, cram, variants]
+    uses: ./.github/workflows/speed-scale-group.yml
+    with: {group: "${{ matrix.group }}", arch: "${{ inputs.arch }}", runner: "${{ inputs.runner }}", platform: "${{ inputs.platform }}"}
+
   table:
     name: One table
-    needs: [prep, haplotypecaller, joint, mutect2, cnv]
+    needs: [prep, prep-b, haplotypecaller, haplotypecaller-b, joint, joint-b, mutect2, mutect2-b, cnv, cnv-b, bwa, sv, late, independent]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:

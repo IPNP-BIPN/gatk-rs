@@ -200,6 +200,27 @@
    "derive": "bcftools index -t pon.chr20.vcf.gz",
    "sha256": "42592b7c9f0b5efbd3678d9026c484d3624492653f8a67d141cd3d8ad9e9b94b",
    "bytes": 32875
+  },
+  {
+   "name": "NA12878.chr20.cram",
+   "image": "samtools",
+   "derive": "samtools view -@ 4 -T chr20.fasta -C --output-fmt-option version=3.1 -o NA12878.chr20.cram NA12878.chr20.bam",
+   "sha256": "36a826303dfcfd6b9d5c3ba42d896714a41d57d2e9816074766ddac53b4016af",
+   "bytes": 302381318
+  },
+  {
+   "name": "NA12878.chr20.cram.crai",
+   "image": "samtools",
+   "derive": "samtools index NA12878.chr20.cram",
+   "sha256": "58ebb585a610df84d43ef97e79ab137cca86ff858752a2c7a3d40c88a2487550",
+   "bytes": 30956
+  },
+  {
+   "name": "read_names.txt",
+   "image": "samtools",
+   "derive": "samtools view NA12878.chr20.bam chr20:30000000-30100000 | cut -f1 | sort -u > read_names.txt",
+   "sha256": "b04e4b969e3e22b3eaa71dd87aeaca4fc04276566d6a4bc6337d859feb15e063",
+   "bytes": 228254
   }
  ],
  "steps_comment": "The best-practices chain on chr20. Each step reads the REFERENCE's output of the steps it needs (mounted at {in}/<step>), so both sides of every step get identical input, and a port failure upstream does not hide the steps below it. {threads} is the same on both sides: the JVM's pair-HMM and Spark threads, and the port's RAYON_NUM_THREADS. VCF writers hold --add-output-vcf-command-line false because ##GATKCommandLine carries the run's wall-clock time. `group` is the CI job a step runs in. `timeout` is seconds per side, chosen so a group's runs fit one 6-hour CI job; a side that reaches it is killed and recorded as such. Picard's MarkDuplicates runs beside MarkDuplicatesSpark on the same reads; the steps below read MarkDuplicatesSpark's output.",
@@ -236,6 +257,70 @@
    ],
    "args": "-R {data}/chr20.fasta -I {in}/MarkDuplicatesSpark/md.bam --bqsr-recal-file {in}/BaseRecalibrator/recal.table -O {out}/bqsr.bam",
    "timeout": 3000
+  },
+  {
+   "name": "ApplyBQSRSpark",
+   "group": "prep-b",
+   "needs": [
+    "BaseRecalibrator"
+   ],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam --bqsr-recal-file {in}/BaseRecalibrator/recal.table -O {out}/bqsr.bam --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 5400
+  },
+  {
+   "name": "GatherBQSRReports",
+   "group": "prep-b",
+   "needs": [
+    "BaseRecalibrator"
+   ],
+   "args": "-I {in}/BaseRecalibrator/recal.table -O {out}/gathered.table",
+   "timeout": 1800
+  },
+  {
+   "name": "AnalyzeCovariates",
+   "group": "prep-b",
+   "needs": [
+    "BaseRecalibrator"
+   ],
+   "args": "--bqsr-recal-file {in}/BaseRecalibrator/recal.table --intermediate-csv-file {out}/covariates.csv",
+   "timeout": 1800
+  },
+  {
+   "name": "CompareDuplicatesSpark",
+   "group": "prep-b",
+   "needs": [
+    "MarkDuplicatesSpark"
+   ],
+   "args": "-I {data}/NA12878.chr20.bam -I2 {in}/MarkDuplicatesSpark/md.bam --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 1800
+  },
+  {
+   "name": "CompareBaseQualities",
+   "group": "prep-b",
+   "needs": [
+    "MarkDuplicatesSpark",
+    "ApplyBQSR"
+   ],
+   "args": "{in}/MarkDuplicatesSpark/md.bam {in}/ApplyBQSR/bqsr.bam -O {out}/quals.txt",
+   "timeout": 1800
+  },
+  {
+   "name": "ReadsPipelineSpark",
+   "group": "prep-b",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam --known-sites {data}/dbsnp138.chr20.vcf.gz --known-sites {data}/mills.chr20.vcf.gz --known-sites {data}/known_indels.chr20.vcf.gz -O {out}/calls.vcf --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 12600,
+   "reps": 1
+  },
+  {
+   "name": "HaplotypeCallerSpark",
+   "group": "haplotypecaller-b",
+   "needs": [
+    "ApplyBQSR"
+   ],
+   "args": "-R {data}/chr20.fasta -I {in}/ApplyBQSR/bqsr.bam -L chr20 -O {out}/calls.vcf.gz --add-output-vcf-command-line false --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 12600,
+   "reps": 1
   },
   {
    "name": "HaplotypeCaller",
@@ -293,6 +378,209 @@
    "timeout": 1800
   },
   {
+   "name": "ReblockGVCF",
+   "group": "joint-b",
+   "needs": [
+    "HaplotypeCaller"
+   ],
+   "args": "-R {data}/chr20.fasta -V {in}/HaplotypeCaller/g.vcf.gz -O {out}/rb.g.vcf.gz --add-output-vcf-command-line false",
+   "timeout": 1800
+  },
+  {
+   "name": "CombineGVCFs",
+   "group": "joint-b",
+   "needs": [
+    "HaplotypeCaller"
+   ],
+   "args": "-R {data}/chr20.fasta -V {in}/HaplotypeCaller/g.vcf.gz -O {out}/combined.g.vcf.gz --add-output-vcf-command-line false",
+   "timeout": 1800
+  },
+  {
+   "name": "GenomicsDBImport",
+   "group": "joint-b",
+   "needs": [
+    "HaplotypeCaller"
+   ],
+   "args": "-V {in}/HaplotypeCaller/g.vcf.gz -L chr20 --genomicsdb-workspace-path {out}/ws",
+   "timeout": 1800
+  },
+  {
+   "name": "GnarlyGenotyper",
+   "group": "joint-b",
+   "needs": [
+    "ReblockGVCF"
+   ],
+   "args": "-R {data}/chr20.fasta -V {in}/ReblockGVCF/rb.g.vcf.gz -O {out}/gnarly.vcf.gz --add-output-vcf-command-line false",
+   "timeout": 1800
+  },
+  {
+   "name": "ReferenceBlockConcordance",
+   "group": "joint-b",
+   "needs": [
+    "HaplotypeCaller",
+    "ReblockGVCF"
+   ],
+   "args": "--truth {in}/HaplotypeCaller/g.vcf.gz --evaluation {in}/ReblockGVCF/rb.g.vcf.gz --confidence-concordance-histogram {out}/concordance.hist --eval-block-histogram {out}/eval.hist --truth-block-histogram {out}/truth.hist",
+   "timeout": 1800
+  },
+  {
+   "name": "VCFComparator",
+   "group": "joint-b",
+   "needs": [
+    "HaplotypeCaller",
+    "ReblockGVCF"
+   ],
+   "args": "-R {data}/chr20.fasta --variant expected:{in}/HaplotypeCaller/g.vcf.gz --variant actual:{in}/ReblockGVCF/rb.g.vcf.gz",
+   "timeout": 1800
+  },
+  {
+   "name": "AnnotateVcfWithBamDepth",
+   "group": "joint-b",
+   "needs": [
+    "GenotypeGVCFs"
+   ],
+   "args": "-I {data}/NA12878.chr20.bam -V {in}/GenotypeGVCFs/geno.vcf.gz -O {out}/depth.vcf.gz --add-output-vcf-command-line false",
+   "timeout": 1800
+  },
+  {
+   "name": "VariantAnnotator",
+   "group": "joint-b",
+   "needs": [
+    "GenotypeGVCFs"
+   ],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam -V {in}/GenotypeGVCFs/geno.vcf.gz -O {out}/annotated.vcf.gz --add-output-vcf-command-line false",
+   "timeout": 1800
+  },
+  {
+   "name": "VariantEval",
+   "group": "joint-b",
+   "needs": [
+    "GenotypeGVCFs"
+   ],
+   "args": "-R {data}/chr20.fasta --eval {in}/GenotypeGVCFs/geno.vcf.gz -D {data}/dbsnp138.chr20.vcf.gz -O {out}/ve.txt",
+   "timeout": 1800
+  },
+  {
+   "name": "CalculateGenotypePosteriors",
+   "group": "joint-b",
+   "needs": [
+    "GenotypeGVCFs"
+   ],
+   "args": "-V {in}/GenotypeGVCFs/geno.vcf.gz --supporting-callsets {data}/gnomad.chr20.vcf.gz -O {out}/posteriors.vcf.gz --add-output-vcf-command-line false",
+   "timeout": 1800
+  },
+  {
+   "name": "CalculateMixingFractions",
+   "group": "joint-b",
+   "needs": [
+    "GenotypeGVCFs"
+   ],
+   "args": "-I {data}/NA12878.chr20.bam -V {in}/GenotypeGVCFs/geno.vcf.gz -O {out}/fractions.table",
+   "timeout": 1800
+  },
+  {
+   "name": "AnnotateVcfWithExpectedAlleleFraction",
+   "group": "joint-b",
+   "needs": [
+    "GenotypeGVCFs",
+    "CalculateMixingFractions"
+   ],
+   "args": "-V {in}/GenotypeGVCFs/geno.vcf.gz --mixing-fractions {in}/CalculateMixingFractions/fractions.table -O {out}/expected.vcf.gz --add-output-vcf-command-line false",
+   "timeout": 1800
+  },
+  {
+   "name": "FastaAlternateReferenceMaker",
+   "group": "joint-b",
+   "needs": [
+    "GenotypeGVCFs"
+   ],
+   "args": "-R {data}/chr20.fasta -V {in}/GenotypeGVCFs/geno.vcf.gz -O {out}/alternate.fasta",
+   "timeout": 1800
+  },
+  {
+   "name": "EvaluateInfoFieldConcordance",
+   "group": "joint-b",
+   "needs": [
+    "GenotypeGVCFs",
+    "ApplyVQSR"
+   ],
+   "args": "--evaluation {in}/GenotypeGVCFs/geno.vcf.gz --truth {in}/ApplyVQSR/vqsr.vcf.gz --eval-info-key QD --truth-info-key QD --summary {out}/concordance.table",
+   "timeout": 1800
+  },
+  {
+   "name": "FilterVariantTranches",
+   "group": "joint-b",
+   "needs": [
+    "ApplyVQSR"
+   ],
+   "args": "-V {in}/ApplyVQSR/vqsr.vcf.gz --resource {data}/hapmap.chr20.vcf.gz --resource {data}/mills.chr20.vcf.gz --info-key VQSLOD --snp-tranche 99.9 --indel-tranche 99.0 -O {out}/tranched.vcf.gz --add-output-vcf-command-line false",
+   "timeout": 1800
+  },
+  {
+   "name": "GatherTranches",
+   "group": "joint-b",
+   "needs": [
+    "VariantRecalibrator"
+   ],
+   "args": "--input {in}/VariantRecalibrator/snps.tranches --mode SNP -O {out}/gathered.tranches",
+   "timeout": 1800
+  },
+  {
+   "name": "ExtractVariantAnnotations",
+   "group": "joint-b",
+   "needs": [
+    "GenotypeGVCFs"
+   ],
+   "args": "-V {in}/GenotypeGVCFs/geno.vcf.gz -an QD -an MQ -an FS -an SOR -an MQRankSum -an ReadPosRankSum --resource:hapmap,training=true,calibration=true {data}/hapmap.chr20.vcf.gz --mode SNP -O {out}/extract",
+   "timeout": 1800
+  },
+  {
+   "name": "TrainVariantAnnotationsModel",
+   "group": "joint-b",
+   "needs": [
+    "ExtractVariantAnnotations"
+   ],
+   "args": "--annotations-hdf5 {in}/ExtractVariantAnnotations/extract.annot.hdf5 --model-backend JAVA_BGMM --mode SNP -O {out}/train",
+   "timeout": 1800
+  },
+  {
+   "name": "ScoreVariantAnnotations",
+   "group": "joint-b",
+   "needs": [
+    "GenotypeGVCFs",
+    "TrainVariantAnnotationsModel"
+   ],
+   "args": "-V {in}/GenotypeGVCFs/geno.vcf.gz -an QD -an MQ -an FS -an SOR -an MQRankSum -an ReadPosRankSum --resource:hapmap,training=true,calibration=true {data}/hapmap.chr20.vcf.gz --model-backend JAVA_BGMM --model-prefix {in}/TrainVariantAnnotationsModel/train --mode SNP -O {out}/score --add-output-vcf-command-line false",
+   "timeout": 1800
+  },
+  {
+   "name": "AlleleFrequencyQC",
+   "group": "joint-b",
+   "needs": [
+    "GenotypeGVCFs"
+   ],
+   "args": "-R {data}/chr20.fasta --eval calls:{in}/GenotypeGVCFs/geno.vcf.gz --eval thousand_genomes:{data}/phase1.chr20.vcf.gz --comparison {data}/phase1.chr20.vcf.gz -O {out}/afqc.txt",
+   "timeout": 1800
+  },
+  {
+   "name": "FilterVcf",
+   "group": "joint-b",
+   "needs": [
+    "GenotypeGVCFs"
+   ],
+   "args": "-I {in}/GenotypeGVCFs/geno.vcf.gz -O {out}/filtered.vcf.gz",
+   "timeout": 1800
+  },
+  {
+   "name": "RenameSampleInVcf",
+   "group": "joint-b",
+   "needs": [
+    "GenotypeGVCFs"
+   ],
+   "args": "-I {in}/GenotypeGVCFs/geno.vcf.gz --NEW_SAMPLE_NAME renamed -O {out}/renamed.vcf.gz",
+   "timeout": 1800
+  },
+  {
    "name": "Mutect2",
    "group": "mutect2",
    "needs": [
@@ -309,6 +597,33 @@
    ],
    "args": "-R {data}/chr20.fasta -V {in}/Mutect2/m2.vcf.gz -O {out}/m2.filtered.vcf.gz --add-output-vcf-command-line false",
    "timeout": 900
+  },
+  {
+   "name": "MergeMutectStats",
+   "group": "mutect2-b",
+   "needs": [
+    "Mutect2"
+   ],
+   "args": "--stats {in}/Mutect2/m2.vcf.gz.stats -O {out}/merged.stats",
+   "timeout": 1800
+  },
+  {
+   "name": "CountFalsePositives",
+   "group": "mutect2-b",
+   "needs": [
+    "FilterMutectCalls"
+   ],
+   "args": "-R {data}/chr20.fasta -V {in}/FilterMutectCalls/m2.filtered.vcf.gz -L chr20 -O {out}/falsepositives.table",
+   "timeout": 1800
+  },
+  {
+   "name": "ValidateBasicSomaticShortMutations",
+   "group": "mutect2-b",
+   "needs": [
+    "FilterMutectCalls"
+   ],
+   "args": "-R {data}/chr20.fasta -V {in}/FilterMutectCalls/m2.filtered.vcf.gz -I {data}/NA12878.chr20.bam --discovery-sample-name NA12878 --annotated-vcf {out}/annotated.vcf -O {out}/validation.tsv --summary {out}/valsummary.tsv",
+   "timeout": 1800
   },
   {
    "name": "PreprocessIntervals",
@@ -344,6 +659,947 @@
    ],
    "args": "--denoised-copy-ratios {in}/DenoiseReadCounts/denoised.tsv -O {out} --output-prefix NA12878",
    "timeout": 1800
+  },
+  {
+   "name": "AnnotateIntervals",
+   "group": "cnv-b",
+   "needs": [
+    "PreprocessIntervals"
+   ],
+   "args": "-R {data}/chr20.fasta -L {in}/PreprocessIntervals/chr20.interval_list --interval-merging-rule OVERLAPPING_ONLY -O {out}/annotated.tsv",
+   "timeout": 1800
+  },
+  {
+   "name": "FilterIntervals",
+   "group": "cnv-b",
+   "needs": [
+    "PreprocessIntervals",
+    "AnnotateIntervals"
+   ],
+   "args": "-L {in}/PreprocessIntervals/chr20.interval_list --annotated-intervals {in}/AnnotateIntervals/annotated.tsv --interval-merging-rule OVERLAPPING_ONLY -O {out}/filtered.interval_list",
+   "timeout": 1800
+  },
+  {
+   "name": "CompareIntervalLists",
+   "group": "cnv-b",
+   "needs": [
+    "PreprocessIntervals",
+    "FilterIntervals"
+   ],
+   "args": "-R {data}/chr20.fasta -L {in}/PreprocessIntervals/chr20.interval_list -L2 {in}/FilterIntervals/filtered.interval_list",
+   "timeout": 1800
+  },
+  {
+   "name": "CallCopyRatioSegments",
+   "group": "cnv-b",
+   "needs": [
+    "ModelSegments"
+   ],
+   "args": "-I {in}/ModelSegments/NA12878.cr.seg -O {out}/called.seg",
+   "timeout": 1800
+  },
+  {
+   "name": "MergeAnnotatedRegions",
+   "group": "cnv-b",
+   "needs": [
+    "ModelSegments"
+   ],
+   "args": "-R {data}/chr20.fasta --segments {in}/ModelSegments/NA12878.cr.seg -O {out}/merged.seg",
+   "timeout": 1800
+  },
+  {
+   "name": "MergeAnnotatedRegionsByAnnotation",
+   "group": "cnv-b",
+   "needs": [
+    "CallCopyRatioSegments"
+   ],
+   "args": "-R {data}/chr20.fasta --segments {in}/CallCopyRatioSegments/called.seg --annotations-to-match CALL -O {out}/merged.tsv",
+   "timeout": 1800
+  },
+  {
+   "name": "TagGermlineEvents",
+   "group": "cnv-b",
+   "needs": [
+    "CallCopyRatioSegments"
+   ],
+   "args": "-R {data}/chr20.fasta --segments {in}/CallCopyRatioSegments/called.seg --called-matched-normal-seg-file {in}/CallCopyRatioSegments/called.seg -O {out}/tagged.seg",
+   "timeout": 1800
+  },
+  {
+   "name": "CombineSegmentBreakpoints",
+   "group": "cnv-b",
+   "needs": [
+    "ModelSegments",
+    "CallCopyRatioSegments"
+   ],
+   "args": "-R {data}/chr20.fasta --segments {in}/ModelSegments/NA12878.cr.seg --segments {in}/CallCopyRatioSegments/called.seg --labels model --labels called -O {out}/combined.seg",
+   "timeout": 1800
+  },
+  {
+   "name": "ConvertCountsToDepthFile",
+   "group": "cnv-b",
+   "needs": [
+    "CollectReadCounts"
+   ],
+   "args": "--counts-filename {in}/CollectReadCounts/counts.tsv --sequence-dictionary {data}/chr20.dict -O {out}/depth.rd.txt",
+   "timeout": 1800
+  },
+  {
+   "name": "PrintReadCounts",
+   "group": "cnv-b",
+   "needs": [
+    "CollectReadCounts"
+   ],
+   "args": "-R {data}/chr20.fasta --input-counts {in}/CollectReadCounts/counts.tsv --output-file-list {out}/files.list --output-prefix {out}/printed.",
+   "timeout": 1800
+  },
+  {
+   "name": "CountReads",
+   "group": "reads-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/count.txt",
+   "timeout": 1800
+  },
+  {
+   "name": "CountBases",
+   "group": "reads-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/count.txt",
+   "timeout": 1800
+  },
+  {
+   "name": "FlagStat",
+   "group": "reads-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/flagstat.txt",
+   "timeout": 1800
+  },
+  {
+   "name": "GetSampleName",
+   "group": "reads-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/sample.txt",
+   "timeout": 1800
+  },
+  {
+   "name": "PrintReadsHeader",
+   "group": "reads-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/header.sam",
+   "timeout": 1800
+  },
+  {
+   "name": "CheckReferenceCompatibility",
+   "group": "reads-a",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam --references-to-compare {data}/chr20.fasta -O {out}/compatibility.table",
+   "timeout": 1800
+  },
+  {
+   "name": "PrintReads",
+   "group": "reads-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/out.bam",
+   "timeout": 1800
+  },
+  {
+   "name": "UnmarkDuplicates",
+   "group": "reads-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/unmarked.bam",
+   "timeout": 1800
+  },
+  {
+   "name": "AddOriginalAlignmentTags",
+   "group": "reads-a",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam -O {out}/tagged.bam",
+   "timeout": 1800
+  },
+  {
+   "name": "PrintDistantMates",
+   "group": "reads-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/distant.bam",
+   "timeout": 1800
+  },
+  {
+   "name": "ReadAnonymizer",
+   "group": "reads-a",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam -O {out}/anonymised.bam",
+   "timeout": 1800
+  },
+  {
+   "name": "RevertBaseQualityScores",
+   "group": "reads-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/reverted.bam",
+   "timeout": 1800
+  },
+  {
+   "name": "ClipReads",
+   "group": "reads-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/clipped.bam -QT 10 -os {out}/clip.stats",
+   "timeout": 1800
+  },
+  {
+   "name": "SplitReads",
+   "group": "reads-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out} --split-sample true",
+   "timeout": 1800
+  },
+  {
+   "name": "LeftAlignIndels",
+   "group": "reads-a",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam -O {out}/left_aligned.bam",
+   "timeout": 1800
+  },
+  {
+   "name": "CreateHadoopBamSplittingIndex",
+   "group": "reads-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/reads.bam.sbi",
+   "timeout": 1800
+  },
+  {
+   "name": "FastaReferenceMaker",
+   "group": "reads-a",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -O {out}/made.fasta",
+   "timeout": 1800
+  },
+  {
+   "name": "CountBasesInReference",
+   "group": "reads-a",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -O {out}/bases.txt",
+   "timeout": 1800
+  },
+  {
+   "name": "ShiftFasta",
+   "group": "reads-a",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -O {out}/shifted.fasta --shift-back-output {out}/shiftback.chain --interval-file-name {out}/shift",
+   "timeout": 1800
+  },
+  {
+   "name": "CompareReferences",
+   "group": "reads-a",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta --references-to-compare {data}/chr20.fasta -O {out}/references.table",
+   "timeout": 1800
+  },
+  {
+   "name": "SplitIntervals",
+   "group": "reads-a",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -L chr20 --scatter-count 50 -O {out}/split",
+   "timeout": 1800
+  },
+  {
+   "name": "ComposeSTRTableFile",
+   "group": "reads-a",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -O {out}/str.zip",
+   "timeout": 1800
+  },
+  {
+   "name": "CalibrateDragstrModel",
+   "group": "reads-a",
+   "needs": [
+    "ComposeSTRTableFile"
+   ],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam --str-table-path {in}/ComposeSTRTableFile/str.zip -O {out}/dragstr.txt",
+   "timeout": 1800
+  },
+  {
+   "name": "SetNmAndUqTags",
+   "group": "reads-a",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam -O {out}/tags.bam",
+   "timeout": 1800
+  },
+  {
+   "name": "SetNmMdAndUqTags",
+   "group": "reads-a",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam -O {out}/tags.bam",
+   "timeout": 1800
+  },
+  {
+   "name": "AddCommentsToBam",
+   "group": "reads-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/commented.bam -C scale",
+   "timeout": 1800
+  },
+  {
+   "name": "BuildBamIndex",
+   "group": "reads-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/reads.bai",
+   "timeout": 1800
+  },
+  {
+   "name": "CheckTerminatorBlock",
+   "group": "reads-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam",
+   "timeout": 1800
+  },
+  {
+   "name": "GatherBamFiles",
+   "group": "reads-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/gathered.bam",
+   "timeout": 1800
+  },
+  {
+   "name": "CollectF1R2Counts",
+   "group": "reads-b",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam -O {out}/f1r2.tar.gz",
+   "timeout": 1800
+  },
+  {
+   "name": "LearnReadOrientationModel",
+   "group": "reads-b",
+   "needs": [
+    "CollectF1R2Counts"
+   ],
+   "args": "-I {in}/CollectF1R2Counts/f1r2.tar.gz -O {out}/priors.tar.gz",
+   "timeout": 1800
+  },
+  {
+   "name": "CollectAllelicCounts",
+   "group": "reads-b",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam -L {data}/hapmap.chr20.vcf.gz -O {out}/allelic.tsv",
+   "timeout": 1800
+  },
+  {
+   "name": "ASEReadCounter",
+   "group": "reads-b",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam -V {data}/hapmap.chr20.vcf.gz -O {out}/ase.table",
+   "timeout": 1800
+  },
+  {
+   "name": "GetPileupSummaries",
+   "group": "reads-b",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -V {data}/gnomad.chr20.vcf.gz -L {data}/gnomad.chr20.vcf.gz -O {out}/summaries.table",
+   "timeout": 1800
+  },
+  {
+   "name": "GatherPileupSummaries",
+   "group": "reads-b",
+   "needs": [
+    "GetPileupSummaries"
+   ],
+   "args": "--I {in}/GetPileupSummaries/summaries.table --O {out}/gathered.table --sequence-dictionary {data}/chr20.dict",
+   "timeout": 1800
+  },
+  {
+   "name": "CalculateContamination",
+   "group": "reads-b",
+   "needs": [
+    "GetPileupSummaries"
+   ],
+   "args": "-I {in}/GetPileupSummaries/summaries.table -O {out}/contamination.table --tumor-segmentation {out}/segments.table",
+   "timeout": 1800
+  },
+  {
+   "name": "CallableLoci",
+   "group": "reads-b",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam -O {out}/callable.bed --summary {out}/callable.summary",
+   "timeout": 1800
+  },
+  {
+   "name": "DepthOfCoverage",
+   "group": "reads-b",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam -L chr20 -O {out}/coverage",
+   "timeout": 5400
+  },
+  {
+   "name": "Pileup",
+   "group": "reads-b",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam -L chr20:30000000-40000000 -O {out}/pileup.txt",
+   "timeout": 1800,
+   "note": "10 Mb of chr20: the whole contig's pileup is ~6 GB of text per side"
+  },
+  {
+   "name": "LocalAssembler",
+   "group": "reads-b",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam -L chr20:30000000-31000000 --fasta-file {out}/la.fa --gfa-file {out}/la.gfa",
+   "timeout": 1800,
+   "note": "1 Mb: the tool assembles one locus's reads, it is not meant for a whole contig"
+  },
+  {
+   "name": "ExtractOriginalAlignmentRecordsByNameSpark",
+   "group": "reads-b",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam --read-name-file {data}/read_names.txt -O {out}/extract.bam --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 1800
+  },
+  {
+   "name": "CountReadsSpark",
+   "group": "spark-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/count.txt --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 1800
+  },
+  {
+   "name": "CountBasesSpark",
+   "group": "spark-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/count.txt --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 1800
+  },
+  {
+   "name": "FlagStatSpark",
+   "group": "spark-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/flagstat.txt --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 1800
+  },
+  {
+   "name": "PrintReadsSpark",
+   "group": "spark-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/out.bam --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 1800
+  },
+  {
+   "name": "RevertSamSpark",
+   "group": "spark-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/reverted.bam --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 1800
+  },
+  {
+   "name": "SortSamSpark",
+   "group": "spark-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/sorted.bam --spark-master local[{threads}] --conf spark.ui.enabled=false --tmp-dir /work/tmp",
+   "timeout": 1800
+  },
+  {
+   "name": "MeanQualityByCycleSpark",
+   "group": "spark-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/mqbc.txt --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 1800
+  },
+  {
+   "name": "QualityScoreDistributionSpark",
+   "group": "spark-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/qsd.txt --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 1800
+  },
+  {
+   "name": "CollectBaseDistributionByCycleSpark",
+   "group": "spark-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/bdbc.txt --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 1800
+  },
+  {
+   "name": "CollectQualityYieldMetricsSpark",
+   "group": "spark-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/qy.txt --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 1800
+  },
+  {
+   "name": "CollectInsertSizeMetricsSpark",
+   "group": "spark-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/insert.txt --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 1800
+  },
+  {
+   "name": "CollectMultipleMetricsSpark",
+   "group": "spark-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/multi --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 1800
+  },
+  {
+   "name": "CollectAllelicCountsSpark",
+   "group": "spark-a",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam -L {data}/hapmap.chr20.vcf.gz -O {out}/allelic.tsv --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 1800
+  },
+  {
+   "name": "CalcMetadataSpark",
+   "group": "spark-a",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/metadata.txt --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 1800
+  },
+  {
+   "name": "PileupSpark",
+   "group": "spark-a",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam -L chr20:30000000-40000000 -O {out}/pileup --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 1800,
+   "note": "10 Mb of chr20, as Pileup"
+  },
+  {
+   "name": "BaseRecalibratorSpark",
+   "group": "spark-b",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam --known-sites {data}/dbsnp138.chr20.vcf.gz --known-sites {data}/mills.chr20.vcf.gz --known-sites {data}/known_indels.chr20.vcf.gz -O {out}/recal.table --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 5400
+  },
+  {
+   "name": "BQSRPipelineSpark",
+   "group": "spark-b",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam --known-sites {data}/dbsnp138.chr20.vcf.gz --known-sites {data}/mills.chr20.vcf.gz --known-sites {data}/known_indels.chr20.vcf.gz -O {out}/bqsr.bam --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 5400
+  },
+  {
+   "name": "CountVariantsSpark",
+   "group": "spark-b",
+   "needs": [],
+   "args": "-V {data}/gnomad.chr20.vcf.gz -O {out}/count.txt --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 1800
+  },
+  {
+   "name": "PrintVariantsSpark",
+   "group": "spark-b",
+   "needs": [],
+   "args": "-V {data}/gnomad.chr20.vcf.gz -O {out}/variants.vcf --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 1800
+  },
+  {
+   "name": "CountReads.cram",
+   "group": "cram",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.cram -O {out}/count.txt",
+   "timeout": 1800,
+   "tool": "CountReads"
+  },
+  {
+   "name": "FlagStat.cram",
+   "group": "cram",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.cram -O {out}/flagstat.txt",
+   "timeout": 1800,
+   "tool": "FlagStat"
+  },
+  {
+   "name": "PrintReads.cram",
+   "group": "cram",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.cram -O {out}/out.bam",
+   "timeout": 1800,
+   "tool": "PrintReads"
+  },
+  {
+   "name": "BaseRecalibrator.cram",
+   "group": "cram",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.cram --known-sites {data}/dbsnp138.chr20.vcf.gz --known-sites {data}/mills.chr20.vcf.gz --known-sites {data}/known_indels.chr20.vcf.gz -O {out}/recal.table",
+   "timeout": 5400,
+   "tool": "BaseRecalibrator"
+  },
+  {
+   "name": "CRAMIssue8768Detector",
+   "group": "cram",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.cram --output-tsv {out}/cram8768.tsv",
+   "timeout": 1800
+  },
+  {
+   "name": "SplitCRAM",
+   "group": "cram",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.cram -O {out}/shard_%04d.cram",
+   "timeout": 1800
+  },
+  {
+   "name": "PrintFileDiagnostics",
+   "group": "cram",
+   "needs": [],
+   "args": "-I {data}/NA12878.chr20.cram -O {out}/diagnostics.txt",
+   "timeout": 1800
+  },
+  {
+   "name": "CountVariants",
+   "group": "variants",
+   "needs": [],
+   "args": "-V {data}/gnomad.chr20.vcf.gz -O {out}/count.txt",
+   "timeout": 1800
+  },
+  {
+   "name": "SelectVariants.gnomad",
+   "group": "variants",
+   "needs": [],
+   "args": "-V {data}/gnomad.chr20.vcf.gz --select-type-to-include SNP -O {out}/select.vcf.gz --add-output-vcf-command-line false",
+   "timeout": 1800,
+   "tool": "SelectVariants"
+  },
+  {
+   "name": "VariantsToTable",
+   "group": "variants",
+   "needs": [],
+   "args": "-V {data}/gnomad.chr20.vcf.gz -F CHROM -F POS -F REF -F ALT -F AF -O {out}/table.tsv",
+   "timeout": 1800
+  },
+  {
+   "name": "ValidateVariants",
+   "group": "variants",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -V {data}/gnomad.chr20.vcf.gz",
+   "timeout": 1800
+  },
+  {
+   "name": "LeftAlignAndTrimVariants",
+   "group": "variants",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -V {data}/gnomad.chr20.vcf.gz -O {out}/aligned.vcf.gz --add-output-vcf-command-line false",
+   "timeout": 1800
+  },
+  {
+   "name": "UpdateVCFSequenceDictionary",
+   "group": "variants",
+   "needs": [],
+   "args": "-V {data}/gnomad.chr20.vcf.gz --source-dictionary {data}/chr20.dict --replace true -O {out}/updated.vcf.gz --add-output-vcf-command-line false",
+   "timeout": 1800
+  },
+  {
+   "name": "RemoveNearbyIndels",
+   "group": "variants",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -V {data}/gnomad.chr20.vcf.gz -O {out}/nearby.vcf.gz --add-output-vcf-command-line false",
+   "timeout": 1800
+  },
+  {
+   "name": "IndexFeatureFile",
+   "group": "variants",
+   "needs": [],
+   "args": "-I {data}/gnomad.chr20.vcf.gz -O {out}/gnomad.vcf.gz.tbi",
+   "timeout": 1800
+  },
+  {
+   "name": "PrintBGZFBlockInformation",
+   "group": "variants",
+   "needs": [],
+   "args": "--bgzf-file {data}/gnomad.chr20.vcf.gz -O {out}/blocks.txt",
+   "timeout": 1800
+  },
+  {
+   "name": "DumpTabixIndex",
+   "group": "variants",
+   "needs": [],
+   "args": "--tabix-index {data}/gnomad.chr20.vcf.gz.tbi -O {out}/tabix.txt",
+   "timeout": 1800
+  },
+  {
+   "name": "GatherVcfsCloud",
+   "group": "variants",
+   "needs": [],
+   "args": "-I {data}/gnomad.chr20.vcf.gz -O {out}/gathered.vcf.gz",
+   "timeout": 1800
+  },
+  {
+   "name": "FixVcfHeader",
+   "group": "variants",
+   "needs": [],
+   "args": "-I {data}/gnomad.chr20.vcf.gz -O {out}/fixed.vcf.gz",
+   "timeout": 1800
+  },
+  {
+   "name": "GatherVcfs",
+   "group": "variants",
+   "needs": [],
+   "args": "-I {data}/gnomad.chr20.vcf.gz -O {out}/gathered.vcf.gz",
+   "timeout": 1800
+  },
+  {
+   "name": "MergeVcfs",
+   "group": "variants",
+   "needs": [],
+   "args": "-I {data}/gnomad.chr20.vcf.gz -I {data}/dbsnp138.chr20.vcf.gz -O {out}/merged.vcf.gz",
+   "timeout": 1800
+  },
+  {
+   "name": "SortVcf",
+   "group": "variants",
+   "needs": [],
+   "args": "-I {data}/gnomad.chr20.vcf.gz -O {out}/sorted.vcf.gz",
+   "timeout": 1800
+  },
+  {
+   "name": "SplitVcfs",
+   "group": "variants",
+   "needs": [],
+   "args": "-I {data}/gnomad.chr20.vcf.gz --SNP_OUTPUT {out}/snps.vcf.gz --INDEL_OUTPUT {out}/indels.vcf.gz --STRICT false",
+   "timeout": 1800
+  },
+  {
+   "name": "UpdateVcfSequenceDictionary",
+   "group": "variants",
+   "needs": [],
+   "args": "-I {data}/gnomad.chr20.vcf.gz -O {out}/updated.vcf.gz --SEQUENCE_DICTIONARY {data}/chr20.dict",
+   "timeout": 1800
+  },
+  {
+   "name": "VcfFormatConverter",
+   "group": "variants",
+   "needs": [],
+   "args": "-I {data}/gnomad.chr20.vcf.gz -O {out}/converted.vcf",
+   "timeout": 1800
+  },
+  {
+   "name": "VcfToIntervalList",
+   "group": "variants",
+   "needs": [],
+   "args": "-I {data}/gnomad.chr20.vcf.gz -O {out}/sites.interval_list",
+   "timeout": 1800
+  },
+  {
+   "name": "MakeSitesOnlyVcf",
+   "group": "variants",
+   "needs": [],
+   "args": "-I {data}/dbsnp138.chr20.vcf.gz -O {out}/sites.vcf.gz",
+   "timeout": 1800
+  },
+  {
+   "name": "BwaMemIndexImageCreator",
+   "group": "bwa",
+   "needs": [],
+   "args": "-I {data}/chr20.fasta -O {out}/chr20.img",
+   "timeout": 1800
+  },
+  {
+   "name": "FindBadGenomicKmersSpark",
+   "group": "bwa",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -O {out}/kmers.txt --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 1800
+  },
+  {
+   "name": "BwaSpark",
+   "group": "bwa",
+   "needs": [
+    "BwaMemIndexImageCreator"
+   ],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam --bwa-mem-index-image {in}/BwaMemIndexImageCreator/chr20.img -O {out}/aligned.bam --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 7200,
+   "reps": 1
+  },
+  {
+   "name": "BwaAndMarkDuplicatesPipelineSpark",
+   "group": "bwa",
+   "needs": [
+    "BwaMemIndexImageCreator"
+   ],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam --bwa-mem-index-image {in}/BwaMemIndexImageCreator/chr20.img -O {out}/aligned.bam --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 7200,
+   "reps": 1
+  },
+  {
+   "name": "ExtractSVEvidenceSpark",
+   "group": "sv",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam -O {out}/evidence --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 1800
+  },
+  {
+   "name": "FindBreakpointEvidenceSpark",
+   "group": "sv",
+   "needs": [
+    "BwaMemIndexImageCreator",
+    "FindBadGenomicKmersSpark"
+   ],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam --aligner-index-image {in}/BwaMemIndexImageCreator/chr20.img --kmers-to-ignore {in}/FindBadGenomicKmersSpark/kmers.txt -O {out}/contigs.sam --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 5400
+  },
+  {
+   "name": "DiscoverVariantsFromContigAlignmentsSAMSpark",
+   "group": "sv",
+   "needs": [
+    "FindBreakpointEvidenceSpark"
+   ],
+   "args": "-R {data}/chr20.fasta -I {in}/FindBreakpointEvidenceSpark/contigs.sam -O {out}/discovered.vcf --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 1800
+  },
+  {
+   "name": "SvDiscoverFromLocalAssemblyContigAlignmentsSpark",
+   "group": "sv",
+   "needs": [
+    "FindBreakpointEvidenceSpark"
+   ],
+   "args": "-R {data}/chr20.fasta -I {in}/FindBreakpointEvidenceSpark/contigs.sam -O {out}/assembled --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 1800
+  },
+  {
+   "name": "StructuralVariantDiscoverer",
+   "group": "sv",
+   "needs": [
+    "FindBreakpointEvidenceSpark"
+   ],
+   "args": "-R {data}/chr20.fasta -I {in}/FindBreakpointEvidenceSpark/contigs.sam --outputVCFName {out}/svd.vcf",
+   "timeout": 1800
+  },
+  {
+   "name": "StructuralVariationDiscoveryPipelineSpark",
+   "group": "sv",
+   "needs": [
+    "BwaMemIndexImageCreator",
+    "FindBadGenomicKmersSpark"
+   ],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam --aligner-index-image {in}/BwaMemIndexImageCreator/chr20.img --kmers-to-ignore {in}/FindBadGenomicKmersSpark/kmers.txt --contig-sam-file {out}/contigs.sam -O {out}/variants --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 7200,
+   "reps": 1
+  },
+  {
+   "name": "PathSeqBuildKmers",
+   "group": "sv",
+   "needs": [],
+   "args": "--reference {data}/chr20.fasta -O {out}/host.hss",
+   "timeout": 1800
+  },
+  {
+   "name": "PathSeqFilterSpark",
+   "group": "sv",
+   "needs": [
+    "PathSeqBuildKmers"
+   ],
+   "args": "-I {data}/NA12878.chr20.bam --kmer-file {in}/PathSeqBuildKmers/host.hss --filter-metrics {out}/filter.metrics --paired-output {out}/paired.bam --unpaired-output {out}/unpaired.bam --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "timeout": 5400
+  },
+  {
+   "name": "CollectSVEvidence",
+   "group": "sv",
+   "needs": [],
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam --sample-name NA12878 -PE {out}/ev.pe.txt.gz -SR {out}/ev.sr.txt.gz -RD {out}/ev.rd.txt.gz -SD {out}/ev.sd.txt.gz --sites-file {data}/hapmap.chr20.vcf.gz",
+   "timeout": 1800
+  },
+  {
+   "name": "CondenseDepthEvidence",
+   "group": "sv",
+   "needs": [
+    "CollectSVEvidence"
+   ],
+   "args": "--depth-evidence {in}/CollectSVEvidence/ev.rd.txt.gz -O {out}/condensed.rd.txt.gz",
+   "timeout": 1800
+  },
+  {
+   "name": "PrintSVEvidence",
+   "group": "sv",
+   "needs": [
+    "CollectSVEvidence"
+   ],
+   "args": "--evidence-file {in}/CollectSVEvidence/ev.pe.txt.gz --sequence-dictionary {data}/chr20.dict -O {out}/printed.pe.txt.gz",
+   "timeout": 1800
+  },
+  {
+   "name": "SiteDepthtoBAF",
+   "group": "sv",
+   "needs": [
+    "CollectSVEvidence"
+   ],
+   "args": "--baf-sites-vcf {data}/hapmap.chr20.vcf.gz --site-depth {in}/CollectSVEvidence/ev.sd.txt.gz --baf-evidence-output {out}/sites.baf.txt.gz --sequence-dictionary {data}/chr20.dict",
+   "timeout": 1800
+  },
+  {
+   "name": "ExampleMultiFeatureWalker",
+   "group": "sv",
+   "needs": [
+    "CollectSVEvidence"
+   ],
+   "args": "--feature {in}/CollectSVEvidence/ev.rd.txt.gz --sequence-dictionary {data}/chr20.dict",
+   "timeout": 1800
+  },
+  {
+   "name": "FilterAlignmentArtifacts",
+   "group": "late",
+   "needs": [
+    "ApplyBQSR",
+    "FilterMutectCalls",
+    "BwaMemIndexImageCreator"
+   ],
+   "args": "-R {data}/chr20.fasta -I {in}/ApplyBQSR/bqsr.bam -V {in}/FilterMutectCalls/m2.filtered.vcf.gz --bwa-mem-index-image {in}/BwaMemIndexImageCreator/chr20.img -O {out}/faa.vcf.gz --add-output-vcf-command-line false",
+   "timeout": 5400
+  },
+  {
+   "name": "Concordance",
+   "group": "late",
+   "needs": [
+    "GenotypeGVCFs",
+    "FilterMutectCalls"
+   ],
+   "args": "-R {data}/chr20.fasta --evaluation {in}/FilterMutectCalls/m2.filtered.vcf.gz --truth {in}/GenotypeGVCFs/geno.vcf.gz --summary {out}/summary.tsv",
+   "timeout": 1800
   }
- ]
+ ],
+ "not_measured": {
+  "AddFlowBaseQuality": "it reads Ultima flow-based reads (tp/t0 tags, flow order); NA12878's chr20 is Illumina, and no flow-based run is pinned",
+  "AddFlowSNVQuality": "it reads Ultima flow-based reads (tp/t0 tags, flow order); NA12878's chr20 is Illumina, and no flow-based run is pinned",
+  "FlowFeatureMapper": "it reads Ultima flow-based reads (tp/t0 tags, flow order); NA12878's chr20 is Illumina, and no flow-based run is pinned",
+  "FlowPairHMMAlignReadsToHaplotypes": "it reads Ultima flow-based reads (tp/t0 tags, flow order); NA12878's chr20 is Illumina, and no flow-based run is pinned",
+  "GroundTruthReadsBuilder": "it reads Ultima flow-based reads (tp/t0 tags, flow order); NA12878's chr20 is Illumina, and no flow-based run is pinned",
+  "GroundTruthScorer": "it reads Ultima flow-based reads (tp/t0 tags, flow order); NA12878's chr20 is Illumina, and no flow-based run is pinned",
+  "HaplotypeBasedVariantRecaller": "it reads Ultima flow-based reads (tp/t0 tags, flow order); NA12878's chr20 is Illumina, and no flow-based run is pinned",
+  "SVCluster": "it reads GATK-SV's own call format (SVTYPE/SVLEN/ALGORITHMS from Manta, Wham, cn.MOPS, GATK-gCNV); none of the chain's tools makes such a VCF, and no GATK-SV callset is pinned",
+  "GroupedSVCluster": "it reads GATK-SV's own call format (SVTYPE/SVLEN/ALGORITHMS from Manta, Wham, cn.MOPS, GATK-gCNV); none of the chain's tools makes such a VCF, and no GATK-SV callset is pinned",
+  "SVConcordance": "it reads GATK-SV's own call format (SVTYPE/SVLEN/ALGORITHMS from Manta, Wham, cn.MOPS, GATK-gCNV); none of the chain's tools makes such a VCF, and no GATK-SV callset is pinned",
+  "SVStratify": "it reads GATK-SV's own call format (SVTYPE/SVLEN/ALGORITHMS from Manta, Wham, cn.MOPS, GATK-gCNV); none of the chain's tools makes such a VCF, and no GATK-SV callset is pinned",
+  "JointGermlineCNVSegmentation": "it reads GATK-SV's own call format (SVTYPE/SVLEN/ALGORITHMS from Manta, Wham, cn.MOPS, GATK-gCNV); none of the chain's tools makes such a VCF, and no GATK-SV callset is pinned; it also reads gCNV's per-sample segment VCFs",
+  "CpxVariantReInterpreterSpark": "it reads complex SV calls from SvDiscoverFromLocalAssemblyContigAlignmentsSpark; on one 30x chr20 that tool's CPX output is empty, so there is nothing to reinterpret",
+  "SVAnnotate": "it needs a protein-coding GTF and GATK-SV calls; neither is pinned",
+  "GtfToBed": "it needs a GENCODE or Ensembl GTF; none is pinned",
+  "GeneExpressionEvaluation": "it counts RNA-seq reads per gene from a GFF3; the data is DNA and no annotation is pinned",
+  "SplitNCigarReads": "it splits RNA-seq reads at N cigar elements; WGS DNA reads carry none, so a run measures a copy, not the tool",
+  "PostProcessReadsForRSEM": "it prepares transcriptome-aligned RNA-seq reads for RSEM; the data is genome-aligned DNA",
+  "MethylationTypeCaller": "it calls methylation from bisulfite-converted reads; the data is not bisulfite",
+  "AnalyzeSaturationMutagenesis": "it reads deep amplicon reads of one ORF from a saturation-mutagenesis screen",
+  "DownsampleByDuplicateSet": "it groups duplex-consensus reads by molecular ID (MI tag); the data has no UMIs",
+  "TransferReadTags": "it copies UMI tags from an unaligned BAM of the same reads; the data has no unaligned UMI BAM",
+  "FixMisencodedBaseQualityReads": "it rewrites Phred+64 qualities; the data is Phred+33, and the reference refuses it",
+  "ConvertHeaderlessHadoopBamShardToBam": "its input is a headerless shard that only Hadoop-BAM's sharded writer makes",
+  "CheckPileup": "it compares the reads against a samtools pileup of the same data; a whole-chr20 pileup is ~6 GB of text that would have to be pinned",
+  "MTLowHeteroplasmyFilterTool": "a mitochondrial-pipeline filter; the data has no chrM",
+  "NuMTFilterTool": "a mitochondrial-pipeline filter; the data has no chrM",
+  "MergeMutect2CallsWithMC3": "it merges calls with the TCGA MC3 callset; MC3 is not public on GRCh38 chr20",
+  "GetNormalArtifactData": "it needs a tumour and a matched normal; NA12878 is one germline sample",
+  "GatherNormalArtifactData": "it gathers GetNormalArtifactData's shards, which need a tumour-normal pair",
+  "CreateSomaticPanelOfNormals": "it needs a GenomicsDB of several normals; there is one sample",
+  "CreateReadCountPanelOfNormals": "it needs read counts from a cohort of normals; there is one sample",
+  "CalculateAverageCombinedAnnotations": "it divides annotations a joint caller summed across samples; one sample has none summed",
+  "RampedHaplotypeCaller": "it replays HaplotypeCaller from on-ramp files a debugging run wrote; a realistic run of it is HaplotypeCaller's step",
+  "FilterFuncotations": "it filters Funcotator's output, which needs Funcotator's data sources (see Funcotator)",
+  "Funcotator": "its data sources (gnomAD, ClinVar, GENCODE, ...) are a ~20 GB tarball not sliced to chr20 and not pinned",
+  "FuncotateSegments": "its data sources are Funcotator's (see Funcotator)",
+  "FuncotatorDataSourceDownloader": "it downloads from the Broad's bucket: a network transfer, not a workload",
+  "ParallelCopyGCSDirectoryIntoHDFSSpark": "it copies between GCS and HDFS: neither exists in the runner",
+  "HtsgetReader": "it streams from an htsget server: a network client, timed against a local server by its own suite",
+  "PathSeqBuildReferenceTaxonomy": "it needs NCBI's RefSeq/GenBank catalogs and taxdump; none is pinned",
+  "PathSeqBwaSpark": "it aligns to a microbial BWA image; no microbial reference is pinned",
+  "PathSeqScoreSpark": "it scores alignments to a microbial reference and taxonomy; neither is pinned",
+  "PathSeqPipelineSpark": "it needs PathSeqBwaSpark's and PathSeqScoreSpark's microbial references",
+  "NVScoreVariants": "its reference needs GATK's conda environment (gatkpythonpackages, gcnvkernel, PyTorch or scikit-learn), which the pinned timing image does not carry; it is measured on fixtures by Speed (#1494) and needs the broadinstitute/gatk image to time at scale",
+  "DetermineGermlineContigPloidy": "its reference needs GATK's conda environment (gatkpythonpackages, gcnvkernel, PyTorch or scikit-learn), which the pinned timing image does not carry; it is measured on fixtures by Speed (#1494) and needs the broadinstitute/gatk image to time at scale; it also needs a cohort or a ploidy model",
+  "GermlineCNVCaller": "its reference needs GATK's conda environment (gatkpythonpackages, gcnvkernel, PyTorch or scikit-learn), which the pinned timing image does not carry; it is measured on fixtures by Speed (#1494) and needs the broadinstitute/gatk image to time at scale",
+  "PostprocessGermlineCNVCalls": "its reference needs GATK's conda environment (gatkpythonpackages, gcnvkernel, PyTorch or scikit-learn), which the pinned timing image does not carry; it is measured on fixtures by Speed (#1494) and needs the broadinstitute/gatk image to time at scale; it reads GermlineCNVCaller's shards",
+  "PlotDenoisedCopyRatios": "it draws with R (optparse, data.table); the pinned timing image has no R",
+  "PlotModeledSegments": "it draws with R; the pinned timing image has no R"
+ },
+ "java_options": "-Xmx3584m",
+ "java_options_comment": "The reference's heap on every CPU: what a 14 GiB container gives a JVM by default (a quarter), set explicitly so a smaller local container times the same JVM."
 }
