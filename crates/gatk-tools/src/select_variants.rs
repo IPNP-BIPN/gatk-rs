@@ -435,7 +435,13 @@ pub fn subset_record(
         .map(|index| record.samples[*index].clone())
         .collect();
 
-    add_annotations(&mut subset, &record.variant, &kept_alleles, arguments);
+    add_annotations(
+        &mut subset,
+        &record.variant,
+        &kept_samples,
+        &kept_alleles,
+        arguments,
+    );
 
     let variant = if arguments.preserve_alleles {
         subset
@@ -468,6 +474,7 @@ fn unseeded_double() -> f64 {
 fn add_annotations(
     subset: &mut Variant,
     original: &Variant,
+    kept_samples: &[usize],
     kept_alleles: &[usize],
     arguments: &SubsetArguments,
 ) {
@@ -514,11 +521,12 @@ fn add_annotations(
         }
     }
 
-    // The depth is summed over the KEPT genotypes, skipping the filtered ones, and written only
-    // where at least one of them had a DP at all: where none does, the record keeps its own.
+    // The depth is summed over the kept samples' ORIGINAL genotypes, skipping the filtered ones,
+    // and written only where at least one of them had a DP at all: where none does, the record
+    // keeps its own. Original, because the subset may have dropped a GQ-0 no-call's `DP=0`.
     let mut saw_depth = false;
     let mut depth = 0;
-    for genotype in &subset.genotypes {
+    for genotype in kept_samples.iter().map(|index| &original.genotypes[*index]) {
         if is_filtered(genotype) {
             continue;
         }
@@ -622,6 +630,20 @@ pub enum VariantType {
 ///
 /// The spanning deletion is not symbolic here: `*` is one base against a one-base reference, so a
 /// record whose only alternate is `*` is a SNP, and `--select-type-to-include SNP` keeps it.
+/// `VariantContext.getType(true)`: `<NON_REF>` and `<*>` are skipped, and a record whose every
+/// alternate is one of them is NO_VARIATION.
+pub fn variant_type_ignoring_non_ref(alleles: &[Allele]) -> VariantType {
+    let kept: Vec<Allele> = alleles
+        .iter()
+        .enumerate()
+        .filter(|(index, allele)| {
+            *index == 0 || !matches!(&allele.bases[..], b"<NON_REF>" | b"<*>")
+        })
+        .map(|(_, allele)| allele.clone())
+        .collect();
+    variant_type(&kept)
+}
+
 pub fn variant_type(alleles: &[Allele]) -> VariantType {
     if alleles.len() < 2 {
         return VariantType::NoVariation;
@@ -675,6 +697,8 @@ pub enum AlleleRestriction {
 pub struct FilterArguments {
     pub types_to_include: Vec<VariantType>,
     pub types_to_exclude: Vec<VariantType>,
+    /// `--ignore-non-ref-in-types`: the type is `getType(true)`, blind to `<NON_REF>` and `<*>`.
+    pub ignore_non_ref_in_types: bool,
     pub allele_restriction: AlleleRestriction,
     pub max_indel_size: i32,
     pub min_indel_size: i32,
@@ -699,6 +723,7 @@ impl Default for FilterArguments {
         FilterArguments {
             types_to_include: Vec::new(),
             types_to_exclude: Vec::new(),
+            ignore_non_ref_in_types: false,
             allele_restriction: AlleleRestriction::All,
             max_indel_size: i32::MAX,
             min_indel_size: 0,
@@ -811,6 +836,70 @@ pub struct FilterRecord {
     pub info: gatk_engine::jexl::Context,
     /// Per sample, the fields a genotype expression reads.
     pub genotype_fields: Vec<gatk_engine::jexl::Context>,
+    /// The sample of each of `genotype_fields`, which `vc.getGenotype("S")` looks up.
+    pub samples: Vec<String>,
+}
+
+/// `info` plus the answer to each `vc.getGenotype("S").method(...)` call the expression makes.
+///
+/// A sample the record lacks is a null Genotype, and so is a method this port does not model:
+/// both are left out, and the engine refuses the call as JEXL refuses one on null.
+fn with_genotype_calls(
+    record: &FilterRecord,
+    expression: &gatk_engine::jexl::Expression,
+) -> gatk_engine::jexl::Context {
+    let calls = expression.genotype_calls();
+    let mut context = record.info.clone();
+    if calls.is_empty() {
+        return context;
+    }
+    for (sample, fields) in record.samples.iter().zip(&record.genotype_fields) {
+        let flag = |name: &str| {
+            JexlValue::Bool(matches!(fields.get(name), Some(JexlValue::Str(v)) if v == "1"))
+        };
+        for method in [
+            "isHom",
+            "isHomRef",
+            "isHet",
+            "isHomVar",
+            "isCalled",
+            "isNoCall",
+            "isMixed",
+            "isAvailable",
+        ] {
+            context.insert(
+                gatk_engine::jexl::genotype_call_key(sample, method, None),
+                flag(method),
+            );
+        }
+        context.insert(
+            gatk_engine::jexl::genotype_call_key(sample, "isFiltered", None),
+            JexlValue::Bool(!matches!(fields.get("isPassFT"), Some(JexlValue::Str(v)) if v == "1")),
+        );
+        let int_or_missing = |name: &str| fields.get(name).cloned().unwrap_or(JexlValue::Int(-1));
+        context.insert(
+            gatk_engine::jexl::genotype_call_key(sample, "getGQ", None),
+            int_or_missing("GQ"),
+        );
+        context.insert(
+            gatk_engine::jexl::genotype_call_key(sample, "getDP", None),
+            int_or_missing("DP"),
+        );
+        for key in &calls {
+            let prefix =
+                gatk_engine::jexl::genotype_call_key(sample, "getExtendedAttribute", Some(""));
+            if let Some(name) = key
+                .strip_prefix(&prefix[..prefix.len() - 1])
+                .and_then(|rest| rest.strip_suffix(')'))
+            {
+                context.insert(
+                    key.clone(),
+                    fields.get(name).cloned().unwrap_or(JexlValue::Null),
+                );
+            }
+        }
+    }
+    context
 }
 
 /// `GenotypeJEXLContext.get` for one genotype, in its order: the fixed map, then
@@ -948,15 +1037,28 @@ pub fn passes_variant_filter(
     // nothing. Measured on rows 12 and 17 of this tool's array, where the reference kept the record
     // the port had dropped.
     let selected_types = selected_types(arguments);
-    if !selected_types.is_empty()
-        && !selected_types.contains(&variant_type(&record.variant.alleles))
-    {
+    let record_type = if arguments.ignore_non_ref_in_types {
+        variant_type_ignoring_non_ref(&record.variant.alleles)
+    } else {
+        variant_type(&record.variant.alleles)
+    };
+    if !selected_types.is_empty() && !selected_types.contains(&record_type) {
         return false;
     }
-    if !arguments.keep_ids.is_empty() && !arguments.keep_ids.contains(&filter_record.id) {
+    // `VariantIDsVariantFilter`: the ID column split on `;`, any one of its parts matching.
+    let id_listed = |ids: &[String]| {
+        filter_record
+            .id
+            .split(';')
+            .any(|id| ids.iter().any(|k| k == id))
+    };
+    if !arguments.keep_ids.is_empty() && !id_listed(&arguments.keep_ids) {
         return false;
     }
-    !arguments.exclude_ids.contains(&filter_record.id)
+    if !arguments.exclude_ids.is_empty() && id_listed(&arguments.exclude_ids) {
+        return false;
+    }
+    true
 }
 
 /// `Genotype.getType()`, which `determineType` reads off the alleles.
@@ -1167,7 +1269,12 @@ fn passes_jexl_filters(
             index,
             text: text.clone(),
         })?;
-        let matched = match expression.evaluate(&record.info) {
+        let context = if expression.genotype_calls().is_empty() {
+            std::borrow::Cow::Borrowed(&record.info)
+        } else {
+            std::borrow::Cow::Owned(with_genotype_calls(record, &expression))
+        };
+        let matched = match expression.evaluate(&context) {
             Ok(JexlValue::Bool(value)) => value,
             // `JEXLMap.evaluateExpression` catches `JexlException.Variable` and a null result and
             // answers with the default `TREAT_AS_MISMATCH`, so a name nothing resolves is a false,
@@ -1202,7 +1309,7 @@ fn passes_jexl_filters(
         for fields in &record.genotype_fields {
             // `GenotypeJEXLContext extends VariantJEXLContext`: what the genotype does not know,
             // the variant's context answers.
-            let mut context = record.info.clone();
+            let mut context = with_genotype_calls(record, &expression);
             context.extend(
                 fields
                     .iter()
@@ -1278,6 +1385,19 @@ pub fn set_filtered_genotypes_to_no_call(record: &mut Record) {
     }
     if replaced {
         calculate_chromosome_counts(&mut record.variant);
+        // `removeStaleValues`: where every chromosome is now a no-call, the three counts are
+        // removed rather than written as zeros.
+        if record
+            .variant
+            .attributes
+            .iter()
+            .any(|(key, value)| key == "AN" && value == "0")
+        {
+            record
+                .variant
+                .attributes
+                .retain(|(key, _)| !matches!(key.as_str(), "AN" | "AC" | "AF"));
+        }
     }
 }
 

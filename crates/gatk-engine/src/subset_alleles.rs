@@ -173,6 +173,25 @@ fn subset_one(
         kept,
     );
 
+    // `subsetSACAlleles`: the strand counts, two per allele, kept for the kept alleles in the
+    // ORIGINAL order, and put back even where the call above cleared the attributes.
+    if let Some((_, sac)) = genotype.attributes.iter().find(|(key, _)| key == "SAC") {
+        let old: Vec<&str> = sac.split(',').collect();
+        let new: Option<Vec<&str>> = (0..original_allele_count)
+            .filter(|index| kept.contains(index))
+            .flat_map(|index| [old.get(2 * index).copied(), old.get(2 * index + 1).copied()])
+            .collect();
+        if let Some(new) = new.filter(|_| kept.len() != original_allele_count) {
+            let value = new.join(",");
+            match result.attributes.iter_mut().find(|(key, _)| key == "SAC") {
+                Some((_, held)) => *held = value,
+                None => result.attributes.push(("SAC".to_string(), value)),
+            }
+        } else if !result.attributes.iter().any(|(key, _)| key == "SAC") {
+            result.attributes.push(("SAC".to_string(), sac.clone()));
+        }
+    }
+
     // ```java
     // if (g.hasAD() && gb.makeWithShallowCopy().hasAD()) {
     // ```
@@ -215,7 +234,14 @@ fn make_genotype_call(
         // `DO_NOT_ASSIGN_GENOTYPES` matches none of the reference's branches, so the calls stay as
         // the builder copied them. The likelihoods and the GQ above were rewritten regardless,
         // which is what makes it different from doing nothing at all.
-        AssignmentMethod::DoNotAssignGenotypes => {}
+        // The calls are the same ALLELES, which this model holds as indices: each follows its
+        // allele to its place in the kept list. Measured on SelectVariants' integration tests,
+        // where a `1/1` over a dropped first alternate had become `./.`.
+        AssignmentMethod::DoNotAssignGenotypes => {
+            for allele in &mut result.alleles {
+                *allele = allele.and_then(|index| kept.iter().position(|k| *k == index));
+            }
+        }
         AssignmentMethod::SetToNoCall => result.alleles = vec![None; ploidy],
         AssignmentMethod::SetToNoCallNoAnnotations => {
             result.alleles = vec![None; ploidy];
