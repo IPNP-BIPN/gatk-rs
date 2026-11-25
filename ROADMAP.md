@@ -1143,8 +1143,9 @@ Everything downstream inherits these, so they are front-loaded.
       on aarch64, the host `exp` on x86-64) and `java_math_pow` (`Math.pow`: the host `pow`). On
       x86-64 both stand in for HotSpot stubs that are GPL2, at 1 ulp from fdlibm and measured
       closer with the host libm (decisions 0014, 0025, 0027). `tools/audit/arithmetic.py` holds
-      the line: 155 counted host calls before, 76 after, none of them unnamed (one `exp`, in
-      `log10OneMinusPow10`, stays the host's on every target and says why at the site).
+      the line: 155 counted host calls before, 77 after, none of them unnamed (two `exp`s, in
+      `log10OneMinusPow10` and `BetaBinomialDistribution.probability`, stay the host's on every
+      target and say why at the site).
 
       `BinomialDistribution` and SVD, the other two names this entry used to carry, are ports and
       not libm calls: `jmath::binomial` and commons-math3's `SingularValueDecomposition`

@@ -31,16 +31,16 @@ Counts are occurrences in `crates/*/src` on 2026-11-25, comments included.
 
 These are the ones the rule exists for. Since 2026-11-25 there are exactly two ways a ported call
 site reaches the host libm, and both are named functions, so `git grep java_math_` lists every
-such site but one, named below the table:
+such site but two, named below the table:
 
 | named function | the Java it stands for | sites | status |
 |---|---|---|---|
-| `gatk_engine::natural_log_utils::java_math_exp` | `Math.exp` | 11 | **exact on aarch64**, where it is `strict_math::exp` (0 of 2,000,000 differ, below). **On x86-64 it is the host `exp`**, ~1 ulp from the HotSpot `dexp` stub on 0.0289% of the corpus; the stub is GPL2 and cannot be transcribed (decision 0014), and fdlibm was measured to be the worse stand-in on three suites (below) |
+| `gatk_engine::natural_log_utils::java_math_exp` | `Math.exp` | 10 | **exact on aarch64**, where it is `strict_math::exp` (0 of 2,000,000 differ, below). **On x86-64 it is the host `exp`**, ~1 ulp from the HotSpot `dexp` stub on 0.0289% of the corpus; the stub is GPL2 and cannot be transcribed (decision 0014), and fdlibm was measured to be the worse stand-in on three suites (below) |
 | `gatk_engine::math_utils::java_math_pow` | `Math.pow` | 28, plus `pow10`'s 34 | **the host `pow` on every target**. On x86-64 `Math.pow` is the `dpow` stub (99.9378% agreement on the corpus); fdlibm is 1 ulp from it at worst (decision 0027) and was **measured to be worse here**: switching `pow10` broke a passing byte-identity claim. On aarch64 `Math.pow` *is* fdlibm (0 of 4,000,000 pairs differ, decision 0051), but the goldens are x86-64 Java's and the host is the closer stand-in for them there too, so the helper does not switch |
 
 What goes through them, by Java method:
 
-- `java_math_exp`: `MathUtils.normalDistribution` (activity profile), `NaturalLogUtils.normalizeFromLogToLinearSpace` for LROM's E-step, FilterMutectCalls' posteriors and the clustering EM (measured, below), `NaturalLogUtils.logSumExp` in ModelSegments, `MathUtils.log1mexp` in DRAGstr, `BetaBinomialDistribution.probability`, `SomaticClusteringModel`'s printed weights, `GCBiasCorrector`'s decay weights, `PairHMMLikelihoodCalculationEngine`'s PCR indel model.
+- `java_math_exp`: `MathUtils.normalDistribution` (activity profile), `NaturalLogUtils.normalizeFromLogToLinearSpace` for LROM's E-step, FilterMutectCalls' posteriors and the clustering EM (measured, below), `NaturalLogUtils.logSumExp` in ModelSegments, `MathUtils.log1mexp` in DRAGstr, `SomaticClusteringModel`'s printed weights, `GCBiasCorrector`'s decay weights, `PairHMMLikelihoodCalculationEngine`'s PCR indel model.
 - `java_math_pow`: `MathUtils.pow10` and every `Math.pow(10.0, x)` it stands for (QualityUtils, BAQ, the genotype likelihood tables, the GQ of `GenotypeLikelihoods.getGQLog10FromLikelihoods` in subsetting, posteriors and GVCF merging, `log10sumLog10`, `normalizeFromLog10`), `AllelePseudoDepth.calculateWeights` (twice, by `weightDecay`), the PairHMM's `log10OneMinusPow10` and Jacobian table, `FisherExactTest`, `AddFlowSNVQuality`, `FlowBasedRead`, `CallCopyRatioSegments`' `Math.pow(2, x)`, DRAGstr's `gpMin` and `MathUtils.doubles`, and VQSR's model.
 
 Why the helpers keep the host `exp` and `pow` on x86-64 bit for bit: `java_math_pow` is
@@ -48,12 +48,19 @@ Why the helpers keep the host `exp` and `pow` on x86-64 bit for bit: `java_math_
 library-call rewrites (`pow(2, x)` to `exp2`, `pow(10, x)` to `exp10`) apply exactly as when the
 goldens were measured; the sites that used `black_box` still do.
 
-One `Math.exp` site keeps the host `exp` on every target, by name:
-`allele_frequency_calculator.rs`, `log1mexp_with_host_exp`, for `MathUtils.log10OneMinusPow10`.
-A no-variant posterior of about 1e-19 passes `exp(a)` through `log1p` unchanged, so the `exp`
-reaches the output as it is: fdlibm's answer is two ulp from the x86-64 golden's and the host's is
-identical, on aarch64 as well, so `java_math_exp`'s aarch64 fdlibm turns this suite red locally
-(measured 2026-11-25).
+Two `Math.exp` sites keep the host `exp` on every target, each saying why at the site:
+
+- `beta_binomial.rs`, `BetaBinomialDistribution.probability`. With fdlibm on aarch64 the
+  `somatic-validation-power` cumulative row `(11, 1, 20, 11)` lands one ulp from the x86-64
+  golden; with the host `exp` it matches.
+- `allele_frequency_calculator.rs`, `log1mexp_with_host_exp`, for `MathUtils.log10OneMinusPow10`.
+  A no-variant posterior of about 1e-19 passes `exp(a)` through `log1p` unchanged, so the `exp`
+  reaches the output as it is. fdlibm's answer is two ulp from the x86-64 golden's and the host's
+  is identical, on aarch64 as well.
+
+Both were measured on 2026-11-25. They are the same finding as the three measurements below: against
+x86-64 goldens, the host `exp` is the closer stand-in even where aarch64 Java would itself be
+fdlibm.
 
 ### Host calls that remain and are exact
 
