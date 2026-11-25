@@ -1,4 +1,5 @@
-//! `SATagBuilder`, ported from `org.broadinstitute.hellbender.utils.SATagBuilder` (GATK 4.6.2.0).
+//! `SATagBuilder`, ported from `org.broadinstitute.hellbender.utils.SATagBuilder` (GATK 4.7.0.0;
+//! `SATagBuilder.java` is unchanged since 4.6.2.0).
 //!
 //! The SA tag is how a split read says where its other pieces went. `SplitNCigarReads` is what
 //! needs it: `repairSupplementaryTags` marks every piece after the first as supplementary and hands
@@ -8,8 +9,12 @@
 //!
 //! ```java
 //! String[] values = SATag.split(",", -1);
-//! if (values.length != 6) { throw new GATKException("Could not parse SATag: " + SATag); }
+//! if (values.length != 6) {
+//!     throw new GATKException("Could not parse SATag: "+SATag);
+//! }
 //! ```
+//!
+//! (`SATagBuilder.java:215-218`.)
 //!
 //! The `-1` is the whole difference between accepting `chr1,100,+,10M,60,;` and refusing it: Java's
 //! zero-limit `split` drops trailing empty strings, so the same tag would arrive with five fields
@@ -30,6 +35,17 @@
 //! Existing tags are preserved: the builder parses the read's own SA at construction, so a primary
 //! that already claimed a piece keeps that claim ahead of its new siblings. And the primary is
 //! never un-marked: a read that arrives already carrying 0x800 keeps it.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - The builder methods return `&mut Self`, a writable reference to the same builder, which is
+//!   the reference's `return this` and allows the same chaining.
+//! - `Vec::insert(0, x)` is `List.add(0, x)`, `push` is `add(x)`, and `retain(|u| test)` keeps the
+//!   units the test accepts, which is the reference's remove-and-step-back loop.
+//! - `Option<String>` is a nullable `String`; `.as_deref()` views it as an optional `&str`, and
+//!   `.unwrap_or("*")` is `x != null ? x : "*"`.
+//! - `Result<T, SaTagError>` is "a `T` or the `GATKException` the reference throws", and `?`
+//!   passes that error to the caller.
 
 use htsjdk_bam::header::SamHeader;
 use htsjdk_bam::record::BamRecord;
@@ -37,7 +53,8 @@ use htsjdk_bam::tag::{Tag, TagValue};
 
 use crate::read::flags;
 
-/// The `SA` tag.
+/// The `SA` tag, as the packed two-character value `Tag::new(b"SA")` produces (the second
+/// character in the high byte), written out so that it can be a constant.
 pub const SA_TAG: Tag = Tag(((b'A' as i16) << 8) | b'S' as i16);
 
 /// `GATKException` from `SARead`'s parsing constructor.
@@ -86,9 +103,15 @@ pub struct SaRead {
 impl SaRead {
     /// The unit a read becomes.
     ///
-    /// An absent NM is `*`. Every other field comes from the read itself, so an unmapped read gives
-    /// `*,0,+,*,0,*;`: the position and the mapping quality are the read's own zeroes, not the
-    /// defaults in `toString`, which are unreachable from a read.
+    /// An absent NM is `*`. Every other field comes from the read itself, so an unplaced unmapped
+    /// read gives `*,0,+,*,0,*;`: the position and the mapping quality are the read's own zeroes,
+    /// not the defaults in `toString`, which are unreachable from a read.
+    ///
+    /// The reference reads the contig and position through the adapter: `this.contig =
+    /// read.getContig();` and `this.pos = read.getStart()+"";` (`SATagBuilder.java:239-240`), which
+    /// answer `null` and 0 for **any** unmapped read. This takes the stored reference index and
+    /// start, so the two agree for an unplaced unmapped read and differ for one that still carries
+    /// its mate's contig and position: the reference writes `*,0`, this the stored values.
     pub fn from_record(record: &BamRecord, header: &SamHeader) -> SaRead {
         SaRead {
             contig: contig_of(record, header).map(str::to_string),
@@ -107,7 +130,9 @@ impl SaRead {
         }
     }
 
-    /// `new SARead(String)`: the parsing constructor, with its three validations.
+    /// `new SARead(String)`: the parsing constructor, with its three validations, in the
+    /// reference's order (field count, position, cigar, mapping quality), so a unit wrong in two
+    /// ways reports the first.
     pub fn parse(unit: &str) -> Result<SaRead, SaTagError> {
         let values: Vec<&str> = split_keeping_trailing(unit);
         if values.len() != 6 {
@@ -156,8 +181,11 @@ impl SaRead {
 /// that exists: `setReadsAsSupplemental` sets every supplementary flag before it builds anything.
 #[derive(Debug, Clone)]
 pub struct SaTagBuilder {
+    /// `supplementaryReads`: every unit, in the order they will be written.
     units: Vec<SaRead>,
+    /// `getThisRead()`: the unit this builder's own read becomes in other reads' tags.
     this_read: SaRead,
+    /// `isPrimary()`: the read did not carry the supplementary flag (0x800).
     primary: bool,
 }
 
@@ -204,6 +232,10 @@ impl SaTagBuilder {
     }
 
     /// `removeTag(contig, start)`: every unit whose contig and position match, by string.
+    ///
+    /// A unit with no contig (one made from a read with no reference index) is compared as `None`
+    /// here. The reference's `saRead.contig.equals(contig)` (`SATagBuilder.java:149`) calls a
+    /// method on that `null` contig and throws instead.
     pub fn remove_tag(&mut self, contig: Option<&str>, start: i32) -> &mut Self {
         let start = start.to_string();
         self.units
@@ -218,6 +250,7 @@ impl SaTagBuilder {
 
     /// `getTag()`: the units concatenated, each already carrying its `;`.
     pub fn tag(&self) -> String {
+        // `collect()` into a `String` concatenates the pieces, the reference's `StringBuilder`.
         self.units.iter().map(SaRead::to_text).collect()
     }
 
@@ -262,6 +295,10 @@ pub fn set_reads_as_supplemental(
         builders.push(SaTagBuilder::new(record, header)?);
     }
 
+    // Rust will not let the list be read while one of its elements is being written, so the
+    // builders being read are a copy taken first. `add_tag` reads only `primary` and `this_read`,
+    // which nothing in this loop changes, so the copy answers what the reference's live list does.
+    // `enumerate()` pairs each element with its index, the `i` and `j` of the reference's loops.
     let snapshot = builders.clone();
     for (i, builder) in builders.iter_mut().enumerate() {
         for (j, other) in snapshot.iter().enumerate() {
@@ -271,6 +308,9 @@ pub fn set_reads_as_supplemental(
         }
     }
 
+    // `setSATag()` on each builder in turn. The reference's builders hold their reads; here the
+    // first builder is the primary's and the rest pair with `supplemental` in order, which `zip`
+    // walks side by side.
     let mut iter = builders.iter();
     if let Some(builder) = iter.next() {
         builder.set_sa_tag(primary);
@@ -282,6 +322,10 @@ pub fn set_reads_as_supplemental(
 }
 
 /// `GATKRead.getAttributeAsString`, for the two value kinds an SA or NM tag can hold.
+///
+/// The adapter decodes a `byte[]` as text and otherwise calls `toString()`
+/// (`SAMRecordToGATKReadAdapter.java:656-663`). The other arms here follow `toString()` for the
+/// types an SA or NM tag is written as; they are not meant as Java's formatting of every type.
 fn attribute_as_string(value: &TagValue) -> String {
     match value {
         TagValue::Str(text) => text.clone(),
@@ -298,7 +342,10 @@ fn attribute_as_string(value: &TagValue) -> String {
     }
 }
 
-/// The contig `read.getContig()` resolves to, or none.
+/// The contig the read's reference index names in the header, or none for `-1`.
+///
+/// This is not quite `read.getContig()`, which answers `null` for every unmapped read: see
+/// [`SaRead::from_record`].
 fn contig_of<'a>(record: &BamRecord, header: &'a SamHeader) -> Option<&'a str> {
     usize::try_from(record.reference_index)
         .ok()
@@ -325,6 +372,11 @@ fn split_dropping_trailing(text: &str, separator: char) -> Vec<&str> {
 /// The reference lets a `NumberFormatException` out of here rather than catching it, so a position
 /// of `abc` is a different failure from a position of `-1`. Nothing in GATK reaches that path with
 /// text, and this reproduces the comparison only.
+///
+/// It is not exactly `Integer.parseInt(values[1]) < 0`, the reference's test at
+/// `SATagBuilder.java:219`: `-0` counts as negative here and parses to zero there, so a position of
+/// `-0` is refused here and accepted there. A bare `-` also counts as negative here (`all` over no
+/// characters is true), where `parseInt` throws.
 fn parses_negative(value: &str) -> bool {
     value.starts_with('-') && value[1..].chars().all(|c| c.is_ascii_digit())
 }

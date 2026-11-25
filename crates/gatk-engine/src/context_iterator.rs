@@ -1,6 +1,6 @@
-//! Ported from `org.broadinstitute.hellbender.utils.locusiterator.IntervalAlignmentContextIterator`,
-//! `org.broadinstitute.hellbender.utils.iterators.IntervalLocusIterator` and
-//! `org.broadinstitute.hellbender.utils.iterators.IntervalOverlappingIterator` (GATK 4.6.2.0).
+//! Ported from `org.broadinstitute.hellbender.utils` (GATK 4.7.0.0; the three files are unchanged
+//! since 4.6.2.0): `locusiterator.IntervalAlignmentContextIterator`,
+//! `iterators.IntervalLocusIterator` and `iterators.IntervalOverlappingIterator`.
 //!
 //! What [`crate::locus_iterator`] yields is one context per *covered* locus. A tool that asked for
 //! empty loci wants one per *requested* locus, covered or not, and a tool that asked for intervals
@@ -21,6 +21,19 @@
 //!  * **the filter and the emitter disagree about what to do at the end.** When the source runs
 //!    out, `IntervalOverlappingIterator` stops, while the empty-loci iterator keeps producing
 //!    empty contexts until the requested loci run out.
+//!
+//! The reference's iterators are lazy; these functions take the covered contexts as a list and
+//! return a list, in the order the iterators would yield them.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `std::cmp::Ordering` is `Less`, `Equal` or `Greater`, Java's negative, zero or positive
+//!   `compare` result, and `a.cmp(&b).then(c.cmp(&d))` is "compare by a, then by c on a tie".
+//! - `contexts.into_iter().peekable()` is a one-pass iterator that can look at its next item
+//!   without taking it (`peek`), the way the reference keeps a `currentAlignmentContext`.
+//! - `interval.start..=interval.end` is the closed range, both ends included.
+//! - `Option<&[SimpleInterval]>` is a nullable list; `Some([])` matches an empty one and
+//!   `Some(_)` any other.
 
 use crate::interval::SimpleInterval;
 use crate::locus_iterator::AlignmentContext;
@@ -28,6 +41,10 @@ use crate::read_pileup::ReadPileup;
 use htsjdk_bam::header::SamHeader;
 
 /// `IntervalUtils.compareLocatables`: contig index in the dictionary, then start, then end.
+///
+/// A contig the dictionary lacks sorts after every known one here (`usize::MAX`), where the
+/// reference's `compareContigs` throws `IllegalArgumentException` ("Can't do comparison because
+/// Locatables' contigs not found in sequence dictionary"). The tuples are (contig, start, end).
 fn compare_locatables(
     left: (&str, i32, i32),
     right: (&str, i32, i32),
@@ -47,6 +64,9 @@ fn compare_locatables(
 }
 
 /// `IntervalLocusIterator`: each interval split into its single-base loci, in order.
+///
+/// The reference splits each interval with `new ShardedIntervalIterator(dummyList.iterator(), 1)`,
+/// shards of one base.
 pub fn interval_loci(intervals: &[SimpleInterval]) -> Vec<SimpleInterval> {
     let mut loci = Vec::new();
     for interval in intervals {
@@ -65,6 +85,20 @@ pub fn interval_loci(intervals: &[SimpleInterval]) -> Vec<SimpleInterval> {
 ///
 /// The interval cursor only advances, as the source cursor does, so this is a merge of two sorted
 /// streams rather than a containment test per context.
+///
+/// The reference's `advance()`, one step per pass of the inner `loop`:
+///
+/// ```java
+/// if(currentInterval.overlaps(next)) {
+///     // keep the next because it overlaps
+///     return;
+/// } else {
+///     int comparison = IntervalUtils.compareLocatables(currentInterval, next, dictionary);
+/// ```
+///
+/// A negative comparison takes the next interval, a positive one the next context. Zero cannot
+/// happen, because equal locatables overlap. The `RejectedEmptyIntervalList` route is decided
+/// before this is called; given no intervals, this keeps nothing.
 pub fn overlapping<'a>(
     contexts: Vec<AlignmentContext<'a>>,
     intervals: &[SimpleInterval],
@@ -74,11 +108,14 @@ pub fn overlapping<'a>(
     let mut interval_index = 0usize;
     for context in contexts {
         loop {
+            // Out of intervals: the reference's `currentInterval == null` ends the iteration,
+            // and every remaining context is dropped.
             let Some(interval) = intervals.get(interval_index) else {
                 return kept;
             };
             let here = (context.contig.as_str(), context.position, context.position);
             let there = (interval.contig.as_str(), interval.start, interval.end);
+            // `SimpleInterval.overlaps` against a one-base context.
             if interval.contig == context.contig
                 && interval.start <= context.position
                 && context.position <= interval.end
@@ -98,6 +135,10 @@ pub fn overlapping<'a>(
 }
 
 /// `IntervalAlignmentContextIterator`: one context per requested locus, empty where uncovered.
+///
+/// The reference fills an exhausted source with an empty context at the current locus
+/// (`advanceAlignmentContext` calls `createEmptyAlignmentContext(currentInterval)`), and returns
+/// that when it overlaps; the output is the same empty context the uncovered branch builds here.
 pub fn with_empty_loci<'a>(
     contexts: Vec<AlignmentContext<'a>>,
     intervals: &[SimpleInterval],
@@ -120,6 +161,8 @@ pub fn with_empty_loci<'a>(
             }
         }
 
+        // `currentInterval.overlaps(currentAlignmentContext)`. `is_some_and` is false for an
+        // exhausted source.
         let covered = source.peek().is_some_and(|context| {
             context.contig == locus.contig
                 && locus.start <= context.position
@@ -128,6 +171,7 @@ pub fn with_empty_loci<'a>(
         if covered {
             out.push(source.next().expect("peeked"));
         } else {
+            // `createEmptyAlignmentContext`: `new ReadPileup(interval)`, no elements.
             out.push(AlignmentContext {
                 contig: locus.contig.clone(),
                 position: locus.start,
@@ -156,6 +200,13 @@ pub enum Route {
 }
 
 /// Which iterator the builder returns.
+///
+/// ```java
+/// if (emitEmptyLoci) {
+/// ```
+///
+/// comes first, then `areIntervalsSpecified(finalIntervals)`, then the bare `libs`. The builder's
+/// `validateEmitEmptyLociParameters` refusals are not decided here.
 pub fn route(emit_empty_loci: bool, intervals: Option<&[SimpleInterval]>) -> Route {
     if emit_empty_loci {
         // With no intervals at all the builder substitutes the whole reference, so the route is

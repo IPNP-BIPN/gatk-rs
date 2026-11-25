@@ -1,6 +1,6 @@
 //! The tranches file, ported from
 //! `org.broadinstitute.hellbender.tools.walkers.vqsr.Tranche` and `TruthSensitivityTranche`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `Tranche.java` and `TruthSensitivityTranche.java` are unchanged since 4.6.2.0).
 //!
 //! The file `VariantRecalibrator` writes and `ApplyVQSR` reads: eleven comma-separated columns per
 //! tranche, named by a header line rather than by position.
@@ -15,10 +15,10 @@
 //! }
 //! ```
 //!
-//! `numKnown` is read with a default of `-1` and the constructor then refuses anything negative, so
-//! a header that does not name the column is fatal rather than defaulted. `accessibleTruthSites` and
-//! `callsAtTruthSites` default to `-1` in the same way and are never checked, which is what makes
-//! `getTruthSensitivity` answer `0.0` for them.
+//! `numKnown` is read with a default of `-1` and the constructor then refuses anything negative,
+//! so a header that does not name the column is fatal rather than defaulted.
+//! `accessibleTruthSites` and `callsAtTruthSites` default to `-1` in the same way and are never
+//! checked, which is what makes `getTruthSensitivity` answer `0.0` for them.
 //!
 //! # The header names the columns, and there must be eleven of them
 //!
@@ -29,20 +29,35 @@
 //!
 //! # Two of the columns are not read defensively at all
 //!
-//! `model` and `filterName` are taken with a bare `bindings.get`, so a header that does not name the
-//! model column reaches `Mode.valueOf(null)` and the refusal is Java's own
+//! `model` and `filterName` are taken with a bare `bindings.get`, so a header that does not name
+//! the model column reaches `Mode.valueOf(null)` and the refusal is Java's own
 //! `NullPointerException: Name is null`. And `numNovel` is a `long` field parsed with
 //! `Integer.valueOf`, so a count `VariantRecalibrator` could have written cannot be read back past
 //! 2^31: it comes out `Invalid value for key numNovel`, exactly as a value that is not a number.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, TrancheError>` is "a `T` or one of the refusals below"; it is how this codebase
+//!   models a method that throws. `Err(..)` is the throw, `Ok(..)` the return, and `?` after a
+//!   call rethrows the caller's error unchanged, which is how the first failing column of a row
+//!   ends the read exactly where the reference's argument list would.
+//! - `Option<&str>` is "a string or nothing", the port's spelling of a `Map.get` that may answer
+//!   `null`. `Some(x)` is the value, `None` the `null`.
+//! - `match` lists every case of an enum, and the compiler refuses one left out, so every refusal
+//!   has a class and a message.
+//! - `&[(String, String)]` is a read-only view of a list of key-value pairs; it stands in for the
+//!   reference's `LinkedHashMap`, with the header's own order.
 
-/// `EXPECTED_COLUMN_COUNT`.
+/// `Tranche.EXPECTED_COLUMN_COUNT`.
 pub const EXPECTED_COLUMN_COUNT: usize = 11;
-/// `COMMENT_STRING`.
+/// `Tranche.COMMENT_STRING`.
 pub const COMMENT_STRING: &str = "#";
-/// `VALUE_SEPARATOR`.
+/// `Tranche.VALUE_SEPARATOR`. A `String` in the reference, handed to `String.split` as a regular
+/// expression; a comma means the same either way.
 pub const VALUE_SEPARATOR: char = ',';
 
-/// `VariantRecalibratorArgumentCollection.Mode`.
+/// `VariantRecalibratorArgumentCollection.Mode` (GATK 4.7.0.0, unchanged since 4.6.2.0):
+/// `SNP`, `INDEL`, `BOTH`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
     Snp,
@@ -52,6 +67,10 @@ pub enum Mode {
 
 impl Mode {
     /// `Mode.valueOf(name)`, whose two failures are two different exceptions.
+    ///
+    /// `None` is the `null` that `bindings.get("model")` answers for a missing column, refused as
+    /// a `NullPointerException`; a name that is not a constant is an `IllegalArgumentException`.
+    /// The match is exact and case-sensitive, as `Enum.valueOf` is.
     pub fn value_of(name: Option<&str>) -> Result<Mode, TrancheError> {
         match name {
             None => Err(TrancheError::NullModel),
@@ -91,11 +110,13 @@ pub enum TrancheError {
     /// `Mode.valueOf(null)`, from a header that does not name the model column.
     NullModel,
     /// A VQSLOD tranche file whose version line is not six. The message names no file at all: the
-    /// reference concatenates an empty string where the path should be, leaving two spaces.
+    /// reference concatenates two literals where the path should be, leaving two spaces,
+    /// `"The file " + " contains version "`. Raised by `GatherTranches`, not by this reader.
     VqslodVersion { found: String, expected: i32 },
     /// `Mode.valueOf` on something that is not a constant.
     UnknownModel(String),
-    /// The `TruthSensitivityTranche` constructor's own range check.
+    /// The `TruthSensitivityTranche` constructor's own range check, which says FDR although it
+    /// tests the target truth sensitivity.
     UnreasonableTargetFdr(f64),
     /// The `Tranche` constructor's check, which the `-1` default of `numKnown` walks straight into.
     NegativeCounts {
@@ -127,6 +148,10 @@ impl TrancheError {
     }
 
     /// The message, whose spacing is the reference's.
+    ///
+    /// The `MalformedFile` and `BadInput` prefixes (`File .. is malformed: `, `Bad input: `) are
+    /// written into each message here, because the exception class adds them upstream.
+    /// `format!` is Java's `String.format` with the argument named inside the braces.
     pub fn message(&self) -> String {
         match self {
             TrancheError::HeaderLength { file, line } => format!(
@@ -168,7 +193,10 @@ impl TrancheError {
     }
 }
 
-/// One `TruthSensitivityTranche`.
+/// One `TruthSensitivityTranche`, with the fields its `Tranche` superclass holds flattened in.
+///
+/// The counts are `i64` because the reference's fields are `long`, even though the reader can only
+/// fill them from an `int`; the two site counts are `int` fields upstream too.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TruthSensitivityTranche {
     pub target_truth_sensitivity: f64,
@@ -186,6 +214,13 @@ pub struct TruthSensitivityTranche {
 
 impl TruthSensitivityTranche {
     /// `getTruthSensitivity()`, which is `0.0` rather than a division when nothing is accessible.
+    ///
+    /// ```java
+    /// return accessibleTruthSites > 0 ? callsAtTruthSites / (1.0*accessibleTruthSites) : 0.0;
+    /// ```
+    ///
+    /// The `1.0 *` is kept: it is an exact multiplication and changes no bit, but it is the
+    /// reference's expression. `as f64` is Java's widening of an `int` to `double`.
     pub fn truth_sensitivity(&self) -> f64 {
         if self.accessible_truth_sites > 0 {
             self.calls_at_truth_sites as f64 / (1.0 * self.accessible_truth_sites as f64)
@@ -195,7 +230,10 @@ impl TruthSensitivityTranche {
     }
 }
 
-/// `Double.valueOf`, as the reader's helpers call it.
+/// `Tranche.getRequiredDouble`: `Double.valueOf` on the bound value, with the two refusals.
+///
+/// `str::parse::<f64>` stands in for `Double.valueOf`. `.map_err(..)` turns the parse failure
+/// into this file's error, the reference's `catch (NumberFormatException e)`.
 fn required_double(bindings: &[(String, String)], key: &str) -> Result<f64, TrancheError> {
     match lookup(bindings, key) {
         Some(value) => value
@@ -205,6 +243,10 @@ fn required_double(bindings: &[(String, String)], key: &str) -> Result<f64, Tran
     }
 }
 
+/// `Tranche.getOptionalDouble`: the default when the key is absent.
+///
+/// The reference parses `String.valueOf(defaultValue)` back rather than returning the default;
+/// for the `-1.0` the reader passes that round trip is exact, so the port returns the default.
 fn optional_double(
     bindings: &[(String, String)],
     key: &str,
@@ -218,7 +260,7 @@ fn optional_double(
     }
 }
 
-/// `Integer.valueOf`, which is where a `numNovel` past 2^31 stops.
+/// `Tranche.getRequiredInteger`: `Integer.valueOf`, which is where a `numNovel` past 2^31 stops.
 fn required_integer(bindings: &[(String, String)], key: &str) -> Result<i32, TrancheError> {
     match lookup(bindings, key) {
         Some(value) => value
@@ -228,6 +270,7 @@ fn required_integer(bindings: &[(String, String)], key: &str) -> Result<i32, Tra
     }
 }
 
+/// `Tranche.getOptionalInteger`, the integer twin of `optional_double`.
 fn optional_integer(
     bindings: &[(String, String)],
     key: &str,
@@ -241,6 +284,11 @@ fn optional_integer(
     }
 }
 
+/// `bindings.get(key)`: the value bound to the first header column of that name, or `None`.
+///
+/// The reference's `LinkedHashMap.put` keeps the LAST value for a repeated column name, while this
+/// returns the first, so the two differ on a header that names a column twice. The `'a` says the
+/// answer borrows from `bindings` and lives no longer than it.
 fn lookup<'a>(bindings: &'a [(String, String)], key: &str) -> Option<&'a str> {
     bindings
         .iter()
@@ -250,7 +298,10 @@ fn lookup<'a>(bindings: &'a [(String, String)], key: &str) -> Option<&'a str> {
 
 /// `readTranches(f)`: every non-comment line, the first of them the header.
 ///
-/// The result is sorted by `targetTruthSensitivity`, which is not the order the writer sorts by.
+/// The result is sorted by `targetTruthSensitivity`, which is not the order the writer sorts by
+/// (`Tranche.tranchesString` sorts by `callsAtTruthSites`).
+///
+/// `file` is only the name the length refusals print; `text` is the whole file, already read.
 pub fn read_tranches(file: &str, text: &str) -> Result<Vec<TruthSensitivityTranche>, TrancheError> {
     let mut header: Option<Vec<String>> = None;
     let mut tranches: Vec<TruthSensitivityTranche> = Vec::new();
@@ -260,6 +311,8 @@ pub fn read_tranches(file: &str, text: &str) -> Result<Vec<TruthSensitivityTranc
             continue;
         }
         let values: Vec<String> = line.split(VALUE_SEPARATOR).map(|v| v.to_string()).collect();
+        // `let Some(x) = y else { .. }` takes the header if one has been read, and otherwise runs
+        // the block, which must leave the iteration. The first non-comment line is the header.
         let Some(columns) = header.as_ref() else {
             if values.len() != EXPECTED_COLUMN_COUNT {
                 return Err(TrancheError::HeaderLength {
@@ -278,11 +331,15 @@ pub fn read_tranches(file: &str, text: &str) -> Result<Vec<TruthSensitivityTranc
                 line: line.to_string(),
             });
         }
+        // The reference's `bindings.put(header[i], vals[i])` loop: pair each column name with
+        // its value, in header order.
         let bindings: Vec<(String, String)> = columns.iter().cloned().zip(values).collect();
         tranches.push(tranche(&bindings)?);
     }
 
-    // `tranches.sort(TRUTH_SENSITIVITY_ORDER)`, a stable sort on one column.
+    // `tranches.sort(TRUTH_SENSITIVITY_ORDER)`, a stable sort on one column. `total_cmp` agrees
+    // with `Double.compare` on every value the range check lets through, `-0.0` below `0.0`
+    // included.
     tranches.sort_by(|left, right| {
         left.target_truth_sensitivity
             .total_cmp(&right.target_truth_sensitivity)
@@ -291,6 +348,18 @@ pub fn read_tranches(file: &str, text: &str) -> Result<Vec<TruthSensitivityTranc
 }
 
 /// One row, read in the order the reference's argument list evaluates.
+///
+/// Java evaluates constructor arguments left to right, so the first bad column in this order is
+/// the one reported:
+///
+/// ```java
+/// getRequiredDouble(bindings, "targetTruthSensitivity"),
+/// getRequiredDouble(bindings, "minVQSLod"),
+/// getOptionalInteger(bindings, "numKnown", -1),
+/// ```
+///
+/// and so on through `filterName`. `? as i64` rethrows a failure and widens the `int` to the
+/// `long` field.
 fn tranche(bindings: &[(String, String)]) -> Result<TruthSensitivityTranche, TrancheError> {
     let target_truth_sensitivity = required_double(bindings, "targetTruthSensitivity")?;
     let min_vqslod = required_double(bindings, "minVQSLod")?;
@@ -303,6 +372,9 @@ fn tranche(bindings: &[(String, String)]) -> Result<TruthSensitivityTranche, Tra
     let accessible_truth_sites = optional_integer(bindings, "accessibleTruthSites", -1)?;
     let calls_at_truth_sites = optional_integer(bindings, "callsAtTruthSites", -1)?;
     let model = Mode::value_of(lookup(bindings, "model"))?;
+    // A missing `filterName` column becomes the empty name here. The reference passes the `null`
+    // on, and the `Tranche` constructor refuses it with `"BUG -- name cannot be null"` once the
+    // count check has passed.
     let name = lookup(bindings, "filterName")
         .unwrap_or_default()
         .to_string();

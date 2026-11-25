@@ -1,5 +1,6 @@
 //! `BaseRecalibrationEngine`, ported from
-//! `org.broadinstitute.hellbender.utils.recalibration` (GATK 4.6.2.0).
+//! `org.broadinstitute.hellbender.utils.recalibration` (GATK 4.7.0.0;
+//! `BaseRecalibrationEngine.java` is unchanged since 4.6.2.0).
 //!
 //! BQSR's counting pass, and the other half of the cycle [`crate::bqsr_transformer`] closes. For
 //! every read: mark which bases disagree with the reference, weigh each disagreement by the BAQ
@@ -11,18 +12,21 @@
 //! final byte[] baqArray = (nErrors == 0 || !recalArgs.enableBAQ) ? flatBAQArray(read) : calculateBAQArray(read, refDS);
 //! ```
 //!
-//! `enableBAQ` is **false** by default, so the ordinary run uses a flat array of the constant 64 and
-//! the whole hidden Markov model is skipped. It is also skipped when the read has no errors at all,
-//! whatever the flag says, "for efficiency reasons": for Illumina data about 85% of reads take that
-//! branch.
+//! `enableBAQ` is **false** by default, so the ordinary run uses a flat array of the constant 64
+//! and the whole hidden Markov model is skipped. It is also skipped when the read has no errors at
+//! all, whatever the flag says, "for efficiency reasons": for Illumina data about 85% of reads take
+//! that branch.
 //!
 //! # An indel is marked at a different base on each strand
 //!
 //! A deletion marks `readPos - 1` on a forward read and `readPos` on a reverse one; an insertion
-//! marks `readPos - 1` **before** advancing on a forward read and `readPos` **after** advancing on a
-//! reverse one. Both are the base on the far side of the event, and both are clamped away rather
-//! than wrapping when the event is at an end: `1D9M` and `1I9M` mark nothing, while `9M1D` and
-//! `9M1I` mark the last base.
+//! marks `readPos - 1` **before** advancing on a forward read and `readPos` **after** advancing on
+//! a reverse one. So the mark is on the aligned base to the left of the event on a forward read and
+//! the one to its right on a reverse read. A mark that would fall outside the read is dropped
+//! rather than wrapped. On a forward read `1D9M` and `1I9M` mark nothing, `9M1D` marks its last
+//! base and `9M1I` the base before the insertion, index 8 of 10 (golden row
+//! `events trailing-insertion`). On a reverse read the ends swap: `9M1D` and `9M1I` mark nothing,
+//! `1D9M` marks index 0 and `1I9M` index 1.
 //!
 //! # Only substitutions are counted, by default
 //!
@@ -41,6 +45,20 @@
 //! place [`crate::recal_datum::RecalDatum::combine`] runs in BQSR. That is why a read group's
 //! reported quality is an **estimate** recomputed from expected errors rather than an average, and
 //! why the NaN that `combine` can produce is reachable from here.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, EngineError>` is "a `T` or one of the refusals below", this codebase's model of a
+//!   method that throws; a `?` after a call rethrows that call's error, and `.map_err(..)` first
+//!   wraps it in this file's error type. `Option<T>` is "a `T` or nothing", the reference's null.
+//! - `&[i32]` is a borrowed, read-only view of an `int[]`; `&mut [i32]` is a writable one, which
+//!   is how `calculate_is_snp_or_indel` fills the caller's three arrays as the reference does.
+//! - A datum in a table is an `Rc<RefCell<RecalDatum>>`, a shared mutable object:
+//!   `.borrow()` reads it, `.borrow_mut()` writes it, and each borrow ends with its statement.
+//! - `match` on a cigar operator must name every operator, so a case the reference sends to its
+//!   `default:` throw cannot be forgotten here; there is no such case.
+//! - `x as i64` and `x as usize` are casts. Indexes are unsigned (`usize`), so a position that can
+//!   be -1, like `readPos - 1`, is computed as `i64` first.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -60,7 +78,8 @@ use crate::qual_quantizer::MIN_USABLE_Q_SCORE;
 use crate::recal_datum::{EventType, RecalDatum, RecalDatumError};
 use crate::recalibration_tables::{NestedArrayError, RecalibrationTables, SharedDatum};
 
-/// `BAQ.NO_BAQ_UNCERTAINTY`, the value a flat BAQ array is filled with.
+/// `BaseRecalibrationEngine.NO_BAQ_UNCERTAINTY`, `(byte)'@'`: the value a flat BAQ array is
+/// filled with, and the BQ tag's character for "the BAQ equals the quality".
 pub const NO_BAQ_UNCERTAINTY: u8 = 64;
 
 /// `ReadUtils.DEFAULT_INSERTION_DELETION_QUAL`, used when a read carries no indel qualities.
@@ -75,6 +94,7 @@ pub const REPORTED_QUALITY_DECIMAL_PLACES: i32 = 4;
 /// The arguments this engine reads beyond the covariates'.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EngineArguments {
+    /// The arguments the covariates read, passed through to them.
     pub covariates: RecalibrationArguments,
     /// `--enable-baq`, whose default is **false**.
     pub enable_baq: bool,
@@ -88,7 +108,7 @@ pub struct EngineArguments {
     pub preserve_qscores_less_than: i32,
     /// `--default-base-qualities`, negative for off.
     pub default_base_qualities: i8,
-    /// `--use-original-qualities`.
+    /// `--use-original-qualities`. Carried, and not read: see [`BaseRecalibrationEngine::new`].
     pub use_original_base_qualities: bool,
 }
 
@@ -112,16 +132,21 @@ pub enum EngineError {
     ArrayLengthMismatch,
     /// `IllegalArgumentException` from rounding to zero places.
     RoundToZeroPlaces,
-    /// A cigar operator the counting loop does not know.
+    /// The reference's `default:` throw in `calculateIsSNPOrIndel`. Never produced: the `match`
+    /// there names every operator.
     UnsupportedCigarOperator(String),
     /// `UserException.MalformedRead`: a read group with no platform, which nothing here defaults.
     NoPlatform(String),
+    /// A covariate's refusal, passed through.
     Covariate(CovariateError),
+    /// A table's refusal, passed through.
     Nested(NestedArrayError),
+    /// A datum's refusal, passed through.
     Datum(RecalDatumError),
 }
 
 impl EngineError {
+    /// The message of the exception the reference throws, or of the wrapped refusal.
     pub fn message(&self) -> String {
         match self {
             EngineError::ArrayLengthMismatch => {
@@ -143,9 +168,21 @@ impl EngineError {
 
 /// `MathUtils.roundToNDecimalPlaces(in, n)`.
 ///
+/// ```java
+/// public static double roundToNDecimalPlaces(final double in, final int n) {
+///      Utils.validateArg(n > 0, "must round to at least one decimal place");
+///      final double mult = Math.pow(10,n);
+///      return Math.round( (in+Math.ulp(in))*mult )/mult;
+/// }
+/// ```
+///
 /// **The ulp is added before the rounding**, not after, which is not the same as rounding twice. It
 /// exists so that a table kept in memory equals one written to a file and read back, and the golden
 /// carries the values on both sides of a half to show it.
+///
+/// The order is the reference's: add the ulp, multiply, round, divide. The golden row
+/// `round 1.005 2` of `base_recalibration_engine.txt.gz` pins it: `1.005 * 100` is just below
+/// 100.5 and rounds to 1.0, while `(1.005 + ulp) * 100` is just above and gives the golden's 1.01.
 pub fn round_to_n_decimal_places(value: f64, places: i32) -> Result<f64, EngineError> {
     if places <= 0 {
         return Err(EngineError::RoundToZeroPlaces);
@@ -156,7 +193,12 @@ pub fn round_to_n_decimal_places(value: f64, places: i32) -> Result<f64, EngineE
     Ok(jmath::math::round((value + ulp) * multiplier) as f64 / multiplier)
 }
 
-/// `Math.ulp(x)`.
+/// `Math.ulp(x)`: the gap between `|x|` and the next double above it.
+///
+/// `to_bits() + 1` steps the bit pattern of a non-negative double to the next representable value,
+/// and the subtraction is exact. One end differs from the JDK: at `Double.MAX_VALUE` the step
+/// reaches infinity, so this answers infinity where `Math.ulp` answers a finite power of two. No
+/// count or quality rounded here comes near it.
 fn ulp(x: f64) -> f64 {
     if x.is_nan() {
         return f64::NAN;
@@ -172,7 +214,7 @@ fn ulp(x: f64) -> f64 {
     next - x
 }
 
-/// `flatBAQArray(read)`: no alignment uncertainty anywhere.
+/// `flatBAQArray(read)`: no alignment uncertainty anywhere, `Arrays.fill(baq, NO_BAQ_UNCERTAINTY)`.
 pub fn flat_baq_array(length: usize) -> Vec<u8> {
     vec![NO_BAQ_UNCERTAINTY; length]
 }
@@ -198,7 +240,13 @@ pub fn calculate_is_snp_or_indel(
         match element.op {
             Op::M | Op::Eq | Op::X => {
                 for _ in 0..length {
-                    // `BaseUtils.basesAreEqual`, which upper-cases both sides.
+                    // The reference is `BaseUtils.basesAreEqual`, which compares
+                    // `simpleBaseToBaseIndex` of each side (BaseUtils.java:118-119). That index is
+                    // 0 to 3 for `ACGTacgt`, 0 for `*`, and -1 for everything else
+                    // (BaseUtils.java:44-56), so there any two non-ACGT bases, `N` against `R`
+                    // say, are equal. A case-insensitive byte comparison agrees on ACGT and on a
+                    // base against itself, and **differs on two different non-ACGT bases** and on
+                    // `*` against `A`.
                     let equal =
                         record.read_bases[read_pos].eq_ignore_ascii_case(&reference_bases[ref_pos]);
                     let value = if equal { 0 } else { 1 };
@@ -219,8 +267,8 @@ pub fn calculate_is_snp_or_indel(
             }
             Op::N => ref_pos += length,
             Op::I => {
-                // Forward marks before advancing, reverse marks after: both name the base on the
-                // far side of the insertion.
+                // Forward marks before advancing, reverse marks after: the aligned base left of
+                // the insertion on a forward read, right of it on a reverse one.
                 if !reverse {
                     update_indel(is_ins, read_pos as i64 - 1);
                 }
@@ -235,12 +283,15 @@ pub fn calculate_is_snp_or_indel(
         }
     }
 
-    // Summed afterwards, because two events can mark the same base and it must count once.
+    // Summed afterwards, because two events can mark the same base and it must count once. The
+    // reference's comment: "we don't sum those as we go because they might set the same place to
+    // 1 twice". `.iter().sum::<i32>()` is `MathUtils.sum(int[])`; `::<i32>` names the result type.
     events += is_del.iter().sum::<i32>() + is_ins.iter().sum::<i32>();
     Ok(events)
 }
 
-/// `updateIndel(indel, index)`: clamped away at both ends rather than wrapping.
+/// `updateIndel(indel, index)`: clamped away at both ends rather than wrapping. The reference's
+/// comment names the two cases: "events at the start or end of the read (1D3M or 3M1D)".
 fn update_indel(indel: &mut [i32], index: i64) {
     if index >= 0 && (index as usize) < indel.len() {
         indel[index as usize] = 1;
@@ -250,9 +301,12 @@ fn update_indel(indel: &mut [i32], index: i64) {
 /// `calculateFractionalErrorArray(errorArray, baqArray)`.
 ///
 /// Each error inside a block of BAQ uncertainty is spread evenly over the block, and **the block
-/// starts one base before** the first uncertain one: `Math.max(0, blockStartIndex - 1)`. With a flat
-/// BAQ array there are no blocks and the fractions are the marks themselves, which is what the
-/// default run produces.
+/// starts one base before** the first uncertain one: `Math.max(0, blockStartIndex - 1)`. With a
+/// flat BAQ array there are no blocks and the fractions are the marks themselves, which is what
+/// the default run produces.
+///
+/// The reference also checks the output length against the input after the loop; the output is
+/// allocated at that length, so the check is not ported.
 pub fn calculate_fractional_error_array(
     error_array: &[i32],
     baq_array: &[u8],
@@ -264,6 +318,8 @@ pub fn calculate_fractional_error_array(
     let mut fractional = vec![0.0f64; baq_array.len()];
     let mut in_block = false;
     let mut block_start = BLOCK_START_UNSET;
+    // A `while` rather than a `for`, because `i` is read after the loop, as the reference's
+    // `int i;` declared outside its `for` is.
     let mut i = 0usize;
     while i < fractional.len() {
         if baq_array[i] == NO_BAQ_UNCERTAINTY {
@@ -289,6 +345,10 @@ pub fn calculate_fractional_error_array(
     Ok(fractional)
 }
 
+/// `calculateAndStoreErrorsInBlock(i, blockStartIndex, errorArray, fractionalErrors)`.
+///
+/// The errors are summed as integers and every slot gets one division of that sum by the block
+/// length, `((double) totalErrors) / ((double)(i - Math.max(0, blockStartIndex - 1) + 1))`.
 fn store_errors_in_block(i: i64, block_start: i64, error_array: &[i32], fractional: &mut [f64]) {
     let from = (block_start - 1).max(0);
     let mut total = 0;
@@ -331,6 +391,10 @@ pub fn calculate_known_sites(record: &BamRecord, known_sites: &[SimpleInterval])
             feature_start = read_length as i32;
             feature_end = read_length as i32;
         }
+        // `Arrays.fill(knownSitesArray, Math.max(0, featureStartOnRead),
+        // Math.min(readLength, featureEndOnRead + 1), true)`. `.take(to).skip(from)` visits the
+        // slots `from..to`, and none when `from >= to`, where `Arrays.fill` would throw if
+        // `from > to`.
         let from = feature_start.max(0) as usize;
         let to = (feature_end + 1).min(read_length as i32).max(0) as usize;
         for slot in covered.iter_mut().take(to).skip(from) {
@@ -340,8 +404,12 @@ pub fn calculate_known_sites(record: &BamRecord, known_sites: &[SimpleInterval])
     covered
 }
 
-/// `calculateSkipArray(read, knownSites)`: a base is skipped when it is not a regular base, when its
-/// quality is below the preserve threshold, or when a known site covers it.
+/// `calculateSkipArray(read, knownSites)`: a base is skipped when it is not a regular base, when
+/// its quality is below the preserve threshold, or when a known site covers it.
+///
+/// `BaseUtils.isRegularBase` is `simpleBaseToBaseIndex(base) != -1`, which also accepts `*`
+/// (BaseUtils.java:49, 174-175); this accepts ACGT only. A BAM's four-bit base code has no `*`, so
+/// the two agree on every base read from a file. A missing quality reads as zero here.
 pub fn calculate_skip_array(
     record: &BamRecord,
     known_sites: &[SimpleInterval],
@@ -360,15 +428,31 @@ pub fn calculate_skip_array(
 
 /// `BaseRecalibrationEngine`.
 pub struct BaseRecalibrationEngine {
+    /// `recalArgs`.
     pub arguments: EngineArguments,
+    /// `covariates`.
     pub covariates: StandardCovariateList,
+    /// `recalTables`.
     pub tables: RecalibrationTables,
+    /// `baq`. Always built, where the reference builds one only when `enableBAQ` is set.
     baq: Baq,
+    /// `finalized`.
     finalized: bool,
+    /// `numReadsProcessed`, a `long` there.
     num_reads_processed: u64,
 }
 
 impl BaseRecalibrationEngine {
+    /// `new BaseRecalibrationEngine(recalArgs, readsHeader)`, with three differences from the
+    /// reference's constructor (BaseRecalibrationEngine.java:83-102):
+    ///
+    ///  * the read group count is the read group covariate's, through
+    ///    [`RecalibrationTables::new`], where the reference takes
+    ///    `readsHeader.getReadGroups().size()` and refuses fewer than one;
+    ///  * the BAQ model always has the default gap open penalty, where the reference passes
+    ///    `recalArgs.BAQGOP`, which [`EngineArguments`] does not carry;
+    ///  * `use_original_base_qualities` is never read: the read transform below has no
+    ///    `resetOriginalBaseQualities` step.
     pub fn new(
         arguments: EngineArguments,
         header: &SamHeader,
@@ -386,6 +470,7 @@ impl BaseRecalibrationEngine {
         })
     }
 
+    /// `getNumReadsProcessed()`.
     pub fn num_reads_processed(&self) -> u64 {
         self.num_reads_processed
     }
@@ -393,8 +478,10 @@ impl BaseRecalibrationEngine {
     /// `processRead(read, refDS, knownSites)`.
     ///
     /// The read is transformed first: the cigar is consolidated, default qualities are filled in,
-    /// original qualities are restored, and then the adaptor **and the soft clips** are hard clipped
-    /// away. The read the covariates see is not the read in the file.
+    /// and then the adaptor **and the soft clips** are hard clipped away. The read the covariates
+    /// see is not the read in the file. The reference also restores the original qualities
+    /// between the second and third steps when `useOriginalBaseQualities` is set; this does not.
+    /// See [`BaseRecalibrationEngine::new`].
     pub fn process_read(
         &mut self,
         original: &BamRecord,
@@ -413,7 +500,9 @@ impl BaseRecalibrationEngine {
         let mut is_snp = vec![0i32; length];
         let mut is_insertion = vec![0i32; length];
         let mut is_deletion = vec![0i32; length];
-        // `queryAndPrefetch(read.getContig(), read.getStart(), read.getEnd())`: the read's own span.
+        // `queryAndPrefetch(read.getContig(), read.getStart(), read.getEnd())`: the read's own
+        // span, as a slice of the contig (`a..b` is half open, so one-based start and end become
+        // `start - 1..end`).
         let span_start = crate::read_utils::start(&read).max(1) as usize - 1;
         let span_end = (crate::read_utils::end(&read) as usize).min(contig_bases.len());
         let reference_bases = &contig_bases[span_start..span_end];
@@ -474,17 +563,19 @@ impl BaseRecalibrationEngine {
     /// return BAQ.getBAQTag(read);
     /// ```
     ///
-    /// `ADD_TAG` writes the **encoded** tag, `(char)(quality - baq + 64)`, and `getBAQTag` reads
-    /// those characters straight back out. So what reaches `calculateFractionalErrorArray` is the
-    /// tag's encoding and not the model's qualities, and `NO_BAQ_UNCERTAINTY` being 64 is exactly
-    /// the character for "the BAQ equals the quality". A port that passed the model's `bq` array
-    /// would detect completely different blocks.
+    /// `ADD_TAG` writes the **encoded** tag, the bytes `quality + 64 - baq` (BAQ.java:391-400),
+    /// and `getBAQTag` reads those bytes straight back out. So what reaches
+    /// `calculateFractionalErrorArray` is the tag's encoding and not the model's qualities, and
+    /// `NO_BAQ_UNCERTAINTY` being 64 is exactly the character for "the BAQ equals the quality".
+    /// A port that passed the model's `bq` array would detect completely different blocks.
     ///
     /// The model runs over the **reference window**, not the read's span, and answers nothing when
     /// that window runs past the contig, which is the "some reads just can't be BAQ'ed" case.
     fn calculate_baq_array(&self, read: &BamRecord, contig_bases: &[u8]) -> Option<Vec<u8>> {
-        // `excludeReadFromBAQ`: unmapped, vendor-failed or duplicate reads never get a tag, so the
-        // caller sees a null and drops the read.
+        // `excludeReadFromBAQ`: an unmapped, vendor-failed or duplicate read is not modelled.
+        // **The reference then returns whatever BQ tag the read already carries**: `baqRead` falls
+        // through untouched (BAQ.java:646-647) and `getBAQTag` reads the existing tag. This
+        // answers nothing, so such a read is dropped here even when the file gave it a tag.
         if crate::read::is_unmapped(read)
             || crate::read::fails_vendor_quality_check(read)
             || crate::read::is_duplicate(read)
@@ -498,6 +589,8 @@ impl BaseRecalibrationEngine {
         let from = window.start.max(1) as usize - 1;
         let to = window.end as usize;
         let offset = window.start - crate::read_utils::start(read);
+        // `.ok()` turns an error into `None`, and each `?` returns `None` from this function if
+        // there is nothing: the first for an error, the second for a read the model skips.
         let result = self
             .baq
             .calc_baq_from_hmm(read, &contig_bases[from..to], offset)
@@ -505,11 +598,20 @@ impl BaseRecalibrationEngine {
         Some(crate::baq::encode_bq_tag(&read.base_qualities, &result.bq).into_bytes())
     }
 
-    /// `makeReadTransform()`: four transforms in this order.
+    /// `makeReadTransform()`, which chains five transforms: `consolidateCigar`,
+    /// `setDefaultBaseQualities`, `resetOriginalBaseQualities`, `hardClipAdaptorSequence`,
+    /// `hardClipSoftClippedBases`. This applies four; `resetOriginalBaseQualities` is missing.
+    ///
+    /// A step that fails here leaves the read as it was. For the cigar step the reference would
+    /// throw instead, for example `"cigar is completely soft-clipped"` (CigarBuilder.java:129).
     fn transform(&self, read: &BamRecord, header: &SamHeader) -> Result<BamRecord, EngineError> {
         let mut out = read.clone();
-        // `consolidateCigar`, which collapses zero-length and repeated elements.
-        // `new CigarBuilder()`, whose no-argument form keeps deletions at the ends.
+        // `consolidateCigar`, which collapses zero-length and repeated elements:
+        // `read.setCigar(new CigarBuilder().addAll(read.getCigar()).make());`.
+        // **This disagrees with the reference.** The no-argument `CigarBuilder()` is `this(true)`,
+        // which removes deletions at the ends, and `make()` is `make(false)`
+        // (CigarBuilder.java:49-51, 142-144). The call below passes `false` and `true`, so a cigar
+        // that starts or ends with a deletion keeps it here and loses it there.
         let mut builder = crate::cigar_builder::CigarBuilder::new(false);
         let mut consolidated = Ok(out.cigar.clone());
         for element in &out.cigar.elements {
@@ -534,8 +636,11 @@ impl BaseRecalibrationEngine {
         Ok(clipped.unwrap_or(out))
     }
 
-    /// `updateRecalTablesForRead`: only the quality score table and the additional ones are counted.
-    /// The read group table is filled by [`BaseRecalibrationEngine::finalize_data`].
+    /// `updateRecalTablesForRead`: only the quality score table and the additional ones are
+    /// counted. The read group table is filled by [`BaseRecalibrationEngine::finalize_data`].
+    ///
+    /// The reference opens with `Utils.validate(!finalized, "FinalizeData() has already been
+    /// called")`; that guard is not ported, so counting after finalising is not refused here.
     fn update_tables(
         &mut self,
         read: &BamRecord,
@@ -553,6 +658,8 @@ impl BaseRecalibrationEngine {
                 continue;
             }
             // `cachedEventTypes`, which is one element unless the hidden indel flag is set.
+            // `&EventType::VALUES` and `&[EventType::BaseSubstitution]` are both read-only views
+            // of a fixed array, so one variable can hold either.
             let events: &[EventType] = if self.arguments.compute_indel_bqsr_tables {
                 &EventType::VALUES
             } else {
@@ -598,6 +705,9 @@ impl BaseRecalibrationEngine {
     }
 
     /// `finalizeData()`: collapse the quality score table into the read group table, then round.
+    ///
+    /// The reference refuses a second call with `Utils.validate(!finalized, ...)`; this does not,
+    /// and a second call would combine the quality score table into the read group table again.
     pub fn finalize_data(&mut self) -> Result<(), EngineError> {
         collapse_quality_score_table_to_read_group_table(&mut self.tables)?;
         round_table_values(&mut self.tables)?;
@@ -605,6 +715,8 @@ impl BaseRecalibrationEngine {
         Ok(())
     }
 
+    /// Whether [`BaseRecalibrationEngine::finalize_data`] has run: the reference's private
+    /// `finalized`, which it reads through `getFinalRecalibrationTables`.
     pub fn is_finalized(&self) -> bool {
         self.finalized
     }
@@ -612,6 +724,11 @@ impl BaseRecalibrationEngine {
 
 /// `RecalUtils.incrementDatum*keys`: increment where there is a datum, create one where there is
 /// not. The created datum has **one** observation and the reported quality of the base.
+///
+/// The key count picks the getter the reference calls: `get3Keys` for the quality score table,
+/// `get4Keys` for an additional one; both check every key, unlike the varargs `get`. `qual as i8`
+/// reads the unsigned byte as Java's signed one, so a quality above 127 is refused as negative by
+/// [`RecalDatum::new`], as `createDatumObject` would be.
 fn increment_datum(
     table: &mut crate::recalibration_tables::NestedIntegerArray,
     qual: u8,
@@ -637,8 +754,12 @@ fn increment_datum(
     Ok(())
 }
 
-/// `RecalUtils.updatePlatformForRead` with neither `FORCE_PLATFORM` nor `DEFAULT_PLATFORM`, which no
-/// tool here declares.
+/// `RecalUtils.updatePlatformForRead` with neither `FORCE_PLATFORM` nor `DEFAULT_PLATFORM`, which
+/// no tool here declares.
+///
+/// A read with no `RG` tag, or one naming a group the header lacks, is let through here. The
+/// reference reads `readGroup.getPlatform()` from the record `getSAMReadGroupRecord` returned,
+/// which for a read with no `RG` tag is null (ReadUtils.java:229-231).
 fn no_platform_refusal(read: &BamRecord, header: &SamHeader) -> Result<(), EngineError> {
     let group = match read.tags.get(htsjdk_bam::tag::Tag::new(b"RG")) {
         Some(htsjdk_bam::tag::TagValue::Str(name)) => {
@@ -646,6 +767,7 @@ fn no_platform_refusal(read: &BamRecord, header: &SamHeader) -> Result<(), Engin
         }
         _ => None,
     };
+    // `is_some_and(..)` is true only when there is a group and the lambda accepts it.
     if group.is_some_and(|group| group.attributes.get("PL").is_none()) {
         let name = &read.read_name;
         let contig = usize::try_from(read.reference_index)
@@ -670,8 +792,11 @@ fn no_platform_refusal(read: &BamRecord, header: &SamHeader) -> Result<(), Engin
 pub fn collapse_quality_score_table_to_read_group_table(
     tables: &mut RecalibrationTables,
 ) -> Result<(), EngineError> {
+    // The leaves are collected before the loop, so the walk does not hold a borrow of `tables`
+    // while the loop writes to the read group table.
     let leaves = tables.quality_score_table().all_leaves();
     for (keys, qual_datum) in leaves {
+        // `readGroupIndex = 0` and `errorModeIndex = 2` in the reference.
         let read_group = keys[0];
         let event = keys[2];
         let existing = tables
@@ -714,6 +839,8 @@ pub fn round_table_values(tables: &mut RecalibrationTables) -> Result<(), Engine
                 datum.borrow().reported_quality(),
                 REPORTED_QUALITY_DECIMAL_PLACES,
             )?;
+            // Both values are read before either is written; neither setter touches the other's
+            // field, so the result is the reference's read-set, read-set order.
             datum
                 .borrow_mut()
                 .set_num_mismatches(mismatches)

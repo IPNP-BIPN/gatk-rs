@@ -1,10 +1,11 @@
 //! `NestedIntegerArray` and `RecalibrationTables`, ported from
 //! `org.broadinstitute.hellbender.utils.collections` and
-//! `org.broadinstitute.hellbender.utils.recalibration` (GATK 4.6.2.0).
+//! `org.broadinstitute.hellbender.utils.recalibration` (GATK 4.7.0.0; `NestedIntegerArray.java`
+//! and `RecalibrationTables.java` are unchanged since 4.6.2.0).
 //!
-//! The container a recalibration table is: four sparse arrays of [`RecalDatum`] indexed by covariate
-//! key. Two are "special", because the report writes them differently, and every shape comes from
-//! the covariates' own `maximumKeyValue` rather than from a constant here.
+//! The container a recalibration table is: four sparse arrays of [`RecalDatum`] indexed by
+//! covariate key. Two are "special", because the report writes them differently, and every shape
+//! comes from the covariates' own `maximumKeyValue` rather than from a constant here.
 //!
 //! | table | shape |
 //! |---|---|
@@ -19,11 +20,18 @@
 //! ```java
 //! public T get(final int... keys) {
 //!     final int numNestedDimensions = numDimensions - 1;
+//!     Object[] myData = data;
+//!
 //!     for( int i = 0; i < numNestedDimensions; i++ ) {
-//!         if ( keys[i] >= dimensions[i] ) return null;
-//!         ...
+//!         if ( keys[i] >= dimensions[i] )
+//!             return null;
+//!
+//!         myData = (Object[])myData[keys[i]];
+//!         if ( myData == null )
+//!             return null;
 //!     }
-//!     return (T)myData[keys[numNestedDimensions]];   // <- no check
+//!
+//!     return (T)myData[keys[numNestedDimensions]];
 //! }
 //! ```
 //!
@@ -49,6 +57,22 @@
 //! `safeCombine(one, two)` the new table's datum is the same object as `one`'s and holds the sum of
 //! both. The port reproduces this with `Rc<RefCell<RecalDatum>>`, because copying would leave the
 //! caller holding something the reference does not.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Rc<RefCell<RecalDatum>>` is a Java object reference to a mutable datum. `Rc::clone` copies
+//!   the reference, not the datum, and `Rc::ptr_eq` is Java's `==` on references. `.borrow()` and
+//!   `.borrow_mut()` take read and write access, checked at run time: asking to write while
+//!   another borrow is live panics instead of compiling.
+//! - `enum Node` is a tagged union: a node is exactly one of `Absent`, `Branch` (more nodes) or
+//!   `Leaf` (one slot), and a `match` on it must handle all three. It stands in for the reference's
+//!   `Object[]` whose entries are `null`, another `Object[]`, or a datum.
+//! - `Result<Option<SharedDatum>, NestedArrayError>` reads as "a datum, a null, or the exception";
+//!   `?` after a call rethrows its error to the caller.
+//! - `usize::try_from(key).ok()` is `None` for a negative key instead of wrapping it into a huge
+//!   unsigned index; that is how a negative key becomes the reference's index exception.
+//! - `&[usize]` and `&[Node]` are borrowed read-only views of an array; `&keys[..n]` is the view of
+//!   its first `n` elements.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -56,10 +80,11 @@ use std::rc::Rc;
 use crate::covariates::{CovariateKind, StandardCovariateList};
 use crate::recal_datum::{EventType, RecalDatum, RecalDatumError};
 
-/// The reference's `NUM_DIMENSIONS_TO_PREALLOCATE`.
+/// The reference's `NUM_DIMENSIONS_TO_PREALLOCATE`, whose own comment is
+/// `// Preallocate the first two dimensions to limit contention during tree traversals in put()`.
 ///
-/// It decides nothing about the values a table can hold; it decides only which branches exist before
-/// anything is written. It is kept because `getAllLeaves` walks the tree and a differently
+/// It decides nothing about the values a table can hold; it decides only which branches exist
+/// before anything is written. It is kept because `getAllLeaves` walks the tree and a differently
 /// preallocated one would walk a different shape, even though every leaf is null either way.
 const NUM_DIMENSIONS_TO_PREALLOCATE: usize = 2;
 
@@ -88,6 +113,9 @@ pub enum NestedArrayError {
 }
 
 impl NestedArrayError {
+    /// The exception's message. `IndexOutOfBounds` is worded as the JVM's own
+    /// `ArrayIndexOutOfBoundsException`, as the golden row `get last-key-too-big-varargs` of
+    /// `recalibration_tables.txt.gz` shows.
     pub fn message(&self) -> String {
         match self {
             NestedArrayError::NoDimensions => {
@@ -116,14 +144,18 @@ impl NestedArrayError {
 enum Node {
     /// A branch that has not been created. Only reachable past the preallocated dimensions.
     Absent,
+    /// An `Object[]` of the next dimension.
     Branch(Vec<Node>),
+    /// One slot of the last dimension: a datum, or `None` for the reference's `null`.
     Leaf(Option<SharedDatum>),
 }
 
 /// `NestedIntegerArray<RecalDatum>`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NestedIntegerArray {
+    /// `dimensions`: the width of each level, outermost first.
     dimensions: Vec<usize>,
+    /// `data`: the outermost level.
     data: Vec<Node>,
 }
 
@@ -141,6 +173,7 @@ impl NestedIntegerArray {
         })
     }
 
+    /// `getDimensions()`.
     pub fn dimensions(&self) -> &[usize] {
         &self.dimensions
     }
@@ -152,6 +185,8 @@ impl NestedIntegerArray {
     pub fn get(&self, keys: &[i32]) -> Result<Option<SharedDatum>, NestedArrayError> {
         let nested = self.dimensions.len() - 1;
         let mut node = &self.data;
+        // `.take(nested).enumerate()`: the first `nested` keys, each with its position `i`, which
+        // is the reference's `for( int i = 0; i < numNestedDimensions; i++ )`.
         for (i, key) in keys.iter().take(nested).enumerate() {
             if *key >= self.dimensions[i] as i32 {
                 return Ok(None);
@@ -248,10 +283,14 @@ impl NestedIntegerArray {
             }
         }
 
+        // A copy of the shape, because `node` below holds the writable borrow of `self.data` for
+        // the whole walk and Rust allows no other access to `self` meanwhile.
         let dimensions = self.dimensions.clone();
         let mut node = &mut self.data;
         for (i, key) in keys.iter().take(nested).enumerate() {
             let length = node.len();
+            // The index the reference's `myData[keys[i]]` would take, or its exception: negative
+            // and too-large keys both fail here, as they would in Java.
             let slot = usize::try_from(*key)
                 .ok()
                 .filter(|slot| *slot < length)
@@ -311,7 +350,12 @@ fn index(node: &[Node], key: i32) -> Result<&Node, NestedArrayError> {
         })
 }
 
-/// `preallocateArray`: branches down to `to_preallocate`, leaves below that.
+/// `preallocateArray(subarray, dimension, dimensionsToPreallocate)`, plus the array the caller
+/// allocates for it: the reference makes `new Object[dimensions[0]]` and then fills it with
+/// `new Object[dimensions[dimension + 1]]` until `dimension >= dimensionsToPreallocate - 1`.
+///
+/// A level that is not preallocated is all `Absent`, and the last level is all empty `Leaf`s,
+/// which are the two kinds of `null` the reference's arrays hold.
 fn build(dimensions: &[usize], dimension: usize, to_preallocate: usize) -> Vec<Node> {
     let width = dimensions[dimension];
     if dimension == dimensions.len() - 1 {
@@ -326,6 +370,10 @@ fn build(dimensions: &[usize], dimension: usize, to_preallocate: usize) -> Vec<N
         .collect()
 }
 
+/// `fillAllLeaves(array, path, result)`: depth first, keys in increasing order, nulls skipped.
+///
+/// The reference builds a new path array per entry (`appendToPath`); this pushes onto one path and
+/// pops after, and copies it only when a leaf is recorded. The keys recorded are the same.
 fn fill_leaves(node: &[Node], path: &mut Vec<i32>, out: &mut Vec<(Vec<i32>, SharedDatum)>) {
     for (key, child) in node.iter().enumerate() {
         match child {
@@ -346,9 +394,9 @@ fn fill_leaves(node: &[Node], path: &mut Vec<i32>, out: &mut Vec<(Vec<i32>, Shar
 
 /// `RecalUtils.combineTables(table1, table2)`.
 ///
-/// Where the left table already holds a datum the right one's is **combined into it**; where it does
-/// not, the right one's **object** is stored, so the two tables share it afterwards. See the module
-/// note.
+/// Where the left table already holds a datum the right one's is **combined into it**; where it
+/// does not, the right one's **object** is stored, so the two tables share it afterwards. See the
+/// module note.
 pub fn combine_tables(
     table1: &mut NestedIntegerArray,
     table2: &NestedIntegerArray,
@@ -369,6 +417,9 @@ pub fn combine_tables(
     for (keys, value) in table2.all_leaves() {
         match table1.get(&keys).map_err(CombineError::Nested)? {
             Some(mine) => {
+                // A copy of the right-hand datum to read from, so that no read borrow of it is live
+                // while `mine` is borrowed for writing; the two could be the same object. The
+                // reference passes the object, and `combine` only reads it, so the values agree.
                 let other = value.borrow().clone();
                 mine.borrow_mut()
                     .combine(&other)
@@ -383,11 +434,14 @@ pub fn combine_tables(
 /// Either the array's refusal or the datum's.
 #[derive(Debug, Clone, PartialEq)]
 pub enum CombineError {
+    /// A shape or index refusal from the array.
     Nested(NestedArrayError),
+    /// The NaN reported quality refusal from [`RecalDatum::combine`].
     Datum(RecalDatumError),
 }
 
 impl CombineError {
+    /// The message of whichever refusal it wraps.
     pub fn message(&self) -> String {
         match self {
             CombineError::Nested(error) => error.message(),
@@ -403,7 +457,9 @@ pub struct RecalibrationTables {
     pub all_tables: Vec<NestedIntegerArray>,
     /// Which covariate each table belongs to, parallel to `all_tables`.
     pub kinds: Vec<CovariateKind>,
+    /// `numReadGroups`, the first dimension of every table.
     pub num_read_groups: usize,
+    /// `qualDimension`: the quality score covariate's `maximumKeyValue() + 1`.
     pub qual_dimension: usize,
 }
 
@@ -415,6 +471,8 @@ impl RecalibrationTables {
     pub fn new(
         covariates: &StandardCovariateList,
     ) -> Result<RecalibrationTables, NestedArrayError> {
+        // `.max(0)` keeps the cast to an unsigned length total; the reference has no such clamp,
+        // and a negative count would be its `NegativeArraySizeException`.
         let num_read_groups = (covariates.read_group.maximum_key_value() + 1).max(0) as usize;
         RecalibrationTables::with_read_groups(covariates, num_read_groups)
     }
@@ -450,27 +508,32 @@ impl RecalibrationTables {
         })
     }
 
+    /// `numTables()`.
     pub fn num_tables(&self) -> usize {
         self.all_tables.len()
     }
 
+    /// `getReadGroupTable()`, which is always the first.
     pub fn read_group_table(&self) -> &NestedIntegerArray {
         &self.all_tables[0]
     }
 
+    /// The same table, writable. Java hands out one reference for both; Rust separates them.
     pub fn read_group_table_mut(&mut self) -> &mut NestedIntegerArray {
         &mut self.all_tables[0]
     }
 
+    /// `getQualityScoreTable()`, which is always the second.
     pub fn quality_score_table(&self) -> &NestedIntegerArray {
         &self.all_tables[1]
     }
 
+    /// The same table, writable.
     pub fn quality_score_table_mut(&mut self) -> &mut NestedIntegerArray {
         &mut self.all_tables[1]
     }
 
-    /// The tables of the additional covariates, in list order.
+    /// `getAdditionalTables()`: the tables of the additional covariates, in list order.
     pub fn additional_tables(&self) -> &[NestedIntegerArray] {
         &self.all_tables[2..]
     }
@@ -498,6 +561,10 @@ impl RecalibrationTables {
     /// `combine(toMerge)`: table by table, in place.
     ///
     /// The reference checks the table **count** and leaves the shapes to `combineTables`.
+    ///
+    /// The count refusal is worded differently. The reference throws
+    /// `IllegalArgumentException("Attempting to merge RecalibrationTables with different sizes")`
+    /// (RecalibrationTables.java:139); this reuses `combineTables`' wording with the two counts.
     pub fn combine(&mut self, to_merge: &RecalibrationTables) -> Result<(), CombineError> {
         if self.num_tables() != to_merge.num_tables() {
             return Err(CombineError::Nested(NestedArrayError::DifferentShapes {
@@ -511,8 +578,12 @@ impl RecalibrationTables {
         Ok(())
     }
 
-    /// `safeCombine(left, right)`, which is **not** safe: see the module note. It mutates the datums
-    /// of both arguments, because the new table holds the same objects.
+    /// `safeCombine(left, right)`, which is **not** safe: see the module note.
+    ///
+    /// The first combine stores the left argument's datum objects in the new tables; the second
+    /// combines the right argument's counts into them. So the left argument's datums are changed,
+    /// and the right argument's are only read, or stored where the left had none, after which the
+    /// new tables share them.
     pub fn safe_combine(
         covariates: &StandardCovariateList,
         left: &RecalibrationTables,
@@ -526,7 +597,7 @@ impl RecalibrationTables {
     }
 }
 
-/// The event type a table's last dimension is indexed by, for readers of this module.
+/// The index an event type has in a table's last dimension: its ordinal. Not a reference method.
 pub fn event_index(event: EventType) -> usize {
     event.ordinal()
 }

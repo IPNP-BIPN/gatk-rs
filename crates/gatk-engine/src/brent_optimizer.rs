@@ -7,6 +7,35 @@
 //! A function that is exactly a parabola is solved in one step by the interpolation, so the
 //! tolerances never reach it. On anything else they decide where the search stops, and a loose
 //! enough tolerance stops well short of the maximum.
+//!
+//! # The tolerances are the caller's
+//!
+//! `OptimizationUtils.max` has an overload that takes them, and that is the one the panel of
+//! normals reaches: `OptimizationUtils.max(logLikelihood, 0.01, 100, 1, 0.01, 0.1, 100)` at
+//! `CreateSomaticPanelOfNormals.java:251`, a relative tolerance of `0.01`, an absolute one of `0.1`
+//! and a budget of 100 evaluations. The overload builds a fresh optimiser per call
+//! (`OptimizationUtils.java:38`):
+//!
+//! ```java
+//! final BrentOptimizer optimizer = new BrentOptimizer(relativeTolerance, absoluteTolerance);
+//! ```
+//!
+//! The `brent-optimizer` golden (`crates/gatk-engine/tests/data/brent_optimizer.txt.gz`) holds
+//! fifteen such answers and four refusals. Its `kinked-*` rows are the ones the tolerances move:
+//! the same peak at 7 comes back as `7.00000000000277` at `1e-12` and as `7.28924288066983` at
+//! `0.5`.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<PointValue, OptimizerError>` is "the answer or one of the three refusals below"; it
+//!   is how this codebase models a method that throws. A `?` after a call that returns a `Result`
+//!   rethrows: on an error the function returns it at once, on success the value is unwrapped.
+//! - `Option<PointValue>` is "a point or nothing", Java's nullable reference with the null check
+//!   enforced by the compiler; `Some(x)` is a value and `None` is the null.
+//! - `F: Fn(f64) -> f64` is the function being optimised, Java's `DoubleUnaryOperator`; `|x| ...`
+//!   is a lambda. A lambda that changes a captured variable (the evaluation counter below) is
+//!   declared `let mut`.
+//! - `f64` is Java's `double` and `usize` an unsigned integer used for counts and indices.
 
 /// `BrentOptimizer.GOLDEN_SECTION`, which is `0.5 * (3 - sqrt(5))` evaluated in double precision.
 ///
@@ -27,6 +56,9 @@ pub enum OptimizerError {
 }
 
 /// Apache Commons prints a whole number without a decimal point and anything else with one.
+///
+/// What the golden's `error` rows show: `-1 out of [0, 10] range` for a guess of `-1.0`, and
+/// `10 is larger than, or equal to, the maximum (0)` for an inverted interval.
 fn number(value: f64) -> String {
     if value == value.trunc() && value.abs() < 1e7 {
         format!("{}", value as i64)
@@ -36,6 +68,7 @@ fn number(value: f64) -> String {
 }
 
 impl OptimizerError {
+    /// The exception's message, as the golden's `error` rows print it after the class name.
     pub fn message(&self) -> String {
         match self {
             OptimizerError::TooManyEvaluations { max_evaluations } => {
@@ -56,7 +89,9 @@ impl OptimizerError {
     }
 }
 
-/// Where the search stopped, and what the function was there.
+/// `UnivariatePointValuePair`: where the search stopped, and what the function was there.
+///
+/// `value` is the function's own value, not the negated one a maximisation searches on.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PointValue {
     pub point: f64,
@@ -65,11 +100,18 @@ pub struct PointValue {
 
 /// `Precision.equals(a, b)` at the default tolerance of one ulp, which for two finite doubles that
 /// are not adjacent is plain equality.
+///
+/// The port is plain equality throughout, so it would part from the reference only on two
+/// adjacent doubles among `x`, `v` and `w`, which the one-ulp tolerance calls equal.
 fn precision_equals(a: f64, b: f64) -> bool {
     a == b
 }
 
 /// `BrentOptimizer.best`, which keeps the earlier of two equal points.
+///
+/// Either side may be absent (`previous` is, before the first step), and then the other is the
+/// answer. `match` over the pair of `Option`s takes the first arm whose shape
+/// fits, and the compiler checks that every combination is covered.
 fn better(a: Option<PointValue>, b: Option<PointValue>, minimise: bool) -> Option<PointValue> {
     match (a, b) {
         (None, other) | (other, None) => other,
@@ -99,7 +141,8 @@ fn check_interval(min: f64, max: f64, start: f64) -> Result<(), OptimizerError> 
     Ok(())
 }
 
-/// `OptimizationUtils.max`: `BrentOptimizer` with the given tolerances, maximising.
+/// `OptimizationUtils.max(function, min, max, guess, relativeTolerance, absoluteTolerance,
+/// maxEvaluations)`: `BrentOptimizer` with the given tolerances, `GoalType.MAXIMIZE`.
 ///
 /// Maximising is minimising the negative, which the optimiser does internally, so the value that
 /// comes back is the function's own.
@@ -151,6 +194,10 @@ pub fn minimize<F: Fn(f64) -> f64>(
 /// The two tolerances make one bound, `relative * |x| + absolute`, so the relative one is scaled by
 /// where the search currently is. The stopping test compares the distance from the midpoint against
 /// twice that bound less half the interval, which is Brent's own criterion.
+///
+/// The names are Brent's: `x` is the best point so far, `w` the second best, `v` the previous `w`;
+/// `[a, b]` is the bracket, `d` the step just taken and `e` the step before it. The statements
+/// keep the reference's order and temporaries, so the points visited are the reference's points.
 #[allow(clippy::too_many_arguments)]
 fn optimize<F: Fn(f64) -> f64>(
     function: F,
@@ -176,6 +223,8 @@ fn optimize<F: Fn(f64) -> f64>(
         Ok(if minimise { value } else { -value })
     };
 
+    // `check_interval` has already refused `min >= max`, so this always keeps `(min, max)`.
+    // `let (a, b) = ...` binds both names from one pair.
     let (mut a, mut b) = if min < max { (min, max) } else { (max, min) };
     let mut x = start;
     let mut v = x;
@@ -186,7 +235,11 @@ fn optimize<F: Fn(f64) -> f64>(
     let mut fv = fx;
     let mut fw = fx;
 
+    // `evaluate` hands the search the negated value when maximising; `unsign` turns it back
+    // before a point is recorded, so a returned `PointValue` carries the function's own value.
     let unsign = |value: f64| if minimise { value } else { -value };
+    // The last two evaluated points and the best seen so far; the search answers with the best of
+    // the three when it stops.
     let mut previous: Option<PointValue> = None;
     let mut current = Some(PointValue {
         point: x,
@@ -246,6 +299,7 @@ fn optimize<F: Fn(f64) -> f64>(
             x + d
         };
 
+        // `?`: a refusal from the budget ends the search with that error.
         let fu = evaluate(u)?;
 
         previous = current;
@@ -255,6 +309,8 @@ fn optimize<F: Fn(f64) -> f64>(
         });
         best = better(best, better(previous, current, minimise), minimise);
 
+        // Update the bracket and the three remembered points: `u` becomes the best if it is no
+        // worse than `x`, otherwise it narrows the bracket and may replace `w` or `v`.
         if fu <= fx {
             if u < x {
                 b = x;

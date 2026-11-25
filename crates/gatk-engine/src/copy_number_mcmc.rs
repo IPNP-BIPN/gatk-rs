@@ -4,10 +4,11 @@
 //! `MinibatchSliceSampler`, `DecileCollection`, the generator `GibbsSampler` holds) and from the
 //! commons-math3 3.5 pieces those reach: `ExponentialDistribution.sample`,
 //! `BetaDistribution.sample` and `logDensity`, `TDistribution.cumulativeProbability`,
-//! `NormalDistribution.density`, `Primes.nextPrime`, `Mean`, `Variance`, `FastMath.pow(double, int)`
-//! and the `BrentSolver` the inverse cumulative probability runs. GATK pins commons-math3 to 3.5
-//! strictly, and 3.5 is what this follows: in 3.6 `BetaDistribution.sample` became Cheng's
-//! algorithm, which draws a different number of values from the generator.
+//! `NormalDistribution.density`, `Primes.nextPrime`, `Mean`, `Variance`,
+//! `FastMath.pow(double, int)` and the `BrentSolver` the inverse cumulative probability runs. GATK
+//! pins commons-math3 to 3.5 strictly, and 3.5 is what this follows: in 3.6
+//! `BetaDistribution.sample` became Cheng's algorithm, which draws a different number of values
+//! from the generator.
 //!
 //! # One generator, restarted at every chain
 //!
@@ -29,6 +30,26 @@
 //! The reference caches the prior and the likelihoods at the current sample, in a `HashMap` keyed
 //! by the data point. The functions cached are pure and the points distinct, so a cached value is
 //! the value recomputed; the port keeps the cache by index for speed and nothing else.
+//!
+//! The GATK classes (`AbstractSliceSampler.java`, `MinibatchSliceSampler.java`,
+//! `GibbsSampler.java`, `DecileCollection.java`) are read from GATK 4.7.0.0 and are unchanged
+//! since 4.6.2.0. commons-math3 and the JDK have no local source, so nothing from them is quoted
+//! here; those items are transcriptions whose order of operations is kept as found.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&mut JavaRandom` is a **writable borrow** of the one generator: every draw advances the
+//!   caller's stream, never a copy, which is how the single shared `rng` of the reference is kept.
+//! - `Result<f64, IllegalArgument>` is "a value or the reference's `IllegalArgumentException`";
+//!   `?` after a call hands an `Err` straight to the caller, as an uncaught exception would.
+//! - `Option<f64>` is "a value or nothing": `None` stands for a refusal no caller here reaches,
+//!   and for the reference's `null` cache.
+//! - `impl Fn(f64) -> f64` and the generic `P: Fn(..)` are lambdas passed as parameters, Java's
+//!   `UnivariateFunction`, `Function` and `BiFunction`. `(self.log_prior)(x)` calls one that is
+//!   stored in a field.
+//! - `x as f64` on an integer is the widening Java does implicitly; on the counts here it is exact.
+//! - The last expression of a body, with no `return` and no semicolon, is its value; `return` is
+//!   only written for early exits.
 
 use crate::java_random::JavaRandom;
 
@@ -40,6 +61,15 @@ pub struct IllegalArgument(pub String);
 pub const GIBBS_RANDOM_SEED: i64 = 42;
 
 /// `FastMath.pow(double, int)`, the Veltkamp split product of commons-math3 3.5.
+///
+/// **What**: `d` to the integer power `e`, by binary exponentiation (square `d2p`, multiply it in
+/// at every set bit of `e`).
+///
+/// **Why not one multiplication per step**: every product is carried as a high part and a low
+/// part. Multiplying by `134217729` (`2^27 + 1`) and subtracting splits a double into two halves
+/// whose products are exact, so the low part collects the rounding error a plain `*` would
+/// drop. The result is `result_high + result_low`, which can differ in the last bit from a
+/// repeated `*`. Every statement keeps the order it was transcribed in for that reason.
 pub fn fast_math_pow_int(d: f64, e: i32) -> f64 {
     if e == 0 {
         return 1.0;
@@ -90,6 +120,9 @@ pub fn fast_math_pow_int(d: f64, e: i32) -> f64 {
 /// `ExponentialDistribution.EXPONENTIAL_SA_QI`, the table the static initializer fills:
 /// `qi += FastMath.pow(LN2, i) / CombinatoricsUtils.factorial(i)` until `qi` reaches one.
 fn exponential_sa_qi() -> &'static [f64] {
+    // `OnceLock` is the static initializer: the closure runs on first use, once, and every later
+    // call returns the same table. `&'static [f64]` is a read-only view that lives as long as the
+    // program.
     use std::sync::OnceLock;
     static TABLE: OnceLock<Vec<f64>> = OnceLock::new();
     TABLE.get_or_init(|| {
@@ -110,6 +143,10 @@ fn exponential_sa_qi() -> &'static [f64] {
 
 /// `ExponentialDistribution.sample()` in 3.5: Ahrens and Dieter's algorithm SA, which draws one
 /// value and then as many more as the table walk needs.
+///
+/// The number of `next_double` calls is the point: one when `u <= qi[0]` after the doubling,
+/// otherwise one more and then one per table entry walked. Every later draw of the chain moves
+/// with that count, so the draws are taken in the transcribed order and nowhere else.
 pub fn exponential_sample(rng: &mut JavaRandom, mean: f64) -> f64 {
     let qi = exponential_sa_qi();
     let mut a = 0.0;
@@ -125,6 +162,7 @@ pub fn exponential_sample(rng: &mut JavaRandom, mean: f64) -> f64 {
     let mut i = 0;
     let mut u2 = rng.next_double();
     let mut umin = u2;
+    // A `loop` whose exit test comes last runs its body at least once, as a `do { } while` does.
     loop {
         i += 1;
         u2 = rng.next_double();
@@ -156,6 +194,9 @@ fn beta_cumulative(x: f64, alpha: f64, beta: f64) -> f64 {
 }
 
 /// `Precision.equals(x, 0)`: within one ulp of either zero, and not NaN.
+///
+/// Masking off the sign bit leaves the magnitude's bit pattern, and a magnitude whose pattern is
+/// `0` or `1` is a zero or the smallest subnormal, the only doubles within one ulp of zero.
 fn within_one_ulp_of_zero(x: f64) -> bool {
     if x.is_nan() {
         return false;
@@ -168,7 +209,12 @@ fn within_one_ulp_of_zero(x: f64) -> bool {
 /// defaults for the other two (relative `1e-14`, function value `1e-15`), started at the midpoint.
 ///
 /// The one refusal, `NoBracketingException`, is `None`: a distribution function minus a
-/// probability in `(0, 1)` always brackets on `[0, 1]`, so the inverse this serves never reaches it.
+/// probability in `(0, 1)` always brackets on `[0, 1]`, so the inverse this serves never reaches
+/// it.
+///
+/// **How**: the midpoint, then `min`, then `max` are each tested for a root before any iteration,
+/// and the half that changes sign is handed to `brent`. The order of those three evaluations is
+/// the order of the transcription; a different order could stop on a different endpoint.
 pub fn brent_solve(f: impl Fn(f64) -> f64, min: f64, max: f64, absolute: f64) -> Option<f64> {
     let relative = 1e-14;
     let function_value_accuracy = 1e-15;
@@ -198,6 +244,11 @@ pub fn brent_solve(f: impl Fn(f64) -> f64, min: f64, max: f64, absolute: f64) ->
     None
 }
 
+/// The Brent iteration over a bracket `[lo, hi]` whose ends have values of opposite sign: `t`
+/// is the absolute accuracy and `eps` the relative one. Inverse quadratic or secant
+/// interpolation when it promises progress, bisection otherwise. It is transcribed statement by
+/// statement, because the sequence of points evaluated, and so the root returned, depends on the
+/// order and rounding of every step.
 #[allow(clippy::too_many_arguments)]
 fn brent(f: &impl Fn(f64) -> f64, lo: f64, hi: f64, f_lo: f64, f_hi: f64, t: f64, eps: f64) -> f64 {
     let mut a = lo;
@@ -273,6 +324,11 @@ fn brent(f: &impl Fn(f64) -> f64, lo: f64, hi: f64, f_lo: f64, f_hi: f64, t: f64
 
 /// `new BetaDistribution(rng, alpha, beta).sample()` in 3.5, which is
 /// `inverseCumulativeProbability(random.nextDouble())` solved by Brent at `1e-9` on the support.
+///
+/// One `next_double` per sample, whatever the shape. A draw of exactly `0.0` answers `0.0`, the
+/// lower end of the support, without a solve. A solve that found no bracket would come back
+/// `None`, and `unwrap_or(f64::NAN)` turns that into `NaN`; see `brent_solve` for why it does
+/// not happen.
 pub fn beta_sample(rng: &mut JavaRandom, alpha: f64, beta: f64) -> f64 {
     let p = rng.next_double();
     if p == 0.0 {
@@ -288,13 +344,16 @@ pub fn beta_sample(rng: &mut JavaRandom, alpha: f64, beta: f64) -> f64 {
 pub fn beta_log_density(x: f64, alpha: f64, beta: f64) -> Result<f64, IllegalArgument> {
     let z = jmath::gamma::log_gamma(alpha) + jmath::gamma::log_gamma(beta)
         - jmath::gamma::log_gamma(alpha + beta);
-    // NaN passes, as the reference's two comparisons let it.
+    // NaN passes, as the reference's two comparisons let it. `partial_cmp` answers `None` for a
+    // NaN, so each test is exactly `x < 0` and `x > 1`, and a NaN falls through to the last arm.
     if x.partial_cmp(&0.0) == Some(std::cmp::Ordering::Less)
         || x.partial_cmp(&1.0) == Some(std::cmp::Ordering::Greater)
     {
         Ok(f64::NEG_INFINITY)
     } else if x == 0.0 {
         if alpha < 1.0 {
+            // `java_double_to_string` spells the shape as Java's string concatenation would
+            // (`Double.toString`), so the message matches the reference's text.
             return Err(IllegalArgument(format!(
                 "Cannot compute beta density at 0 when alpha = {}",
                 crate::tsv_table::java_double_to_string(alpha)
@@ -352,6 +411,8 @@ pub fn next_prime(n: i32) -> i32 {
     candidate
 }
 
+/// Whether `n` is prime, by trial division in `i64` so `divisor * divisor` cannot overflow. Only
+/// the yes-or-no answer reaches `next_prime`, so any exact test gives the same result.
 fn is_prime(n: i32) -> bool {
     if n < 2 {
         return false;
@@ -387,6 +448,8 @@ pub fn commons_mean(values: &[f64]) -> f64 {
 
 /// `new Variance().evaluate(values)`, bias-corrected, zero for one value and NaN for none.
 pub fn commons_variance(values: &[f64]) -> f64 {
+    // A `match` on the length: `0` and `1` are the special cases, and `length` binds every
+    // other value, so the compiler knows all lengths are covered.
     match values.len() {
         0 => f64::NAN,
         1 => 0.0,
@@ -409,11 +472,12 @@ pub fn commons_variance(values: &[f64]) -> f64 {
 /// step SUBTRACTS the stored compensation.
 ///
 /// The accumulator keeps the rounding error with the opposite sign to the running sum, and the
-/// final sum is `sum - compensation`. [`crate::allele_fraction_cluster::double_stream_sum`] adds
-/// it instead, which is a different double whenever the compensation is not zero: two
-/// allele-fraction likelihoods of one segment, `-20.337...` and `-32.733...`, sum to
-/// `0xc04a890dc9de42ed` on the oracle and `...42ef` when the compensation is added. Measured by
-/// tracing `AlleleFractionLikelihoods.segmentLogLikelihood` inside the oracle container.
+/// final sum is `sum - compensation`. [`crate::allele_fraction_cluster::double_stream_sum`] is
+/// the same computation and subtracts too. Adding the compensation instead is a different double
+/// whenever the compensation is not zero: two allele-fraction likelihoods of one segment,
+/// `-20.337...` and `-32.733...`, sum to `0xc04a890dc9de42ed` on the oracle and `...42ef` when
+/// the compensation is added. Measured by tracing
+/// `AlleleFractionLikelihoods.segmentLogLikelihood` inside the oracle container.
 pub fn double_stream_sum(values: &[f64]) -> f64 {
     let mut sum = 0.0;
     let mut compensation = 0.0;
@@ -444,8 +508,16 @@ pub fn double_stream_average(values: &[f64]) -> Option<f64> {
 
 /// `DecileCollection`: the nine deciles of the samples under commons-math3's default
 /// `Percentile`, first to ninth.
+///
+/// The reference evaluates `percentile.evaluate(10 * i)` for `i` from 1 to 9
+/// (`DecileCollection.java:36-37`); `10.0 * (i + 1) as f64` is the same `10, 20, ... 90` with a
+/// zero-based `i`. The constructor's refusal of an empty list
+/// (`Cannot construct deciles for empty list of samples.`) is not ported: this function checks
+/// nothing and leaves an empty slice to `jmath::percentile::evaluate`.
 pub fn deciles(samples: &[f64]) -> [f64; 9] {
     let mut out = [0.0; 9];
+    // `iter_mut().enumerate()` yields each array slot as a writable reference with its index, and
+    // `*slot = ..` writes through that reference.
     for (i, slot) in out.iter_mut().enumerate() {
         *slot = jmath::percentile::evaluate(
             samples,
@@ -465,6 +537,14 @@ const SLICE_EPSILON: f64 = 1e-10;
 
 /// `MinibatchSliceSampler`: slice sampling of a posterior given as a prior and a per-point
 /// likelihood, with Dubois et al.'s minibatch test deciding when enough points have been seen.
+///
+/// The fields are the reference's, with `rng` taken out: the generator is passed to `sample` as
+/// a `&mut JavaRandom` rather than held, so the one shared stream stays with the caller.
+/// `'a` says the sampler borrows `data` and may not outlive it; the reference copies the list
+/// instead (`Collections.unmodifiableList(new ArrayList<>(data))`), and a borrow that cannot be
+/// changed while held answers the same. `x_sample_cache` is the reference's nullable `Double`,
+/// and `log_likelihoods_cache` holds one slot per data index where the reference keys a
+/// `HashMap` by the data point (see the module note).
 pub struct MinibatchSliceSampler<'a, D, P, L>
 where
     P: Fn(f64) -> Result<f64, IllegalArgument>,
@@ -540,6 +620,11 @@ where
     }
 
     /// `AbstractSliceSampler.sample(xInitial)`: one draw, Neal's doubling then shrinking.
+    ///
+    /// The draws, in order: the exponential `z`, one `next_double` to place the interval, one
+    /// `next_boolean` per doubling, one `next_double` per proposal, plus whatever each
+    /// `is_greater_than_slice_height` call takes for its shuffle. That order is the reference's
+    /// and is what the shared stream sees.
     pub fn sample(&mut self, rng: &mut JavaRandom, x_initial: f64) -> Result<f64, IllegalArgument> {
         if !(self.x_min <= x_initial && x_initial <= self.x_max) {
             return Err(IllegalArgument(
@@ -554,6 +639,10 @@ where
         let mut x_left = x_sample - self.width * rng.next_double();
         let mut x_right = x_left + self.width;
 
+        // The reference's `while (k > 0 && (f(xLeft) || f(xRight)))`. A `{ .. }` block is an
+        // expression in Rust, so the condition can bind `left` and use `?` inside it. `||` still
+        // short-circuits: when the left end is above the slice the right end is not evaluated,
+        // and so draws nothing from the generator, exactly as in Java.
         let mut k = MAXIMUM_NUMBER_OF_DOUBLINGS;
         while k > 0 && {
             let left = self.is_greater_than_slice_height(rng, x_left, x_sample, z)?;
@@ -588,6 +677,16 @@ where
     }
 
     /// `isGreaterThanSliceHeight`, the OnSlice procedure of Dubois et al.
+    ///
+    /// **How**: `mu0` is the threshold on the mean log-likelihood difference. Minibatches are
+    /// drawn, in a lazily shuffled order when there is more than one, and the running mean and
+    /// mean square are updated after each; a Student-t test stops early once the sign of
+    /// `mean - mu0` is settled to within `approx_threshold`.
+    ///
+    /// The running means are updated as the reference writes them,
+    /// `(seen * mean + sum) / (seen + actual)`, rather than as a sum divided once at the end,
+    /// because the two can be different doubles. The reference's `Math.pow(mean, 2)` is
+    /// `mean * mean`; see the module note.
     fn is_greater_than_slice_height(
         &mut self,
         rng: &mut JavaRandom,
@@ -611,6 +710,7 @@ where
         let mu0 =
             (self.log_prior_cache - (self.log_prior)(x_proposed)? - z) / num_data_points as f64;
 
+        // Integer division, floored as Java's `int` division is.
         let num_minibatches = (num_data_points / self.minibatch_size).max(1);
         let mut order = if num_minibatches > 1 {
             DataOrder::shuffled(rng, num_data_points)
@@ -625,11 +725,14 @@ where
             let start = minibatch_index * self.minibatch_size;
             let end = ((minibatch_index + 1) * self.minibatch_size).min(num_data_points);
             let actual = end - start;
+            // The reference collects the minibatch from its iterator before evaluating any of
+            // it; `(0..actual).map(|_| ..)` calls `next` `actual` times and ignores the counter.
             let batch: Vec<usize> = (0..actual).map(|_| order.next()).collect();
 
             let mut sum = 0.0;
             let mut squared_sum = 0.0;
             for index in batch {
+                // `computeIfAbsent`: the cached value at the sample, or compute and store it.
                 let at_sample = match self.log_likelihoods_cache[index] {
                     Some(value) => value,
                     None => {
@@ -666,6 +769,12 @@ where
 
 /// The order `isGreaterThanSliceHeight` visits the data in: straight through for one minibatch,
 /// else `lazyShuffleIterator`, a walk by a random stride modulo the next prime.
+///
+/// An `enum` whose variants carry their own fields: `Sequential` holds the next position, and
+/// `Shuffled` holds the anonymous iterator's `index` and `increment` with the prime and size it
+/// closes over. The reference's `int` fields are widened to `i64`; `index + increment` is at most
+/// twice the prime, so the two agree unless the list has more than about 2^30 entries, where
+/// Java's `int` sum would wrap and this one would not.
 enum DataOrder {
     Sequential(usize),
     Shuffled {
@@ -677,6 +786,8 @@ enum DataOrder {
 }
 
 impl DataOrder {
+    /// `lazyShuffleIterator(rng, data)`. The one draw, `rng.nextInt(numDataPoints) + 1`, is taken
+    /// here, when the iterator is created, as the reference's field initializer takes it.
     fn shuffled(rng: &mut JavaRandom, size: usize) -> Self {
         let prime = i64::from(next_prime(size as i32));
         let index = i64::from(rng.next_int_bound(size as i32)) + 1;
@@ -688,6 +799,8 @@ impl DataOrder {
         }
     }
 
+    /// The iterator's `next()`, as a data index. In the `Shuffled` arm the fields are bound as
+    /// writable references, so `*index = ..` updates the stored state.
     fn next(&mut self) -> usize {
         match self {
             DataOrder::Sequential(position) => {
@@ -710,7 +823,8 @@ impl DataOrder {
     }
 }
 
-/// `Math.min(double, double)`, which propagates NaN.
+/// `Math.min(double, double)`, which propagates NaN and orders `-0.0` below `0.0`. Rust's
+/// `f64::min` does neither reliably, which is why both are written out.
 pub fn java_min(a: f64, b: f64) -> f64 {
     if a.is_nan() || b.is_nan() {
         f64::NAN

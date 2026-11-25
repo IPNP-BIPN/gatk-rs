@@ -1,5 +1,6 @@
-//! Ported from `org.broadinstitute.hellbender.utils.read.AlignmentUtils` (GATK 4.6.2.0):
-//! `leftAlignIndels`, `normalizeAlleles`, and the `IndexRange` the two of them push around.
+//! Ported from `org.broadinstitute.hellbender.utils.read.AlignmentUtils` (GATK 4.7.0.0;
+//! `AlignmentUtils.java` and `IndexRange.java` are unchanged since 4.6.2.0): `leftAlignIndels`,
+//! `normalizeAlleles`, and the `IndexRange` the two of them push around.
 //!
 //! One indel can often sit at several positions and still mean the same haplotype. The convention
 //! is the leftmost, and this is the function that enforces it: a cigar, a reference, a read and a
@@ -33,6 +34,18 @@
 //! An indel may not be shifted into one. The reference's own javadoc example is measured: `2S2M2I`
 //! over `GGAA` and `TTAAAA` at read start 2 is `2S2I2M`, which also says that soft-clipped bases
 //! are present in the read's byte array while hard-clipped ones are not.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&mut [IndexRange]` is a writable borrowed view of an array: `normalize_alleles` changes the
+//!   ranges in place, which is the reference's side effect on its `List<IndexRange>`, and the
+//!   caller sees the change.
+//! - `Result<T, AlignmentError>` is "a `T` or one of the reference's exceptions". `?` passes an
+//!   error from the called function straight on, and `.map_err(AlignmentError::Builder)?` first
+//!   wraps a builder error in this file's own type.
+//! - `Option<u8>` is "a byte or nothing"; `base` uses it where Java would index out of bounds.
+//! - `(0..n).rev()` counts `n - 1` down to `0`, Java's `for (int i = n - 1; i >= 0; i--)`.
+//! - `elements[..=k]` is the first `k + 1` elements (`..=` includes its end).
 
 use htsjdk_bam::cigar::{Cigar, CigarElement, Op};
 
@@ -43,6 +56,11 @@ use crate::cigar_builder::{CigarBuilder, CigarError};
 /// A half-open range over a sequence, `[start, end)`. It is mutated in place because
 /// `normalizeAlleles` adjusts what it is given and its caller reads the ranges afterwards rather
 /// than the return value.
+///
+/// The reference's constructor and every shift end in `validate()` (`IndexRange.java:106-109`),
+/// which throws when the range would have a negative size or a negative start. This one does not
+/// check, so where the reference would throw from a shift, this carries on and the input is
+/// refused later, if at all, with a different message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IndexRange {
     pub start: i32,
@@ -50,10 +68,12 @@ pub struct IndexRange {
 }
 
 impl IndexRange {
+    /// `new IndexRange(fromIndex, toIndex)`.
     pub fn new(start: i32, end: i32) -> Self {
         IndexRange { start, end }
     }
 
+    /// `size()`: `end - start`.
     pub fn size(&self) -> i32 {
         self.end - self.start
     }
@@ -87,29 +107,40 @@ impl IndexRange {
 
 /// Why the reference refused, rather than clamping.
 ///
-/// Both messages are `IllegalArgumentException` out of a util, not `UserException` out of a tool,
-/// so a tool that calls this does not get to dress them up.
+/// These are exceptions out of a util, not `UserException` out of a tool, so a tool that calls
+/// this does not get to dress them up. All but `Builder` are `IllegalArgumentException` upstream,
+/// with two exceptions noted on `BadTrim`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AlignmentError {
     /// `ParamUtils.isPositiveOrZero`.
     NegativeReadStart,
-    /// `Utils.validateArg(necessaryRefLength <= ref.length, ...)`.
+    /// `Utils.validateArg(necessaryRefLength <= ref.length, ...)` (`AlignmentUtils.java:741`).
     PastTheReference,
-    /// `Utils.validateArg(readIndelRange.getStart() == 0, ...)`.
+    /// `Utils.validateArg(readIndelRange.getStart() == 0, ...)` (`AlignmentUtils.java:791`): the
+    /// walk did not end at the read's first base, so the cigar and the read disagree on its length.
     CigarMissesReadBases,
     /// `normalizeAlleles`' own preconditions.
     BadAlleleRanges(&'static str),
     /// A cigar the builder itself refuses, which this function does not produce on its own.
     Builder(CigarError),
     /// `trimCigar`'s own preconditions: a negative start, an end before the start, or a cigar that
-    /// stops short of the end.
+    /// stops short of the end; and `getBasesCoveringRefInterval`'s.
+    ///
+    /// The text is a paraphrase of the reference's, without the values it splices in: Java's
+    /// `"end " + end + " is before start " + start` (`AlignmentUtils.java:988`) is `end is before
+    /// start` here. Two of `getBasesCoveringRefInterval`'s are `IllegalStateException` upstream
+    /// ("Unsupported operator", line 221; "Never found start", line 226), and `class` answers
+    /// `IllegalArgumentException` for them.
     BadTrim(&'static str),
     /// `SmithWatermanJavaAligner.align`: "Non-null, non-empty sequences are required".
     EmptySequence,
 }
 
 impl AlignmentError {
-    /// The reference's own message.
+    /// The reference's message: verbatim for the three `leftAlignIndels` refusals
+    /// (`AlignmentUtils.java:732`, `741`, `791`) and the Smith-Waterman one
+    /// (`SmithWatermanJavaAligner.java:66`), a paraphrase for `BadTrim` and `BadAlleleRanges`, and
+    /// the builder error's debug name for `Builder`.
     pub fn message(&self) -> String {
         match self {
             AlignmentError::NegativeReadStart => {
@@ -129,6 +160,8 @@ impl AlignmentError {
         }
     }
 
+    /// The Java exception class the reference throws: `IllegalStateException` from the builder's
+    /// `Utils.validate`, `IllegalArgumentException` for everything else.
     pub fn class(&self) -> &'static str {
         match self {
             AlignmentError::Builder(_) => "java.lang.IllegalStateException",
@@ -157,6 +190,7 @@ fn is_alignment(op: Op) -> bool {
     matches!(op, Op::M | Op::Eq | Op::X)
 }
 
+/// `lengthOnRead`: the element's length if it consumes read bases, else 0.
 fn length_on_read(element: &CigarElement) -> i32 {
     if element.op.consumes_read_bases() {
         element.length as i32
@@ -165,6 +199,7 @@ fn length_on_read(element: &CigarElement) -> i32 {
     }
 }
 
+/// `lengthOnReference`: the element's length if it consumes reference bases, else 0.
 fn length_on_reference(element: &CigarElement) -> i32 {
     if element.op.consumes_reference_bases() {
         element.length as i32
@@ -173,6 +208,11 @@ fn length_on_reference(element: &CigarElement) -> i32 {
     }
 }
 
+/// `new CigarElement(length, op)` from an `int` length.
+///
+/// `max(0)` only keeps the conversion to an unsigned length total. The reference's constructor
+/// throws on a negative length instead (`CigarElement.java:39`, htsjdk 5.0.0), so a negative length
+/// reaching here would be a refusal there and a zero-length element, which the builder drops, here.
 fn cigar_element(length: i32, op: Op) -> CigarElement {
     CigarElement {
         length: length.max(0) as u32,
@@ -186,6 +226,11 @@ fn cigar_element(length: i32, op: Op) -> CigarElement {
 /// `read_start` is the **0-based** position on `ref` of the read's first aligned base. The tool
 /// passes 0 because its reference context starts at the read; a haplotype caller passes something
 /// else.
+///
+/// **How**: walk the cigar right to left, keeping a reference range and a read range for the indel
+/// being gathered. Indel elements widen the ranges; at the next non-indel element the gathered
+/// indel is normalised into it with [`normalize_alleles`] and emitted. The pieces are collected
+/// right to left and fed to a [`CigarBuilder`] in reverse, which does the merging.
 pub fn left_align_indels(
     cigar: &Cigar,
     reference: &[u8],
@@ -197,6 +242,7 @@ pub fn left_align_indels(
     }
 
     let elements = &cigar.elements;
+    // No indel: the reference returns the cigar it was given, with nothing removed.
     if !elements.iter().any(|element| is_indel(element.op)) {
         return Ok(LeftAlignment {
             cigar: cigar.clone(),
@@ -206,6 +252,9 @@ pub fn left_align_indels(
     }
 
     // We need reference bases from the start of the read to the rightmost indel, and no further.
+    // `rposition` is the index of the last element that matches; `expect` unwraps it, and it
+    // cannot be absent because the test above found an indel. `sum::<i32>()` names the type the
+    // sum is taken in, Java's `mapToInt(..).sum()`.
     let last_indel = elements
         .iter()
         .rposition(|element| is_indel(element.op))
@@ -244,6 +293,9 @@ pub fn left_align_indels(
             } else {
                 0
             };
+            // The reference hands `normalizeAlleles` the two range objects and they change under
+            // it. `IndexRange` is a value type here, so the two are copied into an array, adjusted
+            // there, and copied back. The result is a pair, unpacked into two names.
             let mut bounds = [ref_indel, read_indel];
             let (start_shift, end_shift) =
                 normalize_alleles(&[reference, read], &mut bounds, max_shift, true)?;
@@ -300,6 +352,8 @@ pub fn left_align_indels(
         return Err(AlignmentError::CigarMissesReadBases);
     }
 
+    // `new CigarBuilder().addAll(Lists.reverse(resultRightToLeft))` (`AlignmentUtils.java:792`):
+    // the zero-length pieces pushed above are dropped by the builder, not here.
     let mut builder = CigarBuilder::default();
     for element in result_right_to_left.iter().rev() {
         builder.add(*element).map_err(AlignmentError::Builder)?;
@@ -360,6 +414,10 @@ fn trim_cigar(
                 length_on_read(element)
             };
 
+        // "we are careful to include zero-length elements at both ends"
+        // (`AlignmentUtils.java:998`): an element that ends exactly at `start` is skipped only if
+        // it covers a position in the coordinate being trimmed, and one that starts at `end + 1`
+        // is kept only if it covers none, as a `D` does when trimming by read bases.
         if element_end < start || (element_end == start && element_start < start) {
             continue;
         } else if element_start > end && element_end > end + 1 {
@@ -391,6 +449,11 @@ fn trim_cigar(
 /// `getBasesCoveringRefInterval(refStart, refEnd, bases, basesStartOnRef, basesToRefCigar)`: the
 /// bases aligned to reference positions `ref_start` to `ref_end` (both inclusive, counted like
 /// `bases_start_on_ref`), or `None` when either end falls in a deletion.
+///
+/// The reference's `null` is `Ok(None)` and its throws are `Err(..)`, so the return is both.
+/// Bases of a leading insertion count as before the start and are left out: the reference's own
+/// example (`AlignmentUtils.java:167`) is `getBasesCoveringRefInterval(0, 3, "ACTTGT", 0, 2I4M)`,
+/// which yields `TTGT`.
 pub fn bases_covering_ref_interval(
     ref_start: i32,
     ref_end: i32,
@@ -413,6 +476,8 @@ pub fn bases_covering_ref_interval(
     let mut bases_pos = 0i32;
     let mut bases_start = -1i32;
     let mut bases_stop = -1i32;
+    // `'elements:` labels the outer loop so that `break 'elements` below leaves both loops at once,
+    // which is what the reference's `done` flag (`AlignmentUtils.java:190`) does.
     'elements: for element in &cigar.elements {
         match element.op {
             Op::I => bases_pos += element.length as i32,
@@ -444,6 +509,7 @@ pub fn bases_covering_ref_interval(
     if bases_start == -1 || bases_stop == -1 {
         return Err(AlignmentError::BadTrim("never found start or stop"));
     }
+    // `Arrays.copyOfRange(bases, basesStart, basesStop + 1)`: an inclusive slice, then copied.
     Ok(Some(
         bases[bases_start as usize..=bases_stop as usize].to_vec(),
     ))
@@ -455,6 +521,12 @@ pub fn bases_covering_ref_interval(
 /// Returns the start and end shifts, and **adjusts `bounds` in place**, which is how the caller
 /// reads the new positions. The start shift is signed: trimming shared bases off the front moves
 /// the range right, and a range that cannot then shift left keeps that negative shift.
+///
+/// **How**, in the reference's order: trim shared bases off the end, then off the front, then
+/// shift every range left one base at a time while the base before all of them agrees and the
+/// last base of all of them agrees, up to `max_shift`. From [`left_align_indels`], `max_shift` is
+/// the length of the alignment block to the left, which is what stops one indel from being shifted
+/// past another.
 pub fn normalize_alleles(
     sequences: &[&[u8]],
     bounds: &mut [IndexRange],
@@ -480,6 +552,7 @@ pub fn normalize_alleles(
     let mut start_shift = 0;
     let mut end_shift = 0;
 
+    // `.min()` answers `None` for an empty list, which the two checks above rule out.
     let mut min_size = bounds
         .iter()
         .map(IndexRange::size)
@@ -488,6 +561,7 @@ pub fn normalize_alleles(
 
     // Redundant shared bases at the end of the alleles.
     while trim && min_size > 0 && last_base_on_right_is_same(sequences, bounds) {
+        // `iter_mut()` visits each range writably, as `bounds.forEach(bound -> ...)` does.
         bounds.iter_mut().for_each(|bound| bound.shift_end_left(1));
         min_size -= 1;
         end_shift += 1;
@@ -519,12 +593,19 @@ pub fn normalize_alleles(
 /// make that unreachable: a trim loop runs only while the ranges are non-empty, and the shift loop
 /// only while `start_shift < max_shift`, with `max_shift <= start` a precondition.
 fn base(sequence: &[u8], at: i32) -> Option<u8> {
+    // `try_from` refuses a negative index, `.ok()` turns that refusal into `None`, and `get` is an
+    // indexing that answers `None` past the end instead of throwing.
     usize::try_from(at)
         .ok()
         .and_then(|at| sequence.get(at))
         .copied()
 }
 
+/// Do all sequences share one base at the position `at` picks from each range? The body of the
+/// reference's three `...IsSame` helpers, which differ only in that position.
+///
+/// `impl Fn(&IndexRange) -> i32` is a function argument, Java's `ToIntFunction<IndexRange>`.
+/// `let Some(first) = .. else { .. }` takes the first sequence's base or leaves early with `false`.
 fn same_base_at(
     sequences: &[&[u8]],
     bounds: &[IndexRange],
@@ -539,14 +620,17 @@ fn same_base_at(
         .all(|(sequence, bound)| base(sequence, at(bound)) == Some(first))
 }
 
+/// `lastBaseOnRightIsSame`: the base at `end - 1`. For an empty range that is the base before it.
 fn last_base_on_right_is_same(sequences: &[&[u8]], bounds: &[IndexRange]) -> bool {
     same_base_at(sequences, bounds, |bound| bound.end - 1)
 }
 
+/// `firstBaseOnLeftIsSame`: the base at `start`, the range's own first base.
 fn first_base_on_left_is_same(sequences: &[&[u8]], bounds: &[IndexRange]) -> bool {
     same_base_at(sequences, bounds, |bound| bound.start)
 }
 
+/// `nextBaseOnLeftIsSame`: the base at `start - 1`, just outside the range.
 fn next_base_on_left_is_same(sequences: &[&[u8]], bounds: &[IndexRange]) -> bool {
     same_base_at(sequences, bounds, |bound| bound.start - 1)
 }

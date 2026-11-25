@@ -1,6 +1,6 @@
 //! `ErrorProbabilities`, ported from
 //! `org.broadinstitute.hellbender.tools.walkers.mutect.filtering.ErrorProbabilities`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `ErrorProbabilities.java` is unchanged since 4.6.2.0).
 //!
 //! Every filter's answer, combined into one probability per alternate allele.
 //!
@@ -15,22 +15,36 @@
 //!
 //! # One type is a maximum, the types are independent
 //!
-//! Within an error type the **maximum** over filters wins for each allele, so failing two filters of
-//! a type is no worse than failing one. Across types the answer is `1 - prod(1 - p)`, and the result
-//! goes through [`crate::mutect_engine::round_finite_precision_errors`].
+//! Within an error type the **maximum** over filters wins for each allele, so failing two filters
+//! of a type is no worse than failing one. Across types the answer is `1 - prod(1 - p)`, and the
+//! result goes through [`crate::mutect_engine::round_finite_precision_errors`].
 //!
 //! # Ragged lists are a refusal
 //!
-//! `transpose` validates that every list is the same size. A site-level filter copies its one answer
-//! to every alternate allele, which is what keeps them equal in the ordinary case; a record whose
-//! annotation is shorter than its allele list breaks it.
+//! `transpose` validates that every list is the same size. A site-level filter copies its one
+//! answer to every alternate allele, which is what keeps them equal in the ordinary case; a record
+//! whose annotation is shorter than its allele list breaks it.
+//!
+//! # What the reference's constructor does that is not here
+//!
+//! `removeDataForSymbolicAltAlleles` runs between the drop and the grouping in the reference. The
+//! port does it in the caller, `filtering_engine`, before an answer reaches `kept`.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[FilterAnswer]` is a read-only borrowed view of a list; `Vec<f64>` is a growable list the
+//!   function owns and hands back, Java's `List<Double>` without the boxing.
+//! - `Result<Vec<f64>, RaggedLists>` is "the list or the one refusal", how this codebase models a
+//!   method that throws; `?` after a call rethrows that refusal to the caller.
+//! - `.iter().filter(..).map(..).collect()` is Java's `stream().filter(..).map(..).collect(..)`,
+//!   and `.fold(init, f)` is the sequential `reduce(init, f)`: a left-to-right accumulation.
 
 use crate::mutect_engine::round_finite_precision_errors;
 
-/// `ErrorType`, in the enum's own declaration order.
+/// `ErrorType`, in the enum's own declaration order: `ARTIFACT, NON_SOMATIC, SEQUENCING`.
 ///
-/// The three categories exist because filters of one category are **not** independent: two of them
-/// combine by a maximum, and only across categories does `1 - (1 - p1)(1 - p2)` apply.
+/// The three categories exist because filters of one category are **not** independent: two of
+/// them combine by a maximum, and only across categories does `1 - (1 - p1)(1 - p2)` apply.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum ErrorType {
     Artifact,
@@ -49,28 +63,41 @@ impl ErrorType {
     }
 }
 
-/// What `transpose` refuses.
+/// What `transpose` refuses: `Utils.validateArg(..., "lists are not the same size")`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RaggedLists;
 
 impl RaggedLists {
+    /// The exception class `Utils.validateArg` throws.
     pub fn class(&self) -> &'static str {
         "java.lang.IllegalArgumentException"
     }
 
+    /// The reference's message, verbatim.
     pub fn message(&self) -> &'static str {
         "lists are not the same size"
     }
 }
 
-/// One filter's answer: its error type and one probability per alternate allele.
+/// One filter's answer: its error type and one probability per alternate allele. One entry of the
+/// reference's `alleleProbabilitiesByFilter`, with the filter reduced to its `errorType()`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FilterAnswer {
     pub error_type: ErrorType,
     pub probabilities: Vec<f64>,
 }
 
-/// `transpose(list)`, which refuses lists of differing length.
+/// `ErrorProbabilities.transpose(list)`, which refuses lists of differing length.
+///
+/// ```java
+/// if (list.isEmpty()) {
+///     return list;
+/// }
+/// ```
+///
+/// and only then `Utils.validateArg(list.stream().map(List::size).distinct().count() == 1, ..)`.
+/// So an empty outer list is returned before the check, and lists that all agree in length,
+/// including all empty, pass it. Row `n` of the answer is element `n` of every list, in list order.
 pub fn transpose(lists: &[Vec<f64>]) -> Result<Vec<Vec<f64>>, RaggedLists> {
     let Some(first) = lists.first() else {
         return Ok(Vec::new());
@@ -87,6 +114,11 @@ pub fn transpose(lists: &[Vec<f64>]) -> Result<Vec<Vec<f64>>, RaggedLists> {
 ///
 /// The empty answers have already been dropped by [`kept`], which is why nothing here treats an
 /// absent filter as a zero.
+///
+/// The reference's maximum is `alleleList.stream().max(Double::compare).orElse(0.0)`; the port
+/// folds from `0.0` keeping any strictly larger value. The two agree on the rounded probabilities
+/// the engine hands in, which are never below zero. They differ on a `NaN`, which
+/// `Double::compare` ranks above everything and so returns, and which `>` here never prefers.
 pub fn by_type(answers: &[FilterAnswer], error_type: ErrorType) -> Result<Vec<f64>, RaggedLists> {
     let lists: Vec<Vec<f64>> = answers
         .iter()
@@ -105,6 +137,8 @@ pub fn by_type(answers: &[FilterAnswer], error_type: ErrorType) -> Result<Vec<f6
 }
 
 /// The filters that were applied at all: the ones whose answer is not empty.
+///
+/// The reference's `.filter(entry -> !entry.getValue().isEmpty())`, keeping the filters' order.
 pub fn kept(answers: &[FilterAnswer]) -> Vec<FilterAnswer> {
     answers
         .iter()
@@ -115,6 +149,14 @@ pub fn kept(answers: &[FilterAnswer]) -> Vec<FilterAnswer> {
 
 /// `getCombinedErrorProbabilities`: the whole pipeline, from every filter's answer to one
 /// probability per allele.
+///
+/// The reference gathers the per-type maxima into a `HashMap` and transposes its `values()`, so
+/// the order of the factors in each product is that map's iteration order. The port multiplies in
+/// declaration order. A type with no applied filter has no entry in the reference's map, which is
+/// why an empty per-type list is left out here rather than transposed.
+///
+/// Each allele's product is `.map(p -> 1.0 - p).reduce(1.0, (a, b) -> a * b)`, a left fold from
+/// `1.0`, and the fold below starts from `1.0` and multiplies in the same order.
 pub fn combined(answers: &[FilterAnswer]) -> Result<Vec<f64>, RaggedLists> {
     let applied = kept(answers);
     let mut per_type: Vec<Vec<f64>> = Vec::new();

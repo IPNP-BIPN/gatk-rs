@@ -1,4 +1,5 @@
-//! Ported from `org.broadinstitute.hellbender.utils.read.CigarBuilder` (GATK 4.6.2.0).
+//! Ported from `org.broadinstitute.hellbender.utils.read.CigarBuilder` (GATK 4.7.0.0;
+//! `CigarBuilder.java` is unchanged since 4.6.2.0).
 //!
 //! Not a list of elements. Every cigar GATK produces by clipping is assembled through this
 //! builder, and the builder rewrites what it is given:
@@ -13,22 +14,38 @@
 //!
 //! A port that concatenated elements would produce a cigar that is a valid string, describes the
 //! same alignment, and differs byte for byte from the reference's in the output BAM.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<(), CigarError>` is a `void` method that may throw. `Ok(())` is the normal return,
+//!   `Err(..)` the throw, and `?` after a call passes that call's throw on to the caller.
+//! - `Option<Op>` is the reference's nullable `lastOperator`: `None` before the first element.
+//! - `matches!(x, A | B)` is `x == A || x == B`.
+//! - A `match` arm written `Some(last) if condition =>` is taken only when the value is present
+//!   **and** the condition holds; otherwise the next arm is tried, top to bottom, which is how the
+//!   reference's `if / else if` chain is reproduced here.
+//! - `x.is_some_and(|e| ..)` is `x != null && test(x)`.
 
 use htsjdk_bam::cigar::{Cigar, CigarElement, Op};
 
-/// What the reference throws rather than returning.
+/// What the reference throws rather than returning. Every one is `Utils.validate`, so an
+/// `IllegalStateException`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CigarError {
-    /// `advanceSectionAndValidateCigarOrder`: a soft clip after the right hard clip, or an aligned
-    /// element after a right clip.
+    /// `advanceSectionAndValidateCigarOrder`: a soft clip after the right hard clip ("cigar has
+    /// already reached its right hard clip", `CigarBuilder.java:155`), or any other non-hard-clip
+    /// element after a right clip ("cigar has already reached right clip", line 162).
     SectionOutOfOrder,
-    /// `make`: the cigar consists of a single soft clip.
+    /// `make`: the cigar consists of a single soft clip ("cigar is completely soft-clipped",
+    /// `CigarBuilder.java:129`).
     CompletelySoftClipped,
-    /// `make(false)`: nothing left after removing flanking deletions.
+    /// `make(false)`: nothing left after removing flanking deletions ("No cigar elements left
+    /// after removing leading and trailing deletions.", `CigarBuilder.java:138`).
     Empty,
 }
 
-/// `CigarBuilder.Section`: the order a cigar's parts must appear in.
+/// `CigarBuilder.Section`: the order a cigar's parts must appear in. The builder only ever
+/// moves forward through it, so a section once left cannot be re-entered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Section {
     LeftHardClip,
@@ -38,21 +55,33 @@ enum Section {
     RightHardClip,
 }
 
+/// `CigarOperator.isClipping`: `S` or `H`.
 fn is_clipping(op: Op) -> bool {
     matches!(op, Op::S | Op::H)
 }
 
-/// `CigarBuilder`.
+/// `CigarBuilder`: elements are given one at a time to [`CigarBuilder::add`], which rewrites as it
+/// goes, and [`CigarBuilder::make`] finishes the cigar.
 pub struct CigarBuilder {
+    /// `cigarElements`. A `Vec` is Java's `ArrayList`.
     elements: Vec<CigarElement>,
+    /// `lastOperator`, which is not always the last element's operator. When a right clip replaces
+    /// a trailing `D, I` pair the list ends `I, S` and this stays `I`, as the reference's does
+    /// (`CigarBuilder.java:89-92` does not assign it). So `5M 3D 2I 10S 5S` builds `5M2I10S5S`: the
+    /// second soft clip is appended, not merged.
     last_operator: Option<Op>,
     section: Section,
+    /// `true` for the default builder. `false` keeps leading and trailing deletions.
     remove_deletions_at_ends: bool,
+    /// Deletion bases dropped from the front by `add`.
     leading_deletion_bases_removed: u32,
+    /// Deletion bases dropped from the back by `add`, when a right clip arrived after them.
     trailing_deletion_bases_removed: u32,
+    /// Deletion bases dropped from the back by the last `make`, reset by each call.
     trailing_deletion_bases_removed_in_make: u32,
 }
 
+/// `new CigarBuilder()`, which is `this(true)`: deletions at the ends are removed.
 impl Default for CigarBuilder {
     fn default() -> Self {
         CigarBuilder::new(true)
@@ -60,6 +89,7 @@ impl Default for CigarBuilder {
 }
 
 impl CigarBuilder {
+    /// `new CigarBuilder(removeDeletionsAtEnds)`.
     pub fn new(remove_deletions_at_ends: bool) -> CigarBuilder {
         CigarBuilder {
             elements: Vec::new(),
@@ -72,7 +102,11 @@ impl CigarBuilder {
         }
     }
 
-    /// `CigarBuilder.add`.
+    /// `CigarBuilder.add`: append one element, applying the rewrites in the module note.
+    ///
+    /// The order of the checks is the reference's and decides the result: a leading deletion is
+    /// dropped **before** the section is advanced, so it never moves the builder out of the left
+    /// clips; then merging, then the right-clip and deletion-after-insertion rewrites.
     pub fn add(&mut self, element: CigarElement) -> Result<(), CigarError> {
         if element.length == 0 {
             return Ok(());
@@ -85,6 +119,9 @@ impl CigarBuilder {
             let leading = match self.last_operator {
                 None => true,
                 Some(last) if is_clipping(last) => true,
+                // An insertion that is itself leading: the only element, or right after a clip.
+                // `wrapping_sub(2)` only keeps the index arithmetic from panicking on a short list;
+                // the `len() == 1` test before it means it is never asked about one.
                 Some(Op::I) => {
                     self.elements.len() == 1
                         || self
@@ -102,6 +139,8 @@ impl CigarBuilder {
 
         self.advance_section_and_validate_cigar_order(operator)?;
 
+        // `operator == lastOperator`: merge into the last element. After a deletion was moved
+        // behind an insertion the last element is that insertion, and so is the last operator.
         if Some(operator) == self.last_operator {
             let last = self.elements.len() - 1;
             self.elements[last].length += element.length;
@@ -154,13 +193,19 @@ impl CigarBuilder {
         Ok(())
     }
 
+    /// `lastTwoElementsWereDeletionAndInsertion`: the list ends `..., D, I`, which is what a
+    /// deletion added after an insertion leaves behind.
     fn last_two_elements_were_deletion_and_insertion(&self) -> bool {
         self.last_operator == Some(Op::I)
             && self.elements.len() > 1
             && self.elements[self.elements.len() - 2].op == Op::D
     }
 
-    /// `CigarBuilder.make(allowEmpty)`.
+    /// `CigarBuilder.make(allowEmpty)`: drop a trailing deletion (or one hidden behind a trailing
+    /// insertion), record its length, and hand back the cigar.
+    ///
+    /// The removal mutates the builder, as the reference's does. The returned cigar is a copy
+    /// (`clone`), so the builder can still be asked for its counters afterwards.
     pub fn make(&mut self, allow_empty: bool) -> Result<Cigar, CigarError> {
         if self.section == Section::LeftSoftClip
             && self.elements.first().is_some_and(|e| e.op == Op::S)
@@ -196,6 +241,10 @@ impl CigarBuilder {
         self.trailing_deletion_bases_removed + self.trailing_deletion_bases_removed_in_make
     }
 
+    /// `advanceSectionAndValidateCigarOrder`: move to the section `operator` belongs in, or refuse.
+    ///
+    /// A hard clip either leaves the builder in the left hard clip or moves it to the right one,
+    /// so `5H5H` and `5H5S` are both accepted while `5M5H5S` is not.
     fn advance_section_and_validate_cigar_order(&mut self, operator: Op) -> Result<(), CigarError> {
         match operator {
             Op::H => {

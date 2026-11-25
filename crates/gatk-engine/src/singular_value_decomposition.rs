@@ -6,8 +6,9 @@
 //! version to transcribe, not the 3.6.1 that also sits in the dependency cache.
 //!
 //! `KernelSegmenter` is the only caller this port reaches, and through it
-//! `CalculateContamination`. The decomposition is a JAMA-derived Golub-Reinsch: Householder
-//! bidiagonalisation, then implicit-shift QR sweeps, all inside one constructor.
+//! `CalculateContamination` and `ModelSegments` (`model_segments_tool.rs` calls
+//! `kernel_segmenter::find_changepoints_of`). The decomposition is a JAMA-derived Golub-Reinsch:
+//! Householder bidiagonalisation, then implicit-shift QR sweeps, all inside one constructor.
 //!
 //! # What byte identity means here, and where it does not
 //!
@@ -19,6 +20,11 @@
 //!  * **`U`'s null-space basis need not, and cannot.** Any orthonormal basis of the null space is
 //!    as valid, and everything downstream sees `U` only through `Z Z^T`, where the freedom cancels
 //!    exactly.
+//!
+//! The `kernel-segmentation` golden (`crates/gatk-engine/tests/data/kernel_segmentation.txt.gz`)
+//! holds the singular values as raw bits, and the row that shows why is
+//! `singular two-steps 3=3c731179bb60bc98,1.653908237106809E-17`: a value that is rounding noise
+//! on an exact zero, which the segmenter's `1 / (sqrt(s) + 1e-10)` turns into about `2.4e8`.
 //!
 //! This port is a transcription, so it reproduces the reference's basis as well, and the
 //! conformance suite compares `U` entry by entry. The distinction above is about what a *different*
@@ -39,10 +45,27 @@
 //! `if abs(e[k]) <= threshold`. The reference says why (MATH-947): with a NaN in the array the
 //! second form never fires and the loop runs forever, while the first breaks out. Rust would behave
 //! the same way, so the negation is kept rather than tidied.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Vec<Vec<f64>>` is Java's `double[][]`, rows outer; `&[Vec<f64>]` is a borrowed, read-only
+//!   view of one, so the constructor reads the caller's matrix and never changes it.
+//! - Rust indexes arrays with `usize`, which is unsigned and cannot go below zero. JAMA's loops
+//!   count down to `-1` and compare against `k - 1`, so those counters are `i64`, signed like the
+//!   reference's `int`, and `ku = k as usize` is the same value as an index once it is known to
+//!   be non-negative. `as` between integer types does not check: a negative `i64` cast to
+//!   `usize` wraps.
+//! - `for row in u.iter_mut().take(m)` visits the first `m` rows of `u`, each as a writable
+//!   reference, and `row[j]` is then Java's `u[i][j]`. It is `for (int i = 0; i < m; i++)` with
+//!   the row looked up once.
+//! - `a..b` is the half-open range `a, a + 1, ..., b - 1`; it is empty when `a >= b`.
+//! - A function's last expression, written without `return` or a semicolon, is its value.
 
 /// `FastMath.getExponent`: the raw biased exponent, less the bias.
 ///
 /// Raw bits, so NaN and infinity both come back as 1024, which is what the reference relies on.
+/// `to_bits` is Java's `Double.doubleToRawLongBits`; the masked exponent is eleven bits, so the
+/// `as i32` cast loses nothing.
 fn get_exponent(d: f64) -> i32 {
     ((d.to_bits() >> 52) & 0x7ff) as i32 - 1023
 }
@@ -158,14 +181,15 @@ const TINY: f64 = 1.6033346880071782e-291; // 0x1.0p-966
 /// The compact decomposition of a matrix: `A = U * S * V^T`.
 ///
 /// Fields are the reference's `getSingularValues`, `getU` and `getV`, already untransposed. Rows
-/// are the outer index, as in commons-math's `double[][]`.
+/// are the outer index, as in commons-math's `double[][]`. With `p = min(rows, columns)` of the
+/// input, there are `p` singular values, `U` is `rows` by `p` and `V` is `columns` by `p`.
 #[derive(Debug, Clone)]
 pub struct SingularValueDecomposition {
     /// The singular values, in non-increasing order.
     pub singular_values: Vec<f64>,
-    /// `U`, `m` by `n`.
+    /// `U`: one row per row of the input, one column per singular value.
     pub u: Vec<Vec<f64>>,
-    /// `V`, `n` by `n`.
+    /// `V`: one row per column of the input, one column per singular value.
     pub v: Vec<Vec<f64>>,
 }
 
@@ -196,7 +220,8 @@ impl SingularValueDecomposition {
         let rows = matrix.len();
         let columns = if rows == 0 { 0 } else { matrix[0].len() };
 
-        // "m" is always the largest dimension.
+        // "m" is always the largest dimension. The `if` is an expression that yields four values
+        // at once, and `let (..) = ` names them; `matrix.to_vec()` copies the caller's rows.
         let (transposed, mut a, m, n) = if rows < columns {
             let mut transpose = vec![vec![0.0; rows]; columns];
             for (i, row) in matrix.iter().enumerate() {
@@ -217,6 +242,8 @@ impl SingularValueDecomposition {
 
         // Reduce A to bidiagonal form, the diagonal in `singular_values` and the super-diagonal
         // in `e`.
+        // `nct` columns and `nrt` rows get a Householder transformation. Both are signed, as the
+        // reference's `int`s are: `m - 1` is `-1` for an empty matrix.
         let nct = (m as i64 - 1).min(n as i64);
         let nrt = 0.max(n as i64 - 2);
         let mut k: i64 = 0;
@@ -437,6 +464,7 @@ impl SingularValueDecomposition {
             k += 1;
             let ku = k as usize;
 
+            // `match` picks the arm for `kase`; `_` is every other value, which is only ever 4.
             match kase {
                 // Deflate a negligible s(p).
                 1 => {
@@ -586,6 +614,7 @@ impl SingularValueDecomposition {
                 }
             }
         }
+        // The decomposition of the transpose has `U` and `V` exchanged, so they are swapped back.
         if transposed {
             SingularValueDecomposition {
                 singular_values,

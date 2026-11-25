@@ -1,17 +1,20 @@
 //! `MultiFeatureWalker`, ported from `org.broadinstitute.hellbender.engine.MultiFeatureWalker`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `MultiFeatureWalker.java` is unchanged since 4.6.2.0).
 //!
 //! Several locus-sorted feature files presented as one sorted stream. It is the class under
-//! `SiteDepthtoBAF`, `CondenseDepthEvidence`, `PrintSVEvidence` and the rest of the SV family, so
-//! its merge order is their file order.
+//! `SiteDepthtoBAF`, `PrintSVEvidence` and `ExampleMultiFeatureWalker`, the three subclasses in
+//! GATK 4.7.0.0, so its merge order is their file order.
+//!
+//! The golden is `tests/data/multi_feature_walker.txt.gz`, replayed by
+//! `tests/multi_feature_walker.rs`; the cases named below are its labels.
 //!
 //! # The merge is a heap, and a heap is not stable
 //!
 //! `MergingIterator` holds a `java.util.PriorityQueue`. Two features that compare equal come out
 //! in the order the heap's shape decides, which is neither the order their files were named in nor
 //! anything the comparator says: three files each holding the same interval, offered in the order
-//! they were named, come out **first, third, second**. [`JavaHeap`] is `siftUp` and `siftDown`
-//! transcribed, for the same reason `OverhangFixingManager` needed them.
+//! they were named, come out **first, third, second** (the `tie-three` case). `JavaHeap` is
+//! `siftUp` and `siftDown` transcribed, for the same reason `OverhangFixingManager` needed them.
 //!
 //! # A contig the dictionary does not name is not refused, it is misdiagnosed
 //!
@@ -21,47 +24,72 @@
 //!
 //! `getSequenceIndex` answers `-1` for a contig it does not hold, and `-1` sorts before every named
 //! contig. So a file holding chr1 then chr2, under a dictionary naming chr1 and chr3, is refused
-//! with `inputs are not sorted at chr2:101`. The file is sorted. The dictionary is incomplete. The
-//! message says neither.
+//! with `inputs are not sorted at chr2:101` (the `partly-unknown-contig` case). The file is
+//! sorted. The dictionary is incomplete. The message says neither.
 //!
 //! That path needs the input to hold a named contig too: with no overlap at all the run never
 //! reaches here, the engine's own dictionary comparison refusing it first as
-//! `IncompatibleSequenceDictionaries`, which is not this class's doing and is not ported here.
+//! `IncompatibleSequenceDictionaries` (the `unknown-contig` case), which is not this class's doing
+//! and is not ported here.
 //!
 //! # The sort check fires late, and against the same input
 //!
 //! `next()` polls, then draws the replacement from the **same** context and compares it against
 //! the entry it just returned. So a file that goes backwards is caught only when its next record
 //! is pulled, and the message names the locus of the new feature rather than of the one it should
-//! have followed. It is also unreachable through an indexed file, since an unsorted file cannot be
-//! indexed at all.
+//! have followed (the `unsorted` case). It is also unreachable through an indexed file, since an
+//! unsorted file cannot be indexed at all (the `unsorted-index` case).
 //!
 //! # On equal sizes the new dictionary is the smaller one
 //!
 //! ```java
-//! if ( newDict.getDictionary().size() <= curDict.getDictionary().size() ) { smallDict = newDict; ... }
+//! if ( newDict.getDictionary().size() <= curDict.getDictionary().size() ) {
+//!     smallDict = newDict;
+//!     largeDict = curDict;
 //! ```
 //!
 //! The `<=` decides which source each half of the two refusal messages names when the two
 //! dictionaries are the same size, and the reference is offered as `newDict`, so it is the one
-//! called small.
+//! called small (the `dict-out-of-order` case, whose message names the equal-sized
+//! `sequence-dictionary` as the larger dictionary).
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<DictSource>` is "a dictionary or nothing"; `None` is the reference's `null`
+//!   dictionary. `Result<T, WalkerError>` is "a value or the `UserException`", and `?` after a
+//!   call passes the error to the caller.
+//! - `match (a, b) { (x, None) => .., .. }` tests both values at once, arm by arm, top to bottom.
+//! - `Ordering` is `Less`, `Equal` or `Greater`, the sign of Java's `compareTo`; `a.cmp(&b)` is
+//!   `Integer.compare(a, b)`, and `.then(..)` consults the next key only on `Equal`.
+//! - `&[Vec<Located>]` is a borrowed, read-only list of inputs, each a list of features; `usize`
+//!   indexes it. `x as i32` converts such an index to Java's `int`.
 
 use std::cmp::Ordering;
 
 /// One feature, reduced to what the merge reads and what the tool prints.
+///
+/// `#[derive(..)]` has the compiler write `equals`, a debug `toString` and a deep copy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Located {
+    /// `getContig()`.
     pub contig: String,
+    /// `getStart()`, 1-based.
     pub start: i32,
+    /// `getEnd()`, 1-based and inclusive.
     pub end: i32,
     /// `Feature.toString()`, which is what `ExampleMultiFeatureWalker.apply` prints.
     pub text: String,
 }
 
-/// A dictionary and the argument it was read from, which the refusals name.
+/// `MultiFeatureWalker.DictSource`: a dictionary and the argument it was read from, which the
+/// refusals name.
+///
+/// Only the contig names are kept: `betterDictionary` reads nothing else.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DictSource {
+    /// The sequence names in dictionary order.
     pub contigs: Vec<String>,
+    /// `getSource()`: `sequence-dictionary`, `reference`, `read-source` or the input's name.
     pub source: String,
 }
 
@@ -75,7 +103,8 @@ impl DictSource {
     }
 }
 
-/// What the walk refuses.
+/// What the walk refuses. Every variant is a plain `UserException` upstream, told apart only by its
+/// message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WalkerError {
     /// No dictionary anywhere: a `.rd.txt` header carries sample names and a null dictionary.
@@ -98,10 +127,13 @@ pub enum WalkerError {
 }
 
 impl WalkerError {
+    /// The exception's class name, the same for all four.
     pub fn java_class(&self) -> &str {
         "org.broadinstitute.hellbender.exceptions.UserException"
     }
 
+    /// `getMessage()`, each one the reference's string concatenation with the same words. The
+    /// `\` at a line end inside a string literal joins the next line without its indentation.
     pub fn message(&self) -> String {
         match self {
             WalkerError::NoDictionary => {
@@ -136,10 +168,16 @@ impl WalkerError {
 
 /// `betterDictionary`: the larger of the two, once the smaller is known to be a subset of it in
 /// the same relative order.
+///
+/// A `null` dictionary on either side returns the other, `curDict` checked first, as upstream.
+/// Then each contig of the smaller must appear in the larger (`ContigAbsent`) at an index above
+/// the previous one's (`ContigsOutOfOrder`, which names the larger dictionary's contig at that
+/// previous index).
 pub fn better_dictionary(
     new_dict: Option<DictSource>,
     current: Option<DictSource>,
 ) -> Result<Option<DictSource>, WalkerError> {
+    // Each arm either returns early or binds both dictionaries for the rest of the function.
     let (new_dict, current) = match (new_dict, current) {
         (new_dict, None) => return Ok(new_dict),
         (None, current) => return Ok(current),
@@ -176,6 +214,11 @@ pub fn better_dictionary(
 
 /// `setDictionaryAndSamples`, for the sources this walk can be given: the master dictionary, then
 /// the reference, in that order.
+///
+/// The reference goes on to fold in the reads' dictionary and each feature input's header
+/// dictionary, and to collect the sample names; none of that is here. The argument order of the
+/// call is the reference's, `betterDictionary(refDictSource, dictSource)`, which is what makes the
+/// reference the `newDict`.
 pub fn choose_dictionary(
     master: Option<DictSource>,
     reference: Option<DictSource>,
@@ -184,7 +227,8 @@ pub fn choose_dictionary(
     chosen.ok_or(WalkerError::NoDictionary)
 }
 
-/// One entry of the queue: a feature, its contig's index, and the input it came from.
+/// `PQEntry`: a feature, its contig's index, and the input it came from (the reference keeps the
+/// input's `PQContext`, which is its iterator and header).
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Entry {
     input: usize,
@@ -195,6 +239,9 @@ struct Entry {
 impl Entry {
     /// `PQEntry.compareTo`: contig index, then start, then end. The index rather than the name, so
     /// the dictionary's order is the file's.
+    ///
+    /// The index is computed once, when the entry is made, from the walk's dictionary; `-1` for a
+    /// contig it does not name (see the module note).
     fn compare(&self, other: &Entry) -> Ordering {
         self.contig_index
             .cmp(&other.contig_index)
@@ -209,6 +256,7 @@ impl Entry {
 /// would produce a different, equally sorted stream and no golden could hold.
 #[derive(Debug, Default)]
 struct JavaHeap {
+    /// The heap array: index 0 is the head, and the children of `k` are `2k + 1` and `2k + 2`.
     queue: Vec<Entry>,
 }
 
@@ -236,11 +284,14 @@ impl JavaHeap {
         if self.queue.is_empty() {
             return None;
         }
+        // `swap_remove(0)` takes the head and moves the last element into its place.
         let head = self.queue.swap_remove(0);
         self.sift_down(0);
         Some(head)
     }
 
+    /// `siftDown`: swap down to the smaller child while it is strictly smaller. The right child is
+    /// chosen only when strictly smaller than the left.
     fn sift_down(&mut self, mut k: usize) {
         let size = self.queue.len();
         let half = size >> 1;
@@ -262,6 +313,7 @@ impl JavaHeap {
 /// `MergingIterator` run to exhaustion: every feature in the order the walk hands it over.
 ///
 /// The inputs are offered in the order given, which is `FeatureManager.getAllInputs()`'s order.
+/// Because the heap is not stable, that order is part of the answer whenever two inputs tie.
 pub fn merge(
     inputs: &[Vec<Located>],
     dictionary: &DictSource,
@@ -276,6 +328,7 @@ pub fn merge(
 /// backwards, which a tool that prints as it goes has already printed. The whole stream when the
 /// walk does not refuse.
 pub fn merge_prefix(inputs: &[Vec<Located>], dictionary: &DictSource) -> Vec<Located> {
+    // `cursors[i]` is how far input `i` has been read: its iterator's position.
     let mut cursors: Vec<usize> = vec![0; inputs.len()];
     let mut heap = JavaHeap::default();
     for (index, input) in inputs.iter().enumerate() {
@@ -310,6 +363,7 @@ pub fn merge_with_sources(
 ) -> Result<Vec<(usize, Located)>, WalkerError> {
     let mut cursors: Vec<usize> = vec![0; inputs.len()];
     let mut heap = JavaHeap::default();
+    // The constructor's `addEntry` per input: its first feature, if it has one, joins the heap.
     for (index, input) in inputs.iter().enumerate() {
         if let Some(feature) = input.first() {
             cursors[index] = 1;
@@ -326,6 +380,8 @@ pub fn merge_with_sources(
             cursors[input] += 1;
             let replacement = entry_for(input, feature, dictionary);
             let compared = replacement.compare(&entry);
+            // Pushed before the check, as `addEntry` adds it before `next()` compares; nothing
+            // reads the heap after the refusal.
             heap.push(replacement);
             if compared == Ordering::Less {
                 return Err(WalkerError::NotSorted {
@@ -339,6 +395,7 @@ pub fn merge_with_sources(
     Ok(written)
 }
 
+/// `new PQEntry(context, feature)`: the contig's index looked up once, here.
 fn entry_for(input: usize, feature: &Located, dictionary: &DictSource) -> Entry {
     Entry {
         input,

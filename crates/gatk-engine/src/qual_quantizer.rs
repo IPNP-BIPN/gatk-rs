@@ -1,5 +1,6 @@
 //! `QualQuantizer` and `QuantizationInfo`, ported from
-//! `org.broadinstitute.hellbender.utils.recalibration` (GATK 4.6.2.0).
+//! `org.broadinstitute.hellbender.utils.recalibration` (GATK 4.7.0.0; `QualQuantizer.java` and
+//! `QuantizationInfo.java` are unchanged since 4.6.2.0).
 //!
 //! The map from every original quality score to the quantized one that replaces it. It is the last
 //! table a recalibration report carries, `BaseRecalibrator` computes it and `ApplyBQSR` reads it
@@ -14,9 +15,12 @@
 //! `QualInterval.getErrorRate` reads:
 //!
 //! ```java
-//! if ( hasFixedQual() ) return QualityUtils.qualToErrorProb((byte) fixedQual);
-//! else if ( nObservations == 0 ) return 0.0;
-//! else return (nErrors+1) / (1.0 * (nObservations+1));
+//! if ( hasFixedQual() )
+//!     return QualityUtils.qualToErrorProb((byte) fixedQual);
+//! else if ( nObservations == 0 )
+//!     return 0.0;
+//! else
+//!     return (nErrors+1) / (1.0 * (nObservations+1));
 //! ```
 //!
 //! and `quantize()` builds every leaf through the constructor that **sets** `fixedQual` to the
@@ -31,20 +35,36 @@
 //!
 //! ```java
 //! final double nErrors = nObs * errorRate;
-//! new QualInterval(qStart, qStart, nObs, (int) Math.floor(nErrors), 0, (byte)qStart);
 //! ```
+//!
+//! and the leaf is then
+//! `new QualInterval(qStart, qStart, nObs, (int) Math.floor(nErrors), 0, (byte)qStart)`.
 //!
 //! A `long` count of observations, a `double` product, and an `int` in the middle. Java's narrowing
 //! cast **clamps** rather than wrapping, so three billion observations at quality zero give
 //! `Integer.MAX_VALUE` errors and not three billion. Rust's `as` clamps the same way, which is the
 //! one place where the obvious port is also the faithful one.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `u8` is an unsigned byte. Java's `byte` is signed, so a quality the reference holds as -1 is
+//!   255 here: the same bits, read differently. The comments point out where that matters.
+//! - `Option<u8>` is "a byte or nothing" and `Result<T, QuantizerError>` is "a `T` or one of the
+//!   refusals below", which is how this codebase models a method that throws. A `?` after an
+//!   expression of either kind returns the nothing or the error to the caller at once.
+//! - `&[i64]` is a borrowed, read-only view of a `long[]`; `&mut Vec<QualInterval>` is a writable
+//!   one of a growable list, which the callee may change in place.
+//! - `.iter().map(..).collect()` is Java's stream, map, collect; `|x| ...` is a lambda.
+//! - The `match` on [`QuantizerError`] has to name every variant: the compiler refuses one that
+//!   leaves a case out.
 
 use crate::math_utils::{pow10, qual_to_error_prob};
 
-/// `QualityUtils.MIN_USABLE_Q_SCORE`, the default below which merges are free.
+/// `QualityUtils.MIN_USABLE_Q_SCORE`, the `minInterestingQual` that
+/// `QuantizationInfo.quantizeQualityScores` passes: a leaf at or below it merges for free.
 pub const MIN_USABLE_Q_SCORE: i32 = 6;
 
-/// `QualityUtils.MAX_SAM_QUAL_SCORE`.
+/// `QualityUtils.MAX_SAM_QUAL_SCORE`, which is `SAMUtils.MAX_PHRED_SCORE`.
 pub const MAX_SAM_QUAL_SCORE: i32 = 93;
 
 /// What the quantizer refuses, and the two ends it does not refuse but cannot survive.
@@ -59,11 +79,13 @@ pub enum QuantizerError {
     /// The reference's `NullPointerException`: with `nLevels` of zero the merge loop runs once more
     /// than there are pairs and dereferences the minimum it never found.
     NoPairToMerge,
-    /// The reference's `NoSuchElementException`, with no message: the minimum of an empty histogram.
+    /// The reference's `NoSuchElementException`, with no message: the minimum of an empty
+    /// histogram.
     EmptyHistogram,
 }
 
 impl QuantizerError {
+    /// The message the reference's exception carries, which the golden compares.
     pub fn message(&self) -> String {
         match self {
             QuantizerError::NegativeCounts(histogram) => {
@@ -90,8 +112,12 @@ impl QuantizerError {
 /// the bound brings back to 93.
 ///
 /// `None` where the reference throws: the argument must be a probability, which NaN is not.
+///
+/// The reference is QualityUtils.java:224-228: validate, round the Phred value into a `double`,
+/// then `boundQual((int)d, maxQual)` with `maxQual = MAX_SAM_QUAL_SCORE`.
 pub fn error_prob_to_qual(error_rate: f64) -> Option<u8> {
     // `MathUtils.isValidProbability`: `0.0 <= p <= 1.0`, which is false for NaN.
+    // `(0.0..=1.0).contains(&x)` is that closed-interval test.
     if !(0.0..=1.0).contains(&error_rate) {
         return None;
     }
@@ -104,6 +130,13 @@ pub fn error_prob_to_qual(error_rate: f64) -> Option<u8> {
 }
 
 /// `QualityUtils.boundQual(qual, maxQual)`: clamped to `[1, maxQual]`, never to zero.
+///
+/// ```java
+/// return (byte) (Math.max(Math.min(qual, maxQual & 0xFF), 1) & 0xFF);
+/// ```
+///
+/// `u8` is an unsigned byte where Java's `byte` is signed; the bits are the same, and the callers
+/// here read the value as unsigned.
 pub fn bound_qual(qual: i32, max_qual: i32) -> u8 {
     (qual.min(max_qual).max(1) & 0xFF) as u8
 }
@@ -111,10 +144,17 @@ pub fn bound_qual(qual: i32, max_qual: i32) -> u8 {
 /// `QualQuantizer.QualInterval`: a contiguous run of quality scores, with both ends inclusive.
 #[derive(Debug, Clone, PartialEq)]
 pub struct QualInterval {
+    /// `qStart`, inclusive.
     pub q_start: i32,
+    /// `qEnd`, inclusive.
     pub q_end: i32,
+    /// `nObservations`, summed over the leaves.
     pub n_observations: i64,
+    /// `nErrors`, summed over the leaves. A leaf's is the floored, saturated product described in
+    /// the module note.
     pub n_errors: i64,
+    /// `level`: zero for a leaf, one above the higher child for a merge. The reference's
+    /// `mergeOrder`, which is for debugging only, is not kept.
     pub level: i32,
     /// -1 for a merged interval. See the module note: a leaf always has one, and that decides both
     /// its error rate and its quality.
@@ -143,6 +183,8 @@ impl QualInterval {
         } else if self.n_observations == 0 {
             0.0
         } else {
+            // `(nErrors+1) / (1.0 * (nObservations+1))`: both `+ 1`s on the `long`s, then the
+            // widening. The `1.0 *` is the reference's and changes no bit.
             (self.n_errors + 1) as f64 / (1.0 * (self.n_observations + 1) as f64)
         }
     }
@@ -154,6 +196,9 @@ impl QualInterval {
             // quality of zero exists.
             self.fixed_qual as u8
         } else {
+            // `unwrap_or(1)` is a fallback that is never taken: a merged interval's rate is
+            // `(nErrors+1)/(nObservations+1)` with `nErrors <= nObservations`, or zero, and both
+            // are probabilities. Where it was taken the reference would throw.
             error_prob_to_qual(self.error_rate()).unwrap_or(1)
         }
     }
@@ -193,8 +238,8 @@ impl QualInterval {
     ///    never reaches the leaves and every merge costs the same;
     ///  * **a leaf at or below `minInterestingQual` contributes nothing**, which is what "free to
     ///    merge" means;
-    ///  * and the sum is over **leaves**, recursively, each against the same global rate rather than
-    ///    against its parent's.
+    ///  * and the sum is over **leaves**, recursively, each against the same global rate rather
+    ///    than against its parent's.
     fn calc_penalty(&self, global_error_rate: f64, min_interesting_qual: i32) -> f64 {
         if global_error_rate == 0.0 {
             return 0.0;
@@ -203,10 +248,16 @@ impl QualInterval {
             if self.q_end <= min_interesting_qual {
                 0.0
             } else {
+                // QualQuantizer.java:237, in the same order: the two logarithms, their difference,
+                // its magnitude, then the multiply by the observation count.
                 (log10(self.error_rate()) - log10(global_error_rate)).abs()
                     * self.n_observations as f64
             }
         } else {
+            // `.sum()` adds left to right, the reference's `sum += ...` over the `LinkedHashSet`
+            // of the two sub-intervals, left first. Every term is a magnitude times a count, never
+            // -0.0, so whichever zero the sum starts from, the first addition yields the first
+            // term exactly, as the reference's `double sum = 0` does.
             self.sub_intervals
                 .iter()
                 .map(|interval| interval.calc_penalty(global_error_rate, min_interesting_qual))
@@ -223,7 +274,9 @@ fn log10(x: f64) -> f64 {
 /// `QualQuantizer`: the histogram, the levels, and the map it produced.
 #[derive(Debug, Clone, PartialEq)]
 pub struct QualQuantizer {
+    /// `nLevels`: how many intervals the merging stops at.
     pub n_levels: i32,
+    /// `minInterestingQual`: a leaf whose `qEnd` is at or below this costs nothing to merge.
     pub min_interesting_qual: i32,
     /// The final forest, in `q_start` order.
     pub quantized_intervals: Vec<QualInterval>,
@@ -239,12 +292,14 @@ impl QualQuantizer {
         min_interesting_qual: i32,
     ) -> Result<QualQuantizer, QuantizerError> {
         // `Collections.min` of an empty list is a NoSuchElementException, and it happens before
-        // either of the two checks below.
+        // either of the two checks below. `.min()` answers `None` for an empty slice and
+        // `.ok_or(..)?` turns that `None` into the refusal and returns it.
         let minimum = n_observations_per_qual
             .iter()
             .min()
             .ok_or(QuantizerError::EmptyHistogram)?;
         if *minimum < 0 {
+            // `Utils.join(", ", nObservationsPerQual)`: every count, not only the negative ones.
             let histogram = n_observations_per_qual
                 .iter()
                 .map(|count| count.to_string())
@@ -279,11 +334,16 @@ fn quantize(
     n_levels: i32,
     min_interesting_qual: i32,
 ) -> Result<Vec<QualInterval>, QuantizerError> {
+    // `.iter().enumerate()` yields each bin with its index, the reference's `qStart` loop; the
+    // `.map(..).collect()` builds one leaf per bin into a `Vec` kept in `qStart` order, which is
+    // the order the reference's `TreeSet` iterates in.
     let mut intervals: Vec<QualInterval> = histogram
         .iter()
         .enumerate()
         .map(|(q_start, n_obs)| {
             let q_start = q_start as i32;
+            // The reference calls the byte overload, `qualToErrorProb((byte)qStart)`, which reads
+            // a cache filled from this double one, so the value is the same.
             let error_rate = qual_to_error_prob(q_start as f64);
             let n_errors = *n_obs as f64 * error_rate;
             QualInterval {
@@ -294,6 +354,8 @@ fn quantize(
                 // narrowing clamps, so a huge count saturates at Integer.MAX_VALUE.
                 n_errors: n_errors.floor() as i32 as i64,
                 level: 0,
+                // The reference passes `(byte)qStart`, which for bin 255 is -1, "no fixed
+                // quality". The histograms `QuantizationInfo` builds have 94 bins.
                 fixed_qual: q_start,
                 sub_intervals: Vec::new(),
             }
@@ -312,16 +374,23 @@ fn quantize(
 /// so a tie goes to the leftmost pair, and ties are the rule rather than the exception: an empty
 /// histogram gives every pair a penalty of zero.
 ///
-/// **With one interval left there is no pair.** The reference builds two iterators, skips one on the
-/// second, and then dereferences a minimum it never found. That is the `nLevels = 0` end.
+/// **With one interval left there is no pair.** The reference builds two iterators, skips one on
+/// the second, and then dereferences a minimum it never found. That is the `nLevels = 0` end.
 fn merge_lowest_penalty_intervals(
     intervals: &mut Vec<QualInterval>,
     min_interesting_qual: i32,
 ) -> Result<(), QuantizerError> {
+    // The best pair so far: its left index, the merged interval and its penalty. The reference
+    // keeps only the merged interval and calls `getPenalty()` on it again at every comparison;
+    // the penalty is a pure function of the interval, so storing it gives the same bits.
     let mut min_merge: Option<(usize, QualInterval, f64)> = None;
+    // `saturating_sub(1)` stops at zero instead of wrapping, so one interval gives no pairs.
     for index in 0..intervals.len().saturating_sub(1) {
         let merged = intervals[index].merge(&intervals[index + 1]);
         let penalty = merged.penalty(min_interesting_qual);
+        // `minMerge == null || (merged.getPenalty() < minMerge.getPenalty() )`. The first arm, with
+        // its `if` guard, keeps the earlier pair on a tie or a larger penalty; the `_` arm takes
+        // this pair when there is none yet or it is strictly cheaper.
         match &min_merge {
             Some((_, _, best)) if penalty >= *best => {}
             _ => min_merge = Some((index, merged, penalty)),
@@ -343,7 +412,11 @@ fn intervals_to_map(intervals: &[QualInterval], size: usize) -> Vec<u8> {
     let mut map = vec![0u8; size];
     for interval in intervals {
         let qual = interval.qual();
+        // `a..=b` is the closed range, both ends included: `q <= interval.qEnd`.
         for q in interval.q_start..=interval.q_end {
+            // `if let Some(slot) = ...` runs the body only when the index is inside the map, and
+            // `*slot = ...` writes through the reference it yields. Every interval lies inside the
+            // histogram, so the test never fails.
             if let Some(slot) = map.get_mut(q as usize) {
                 *slot = qual;
             }
@@ -355,8 +428,12 @@ fn intervals_to_map(intervals: &[QualInterval], size: usize) -> Vec<u8> {
 /// `QuantizationInfo`: the map, the counts it came from, and how many levels it turned out to have.
 #[derive(Debug, Clone, PartialEq)]
 pub struct QuantizationInfo {
+    /// `quantizedQuals`: original quality to quantized quality, one entry per histogram bin.
     pub quantized_quals: Vec<u8>,
+    /// `empiricalQualCounts`: the histogram the map was computed from.
     pub empirical_qual_counts: Vec<i64>,
+    /// `quantizationLevels`. See [`QuantizationInfo::quantize_quality_scores`] for when it is
+    /// stale.
     pub quantization_levels: i32,
 }
 
@@ -374,8 +451,8 @@ impl QuantizationInfo {
     /// `quantizeQualityScores(nLevels)`: replace the map, leaving the level count alone.
     ///
     /// The reference does **not** update `quantizationLevels` here. Only the constructor and
-    /// [`QuantizationInfo::no_quantization`] set it, so after this call the count can describe a map
-    /// that no longer exists.
+    /// [`QuantizationInfo::no_quantization`] set it, so after this call the count can describe a
+    /// map that no longer exists.
     pub fn quantize_quality_scores(&mut self, n_levels: i32) -> Result<(), QuantizerError> {
         let quantizer =
             QualQuantizer::new(&self.empirical_qual_counts, n_levels, MIN_USABLE_Q_SCORE)?;
@@ -385,9 +462,17 @@ impl QuantizationInfo {
 
     /// `noQuantization()`: the identity map, for the **first 93 entries only**.
     ///
-    /// The loop is `for (i = 0; i < quantizationLevels; i++)` after `quantizationLevels` was set to
-    /// 93, so entry 93 keeps whatever it had. The golden carries the whole map, so the last entry is
-    /// visible.
+    /// ```java
+    /// this.quantizationLevels = QualityUtils.MAX_SAM_QUAL_SCORE;
+    /// for (int i = 0; i < this.quantizationLevels; i++)
+    ///     quantizedQuals.set(i, (byte) i);
+    /// ```
+    ///
+    /// The bound is 93 and the test is `<`, so entry 93 keeps whatever it had. The golden carries
+    /// the whole map, so the last entry is visible.
+    ///
+    /// `get_mut(i)` answers `None` for an index past the end, where the reference's `set` would
+    /// throw; a map shorter than 93 entries is not one `QuantizationInfo` builds.
     pub fn no_quantization(&mut self) {
         self.quantization_levels = MAX_SAM_QUAL_SCORE;
         for i in 0..self.quantization_levels as usize {
@@ -400,8 +485,13 @@ impl QuantizationInfo {
 
 /// `calculateQuantizationLevels`: a count of **changes**, not of distinct values.
 ///
-/// It starts from -1, which no unsigned quality can equal, so the first entry always counts. A map
-/// that returns to a value it already used counts that as another level: `2,2,10,10,2,2,30` is four.
+/// It starts from -1, which no unsigned quality can equal, so the first entry always counts. A
+/// map that returns to a value it already used counts that as another level: `2,2,10,10,2,2,30`
+/// is four.
+///
+/// The reference's tracker is `byte lastByte = -1`, compared against signed bytes, so there a
+/// first entry of 255 (the byte -1) would **not** count. A quantized quality is at most 93, so the
+/// two agree on every map the quantizer can produce.
 pub fn calculate_quantization_levels(quantized_quals: &[u8]) -> i32 {
     let mut last: i32 = -1;
     let mut levels = 0;
@@ -419,6 +509,14 @@ pub fn calculate_quantization_levels(quantized_quals: &[u8]) -> i32 {
 /// Read from a table, as the reference reads its `qualToProbLog10Cache`: every entry is the same
 /// expression evaluated once, so the bits are the expression's, at a load per call instead of a
 /// `pow` and a `log10`.
+///
+/// **One entry more than the reference.** `qualToProbLog10Cache` is `new double[MAX_QUAL + 1]`
+/// with `MAX_QUAL = 254` (QualityUtils.java:43, 49), and the lookup is
+/// `qualToProbLog10Cache[(int) qual & 0xff]`, so a quality of 255 is an
+/// `ArrayIndexOutOfBoundsException` there and a finite value here.
+///
+/// `std::array::from_fn(|q| ...)` builds the fixed-size array by calling the lambda with each
+/// index in turn, inside a `LazyLock`, which runs it once on first use: the static initialiser.
 pub fn qual_to_prob_log10(qual: u8) -> f64 {
     static TABLE: std::sync::LazyLock<[f64; 256]> =
         std::sync::LazyLock::new(|| std::array::from_fn(|q| log10(1.0 - pow10(q as f64 / -10.0))));

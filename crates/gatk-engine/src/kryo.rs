@@ -49,7 +49,7 @@
 //!
 //! Nothing here writes a class or a schema, because `writeObject` is told the class by the reader.
 //! What it does write is a **reference marker**: Kryo 4 has references ON by default, so the first
-//! object in a stream is preceded by `01`. That byte is the object writer's ([`write_object`]), not
+//! object in a stream is preceded by `01`. That byte is the object writer's (`write_object`), not
 //! the primitives'.
 //!
 //! # Reading this file without reading Rust

@@ -1,6 +1,10 @@
 //! `AbstractConcordanceWalker.ConcordanceIterator`, ported from
-//! `org.broadinstitute.hellbender.engine.AbstractConcordanceWalker` (GATK 4.6.2.0), with
+//! `org.broadinstitute.hellbender.engine.AbstractConcordanceWalker` (GATK 4.7.0.0;
+//! `AbstractConcordanceWalker.java` and `ConcordanceState.java` are unchanged since 4.6.2.0), with
 //! `ConcordanceState` from `org.broadinstitute.hellbender.tools.walkers.validation`.
+//!
+//! The golden is `tests/data/concordance_walker.txt.gz`, replayed by `tests/concordance_walker.rs`;
+//! the step numbers below are its `state` rows.
 //!
 //! Two VCFs walked in lockstep, each step labelled with one of five states. The labels are the
 //! visible part; which of the two iterators a step consumes is what decides everything after it.
@@ -15,10 +19,11 @@
 //! ```
 //!
 //! The eval record stays where it is and is compared against the **next** truth record. In the
-//! golden that is three steps from one disagreement: truth `chr1:200 AT/A` and eval `chr1:200 A/C`
-//! disagree, so truth 200 is a false negative; eval 200 then sits before truth 210 and comes out a
-//! false positive; and truth 210 is a false negative of its own. A port pairing locally would emit
-//! one step here and disagree with the reference on everything downstream.
+//! golden (`default-filters`, steps 5 to 7) that is three steps from one disagreement: truth
+//! `chr1:200 AT/A` and eval `chr1:200 A/C` disagree, so truth 200 is a false negative; eval 200
+//! then sits before truth 210 and comes out a false positive; and truth 210 is a false negative of
+//! its own. A port pairing locally would emit one step here and disagree with the reference on
+//! everything downstream.
 //!
 //! # A filtered eval record is labelled by what truth has
 //!
@@ -31,14 +36,42 @@
 //! The base class drops filtered **truth** records and keeps every eval record, which is what makes
 //! the two filtered states reachable. A walker that drops filtered records on both sides, as
 //! `EvaluateInfoFieldConcordance` does, can never produce them: the golden runs the same two files
-//! through both filter sets and the second one has no filtered state in it at all.
+//! through both filter sets and the second one (`filtered-dropped-both-sides`) has no filtered
+//! state in it at all. The base class's two filters are:
+//!
+//! ```java
+//! protected Predicate<VariantContext> makeTruthVariantFilter() {
+//!     return vc -> !vc.isFiltered();
+//! }
+//! ```
+//!
+//! and `protected Predicate<VariantContext> makeEvalVariantFilter() { return vc -> true; }`.
 //!
 //! # The order is the dictionary's
 //!
 //! `VariantContextComparator` compares the contig's index in the sequence dictionary and then the
 //! start. Nothing looks at the end of a record, so a spanning deletion sorts by where it begins.
+//! The golden's `across-contigs` case is the dictionary order at work: truth `chr1:500` comes out
+//! before the `chr2:100` pair although 500 is the larger start.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `trait ConcordanceRecord` is a Java interface; `<T: ConcordanceRecord>` makes a function
+//!   generic over any record type that implements it, as `<T extends ConcordanceRecord>` would.
+//! - `impl Fn(&T, &T) -> bool` is a function value, Java's `BiPredicate<T, T>`; here it stands in
+//!   for the abstract `areVariantsAtSameLocusConcordant` a subclass overrides.
+//! - `Option<usize>` is "an index or nothing", the reference's `Optional<VariantContext>`.
+//! - `std::cmp::Ordering` is the sign of a `compare`: `Less`, `Equal` or `Greater`, and
+//!   `a.cmp(&b)` is `Integer.compare(a, b)`.
 
 /// `ConcordanceState`, with the abbreviations the summary tables print.
+///
+/// ```java
+/// TRUE_POSITIVE("TP"), FALSE_POSITIVE("FP"), FALSE_NEGATIVE("FN"),
+///         FILTERED_TRUE_NEGATIVE("FTN"), FILTERED_FALSE_NEGATIVE("FFN");
+/// ```
+///
+/// (One line in the reference, wrapped here.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConcordanceState {
     TruePositive,
@@ -60,7 +93,9 @@ impl ConcordanceState {
         }
     }
 
-    /// The enum constant's own name, which is what an unexpected-state message quotes.
+    /// The enum constant's own name, which is what an unexpected-state message quotes: Java's
+    /// `toString()` of an enum, as in `TruthVersusEval.getTruth`'s
+    /// `"This is a " + concordanceState.toString() + " and has no truth VariantContext."`.
     pub fn name(&self) -> &'static str {
         match self {
             ConcordanceState::TruePositive => "TRUE_POSITIVE",
@@ -78,26 +113,48 @@ impl ConcordanceState {
 /// so that "the same record twice" is visible as the same index.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TruthVersusEval {
+    /// `truth`: the index into the filtered truth records, `None` for an eval-only step.
     pub truth: Option<usize>,
+    /// `eval`: the index into the filtered eval records, `None` for a truth-only step.
     pub eval: Option<usize>,
+    /// `concordanceState`.
     pub state: ConcordanceState,
 }
 
 /// As much of a record as the iterator itself looks at.
 pub trait ConcordanceRecord {
+    /// `VariantContext.getContig()`.
     fn contig(&self) -> &str;
+    /// `VariantContext.getStart()`.
     fn start(&self) -> i32;
+    /// `VariantContext.isFiltered()`, which is htsjdk's
+    /// `filters != null && !filters.isEmpty()`.
     fn is_filtered(&self) -> bool;
 }
 
 /// `VariantContextComparator`: the contig's index in the dictionary, then the start.
+///
+/// The reference subtracts (htsjdk 5.0.0, wrapped here):
+///
+/// ```java
+/// final int contigCompare = this.contigIndexLookup.get(firstVariantContext.getContig())
+///         - this.contigIndexLookup.get(secondVariantContext.getContig());
+/// return contigCompare != 0 ? contigCompare
+///         : firstVariantContext.getStart() - secondVariantContext.getStart();
+/// ```
+///
+/// Only the sign is used, and for positions the subtraction cannot overflow, so `cmp` gives the
+/// same answer.
 fn compare<T: ConcordanceRecord>(left: &T, right: &T, dictionary: &[String]) -> std::cmp::Ordering {
     let index = |record: &T| {
         dictionary
             .iter()
             .position(|contig| contig == record.contig())
-            // A contig the dictionary does not name is a refusal in the reference, thrown when the
-            // comparator is built rather than here; ordering it last keeps this function total.
+            // **Divergence.** A contig the dictionary does not name is not refused when the
+            // reference's comparator is built (that checks only for an empty list and duplicates):
+            // its `contigIndexLookup.get(..)` answers `null` and unboxing it throws
+            // `NullPointerException` inside `compare`, as htsjdk's own comment there says. Here it
+            // is ordered last instead, which keeps this function total and does not throw.
             .unwrap_or(usize::MAX)
     };
     index(left)
@@ -105,10 +162,20 @@ fn compare<T: ConcordanceRecord>(left: &T, right: &T, dictionary: &[String]) -> 
         .then(left.start().cmp(&right.start()))
 }
 
-/// The whole traversal: every step, in order.
+/// The whole traversal: every step, in order. `ConcordanceIterator` drained.
 ///
 /// `truth` and `eval` are the records that survived the walker's own filters, in file order.
 /// `concordant` is `areVariantsAtSameLocusConcordant`, which each tool defines for itself.
+///
+/// `t` and `e` are the two iterators' positions; `truth[t]` is `truthIterator.peek()`, and
+/// `t += 1` is the `next()` that consumes it. The branches are `next()`'s, in its order:
+///
+/// ```java
+/// } else if(evalIterator.peek().isFiltered()) {
+///     return TruthVersusEval.filteredFalseNegative(truthIterator.next(), evalIterator.next());
+/// } else if (areVariantsAtSameLocusConcordant(truthIterator.peek(), evalIterator.peek())) {
+///     return TruthVersusEval.truePositive(truthIterator.next(), evalIterator.next());
+/// ```
 pub fn concordance<T: ConcordanceRecord>(
     truth: &[T],
     eval: &[T],
@@ -132,6 +199,7 @@ pub fn concordance<T: ConcordanceRecord>(
             continue;
         }
 
+        // `positionCompare > 0`: eval is behind, so it goes alone.
         match compare(&truth[t], &eval[e], dictionary) {
             std::cmp::Ordering::Greater => {
                 steps.push(eval_only(e, eval[e].is_filtered()));
@@ -170,6 +238,14 @@ pub fn concordance<T: ConcordanceRecord>(
     steps
 }
 
+/// `nextEvalOnlyVariant`: "it is either a false positive or a filtered true negative".
+///
+/// ```java
+/// return evalVariant.isFiltered() ? TruthVersusEval.filteredTrueNegative(evalVariant)
+///         : TruthVersusEval.falsePositive(evalVariant);
+/// ```
+///
+/// (One line in the reference, wrapped here.)
 fn eval_only(index: usize, filtered: bool) -> TruthVersusEval {
     TruthVersusEval {
         truth: None,
@@ -182,6 +258,8 @@ fn eval_only(index: usize, filtered: bool) -> TruthVersusEval {
     }
 }
 
+/// `nextTruthOnlyVariant`: always a false negative, filtered or not. Under the base class's truth
+/// filter no filtered truth record reaches the iterator at all.
 fn truth_only(index: usize) -> TruthVersusEval {
     TruthVersusEval {
         truth: Some(index),

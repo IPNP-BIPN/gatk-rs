@@ -1,5 +1,6 @@
 //! The writing side of `RecalUtils`, ported from
-//! `org.broadinstitute.hellbender.utils.recalibration` (GATK 4.6.2.0).
+//! `org.broadinstitute.hellbender.utils.recalibration` (GATK 4.7.0.0; `RecalUtils.java` is
+//! unchanged since 4.6.2.0).
 //!
 //! [`crate::recalibration_report`] reads a recalibration table; this writes one. The two are the
 //! same five tables in the same order, and `BaseRecalibrator` writing a file that `ApplyBQSR` reads
@@ -7,11 +8,13 @@
 //!
 //! # The two additional covariate tables share one report table
 //!
+//! The branch for an additional covariate table while `allCovsReportTable == null`, and the one
+//! after it (RecalUtils.java:228-235):
+//!
 //! ```java
-//! } else if (allCovsReportTable == null && recalibrationTables.isAdditionalCovariateTable(table)) {
 //!     reportTable = makeNewTableWithColumns(columnNames, reportTableName, sort);
-//!     rowIndex = 0;
-//!     allCovsReportTable = reportTable;
+//!     rowIndex = 0; // reset the row index since we're starting with a new table
+//!     allCovsReportTable =  reportTable;
 //!     addToList = true;
 //! } else {
 //!     reportTable = allCovsReportTable;
@@ -28,6 +31,17 @@
 //! Every table here sorts `SORT_BY_COLUMN`, which orders by the row's **data** and not by its key,
 //! so the integer row index the writer counts with is invisible in the output. It matters only
 //! because two rows written under the same index would overwrite each other.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `let mut row = |name, value| { ... }` is a lambda that writes into `table`. It holds the only
+//!   writable borrow of `table` while it is in use, which is why the function goes back to `table`
+//!   only after the last `row(..)` call.
+//! - A datum is an `Rc<RefCell<RecalDatum>>`, a shared, mutable object (see
+//!   `recalibration_tables`). `.borrow()` reads it and `.borrow_mut()` may write it.
+//! - `Option<Table>` is "a table or nothing"; `.take()` moves the table out and leaves nothing
+//!   behind, so the shared covariate table has one owner at a time.
+//! - `.as_deref().unwrap_or("null")` is the reference's `x == null ? "null" : x`.
 
 use crate::covariates::{CovariateKind, RecalibrationArguments, StandardCovariateList};
 use crate::gatk_report::{Report, Sorting, Table, Value};
@@ -44,6 +58,13 @@ use crate::recalibration_tables::RecalibrationTables;
 /// Seventeen rows, in the order the reference adds them, sorted by the first column when written.
 /// **The value column has an empty format**, so it is `Unknown` and every value is written through
 /// `String.valueOf`, which is why an integer argument has no padding rule of its own.
+///
+/// **Ten rows are written as constants.** Four are constants in the reference too
+/// (`DO_NOT_USE_STANDARD_COVARIATES`, `RUN_WITHOUT_DBSNP`, `SOLID_RECAL_MODE`,
+/// `SOLID_NOCALL_STRATEGY`, RecalibrationArgumentCollection.java:24-31). The three default
+/// qualities, `DEFAULT_PLATFORM`, `FORCE_PLATFORM` and the existing report are argument fields
+/// there (lines 56-68 and 140-146) and are written here as their defaults, because
+/// [`RecalibrationArguments`] does not carry them.
 pub fn generate_argument_table(
     arguments: &RecalibrationArguments,
     quantizing_levels: i32,
@@ -108,7 +129,12 @@ pub fn generate_argument_table(
     table
 }
 
-/// `QuantizationInfo.generateReportTable()`: one row per quality score, all 94 of them.
+/// `QuantizationInfo.generateReportTable()`: one row per quality score.
+///
+/// The reference loops `qual <= QualityUtils.MAX_SAM_QUAL_SCORE`, 94 rows; this loops over the
+/// map, which has 94 entries whenever `QuantizationInfo` built it. A count missing from the
+/// histogram is written as zero here, where the reference's `empiricalQualCounts.get(qual)` would
+/// throw.
 pub fn generate_quantization_table(info: &QuantizationInfo) -> Table {
     let mut table = Table::new(
         QUANTIZED_REPORT_TABLE_TITLE,
@@ -148,6 +174,9 @@ pub fn generate_report_tables(
     let mut row_index = 0usize;
 
     for (index, table) in tables.all_tables.iter().enumerate() {
+        // The reference asks `isReadGroupTable(table)` and `isAdditionalCovariateTable(table)`,
+        // which test object identity. The tables are always read group, quality score, then the
+        // additional ones, so the position answers the same questions.
         let is_read_group = index == 0;
         let is_additional = index >= 2;
 
@@ -177,7 +206,9 @@ pub fn generate_report_tables(
             ALL_COVARIATES_REPORT_TABLE_TITLE
         };
 
-        // The first additional covariate makes the shared table; the second writes into it.
+        // The first additional covariate makes the shared table; the second writes into it, and
+        // only a fresh table resets `row_index`, exactly as in the module note. `.take().unwrap()`
+        // moves the shared table out of the `Option`, which was just tested to hold one.
         let mut report = if is_additional && all_covariates.is_some() {
             all_covariates.take().unwrap()
         } else {
@@ -210,6 +241,8 @@ pub fn generate_report_tables(
                 key_index += 1;
                 if is_additional {
                     let value = match kind {
+                        // `format_key` answers a `Result` of an `Option`; `.ok().flatten()`
+                        // makes an error and an absent value both "nothing", written as "null".
                         CovariateKind::Context => covariates
                             .context
                             .format_key(keys[key_index])
@@ -228,6 +261,9 @@ pub fn generate_report_tables(
                     key_index += 1;
                 }
             }
+            // `EventType.eventFrom(keys[keyIndex])`. The fallback is never taken: the last key
+            // indexes a dimension of three, so it is always an ordinal. Where it was taken the
+            // reference would throw.
             let event =
                 EventType::from_index(keys[key_index]).unwrap_or(EventType::BaseSubstitution);
             report.set(
@@ -262,6 +298,9 @@ pub fn generate_report_tables(
             row_index += 1;
         }
 
+        // The reference adds the shared table to its list when it is created (`addToList`), and
+        // it is the third and last table either way, so pushing it once at the end below puts it
+        // in the same place.
         if is_additional {
             all_covariates = Some(report);
         } else {
@@ -275,6 +314,10 @@ pub fn generate_report_tables(
 }
 
 /// `RecalUtils.outputRecalibrationReport`: the whole five-table report as text.
+///
+/// The order is `createRecalibrationGATKReport`'s: the argument table, the quantization table,
+/// then the three from [`generate_report_tables`]. The reference prints to a `PrintStream`; this
+/// answers the text.
 pub fn output_recalibration_report(
     arguments: &RecalibrationArguments,
     quantizing_levels: i32,

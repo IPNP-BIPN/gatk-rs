@@ -138,7 +138,7 @@ impl Haplotype {
     /// wrapping like Java's `int`.
     ///
     /// A partially determined haplotype hashes its alternate bytes as well, which
-    /// [`crate::partially_determined::hash_code`] adds.
+    /// `partially_determined::hash_code` adds.
     pub fn java_hash_code(&self) -> i32 {
         let mut result: i32 = 1;
         for base in self.bases() {
@@ -150,7 +150,7 @@ impl Haplotype {
 
 /// `Haplotype.equals`: the uniqueness value, the reference flag, and the bases. Not the allele's
 /// own equality, which stops at the last two. A partially determined haplotype compares its own
-/// fields as well, which [`crate::partially_determined::equals`] decides.
+/// fields as well, which `partially_determined::equals` decides.
 ///
 /// The last two are asked of the allele in one comparison: `Allele`'s own equality is the bases,
 /// the reference flag, and the two flags derived from the bases, so it answers the same question

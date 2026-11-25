@@ -1,5 +1,7 @@
 //! The two `AlleleFractionCluster` implementations, ported from
-//! `org.broadinstitute.hellbender.tools.walkers.mutect.clustering` (GATK 4.6.2.0), with the
+//! `org.broadinstitute.hellbender.tools.walkers.mutect.clustering` (GATK 4.7.0.0;
+//! `AlleleFractionCluster.java`, `BinomialCluster.java`, `BetaBinomialCluster.java`, `Datum.java`
+//! and `readorientation/BetaDistributionShape.java` are unchanged since 4.6.2.0), with the
 //! `BetaDistributionShape` and `Datum` they carry.
 //!
 //! `SomaticClusteringModel` keeps a `BinomialCluster` per allele fraction it tracks and a
@@ -19,20 +21,36 @@
 //!
 //! # `BinomialCluster` has no binomial in it
 //!
-//! Its constructor turns a mean into a beta shape at a fixed standard-deviation-over-mean of `0.01`,
-//! and clamps the mean at `1 - 0.01` on the way. A cluster asked for a mean of `1.0` and one asked
-//! for `2.0` come out at the same shape as one asked for `0.99`, and only a mean of `0.5` is
-//! symmetric. `alphaPlusBeta` is `((1 - mean) / (mean * 0.0001)) - 1`, which is nearly ten million
-//! at a mean of `0.001`: these are the shapes that drive [`jmath::beta::log_beta`] into its
+//! Its constructor turns a mean into a beta shape at a fixed standard-deviation-over-mean of
+//! `0.01`, and clamps the mean at `1 - 0.01` on the way. A cluster asked for a mean of `1.0` and
+//! one asked for `2.0` come out at the same shape as one asked for `0.99`, and only a mean of `0.5`
+//! is symmetric. `alphaPlusBeta` is `((1 - mean) / (mean * 0.0001)) - 1`, which is nearly ten
+//! million at a mean of `0.001`: these are the shapes that drive [`jmath::beta::log_beta`] into its
 //! `a >= 10` branch.
 //!
-//! `learn` is not ported here. It is ten epochs of gradient ascent over `Gamma.digamma` and belongs
-//! with the model's fitting.
+//! Both `learn` methods are ported here, as `learn_binomial` and `learn_beta_binomial`. They
+//! return the new shape rather than overwriting a field, and `SomaticClusteringModel` stores it.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<BetaDistributionShape, ShapeError>` is "a shape or the reference's
+//!   `IllegalArgumentException`"; `Err(..)` is the throw, `Ok(..)` the return. A `?` after a call
+//!   passes an `Err` straight up to the caller, as an uncaught exception would.
+//! - `enum AlleleFractionCluster { Binomial(..), BetaBinomial(..) }` stands for the Java interface
+//!   and its two implementations: a value is exactly one of the two variants and carries its
+//!   shape, and a `match` on it must handle both.
+//! - `#[derive(Clone, Copy, PartialEq)]` asks the compiler to generate copying and `==`; a `Copy`
+//!   type is passed by value, as a Java `double` is.
+//! - `x as f64` on an `i32` is Java's implicit `int` to `double` widening, which is exact.
+//! - `data.iter().enumerate()` yields `(index, item)` pairs, the `n` and `data.get(n)` of the
+//!   reference's counted loop.
 
 use crate::beta_binomial::{BetaBinomialDistribution, BetaBinomialError};
 use crate::somatic_likelihoods::log_dirichlet_normalization;
 
-/// `BetaDistributionShape`, whose two arguments are refused by two different call paths.
+/// `readorientation.BetaDistributionShape`, whose two arguments are refused by two different call
+/// paths. The fields are private and read through `alpha()` and `beta()`, the reference's
+/// `getAlpha()` and `getBeta()`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BetaDistributionShape {
     alpha: f64,
@@ -55,6 +73,15 @@ impl BetaDistributionShape {
         beta: 1.0,
     };
 
+    /// `new BetaDistributionShape(alpha, beta)`:
+    ///
+    /// ```java
+    /// ParamUtils.isPositive(alpha, "alpha must be greater than 0 but got " + alpha);
+    /// Utils.validateArg(beta > 0, "beta must be greater than 0 but got " + beta);
+    /// ```
+    ///
+    /// `ParamUtils.isPositive` is `Utils.validateArg(val > 0, message)`, so both are the same test
+    /// and the same exception class. Alpha is checked first, so a shape bad in both reports alpha.
     pub fn new(alpha: f64, beta: f64) -> Result<Self, ShapeError> {
         // Both checks are `> 0`, so both refuse NaN.
         if alpha.is_nan() || alpha <= 0.0 {
@@ -87,6 +114,8 @@ pub struct Datum {
 }
 
 impl Datum {
+    /// `new Datum(tumorLogOdds, artifactProb, nonSomaticProb, altCount, totalCount, indelLength)`.
+    /// `nonSomaticProb` is not kept: only the combined probability below is.
     pub fn new(
         tumor_log_odds: f64,
         artifact_prob: f64,
@@ -139,6 +168,9 @@ const STD_DEV_OVER_MEAN: f64 = 0.01;
 ///
 /// The clamp is `Math.min(unboundedMean, 1 - 0.01)`, which propagates NaN in Java and does not in
 /// Rust, so it is written out rather than taken from `f64::min`.
+///
+/// The clamp is pinned by the `allele_fraction_cluster.txt.gz` golden: its `fuzzy 0.99`,
+/// `fuzzy 1.0` and `fuzzy 2.0` rows are all `99.01000000000009,1.0001010101010053`.
 pub fn fuzzy_binomial(unbounded_mean: f64) -> Result<BetaDistributionShape, ShapeError> {
     let bound = 1.0 - STD_DEV_OVER_MEAN;
     // `Math.min` answers NaN when either argument is NaN; Rust's `f64::min` answers the other one.
@@ -158,6 +190,12 @@ pub fn fuzzy_binomial(unbounded_mean: f64) -> Result<BetaDistributionShape, Shap
 ///
 /// Four normalisations, in the reference's order and with its signs. `g(1, 1)` is `0.0` and
 /// `g(1 + alt, 1 + ref)` is not, so the flat pair does not vanish.
+///
+/// The reference's `return` (`BetaBinomialCluster.java:64-65`) is `g(new) - g(new + counts)`,
+/// then `- g(original) + g(original + counts)`. The chain is evaluated left to right in both
+/// languages, `((a - b) - c) + d`, so the rounding of each partial result is the reference's.
+/// `let g = log_dirichlet_normalization;` names the function, as the reference's private
+/// `g(double...)` does, and `&[x, y]` is the two-element array the varargs call builds.
 pub fn log_odds_correction(
     original: BetaDistributionShape,
     new: BetaDistributionShape,
@@ -186,7 +224,9 @@ pub fn corrected_log_likelihood(datum: &Datum, shape: BetaDistributionShape) -> 
         + log_odds_correction(BetaDistributionShape::FLAT, shape, alt_count, ref_count)
 }
 
-/// `logLikelihood(totalCount, altCount)`, the same for both clusters once the shape is fixed.
+/// `logLikelihood(totalCount, altCount)`, the same for both clusters once the shape is fixed:
+/// `new BetaBinomialDistribution(null, alpha, beta, totalCount).logProbability(altCount)`, whose
+/// `null` generator is never drawn from. The `?` passes the distribution's refusal through.
 pub fn log_likelihood(
     shape: BetaDistributionShape,
     total_count: i32,
@@ -196,8 +236,10 @@ pub fn log_likelihood(
         .log_probability(alt_count)
 }
 
-/// `BetaBinomialCluster`'s learning rate, its cap and its epoch count.
+/// `BetaBinomialCluster.RATE`, the learning rate. The reference's `MAX_RATE = 0.1` is declared
+/// and never read, so it is not ported.
 const RATE: f64 = 0.01;
+/// `BetaBinomialCluster.NUM_EPOCHS`, the passes over the data per call to `learn`.
 const NUM_EPOCHS: usize = 10;
 
 /// `BetaBinomialCluster.learn(data, responsibilities)`.
@@ -207,8 +249,8 @@ const NUM_EPOCHS: usize = 10;
 ///
 ///  * **the update is sequential within an epoch.** Alpha and beta are read and written per datum,
 ///    so the same data in a different order learn a different shape;
-///  * **the floors are applied every step**, not at the end, so a shape that would have dipped below
-///    `1.0` or `0.5` and come back cannot;
+///  * **the floors are applied every step**, not at the end, so a shape that would have dipped
+///    below `1.0` or `0.5` and come back cannot;
 ///  * **`Math.max` propagates NaN** where Rust's `f64::max` answers the other argument, so the
 ///    clamps are written out.
 pub fn learn_beta_binomial(
@@ -222,6 +264,8 @@ pub fn learn_beta_binomial(
         for (index, datum) in data.iter().enumerate() {
             let alt = datum.alt_count() as f64;
             let reference = (datum.total_count() - datum.alt_count()) as f64;
+            // `datum.getTotalCount() + alpha + beta` in the reference: the `int` is widened and
+            // the sum runs left to right, `(total + alpha) + beta`, as it does here.
             let digamma_of_total_plus_alpha_plus_beta =
                 digamma(datum.total_count() as f64 + alpha + beta);
             let digamma_of_alpha_plus_beta = digamma(alpha + beta);
@@ -238,7 +282,8 @@ pub fn learn_beta_binomial(
     BetaDistributionShape::new(alpha, beta)
 }
 
-/// `Gamma.digamma`, which jmath carries and which refuses nothing this reaches.
+/// `Gamma.digamma`, which jmath carries and which refuses nothing this reaches. jmath's version
+/// returns a `Result`; `unwrap_or(f64::NAN)` takes the value, or `NaN` on a refusal.
 fn digamma(x: f64) -> f64 {
     jmath::gamma::digamma(x).unwrap_or(f64::NAN)
 }
@@ -258,7 +303,9 @@ fn java_max(a: f64, b: f64) -> f64 {
 /// it is what keeps a cluster given no responsibility at all from dividing zero by zero. Such a
 /// cluster lands at `0.0001 / 0.0001`, which the fuzzy binomial's own clamp turns into `0.99`.
 ///
-/// Both sums are `DoubleStream.sum`, which is compensated rather than a plain loop.
+/// Both sums are `DoubleStream.sum`, which is compensated rather than a plain loop
+/// (`BinomialCluster.java:32-33`, `IntStream.range(..).mapToDouble(..).sum() + 0.0001`). The port
+/// collects the products into a `Vec` first and sums that, in index order, as the stream does.
 pub fn learn_binomial(
     data: &[Datum],
     responsibilities: &[f64],
@@ -313,7 +360,8 @@ pub fn double_stream_sum(values: &[f64]) -> f64 {
     }
 }
 
-/// The two clusters, which differ only in where their shape comes from.
+/// The `AlleleFractionCluster` interface and its two implementations, which differ only in where
+/// their shape comes from. `toString` is not ported; `learn` is the two free functions above.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AlleleFractionCluster {
     /// `BinomialCluster`, built from a mean.
@@ -333,6 +381,8 @@ impl AlleleFractionCluster {
         AlleleFractionCluster::BetaBinomial(shape)
     }
 
+    /// The shape either variant carries. The `|` in the `match` arm binds `shape` from whichever
+    /// variant it is, since both carry the same type.
     pub fn shape(&self) -> BetaDistributionShape {
         match self {
             AlleleFractionCluster::Binomial(shape) | AlleleFractionCluster::BetaBinomial(shape) => {
@@ -341,10 +391,13 @@ impl AlleleFractionCluster {
         }
     }
 
+    /// `correctedLogLikelihood(datum)`. Both implementations call the static
+    /// `BetaBinomialCluster.correctedLogLikelihood` with their own shape.
     pub fn corrected_log_likelihood(&self, datum: &Datum) -> f64 {
         corrected_log_likelihood(datum, self.shape())
     }
 
+    /// `logLikelihood(totalCount, altCount)`, identical in both implementations.
     pub fn log_likelihood(
         &self,
         total_count: i32,

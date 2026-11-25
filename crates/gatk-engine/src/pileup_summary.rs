@@ -1,5 +1,6 @@
 //! `PileupSummary`, ported from
-//! `org.broadinstitute.hellbender.tools.walkers.contamination.PileupSummary` (GATK 4.6.2.0).
+//! `org.broadinstitute.hellbender.tools.walkers.contamination.PileupSummary` (GATK 4.7.0.0;
+//! `PileupSummary.java` is unchanged since 4.6.2.0).
 //!
 //! The record every contamination tool passes around: six columns, a sample carried as metadata,
 //! and a handful of quantities derived from the counts. Nothing here is a walker; it is the table
@@ -13,7 +14,7 @@
 //! writer.writeMetadata(TableUtils.SAMPLE_METADATA_TAG, sample);
 //! ...
 //! final String thisSample = reader.getMetadata().get(TableUtils.SAMPLE_METADATA_TAG);
-//! if (! thisSample.equals(sample)) {
+//! if (! thisSample.equals(sample)){
 //! ```
 //!
 //! A file with no `SAMPLE` metadata fails differently depending on where it sits in the list. First
@@ -37,6 +38,15 @@
 //! The reference frequency is `1 - alleleFrequency` with no check, so a table holding 2.0 gives
 //! -1.0, and a `NaN` propagates. Only the alt fraction is guarded, and only against a total of
 //! zero, where it gives 0 rather than `NaN`.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, PileupSummaryError>` is "a `T` or one of the refusals below"; `Err(..)` is where
+//!   the reference throws. A `?` after a call returns its error from the enclosing function at
+//!   once, Java's `throws` at that call site. Where the callee's error is a [`TableError`], the
+//!   `impl From<TableError>` below is what lets `?` wrap it as `PileupSummaryError::Table`.
+//! - `Option<String>` is a nullable `String`, and `.ok_or(e)?` is "if it is null, fail with `e`".
+//! - `&[(&str, &str)]` is a borrowed, read-only array of pairs of strings; the caller keeps them.
 
 use crate::base_utils::simple_base_to_base_index;
 use crate::tsv_table::{java_double_to_string, write_table, Table, TableError};
@@ -55,7 +65,10 @@ pub const COLUMNS: [&str; 6] = [
     "allele_frequency",
 ];
 
-/// One site's counts and the frequency of its alternate allele.
+/// `PileupSummary`: one site's counts and the frequency of its alternate allele.
+///
+/// The fields are `pub` where the reference has getters; `position` is both `getStart` and
+/// `getEnd`, since a summary is one base.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PileupSummary {
     pub contig: String,
@@ -65,6 +78,7 @@ pub struct PileupSummary {
     pub other_alt_count: i32,
     /// `refCount + altCount + otherAltsCount`, derived here and never written to the table.
     pub total_count: i32,
+    /// The population frequency of the alternate allele, from the variant's `AF` (default 0).
     pub allele_frequency: f64,
 }
 
@@ -103,6 +117,17 @@ impl PileupSummary {
     /// A base that is not `ACGT` in the record's own alleles indexes at -1 upstream, which is an
     /// array access with a negative index and therefore an exception; nothing that reaches this
     /// constructor through `GetPileupSummaries` can, because the record has to be a SNP first.
+    /// This answers `None` there instead.
+    ///
+    /// ```java
+    /// altCount = baseCounts[BaseUtils.simpleBaseToBaseIndex(altBase)];
+    /// refCount = baseCounts[BaseUtils.simpleBaseToBaseIndex(refBase)];
+    /// totalCount = (int) MathUtils.sum(baseCounts);
+    /// otherAltsCount = totalCount - altCount - refCount;
+    /// ```
+    ///
+    /// The caller passes the variant's position, `AF` and the first bases of its reference and
+    /// first alternate allele, and the pileup's `getBaseCounts`.
     pub fn from_base_counts(
         contig: &str,
         position: i32,
@@ -118,6 +143,7 @@ impl PileupSummary {
         }
         let alt_count = base_counts[alt_index as usize];
         let ref_count = base_counts[ref_index as usize];
+        // `MathUtils.sum(int[])` then `(int)`; for four non-negative counts the `i32` sum agrees.
         let total_count: i32 = base_counts.iter().sum();
         Some(PileupSummary {
             contig: contig.to_string(),
@@ -131,6 +157,8 @@ impl PileupSummary {
     }
 
     /// `getAltFraction`, whose only guard is against an empty site.
+    ///
+    /// `f64::from` is Java's widening `(double)` cast of an `int`, which is exact.
     pub fn alt_fraction(&self) -> f64 {
         if self.total_count == 0 {
             0.0
@@ -140,12 +168,15 @@ impl PileupSummary {
     }
 
     /// `getMinorAlleleFraction`: the alt fraction against everything else, not the rarer base.
+    ///
+    /// The reference uses `FastMath.min`; for the fractions reached here (never `NaN`, since the
+    /// alt fraction is guarded) `f64::min` gives the same value.
     pub fn minor_allele_fraction(&self) -> f64 {
         let fraction = self.alt_fraction();
         fraction.min(1.0 - fraction)
     }
 
-    /// `getRefFrequency`, which nothing bounds.
+    /// `getRefFrequency`, which nothing bounds: `return 1 - alleleFrequency;`.
     pub fn ref_frequency(&self) -> f64 {
         1.0 - self.allele_frequency
     }
@@ -165,7 +196,8 @@ pub enum PileupSummaryError {
 }
 
 impl PileupSummaryError {
-    /// The message the reference carries.
+    /// The message the reference carries. The `NoSampleToCompare` text is the JVM's own helpful
+    /// `NullPointerException` message for `thisSample.equals(sample)`.
     pub fn message(&self) -> String {
         match self {
             PileupSummaryError::Table(error) => error.message(),
@@ -179,7 +211,8 @@ impl PileupSummaryError {
         }
     }
 
-    /// The Java class, which is a different one for each of the three ways a sample can be missing.
+    /// The Java class of the exception the reference throws. The three sample refusals are three
+    /// different classes.
     pub fn java_class(&self) -> &'static str {
         match self {
             PileupSummaryError::Table(error) => error.java_class(),
@@ -192,6 +225,7 @@ impl PileupSummaryError {
     }
 }
 
+/// Lets `?` turn a [`TableError`] into a `PileupSummaryError` without an explicit conversion.
 impl From<TableError> for PileupSummaryError {
     fn from(error: TableError) -> PileupSummaryError {
         PileupSummaryError::Table(error)
@@ -202,7 +236,9 @@ impl From<TableError> for PileupSummaryError {
 /// rows.
 ///
 /// The header is written whether or not a record follows, so an empty run still leaves a readable
-/// table.
+/// table. That is `TableWriter.close`, which calls `writeHeaderIfApplies()`.
+///
+/// The reference writes to a file; this returns the text and leaves the writing to the caller.
 pub fn write_to_file(sample: &str, records: &[PileupSummary]) -> String {
     let rows: Vec<Vec<String>> = records
         .iter()
@@ -223,12 +259,17 @@ pub fn write_to_file(sample: &str, records: &[PileupSummary]) -> String {
 
 /// `readFromFile(tableFile)`: the sample the metadata carried, which may be missing, and the
 /// records.
+///
+/// `text` is the file's contents and `source` the name the error messages use. Each row goes
+/// through the reference's `PileupSummaryTableReader.createRecord`: the five typed getters in
+/// column order, then the six-argument constructor.
 pub fn read_from_file(
     text: &str,
     source: &str,
 ) -> Result<(Option<String>, Vec<PileupSummary>), PileupSummaryError> {
     let table = Table::parse(text, source)?;
     let mut records = Vec::with_capacity(table.rows.len());
+    // `.enumerate()` pairs each row with its index, used here to find its line number.
     for (index, row) in table.rows.iter().enumerate() {
         let line = table.row_lines[index];
         let contig = table.get(row, "contig")?.to_string();
@@ -246,14 +287,14 @@ pub fn read_from_file(
             allele_frequency,
         ));
     }
+    // `reader.getMetadata().get(SAMPLE_METADATA_TAG)`, `None` where the Java map gives null.
     Ok((table.metadata.get(SAMPLE_METADATA_TAG).cloned(), records))
 }
 
 /// `DataLine.getDouble`, whose refusal is the **int** getter's message.
 ///
-/// ```java
-/// throw formatErrorFactory.apply(String.format("expected int value for column %s but found %s", ...));
-/// ```
+/// Both branches of `DataLine.getDouble(int, Function)` format their message as
+/// `"expected int value for column %s but found %s"`.
 ///
 /// The line is copied twice into the double getter, once for each branch, so a malformed frequency
 /// is reported as a bad integer. It reaches the user, so the port says the same thing.
@@ -275,6 +316,10 @@ fn get_double(
 
 /// `Double.parseDouble`, for the spellings the writer produces and the ones a hand-written table
 /// may hold.
+///
+/// The three named spellings are Java's `Double.toString` forms for the non-finite values; the
+/// rest goes to Rust's `str::parse`. That is not the JDK's grammar in full: `str::parse` also
+/// accepts `inf`, `infinity` and `nan` in any case, and refuses surrounding whitespace.
 fn parse_java_double(value: &str) -> Option<f64> {
     match value {
         "NaN" => Some(f64::NAN),
@@ -288,6 +333,10 @@ fn parse_java_double(value: &str) -> Option<f64> {
 ///
 /// Each input is its text and the name the messages use. The sample is the **first** file's, and
 /// every other file is compared against it, which is where the two missing-sample failures live.
+///
+/// Each file is read in full by [`read_from_file`] before its sample is compared. The reference
+/// compares first and reads the rows after (`reader.toList()` follows the `equals` test), so a
+/// file that is wrong in both ways is reported by its row here and by its sample there.
 pub fn gather(inputs: &[(&str, &str)]) -> Result<String, PileupSummaryError> {
     let mut sample: Option<String> = None;
     let mut records = Vec::new();
@@ -302,6 +351,8 @@ pub fn gather(inputs: &[(&str, &str)]) -> Result<String, PileupSummaryError> {
                     .ok_or(PileupSummaryError::NoSampleToWrite)?,
             );
         }
+        // The first file is compared against itself too, as in the reference's loop, which is
+        // harmless once `writeMetadata` has accepted its sample.
         let this_sample = this_sample.ok_or(PileupSummaryError::NoSampleToCompare)?;
         let first = sample.clone().unwrap_or_default();
         if this_sample != first {
@@ -316,6 +367,10 @@ pub fn gather(inputs: &[(&str, &str)]) -> Result<String, PileupSummaryError> {
 }
 
 /// `PileupSummaryComparator`: the dictionary's order, and -1 for a contig it does not have.
+///
+/// `dictionary` is the contig names in dictionary order (the reference's `contigsInOrder`).
+/// `.position(..)` is `List.indexOf`, `None` where Java answers -1, and `map_or(-1, ..)` turns
+/// that `None` back into -1 so that it sorts first, as upstream.
 pub fn compare(dictionary: &[String], first: &PileupSummary, second: &PileupSummary) -> Ordering {
     let index = |contig: &str| {
         dictionary

@@ -1,6 +1,6 @@
 //! Ported from
 //! `org.broadinstitute.hellbender.tools.walkers.validation.basicshortmutpileup.AllelePileupCounter`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `AllelePileupCounter.java` is unchanged since 4.6.2.0).
 //!
 //! How many reads of a pileup carry each allele, when the alleles are known before the counting.
 //!
@@ -17,6 +17,15 @@
 //! Only the alleles the counter was built with have entries, and the increment checks for the key
 //! rather than inserting. An alternate the pileup carries but the caller did not ask about is
 //! counted nowhere.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, CounterError>` is "a `T` or one of the refusals below"; `Err(..)` is where the
+//!   reference throws, and a `?` after a call returns that call's error from the function at once.
+//! - `Option<Allele>` is a nullable `Allele`. `let Some(allele) = chosen else { continue; };`
+//!   unwraps it or, when it is `None`, skips to the next element: the reference's
+//!   `pileupAllele != null` test.
+//! - `&[Allele]` is a borrowed, read-only `List<Allele>`; `.to_vec()` copies it.
 
 use crate::read_pileup::ReadPileup;
 use crate::variant_context_utils::{choose_allele_for_read, Allele, PileupAlleleError};
@@ -40,6 +49,9 @@ pub enum CounterError {
 }
 
 impl CounterError {
+    /// The class of the exception the reference throws: `UserException.BadInput` for the
+    /// symbolic reference, and `IllegalArgumentException` from `Utils.validateArg` (which
+    /// `ParamUtils.isPositiveOrZero` also calls) for the other three.
     pub fn java_class(&self) -> &'static str {
         match self {
             CounterError::SymbolicReference => {
@@ -50,7 +62,8 @@ impl CounterError {
     }
 
     /// The message, with alleles written the way `Allele.toString` writes them: the bases, and a
-    /// trailing `*` when the allele is the reference.
+    /// trailing `*` when the allele is the reference. The reference builds the alternates' list
+    /// with `Collectors.joining(", ")`.
     pub fn message(&self) -> String {
         match self {
             CounterError::SymbolicReference => {
@@ -86,7 +99,8 @@ fn java_string(allele: &Allele) -> String {
     text
 }
 
-/// `AllelePileupCounter`.
+/// `AllelePileupCounter`: the alleles to count, the base-quality cutoff `chooseAlleleForRead` is
+/// given, and the counts so far.
 #[derive(Debug, Clone)]
 pub struct AllelePileupCounter {
     reference: Allele,
@@ -95,11 +109,19 @@ pub struct AllelePileupCounter {
     /// The alternates in the order they were given, then the reference, which is the order the
     /// reference's own `forEach` plus `put` fills a map in. A `HashMap` has no order of its own, so
     /// a caller that needs one sorts; this keeps insertion order so that nothing here is arbitrary.
+    ///
+    /// An allele given twice gets two entries here where the Java map holds one key; only the
+    /// first entry is ever incremented or found.
     counts: Vec<(Allele, i32)>,
 }
 
 impl AllelePileupCounter {
     /// The constructor, with its four checks in the reference's order.
+    ///
+    /// ```java
+    /// alternateAlleles.forEach(a -> countMap.put(a, new MutableInt(0)));
+    /// countMap.put(referenceAllele, new MutableInt(0));
+    /// ```
     pub fn new(
         reference: &Allele,
         alternates: &[Allele],
@@ -139,14 +161,20 @@ impl AllelePileupCounter {
     ) -> Result<AllelePileupCounter, CounterError> {
         let mut counter = AllelePileupCounter::new(reference, alternates, minimum_base_quality)?;
         counter.add_pileup(pileup).map_err(|_| {
-            // The only refusal underneath is the negative cutoff, which the constructor has
-            // already rejected, so this cannot be reached.
+            // The refusals underneath are the negative cutoff, which the constructor has already
+            // rejected, and `typeOfVariant`'s two reference refusals. The symbolic one cannot
+            // happen either (`add_pileup` returns early for it); a spanning-deletion reference
+            // allele would arrive here and be reported as the cutoff refusal.
             CounterError::NegativeMinimumBaseQuality
         })?;
         Ok(counter)
     }
 
     /// `addPileup`. A pileup the reference is never given is a null there and nothing here.
+    ///
+    /// Each element that passes [`is_usable_read`] goes through `chooseAlleleForRead`, and the
+    /// allele it chooses, if any, is incremented when the map holds it. The `Err` is
+    /// `chooseAlleleForRead`'s own refusal.
     pub fn add_pileup(&mut self, pileup: &ReadPileup<'_>) -> Result<(), PileupAlleleError> {
         if self.reference.is_symbolic() {
             return Ok(());
@@ -165,6 +193,8 @@ impl AllelePileupCounter {
                 continue;
             };
             // `containsKey` and then `increment`: an allele the map does not hold is not added.
+            // `iter_mut().find(..)` is a linear lookup that hands back a writable reference to the
+            // matching pair; `entry.1` is its second member, the count.
             if let Some(entry) = self.counts.iter_mut().find(|(key, _)| *key == allele) {
                 entry.1 += 1;
             }
@@ -177,7 +207,8 @@ impl AllelePileupCounter {
         &self.counts
     }
 
-    /// The count of one allele, or `None` when the map has no such key.
+    /// The count of one allele, or `None` when the map has no such key: `getCountMap().get(a)`,
+    /// with `None` for Java's null.
     pub fn count(&self, allele: &Allele) -> Option<i32> {
         self.counts
             .iter()
