@@ -115,19 +115,27 @@ byte-identical on every run, and to GATK's.
 
 | | GATK 4.7.0.0 | #1515 | this branch | vs GATK |
 |---|---:|---:|---:|---:|
-| CPU (user + sys) | 18.7, 20.5 s | 16.3, 17.3, 16.3 s | 12.4, 12.6, 12.3 s | 0.63x |
-| peak memory | 662, 720 MB | 3,049 to 3,051 MB | 243, 251, 248 MB | 0.36x |
-| wall | 41.3, 44.7 s | 15.8, 16.9, 15.7 s | 6.7, 6.3, 6.2 s | 0.15x |
-| instructions retired | | 324.5 G | 200.6 G | |
+| CPU (user + sys) | 18.7, 20.5 s | 16.3, 17.3, 16.3 s | 9.9, 9.7, 9.4 s | 0.49x |
+| peak memory | 662, 720 MB | 3,049 to 3,051 MB | 125, 126, 128 MB | 0.18x |
+| wall | 41.3, 44.7 s | 15.8, 16.9, 15.7 s | 3.6, 3.5, 3.5 s | 0.08x |
+| instructions retired | | 324.5 G | 152.3 G | |
 
 GATK ran in the arm64 oracle image (`java -jar`, JDK 17) on the same host, with the bgzipped known
 sites and their indexes; its CPU and peak memory are the container's cgroup counters, so its
-memory includes the page cache and overstates its heap. On one counting thread this branch takes
-10.9 to 11.3 s of CPU and 214 MB, so the six threads cost about 12% more CPU for 1.7x less wall.
+memory includes the page cache and overstates its heap. Before the last three cuts below, one
+counting thread took 10.9 to 11.3 s of CPU and six about 12% more, for 1.7x less wall.
 
-Left for the 0.5x CPU and 0.25x memory target: the whole contig is fetched (64 MB here, 250 MB on
-chr1) where GATK reads windows; every known site keeps its contig as a `String`; and dbSNP's INFO
-is decoded on one thread before counting starts, about 4 s of the CPU.
+Three more cuts brought it under 0.5x the CPU and 0.25x the memory, each checked the same way:
+
+- the known sites are kept as two coordinates under their contig's name, not a `SimpleInterval`
+  with its own `String` each (247 to 186 MB);
+- a plain site line (eight non-empty columns, a `POS` and `QUAL` that parse, a `FILTER` other than
+  `0`, an INFO without a space or an `END` key, `ACGTN` alleles none repeated) gives its span
+  without decoding the record; any other line is decoded or refused as before. A test holds this to
+  `decode_line`, and every one of dbSNP's 1,390,830 and Mills' 27,572 lines at chr20 takes it with
+  the decoded span (CPU 13.5 to 10.4 s);
+- without BAQ the reference is read by windows of a megabase, not a contig at a time (186 to
+  126 MB; chr1 would have held 249 MB). The golden suite also runs against a one-base window.
 
 ## Not targets yet
 
