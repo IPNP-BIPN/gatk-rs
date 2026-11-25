@@ -678,8 +678,6 @@ pub fn pileup_spark(parser: &Parser) -> Outcome {
     };
 
     let filter = read_filter(parser, &filters, &header)?;
-    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
-        .map_err(|error| Thrown::user(format!("{error:?}")))?;
     let shard_size = number_or(parser, "read-shard-size", 10000).max(1);
     let whole: Vec<gatk_engine::interval::SimpleInterval> = if intervals.is_empty() {
         dictionary
@@ -693,18 +691,98 @@ pub fn pileup_spark(parser: &Parser) -> Outcome {
     } else {
         intervals.clone()
     };
+    let options = gatk_tools::locus_walker::Options {
+        max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
+        ..gatk_tools::locus_walker::Options::default()
+    };
+    let output_insert_length = flag(parser, "output-insert-length");
+    let show_verbose = flag(parser, "show-verbose");
+
+    // A locus at a time over the shards, which are disjoint and in order, so their loci are each
+    // shard's in turn. A run with no read, or with one longer than a shard, and any failure, drops
+    // its scratch file and takes the whole-list path below, which refuses as it always did.
+    if gatk_tools::locus_walker::streams(&options) {
+        let scratch = format!("{output}.part-00000.partial");
+        let reads = gatk_tools::read_walker::traverse_iter(
+            &source,
+            &intervals,
+            false,
+            |record: &BamRecord| filter(record),
+        );
+        if let (Ok(reads), Ok(file)) = (reads, std::fs::File::create(&scratch)) {
+            let shards: Vec<gatk_engine::interval::SimpleInterval> =
+                shards_of(&whole, shard_size).collect();
+            let shuffle = flag(parser, "shuffle");
+            let (any, oversized) = (std::cell::Cell::new(false), std::cell::Cell::new(false));
+            let reads = reads.take_while(|read| {
+                if let Ok(record) = read {
+                    any.set(true);
+                    let size = record.alignment_end() - record.alignment_start + 1;
+                    if !shuffle && !record.read_unmapped() && size > shard_size {
+                        oversized.set(true);
+                    }
+                }
+                !oversized.get()
+            });
+            let mut out = std::io::BufWriter::with_capacity(1 << 20, file);
+            let mut window = BaseWindow::default();
+            let done = gatk_tools::locus_walker::for_each_streamed(
+                reads,
+                &header,
+                None,
+                Some(&shards),
+                options,
+                &|_| true,
+                gatk_tools::locus_walker::SEGMENT_READS,
+                |one| {
+                    let Some(base) = window.base(reference.as_mut(), &one) else {
+                        return false;
+                    };
+                    let mut line = gatk_tools::pileup::line_unfiltered(
+                        &one.context.pileup,
+                        base,
+                        &[],
+                        output_insert_length,
+                        show_verbose,
+                    );
+                    line.push('\n');
+                    std::io::Write::write_all(&mut out, line.as_bytes()).is_ok()
+                },
+            );
+            let written = done.is_ok()
+                && any.get()
+                && !oversized.get()
+                && std::io::Write::flush(&mut out).is_ok();
+            drop(out);
+            if written {
+                // The whole-list path reads every contig here, and a refusal is its answer.
+                if let Some(source) = reference.as_mut() {
+                    for (name, length) in source.sequences().to_vec() {
+                        if let Err(error) = source.query(&name, 1, length as i32) {
+                            let _ = std::fs::remove_file(&scratch);
+                            return Err(Thrown::user(format!("{error:?}")));
+                        }
+                    }
+                }
+                let directory = std::path::Path::new(&output);
+                std::fs::create_dir_all(directory)
+                    .and_then(|()| std::fs::rename(&scratch, directory.join("part-00000")))
+                    .and_then(|()| std::fs::write(directory.join("_SUCCESS"), b""))
+                    .map_err(|error| {
+                        let _ = std::fs::remove_file(&scratch);
+                        Thrown::non_user(PORT_FAILURE, format!("{output}: {error}"))
+                    })?;
+                return Ok(None);
+            }
+            let _ = std::fs::remove_file(&scratch);
+        }
+    }
+
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
     no_reads_refusal(parser, &records, &whole, shard_size)?;
     oversized_read_refusal(parser, &records, &header, shard_size)?;
-    // `Shard.divideIntervalIntoShards` with no padding.
-    let shards = whole.iter().flat_map(|interval| {
-        (interval.start..=interval.end)
-            .step_by(shard_size as usize)
-            .map(move |start| gatk_engine::interval::SimpleInterval {
-                contig: interval.contig.clone(),
-                start,
-                end: (start + shard_size - 1).min(interval.end),
-            })
-    });
+    let shards = shards_of(&whole, shard_size);
 
     let mut bases: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
     if let Some(source) = reference.as_mut() {
@@ -715,8 +793,6 @@ pub fn pileup_spark(parser: &Parser) -> Outcome {
             bases.insert(name, contig);
         }
     }
-    let output_insert_length = flag(parser, "output-insert-length");
-    let show_verbose = flag(parser, "show-verbose");
     let mut text = String::new();
     for shard in shards {
         let applied = gatk_tools::locus_walker::traverse(
@@ -724,10 +800,7 @@ pub fn pileup_spark(parser: &Parser) -> Outcome {
             &header,
             None,
             Some(std::slice::from_ref(&shard)),
-            gatk_tools::locus_walker::Options {
-                max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
-                ..gatk_tools::locus_walker::Options::default()
-            },
+            options,
             &|_| true,
         )
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
@@ -755,6 +828,22 @@ pub fn pileup_spark(parser: &Parser) -> Outcome {
         .and_then(|()| std::fs::write(directory.join("_SUCCESS"), b""))
         .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
     Ok(None)
+}
+
+/// `Shard.divideIntervalIntoShards` with no padding.
+fn shards_of(
+    whole: &[gatk_engine::interval::SimpleInterval],
+    shard_size: i32,
+) -> impl Iterator<Item = gatk_engine::interval::SimpleInterval> + '_ {
+    whole.iter().flat_map(move |interval| {
+        (interval.start..=interval.end)
+            .step_by(shard_size as usize)
+            .map(move |start| gatk_engine::interval::SimpleInterval {
+                contig: interval.contig.clone(),
+                start,
+                end: (start + shard_size - 1).min(interval.end),
+            })
+    })
 }
 
 /// `SparkSharder`'s overlaps partitioning, which `--shuffle` does not go through: no read leaves

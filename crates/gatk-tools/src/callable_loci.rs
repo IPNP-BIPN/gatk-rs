@@ -181,24 +181,51 @@ pub enum OutputFormat {
 ///
 /// Returns the BED file's text and the summary's, which is what the two output streams get.
 pub fn write(loci: &[(String, i32, State)], format: OutputFormat) -> (String, String) {
+    let mut writer = Writer::new(format);
     let mut bed = String::new();
-    let mut counts = [0_i64; 6];
-    let mut current: Option<Run> = None;
     for (contig, position, state) in loci {
-        counts[State::ALL.iter().position(|s| s == state).expect("a state")] += 1;
+        writer.push(contig, *position, *state, &mut bed);
+    }
+    let summary = writer.finish(&mut bed);
+    (bed, summary)
+}
+
+/// [`write`] a locus at a time: each line is appended to `bed` once it is known, so a caller can
+/// write it out and clear it.
+pub struct Writer {
+    format: OutputFormat,
+    counts: [i64; 6],
+    current: Option<Run>,
+}
+
+impl Writer {
+    pub fn new(format: OutputFormat) -> Self {
+        Writer {
+            format,
+            counts: [0; 6],
+            current: None,
+        }
+    }
+
+    /// One locus, the next in order.
+    pub fn push(&mut self, contig: &str, position: i32, state: State, bed: &mut String) {
+        self.counts[State::ALL
+            .iter()
+            .position(|s| *s == state)
+            .expect("a state")] += 1;
         let this = Run {
-            contig: contig.clone(),
-            start: *position,
-            end: *position,
-            state: *state,
+            contig: contig.to_string(),
+            start: position,
+            end: position,
+            state,
         };
-        match format {
+        match self.format {
             OutputFormat::StatePerBase => {
                 bed.push_str(&this.bed_line());
                 bed.push('\n');
             }
-            OutputFormat::Bed => match &mut current {
-                None => current = Some(this),
+            OutputFormat::Bed => match &mut self.current {
+                None => self.current = Some(this),
                 // The contig is not part of this test, which is what merges runs across contigs.
                 Some(run) if this.start == run.end + 1 && run.state == this.state => {
                     run.end = this.end;
@@ -206,23 +233,26 @@ pub fn write(loci: &[(String, i32, State)], format: OutputFormat) -> (String, St
                 Some(run) => {
                     bed.push_str(&run.bed_line());
                     bed.push('\n');
-                    current = Some(this);
+                    self.current = Some(this);
                 }
             },
         }
     }
-    if format == OutputFormat::Bed {
-        if let Some(run) = &current {
-            bed.push_str(&run.bed_line());
-            bed.push('\n');
-        }
-    }
 
-    let mut summary = format!("{:>30} {}\n", "state", "nBases");
-    for (index, state) in State::ALL.iter().enumerate() {
-        summary.push_str(&format!("{:>30} {}\n", state.name(), counts[index]));
+    /// The last run onto `bed`, and the summary.
+    pub fn finish(self, bed: &mut String) -> String {
+        if self.format == OutputFormat::Bed {
+            if let Some(run) = &self.current {
+                bed.push_str(&run.bed_line());
+                bed.push('\n');
+            }
+        }
+        let mut summary = format!("{:>30} {}\n", "state", "nBases");
+        for (index, state) in State::ALL.iter().enumerate() {
+            summary.push_str(&format!("{:>30} {}\n", state.name(), self.counts[index]));
+        }
+        summary
     }
-    (bed, summary)
 }
 
 /// `UserException.BadInput` when the reads carry more than one sample.

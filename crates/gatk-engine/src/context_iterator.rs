@@ -71,30 +71,50 @@ pub fn overlapping<'a>(
     header: &SamHeader,
 ) -> Vec<AlignmentContext<'a>> {
     let mut kept = Vec::new();
-    let mut interval_index = 0usize;
+    let mut cursor = OverlapCursor::default();
     for context in contexts {
+        match cursor.keeps(&context, intervals, header) {
+            Some(true) => kept.push(context),
+            Some(false) => {}
+            None => return kept,
+        }
+    }
+    kept
+}
+
+/// [`overlapping`]'s interval cursor, for contexts that come one at a time.
+#[derive(Debug, Default)]
+pub struct OverlapCursor {
+    interval_index: usize,
+}
+
+impl OverlapCursor {
+    /// Whether `context` overlaps the intervals, the cursor moved past those behind it; `None`
+    /// once every interval is behind, where no later context can overlap one.
+    pub fn keeps(
+        &mut self,
+        context: &AlignmentContext<'_>,
+        intervals: &[SimpleInterval],
+        header: &SamHeader,
+    ) -> Option<bool> {
         loop {
-            let Some(interval) = intervals.get(interval_index) else {
-                return kept;
-            };
+            let interval = intervals.get(self.interval_index)?;
             let here = (context.contig.as_str(), context.position, context.position);
             let there = (interval.contig.as_str(), interval.start, interval.end);
             if interval.contig == context.contig
                 && interval.start <= context.position
                 && context.position <= interval.end
             {
-                kept.push(context);
-                break;
+                return Some(true);
             }
             match compare_locatables(there, here, header) {
                 // The interval is behind the context: take the next interval.
-                std::cmp::Ordering::Less => interval_index += 1,
+                std::cmp::Ordering::Less => self.interval_index += 1,
                 // The interval is ahead: drop this context and take the next one.
-                _ => break,
+                _ => return Some(false),
             }
         }
     }
-    kept
 }
 
 /// `IntervalAlignmentContextIterator`: one context per requested locus, empty where uncovered.
@@ -142,6 +162,90 @@ pub fn with_empty_loci<'a>(
 ///
 /// `areIntervalsSpecified` is `intervals != null`, so `Some(vec![])` is *specified* while `None` is
 /// not. That distinction is the whole reason this is an enum rather than a slice.
+/// [`with_empty_loci`] for contexts that come one at a time: the requested loci walked as the
+/// covered contexts arrive, each one answered by its context or by an empty one.
+pub struct EmptyLociCursor<'i> {
+    intervals: &'i [SimpleInterval],
+    interval: usize,
+    position: i32,
+}
+
+impl<'i> EmptyLociCursor<'i> {
+    pub fn new(intervals: &'i [SimpleInterval]) -> Self {
+        EmptyLociCursor {
+            intervals,
+            interval: 0,
+            position: intervals.first().map_or(0, |interval| interval.start),
+        }
+    }
+
+    /// The next requested locus, if any is left.
+    fn peek(&mut self) -> Option<(&'i str, i32)> {
+        loop {
+            let interval = self.intervals.get(self.interval)?;
+            if self.position <= interval.end {
+                return Some((interval.contig.as_str(), self.position));
+            }
+            self.interval += 1;
+            self.position = self
+                .intervals
+                .get(self.interval)
+                .map_or(0, |next| next.start);
+        }
+    }
+
+    fn advance(&mut self) {
+        self.position += 1;
+    }
+
+    /// Every locus `context` answers or passes, in order: the empty ones before it, then the
+    /// context itself if it is the next locus; a context before the next locus answers none.
+    /// `emit` returns false to stop, and so does this.
+    pub fn take<'a>(
+        &mut self,
+        context: AlignmentContext<'a>,
+        header: &SamHeader,
+        emit: &mut dyn FnMut(AlignmentContext<'a>) -> bool,
+    ) -> bool {
+        while let Some((contig, position)) = self.peek() {
+            let here = (context.contig.as_str(), context.position, context.position);
+            match compare_locatables((contig, position, position), here, header) {
+                std::cmp::Ordering::Less => {
+                    self.advance();
+                    if !emit(empty_context(contig, position)) {
+                        return false;
+                    }
+                }
+                std::cmp::Ordering::Equal => {
+                    self.advance();
+                    return emit(context);
+                }
+                std::cmp::Ordering::Greater => return true,
+            }
+        }
+        true
+    }
+
+    /// The loci left after the last context, each an empty one.
+    pub fn finish<'a>(&mut self, emit: &mut dyn FnMut(AlignmentContext<'a>) -> bool) -> bool {
+        while let Some((contig, position)) = self.peek() {
+            self.advance();
+            if !emit(empty_context(contig, position)) {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+fn empty_context<'a>(contig: &str, position: i32) -> AlignmentContext<'a> {
+    AlignmentContext {
+        contig: contig.to_string(),
+        position,
+        pileup: ReadPileup::new(contig, position, Vec::new()),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Route {
     /// No intervals and no empty loci: the covered contexts, unfiltered.
