@@ -95,9 +95,8 @@ if peak RSS does not rise against glibc on any measured tool, since the gate for
 for CPU.
 
 **Result: admitted, not landed by W12.** On the macOS measurement below it saves 3 to 13% of CPU on
-top of `dist`, but PrintReads' peak RSS rises 8% (2,478 MB against 2,294 MB), which is the condition
-above failing on the one host measured. That host's baseline is Apple's allocator, not glibc, so it
-does not settle Linux. #1474 carries the same `#[global_allocator]` line; it is decided there, on
+top of `dist`, but PrintReads' peak RSS rises 8% (2,478 MB against 2,294 MB), but that host's baseline is
+Apple's allocator, so the criterion as written (against glibc) is not yet measured. #1474 carries the same `#[global_allocator]` line; it is decided there, on
 `Speed at scale`'s Linux rows, against this criterion. The guard admits the line in `main.rs`
 either way.
 
@@ -116,7 +115,9 @@ SSE2, two per register; GKL, which GATK calls, uses AVX-512 or AVX2.
 **Why it cannot move a byte.** One read per lane, each lane doing the single pair's multiplies and
 adds in `LoglessPairHMM`'s order; a lane-wise IEEE 754 multiply or add is the scalar one, bit for
 bit, and nothing crosses lanes (the final sum stays scalar, per read, in the reference's order).
-`fma` is not enabled and the guard refuses it in this file. Identity holds whether or not LLVM
+`avx512f` implies `fma` in Rust, so what keeps it unfused is that Rust never contracts
+`a * b + c` and the guard refuses explicit fused intrinsics here; neither wrapper's x86-64 assembly
+holds a `vfmadd` or `vfmsub`. Identity holds whether or not LLVM
 vectorises the body, so it does not rest on the autovectoriser.
 
 **The suites that prove it.** `reads_side_by_side_give_each_reads_own_bits` forces every kernel

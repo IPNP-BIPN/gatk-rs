@@ -388,7 +388,8 @@ unsafe fn avx2(haplotype: &[u8], reads: &[HmmRead<'_>], out: &mut [f64]) {
     lanes::<4>(&ROWS_4, haplotype, reads, out);
 }
 
-/// [`lanes`] with eight lanes and AVX-512F enabled.
+/// [`lanes`] with eight lanes and AVX-512F enabled, which in Rust implies fused multiply-add; Rust still never
+/// contracts `a * b + c`, and the assembly holds no fused instruction.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx512f")]
 unsafe fn avx512(haplotype: &[u8], reads: &[HmmRead<'_>], out: &mut [f64]) {

@@ -53,8 +53,9 @@ cross-crate inlining may be folded at compile time with the build host's libm in
 run time. That is the failure mode recorded above for debug against release, and the reason the
 port already hides its constant bases behind `std::hint::black_box` (`pair_hmm::jacobian_entry`).
 The proof is therefore not the argument but the suites run on the `dist` binary: every job that
-runs the port against the reference (the covering arrays, thread independence, `Speed`,
-`Speed at scale`) builds it with `--profile dist`, so a folded constant that moves a byte fails the
+runs the port against the reference (the covering arrays, the fuzzer replay, thread independence,
+`Speed`) builds it with `--profile dist`; `Speed at scale` (#1493) still builds `release` and must
+switch, so a folded constant that moves a byte fails the
 array that reaches it. `release` stays the default profile, because the 391 test binaries would
 each pay a fat link, and the in-process suites keep running on it: both code generations are held
 to the same goldens.
