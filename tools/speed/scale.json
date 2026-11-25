@@ -683,11 +683,11 @@
    "name": "CompareIntervalLists",
    "group": "cnv-b",
    "needs": [
-    "PreprocessIntervals",
-    "FilterIntervals"
+    "PreprocessIntervals"
    ],
-   "args": "-R {data}/chr20.fasta -L {in}/PreprocessIntervals/chr20.interval_list -L2 {in}/FilterIntervals/filtered.interval_list",
-   "timeout": 1800
+   "args": "-R {data}/chr20.fasta -L {in}/PreprocessIntervals/chr20.interval_list -L2 {in}/PreprocessIntervals/chr20.interval_list",
+   "timeout": 1800,
+   "comment": "One list against itself: two different lists end in a NoSuchElementException inside IntervalUtils.equateIntervals in GATK 4.7.0.0."
   },
   {
    "name": "CallCopyRatioSegments",
@@ -992,8 +992,9 @@
    "name": "GetPileupSummaries",
    "group": "reads-b",
    "needs": [],
-   "args": "-I {data}/NA12878.chr20.bam -V {data}/gnomad.chr20.vcf.gz -L {data}/gnomad.chr20.vcf.gz -O {out}/summaries.table",
-   "timeout": 1800
+   "args": "-I {data}/NA12878.chr20.bam -V {data}/hapmap.chr20.vcf.gz -L {data}/hapmap.chr20.vcf.gz -O {out}/summaries.table",
+   "timeout": 1800,
+   "comment": "Common sites (HapMap), as the tool is run: on all 5.6 million gnomAD sites GATK exhausts a 3.5 GiB heap."
   },
   {
    "name": "GatherPileupSummaries",
@@ -1039,7 +1040,7 @@
    "name": "LocalAssembler",
    "group": "reads-b",
    "needs": [],
-   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam -L chr20:30000000-31000000 --fasta-file {out}/la.fa --gfa-file {out}/la.gfa",
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.bam -L chr20:30000000-31000000 --fasta-file {out}/la.fa --gfa-file {out}/la.gfa --assembly-name chr20",
    "timeout": 1800,
    "note": "1 Mb: the tool assembles one locus's reads, it is not meant for a whole contig"
   },
@@ -1124,7 +1125,7 @@
    "name": "CollectInsertSizeMetricsSpark",
    "group": "spark-a",
    "needs": [],
-   "args": "-I {data}/NA12878.chr20.bam -O {out}/insert.txt --spark-master local[{threads}] --conf spark.ui.enabled=false",
+   "args": "-I {data}/NA12878.chr20.bam -O {out}/insert.txt --histogram-plot-file {out}/insert.pdf --spark-master local[{threads}] --conf spark.ui.enabled=false",
    "timeout": 1800
   },
   {
@@ -1132,7 +1133,9 @@
    "group": "spark-a",
    "needs": [],
    "args": "-I {data}/NA12878.chr20.bam -O {out}/multi --spark-master local[{threads}] --conf spark.ui.enabled=false",
-   "timeout": 1800
+   "timeout": 1800,
+   "java_options": "-Xmx12g",
+   "comment": "GATK exhausts the default 3.5 GiB heap on chr20 30x (OutOfMemoryError in a Spark task)."
   },
   {
    "name": "CollectAllelicCountsSpark",
@@ -1188,7 +1191,7 @@
    "name": "CountReads.cram",
    "group": "cram",
    "needs": [],
-   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.cram -O {out}/count.txt",
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.cram -O {out}/count.txt --disable-sequence-dictionary-validation true",
    "timeout": 1800,
    "tool": "CountReads"
   },
@@ -1196,7 +1199,7 @@
    "name": "FlagStat.cram",
    "group": "cram",
    "needs": [],
-   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.cram -O {out}/flagstat.txt",
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.cram -O {out}/flagstat.txt --disable-sequence-dictionary-validation true",
    "timeout": 1800,
    "tool": "FlagStat"
   },
@@ -1204,7 +1207,7 @@
    "name": "PrintReads.cram",
    "group": "cram",
    "needs": [],
-   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.cram -O {out}/out.bam",
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.cram -O {out}/out.bam --disable-sequence-dictionary-validation true",
    "timeout": 1800,
    "tool": "PrintReads"
   },
@@ -1212,7 +1215,7 @@
    "name": "BaseRecalibrator.cram",
    "group": "cram",
    "needs": [],
-   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.cram --known-sites {data}/dbsnp138.chr20.vcf.gz --known-sites {data}/mills.chr20.vcf.gz --known-sites {data}/known_indels.chr20.vcf.gz -O {out}/recal.table",
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.cram --known-sites {data}/dbsnp138.chr20.vcf.gz --known-sites {data}/mills.chr20.vcf.gz --known-sites {data}/known_indels.chr20.vcf.gz -O {out}/recal.table --disable-sequence-dictionary-validation true",
    "timeout": 5400,
    "tool": "BaseRecalibrator"
   },
@@ -1220,7 +1223,7 @@
    "name": "CRAMIssue8768Detector",
    "group": "cram",
    "needs": [],
-   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.cram --output-tsv {out}/cram8768.tsv",
+   "args": "-R {data}/chr20.fasta -I {data}/NA12878.chr20.cram -O {out}/cram8768.txt --output-tsv {out}/cram8768.tsv --disable-sequence-dictionary-validation true",
    "timeout": 1800
   },
   {
@@ -1601,5 +1604,6 @@
   "PlotModeledSegments": "it draws with R; the pinned timing image has no R"
  },
  "java_options": "-Xmx3584m",
- "java_options_comment": "The reference's heap on every CPU: what a 14 GiB container gives a JVM by default (a quarter), set explicitly so a smaller local container times the same JVM."
+ "java_options_comment": "The reference's heap on every CPU: what a 14 GiB container gives a JVM by default (a quarter), set explicitly so a smaller local container times the same JVM.",
+ "cram_comment": "The CRAM keeps the 30x run's whole GRCh38 header, so a chr20-only reference is a subset of its dictionary: GATK refuses that for CRAM unless the dictionary check is off, which the CRAM steps turn off on both sides."
 }

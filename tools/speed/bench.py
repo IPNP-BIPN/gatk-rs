@@ -629,12 +629,32 @@ def target(o, p):
     return "❌ neither"
 
 
+INDEXES = (".bai", ".tbi", ".crai", ".sbi", ".idx", ".csi")
+
+
+def differs(entry):
+    """How a step's outputs differ, or None where only the deflater does.
+
+    GATK without GKL (any non-x86 CPU) deflates with the JDK's zlib, so a BGZF output whose
+    inflated stream is GATK's, and the index of it whose offsets follow the blocks, differ in bytes
+    and not in content. That is a ratio worth reading; any other difference is a divergence.
+    """
+    unequal = {n: f for n, f in entry.get("files", {}).items() if not f["equal"]}
+    inflated_equal = [n for n, f in unequal.items() if f.get("first_difference") is None]
+    deflate_only = all("missing_on" not in f for f in unequal.values()) and all(
+        n in inflated_equal or n.endswith(INDEXES) for n in unequal)
+    if inflated_equal and deflate_only:
+        return None
+    return "bytes differ"
+
+
 def rank(paths):
     """The ranked table for targets.md: worst peak RSS ratio first, a port that failed above all.
 
     Each measurement is one CPU's merged scale run; a step measured on several CPUs gets a row per
     CPU. A row without a ratio (either side failed, or the bytes differ) ranks above every ratio,
-    since no ratio is a claim until the port finishes with GATK's bytes.
+    since no ratio is a claim until the port finishes with GATK's bytes. Of a step measured twice
+    on one CPU, the measurement in the later path is kept.
     """
     rows = []
     for path in paths:
@@ -651,7 +671,7 @@ def rank(paths):
                 continue
             cpu = p["cpu"] / o["cpu"] if o["cpu"] else None
             rss = p["rss_kib"] / o["rss_kib"] if o["rss_kib"] else None
-            state = side_state(p) or ("bytes differ" if entry.get("bytes_equal") is False else None)
+            state = side_state(p) or (differs(entry) if entry.get("bytes_equal") is False else None)
             key = (0, -o["rss_kib"]) if state else (1, -(rss or 0))
             reps = f"{min(o.get('reps', 1), p.get('reps', 1))}"
             cells = [f"{o['cpu']:.0f} s", f"{p['cpu']:.0f} s", f"{cpu:.2f}" if cpu else "-",
@@ -661,7 +681,9 @@ def rank(paths):
     print("| step | host | GATK CPU | port CPU | CPU ratio | GATK peak RSS | port peak RSS | "
           "RSS ratio | reps | CPU ≤ 0.5x and RSS ≤ 0.25x |")
     print("|---|---|---:|---:|---:|---:|---:|---:|---:|:-:|")
-    for row in sorted(rows, key=lambda r: r[:4]):
+    # A step measured again on the same CPU (a rerun after a fix) replaces its earlier row.
+    latest = {(row[2], row[3]): row for row in rows}
+    for row in sorted(latest.values(), key=lambda r: r[:4]):
         print(row[4])
     return 0
 
