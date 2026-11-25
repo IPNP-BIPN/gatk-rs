@@ -124,8 +124,32 @@ line, three rounds alternated, GNU `time`. PrintReads, chr20:30-32 Mb of NA12878
 
 The reads are the same; the headers differ only by the output path in `@PG`. CPU holds and peak RSS
 rises 2.5x, so the rule above refuses it. HaplotypeCaller and Mutect2 on the same slice were killed
-by the shared Docker VM before finishing on both allocators, so they were not measured. On this
-evidence #1474's `#[global_allocator]` line should not land.
+by the shared Docker VM before finishing on both allocators, so they were not measured there.
+
+**The others, and the threaded callers.** The same PrintReads row with jemalloc (`tikv-jemallocator`
+0.6) and with both allocators told to return memory at once (`MIMALLOC_PURGE_DELAY=0
+MIMALLOC_ARENA_EAGER_COMMIT=0`, `_RJEM_MALLOC_CONF=dirty_decay_ms:0,muzzy_decay_ms:0`): mimalloc so
+tuned holds glibc's 34 to 41 MB at the same CPU; jemalloc takes 74 to 110 MB either way, at no less
+CPU. Then HaplotypeCaller and Mutect2 on #1474's branch (`c/hc-multicore`, e8ed8e2f, which streams
+its output), 4 threads, its `#[global_allocator]` line against the same build without it:
+
+| Row | allocator | user + sys | peak RSS | wall |
+|---|---|---:|---:|---:|
+| HaplotypeCaller, 1 Mb | glibc | 8.2 to 9.8 s | 99 to 103 MB | 6.3 to 7.4 s |
+| | mimalloc | 7.8 to 8.6 s | 156 to 171 MB | 5.2 to 5.7 s |
+| | mimalloc, tuned | 6.9 to 8.9 s | 116 to 124 MB | 4.7 to 5.8 s |
+| HaplotypeCaller, 1 Mb, `-ERC GVCF` | glibc | 16.7 to 20.3 s | 103 MB | 11.7 to 12.1 s |
+| | mimalloc | 13.2 to 15.2 s | 169 to 172 MB | 6.5 to 7.6 s |
+| | mimalloc, tuned | 14.6 to 22.1 s | 121 to 135 MB | 6.9 to 10.7 s |
+| Mutect2, 200 kb | glibc | 2.8 to 2.9 s | 154 to 157 MB | 2.1 to 2.2 s |
+| | mimalloc | 2.3 to 2.4 s | 212 to 238 MB | 1.6 to 1.8 s |
+| | mimalloc, tuned | 2.4 to 2.5 s | 183 to 188 MB | 1.7 to 1.8 s |
+
+Every VCF, GVCF and stats file is the same across allocators (the `.idx` differs by its file
+timestamp only). Under threads mimalloc buys 10 to 20% of CPU and a third of the wall clock for 45 to
+65% more peak RSS, 20% when tuned: the trade the rule refuses. So glibc stays, and #1474's
+`#[global_allocator]` line should not land. What would let it back is an allocator that keeps the
+threaded gain without the resident growth, measured against this table.
 
 ## 8. Profile-guided optimisation of the shipped binary (W12, P0)
 
