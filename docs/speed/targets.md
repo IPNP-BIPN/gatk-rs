@@ -91,6 +91,24 @@ threads handed one read at a time, the finest split there is (a planted bug that
 share fails it); every array that runs the binary against the reference, on runners with several
 cores; and the smoke slice below, identical output on every run.
 
+**Measured (M-series, 12 performance and 4 efficiency cores, shared with other work; chr20 smoke
+slice, `-L chr20:30000000-35000000`, dbSNP and Mills as known sites; three alternated runs, release
+builds; #1515's head against this branch).** The table is byte-identical on every run.
+
+| | #1515 | this branch | |
+|---|---:|---:|---:|
+| wall | 17.99, 21.50, 19.77 s | 9.89, 9.66, 13.89 s | 0.56x |
+| CPU (user + sys) | 17.83, 19.27, 17.79 s | 21.84, 21.95, 22.54 s | 1.21x |
+| peak RSS | 3,051 MB | 3,392 MB | 1.11x |
+| instructions retired | 324.5 G | 323.5 G | 1.00x |
+
+The threads do no extra work: the instructions retired are the same. The CPU rises because the same
+instructions take 17% more cycles, which is the price of spreading the reads over cores (cold
+caches, records freed on another thread than the one that built them, efficiency cores). The RSS
+rises by the counting threads' tables and the batches in flight. The gate is against GATK, not
+against #1515, and is not measured here: `Speed at scale` measures it on x86-64 once #1515 and this
+land.
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are

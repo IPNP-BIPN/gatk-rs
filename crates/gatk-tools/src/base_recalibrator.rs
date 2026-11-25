@@ -116,9 +116,9 @@ pub fn base_recalibrator_on(
     // reads a command line had excluded: `--intervals chr1:1-6000 --exclude-intervals chr1:1-500`
     // leaves seven of the corpus's eight reads, and the eighth's nine countable bases were nine
     // observations the recalibration table carried too many.
-    // One read at a time, counted as it is decoded: the BAM is never held (#1453 found 8 GiB at
-    // chr20 before the step stopped). A decode failure now surfaces at the read that fails, after
-    // the reads before it were counted, which is the reference's own order.
+    // Counted as it is decoded, at most a few batches in flight: the BAM is never held (#1453
+    // found 8 GiB at chr20 before the step stopped). A failure surfaces at the earliest read that
+    // fails, which is the reference's own order.
     let records = crate::read_walker::traverse_iter(source, intervals, false, filter)
         .map_err(BaseRecalibratorError::Reads)?;
     base_recalibrator_counted(
