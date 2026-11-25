@@ -56,6 +56,62 @@ now STATUS.md's cost column; the baseline stays in `baseline.json`):
 both directions, which is what an unchanged path does. The other 131 tools moved a median 7% cold
 and 10% steady, at most 45%, the same spread two runs of one commit showed in the baseline.
 
+## Scale J. The Spark read tools held every read (`PrintReadsSpark`, `ExtractOriginalAlignmentRecordsByNameSpark`, `FlagStatSpark`, the four Spark metrics tools)
+
+**Ratio.** At scale (chr20 30x BAM, linux/arm64, 6 GiB container), each one killed at the limit:
+
+| Tool | GATK CPU | GATK RSS |
+|---|---:|---:|
+| `PrintReadsSpark` | 71 s | 2.22 GiB |
+| `ExtractOriginalAlignmentRecordsByNameSpark` | 27 s | 2.19 GiB |
+| `FlagStatSpark` | 28 s | 1.59 GiB |
+| `QualityScoreDistributionSpark` | 34 s | 1.58 GiB |
+| `CollectQualityYieldMetricsSpark` | 28 s | 1.49 GiB |
+| `MeanQualityByCycleSpark` | 24 s | 1.45 GiB |
+| `CollectBaseDistributionByCycleSpark` | 31 s | 1.29 GiB |
+
+Natively on macOS, with no limit, main holds 54 GiB (`PrintReadsSpark`) and 35 to 36 GiB (the
+others).
+
+**Where the memory goes.** `read_walker::traverse` collects the whole traversal before the tool
+looks at a read. #1473 streams the writer, but its callers still hand it that list.
+
+**The optimisation.** `traverse_iter`, the same traversal a read at a time.
+- `FlagStatSpark` and the metrics tools (`spark_metric_text`) fold the reads as they come. The
+  `spark_metrics` folds now take any `Borrow<BamRecord>`.
+- `PrintReadsSpark` and `ExtractOriginalAlignmentRecordsByNameSpark` hand #1473's writer one
+  partition as the reads come (`write_spark_streamed`), which is what `parts_of` makes of the list.
+  A sharded output writes its parts as it goes, and a CRAM refuses its version only after the
+  traversal, so both keep the list.
+
+**Why it cannot move a byte.** The same reads reach the same fold or the same writer in the same
+order. A traversal refusal is still the first one, and leaves no output, because the writer
+renames its scratch file only at the end. A refusal of the writer's own first reads the rest of
+the traversal, so a later traversal refusal still wins, as when the list was read whole. The
+metrics' `--chart` refusal still comes after the traversal.
+
+**The suites that prove it.** `spark-walkers` and the tools' covering arrays. Natively, old against
+new: on chr20 the outputs are identical, and on a BAM with a malformed record in the middle every
+tool gives the same exit and the same message and leaves no output. The same holds for an output
+in a missing directory, with a good input and with a bad one.
+
+**Result.** macOS native, chr20, this branch (with #1473 and #1482 under it) against main:
+
+| Tool | main RSS | RSS | main CPU | CPU | identical |
+|---|---:|---:|---:|---:|---|
+| `PrintReadsSpark` (`.bai`, `.sbi`) | 53.8 GiB | 40 MB | 96 s | 43 s | `.bam` `8dafdf0c`, `.bai`, `.sbi` |
+| `PrintReadsSpark` to `.sam`, 1 Mb | | 31 MB | | 6 s | `f079c14f` |
+| `ExtractOriginalAlignmentRecordsByNameSpark` | 36.4 GiB | 42 MB | 40 s | 19 s | `.bam` `17819ff0`, `.bai`, `.sbi` |
+| `FlagStatSpark` | 36.4 GiB | 30 MB | 42 s | 19 s | `FlagStat`'s, `5434284f` |
+| `MeanQualityByCycleSpark` | 35.5 GiB | 29 MB | 43 s | 25 s | `6b5a1c63` |
+| `QualityScoreDistributionSpark` | 36.3 GiB | 30 MB | 48 s | 29 s | `fab3cd23` |
+| `CollectBaseDistributionByCycleSpark` | 36.3 GiB | 30 MB | 47 s | 24 s | `df9fe6d5` |
+| `CollectQualityYieldMetricsSpark` | 36.3 GiB | 33 MB | 42 s | 25 s | `9b2d70ed` |
+
+The metrics md5s are of the file without its command-line and start-time lines. Against GATK the
+RSS is 0.02x. The CPU is 0.6x to 0.7x for the first three and about 1x for the metrics, where the
+rest is decoding (the engine's, W12).
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are

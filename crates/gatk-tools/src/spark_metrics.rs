@@ -113,12 +113,13 @@ impl MeanQualities {
 }
 
 /// `MeanQualityByCycleSpark.calculateMeanQualityByCycle`, over reads already filtered.
-pub fn mean_quality_by_cycle<'a>(
-    records: impl Iterator<Item = &'a BamRecord>,
+pub fn mean_quality_by_cycle<R: std::borrow::Borrow<BamRecord>>(
+    records: impl Iterator<Item = R>,
     headers: &[String],
 ) -> String {
     let (mut qualities, mut originals) = (MeanQualities::default(), MeanQualities::default());
     for record in records {
+        let record = record.borrow();
         let reverse = record.flags & REVERSE != 0;
         let second = second_of_pair(record);
         qualities.add(&record.base_qualities, reverse, second);
@@ -138,14 +139,15 @@ pub fn mean_quality_by_cycle<'a>(
 /// `QualityScoreDistributionSpark`, over reads already filtered.
 ///
 /// `SequenceUtil.isNoCall` is `N`, `n` or `.`, and `OQ` is indexed by the qualities' length.
-pub fn quality_score_distribution<'a>(
-    records: impl Iterator<Item = &'a BamRecord>,
+pub fn quality_score_distribution<R: std::borrow::Borrow<BamRecord>>(
+    records: impl Iterator<Item = R>,
     include_no_calls: bool,
     headers: &[String],
 ) -> String {
     let mut counts = [0u64; 128];
     let mut original_counts = [0u64; 128];
     for record in records {
+        let record = record.borrow();
         let original = original_qualities(record);
         for (index, quality) in record.base_qualities.iter().enumerate() {
             let base = record.read_bases.get(index).copied().unwrap_or(b'N');
@@ -203,13 +205,14 @@ impl MetricBean for BaseDistributionMetric {
 }
 
 /// `CollectBaseDistributionByCycleSpark.HistogramGenerator`, over reads already filtered.
-pub fn base_distribution_by_cycle<'a>(
-    records: impl Iterator<Item = &'a BamRecord>,
+pub fn base_distribution_by_cycle<R: std::borrow::Borrow<BamRecord>>(
+    records: impl Iterator<Item = R>,
     headers: &[String],
 ) -> String {
     let (mut first, mut second): (Vec<[u64; 5]>, Vec<[u64; 5]>) = (Vec::new(), Vec::new());
     let mut seen_second = false;
     for record in records {
+        let record = record.borrow();
         let length = record.read_bases.len();
         if length + 1 > first.len() {
             first.resize(length + 1, [0; 5]);
@@ -315,13 +318,14 @@ impl MetricBean for QualityYield {
 }
 
 /// `QualityYieldMetricsCollectorSpark`, with no filter of its own beyond the tool's.
-pub fn quality_yield<'a>(
-    records: impl Iterator<Item = &'a BamRecord>,
+pub fn quality_yield<R: std::borrow::Borrow<BamRecord>>(
+    records: impl Iterator<Item = R>,
     use_original: bool,
     headers: &[String],
 ) -> String {
     let mut yields = QualityYield::default();
     for record in records {
+        let record = record.borrow();
         yields.total_reads += 1;
         let length = record.read_bases.len() as i64;
         let passes = record.flags & FAILS_VENDOR_QUALITY == 0;
