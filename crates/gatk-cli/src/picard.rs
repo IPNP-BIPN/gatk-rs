@@ -396,6 +396,15 @@ impl<'a> VcfStream<'a> {
         self.writer.write(&self.encoder, record).ok()
     }
 
+    /// A record already encoded by this stream's header, ending in its newline.
+    pub(crate) fn write_line(&mut self, line: &str) -> Option<()> {
+        self.writer.write_line(line).ok()
+    }
+
+    pub(crate) fn encoder(&self) -> &htsjdk_vcf::encoder::VcfEncoder<'a> {
+        &self.encoder
+    }
+
     pub(crate) fn finish(self, parser: &Parser) -> Option<()> {
         self.writer.finish(parser).ok()
     }

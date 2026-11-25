@@ -333,6 +333,51 @@ sets (no reference, `-R`, `--warn-on-errors`, `--validation-type-to-exclude ALL`
 
 What is left of the CPU is the decoder (htsjdk-io).
 
+## Scale S. `SortVcf` held every input
+
+**Ratio.** At scale (gnomAD chr20 sites to `.vcf.gz`, linux/arm64, 6 GiB container), GATK takes
+33.8 s CPU and 3.57 GiB (its `SortingCollection` spills to disk); the port was killed at the
+limit.
+
+**Where the memory goes.** Each input was read into one string and decoded whole, every record
+held for one in-memory sort, and the output encoded as one more string. Natively the peak was
+6.64 GB for one gnomAD chromosome and 11.5 GB for two inputs.
+
+**The optimisation.** An external sort over the encoded lines.
+- The headers are read first, all of them, and checked as before (`Checks`, which `sort` now runs
+  too); the merged header is written at once.
+- Each record is read, encoded under that header and kept with its key (contig index, start).
+  Every 128 MiB of text the run is sorted stably and written beside the output; at the end the
+  runs are merged, the lowest run winning a tie, and each line written as it comes out. A run
+  that never fills one is sorted and written from memory.
+- Any refusal (a reader, a dictionary, the samples, a contig the dictionary lacks, the encoder,
+  the writer) leaves nothing written and the whole run refuses in its own words and order.
+
+**Why it cannot move a byte.**
+- `write_vcf` is the header followed by each record's encoding, so encoding first and ordering
+  the lines after is the same text.
+- The order is the whole run's stable sort: a run holds only records read after every earlier
+  run's, each run is sorted stably, and the merge breaks a tie by run, so equal keys keep their
+  input order across runs. The key is the comparator's (its contig lookup, `contig_indexes`).
+- The output goes through Scale O's writer and index.
+
+**The suites that prove it.** `sort-vcf`, and a unit test merging runs of one line, of a few and
+of all of them over repeated keys. Natively, old against new, 204 runs give the same output,
+index (but its timestamp) and message: one to three inputs (plain, unsorted, two samples,
+unsorted samples, no records, a malformed record, a contig the dictionary lacks, an undeclared
+INFO key, missing, no contig lines, truncated BGZF, two inputs either way round, different
+samples, one with and one without a dictionary) by `SEQUENCE_DICTIONARY` (none, the reference's,
+another) and `CREATE_INDEX false`, by three outputs. gnomAD chr20 gives the same `.vcf.gz` and
+`.tbi`; a shuffled copy of it sorted with the original (five runs, every key tied across them)
+gives the same `.vcf`.
+
+**Result.** macOS native:
+
+| input | main RSS | RSS | main CPU | CPU | RSS vs GATK | CPU vs GATK |
+|---|---:|---:|---:|---:|---:|---:|
+| gnomAD chr20 | 6.64 GB | 244 MB | 18.6 s | 8.5 s | 0.06x | 0.25x |
+| it and a shuffled copy | 11.5 GB | 315 MB | 16.3 s | 16.1 s | | |
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are

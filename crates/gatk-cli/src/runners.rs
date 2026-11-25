@@ -18282,17 +18282,22 @@ impl VariantStreamWriter {
                 message: Some(format!("{error:?}")),
             })?;
         line.push('\n');
+        self.write_line(&line)?;
+        self.line = line;
+        Ok(())
+    }
+
+    /// One record's line, already encoded and ending in its newline.
+    pub(crate) fn write_line(&mut self, line: &str) -> Result<(), Thrown> {
         if let (Some(tabix), VariantSink::Bgzf(writer)) = (&mut self.tabix, &mut self.sink) {
             if !tabix.failed {
                 let pointer = writer
                     .file_pointer()
                     .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error}")))?;
-                tabix.add(&line, pointer as i64);
+                tabix.add(line, pointer as i64);
             }
         }
-        self.write_text(&line)?;
-        self.line = line;
-        Ok(())
+        self.write_text(line)
     }
 
     pub(crate) fn finish(self, parser: &Parser) -> Result<(), Thrown> {
