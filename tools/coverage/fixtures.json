@@ -2486,21 +2486,17 @@
     },
     "PostProcessReadsForRSEM": {
       "$why": [
-        "qname.bam holds the four answers passesRSEMFilter gives -- a proper pair of single-M reads",
-        "with a pair of secondary alignments beside it, a pair whose second read is unmapped, a pair",
-        "whose first read carries an insertion, and a first of pair with no second -- so a row's output",
-        "is the groups that survive rather than the file back again. reads.bam is coordinate-sorted,",
-        "which this tool refuses outright, so the argument has a row that traverses and a row that",
-        "refuses.",
-        "--read-index is held out for the reason it is held out of TransferReadTags: a query-name",
-        "sorted BAM has no index.",
-        "--inverted-read-filter is held out, and the first measurement is why: all nineteen rows were",
-        "REFUSED and not one of them reached the reordering. Inverting either filter the corpus offers",
-        "leaves a query-name group with no PRIMARY first-of-pair in it -- FirstOfPairReadFilter keeps the",
-        "second reads and PrimaryLineReadFilter keeps the secondary ones -- and the reference then",
-        "dereferences null inside the guard that exists because read1 may be null. That exception is the",
-        "tool's behaviour and is measured, in the module's own tests and against the golden; what an array",
-        "of nineteen refusals cannot measure is the argument surface it is for."
+        "qname.bam holds the four answers passesRSEMFilter gives -- a proper pair of single-M reads with a",
+        "pair of secondary alignments beside it, a pair whose second read is unmapped, a pair whose first",
+        "read carries an insertion, and a first of pair with no second -- so a row's output is the groups",
+        "that survive rather than the file back again. reads.bam is coordinate-sorted, which this tool",
+        "refuses outright, so the argument has a row that traverses and a row that refuses. --read-index is",
+        "held out for the reason it is held out of TransferReadTags: a query-name sorted BAM has no index.",
+        "--inverted-read-filter is absent or SecondOfPairReadFilter. Inverting FirstOfPairReadFilter or",
+        "PrimaryLineReadFilter leaves a query-name group with no PRIMARY first-of-pair, and the reference",
+        "then dereferences null inside the guard that exists because read1 may be null; that refusal is",
+        "measured by the module's own tests. Inverting SecondOfPairReadFilter keeps the first reads and the",
+        "unpaired ones, so every group the filter passes has its read1 and the rows reach the reordering."
       ],
       "--input": [
         "/work/fixtures/qname.bam",
@@ -2511,7 +2507,10 @@
         "/work/out/rsem2.bam"
       ],
       "--read-index": [],
-      "--inverted-read-filter": []
+      "--inverted-read-filter": [
+        "<unset>",
+        "SecondOfPairReadFilter"
+      ]
     },
     "VariantsToTable": {
       "$why": [
