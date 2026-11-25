@@ -3851,6 +3851,34 @@ pub fn revert_sam_spark(parser: &Parser) -> Outcome {
     let attributes = arguments(parser, "attributes-to-clear");
     let restore = !flag(parser, "dont-restore-original-qualities");
     let keep_duplicates = flag(parser, "remove-duplicate-information");
+    // One output and no read group lookup: each read is reverted and written as it is read.
+    if let [(None, file)] = files.as_slice() {
+        let bam_or_sam = file.ends_with(".bam") || file.ends_with(".sam");
+        if !sanitize && bam_or_sam && streams_spark_output(parser, file) {
+            let out = revert_out_header(&driver, &sort_order, &driver.read_groups, keep_alignment);
+            let revert = |mut record: BamRecord| {
+                revert_record(
+                    &mut record,
+                    restore,
+                    keep_duplicates,
+                    keep_alignment,
+                    &attributes,
+                )
+                .map(|()| record)
+            };
+            write_reverted_streamed(
+                parser,
+                &out,
+                &sort_order,
+                &source,
+                &intervals,
+                &filter,
+                revert,
+                file,
+            )?;
+            return Ok(None);
+        }
+    }
     let mut records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
     for record in &mut records {
@@ -3919,6 +3947,64 @@ pub fn revert_sam_spark(parser: &Parser) -> Outcome {
         write_reverted(parser, &out, &sort_order, &filtered, &file)?;
     }
     Ok(None)
+}
+
+/// [`write_reverted`] of one partition, each read reverted and written as it is read.
+///
+/// The run it replaces read and reverted every read before writing one, so its refusals come in
+/// that order: a traversal refusal anywhere, then the first read `revert` refuses, then the
+/// writer's. Past a refusal nothing more is written, the rest of the traversal is read for an
+/// earlier-ranked one, and the writer's scratch file is never renamed over `output`.
+#[allow(clippy::too_many_arguments)]
+fn write_reverted_streamed(
+    parser: &Parser,
+    header: &SamHeader,
+    sort_order: &str,
+    source: &gatk_engine::reads::ReadsDataSource,
+    intervals: &[gatk_engine::interval::SimpleInterval],
+    filter: &dyn Fn(&BamRecord) -> bool,
+    revert: impl Fn(BamRecord) -> Result<BamRecord, Thrown>,
+    output: &str,
+) -> Result<(), Thrown> {
+    let mut records = gatk_tools::read_walker::traverse_iter(source, intervals, false, filter)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?
+        .map(|record| record.map_err(|error| Thrown::user(format!("{error:?}"))));
+    // The directory the writer needs, which the run it replaces made only once every read was
+    // reverted: on a refusal of a read it is removed again.
+    let mut created = None;
+    if let Some(parent) = std::path::Path::new(output).parent() {
+        created = parent
+            .ancestors()
+            .take_while(|dir| !dir.as_os_str().is_empty() && !dir.exists())
+            .last()
+            .map(std::path::Path::to_path_buf);
+        std::fs::create_dir_all(parent).map_err(|error| {
+            Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
+        })?;
+    }
+    let (read_failed, revert_failed) = (std::cell::Cell::new(false), std::cell::Cell::new(false));
+    let parts = std::iter::once(Ok((0, None))).chain(records.by_ref().map(|record| {
+        record
+            .inspect_err(|_| read_failed.set(true))
+            .and_then(|record| revert(record).inspect_err(|_| revert_failed.set(true)))
+            .map(|record| (0, Some(std::borrow::Cow::Owned(record))))
+    }));
+    let result = match write_spark_partitions(parser, header, Some(sort_order), parts, output) {
+        Err(thrown) if !read_failed.get() => match records.find_map(Result::err) {
+            Some(earlier) => {
+                read_failed.set(true);
+                Err(earlier)
+            }
+            None => Err(thrown),
+        },
+        result => result,
+    };
+    if result.is_err() && (read_failed.get() || revert_failed.get()) {
+        if let Some(dir) = created {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
+    result
 }
 
 /// `writeReads(ctx, path, reads, header, false)` for an output whose directory Hadoop would make.
