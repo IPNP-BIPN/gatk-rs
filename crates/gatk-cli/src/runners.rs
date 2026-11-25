@@ -12911,7 +12911,8 @@ pub fn gtf_to_bed(parser: &Parser) -> Outcome {
             let _ = &mut reference;
         }
     }
-    let dictionary = match master_dictionary(parser)? {
+    // `getBestAvailableSequenceDictionary`: the master dictionary, else the reference's.
+    let dictionary = match master_dictionary(parser)?.or(reference_dictionary(parser)?) {
         Some(header) => Some(
             header
                 .sequences
