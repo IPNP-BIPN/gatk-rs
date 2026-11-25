@@ -182,7 +182,7 @@ fn every_recalibration_table_is_the_reference_line_for_line() {
                 // The bases are read after the traversal, so the caller hands over a closure. This
                 // suite's reference is one contig from the golden and cannot fail.
                 &mut |_contig| Ok(reference.as_bytes().to_vec()),
-                &known_sites(),
+                &base_recalibrator::KnownSites::new(&known_sites()),
                 &engine_arguments,
                 levels,
                 &filter,

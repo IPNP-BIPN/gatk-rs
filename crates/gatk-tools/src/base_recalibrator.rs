@@ -76,7 +76,7 @@ impl BaseRecalibratorError {
 pub fn base_recalibrator(
     source: &ReadsDataSource,
     contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, BaseRecalibratorError>,
-    known_sites: &[SimpleInterval],
+    known_sites: &KnownSites,
     arguments: &EngineArguments,
     quantizing_levels: i32,
     filter: &dyn Fn(&BamRecord) -> bool,
@@ -103,7 +103,7 @@ pub fn base_recalibrator(
 pub fn base_recalibrator_on(
     source: &ReadsDataSource,
     contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, BaseRecalibratorError>,
-    known_sites: &[SimpleInterval],
+    known_sites: &KnownSites,
     arguments: &EngineArguments,
     quantizing_levels: i32,
     filter: &dyn Fn(&BamRecord) -> bool,
@@ -152,7 +152,7 @@ fn base_recalibrator_counted<R: std::borrow::Borrow<BamRecord> + Send>(
     header: &htsjdk_bam::header::SamHeader,
     records: impl Iterator<Item = Result<R, BaseRecalibratorError>>,
     contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, BaseRecalibratorError>,
-    known_sites: &[SimpleInterval],
+    known_sites: &KnownSites,
     arguments: &EngineArguments,
     quantizing_levels: i32,
     workers: usize,
@@ -180,7 +180,7 @@ pub fn table_of_reads(
     header: &htsjdk_bam::header::SamHeader,
     records: &[BamRecord],
     contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, BaseRecalibratorError>,
-    known_sites: &[SimpleInterval],
+    known_sites: &KnownSites,
     arguments: &EngineArguments,
     quantizing_levels: i32,
 ) -> Result<String, BaseRecalibratorError> {
@@ -199,10 +199,9 @@ fn count_here<R: std::borrow::Borrow<BamRecord>>(
     header: &htsjdk_bam::header::SamHeader,
     records: impl Iterator<Item = Result<R, BaseRecalibratorError>>,
     contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, BaseRecalibratorError>,
-    known_sites: &[SimpleInterval],
+    known_sites: &KnownSites,
     arguments: &EngineArguments,
 ) -> Result<BaseRecalibrationEngine, BaseRecalibratorError> {
-    let sites = KnownSites::new(known_sites);
     let mut fetched = Bases::default();
     let mut engine = BaseRecalibrationEngine::new(arguments.clone(), header)
         .map_err(BaseRecalibratorError::Engine)?;
@@ -210,7 +209,7 @@ fn count_here<R: std::borrow::Borrow<BamRecord>>(
         let record = record?;
         let record = record.borrow();
         let bases = fetched.of(record, header, contig_bases)?;
-        let overlapping = sites.overlapping(record, header);
+        let overlapping = known_sites.overlapping(record, header);
         engine
             .process_read(record, header, &bases, &overlapping)
             .map_err(BaseRecalibratorError::Engine)?;
@@ -231,7 +230,7 @@ fn count_on_threads<R: std::borrow::Borrow<BamRecord> + Send>(
     header: &htsjdk_bam::header::SamHeader,
     mut records: impl Iterator<Item = Result<R, BaseRecalibratorError>>,
     contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, BaseRecalibratorError>,
-    known_sites: &[SimpleInterval],
+    known_sites: &KnownSites,
     arguments: &EngineArguments,
     workers: usize,
     batch: usize,
@@ -239,13 +238,11 @@ fn count_on_threads<R: std::borrow::Borrow<BamRecord> + Send>(
     use std::sync::{mpsc, Arc};
     // A read, its position in the traversal, and its contig's bases.
     type Item<R> = (usize, R, Arc<Vec<u8>>);
-    let sites = KnownSites::new(known_sites);
     let mut engine = BaseRecalibrationEngine::new(arguments.clone(), header)
         .map_err(BaseRecalibratorError::Engine)?;
     let mut fetched = Bases::default();
 
     let (counted, here) = std::thread::scope(|scope| {
-        let sites = &sites;
         let lanes: Vec<_> = (0..workers)
             .map(|_| {
                 let (to_worker, batches) = mpsc::sync_channel::<Vec<Item<R>>>(2);
@@ -263,7 +260,7 @@ fn count_on_threads<R: std::borrow::Borrow<BamRecord> + Send>(
                         }
                         for (position, record, bases) in items {
                             let record = record.borrow();
-                            let overlapping = sites.overlapping(record, header);
+                            let overlapping = known_sites.overlapping(record, header);
                             if let Err(error) =
                                 engine.process_read(record, header, &bases, &overlapping)
                             {
@@ -393,35 +390,56 @@ fn report(
 
 /// The known sites, sorted by contig and start so that one read's are found by binary search.
 /// Scanning them all for every read was 1.7 million dbSNP sites times 17.7 million reads on chr20.
-struct KnownSites<'a> {
-    by_contig: std::collections::HashMap<&'a str, Contig<'a>>,
+///
+/// Each site is kept as its two coordinates under its contig's name, not as a `SimpleInterval`:
+/// a contig name per site was 1.4 million strings for dbSNP at chr20. Sites are added with
+/// [`KnownSites::push`] and searched once [`KnownSites::sort`] has run.
+#[derive(Debug, Default)]
+pub struct KnownSites {
+    by_contig: std::collections::HashMap<String, Contig>,
+    sorted: bool,
 }
 
-struct Contig<'a> {
-    /// Sorted by start, ties in the order given.
-    sites: Vec<&'a SimpleInterval>,
+#[derive(Debug)]
+struct Contig {
+    /// `(start, end)`, sorted by start, ties in the order given.
+    sites: Vec<(i32, i32)>,
     /// The longest site, which bounds how far before a read's start an overlapping site can begin.
     longest: i64,
 }
 
-impl<'a> KnownSites<'a> {
-    fn new(known_sites: &'a [SimpleInterval]) -> Self {
-        let mut by_contig: std::collections::HashMap<&str, Contig> =
-            std::collections::HashMap::new();
+impl KnownSites {
+    /// The sites of `known_sites`, sorted.
+    pub fn new(known_sites: &[SimpleInterval]) -> Self {
+        let mut sites = KnownSites::default();
         for site in known_sites {
-            let contig = by_contig.entry(site.contig.as_str()).or_insert(Contig {
+            sites.push(&site.contig, site.start, site.end);
+        }
+        sites.sort();
+        sites
+    }
+
+    /// One more site, in the order the files give them.
+    pub fn push(&mut self, contig: &str, start: i32, end: i32) {
+        let contig = match self.by_contig.get_mut(contig) {
+            Some(sites) => sites,
+            None => self.by_contig.entry(contig.to_string()).or_insert(Contig {
                 sites: Vec::new(),
                 longest: 0,
-            });
-            contig.sites.push(site);
-            contig.longest = contig
-                .longest
-                .max(i64::from(site.end) - i64::from(site.start));
+            }),
+        };
+        contig.sites.push((start, end));
+        contig.longest = contig.longest.max(i64::from(end) - i64::from(start));
+        self.sorted = false;
+    }
+
+    /// Sorts every contig's sites by start, stably, which the search needs.
+    pub fn sort(&mut self) {
+        for contig in self.by_contig.values_mut() {
+            contig.sites.sort_by_key(|&(start, _)| start);
+            contig.sites.shrink_to_fit();
         }
-        for contig in by_contig.values_mut() {
-            contig.sites.sort_by_key(|site| site.start);
-        }
-        KnownSites { by_contig }
+        self.sorted = true;
     }
 
     /// The known sites the engine is handed for one read: those on its contig overlapping
@@ -449,18 +467,26 @@ impl<'a> KnownSites<'a> {
     }
 
     fn in_span(&self, contig: &str, start: i32, end: i32) -> Vec<SimpleInterval> {
+        assert!(
+            self.sorted,
+            "the known sites are searched before they are sorted"
+        );
         let Some(sites) = self.by_contig.get(contig) else {
             return Vec::new();
         };
         let earliest = i64::from(start) - sites.longest;
         let first = sites
             .sites
-            .partition_point(|site| i64::from(site.start) < earliest);
+            .partition_point(|&(site_start, _)| i64::from(site_start) < earliest);
         sites.sites[first..]
             .iter()
-            .take_while(|site| site.start <= end)
-            .filter(|site| site.end >= start)
-            .map(|site| (*site).clone())
+            .take_while(|&&(site_start, _)| site_start <= end)
+            .filter(|&&(_, site_end)| site_end >= start)
+            .map(|&(start, end)| SimpleInterval {
+                contig: contig.to_string(),
+                start,
+                end,
+            })
             .collect()
     }
 }
