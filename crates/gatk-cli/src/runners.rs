@@ -1932,67 +1932,97 @@ fn on_the_fly_index(
     size: i64,
     timestamp: i64,
 ) -> Vec<u8> {
-    use htsjdk_tribble::index::{TribbleIndex, INTERVAL_TREE, LINEAR, VERSION};
-    use htsjdk_tribble::index_write::{BalanceApproach, BuiltIndex, DynamicIndexCreator, Feature};
+    let mut index = OnTheFlyIndex::new();
+    index.add_text(text);
+    index.finish(dictionary, path, size, timestamp)
+}
 
-    let mut creator = DynamicIndexCreator::new(BalanceApproach::ForSeekTime);
-    let mut at: i64 = 0;
-    for line in text.split_inclusive('\n') {
-        let body = line.trim_end_matches('\n');
-        if !body.starts_with('#') {
-            let columns: Vec<&str> = body.split('\t').collect();
-            if columns.len() >= 8 {
-                if let Ok(start) = columns[1].parse::<i32>() {
-                    let end = columns[7]
-                        .split(';')
-                        .filter_map(|field| field.split_once('='))
-                        .find(|(key, _)| *key == "END")
-                        .and_then(|(_, value)| value.parse::<i32>().ok())
-                        .unwrap_or(start + columns[3].len() as i32 - 1);
-                    creator.add_feature(
-                        &Feature {
-                            contig: columns[0].to_string(),
-                            start,
-                            end,
-                        },
-                        at,
-                    );
+/// [`on_the_fly_index`] fed the file's text as it is written, a whole line or more at a time.
+pub(crate) struct OnTheFlyIndex {
+    creator: htsjdk_tribble::index_write::DynamicIndexCreator,
+    /// Bytes fed so far: where the next line starts.
+    at: i64,
+}
+
+impl OnTheFlyIndex {
+    pub(crate) fn new() -> Self {
+        OnTheFlyIndex {
+            creator: htsjdk_tribble::index_write::DynamicIndexCreator::new(
+                htsjdk_tribble::index_write::BalanceApproach::ForSeekTime,
+            ),
+            at: 0,
+        }
+    }
+
+    pub(crate) fn add_text(&mut self, text: &str) {
+        for line in text.split_inclusive('\n') {
+            let body = line.trim_end_matches('\n');
+            if !body.starts_with('#') {
+                let columns: Vec<&str> = body.split('\t').collect();
+                if columns.len() >= 8 {
+                    if let Ok(start) = columns[1].parse::<i32>() {
+                        let end = columns[7]
+                            .split(';')
+                            .filter_map(|field| field.split_once('='))
+                            .find(|(key, _)| *key == "END")
+                            .and_then(|(_, value)| value.parse::<i32>().ok())
+                            .unwrap_or(start + columns[3].len() as i32 - 1);
+                        self.creator.add_feature(
+                            &htsjdk_tribble::index_write::Feature {
+                                contig: columns[0].to_string(),
+                                start,
+                                end,
+                            },
+                            self.at,
+                        );
+                    }
                 }
             }
+            self.at += line.len() as i64;
         }
-        at += line.len() as i64;
     }
 
-    let mut properties: Vec<(String, String)> = dictionary
-        .iter()
-        .map(|(name, length)| (format!("DICT:{name}"), length.to_string()))
-        .collect();
-    properties.extend(creator.properties());
+    pub(crate) fn finish(
+        self,
+        dictionary: &[(String, i32)],
+        path: &str,
+        size: i64,
+        timestamp: i64,
+    ) -> Vec<u8> {
+        use htsjdk_tribble::index::{TribbleIndex, INTERVAL_TREE, LINEAR, VERSION};
+        use htsjdk_tribble::index_write::BuiltIndex;
 
-    let (index_type, contigs, interval_contigs) = match creator.finalize(text.len() as i64) {
-        Ok(BuiltIndex::Linear(contigs)) => (LINEAR, contigs, Vec::new()),
-        Ok(BuiltIndex::IntervalTree(intervals)) => (INTERVAL_TREE, Vec::new(), intervals),
-        Err(_) => (LINEAR, Vec::new(), Vec::new()),
-    };
+        let mut properties: Vec<(String, String)> = dictionary
+            .iter()
+            .map(|(name, length)| (format!("DICT:{name}"), length.to_string()))
+            .collect();
+        properties.extend(self.creator.properties());
 
-    TribbleIndex {
-        index_type,
-        version: VERSION,
-        indexed_path: format!("file://{path}"),
-        // `close()` writes the index with `writeBasedOnFeaturePath`, which STATS the file it has
-        // just finished: the size and the timestamp are the written file's. The md5 is not
-        // computed and stays empty.
-        indexed_file_size: size,
-        indexed_file_timestamp: timestamp,
-        indexed_file_md5: String::new(),
-        // Zero, not the dictionary flag: from version 3 the dictionary is properties.
-        flags: 0,
-        properties,
-        contigs,
-        interval_contigs,
+        let (index_type, contigs, interval_contigs) = match self.creator.finalize(self.at) {
+            Ok(BuiltIndex::Linear(contigs)) => (LINEAR, contigs, Vec::new()),
+            Ok(BuiltIndex::IntervalTree(intervals)) => (INTERVAL_TREE, Vec::new(), intervals),
+            Err(_) => (LINEAR, Vec::new(), Vec::new()),
+        };
+
+        TribbleIndex {
+            index_type,
+            version: VERSION,
+            indexed_path: format!("file://{path}"),
+            // `close()` writes the index with `writeBasedOnFeaturePath`, which STATS the file it
+            // has just finished: the size and the timestamp are the written file's. The md5 is
+            // not computed and stays empty.
+            indexed_file_size: size,
+            indexed_file_timestamp: timestamp,
+            indexed_file_md5: String::new(),
+            // Zero, not the dictionary flag: from version 3 the dictionary is properties.
+            flags: 0,
+            properties,
+            contigs,
+            interval_contigs,
+        }
+        .write()
+        .unwrap_or_default()
     }
-    .write()
-    .unwrap_or_default()
 }
 
 /// One input VCF, read as far as the gather looks at it.
@@ -17796,21 +17826,7 @@ fn write_variant_companions(
     if !create_index {
         return Ok(());
     }
-    let dictionary: Vec<(String, i32)> = index_dictionary.unwrap_or_else(|| {
-        text.lines()
-            .take_while(|line| line.starts_with('#'))
-            .filter_map(|line| {
-                let body = line.strip_prefix("##contig=<")?.trim_end_matches('>');
-                let name = body.split(',').find_map(|f| f.strip_prefix("ID="))?;
-                let length = body
-                    .split(',')
-                    .find_map(|f| f.strip_prefix("length="))
-                    .and_then(|value| value.parse().ok())
-                    .unwrap_or(0);
-                Some((name.to_string(), length))
-            })
-            .collect()
-    });
+    let dictionary: Vec<(String, i32)> = index_dictionary.unwrap_or_else(|| header_contigs(text));
     // The index records the output as `Path.toUri` prints it, which is always absolute.
     let mut source = index_feature_file::Source::new(&java_absolute_path(output));
     source.timestamp = modified_millis(output);
@@ -17853,14 +17869,31 @@ fn write_variant_companions(
     })
 }
 
+/// The `##contig` lines of a VCF's header, as the `.idx` lists them when no dictionary is given.
+fn header_contigs(text: &str) -> Vec<(String, i32)> {
+    text.lines()
+        .take_while(|line| line.starts_with('#'))
+        .filter_map(|line| {
+            let body = line.strip_prefix("##contig=<")?.trim_end_matches('>');
+            let name = body.split(',').find_map(|f| f.strip_prefix("ID="))?;
+            let length = body
+                .split(',')
+                .find_map(|f| f.strip_prefix("length="))
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(0);
+            Some((name.to_string(), length))
+        })
+        .collect()
+}
+
 /// [`write_variant_output`] fed one record at a time, for a tool that need not hold its records.
 ///
 /// The output is written beside itself and renamed into place by [`finish`](Self::finish), so a
 /// run refused part way leaves none, as the whole-text writer did. A `.vcf.gz` is tabix indexed as
 /// it is written, at the pointer the BGZF stream reports before each record, which is what
-/// `IndexingVariantContextWriter` does. The rest of what the whole-text path does -- the shards of
-/// `--max-variants-per-shard`, an MD5, a `.idx`, and a tabix the records' order refuses -- is that
-/// path's, over the file read back.
+/// `IndexingVariantContextWriter` does, and a text file's `.idx` is built from each line as it is
+/// written. The rest of what the whole-text path does -- the shards of `--max-variants-per-shard`,
+/// an MD5, and a tabix the records' order refuses -- is that path's, over the file read back.
 pub(crate) struct VariantStreamWriter {
     output: String,
     sink: VariantSink,
@@ -17872,6 +17905,9 @@ pub(crate) struct VariantStreamWriter {
     /// A Picard writer refuses an unordered tabix before it writes a byte, so a tabix the records
     /// could not stream leaves no output and the caller writes the whole text instead.
     refuse_unstreamed_tabix: bool,
+    /// A text file's `.idx`, fed as the file is written, and the header's contig lines it lists
+    /// when no dictionary is given.
+    tribble: Option<(OnTheFlyIndex, Vec<(String, i32)>)>,
     line: String,
     _partial: PartialFile,
 }
@@ -17985,6 +18021,10 @@ impl VariantStreamWriter {
                 VariantSink::Plain(file)
             }
         };
+        let tribble = (create_index
+            && matches!(sink, VariantSink::Plain(_))
+            && index_feature_file::index_kind(output) != index_feature_file::IndexKind::Tabix)
+            .then(|| (OnTheFlyIndex::new(), header_contigs(header)));
         let mut writer = VariantStreamWriter {
             output: output.to_string(),
             sink,
@@ -17993,6 +18033,7 @@ impl VariantStreamWriter {
             create_md5,
             index_dictionary: None,
             refuse_unstreamed_tabix: false,
+            tribble,
             line: String::new(),
             _partial: partial,
         };
@@ -18001,6 +18042,9 @@ impl VariantStreamWriter {
     }
 
     fn write_text(&mut self, text: &str) -> Result<(), Thrown> {
+        if let Some((index, _)) = &mut self.tribble {
+            index.add_text(text);
+        }
         let written = match &mut self.sink {
             VariantSink::Plain(file) => std::io::Write::write_all(file, text.as_bytes()),
             VariantSink::Bgzf(writer) => std::io::Write::write_all(writer, text.as_bytes()),
@@ -18080,10 +18124,10 @@ impl VariantStreamWriter {
         std::fs::rename(&self._partial.0, output).map_err(failed)?;
 
         let streamed = self.tabix.filter(|tabix| !tabix.failed);
-        let index_from_file = self.create_index && streamed.is_none();
+        let index_from_file = self.create_index && streamed.is_none() && self.tribble.is_none();
         if self.create_md5 || index_from_file {
-            // shortcut: an MD5, a `.idx` or a refused tabix read the whole output back, as the
-            // whole-text writer held it; stream them too when a large run asks for one.
+            // shortcut: an MD5 or a refused tabix read the whole output back, as the whole-text
+            // writer held it; stream them too when a large run asks for one.
             let bytes = std::fs::read(output).map_err(failed)?;
             let text = if output.ends_with(".gz") || output.ends_with(".bgz") {
                 String::from_utf8_lossy(
@@ -18101,8 +18145,20 @@ impl VariantStreamWriter {
                 &bytes,
                 index_from_file,
                 self.create_md5,
-                self.index_dictionary,
+                self.index_dictionary.clone(),
             )?;
+        }
+        if let Some((index, contigs)) = self.tribble {
+            let dictionary = self.index_dictionary.as_deref().unwrap_or(&contigs);
+            let size = std::fs::metadata(output).map_err(failed)?.len() as i64;
+            let index = index.finish(dictionary, output, size, modified_millis(output));
+            let companion = index_feature_file::default_output(output);
+            std::fs::write(&companion, index).map_err(|error| {
+                Thrown::non_user(
+                    PORT_FAILURE,
+                    format!("could not write {companion}: {error}"),
+                )
+            })?;
         }
         if let Some(tabix) = streamed {
             let (level, deflater) = output_compression(parser);

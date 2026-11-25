@@ -1,12 +1,13 @@
 //! `FixVcfHeader.doWork`, after `customCommandLineValidation`.
 
 use gatk_barclay::Parser;
-use gatk_tools::fix_vcf_header::{fix, fix_with_header};
+use gatk_tools::fix_vcf_header::{fix, fix_with_header, Invented};
 use gatk_tools::main_entry::Thrown;
 
 use super::vcf_format_converter::output_type;
-use super::{assert_readable, thrown, vcf_text, write_vcf};
+use super::{assert_readable, thrown, vcf_lines, vcf_text, write_vcf, VcfStream};
 use crate::runners::{argument, flag, scalar};
+use crate::vcf_stream::{Body, Records};
 
 pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> {
     let input = argument(parser, "INPUT").unwrap_or_default();
@@ -18,6 +19,9 @@ pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> 
     assert_readable(&input)?;
     if let Some(header) = &header {
         assert_readable(header)?;
+    }
+    if header.is_none() && streamed(parser, &input, &output, check_first_n_records).is_some() {
+        return Ok(0);
     }
     let text = vcf_text(&input)?;
     let fixed = match &header {
@@ -33,6 +37,36 @@ pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> 
     output_type(&output)?;
     write_indexed_vcf(parser, &output, &fixed)?;
     Ok(0)
+}
+
+/// `fix` and [`write_indexed_vcf`] with the file read twice, as `doWork` reads it: once for the
+/// lines its records use and its header lacks, then again for the records written under the
+/// fixed header. `None` on any refusal, having written nothing, so the run above refuses in its
+/// own words and order.
+fn streamed(parser: &Parser, input: &str, output: &str, check_first_n_records: i32) -> Option<()> {
+    output_type(output).ok()?;
+    let mut lines = vcf_lines(input)?;
+    let (text, header_lines) = lines.read_header().ok()?;
+    let file = htsjdk_vcf::reader::read_vcf(&text).ok()?;
+    let mut invented = Invented::new(&file.header);
+    for (index, record) in Records::new(Body::Stream(lines), &file, header_lines).enumerate() {
+        // The scan stops at the limit, but every record is read: the whole file is decoded first.
+        let record = record.ok()?;
+        if check_first_n_records <= 0 || (index as i32) < check_first_n_records {
+            invented.look(&record);
+        }
+    }
+    let (mut header, samples) = invented.header();
+    header.samples = samples;
+
+    let mut lines = vcf_lines(input)?;
+    let (text, header_lines) = lines.read_header().ok()?;
+    let file = htsjdk_vcf::reader::read_vcf(&text).ok()?;
+    let mut out = VcfStream::create(parser, output, &header, true, None)?;
+    for record in Records::new(Body::Stream(lines), &file, header_lines) {
+        out.write(&record.ok()?)?;
+    }
+    out.finish(parser)
 }
 
 /// `write_vcf` for a writer built with htsjdk's default options, which hold `INDEX_ON_THE_FLY`:

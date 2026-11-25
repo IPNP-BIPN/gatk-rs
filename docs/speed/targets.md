@@ -181,8 +181,60 @@ against the header. htsjdk-vcf does that with a linear scan of every header line
 header has hundreds. Sent to htsjdk-io as a per-encoder set of ids, which answers the same
 booleans; it is every VCF writer's cost, not this tool's.
 
-A text `.vcf` with `CREATE_INDEX` still reads its whole output back for the `.idx`: 650 MB for
-`MakeSitesOnlyVcf` on gnomAD to `.vcf`, the shortcut `VariantStreamWriter` names.
+A text `.vcf` with `CREATE_INDEX` read its whole output back for the `.idx` (650 MB for
+`MakeSitesOnlyVcf` on gnomAD to `.vcf`); Scale P streams it.
+
+## Scale P. The last Picard VCF writers (`VcfFormatConverter`, `FixVcfHeader`) and a text `.idx`
+
+**Ratio.** At scale (gnomAD chr20 sites, linux/arm64, 6 GiB container), each killed at the limit:
+
+| Tool | output | GATK CPU | GATK RSS |
+|---|---|---:|---:|
+| `VcfFormatConverter` | `.vcf` (`.idx`) | 24.2 s | 1.27 GiB |
+| `FixVcfHeader` | `.vcf.gz` (`.tbi`) | 17.8 s | 0.98 GiB |
+
+**Where the memory goes.** Each tool read, decoded and wrote the whole file, as in Scale O. A text
+output with an index had one more copy: Scale O's writer read the whole output back for the
+`.idx`.
+
+**The optimisation.**
+- `on_the_fly_index` is now `OnTheFlyIndex` fed the written text line by line. The whole-text
+  path feeds it the text once; `VariantStreamWriter` feeds it each line as it writes. A text
+  output's `.idx` no longer reads the file back.
+- `VcfFormatConverter` writes each record as it is read, once the index check passes. A missing
+  index is left to the whole run.
+- `FixVcfHeader` reads the file twice, as `doWork` does. The first pass finds the lines the records
+  use and the header lacks (`Invented`, which `fix` now runs too); the second writes the records
+  under the fixed header. Every record is decoded in the first pass, whatever
+  `CHECK_FIRST_N_RECORDS` says, as the whole read decoded them. `HEADER` is left to the whole run.
+
+**Why it cannot move a byte.**
+- `OnTheFlyIndex` sees the same lines at the same offsets and is finished at the same length, with
+  the same dictionary, path, size and timestamp sources.
+- The records and the header are Scale O's: `write_vcf`'s encoding through `write_variant_file`'s
+  writer.
+- On any refusal nothing is written and the whole run refuses as before.
+
+**The suites that prove it.** `vcf-format-converter`, `fix-vcf-header` and every Scale O suite.
+Natively, old against new, 117 runs give the same output, index and message (an `.idx` differs
+only in its timestamp):
+- `FixVcfHeader` with and without `CHECK_FIRST_N_RECORDS` and `HEADER`;
+- `VcfFormatConverter` with `REQUIRE_INDEX` and `CREATE_INDEX` on and off;
+- to `.vcf`, `.vcf.gz` and a name with no VCF extension;
+- over an indexed input, an unindexed one, a BGZF one, undeclared INFO, FORMAT and FILTER keys,
+  a malformed record, no contig lines, an unsorted file and truncated BGZF.
+The 162 Scale O runs were repeated with this build and still match.
+
+**Result.** macOS native:
+
+| Tool | main RSS | RSS | main CPU | CPU | RSS vs GATK | CPU vs GATK |
+|---|---:|---:|---:|---:|---:|---:|
+| `VcfFormatConverter` | 5.25 GB | 34 MB | 7.0 s | 7.5 s | 0.03x | 0.31x |
+| `FixVcfHeader` | 9.49 GB | 23 MB | 22.7 s | 12.0 s | 0.02x | 0.67x |
+| `MakeSitesOnlyVcf` to `.vcf` (gnomAD) | 8.17 GB | 33 MB | 8.0 s | 7.6 s | | |
+
+`FixVcfHeader`'s CPU is two decodes of the file, as GATK's is; what is left is the decoder's
+(htsjdk-io).
 
 ## Not targets yet
 
