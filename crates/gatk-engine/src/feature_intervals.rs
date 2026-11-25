@@ -182,8 +182,16 @@ impl RegisteredCodecs {
             samples: frame.samples,
         };
         let mut intervals = Vec::new();
+        // Built once rather than by `decode_line` for every line.
+        let info_types = htsjdk_vcf::record_parse::InfoTypes::new(&header);
         for (number, line) in text.lines().enumerate() {
-            match htsjdk_vcf::record_parse::decode_line(line, &header, number, version) {
+            match htsjdk_vcf::record_parse::decode_line_with(
+                line,
+                &header,
+                &info_types,
+                number,
+                version,
+            ) {
                 Ok(Some(decoded)) => {
                     let variant = decoded.variant;
                     intervals.push(crate::interval::parse_interval(
