@@ -514,6 +514,10 @@ fn frames(compressed: &CompressedFile, address: u64, count: usize) -> Result<u64
     Ok(end)
 }
 
+/// How many blocks a tail cursor inflates at once where it has no prefetch: at most 4 MiB either
+/// side of the inflate.
+const STREAM_BLOCKS: usize = 64;
+
 /// How many inflated blocks a reader is handed at once, and how many such handfuls wait ready:
 /// at most a few MiB ahead of the record being decoded.
 const AHEAD_BLOCKS: usize = 16;
@@ -966,7 +970,8 @@ impl ReadsDataSource {
     /// [`Self::iter_all`], a record at a time.
     pub fn records_all(&self) -> Result<Records<'_>, ReadsError> {
         if self.split_start != 0 {
-            let cursor = BlockCursor::seek(&self.compressed, self.split_start, u64::MAX)?;
+            let mut cursor = BlockCursor::seek(&self.compressed, self.split_start, u64::MAX)?;
+            cursor.batched = true;
             return Ok(self.records(Kind::Tail(cursor)));
         }
         Ok(self.records(Kind::Stream(Stream::new(
@@ -1834,6 +1839,9 @@ struct BlockCursor<'a> {
     next_address: u64,
     block: Vec<u8>,
     offset: usize,
+    /// Reading on, the blocks after the first inflate a batch at a time, as [`Inflating`] does;
+    /// `block` is then the batch, so the pointer is only right for a cursor nobody asks it of.
+    batched: bool,
 }
 
 impl<'a> BlockCursor<'a> {
@@ -1858,6 +1866,7 @@ impl<'a> BlockCursor<'a> {
             next_address: address,
             block: Vec::new(),
             offset: 0,
+            batched: false,
         };
         cursor.load_block(address)?;
         cursor.offset = vfp::block_offset(pointer) as usize;
@@ -1878,6 +1887,28 @@ impl<'a> BlockCursor<'a> {
                     return Ok(true);
                 }
                 None => self.ahead = None,
+            }
+        }
+        // Where the prefetch has no block for this address, a tail cursor inflates a batch at a time.
+        if self.batched && address == self.next_address && address != self.block_address {
+            let end = frames(self.data, address, STREAM_BLOCKS).unwrap_or(address);
+            let bytes = match end > address {
+                true => self
+                    .data
+                    .get(address, (end - address) as usize)
+                    .ok()
+                    .flatten(),
+                false => None,
+            };
+            if let Some(Ok(inflated)) = bytes.map(|bytes| htsjdk_bgzf::read::decompress_all(&bytes))
+            {
+                self.block_address = address;
+                self.next_address = end;
+                self.block = inflated;
+                self.offset = 0;
+                // The serial reader is behind the batch now.
+                self.reader = None;
+                return Ok(true);
             }
         }
         // The reader carries on from the block before; anywhere else is a new one.
