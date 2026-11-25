@@ -80,6 +80,8 @@ pub enum RecalibrationReportError {
     UnknownCovariateName(String),
     /// `GATKException` from `asLong` or `asDouble` on a cell of a type they do not accept.
     UnexpectedCellType { column: String },
+    /// A covariate refusing a value the report holds, such as a cycle above `--maximum-cycle-value`.
+    Covariate(crate::covariates::CovariateError),
 }
 
 impl RecalibrationReportError {
@@ -101,6 +103,7 @@ impl RecalibrationReportError {
             RecalibrationReportError::UnexpectedCellType { column } => {
                 format!("Object in column {column} is not of the expected type")
             }
+            RecalibrationReportError::Covariate(error) => error.message(),
         }
     }
 }
@@ -378,7 +381,7 @@ fn parse_all_covariates_table(
             CovariateKind::Cycle => covariates
                 .cycle
                 .key_from_value(value.parse::<i32>().unwrap_or(0))
-                .map_err(|error| RecalibrationReportError::UnknownCovariateName(error.message()))?,
+                .map_err(RecalibrationReportError::Covariate)?,
             // The special covariates never appear in this table.
             CovariateKind::ReadGroup => covariates.read_group.key_from_value(&value),
             CovariateKind::QualityScore => value.parse::<i32>().unwrap_or(0),
