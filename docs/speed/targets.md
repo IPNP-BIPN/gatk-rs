@@ -112,6 +112,44 @@ The metrics md5s are of the file without its command-line and start-time lines. 
 RSS is 0.02x. The CPU is 0.6x to 0.7x for the first three and about 1x for the metrics, where the
 rest is decoding (the engine's, W12).
 
+## Scale T. `RevertSamSpark` held every read
+
+**Ratio.** At scale (NA12878 chr20 BAM, linux/arm64, 6 GiB container), GATK takes 81.9 s CPU and
+1.13 GiB; the port was killed at the limit.
+
+**Where the memory goes.** Every read was traversed into a `Vec`, reverted in place, and the list
+handed to the writer: the whole BAM decoded at once. Natively the peak was 22.5 GB.
+
+**The optimisation.** A run with one output and no read group lookup (no `--sanitize`, no
+`--output-by-readgroup`, a `.bam` or `.sam` that is not sharded) reverts each read and hands it to
+Scale J's streaming writer as it is read. Every other run is the whole one.
+
+**Why it cannot move a byte.**
+- The reads, their order and `revert_record` are the whole run's, and the writer is the one it
+  called with the same header and order: one partition, written as it comes.
+- The refusals keep their order: a traversal refusal anywhere, then the first read reverting
+  refuses, then the writer's. Past a refusal nothing more is written, the rest of the traversal is
+  read for an earlier-ranked refusal, the scratch file is never renamed, and an output directory
+  the run had to make is removed again, as the whole run makes it only once every read is reverted.
+
+**The suites that prove it.** `spark-walkers`. Natively, old against new, 224 runs give the same
+files and message: a BAM, a SAM, a truncated BAM and a missing one, by fourteen option sets
+(none, `--sanitize`, `--output-by-readgroup`, `-L`, `--attributes-to-clear XS` and `RG`,
+`--keep-alignment-information`, `--dont-restore-original-qualities`,
+`--remove-duplicate-information`, `--sort-order coordinate`, `--sample-alias` and
+`--library-name`, `--keep-first-duplicate`, `--sharded-output`, `--create-output-bam-index`), by
+four outputs (`.bam`, `.sam`, `.cram`, a `.bam` in a directory not yet made). chr20 gives the same
+BAM and `.sbi`.
+
+**Result.** macOS native, NA12878 chr20:
+
+| | RSS | CPU | RSS vs GATK | CPU vs GATK |
+|---|---:|---:|---:|---:|
+| main | 22.5 GB | 77.5 s | | |
+| streamed | 38 MB | 52.3 s | 0.03x | 0.64x |
+
+What is left of the CPU is BGZF inflate and deflate and `reverse_complement` (htsjdk-io).
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are
