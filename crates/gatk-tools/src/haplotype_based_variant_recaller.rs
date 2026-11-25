@@ -891,8 +891,8 @@ pub fn compute_likelihoods(
             gatk_engine::pair_hmm::fast_round(value).max(10) as u8
         })
         .collect();
-    let mut matrix = vec![Vec::with_capacity(reads.len()); haplotypes.len()];
     let mut hmm_quals: Vec<Vec<u8>> = Vec::with_capacity(reads.len());
+    let mut hmm_indels: Vec<(Vec<u8>, Vec<u8>, Vec<u8>)> = Vec::with_capacity(reads.len());
     for read in reads {
         let length = read.bases.len();
         let mut quals = read.quals.clone();
@@ -928,19 +928,35 @@ pub fn compute_likelihoods(
             }
         }
         let gcp = vec![settings.gap_continuation_penalty; length];
-        for (h, haplotype) in haplotypes.iter().enumerate() {
-            let value = gatk_engine::pair_hmm::read_likelihood_given_haplotype_log10(
-                haplotype,
-                &read.bases,
-                &quals,
-                &ins,
-                &del,
-                &gcp,
-            );
-            matrix[h].push(value);
-        }
         hmm_quals.push(quals);
+        hmm_indels.push((ins, del, gcp));
     }
+    // Every read against one haplotype at a time, several reads side by side: the batched
+    // recursion gives each read the bits the one-read recursion gives it.
+    let views: Vec<gatk_engine::pair_hmm::HmmRead<'_>> = reads
+        .iter()
+        .zip(&hmm_quals)
+        .zip(&hmm_indels)
+        .map(
+            |((read, quals), (ins, del, gcp))| gatk_engine::pair_hmm::HmmRead {
+                bases: &read.bases,
+                quals,
+                insertion_quals: ins,
+                deletion_quals: del,
+                gap_continuation: gcp,
+            },
+        )
+        .collect();
+    let matrix: Vec<Vec<f64>> = haplotypes
+        .iter()
+        .map(|haplotype| {
+            let mut row = vec![0.0; views.len()];
+            gatk_engine::pair_hmm::reads_likelihoods_given_haplotype_log10(
+                haplotype, &views, &mut row,
+            );
+            row
+        })
+        .collect();
     // filterPoorlyModeledEvidence.
     let mut kept = Vec::new();
     for (r, quals) in hmm_quals.iter().enumerate() {
