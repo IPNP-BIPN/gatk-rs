@@ -111,7 +111,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | CondenseDepthEvidence | gatk-rs | oracle-backed | 18 suite | 0 suite | 18/18 (100.0%) | 2 | 2047 probes (+35), 0/9 diverge | 2 | 7 | none |
 | ConvertCountsToDepthFile | gatk-rs | oracle-backed | 55 suite | 0 suite | 21/21 (100.0%) | 2 | not measured | 2 | 4 | none |
 | ConvertHaplotypeDatabaseToVcf | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
-| ConvertHeaderlessHadoopBamShardToBam | gatk-rs | oracle-backed | 21 suite | 0 suite | 12/12 (100.0%) | 2 | 985 probes (+2), 0/6 diverge | 5 | 0 | none |
+| ConvertHeaderlessHadoopBamShardToBam | gatk-rs | oracle-backed | 21 suite | 0 suite | 12/12 (100.0%) | 2 | 985 probes (+2), 0/6 diverge | 6 | 0 | none |
 | ConvertSequencingArtifactToOxoG | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CountBases | gatk-rs | oracle-backed | 50 suite | 0 suite | 21/21 (100.0%) | 2 | 2111 probes (+25), 0/12 diverge | 5 | 0 | none |
 | CountBasesInReference | gatk-rs | oracle-backed | 191 suite | 0 suite | 19/19 (100.0%) | 2 | 2046 probes (+0), 0/6 diverge | 4 | 0 | none |
@@ -119,7 +119,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | CountFalsePositives | gatk-rs | oracle-backed | 14 suite | 0 suite | 24/24 (100.0%) | 2 | 2273 probes (+30), 0/7 diverge | 2 | 2 | none |
 | CountReads | gatk-rs | oracle-backed | 36418 suite | 6 suite | 21/21 (100.0%) | 2 | 2110 probes (+25), 0/12 diverge | 5 | 0 | none |
 | CountReadsSpark | gatk-rs | oracle-backed | 9 | 1 | 19/19 (100.0%) | 2 | 2017 probes (+4), 0/11 diverge | 5 | 1 | none |
-| CountVariants | gatk-rs | oracle-backed | 36417 suite | 12 suite | 23/23 (100.0%) | 2 | 2356 probes (+4), 0/10 diverge | 4 | 0 | none |
+| CountVariants | gatk-rs | oracle-backed | 36417 suite | 12 suite | 23/23 (100.0%) | 2 | 2356 probes (+4), 0/10 diverge | 6 | 0 | none |
 | CountVariantsSpark | gatk-rs | oracle-backed | 7 | 0 | 19/19 (100.0%) | 2 | 1682 probes (+8), 0/11 diverge | 7 | 1 | none |
 | CpxVariantReInterpreterSpark | gatk-rs | oracle-backed | 81 | 24 | 19/19 (100.0%) | 2 | 3828 probes (+5), 0/12 diverge | 8 | 5 | none |
 | CreateBafRegressMetricsFile | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -849,11 +849,11 @@ sv.counts.tsv is the table the REFERENCE's own CollectReadCounts wrote, under th
 
 Suites: `convert-headerless-shard`.
 
-Inputs: `donor.sam`, `missing.bam`, `reads.bam`, `reads.vcf`, `reads.vcf.gz`.
+Inputs: `donor.sam`, `missing.bam`, `reads.bam`, `reads.cram`, `reads.vcf`, `reads.vcf.gz`.
 
 Held out: none.
 
---bam-shard is copied byte for byte and never parsed, so any file is a shard: reads.bam, a text file, and the fixtures DIRECTORY, which FileUtils.copyFile refuses inside the same try as the output and therefore as `Error writing to` the output. --bam-with-header is the donor SamReaderFactory opens: a coordinate BAM, a SAM text donor.sam whose VN:1.5 the tool keeps, a BGZF VCF read as SAM text (an empty header), and a missing file, the RuntimeIOException. --output carries two names. --use-jdk-deflater is what decides the header block's deflate stream, the one part the tool writes.
+--bam-shard is copied byte for byte and never parsed, so any file is a shard: reads.bam, a text file, and the fixtures DIRECTORY, which FileUtils.copyFile refuses inside the same try as the output and therefore as `Error writing to` the output. --bam-with-header is the donor SamReaderFactory opens: a coordinate BAM, the same reads as CRAM (its header needs no reference), a SAM text donor.sam whose VN:1.5 the tool keeps, a BGZF VCF read as SAM text (an empty header), and a missing file, the RuntimeIOException. --output carries two names. --use-jdk-deflater is what decides the header block's deflate stream, the one part the tool writes.
 
 ### CountBases
 
@@ -909,7 +909,7 @@ Held out: `--output-shard-tmp-dir`.
 
 Suites: `count-variants`, `sequence-dictionary-validation`, `interval-arguments`, `tool-argument-declarations`, `tool-argument-enums`.
 
-Inputs: `reads.bai`, `reads.bam`, `reads2.bai`, `reads2.bam`.
+Inputs: `reads.bai`, `reads.bam`, `reads.cram`, `reads.sam`, `reads2.bai`, `reads2.bam`.
 
 Held out: none.
 

@@ -78,9 +78,9 @@
       "source": "none"
     }
   ],
-  "rows": 12,
-  "tuples_total": 66,
-  "tuples_covered": 66,
+  "rows": 15,
+  "tuples_total": 75,
+  "tuples_covered": 75,
   "tuples_forbidden": 0,
   "constraint_notes": [],
   "coverage": 1.0,
@@ -130,7 +130,7 @@
       },
       "arguments": [
         "--bam-shard=/work/fixtures/reads.bam",
-        "--bam-with-header=/work/fixtures/reads.vcf.gz",
+        "--bam-with-header=/work/fixtures/reads.cram",
         "--output=/work/out/converted.bam",
         "--tmp-dir=/work/tmp2",
         "--use-jdk-deflater=true"
@@ -147,7 +147,7 @@
       },
       "arguments": [
         "--bam-shard=/work/fixtures/reads.bam",
-        "--bam-with-header=/work/fixtures/missing.bam",
+        "--bam-with-header=/work/fixtures/reads.vcf.gz",
         "--output=/work/out/converted.bam",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=false"
@@ -156,16 +156,16 @@
     {
       "row": 4,
       "labels": {
-        "--bam-shard": "fixture[1]",
-        "--bam-with-header": "fixture[0]",
-        "--output": "fixture[1]",
+        "--bam-shard": "fixture[0]",
+        "--bam-with-header": "fixture[4]",
+        "--output": "fixture[0]",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
       },
       "arguments": [
-        "--bam-shard=/work/fixtures/reads.vcf",
-        "--bam-with-header=/work/fixtures/reads.bam",
-        "--output=/work/out/other.bam",
+        "--bam-shard=/work/fixtures/reads.bam",
+        "--bam-with-header=/work/fixtures/missing.bam",
+        "--output=/work/out/converted.bam",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true"
       ]
@@ -174,6 +174,23 @@
       "row": 5,
       "labels": {
         "--bam-shard": "fixture[1]",
+        "--bam-with-header": "fixture[0]",
+        "--output": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--bam-shard=/work/fixtures/reads.vcf",
+        "--bam-with-header=/work/fixtures/reads.bam",
+        "--output=/work/out/other.bam",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 6,
+      "labels": {
+        "--bam-shard": "fixture[1]",
         "--bam-with-header": "fixture[1]",
         "--output": "fixture[0]",
         "--tmp-dir": "fixture[0]",
@@ -188,7 +205,7 @@
       ]
     },
     {
-      "row": 6,
+      "row": 7,
       "labels": {
         "--bam-shard": "fixture[1]",
         "--bam-with-header": "fixture[2]",
@@ -198,14 +215,14 @@
       },
       "arguments": [
         "--bam-shard=/work/fixtures/reads.vcf",
-        "--bam-with-header=/work/fixtures/reads.vcf.gz",
+        "--bam-with-header=/work/fixtures/reads.cram",
         "--output=/work/out/other.bam",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=false"
       ]
     },
     {
-      "row": 7,
+      "row": 8,
       "labels": {
         "--bam-shard": "fixture[1]",
         "--bam-with-header": "fixture[3]",
@@ -215,14 +232,31 @@
       },
       "arguments": [
         "--bam-shard=/work/fixtures/reads.vcf",
-        "--bam-with-header=/work/fixtures/missing.bam",
+        "--bam-with-header=/work/fixtures/reads.vcf.gz",
         "--output=/work/out/other.bam",
         "--tmp-dir=/work/tmp2",
         "--use-jdk-deflater=true"
       ]
     },
     {
-      "row": 8,
+      "row": 9,
+      "labels": {
+        "--bam-shard": "fixture[1]",
+        "--bam-with-header": "fixture[4]",
+        "--output": "fixture[1]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--bam-shard=/work/fixtures/reads.vcf",
+        "--bam-with-header=/work/fixtures/missing.bam",
+        "--output=/work/out/other.bam",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 10,
       "labels": {
         "--bam-shard": "fixture[2]",
         "--bam-with-header": "fixture[0]",
@@ -239,7 +273,7 @@
       ]
     },
     {
-      "row": 9,
+      "row": 11,
       "labels": {
         "--bam-shard": "fixture[2]",
         "--bam-with-header": "fixture[1]",
@@ -256,10 +290,27 @@
       ]
     },
     {
-      "row": 10,
+      "row": 12,
       "labels": {
         "--bam-shard": "fixture[2]",
         "--bam-with-header": "fixture[2]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--bam-shard=/work/fixtures",
+        "--bam-with-header=/work/fixtures/reads.cram",
+        "--output=/work/out/converted.bam",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 13,
+      "labels": {
+        "--bam-shard": "fixture[2]",
+        "--bam-with-header": "fixture[3]",
         "--output": "fixture[0]",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
@@ -273,10 +324,10 @@
       ]
     },
     {
-      "row": 11,
+      "row": 14,
       "labels": {
         "--bam-shard": "fixture[2]",
-        "--bam-with-header": "fixture[3]",
+        "--bam-with-header": "fixture[4]",
         "--output": "fixture[0]",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"

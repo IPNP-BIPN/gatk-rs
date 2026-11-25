@@ -1487,7 +1487,8 @@ pub fn count_variants(parser: &Parser) -> Outcome {
     Ok(Some(count.to_string()))
 }
 
-/// The sequence dictionary a reads input carries, which for a file that is not a BAM is EMPTY.
+/// The sequence dictionary a reads input carries: a BAM's or a CRAM's header, or the leading `@`
+/// lines of text, which for a file that is not SAM are none, so its dictionary is EMPTY.
 ///
 /// `ReadsPathDataSource` opens whatever it is given and asks for the header before it reads a
 /// record, so a VCF or a BED handed to `--input` is a stream with no `@SQ` line rather than a
@@ -1512,9 +1513,13 @@ fn reads_dictionary(
         bytes
     };
     let is_binary = decompressed.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC);
+    let is_cram = decompressed.starts_with(b"CRAM");
     // `--read-index` is refused while the reads are OPENED, so it refuses here too: a walker that
     // only wants the dictionary still opens them.
-    let _ = read_index(parser, inputs, is_binary, compressed)?;
+    let _ = read_index(parser, inputs, is_binary || is_cram, compressed)?;
+    if is_cram || (!is_binary && !compressed) {
+        return Ok(reads_input::non_bam_header(parser, &decompressed)?.sequences);
+    }
     if !is_binary {
         return Ok(Vec::new());
     }
@@ -22076,10 +22081,10 @@ fn donor_header(donor: &str) -> Result<SamHeader, Thrown> {
     }
     let bytes = std::fs::read(path).map_err(|_| unreadable("No such file or directory"))?;
     if bytes.starts_with(b"CRAM") {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "A CRAM donor is a GATK feature that this port does not carry yet. This message is the port's own and not GATK's.",
-        ));
+        // The header container is all `getFileHeader` reads, so no reference is asked for.
+        return htsjdk_cram::reader::CramReader::new(&bytes)
+            .map(|reader| reader.header)
+            .map_err(|error| Thrown::non_user(error.java_exception(), error.message()));
     }
     let content = if bytes.starts_with(&[0x1f, 0x8b]) {
         let mut plain = Vec::new();
