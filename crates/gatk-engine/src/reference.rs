@@ -68,7 +68,13 @@ impl<R: Read + Seek + Send + Sync> Fasta for IndexedFasta<R> {
 pub struct ReferenceFileSource {
     reader: Box<dyn Fasta>,
     lengths: Vec<(String, usize)>,
+    /// The bases [`ReferenceFileSource::query_windowed`] read ahead: a contig, the position of the
+    /// first base, and the bases as `query` returns them.
+    window: Option<(String, i32, Vec<u8>)>,
 }
+
+/// How far [`ReferenceFileSource::query_windowed`] reads ahead.
+const WINDOW: i32 = 1 << 20;
 
 impl ReferenceFileSource {
     /// Open a FASTA and its `.fai`.
@@ -81,7 +87,11 @@ impl ReferenceFileSource {
             .iter()
             .map(|entry| (entry.name.clone(), entry.size as usize))
             .collect();
-        Ok(ReferenceFileSource { reader, lengths })
+        Ok(ReferenceFileSource {
+            reader,
+            lengths,
+            window: None,
+        })
     }
 
     fn length_of(&self, contig: &str) -> Option<usize> {
@@ -123,6 +133,40 @@ impl ReferenceFileSource {
             .map_err(|e| ReferenceError::Io(e.message()))?;
         upper_case_and_flatten_iupac(&mut bases);
         Ok(bases)
+    }
+
+    /// [`ReferenceFileSource::query`] for a caller whose queries mostly move forward a little at
+    /// a time: each miss reads a mebibase ahead, and the queries inside it are answered from it.
+    /// The flattening is base by base, so a slice of a longer query is the shorter query; a
+    /// query `query` refuses, or a read ahead that fails, goes to `query` itself.
+    pub fn query_windowed(
+        &mut self,
+        contig: &str,
+        start: i32,
+        stop: i32,
+    ) -> Result<Vec<u8>, ReferenceError> {
+        if let Some((name, first, bases)) = &self.window {
+            if name == contig && start >= *first && stop >= start {
+                if let Some(slice) = bases.get((start - first) as usize..=(stop - first) as usize) {
+                    return Ok(slice.to_vec());
+                }
+            }
+        }
+        let Some(length) = self.length_of(contig) else {
+            return self.query(contig, start, stop);
+        };
+        if start < 1 || stop < start || stop as usize > length {
+            return self.query(contig, start, stop);
+        }
+        let end = (stop.max(start.saturating_add(WINDOW - 1)) as usize).min(length) as i32;
+        match self.query(contig, start, end) {
+            Ok(bases) => {
+                let answer = bases[..(stop - start + 1) as usize].to_vec();
+                self.window = Some((contig.to_string(), start, bases));
+                Ok(answer)
+            }
+            Err(_) => self.query(contig, start, stop),
+        }
     }
 }
 

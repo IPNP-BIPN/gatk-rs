@@ -4931,6 +4931,9 @@ pub fn filter_intervals(parser: &Parser) -> Outcome {
 pub fn left_align_and_trim_variants(parser: &Parser) -> Outcome {
     use gatk_tools::left_align_and_trim_variants as align;
 
+    if left_align_and_trim_streamed(parser).is_some() {
+        return Ok(Some("SUCCESS".to_string()));
+    }
     let VariantWalkerStart {
         input,
         text,
@@ -4966,16 +4969,147 @@ pub fn left_align_and_trim_variants(parser: &Parser) -> Outcome {
     };
     let keep_original_counts = flag(parser, "keep-original-ac");
 
+    let header = left_align_header(parser, &file.header, &arguments, keep_original_counts)?;
+    let sites_only = flag(parser, "sites-only-vcf-output");
+
+    let located: Vec<LocatedRecord> = file
+        .records
+        .iter()
+        .enumerate()
+        .map(|(index, record)| LocatedRecord {
+            index,
+            contig: record.contig.clone(),
+            start: record.start as i32,
+            stop: record.stop as i32,
+        })
+        .collect();
+    if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()).is_some()
+        && !has_feature_index(&input)
+    {
+        return Err(Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException",
+            message: Some(format!(
+                "Input {input} must support random access to enable traversal by intervals. \
+                 If it's a file, please index it using the bundled tool IndexFeatureFile"
+            )),
+        });
+    }
+
+    let mut aligner = LeftAligner::new(&arguments, keep_original_counts);
+    let mut written: Vec<htsjdk_vcf::variant::VariantContext> = Vec::new();
+    for located in gatk_engine::variant_source::traverse(&located, intervals.as_deref()) {
+        aligner.align(
+            &file.records[located.index],
+            &file.header.samples,
+            &mut reference,
+            &mut |record| {
+                written.push(record);
+                Ok(())
+            },
+        )?;
+    }
+
+    let keep = variant_output_filter(parser, intervals.as_deref())?;
+    written.retain(|record| keep(record));
+    if sites_only {
+        for record in &mut written {
+            record.genotypes.clear();
+        }
+    }
+
+    let text = htsjdk_vcf::vcf_file::write_vcf(&header, &written).map_err(|error| Thrown {
+        failure: Failure::User,
+        exception: "org.broadinstitute.hellbender.exceptions.UserException",
+        message: Some(format!("{error:?}")),
+    })?;
+    write_variant_output(parser, &output, &text)?;
+    // What `doWork` returns, which `handleResult` prints after `Tool returned:`.
+    Ok(Some("SUCCESS".to_string()))
+}
+
+/// [`left_align_and_trim_variants`] with the records read, aligned and written one at a time,
+/// for a run with no `-L`, whose traversal is the file's own order. `None` on any refusal, having
+/// written nothing, so the whole run then refuses in its own words and order.
+fn left_align_and_trim_streamed(parser: &Parser) -> Option<()> {
+    use gatk_tools::left_align_and_trim_variants as align;
+
+    let (start, stream) =
+        variant_walker_startup_streamed(parser, "LeftAlignAndTrimVariants").ok()?;
+    let (lines, header_lines) = stream?;
+    if gatk_engine::variant_source::intervals_for_traversal(start.intervals.as_deref()).is_some() {
+        return None;
+    }
+    let output = argument(parser, "output")?;
+    let reference_path = argument(parser, "reference")?;
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .ok()?;
+    let file = htsjdk_vcf::reader::read_vcf(&start.text).ok()?;
+    let arguments = align::Arguments {
+        dont_trim_alleles: flag(parser, "dont-trim-alleles"),
+        split_multiallelics: flag(parser, "split-multi-allelics"),
+        max_indel_size: number_or(parser, "max-indel-length", align::DEFAULT_MAX_INDEL_SIZE),
+        max_leading_bases: number_or(
+            parser,
+            "max-leading-bases",
+            align::DEFAULT_MAX_LEADING_BASES,
+        ),
+    };
+    let keep_original_counts = flag(parser, "keep-original-ac");
+
+    let header = left_align_header(parser, &file.header, &arguments, keep_original_counts).ok()?;
+    let sites_only = flag(parser, "sites-only-vcf-output");
+    let keep = variant_output_filter(parser, start.intervals.as_deref()).ok()?;
+
+    let encoder = htsjdk_vcf::encoder::VcfEncoder::new(&header);
+    let mut writer = VariantStreamWriter::create(parser, &output, &header.write()).ok()?;
+    let mut aligner = LeftAligner::new(&arguments, keep_original_counts);
+    let records = crate::vcf_stream::Records::new(
+        crate::vcf_stream::Body::Stream(lines),
+        &file,
+        header_lines,
+    );
+    let stop = || Thrown::non_user(PORT_FAILURE, "the streamed run stopped");
+    for record in records {
+        let record = record.ok()?;
+        aligner
+            .align(
+                &record,
+                &file.header.samples,
+                &mut reference,
+                &mut |mut record| {
+                    if !keep(&record) {
+                        return Ok(());
+                    }
+                    if sites_only {
+                        record.genotypes.clear();
+                    }
+                    writer.write(&encoder, &record).map_err(|_| stop())
+                },
+            )
+            .ok()?;
+    }
+    writer.finish(parser).ok()
+}
+
+/// `createVCFHeaderLineList` and the samples: the header [`left_align_and_trim_variants`] writes.
+fn left_align_header(
+    parser: &Parser,
+    header_in: &htsjdk_vcf::VcfHeader,
+    arguments: &gatk_tools::left_align_and_trim_variants::Arguments,
+    keep_original_counts: bool,
+) -> Result<htsjdk_vcf::VcfHeader, Thrown> {
     // `createVCFHeaderLineList`: the input's own lines merged with themselves, the tool's default
     // lines, and the count lines the splitting adds.
     let (mut lines, _warnings) = htsjdk_vcf::merge::smart_merge_headers(
         &[htsjdk_vcf::merge::Source {
-            header: &file.header,
+            header: header_in,
             version: None,
         }],
         true,
     )
-    .unwrap_or_else(|_| (file.header.lines.clone(), Vec::new()));
+    .unwrap_or_else(|_| (header_in.lines.clone(), Vec::new()));
     if flag(parser, "add-output-vcf-command-line") {
         lines.push(htsjdk_vcf::header::HeaderLine::Unstructured {
             key: "source".to_string(),
@@ -5041,44 +5175,82 @@ pub fn left_align_and_trim_variants(parser: &Parser) -> Outcome {
     let mut samples = if sites_only {
         Vec::new()
     } else {
-        file.header.samples.clone()
+        header_in.samples.clone()
     };
     samples.sort();
-    let header =
-        update_header_contig_lines(parser, htsjdk_vcf::header::VcfHeader { lines, samples })?;
+    update_header_contig_lines(parser, htsjdk_vcf::header::VcfHeader { lines, samples })
+}
 
-    let located: Vec<LocatedRecord> = file
-        .records
-        .iter()
-        .enumerate()
-        .map(|(index, record)| LocatedRecord {
-            index,
-            contig: record.contig.clone(),
-            start: record.start as i32,
-            stop: record.stop as i32,
-        })
-        .collect();
-    if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()).is_some()
-        && !has_feature_index(&input)
-    {
-        return Err(Thrown {
-            failure: Failure::User,
-            exception: "org.broadinstitute.hellbender.exceptions.UserException",
-            message: Some(format!(
-                "Input {input} must support random access to enable traversal by intervals. \
-                 If it's a file, please index it using the bundled tool IndexFeatureFile"
-            )),
-        });
+/// The state [`left_align_and_trim_variants`] carries from record to record: the reference's
+/// contigs read so far, and the record the next one is measured against.
+struct LeftAligner<'a> {
+    arguments: &'a gatk_tools::left_align_and_trim_variants::Arguments,
+    keep_original_counts: bool,
+    contigs: std::collections::HashMap<String, Vec<u8>>,
+    last: Option<gatk_engine::variant_context_utils::Variant>,
+}
+
+impl<'a> LeftAligner<'a> {
+    fn new(
+        arguments: &'a gatk_tools::left_align_and_trim_variants::Arguments,
+        keep_original_counts: bool,
+    ) -> Self {
+        LeftAligner {
+            arguments,
+            keep_original_counts,
+            contigs: std::collections::HashMap::new(),
+            last: None,
+        }
     }
 
-    // The whole contig, once per contig: the alignment indexes the reference by one-based position
-    // and walks LEFT from the record, so a slice around the record would have to be re-based.
-    let mut contigs: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
-    let mut written: Vec<htsjdk_vcf::variant::VariantContext> = Vec::new();
-    let mut last: Option<gatk_engine::variant_context_utils::Variant> = None;
-    for located in gatk_engine::variant_source::traverse(&located, intervals.as_deref()) {
-        let original = &file.records[located.index];
-        let bridged = crate::variant_bridge::to_engine(original);
+    /// One input record: split, aligned and trimmed, each piece handed to `emit` in order.
+    fn align(
+        &mut self,
+        original: &htsjdk_vcf::variant::VariantContext,
+        samples: &[String],
+        reference: &mut gatk_engine::reference::ReferenceFileSource,
+        emit: &mut dyn FnMut(htsjdk_vcf::variant::VariantContext) -> Result<(), Thrown>,
+    ) -> Result<(), Thrown> {
+        use gatk_tools::left_align_and_trim_variants as align;
+        let arguments = self.arguments;
+        let keep_original_counts = self.keep_original_counts;
+        let contigs = &mut self.contigs;
+        let last = &mut self.last;
+        // A record the alignment leaves where it is comes back from the bridge as it went in when
+        // it has no genotypes (the decoder keeps one value per INFO key, so each finds its own),
+        // so it is written as read, without the round trip. Only its alleles and place are needed
+        // for the decision and for the next record's bound.
+        if !arguments.split_multiallelics && original.genotypes.is_empty() {
+            let place = gatk_engine::variant_context_utils::Variant {
+                contig: original.contig.clone(),
+                start: original.start as i32,
+                stop: original.stop as i32,
+                alleles: original
+                    .alleles
+                    .iter()
+                    .map(|allele| gatk_engine::variant_context_utils::Allele {
+                        bases: allele.display_string().into_bytes(),
+                        is_reference: allele.is_reference(),
+                    })
+                    .collect(),
+                ..Default::default()
+            };
+            let distance = match &last {
+                Some(previous) if previous.contig == place.contig => place.start - previous.stop,
+                _ => i32::MAX,
+            };
+            let window = arguments.max_leading_bases.min(distance - 1);
+            let moves = align::largest_indel_length(&place) <= arguments.max_indel_size
+                && place.is_indel()
+                && window > 0;
+            if !moves {
+                emit(original.clone())?;
+                *last = Some(place);
+                return Ok(());
+            }
+        }
+        // No JEXL expression reads the record here.
+        let bridged = crate::variant_bridge::to_engine_for(original, false);
 
         // The counts the subsetter would carry over are only reachable on a record that HAS them;
         // the corpus has none, so the flag is the header's business alone. A record that carries
@@ -5095,8 +5267,8 @@ pub fn left_align_and_trim_variants(parser: &Parser) -> Outcome {
             return Err(Thrown::non_user(
                 PORT_LIMITATION,
                 "--keep-original-ac over a record that carries AC asks the subsetter for the \
-                 counts it had, which this port does not carry yet. This message is the port's \
-                 own and not GATK's.",
+             counts it had, which this port does not carry yet. This message is the port's \
+             own and not GATK's.",
             ));
         }
 
@@ -5109,7 +5281,7 @@ pub fn left_align_and_trim_variants(parser: &Parser) -> Outcome {
                 return Err(Thrown::non_user(
                     PORT_LIMITATION,
                     "A record whose genotypes carry AF is split by the SOMATIC splitter, which \
-                     this port does not carry yet. This message is the port's own and not GATK's.",
+                 this port does not carry yet. This message is the port's own and not GATK's.",
                 ));
             }
             gatk_engine::variant_context_utils::split_variant_context_to_biallelics(
@@ -5124,14 +5296,14 @@ pub fn left_align_and_trim_variants(parser: &Parser) -> Outcome {
         for piece in pieces {
             if align::largest_indel_length(&piece) > arguments.max_indel_size {
                 // Written untouched, and it is still the record the next one is measured against.
-                written.push(crate::variant_bridge::from_engine(
+                emit(crate::variant_bridge::from_engine(
                     original,
                     &gatk_tools::select_variants::Record {
                         variant: piece.clone(),
-                        samples: file.header.samples.clone(),
+                        samples: samples.to_vec(),
                     },
-                ));
-                last = Some(piece);
+                ))?;
+                *last = Some(piece);
                 continue;
             }
             let distance = match &last {
@@ -5169,22 +5341,20 @@ pub fn left_align_and_trim_variants(parser: &Parser) -> Outcome {
                     // The engine's own query, which upper-cases and flattens IUPAC exactly as
                     // `ReferenceDataSource.of(path)` does for a `ReferenceContext`: the alignment
                     // compares these bases against the record's alleles.
-                    bases.extend(
-                        reference
-                            .query(&piece.contig, 1, length)
-                            .map_err(|error| match error {
-                                gatk_engine::reference::ReferenceError::UnknownContig(contig) => {
-                                    Thrown::user(format!(
-                                        "Contig {contig} not present in the sequence dictionary {}\n",
-                                        gatk_tools::sequence_dictionary::pretty_print(
-                                            &gatk_tools::reference_walker::dictionary(&reference)
-                                                .sequences
-                                        )
-                                    ))
-                                }
-                                other => Thrown::user(format!("{other:?}")),
-                            })?,
-                    );
+                    bases.extend(reference.query(&piece.contig, 1, length).map_err(|error| {
+                        match error {
+                            gatk_engine::reference::ReferenceError::UnknownContig(contig) => {
+                                Thrown::user(format!(
+                                    "Contig {contig} not present in the sequence dictionary {}\n",
+                                    gatk_tools::sequence_dictionary::pretty_print(
+                                        &gatk_tools::reference_walker::dictionary(reference)
+                                            .sequences
+                                    )
+                                ))
+                            }
+                            other => Thrown::user(format!("{other:?}")),
+                        }
+                    })?);
                 }
                 contigs.insert(piece.contig.clone(), bases);
             }
@@ -5197,33 +5367,17 @@ pub fn left_align_and_trim_variants(parser: &Parser) -> Outcome {
                 !arguments.dont_trim_alleles,
             )
             .map_err(|error| Thrown::user(format!("{error:?}")))?;
-            written.push(crate::variant_bridge::from_engine(
+            emit(crate::variant_bridge::from_engine(
                 original,
                 &gatk_tools::select_variants::Record {
                     variant: aligned.clone(),
-                    samples: file.header.samples.clone(),
+                    samples: samples.to_vec(),
                 },
-            ));
-            last = Some(aligned);
+            ))?;
+            *last = Some(aligned);
         }
+        Ok(())
     }
-
-    let keep = variant_output_filter(parser, intervals.as_deref())?;
-    written.retain(|record| keep(record));
-    if sites_only {
-        for record in &mut written {
-            record.genotypes.clear();
-        }
-    }
-
-    let text = htsjdk_vcf::vcf_file::write_vcf(&header, &written).map_err(|error| Thrown {
-        failure: Failure::User,
-        exception: "org.broadinstitute.hellbender.exceptions.UserException",
-        message: Some(format!("{error:?}")),
-    })?;
-    write_variant_output(parser, &output, &text)?;
-    // What `doWork` returns, which `handleResult` prints after `Tool returned:`.
-    Ok(Some("SUCCESS".to_string()))
 }
 
 /// What the biallelic splitter refuses: the trimming underneath, or the genotype combinatorics.
@@ -7182,8 +7336,9 @@ fn validation_record(
 /// The GVCF coverage check runs at the end over the whole traversal, and what it subtracts from is
 /// the interval argument when there is one and the whole dictionary when there is not.
 pub fn validate_variants(parser: &Parser) -> Outcome {
-    use gatk_tools::validate_variants as validate;
-
+    if let Some(outcome) = validate_variants_streamed(parser) {
+        return Ok(outcome);
+    }
     let VariantWalkerStart {
         input,
         text,
@@ -7196,6 +7351,75 @@ pub fn validate_variants(parser: &Parser) -> Outcome {
         exception: "htsjdk.tribble.TribbleException",
         message: Some(failure.error.message()),
     })?;
+    validate_variant_records(parser, &input, &text, intervals.as_deref(), || {
+        let located: Vec<LocatedRecord> = file
+            .records
+            .iter()
+            .enumerate()
+            .map(|(index, record)| LocatedRecord {
+                index,
+                contig: record.contig.clone(),
+                start: record.start as i32,
+                stop: record.stop as i32,
+            })
+            .collect();
+        if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()).is_some()
+            && !has_feature_index(&input)
+        {
+            return Err(Thrown {
+                failure: Failure::User,
+                exception: "org.broadinstitute.hellbender.exceptions.UserException",
+                message: Some(format!(
+                    "Input {input} must support random access to enable traversal by intervals. \
+                     If it's a file, please index it using the bundled tool IndexFeatureFile"
+                )),
+            });
+        }
+        let traversed: Vec<&htsjdk_vcf::variant::VariantContext> =
+            gatk_engine::variant_source::traverse(&located, intervals.as_deref())
+                .into_iter()
+                .map(|located| &file.records[located.index])
+                .collect();
+        Ok(traversed.into_iter().map(Ok))
+    })
+}
+
+/// [`validate_variants`] with the records read and checked one at a time, for a run with no `-L`,
+/// whose traversal is the file's own order. Nothing is written, so any refusal, the reader's
+/// included, is `None` and the whole run then refuses in its own words and order.
+fn validate_variants_streamed(parser: &Parser) -> Option<Option<String>> {
+    let (start, stream) = variant_walker_startup_streamed(parser, "ValidateVariants").ok()?;
+    let (lines, header_lines) = stream?;
+    if gatk_engine::variant_source::intervals_for_traversal(start.intervals.as_deref()).is_some() {
+        return None;
+    }
+    let file = htsjdk_vcf::reader::read_vcf(&start.text).ok()?;
+    let refused = || Thrown::non_user(PORT_FAILURE, "the streamed run stopped");
+    validate_variant_records(parser, &start.input, &start.text, None, || {
+        Ok(crate::vcf_stream::Records::new(
+            crate::vcf_stream::Body::Stream(lines),
+            &file,
+            header_lines,
+        )
+        .map(|record| record.map_err(|_| refused())))
+    })
+    .ok()
+}
+
+/// The checks of [`validate_variants`] over `records`, which are made where the traversal starts,
+/// after the arguments and the reference are checked.
+fn validate_variant_records<I, B>(
+    parser: &Parser,
+    input: &str,
+    header_text: &str,
+    intervals: Option<&[gatk_engine::interval::SimpleInterval]>,
+    records: impl FnOnce() -> Result<I, Thrown>,
+) -> Outcome
+where
+    I: Iterator<Item = Result<B, Thrown>>,
+    B: std::borrow::Borrow<htsjdk_vcf::variant::VariantContext>,
+{
+    use gatk_tools::validate_variants as validate;
 
     let mut types_to_exclude = Vec::new();
     for name in arguments(parser, "validation-type-to-exclude") {
@@ -7259,29 +7483,7 @@ pub fn validate_variants(parser: &Parser) -> Outcome {
         None => None,
     };
 
-    let located: Vec<LocatedRecord> = file
-        .records
-        .iter()
-        .enumerate()
-        .map(|(index, record)| LocatedRecord {
-            index,
-            contig: record.contig.clone(),
-            start: record.start as i32,
-            stop: record.stop as i32,
-        })
-        .collect();
-    if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()).is_some()
-        && !has_feature_index(&input)
-    {
-        return Err(Thrown {
-            failure: Failure::User,
-            exception: "org.broadinstitute.hellbender.exceptions.UserException",
-            message: Some(format!(
-                "Input {input} must support random access to enable traversal by intervals. \
-                 If it's a file, please index it using the bundled tool IndexFeatureFile"
-            )),
-        });
-    }
+    let records = records()?;
 
     let mut order = validate::OrderCheck::new();
     let mut covered: Vec<gatk_engine::interval::SimpleInterval> = Vec::new();
@@ -7291,8 +7493,9 @@ pub fn validate_variants(parser: &Parser) -> Outcome {
     // overlapping interval and the assignment makes it the last.
     let mut previous: Option<(gatk_engine::interval::SimpleInterval, bool)> = None;
     let mut overlapping: Option<gatk_engine::interval::SimpleInterval> = None;
-    for located in gatk_engine::variant_source::traverse(&located, intervals.as_deref()) {
-        let vc = &file.records[located.index];
+    for vc in records {
+        let vc = vc?;
+        let vc = vc.borrow();
         let record = validation_record(vc);
 
         if validate_gvcf {
@@ -7350,7 +7553,7 @@ pub fn validate_variants(parser: &Parser) -> Outcome {
             Some(source) => {
                 let length = record.reference.len() as i32;
                 let bases = source
-                    .query(&record.contig, record.start, record.start + length - 1)
+                    .query_windowed(&record.contig, record.start, record.start + length - 1)
                     .map_err(|error| match error {
                         // A reference that does not carry the record's contig is a refusal and not
                         // a skipped check, and the dictionary it prints is the REFERENCE's.
@@ -7371,7 +7574,7 @@ pub fn validate_variants(parser: &Parser) -> Outcome {
             None => None,
         };
         if let Err(error) =
-            validate::validate_record(&record, &input, &types, observed.as_deref(), &arguments)
+            validate::validate_record(&record, input, &types, observed.as_deref(), &arguments)
         {
             if let Some(thrown) = refuse(error) {
                 return Err(thrown);
@@ -7384,9 +7587,9 @@ pub fn validate_variants(parser: &Parser) -> Outcome {
         // is not, and what is subtracted from it is the merged span of every record traversed.
         let dictionary = match master_dictionary(parser)?.or(reference_dictionary(parser)?) {
             Some(header) => header,
-            None => vcf_dictionary(&text),
+            None => vcf_dictionary(header_text),
         };
-        let wanted = match intervals.as_deref() {
+        let wanted = match intervals {
             Some(given) if !given.is_empty() => given.to_vec(),
             _ => gatk_engine::interval_args::whole_reference(&dictionary),
         };
