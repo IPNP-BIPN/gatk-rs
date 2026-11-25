@@ -16654,12 +16654,33 @@ fn java_class_name(class: &str) -> &'static str {
 /// than an equality. Both are the port's business; what the runner adds is the header the output
 /// carries and the traversal that decides which records reach the buffer at all.
 pub fn remove_nearby_indels(parser: &Parser) -> Outcome {
+    let (start, stream) = variant_walker_startup_streamed(parser, "RemoveNearbyIndels")?;
     let VariantWalkerStart {
         input,
-        text,
+        mut text,
         intervals,
         ..
-    } = variant_walker_startup(parser, "RemoveNearbyIndels")?;
+    } = start;
+    let stream = match stream {
+        Some((reader, lines))
+            if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref())
+                .is_none() =>
+        {
+            return remove_nearby_indels_streamed(parser, &input, &text, reader, lines);
+        }
+        stream => stream,
+    };
+    // shortcut: `-L` and a GenomicsDB workspace keep the whole text; stream them when a run needs.
+    if let Some((mut reader, _)) = stream {
+        let mut line = String::new();
+        while reader
+            .next_line(&mut line)
+            .map_err(|_| not_block_compressed(&input))?
+        {
+            text.push_str(&line);
+            text.push('\n');
+        }
+    }
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
@@ -16690,6 +16711,150 @@ pub fn remove_nearby_indels(parser: &Parser) -> Outcome {
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
 
     write_variant_output(parser, &output, &out)?;
+    // `onTraversalSuccess` returns the word, which `handleResult` prints.
+    Ok(Some("SUCCESS".to_string()))
+}
+
+/// [`remove_nearby_indels`] over the records one at a time, for a run with no `-L`. A record is
+/// held only while the buffer may still emit it, and written when it does.
+///
+/// The whole-text path decompressed the file at startup and decoded every record before anything
+/// else, so a file that cannot be read was refused first, and a malformed record next. Every
+/// refusal here therefore reads the rest of the file first, and answers with the earliest of
+/// those if there is one.
+fn remove_nearby_indels_streamed(
+    parser: &Parser,
+    input: &str,
+    header_text: &str,
+    reader: crate::vcf_stream::LineReader,
+    header_lines: usize,
+) -> Outcome {
+    let unreadable = |mut reader: crate::vcf_stream::LineReader, thrown: Thrown| {
+        let mut line = String::new();
+        loop {
+            match reader.next_line(&mut line) {
+                Ok(true) => {}
+                Ok(false) => return thrown,
+                Err(_) => return not_block_compressed(input),
+            }
+        }
+    };
+    let Some(output) = argument(parser, "output") else {
+        return Err(unreadable(
+            reader,
+            Thrown::command_line("Argument output was missing: Argument 'output' is required"),
+        ));
+    };
+    let spacing = number_or(parser, "min-indel-spacing", 1);
+    let file = match htsjdk_vcf::reader::read_vcf(header_text) {
+        Ok(file) => file,
+        Err(failure) => {
+            return Err(unreadable(
+                reader,
+                Thrown::user(format!("{:?}", failure.error)),
+            ))
+        }
+    };
+    let record_refusal = |error| {
+        Thrown::user(format!(
+            "{:?}",
+            htsjdk_vcf::reader::ReadError::Record(error)
+        ))
+    };
+    let mut records = crate::vcf_stream::Records::new(
+        crate::vcf_stream::Body::Stream(reader),
+        &file,
+        header_lines,
+    );
+    let settle = |records: &mut crate::vcf_stream::Records, thrown: Thrown| -> Thrown {
+        let mut first = None;
+        for record in records {
+            match record {
+                Err(crate::vcf_stream::Failure::Read(_)) => return not_block_compressed(input),
+                Err(crate::vcf_stream::Failure::Record(error)) if first.is_none() => {
+                    first = Some(record_refusal(error));
+                }
+                _ => {}
+            }
+        }
+        first.unwrap_or(thrown)
+    };
+
+    let mut header = file.header.clone();
+    for line in default_tool_vcf_header_lines(parser, "RemoveNearbyIndels") {
+        header.lines.push(line);
+    }
+    let keep = match variant_output_filter(parser, None) {
+        Ok(keep) => keep,
+        Err(thrown) => return Err(settle(&mut records, thrown)),
+    };
+    // `apply_sites_only`, on the header now and on each record as it is written.
+    let sites_only = flag(parser, "sites-only-vcf-output");
+    if sites_only {
+        header.samples.clear();
+    }
+    let encoder = htsjdk_vcf::encoder::VcfEncoder::new(&header);
+    // shortcut: an output that cannot be created is refused before the records' own refusals,
+    // where the whole-text path wrote last; read them first if such a run is ever compared.
+    let mut writer = match VariantStreamWriter::create(parser, &output, &header.write()) {
+        Ok(writer) => writer,
+        Err(thrown) => return Err(settle(&mut records, thrown)),
+    };
+
+    let mut buffer = gatk_tools::remove_nearby_indels::IndelSpacing::new(spacing);
+    let mut held: std::collections::VecDeque<(usize, htsjdk_vcf::variant::VariantContext)> =
+        std::collections::VecDeque::new();
+    let mut emitted = Vec::new();
+    // Write what the buffer emitted, in order, and drop what it let go of.
+    let mut flush =
+        |held: &mut std::collections::VecDeque<(usize, htsjdk_vcf::variant::VariantContext)>,
+         emitted: &mut Vec<usize>,
+         still: Option<usize>|
+         -> Result<(), Thrown> {
+            let mut emitted_now = emitted.drain(..).peekable();
+            while let Some((index, _)) = held.front() {
+                let index = *index;
+                if still.is_some_and(|first| index >= first) {
+                    break;
+                }
+                let (_, mut record) = held.pop_front().expect("a held record");
+                if emitted_now.next_if_eq(&index).is_none() {
+                    continue;
+                }
+                if !keep(&record) {
+                    continue;
+                }
+                if sites_only {
+                    record.genotypes = Vec::new().into();
+                }
+                writer.write(&encoder, &record)?;
+            }
+            debug_assert!(emitted_now.next().is_none(), "an emitted record is held");
+            Ok(())
+        };
+    let mut index = 0;
+    while let Some(record) = records.next() {
+        let record = match record {
+            Ok(record) => record,
+            Err(crate::vcf_stream::Failure::Read(_)) => return Err(not_block_compressed(input)),
+            Err(crate::vcf_stream::Failure::Record(error)) => {
+                let thrown = record_refusal(error);
+                return Err(settle(&mut records, thrown));
+            }
+        };
+        buffer.add(
+            gatk_tools::remove_nearby_indels::Site::of(index, &record),
+            &mut emitted,
+        );
+        held.push_back((index, record));
+        index += 1;
+        if let Err(thrown) = flush(&mut held, &mut emitted, buffer.buffered().next()) {
+            return Err(settle(&mut records, thrown));
+        }
+    }
+    buffer.finish(&mut emitted);
+    flush(&mut held, &mut emitted, None)?;
+    writer.finish(parser)?;
     // `onTraversalSuccess` returns the word, which `handleResult` prints.
     Ok(Some("SUCCESS".to_string()))
 }
