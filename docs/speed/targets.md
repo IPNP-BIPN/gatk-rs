@@ -217,11 +217,19 @@ from them.
 slim entry to the one built from the record the scan finds; locally, the 40x row's recal file and
 tranches identical before and after.
 
-**Result** (macOS, the 40x row, recal file and tranches identical; the fixture row identical too):
-peak RSS 502 MB to 435 MB (-13%), CPU unchanged at 1.85 s. Still 0.29 of GATK's peak, above 0.25:
-what remains is the calls, which `multi_variant::open` reads whole for every walker over several
-VCFs, about 3.6 million live blocks at the plateau. Streaming them is the scale session's
-multi-variant work, not this entry's.
+**Result** (the 40x row, recal file and tranches identical, the fixture row identical too; CPU
+user + sys, RAM peak RSS; the port on macOS, min and max of three runs; GATK 4.7.0.0 in its arm64
+image, one run, its RAM the cgroup `memory.peak`):
+
+| | CPU | RAM | CPU / GATK | RAM / GATK |
+|---|---:|---:|---:|---:|
+| #1554 without this entry | 1.82 s | 462-502 MiB | 0.19 | 0.40-0.43 |
+| with it | 1.92-1.99 s | 420-435 MiB | 0.20 | 0.36-0.37 |
+| GATK | 9.77 s | 1,163 MiB | | |
+
+Still above the 0.25 bound for memory: what remains is the calls, which `multi_variant::open`
+reads whole for every walker over several VCFs, about 3.6 million live blocks at the plateau.
+Streaming them is the scale session's multi-variant work (`scale-fix/multi-variant-stream`).
 
 ## Not targets yet
 
