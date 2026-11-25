@@ -143,6 +143,23 @@ any compiler change.
 **The suites that prove it.** Every end-to-end test and covering array, run on the PGO binary, and
 the smoke slice's outputs compared with the non-PGO binary's. Kept only if CPU falls with no RSS rise.
 
+**Result: promising, not landed.** Linux arm64 (Docker, `rust:1.97.1-bookworm`), main, trained on
+the 139 fixture rows of `current.json`, three rounds alternated, user + sys from GNU `time`, on a
+machine other jobs shared. Every output of the 139 rows (215 files) is the same as the non-PGO
+binary's, apart from one `# Started on` timestamp that also differs between two non-PGO runs.
+
+| Run | base | PGO |
+|---|---:|---:|
+| the 139 fixture rows, total | 1.20 s | 0.93 s |
+| `ModelSegments`, 2000 samples | 10.6 to 14.6 s | 9.0 to 12.1 s |
+| `VariantRecalibrator`, the fixture repeated 40x | 222 to 254 s | 232 to 271 s |
+
+Peak RSS moved by a median of 3% down. The fixture rows are the training set, so their total is
+optimistic; `ModelSegments` gains about 14% by the best of three. `VariantRecalibrator` on main is
+the quadratic resource scan of entry 6, which no profile can shorten. The spread between rounds of
+one binary is as large as the gain, so landing it waits on x86-64 numbers from a CI job. The release
+build then needs a training step: three builds rather than one, and training inputs it can reach.
+
 ## Not targets yet
 
 Superseded by entry 6 for these two, kept for the record. `HaplotypeBasedVariantRecaller` (1.30
