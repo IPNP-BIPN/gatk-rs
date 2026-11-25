@@ -286,7 +286,12 @@ fn a_bgzipped_vcf_resolves_as_the_plain_one() {
             &header,
             &gatk_engine::feature_intervals::RegisteredCodecs,
         )
-        .map(|intervals| intervals.iter().map(genome_loc_to_string).collect::<Vec<_>>())
+        .map(|intervals| {
+            intervals
+                .iter()
+                .map(genome_loc_to_string)
+                .collect::<Vec<_>>()
+        })
         .map_err(|error| class_of(&error))
     };
     let (expected, ours) = (resolve(&plain), resolve(&gz));
