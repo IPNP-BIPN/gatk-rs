@@ -12150,6 +12150,243 @@ fn java_float_to_string(value: f32) -> String {
     jmath::to_string::float_to_string(value)
 }
 
+/// The span `decode_line` gives a site line that it can be shown to accept, without building the
+/// record: decoding every INFO field of dbSNP's 1.4 million lines at chr20 was most of the CPU
+/// spent before counting. `None` for any line this cannot vouch for, which `decode_line` then
+/// decodes or refuses with its own message.
+///
+/// Vouched for, check by check against `decode_line` on a file without samples: exactly eight
+/// non-empty columns (so the splitter's condensing never applies), a `POS` that parses, any `ID`,
+/// a `QUAL` that is `.` or parses, a `FILTER` other than `0`, an INFO without a space and without
+/// an `END` key (the one key that moves the stop), a reference of `ACGTN` in either case and
+/// alternates of upper-case `ACGTN`, none equal to the reference or to another. The stop is then
+/// the record's: the start plus the reference's length, less one.
+fn plain_site_span(line: &str) -> Option<(&str, i64, i64)> {
+    let plain = |allele: &[u8], any_case: bool| {
+        !allele.is_empty()
+            && allele.iter().all(|&base| {
+                let base = if any_case {
+                    base.to_ascii_uppercase()
+                } else {
+                    base
+                };
+                matches!(base, b'A' | b'C' | b'G' | b'T' | b'N')
+            })
+    };
+    if line.starts_with('#') {
+        return None;
+    }
+    let mut columns = line.split('\t');
+    let mut next = || columns.next().filter(|column| !column.is_empty());
+    let (contig, pos, _id, reference, alternates, qual, filter, info) = (
+        next()?,
+        next()?,
+        next()?,
+        next()?,
+        next()?,
+        next()?,
+        next()?,
+        next()?,
+    );
+    if columns.next().is_some() {
+        return None;
+    }
+    let start: i64 = pos.parse().ok()?;
+    if qual != "." && qual.parse::<f64>().is_err() {
+        return None;
+    }
+    if filter == "0" || info.contains(' ') {
+        return None;
+    }
+    if info
+        .split(';')
+        .any(|field| field.split('=').next() == Some("END"))
+    {
+        return None;
+    }
+    if !plain(reference.as_bytes(), true) {
+        return None;
+    }
+    let mut seen: Vec<&[u8]> = Vec::new();
+    for alternate in alternates.split(',') {
+        let alternate = alternate.as_bytes();
+        if !plain(alternate, false)
+            || alternate.eq_ignore_ascii_case(reference.as_bytes())
+            || seen.contains(&alternate)
+        {
+            return None;
+        }
+        seen.push(alternate);
+    }
+    Some((contig, start, start + reference.len() as i64 - 1))
+}
+
+#[cfg(test)]
+mod plain_site_span_tests {
+    use super::plain_site_span;
+
+    /// Every line the fast path vouches for, `decode_line` decodes to the same span. The lines are
+    /// the cases each check is there for; `GATK_RS_KNOWN_SITES_CHECK` names a real VCF (dbSNP, say)
+    /// to hold every one of its lines to the same rule.
+    #[test]
+    fn a_span_vouched_for_is_the_decoded_records() {
+        const HEADER: &str = "##fileformat=VCFv4.2\n\
+            ##INFO=<ID=END,Number=1,Type=Integer,Description=\"End\">\n\
+            ##INFO=<ID=F,Number=0,Type=Flag,Description=\"Flag\">\n\
+            #CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n";
+        let crafted = [
+            ("chr20\t100\trs1\tA\tC\t.\tPASS\tF;X=1", true),
+            ("chr20\t100\t.\tACGT\tA,AC\t30.5\t.\t.", true),
+            ("chr20\t100\t.\tacgn\tA\t1e3\tq10;s50\tX=a,b", true),
+            ("chr20\t100\t.\tA\tC\t.\tPASS\tXEND=5", true),
+            ("chr20\t100\t.\tA\ta\t.\tPASS\t.", false),
+            ("chr20\t100\t.\tA\tC\t.\tPASS\tEND=500", false),
+            ("chr20\t100\t.\tA\tC\t.\tPASS\tF;END", false),
+            ("chr20\t100\t.\tA\t.\t.\tPASS\t.", false),
+            ("chr20\t100\t.\tA\tA\t.\tPASS\t.", false),
+            ("chr20\t100\t.\tA\tC,C\t.\tPASS\t.", false),
+            ("chr20\t100\t.\tA\t<DEL>\t.\tPASS\t.", false),
+            ("chr20\t100\t.\tA\t*\t.\tPASS\t.", false),
+            ("chr20\t100\t.\tA\tC\t.\t0\t.", false),
+            ("chr20\t100\t.\tA\tC\tabc\tPASS\t.", false),
+            ("chr20\tx\t.\tA\tC\t.\tPASS\t.", false),
+            ("chr20\t100\t.\tA\tC\t.\tPASS", false),
+            ("chr20\t100\t.\tA\tC\t.\tPASS\t.\textra", false),
+            ("chr20\t100\t\tA\tC\t.\tPASS\t.", false),
+            ("chr20\t100\t.\tA\tC\t.\tPASS\tX=a b", false),
+            ("#chr20\t100\t.\tA\tC\t.\tPASS\t.", false),
+        ];
+        let file = htsjdk_vcf::reader::read_vcf(HEADER).expect("the header parses");
+        for (line, vouched) in crafted {
+            assert_eq!(plain_site_span(line).is_some(), vouched, "{line}");
+            agrees(line, &file);
+        }
+        if let Ok(path) = std::env::var("GATK_RS_KNOWN_SITES_CHECK") {
+            let text = std::fs::read_to_string(&path).expect("the file reads");
+            let file = htsjdk_vcf::reader::read_vcf(
+                &text
+                    .lines()
+                    .take_while(|line| line.starts_with('#'))
+                    .map(|line| format!("{line}\n"))
+                    .collect::<String>(),
+            )
+            .expect("the header parses");
+            let (mut lines, mut vouched) = (0, 0);
+            for line in text.lines().filter(|line| !line.starts_with('#')) {
+                lines += 1;
+                vouched += usize::from(agrees(line, &file));
+            }
+            println!("{path}: {vouched} of {lines} lines vouched for, every one as decoded");
+        }
+    }
+
+    /// Whether the fast path vouched for `line`; panics if it did and `decode_line` disagrees.
+    fn agrees(line: &str, file: &htsjdk_vcf::reader::VcfFile) -> bool {
+        let Some((contig, start, stop)) = plain_site_span(line) else {
+            return false;
+        };
+        let decoded =
+            htsjdk_vcf::record_parse::decode_line(line, &file.header, 1, file.codec_version)
+                .unwrap_or_else(|error| panic!("{line}: vouched for, refused with {error:?}"))
+                .unwrap_or_else(|| panic!("{line}: vouched for, skipped"));
+        let record = decoded.variant;
+        assert_eq!(
+            (record.contig.as_str(), record.start, record.stop),
+            (contig, start, stop),
+            "{line}"
+        );
+        true
+    }
+}
+
+/// The sites of the VCF at `path`, as `read_vcf` over the whole file would give them and with the
+/// same refusals, but a line at a time: only each record's span is kept. Reading the file whole
+/// held dbSNP's text and every one of its records with their INFO at once, 3 GB at chr20 for
+/// what is 1.4 million spans.
+///
+/// A file that has samples is read whole as before, because its genotypes are parsed at the read
+/// and can be refused there.
+fn vcf_known_sites(
+    path: &str,
+    known_sites: &mut gatk_tools::base_recalibrator::KnownSites,
+) -> Result<(), Thrown> {
+    use std::io::BufRead;
+    let cannot_read = || Thrown::user(gatk_tools::read_walker_refusal::cannot_read(path, false));
+    let refused = |error: &htsjdk_vcf::reader::ReadError| Thrown::user(format!("{error:?}"));
+    let mut site = |record: &htsjdk_vcf::variant::VariantContext| {
+        known_sites.push(&record.contig, record.start as i32, record.stop as i32)
+    };
+    let mut input = std::io::BufReader::new(std::fs::File::open(path).map_err(|_| cannot_read())?);
+
+    // The header is every line up to `#CHROM`, which is what the reader takes as its header.
+    let mut head = String::new();
+    let mut header_lines = 0;
+    loop {
+        let before = head.len();
+        if input.read_line(&mut head).map_err(|_| cannot_read())? == 0 {
+            break;
+        }
+        header_lines += 1;
+        if head[before..].starts_with("#CHROM") {
+            break;
+        }
+    }
+    let file = htsjdk_vcf::reader::read_vcf(&head).map_err(|failure| refused(&failure.error))?;
+    if !file.header.samples.is_empty() {
+        // The whole file, header included: a record's INFO is decoded against the declarations
+        // above it, and a reader given an empty header answers nothing at all.
+        let text = std::fs::read_to_string(path).map_err(|_| cannot_read())?;
+        let file =
+            htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| refused(&failure.error))?;
+        file.records.iter().for_each(&mut site);
+        return Ok(());
+    }
+    // Without a `#CHROM` line the header read above was the whole file.
+    file.records.iter().for_each(&mut site);
+
+    // The body, decoded as `read_vcf` decodes it, against the same header and line counter. The
+    // file is refused as unreadable if any of it is not UTF-8, wherever a record failed first,
+    // because the whole-file read refused it before decoding anything.
+    let mut line_number = header_lines;
+    let mut failed = None;
+    let mut line = String::new();
+    loop {
+        line.clear();
+        if input.read_line(&mut line).map_err(|_| cannot_read())? == 0 {
+            break;
+        }
+        if failed.is_some() {
+            continue;
+        }
+        // What `str::lines` strips.
+        let text = line.strip_suffix('\n').unwrap_or(&line);
+        let text = text.strip_suffix('\r').unwrap_or(text);
+        if let Some((contig, start, stop)) = plain_site_span(text) {
+            line_number += 1;
+            known_sites.push(contig, start as i32, stop as i32);
+            continue;
+        }
+        match htsjdk_vcf::record_parse::decode_line(
+            text,
+            &file.header,
+            line_number,
+            file.codec_version,
+        ) {
+            Ok(Some(decoded)) => {
+                line_number += 1;
+                let record = &decoded.variant;
+                known_sites.push(&record.contig, record.start as i32, record.stop as i32);
+            }
+            Ok(None) => {}
+            Err(error) => failed = Some(htsjdk_vcf::reader::ReadError::Record(error)),
+        }
+    }
+    match failed {
+        Some(error) => Err(refused(&error)),
+        None => Ok(()),
+    }
+}
+
 /// A flow read the reference throws on, or one the port does not read.
 fn flow_refusal(refusal: gatk_tools::flow_based_read::FlowReadError) -> Thrown {
     if refusal.port_limitation {
@@ -12805,43 +13042,30 @@ pub(crate) fn recalibration_table_over(
             "Argument known-sites was missing: Argument 'known-sites' is required",
         ));
     }
-    let mut known_sites = Vec::new();
+    let mut known_sites = gatk_tools::base_recalibrator::KnownSites::default();
     for path in &sites_paths {
-        let text = std::fs::read_to_string(path)
-            .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(path, false)))?;
         // The codec is chosen by the file's NAME, which is what `FeatureManager` does. Neither is
         // read as an interval argument: these are features, so they are not checked against the
         // reference's dictionary and a site on a contig the reference does not carry is simply a
         // site no read is at.
         if path.ends_with(".bed") {
+            let text = std::fs::read_to_string(path).map_err(|_| {
+                Thrown::user(gatk_tools::read_walker_refusal::cannot_read(path, false))
+            })?;
             for line in text.lines() {
                 // `BEDCodec` with `StartOffset.ONE`: the file is half-open and zero-based and the
                 // locus it decodes to is neither.
                 if let Ok(Some(feature)) =
                     htsjdk_tribble::bed::decode(line, htsjdk_tribble::bed::StartOffset::One)
                 {
-                    known_sites.push(gatk_engine::interval::SimpleInterval {
-                        contig: feature.contig,
-                        start: feature.start,
-                        end: feature.end,
-                    });
+                    known_sites.push(&feature.contig, feature.start, feature.end);
                 }
             }
         } else {
-            // The whole file through the VCF reader, header included: a record's INFO is decoded
-            // against the declarations above it, and a reader given an empty header answers
-            // nothing at all, which is a run with no known sites and no way to tell.
-            let file = htsjdk_vcf::reader::read_vcf(&text)
-                .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
-            for record in &file.records {
-                known_sites.push(gatk_engine::interval::SimpleInterval {
-                    contig: record.contig.clone(),
-                    start: record.start as i32,
-                    end: record.stop as i32,
-                });
-            }
+            vcf_known_sites(path, &mut known_sites)?;
         }
     }
+    known_sites.sort();
 
     // The contig each READ is on, whole: the counting pass compares a read's bases against the
     // reference, so the contig it needs is its own and not whichever the reference lists first.
@@ -12853,22 +13077,33 @@ pub(crate) fn recalibration_table_over(
     // index AND a reference without the reads' contig answers the read failure. Querying first
     // answered the contig instead.
     let mut bases =
-        |wanted: &str| -> Result<Vec<u8>, gatk_tools::base_recalibrator::BaseRecalibratorError> {
+        |wanted: &str,
+         start: usize,
+         end: usize|
+         -> Result<(Vec<u8>, usize), gatk_tools::base_recalibrator::BaseRecalibratorError> {
             let length = dictionary
                 .sequences
                 .iter()
                 .find(|sequence| sequence.name == wanted)
-                .map(|sequence| sequence.length)
+                .map(|sequence| sequence.length.max(0) as usize)
                 .ok_or_else(|| {
                     gatk_tools::base_recalibrator::BaseRecalibratorError::Reads(
                         gatk_engine::reads::ReadsError::ContigNotInDictionary(wanted.to_string()),
                     )
                 })?;
-            reference.query(wanted, 1, length).map_err(|error| {
-                gatk_tools::base_recalibrator::BaseRecalibratorError::Reads(
-                    gatk_engine::reads::ReadsError::Malformed(format!("{error:?}")),
-                )
-            })
+            // Zero-based and half-open, cut at the contig's end; the query is one-based and closed.
+            let end = end.min(length);
+            if start >= end {
+                return Ok((Vec::new(), length));
+            }
+            let bases = reference
+                .query(wanted, start as i32 + 1, end as i32)
+                .map_err(|error| {
+                    gatk_tools::base_recalibrator::BaseRecalibratorError::Reads(
+                        gatk_engine::reads::ReadsError::Malformed(format!("{error:?}")),
+                    )
+                })?;
+            Ok((bases, length))
         };
 
     let arguments_for_engine = gatk_engine::base_recalibration_engine::EngineArguments {

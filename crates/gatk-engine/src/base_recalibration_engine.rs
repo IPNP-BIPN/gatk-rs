@@ -358,12 +358,37 @@ pub fn calculate_skip_array(
         .collect()
 }
 
+/// Some of one contig's bases: `bases` are the contig's from the zero-based `start` on, and
+/// `contig_length` is the whole contig's, which is what spans are clamped to. A whole contig is the
+/// window that starts at zero and holds it all.
+#[derive(Debug, Clone, Copy)]
+pub struct ReferenceWindow<'a> {
+    pub bases: &'a [u8],
+    pub start: usize,
+    pub contig_length: usize,
+}
+
+impl<'a> ReferenceWindow<'a> {
+    /// The contig's bases `[from, to)`, zero-based, which the window must hold.
+    fn slice(&self, from: usize, to: usize) -> &'a [u8] {
+        assert!(
+            from >= self.start && to <= self.start + self.bases.len(),
+            "bases {from}..{to} asked of a window holding {}..{}",
+            self.start,
+            self.start + self.bases.len()
+        );
+        &self.bases[from - self.start..to - self.start]
+    }
+}
+
 /// `BaseRecalibrationEngine`.
 pub struct BaseRecalibrationEngine {
     pub arguments: EngineArguments,
     pub covariates: StandardCovariateList,
     pub tables: RecalibrationTables,
-    baq: Baq,
+    /// `new BAQ()`, made the first time a read is BAQ'ed: its emission table is 49 MB, which a run
+    /// without BAQ, the default, never reads.
+    baq: std::cell::OnceCell<Baq>,
     finalized: bool,
     num_reads_processed: u64,
 }
@@ -380,7 +405,7 @@ impl BaseRecalibrationEngine {
             arguments,
             covariates,
             tables,
-            baq: Baq::default(),
+            baq: std::cell::OnceCell::new(),
             finalized: false,
             num_reads_processed: 0,
         })
@@ -402,6 +427,23 @@ impl BaseRecalibrationEngine {
         contig_bases: &[u8],
         known_sites: &[SimpleInterval],
     ) -> Result<(), EngineError> {
+        let whole = ReferenceWindow {
+            bases: contig_bases,
+            start: 0,
+            contig_length: contig_bases.len(),
+        };
+        self.process_read_in(original, header, &whole, known_sites)
+    }
+
+    /// [`process_read`](BaseRecalibrationEngine::process_read) against a window of the contig,
+    /// which must cover the read's aligned span, or, with BAQ on, the whole contig.
+    pub fn process_read_in(
+        &mut self,
+        original: &BamRecord,
+        header: &SamHeader,
+        reference: &ReferenceWindow<'_>,
+        known_sites: &[SimpleInterval],
+    ) -> Result<(), EngineError> {
         let read = self.transform(original, header)?;
         if read.read_bases.is_empty() {
             // The whole read was inside the adaptor.
@@ -415,8 +457,8 @@ impl BaseRecalibrationEngine {
         let mut is_deletion = vec![0i32; length];
         // `queryAndPrefetch(read.getContig(), read.getStart(), read.getEnd())`: the read's own span.
         let span_start = crate::read_utils::start(&read).max(1) as usize - 1;
-        let span_end = (crate::read_utils::end(&read) as usize).min(contig_bases.len());
-        let reference_bases = &contig_bases[span_start..span_end];
+        let span_end = (crate::read_utils::end(&read) as usize).min(reference.contig_length);
+        let reference_bases = reference.slice(span_start, span_end);
         let n_errors = calculate_is_snp_or_indel(
             &read,
             reference_bases,
@@ -430,7 +472,7 @@ impl BaseRecalibrationEngine {
         let baq_array = if n_errors == 0 || !self.arguments.enable_baq {
             flat_baq_array(length)
         } else {
-            match self.calculate_baq_array(&read, contig_bases) {
+            match self.calculate_baq_array(&read, reference) {
                 Some(array) => array,
                 // "some reads just can't be BAQ'ed". The read is still counted as processed and
                 // then dropped, because the reference's `if (baqArray != null)` guards only the
@@ -482,7 +524,11 @@ impl BaseRecalibrationEngine {
     ///
     /// The model runs over the **reference window**, not the read's span, and answers nothing when
     /// that window runs past the contig, which is the "some reads just can't be BAQ'ed" case.
-    fn calculate_baq_array(&self, read: &BamRecord, contig_bases: &[u8]) -> Option<Vec<u8>> {
+    fn calculate_baq_array(
+        &self,
+        read: &BamRecord,
+        reference: &ReferenceWindow<'_>,
+    ) -> Option<Vec<u8>> {
         // `excludeReadFromBAQ`: unmapped, vendor-failed or duplicate reads never get a tag, so the
         // caller sees a null and drops the read.
         if crate::read::is_unmapped(read)
@@ -491,16 +537,16 @@ impl BaseRecalibrationEngine {
         {
             return None;
         }
-        let window = crate::baq::reference_window_for_read(read, "", self.baq.band_width())?;
-        if window.end as usize > contig_bases.len() {
+        let baq = self.baq.get_or_init(Baq::default);
+        let window = crate::baq::reference_window_for_read(read, "", baq.band_width())?;
+        if window.end as usize > reference.contig_length {
             return None;
         }
         let from = window.start.max(1) as usize - 1;
         let to = window.end as usize;
         let offset = window.start - crate::read_utils::start(read);
-        let result = self
-            .baq
-            .calc_baq_from_hmm(read, &contig_bases[from..to], offset)
+        let result = baq
+            .calc_baq_from_hmm(read, reference.slice(from, to), offset)
             .ok()??;
         Some(crate::baq::encode_bq_tag(&read.base_qualities, &result.bq).into_bytes())
     }
@@ -528,6 +574,19 @@ impl BaseRecalibrationEngine {
         {
             out.base_qualities =
                 vec![self.arguments.default_base_qualities as u8; out.read_bases.len()];
+        }
+        // Both clips hand back a copy of the read when they have nothing to cut, which is most
+        // reads: no soft clip and an adaptor boundary outside the read (or none). Such a read is
+        // returned as it is rather than copied twice.
+        let adaptor_outside = crate::read_utils::adaptor_boundary(&out)
+            .is_none_or(|boundary| !crate::read_utils::is_inside_read(&out, boundary));
+        let soft_clipped = out
+            .cigar
+            .elements
+            .iter()
+            .any(|element| element.op == htsjdk_bam::cigar::Op::S);
+        if adaptor_outside && !soft_clipped {
+            return Ok(out);
         }
         let clipped = crate::clipping::hard_clip_adaptor_sequence(&out, Some(header))
             .and_then(|read| crate::clipping::hard_clip_soft_clipped_bases(&read, Some(header), 0));
@@ -597,6 +656,46 @@ impl BaseRecalibrationEngine {
         Ok(())
     }
 
+    /// What this engine counted, as plain values that can cross threads (a table's datum is an
+    /// `Rc`): every table's cells with their keys, and the reads it processed. Not a reference
+    /// method; it is how a counting thread hands its share to [`BaseRecalibrationEngine::absorb`].
+    pub fn counted(&self) -> Counted {
+        let cells = self
+            .tables
+            .all_tables
+            .iter()
+            .enumerate()
+            .flat_map(|(table, nested)| {
+                nested
+                    .all_leaves()
+                    .into_iter()
+                    .map(move |(keys, datum)| (table, keys, datum.borrow().clone()))
+            })
+            .collect();
+        Counted {
+            cells,
+            reads: self.num_reads_processed,
+        }
+    }
+
+    /// Adds another engine's [`counted`](BaseRecalibrationEngine::counted) cells into these
+    /// tables: summed where the cell exists, placed where it does not. The tables are indexed by
+    /// key, so the order cells arrive in changes nothing; the sums are exact only for whole-number
+    /// errors, so only a run without BAQ may count on several threads (see [`RecalDatum::absorb`]).
+    pub fn absorb(&mut self, counted: Counted) -> Result<(), EngineError> {
+        for (table, keys, datum) in counted.cells {
+            let nested = &mut self.tables.all_tables[table];
+            match nested.get(&keys).map_err(EngineError::Nested)? {
+                Some(existing) => existing.borrow_mut().absorb(&datum),
+                None => nested
+                    .put(Rc::new(RefCell::new(datum)), &keys)
+                    .map_err(EngineError::Nested)?,
+            }
+        }
+        self.num_reads_processed += counted.reads;
+        Ok(())
+    }
+
     /// `finalizeData()`: collapse the quality score table into the read group table, then round.
     pub fn finalize_data(&mut self) -> Result<(), EngineError> {
         collapse_quality_score_table_to_read_group_table(&mut self.tables)?;
@@ -608,6 +707,13 @@ impl BaseRecalibrationEngine {
     pub fn is_finalized(&self) -> bool {
         self.finalized
     }
+}
+
+/// One engine's counts, by table index and keys, as [`BaseRecalibrationEngine::counted`] gives them.
+#[derive(Debug, Clone)]
+pub struct Counted {
+    cells: Vec<(usize, Vec<i32>, RecalDatum)>,
+    reads: u64,
 }
 
 /// `RecalUtils.incrementDatum*keys`: increment where there is a datum, create one where there is

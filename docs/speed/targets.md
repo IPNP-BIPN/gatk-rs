@@ -56,6 +56,87 @@ now STATUS.md's cost column; the baseline stays in `baseline.json`):
 both directions, which is what an unchanged path does. The other 131 tools moved a median 7% cold
 and 10% steady, at most 45%, the same spread two runs of one commit showed in the baseline.
 
+## 5. `BaseRecalibrator`'s counting on several threads (W12)
+
+Numbered after #1541's entries 2 to 4, which this branch does not carry yet.
+
+**Where the time goes.** A native profile of `BaseRecalibrator` on the chr20 smoke slice, on
+#1515's streaming traversal (macOS `sample`): most samples are in counting, which is
+`process_read`'s covariates and the table updates under it (`update_tables`, `increment_datum`,
+`get_checked`), and the rest is decoding and the allocator. GATK counts on one thread, so the
+counting alone is the share a second core can take, and splitting only the preparation would leave
+the table updates, the largest part, on one thread.
+
+**The optimisation.** The traversal's thread decodes, fetches each contig's bases once and hands
+batches of 1,024 reads round robin to counting threads, one per spare core and at most six. Each
+counting thread has an engine and tables of its own. At the end every thread's cells are added into
+one engine, and `finalizeData`, the quantization and the report run on it as before.
+
+**Why it cannot move a byte.**
+
+- The tables are indexed by key (`NestedIntegerArray`), so the order in which cells arrive is
+  nothing; the report walks them by key.
+- Without BAQ, each base adds one observation and an error of exactly 0 or 1, so a cell holds whole
+  numbers, its mismatch count scaled by 100,000, and these sums are exact far beyond any read
+  count; adding several threads' sums gives the one thread's sum to the bit. The empirical quality
+  is computed from the sums, after the merge, as before.
+- With BAQ on, the errors are fractional, so their sum depends on its order. Counting then stays on
+  one thread.
+- GATK stops at the first read that fails. So does this: each failure carries its read's position,
+  and the earliest one is returned, whether the traversal, the reference or a counting thread
+  raised it.
+
+**The suites that prove it.** `base_recalibrator`'s golden suite, now run on one thread and on three
+threads handed one read at a time, the finest split there is (a planted bug that drops one thread's
+share fails it); every array that runs the binary against the reference, on runners with several
+cores; and the smoke slice below, identical output on every run.
+
+**What the threads first cost, and what removed it.** Counting on seven threads first spent more
+CPU and memory than one: the same instructions took 17% more cycles, and the RSS rose by 53 MB a
+thread, whatever the batch size. Each engine built BAQ's 49 MB emission table, which a run without
+BAQ never reads. Three fixes, each byte-neutral by construction, made the threads cheaper than
+#1515's one thread:
+
+- the BAQ table is built the first time a read is BAQ'ed (`OnceCell`);
+- the per-read covariate matrix is one buffer with the same `[event][position][covariate]`
+  indexing and bounds, not one allocation per event and position (450 for a 150-base read);
+- a read with nothing to clip (no soft clip, its adaptor boundary outside it, no low-quality tail)
+  is used as it is, where three clips each handed back a full copy of it.
+
+The VCF known sites are also decoded a line at a time, keeping only each record's span: the whole
+file and its 1.4 million records with their INFO were held together, 2.8 GB for dbSNP at chr20.
+The same refusals come in the same order: eleven malformed and edge-case files (no `#CHROM`, a bad
+`POS`, missing columns, a non-UTF-8 byte after a bad record, a bad genotype, CRLF, no final newline)
+give the old binary's status, message and table.
+
+**Measured (M-series, 12 performance and 4 efficiency cores, shared with other work; chr20 smoke
+slice, `-L chr20:30000000-35000000`, dbSNP and Mills as known sites; release builds).** The table is
+byte-identical on every run, and to GATK's.
+
+| | GATK 4.7.0.0 | #1515 | this branch | vs GATK |
+|---|---:|---:|---:|---:|
+| CPU (user + sys) | 18.7, 20.5 s | 16.3, 17.3, 16.3 s | 9.9, 9.7, 9.4 s | 0.49x |
+| peak memory | 662, 720 MB | 3,049 to 3,051 MB | 125, 126, 128 MB | 0.18x |
+| wall | 41.3, 44.7 s | 15.8, 16.9, 15.7 s | 3.6, 3.5, 3.5 s | 0.08x |
+| instructions retired | | 324.5 G | 152.3 G | |
+
+GATK ran in the arm64 oracle image (`java -jar`, JDK 17) on the same host, with the bgzipped known
+sites and their indexes; its CPU and peak memory are the container's cgroup counters, so its
+memory includes the page cache and overstates its heap. Before the last three cuts below, one
+counting thread took 10.9 to 11.3 s of CPU and six about 12% more, for 1.7x less wall.
+
+Three more cuts brought it under 0.5x the CPU and 0.25x the memory, each checked the same way:
+
+- the known sites are kept as two coordinates under their contig's name, not a `SimpleInterval`
+  with its own `String` each (247 to 186 MB);
+- a plain site line (eight non-empty columns, a `POS` and `QUAL` that parse, a `FILTER` other than
+  `0`, an INFO without a space or an `END` key, `ACGTN` alleles none repeated) gives its span
+  without decoding the record; any other line is decoded or refused as before. A test holds this to
+  `decode_line`, and every one of dbSNP's 1,390,830 and Mills' 27,572 lines at chr20 takes it with
+  the decoded span (CPU 13.5 to 10.4 s);
+- without BAQ the reference is read by windows of a megabase, not a contig at a time (186 to
+  126 MB; chr1 would have held 249 MB). The golden suite also runs against a one-base window.
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are

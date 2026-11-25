@@ -188,12 +188,16 @@ impl CovariateError {
 
 /// `PerReadCovariateMatrix`: the keys of one read, indexed by event type, position and covariate.
 ///
-/// The reference's shape is `int[event][position][covariate]` and so is this one. See the module
-/// note for why the key cache is not ported.
+/// The reference's shape is `int[event][position][covariate]` and so is this one's indexing, laid
+/// out in one buffer: three nested vectors were one allocation per event and position, 450 per
+/// 150-base read, most of the counting pass's allocator time. See the module note for why the
+/// key cache is not ported.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PerReadCovariateMatrix {
-    /// `[event][position][covariate]`.
-    covariates: Vec<Vec<Vec<i32>>>,
+    /// `[event][position][covariate]`, row-major.
+    covariates: Vec<i32>,
+    read_length: usize,
+    number_of_covariates: usize,
     /// The column `add_covariate` writes into, set by the list before each covariate runs.
     current_covariate_index: usize,
 }
@@ -201,10 +205,9 @@ pub struct PerReadCovariateMatrix {
 impl PerReadCovariateMatrix {
     pub fn new(read_length: usize, number_of_covariates: usize) -> PerReadCovariateMatrix {
         PerReadCovariateMatrix {
-            covariates: vec![
-                vec![vec![0; number_of_covariates]; read_length];
-                EventType::VALUES.len()
-            ],
+            covariates: vec![0; EventType::VALUES.len() * read_length * number_of_covariates],
+            read_length,
+            number_of_covariates,
             current_covariate_index: 0,
         }
     }
@@ -226,19 +229,37 @@ impl PerReadCovariateMatrix {
         read_offset: usize,
     ) {
         let column = self.current_covariate_index;
-        self.covariates[EventType::BaseSubstitution.ordinal()][read_offset][column] = mismatch;
-        self.covariates[EventType::BaseInsertion.ordinal()][read_offset][column] = insertion;
-        self.covariates[EventType::BaseDeletion.ordinal()][read_offset][column] = deletion;
+        // The nested vectors' bounds check, which the flat index alone would not make: a column
+        // past the row would land in the next position's row.
+        assert!(read_offset < self.read_length && column < self.number_of_covariates);
+        let at = |event: EventType| self.cell(event, read_offset) + column;
+        let (m, i, d) = (
+            at(EventType::BaseSubstitution),
+            at(EventType::BaseInsertion),
+            at(EventType::BaseDeletion),
+        );
+        self.covariates[m] = mismatch;
+        self.covariates[i] = insertion;
+        self.covariates[d] = deletion;
     }
 
     /// `getCovariatesAtOffset(readPosition, errorModel)`.
     pub fn covariates_at_offset(&self, read_position: usize, error_model: EventType) -> &[i32] {
-        &self.covariates[error_model.ordinal()][read_position]
+        assert!(read_position < self.read_length);
+        let start = self.cell(error_model, read_position);
+        &self.covariates[start..start + self.number_of_covariates]
     }
 
-    /// `getMatrixForErrorModel(errorModel)`.
-    pub fn matrix_for_error_model(&self, error_model: EventType) -> &[Vec<i32>] {
-        &self.covariates[error_model.ordinal()]
+    /// `getMatrixForErrorModel(errorModel)`: one row of keys per position.
+    pub fn matrix_for_error_model(&self, error_model: EventType) -> std::slice::Chunks<'_, i32> {
+        let start = self.cell(error_model, 0);
+        let rows = self.read_length * self.number_of_covariates;
+        self.covariates[start..start + rows].chunks(self.number_of_covariates.max(1))
+    }
+
+    /// Where `[event][position][0]` is in the buffer.
+    fn cell(&self, event: EventType, position: usize) -> usize {
+        (event.ordinal() * self.read_length + position) * self.number_of_covariates
     }
 }
 
@@ -473,17 +494,34 @@ impl ContextCovariate {
         record: &BamRecord,
         header: Option<&SamHeader>,
     ) -> Result<Vec<u8>, CovariateError> {
-        let clipped = clip_low_qual_ends(
-            record,
-            header,
-            self.low_qual_tail,
-            ClippingRepresentation::WriteNs,
-        )
-        .map_err(CovariateError::Clip)?;
-        if read::is_reverse_strand(record) {
-            Ok(simple_reverse_complement(&clipped.read_bases))
+        // Neither end at or below the tail threshold, compared as Java's signed bytes: the clip
+        // has nothing to cut and would hand back a copy of the whole read, of which only the
+        // bases are wanted.
+        let above = |index: usize| {
+            record
+                .base_qualities
+                .get(index)
+                .is_some_and(|&quality| quality as i8 > self.low_qual_tail as i8)
+        };
+        let length = record.read_bases.len();
+        let bases = if length > 0 && above(0) && above(length - 1) {
+            std::borrow::Cow::Borrowed(&record.read_bases[..])
         } else {
-            Ok(clipped.read_bases)
+            std::borrow::Cow::Owned(
+                clip_low_qual_ends(
+                    record,
+                    header,
+                    self.low_qual_tail,
+                    ClippingRepresentation::WriteNs,
+                )
+                .map_err(CovariateError::Clip)?
+                .read_bases,
+            )
+        };
+        if read::is_reverse_strand(record) {
+            Ok(simple_reverse_complement(&bases))
+        } else {
+            Ok(bases.into_owned())
         }
     }
 
