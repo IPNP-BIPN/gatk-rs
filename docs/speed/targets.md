@@ -112,6 +112,20 @@ reaches an output the suites check.
 **The suites that prove it.** Entry 3's. The decision rule, written before measuring: kept only if,
 on Linux against glibc, no measured tool's peak RSS rises and the CPU of each falls or holds.
 
+**Result: refused.** Linux arm64 (Docker, `rust:1.97.1-bookworm`, glibc 2.36), the streaming base
+`c/streaming-guard` (f0498420) since main holds whole inputs, the same build with and without the
+line, three rounds alternated, GNU `time`. PrintReads, chr20:30-32 Mb of NA12878 30x:
+
+| | user + sys | peak RSS |
+|---|---:|---:|
+| glibc | 13.0 to 13.5 s | 32 to 37 MB |
+| mimalloc | 13.1 to 13.7 s | 81 to 102 MB |
+
+The reads are the same; the headers differ only by the output path in `@PG`. CPU holds and peak RSS
+rises 2.5x, so the rule above refuses it. HaplotypeCaller and Mutect2 on the same slice were killed
+by the shared Docker VM before finishing on both allocators, so they were not measured. On this
+evidence #1474's `#[global_allocator]` line should not land.
+
 ## 8. Profile-guided optimisation of the shipped binary (W12, P0)
 
 **Profile.** The binary's hot paths (the PairHMM, BGZF, the VCF and BAM codecs, the read
