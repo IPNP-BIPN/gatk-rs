@@ -4365,7 +4365,29 @@ pub fn variant_filtration(parser: &Parser) -> Outcome {
             exception: "org.broadinstitute.hellbender.exceptions.UserException",
             message: Some(format!("{error:?}")),
         })?;
-    write_variant_output(parser, &output, &rendered)?;
+    // `getBestAvailableSequenceDictionary` for a VCF that declares no contig: the one synthesized
+    // from its Tribble index, unless a master or reference dictionary outranks it. Measured on
+    // vcfexample2.vcf, whose index the output's carries as `DICT:1=0`.
+    let declares_contigs = file
+        .header
+        .lines
+        .iter()
+        .any(|line| matches!(line, htsjdk_vcf::header::HeaderLine::Contig { .. }));
+    let from_index = if declares_contigs
+        || master_dictionary(parser)?.is_some()
+        || reference_dictionary(parser)?.is_some()
+    {
+        None
+    } else {
+        index_dictionary(&input).map(|dictionary| {
+            dictionary
+                .sequences
+                .iter()
+                .map(|sequence| (sequence.name.clone(), sequence.length))
+                .collect()
+        })
+    };
+    write_variant_output_indexed_by(parser, &output, &rendered, from_index)?;
     Ok(None)
 }
 
