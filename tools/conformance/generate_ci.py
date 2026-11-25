@@ -49,6 +49,11 @@ def wrap(text, indent, width=96):
 
 
 def oracle_jobs(manifest):
+    """Render the `oracle-image`, `oracle` and (when the manifest has probes) `oracle-probes` jobs.
+
+    Returns the YAML text for those jobs, with suites grouped by status and chunked
+    `ci.suites_per_job` (default 5) to a matrix entry.
+    """
     # A suite naming an image of its own cannot run from the shared image's cache, so it has a job
     # of its own in ci.template.yml.
     suites = [s for s in manifest["suites"] if not s.get("oracle")]
@@ -274,6 +279,7 @@ def gate_job(rendered):
 
 
 def render(manifest):
+    """Return the template with its marker replaced by a generated-file banner and the jobs."""
     template = TEMPLATE.read_text()
     if MARKER not in template:
         raise SystemExit(f"{TEMPLATE} has lost its {MARKER} marker")
@@ -286,6 +292,10 @@ def render(manifest):
 
 
 def main(argv):
+    """Write the workflow, or with `--check` fail when the committed one is stale.
+
+    Returns the process exit code: 1 when `--check` finds a difference, else 0.
+    """
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--check", action="store_true", help="fail if the committed workflow is stale")
     args = ap.parse_args(argv)

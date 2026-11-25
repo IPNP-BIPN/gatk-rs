@@ -1,9 +1,27 @@
+"""Probe the order in which torch.addmm sums over K on this CPU, from what float32 rounding keeps.
+
+Ones are placed at two columns `j` and `l` of the reduction, and 2**24 at a third column (or in
+the bias). Each 1 added to 2**24 on its own is rounded away, while the pair added first survives
+as 2, so the result tells whether `j` and `l` were merged before meeting the big value. The
+environment variable T sets torch's thread count (default 1). The first argument picks a probe:
+
+    probe_gemm.py adj                  which neighbouring columns merge first, for a set of shapes
+    probe_gemm.py triple M N K         for a few output positions, the pairs merged before each k
+    probe_gemm.py trees M,N,K ...      the distinct reduction trees over the output positions
+    probe_gemm.py subset M N K i,j,... the same restricted to the listed columns
+    probe_gemm.py classes              which rows follow the even or the sequential pattern
+"""
 import os, sys, torch, time
 torch.set_num_threads(int(os.environ.get('T', '1')))
 BIG = float(2**24)
 
+
 def call(M, N, K, wcols, xcols, bias):
-    """wcols/xcols: dict k -> value, uniform over rows and columns"""
+    """Return addmm(bias, x, w.T) for an M by K `w` and an N by K `x` that are zero elsewhere.
+
+    `wcols` and `xcols` map a column k to the value it holds in every row of `w` and of `x`. The
+    result is N by M.
+    """
     w = torch.zeros((M, K), dtype=torch.float32)
     x = torch.zeros((N, K), dtype=torch.float32)
     for k, v in wcols.items():
@@ -13,8 +31,12 @@ def call(M, N, K, wcols, xcols, bias):
     b = torch.full((M,), bias, dtype=torch.float32)
     return torch.addmm(b, x, w.t())  # (N, M)
 
+
 def merged(M, N, K, big, j, l):
-    """big = index or -1 for the bias. Returns (N,M) bool tensor: j,l merged before meeting big"""
+    """Return an (N, M) bool tensor: whether columns `j` and `l` merged before meeting `big`.
+
+    `big` is the column that holds 2**24, or -1 to put it in the bias instead.
+    """
     wc = {j: 1.0, l: 1.0}
     xc = {j: 1.0, l: 1.0}
     bias = 0.0
@@ -26,17 +48,28 @@ def merged(M, N, K, big, j, l):
     r = call(M, N, K, wc, xc, bias)
     return r != BIG
 
+
 def classes(t):
-    """summarise a (N,M) bool tensor as distinct row patterns"""
+    """Return `t` unchanged.
+
+    Meant to summarise an (N, M) bool tensor as distinct row patterns; nothing calls it.
+    """
     return t
 
+
 def adjacency(M, N, K):
+    """Return a (K - 1, N, M) bool tensor: whether columns k and k + 1 merged before the bias."""
     res = torch.zeros((K - 1, N, M), dtype=torch.bool)
     for j in range(K - 1):
         res[j] = merged(M, N, K, -1, j, j + 1)
     return res
 
+
 def summarize(M, N, K):
+    """Print, for each distinct set of columns after which the sum breaks, the positions with it.
+
+    A break after k means columns k and k + 1 were not merged before the bias was added.
+    """
     t0 = time.time()
     a = adjacency(M, N, K)
     print(f'M={M} N={N} K={K}: adjacency {time.time()-t0:.1f}s')
@@ -49,11 +82,26 @@ def summarize(M, N, K):
     for br, who in pats.items():
         rows = sorted(set(x[0] for x in who))
         cols = sorted(set(x[1] for x in who))
-        print(f'  breaks after k in {br[:40]}{"..." if len(br)>40 else ""} (n={len(br)}) rows {rows[0]}..{rows[-1]} ({len(rows)}) cols {cols[0]}..{cols[-1]} ({len(cols)}) positions {len(who)}')
+        print(
+            f'  breaks after k in {br[:40]}{"..." if len(br)>40 else ""} (n={len(br)})'
+            f' rows {rows[0]}..{rows[-1]} ({len(rows)}) cols {cols[0]}..{cols[-1]} ({len(cols)})'
+            f' positions {len(who)}'
+        )
+
 
 which = sys.argv[1]
 if which == 'adj':
-    for shape in [(40, 64, 7), (40, 7, 7), (40, 64, 12200), (40, 7, 12200), (4, 64, 47), (4, 7, 47), (40, 1, 12200), (4, 1, 47), (40, 1, 7)]:
+    for shape in [
+        (40, 64, 7),
+        (40, 7, 7),
+        (40, 64, 12200),
+        (40, 7, 12200),
+        (4, 64, 47),
+        (4, 7, 47),
+        (40, 1, 12200),
+        (4, 1, 47),
+        (40, 1, 7),
+    ]:
         summarize(*shape)
         sys.stdout.flush()
 elif which == 'triple':
@@ -71,7 +119,13 @@ elif which == 'triple':
             print('  big', i, 'merged before:', out)
         sys.stdout.flush()
 
+
 def trees(M, N, K):
+    """Print the distinct reduction trees over the output positions of an M, N, K product.
+
+    For each tree: the rows and columns that use it, then for each k (and -1 for the bias) the
+    groups of columns already merged when k is added.
+    """
     keys = []
     results = []
     for i in list(range(K)) + [-1]:
@@ -100,7 +154,9 @@ def trees(M, N, K):
             # present as partition of indices already merged: components
             pairs = by.get(i, [])
             parent = {}
+
             def find(a):
+                """Return the root of `a` in the union-find `parent`, adding it if new."""
                 parent.setdefault(a, a)
                 while parent[a] != a:
                     a = parent[a]
@@ -113,11 +169,14 @@ def trees(M, N, K):
             print(f'    before {i:3}: ', sorted(sorted(x) for x in comp.values()))
     sys.stdout.flush()
 
+
 if which == 'trees':
     for spec in sys.argv[2:]:
         trees(*[int(v) for v in spec.split(',')])
 
+
 def subset(M, N, K, idx):
+    """Print the distinct reduction trees as `trees` does, over the columns in `idx` only."""
     keys = []
     results = []
     for i in idx + [-1]:
@@ -145,7 +204,9 @@ def subset(M, N, K, idx):
         for i in idx + [-1]:
             pairs = by.get(i, [])
             parent = {}
+
             def find(a):
+                """Return the root of `a` in the union-find `parent`, adding it if new."""
                 parent.setdefault(a, a)
                 while parent[a] != a:
                     a = parent[a]
@@ -158,6 +219,7 @@ def subset(M, N, K, idx):
             print(f'    before {i:5}: ', sorted(sorted(x) for x in comp.values()))
     sys.stdout.flush()
 
+
 if which == 'subset':
     M, N, K = [int(v) for v in sys.argv[2:5]]
     subset(M, N, K, [int(v) for v in sys.argv[5].split(',')])
@@ -169,7 +231,11 @@ if which == 'classes':
             seq = merged(M, N, K, 2, 0, 1)    # 0,1 together before k=2
             lines = {}
             for r in range(M):
-                pattern = ''.join('e' if even[c, r] and not seq[c, r] else ('s' if seq[c, r] and not even[c, r] else '?') for c in range(N))
+                pattern = ''.join(
+                    'e' if even[c, r] and not seq[c, r]
+                    else ('s' if seq[c, r] and not even[c, r] else '?')
+                    for c in range(N)
+                )
                 lines.setdefault(pattern, []).append(r)
             desc = '; '.join(f'rows {v[0]}..{v[-1]}({len(v)}): {k}' for k, v in lines.items())
             print(f'M={M} K={K} N={N}: {desc}', flush=True)

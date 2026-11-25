@@ -15,7 +15,11 @@ CONTIGS = [("chr1", 2000000), ("chr2", 1500000), ("chrX", 1200000)]
 
 
 def poisson(rng, mean):
-    # Knuth's method, in logs so that a large mean does not underflow.
+    """Draw a Poisson count with the given mean from `rng`.
+
+    Below a mean of 30 this is Knuth's method, multiplying uniforms until the product falls to
+    exp(-mean); above it, a normal approximation, rounded and clamped at zero.
+    """
     if mean < 30:
         limit, k, p = math.exp(-mean), 0, 1.0
         while True:
@@ -27,6 +31,11 @@ def poisson(rng, mean):
 
 
 def main():
+    """Write intervals.interval_list, one counts file per sample and priors.tsv into the directory.
+
+    Autosomes have two copies outside the two changes above; even samples have two X, odd ones one.
+    Counts are Poisson around the sample's depth times the interval's bias times copies / 2.
+    """
     directory = sys.argv[1]
     samples = int(sys.argv[2]) if len(sys.argv) > 2 else 6
     per_contig = int(sys.argv[3]) if len(sys.argv) > 3 else 60

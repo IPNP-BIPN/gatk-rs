@@ -8,9 +8,9 @@ Usage: dump_vets.py <fixture directory> (<pass> <directory>)...
     scorer <pass> <file>  <sha256>     the pickle, without its frames and its temporary script name
     scores <pass> <file>  <hex>        the doubles of a file Java wrote, which holds the time
 
-The name in a scorer is random in every run, and one name in ten is a digit shorter, which moves the
-frames along with it; the rest of the pickle is a function of the fit. CPU features go on a comment
-line: scores can depend on them, and a golden should say what it was made on.
+The name in a scorer is random in every run, and one name in ten is a digit shorter, which moves
+the frames along with it; the rest of the pickle is a function of the fit. CPU features go on a
+comment line: scores can depend on them, and a golden should say what it was made on.
 """
 import hashlib
 import os
@@ -22,11 +22,17 @@ import numpy as np
 
 
 def read(*path):
+    """Return the bytes of the file at the joined `path`."""
     with open(os.path.join(*path), "rb") as stream:
         return stream.read()
 
 
 def normal_scorer(data):
+    """Return a scorer pickle without its FRAME headers, its script name and that name's length.
+
+    A frame header (opcode 0x95 and an 8-byte length) is dropped and its contents kept; the first
+    temporary script name, with the byte before it, becomes `?NAME`.
+    """
     out, at = bytearray(data[:2]), 2
     while at < len(data):
         if data[at] == 0x95:
@@ -40,6 +46,7 @@ def normal_scorer(data):
 
 
 def main():
+    """Print numpy's CPU features, the fixture files, then each pass's files as the lines above."""
     features = np.core._multiarray_umath.__cpu_features__
     print("# cpu " + " ".join(name for name, on in features.items() if on))
     fixture = sys.argv[1]
@@ -55,7 +62,9 @@ def main():
             print(f"file\t{tag}\t{name}\t{read(directory, name).hex()}")
         print(f"input\t{tag}.extract.annot.hdf5\t{read(directory, 'extract.annot.hdf5').hex()}")
         for kind in ("snp", "indel"):
-            digest = hashlib.sha256(normal_scorer(read(directory, f"train.{kind}.scorer.pkl"))).hexdigest()
+            digest = hashlib.sha256(
+                normal_scorer(read(directory, f"train.{kind}.scorer.pkl"))
+            ).hexdigest()
             print(f"scorer\t{tag}\ttrain.{kind}.scorer.pkl\t{digest}")
         with h5py.File(os.path.join(directory, "score.scores.hdf5"), "r") as stream:
             values = stream["/data/scores"][()].astype("<f8").tobytes().hex()

@@ -52,13 +52,20 @@ COMMENT = [
 
 
 def main(argv):
+    """Run the array for every named tool and write `measured.json` from their summaries.
+
+    Builds the shared corpus once, trains the scorers or builds the R-enabled port when a named
+    tool needs them, runs `run_array.py` per tool (up to `--jobs` side by side), and exits with a
+    message if any run fails or prints no summary line. Returns 0.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tool", action="append", required=True)
     parser.add_argument("--port", required=True, help="the linux/amd64 port binary")
     parser.add_argument("--t", type=int, default=2)
     parser.add_argument(
         "--corpus-dir",
-        help="where to write each tool's row-by-row corpus, which is what a divergence is read from",
+        help="where to write each tool's row-by-row corpus, which is what a divergence is "
+        "read from",
     )
     parser.add_argument(
         "--jobs",
@@ -83,6 +90,7 @@ def main(argv):
         run_array.build_port_with_r()
 
     def measure_one(tool):
+        """Run `run_array.py` for one tool and return the completed process."""
         command = [
             sys.executable, str(RUNNER), "--tool", tool,
             "--t", str(options.t), "--port", options.port,

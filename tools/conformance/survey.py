@@ -81,7 +81,9 @@ def unstamped(text, was, now):
         for i, field in enumerate(fields):
             if BASE64.match(field):
                 try:
-                    fields[i] = "unstamped:" + unstamped_bytes(base64.b64decode(field), was, now).hex()
+                    fields[i] = "unstamped:" + unstamped_bytes(
+                        base64.b64decode(field), was, now
+                    ).hex()
                 except ValueError:
                     pass
         line = "\t".join(fields)
@@ -94,6 +96,7 @@ def unstamped(text, was, now):
 def rewrite(real, golden, was, now):
     """Both sides with the stamp taken out, so only what the reference DOES is left to differ."""
     def read(path):
+        """Return a file's text, through gzip when its name ends in `.gz`."""
         return (gzip.open(path, "rt") if str(path).endswith(".gz") else open(path)).read()
 
     out_real, out_golden = Path(str(real) + ".unstamped"), Path(str(real) + ".golden.unstamped")
@@ -107,7 +110,9 @@ def survey_suite(manifest, suite, workdir, was, now, fixtures, keep=None):
     props = suite.get("java_props", manifest.get("default_java_props", []))
     if suite.get("oracle"):
         # It names an image of its own, which the override does not reach.
-        return "error", [f"runs in its own image ({manifest[suite['oracle']]['image']}), not surveyed"]
+        return "error", [
+            f"runs in its own image ({manifest[suite['oracle']]['image']}), not surveyed"
+        ]
     if not suite.get("needs_fixtures"):
         fixtures = None
     elif fixtures is None:
@@ -126,7 +131,9 @@ def survey_suite(manifest, suite, workdir, was, now, fixtures, keep=None):
         ok, _, messages = comparator.compare_case(real, golden, suite["compare"])
         if ok:
             continue
-        ok, _, messages = comparator.compare_case(*rewrite(real, golden, was, now), suite["compare"])
+        ok, _, messages = comparator.compare_case(
+            *rewrite(real, golden, was, now), suite["compare"]
+        )
         if ok:
             verdict = "version" if verdict != "behaviour" else verdict
             notes.append(f"{dump}: the version stamp, and nothing else")
@@ -140,13 +147,20 @@ def survey_suite(manifest, suite, workdir, was, now, fixtures, keep=None):
 
 
 def main(argv):
+    """Survey the chosen suites under the given image and print the buckets.
+
+    Returns 1 when any suite moved in behaviour or did not run, else 0. With `--json` the buckets
+    and notes are also written to that file.
+    """
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--manifest")
     ap.add_argument("--oracle-image", required=True)
     ap.add_argument("--version-was", required=True)
     ap.add_argument("--version-now", required=True)
     ap.add_argument("--suites", help="space separated ids; default is every oracle-backed suite")
-    ap.add_argument("--shard", help="k/n: survey only every n-th suite, starting at the k-th (1-based)")
+    ap.add_argument(
+        "--shard", help="k/n: survey only every n-th suite, starting at the k-th (1-based)"
+    )
     ap.add_argument("--json", help="also write the buckets and notes to this file")
     ap.add_argument("--keep", help="copy the regenerated dump of every suite that moved here")
     args = ap.parse_args(argv)

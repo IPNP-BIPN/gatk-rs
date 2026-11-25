@@ -39,9 +39,9 @@ PLATFORM = "linux/amd64"
 
 # The `Add-Opens` of the GATK jar's own manifest. `java -jar` applies them and `java -cp` does not,
 # so a reference run off the classpath is a JVM the shipped launcher never starts. What they grant
-# is reflective access, which the tools measured before them never needed; `CreateReadCountPanelOfNormals`
-# is a Spark program, and Spark 3.5 on JDK 17 dies in `StorageUtils` with an `IllegalAccessError`
-# on `sun.nio.ch` without them, on every row.
+# is reflective access, which the tools measured before them never needed;
+# `CreateReadCountPanelOfNormals` is a Spark program, and Spark 3.5 on JDK 17 dies in
+# `StorageUtils` with an `IllegalAccessError` on `sun.nio.ch` without them, on every row.
 ADD_OPENS = (
     "java.base/java.lang", "java.base/java.lang.invoke", "java.base/java.lang.reflect",
     "java.base/java.io", "java.base/java.net", "java.base/java.nio", "java.base/java.util",
@@ -69,8 +69,12 @@ ADD_OPENS = (
 # The properties every conformance suite runs under, so a row is measured under the same
 # configuration as a golden. Without -Dsamjdk.use_libdeflate=false, htsjdk 5.0.0 compresses with
 # libdeflate and every BGZF output (BAM, BAI, VCF.GZ, TBI) differs from the JDK deflater's bytes.
-JAVA_PROPS = json.loads((REPO / "tools" / "conformance" / "manifest.json").read_text())["default_java_props"]
-JAVA_OPENS = " ".join([*(f"--add-opens={module}=ALL-UNNAMED" for module in ADD_OPENS), *JAVA_PROPS])
+JAVA_PROPS = json.loads(
+    (REPO / "tools" / "conformance" / "manifest.json").read_text()
+)["default_java_props"]
+JAVA_OPENS = " ".join(
+    [*(f"--add-opens={module}=ALL-UNNAMED" for module in ADD_OPENS), *JAVA_PROPS]
+)
 
 # The Broad's own image of the release, which has the `python` and the `Rscript` the pinned one
 # deliberately lacks. A tool under `$past_the_interpreter` runs its REFERENCE there, so the array
@@ -83,13 +87,21 @@ JAVA_OPENS = " ".join([*(f"--add-opens={module}=ALL-UNNAMED" for module in ADD_O
 # `run_fuzz.py` turns this off: its branch probes run in the pinned image, without either.
 PAST_THE_INTERPRETER = True
 PORT_WITH_R = "gatk-rs-port-with-r:4.7.0.0"
-BROAD = json.loads((REPO / "tools" / "conformance" / "manifest.json").read_text())["oracle_with_r"]
-# The htsget server a tool under `$htsget_server` reaches, pinned in the manifest. It runs beside the
-# rows on a docker network of its own, as `htsget`; SERVER holds what each row then adds to its
+BROAD = json.loads(
+    (REPO / "tools" / "conformance" / "manifest.json").read_text()
+)["oracle_with_r"]
+# The htsget server a tool under `$htsget_server` reaches, pinned in the manifest. It runs beside
+# the rows on a docker network of its own, as `htsget`; SERVER holds what each row then adds to its
 # container (the network, the certificate's mount) and the reference's trust store, or None.
-HTSGET = json.loads((REPO / "tools" / "conformance" / "manifest.json").read_text())["htsget_server"]
+HTSGET = json.loads(
+    (REPO / "tools" / "conformance" / "manifest.json").read_text()
+)["htsget_server"]
 SERVER = None
-TRUST = "-Djavax.net.ssl.trustStore=/work/htsget/trust.p12 -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=PKCS12"
+TRUST = (
+    "-Djavax.net.ssl.trustStore=/work/htsget/trust.p12 "
+    "-Djavax.net.ssl.trustStorePassword=changeit "
+    "-Djavax.net.ssl.trustStoreType=PKCS12"
+)
 NUMPY_WITHOUT_AVX512 = "AVX512F AVX512CD AVX512_SKX AVX512_CLX AVX512_CNL AVX512_ICL AVX512_SPR"
 
 # Values that mean "the argument is absent", so a held-at value carrying one must not be passed.
@@ -99,9 +111,9 @@ ABSENT = {"None", "null", "[]", ""}
 UNSET = "<unset>"
 
 
-# A corpus built once and handed to every row, by `measure.py` when it runs many tools. The files are
-# mounted READ-ONLY into every container, so one copy serves any number of runs, concurrent ones
-# included; `None` builds a corpus of this run's own.
+# A corpus built once and handed to every row, by `measure.py` when it runs many tools. The files
+# are mounted READ-ONLY into every container, so one copy serves any number of runs, concurrent
+# ones included; `None` builds a corpus of this run's own.
 FIXTURES_DIR = None
 
 
@@ -150,7 +162,8 @@ def train_scorers(fixtures):
         return
     train = " && ".join(
         f'java -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main TrainVariantAnnotationsModel '
-        f"--annotations-hdf5 /work/fixtures/it/extract.annot.hdf5 --mode {mode} --output /work/fixtures/{prefix}"
+        f"--annotations-hdf5 /work/fixtures/it/extract.annot.hdf5 --mode {mode} "
+        f"--output /work/fixtures/{prefix}"
         for prefix, modes in SCORERS.items()
         for mode in modes
     )
@@ -158,7 +171,8 @@ def train_scorers(fixtures):
         [
             "docker", "run", "--rm", "--platform", PLATFORM,
             "-v", f"{fixtures}:/work/fixtures",
-            "-e", f"ORACLE_CP={BROAD['classpath']}", "-e", f"NPY_DISABLE_CPU_FEATURES={NUMPY_WITHOUT_AVX512}",
+            "-e", f"ORACLE_CP={BROAD['classpath']}",
+            "-e", f"NPY_DISABLE_CPU_FEATURES={NUMPY_WITHOUT_AVX512}",
             "-w", "/work", "--entrypoint", "sh", BROAD["image"], "-c",
             f"{train}; rc=$?; chmod -R a+rwX /work/fixtures/it; exit $rc",
         ],
@@ -270,11 +284,17 @@ def run_oracle(tool, row_args, workdir, positional=(), tagged=(), lists=()):
     # `gatk <Tool> <args>`: the tool name is the first token, which is the shape the bit-identity
     # claim is defined against, and the wrapper is what fixes the parser to Barclay.
     trust = f" {TRUST}" if SERVER else ""
-    command = f'rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && {copies}java {JAVA_OPENS}{trust} -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {tool} {cli}; rc=$?; chmod -R a+rwX /work/out; exit $rc'
+    command = (
+        "rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && "
+        f"{copies}java {JAVA_OPENS}{trust} "
+        f'-cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {tool} {cli}; '
+        "rc=$?; chmod -R a+rwX /work/out; exit $rc"
+    )
     image = [IMAGE, command]
     if past_the_interpreter(tool):
         image = [
-            "-e", f"ORACLE_CP={BROAD['classpath']}", "-e", f"NPY_DISABLE_CPU_FEATURES={NUMPY_WITHOUT_AVX512}",
+            "-e", f"ORACLE_CP={BROAD['classpath']}",
+            "-e", f"NPY_DISABLE_CPU_FEATURES={NUMPY_WITHOUT_AVX512}",
             "--entrypoint", "sh", BROAD["image"], "-c", command,
         ]
     result = subprocess.run(
@@ -290,7 +310,9 @@ def run_oracle(tool, row_args, workdir, positional=(), tagged=(), lists=()):
     )
     return (
         result.returncode,
-        with_stdout(read_output(out_dir, row_args), result.stdout + stderr_answer(tool, result.stderr)),
+        with_stdout(
+            read_output(out_dir, row_args), result.stdout + stderr_answer(tool, result.stderr)
+        ),
         first_error(result.stderr or result.stdout),
     )
 
@@ -308,7 +330,9 @@ def read_output(out_dir, row_args=()):
         return ""
     fragments = genomicsdb_names(produced, out_dir)
     # A fragment's name is a random uuid, so the order is the stable name's, not the file's.
-    produced.sort(key=lambda p: Path(fragments[p][1]) if p in fragments else p.relative_to(out_dir))
+    produced.sort(
+        key=lambda p: Path(fragments[p][1]) if p in fragments else p.relative_to(out_dir)
+    )
     parts = []
     for path in produced:
         raw = path.read_bytes()
@@ -333,12 +357,15 @@ def read_output(out_dir, row_args=()):
             masked = tribble_index_masked(raw)
             if masked is not None:
                 digest = hashlib.sha256(masked).hexdigest()
-                parts.append(f"{name}: TRIBBLE INDEX sha256={digest} bytes={len(raw)} (mtime masked)")
+                parts.append(
+                    f"{name}: TRIBBLE INDEX sha256={digest} bytes={len(raw)} (mtime masked)"
+                )
                 continue
         if name.endswith((".data.rds", ".ggplot.rds", ".af_combined.png")):
             # What the rewritten plot scripts add (#807), which the reference does not write: the
             # exports, whose numbers suite `r-plots` measures against the reference's own traced
-            # ones, and AlleleFrequencyQC's combined figure. The same list as r_plots_end_to_end.rs.
+            # ones, and AlleleFrequencyQC's combined figure. The same list as
+            # r_plots_end_to_end.rs.
             continue
         if name.endswith(".png"):
             parts.append(f"{name}: {png_shape(raw)}")
@@ -347,13 +374,18 @@ def read_output(out_dir, row_args=()):
             # The masked length: the script's random digits are not always the same count.
             masked = scorer_masked(raw)
             digest = hashlib.sha256(masked).hexdigest()
-            parts.append(f"{name}: SCORER sha256={digest} bytes={len(masked)} (frames and the script's digits masked)")
+            parts.append(
+                f"{name}: SCORER sha256={digest} bytes={len(masked)} "
+                "(frames and the script's digits masked)"
+            )
             continue
         if name.endswith(".img"):
             masked = bwa_image_masked(raw)
             if masked is not None:
                 digest = hashlib.sha256(masked).hexdigest()
-                parts.append(f"{name}: BWA IMAGE sha256={digest} bytes={len(raw)} (addresses masked)")
+                parts.append(
+                    f"{name}: BWA IMAGE sha256={digest} bytes={len(raw)} (addresses masked)"
+                )
                 continue
         try:
             text = without_start_time(raw.decode("utf-8"))
@@ -397,14 +429,23 @@ def genomicsdb_names(produced, out_dir):
             for index, fragment in enumerate(fragments):
                 for path in produced:
                     if path.parent == fragment:
-                        stable = path.relative_to(out_dir).as_posix().replace(fragment.name, f"fragment-{index}")
+                        stable = path.relative_to(out_dir).as_posix().replace(
+                            fragment.name, f"fragment-{index}"
+                        )
                         found[path] = (found[path][0], stable)
             metas = sorted(
-                (p for p in produced if p.parent == array / "genomicsdb_meta_dir" and p.name.startswith("genomicsdb_meta_")),
+                (
+                    p
+                    for p in produced
+                    if p.parent == array / "genomicsdb_meta_dir"
+                    and p.name.startswith("genomicsdb_meta_")
+                ),
                 key=lambda p: p.read_bytes(),
             )
             for index, path in enumerate(metas):
-                stable = path.relative_to(out_dir).as_posix().replace(path.name, f"genomicsdb_meta_{index}.json")
+                stable = path.relative_to(out_dir).as_posix().replace(
+                    path.name, f"genomicsdb_meta_{index}.json"
+                )
                 found[path] = (found[path][0], stable)
     return found
 
@@ -481,6 +522,7 @@ def traversals_unordered(raw):
         flip = {"+": "-", "-": "+"}
 
         def canonical(line):
+            """The lesser of an `O` line's two spellings, forwards and read backwards."""
             steps = line[len("O\t*\t"):].split(" ")
             reverse = [step[:-1] + flip[step[-1]] for step in reversed(steps)]
             return "O\t*\t" + min(" ".join(steps), " ".join(reverse))
@@ -579,7 +621,11 @@ def png_shape(raw):
     width, height = int.from_bytes(raw[16:20], "big"), int.from_bytes(raw[20:24], "big")
     at, density = raw.find(b"pHYs"), "no pHYs"
     if at > 0:
-        x, y, unit = int.from_bytes(raw[at + 4 : at + 8], "big"), int.from_bytes(raw[at + 8 : at + 12], "big"), raw[at + 12]
+        x, y, unit = (
+            int.from_bytes(raw[at + 4 : at + 8], "big"),
+            int.from_bytes(raw[at + 8 : at + 12], "big"),
+            raw[at + 12],
+        )
         density = f"{x}x{y} per {'metre' if unit == 1 else 'unit'}"
     return f"PNG {width}x{height}, {density}"
 
@@ -598,23 +644,36 @@ def scorer_masked(raw):
         at += 9 + length
     out += raw[at:]
     return re.sub(
-        rb"\x8c.(/[ -~]*?/isolation-forest\.)\d+(\.py)", lambda m: b"\x8c?" + m[1] + b"N" + m[2], bytes(out), count=1, flags=re.S
+        rb"\x8c.(/[ -~]*?/isolation-forest\.)\d+(\.py)",
+        lambda m: b"\x8c?" + m[1] + b"N" + m[2],
+        bytes(out),
+        count=1,
+        flags=re.S,
     )
 
 
 def past_the_interpreter(tool):
-    """The interpreter a tool's reference runs past in the Broad's image, "python" or "Rscript",
-    per tool under `$past_the_interpreter`; None where it runs in the pinned image."""
+    """The interpreter a tool's reference runs past in the Broad's image.
+
+    That is "python" or "Rscript", per tool under `$past_the_interpreter`; None where it runs in
+    the pinned image, which is every tool when PAST_THE_INTERPRETER is off.
+    """
     path = REPO / "tools" / "coverage" / "fixtures.json"
     if not PAST_THE_INTERPRETER or not path.exists():
         return None
-    return json.loads(path.read_text()).get("per_tool", {}).get(tool, {}).get("$past_the_interpreter")
+    return (
+        json.loads(path.read_text()).get("per_tool", {}).get(tool, {})
+        .get("$past_the_interpreter")
+    )
 
 
 def build_port_with_r():
     """PORT_WITH_R, from tools/coverage/port-with-r; docker's cache makes a second build free."""
     result = subprocess.run(
-        ["docker", "build", "--platform", PLATFORM, "-t", PORT_WITH_R, str(REPO / "tools" / "coverage" / "port-with-r")],
+        [
+            "docker", "build", "--platform", PLATFORM, "-t", PORT_WITH_R,
+            str(REPO / "tools" / "coverage" / "port-with-r"),
+        ],
         capture_output=True,
         text=True,
     )
@@ -628,7 +687,10 @@ def htsget_files(tool):
     path = REPO / "tools" / "coverage" / "fixtures.json"
     if not path.exists():
         return []
-    return json.loads(path.read_text()).get("per_tool", {}).get(tool, {}).get("$htsget_server", [])
+    return (
+        json.loads(path.read_text()).get("per_tool", {}).get(tool, {})
+        .get("$htsget_server", [])
+    )
 
 
 def start_htsget(files, workdir):
@@ -655,25 +717,37 @@ def start_htsget(files, workdir):
     copies = []
     for name in files:
         index = f"{name.removesuffix('.bam')}.bai" if name.endswith(".bam") else f"{name}.tbi"
-        copies.append(f"cp /work/fixtures/{name} data/ && cp /work/fixtures/{index} data/{name}.{index.rsplit('.', 1)[1]}")
+        copies.append(
+            f"cp /work/fixtures/{name} data/ && cp /work/fixtures/{index} "
+            f"data/{name}.{index.rsplit('.', 1)[1]}"
+        )
     prepare = (
-        "openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 2 -subj /CN=htsget "
+        "openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 2 "
+        "-subj /CN=htsget "
         "-addext subjectAltName=DNS:htsget -addext basicConstraints=critical,CA:FALSE "
         "&& keytool -importcert -noprompt -alias htsget -file cert.pem -keystore trust.p12 "
-        f"-storetype PKCS12 -storepass changeit && {' && '.join(copies)} && chmod -R a+rX /work/htsget"
+        f"-storetype PKCS12 -storepass changeit && {' && '.join(copies)} "
+        "&& chmod -R a+rX /work/htsget"
     )
     network = f"{workdir.name}-htsget"
-    SERVER = ["--network", network, "-v", f"{served}:/work/htsget:ro", "-e", "SSL_CERT_FILE=/work/htsget/cert.pem"]
+    SERVER = [
+        "--network", network, "-v", f"{served}:/work/htsget:ro",
+        "-e", "SSL_CERT_FILE=/work/htsget/cert.pem",
+    ]
     steps = [
-        ["docker", "run", "--rm", "--platform", PLATFORM, "-v", f"{fixtures_of(workdir)}:/work/fixtures:ro",
+        ["docker", "run", "--rm", "--platform", PLATFORM,
+         "-v", f"{fixtures_of(workdir)}:/work/fixtures:ro",
          "-v", f"{served}:/work/htsget", "-w", "/work/htsget", IMAGE, prepare],
         ["docker", "network", "create", network],
-        ["docker", "run", "-d", "--name", network, "--network", network, "--network-alias", "htsget",
+        ["docker", "run", "-d", "--name", network, "--network", network,
+         "--network-alias", "htsget",
          "--platform", HTSGET["platform"], "-v", f"{served}:/work/htsget:ro", "-w", "/work/htsget",
          HTSGET["image"], "htsget-axum", "--config", "config.toml"],
         # Up once its ticket server answers over TLS.
-        ["docker", "run", "--rm", "--platform", PLATFORM, "--network", network, "-v", f"{served}:/work/htsget:ro",
-         IMAGE, "curl -sf --retry 30 --retry-delay 1 --retry-all-errors --cacert /work/htsget/cert.pem "
+        ["docker", "run", "--rm", "--platform", PLATFORM, "--network", network,
+         "-v", f"{served}:/work/htsget:ro",
+         IMAGE, "curl -sf --retry 30 --retry-delay 1 --retry-all-errors "
+         "--cacert /work/htsget/cert.pem "
          "-o /dev/null https://htsget:8080/reads/service-info"],
     ]
     for step in steps:
@@ -769,10 +843,14 @@ def hdf5_members(path):
         import h5py
     except ImportError:
         raw = path.read_bytes()
-        return f"BINARY sha256={hashlib.sha256(raw).hexdigest()} bytes={len(raw)} (no h5py to read it)"
+        return (
+            f"BINARY sha256={hashlib.sha256(raw).hexdigest()} bytes={len(raw)} "
+            "(no h5py to read it)"
+        )
     rendered = []
 
     def visit(name, obj):
+        """Add one group or dataset of the file to `rendered`, as the comparison sees it."""
         if isinstance(obj, h5py.Group):
             rendered.append(f"[{name}/]")
             return
@@ -783,7 +861,10 @@ def hdf5_members(path):
             return
         data = obj[()]
         if obj.dtype.kind in ("S", "O", "U"):
-            values = [v.decode("utf-8") if isinstance(v, bytes) else str(v) for v in data.ravel().tolist()]
+            values = [
+                v.decode("utf-8") if isinstance(v, bytes) else str(v)
+                for v in data.ravel().tolist()
+            ]
             rendered.append(f"[{name}: string {list(obj.shape)} {values}]")
         else:
             values = [repr(v) for v in data.ravel().tolist()]
@@ -794,14 +875,17 @@ def hdf5_members(path):
             handle.visititems(visit)
     except OSError as error:
         raw = path.read_bytes()
-        return f"BINARY sha256={hashlib.sha256(raw).hexdigest()} bytes={len(raw)} (not HDF5: {error})"
+        return (
+            f"BINARY sha256={hashlib.sha256(raw).hexdigest()} bytes={len(raw)} "
+            f"(not HDF5: {error})"
+        )
     return "HDF5 " + " ".join(sorted(rendered))
 
 
 # A read-count panel of normals' decomposition: the singular values, and the eigensample vectors in
 # their chunked matrix. What decides them is Spark's solver: the panel's Gramian is summed in an
-# order the cluster picks, its trailing eigenvalues are rounding noise, and whether their roots clear
-# `1e-9` times the first moves from run to run of ONE image (8, 6 and 7 on one fixture, see
+# order the cluster picks, its trailing eigenvalues are rounding noise, and whether their roots
+# clear `1e-9` times the first moves from run to run of ONE image (8, 6 and 7 on one fixture, see
 # docs/a-rank-is-not-a-byte.md). An eigenvector's sign is the solver's choice too. So their values,
 # the count of them and the chunks that count shapes are not compared; that they were written is,
 # because the branch that writes them (more than one panel sample, more than zero eigensamples
@@ -884,7 +968,8 @@ def first_error(text):
 
     The user error is looked for first: a Spark thread stopped by that same refusal can log an
     `InterruptedException` ahead of it, on some runs and not others, and that line is the
-    scheduler's rather than the tool's. `ApplyBQSRSpark` measured 19 of 20 on it in run 40928504522.
+    scheduler's rather than the tool's. `ApplyBQSRSpark` measured 19 of 20 on it in run
+    40928504522.
 
     A Picard tool logs through htsjdk's `Log` instead, whose date sits in the second column:
     `GatherVcfs` catches its own refusal and logs it as `ERROR\t<date>\tGatherVcfs\t...` before
@@ -947,7 +1032,9 @@ def run_port(binary, tool, row_args, workdir, positional=(), tagged=(), lists=()
     )
     return (
         result.returncode,
-        with_stdout(read_output(out_dir, row_args), result.stdout + stderr_answer(tool, result.stderr)),
+        with_stdout(
+            read_output(out_dir, row_args), result.stdout + stderr_answer(tool, result.stderr)
+        ),
         first_error(result.stderr or result.stdout),
     )
 
@@ -998,10 +1085,16 @@ def outcome(code, text, error, keep_output=False):
 
 
 def escape(text):
+    """Backslash-escape backslashes, tabs and newlines, so a value fits one corpus field."""
     return text.replace("\\", "\\\\").replace("\t", "\\t").replace("\n", "\\n")
 
 
 def main(argv):
+    """Run one tool's array, against the oracle and with `--port` against the port too.
+
+    Exits with a message when the tool has no array; otherwise returns what `run_rows` returns,
+    after the htsget server is stopped and the root-owned outputs are removed.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tool", required=True)
     parser.add_argument("--t", type=int, default=2)
@@ -1060,10 +1153,10 @@ def empty_output_in_container(workdir):
 def positional_values(tool):
     """The `$positional` fixture values for a tool, which every row carries unchanged.
 
-    They are not part of the array: an assignment there is `--name=value`, and a positional argument
-    has no name. Holding them per tool is the same bargain a held-at fixture makes -- the values are
-    present on every row rather than covered against each other -- and it is the only way a tool
-    whose inputs are positional can be run at all.
+    They are not part of the array: an assignment there is `--name=value`, and a positional
+    argument has no name. Holding them per tool is the same bargain a held-at fixture makes -- the
+    values are present on every row rather than covered against each other -- and it is the only
+    way a tool whose inputs are positional can be run at all.
     """
     path = REPO / "tools" / "coverage" / "fixtures.json"
     if not path.exists():
@@ -1073,8 +1166,9 @@ def positional_values(tool):
 
 
 def output_on_failure(tool):
-    """Whether a failed row's output files are part of its answer, per tool under
-    `$output_on_failure`.
+    """Whether a failed row's output files are part of its answer, per tool.
+
+    The tool says so under `$output_on_failure`.
 
     `AlleleFrequencyQC` writes its metrics and only then runs an R script, which the image cannot,
     so EVERY row it accepts ends on a user error. Comparing the error alone would count twenty rows
@@ -1105,8 +1199,8 @@ def array_file(tool, t):
     """The tool's array, its name matched exactly.
 
     Picard's arrays sit under `arrays/picard/`: its `UpdateVcfSequenceDictionary` and GATK's
-    `UpdateVCFSequenceDictionary` differ only by case, which a case-insensitive checkout cannot hold
-    in one folder, and `Path.exists` there would answer for either.
+    `UpdateVCFSequenceDictionary` differ only by case, which a case-insensitive checkout cannot
+    hold in one folder, and `Path.exists` there would answer for either.
     """
     name = f"{tool}.t{t}.json"
     for folder in (ARRAYS, ARRAYS / "picard"):

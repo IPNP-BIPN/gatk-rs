@@ -62,12 +62,14 @@ def split_class(stem):
 
 
 def parse_bool(v):
+    """Read a gatkdoc flag: a bool as is, otherwise true only for "true" or "yes" in any case."""
     if isinstance(v, bool):
         return v
     return str(v).strip().lower() in ("true", "yes")
 
 
 def normalize_default(v):
+    """Return a value as a stripped string, or None when it is absent, empty, null, NA or none."""
     if v is None:
         return None
     s = str(v).strip()
@@ -75,6 +77,7 @@ def normalize_default(v):
 
 
 def normalize_argument(a):
+    """Map one gatkdoc argument record onto the inventory's argument fields."""
     options = a.get("options") or []
     enum_members = [o["name"] for o in options if isinstance(o, dict) and "name" in o]
     synonyms = a.get("synonyms")
@@ -93,6 +96,7 @@ def normalize_argument(a):
 
 
 def branch_name(origin, tool_name):
+    """Return `tool/<origin>-<name>`, the name lowercased with everything but [a-z0-9] removed."""
     slug = re.sub(r"[^a-z0-9]+", "", tool_name.lower())
     return f"tool/{origin}-{slug}"
 
@@ -116,6 +120,7 @@ def classify(stem, name, group, n_args):
 
 
 def main():
+    """Read every gatkdoc JSON, classify it and write inventory.json and summary.md to `-o`."""
     ap = argparse.ArgumentParser()
     ap.add_argument("gatkdoc", type=pathlib.Path)
     ap.add_argument("-o", "--outdir", type=pathlib.Path, default=pathlib.Path("."))
@@ -204,6 +209,10 @@ def main():
 
 
 def write_summary(inventory, outdir):
+    """Write summary.md: the overall counts, then the tools and arguments per archetype.
+
+    Also lists the twelve tools with the most arguments and up to twenty skipped docs.
+    """
     tools = inventory["tools"]
     filters = inventory["read_filters"]
     annotations = inventory["annotations"]
@@ -251,7 +260,9 @@ def write_summary(inventory, outdir):
     for arch, n in by_arch.most_common():
         lines.append(f"| `{arch}` | {n} | {args_by_arch[arch]} |")
 
-    lines += ["", "## Largest argument surfaces", "", "| Tool | Origin | Arguments |", "|---|---|---:|"]
+    lines += [
+        "", "## Largest argument surfaces", "", "| Tool | Origin | Arguments |", "|---|---|---:|"
+    ]
     for t in sorted(tools, key=lambda x: -len(x["arguments"]))[:12]:
         lines.append(f"| `{t['name']}` | {t['origin']} | {len(t['arguments'])} |")
 

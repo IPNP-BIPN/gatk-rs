@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-"""The most a device inflater could save a read-bound tool: the tool on a BAM, then on the same
-BAM with stored blocks, whose inflate is a copy. Milestone GPU, GPU.2 (docs/gpu/targets.md, §3).
+"""Measure the most a device inflater could save a read-bound tool.
+
+It runs the tool on a BAM, then on the same BAM with stored blocks, whose inflate is a copy.
+Milestone GPU, GPU.2 (docs/gpu/targets.md, §3).
 
     python3 tools/speed/bgzf_inflate_bound.py --port target/release/gatk --bam in.bam --work DIR
 
@@ -28,11 +30,17 @@ def bgzf(path, data, level):
         for chunk in [data[i : i + BLOCK] for i in range(0, len(data), BLOCK)] + [b""]:
             compressor = zlib.compressobj(level, zlib.DEFLATED, -15)
             body = compressor.compress(chunk) + compressor.flush()
-            header = struct.pack("<BBBBIBBHBBHH", 31, 139, 8, 4, 0, 0, 255, 6, 66, 67, 2, len(body) + 25)
+            header = struct.pack(
+                "<BBBBIBBHBBHH", 31, 139, 8, 4, 0, 0, 255, 6, 66, 67, 2, len(body) + 25
+            )
             out.write(header + body + struct.pack("<II", zlib.crc32(chunk), len(chunk)))
 
 
 def header_length(raw):
+    """Return the length in bytes of the BAM header at the start of the inflated stream `raw`.
+
+    That is the magic, the SAM text and the reference list, so the records start at the result.
+    """
     assert raw[:4] == b"BAM\1", "not a BAM"
     at = 8 + struct.unpack_from("<i", raw, 4)[0]
     references = struct.unpack_from("<i", raw, at)[0]
@@ -43,16 +51,26 @@ def header_length(raw):
 
 
 def timed(command, threads):
+    """Run `command` once with `RAYON_NUM_THREADS` set to `threads`.
+
+    Returns its wall time, its user CPU time and the last line of its standard output.
+    """
     environment = dict(os.environ, RAYON_NUM_THREADS=str(threads))
     before = resource.getrusage(resource.RUSAGE_CHILDREN)
     start = time.perf_counter()
-    out = subprocess.run(command, env=environment, capture_output=True, text=True, check=True).stdout
+    out = subprocess.run(
+        command, env=environment, capture_output=True, text=True, check=True
+    ).stdout
     wall = time.perf_counter() - start
     after = resource.getrusage(resource.RUSAGE_CHILDREN)
     return wall, after.ru_utime - before.ru_utime, out.strip().splitlines()[-1]
 
 
 def main():
+    """Write the deflated and stored copies, time the tool on each and print a Markdown table.
+
+    Fails when the two files do not give the tool the same answer.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", required=True)
     parser.add_argument("--bam", required=True)
@@ -76,11 +94,17 @@ def main():
     answers = set()
     for name, path in files.items():
         for threads in (1, cores):
-            runs = [timed([arguments.port, arguments.tool, "-I", path], threads) for _ in range(arguments.runs)]
+            runs = [
+                timed([arguments.port, arguments.tool, "-I", path], threads)
+                for _ in range(arguments.runs)
+            ]
             wall = min(r[0] for r in runs)
             cpu = min(r[1] for r in runs)
             answers.add(runs[0][2])
-            print(f"| {name} | {os.path.getsize(path) / 1e6:.0f} MB | {threads} | {wall:.2f} s | {cpu:.2f} s | {runs[0][2]} |")
+            print(
+                f"| {name} | {os.path.getsize(path) / 1e6:.0f} MB | {threads} | {wall:.2f} s"
+                f" | {cpu:.2f} s | {runs[0][2]} |"
+            )
     assert len(answers) == 1, f"the two files did not give the same answer: {answers}"
 
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """The sites the isolation-forest measurement and the suite run on.
 
-A seeded stream of SNPs and indels whose annotations are drawn from two separated clusters, with a
-known-good resource over the first cluster and a few values missing, so that the imputer has
+A seeded stream of SNPs and indels whose annotations are drawn from two separated clusters, with
+a known-good resource over the first cluster and a few values missing, so that the imputer has
 something to do. Nothing here depends on numpy, so the host and the image write the same bytes.
 
 Usage: make_vets_fixture.py <directory> [sites]
@@ -25,6 +25,11 @@ HEADER = (
 
 
 def main():
+    """Write calls.vcf and resource.vcf into the directory named on the command line.
+
+    About 60% of the sites are drawn from the good cluster, and 80% of those go into the resource.
+    One site in fifty lacks its FS annotation.
+    """
     directory = sys.argv[1]
     sites = int(sys.argv[2]) if len(sys.argv) > 2 else 2000
     rng = random.Random(20261102)

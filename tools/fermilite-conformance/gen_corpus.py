@@ -19,12 +19,16 @@ FLAGS = (DEFAULT, AGGRESSIVE)
 
 
 class Rng:
+    """A 64-bit xorshift generator, so that the corpus does not depend on the Python version."""
+
     def __init__(self, seed):
+        """Derive a nonzero state from `seed` and discard the first 16 values."""
         self.s = (seed * 0x9E3779B97F4A7C15 + 0x1234567) & (2**64 - 1) or 1
         for _ in range(16):
             self.u64()
 
     def u64(self):
+        """Advance the xorshift state and return it as the next 64-bit value."""
         x = self.s
         x ^= (x << 13) & (2**64 - 1)
         x ^= x >> 7
@@ -33,15 +37,19 @@ class Rng:
         return x
 
     def below(self, n):
+        """Return an integer in [0, n) from the top 53 bits of the next value."""
         return (self.u64() >> 11) % n
 
     def between(self, a, b):
+        """Return an integer in [a, b], both ends included."""
         return a + self.below(b - a + 1)
 
     def real(self):
+        """Return a float in [0, 1) from the top 53 bits of the next value."""
         return (self.u64() >> 11) / float(1 << 53)
 
     def choice(self, xs):
+        """Return one element of `xs`, each equally likely."""
         return xs[self.below(len(xs))]
 
 
@@ -49,10 +57,12 @@ COMP = bytes.maketrans(b"ACGTacgtN", b"TGCAtgcaN")
 
 
 def rc(s):
+    """Return the reverse complement of the bases `s`, keeping their case; N stays N."""
     return s.translate(COMP)[::-1]
 
 
 def genome(r, n, gc=0.5):
+    """Return `n` random bases, each a C or a G with probability `gc`."""
     out = bytearray(n)
     for i in range(n):
         if r.real() < gc:
@@ -63,6 +73,11 @@ def genome(r, n, gc=0.5):
 
 
 def mutate_haplotype(r, g, rate, indels=True):
+    """Return a copy of `g` with a variant at each base with probability `rate`.
+
+    A variant is a substitution or, with `indels`, also a deletion or an insertion of 1 to 12
+    bases.
+    """
     out = bytearray()
     i = 0
     while i < len(g):
@@ -89,11 +104,14 @@ def qual_model(r, name, n, errs):
             q[i] = r.between(2, 15) + 33
     elif name == "illumina_tail":
         tail = r.below(n // 3 + 1)
-        q = bytearray((r.between(32, 41) if i < n - tail else r.between(2, 20)) + 33 for i in range(n))
+        q = bytearray(
+            (r.between(32, 41) if i < n - tail else r.between(2, 20)) + 33 for i in range(n)
+        )
         for i in errs:
             q[i] = r.between(2, 12) + 33
     elif name == "raw_phred":
-        # what a BAM's unconverted qualities look like: small numbers, never 0 here since 0 is the NUL
+        # what a BAM's unconverted qualities look like: small numbers, never 0 here since 0 is
+        # the NUL
         q = bytearray(r.between(1, 45) for _ in range(n))
         for i in errs:
             q[i] = r.between(1, 5)
@@ -115,6 +133,14 @@ def qual_model(r, name, n, errs):
 
 
 def sample_read(r, g, lens, sub, ins, dele, qual, circular=False, both=True, start=None):
+    """Sample one read of `g` with errors and return its bases and qualities.
+
+    The length is `lens`, or one drawn from it, capped at the genome unless `circular`, where the
+    read may wrap. It starts at `start` or at random, and with `both` is reverse complemented half
+    the time. Each base is then substituted, followed by an inserted base, or deleted with the
+    probabilities `sub`, `ins` and `dele`, and the qualities come from the `qual` model with the
+    errors marked. An empty read gets empty qualities.
+    """
     n = lens if isinstance(lens, int) else r.choice(lens)
     if circular:
         if start is None:
@@ -150,28 +176,41 @@ def sample_read(r, g, lens, sub, ins, dele, qual, circular=False, both=True, sta
 
 
 def sample_depth(r, g, depth, lens, sub=0.0, ins=0.0, dele=0.0, qual="phred33", circular=False):
+    """Return enough reads of `g` to cover it `depth` times at the mean read length.
+
+    There is always at least one read.
+    """
     mean = lens if isinstance(lens, int) else sum(lens) // len(lens)
     n = max(1, int(depth * len(g) / max(mean, 1)))
     return [sample_read(r, g, lens, sub, ins, dele, qual, circular) for _ in range(n)]
 
 
-QUALS = ["phred33", "illumina_tail", "raw_phred", "two", "bang", "all_high", "top", "const40", "lowonly"]
+QUALS = [
+    "phred33", "illumina_tail", "raw_phred", "two", "bang", "all_high", "top", "const40", "lowonly"
+]
 LENS = [30, 36, 50, 75, 100, 101, 125, 150, 151, 250, [75, 100, 151], [30, 151, 250], [36, 50, 76]]
 
 
 def rand_lens(r):
+    """Pick a read length, or a list of lengths to draw each read's from."""
     return r.choice(LENS)
 
 
 def rand_err(r):
-    return r.choice([(0, 0, 0), (0.001, 0, 0), (0.005, 0.0005, 0.0005), (0.01, 0.001, 0.001), (0.03, 0.002, 0.002)])
+    """Pick a (substitution, insertion, deletion) triple of error rates."""
+    return r.choice([
+        (0, 0, 0), (0.001, 0, 0), (0.005, 0.0005, 0.0005), (0.01, 0.001, 0.001),
+        (0.03, 0.002, 0.002),
+    ])
 
 
 def rand_depth(r):
+    """Pick a sequencing depth."""
     return r.choice([2, 4, 8, 12, 20, 30, 50, 80, 120, 200])
 
 
 def g_random(r):
+    """Reads of a random genome, the depth capped so that depth times length is at most 60000."""
     n = r.choice([100, 200, 400, 800, 1500])
     g = genome(r, n, r.choice([0.3, 0.5, 0.65]))
     d = rand_depth(r)
@@ -182,27 +221,36 @@ def g_random(r):
 
 
 def g_bubble(r):
+    """Reads of a genome and of a mutated haplotype of it at the same depth, which make bubbles."""
     g = genome(r, r.choice([300, 600, 1000]))
     h = mutate_haplotype(r, g, r.choice([0.002, 0.005, 0.01, 0.03]), indels=bool(r.below(2)))
     d = r.choice([10, 20, 40, 60])
     e = rand_err(r)
     q = r.choice(["phred33", "illumina_tail", "const40"])
-    return sample_depth(r, g, d, rand_lens(r), *e, qual=q) + sample_depth(r, h, d, rand_lens(r), *e, qual=q)
+    return sample_depth(r, g, d, rand_lens(r), *e, qual=q) + sample_depth(
+        r, h, d, rand_lens(r), *e, qual=q
+    )
 
 
 def g_tandem(r):
+    """Reads of a tandem repeat of a unit of 1 to 80 bases between two 200-base flanks."""
     unit = genome(r, r.choice([1, 2, 3, 5, 8, 13, 21, 40, 80]))
     left = genome(r, 200)
     right = genome(r, 200)
     g = left + unit * r.between(4, 2000 // len(unit) + 4) + right
-    return sample_depth(r, g, r.choice([10, 30, 60]), rand_lens(r), *rand_err(r), qual=r.choice(QUALS[:3]))
+    return sample_depth(
+        r, g, r.choice([10, 30, 60]), rand_lens(r), *rand_err(r), qual=r.choice(QUALS[:3])
+    )
 
 
 def g_inverted(r):
+    """Reads of an inverted repeat: an arm, a spacer and the arm's reverse complement, flanked."""
     arm = genome(r, r.choice([40, 80, 150, 400]))
     spacer = genome(r, r.choice([0, 1, 2, 10, 30, 100]))
     g = genome(r, 150) + arm + spacer + rc(arm) + genome(r, 150)
-    return sample_depth(r, g, r.choice([10, 30, 60]), rand_lens(r), *rand_err(r), qual=r.choice(QUALS[:3]))
+    return sample_depth(
+        r, g, r.choice([10, 30, 60]), rand_lens(r), *rand_err(r), qual=r.choice(QUALS[:3])
+    )
 
 
 def g_palindrome(r):
@@ -218,6 +266,11 @@ def g_palindrome(r):
 
 
 def g_chimera(r):
+    """Reads of two genomes and of a junction between them.
+
+    The junction joins a prefix of one to a suffix of the other, or of its reverse complement, with
+    up to 30 random bases between them.
+    """
     a = genome(r, r.choice([400, 800]))
     b = genome(r, r.choice([400, 800]))
     pa = r.between(100, len(a) - 1)
@@ -235,12 +288,18 @@ def g_chimera(r):
 
 
 def g_circle(r):
+    """Reads of a circular genome, some of which wrap around its end."""
     g = genome(r, r.choice([100, 150, 300, 600, 1000]))
-    return sample_depth(r, g, r.choice([10, 20, 40, 80]), r.choice([50, 75, 100, 151]), *rand_err(r),
-                        qual=r.choice(QUALS[:3]), circular=True)
+    return sample_depth(r, g, r.choice([10, 20, 40, 80]), r.choice([50, 75, 100, 151]),
+                        *rand_err(r), qual=r.choice(QUALS[:3]), circular=True)
 
 
 def g_low_complexity(r):
+    """Reads of a low-complexity sequence.
+
+    That is a run of A, with or without random flanks, an AT repeat, a sequence that is mostly A,
+    or a GGC repeat and a run of T between random flanks.
+    """
     n = r.choice([150, 300, 800])
     kind = r.below(5)
     if kind == 0:
@@ -253,10 +312,13 @@ def g_low_complexity(r):
         g = bytes(r.choice(b"AAAAAAAC") for _ in range(n))
     else:
         g = genome(r, 100) + (b"GGC" * n)[:n] + b"T" * 40 + genome(r, 100)
-    return sample_depth(r, g, r.choice([5, 20, 60, 120]), rand_lens(r), *rand_err(r), qual=r.choice(QUALS))
+    return sample_depth(
+        r, g, r.choice([5, 20, 60, 120]), rand_lens(r), *rand_err(r), qual=r.choice(QUALS)
+    )
 
 
 def dirty(r, reads, p_n, alphabet):
+    """Return `reads` with each base replaced, with probability `p_n`, by a byte of `alphabet`."""
     out = []
     for b, q in reads:
         b = bytearray(b)
@@ -268,8 +330,14 @@ def dirty(r, reads, p_n, alphabet):
 
 
 def g_dirty(r):
+    """Reads with unexpected bases.
+
+    That is Ns, lower case, IUPAC codes and punctuation, or any 7-bit byte but NUL.
+    """
     g = genome(r, r.choice([200, 500, 1000]))
-    reads = sample_depth(r, g, r.choice([10, 30, 60]), rand_lens(r), *rand_err(r), qual=r.choice(QUALS[:3]))
+    reads = sample_depth(
+        r, g, r.choice([10, 30, 60]), rand_lens(r), *rand_err(r), qual=r.choice(QUALS[:3])
+    )
     kind = r.below(4)
     if kind == 0:
         return dirty(r, reads, r.choice([0.001, 0.01, 0.1]), b"N")
@@ -281,6 +349,11 @@ def g_dirty(r):
 
 
 def g_trivial(r):
+    """Degenerate inputs.
+
+    No reads, one read, empty reads, reads shorter than their 12 qualities, many copies of one
+    read, reads followed by empty ones, or reads that are all N.
+    """
     kind = r.below(7)
     if kind == 0:
         return []
@@ -319,6 +392,7 @@ def g_pairs(r):
 
 
 def g_duplicates(r):
+    """Reads of a small genome, the whole set repeated 2 to 6 times."""
     g = genome(r, r.choice([200, 500]))
     reads = sample_depth(r, g, r.choice([4, 10, 30]), rand_lens(r), *rand_err(r), qual="phred33")
     return reads * r.between(2, 6)
@@ -343,12 +417,15 @@ def g_typical(r):
 
 
 def g_big(r):
+    """Thousands of 151-base reads, alternating between a genome and a mutated haplotype of it."""
     n_reads = r.choice([5000, 6000, 8000, 12000])
     g = genome(r, r.choice([5000, 20000, 50000]))
     h = mutate_haplotype(r, g, 0.002)
     reads = []
     for i in range(n_reads):
-        reads.append(sample_read(r, g if i & 1 else h, 151, 0.005, 0.0005, 0.0005, "illumina_tail"))
+        reads.append(
+            sample_read(r, g if i & 1 else h, 151, 0.005, 0.0005, 0.0005, "illumina_tail")
+        )
     return reads
 
 
@@ -370,6 +447,7 @@ CATEGORIES = [
 
 
 def write_record(out, name, flag, reads):
+    """Write one assembly in the corpus format: its name, its flag and every read's bytes."""
     nb = name.encode()
     out.write(struct.pack(">I", len(nb)) + nb + struct.pack(">iI", flag, len(reads)))
     for b, q in reads:
@@ -377,6 +455,11 @@ def write_record(out, name, flag, reads):
 
 
 def main_corpus(out, seed, scale):
+    """Write every category `scale` times over, then six big assemblies, and return the count.
+
+    Every fifth assembly of a category is written under both flags, the others under one of them,
+    alternating.
+    """
     n = 0
     for ci, (name, fn, count) in enumerate(CATEGORIES):
         for i in range(count * scale):
@@ -399,6 +482,7 @@ def edge_corpus(out, seed):
     n = 0
 
     def emit(name, reads):
+        """Write `reads` once under each flag and count them."""
         nonlocal n
         for f in FLAGS:
             write_record(out, name, f, reads)
@@ -410,18 +494,26 @@ def edge_corpus(out, seed):
         reads = sample_depth(r, g, 30, 75, qual="const40")
         # bytes whose table entry is a zero of .data, whichever way it is loaded
         for byte in (0xD0, 0xD5, 0xDF, 0xE0, 0xE8, 0xF0, 0xFF):
-            emit(f"highbyte-{byte:02x}-{i}", dirty(r, reads, r.choice([0.001, 0.01]), bytes([byte])))
+            emit(
+                f"highbyte-{byte:02x}-{i}",
+                dirty(r, reads, r.choice([0.001, 0.01]), bytes([byte])),
+            )
         # a NUL in the bases: the JNI's two strings go out of step
         b0, q0 = reads[0]
         mid = len(b0) // 2
         emit(f"nulbase-{i}", [(b0[:mid] + b"\0" + b0[mid + 1 :], q0)] + reads[1:])
         # quals shorter by a NUL at the very end are refused by us: see nulqual below
-        # quals longer than the bases, with room left by nothing: BufferOverflowException for the last
+        # quals longer than the bases, with room left by nothing: BufferOverflowException for the
+        # last
         emit(f"longqual-{i}", reads[:-1] + [(reads[-1][0], reads[-1][1] + b"II")])
         # quals longer on a read followed by one with shorter quals: the buffer still has room
         b1, q1 = reads[1]
-        emit(f"quals-shift-{i}", [(reads[0][0], reads[0][1] + b"IIII"), (b1, q1[:-4])] + reads[2:])
-    # a Phred 0 in FastqRead's raw qualities: truly undefined, so this says what it does in practice.
+        emit(
+            f"quals-shift-{i}",
+            [(reads[0][0], reads[0][1] + b"IIII"), (b1, q1[:-4])] + reads[2:],
+        )
+    # a Phred 0 in FastqRead's raw qualities: truly undefined, so this says what it does in
+    # practice.
     # Two identical runs of each, to see whether the heap decides.
     for i in range(24):
         r = Rng(seed * 37 + i)
@@ -441,6 +533,7 @@ def edge_corpus(out, seed):
 
 
 def main():
+    """Write the `main` or the `edge` corpus to OUT and report how many assemblies it holds."""
     ap = argparse.ArgumentParser()
     ap.add_argument("kind", choices=["main", "edge"])
     ap.add_argument("out")

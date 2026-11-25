@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Compare the port's TrainVariantAnnotationsModel and ScoreVariantAnnotations with the reference's.
+"""Compare the port's TrainVariantAnnotationsModel and ScoreVariantAnnotations to the reference.
 
 Usage: compare_port.py <reference directory> <port directory>
 
-The h5py files and the VCF must match byte for byte. The scorer must match with the digits of the
-reference's temporary script name zeroed; those are random in every run of the reference, and one
-name in ten is a digit shorter, which only moves the frames. score.scores.hdf5 goes through Java's
-HDF5 library in the reference, which holds the time and lays the file out its own way: its doubles
-are compared by the isolation_forest_measured test.
+The h5py files and the VCF must match byte for byte. The scorer must match with the digits of
+the reference's temporary script name zeroed; those are random in every run of the reference, and
+one name in ten is a digit shorter, which only moves the frames. score.scores.hdf5 goes through
+Java's HDF5 library in the reference, which holds the time and lays the file out its own way: its
+doubles are compared by the isolation_forest_measured test. Exits 1 if any file differs.
 """
 import os
 import re
@@ -27,11 +27,13 @@ PORT_DIGITS = 20
 
 
 def read(directory, name):
+    """Return the bytes of the file `name` in `directory`."""
     with open(os.path.join(directory, name), "rb") as stream:
         return stream.read()
 
 
 def first_difference(a, b):
+    """Return the first offset where `a` and `b` differ, or the shorter length if none does."""
     for index, (x, y) in enumerate(zip(a, b)):
         if x != y:
             return index
@@ -39,7 +41,10 @@ def first_difference(a, b):
 
 
 def masked(data):
-    return SCRIPT_NAME.sub(lambda m: b"/tmp/isolation-forest." + b"0" * len(m.group(1)) + b".py", data)
+    """Return `data` with the digits of every temporary script name replaced by zeros."""
+    return SCRIPT_NAME.sub(
+        lambda m: b"/tmp/isolation-forest." + b"0" * len(m.group(1)) + b".py", data
+    )
 
 
 def unframed(data):
@@ -47,8 +52,8 @@ def unframed(data):
     out, at = bytearray(data[:2]), 2
     while at < len(data):
         if data[at] == 0x95:
-            length = int.from_bytes(data[at + 1:at + 9], "little")
-            out += data[at + 9:at + 9 + length]
+            length = int.from_bytes(data[at + 1 : at + 9], "little")
+            out += data[at + 9 : at + 9 + length]
             at += 9 + length
         else:
             out += data[at:]
@@ -62,12 +67,16 @@ def normal(data):
 
 
 def main():
+    """Compare the two directories' files, print a line for each, and return the exit code."""
     reference, port = sys.argv[1], sys.argv[2]
     failed = 0
     for name in EXACT:
         a, b = read(reference, name), read(port, name)
         same = a == b
-        print(f"{name}: {'identical' if same else f'differs at {first_difference(a, b)}'} ({len(a)}, {len(b)})")
+        print(
+            f"{name}: {'identical' if same else f'differs at {first_difference(a, b)}'}"
+            f" ({len(a)}, {len(b)})"
+        )
         failed += not same
     for name in PICKLES:
         a, b = read(reference, name), read(port, name)
@@ -79,7 +88,11 @@ def main():
             print(f"{name}: the reference drew {digits} digits; comparing without the frames")
             a, b = normal(unframed(a)), normal(unframed(b))
         same = a == b
-        print(f"{name}: {'identical but the name' if same else f'differs at {first_difference(a, b)}'} ({len(a)}, {len(b)})")
+        print(
+            f"{name}: "
+            f"{'identical but the name' if same else f'differs at {first_difference(a, b)}'}"
+            f" ({len(a)}, {len(b)})"
+        )
         failed += not same
     print("FAILED" if failed else "OK")
     return 1 if failed else 0

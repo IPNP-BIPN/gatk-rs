@@ -36,6 +36,7 @@ INVENTORY = REPO / "tools" / "inventory" / "generated" / "inventory.json"
 
 
 def load_tool(name, inventory_path=None):
+    """The inventory entry for the tool `name`; exits with a message when there is none."""
     with open(inventory_path or INVENTORY) as fh:
         inventory = json.load(fh)
     for tool in inventory["tools"]:
@@ -53,6 +54,7 @@ def tuples_of(params, domain, t):
 
 
 def _covered_by(row, combo, indices):
+    """Whether `row` assigns every parameter of `combo` its value index from `indices`."""
     return all(row.get(p) == i for p, i in zip(combo, indices))
 
 
@@ -106,7 +108,9 @@ def compile_constraints(declared, domain, excluded):
                 if str(held[name]) != str(value):
                     drop = f"{name} is held at {held[name]}, so the clause can never fire"
                     break
-                notes.append(f"{name} is held at the forbidden value {value}; clause still applies")
+                notes.append(
+                    f"{name} is held at the forbidden value {value}; clause still applies"
+                )
             else:
                 drop = f"{name} is not an argument of this tool"
                 break
@@ -239,6 +243,7 @@ def as_arguments(row, domain):
 
 def report(tool, domain, excluded, rows, t, total_tuples, missing, numeric_policy,
            forbidden=0, constraint_notes=()):
+    """The JSON report for one tool's array: its counts, coverage share, exclusions and rows."""
     covered = total_tuples - len(missing)
     return {
         "tool": tool["name"],
@@ -317,6 +322,11 @@ def summarize_all(inventory_path, t, fixtures, numeric_policy, limit=None, exclu
 
 
 def main(argv):
+    """Build and print one tool's covering array, or size every tool with `--all`.
+
+    With `--json` the full report (or the `--all` summary) is also written. Returns 0 on success,
+    and 1 when the tool has fewer usable arguments than `--t` or a checked array misses a tuple.
+    """
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--tool")
     ap.add_argument("--all", action="store_true", help="size every tool in the inventory")

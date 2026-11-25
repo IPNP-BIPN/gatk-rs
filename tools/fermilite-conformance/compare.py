@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """Compare two dumps, assembly by assembly: compare.py reference.txt port.txt.
 
-Reports totals and the first few differences by name. Exits 1 on any difference."""
+Reports totals and the first few differences by name. Exits 1 on any difference.
+"""
 import sys
 
 
 def records(path):
+    """Yield the records of a dump, each as its list of raw byte lines.
+
+    A record starts at a line tagged `A`, `X`, `J`, `U` or `S` and runs to the next such line.
+    """
     cur = None
     with open(path, "rb") as f:
         for line in f:
@@ -20,6 +25,11 @@ def records(path):
 
 
 def main():
+    """Compare the two dumps named on the command line and exit 1 on any difference.
+
+    A record the port refused (`U`) is counted and skipped. With `--prefix` as the third argument a
+    reference shorter than the port's dump is accepted, since it may still be being written.
+    """
     n = contigs = links = aborts = over = refused = bad = 0
     for ra, rb in zip_longest_records(sys.argv[1], sys.argv[2]):
         if ra is None and len(sys.argv) > 3 and sys.argv[3] == "--prefix":
@@ -37,7 +47,10 @@ def main():
         if ra != rb:
             bad += 1
             if bad <= 20:
-                print("DIFF", ra[0].decode("latin-1").strip(), "| vs |", rb[0].decode("latin-1").strip())
+                print(
+                    "DIFF", ra[0].decode("latin-1").strip(), "| vs |",
+                    rb[0].decode("latin-1").strip()
+                )
                 for x, y in zip(ra[1:], rb[1:]):
                     if x != y:
                         print("  ref ", x.decode("latin-1").strip()[:200])
@@ -50,13 +63,15 @@ def main():
         over += kind == b"J"
     print(
         f"{n} records; identical apart from {bad} differences; "
-        f"{contigs} contigs, {links} connections, {aborts} aborts, {over} Java overflows compared; "
+        f"{contigs} contigs, {links} connections, {aborts} aborts, {over} Java overflows "
+        f"compared; "
         f"{refused} refused by the port and not compared"
     )
     sys.exit(1 if bad else 0)
 
 
 def zip_longest_records(a, b):
+    """Yield the records of the dumps `a` and `b` in pairs, padding the shorter with None."""
     ia, ib = records(a), records(b)
     while True:
         x = next(ia, None)

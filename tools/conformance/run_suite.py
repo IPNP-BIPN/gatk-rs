@@ -71,7 +71,7 @@ def build_fixtures(manifest, into):
         '&& java -Dsamjdk.try_use_intel_deflater=false -cp ".:$ORACLE_CP" MakeFixtures /out '
         # The container writes as root; open the tree up so the runner can delete the
         # subdirectories (gtrb/, gtrb_late/) when the temporary directory is cleaned up.
-        '&& chmod -R a+rwX /out'
+        "&& chmod -R a+rwX /out"
     )
     result = subprocess.run(
         [
@@ -89,11 +89,18 @@ def build_fixtures(manifest, into):
 
 
 def oracle_of(manifest, suite):
-    """The image a suite runs in: the manifest's, or the other one it names with an `oracle` key."""
+    """The image a suite runs in: the manifest's, or the one its `oracle` key names."""
     return manifest[suite["oracle"]] if suite.get("oracle") else manifest["oracle"]
 
 
 def docker_run(oracle, harness, cls, props, stdout, fixtures=None, python_image=None, suite=None):
+    """Run one dump in its container with its output redirected to `stdout`; return the exit code.
+
+    The command is the suite's own `command` when it names one, `python3 /harness/<cls>.py` in
+    `python_image` when that is given, and otherwise the compile-and-run script of
+    `container_command`. The harness directory is mounted read-only, and the fixtures, when given,
+    under /work/fixtures.
+    """
     # A suite whose reference needs what the pinned image was built without, an interpreter, names
     # its own image and what to run in it. Its dump is written to stdout like any other.
     own = (suite or {}).get("command")
@@ -111,8 +118,8 @@ def docker_run(oracle, harness, cls, props, stdout, fixtures=None, python_image=
             return subprocess.run(cmd, stdout=fh).returncode
     if fixtures is not None:
         mounts += ["-v", f"{fixtures}:/work/fixtures:ro"]
-    # The pinned image's entrypoint is already `sh -c` and it sets ORACLE_CP itself; the Broad's has
-    # neither, so a manifest entry that needs them says so.
+    # The pinned image's entrypoint is already `sh -c` and it sets ORACLE_CP itself; the Broad's
+    # has neither, so a manifest entry that needs them says so.
     entry = ["--entrypoint", oracle["entrypoint"]] if oracle.get("entrypoint") else []
     env = ["-e", f"ORACLE_CP={oracle['classpath']}"] if oracle.get("classpath") else []
     script = ["-c"] if oracle.get("entrypoint") else []
@@ -194,6 +201,10 @@ def run_pending(manifest, suite, workdir):
 
 
 def run_suite(manifest, suite, workdir):
+    """Regenerate every dump of a suite and compare it with its golden; return the failure count.
+
+    A `golden-pending` suite goes to `run_pending` instead, having nothing to compare against.
+    """
     if suite["status"] == "golden-pending":
         return run_pending(manifest, suite, workdir)
     props = suite.get("java_props", manifest.get("default_java_props", []))
@@ -247,6 +258,7 @@ def run_suite(manifest, suite, workdir):
 
 
 def run_probe(manifest, probe, workdir):
+    """Run a probe; return 1, after printing its `on_failure`, when its output lacks `expect`."""
     out = Path(workdir) / f"probe.{probe['id']}.txt"
     props = probe.get("java_props", manifest.get("default_java_props", []))
     docker_run(manifest["oracle"], probe["harness"], probe["class"], props, out)
@@ -261,6 +273,7 @@ def run_probe(manifest, probe, workdir):
 
 
 def main(argv):
+    """List the suites, run the given ones, or run one probe; return the exit code."""
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--manifest")
     ap.add_argument(

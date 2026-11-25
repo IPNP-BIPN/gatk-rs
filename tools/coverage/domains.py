@@ -33,6 +33,7 @@ FLOAT_TYPES = {"double", "Double", "float", "Float"}
 
 
 def _bound(arg, key):
+    """The declared `min` or `max` as a float; None when absent, infinite or unparseable."""
     raw = arg.get(key)
     if raw in (None, "-Infinity", "Infinity", "NaN"):
         return None
@@ -43,6 +44,7 @@ def _bound(arg, key):
 
 
 def _within_bounds(arg, value):
+    """Whether `value` lies within the argument's finite declared bounds, inclusive."""
     low, high = _bound(arg, "min"), _bound(arg, "max")
     return (low is None or value >= low) and (high is None or value <= high)
 

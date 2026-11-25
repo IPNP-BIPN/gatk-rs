@@ -42,7 +42,8 @@ PARALLEL = {
 }
 
 
-# The arrays' BWA fixtures hold a few reads, too few to fill a batch per thread: this holds thousands.
+# The arrays' BWA fixtures hold a few reads, too few to fill a batch per thread: this holds
+# thousands.
 LARGER = (
     "--input /work/fixtures/svbp_reads.bam --reference /work/fixtures/svbp_sv.fasta "
     "--bwa-mem-index-image /work/fixtures/svbp_sv.fasta.img --output /work/out/larger.bam "
@@ -51,7 +52,11 @@ LARGER = (
 
 
 def spark_arrays():
-    """Every array of a tool whose arguments name a Spark master, which is what a Spark tool has."""
+    """Every non-empty t=2 array of a Spark tool, as `(tool, array)` pairs.
+
+    A Spark tool is one whose arguments name a Spark master; it is recognised here by its array
+    file's name ending in `Spark`.
+    """
     found = []
     for path in sorted(run_array.ARRAYS.glob("*.t2.json")):
         array = json.loads(path.read_text())
@@ -126,6 +131,11 @@ def on_host(binary, tool, cli, threads, work, fixtures):
 
 
 def main(argv):
+    """Run each Spark tool's rows at one thread and at `--threads`, and report any difference.
+
+    Parallel tools run every row, the others a sample of `--rows`, and BwaSpark also runs the
+    larger input. Returns 1 when any run differs between the two thread counts, else 0.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", required=True)
     parser.add_argument("--threads", type=int, default=4, help="the N compared with one thread")

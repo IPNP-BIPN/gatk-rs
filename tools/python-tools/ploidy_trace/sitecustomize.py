@@ -1,7 +1,10 @@
-"""On PYTHONPATH with PLOIDY_TRACE=<dir>: traces cohort_determine_ploidy_and_depth.py for the port
-(crates/gatk-tools/src/gcnv_ploidy.rs). Every compiled pytensor function's final graph goes to
-graph.txt the first time it runs; every call's outputs and every shared variable it reads, after
-the call, go to trace.tsv as raw float64 bits; reseed_rngs' seeds and the PCG64 states it sets too.
+"""Trace cohort_determine_ploidy_and_depth.py for the port, when on PYTHONPATH with PLOIDY_TRACE.
+
+PLOIDY_TRACE=<dir> names the output directory; the port is crates/gatk-tools/src/gcnv_ploidy.rs.
+Every compiled pytensor function's final graph goes to graph.txt, and its nodes to nodes.txt, the
+first time it runs; every call's outputs and every shared variable it reads, after the call, go
+to trace.tsv as raw float64 bits; reseed_rngs' seeds and the PCG64 states it sets too. The first
+call also saves the command line to argv.txt and copies each file it names into the directory.
 
 The patches wait for their modules to be imported: GATK's script sets PYTENSOR_FLAGS first.
 """
@@ -15,6 +18,11 @@ OUT = os.environ.get("PLOIDY_TRACE")
 
 
 def bits(value):
+    """Return the shape of `value` and its elements as text.
+
+    Floats are written as the hex of their float64 bits, integers and booleans in decimal; anything
+    else has no shape and is written as its repr.
+    """
     import numpy as np
     a = np.asarray(value)
     if a.dtype.kind == "f":
@@ -25,6 +33,7 @@ def bits(value):
 
 
 def emit(key, value):
+    """Append `key`, the shape of `value` and its elements to trace.tsv, tab-separated."""
     shape, text = bits(value)
     shape = "?" if shape is None else ",".join(map(str, shape))
     with open(os.path.join(OUT, "trace.tsv"), "a") as t:
@@ -32,16 +41,26 @@ def emit(key, value):
 
 
 def state(value):
+    """Return a numpy Generator's PCG64 state as one line of text, or None for anything else."""
     import numpy as np
     if isinstance(value, np.random.Generator):
         s = value.bit_generator.state
-        return "pcg64 %x %x %d %d" % (s["state"]["state"], s["state"]["inc"], s["has_uint32"], s["uinteger"])
+        return "pcg64 %x %x %d %d" % (
+            s["state"]["state"],
+            s["state"]["inc"],
+            s["has_uint32"],
+            s["uinteger"],
+        )
     return None
 
 
 def describe_nodes(nodes, out, prefix):
-    """One line per node: its index, op, inputs (n<node>.<output>, a name, or a constant), and the
-    C template of a fused composite; a Scan's inner graph follows under its own prefix."""
+    """Write one line per node of `nodes` to `out`, each named under `prefix`.
+
+    A line has the node's index, op, inputs (n<node>.<output>, a name, or a constant) and output
+    types; the C template of a fused composite follows it, and a Scan's inner graph follows under
+    its own prefix.
+    """
     from pytensor.graph.basic import Constant
     ids = {}
     for i, node in enumerate(nodes):
@@ -57,14 +76,21 @@ def describe_nodes(nodes, out, prefix):
             else:
                 args.append(f"in:{v.name}:{v.type}")
         scalar = getattr(node.op, "scalar_op", None)
-        out.write(f"{prefix}n{i}\t{node.op}\t{' '.join(args)}\t{[str(o.type) for o in node.outputs]}\n")
+        out.write(
+            f"{prefix}n{i}\t{node.op}\t{' '.join(args)}\t{[str(o.type) for o in node.outputs]}\n"
+        )
         template = getattr(scalar, "c_code_template", None)
         if template is not None:
             inner = [str(x) for x in scalar.fgraph.inputs]
-            out.write(f"  C inputs {inner}\n" + "".join("  " + l + "\n" for l in template.splitlines()))
+            out.write(
+                f"  C inputs {inner}\n" + "".join("  " + l + "\n" for l in template.splitlines())
+            )
         if type(node.op).__name__ == "Scan":
             fg = node.op.fgraph
-            out.write(f"  scan inputs {[str(x) for x in fg.inputs]} outputs {[str(x) for x in fg.outputs]}\n")
+            out.write(
+                f"  scan inputs {[str(x) for x in fg.inputs]}"
+                f" outputs {[str(x) for x in fg.outputs]}\n"
+            )
             describe_nodes(fg.toposort(), out, prefix + f"n{i}/")
             ids_inner = {}
             for k, o in enumerate(fg.outputs):
@@ -72,6 +98,7 @@ def describe_nodes(nodes, out, prefix):
 
 
 def patch_function(module):
+    """Wrap `module.Function.__call__` so that every call of a compiled function is traced."""
     import pytensor
     from pytensor.compile.sharedvalue import SharedVariable
     original = module.Function.__call__
@@ -79,6 +106,11 @@ def patch_function(module):
     calls = {}
 
     def call(self, *args, **kwargs):
+        """Call the function, tracing it as the module docstring says, and return its outputs.
+
+        Before the call, the state of every random generator among its shared inputs is written;
+        for the first two calls of each function, every node's outputs are too.
+        """
         first = id(self) not in names
         if first:
             names[id(self)] = len(names)
@@ -94,8 +126,11 @@ def patch_function(module):
                 pytensor.printing.debugprint(self, file=g, print_type=True, print_destroy_map=True,
                                              print_view_map=True)
             with open(os.path.join(OUT, "nodes.txt"), "a") as g:
-                g.write(f"=== function {names[id(self)]} inputs {[str(i.variable) for i in self.maker.inputs]}"
-                        f" outputs {[str(o) for o in self.maker.fgraph.outputs]}\n")
+                g.write(
+                    f"=== function {names[id(self)]}"
+                    f" inputs {[str(i.variable) for i in self.maker.inputs]}"
+                    f" outputs {[str(o) for o in self.maker.fgraph.outputs]}\n"
+                )
                 describe_nodes(list(self.vm.nodes), g, "")
         k = names[id(self)]
         shared = [i for i in self.maker.inputs if isinstance(i.variable, SharedVariable)]
@@ -126,11 +161,17 @@ def patch_function(module):
 
 
 def patch_pytensorf(module):
+    """Wrap `module.reseed_rngs` so that each reseed is traced."""
     original = module.reseed_rngs
 
     def reseed(rngs, seed):
+        """Reseed as before, then write the seed, the count and each generator's new state."""
         original(rngs, seed)
-        emit("reseed", f"{seed} {len(rngs)} " + " ".join(state(r.get_value(borrow=True)) or "rs" for r in rngs))
+        emit(
+            "reseed",
+            f"{seed} {len(rngs)} "
+            + " ".join(state(r.get_value(borrow=True)) or "rs" for r in rngs),
+        )
 
     module.reseed_rngs = reseed
 
@@ -139,7 +180,14 @@ TARGETS = {"pytensor.compile.function.types": patch_function, "pymc.pytensorf": 
 
 
 class Hook(importlib.abc.MetaPathFinder):
+    """An import hook that patches each module of `TARGETS` once it has loaded."""
+
     def find_spec(self, name, path, target=None):
+        """Return a target's spec with a loader that patches the module after running it.
+
+        Any other name is left to the other finders. The hook steps out of `sys.meta_path` while
+        it asks for the real spec, and goes back in for the next target.
+        """
         if name not in TARGETS:
             return None
         sys.meta_path.remove(self)
@@ -150,6 +198,7 @@ class Hook(importlib.abc.MetaPathFinder):
         run = spec.loader.exec_module
 
         def exec_module(module):
+            """Run the module as the original loader would, then apply its patch."""
             run(module)
             TARGETS[name](module)
 

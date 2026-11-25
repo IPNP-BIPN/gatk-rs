@@ -71,10 +71,12 @@ def fuzz(tool, workdir, iterations, timeout):
     harness = workdir / "fuzz"
     command = (
         "mkdir -p /work/tmp /work/tmp2 /work/out /tmp/fz && cp /harness/FuzzDriver.java /tmp/fz/ "
-        '&& javac -cp "$ORACLE_CP:$JACOCO_AGENT:$JACOCO_ANALYSIS" -d /tmp/fz /tmp/fz/FuzzDriver.java '
+        '&& javac -cp "$ORACLE_CP:$JACOCO_AGENT:$JACOCO_ANALYSIS" '
+        "-d /tmp/fz /tmp/fz/FuzzDriver.java "
         f"&& java {run_array.JAVA_OPENS} -javaagent:$JACOCO_AGENT=output=none,includes={INCLUDES} "
         '-cp "/tmp/fz:$ORACLE_CP:$JACOCO_AGENT:$JACOCO_ANALYSIS" '
-        f"FuzzDriver {tool} /work/fuzz/seed.txt {iterations} /work/fuzz/corpus.txt {RNG_SEED} {timeout}"
+        f"FuzzDriver {tool} /work/fuzz/seed.txt {iterations} "
+        f"/work/fuzz/corpus.txt {RNG_SEED} {timeout}"
     )
     result = subprocess.run(
         [
@@ -103,6 +105,7 @@ def fuzz(tool, workdir, iterations, timeout):
 
 
 def both_sides(tool, args, port, workdir, config):
+    """Run one case on the reference and on the port; return both outcomes, reference first."""
     positional, tagged, lists, keep = config
     code, text, error = run_array.run_oracle(tool, args, workdir, positional, tagged, lists)
     reference = run_array.outcome(code, text, error, keep)
@@ -111,9 +114,12 @@ def both_sides(tool, args, port, workdir, config):
 
 
 def minimize(tool, args, varied, port, workdir, config, original):
-    """Drop varied arguments while the divergence survives AND the reference still answers what it
-    answered on the full case, re-running both sides each step. Without the second condition
-    dropping `--input` "minimizes" every divergence into the reference's missing-input refusal.
+    """Drop varied arguments while the divergence survives, re-running both sides each step.
+
+    An argument is dropped only while the reference still answers what it answered on the full
+    case, AND the port still disagrees. Without the second condition dropping `--input`
+    "minimizes" every divergence into the reference's missing-input refusal. Returns the minimal
+    arguments followed by the reference's and the port's outcomes on them.
     """
     current = list(args)
     changed = True
@@ -131,6 +137,11 @@ def minimize(tool, args, varied, port, workdir, config, original):
 
 
 def run(options):
+    """Seed, fuzz and (with `--port`) replay one tool, then write its findings JSON.
+
+    The findings go to tools/fuzz/findings/<tool>.json: the summary, the kept cases and the
+    distinct divergences. Returns 0.
+    """
     array_path = run_array.ARRAYS / f"{options.tool}.t{options.t}.json"
     if not array_path.exists():
         raise SystemExit(f"no array at {array_path}; generate it with covering.py")
@@ -159,17 +170,22 @@ def run(options):
             minimized = 0
             if options.port:
                 for case in kept:
-                    reference, ours = both_sides(options.tool, case["arguments"], options.port, workdir, config)
+                    reference, ours = both_sides(
+                        options.tool, case["arguments"], options.port, workdir, config
+                    )
                     case["matched"] = reference == ours
                     if not case["matched"]:
                         if minimized < MINIMIZE_PER_TOOL:
                             minimized += 1
                             minimal, ref_min, ours_min = minimize(
-                                options.tool, case["arguments"], varied, options.port, workdir, config, reference)
+                                options.tool, case["arguments"], varied, options.port, workdir,
+                                config, reference)
                         else:
                             minimal, ref_min, ours_min = case["arguments"], reference, ours
                         if all(d["arguments"] != minimal for d in divergences):
-                            divergences.append({"arguments": minimal, "reference": ref_min, "port": ours_min})
+                            divergences.append(
+                                {"arguments": minimal, "reference": ref_min, "port": ours_min}
+                            )
         finally:
             run_array.empty_output_in_container(workdir)
             shutil.rmtree(workdir, ignore_errors=True)
@@ -215,7 +231,8 @@ def merge(directory):
             "Produced by tools/fuzz/run_fuzz.py --merge from a CI run's fuzz-findings artefact.",
             "`probes_*` count the reference's JaCoCo probes reached (a proxy for branches, not a",
             "percentage); `diverged` counts kept cases on which the port, re-run out of process,",
-            "did not answer exactly as the reference did; `divergence_classes` counts their distinct",
+            "did not answer exactly as the reference did; `divergence_classes` counts their "
+            "distinct",
             "command lines, minimized for the first `minimized` of them only.",
         ],
         "tools": tools,
@@ -225,16 +242,24 @@ def merge(directory):
 
 
 def main(argv):
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    """Merge findings, fuzz one shard, or fuzz the tool `--tool` names; return the exit code."""
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("--tool")
     parser.add_argument("--t", type=int, default=2)
     parser.add_argument("--iterations", type=int, default=60)
     parser.add_argument("--timeout", type=int, default=120, help="seconds per in-process case")
-    parser.add_argument("--port", help="the port binary (linux/amd64); omit to fuzz the reference alone")
+    parser.add_argument(
+        "--port", help="the port binary (linux/amd64); omit to fuzz the reference alone"
+    )
     parser.add_argument("--fixtures-dir", help="a corpus MakeFixtures.java already built")
-    parser.add_argument("--merge", metavar="DIR", help="merge per-tool findings into measured.json")
+    parser.add_argument(
+        "--merge", metavar="DIR", help="merge per-tool findings into measured.json"
+    )
     parser.add_argument("--shard", metavar="K/N",
-                        help="fuzz the K-th of N slices of every tool whose array the port is measured on")
+                        help="fuzz the K-th of N slices of every tool whose array the port is "
+                        "measured on")
     options = parser.parse_args(argv)
     if options.merge:
         return merge(options.merge)
@@ -246,9 +271,12 @@ def main(argv):
 
 
 def shard(options):
-    """One CI slice: every tool `measured.json` holds an argument-coverage number for, so every
-    tool fuzzed is one whose array already runs against both sides. A tool the driver cannot run is
-    recorded as failed and the slice goes on; the report then reads `not measured` for it."""
+    """Fuzz one CI slice of the tools; return 1 only when every tool in a non-empty slice failed.
+
+    The slice is drawn from every tool `measured.json` holds an argument-coverage number for, so
+    every tool fuzzed is one whose array already runs against both sides. A tool the driver cannot
+    run is recorded as failed and the slice goes on; the report then reads `not measured` for it.
+    """
     k, n = (int(x) for x in options.shard.split("/"))
     measured = json.loads((REPO / "tools" / "coverage" / "measured.json").read_text())["tools"]
     tools = sorted(t for t in measured if (run_array.ARRAYS / f"{t}.t{options.t}.json").exists())
@@ -262,9 +290,10 @@ def shard(options):
             options.fixtures_dir = str(run_array.build_fixtures(Path(tmp)))
         for tool in mine:
             options.tool = tool
+            # Any failure is caught: one tool must not end the slice.
             try:
                 run(options)
-            except (SystemExit, Exception) as error:  # noqa: BLE001 -- one tool must not end the slice
+            except (SystemExit, Exception) as error:  # noqa: BLE001
                 failed.append(tool)
                 FINDINGS.mkdir(parents=True, exist_ok=True)
                 (FINDINGS / f"{tool}.json").write_text(json.dumps(
@@ -272,7 +301,10 @@ def shard(options):
                 print(f"{tool}: FAILED {error}")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    print(f"shard {k}/{n}: {len(mine) - len(failed)} of {len(mine)} fuzzed; failed: {' '.join(failed) or 'none'}")
+    print(
+        f"shard {k}/{n}: {len(mine) - len(failed)} of {len(mine)} fuzzed; "
+        f"failed: {' '.join(failed) or 'none'}"
+    )
     return 1 if mine and len(failed) == len(mine) else 0
 
 

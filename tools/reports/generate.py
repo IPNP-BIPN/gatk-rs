@@ -82,6 +82,11 @@ def quarantined(suite):
 
 
 def gather():
+    """Read the inventory, the manifests, the coverage and fuzz measurements and the fixtures.
+
+    Returns the inventory, a per-tool record (its port, suites, record and file counts,
+    quarantined rules, argument coverage and fuzz result) and the per-tool fixtures.
+    """
     inventory = json.loads(INVENTORY.read_text())
     manifest = json.loads(MANIFEST.read_text())
     measured = json.loads(MEASURED.read_text()).get("tools", {})
@@ -90,8 +95,9 @@ def gather():
     tools = {}
     for entry in inventory["tools"]:
         name = entry["name"] if isinstance(entry, dict) else entry
-        tools[name] = {"suites": [], "records": 0, "files": 0, "by_suite": False, "quarantine": set(),
-                       "port": None, "coverage": None, "fuzz": fuzzed.get(name)}
+        tools[name] = {"suites": [], "records": 0, "files": 0, "by_suite": False,
+                       "quarantine": set(), "port": None, "coverage": None,
+                       "fuzz": fuzzed.get(name)}
     for suite in manifest["suites"]:
         records, files, per_tool = count_suite(suite)
         for name in suite.get("tools", []):
@@ -130,15 +136,23 @@ def gather():
 
 
 def coverage_text(value):
+    """Return a tool's argument coverage as the report's matched-rows text and its `t` level."""
     if not value:
         return "not measured", "-"
     share = value.get("share")
     rows = value.get("rows")
     matched = value.get("matched")
-    return f"{matched}/{rows} ({share:.1%})" if share is not None else f"{matched}/{rows}", str(value.get("t", "-"))
+    return (
+        f"{matched}/{rows} ({share:.1%})" if share is not None else f"{matched}/{rows}",
+        str(value.get("t", "-")),
+    )
 
 
 def fuzz_text(value):
+    """Return a tool's fuzzer result as the report's text.
+
+    That is the probes reached, how many the fuzzer added, and how many kept cases diverged.
+    """
     if not value:
         return "not measured"
     gained = value["probes_total"] - value["probes_from_seeds"]
@@ -164,6 +178,7 @@ def fixture_summary(entry):
 
 
 def render(inventory, tools, fixtures):
+    """Render the whole report as Markdown: the explanation, the per-tool table and the details."""
     reference = inventory.get("reference")
     lines = [
         "# Validation report",
@@ -172,20 +187,22 @@ def render(inventory, tools, fixtures):
         "",
         f"Reference: `{json.dumps(reference, sort_keys=True)}`",
         "",
-        "How to read it: **records** and **files** count the lines of the goldens CI re-derives from "
-        "the pinned container on every run, and the files among them, compared byte for byte. A "
-        "count marked `suite` belongs to a suite the tool shares, or whose golden does not label "
-        "its runs per tool. **Argument rows** are the rows of the tool's covering array whose "
-        "outcome matched the reference, at the **t** level shown. **Fuzzer branches** are the reference's JaCoCo "
-        "probes reached (a proxy for branches, not a percentage), how many of them only the "
-        "fuzzer's mutants reached, and how many of the cases it kept the port answered "
-        "differently, re-run out of process (`tools/fuzz/run_fuzz.py`). A sibling port's goldens are not vendored "
-        "here, so its counts read `not vendored`; its own repository holds them.",
+        "How to read it: **records** and **files** count the lines of the goldens CI re-derives "
+        "from the pinned container on every run, and the files among them, compared byte for "
+        "byte. A count marked `suite` belongs to a suite the tool shares, or whose golden does "
+        "not label its runs per tool. **Argument rows** are the rows of the tool's covering array "
+        "whose outcome matched the reference, at the **t** level shown. **Fuzzer branches** are "
+        "the reference's JaCoCo probes reached (a proxy for branches, not a percentage), how many "
+        "of them only the fuzzer's mutants reached, and how many of the cases it kept the port "
+        "answered differently, re-run out of process (`tools/fuzz/run_fuzz.py`). A sibling "
+        "port's goldens are not vendored here, so its counts read `not vendored`; its own "
+        "repository holds them.",
         "",
         "Each run's inputs, toolchain and container are in the `provenance` artefact CI keeps "
         "(`tools/provenance/record.py`).",
         "",
-        "| tool | port | state | records | files | argument rows | t | fuzzer branches | inputs | held-out arguments | quarantined |",
+        "| tool | port | state | records | files | argument rows | t | fuzzer branches | inputs "
+        "| held-out arguments | quarantined |",
         "|---|---|---|---:|---:|---:|---:|---|---:|---:|---|",
     ]
     details = []
@@ -209,15 +226,17 @@ def render(inventory, tools, fixtures):
         inputs, held = fixture_summary(fixtures.get(name))
         quarantine = ", ".join(sorted(tool["quarantine"])) or "none"
         lines.append(
-            f"| {name} | {tool['port'] or '-'} | {state} | {records} | {files} | {covered} | {level} "
-            f"| {fuzz_text(tool['fuzz'])} | {len(inputs)} | {len(held)} | {quarantine} |"
+            f"| {name} | {tool['port'] or '-'} | {state} | {records} | {files} | {covered} "
+            f"| {level} | {fuzz_text(tool['fuzz'])} | {len(inputs)} | {len(held)} | {quarantine} |"
         )
         entry = fixtures.get(name)
         if entry:
             why = " ".join(entry.get("$why", []))
             why = re.sub(r"\s+", " ", why).strip()
             block = [f"### {name}", ""]
-            block.append("Suites: " + (", ".join(f"`{i}`" for i, _ in tool["suites"]) or "none") + ".")
+            block.append(
+                "Suites: " + (", ".join(f"`{i}`" for i, _ in tool["suites"]) or "none") + "."
+            )
             block.append("")
             block.append("Inputs: " + (", ".join(f"`{i}`" for i in inputs) or "none") + ".")
             block.append("")
@@ -232,6 +251,10 @@ def render(inventory, tools, fixtures):
 
 
 def main(argv):
+    """Write docs/VALIDATION.md, or with `--check` report whether it is stale.
+
+    Returns the exit status: 1 when `--check` finds the committed file stale, else 0.
+    """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args(argv)
