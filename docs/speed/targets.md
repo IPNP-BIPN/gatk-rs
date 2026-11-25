@@ -56,6 +56,39 @@ now STATUS.md's cost column; the baseline stays in `baseline.json`):
 both directions, which is what an unchanged path does. The other 131 tools moved a median 7% cold
 and 10% steady, at most 45%, the same spread two runs of one commit showed in the baseline.
 
+## Scale H. `UpdateVCFSequenceDictionary` holds the whole VCF
+
+**Ratio.** Measured at scale (the every-tool pass of `tools/speed/scale.json`, gnomAD chr20 sites,
+`--source-dictionary chr20.dict --replace true`, linux/arm64 in the pinned container, 6 GiB limit):
+GATK 13 s CPU and 0.53 GiB peak RSS; the port 4.13 GiB (7.75x) and killed at the limit.
+
+**Where the memory goes.** `variant_walker_startup` reads the file whole, `read_vcf` decodes every
+record, the kept records are cloned twice (`records`, `emitted`), and `write_vcf` builds the whole
+output text before it is compressed: 11.8 GB natively.
+
+**The optimisation.** Without `-L` (and outside a GenomicsDB workspace), #1500's
+`variant_walker_startup_streamed` and `vcf_stream::Records`: each record is checked against the
+dictionary (`check_variant`, the body of `update_dictionary`), filtered, and written by
+`VariantStreamWriter`, which tabix-indexes a `.vcf.gz` as it goes.
+
+**Why it cannot move a byte.** The header is built by the same lines in the same order, and the
+records are encoded by the same `VcfEncoder` that `write_vcf` uses, after `header.write()`. The
+records before the first one the dictionary refuses are written, then the refusal, as
+`update_dictionary` did. The whole-text path refused an unreadable file first and a malformed
+record next, before any other check. So every refusal here first reads the rest of the file and
+answers with the earliest of those if there is one, and a dictionary refusal followed by a
+malformed record leaves no output, as before.
+
+**The suites that prove it.** The `UpdateVCFSequenceDictionary` covering array on linux/amd64, and
+old against new natively on eight edge cases (malformed record, `--replace false`, a contig
+missing from the dictionary with and without a later malformed record): same exit, same message,
+same output, and the same `.idx` but for the output's modification time it records.
+
+**Result.** On gnomAD chr20 natively: 11.8 GB and 14.9 s CPU on the whole-text path (with #1560's
+linear index; the scan made it quadratic), 22 MB and 8.0 s streamed (0.04x GATK's RSS, 0.62x its
+CPU). The `.vcf.gz` and its `.tbi` are the whole-text path's byte for byte, and the inflated VCF
+is GATK's (md5 5329d093).
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are
