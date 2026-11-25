@@ -16008,7 +16008,8 @@ pub fn variant_annotator(parser: &Parser) -> Outcome {
             .iter()
             .any(|line| matches!(line, HeaderLine::Contig { .. }))
     {
-        if let Some(dictionary) = index_dictionary(&input) {
+        // `isSequenceDictionaryFromIndex`, so a `--sequence-dictionary` outranks it.
+        if let Some(dictionary) = master_dictionary(parser)?.or_else(|| index_dictionary(&input)) {
             lines.extend(contig_lines(&dictionary.sequences));
         }
     }
@@ -23698,7 +23699,9 @@ pub fn combine_segment_breakpoints(parser: &Parser) -> Outcome {
             .collect();
         // The reader keeps a `#` line as a comment of the SAM header, so the merge carries it.
         let mut header = htsjdk_bam::reader::parse_header_text(&text);
-        header.comments.extend(collection.comments.iter().cloned());
+        for comment in &collection.comments {
+            header.add_comment(comment);
+        }
         header
     };
     let headers = [header_of(&first), header_of(&second)];
