@@ -337,8 +337,8 @@ impl OrderCheck {
 /// `String.format("[VC %s @ %s Q%s of type=%s alleles=%s attr=%s filters=%s", ...)`, and the
 /// format string has no closing bracket: the message ends after the filters, mid-structure. The
 /// source is `Unknown` for a file the walker opened, the position collapses to one number when the
-/// record spans one base, the quality is `%.2f`, the alleles are SORTED with the reference first
-/// and the attributes are a sorted `key=value` map.
+/// record spans one base (its end being `END` where it has one), the quality is `%.2f`, the alleles
+/// are SORTED with the reference first and the attributes are a sorted `key=value` map.
 fn rendered(record: &Record) -> String {
     let mut alleles: Vec<String> = record.alternates.clone();
     alleles.sort();
@@ -346,20 +346,34 @@ fn rendered(record: &Record) -> String {
         .chain(alleles)
         .collect::<Vec<_>>()
         .join(", ");
+    // A value with several entries is a `List`, which prints as `[a, b]`.
     let attributes = record
         .attributes
         .iter()
-        .map(|(key, value)| format!("{key}={value}"))
+        .map(|(key, value)| match value.contains(',') {
+            true => format!("{key}=[{}]", value.split(',').collect::<Vec<_>>().join(", ")),
+            false => format!("{key}={value}"),
+        })
         .collect::<Vec<_>>()
         .join(", ");
+    // `getEnd()`, which is the `END` attribute where there is one.
+    let end = record
+        .attributes
+        .iter()
+        .find(|(key, _)| key == "END")
+        .and_then(|(_, value)| value.parse().ok())
+        .unwrap_or(record.start + record.reference.len() as i32 - 1);
+    let position = if end == record.start {
+        format!("{}:{}", record.contig, record.start)
+    } else {
+        format!("{}:{}-{end}", record.contig, record.start)
+    };
     let quality = match record.qual {
         Some(qual) => format!("{qual:.2}"),
         None => ".".to_string(),
     };
     format!(
-        "[VC Unknown @ {}:{} Q{quality} of type={} alleles=[{alleles}] attr={{{attributes}}} filters={}",
-        record.contig,
-        record.start,
+        "[VC Unknown @ {position} Q{quality} of type={} alleles=[{alleles}] attr={{{attributes}}} filters={}",
         record.variant_type,
         record.filters.join(",")
     )

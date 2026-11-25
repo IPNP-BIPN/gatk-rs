@@ -150,7 +150,7 @@ impl IntervalArgumentError {
 fn file_argument_class(error: &crate::interval_args::IntervalArgumentError) -> &'static str {
     use crate::interval_args::IntervalArgumentError as File;
     match error {
-        File::IntervalFileEmpty | File::FeatureFileMalformed(_) => {
+        File::IntervalFileEmpty(_) | File::FeatureFileMalformed(_) => {
             "org.broadinstitute.hellbender.exceptions.UserException$MalformedFile"
         }
         File::IntervalFileMissing(_) | File::FileIsNeitherFeaturesNorIntervals(_) => {
@@ -181,7 +181,19 @@ fn file_argument_message(error: &crate::interval_args::IntervalArgumentError) ->
         File::MalformedGenomeLoc(detail) => format!(
             "Badly formed genome unclippedLoc: Parameters to GenomeLocParser are incorrect:{detail}"
         ),
-        File::IntervalFileEmpty => "It contains no intervals.".to_string(),
+        // `MalformedFile(Path, message)`, which names the file by `Path.toUri`.
+        File::IntervalFileEmpty(path) => {
+            let absolute = std::path::Path::new(path);
+            let absolute = if absolute.is_absolute() {
+                absolute.to_path_buf()
+            } else {
+                std::env::current_dir().unwrap_or_default().join(absolute)
+            };
+            format!(
+                "File file://{} is malformed: It contains no intervals.",
+                absolute.display()
+            )
+        }
         File::LegacySemicolonSyntax(query) => format!(
             "Argument -L {query} has a bad value: The legacy -L \"interval1;interval2\" syntax is \
              no longer supported. Please use one -L argument for each interval or an interval file \

@@ -169,8 +169,14 @@ fn non_empty(text: &str) -> Result<(), Thrown> {
 /// `ReferenceUtils.loadFastaDictionary(File)`.
 fn load_fasta_dictionary(path: &str) -> Result<Vec<SequenceRecord>, Thrown> {
     let absolute = java_absolute_path(path);
-    let text = std::fs::read_to_string(path)
-        .map_err(|_| Thrown::non_user("java.lang.RuntimeException", absolute.clone()))?;
+    // `GATKPath.getInputStream`, which names the path as given and as a URI. shortcut: the URI is
+    // not percent-encoded, which a path with a space or a `%` would need.
+    let text = std::fs::read_to_string(path).map_err(|_| {
+        Thrown::non_user(
+            "java.lang.RuntimeException",
+            format!("Could not create open input stream for {absolute} (as URI file://{absolute})"),
+        )
+    })?;
     let header = htsjdk_bam::reader::parse_header_text(&text);
     if header.sequences.is_empty() {
         return Err(Thrown {

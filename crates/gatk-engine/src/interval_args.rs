@@ -94,8 +94,8 @@ pub enum IntervalArgumentError {
     MalformedGenomeLoc(String),
     /// The argument ends in `.list` or `.intervals` and there is no such file.
     IntervalFileMissing(String),
-    /// `UserException.MalformedFile`: the interval file held no intervals.
-    IntervalFileEmpty,
+    /// `UserException.MalformedFile`: the interval file, named as given, held no intervals.
+    IntervalFileEmpty(String),
     /// The file exists and is neither a Feature file nor an interval file by extension.
     FileIsNeitherFeaturesNorIntervals(String),
     /// The removed `-L "a;b"` syntax, which is refused rather than split.
@@ -271,6 +271,7 @@ pub fn has_gatk_interval_file_extension(query: &str) -> bool {
 /// A file with no intervals in it is a `MalformedFile`, not an empty list, which is a different
 /// outcome from `-L` with no argument at all.
 pub fn gatk_interval_file_to_list(
+    path: &str,
     text: &str,
     header: &SamHeader,
 ) -> Result<Vec<SimpleInterval>, IntervalArgumentError> {
@@ -288,7 +289,7 @@ pub fn gatk_interval_file_to_list(
         intervals.push(parsed);
     }
     if intervals.is_empty() {
-        return Err(IntervalArgumentError::IntervalFileEmpty);
+        return Err(IntervalArgumentError::IntervalFileEmpty(path.to_string()));
     }
     Ok(intervals)
 }
@@ -357,7 +358,7 @@ pub fn parse_interval_arguments(
         }
         let text = std::fs::read_to_string(path)
             .map_err(|_| IntervalArgumentError::IntervalFileMissing(query.to_string()))?;
-        return gatk_interval_file_to_list(&text, header);
+        return gatk_interval_file_to_list(query, &text, header);
     }
     if path.exists() {
         return Err(IntervalArgumentError::FileIsNeitherFeaturesNorIntervals(

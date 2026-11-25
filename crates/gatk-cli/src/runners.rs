@@ -10281,13 +10281,13 @@ pub fn compare_references(parser: &Parser) -> Outcome {
     // `onTraversalStart`, in its own order: the directory before the count.
     if base_comparison != "NO_BASE_COMPARISON" {
         let directory = argument(parser, "base-comparison-output");
+        // `CouldNotCreateOutputFile(GATKPath, message)` calls `getRawInputString()` on the path, so
+        // a missing directory is a NullPointerException before any message is built.
         match &directory {
             None => {
-                return Err(could_not_create_output_file(
-                    "null",
-                    &format!(
-                        "Output directory not provided but required in -base-comparison {base_comparison} mode."
-                    ),
+                return Err(Thrown::non_user(
+                    "java.lang.NullPointerException",
+                    "Cannot invoke \"org.broadinstitute.hellbender.engine.GATKPath.getRawInputString()\" because \"file\" is null",
                 ))
             }
             Some(path) if !std::path::Path::new(path).exists() => {
@@ -10412,7 +10412,7 @@ fn could_not_create_output_file(path: &str, reason: &str) -> Thrown {
         failure: Failure::User,
         exception:
             "org.broadinstitute.hellbender.exceptions.UserException$CouldNotCreateOutputFile",
-        message: Some(format!("Could not create file {path}. {reason}")),
+        message: Some(format!("Couldn't write file {path} because {reason}")),
     }
 }
 
