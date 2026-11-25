@@ -363,7 +363,9 @@ pub struct BaseRecalibrationEngine {
     pub arguments: EngineArguments,
     pub covariates: StandardCovariateList,
     pub tables: RecalibrationTables,
-    baq: Baq,
+    /// `new BAQ()`, made the first time a read is BAQ'ed: its emission table is 49 MB, which a run
+    /// without BAQ, the default, never reads.
+    baq: std::cell::OnceCell<Baq>,
     finalized: bool,
     num_reads_processed: u64,
 }
@@ -380,7 +382,7 @@ impl BaseRecalibrationEngine {
             arguments,
             covariates,
             tables,
-            baq: Baq::default(),
+            baq: std::cell::OnceCell::new(),
             finalized: false,
             num_reads_processed: 0,
         })
@@ -491,15 +493,15 @@ impl BaseRecalibrationEngine {
         {
             return None;
         }
-        let window = crate::baq::reference_window_for_read(read, "", self.baq.band_width())?;
+        let baq = self.baq.get_or_init(Baq::default);
+        let window = crate::baq::reference_window_for_read(read, "", baq.band_width())?;
         if window.end as usize > contig_bases.len() {
             return None;
         }
         let from = window.start.max(1) as usize - 1;
         let to = window.end as usize;
         let offset = window.start - crate::read_utils::start(read);
-        let result = self
-            .baq
+        let result = baq
             .calc_baq_from_hmm(read, &contig_bases[from..to], offset)
             .ok()??;
         Some(crate::baq::encode_bq_tag(&read.base_qualities, &result.bq).into_bytes())
