@@ -203,6 +203,15 @@ pub fn compare_base_qualities(
     second: &[BamRecord],
     arguments: &CompareArguments,
 ) -> Result<CompareResult, CompareError> {
+    compare_base_qualities_of(first.iter(), second.iter(), arguments)
+}
+
+/// [`compare_base_qualities`] over the two files' reads as they come.
+pub fn compare_base_qualities_of<R: std::borrow::Borrow<BamRecord>>(
+    first: impl Iterator<Item = R>,
+    second: impl Iterator<Item = R>,
+    arguments: &CompareArguments,
+) -> Result<CompareResult, CompareError> {
     if arguments.round_down && arguments.static_quantization_quals.is_empty() {
         return Err(CompareError::RoundDownAlone);
     }
@@ -213,16 +222,13 @@ pub fn compare_base_qualities(
     );
 
     let mut matrix = CompareMatrix::new(&mapping);
-    let mut left = first
-        .iter()
-        .filter(|record| !is_secondary_or_supplementary(record));
-    let mut right = second
-        .iter()
-        .filter(|record| !is_secondary_or_supplementary(record));
+    let mut left = first.filter(|record| !is_secondary_or_supplementary(record.borrow()));
+    let mut right = second.filter(|record| !is_secondary_or_supplementary(record.borrow()));
 
     let mut a = left.next();
     let mut b = right.next();
-    while let (Some(one), Some(other)) = (a, b) {
+    while let (Some(one), Some(other)) = (&a, &b) {
+        let (one, other) = (one.borrow(), other.borrow());
         if one.read_name != other.read_name {
             return Err(CompareError::OutOfOrder(
                 one.read_name.clone(),
