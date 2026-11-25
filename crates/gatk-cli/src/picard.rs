@@ -334,6 +334,51 @@ pub(crate) fn vcf_text(path: &str) -> Result<String, Thrown> {
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
+/// [`vcf_text`] cut after the header and the first `records` record lines, read no further.
+///
+/// `VCFFileReader.iterator()` decodes one record ahead, so a tool that looks only at a file's
+/// first record has decoded its first two and never sees the rest. A record line is one that does
+/// not start with `#`; an empty one counts, as the codec's line counter does.
+pub(crate) fn vcf_prefix(path: &str, records: usize) -> Result<String, Thrown> {
+    let mut file = std::io::BufReader::new(
+        std::fs::File::open(path)
+            .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{path}: {error}")))?,
+    );
+    let first = std::io::BufRead::fill_buf(&mut file)
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{path}: {error}")))?;
+    let mut reader = if first.starts_with(&[0x1f, 0x8b]) {
+        crate::vcf_stream::LineReader::new(
+            Box::new(std::io::BufReader::new(htsjdk_bgzf::read::BgzfReader::new(
+                file,
+            ))),
+            false,
+        )
+    } else {
+        crate::vcf_stream::LineReader::new(Box::new(file), false)
+    };
+    let (mut text, mut line, mut seen) = (String::new(), String::new(), 0);
+    while seen < records
+        && reader.next_line(&mut line).map_err(|error| {
+            // `decompress_all`'s own error, which the reader carries inside an `io::Error`.
+            let error = match error.get_ref() {
+                Some(inner) => format!("{inner:?}"),
+                None => format!("{error:?}"),
+            };
+            Thrown::non_user(
+                "htsjdk.tribble.TribbleException",
+                format!("{path}: {error}"),
+            )
+        })?
+    {
+        if !line.starts_with('#') {
+            seen += 1;
+        }
+        text.push_str(&line);
+        text.push('\n');
+    }
+    Ok(text)
+}
+
 /// `VCFHeader.setSequenceDictionary` on a header that has no contig lines: the dictionary's, in
 /// front of the column line, as `VCFContigHeaderLine(record, record.getAssembly())` renders them.
 pub(crate) fn with_contigs(text: &str, sequences: &[htsjdk_bam::header::SequenceRecord]) -> String {
@@ -597,5 +642,21 @@ mod tests {
         assert!(outcome
             .stderr
             .ends_with("NO_SUCH is not a recognized option\n"));
+    }
+
+    #[test]
+    fn a_prefix_stops_after_its_records_and_keeps_the_header() {
+        let path = std::env::temp_dir().join(format!("vcf_prefix_{}.vcf", std::process::id()));
+        std::fs::write(&path, "##fileformat=VCFv4.2\n#CHROM\n1\n\n#late\n3\n").unwrap();
+        let path = path.to_str().unwrap();
+        assert_eq!(
+            super::vcf_prefix(path, 2).unwrap(),
+            "##fileformat=VCFv4.2\n#CHROM\n1\n\n"
+        );
+        assert_eq!(
+            super::vcf_prefix(path, 9).unwrap(),
+            super::vcf_text(path).unwrap()
+        );
+        std::fs::remove_file(path).unwrap();
     }
 }

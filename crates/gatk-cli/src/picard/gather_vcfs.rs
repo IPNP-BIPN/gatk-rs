@@ -16,7 +16,8 @@ use gatk_tools::picard_gather_vcfs::{
 };
 
 use super::{
-    absolute, assert_readable, assert_writable, thrown, unroll_paths, vcf_text, write_vcf,
+    absolute, assert_readable, assert_writable, thrown, unroll_paths, vcf_prefix, vcf_text,
+    write_vcf,
 };
 use crate::runners::{argument, arguments, flag, output_compression};
 
@@ -29,9 +30,24 @@ pub(super) fn run(parser: &Parser, stderr: &mut String) -> Result<i32, Thrown> {
     let output = argument(parser, "OUTPUT").unwrap_or_default();
     assert_writable(&output)?;
 
+    let block_copy = paths.iter().chain(std::iter::once(&output)).all(|path| {
+        let lower = path.to_lowercase();
+        !lower.ends_with(".bcf")
+            && [".gz", ".gzip", ".bgz", ".bgzf"]
+                .iter()
+                .any(|extension| lower.ends_with(extension))
+    });
+    // Block copying reads each file's first record, which `VCFFileReader` decodes with the one
+    // after it; the records past those are copied as bytes and never decoded.
     let texts: Vec<String> = paths
         .iter()
-        .map(|path| vcf_text(path))
+        .map(|path| {
+            if block_copy {
+                vcf_prefix(path, 2)
+            } else {
+                vcf_text(path)
+            }
+        })
         .collect::<Result<_, _>>()?;
     let inputs: Vec<Input> = paths
         .iter()
@@ -44,13 +60,6 @@ pub(super) fn run(parser: &Parser, stderr: &mut String) -> Result<i32, Thrown> {
         reorder_input_by_first_variant: flag(parser, "REORDER_INPUT_BY_FIRST_VARIANT"),
     };
 
-    let block_copy = paths.iter().chain(std::iter::once(&output)).all(|path| {
-        let lower = path.to_lowercase();
-        !lower.ends_with(".bcf")
-            && [".gz", ".gzip", ".bgz", ".bgzf"]
-                .iter()
-                .any(|extension| lower.ends_with(extension))
-    });
     let gathered = if block_copy {
         checked_order(&inputs, &args).and_then(|order| {
             block_copied(parser, &order).map_err(|error| Failure::Exit {

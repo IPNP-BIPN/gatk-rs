@@ -56,6 +56,33 @@ now STATUS.md's cost column; the baseline stays in `baseline.json`):
 both directions, which is what an unchanged path does. The other 131 tools moved a median 7% cold
 and 10% steady, at most 45%, the same spread two runs of one commit showed in the baseline.
 
+## Scale F. `GatherVcfs` decodes every record of every input to read each one's first
+
+**Ratio.** Measured at scale (the every-tool pass of `tools/speed/scale.json`, gnomAD chr20
+sites, linux/arm64 in the pinned container, 6 GiB limit): GATK 2 s CPU and 0.27 GiB peak RSS;
+the port 5 s and 4.26 GiB (15.98x), then killed at the limit.
+
+**Where the memory goes.** `picard/gather_vcfs.rs` reads every input whole with `vcf_text` and
+`read_shard` decodes all its records, on the block-copying path too, where only each file's header
+and first record are looked at (`assertSameSamplesAndValidOrdering`) before the bytes are copied.
+
+**The optimisation.** On the block-copying path, `vcf_prefix(path, 2)`: the header and the first two
+record lines, read through a `BgzfReader` and no further. Two, because `VCFFileReader.iterator()`
+decodes one record ahead.
+
+**Why it cannot move a byte.** The output is the files' compressed blocks, which the text never
+fed. The checks see the same header and the same first record. The second record is decoded as
+the reference decodes it: a malformed second record still fails, with the same line number.
+Measured against the oracle on a malformed third record: GATK gathers it (exit 0) and the port
+used to refuse it (exit 4). It now gathers it, as GATK does. A non-BGZF gzip input gives the same
+message as before (`decompress_all`'s error, unwrapped from the reader's `io::Error`).
+
+**The suites that prove it.** `gather-vcfs`, `picard-gather-vcfs`, the `GatherVcfs` covering array
+(34 of 34 rows match on linux/amd64), and a unit test of `vcf_prefix`.
+
+**Result.** On gnomAD chr20 natively: 4.94 GB and 3.77 s before, 0.14 GB and 0.03 s after, and the
+same md5 (13bea3ff).
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are
