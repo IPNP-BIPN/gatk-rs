@@ -5006,11 +5006,22 @@ pub fn left_align_and_trim_variants(parser: &Parser) -> Outcome {
                      this port does not carry yet. This message is the port's own and not GATK's.",
                 ));
             }
-            gatk_engine::variant_context_utils::split_variant_context_to_biallelics(
-                &bridged.record.variant,
-                false,
-            )
-            .map_err(split_refusal)?
+            let mut pieces =
+                gatk_engine::variant_context_utils::split_variant_context_to_biallelics(
+                    &bridged.record.variant,
+                    false,
+                )
+                .map_err(split_refusal)?;
+            // The recomputed AF is a Double, which the writer formats: 0.25 is `0.250`.
+            for (key, value) in pieces
+                .iter_mut()
+                .flat_map(|piece| piece.attributes.iter_mut())
+            {
+                if let ("AF", Ok(frequency)) = (key.as_str(), value.parse::<f64>()) {
+                    *value = htsjdk_vcf::variant::format_vcf_double(frequency);
+                }
+            }
+            pieces
         } else {
             vec![bridged.record.variant.clone()]
         };

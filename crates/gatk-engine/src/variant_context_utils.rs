@@ -544,8 +544,7 @@ fn chromosome_counts(genotypes: &[Genotype], original_samples: usize) -> Vec<(St
         ("AC".to_string(), allele_count.to_string()),
         (
             "AF".to_string(),
-            // A Double attribute, formatted by the writer: 0.25 is `0.250`.
-            htsjdk_vcf::variant::format_vcf_double(frequency),
+            crate::tsv_table::java_double_to_string(frequency),
         ),
         ("AN".to_string(), allele_number.to_string()),
     ]
