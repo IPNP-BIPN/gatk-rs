@@ -6965,36 +6965,55 @@ pub fn vcf_comparator(parser: &Parser) -> Outcome {
             .map(|sequence| sequence.name.clone())
             .collect()
     });
+    // `throwOrWarn` prints each message to `--output-warnings`, which `closeTool` closes on
+    // failure too, so the file keeps what was printed before the run stopped.
+    let write_thrown = |thrown: &[String]| -> Result<(), Thrown> {
+        match argument(parser, "output-warnings") {
+            Some(path) => std::fs::write(
+                &path,
+                thrown
+                    .iter()
+                    .map(|line| format!("{line}\n"))
+                    .collect::<String>(),
+            )
+            .map_err(|error| Thrown::user(format!("Couldn't write file {path} because {error}"))),
+            None => Ok(()),
+        }
+    };
     match comparator::compare(&inputs, &contigs, spans, reference.as_deref(), &options) {
         Ok(finished) => {
+            write_thrown(&finished.thrown)?;
             for warning in finished.warnings {
                 eprintln!("WARN  VCFComparator - {warning}");
             }
             Ok(None)
         }
-        Err(stopped) => Err(match (stopped.failure, stopped.at) {
-            (comparator::Failure::Limitation(message), _) => {
-                Thrown::non_user(PORT_LIMITATION, message)
-            }
-            // `MultiVariantWalker.traverse` wraps whatever `apply` throws, naming the record it
-            // was on, and the cause is not what prints.
-            (_, Some((input, index))) => {
-                let record = &inputs[input].records[index];
-                Thrown::non_user(
-                    "org.broadinstitute.hellbender.exceptions.GATKException",
-                    format!(
-                        "Exception thrown at {}:{} {}",
-                        record.contig,
-                        record.start,
-                        java_variant_context_string(record, &inputs[input].name)
-                    ),
-                )
-            }
-            (comparator::Failure::User(message), None) => Thrown::user(message),
-            (comparator::Failure::Runtime { class, message }, None) => {
-                Thrown::non_user(class, message)
-            }
-        }),
+        Err(stopped) => Err(
+            match (write_thrown(&stopped.thrown), stopped.failure, stopped.at) {
+                (Err(thrown), _, _) => thrown,
+                (Ok(()), comparator::Failure::Limitation(message), _) => {
+                    Thrown::non_user(PORT_LIMITATION, message)
+                }
+                // `MultiVariantWalker.traverse` wraps whatever `apply` throws, naming the record it
+                // was on, and the cause is not what prints.
+                (Ok(()), _, Some((input, index))) => {
+                    let record = &inputs[input].records[index];
+                    Thrown::non_user(
+                        "org.broadinstitute.hellbender.exceptions.GATKException",
+                        format!(
+                            "Exception thrown at {}:{} {}",
+                            record.contig,
+                            record.start,
+                            java_variant_context_string(record, &inputs[input].name)
+                        ),
+                    )
+                }
+                (Ok(()), comparator::Failure::User(message), None) => Thrown::user(message),
+                (Ok(()), comparator::Failure::Runtime { class, message }, None) => {
+                    Thrown::non_user(class, message)
+                }
+            },
+        ),
     }
 }
 

@@ -187,6 +187,9 @@ pub struct Stopped {
     /// `(input, record)`: the record whose `apply` threw, which the walker names when it wraps the
     /// failure. `None` for a failure after the traversal, which reaches the user unwrapped.
     pub at: Option<(usize, usize)>,
+    /// What `throwOrWarn` printed to `--output-warnings` before the run stopped, which the stream
+    /// keeps when `closeTool` closes it.
+    pub thrown: Vec<String>,
 }
 
 /// What a run that did not stop leaves behind.
@@ -194,6 +197,8 @@ pub struct Stopped {
 pub struct Finished {
     /// The warnings, in order, as the log prints them.
     pub warnings: Vec<String>,
+    /// The messages `throwOrWarn` prints to `--output-warnings`, one per line.
+    pub thrown: Vec<String>,
 }
 
 /// One input: the name its tag gave it, which every record carries as its source, the samples of
@@ -810,6 +815,7 @@ struct Comparator<'a> {
     inbreeding_coeff_is_different: bool,
     fail_on_completion: bool,
     warnings: Vec<String>,
+    thrown: Vec<String>,
 }
 
 impl Comparator<'_> {
@@ -829,6 +835,7 @@ impl Comparator<'_> {
         }
         if self.options.warn_on_errors || self.options.finish_before_failing {
             self.warn(format!("***** {message} *****"));
+            self.thrown.push(message);
             if self.options.finish_before_failing {
                 self.fail_on_completion = true;
             }
@@ -2244,9 +2251,41 @@ pub fn compare(
         inbreeding_coeff_is_different: false,
         fail_on_completion: false,
         warnings: Vec::new(),
+        thrown: Vec::new(),
     };
+    match traverse(
+        &mut comparator,
+        inputs,
+        contigs,
+        start_intervals,
+        reference,
+        options,
+    ) {
+        Ok(()) => Ok(Finished {
+            warnings: comparator.warnings,
+            thrown: comparator.thrown,
+        }),
+        Err(stopped) => Err(Stopped {
+            thrown: comparator.thrown,
+            ..stopped
+        }),
+    }
+}
 
-    let order = merged_order(inputs, contigs).map_err(|failure| Stopped { failure, at: None })?;
+/// `apply` over every group of overlapping records, then `onTraversalSuccess`.
+fn traverse(
+    comparator: &mut Comparator,
+    inputs: &[Input],
+    contigs: &[String],
+    start_intervals: Option<&[SimpleInterval]>,
+    reference: Option<&[String]>,
+    options: &Options,
+) -> Result<(), Stopped> {
+    let order = merged_order(inputs, contigs).map_err(|failure| Stopped {
+        failure,
+        at: None,
+        thrown: Vec::new(),
+    })?;
     let mut current: Vec<Record> = Vec::new();
     let mut last_contig = String::new();
     let mut last_end: i64 = 0;
@@ -2255,6 +2294,7 @@ pub fn compare(
         let stop = |failure: Failure| Stopped {
             failure,
             at: Some((input, index)),
+            thrown: Vec::new(),
         };
         if options.ignore_variants_starting_outside_interval {
             if let Some(intervals) = start_intervals {
@@ -2291,7 +2331,11 @@ pub fn compare(
     } else {
         spanning_reference(&current, reference, options.reference_padding)
             .and_then(|()| comparator.apply(&current))
-            .map_err(|failure| Stopped { failure, at: None })?;
+            .map_err(|failure| Stopped {
+                failure,
+                at: None,
+                thrown: Vec::new(),
+            })?;
     }
     if comparator.fail_on_completion {
         return Err(Stopped {
@@ -2299,9 +2343,8 @@ pub fn compare(
                 "Some comparisons failed.  See stderr log for details.".to_string(),
             ),
             at: None,
+            thrown: Vec::new(),
         });
     }
-    Ok(Finished {
-        warnings: comparator.warnings,
-    })
+    Ok(())
 }
