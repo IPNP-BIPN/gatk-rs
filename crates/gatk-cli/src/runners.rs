@@ -3366,9 +3366,7 @@ pub fn calculate_mixing_fractions(parser: &Parser) -> Outcome {
     // contig by its reference INDEX and the index is the reads header's, not the VCF's.
     let mut records: Vec<(String, htsjdk_bam::record::BamRecord)> = Vec::new();
     for path in &reads_paths {
-        let source =
-            gatk_engine::reads::ReadsDataSource::open_unindexed(std::path::Path::new(path))
-                .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        let source = open_reads(parser, std::path::Path::new(path), None)?;
         let sequences = source.header().sequences.clone();
         let header = source.header().clone();
         let filter = read_filter(parser, &resolved, &header)?;
@@ -3598,9 +3596,7 @@ pub fn annotate_vcf_with_bam_depth(parser: &Parser) -> Outcome {
     let resolved = resolve_read_filters(parser, "AnnotateVcfWithBamDepth")?;
     let mut reads: Vec<(String, htsjdk_bam::record::BamRecord)> = Vec::new();
     for path in arguments(parser, "input") {
-        let source =
-            gatk_engine::reads::ReadsDataSource::open_unindexed(std::path::Path::new(&path))
-                .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        let source = open_reads(parser, std::path::Path::new(&path), None)?;
         let sequences = source.header().sequences.clone();
         let header = source.header().clone();
         let filter = read_filter(parser, &resolved, &header)?;
@@ -6219,9 +6215,7 @@ pub fn validate_basic_somatic_short_mutations(parser: &Parser) -> Outcome {
     let resolved = resolve_read_filters(parser, "ValidateBasicSomaticShortMutations")?;
     let mut reads: Vec<(String, htsjdk_bam::record::BamRecord)> = Vec::new();
     for path in arguments(parser, "input") {
-        let source =
-            gatk_engine::reads::ReadsDataSource::open_unindexed(std::path::Path::new(&path))
-                .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        let source = open_reads(parser, std::path::Path::new(&path), None)?;
         let header = source.header().clone();
         let filter = read_filter(parser, &resolved, &header)?;
         for read in gatk_tools::read_walker::traverse(&source, &[], &filter)
@@ -15883,11 +15877,11 @@ pub fn variant_annotator(parser: &Parser) -> Outcome {
     let reads = match reads_paths.first() {
         Some(path) => {
             let path = std::path::Path::new(path);
-            let source = match htsjdk_bam::sam_files::find_index(path) {
-                Some(index) => gatk_engine::reads::ReadsDataSource::open(path, &index),
-                None => gatk_engine::reads::ReadsDataSource::open_unindexed(path),
-            }
-            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+            let source = open_reads(
+                parser,
+                path,
+                htsjdk_bam::sam_files::find_index(path).as_deref(),
+            )?;
             let indexed = htsjdk_bam::sam_files::find_index(path).is_some();
             Some((source, indexed))
         }
@@ -25105,6 +25099,7 @@ mod filter_alignment_artifacts_runner;
 #[path = "runners_reads_input.rs"]
 mod reads_input;
 pub use filter_alignment_artifacts_runner::filter_alignment_artifacts;
+use reads_input::open_reads;
 
 /// `StructuralVariantDiscoverer`: a read walker over the alignments of assembled contigs.
 ///

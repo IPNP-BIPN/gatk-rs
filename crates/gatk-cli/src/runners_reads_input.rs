@@ -13,10 +13,18 @@ use std::path::Path;
 /// `.crai` beside it, and the source is given the `.bai` built while transcoding instead, so an
 /// interval query answers the same. SAM text has no index. Text that does not parse as SAM, and
 /// anything else that is not CRAM, goes to the BAM open, so its refusal is the one it was.
-///
-/// A CRAM's decode refusal is held back rather than raised: htsjdk decodes a container when the
-/// traversal reaches it, so a tool's checks before its traversal come first. The source holds the
-/// records before the refusal; the caller raises it where it traverses.
+pub(crate) fn open_reads(
+    parser: &Parser,
+    path: &Path,
+    index: Option<&Path>,
+) -> Result<ReadsDataSource, Thrown> {
+    let (source, pending) = open_reads_deferred(parser, path, index)?;
+    pending.map_or(Ok(source), Err)
+}
+
+/// [`open_reads`] with a CRAM's decode refusal held back rather than raised: htsjdk decodes a
+/// container when the traversal reaches it, so a tool's checks before its traversal come first.
+/// The source holds the records before the refusal; the caller raises it where it traverses.
 pub(crate) fn open_reads_deferred(
     parser: &Parser,
     path: &Path,
@@ -32,9 +40,8 @@ pub(crate) fn open_reads_deferred(
     })
 }
 
-/// [`open_reads_deferred`] for a tool that opens its reads with a bare
-/// `new ReadsPathDataSource(path)`, which is given no reference: a CRAM decodes until a slice
-/// needs one, and is refused there, at once.
+/// [`open_reads`] for a tool that opens its reads with a bare `new ReadsPathDataSource(path)`,
+/// which is given no reference: a CRAM decodes until a slice needs one, and is refused there.
 pub(crate) fn open_reads_without_reference(path: &Path) -> Result<ReadsDataSource, Thrown> {
     let (source, pending) = open(path, None, || Ok(None))?;
     pending.map_or(Ok(source), Err)
@@ -84,6 +91,26 @@ fn open(
     }
     // The file's own header, not the one the BAM writer stamps a sort order onto.
     Ok((source.with_header(header), pending))
+}
+
+/// Whether `path` is SAM text: not a BAM, a CRAM or block compressed. htsjdk cannot query one,
+/// and it has no index whatever sits beside it.
+pub(crate) fn is_sam_text(path: &Path) -> bool {
+    let mut magic = [0u8; 4];
+    let read = std::fs::File::open(path)
+        .and_then(|mut file| file.read(&mut magic))
+        .unwrap_or(0);
+    let magic = &magic[..read];
+    !magic.is_empty()
+        && magic != gatk_tools::read_walker_refusal::BAM_MAGIC
+        && magic != b"CRAM"
+        && !gatk_tools::read_walker_refusal::is_block_compressed(magic)
+}
+
+/// `ReadsPathDataSource.isQueryableByInterval` for one file: an index found beside it, which SAM
+/// text never has.
+pub(crate) fn is_indexed(path: &Path) -> bool {
+    !is_sam_text(path) && htsjdk_bam::sam_files::find_index(path).is_some()
 }
 
 /// `GATKTool.validateSequenceDictionaries` for reads, a reference and a master dictionary, which
