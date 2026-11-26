@@ -12996,7 +12996,10 @@ pub fn gtf_to_bed(parser: &Parser) -> Outcome {
     // are the dictionary comparison's own -- "No overlapping contigs found" for two that share
     // nothing and "Found contigs with the same name but different lengths" for two that do.
     // A BAM under `--input` is opened too, and the master meets the reads before the reference.
+    // `-L` and `-XL` are resolved first, as `initializeIntervals` precedes the validation.
+    let intervals = tool_intervals(parser)?;
     validate_tool_dictionaries(parser)?;
+    require_feature_index(&input, intervals.as_deref())?;
     let dictionary = match master_dictionary(parser)? {
         Some(header) => Some(
             header
@@ -13007,7 +13010,16 @@ pub fn gtf_to_bed(parser: &Parser) -> Outcome {
         ),
         None => None,
     };
-    let features = gatk_tools::gtf_to_bed::parse_features(&text);
+    let mut features = gatk_tools::gtf_to_bed::parse_features(&text);
+    // The codec's feature is the whole GENE, so a gene line the traversal reaches keeps its
+    // transcripts, however far they reach past it.
+    let reached: std::collections::HashSet<String> = features
+        .iter()
+        .filter(|feature| matches!(feature.kind, gatk_tools::gtf_to_bed::EntryType::Gene))
+        .filter(|gene| in_traversal(intervals.as_deref(), &gene.contig, gene.start, gene.end))
+        .map(|gene| gene.gene_id.clone())
+        .collect();
+    features.retain(|feature| reached.contains(&feature.gene_id));
     let bed = gatk_tools::gtf_to_bed::run(
         &features,
         dictionary.as_deref(),
@@ -18293,11 +18305,13 @@ pub fn condense_depth_evidence(parser: &Parser) -> Outcome {
             ));
         }
     }
+    let intervals = tool_intervals(parser)?;
     // `validateSequenceDictionaries`, once the input is open: the text codec carries no
     // dictionary, so the pairs are the master's, the reference's and a BAM's under `--input`.
     validate_tool_dictionaries(parser)?;
+    require_feature_index(&input, intervals.as_deref())?;
     let text = String::from_utf8_lossy(&bytes);
-    let (samples, records) = condense::read(&text).map_err(|problem| {
+    let (samples, mut records) = condense::read(&text).map_err(|problem| {
         Thrown::non_user(
             PORT_LIMITATION,
             format!(
@@ -18306,6 +18320,7 @@ pub fn condense_depth_evidence(parser: &Parser) -> Outcome {
         )
     })?;
 
+    records.retain(|record| in_traversal(intervals.as_deref(), &record.contig, record.start, record.end));
     condense::check_lengths(&arguments).map_err(refused)?;
     condense::check_output(&output).map_err(refused)?;
     if codecs::find(&output).map(|codec| codec.encoding)
@@ -19177,6 +19192,75 @@ fn best_dictionary(parser: &Parser) -> Result<Vec<String>, Thrown> {
 /// `validateSequenceDictionaries` for a `GATKTool` with no feature inputs: the reads opened for
 /// their dictionary, the master checked against the reads then the reference, then the reference
 /// against the reads. The argument turns all of it off.
+/// `GATKTool.initializeIntervals` for a tool whose driving file carries no dictionary of its own:
+/// `-L` and `-XL` resolved against `getBestAvailableSequenceDictionary`, which is the master's, then
+/// the reference's, then the reads'. With none of them, giving either is refused.
+fn tool_intervals(
+    parser: &Parser,
+) -> Result<Option<Vec<gatk_engine::interval::SimpleInterval>>, Thrown> {
+    let inputs = arguments(parser, "input");
+    let best = match master_dictionary(parser)?.or(reference_dictionary(parser)?) {
+        Some(header) => Some(header),
+        None => match inputs.first() {
+            Some(path) => Some(SamHeader {
+                sequences: reads_dictionary(parser, path, inputs.len())?,
+                ..SamHeader::default()
+            }),
+            None => None,
+        },
+    };
+    match best {
+        Some(header) => Ok(interval_arguments(parser, &header)?.map(|parameters| parameters.intervals)),
+        None if !arguments(parser, "intervals").is_empty()
+            || !arguments(parser, "exclude-intervals").is_empty() =>
+        {
+            Err(Thrown::user(
+                "We require a sequence dictionary from a reference, a source of reads, or a source \
+                 of variants to process intervals.  Since reference and reads files generally \
+                 contain sequence dictionaries, this error most commonly occurs for VariantWalkers \
+                 that do not require a reference or reads.  You can fix the problem by passing a \
+                 reference file with a sequence dictionary via the -R argument or you can run the \
+                 tool UpdateVCFSequenceDictionary on your vcf.",
+            ))
+        }
+        None => Ok(None),
+    }
+}
+
+/// `FeatureWalker.onStartup`, past the engine's: `setIntervalsForTraversal` on a driving file with
+/// no index is refused.
+fn require_feature_index(
+    input: &str,
+    intervals: Option<&[gatk_engine::interval::SimpleInterval]>,
+) -> Result<(), Thrown> {
+    if gatk_engine::variant_source::intervals_for_traversal(intervals).is_some()
+        && !has_feature_index(input)
+    {
+        return Err(Thrown::user(
+            gatk_tools::count_variants::CountVariantsError::IntervalsWithoutRandomAccess {
+                path: input.to_string(),
+            }
+            .message(),
+        ));
+    }
+    Ok(())
+}
+
+/// Whether `FeatureIntervalIterator` reaches a feature: it overlaps one of the intervals. A feature
+/// several intervals overlap is returned once, so in file order this is the whole traversal.
+fn in_traversal(
+    intervals: Option<&[gatk_engine::interval::SimpleInterval]>,
+    contig: &str,
+    start: i32,
+    end: i32,
+) -> bool {
+    gatk_engine::variant_source::intervals_for_traversal(intervals).is_none_or(|intervals| {
+        intervals
+            .iter()
+            .any(|interval| interval.contig == contig && interval.start <= end && start <= interval.end)
+    })
+}
+
 fn validate_tool_dictionaries(parser: &Parser) -> Result<(), Thrown> {
     let master = master_dictionary(parser)?;
     let reference = reference_dictionary(parser)?;
@@ -19882,6 +19966,16 @@ pub fn example_multi_feature_walker(parser: &Parser) -> Outcome {
                 })
                 .collect(),
         );
+    }
+    // `initializeIntervals`, then each input's `setIntervalsForTraversal`, which needs its index.
+    let intervals = tool_intervals(parser)?;
+    for input in &inputs {
+        require_feature_index(input, intervals.as_deref())?;
+    }
+    for features in &mut located {
+        features.retain(|feature| {
+            in_traversal(intervals.as_deref(), &feature.contig, feature.start, feature.end)
+        });
     }
     let source = |header: Option<SamHeader>, name: &str| {
         header.map(|header| walker::DictSource {
