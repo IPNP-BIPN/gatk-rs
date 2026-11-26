@@ -6861,7 +6861,7 @@
         {
           "dump": "UsageTextDump",
           "golden": "crates/gatk-tools/tests/data/usage_text.txt.gz",
-          "why": "Frozen from CI run 43626754546, byte-identical to run 43573435478. One `usage`, `lines` and `same` row per tool, then its `allowed`, `field` and `deprecated` rows."
+          "why": "Frozen from CI run 45362755663, the first with the pinned -Xmx4g heap (before it: run 43626754546, byte-identical to run 43573435478). One `usage`, `lines` and `same` row per tool, then its `allowed`, `field` and `deprecated` rows."
         }
       ]
     },
