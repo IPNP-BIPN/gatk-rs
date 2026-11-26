@@ -1345,6 +1345,31 @@ fn variant_walker_validation(
 
     let master = master_dictionary(parser)?;
     let reference = reference_dictionary(parser)?;
+    // `initializeIntervals` runs before `validateSequenceDictionaries`, so a bad `-L` is refused
+    // ahead of any dictionary mismatch.
+    // The master dictionary is validated against the features, and then again as `best available`.
+    // What `-L` resolves against is NOT the master here: a variant walker prefers the DRIVING
+    // VARIANTS' dictionary unless that one was synthesized from an index, and a VCF carrying
+    // `##contig` lines gives a real one.
+    //
+    // A VCF with no `##contig` line has its dictionary SYNTHESIZED from its Tribble index: the
+    // index's contig names at an unknown length. That one is used only when no other source has a
+    // dictionary (`VariantWalkerBase.getBestAvailableSequenceDictionary`), and an unknown length
+    // is not checked against an interval's stop, so `-L` over such a VCF is accepted.
+    let best = if header.sequences.is_empty() {
+        match master.clone().or_else(|| reference.clone()).or_else(|| {
+            reads_dictionaries.first().map(|sequences| SamHeader {
+                sequences: sequences.clone(),
+                ..SamHeader::default()
+            })
+        }) {
+            Some(other) => other,
+            None => index_dictionary(&input).unwrap_or_else(|| header.clone()),
+        }
+    } else {
+        header.clone()
+    };
+    let intervals = interval_arguments(parser, &best)?.map(|parameters| parameters.intervals);
     // `validateSequenceDictionaries` is ONE method and the argument turns all of it off, the
     // master block included: a guard around part of it refuses command lines the reference runs.
     if !flag(parser, "disable-sequence-dictionary-validation") {
@@ -1413,30 +1438,6 @@ fn variant_walker_validation(
             })?;
         }
     }
-
-    // The master dictionary is validated against the features, and then again as `best available`.
-    // What `-L` resolves against is NOT the master here: a variant walker prefers the DRIVING
-    // VARIANTS' dictionary unless that one was synthesized from an index, and a VCF carrying
-    // `##contig` lines gives a real one.
-    //
-    // A VCF with no `##contig` line has its dictionary SYNTHESIZED from its Tribble index: the
-    // index's contig names at an unknown length. That one is used only when no other source has a
-    // dictionary (`VariantWalkerBase.getBestAvailableSequenceDictionary`), and an unknown length
-    // is not checked against an interval's stop, so `-L` over such a VCF is accepted.
-    let best = if header.sequences.is_empty() {
-        match master.clone().or_else(|| reference.clone()).or_else(|| {
-            reads_dictionaries.first().map(|sequences| SamHeader {
-                sequences: sequences.clone(),
-                ..SamHeader::default()
-            })
-        }) {
-            Some(other) => other,
-            None => index_dictionary(&input).unwrap_or_else(|| header.clone()),
-        }
-    } else {
-        header.clone()
-    };
-    let intervals = interval_arguments(parser, &best)?.map(|parameters| parameters.intervals);
 
     Ok(VariantWalkerStart {
         input,
@@ -1803,6 +1804,15 @@ pub fn print_reads(parser: &Parser) -> Outcome {
     let header = source.header().clone();
     let master = master_dictionary(parser)?;
     let reference = reference_dictionary(parser)?;
+    // `initializeIntervals` runs before `validateSequenceDictionaries`, against the best
+    // available dictionary, so an interval the master does not hold is refused first.
+    let best = master
+        .clone()
+        .or_else(|| reference.clone())
+        .unwrap_or_else(|| header.clone());
+    let intervals = interval_arguments(parser, &best)?
+        .map(|parameters| parameters.intervals)
+        .unwrap_or_default();
     if !flag(parser, "disable-sequence-dictionary-validation") {
         if let Some(master) = &master {
             validate_against_master(master, "reads", &header.sequences)?;
@@ -1811,13 +1821,6 @@ pub fn print_reads(parser: &Parser) -> Outcome {
             }
         }
     }
-    let best = master
-        .clone()
-        .or_else(|| reference.clone())
-        .unwrap_or_else(|| header.clone());
-    let intervals = interval_arguments(parser, &best)?
-        .map(|parameters| parameters.intervals)
-        .unwrap_or_default();
     if !intervals.is_empty() && index.is_none() {
         return Err(Thrown::user(
             "Traversal by intervals was requested but some input files are not indexed.",
@@ -2305,6 +2308,15 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
     let header = source.header().clone();
     let master = master_dictionary(parser)?;
     let reference = reference_dictionary(parser)?;
+    // `initializeIntervals` runs before `validateSequenceDictionaries`, against the best
+    // available dictionary, so an interval the master does not hold is refused first.
+    let best = master
+        .clone()
+        .or_else(|| reference.clone())
+        .unwrap_or_else(|| header.clone());
+    let intervals = interval_arguments(parser, &best)?
+        .map(|parameters| parameters.intervals)
+        .unwrap_or_default();
     if !flag(parser, "disable-sequence-dictionary-validation") {
         if let Some(master) = &master {
             validate_against_master(master, "reads", &header.sequences)?;
@@ -2313,13 +2325,6 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
             }
         }
     }
-    let best = master
-        .clone()
-        .or_else(|| reference.clone())
-        .unwrap_or_else(|| header.clone());
-    let intervals = interval_arguments(parser, &best)?
-        .map(|parameters| parameters.intervals)
-        .unwrap_or_default();
     if !intervals.is_empty() && index.is_none() {
         return Err(Thrown::user(
             "Traversal by intervals was requested but some input files are not indexed.",
@@ -2356,14 +2361,18 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
     // The failure follows the CLASS rather than being assumed: the transformer throws a
     // `GATKException`, which leaves exit 3 and is printed as a stack trace rather than as
     // `A USER ERROR has occurred`.
-    .map_err(|error| Thrown {
-        failure: if error.is_user() {
-            Failure::User
-        } else {
-            Failure::Other
+    .map_err(|error| match error {
+        // A record that does not decode is htsjdk's, not a user error: the shared mapping.
+        gatk_tools::apply_bqsr::ApplyBqsrError::Reads(reads) => reads_traversal_error(reads),
+        error => Thrown {
+            failure: if error.is_user() {
+                Failure::User
+            } else {
+                Failure::Other
+            },
+            exception: error.java_class(),
+            message: Some(error.message()),
         },
-        exception: error.java_class(),
-        message: Some(error.message()),
     })?;
 
     std::fs::write(&output, &bam).map_err(|error| {

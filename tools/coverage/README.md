@@ -195,3 +195,18 @@ looks covered. So a value is used only when it traces to the inventory (`enum_me
 `max`, `default`) or to a declared fixture, and everything else is **excluded by name with a
 reason**. The exclusion list is part of the coverage claim: a tool at "t=2 covered" with half its
 arguments excluded is covered over half a tool.
+
+## t=3 on the critical path
+
+The best-practices chain (MarkDuplicatesSpark, BaseRecalibrator, ApplyBQSR, HaplotypeCaller,
+GenotypeGVCFs, Mutect2, FilterMutectCalls, SelectVariants, VariantFiltration, VariantRecalibrator,
+ApplyVQSR) also has a `<Tool>.t3.json`. CI's `argument-coverage-t3` job runs one tool per shard and
+writes a fragment (`measure.py --t 3 --fragment`). `argument-coverage-t3-merge` folds the fragments
+into `measured.json`'s `t3` section (`measure.py --merge`), which the t=2 job leaves alone.
+`docs/VALIDATION.md` then shows both measurements, and its `t` column shows the strongest level measured.
+A t=3 array is regenerated whenever its tool's fixtures change:
+
+```sh
+python3 tools/coverage/covering.py --tool HaplotypeCaller --t 3 \
+  --fixtures tools/coverage/fixtures.json --verify --json tools/coverage/arrays/HaplotypeCaller.t3.json
+```
