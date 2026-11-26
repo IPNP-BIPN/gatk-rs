@@ -1,7 +1,8 @@
 //! `DepthOfCoverage`: how deep the reads lie over a reference.
 //!
 //! The tool writes a family of files rather than one, and which of them appear is decided by four
-//! `omit` arguments rather than by the data. The partition is the SAMPLE, so read groups collapse
+//! `omit` arguments rather than by the data. The partition is the SAMPLE unless `--partition-type`
+//! says otherwise, so by default read groups collapse
 //! into one column each.
 //!
 //! Reading the BAM and the intervals is not ported. Which bases are counted, how they are counted
@@ -130,44 +131,96 @@ fn base_index(base: u8) -> usize {
         .unwrap_or(4)
 }
 
-/// One pileup element as the counter reads it: its sample, base, quality and whether it is a
-/// deletion.
-pub struct Element<'a> {
-    pub sample: &'a str,
+/// `DoCOutputType.Partition`, in its declaration order, which is the order an `EnumSet` of them
+/// iterates in and so the order of the partitions' columns.
+pub const PARTITIONS: [&str; 8] = [
+    "readgroup",
+    "sample",
+    "library",
+    "platform",
+    "center",
+    "sample_by_platform",
+    "sample_by_center",
+    "sample_by_platform_by_center",
+];
+
+/// `CoverageUtils.getTypeID`: the column a read group counts into under one partition. A field
+/// the group lacks is Java's `null`: the word, inside a concatenation, and `None` on its own.
+pub fn type_id(
+    partition: &str,
+    id: &str,
+    field: &dyn Fn(&str) -> Option<String>,
+) -> Option<String> {
+    let get = |key: &str| field(key).unwrap_or_else(|| "null".to_string());
+    Some(match partition {
+        "readgroup" => format!("{}_rg_{id}", get("SM")),
+        "library" => return field("LB"),
+        "platform" => return field("PL"),
+        "center" => return field("CN"),
+        "sample_by_platform" => format!("{}_pl_{}", get("SM"), get("PL")),
+        "sample_by_center" => format!("{}_cn_{}", get("SM"), get("CN")),
+        "sample_by_platform_by_center" => {
+            format!("{}_pl_{}_cn_{}", get("SM"), get("PL"), get("CN"))
+        }
+        _ => return field("SM"),
+    })
+}
+
+/// `makeGlobalIdentifierMap` for one partition: the distinct ids, sorted by `String::compareTo`.
+///
+/// A `null` id is first in its `HashSet`, so with any other id beside it the sort hands it to
+/// `compareTo` as the argument and throws; alone it is never compared, and its column is named
+/// `null`.
+pub fn sorted_ids(mut ids: Vec<Option<String>>) -> Result<Vec<String>, &'static str> {
+    ids.sort();
+    ids.dedup();
+    if ids.len() > 1 && ids[0].is_none() {
+        return Err("Cannot read field \"value\" because \"anotherString\" is null");
+    }
+    Ok(ids
+        .into_iter()
+        .map(|id| id.unwrap_or_else(|| "null".to_string()))
+        .collect())
+}
+
+/// One pileup element as the counter reads it: the columns its read group counts into, one per
+/// partition, its base, quality and whether it is a deletion.
+pub struct Element {
+    pub columns: Vec<usize>,
     pub base: u8,
     pub quality: i32,
     pub deletion: bool,
 }
 
-/// `CoverageUtils.getBaseCountsByPartition` over one locus's pileup.
+/// `CoverageUtils.getBaseCountsByPartition` over one locus's pileup, into `width` columns.
 ///
 /// A deletion is in the pileup only under `--include-deletions`, and then it counts whatever its
 /// quality, into `D` and into the depth.
-pub fn count_pileup<'a>(
+pub fn count_pileup(
     contig: &str,
     position: i32,
-    samples: &[String],
-    elements: impl IntoIterator<Item = Element<'a>>,
+    width: usize,
+    elements: impl IntoIterator<Item = Element>,
     minimum_base_quality: i32,
     maximum_base_quality: i32,
 ) -> Locus {
-    let mut depths = vec![0; samples.len()];
-    let mut counts = vec![[0; 6]; samples.len()];
+    let mut depths = vec![0; width];
+    let mut counts = vec![[0; 6]; width];
     for element in elements {
-        let Some(index) = samples.iter().position(|sample| sample == element.sample) else {
-            continue;
-        };
         if !element.deletion
             && !base_counts(element.quality, minimum_base_quality, maximum_base_quality)
         {
             continue;
         }
-        depths[index] += 1;
-        counts[index][if element.deletion {
+        let at = if element.deletion {
             5
         } else {
             base_index(element.base)
-        }] += 1;
+        };
+        for column in element.columns {
+            depths[column] += 1;
+            counts[column][at] += 1;
+        }
     }
     Locus {
         contig: contig.to_string(),
@@ -175,6 +228,27 @@ pub fn count_pileup<'a>(
         depths,
         base_counts: counts,
     }
+}
+
+/// The header of the per-locus table over partitions, each with its sorted identifiers.
+pub fn per_locus_header_for(
+    partitions: &[(&str, Vec<String>)],
+    print_base_counts: bool,
+    separator: char,
+) -> String {
+    let mut out = format!("Locus{separator}Total_Depth");
+    for (partition, _) in partitions {
+        out.push_str(&format!("{separator}Average_Depth_{partition}"));
+    }
+    for (_, ids) in partitions {
+        for id in ids {
+            out.push_str(&format!("{separator}Depth_for_{id}"));
+            if print_base_counts {
+                out.push_str(&format!("{separator}{id}_base_counts"));
+            }
+        }
+    }
+    out
 }
 
 /// The header of the per-locus table, whose sample columns depend on `--print-base-counts`.
@@ -191,20 +265,36 @@ pub fn per_locus_header(samples: &[String], print_base_counts: bool) -> String {
 
 /// One row of the per-locus table, rendered as the writer renders it.
 pub fn per_locus_row(locus: &Locus, print_base_counts: bool) -> String {
-    per_locus_row_with(locus, print_base_counts, false)
+    per_locus_row_for(locus, &[locus.depths.len()], print_base_counts, false, ',')
 }
 
-/// The same, with `--include-deletions`'s `D` column in each base-count field.
-pub fn per_locus_row_with(locus: &Locus, print_base_counts: bool, deletions: bool) -> String {
-    let mut out = format!(
-        "{}:{},{},{:.2}",
-        locus.contig,
-        locus.position,
-        locus.total_depth(),
-        locus.average_depth()
-    );
+/// `writePerLocusDepthSummary` over partitions of these widths, whose columns `locus` holds one
+/// after the other. The total is the first partition's, and every partition's average divides it.
+pub fn per_locus_row_for(
+    locus: &Locus,
+    widths: &[usize],
+    print_base_counts: bool,
+    deletions: bool,
+    separator: char,
+) -> String {
+    let total: i32 = locus.depths[..widths.first().copied().unwrap_or(0)]
+        .iter()
+        .sum();
+    let mut out = format!("{}:{}{separator}{total}", locus.contig, locus.position);
+    for width in widths {
+        // `DOUBLE_FORMAT_2PLACES`, HALF_UP.
+        let average = if *width == 0 {
+            0.0
+        } else {
+            f64::from(total) / *width as f64
+        };
+        out.push_str(&format!(
+            "{separator}{}",
+            gatk_engine::java_format::format_decimals(average, 2)
+        ));
+    }
     for (index, depth) in locus.depths.iter().enumerate() {
-        out.push_str(&format!(",{depth}"));
+        out.push_str(&format!("{separator}{depth}"));
         if print_base_counts {
             let counts = locus.base_counts[index];
             // `getBaseCountsString`: a space after every pair but the sixth, so without the `D`
@@ -219,7 +309,7 @@ pub fn per_locus_row_with(locus: &Locus, print_base_counts: bool, deletions: boo
                     text.push(' ');
                 }
             }
-            out.push_str(&format!(",{text}"));
+            out.push_str(&format!("{separator}{text}"));
         }
     }
     out

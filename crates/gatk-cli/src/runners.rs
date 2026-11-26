@@ -5617,23 +5617,11 @@ pub fn depth_of_coverage(parser: &Parser) -> Outcome {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
 
-    // The two arguments whose values decide the FORMAT of what is written, held at their defaults.
-    if scalar(parser, "output-format").as_deref().unwrap_or("CSV") != "CSV" {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "--output-format TABLE writes the per-base file as a padded table, which this port \
-             does not write yet. This message is the port's own and not GATK's.",
-        ));
-    }
-    let partitions = arguments(parser, "partition-type");
-    if !partitions.is_empty() && partitions != vec!["sample".to_string()] {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "--partition-type beyond `sample` partitions the counts by read group, library or \
-             centre as well, which this port does not carry yet. This message is the port's own \
-             and not GATK's.",
-        ));
-    }
+    // `TABLE` is the same table with tabs for commas.
+    let separator = match scalar(parser, "output-format").as_deref() {
+        Some("TABLE") => '\t',
+        _ => ',',
+    };
     if argument(parser, "calculate-coverage-over-genes").is_some() {
         return Err(Thrown::non_user(
             PORT_LIMITATION,
@@ -5665,6 +5653,46 @@ pub fn depth_of_coverage(parser: &Parser) -> Outcome {
             ),
         ));
     }
+
+    // `makeGlobalIdentifierMap`: the partitions in their enum's order, each with the distinct ids
+    // the header's read groups give it, sorted. The columns are written in that order.
+    //
+    // This runs in `onTraversalStart`, before the binning check.
+    let requested = arguments(parser, "partition-type");
+    let partitions: Result<Vec<(&str, Vec<String>)>, &str> = coverage::PARTITIONS
+        .iter()
+        .filter(|partition| {
+            if requested.is_empty() {
+                **partition == "sample"
+            } else {
+                requested.iter().any(|name| name == *partition)
+            }
+        })
+        .map(|partition| {
+            let ids = header
+                .read_groups
+                .iter()
+                // `getSamplesFromHeader` skips a group without a sample; the others do not.
+                .filter(|group| *partition != "sample" || group.attributes.get("SM").is_some())
+                .map(|group| {
+                    coverage::type_id(partition, &group.id, &|key: &str| {
+                        group.attributes.get(key).map(|value| value.to_string())
+                    })
+                })
+                .collect();
+            Ok((*partition, coverage::sorted_ids(ids)?))
+        })
+        .collect();
+    // The writer has opened the per-base file by then, and `closeTool` leaves it empty.
+    let partitions = match partitions {
+        Ok(partitions) => partitions,
+        Err(message) => {
+            if !omissions.depth_output_at_each_base {
+                write_file(&output, b"")?;
+            }
+            return Err(Thrown::non_user("java.lang.NullPointerException", message));
+        }
+    };
 
     // `calculateCoverageHistogramBinEndpoints`, which runs at startup and refuses the three
     // binning arguments together rather than one at a time.
@@ -5698,16 +5726,27 @@ pub fn depth_of_coverage(parser: &Parser) -> Outcome {
     let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
         .map_err(reads_traversal_error)?;
 
-    // `ReadUtils.getSamplesFromHeader`: the distinct SM values, in the header's own order, which is
-    // the order the sample columns are written in.
-    let mut samples: Vec<String> = Vec::new();
-    for group in &header.read_groups {
-        if let Some(sample) = group.attributes.get("SM") {
-            if !samples.iter().any(|seen| seen == sample) {
-                samples.push(sample.to_string());
+    let widths: Vec<usize> = partitions.iter().map(|(_, ids)| ids.len()).collect();
+    let width = widths.iter().sum();
+    // The column each read group counts into under each partition.
+    let columns_of = |read: &htsjdk_bam::record::BamRecord| -> Vec<usize> {
+        let Some(group) = gatk_engine::read_group::resolve(read, &header) else {
+            return Vec::new();
+        };
+        let mut offset = 0;
+        let mut columns = Vec::new();
+        for (partition, ids) in &partitions {
+            let id = coverage::type_id(partition, &group.id, &|key: &str| {
+                group.attributes.get(key).map(|value| value.to_string())
+            })
+            .unwrap_or_else(|| "null".to_string());
+            if let Some(at) = ids.iter().position(|known| *known == id) {
+                columns.push(offset + at);
             }
+            offset += ids.len();
         }
-    }
+        columns
+    };
     // `includeDeletions()` is the argument unless `--ignore-deletion-sites` turns it off, and it
     // decides whether a deletion is in the pileup at all. The writer's `D` column reads the
     // argument alone, so the two together print a `D` that is always zero.
@@ -5724,21 +5763,12 @@ pub fn depth_of_coverage(parser: &Parser) -> Outcome {
     let mut pileups = std::collections::HashMap::new();
     for applied in &applied {
         let context = &applied.context;
-        let samples_of: Vec<String> = context
-            .pileup
-            .elements
-            .iter()
-            .map(|element| {
-                gatk_engine::read_pileup::sample_name(element.read, &header).unwrap_or_default()
-            })
-            .collect();
         let elements = context
             .pileup
             .elements
             .iter()
-            .zip(&samples_of)
-            .map(|(element, sample)| coverage::Element {
-                sample,
+            .map(|element| coverage::Element {
+                columns: columns_of(element.read),
                 base: element.base(),
                 quality: i32::from(element.qual()),
                 deletion: element.is_deletion(),
@@ -5746,7 +5776,7 @@ pub fn depth_of_coverage(parser: &Parser) -> Outcome {
         let locus = coverage::count_pileup(
             &context.contig,
             context.position,
-            &samples,
+            width,
             elements,
             minimum as i32,
             maximum as i32,
@@ -5802,7 +5832,7 @@ pub fn depth_of_coverage(parser: &Parser) -> Outcome {
     }
 
     let print_base_counts = flag(parser, "print-base-counts");
-    let mut text = coverage::per_locus_header(&samples, print_base_counts);
+    let mut text = coverage::per_locus_header_for(&partitions, print_base_counts, separator);
     text.push('\n');
     for interval in &intervals {
         // Every base of the interval is a row, covered or not.
@@ -5811,14 +5841,16 @@ pub fn depth_of_coverage(parser: &Parser) -> Outcome {
             let locus = match pileups.get(&(interval.contig.clone(), position)) {
                 Some(locus) => locus,
                 None => {
-                    empty = coverage::count_pileup(&interval.contig, position, &samples, [], 0, 0);
+                    empty = coverage::count_pileup(&interval.contig, position, width, [], 0, 0);
                     &empty
                 }
             };
-            text.push_str(&coverage::per_locus_row_with(
+            text.push_str(&coverage::per_locus_row_for(
                 locus,
+                &widths,
                 print_base_counts,
                 include_deletions,
+                separator,
             ));
             text.push('\n');
         }
