@@ -220,9 +220,12 @@ pub fn write_bam_file(
             return Err(error);
         }
     };
-    let md5 = out
-        .md5
-        .map(|md5| format!("{:032x}", u128::from_be_bytes(md5::Digest::finalize(md5).into())));
+    let md5 = out.md5.map(|md5| {
+        format!(
+            "{:032x}",
+            u128::from_be_bytes(md5::Digest::finalize(md5).into())
+        )
+    });
     let finished = out
         .inner
         .into_inner()
