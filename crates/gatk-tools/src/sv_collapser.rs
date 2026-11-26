@@ -173,10 +173,10 @@ pub struct Collapsed {
 }
 
 /// An integer FORMAT field, `getAttributeAsInt(genotype, key, default)`.
+///
+/// That reads `getExtendedAttribute` only, so an inline field such as `GQ` is never found and
+/// answers the default: `genotypeQualityComparator` ranks every genotype alike.
 pub fn genotype_int(genotype: &Genotype, key: &str, default: i32) -> i32 {
-    if key == "GQ" {
-        return genotype.gq.unwrap_or(default);
-    }
     genotype
         .extended
         .iter()
@@ -792,6 +792,17 @@ mod tests {
             genotypes: vec![genotype],
             filters: Vec::new(),
         }
+    }
+
+    #[test]
+    fn an_inline_gq_does_not_rank_genotypes_so_the_first_is_kept() {
+        let mut low = member(call("a", 1000, 2000, &["manta"]), &["0", "0"]);
+        low.genotypes[0].gq = Some(9);
+        let mut high = member(call("b", 1000, 2000, &["manta"]), &["0", "0"]);
+        high.genotypes[0].gq = Some(14);
+        let reference = Allele::create(b"N", true).unwrap();
+        let collapsed = collapse_genotypes(&[low, high], &reference, &[symbolic("<DEL>")]).unwrap();
+        assert_eq!(collapsed[0].gq, Some(9));
     }
 
     #[test]

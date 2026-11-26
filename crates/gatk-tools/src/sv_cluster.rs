@@ -353,17 +353,18 @@ impl Linkage {
         if matches!(a.sv_type, SvType::Bnd | SvType::Inv) && !strands_match(a, b) {
             return LinkageResult::refused();
         }
-        // The order is PESR, then mixed, then depth: the first set the pair is valid for wins.
-        let parameters = if self.pesr.is_valid_pair(a, b) {
-            self.pesr
-        } else if self.mixed.is_valid_pair(a, b) {
-            self.mixed
-        } else if self.depth.is_valid_pair(a, b) {
-            self.depth
-        } else {
+        let Some(parameters) = self.parameters_for(a, b) else {
             return LinkageResult::refused();
         };
         cluster_together_with(a, b, &parameters)
+    }
+
+    /// The parameter set a pair is tested under. The order is PESR, then mixed, then depth: the
+    /// first set the pair is valid for wins.
+    pub fn parameters_for(&self, a: &CallRecord, b: &CallRecord) -> Option<ClusteringParameters> {
+        [self.pesr, self.mixed, self.depth]
+            .into_iter()
+            .find(|parameters| parameters.is_valid_pair(a, b))
     }
 
     /// `getMaxClusterableStartingPosition`: the furthest start any record linked to this one can
