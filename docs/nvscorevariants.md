@@ -101,6 +101,45 @@ The `nvscorevariants` job in CI, which pulls a second image next to the pinned o
 
 The job prints the layer table and asserts only the inputs and the printed scores and VCFs.
 
+## On real x86-64, GATK 4.7.0.0
+
+The `nvscorevariants` job of run 44799995145 landed on an Intel Xeon 6975P-C. oneDNN reported AVX-512
+with AMX and ran the 1D convolutions as `jit:avx512_core`. Values differing, port against the
+reference at one thread and batch 64:
+
+| layer | 1D | 2D |
+|---|---|---|
+| encoded input, annotations | 0 | 0 |
+| convolutions | 1217823/2126592 (conv.0), every layer | **0 of 119798016**, all four |
+| batch norm | 0/497 | 0/497 |
+| first dense | 293/2840 | first batch 0/4096, short batch 30/448 |
+| second dense on, softmax, score | most values, up to 8192 ulp | most values, up to 5120 ulp |
+| **score at `%.3f`, every VCF** | **0/71; 32 cases, 337 rows equal** | **0/71** |
+
+The weights the job extracted have the two SHA-256 that `weights.rs` pins; any other file is refused.
+
+So under AVX-512 the reference's own 1D convolutions take another order than under AVX2: its bits
+there depend on the CPU it runs on, not only on the image. The port takes the AVX2 order on every
+host. The layer test now asserts the convolutions under a dispatch where they were measured exact
+(`jit:avx2` for 1D; `brgconv:avx2` and AVX-512 for 2D), and it tries ten candidate orders for each 1D
+convolution from the reference's own previous layer. Under AVX2 only `jit:avx2`'s order misses
+nothing, and each of the others misses 25% to 95% of the values. The next run on an AVX-512 host
+shows which order that dispatch takes, if any of the ten.
+
+## The limit
+
+These bits are not a property of the reference, because the reference does not hold them still:
+
+* **From the first `SGEMM` on** (the dense layers, the logits, the softmax, the score's bits): they
+  move with the thread count (2047 of 2840 values of dense_2.0 between one thread and four), with
+  the batch size and with a row's place in its batch. MKL's kernel is closed and chosen per shape and
+  per ISA. The port takes the order of one thread at batch 64 under AVX2, and it matches the first
+  batch there exactly.
+* **The convolutions across CPUs**: AVX2 and AVX-512 hosts give different bits from the same image.
+
+What the tool itself keeps constant is the printed `%.3f` score and the VCF. The port matches those on
+every run measured: Rosetta at AVX2 and a real AVX-512 host, both models, 32 cases.
+
 ## Running it
 
 The weights are 8 MB and not committed. `tools/nvscorevariants/extract_weights.py` takes them from the

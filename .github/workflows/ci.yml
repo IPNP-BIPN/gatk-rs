@@ -998,7 +998,8 @@ jobs:
     # because that one has no Python. Everything else about this tool is measured under Rosetta at
     # AVX2, so this is where those measurements get checked: which CPU dispatch the reference took,
     # how far the port's layers are from it there, and whether the printed scores still agree. The
-    # bit-level lines are printed and asserted nowhere. The printed scores are asserted.
+    # inputs, the batch norm and the convolutions under a dispatch measured exact are asserted, the
+    # dense layers on are printed only, and the printed scores are asserted.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -1019,8 +1020,10 @@ jobs:
           run python3 /harness/extract_weights.py /nv
           run python3 /harness/make_fixture.py /nv/fixture
           run python3 /harness/NVScoreVariantsDump.py /nv/fixture > /tmp/nv/reference.dump
-          run env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 ONEDNN_VERBOSE=1 python3 /harness/dump_layers.py reference /nv/fixture/variants.vcf /nv/fixture/reference.fasta - 64 /nv/d1d.bin /nv/d1d.scores | grep -m3 -E "onednn_verbose,(info,cpu,isa|exec,cpu,convolution)" || true
-          run env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 python3 /harness/dump_layers.py read_tensor /nv/fixture/variants.vcf /nv/fixture/reference.fasta /nv/fixture/reads.bam 64 /nv/d2d.bin /nv/d2d.scores
+          # The dispatch oneDNN chose decides the convolutions' order, so the layer test is told it.
+          run env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 ONEDNN_VERBOSE=1 python3 /harness/dump_layers.py reference /nv/fixture/variants.vcf /nv/fixture/reference.fasta - 64 /nv/d1d.bin /nv/d1d.scores > /tmp/nv/verbose-1d.txt
+          run env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 ONEDNN_VERBOSE=1 python3 /harness/dump_layers.py read_tensor /nv/fixture/variants.vcf /nv/fixture/reference.fasta /nv/fixture/reads.bam 64 /nv/d2d.bin /nv/d2d.scores > /tmp/nv/verbose-2d.txt
+          for model in 1d 2d; do grep -m3 -E "onednn_verbose,(info,cpu,isa|exec,cpu,convolution)" /tmp/nv/verbose-$model.txt | tee /tmp/nv/dispatch-$model.txt; done
 
       - name: nasm, which `gkl-igzip` needs to build ISA-L's assembly
         run: |
@@ -1033,8 +1036,8 @@ jobs:
           NVSCORE_LAYERS_1D: reference /tmp/nv/fixture/variants.vcf /tmp/nv/fixture/reference.fasta - 64 /tmp/nv/d1d.bin /tmp/nv
           NVSCORE_LAYERS_2D: read_tensor /tmp/nv/fixture/variants.vcf /tmp/nv/fixture/reference.fasta /tmp/nv/fixture/reads.bam 64 /tmp/nv/d2d.bin /tmp/nv
         run: |
-          NVSCORE_LAYERS="$NVSCORE_LAYERS_1D" cargo test --release -p gatk-tools --test nv_score_variants_layers -- --nocapture
-          NVSCORE_LAYERS="$NVSCORE_LAYERS_2D" cargo test --release -p gatk-tools --test nv_score_variants_layers -- --nocapture
+          NVSCORE_DISPATCH="$(cat /tmp/nv/dispatch-1d.txt)" NVSCORE_LAYERS="$NVSCORE_LAYERS_1D" cargo test --release -p gatk-tools --test nv_score_variants_layers -- --nocapture
+          NVSCORE_DISPATCH="$(cat /tmp/nv/dispatch-2d.txt)" NVSCORE_LAYERS="$NVSCORE_LAYERS_2D" cargo test --release -p gatk-tools --test nv_score_variants_layers -- --nocapture
 
       - name: The printed scores and every VCF against the reference
         env:
