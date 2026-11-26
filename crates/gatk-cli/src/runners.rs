@@ -182,7 +182,7 @@ fn decode(bytes: &[u8], path: &str) -> Result<String, Refusal> {
 }
 
 /// `File.lastModified()` in milliseconds, which the index header carries.
-fn modified_millis(path: &str) -> i64 {
+pub(crate) fn modified_millis(path: &str) -> i64 {
     std::fs::metadata(path)
         .and_then(|data| data.modified())
         .ok()
@@ -1345,6 +1345,31 @@ fn variant_walker_validation(
 
     let master = master_dictionary(parser)?;
     let reference = reference_dictionary(parser)?;
+    // `initializeIntervals` runs before `validateSequenceDictionaries`, so a bad `-L` is refused
+    // ahead of any dictionary mismatch.
+    // The master dictionary is validated against the features, and then again as `best available`.
+    // What `-L` resolves against is NOT the master here: a variant walker prefers the DRIVING
+    // VARIANTS' dictionary unless that one was synthesized from an index, and a VCF carrying
+    // `##contig` lines gives a real one.
+    //
+    // A VCF with no `##contig` line has its dictionary SYNTHESIZED from its Tribble index: the
+    // index's contig names at an unknown length. That one is used only when no other source has a
+    // dictionary (`VariantWalkerBase.getBestAvailableSequenceDictionary`), and an unknown length
+    // is not checked against an interval's stop, so `-L` over such a VCF is accepted.
+    let best = if header.sequences.is_empty() {
+        match master.clone().or_else(|| reference.clone()).or_else(|| {
+            reads_dictionaries.first().map(|sequences| SamHeader {
+                sequences: sequences.clone(),
+                ..SamHeader::default()
+            })
+        }) {
+            Some(other) => other,
+            None => index_dictionary(&input).unwrap_or_else(|| header.clone()),
+        }
+    } else {
+        header.clone()
+    };
+    let intervals = interval_arguments(parser, &best)?.map(|parameters| parameters.intervals);
     // `validateSequenceDictionaries` is ONE method and the argument turns all of it off, the
     // master block included: a guard around part of it refuses command lines the reference runs.
     if !flag(parser, "disable-sequence-dictionary-validation") {
@@ -1413,30 +1438,6 @@ fn variant_walker_validation(
             })?;
         }
     }
-
-    // The master dictionary is validated against the features, and then again as `best available`.
-    // What `-L` resolves against is NOT the master here: a variant walker prefers the DRIVING
-    // VARIANTS' dictionary unless that one was synthesized from an index, and a VCF carrying
-    // `##contig` lines gives a real one.
-    //
-    // A VCF with no `##contig` line has its dictionary SYNTHESIZED from its Tribble index: the
-    // index's contig names at an unknown length. That one is used only when no other source has a
-    // dictionary (`VariantWalkerBase.getBestAvailableSequenceDictionary`), and an unknown length
-    // is not checked against an interval's stop, so `-L` over such a VCF is accepted.
-    let best = if header.sequences.is_empty() {
-        match master.clone().or_else(|| reference.clone()).or_else(|| {
-            reads_dictionaries.first().map(|sequences| SamHeader {
-                sequences: sequences.clone(),
-                ..SamHeader::default()
-            })
-        }) {
-            Some(other) => other,
-            None => index_dictionary(&input).unwrap_or_else(|| header.clone()),
-        }
-    } else {
-        header.clone()
-    };
-    let intervals = interval_arguments(parser, &best)?.map(|parameters| parameters.intervals);
 
     Ok(VariantWalkerStart {
         input,
@@ -1803,6 +1804,15 @@ pub fn print_reads(parser: &Parser) -> Outcome {
     let header = source.header().clone();
     let master = master_dictionary(parser)?;
     let reference = reference_dictionary(parser)?;
+    // `initializeIntervals` runs before `validateSequenceDictionaries`, against the best
+    // available dictionary, so an interval the master does not hold is refused first.
+    let best = master
+        .clone()
+        .or_else(|| reference.clone())
+        .unwrap_or_else(|| header.clone());
+    let intervals = interval_arguments(parser, &best)?
+        .map(|parameters| parameters.intervals)
+        .unwrap_or_default();
     if !flag(parser, "disable-sequence-dictionary-validation") {
         if let Some(master) = &master {
             validate_against_master(master, "reads", &header.sequences)?;
@@ -1811,13 +1821,6 @@ pub fn print_reads(parser: &Parser) -> Outcome {
             }
         }
     }
-    let best = master
-        .clone()
-        .or_else(|| reference.clone())
-        .unwrap_or_else(|| header.clone());
-    let intervals = interval_arguments(parser, &best)?
-        .map(|parameters| parameters.intervals)
-        .unwrap_or_default();
     if !intervals.is_empty() && index.is_none() {
         return Err(Thrown::user(
             "Traversal by intervals was requested but some input files are not indexed.",
@@ -1885,12 +1888,50 @@ fn on_the_fly_index(
     size: i64,
     timestamp: i64,
 ) -> Vec<u8> {
-    use htsjdk_tribble::index::{TribbleIndex, INTERVAL_TREE, LINEAR, VERSION};
-    use htsjdk_tribble::index_write::{BalanceApproach, BuiltIndex, DynamicIndexCreator, Feature};
-
-    let mut creator = DynamicIndexCreator::new(BalanceApproach::ForSeekTime);
-    let mut at: i64 = 0;
+    let mut index = OnTheFlyIndex::new();
     for line in text.split_inclusive('\n') {
+        index.add_line(line);
+    }
+    index.finish(dictionary, path, size, timestamp)
+}
+
+/// The dictionary an on-the-fly index takes from a VCF's own `##contig` lines.
+pub(crate) fn header_dictionary(text: &str) -> Vec<(String, i32)> {
+    text.lines()
+        .take_while(|line| line.starts_with('#'))
+        .filter_map(|line| {
+            let body = line.strip_prefix("##contig=<")?.trim_end_matches('>');
+            let name = body.split(',').find_map(|f| f.strip_prefix("ID="))?;
+            let length = body
+                .split(',')
+                .find_map(|f| f.strip_prefix("length="))
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(0);
+            Some((name.to_string(), length))
+        })
+        .collect()
+}
+
+/// [`on_the_fly_index`] fed one line at a time, as the writer feeds it, for a file that is never
+/// held whole.
+pub(crate) struct OnTheFlyIndex {
+    creator: htsjdk_tribble::index_write::DynamicIndexCreator,
+    /// The position before the next line: every byte written so far, the header's included.
+    at: i64,
+}
+
+impl OnTheFlyIndex {
+    pub(crate) fn new() -> Self {
+        use htsjdk_tribble::index_write::{BalanceApproach, DynamicIndexCreator};
+        OnTheFlyIndex {
+            creator: DynamicIndexCreator::new(BalanceApproach::ForSeekTime),
+            at: 0,
+        }
+    }
+
+    /// One line of the file, its newline included.
+    pub(crate) fn add_line(&mut self, line: &str) {
+        use htsjdk_tribble::index_write::Feature;
         let body = line.trim_end_matches('\n');
         if !body.starts_with('#') {
             let columns: Vec<&str> = body.split('\t').collect();
@@ -1902,50 +1943,62 @@ fn on_the_fly_index(
                         .find(|(key, _)| *key == "END")
                         .and_then(|(_, value)| value.parse::<i32>().ok())
                         .unwrap_or(start + columns[3].len() as i32 - 1);
-                    creator.add_feature(
+                    self.creator.add_feature(
                         &Feature {
                             contig: columns[0].to_string(),
                             start,
                             end,
                         },
-                        at,
+                        self.at,
                     );
                 }
             }
         }
-        at += line.len() as i64;
+        self.at += line.len() as i64;
     }
 
-    let mut properties: Vec<(String, String)> = dictionary
-        .iter()
-        .map(|(name, length)| (format!("DICT:{name}"), length.to_string()))
-        .collect();
-    properties.extend(creator.properties());
+    /// `close()`: the index of every line added, closed at the end of the last one.
+    pub(crate) fn finish(
+        self,
+        dictionary: &[(String, i32)],
+        path: &str,
+        size: i64,
+        timestamp: i64,
+    ) -> Vec<u8> {
+        use htsjdk_tribble::index::{TribbleIndex, INTERVAL_TREE, LINEAR, VERSION};
+        use htsjdk_tribble::index_write::BuiltIndex;
 
-    let (index_type, contigs, interval_contigs) = match creator.finalize(text.len() as i64) {
-        Ok(BuiltIndex::Linear(contigs)) => (LINEAR, contigs, Vec::new()),
-        Ok(BuiltIndex::IntervalTree(intervals)) => (INTERVAL_TREE, Vec::new(), intervals),
-        Err(_) => (LINEAR, Vec::new(), Vec::new()),
-    };
+        let mut properties: Vec<(String, String)> = dictionary
+            .iter()
+            .map(|(name, length)| (format!("DICT:{name}"), length.to_string()))
+            .collect();
+        properties.extend(self.creator.properties());
 
-    TribbleIndex {
-        index_type,
-        version: VERSION,
-        indexed_path: format!("file://{path}"),
-        // `close()` writes the index with `writeBasedOnFeaturePath`, which STATS the file it has
-        // just finished: the size and the timestamp are the written file's. The md5 is not
-        // computed and stays empty.
-        indexed_file_size: size,
-        indexed_file_timestamp: timestamp,
-        indexed_file_md5: String::new(),
-        // Zero, not the dictionary flag: from version 3 the dictionary is properties.
-        flags: 0,
-        properties,
-        contigs,
-        interval_contigs,
+        let (index_type, contigs, interval_contigs) = match self.creator.finalize(self.at) {
+            Ok(BuiltIndex::Linear(contigs)) => (LINEAR, contigs, Vec::new()),
+            Ok(BuiltIndex::IntervalTree(intervals)) => (INTERVAL_TREE, Vec::new(), intervals),
+            Err(_) => (LINEAR, Vec::new(), Vec::new()),
+        };
+
+        TribbleIndex {
+            index_type,
+            version: VERSION,
+            indexed_path: format!("file://{path}"),
+            // `close()` writes the index with `writeBasedOnFeaturePath`, which STATS the file it has
+            // just finished: the size and the timestamp are the written file's. The md5 is not
+            // computed and stays empty.
+            indexed_file_size: size,
+            indexed_file_timestamp: timestamp,
+            indexed_file_md5: String::new(),
+            // Zero, not the dictionary flag: from version 3 the dictionary is properties.
+            flags: 0,
+            properties,
+            contigs,
+            interval_contigs,
+        }
+        .write()
+        .unwrap_or_default()
     }
-    .write()
-    .unwrap_or_default()
 }
 
 /// One input VCF, read as far as the gather looks at it.
@@ -2255,6 +2308,15 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
     let header = source.header().clone();
     let master = master_dictionary(parser)?;
     let reference = reference_dictionary(parser)?;
+    // `initializeIntervals` runs before `validateSequenceDictionaries`, against the best
+    // available dictionary, so an interval the master does not hold is refused first.
+    let best = master
+        .clone()
+        .or_else(|| reference.clone())
+        .unwrap_or_else(|| header.clone());
+    let intervals = interval_arguments(parser, &best)?
+        .map(|parameters| parameters.intervals)
+        .unwrap_or_default();
     if !flag(parser, "disable-sequence-dictionary-validation") {
         if let Some(master) = &master {
             validate_against_master(master, "reads", &header.sequences)?;
@@ -2263,13 +2325,6 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
             }
         }
     }
-    let best = master
-        .clone()
-        .or_else(|| reference.clone())
-        .unwrap_or_else(|| header.clone());
-    let intervals = interval_arguments(parser, &best)?
-        .map(|parameters| parameters.intervals)
-        .unwrap_or_default();
     if !intervals.is_empty() && index.is_none() {
         return Err(Thrown::user(
             "Traversal by intervals was requested but some input files are not indexed.",
@@ -2306,14 +2361,18 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
     // The failure follows the CLASS rather than being assumed: the transformer throws a
     // `GATKException`, which leaves exit 3 and is printed as a stack trace rather than as
     // `A USER ERROR has occurred`.
-    .map_err(|error| Thrown {
-        failure: if error.is_user() {
-            Failure::User
-        } else {
-            Failure::Other
+    .map_err(|error| match error {
+        // A record that does not decode is htsjdk's, not a user error: the shared mapping.
+        gatk_tools::apply_bqsr::ApplyBqsrError::Reads(reads) => reads_traversal_error(reads),
+        error => Thrown {
+            failure: if error.is_user() {
+                Failure::User
+            } else {
+                Failure::Other
+            },
+            exception: error.java_class(),
+            message: Some(error.message()),
         },
-        exception: error.java_class(),
-        message: Some(error.message()),
     })?;
 
     std::fs::write(&output, &bam).map_err(|error| {
@@ -17709,21 +17768,7 @@ pub(crate) fn write_variant_file(
     if !create_index {
         return Ok(());
     }
-    let dictionary: Vec<(String, i32)> = index_dictionary.unwrap_or_else(|| {
-        text.lines()
-            .take_while(|line| line.starts_with('#'))
-            .filter_map(|line| {
-                let body = line.strip_prefix("##contig=<")?.trim_end_matches('>');
-                let name = body.split(',').find_map(|f| f.strip_prefix("ID="))?;
-                let length = body
-                    .split(',')
-                    .find_map(|f| f.strip_prefix("length="))
-                    .and_then(|value| value.parse().ok())
-                    .unwrap_or(0);
-                Some((name.to_string(), length))
-            })
-            .collect()
-    });
+    let dictionary = index_dictionary.unwrap_or_else(|| header_dictionary(text));
     // The index records the output as `Path.toUri` prints it, which is always absolute.
     let mut source = index_feature_file::Source::new(&java_absolute_path(output));
     source.timestamp = modified_millis(output);

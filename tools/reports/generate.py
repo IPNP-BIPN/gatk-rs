@@ -98,6 +98,8 @@ def gather():
     measured = measured_file.get("tools", {})
     t3 = measured_file.get("t3", {})
     replayed = json.loads(REPLAYED.read_text()).get("tools", {}) if REPLAYED.exists() else None
+    # The stronger arrays, measured on the critical path only: `t3` beside the t=2 `tools`.
+    stronger = {key: value for key, value in measured_file.items() if re.fullmatch(r"t\d+", key)}
     fixtures = json.loads(FIXTURES.read_text()).get("per_tool", {})
     fuzzed = json.loads(FUZZED.read_text()).get("tools", {}) if FUZZED.exists() else {}
     tools = {}
@@ -141,6 +143,10 @@ def gather():
     for name, value in measured.items():
         if name in tools and tools[name]["coverage"] is None:
             tools[name]["coverage"] = value
+    for level in sorted(stronger, key=lambda key: int(key[1:])):
+        for name, value in stronger[level].items():
+            if name in tools:
+                tools[name]["stronger"] = value
     return inventory, tools, fixtures
 
 
@@ -169,13 +175,16 @@ def missing(tool, held):
     return gaps
 
 
-def coverage_text(value):
+def coverage_text(value, stronger=None):
+    """Rows matched at t=2, and at the strongest level measured beyond it; `t` is that level."""
     if not value:
         return "not measured", "-"
-    share = value.get("share")
-    rows = value.get("rows")
-    matched = value.get("matched")
-    return f"{matched}/{rows} ({share:.1%})" if share is not None else f"{matched}/{rows}", str(value.get("t", "-"))
+    def rows_text(entry):
+        share, rows, matched = entry.get("share"), entry.get("rows"), entry.get("matched")
+        return f"{matched}/{rows} ({share:.1%})" if share is not None else f"{matched}/{rows}"
+    if stronger:
+        return f"{rows_text(value)}; t={stronger['t']}: {rows_text(stronger)}", str(stronger["t"])
+    return rows_text(value), str(value.get("t", "-"))
 
 
 def fuzz_text(value):
@@ -254,7 +263,7 @@ def render(inventory, tools, fixtures):
             files = f"{tool['files']}{mark}" if known else "-"
         else:
             records = files = "not vendored"
-        covered, level = coverage_text(tool["coverage"])
+        covered, level = coverage_text(tool["coverage"], tool.get("stronger"))
         inputs, held = fixture_summary(fixtures.get(name))
         quarantine = ", ".join(sorted(tool["quarantine"])) or "none"
         gaps = missing(tool, held)

@@ -46,11 +46,16 @@ import org.broadinstitute.barclay.argparser.Argument;
 import org.broadinstitute.barclay.argparser.CommandLineArgumentParser;
 import org.broadinstitute.barclay.argparser.NamedArgumentDefinition;
 
+import org.broadinstitute.hellbender.cmdline.GATKPlugin.GATKAnnotationPluginDescriptor;
 import org.broadinstitute.hellbender.cmdline.GATKPlugin.GATKReadFilterPluginDescriptor;
 import org.broadinstitute.hellbender.engine.filters.ReadFilterLibrary;
 import org.broadinstitute.hellbender.engine.filters.ReadFilterLibrary.MappedReadFilter;
 import org.broadinstitute.hellbender.engine.filters.ReadFilter;
 import org.broadinstitute.hellbender.engine.filters.WellformedReadFilter;
+import org.broadinstitute.hellbender.tools.walkers.annotator.Annotation;
+import org.broadinstitute.hellbender.tools.walkers.annotator.Coverage;
+import org.broadinstitute.hellbender.tools.walkers.annotator.ReferenceBases;
+import org.broadinstitute.hellbender.tools.walkers.annotator.StandardAnnotation;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
@@ -105,6 +110,14 @@ public class PluginArgumentOwnershipDump {
         allowed("wellformed-and-mapped",
                 List.of(new WellformedReadFilter(), ReadFilterLibrary.MAPPED));
 
+        // The annotation descriptor also accepts a plugin through a GROUP it belongs to, the tool's
+        // default groups or the ones the command line names. `Coverage` is a StandardAnnotation
+        // and `ReferenceBases` is not.
+        annotationAllowed("annotation-no-groups", new ArrayList<>());
+        annotationAllowed("annotation-standard-by-default", List.of(StandardAnnotation.class));
+        annotationAllowed("annotation-standard-named", new ArrayList<>(),
+                "--annotation-group", "StandardAnnotation");
+
         // The trim, over the arguments the table above says are required.
         run("nothing-named", new ArrayList<ReadFilter>());
         run("a-required-argument-of-nobody", new ArrayList<ReadFilter>(), "--library", "lib1");
@@ -132,6 +145,24 @@ public class PluginArgumentOwnershipDump {
                 new GATKReadFilterPluginDescriptor(defaults);
         for (final Class<?> plugin : List.of(WellformedReadFilter.class, MappedReadFilter.class,
                 org.broadinstitute.hellbender.engine.filters.LibraryReadFilter.class)) {
+            System.out.printf("allowed\t%s\t%s\t%s%n", label, plugin.getSimpleName(),
+                    descriptor.isDependentArgumentAllowed(plugin));
+        }
+    }
+
+    /**
+     * The groups are discovered while a parser is built, so the question is asked after one is,
+     * and after it has parsed the command line that may name a group.
+     */
+    static void annotationAllowed(final String label,
+                                  final List<Class<? extends Annotation>> defaultGroups,
+                                  final String... argv) {
+        final GATKAnnotationPluginDescriptor descriptor =
+                new GATKAnnotationPluginDescriptor(new ArrayList<Annotation>(), defaultGroups);
+        final CommandLineArgumentParser parser = new CommandLineArgumentParser(
+                new Args(), Collections.singletonList(descriptor), Collections.emptySet());
+        parser.parseArguments(new PrintStream(new ByteArrayOutputStream()), argv);
+        for (final Class<?> plugin : List.of(Coverage.class, ReferenceBases.class)) {
             System.out.printf("allowed\t%s\t%s\t%s%n", label, plugin.getSimpleName(),
                     descriptor.isDependentArgumentAllowed(plugin));
         }
