@@ -1564,7 +1564,18 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
                 error.message,
             ));
         }
-        Err(error) if spark_task_failure(spark, &error.message) => {
+        // On Spark a GVCF goes through `GVCFBlockCombiningIterator`, whose constructor pulls the
+        // first calls inside `mapPartitions`, outside the Hadoop writer's abort handler: a failure
+        // there fails the executor task first. Elsewhere the writer logs the exception itself.
+        // shortcut: "before any call" stands for "while the combiner fills its first block",
+        // which a failure after a closed first block would contradict; refine if one is measured.
+        Err(error)
+            if spark_task_failure(spark, &error.message)
+                || (spark
+                    && emit_mode == "GVCF"
+                    && !error.at_startup
+                    && error.calls_before.is_empty()) =>
+        {
             eprintln!("ERROR Executor - Exception in task 0.0 in stage 0.0 (TID 0)");
             return Err(Thrown::non_user(
                 "org.apache.spark.SparkException",

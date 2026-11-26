@@ -510,3 +510,23 @@ fn artifact_priors_fill_the_reverse_complements_and_refuse_a_missing_context() {
         .message
         .contains(&format!("reference context {context}in file t")));
 }
+
+/// A positive `--log-snv-prior` makes the contamination filter's `logSumExp` overflow, and the run
+/// stops with the reference's class and message, not the port's own debug text.
+///
+/// From the fuzzer (`tools/fuzz`, PR #1476): GATK 4.7.0.0 answers
+/// `java.lang.IllegalArgumentException: logValues must be non-infinite and non-NAN`.
+#[test]
+fn a_positive_snv_prior_is_refused_as_the_reference_refuses_it() {
+    let mut arguments = arguments("mitochondria");
+    arguments.engine.list.log_snv_prior = 2.0;
+    let refusal =
+        filter_mutect_calls(&records("mitochondria"), &arguments).expect_err("logSumExp overflows");
+    assert_eq!(
+        (refusal.class, refusal.message.as_str()),
+        (
+            "java.lang.IllegalArgumentException",
+            "logValues must be non-infinite and non-NAN"
+        )
+    );
+}

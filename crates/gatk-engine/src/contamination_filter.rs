@@ -79,21 +79,21 @@ pub enum ContaminationError {
 }
 
 impl ContaminationError {
-    pub fn class(&self) -> Option<&'static str> {
+    pub fn class(&self) -> &'static str {
         match self {
             ContaminationError::IndexOutOfRange { .. } => {
-                Some("java.lang.ArrayIndexOutOfBoundsException")
+                "java.lang.ArrayIndexOutOfBoundsException"
             }
-            ContaminationError::NonFiniteSum(_) => None,
+            ContaminationError::NonFiniteSum(error) => error.class(),
         }
     }
 
-    pub fn message(&self) -> Option<String> {
+    pub fn message(&self) -> String {
         match self {
             ContaminationError::IndexOutOfRange { index, length } => {
-                Some(format!("Index {index} out of bounds for length {length}"))
+                format!("Index {index} out of bounds for length {length}")
             }
-            ContaminationError::NonFiniteSum(_) => None,
+            ContaminationError::NonFiniteSum(error) => error.message().to_string(),
         }
     }
 }

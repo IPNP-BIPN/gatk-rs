@@ -112,6 +112,14 @@ impl GermlineError {
             GermlineError::NonFiniteSum(_) => "java.lang.IllegalArgumentException",
         }
     }
+
+    pub fn message(&self) -> String {
+        match self {
+            GermlineError::AlleleDepth(error) => error.message(),
+            GermlineError::ArrayLengthsDiffer => "Arrays must have same length".to_string(),
+            GermlineError::NonFiniteSum(error) => error.message().to_string(),
+        }
+    }
 }
 
 impl From<AlleleDepthTooShort> for GermlineError {

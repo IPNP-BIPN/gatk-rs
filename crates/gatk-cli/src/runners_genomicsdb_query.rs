@@ -83,13 +83,6 @@ pub(super) fn genomicsdb_startup(
              GenomicsDB reader does not read."
         )));
     }
-    if flag(parser, "genomicsdb-use-bcf-codec") {
-        return Err(limitation(
-            "--genomicsdb-use-bcf-codec streams the workspace through BCF2Codec, whose records \
-             this port's GenomicsDB reader has not measured."
-                .to_string(),
-        ));
-    }
     // `initializeReference` runs before `initializeFeatures` opens the reader.
     let _ = reference_dictionary(parser)?;
     let options = export_options(parser, tool)?;
@@ -111,6 +104,7 @@ pub(super) fn genomicsdb_startup(
     }
     let workspace = Workspace::open(std::path::Path::new(&directory)).map_err(limitation)?;
     let header = workspace.header().map_err(limitation)?;
+    let bcf = flag(parser, "genomicsdb-use-bcf-codec").then(|| header.clone());
     let dictionary = vcf_dictionary(&header);
     let mut start = variant_walker_validation(
         parser,
@@ -176,7 +170,14 @@ pub(super) fn genomicsdb_startup(
             }
         }
     }
-    start.text.push_str(&records);
+    match bcf {
+        Some(header) => start
+            .text
+            .push_str(&gatk_tools::genomicsdb_query::as_bcf2_decoded(
+                &header, &records,
+            )),
+        None => start.text.push_str(&records),
+    }
     Ok(start)
 }
 

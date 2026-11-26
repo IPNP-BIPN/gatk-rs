@@ -196,11 +196,7 @@ fn every_row_matches_the_golden() {
                 let error = answer(label).expect_err("refused");
                 assert_eq!(
                     *payload,
-                    format!(
-                        "{}:{}",
-                        error.class().expect("a class"),
-                        error.message().expect("a message")
-                    ),
+                    format!("{}:{}", error.class(), error.message()),
                     "error {label}"
                 );
             }

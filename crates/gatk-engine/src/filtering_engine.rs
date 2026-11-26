@@ -424,7 +424,10 @@ fn answer_for(
                     &alternates,
                     record.reference_length,
                 )
-                .map_err(|error| refuse("java.lang.ArrayIndexOutOfBoundsException", error))?;
+                .map_err(|error| EngineError::Filter {
+                    class: error.class(),
+                    message: error.message(),
+                })?;
                 if probabilities.is_empty() {
                     FilterOutcome::Nothing
                 } else {
@@ -563,7 +566,10 @@ fn answer_for(
                 arguments.min_slippage_length,
                 arguments.slippage_rate,
             )
-            .map_err(|error| refuse("java.lang.NumberFormatException", error))?;
+            .map_err(|error| match (error.class(), error.message()) {
+                (Some(class), Some(message)) => EngineError::Filter { class, message },
+                _ => refuse("java.lang.NumberFormatException", error),
+            })?;
             FilterOutcome::PerSite(*probabilities.first().unwrap_or(&0.0))
         }
         // `calculateErrorProbability`: the alt-depth-weighted median of the tumour genotypes'
@@ -612,7 +618,10 @@ fn answer_for(
                 &alternates,
                 record.reference_length,
             )
-            .map_err(|error| refuse("java.lang.IllegalArgumentException", error))?;
+            .map_err(|error| EngineError::Filter {
+                class: error.class(),
+                message: error.message(),
+            })?;
             FilterOutcome::PerSite(*probabilities.first().unwrap_or(&0.0))
         }
         other => panic!("no filter named {other}"),
