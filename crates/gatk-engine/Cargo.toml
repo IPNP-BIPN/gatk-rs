@@ -15,12 +15,16 @@ htsjdk-vcf.workspace = true
 jmath.workspace = true
 # Pinned exactly, not by caret range: a byte-identity claim cannot float its dependencies.
 
-# Milestone GPU's device path, Metal only for now: Apple GPUs are the hardware this was built on.
+# Milestone GPU's device path: Metal on macOS, CUDA on Linux (the second architecture of GPU.1).
 [target.'cfg(target_os = "macos")'.dependencies]
 metal = { version = "=0.33.0", optional = true }
 
+# Loaded at run time, so the build needs no CUDA toolkit and a host without one answers `None`.
+[target.'cfg(target_os = "linux")'.dependencies]
+cudarc = { version = "=0.19.10", optional = true, default-features = false, features = ["std", "driver", "nvrtc", "dynamic-loading", "cuda-12040"] }
+
 [features]
-gpu = ["dep:metal"]
+gpu = ["dep:metal", "dep:cudarc"]
 
 [dev-dependencies]
 flate2 = "1"

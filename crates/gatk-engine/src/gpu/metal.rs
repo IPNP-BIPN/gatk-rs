@@ -12,7 +12,6 @@ use metal::{
 };
 
 use super::{ConvShape, ReadInputs};
-use crate::pair_hmm::{initial_condition, initial_condition_log10, prior, qual_to_trans_probs};
 
 const SOURCE: &str = include_str!("kernels.metal");
 /// The scratch one dispatch may hold. A batch past it is split rather than refused.
@@ -162,58 +161,23 @@ pub fn f64_ops(operation: u32, a: &[u64], b: &[u64]) -> Option<Vec<u64>> {
 }
 
 pub fn pair_hmm_log10(haplotypes: &[Vec<u8>], reads: &[ReadInputs]) -> Option<Vec<f64>> {
-    // Everything that reaches a transcendental stays on the host, in the CPU path's own code: the
-    // transitions, the priors and the initial condition go down as bits, the sum comes back as
-    // bits, and the logarithm is taken here.
-    let mut read_bases = Vec::new();
-    let mut read_spans = Vec::with_capacity(reads.len());
-    let mut read_rows = Vec::new();
-    for read in reads {
-        read_spans.push([read_bases.len() as u32, read.bases.len() as u32]);
-        read_bases.extend_from_slice(read.bases);
-        for k in 0..read.bases.len() {
-            let t = qual_to_trans_probs(
-                read.insertion[k],
-                read.deletion[k],
-                read.gap_continuation[k],
-            );
-            read_rows.extend(t.iter().map(|v| v.to_bits()));
-            // The two values `prior` can take for this base: the kernel picks one per cell.
-            read_rows.push(prior(0, 0, read.qualities[k]).to_bits());
-            read_rows.push(prior(0, 1, read.qualities[k]).to_bits());
-        }
-    }
-    let mut haplotype_bases = Vec::new();
-    let mut haplotype_spans = Vec::with_capacity(haplotypes.len());
-    let mut haplotype_initial = Vec::with_capacity(haplotypes.len());
-    for haplotype in haplotypes {
-        haplotype_spans.push([haplotype_bases.len() as u32, haplotype.len() as u32]);
-        haplotype_bases.extend_from_slice(haplotype);
-        haplotype_initial.push((initial_condition() / haplotype.len() as f64).to_bits());
-    }
-    let jobs: Vec<[u32; 2]> = (0..reads.len() as u32)
-        .flat_map(|r| (0..haplotypes.len() as u32).map(move |h| [r, h]))
-        .collect();
-    let longest = haplotypes.iter().map(Vec::len).max().unwrap_or(0);
-    let stride = 3 * (longest + 1);
-    let per_dispatch = (SCRATCH_BYTES / 8 / stride).max(1);
-    let offset = initial_condition_log10();
-
+    let p = super::PairHmmBatch::pack(haplotypes, reads);
+    let per_dispatch = (SCRATCH_BYTES / 8 / p.stride).max(1);
     with_context(|c| {
         let d = &c.device;
         let inputs = [
-            buffer(d, &read_bases),
-            buffer(d, &read_spans),
-            buffer(d, &read_rows),
-            buffer(d, &haplotype_bases),
-            buffer(d, &haplotype_spans),
-            buffer(d, &haplotype_initial),
+            buffer(d, &p.read_bases),
+            buffer(d, &p.read_spans),
+            buffer(d, &p.read_rows),
+            buffer(d, &p.haplotype_bases),
+            buffer(d, &p.haplotype_spans),
+            buffer(d, &p.haplotype_initial),
         ];
-        let mut totals = Vec::with_capacity(jobs.len());
-        for chunk in jobs.chunks(per_dispatch) {
+        let mut totals = Vec::with_capacity(p.jobs.len());
+        for chunk in p.jobs.chunks(per_dispatch) {
             let jobs = buffer(d, chunk);
             let scratch = d.new_buffer(
-                (chunk.len() * stride * 8) as u64,
+                (chunk.len() * p.stride * 8) as u64,
                 MTLResourceOptions::StorageModePrivate,
             );
             let out = buffer(d, &vec![0u64; chunk.len()]);
@@ -223,17 +187,12 @@ pub fn pair_hmm_log10(haplotypes: &[Vec<u8>], reads: &[ReadInputs]) -> Option<Ve
                 c,
                 &c.pair_hmm,
                 &bound,
-                &[chunk.len() as u32, stride as u32],
+                &[chunk.len() as u32, p.stride as u32],
                 chunk.len(),
             )?;
             totals.extend(read_back::<u64>(&out, chunk.len()));
         }
-        Some(
-            totals
-                .into_iter()
-                .map(|bits| jmath::math::log10(f64::from_bits(bits)) - offset)
-                .collect(),
-        )
+        Some(super::PairHmmBatch::log10(totals))
     })
 }
 
@@ -266,38 +225,21 @@ pub fn conv2d_fused(
     bias: &[f32],
     shape: &ConvShape,
 ) -> Option<Vec<f32>> {
-    let total = shape.batch
-        * shape.outputs
-        * (shape.height + 1 - shape.kernel_height)
-        * (shape.width + 1 - shape.kernel_width);
-    let word = |v: usize| u32::try_from(v).expect("a convolution past 2^32 elements");
+    let total = super::conv_outputs(shape);
     with_context(|c| {
         let d = &c.device;
         let (src, weight, bias) = (buffer(d, src), buffer(d, weight), buffer(d, bias));
         let mut dst = Vec::with_capacity(total);
         for first in (0..total).step_by(CONV_OUTPUTS_PER_DISPATCH) {
             let count = CONV_OUTPUTS_PER_DISPATCH.min(total - first);
-            let words = [
-                shape.batch,
-                shape.inputs,
-                shape.height,
-                shape.width,
-                shape.outputs,
-                shape.kernel_height,
-                shape.kernel_width,
-                shape.block,
-                usize::from(shape.bias_last),
-                usize::from(shape.padded),
-                first,
-            ]
-            .map(word);
+            let (words, count_word) = super::conv_words(shape, first, count);
             let words = buffer(d, &words);
             let out = buffer(d, &vec![0u32; count]);
             run(
                 c,
                 &c.conv2d_fused,
                 &[&src, &weight, &bias, &out, &words],
-                &[word(count)],
+                &[count_word],
                 count,
             )?;
             dst.extend(read_back::<f32>(&out, count));
