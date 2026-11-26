@@ -885,9 +885,10 @@ pub fn compute_likelihoods(
     let rate = pcr_rate_factor(&settings.pcr_error_model);
     let pcr_cache: Vec<u8> = (0..=MAX_REPEAT_LENGTH)
         .map(|i| {
-            let value = 40.0
-                - (std::hint::black_box(f64::from(i)) / (rate * std::f64::consts::PI)).exp()
-                + 1.0;
+            let value =
+                40.0 - gatk_engine::natural_log_utils::java_math_exp(
+                    std::hint::black_box(f64::from(i)) / (rate * std::f64::consts::PI),
+                ) + 1.0;
             gatk_engine::pair_hmm::fast_round(value).max(10) as u8
         })
         .collect();

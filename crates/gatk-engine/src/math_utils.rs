@@ -87,7 +87,27 @@ pub fn max_element_index(array: &[f64], start: usize, end: usize) -> usize {
 /// one place to change if decision 0007 is ever closed, and so that a reader grepping for the
 /// deferred function finds every use of it.
 pub fn pow10(x: f64) -> f64 {
-    std::hint::black_box(10.0f64).powf(x)
+    java_math_pow(std::hint::black_box(10.0f64), x)
+}
+
+/// Java's `Math.pow`, which no port here reproduces on x86-64, named so every call site that
+/// reaches it says so.
+///
+/// **What**: the host libm's `pow`, on every target. On x86-64 `Math.pow` is HotSpot's `dpow`
+/// stub, which decision 0014 forbids transcribing; fdlibm (`jmath::strict_math::pow`) is one ulp
+/// from it at worst and was measured to be the worse stand-in on the suites (see [`pow10`]).
+///
+/// **Why not fdlibm on aarch64**, as `java_math_exp` does: aarch64 HotSpot has no `pow` stub, so
+/// there `Math.pow` *is* fdlibm (0 of 4,000,000 pairs differ, htsjdk-rs decision 0051). But the
+/// goldens are x86-64 Java's, and against them the host libm is the closer stand-in on aarch64
+/// too, so taking fdlibm there would turn local aarch64 runs red without bringing CI closer.
+///
+/// **Why `inline(always)`**: the call must stay the same IR as the `powf` it replaced, so whatever
+/// LLVM does with a `pow` of a constant base at a given site, it still does, as when each golden
+/// was measured. That x86-64 is unchanged is held by CI's suites, not measured separately.
+#[inline(always)]
+pub fn java_math_pow(x: f64, y: f64) -> f64 {
+    x.powf(y)
 }
 
 /// `MathUtils.log10SumLog10(array)`, with a **capital S**.

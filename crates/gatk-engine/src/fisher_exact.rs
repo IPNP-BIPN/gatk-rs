@@ -106,7 +106,7 @@ pub fn sum_log10(values: &[f64]) -> f64 {
 /// This calls the platform's, and the conformance suite is what says whether that is the same
 /// double on the inputs the strand-bias annotations produce.
 fn pow10(x: f64) -> f64 {
-    10.0f64.powf(x)
+    crate::math_utils::java_math_pow(10.0, x)
 }
 
 /// `FisherExactTest.twoSidedPValue(normalizedTable)`.

@@ -96,6 +96,7 @@
 
 use std::collections::HashMap;
 
+use gatk_engine::math_utils::java_math_pow;
 use gatk_engine::natural_log_utils::NonFiniteSum;
 use gatk_engine::somatic_likelihoods::{allele_fractions_posterior, sum};
 use jmath::math::log;
@@ -336,9 +337,9 @@ impl AllelePseudoDepth {
             }
             let second_adjusted = second_best - best;
             // Base ten, on a difference of natural logs. Transcribed as written.
-            let mut weight = 1.0 - 10f64.powf(second_adjusted);
+            let mut weight = 1.0 - java_math_pow(10.0, second_adjusted);
             if self.weight_decay != 1.0 {
-                weight = weight.powf(self.weight_decay);
+                weight = java_math_pow(weight, self.weight_decay);
             }
             weights.push(weight);
         }

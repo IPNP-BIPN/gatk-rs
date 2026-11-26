@@ -571,7 +571,7 @@ fn find_last_non_zero(key: &[i32]) -> Option<usize> {
 
 /// `Math.pow(10, -q / 10)`, at run time.
 fn phred_to_prob(q: f64) -> f64 {
-    std::hint::black_box(10.0f64).powf(-q / 10.0)
+    gatk_engine::math_utils::java_math_pow(std::hint::black_box(10.0f64), -q / 10.0)
 }
 
 /// `readFlowMatrix`, the production path, then `applyFilteringFlowMatrix`.

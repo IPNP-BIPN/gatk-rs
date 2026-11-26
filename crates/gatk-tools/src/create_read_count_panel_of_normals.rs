@@ -170,7 +170,9 @@ pub fn correct_gc_bias(counts: &mut Matrix, gc_content: &[f64]) {
                         .map(|n| {
                             let distance = (bin as f64 - n as f64).abs();
                             by_bin[n].len() as f64
-                                * (-distance * CORRELATION_DECAY_RATE_PER_BIN).exp()
+                                * gatk_engine::natural_log_utils::java_math_exp(
+                                    -distance * CORRELATION_DECAY_RATE_PER_BIN,
+                                )
                         })
                         .collect();
                     let mut dot = 0.0;

@@ -56,6 +56,7 @@ use crate::add_flow_base_quality::{
     extract_error_prob_bands, RawProbs, ERROR_PROB_BAND_1LESS, ERROR_PROB_BAND_1MORE,
     ERROR_PROB_BAND_KEY, PHRED_ASCII_BASE,
 };
+use gatk_engine::math_utils::java_math_pow;
 
 /// `AddFlowSNVQuality.minLikelihoodProbRate`.
 pub const DEFAULT_MIN_LIKELIHOOD_PROB_RATE: f64 = 1e-6;
@@ -380,7 +381,7 @@ pub fn convert_error_prob_to_phred(error_prob: &[f64], max_quality_score: i32) -
                 max_quality_score as u8
             } else {
                 // `Math.round(double)` is floor(x + 0.5), not a half-even rounding.
-                ((-10.0 * probability.log10()) + 0.5).floor() as i64 as u8
+                ((-10.0 * jmath::math::log10(*probability)) + 0.5).floor() as i64 as u8
             }
         })
         .collect()
@@ -441,7 +442,7 @@ pub fn add_base_quality(
 ) -> Result<ReadOutput, SnvError> {
     // The one argument that moves two numbers.
     let (max_quality_score, min_rate) = match max_phred_score {
-        Some(score) => (score as i32, 10f64.powf(-score / 10.0)),
+        Some(score) => (score as i32, java_math_pow(10.0, -score / 10.0)),
         None => (DEFAULT_MAX_QUALITY_SCORE, DEFAULT_MIN_LIKELIHOOD_PROB_RATE),
     };
     let bands = extract_error_prob_bands(probs, min_rate);

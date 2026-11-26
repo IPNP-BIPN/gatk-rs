@@ -61,9 +61,11 @@ pub fn default_log_prior_of_variant_versus_artifact() -> f64 {
     log10_to_log(-1.0)
 }
 
-/// `MathUtils.LOG_ONE_THIRD`, the three alternate bases a SNV could have been.
+/// `MathUtils.LOG_ONE_THIRD`, the three alternate bases a SNV could have been. The Java negates
+/// the logarithm of three rather than taking the logarithm of a third, and so does this: the two
+/// agree only because the logarithm absorbs the rounding of the quotient.
 pub fn log_one_third() -> f64 {
-    (1.0f64 / 3.0).ln()
+    -jmath::math::log(3.0)
 }
 
 /// `isNormal`: the sample is named by a `##normal_sample=` line of the header.
@@ -168,8 +170,9 @@ pub fn log_likelihood_ratio_from_error(
 /// Every term is the reference's own function: `FastMath.exp` of a difference of `digamma`s
 /// (`MathUtils.digamma` is a cache of commons-math's `Gamma.digamma`), the quality tables of
 /// `QualityUtils` and `NaturalLogUtils`, `MathUtils.fastBernoulliEntropy`, and
-/// `CombinatoricsUtils.binomialCoefficientLog`. The one term that is not exact against the JVM is
-/// `qualToLogProb`, which goes through `log1mexp` and so through the host's `log1p` or `expm1`.
+/// `CombinatoricsUtils.binomialCoefficientLog`. `qualToLogProb` goes through `log1mexp`, whose
+/// `log1p` and `expm1` are FDLIBM and exact (htsjdk-rs decision 0051); its `exp` is fdlibm's, one
+/// ulp from `Math.exp` at worst (decision 0025).
 pub fn log_likelihood_ratio(n_ref: i32, alt_quals: &[u8], repeat_factor: i32) -> f64 {
     log_likelihood_ratio_with_prior(n_ref, alt_quals, repeat_factor, None)
 }

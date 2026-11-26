@@ -51,6 +51,23 @@ use jmath::strict_math::exp;
 
 use crate::math_utils::max_element_index;
 
+/// Java's `Math.exp`, chosen per target at compile time.
+///
+/// On aarch64 HotSpot has no `exp` intrinsic, so `Math.exp` is fdlibm, which
+/// [`jmath::strict_math::exp`] reproduces bit for bit (0 of 2,000,000 inputs differ). On x86-64
+/// it is the HotSpot `dexp` stub, which nothing here transcribes (decision 0014), so the host
+/// libm stays: it is ~1 ulp off on about 0.24% of inputs. Never dispatch on runtime CPU features.
+#[cfg(target_arch = "aarch64")]
+pub fn java_math_exp(x: f64) -> f64 {
+    exp(x)
+}
+
+/// Java's `Math.exp`, chosen per target at compile time: see the aarch64 definition.
+#[cfg(not(target_arch = "aarch64"))]
+pub fn java_math_exp(x: f64) -> f64 {
+    x.exp()
+}
+
 /// `LOG_ONE_HALF`, which is `Math.log(0.5)` and not a literal.
 pub fn log_one_half() -> f64 {
     log(0.5)
@@ -143,7 +160,9 @@ pub fn normalize_from_log_to_linear_space(array: &[f64]) -> Result<Vec<f64>, Non
     normalize_log(array, false)
 }
 
-/// [`normalize_from_log_to_linear_space`] through the **host** libm's `exp` instead of fdlibm's.
+/// [`normalize_from_log_to_linear_space`] through [`java_math_exp`] instead of fdlibm's `exp`.
+///
+/// That is fdlibm on aarch64 (exact against Java there) and the host libm on x86-64.
 ///
 /// The reference's `Math.exp` is a HotSpot intrinsic neither function reproduces (decisions 0014
 /// and 0025), so which stand-in a call site takes is a measurement, not a principle, exactly as
@@ -155,7 +174,7 @@ pub fn normalize_from_log_to_linear_space(array: &[f64]) -> Result<Vec<f64>, Non
 pub fn normalize_from_log_to_linear_space_host_exp(
     array: &[f64],
 ) -> Result<Vec<f64>, NonFiniteSum> {
-    normalize_log_with(array, false, f64::exp)
+    normalize_log_with(array, false, java_math_exp)
 }
 
 /// `posteriors(logPriors, logLikelihoods)`, which is what the Dirichlet fixed point calls per read.
@@ -187,9 +206,9 @@ pub fn posteriors(log_priors: &[f64], log_likelihoods: &[f64]) -> Option<Vec<f64
 /// in G1.9 reaches it: the two arms are accurate in different halves of the range, and collapsing
 /// them to either one alone loses precision exactly where the other was chosen to keep it.
 ///
-/// `log1p` and `expm1` are the host libm's, which are **not** exact against the JVM (their rates
-/// are in the jmath table). A call site that reaches this function inherits that, not the 1-ulp
-/// bound `exp` carries.
+/// `log1p` and `expm1` are exact: `Math.log1p` and `Math.expm1` delegate to `StrictMath`, which is
+/// FDLIBM, and `jmath::math` ports it (htsjdk-rs decision 0051). The `exp` is fdlibm's, which is
+/// `StrictMath.exp` and one ulp from `Math.exp` at worst (decision 0025).
 pub fn log1mexp(a: f64) -> f64 {
     if a > 0.0 {
         return f64::NAN;
@@ -198,8 +217,8 @@ pub fn log1mexp(a: f64) -> f64 {
         return f64::NEG_INFINITY;
     }
     if a < log1mexp_threshold() {
-        (-exp(a)).ln_1p()
+        jmath::math::log1p(-exp(a))
     } else {
-        log(-(a.exp_m1()))
+        log(-jmath::math::expm1(a))
     }
 }

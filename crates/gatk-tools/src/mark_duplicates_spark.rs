@@ -1175,7 +1175,8 @@ impl DuplicationMetrics {
         };
     }
 
-    /// `calculateRoiHistogram`, a hundred bins from one times the coverage up.
+    /// `calculateRoiHistogram`, a hundred bins from one times the coverage up. Its `Math.exp` is
+    /// `StrictMath.exp` here, as in [`f`].
     fn roi_histogram(&self) -> Option<Histogram> {
         let size = self.estimated_library_size?;
         let unique = self.read_pairs_examined - self.read_pair_duplicates;
@@ -1200,6 +1201,10 @@ impl DuplicationMetrics {
 }
 
 /// `DuplicationMetrics.f`.
+///
+/// Picard writes `Math.exp`; this is `StrictMath.exp` (fdlibm), a named stand-in at most one ulp
+/// away (htsjdk-rs decision 0025), as in `roi_histogram`. The `markduplicatesspark` suites hold the
+/// library size and histogram it feeds.
 fn f(x: f64, c: f64, n: f64) -> f64 {
     c / x - 1.0 + jmath::strict_math::exp(-n / x)
 }

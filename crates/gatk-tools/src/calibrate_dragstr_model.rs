@@ -11,7 +11,8 @@
 //! `org.broadinstitute.hellbender.tools.dragstr.DragstrHyperParameters` and
 //! `org.broadinstitute.hellbender.utils.dragstr.DragstrParams` in GATK 4.6.2.0.
 
-use gatk_engine::math_utils::log10_sum_log10;
+use gatk_engine::math_utils::{java_math_pow, log10_sum_log10};
+use gatk_engine::natural_log_utils::java_math_exp;
 
 /// `MathUtils.log10OneMinusPow10`, which is `log10(1 - 10^a)`.
 ///
@@ -38,10 +39,10 @@ fn log1mexp(a: f64) -> f64 {
     if a == 0.0 {
         return f64::NEG_INFINITY;
     }
-    if a < 0.5f64.ln() {
-        (-a.exp()).ln_1p()
+    if a < jmath::math::log(0.5) {
+        jmath::math::log1p(-java_math_exp(a))
     } else {
-        (-a.exp_m1()).ln()
+        jmath::math::log(-jmath::math::expm1(a))
     }
 }
 
@@ -151,8 +152,12 @@ pub fn precompute(parameters: &HyperParameters) -> Precomputed {
 /// tolerance it applies is read from the API values rather than the GP ones.
 pub fn min_gp_index(parameters: &HyperParameters, period: usize) -> usize {
     let gp_min = (-10.0
-        * (1.0 - 0.5f64.powf((1.0 / (parameters.max_repeat_length * period) as f64) / 2.0))
-            .log10())
+        * jmath::math::log10(
+            1.0 - java_math_pow(
+                0.5,
+                (1.0 / (parameters.max_repeat_length * period) as f64) / 2.0,
+            ),
+        ))
     .ceil();
     match binary_search(&parameters.phred_gp_values, gp_min) {
         Ok(index) => index,
@@ -258,8 +263,9 @@ pub fn estimate_interval(
     let mut max_gp_index = 0usize;
     let mut max_log10_prob = f64::NEG_INFINITY;
     let period_index = period - 1;
-    let log10_het_over_hom_var = parameters.het_to_hom_ratio.log10();
-    let max_log10_p_het = log10_het_over_hom_var - (1.0 + parameters.het_to_hom_ratio).log10();
+    let log10_het_over_hom_var = jmath::math::log10(parameters.het_to_hom_ratio);
+    let max_log10_p_het =
+        log10_het_over_hom_var - jmath::math::log10(1.0 + parameters.het_to_hom_ratio);
     for i in 0..parameters.phred_api_values.len() {
         let log10_api = -0.1 * parameters.phred_api_values[i];
         let log10_p_het = log10_api.min(max_log10_p_het);
@@ -539,7 +545,10 @@ pub fn java_doubles(start: f64, limit: f64, step: f64) -> Result<Vec<f64>, Strin
     if !start.is_finite() || !limit.is_finite() || !step.is_finite() {
         return Err("the start, limit and step must be finite".to_string());
     }
-    let tolerance = 10f64.powf((0f64.min(step.abs().log10() - 3.0)).floor());
+    let tolerance = java_math_pow(
+        10.0,
+        (0f64.min(jmath::math::log10(step.abs()) - 3.0)).floor(),
+    );
     let diff = limit - start;
     if diff.abs() < tolerance {
         return Ok(vec![start]);
@@ -877,7 +886,7 @@ pub fn enough_cases(sites: &Stratified, max_period: usize, max_repeat_length: us
 
 /// `Math.pow`, at run time and never folded, like `gatk_engine::math_utils::pow10`.
 fn java_pow(base: f64, exponent: f64) -> f64 {
-    std::hint::black_box(base).powf(exponent)
+    java_math_pow(std::hint::black_box(base), exponent)
 }
 
 /// `DragstrParamsBuilder.gopCalculation`, a grid search from zero whose step accumulates.

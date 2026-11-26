@@ -40,6 +40,7 @@ use gatk_annotation::catalogue::Entry;
 use gatk_engine::genotype_index::{
     genotypes_in_canonical_order, index_of_first_genotype_with_allele, subsetted_pl_indices,
 };
+use gatk_engine::math_utils::java_math_pow;
 use htsjdk_vcf::allele::Allele;
 use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType, VcfHeader};
 use htsjdk_vcf::variant::{Genotype, Value, VariantContext, NO_LOG10_PERROR};
@@ -1143,10 +1144,10 @@ pub(crate) fn gq_log10_from_likelihoods(chosen: usize, likelihoods: &[f64]) -> f
             .fold(f64::NEG_INFINITY, f64::max);
         let total: f64 = likelihoods
             .iter()
-            .map(|value| 10f64.powf(value - max))
+            .map(|value| java_math_pow(10.0, value - max))
             .sum();
-        let normalised = 10f64.powf(likelihoods[chosen] - max) / total;
-        (1.0 - normalised).log10()
+        let normalised = java_math_pow(10.0, likelihoods[chosen] - max) / total;
+        jmath::math::log10(1.0 - normalised)
     } else {
         -quality
     }

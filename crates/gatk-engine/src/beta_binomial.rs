@@ -101,8 +101,10 @@ impl BetaBinomialDistribution {
 
     /// `probability(k)`, which is `Math.exp` of the log.
     ///
-    /// Under decision 0014 `Math.exp` cannot be transcribed, so this is the platform's `exp` and is
-    /// not asserted bit-exact anywhere. `log_probability` is the one the clustering model uses.
+    /// Under decision 0014 `Math.exp` cannot be transcribed, so this is the platform's `exp`, on
+    /// every target. Not `java_math_exp`: its aarch64 fdlibm puts the `somatic-validation-power`
+    /// cumulative row `(11, 1, 20, 11)` one ulp from the x86-64 golden, where the host `exp` matches
+    /// it (measured 2026-11-25). `log_probability` is the one the clustering model uses.
     pub fn probability(&self, k: i32) -> Result<f64, BetaBinomialError> {
         Ok(self.log_probability(k)?.exp())
     }

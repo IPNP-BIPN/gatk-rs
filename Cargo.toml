@@ -45,7 +45,10 @@ htsjdk-cram = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "cb1f5804b
 htsjdk-metrics = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "cb1f5804bd837914113608073a46ddc7451f5ef5" }
 htsjdk-tribble = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "cb1f5804bd837914113608073a46ddc7451f5ef5" }
 htsjdk-vcf = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "cb1f5804bd837914113608073a46ddc7451f5ef5" }
-jmath = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "cb1f5804bd837914113608073a46ddc7451f5ef5" }
+# jmath alone is one commit ahead of the other htsjdk-rs crates: htsjdk-rs#301 adds `Math.log1p` and
+# `Math.expm1` (FDLIBM, decision 0051) and changes nothing else, so the rest stay where they were
+# measured. The next htsjdk-rs bump brings them back to one rev.
+jmath = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "d923edeabba952c4afc67c99354fff0be19c4d9e" }
 # GatherBamFiles writes a .md5 beside its output, which is the only digest a ported tool computes
 # for itself. htsjdk-bam already pulls this crate in for the same algorithm.
 md-5 = "0.11.0"

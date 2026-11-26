@@ -141,7 +141,9 @@ pub fn log10_one_minus_pow10(a: f64) -> f64 {
 /// unchanged, so `exp(a)` reaches the output as it is, and fdlibm's answer is two ulp from the
 /// reference's where the host libm's is identical. It is the same trade [`pow10`] makes for
 /// `Math.pow`: the intrinsic cannot be transcribed (htsjdk-rs decision 0014), and the host is the
-/// closer stand-in on the points measured.
+/// closer stand-in on the points measured. On aarch64 too, which is why this is not
+/// `java_math_exp`: there that helper is fdlibm, and this suite's x86-64 golden turns red.
+/// `log1p` and `expm1` are jmath's, exact on every host (htsjdk-rs decision 0051).
 fn log1mexp_with_host_exp(a: f64) -> f64 {
     if a > 0.0 {
         return f64::NAN;
@@ -150,9 +152,9 @@ fn log1mexp_with_host_exp(a: f64) -> f64 {
         return f64::NEG_INFINITY;
     }
     if a < jmath::math::log(0.5) {
-        (-std::hint::black_box(a).exp()).ln_1p()
+        jmath::math::log1p(-std::hint::black_box(a).exp())
     } else {
-        jmath::math::log(-(a.exp_m1()))
+        jmath::math::log(-jmath::math::expm1(a))
     }
 }
 
