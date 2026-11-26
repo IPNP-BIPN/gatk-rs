@@ -63,6 +63,7 @@ PORTS = [
 PORT_REF = "origin/main"
 MANIFEST_PATH = "tools/conformance/manifest.json"
 MEASURED_PATH = "tools/coverage/measured.json"
+FUZZED_PATH = "tools/fuzz/measured.json"
 
 # This repository's own manifest is read in place, not vendored.
 #
@@ -126,6 +127,10 @@ def refresh():
         measured = git(clone, "show", f"{PORT_REF}:{MEASURED_PATH}")
         if measured is not None:
             summary["coverage"] = json.loads(measured).get("tools", {})
+        # The port's fuzzer measurement, for the validation report's fuzzer column.
+        fuzzed = git(clone, "show", f"{PORT_REF}:{FUZZED_PATH}")
+        if fuzzed is not None:
+            summary["fuzz"] = json.loads(fuzzed).get("tools", {})
         out = VENDORED / f"{name}.json"
         out.write_text(json.dumps(summary, indent=2) + "\n")
         written.append((name, len(summary["suites"])))
