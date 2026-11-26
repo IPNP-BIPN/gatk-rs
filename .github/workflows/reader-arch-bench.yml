@@ -1,4 +1,4 @@
-name: Inflate per architecture (scratch)
+name: PrintReads indexed deflate chr20 (scratch)
 
 # Temporary: GATK 4.7.0.0, main, c/streaming-guard and c/reader-prefetch on the same chr20 of
 # NA12878 30x, one after another on one runner, default threads. main holds the whole BAM
@@ -6,7 +6,7 @@ name: Inflate per architecture (scratch)
 
 on:
   push:
-    branches: [scratch/inflate-bench]
+    branches: [scratch/ipd-chr20-bench]
   workflow_dispatch:
 
 jobs:
@@ -21,20 +21,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: c/reader-prefetch
-          path: pr
-      - uses: actions/checkout@v7
-        with:
           ref: perf/inflate-bump
-          path: inflate
+          path: before
       - uses: actions/checkout@v7
         with:
-          ref: scratch/inflate-lazy-both
-          path: both
-      - uses: actions/checkout@v7
-        with:
-          ref: c/reader-lazy-tags-try
-          path: lazy
+          ref: perf/indexed-parallel-deflate-bump
+          path: after
 
       - name: Tools
         run: |
@@ -54,10 +46,8 @@ jobs:
 
       - name: Build both ports
         run: |
-          (cd pr && cargo build --release -p gatk-cli) && cp pr/target/release/gatk gatk-pr
-          (cd inflate && cargo build --release -p gatk-cli) && cp inflate/target/release/gatk gatk-inflate
-          (cd both && cargo build --release -p gatk-cli) && cp both/target/release/gatk gatk-both
-          (cd lazy && cargo build --release -p gatk-cli) && cp lazy/target/release/gatk gatk-lazy
+          (cd before && cargo build --release -p gatk-cli) && cp before/target/release/gatk gatk-before
+          (cd after && cargo build --release -p gatk-cli) && cp after/target/release/gatk gatk-after
 
       - name: GATK 4.7.0.0
         run: |
@@ -82,6 +72,7 @@ jobs:
           row() { # tool build round
             case $2 in
               java) cmd="java -Xmx12g -jar $PWD/$JAR" ;;
+              after1) cmd="env RAYON_NUM_THREADS=1 $PWD/gatk-after" ;;
               *) cmd="$PWD/gatk-$2" ;;
             esac
             case $1 in
@@ -105,7 +96,7 @@ jobs:
           }
           echo "| tool | build | round | exit | peak RSS | CPU (user+sys) | wall | output |" > table.md
           echo "|---|---|---|---|---|---|---|---|" >> table.md
-          for r in 1 2; do for t in CountReads CountReadsL PrintReads; do for b in java pr inflate lazy both; do row $t $b $r; done; done; done
+          for r in 1 2; do for t in CountReads CountReadsL PrintReads; do for b in java before after after1; do row $t $b $r; done; done; done
           cat table.md >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v7
