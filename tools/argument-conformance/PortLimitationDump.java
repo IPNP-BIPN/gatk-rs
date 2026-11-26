@@ -155,6 +155,33 @@ public class PortLimitationDump {
             run("depthofcoverage-" + variant[0] + "-base-counts", argv.toArray(new String[0]));
         }
 
+        // Its --partition-type columns come in the enum's order, each partition's ids sorted, the
+        // total from the first partition; a field a read group lacks prints as null. TABLE is the
+        // same table with tabs.
+        final String groups = "@RG\tID:rg1\tSM:zeta\tLB:lib1\tPL:ILLUMINA\tCN:BI\n"
+                + "@RG\tID:rg2\tSM:alpha\tLB:lib2\tPL:ILLUMINA\n"
+                + "@RG\tID:rg3\tSM:zeta\tLB:lib1\tPL:PACBIO\tCN:BI\n";
+        final String partitioned = bamWithGroups("depthofcoverage-partitions", groups,
+                groupRead("rg1", 100), groupRead("rg2", 101), groupRead("rg3", 102), groupRead("rg1", 103),
+                groupRead("rg2", 106));
+        for (final String[] variant : new String[][] {
+                {"sample"}, {"readgroup", "--partition-type", "readgroup"},
+                {"library", "--partition-type", "library"},
+                {"platform-center", "--partition-type", "center", "--partition-type", "platform"},
+                {"sample-by-platform-by-center", "--partition-type", "sample_by_platform_by_center"},
+                {"three", "--partition-type", "library", "--partition-type", "readgroup",
+                        "--partition-type", "sample"},
+                {"table", "--output-format", "TABLE"},
+                {"table-readgroup", "--output-format", "TABLE", "--partition-type", "readgroup"}}) {
+            final List<String> argv = new ArrayList<>(List.of("DepthOfCoverage", "-R", fasta, "-I",
+                    partitioned, "-L", "chr1:99-117", "-O", "{out}/out", "--omit-locus-table",
+                    "--omit-interval-statistics", "--omit-per-sample-statistics"));
+            argv.addAll(Arrays.asList(variant).subList(1, variant.length));
+            run("depthofcoverage-partition-" + variant[0], argv.toArray(new String[0]));
+            argv.add("--print-base-counts");
+            run("depthofcoverage-partition-" + variant[0] + "-base-counts", argv.toArray(new String[0]));
+        }
+
         for (final String input : INPUTS) {
             final Path path = Paths.get(input);
             if (Files.isRegularFile(path)) {
@@ -184,6 +211,12 @@ public class PortLimitationDump {
         return String.join("\t", "r" + contig + "_" + start, "0", "chr" + contig,
                 String.valueOf(start), "60", cigar, "*", "0", "0",
                 "ACGTACGTACGT".substring(0, quals.length()), quals, "RG:Z:rg");
+    }
+
+    /** A 10M read on chr1 in the given read group. */
+    static String groupRead(final String group, final int start) {
+        return String.join("\t", group + "_" + start, "0", "chr1", String.valueOf(start), "60", "10M",
+                "*", "0", "0", "ACGTACGTAC", "IIIIIIIIII", "RG:Z:" + group);
     }
 
     /** The two contigs of the BAMs' header as a FASTA, with its index and dictionary. */
@@ -218,11 +251,17 @@ public class PortLimitationDump {
      * level is GATK's: htsjdk writing first would fix `Defaults` at 5 for the rest of the JVM.
      */
     static String bam(final String name, final String... reads) throws Exception {
+        return bamWithGroups(name, "@RG\tID:rg\tSM:sample\n", reads);
+    }
+
+    /** The same, with these read-group lines. */
+    static String bamWithGroups(final String name, final String groups, final String... reads)
+            throws Exception {
         final Path dir = Paths.get("inputs");
         Files.createDirectories(dir);
         final Path sam = dir.resolve(name + ".sam");
         final StringBuilder text = new StringBuilder(
-                "@HD\tVN:1.6\tSO:coordinate\n@SQ\tSN:chr1\tLN:10000\n@SQ\tSN:chr2\tLN:10000\n@RG\tID:rg\tSM:sample\n");
+                "@HD\tVN:1.6\tSO:coordinate\n@SQ\tSN:chr1\tLN:10000\n@SQ\tSN:chr2\tLN:10000\n" + groups);
         for (final String read : reads) {
             text.append(read).append('\n');
         }
