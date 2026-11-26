@@ -511,7 +511,8 @@ fn ploidy_regions(
         {
             continue;
         }
-        let fields: Vec<&str> = line.split('\t').collect();
+        // `BEDCodec` splits on a tab or a run of spaces.
+        let fields = htsjdk_tribble::bed::split_bed_line(line);
         let contig = fields[0].to_string();
         let start = fields
             .get(1)
