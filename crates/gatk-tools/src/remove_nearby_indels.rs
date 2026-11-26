@@ -96,94 +96,120 @@ pub fn is_indel(variant: &VariantContext) -> bool {
     variant_type(variant) == VariantType::Indel
 }
 
-/// The tool: the indices of the variants that reach the output, in the order they are written.
-///
-/// Indices rather than records, because the reference keeps `lastIndel` by identity and compares
-/// it with `==`.
-pub fn remove_nearby_indels(variants: &[VariantContext], min_indel_spacing: i32) -> Vec<usize> {
-    let mut buffer = VariantBuffer {
-        variants,
-        min_indel_spacing,
-        last_indel: None,
-        buffer: Vec::new(),
-        emitted: Vec::new(),
-    };
-    for index in 0..variants.len() {
-        buffer.add(index);
+/// What the buffer needs of a record: where it is and whether it is an indel. The records
+/// themselves stay with the caller, which [`IndelSpacing`] names by their index in the traversal.
+#[derive(Debug, Clone)]
+pub struct Site {
+    pub index: usize,
+    pub indel: bool,
+    pub contig: String,
+    pub start: i64,
+    pub stop: i64,
+}
+
+impl Site {
+    pub fn of(index: usize, variant: &VariantContext) -> Site {
+        Site {
+            index,
+            indel: is_indel(variant),
+            contig: variant.contig.clone(),
+            start: variant.start,
+            stop: variant.stop,
+        }
     }
-    buffer.emit_remaining();
-    buffer.emitted
 }
 
-struct VariantBuffer<'a> {
-    variants: &'a [VariantContext],
+/// `RemoveNearbyIndels`' `VariantBuffer`, fed one record at a time. The indices it emits are
+/// increasing, so a caller can write each record as it is emitted and drop any record
+/// [`buffered`](Self::buffered) no longer names.
+pub struct IndelSpacing {
     min_indel_spacing: i32,
-    last_indel: Option<usize>,
+    last_indel: Option<Site>,
     /// "INVARIANT: this buffer will contain at most one indel", says the reference.
-    buffer: Vec<usize>,
-    emitted: Vec<usize>,
+    buffer: Vec<Site>,
 }
 
-impl VariantBuffer<'_> {
-    fn add(&mut self, index: usize) {
-        let indel = is_indel(&self.variants[index]);
+impl IndelSpacing {
+    pub fn new(min_indel_spacing: i32) -> IndelSpacing {
+        IndelSpacing {
+            min_indel_spacing,
+            last_indel: None,
+            buffer: Vec::new(),
+        }
+    }
+
+    /// The indices still held, which a later call may yet emit.
+    pub fn buffered(&self) -> impl Iterator<Item = usize> + '_ {
+        self.buffer.iter().map(|site| site.index)
+    }
+
+    pub fn add(&mut self, site: Site, emitted: &mut Vec<usize>) {
+        let indel = site.indel;
         if self.last_indel.is_none() && indel {
             // Only ever reached once per traversal: `lastIndel` never returns to null.
-            self.buffer.push(index);
-            self.last_indel = Some(index);
-        } else if self.nearby(self.last_indel, index) {
+            self.buffer.push(site.clone());
+            self.last_indel = Some(site);
+            return;
+        }
+        if self.nearby(self.last_indel.as_ref(), &site) {
             if indel {
                 // Throws out `lastIndel`, which is in the buffer, and `vc`, which is never added.
-                self.emit_all_non_indels();
+                for held in std::mem::take(&mut self.buffer) {
+                    if !held.indel {
+                        emitted.push(held.index);
+                    }
+                }
             } else {
-                self.buffer.push(index);
+                self.buffer.push(site.clone());
             }
         } else {
-            self.emit_all_variants();
-            self.buffer.push(index);
+            emitted.extend(self.buffer.drain(..).map(|held| held.index));
+            self.buffer.push(site.clone());
         }
 
         // After the branch above, so an indel that was just discarded becomes the one the next
         // indel is measured against.
         if indel {
-            self.last_indel = Some(index);
+            self.last_indel = Some(site);
         }
     }
 
     /// `nearby(left, right)`: same contig, and END to START, strictly below the spacing.
-    fn nearby(&self, left: Option<usize>, right: usize) -> bool {
+    fn nearby(&self, left: Option<&Site>, right: &Site) -> bool {
         match left {
             None => false,
             Some(left) => {
-                let (left, right) = (&self.variants[left], &self.variants[right]);
                 left.contig == right.contig
                     && (right.start - left.stop) < i64::from(self.min_indel_spacing)
             }
         }
     }
 
-    fn emit_all_non_indels(&mut self) {
-        for index in std::mem::take(&mut self.buffer) {
-            if !is_indel(&self.variants[index]) {
-                self.emitted.push(index);
-            }
-        }
-    }
-
-    fn emit_all_variants(&mut self) {
-        self.emitted.append(&mut self.buffer);
-    }
-
     /// The end of the traversal, where the identity comparison is what keeps a trailing indel.
-    fn emit_remaining(&mut self) {
-        for index in std::mem::take(&mut self.buffer) {
-            let keep = !(is_indel(&self.variants[index]) && self.nearby(self.last_indel, index))
-                || self.last_indel == Some(index);
+    pub fn finish(mut self, emitted: &mut Vec<usize>) {
+        let last = self.last_indel.take();
+        for held in std::mem::take(&mut self.buffer) {
+            let keep = !(held.indel && self.nearby(last.as_ref(), &held))
+                || last.as_ref().map(|site| site.index) == Some(held.index);
             if keep {
-                self.emitted.push(index);
+                emitted.push(held.index);
             }
         }
     }
+}
+
+/// The tool: the indices of the variants that reach the output, in the order they are written.
+///
+/// Indices rather than records, because the reference keeps `lastIndel` by identity and compares
+/// it with `==`.
+pub fn remove_nearby_indels(variants: &[VariantContext], min_indel_spacing: i32) -> Vec<usize> {
+    let mut spacing = IndelSpacing::new(min_indel_spacing);
+    let mut emitted = Vec::new();
+    for (index, variant) in variants.iter().enumerate() {
+        spacing.add(Site::of(index, variant), &mut emitted);
+    }
+    spacing.finish(&mut emitted);
+    emitted
 }
 
 #[cfg(test)]

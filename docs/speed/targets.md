@@ -56,6 +56,38 @@ now STATUS.md's cost column; the baseline stays in `baseline.json`):
 both directions, which is what an unchanged path does. The other 131 tools moved a median 7% cold
 and 10% steady, at most 45%, the same spread two runs of one commit showed in the baseline.
 
+## Scale I. `RemoveNearbyIndels` holds the whole VCF
+
+**Ratio.** Measured at scale (the every-tool pass of `tools/speed/scale.json`, gnomAD chr20 sites,
+linux/arm64 in the pinned container, 6 GiB limit): GATK 15 s CPU and 0.53 GiB peak RSS; the port
+58 s (3.77x) and 5.31 GiB (10.04x).
+
+**Where the time and memory go.** The quadratic index scan of `variants_in_traversal` (#1560, Scale
+G) for the time. For the memory, `variant_walker_startup` reads the file whole, `read_vcf` decodes
+every record, they are cloned twice, and `write_vcf` builds the whole output text: 11.7 GB natively.
+
+**The optimisation.** `VariantBuffer` becomes `IndelSpacing`, fed one `Site` (index, indel or not,
+contig, start, stop) at a time, which emits increasing indices. `remove_nearby_indels` is that loop
+over a slice, so its unit tests now test the streaming core. Without `-L`, the runner reads records
+from #1500's `vcf_stream`, holds each one only while the buffer can still emit it, and writes it
+through `VariantStreamWriter` when it does.
+
+**Why it cannot move a byte.** The buffer makes the same decisions over the same sites, in the same
+order. The emitted indices increase, so writing each record when it is emitted gives the order the
+whole list gave. Records are encoded by `write_vcf`'s own `VcfEncoder` after `header.write()`. Every
+refusal first reads the rest of the file, so an unreadable file and then a malformed record are
+still refused first, before any output, as on the whole-text path.
+
+**The suites that prove it.** `remove-nearby-indels`' unit tests, its covering array on
+linux/amd64, and old against new natively on gnomAD chr20 (spacing 1 and 50) and on twelve small
+cases (malformed record, `--variant-output-filtering` without `-L`, `--sites-only-vcf-output`,
+spacings).
+
+**Result.** gnomAD chr20 natively: 22 MB peak RSS and 7.8 s CPU (0.04x GATK's RSS, 0.52x its CPU),
+from 11.7 GB and 14.9 s on the whole-text path with #1560. The `.vcf.gz` and its `.tbi` are
+identical byte for byte at spacing 1 and at spacing 50, and the inflated VCF is GATK's (md5
+8546ba19).
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are
