@@ -14,7 +14,9 @@
  *     directory\t<an input that is a directory>
  *     argv\t<case>\t<argument>\t<argument>...
  *     error\t<case>\t<the exception class>:<its message>
- *     file\t<case>\t<file name>\t<its bytes, base64>
+ *     kind\t<case>\t<commandline, user or other>
+ *     dir\t<case>\t<a directory the run left, under the case's>
+ *     file\t<case>\t<a file the run left, under the case's>\t<its bytes, base64>
  *
  * Usage: PortLimitationDump
  */
@@ -42,6 +44,17 @@ public class PortLimitationDump {
         // in place of this one.
         System.out.printf("cwd\t%s%n", Paths.get("").toAbsolutePath());
 
+        // AlleleFrequencyQC's chi-squared over fewer than two bins, which no command line is
+        // known to reach: commons-math's own refusal for zero and minus one degrees of freedom.
+        for (final int df : new int[] {0, -1}) {
+            try {
+                new org.apache.commons.math3.distribution.ChiSquaredDistribution(df);
+                System.out.printf("probe\tchi-squared%d\tnone%n", df);
+            } catch (final Exception e) {
+                System.out.printf("probe\tchi-squared%d\t%s:%s%n", df, e.getClass().getName(), e.getMessage());
+            }
+        }
+
         // A walker whose `requiresReference()` is true declares -R required, so Barclay refuses a
         // run without it before the tool opens anything; the other inputs need not exist.
         run("svcluster-no-reference", "SVCluster", "-V", "absent.vcf", "--ploidy-table",
@@ -54,6 +67,7 @@ public class PortLimitationDump {
         // never for the reads of the last set after its first. What a malformed tag throws is the
         // JVM's own exception from the place it is first read, and `closeTool` still closes the
         // writer, so the sets applied before the failure are written.
+        downsample("no-reads");
         downsample("mi-missing-first", read(1, 100, null));
         downsample("mi-not-a-number", read(1, 100, "MI:Z:x/A"));
         downsample("mi-no-strand-first", read(1, 100, "MI:Z:1"));
@@ -84,8 +98,9 @@ public class PortLimitationDump {
         // RevertSamSpark's output map is read on the driver as a TableFeature stream, every group
         // of the header must be in it, and the files are written in the map's HashMap order, so a
         // group only the map names fails on its null header after the groups before it are
-        // written. An illegal --attributes-to-clear fails inside a task instead, which leaves
-        // Hadoop's temporary directories named by the job's clock: no case here.
+        // written. An illegal --attributes-to-clear fails inside the task that writes the first
+        // output: Hadoop's "Job aborted." and its empty .parts directory. With --sanitize an
+        // earlier task fails, and its message names the executor's host: no stable bytes there.
         final String reverted = bam("revertsamspark", read(1, 100, "XX:Z:a"), read(1, 110, "XX:Z:b"));
         run("revertsamspark-short-map-row", "RevertSamSpark", "-I", reverted,
                 "--output-by-readgroup", "--output-map",
@@ -99,6 +114,10 @@ public class PortLimitationDump {
                 text("revertsamspark-extra-group.tsv", "READ_GROUP_ID\tOUTPUT\nrg\t"
                         + OUT.resolve("revertsamspark-extra-group").resolve("rg.bam") + "\nother\t"
                         + OUT.resolve("revertsamspark-extra-group").resolve("other.bam") + "\n"));
+        run("revertsamspark-bad-attribute", "RevertSamSpark", "-I", reverted, "-O",
+                "{out}/out.bam", "--attributes-to-clear", "XXX");
+        run("revertsamspark-bad-attribute-by-group", "RevertSamSpark", "-I", reverted,
+                "--output-by-readgroup", "-O", "{out}", "--attributes-to-clear", "XXX");
 
         // ConvertCountsToDepthFile reads its counts through SimpleCountCodec, whose decode turns
         // a NumberFormatException into MalformedFile and lets every other failure through, after
@@ -199,15 +218,26 @@ public class PortLimitationDump {
         try {
             System.setOut(new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8));
             new org.broadinstitute.hellbender.Main().instanceMain(argv.toArray(new String[0]));
-        } catch (final Exception | AssertionError e) {
+        } catch (final Throwable e) {
             System.setOut(original);
             System.out.printf("error\t%s\t%s%n", name, escape(e.getClass().getName() + ":" + e.getMessage()));
+            // Which handler `mainEntry` gives it to, which decides the status and the banner.
+            System.out.printf("kind\t%s\t%s%n", name,
+                    e instanceof org.broadinstitute.barclay.argparser.CommandLineException ? "commandline"
+                            : e instanceof org.broadinstitute.hellbender.exceptions.UserException ? "user"
+                            : "other");
         } finally {
             System.setOut(original);
         }
-        try (final var entries = Files.list(dir)) {
-            for (final Path file : entries.sorted().toList()) {
-                System.out.printf("file\t%s\t%s\t%s%n", name, file.getFileName(), base64(file));
+        // Everything the run left, directories included, by its path under the case's directory.
+        try (final var entries = Files.walk(dir)) {
+            for (final Path path : entries.filter(p -> !p.equals(dir)).sorted().toList()) {
+                final String relative = dir.relativize(path).toString();
+                if (Files.isDirectory(path)) {
+                    System.out.printf("dir\t%s\t%s%n", name, relative);
+                } else {
+                    System.out.printf("file\t%s\t%s\t%s%n", name, relative, base64(path));
+                }
             }
         }
     }

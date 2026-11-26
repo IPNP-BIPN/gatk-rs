@@ -93,9 +93,9 @@
       "file": "crates/gatk-cli/src/runners_spark.rs",
       "match": "the reference fails this inside a Spark task",
       "tools": "RevertSamSpark",
-      "arguments": "--attributes-to-clear with a name that is not two characters",
+      "arguments": "--sanitize with an --attributes-to-clear name that is not two characters",
       "reason": "no-stable-bytes",
-      "why": "The task fails while Hadoop writes, which leaves temporary directories named by the job's clock, and with --sanitize the message names the executor's host."
+      "why": "With --sanitize the task fails inside a shuffle, and Spark's message names the executor's host."
     },
     {
       "file": "crates/gatk-cli/src/runners.rs",

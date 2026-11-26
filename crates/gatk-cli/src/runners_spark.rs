@@ -3494,8 +3494,14 @@ fn revert_output_files(
         };
         let (id, file) = (field(id_at)?, field(output_at)?);
         // A `HashMap`, so a later row of the same group wins.
-        files.retain(|(group, _)| group.as_deref() != Some(*id));
-        files.push((Some(id.to_string()), file.to_string()));
+        // `HashMap.put` replaces the value and keeps the key where it was.
+        match files
+            .iter_mut()
+            .find(|(group, _)| group.as_deref() == Some(*id))
+        {
+            Some(entry) => entry.1 = file.to_string(),
+            None => files.push((Some(id.to_string()), file.to_string())),
+        }
     }
     in_hash_map_order(files)
 }
@@ -3883,6 +3889,23 @@ pub fn revert_sam_spark(parser: &Parser) -> Outcome {
     let keep_duplicates = flag(parser, "remove-duplicate-information");
     let mut records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    // `assertAttributeNameIsLegal` runs inside the task that writes the first output, so without
+    // `--sanitize` the failure is Hadoop's "Job aborted." and leaves that output's empty `.parts`
+    // directory. With `--sanitize` an earlier task fails, whose message names the executor's host.
+    let illegal = |name: &String| {
+        let bytes = name.as_bytes();
+        !(bytes.len() == 2 && bytes[0].is_ascii_alphabetic() && bytes[1].is_ascii_alphanumeric())
+    };
+    if !sanitize && !records.is_empty() && attributes.iter().any(illegal) {
+        if let Some((_, first)) = files.first() {
+            std::fs::create_dir_all(format!("{first}.parts"))
+                .map_err(|error| Thrown::non_user(PORT_FAILURE, error.to_string()))?;
+        }
+        return Err(Thrown::non_user(
+            "org.apache.spark.SparkException",
+            "Job aborted.",
+        ));
+    }
     for record in &mut records {
         revert_record(
             record,

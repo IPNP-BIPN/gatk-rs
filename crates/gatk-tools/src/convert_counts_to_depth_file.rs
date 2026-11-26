@@ -104,10 +104,12 @@ pub struct Refused {
 /// `decode` on one record line: the interval's three fields, its validation, then the count, the
 /// order Java evaluates `new SimpleCount(new SimpleInterval(..), parseInt(split[3]))` in.
 fn decode(line: &str) -> Result<SimpleCount, Refused> {
-    // `line.split("\t")`, which drops trailing empty fields but keeps a lone empty one.
+    // `line.split("\t")`: a line without a tab is one field, and trailing empty fields are dropped.
     let mut fields: Vec<&str> = line.split('\t').collect();
-    while fields.len() > 1 && fields.last() == Some(&"") {
-        fields.pop();
+    if line.contains('\t') {
+        while fields.last() == Some(&"") {
+            fields.pop();
+        }
     }
     let field = |index: usize| {
         fields.get(index).copied().ok_or_else(|| Refused {
