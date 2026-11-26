@@ -14182,9 +14182,6 @@ pub fn compare_base_qualities(parser: &Parser) -> Outcome {
                 .map_err(|error| Thrown::user(format!("{error:?}")))?;
         source.iter_all().map_err(reads_traversal_error)
     };
-    let left = read(&first)?;
-    let right = read(&second)?;
-
     let arguments = gatk_tools::compare_base_qualities::CompareArguments {
         static_quantization_quals: arguments(parser, "static-quantized-quals")
             .iter()
@@ -14193,6 +14190,31 @@ pub fn compare_base_qualities(parser: &Parser) -> Outcome {
         round_down: flag(parser, "round-down-quantized"),
         throw_on_diff: flag(parser, "throw-on-diff"),
     };
+
+    // Both files a read at a time. The whole-list path read the first file whole, then the
+    // second, then compared, so any refusal on the way (an open, a read, the comparison's) is left
+    // to it, and it refuses as before.
+    let open = |path: &str| {
+        gatk_engine::reads::ReadsDataSource::open_unindexed(std::path::Path::new(path)).ok()
+    };
+    if let (Some(left), Some(right)) = (open(&first), open(&second)) {
+        if let (Ok(left), Ok(right)) = (left.records_all(), right.records_all()) {
+            let failed = std::cell::Cell::new(false);
+            let ok = |record: Result<BamRecord, _>| record.inspect_err(|_| failed.set(true)).ok();
+            let result = gatk_tools::compare_base_qualities::compare_base_qualities_of(
+                left.map_while(ok),
+                right.map_while(ok),
+                &arguments,
+            );
+            if let (Ok(result), false) = (result, failed.get()) {
+                write_report(&argument(parser, "output"), &result.report)?;
+                return Ok(Some(result.exit_code.to_string()));
+            }
+        }
+    }
+
+    let left = read(&first)?;
+    let right = read(&second)?;
     let result =
         gatk_tools::compare_base_qualities::compare_base_qualities(&left, &right, &arguments)
             .map_err(|refusal| match refusal {

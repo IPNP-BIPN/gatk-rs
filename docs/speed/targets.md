@@ -56,6 +56,34 @@ now STATUS.md's cost column; the baseline stays in `baseline.json`):
 both directions, which is what an unchanged path does. The other 131 tools moved a median 7% cold
 and 10% steady, at most 45%, the same spread two runs of one commit showed in the baseline.
 
+## Scale L. `CompareBaseQualities` held both BAMs
+
+**Ratio.** At scale (`MarkDuplicatesSpark`'s BAM against `ApplyBQSR`'s, chr20 30x, linux/arm64,
+6 GiB container): GATK 44 s CPU and 0.40 GiB; the port killed at the limit (14.9x).
+
+**Where the memory goes.** Both files are read whole (`iter_all`) before the first pair is
+compared.
+
+**The optimisation.** `compare_base_qualities_of` takes the two files' reads as iterators, and the
+runner hands it both `records_all` streams at once.
+
+**Why it cannot move a byte.** The same reads are compared in the same pairs into the same
+matrices. The whole-list path read the first file whole, then the second, then compared, so a
+refusal there (an open, a read, the comparison's own, `--throw-on-diff`) is the first one of that
+order. The streamed run answers only when nothing refused; on any refusal it writes nothing and
+runs the whole-list path, which refuses as before.
+
+**The suites that prove it.** `compare-base-qualities` and its covering array. Natively, old against
+new, on chr20 data: two identical files, two with different qualities (with and without
+`--static-quantized-quals` and `--throw-on-diff`), `--round-down-quantized` alone, a read whose
+qualities are one shorter, two reads swapped, files of different lengths, a malformed record in
+either file, a missing file: the same exit, message and report.
+
+**Result.** 5 Mb of chr20 against itself: 3.26 GB to 76 MB. The whole chr20 BAM against itself:
+104 MB (0.25x GATK), 67 s CPU (1.5x). The CPU is the reader's: `open_unindexed` inflates each whole
+file to check it before the stream inflates it again, and two streams side by side spin waiting on
+their inflating threads. That is the engine's (W12).
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are
