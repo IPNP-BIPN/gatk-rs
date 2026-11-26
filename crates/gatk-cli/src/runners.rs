@@ -14548,8 +14548,11 @@ pub fn reblock_gvcf(parser: &Parser) -> Outcome {
             )));
         }
     }
-    if argument(parser, "population-callset").is_some() {
-        return Err(limitation("--population-callset is not ported."));
+    // `--population-callset` is the genotyping arguments' `supportVariants`, which only the
+    // HaplotypeCaller engine queries: here `initializeFeatures` opens it, refusing what it cannot
+    // read, and nothing reads a record.
+    if let Some(path) = argument(parser, "population-callset") {
+        feature_variants(&path)?;
     }
 
     let inputs = multi_variant::feature_inputs(parser);
@@ -14916,8 +14919,11 @@ pub fn gnarly_genotyper(parser: &Parser) -> Outcome {
             format!("{what} This message is the port's own and not GATK's."),
         )
     };
-    if argument(parser, "population-callset").is_some() {
-        return Err(limitation("--population-callset is not ported."));
+    // `--population-callset` is the genotyping arguments' `supportVariants`, which only the
+    // HaplotypeCaller engine queries: here `initializeFeatures` opens it, refusing what it cannot
+    // read, and nothing reads a record.
+    if let Some(path) = argument(parser, "population-callset") {
+        feature_variants(&path)?;
     }
     let VariantWalkerStart {
         input,
