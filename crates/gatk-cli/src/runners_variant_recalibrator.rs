@@ -26,17 +26,94 @@ use gatk_tools::variant_recalibrator as tranches;
 use gatk_tools::variant_recalibrator_model as model;
 use htsjdk_vcf::variant::VariantContext;
 
+/// What the lookup reads of a training record, none of it depending on the variant looking it
+/// up, computed once with the functions the lookup called: the records themselves are not kept.
+struct Training {
+    contig: String,
+    start: i64,
+    stop: i64,
+    /// `bases(train.reference())` and the alternates' display strings, for `isAlleleInList`.
+    reference: String,
+    alternates: Vec<String>,
+    /// The class `checkVariationClass(evalVC, trainVC)` asks of the variant; `None` for no
+    /// variation, which no variant matches.
+    class: Option<tranches::Mode>,
+    /// `!isFiltered() && getAlleles().size() > 1`.
+    unfiltered_variant: bool,
+    /// No genotype, or polymorphic in its samples: `isValidVariant` when not trusting.
+    untyped_or_polymorphic: bool,
+}
+
+impl Training {
+    fn of(record: &VariantContext) -> Training {
+        use gatk_tools::remove_nearby_indels::{variant_type, VariantType};
+        Training {
+            contig: record.contig.clone(),
+            start: record.start,
+            stop: record.stop,
+            reference: bases(record.reference()),
+            alternates: record
+                .alternate_alleles()
+                .iter()
+                .map(|allele| allele.display_string())
+                .collect(),
+            class: match variant_type(record) {
+                VariantType::Snp | VariantType::Mnp => Some(tranches::Mode::Snp),
+                VariantType::Indel | VariantType::Mixed | VariantType::Symbolic => {
+                    Some(tranches::Mode::Indel)
+                }
+                VariantType::NoVariation => None,
+            },
+            unfiltered_variant: !record.is_filtered() && record.alleles.len() > 1,
+            untyped_or_polymorphic: record.genotypes.iter().next().is_none()
+                || is_polymorphic_in_samples(record),
+        }
+    }
+}
+
+fn training_entries(records: Vec<VariantContext>) -> Vec<Training> {
+    records.iter().map(Training::of).collect()
+}
+
 /// A resource, its tags, and its records.
 struct Resource {
     set: model::TrainingSet,
-    records: Vec<VariantContext>,
+    records: Vec<Training>,
+    /// The records' indices by contig and start, in file order: every variant looks its resources
+    /// up, and a scan of each resource per variant was most of the run.
+    by_start: std::collections::HashMap<(String, i64), Vec<usize>>,
 }
 
 impl Resource {
+    fn new(set: model::TrainingSet, records: Vec<Training>) -> Resource {
+        let mut by_start: std::collections::HashMap<(String, i64), Vec<usize>> =
+            std::collections::HashMap::new();
+        for (index, record) in records.iter().enumerate() {
+            by_start
+                .entry((record.contig.clone(), record.start))
+                .or_default()
+                .push(index);
+        }
+        Resource {
+            set,
+            records,
+            by_start,
+        }
+    }
+
     /// `featureContext.getValues(source, start)`: the records overlapping the variant that start
-    /// where it starts, in file order.
-    fn at<'a>(&'a self, contig: &str, start: i64, stop: i64) -> Vec<&'a VariantContext> {
-        records_at(&self.records, contig, start, stop)
+    /// where it starts, in file order. The same records as [`records_at`] over the whole file.
+    fn at<'a>(&'a self, contig: &str, start: i64, stop: i64) -> Vec<&'a Training> {
+        self.by_start
+            .get(&(contig.to_string(), start))
+            .map(|indices| {
+                indices
+                    .iter()
+                    .map(|&index| &self.records[index])
+                    .filter(|record| record.start <= stop && record.stop >= start)
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 }
 
@@ -106,15 +183,8 @@ fn allele_of_mode(
 }
 
 /// `checkVariationClass(evalVC, trainVC)`: the training record's type decides the class asked.
-fn same_class(eval: &VariantContext, train: &VariantContext) -> bool {
-    use gatk_tools::remove_nearby_indels::{variant_type, VariantType};
-    match variant_type(train) {
-        VariantType::Snp | VariantType::Mnp => of_mode(eval, tranches::Mode::Snp),
-        VariantType::Indel | VariantType::Mixed | VariantType::Symbolic => {
-            of_mode(eval, tranches::Mode::Indel)
-        }
-        VariantType::NoVariation => false,
-    }
+fn same_class(eval: &VariantContext, train: &Training) -> bool {
+    train.class.is_some_and(|mode| of_mode(eval, mode))
 }
 
 /// `isPolymorphicInSamples`: some called allele is not the reference.
@@ -135,11 +205,8 @@ fn is_polymorphic_in_samples(record: &VariantContext) -> bool {
 }
 
 /// `isValidVariant`.
-fn is_valid_training_variant(eval: &VariantContext, train: &VariantContext, trust: bool) -> bool {
-    !train.is_filtered()
-        && train.alleles.len() > 1
-        && same_class(eval, train)
-        && (trust || train.genotypes.iter().next().is_none() || is_polymorphic_in_samples(train))
+fn is_valid_training_variant(eval: &VariantContext, train: &Training, trust: bool) -> bool {
+    train.unfiltered_variant && same_class(eval, train) && (trust || train.untyped_or_polymorphic)
 }
 
 /// `Allele.getBaseString`, which a reference allele carries without its star.
@@ -291,12 +358,8 @@ fn add_datum(
     for resource in context.resources {
         for train in resource.at(&site.contig, site.start, site.stop) {
             if let Some(alternate) = &alternate {
-                let others: Vec<String> = train
-                    .alternate_alleles()
-                    .iter()
-                    .map(|allele| allele.display_string())
-                    .collect();
-                match is_allele_in_list(&reference, alternate, &bases(train.reference()), &others) {
+                match is_allele_in_list(&reference, alternate, &train.reference, &train.alternates)
+                {
                     Ok(true) => {}
                     Ok(false) => continue,
                     Err(()) => {
@@ -519,7 +582,13 @@ pub fn variant_recalibrator(parser: &Parser) -> Outcome {
         .unwrap_or_default();
     let mut resource_files = Vec::new();
     for (path, attributes) in &resource_values {
-        resource_files.push((path.clone(), attributes.clone(), read_feature_vcf(path)?));
+        // Reduced as soon as it is read, so the next resource is parsed beside slim entries.
+        let file = read_feature_vcf(path)?;
+        resource_files.push((
+            path.clone(),
+            attributes.clone(),
+            training_entries(file.records),
+        ));
     }
     let mut aggregates = Vec::new();
     for path in arguments(parser, "aggregate") {
@@ -555,10 +624,7 @@ pub fn variant_recalibrator(parser: &Parser) -> Outcome {
     let mut resources = Vec::new();
     for (_, attributes, file) in resource_files {
         let set = model::TrainingSet::from_attributes(&attributes).map_err(thrown)?;
-        resources.push(Resource {
-            set,
-            records: file.records,
-        });
+        resources.push(Resource::new(set, file));
     }
     if !resources.iter().any(|resource| resource.set.is_training) {
         return Err(Thrown::command_line(
@@ -889,9 +955,10 @@ fn train_and_write(
             .map_or(i64::MAX, |index| index as i64)
     };
     let data = &manager.data;
-    active.sort_by_key(|i| {
-        let (contig, start, end) = data[*i].loc.clone().unwrap_or_default();
-        (contig_index(&contig), start, end)
+    // Stable as well, and each key computed once rather than per comparison.
+    active.sort_by_cached_key(|i| match &data[*i].loc {
+        Some((contig, start, end)) => (contig_index(contig), *start, *end),
+        None => (contig_index(""), 0, 0),
     });
     manager.active = active;
     let recal = recal_file(parser, manager, contigs)?;
@@ -1201,4 +1268,57 @@ fn visualization_script(
     s.push_str("compactPDF(outputPDF)\n");
     s.push_str("}\n");
     Ok(s)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The index answers what the scan over the whole file answers, in the same order: records
+    /// sharing a start, a start on two contigs, a deletion spanning later starts, a start nothing has.
+    #[test]
+    fn the_index_finds_what_the_scan_finds() {
+        let text = "##fileformat=VCFv4.2\n\
+            ##contig=<ID=chr1,length=1000>\n##contig=<ID=chr2,length=1000>\n\
+            #CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n\
+            chr1\t10\t.\tA\tG\t.\t.\t.\nchr1\t10\t.\tA\tT\t.\t.\t.\n\
+            chr1\t12\t.\tACGT\tA\t.\t.\t.\nchr1\t13\t.\tC\tG\t.\t.\t.\n\
+            chr2\t10\t.\tA\tC\t.\t.\t.\n";
+        let file = htsjdk_vcf::reader::read_vcf(text).expect("the vcf");
+        let records = file.records;
+        let resource = Resource::new(
+            model::TrainingSet::from_attributes(&[]).expect("a set"),
+            training_entries(records.clone()),
+        );
+        // An entry, as what the lookup reads of it.
+        let key = |t: &Training| {
+            (
+                t.contig.clone(),
+                t.start,
+                t.stop,
+                t.reference.clone(),
+                t.alternates.clone(),
+                t.class,
+                t.unfiltered_variant,
+                t.untyped_or_polymorphic,
+            )
+        };
+        for contig in ["chr1", "chr2", "chr3"] {
+            for start in 8..16 {
+                for stop in start..start + 4 {
+                    let ours: Vec<_> = resource
+                        .at(contig, start, stop)
+                        .into_iter()
+                        .map(key)
+                        .collect();
+                    let scanned: Vec<_> = records_at(&records, contig, start, stop)
+                        .into_iter()
+                        .map(|r| key(&Training::of(r)))
+                        .collect();
+                    assert_eq!(ours, scanned, "{contig}:{start}-{stop}");
+                }
+            }
+        }
+        assert_eq!(resource.at("chr1", 10, 10).len(), 2);
+    }
 }

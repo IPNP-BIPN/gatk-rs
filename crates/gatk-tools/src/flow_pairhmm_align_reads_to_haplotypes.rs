@@ -226,8 +226,31 @@ fn within_one_ulp(x: f64, y: f64) -> bool {
 
 /// `Math.log10`, correctly rounded as the JVM's is: the platform's can be an ulp away, which a
 /// sum of a read's flows carries into its likelihood.
+///
+/// Remembered by the input's bits, which is exact because the function is: a read's flow
+/// probabilities are few distinct values, and every haplotype and every shift took the logarithm
+/// of each again, most of this tool's CPU. The cache is direct-mapped and per thread, so it is
+/// bounded and needs no lock; a collision only costs a recomputation.
 fn log10(value: f64) -> f64 {
-    jmath::math::log10(value)
+    const SLOTS: usize = 1024;
+    thread_local! {
+        static CACHE: std::cell::RefCell<Vec<(u64, f64)>> =
+            // A NaN's bits never come back as an input's with this payload, so an empty slot
+            // never matches; and a NaN input is computed, not looked up.
+            std::cell::RefCell::new(vec![(f64::NAN.to_bits() ^ 1, 0.0); SLOTS]);
+    }
+    if value.is_nan() {
+        return jmath::math::log10(value);
+    }
+    let bits = value.to_bits();
+    let slot = (bits ^ (bits >> 29) ^ (bits >> 47)) as usize % SLOTS;
+    CACHE.with_borrow_mut(|cache| {
+        let entry = &mut cache[slot];
+        if entry.0 != bits {
+            *entry = (bits, jmath::math::log10(value));
+        }
+        entry.1
+    })
 }
 
 /// `FlowBasedHaplotype`: the haplotype's key and the base each of its flows reads.
@@ -322,4 +345,40 @@ pub fn read_haplotype_fasta(text: &str) -> Vec<(String, Vec<u8>)> {
         }
     }
     records
+}
+
+#[cfg(test)]
+mod tests {
+    /// The remembered logarithm is the computed one, bit for bit, whether its slot was empty,
+    /// held the same input or held another, and for the inputs a logarithm treats apart.
+    #[test]
+    fn the_remembered_log10_is_the_computed_one() {
+        let mut state = 11u64;
+        let mut inputs: Vec<f64> = (0..20_000)
+            .map(|_| {
+                state = state
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                (state >> 11) as f64 / (1u64 << 53) as f64
+            })
+            .collect();
+        inputs.extend([
+            0.0,
+            -0.0,
+            1.0,
+            -1.0,
+            f64::INFINITY,
+            f64::MIN_POSITIVE,
+            5e-324,
+        ]);
+        // Twice over, so the second pass reads what the first remembered.
+        for value in inputs.iter().chain(inputs.iter()) {
+            assert_eq!(
+                super::log10(*value).to_bits(),
+                jmath::math::log10(*value).to_bits(),
+                "{value:e}"
+            );
+        }
+        assert!(super::log10(f64::NAN).is_nan());
+    }
 }

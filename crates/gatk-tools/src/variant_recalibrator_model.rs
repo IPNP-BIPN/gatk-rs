@@ -95,6 +95,12 @@ fn ln(x: f64) -> f64 {
     jmath::math::log(x)
 }
 
+/// `Math.log` of 10.0, which every datum's evaluation divides by, computed once.
+fn ln_10() -> f64 {
+    static LN_10: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
+    *LN_10.get_or_init(|| ln(10.0))
+}
+
 /// `Gamma.digamma`, which answers NaN where the port's own refuses a non-terminating input.
 fn digamma(x: f64) -> f64 {
     jmath::gamma::digamma(x).unwrap_or(f64::NAN)
@@ -258,7 +264,7 @@ fn normal_distribution_log10(mean: f64, sd: f64, x: f64) -> Result<f64, ModelErr
     }
     let root_two_pi = (2.0 * std::f64::consts::PI).sqrt();
     let a = -1.0 * log10(sd * root_two_pi);
-    let b = -1.0 * ((x - mean) * (x - mean) / (2.0 * (sd * sd))) / ln(10.0);
+    let b = -1.0 * ((x - mean) * (x - mean) / (2.0 * (sd * sd))) / ln_10();
     Ok(a + b)
 }
 
@@ -1081,17 +1087,17 @@ impl Gaussian {
             .cached_sigma_inverse
             .as_ref()
             .expect("a precomputed inverse");
-        let mut cross = vec![0.0; n];
-        for i in 0..n {
-            for j in 0..n {
-                cross[i] += (annotations[j] - self.mu[j]) * inverse.a[j][i];
-            }
-        }
+        // Each `cross[i]` is summed whole before it enters the kernel, as the reference's two loops
+        // do, so it needs no array.
         let mut kernel = 0.0;
         for i in 0..n {
-            kernel += cross[i] * (annotations[i] - self.mu[i]);
+            let mut cross = 0.0;
+            for j in 0..n {
+                cross += (annotations[j] - self.mu[j]) * inverse.a[j][i];
+            }
+            kernel += cross * (annotations[i] - self.mu[i]);
         }
-        ((-0.5 * kernel) / ln(10.0)) + self.cached_denom_log10
+        ((-0.5 * kernel) / ln_10()) + self.cached_denom_log10
     }
 
     fn maximize(
@@ -1139,25 +1145,28 @@ impl Gaussian {
     }
 
     /// The weighted scatter matrix, one datum's outer product at a time, each regularised.
+    ///
+    /// Each term is added to the sum as it is formed, which is what `plusEquals` of the term
+    /// matrix does element by element.
     fn accumulate_sigma(&mut self, data: &[&Datum]) {
         let n = self.mu.len();
-        let mut term = Matrix::zeros(n, n);
+        let mut deviation = vec![0.0; n];
         for (index, datum) in data.iter().enumerate() {
             let prob = self.p_var[index];
-            for i in 0..n {
-                for j in 0..n {
+            for (j, value) in deviation.iter_mut().enumerate() {
+                *value = datum.annotations[j] - self.mu[j];
+            }
+            for (i, row) in self.sigma.a.iter_mut().enumerate().take(n) {
+                let weighted = prob * deviation[i];
+                for (j, x) in row.iter_mut().enumerate().take(n) {
                     let reg = if i == j {
                         COVARIANCE_REGULARIZATION_EPSILON
                     } else {
                         0.0
                     };
-                    term.a[i][j] = prob
-                        * (datum.annotations[i] - self.mu[i])
-                        * (datum.annotations[j] - self.mu[j])
-                        + reg;
+                    *x += weighted * deviation[j] + reg;
                 }
             }
-            self.sigma.plus_equals(&term);
         }
     }
 
