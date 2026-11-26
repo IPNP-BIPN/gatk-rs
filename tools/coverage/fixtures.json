@@ -2817,27 +2817,34 @@
         "that, by --max-variants-per-shard's range and by an interval the reference does not hold, so",
         "the IndexOutOfBoundsException is measured by the tool's suite and reproduced by the runner",
         "rather than covered here.",
-        "--base-comparison is held at NO_BASE_COMPARISON and --base-comparison-output is held out with",
-        "it. FULL_ALIGNMENT shells out to mummer, which the oracle image does not carry, and",
-        "FIND_SNPS_ONLY compares bases into a directory this port does not write yet: a row carrying",
-        "either would measure a refusal of the port's own.",
-        "--input and --read-index are held out. This tool reads no reads, and the shared --input value",
+        "--base-comparison is NO_BASE_COMPARISON or FIND_SNPS_ONLY, and --base-comparison-output is",
+        "absent, /work/out or a directory that does not exist. snp.fasta is reference.fasta's chr1 with",
+        "three bases changed, one to an ambiguity code, so the pair the mode compares differs in sequence",
+        "and the SNP table has rows. FULL_ALIGNMENT shells out to mummer, which the oracle image does not",
+        "carry, so it stays out. FIND_SNPS_ONLY is kept off other.fasta as --reference, whose chrOther",
+        "refuses every chr1 interval before the mode is reached.",
         "is a VCF whose refusal as a reads source is measured by CountVariants.",
         "--sequence-dictionary is held out. It is the master dictionary, which the engine validates",
         "against the reference, and that validation is measured by the tools that traverse."
       ],
       "--references-to-compare": [
         "/work/fixtures/other.fasta",
-        "/work/fixtures/renamed.fasta"
+        "/work/fixtures/renamed.fasta",
+        "/work/fixtures/snp.fasta"
       ],
       "--output": [
         "/work/out/references.table",
         "/work/out/references2.table"
       ],
       "--base-comparison": [
-        "NO_BASE_COMPARISON"
+        "NO_BASE_COMPARISON",
+        "FIND_SNPS_ONLY"
       ],
-      "--base-comparison-output": [],
+      "--base-comparison-output": [
+        "<unset>",
+        "/work/out",
+        "/work/out/no_such_directory"
+      ],
       "--input": [],
       "--read-index": [],
       "--sequence-dictionary": []
@@ -20232,6 +20239,36 @@
         "--exclude-intervals": "null"
       },
       "why": "A filtering mode with no -L or -XL is the one MissingArgument at the end of onStartup, on every such row."
+    },
+    {
+      "tools": [
+        "CompareReferences"
+      ],
+      "forbid": {
+        "--base-comparison": "FIND_SNPS_ONLY",
+        "--reference": "/work/fixtures/other.fasta"
+      },
+      "why": "other.fasta refuses the chr1 intervals before the base comparison is reached."
+    },
+    {
+      "tools": [
+        "CompareReferences"
+      ],
+      "forbid": {
+        "--references-to-compare": "/work/fixtures/snp.fasta",
+        "--base-comparison-output": "<unset>"
+      },
+      "why": "snp.fasta is the one pair that writes a SNP table, so its rows give the mode a directory it can write into."
+    },
+    {
+      "tools": [
+        "CompareReferences"
+      ],
+      "forbid": {
+        "--references-to-compare": "/work/fixtures/snp.fasta",
+        "--base-comparison-output": "/work/out/no_such_directory"
+      },
+      "why": "snp.fasta is the one pair that writes a SNP table, so its rows give the mode a directory it can write into."
     }
   ],
   "exclude": {
