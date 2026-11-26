@@ -83,8 +83,35 @@ pub fn check_inputs(names: &[String]) -> Result<(), InputError> {
     Ok(())
 }
 
+/// `getDefaultVariantAnnotationGroups`, resolved with no annotation argument given.
+pub const DEFAULT_ANNOTATION_GROUPS: [&str; 2] = ["StandardAnnotation", "AS_StandardAnnotation"];
+
+/// The INFO and jumbo INFO annotations, which are the ones `copyInfoAnnotations` reads.
+pub fn info_annotations(
+    resolved: &[&'static gatk_annotation::catalogue::Entry],
+) -> Vec<&'static gatk_annotation::catalogue::Entry> {
+    use gatk_annotation::catalogue::Kind;
+    resolved
+        .iter()
+        .copied()
+        .filter(|entry| matches!(entry.kind, Kind::Info | Kind::JumboInfo))
+        .collect()
+}
+
+fn standard_annotations() -> Vec<&'static gatk_annotation::catalogue::Entry> {
+    use gatk_annotation::catalogue::{resolve, AnnotationArguments};
+    let arguments = AnnotationArguments {
+        annotations: Vec::new(),
+        groups: Vec::new(),
+        excluded: Vec::new(),
+        disable_tool_defaults: false,
+        enable_all: false,
+    };
+    info_annotations(&resolve(&arguments, &DEFAULT_ANNOTATION_GROUPS, &[]).unwrap_or_default())
+}
+
 /// Every argument the comparison reads, with the tool's defaults.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Options {
     pub warn_on_errors: bool,
     pub finish_before_failing: bool,
@@ -113,11 +140,10 @@ pub struct Options {
     pub ignore_dbsnp_ids: bool,
     pub ignore_gq0: bool,
     pub ignore_some_multi_allelics: bool,
-    /// `--annotations-to-keep`, and the two arguments that decide which annotations the engine
-    /// holds, all three read only when a trim subsets a record's annotations.
+    /// `--annotations-to-keep`, and the engine's INFO annotations as the annotation arguments
+    /// resolve them, both read only when a trim subsets a record's annotations.
     pub annotations_to_keep: Vec<String>,
-    pub enable_all_annotations: bool,
-    pub disable_tool_default_annotations: bool,
+    pub annotations: Vec<&'static gatk_annotation::catalogue::Entry>,
     /// `MultiVariantWalkerGroupedByOverlap`'s two record filters.
     pub ignore_variants_starting_outside_interval: bool,
     pub ignore_reference_blocks: bool,
@@ -156,8 +182,7 @@ impl Default for Options {
             ignore_gq0: false,
             ignore_some_multi_allelics: false,
             annotations_to_keep: Vec::new(),
-            enable_all_annotations: false,
-            disable_tool_default_annotations: false,
+            annotations: standard_annotations(),
             ignore_variants_starting_outside_interval: false,
             ignore_reference_blocks: false,
             reference_padding: 1,
@@ -225,39 +250,6 @@ const HAPLOTYPE_CALLER_PHASING_ID_KEY: &str = "PID";
 const AS_VARIANT_DEPTH_KEY: &str = "AS_VarDP";
 const RAW_QUAL_APPROX_KEY: &str = "QUALapprox";
 const RAW_RMS_MAPPING_QUALITY_DEPRECATED: &str = "RAW_MQ";
-
-/// The INFO keys the standard annotations claim, annotation by annotation in class-name order:
-/// `BaseQualityRankSumTest`, `ChromosomeCounts`, `Coverage`, `ExcessHet`, `FisherStrand`,
-/// `InbreedingCoeff`, `MappingQualityRankSumTest`, `QualByDepth`, `RMSMappingQuality` (with its raw
-/// key), `ReadPosRankSumTest` and `StrandOddsRatio`.
-const STANDARD_ANNOTATION_KEYS: [&str; 14] = [
-    "BaseQRankSum",
-    "AN",
-    "AC",
-    "AF",
-    "DP",
-    "ExcessHet",
-    "FS",
-    "InbreedingCoeff",
-    "MQRankSum",
-    "QD",
-    "MQ",
-    "RAW_MQandDP",
-    "ReadPosRankSum",
-    "SOR",
-];
-
-/// `ReblockGVCF.infoFieldAnnotationKeyNamesToRemove`.
-const REMOVED_ANNOTATION_KEYS: [&str; 8] = [
-    "GVCFBlock",
-    "HaplotypeScore",
-    "InbreedingCoeff",
-    "MLEAC",
-    "MLEAF",
-    "ExcessHet",
-    "AS_InbreedingCoeff",
-    "DS",
-];
 
 /// `annotationsThatVaryWithNoCalls`, which `--mute-acceptable-diffs` would forgive when the allele
 /// number differs, and it never does.
@@ -1898,7 +1890,7 @@ impl Comparator<'_> {
         }
         let attributes = if relevant.len() != variant.alleles().len() {
             let first = vc.genotypes.iter().next().cloned();
-            self.subset_annotations(variant, first.as_ref())?
+            self.subset_annotations(variant, first.as_ref(), &kept)?
         } else {
             variant.attributes.clone()
         };
@@ -1915,13 +1907,12 @@ impl Comparator<'_> {
     /// The new map holds the raw MQ when the record had none, every key an engine annotation claims
     /// except the eight the reblocking removes, the variant depth and QUAL approximation when
     /// present, a genotype count built from the first genotype, and `--annotations-to-keep`. A key
-    /// no annotation claims is DROPPED. Allele-specific annotations are subset per allele, which is
-    /// not ported, and neither is the set `--enable-all-annotations` claims beyond the standard
-    /// one: a record that reaches either is the port's limitation.
+    /// no annotation claims is DROPPED, and an allele-specific one is subset to the kept alleles.
     fn subset_annotations(
         &self,
         variant: &Record,
         genotype: Option<&Genotype>,
+        relevant: &[usize],
     ) -> Result<Vec<(String, Value)>, Failure> {
         let limitation = |what: String| {
             Failure::Limitation(format!(
@@ -1933,24 +1924,17 @@ impl Comparator<'_> {
         };
         let original = &variant.attributes;
         let has = |key: &str| original.iter().any(|(name, _)| name == key);
-        for (key, _) in original {
-            if key.starts_with("AS_") && key != AS_VARIANT_DEPTH_KEY {
-                return Err(limitation(format!("the allele-specific {key}")));
-            }
-            if key == RAW_RMS_MAPPING_QUALITY_DEPRECATED {
-                return Err(limitation(format!("the deprecated {key}")));
-            }
-            let known = STANDARD_ANNOTATION_KEYS.contains(&key.as_str())
-                || REMOVED_ANNOTATION_KEYS.contains(&key.as_str())
-                || key == AS_VARIANT_DEPTH_KEY
-                || key == RAW_QUAL_APPROX_KEY
-                || self.options.annotations_to_keep.contains(key);
-            if self.options.enable_all_annotations && !known {
-                return Err(limitation(format!("{key} under --enable-all-annotations")));
-            }
+        if original
+            .iter()
+            .any(|(key, _)| key == RAW_RMS_MAPPING_QUALITY_DEPRECATED)
+        {
+            return Err(limitation(format!(
+                "the deprecated {RAW_RMS_MAPPING_QUALITY_DEPRECATED}"
+            )));
         }
-        let claimed =
-            self.options.enable_all_annotations || !self.options.disable_tool_default_annotations;
+        // `copyInfoAnnotations` reads the original record, attributes and alleles both.
+        let mut source = variant.vc.clone();
+        source.attributes = original.clone();
 
         let mut destination: Vec<(String, Value)> = Vec::new();
         let put =
@@ -1984,16 +1968,13 @@ impl Comparator<'_> {
                 Value::Str(format!("{raw},{dp}")),
             );
         }
-        if claimed {
-            for key in STANDARD_ANNOTATION_KEYS {
-                if REMOVED_ANNOTATION_KEYS.contains(&key) {
-                    continue;
-                }
-                if let Some((_, value)) = original.iter().find(|(name, _)| name == key) {
-                    put(&mut destination, key, value.clone());
-                }
-            }
-        }
+        crate::reblock_gvcf::copy_info_annotations(
+            &self.options.annotations,
+            &mut destination,
+            &source,
+            true,
+            relevant,
+        );
         for key in [AS_VARIANT_DEPTH_KEY, RAW_QUAL_APPROX_KEY] {
             if let Some((_, value)) = original.iter().find(|(name, _)| name == key) {
                 put(&mut destination, key, value.clone());

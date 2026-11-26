@@ -869,55 +869,13 @@ impl Reblocker {
         needs_subsetting: bool,
         relevant: &[usize],
     ) {
-        for entry in &self.annotations {
-            for key in entry.key_names {
-                if INFO_KEYS_TO_REMOVE.contains(key) {
-                    continue;
-                }
-                if let Some(value) = attribute(source, key) {
-                    put(destination, key, value.clone());
-                }
-            }
-            let Some(empty) = allele_specific_empty_value(entry) else {
-                continue;
-            };
-            let reducible = entry.is_reducible();
-            let keys: &[&str] = if reducible {
-                entry.raw_keys.unwrap_or(&[])
-            } else {
-                entry.key_names
-            };
-            for raw_key in keys {
-                if INFO_KEYS_TO_REMOVE.contains(raw_key) {
-                    continue;
-                }
-                let Some(value) = attribute(source, raw_key) else {
-                    continue;
-                };
-                if needs_subsetting && raw_key.starts_with("AS_") {
-                    let values = allele_list(value, if reducible { '|' } else { ',' });
-                    let mut subset = if reducible {
-                        remap_list(&values, relevant, 0, "")
-                    } else {
-                        remap_list(&values, relevant, 1, "")
-                    };
-                    let last = relevant[relevant.len() - 1];
-                    if source.alleles.get(last) == Some(&non_ref()) {
-                        // "zero out non-ref value, just in case"
-                        let end = subset.len() - 1;
-                        subset[end] = empty.to_string();
-                    }
-                    let encoded = if reducible {
-                        subset.join("|").replace(['[', ']'], "")
-                    } else {
-                        subset.join(",")
-                    };
-                    put(destination, raw_key, Value::Str(encoded));
-                } else {
-                    put(destination, raw_key, value.clone());
-                }
-            }
-        }
+        copy_info_annotations(
+            &self.annotations,
+            destination,
+            source,
+            needs_subsetting,
+            relevant,
+        );
     }
 
     /// `addQualAnnotations`.
@@ -1115,5 +1073,64 @@ mod tests {
     fn second_smallest_minus_smallest_is_the_gap_or_the_default() {
         assert_eq!(second_smallest_minus_smallest(&[0, 25, 250], 0), 25);
         assert_eq!(second_smallest_minus_smallest(&[7], 3), 3);
+    }
+}
+
+/// `copyInfoAnnotations` over the engine's INFO annotations, which `VCFComparator` shares.
+pub fn copy_info_annotations(
+    annotations: &[&'static Entry],
+    destination: &mut Vec<(String, Value)>,
+    source: &VariantContext,
+    needs_subsetting: bool,
+    relevant: &[usize],
+) {
+    for entry in annotations {
+        for key in entry.key_names {
+            if INFO_KEYS_TO_REMOVE.contains(key) {
+                continue;
+            }
+            if let Some(value) = attribute(source, key) {
+                put(destination, key, value.clone());
+            }
+        }
+        let Some(empty) = allele_specific_empty_value(entry) else {
+            continue;
+        };
+        let reducible = entry.is_reducible();
+        let keys: &[&str] = if reducible {
+            entry.raw_keys.unwrap_or(&[])
+        } else {
+            entry.key_names
+        };
+        for raw_key in keys {
+            if INFO_KEYS_TO_REMOVE.contains(raw_key) {
+                continue;
+            }
+            let Some(value) = attribute(source, raw_key) else {
+                continue;
+            };
+            if needs_subsetting && raw_key.starts_with("AS_") {
+                let values = allele_list(value, if reducible { '|' } else { ',' });
+                let mut subset = if reducible {
+                    remap_list(&values, relevant, 0, "")
+                } else {
+                    remap_list(&values, relevant, 1, "")
+                };
+                let last = relevant[relevant.len() - 1];
+                if source.alleles.get(last) == Some(&non_ref()) {
+                    // "zero out non-ref value, just in case"
+                    let end = subset.len() - 1;
+                    subset[end] = empty.to_string();
+                }
+                let encoded = if reducible {
+                    subset.join("|").replace(['[', ']'], "")
+                } else {
+                    subset.join(",")
+                };
+                put(destination, raw_key, Value::Str(encoded));
+            } else {
+                put(destination, raw_key, value.clone());
+            }
+        }
     }
 }
