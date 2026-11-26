@@ -5829,29 +5829,10 @@ pub fn calculate_genotype_posteriors(parser: &Parser) -> Outcome {
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
-    // `onTraversalStart`: the PED is read whether or not the family priors are skipped, and they
-    // are skipped when the file holds no trio, which is `getTrios()` over the whole PED rather
-    // than the trios `setTrios` later keeps.
-    let db = match argument(parser, "pedigree") {
-        Some(path) => read_sample_db(&path)?,
-        None => gatk_engine::sample_db::SampleDb::default(),
-    };
-    let skip_family_priors = flag(parser, "skip-family-priors") || db.trios().is_empty();
-
-    let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
-        failure: Failure::User,
-        exception: "htsjdk.tribble.TribbleException",
-        message: Some(failure.error.message()),
-    })?;
-    // `getSortedSampleSet`, then `new FamilyLikelihoods(..., getFamilies(vcfSamples))`.
-    let trios = gatk_tools::family_priors::set_trios(&db, &file.header.samples);
-    let de_novo_prior = scalar(parser, "de-novo-prior")
-        .and_then(|text| text.parse().ok())
-        .unwrap_or(gatk_tools::family_priors::DEFAULT_DE_NOVO_PRIOR);
-
     // Every supporting callset, read whole: `featureContext.getValues` asks each of them for the
     // records at the driving record's locus, and only those with the SAME START are used.
     let mut supporting: Vec<posteriors::Record> = Vec::new();
+    let mut supporting_dictionaries: Vec<Vec<htsjdk_bam::header::SequenceRecord>> = Vec::new();
     for path in arguments(parser, "supporting-callsets") {
         let bytes = std::fs::read(&path).map_err(|_| {
             Thrown::user(
@@ -5871,6 +5852,20 @@ pub fn calculate_genotype_posteriors(parser: &Parser) -> Outcome {
             exception: "htsjdk.tribble.TribbleException",
             message: Some(failure.error.message()),
         })?;
+        supporting_dictionaries.push(
+            gatk_tools::multi_variant::dictionary_of(&support.header.lines)
+                .iter()
+                .map(|contig| {
+                    htsjdk_bam::header::SequenceRecord::new(&contig.name, contig.length as i32)
+                })
+                .collect::<Vec<_>>(),
+        );
+        if supporting_dictionaries.last().is_some_and(Vec::is_empty) {
+            supporting_dictionaries.pop();
+            if let Some(index) = index_dictionary(&path) {
+                supporting_dictionaries.push(index.sequences);
+            }
+        }
         supporting.extend(
             support
                 .records
@@ -5878,6 +5873,94 @@ pub fn calculate_genotype_posteriors(parser: &Parser) -> Outcome {
                 .map(gatk_tools::calculate_genotype_posteriors::record_from_vc),
         );
     }
+
+    // `validateSequenceDictionaries` over the supporting callsets, which are features too: each
+    // against the reference, then against the best available dictionary (the driving variants'
+    // unless synthesized from an index, then the master's or the reference's).
+    if !flag(parser, "disable-sequence-dictionary-validation") {
+        let reference = reference_dictionary(parser)?;
+        let own: Vec<htsjdk_bam::header::SequenceRecord> = htsjdk_vcf::reader::read_vcf(&text)
+            .map(|file| {
+                gatk_tools::multi_variant::dictionary_of(&file.header.lines)
+                    .iter()
+                    .map(|contig| {
+                        htsjdk_bam::header::SequenceRecord::new(&contig.name, contig.length as i32)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let best = if !own.is_empty() {
+            Some(own)
+        } else {
+            master_dictionary(parser)?
+                .or_else(|| reference.clone())
+                .map(|header| header.sequences)
+                .or_else(|| index_dictionary(&input).map(|index| index.sequences))
+        };
+        for features in &supporting_dictionaries {
+            for (name, other) in [
+                ("reference", reference.as_ref().map(|r| &r.sequences)),
+                ("best available", best.as_ref()),
+            ] {
+                if let Some(other) = other {
+                    gatk_tools::sequence_dictionary::validate(
+                        name, other, "features", features, false, false,
+                    )
+                    .map_err(|refusal| Thrown {
+                        failure: Failure::User,
+                        exception: refusal.java_class(),
+                        message: Some(refusal.message()),
+                    })?;
+                }
+            }
+        }
+    }
+    // `onTraversalStart`: the PED is read whether or not the family priors are skipped, and they
+    // are skipped when the file holds no trio, which is `getTrios()` over the whole PED rather
+    // than the trios `setTrios` later keeps.
+    let db = match argument(parser, "pedigree") {
+        Some(path) => read_sample_db(&path)?,
+        None => gatk_engine::sample_db::SampleDb::default(),
+    };
+    let skip_family_priors = flag(parser, "skip-family-priors") || db.trios().is_empty();
+
+    let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+        failure: Failure::User,
+        exception: "htsjdk.tribble.TribbleException",
+        message: Some(failure.error.message()),
+    })?;
+    // `onTraversalStart`'s two refusals of the driving header, in its order.
+    if file.header.samples.is_empty() {
+        return Err(Thrown::user("Bad input: VCF has no genotypes"));
+    }
+    if let Some((number, line_type)) = file.header.lines.iter().find_map(|line| match line {
+        htsjdk_vcf::header::HeaderLine::Compound {
+            key,
+            id,
+            number,
+            line_type,
+            ..
+        } if key == "INFO" && id == "MLEAC" => Some((number, line_type)),
+        _ => None,
+    }) {
+        if *number != htsjdk_vcf::header::Cardinality::A {
+            return Err(Thrown::user(
+                "Bad input: VCF does not have a properly formatted MLEAC field: the count type \
+                 should be \"A\"",
+            ));
+        }
+        if *line_type != htsjdk_vcf::header::LineType::Integer {
+            return Err(Thrown::user(
+                "Bad input: VCF does not have a properly formatted MLEAC field: the field type \
+                 should be \"Integer\"",
+            ));
+        }
+    }
+    // `getSortedSampleSet`, then `new FamilyLikelihoods(..., getFamilies(vcfSamples))`.
+    let trios = gatk_tools::family_priors::set_trios(&db, &file.header.samples);
+    let de_novo_prior = scalar(parser, "de-novo-prior")
+        .and_then(|text| text.parse().ok())
+        .unwrap_or(gatk_tools::family_priors::DEFAULT_DE_NOVO_PRIOR);
 
     let number = |name: &str, default: f64| -> f64 {
         scalar(parser, name)
@@ -5986,27 +6069,36 @@ pub fn calculate_genotype_posteriors(parser: &Parser) -> Outcome {
             else {
                 continue;
             };
-            genotype.alleles = called
-                .alleles
-                .iter()
-                .filter_map(|index| original.alleles.get(*index).cloned())
-                .collect();
+            // A genotype with neither PP nor real PLs is copied through as it is, so a `./.`
+            // keeps its no-call alleles instead of losing them to the index lookup below.
+            let Some(values) = &called.posteriors else {
+                continue;
+            };
+            genotype.alleles = posteriors::called_alleles(called, &original.alleles);
             if let Some(gq) = called.gq {
                 genotype.gq = Some(gq);
             }
-            genotype.extended.retain(|(key, _)| key != "PP");
-            if let Some(values) = &called.posteriors {
-                genotype.extended.push((
-                    "PP".to_string(),
-                    htsjdk_vcf::variant::Value::Str(
-                        values
-                            .iter()
-                            .map(|value| value.to_string())
-                            .collect::<Vec<_>>()
-                            .join(","),
-                    ),
-                ));
+            if called.stripped {
+                genotype.ad = None;
+                genotype.dp = None;
+                genotype.pl = None;
+                genotype.extended.clear();
             }
+            genotype.extended.retain(|(key, _)| key != "PP");
+            genotype.extended.push((
+                "PP".to_string(),
+                htsjdk_vcf::variant::Value::Str(
+                    values
+                        .iter()
+                        .map(|value| value.to_string())
+                        .collect::<Vec<_>>()
+                        .join(","),
+                ),
+            ));
+        }
+        // `calculateChromosomeCounts(builder, true)` again, over the recalled genotypes.
+        if answer.prior.is_some() {
+            gatk_tools::population_priors::chromosome_counts(&mut vc);
         }
         written.push(vc);
     }

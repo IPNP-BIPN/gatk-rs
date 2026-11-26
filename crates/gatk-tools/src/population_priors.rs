@@ -72,13 +72,15 @@ impl PopulationPriors {
             let Some(values) = &called.posteriors else {
                 continue;
             };
-            genotype.alleles = called
-                .alleles
-                .iter()
-                .filter_map(|index| vc.alleles.get(*index).cloned())
-                .collect();
+            genotype.alleles = posteriors::called_alleles(called, &vc.alleles);
             if let Some(gq) = called.gq {
                 genotype.gq = Some(gq);
+            }
+            if called.stripped {
+                genotype.ad = None;
+                genotype.dp = None;
+                genotype.pl = None;
+                genotype.extended.clear();
             }
             genotype.extended.retain(|(key, _)| key != "PP");
             genotype
@@ -108,7 +110,7 @@ fn set(vc: &mut VariantContext, key: &str, value: String) {
 
 /// `VariantContextUtils.calculateChromosomeCounts(builder, true)`: AN over the called alleles of
 /// the unfiltered genotypes, and AC and AF for each alternate.
-fn chromosome_counts(vc: &mut VariantContext) {
+pub fn chromosome_counts(vc: &mut VariantContext) {
     if vc.genotypes.is_empty() {
         return;
     }

@@ -50,6 +50,7 @@
 //! `makeGenotypeCall` with `USE_PLS_TO_ASSIGN` picks the most likely posterior, so a `GT` can
 //! change and the `GQ` is recomputed from the `PP` rather than kept from the `PL`.
 
+use gatk_engine::math_utils::log10_sum_log10;
 use jmath::gamma::log_gamma;
 use std::collections::BTreeMap;
 
@@ -57,6 +58,9 @@ use std::collections::BTreeMap;
 pub const MIN_SAMPLES_TO_USE_INPUTS: usize = 10;
 /// `HomoSapiensConstants.SNP_HETEROZYGOSITY`, which is both defaults.
 pub const DEFAULT_PRIOR: f64 = 1e-3;
+/// `GATKVariantContextUtils.SUM_GL_THRESH_NOCALL`.
+const SUM_GL_THRESH_NOCALL: f64 = -0.1;
+
 /// `HomoSapiensConstants.DEFAULT_PLOIDY`.
 pub const DEFAULT_PLOIDY: usize = 2;
 
@@ -84,6 +88,7 @@ pub struct Genotype {
     /// Allele indices into the record's allele list.
     pub alleles: Vec<usize>,
     pub depth: Option<i32>,
+    pub gq: Option<i32>,
     pub likelihoods: Option<Vec<i32>>,
     /// `PP`, which a second pass would read in preference to `PL`.
     pub posteriors: Option<Vec<i32>>,
@@ -274,11 +279,54 @@ pub fn parse_posteriors_into_prob_space(genotype: &Genotype) -> Option<Vec<f64>>
     })
 }
 
+/// `GATKVariantContextUtils.determineReferenceAllele`: the longest reference among the records
+/// that start where `record` does, so that a deletion in a resource pads a shorter input.
+///
+/// shortcut: Java throws an IllegalStateException when two references of the same length differ;
+/// this keeps the first one. Upgrade if a row ever feeds such a pair.
+fn common_reference(record: &Record, resources: &[Record]) -> Allele {
+    let mut common = record.reference();
+    for resource in resources
+        .iter()
+        .filter(|resource| resource.start == record.start)
+    {
+        if resource.reference().bases.len() > common.bases.len() {
+            common = resource.reference();
+        }
+    }
+    common.clone()
+}
+
+/// `ReferenceConfidenceVariantContextMerger.remapAlleles`: the common reference, then each
+/// alternate extended by the reference bases this record's own reference lacks.
+///
+/// Symbolic alleles, `*` and no-calls are kept as they are, as in Java.
+fn remap_alleles(record: &Record, common_ref: &Allele) -> Vec<Allele> {
+    let extra = &common_ref.bases[record.reference().bases.len()..];
+    std::iter::once(common_ref.clone())
+        .chain(record.alternates().into_iter().map(|allele| {
+            if allele.is_symbolic() || allele.bases == "." {
+                allele.clone()
+            } else {
+                Allele {
+                    bases: format!("{}{extra}", allele.bases),
+                    is_ref: false,
+                }
+            }
+        }))
+        .collect()
+}
+
 /// `addAlleleCounts`: MLEAC first unless `use_ac`, then AC, then the genotypes themselves.
 ///
-/// The alleles are keyed by their remapped selves; this fixture never needs a remapping, since
-/// every resource shares the input's reference allele, and the padding path is not ported.
-pub fn add_allele_counts(counts: &mut BTreeMap<Allele, i32>, record: &Record, use_ac: bool) {
+/// Each count is keyed by the allele as `remapped` onto the common reference, so a panel that
+/// writes a deletion with more padding than the input still counts towards the input's allele.
+pub fn add_allele_counts(
+    counts: &mut BTreeMap<Allele, i32>,
+    record: &Record,
+    remapped: &[Allele],
+    use_ac: bool,
+) {
     let allele_counts: Vec<i32> = if record.attributes.contains_key("MLEAC") && !use_ac {
         record.attribute_ints("MLEAC").expect("an MLEAC")
     } else if record.attributes.contains_key("AC") {
@@ -302,7 +350,7 @@ pub fn add_allele_counts(counts: &mut BTreeMap<Allele, i32>, record: &Record, us
         } else {
             allele_counts[index - 1]
         };
-        *counts.entry(allele.clone()).or_insert(0) += count;
+        *counts.entry(remapped[index].clone()).or_insert(0) += count;
     }
 }
 
@@ -318,9 +366,12 @@ pub struct Posteriors {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CalledGenotype {
     pub sample: String,
+    /// Allele indices into the record's alleles; empty for a no-call (`./.`).
     pub alleles: Vec<usize>,
     pub gq: Option<i32>,
     pub posteriors: Option<Vec<i32>>,
+    /// The genotype loses its AD, DP, PL and other FORMAT attributes before PP is added.
+    pub stripped: bool,
 }
 
 /// `calculatePosteriorProbs`, over one record and the resources that start where it does.
@@ -341,24 +392,35 @@ pub fn calculate_posterior_probs(
         0
     };
 
+    let common_ref = common_reference(record, resources);
+    let remapped = remap_alleles(record, &common_ref);
     for resource in resources {
         if resource.start == record.start {
-            add_allele_counts(&mut total_allele_counts, resource, !options.use_mleac);
+            let resource_remapped = remap_alleles(resource, &common_ref);
+            add_allele_counts(
+                &mut total_allele_counts,
+                resource,
+                &resource_remapped,
+                !options.use_mleac,
+            );
         }
     }
     if (options.use_input_samples_allele_counts && !resources.is_empty())
         || (resources.is_empty() && use_discovered_ac_for_missing)
     {
-        add_allele_counts(&mut total_allele_counts, record, !options.use_mleac);
+        add_allele_counts(
+            &mut total_allele_counts,
+            record,
+            &remapped,
+            !options.use_mleac,
+        );
     }
 
-    let common_ref = record.reference().clone();
     *total_allele_counts.entry(common_ref.clone()).or_insert(0) +=
         reference_allele_count_for_missing;
 
     // The pseudocount is chosen by LENGTH, not by the site's type.
-    let mut allele_counts: Vec<f64> = record
-        .alleles
+    let mut allele_counts: Vec<f64> = remapped
         .iter()
         .map(|allele| {
             let observed = f64::from(*total_allele_counts.get(allele).unwrap_or(&0));
@@ -380,7 +442,7 @@ pub fn calculate_posterior_probs(
     if let Some(non_ref_index) = record.alleles.iter().position(Allele::is_non_ref) {
         let resource_only: i32 = total_allele_counts
             .iter()
-            .filter(|(allele, _)| !record.alleles.contains(allele))
+            .filter(|(allele, _)| !remapped.contains(allele))
             .map(|(_, count)| *count)
             .sum();
         allele_counts[non_ref_index] = options
@@ -404,6 +466,7 @@ pub fn calculate_posterior_probs(
                 alleles: genotype.alleles.clone(),
                 gq: None,
                 posteriors: None,
+                stripped: false,
             }),
             Some(likelihoods) => {
                 assert_eq!(
@@ -411,27 +474,52 @@ pub fn calculate_posterior_probs(
                     prior.len(),
                     "likelihoods not of correct size"
                 );
-                let posterior: Vec<f64> = likelihoods
+                let unnormalized: Vec<f64> = likelihoods
                     .iter()
                     .zip(&prior)
                     .map(|(likelihood, prior)| likelihood + prior)
                     .collect();
+                // `MathUtils.normalizeLog10`: the GQ test below is sensitive to the last bit.
+                let log10_sum = log10_sum_log10(&unnormalized);
+                let posterior: Vec<f64> =
+                    unnormalized.iter().map(|value| value - log10_sum).collect();
                 let best = max_element_index(&posterior);
                 let alleles = genotype_alleles(DEFAULT_PLOIDY, best);
                 let gq = gq_log10_from_likelihoods(best, &posterior);
+                // `makeGenotypeCall`'s "no data" case: a hom-ref or no-call at GQ 0 and DP 0 is
+                // stripped to its GT, and with no PL left CGP calls it straight from the posteriors,
+                // without the <NON_REF> or no-call rules below.
+                if genotype.gq == Some(0)
+                    && genotype.depth == Some(0)
+                    && genotype.alleles.iter().all(|index| *index == 0)
+                {
+                    called.push(CalledGenotype {
+                        sample: genotype.sample.clone(),
+                        alleles,
+                        gq: Some(gq_to_phred(gq)),
+                        posteriors: Some(gls_to_pls(&posterior)),
+                        stripped: true,
+                    });
+                    continue;
+                }
                 called.push(CalledGenotype {
                     sample: genotype.sample.clone(),
-                    // A recalled genotype whose alleles include <NON_REF> is written as hom-ref.
+                    // `makeGenotypeCall`: a recalled genotype whose alleles include <NON_REF> is
+                    // written as hom-ref, and a hom-ref call less sure than SUM_GL_THRESH_NOCALL
+                    // (-0.1) is no-called, so a PL of 0,0,34 comes out as `./.`.
                     alleles: if alleles
                         .iter()
                         .any(|index| record.alleles[*index].is_non_ref())
                     {
                         vec![0; DEFAULT_PLOIDY]
+                    } else if best == 0 && gq > SUM_GL_THRESH_NOCALL {
+                        Vec::new()
                     } else {
                         alleles
                     },
                     gq: Some(gq_to_phred(gq)),
                     posteriors: Some(gls_to_pls(&posterior)),
+                    stripped: false,
                 });
             }
         }
@@ -459,6 +547,21 @@ fn max_element_index(values: &[f64]) -> usize {
         }
     }
     best
+}
+
+/// A recalled genotype's alleles out of the record's own, a no-call being `./.` of the diploid.
+pub fn called_alleles(
+    called: &CalledGenotype,
+    alleles: &[htsjdk_vcf::allele::Allele],
+) -> Vec<htsjdk_vcf::allele::Allele> {
+    if called.alleles.is_empty() {
+        return vec![htsjdk_vcf::allele::Allele::no_call(); DEFAULT_PLOIDY];
+    }
+    called
+        .alleles
+        .iter()
+        .filter_map(|index| alleles.get(*index).cloned())
+        .collect()
 }
 
 /// `GenotypesCache.get(ploidy, index).asAlleleList`, for the diploid order AA AB BB AC BC CC.
@@ -544,6 +647,7 @@ pub fn record_from_vc(vc: &htsjdk_vcf::variant::VariantContext) -> Record {
                     })
                     .collect(),
                 depth: genotype.dp,
+                gq: genotype.gq,
                 likelihoods: genotype.pl.clone(),
                 posteriors: genotype
                     .extended

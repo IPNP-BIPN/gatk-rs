@@ -95,6 +95,7 @@ fn records(vcf: &str) -> Vec<Record> {
                         .map(|value| value.parse().expect("an allele index"))
                         .collect(),
                     depth: get("DP").map(|value| value.parse().expect("a depth")),
+                    gq: get("GQ").map(|value| value.parse().expect("a GQ")),
                     likelihoods: get("PL").map(|value| {
                         value
                             .split(',')
@@ -463,6 +464,48 @@ fn the_pseudocount_is_chosen_by_allele_length() {
             .prior
     };
     assert_eq!(of(&same_length), of(&shorter));
+}
+
+/// A panel that writes a deletion with more padding than the input still counts towards it:
+/// both are remapped onto the longer reference (`remapAlleles`), as at 20:10006819 in GATK's
+/// testDefaultsWithPanel, so the prior is the one a panel written with the input's padding gives.
+#[test]
+fn a_panel_deletion_with_more_padding_is_remapped_onto_the_input() {
+    let text = golden();
+    let template = records(&section(&text, "vcf", "input"))
+        .into_iter()
+        .next()
+        .expect("a record");
+    let input = Record {
+        alleles: alleles("AAAAC", "A"),
+        attributes: BTreeMap::new(),
+        genotypes: vec![],
+        ..template.clone()
+    };
+    let panel = |reference: &str, alternates: &str, mleac: &str, an: &str| Record {
+        alleles: alleles(reference, alternates),
+        attributes: BTreeMap::from([
+            ("MLEAC".to_string(), mleac.to_string()),
+            ("AN".to_string(), an.to_string()),
+        ]),
+        genotypes: vec![],
+        ..template.clone()
+    };
+    // The padded panel's AAAACAAAC is the input's deletion; its reference count is 5070 - 3986.
+    let padded = panel("AAAACAAACAAAC", "A,AAAAC,AAAACAAAC", "24,14,3948", "5070");
+    let plain = panel("AAAAC", "A", "3948", "5032");
+    let of = |resource: &Record| {
+        apply(
+            &input,
+            std::slice::from_ref(resource),
+            0,
+            &Options::default(),
+            false,
+        )
+        .expect("population priors")
+        .prior
+    };
+    assert_eq!(of(&padded), of(&plain));
 }
 
 /// A genotype can change, and its GQ is recomputed from the posteriors rather than kept.
