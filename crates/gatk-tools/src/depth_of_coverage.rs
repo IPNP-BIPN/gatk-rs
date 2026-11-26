@@ -20,7 +20,8 @@ pub struct Read {
 }
 
 impl Read {
-    /// The last reference position the read covers. Only `M` cigars are ported.
+    /// The last reference position the read covers, for an all-`M` read. The runner counts off the
+    /// engine's pileup instead, which reads the cigar.
     pub fn end(&self) -> i32 {
         self.start + self.bases.len() as i32 - 1
     }
@@ -47,8 +48,9 @@ pub fn base_counts(quality: i32, minimum: i32, maximum: i32) -> bool {
     quality >= minimum && quality <= maximum
 }
 
-/// The five columns `--print-base-counts` breaks a depth into, in the order it writes them.
-pub const BASE_COUNT_ORDER: &[u8] = b"ACGTN";
+/// The columns `--print-base-counts` breaks a depth into, in the order it writes them:
+/// `BaseUtils.BASES_EXTENDED`, whose `D` is written only under `--include-deletions`.
+pub const BASE_COUNT_ORDER: &[u8] = b"ACGTND";
 
 /// One locus of the per-base table.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,8 +59,8 @@ pub struct Locus {
     pub position: i32,
     /// One entry per sample, in the order the samples are listed.
     pub depths: Vec<i32>,
-    /// One `A: C: G: T: N:` breakdown per sample, when `--print-base-counts` was given.
-    pub base_counts: Vec<[i32; 5]>,
+    /// One `A: C: G: T: N: D:` breakdown per sample.
+    pub base_counts: Vec<[i32; 6]>,
 }
 
 impl Locus {
@@ -92,7 +94,7 @@ pub fn per_locus(
     (start..=end)
         .map(|position| {
             let mut depths = vec![0; samples.len()];
-            let mut counts = vec![[0; 5]; samples.len()];
+            let mut counts = vec![[0; 6]; samples.len()];
             for read in reads {
                 if read.contig != contig {
                     continue;
@@ -107,12 +109,7 @@ pub fn per_locus(
                     continue;
                 }
                 depths[index] += 1;
-                let at = BASE_COUNT_ORDER
-                    .iter()
-                    .position(|expected| *expected == base.to_ascii_uppercase())
-                    // Anything that is not one of the four bases is counted as N.
-                    .unwrap_or(4);
-                counts[index][at] += 1;
+                counts[index][base_index(base)] += 1;
             }
             Locus {
                 contig: contig.to_string(),
@@ -122,6 +119,62 @@ pub fn per_locus(
             }
         })
         .collect()
+}
+
+/// Where `CoverageUtils.updateCounts` counts a read base: anything that is not one of the four
+/// bases is counted as N.
+fn base_index(base: u8) -> usize {
+    BASE_COUNT_ORDER[..4]
+        .iter()
+        .position(|expected| *expected == base.to_ascii_uppercase())
+        .unwrap_or(4)
+}
+
+/// One pileup element as the counter reads it: its sample, base, quality and whether it is a
+/// deletion.
+pub struct Element<'a> {
+    pub sample: &'a str,
+    pub base: u8,
+    pub quality: i32,
+    pub deletion: bool,
+}
+
+/// `CoverageUtils.getBaseCountsByPartition` over one locus's pileup.
+///
+/// A deletion is in the pileup only under `--include-deletions`, and then it counts whatever its
+/// quality, into `D` and into the depth.
+pub fn count_pileup<'a>(
+    contig: &str,
+    position: i32,
+    samples: &[String],
+    elements: impl IntoIterator<Item = Element<'a>>,
+    minimum_base_quality: i32,
+    maximum_base_quality: i32,
+) -> Locus {
+    let mut depths = vec![0; samples.len()];
+    let mut counts = vec![[0; 6]; samples.len()];
+    for element in elements {
+        let Some(index) = samples.iter().position(|sample| sample == element.sample) else {
+            continue;
+        };
+        if !element.deletion
+            && !base_counts(element.quality, minimum_base_quality, maximum_base_quality)
+        {
+            continue;
+        }
+        depths[index] += 1;
+        counts[index][if element.deletion {
+            5
+        } else {
+            base_index(element.base)
+        }] += 1;
+    }
+    Locus {
+        contig: contig.to_string(),
+        position,
+        depths,
+        base_counts: counts,
+    }
 }
 
 /// The header of the per-locus table, whose sample columns depend on `--print-base-counts`.
@@ -138,6 +191,11 @@ pub fn per_locus_header(samples: &[String], print_base_counts: bool) -> String {
 
 /// One row of the per-locus table, rendered as the writer renders it.
 pub fn per_locus_row(locus: &Locus, print_base_counts: bool) -> String {
+    per_locus_row_with(locus, print_base_counts, false)
+}
+
+/// The same, with `--include-deletions`'s `D` column in each base-count field.
+pub fn per_locus_row_with(locus: &Locus, print_base_counts: bool, deletions: bool) -> String {
     let mut out = format!(
         "{}:{},{},{:.2}",
         locus.contig,
@@ -149,10 +207,17 @@ pub fn per_locus_row(locus: &Locus, print_base_counts: bool) -> String {
         out.push_str(&format!(",{depth}"));
         if print_base_counts {
             let counts = locus.base_counts[index];
+            // `getBaseCountsString`: a space after every pair but the sixth, so without the `D`
+            // the field ends with one.
             let mut text = String::new();
             for (at, base) in BASE_COUNT_ORDER.iter().enumerate() {
-                // Each pair is followed by a space, so the field ends with one.
-                text.push_str(&format!("{}:{} ", *base as char, counts[at]));
+                if at == 5 && !deletions {
+                    continue;
+                }
+                text.push_str(&format!("{}:{}", *base as char, counts[at]));
+                if at < 5 {
+                    text.push(' ');
+                }
             }
             out.push_str(&format!(",{text}"));
         }

@@ -5708,26 +5708,51 @@ pub fn depth_of_coverage(parser: &Parser) -> Outcome {
             }
         }
     }
-    let sample_of = |record: &htsjdk_bam::record::BamRecord| -> String {
-        gatk_engine::read_pileup::sample_name(record, &header).unwrap_or_default()
+    // `includeDeletions()` is the argument unless `--ignore-deletion-sites` turns it off, and it
+    // decides whether a deletion is in the pileup at all. The writer's `D` column reads the
+    // argument alone, so the two together print a `D` that is always zero.
+    let include_deletions = flag(parser, "include-deletions");
+    let options = gatk_tools::locus_walker::Options {
+        include_deletions: include_deletions && !flag(parser, "ignore-deletion-sites"),
+        include_ns: true,
+        ..Default::default()
     };
-    let reads: Vec<coverage::Read> = records
-        .iter()
-        .filter_map(|record| {
-            contig_name(&header, record.reference_index).map(|contig| coverage::Read {
-                name: record.read_name.clone(),
-                sample: sample_of(record),
-                contig: contig.to_string(),
-                start: record.alignment_start,
-                bases: record.read_bases.clone(),
-                base_qualities: record
-                    .base_qualities
-                    .iter()
-                    .map(|quality| i32::from(*quality))
-                    .collect(),
+    // The reads are the traversal's already, so the walker's own filter has run.
+    let applied =
+        gatk_tools::locus_walker::traverse(&records, &header, None, None, options, &|_| true)
+            .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error:?}")))?;
+    let mut pileups = std::collections::HashMap::new();
+    for applied in &applied {
+        let context = &applied.context;
+        let samples_of: Vec<String> = context
+            .pileup
+            .elements
+            .iter()
+            .map(|element| {
+                gatk_engine::read_pileup::sample_name(element.read, &header).unwrap_or_default()
             })
-        })
-        .collect();
+            .collect();
+        let elements = context
+            .pileup
+            .elements
+            .iter()
+            .zip(&samples_of)
+            .map(|(element, sample)| coverage::Element {
+                sample,
+                base: element.base(),
+                quality: i32::from(element.qual()),
+                deletion: element.is_deletion(),
+            });
+        let locus = coverage::count_pileup(
+            &context.contig,
+            context.position,
+            &samples,
+            elements,
+            minimum as i32,
+            maximum as i32,
+        );
+        pileups.insert((context.contig.clone(), context.position), locus);
+    }
 
     // The traversal still runs when no file will be written, and two refusals live inside it.
     //
@@ -5769,17 +5794,6 @@ pub fn depth_of_coverage(parser: &Parser) -> Outcome {
             "Fragment based counting is currently unsupported",
         ));
     }
-    // `--include-deletions` adds a sixth column, `D`, to every base-count field and counts a
-    // deletion into it. The ported counter has the five bases and no deletion slot, so a run that
-    // asks for it would write a table one column short of the reference's.
-    if flag(parser, "include-deletions") {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "--include-deletions adds a D column to the base counts, which this port does not \
-             count yet. This message is the port's own and not GATK's.",
-        ));
-    }
-
     // `--omit-depth-output-at-each-base` removes the per-base file, which is the only file this
     // port writes: the run then writes nothing at all, and so does the reference once the other
     // three omissions have taken their files away.
@@ -5791,16 +5805,21 @@ pub fn depth_of_coverage(parser: &Parser) -> Outcome {
     let mut text = coverage::per_locus_header(&samples, print_base_counts);
     text.push('\n');
     for interval in &intervals {
-        for locus in coverage::per_locus(
-            &reads,
-            &samples,
-            &interval.contig,
-            interval.start,
-            interval.end,
-            minimum as i32,
-            maximum as i32,
-        ) {
-            text.push_str(&coverage::per_locus_row(&locus, print_base_counts));
+        // Every base of the interval is a row, covered or not.
+        for position in interval.start..=interval.end {
+            let empty;
+            let locus = match pileups.get(&(interval.contig.clone(), position)) {
+                Some(locus) => locus,
+                None => {
+                    empty = coverage::count_pileup(&interval.contig, position, &samples, [], 0, 0);
+                    &empty
+                }
+            };
+            text.push_str(&coverage::per_locus_row_with(
+                locus,
+                print_base_counts,
+                include_deletions,
+            ));
             text.push('\n');
         }
     }
