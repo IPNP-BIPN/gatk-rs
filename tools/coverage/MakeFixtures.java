@@ -4636,6 +4636,22 @@ public class MakeFixtures {
             reference.startSequence("chr1").appendBases(chr1);
             reference.startSequence("chr2").appendBases(chr2);
         }
+        // `VariantEval --ancestral-alignments`: chr1 with every third base swapped for its transition
+        // partner, so an ancestral allele is sometimes the reference and sometimes not, and chr2 in
+        // lower case, which the evaluators upper-case before comparing.
+        try (final htsjdk.samtools.reference.FastaReferenceWriter ancestral =
+                     new htsjdk.samtools.reference.FastaReferenceWriterBuilder()
+                             .setFastaFile(dir.resolve("ve_ancestral.fasta"))
+                             .setMakeFaiOutput(true)
+                             .setMakeDictOutput(true)
+                             .build()) {
+            final StringBuilder swapped = new StringBuilder(chr1);
+            for (int i = 0; i < swapped.length(); i += 3) {
+                swapped.setCharAt(i, "GTAC".charAt("ACGT".indexOf(swapped.charAt(i))));
+            }
+            ancestral.startSequence("chr1").appendBases(swapped.toString());
+            ancestral.startSequence("chr2").appendBases(chr2.toLowerCase());
+        }
         final java.util.Map<String, String> bases = java.util.Map.of("chr1", chr1, "chr2", chr2);
         // chr2:21 is a hom-var SNP to whichever base the reference does not hold there.
         final String chr2Ref = chr2.substring(20, 21);

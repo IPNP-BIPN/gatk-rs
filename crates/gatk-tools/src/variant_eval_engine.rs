@@ -2636,7 +2636,12 @@ pub struct Engine {
     by_filter: bool,
     per_sample: bool,
     sample_names_for_stratification: Vec<String>,
+    /// `--ancestral-alignments`: the bases of `[start, end]` on a contig, read raw.
+    pub ancestral: Option<Ancestral>,
 }
+
+/// A lookup into the `--ancestral-alignments` FASTA.
+pub type Ancestral = Box<dyn FnMut(&str, i64, i64) -> Result<Vec<u8>, EvalError>>;
 
 impl Engine {
     /// `validateAndInitialize`.
@@ -2791,6 +2796,7 @@ impl Engine {
             by_filter,
             per_sample,
             sample_names_for_stratification,
+            ancestral: None,
         })
     }
 
@@ -2925,6 +2931,28 @@ impl Engine {
                     };
                 let present: Vec<&VariantContext> = by_sample.iter().flatten().collect();
                 for eval in &by_sample {
+                    // The bases are read before the null check, so a level with no eval here dies.
+                    let annotated = match (&mut self.ancestral, eval) {
+                        (None, _) => None,
+                        (Some(_), None) => {
+                            return Err(EvalError {
+                                class: "java.lang.NullPointerException".to_string(),
+                                message: "Cannot invoke \"htsjdk.variant.variantcontext.VariantContext.getContig()\" because \"eval\" is null".to_string(),
+                                user: false,
+                            })
+                        }
+                        (Some(lookup), Some(vc)) => {
+                            let bases = lookup(&vc.contig, vc.start, vc.stop)?;
+                            let value = Value::Str(String::from_utf8_lossy(&bases).into_owned());
+                            let mut vc = vc.clone();
+                            match vc.attributes.iter_mut().find(|(key, _)| key == "ANCESTRALALLELE") {
+                                Some(slot) => slot.1 = value,
+                                None => vc.attributes.push(("ANCESTRALALLELE".to_string(), value)),
+                            }
+                            Some(vc)
+                        }
+                    };
+                    let eval = &annotated.or_else(|| eval.clone());
                     if comp_count == 0 {
                         self.process_comp(
                             &site,

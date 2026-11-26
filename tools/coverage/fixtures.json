@@ -6288,7 +6288,11 @@
         "false"
       ],
       "--pedigree": [],
-      "--ancestral-alignments": [],
+      "--ancestral-alignments": [
+        "<unset>",
+        "/work/fixtures/ve_ancestral.fasta",
+        "/work/fixtures/no_such_ancestral.fasta"
+      ],
       "--input": [],
       "--read-index": [],
       "--sequence-dictionary": [],
@@ -6305,21 +6309,23 @@
       "$why": [
         "ve_eval2.vcf is two diploid samples written by hand over cgv_ref.fasta: a SNP shared with",
         "ve_eval.vcf, a LowQual SNP, a deletion, an insertion, an MNP, an AC0 site, a doubly filtered",
-        "triallelic SNP, a mixed site, a symbolic deletion, a phased SNP and a 20-base deletion on",
-        "chr2. ve_eval.vcf is the reference's own GenotypeGVCFs over cg_combined.g.vcf, whose haploid",
-        "sample VariantAFEvaluator refuses. It comes second, since the first value fills the rows.",
-        "--stratification-module and --eval-module each name one module per row beside the standard",
-        "ones, and not every module: AlleleFrequency, CpG, Contig and the rest cross into tens of",
-        "thousands of states, and the reference ran out of heap on five of them together. Each was",
-        "compared by hand against the oracle instead. Family and MendelianViolationEvaluator need a",
-        "pedigree, which the port refuses, so --pedigree and --ancestral-alignments are held out and",
-        "--list is held at false: all three are port limitations.",
-        "--selectExps and --selectNames carry two paired values and no null, because a row pairing",
-        "one with the other's absence measures one IllegalArgumentException on every such row.",
-        "ve_strat_noidx.bed is refused at the first eval IntervalStratification queries, and",
-        "ve_cnv.bed is indexed because VariantSummary queries it for a CNV with no comp.",
-        "--input, --read-index, --sequence-dictionary and --variant-output-filtering are held out,",
-        "as for CombineGVCFs, and the writer holds are the ones every variant tool keeps."
+        "triallelic SNP, a mixed site, a symbolic deletion, a phased SNP and a 20-base deletion on chr2.",
+        "ve_eval.vcf is the reference's own GenotypeGVCFs over cg_combined.g.vcf, whose haploid sample",
+        "VariantAFEvaluator refuses. It comes second, since the first value fills the rows. --stratification-",
+        "module and --eval-module each name one module per row beside the standard ones, and not every",
+        "module: AlleleFrequency, CpG, Contig and the rest cross into tens of thousands of states, and the",
+        "reference ran out of heap on five of them together. Each was compared by hand against the oracle",
+        "instead. Family and MendelianViolationEvaluator need a pedigree, which the port refuses, so",
+        "--pedigree is held out and --list is held at false: both are port limitations. --selectExps and",
+        "--selectNames carry two paired values and no null, because a row pairing one with the other's",
+        "absence measures one IllegalArgumentException on every such row. ve_strat_noidx.bed is refused at",
+        "the first eval IntervalStratification queries, and ve_cnv.bed is indexed because VariantSummary",
+        "queries it for a CNV with no comp. --input, --read-index, --sequence- dictionary and --variant-",
+        "output-filtering are held out, as for CombineGVCFs, and the writer holds are the ones every variant",
+        "tool keeps. --ancestral-alignments is absent, ve_ancestral.fasta (cgv_ref's chr1 with every third",
+        "base swapped for its transition partner, and chr2 in lower case) or a file that does not exist:",
+        "every eval then carries the bases it spans as ANCESTRALALLELE, which CountVariants and",
+        "TiTvVariantEvaluator read."
       ]
     },
     "VariantAnnotator": {
@@ -7529,7 +7535,11 @@
         "false"
       ],
       "--pedigree": [],
-      "--ancestral-alignments": [],
+      "--ancestral-alignments": [
+        "<unset>",
+        "/work/fixtures/ve_ancestral.fasta",
+        "/work/fixtures/no_such_ancestral.fasta"
+      ],
       "--input": [],
       "--read-index": [],
       "--sequence-dictionary": [],
@@ -7545,17 +7555,19 @@
       ],
       "$why": [
         "AlleleFrequencyQC is VariantEval with its modules and stratifiers preset, so every VariantEval",
-        "argument is still declared and still parsed, and --eval-module, --stratification-module and",
-        "the two do-not-use flags are varied to show that the presets override them. -O is the metrics",
-        "file; --debugFile is where the report goes, and null sends it to a temporary file nothing",
-        "compares. --eval is tagged: the Thousand Genomes set is given again as a second eval track,",
-        "which is what puts two rows in each allele-frequency bin, in either order; the call set alone",
-        "leaves one row per bin and a statistic of nought; afqc_eval_noalias.vcf has no ##sampleAlias",
-        "line and is the NullPointerException the tool raises before VariantEval starts. --comparison",
-        "null leaves the comp-AF stratifier without a comp. The reference runs in the Broad's image and",
-        "the port in one with R ($past_the_interpreter), so a run that gets as far as the plot draws it:",
-        "the PNGs are compared by pixel size and resolution, and the combined figure the port adds is not.",
-        "--pedigree, --ancestral-alignments and --list are held out as for VariantEval."
+        "argument is still declared and still parsed, and --eval-module, --stratification-module and the two",
+        "do-not-use flags are varied to show that the presets override them. -O is the metrics file;",
+        "--debugFile is where the report goes, and null sends it to a temporary file nothing compares. --eval",
+        "is tagged: the Thousand Genomes set is given again as a second eval track, which is what puts two",
+        "rows in each allele-frequency bin, in either order; the call set alone leaves one row per bin and a",
+        "statistic of nought; afqc_eval_noalias.vcf has no ##sampleAlias line and is the NullPointerException",
+        "the tool raises before VariantEval starts. --comparison null leaves the comp-AF stratifier without a",
+        "comp. The reference runs in the Broad's image and the port in one with R ($past_the_interpreter), so",
+        "a run that gets as far as the plot draws it: the PNGs are compared by pixel size and resolution, and",
+        "the combined figure the port adds is not. --pedigree and --list are held out as for VariantEval.",
+        "--ancestral-alignments is absent, ve_ancestral.fasta (cgv_ref's chr1 with every third base swapped",
+        "for its transition partner, and chr2 in lower case) or a file that does not exist: every eval then",
+        "carries the bases it spans as ANCESTRALALLELE, which CountVariants and TiTvVariantEvaluator read."
       ]
     },
     "GroundTruthScorer": {
