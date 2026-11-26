@@ -6,6 +6,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+# A new push to a PR cancels its older run. On main a running run finishes, and only the newest queued one waits.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   guard:
     name: Repository invariants
