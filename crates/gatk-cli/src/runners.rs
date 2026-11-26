@@ -2725,24 +2725,51 @@ fn locus_traversal_error(error: gatk_tools::locus_walker::LocusWalkerError) -> T
 /// opened, the dictionaries compared and the intervals resolved exactly as they are for
 /// `CountReads` -- and what follows it is a different traversal entirely.
 ///
-/// `--metadata` is refused rather than ignored: the features it annotates a locus with are a
-/// second data source this runner does not open, and a silent empty column would be a different
-/// answer rather than a refusal.
+/// `--metadata` annotates a locus with every overlapping feature's `toString`. A VCF's is the
+/// `VariantContext`'s and is ported; a BED feature's is `Object.toString`, whose identity hash is
+/// the JVM's, so that stays refused.
 pub fn pileup(parser: &Parser) -> Outcome {
-    if !arguments(parser, "metadata").is_empty() {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "Pileup's --metadata is a feature source this port does not open yet, and a run that \
-             ignored it would answer without the column it asks for. This message is the port's \
-             own and not GATK's.",
-        ));
-    }
     let ReadWalkerStart {
         source,
         header,
         intervals,
         filters,
     } = read_walker_startup(parser, "Pileup")?;
+    // Each `--metadata` source opened at startup, in the order the command line gave them.
+    enum Metadata {
+        Vcf(Vec<(gatk_tools::variants_to_table::Record, String)>),
+        /// BED spans, one-based and closed: a feature only refused once it would be printed.
+        Bed(Vec<(String, i32, i32)>),
+    }
+    let mut metadata = Vec::new();
+    for path in arguments(parser, "metadata") {
+        let (codec, text) = open_feature_input(&path)?;
+        let source = match codec {
+            gatk_tools::feature_codec::Codec::Vcf => Metadata::Vcf(vcf_records(
+                &text,
+                &samples_in_file_order(&text),
+                &vcf_declarations(&text),
+            )),
+            gatk_tools::feature_codec::Codec::Bed => Metadata::Bed(
+                text.lines()
+                    .filter(|line| {
+                        !(line.starts_with('#')
+                            || line.starts_with("track")
+                            || line.starts_with("browser"))
+                    })
+                    .filter_map(|line| {
+                        let field: Vec<&str> = line.split('\t').collect();
+                        Some((
+                            field.first()?.to_string(),
+                            field.get(1)?.parse::<i32>().ok()? + 1,
+                            field.get(2)?.parse().ok()?,
+                        ))
+                    })
+                    .collect(),
+            ),
+        };
+        metadata.push((path, source));
+    }
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
@@ -2790,6 +2817,18 @@ pub fn pileup(parser: &Parser) -> Outcome {
     )
     .map_err(locus_traversal_error)?;
 
+    // The first locus queries the metadata, in order, before it asks for its reference base, and a
+    // source without an index cannot be queried. The output is open by then, so it is left empty.
+    if !applied.is_empty() {
+        if let Some((path, _)) = metadata.iter().find(|(path, _)| !has_feature_index(path)) {
+            write_file(&output, b"")?;
+            return Err(Thrown::user(format!(
+                "Input {path} must support random access to enable queries by interval. If it's \
+                 a file, please index it using the bundled tool IndexFeatureFile"
+            )));
+        }
+    }
+
     // `MissingContigInSequenceDictionary`, which is raised when a LOCUS asks the reference for its
     // base and not before. Three things follow from that, and all three are measured:
     //
@@ -2825,10 +2864,47 @@ pub fn pileup(parser: &Parser) -> Outcome {
             .and_then(|contig| contig.get((one.context.position - 1) as usize))
             .map(|base| *base as char)
             .unwrap_or('N');
+        // `FeatureContext.getValues(metadata)`: each source's records over the locus, in file order.
+        let position = one.context.position;
+        let mut features: Vec<String> = Vec::new();
+        for (path, source) in &metadata {
+            match source {
+                Metadata::Vcf(records) => features.extend(
+                    records
+                        .iter()
+                        .filter(|(record, _)| {
+                            record.contig == one.context.contig
+                                && record.start <= position
+                                && position < record.start + record.reference.len() as i32
+                        })
+                        .map(|(record, raw)| {
+                            // A sites-only record's genotypes are an empty list, not lazy text.
+                            variant_context_to_string(
+                                record,
+                                if raw.is_empty() { "[]" } else { raw },
+                            )
+                        }),
+                ),
+                Metadata::Bed(spans) => {
+                    if spans.iter().any(|(contig, start, end)| {
+                        *contig == one.context.contig && *start <= position && position <= *end
+                    }) {
+                        return Err(Thrown::non_user(
+                            PORT_LIMITATION,
+                            format!(
+                                "Pileup's --metadata {path} prints a BED feature as \
+                                 Object.toString renders it, an identity hash only the JVM \
+                                 knows. This message is the port's own and not GATK's."
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
         text.push_str(&gatk_tools::pileup::line(
             &one.context.pileup,
             base,
-            &[],
+            &features,
             output_insert_length,
             show_verbose,
         ));

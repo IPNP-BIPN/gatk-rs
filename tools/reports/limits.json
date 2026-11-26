@@ -99,6 +99,14 @@
     },
     {
       "file": "crates/gatk-cli/src/runners.rs",
+      "match": "prints a BED feature as",
+      "tools": "Pileup",
+      "arguments": "--metadata with an indexed BED that overlaps a locus",
+      "reason": "no-stable-bytes",
+      "why": "The column prints each feature's toString, and FullBEDFeature has none of its own: Object.toString's identity hash is the JVM's."
+    },
+    {
+      "file": "crates/gatk-cli/src/runners.rs",
       "match": "renders as an identity hash",
       "tools": "DownsampleByDuplicateSet",
       "arguments": "an MI tag that is a numeric array",

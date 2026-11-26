@@ -182,6 +182,36 @@ public class PortLimitationDump {
             run("depthofcoverage-partition-" + variant[0] + "-base-counts", argv.toArray(new String[0]));
         }
 
+        // Pileup's --metadata prints every overlapping feature's toString after the pileup, and the
+        // first locus refuses a source it cannot query. A BED feature prints Object.toString, an
+        // identity hash, so an indexed BED is not a case here.
+        final String piled = bam("pileup", groupRead("rg", 100), groupRead("rg", 104));
+        final String bed = text("pileup-metadata.bed", "chr1\t101\t103\tfirst\t5\t+\nchr1\t102\t110\n");
+        final String vcf = text("pileup-metadata.vcf", "##fileformat=VCFv4.2\n"
+                + "##INFO=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">\n"
+                + "##contig=<ID=chr1,length=10000>\n##contig=<ID=chr2,length=10000>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
+                + "chr1\t102\trs1\tG\tA\t30\tPASS\tDP=5\nchr1\t104\t.\tACG\tA\t.\t.\t.\n");
+        run("pileup-metadata-unindexed-everywhere", "Pileup", "-R", fasta, "-I", piled,
+                "--metadata", bed, "-O", "{out}/out.txt");
+        run("pileup-metadata-unindexed", "Pileup", "-R", fasta, "-I", piled, "-L", "chr1:99-106",
+                "--metadata", bed, "-O", "{out}/out.txt");
+        final String indexedVcf = indexed(text("pileup-metadata-indexed.vcf", Files.readString(Paths.get(vcf))));
+        run("pileup-metadata-vcf", "Pileup", "-R", fasta, "-I", piled, "-L", "chr1:99-106",
+                "--metadata", indexedVcf, "-O", "{out}/out.txt");
+        run("pileup-metadata-second-unindexed", "Pileup", "-R", fasta, "-I", piled, "-L",
+                "chr1:99-106", "--metadata", indexedVcf, "--metadata", vcf, "-O", "{out}/out.txt");
+        final String genotyped = indexed(text("pileup-metadata-genotyped.vcf", "##fileformat=VCFv4.2\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##FORMAT=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">\n"
+                + "##contig=<ID=chr1,length=10000>\n##contig=<ID=chr2,length=10000>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ts1\ts2\n"
+                + "chr1\t101\t.\tT\tC,G\t12.5\tq10\t.\tGT:DP\t0/1:3\t1/2:4\n"));
+        run("pileup-metadata-genotyped", "Pileup", "-R", fasta, "-I", piled, "-L", "chr1:99-106",
+                "--metadata", genotyped, "--metadata", indexedVcf, "-O", "{out}/out.txt");
+        run("pileup-metadata-no-reads", "Pileup", "-R", fasta, "-I", piled, "-L", "chr2:99-106",
+                "--metadata", vcf, "-O", "{out}/out.txt");
+
         for (final String input : INPUTS) {
             final Path path = Paths.get(input);
             if (Files.isRegularFile(path)) {
@@ -284,6 +314,20 @@ public class PortLimitationDump {
     static void counts(final String name, final String content) throws Exception {
         run(name, "ConvertCountsToDepthFile", "--counts-filename",
                 text(name + ".counts.tsv", content), "-O", "{out}/out.rd.txt");
+    }
+
+    /** A feature file indexed by GATK's IndexFeatureFile, its index recorded with the inputs. */
+    static String indexed(final String path) throws Exception {
+        final PrintStream original = System.out;
+        try {
+            System.setOut(new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8));
+            new org.broadinstitute.hellbender.Main().instanceMain(
+                    new String[] {"IndexFeatureFile", "-I", path});
+        } finally {
+            System.setOut(original);
+        }
+        INPUTS.add(path + ".idx");
+        return path;
     }
 
     /** A text input, recorded with the others. */
