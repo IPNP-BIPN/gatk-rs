@@ -1564,7 +1564,9 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
                 error.message,
             ));
         }
-        Err(error) if spark_task_failure(spark, &error.message) => {
+        // On Spark the calling runs in an executor task, so a failure there fails the task, and
+        // nothing is written: the driver writes the VCF only once every task has answered.
+        Err(error) if spark_task_failure(spark, &error.message) || (spark && !error.at_startup) => {
             eprintln!("ERROR Executor - Exception in task 0.0 in stage 0.0 (TID 0)");
             return Err(Thrown::non_user(
                 "org.apache.spark.SparkException",
