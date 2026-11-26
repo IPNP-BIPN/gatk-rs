@@ -16043,8 +16043,15 @@
       "--output-shard-tmp-dir": [],
       "--read-index": [],
       "$why": [
-        "An unaligned BAM with something for each transformer and a BAM with alignments and NM tags. --filter-bwa-image names a host image that holds nothing of those reads, so every read goes through BWA and the rows that drop some are the suite's. --sharded-output and the outputs' indexes are held out as for the other tools that write one BAM, and --ignore-alignment-contigs would refuse every row it fills over --is-host-aligned, so a suite row carries it.",
-        "STRICT is held out: these reads carry flags a validator refuses, and it refuses inside a task whatever else the row holds. --sharded-output, --num-reducers and the partition size are held out because the reference then writes one part per reducer with Hadoop checksums, which the port refuses or writes as one part."
+        "An unaligned BAM with something for each transformer and a BAM with alignments and NM tags.",
+        "--filter-bwa-image names a host image that holds nothing of those reads, so every read goes through",
+        "BWA and the rows that drop some are the suite's. --sharded-output and the outputs' indexes are held",
+        "out as for the other tools that write one BAM, and --ignore-alignment-contigs is `<unset>` or chr1,",
+        "which a constraint keeps to rows with --is-host-aligned true: without it the reference refuses the",
+        "argument, and a suite row measures that refusal. STRICT is held out: these reads carry flags a",
+        "validator refuses, and it refuses inside a task whatever else the row holds. --sharded-output,",
+        "--num-reducers and the partition size are held out because the reference then writes one part per",
+        "reducer with Hadoop checksums, which the port refuses or writes as one part."
       ],
       "--input": [
         "/work/fixtures/pathseq_filter.bam",
@@ -16116,7 +16123,10 @@
         "30",
         "70"
       ],
-      "--ignore-alignment-contigs": [],
+      "--ignore-alignment-contigs": [
+        "<unset>",
+        "chr1"
+      ],
       "--host-kmer-thresh": [
         "1",
         "30"
@@ -20232,6 +20242,16 @@
         "--exclude-intervals": "null"
       },
       "why": "A filtering mode with no -L or -XL is the one MissingArgument at the end of onStartup, on every such row."
+    },
+    {
+      "tools": [
+        "PathSeqFilterSpark"
+      ],
+      "forbid": {
+        "--ignore-alignment-contigs": "chr1",
+        "--is-host-aligned": "false"
+      },
+      "why": "--ignore-alignment-contigs is refused without --is-host-aligned; the filter-ignored-unaligned run of the spark-walkers golden measures that refusal."
     }
   ],
   "exclude": {

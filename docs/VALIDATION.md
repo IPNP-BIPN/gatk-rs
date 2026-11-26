@@ -238,7 +238,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | PathSeqBuildKmers | gatk-rs | oracle-backed | 122 suite | 0 suite | 8/8 (100.0%) | 2 | 1256 probes (+17), 0/7 diverge | 2 | 1 | none |
 | PathSeqBuildReferenceTaxonomy | gatk-rs | oracle-backed | 161 suite | 0 suite | 9/9 (100.0%) | 2 | 1296 probes (+7), 0/9 diverge | 6 | 0 | none |
 | PathSeqBwaSpark | gatk-rs | oracle-backed | 92 | 32 | 22/22 (100.0%) | 2 | 1512 probes (+0), 0/6 diverge | 5 | 5 | none |
-| PathSeqFilterSpark | gatk-rs | oracle-backed | 188 | 109 | 20/20 (100.0%) | 2 | 2798 probes (+0), 0/9 diverge | 5 | 7 | none |
+| PathSeqFilterSpark | gatk-rs | oracle-backed | 188 | 109 | 20/20 (100.0%) | 2 | 2798 probes (+0), 0/9 diverge | 5 | 6 | none |
 | PathSeqPipelineSpark | gatk-rs | oracle-backed | 151 | 103 | 25/25 (100.0%) | 2 | 2830 probes (+2), 0/7 diverge | 6 | 5 | none |
 | PathSeqScoreSpark | gatk-rs | oracle-backed | 110 | 56 | 15/15 (100.0%) | 2 | 2083 probes (+0), 0/7 diverge | 3 | 9 | none |
 | Pileup | gatk-rs | oracle-backed | 9 suite | 0 suite | 18/18 (100.0%) | 2 | 2701 probes (+8), 0/10 diverge | 4 | 0 | none |
@@ -1713,9 +1713,9 @@ Suites: `spark-walkers`.
 
 Inputs: `pathseq_filter.bam`, `pathseq_filter.bfi`, `pathseq_filter.hss`, `pathseq_filter_aligned.bam`, `ps_host.img`.
 
-Held out: `--dont-require-soft-clips-both-ends`, `--ignore-alignment-contigs`, `--keep-reverse-strand-only`, `--output-shard-tmp-dir`, `--read-filter-tag-op`, `--read-index`, `--reference`.
+Held out: `--dont-require-soft-clips-both-ends`, `--keep-reverse-strand-only`, `--output-shard-tmp-dir`, `--read-filter-tag-op`, `--read-index`, `--reference`.
 
-An unaligned BAM with something for each transformer and a BAM with alignments and NM tags. --filter-bwa-image names a host image that holds nothing of those reads, so every read goes through BWA and the rows that drop some are the suite's. --sharded-output and the outputs' indexes are held out as for the other tools that write one BAM, and --ignore-alignment-contigs would refuse every row it fills over --is-host-aligned, so a suite row carries it. STRICT is held out: these reads carry flags a validator refuses, and it refuses inside a task whatever else the row holds. --sharded-output, --num-reducers and the partition size are held out because the reference then writes one part per reducer with Hadoop checksums, which the port refuses or writes as one part.
+An unaligned BAM with something for each transformer and a BAM with alignments and NM tags. --filter-bwa-image names a host image that holds nothing of those reads, so every read goes through BWA and the rows that drop some are the suite's. --sharded-output and the outputs' indexes are held out as for the other tools that write one BAM, and --ignore-alignment-contigs is `<unset>` or chr1, which a constraint keeps to rows with --is-host-aligned true: without it the reference refuses the argument, and a suite row measures that refusal. STRICT is held out: these reads carry flags a validator refuses, and it refuses inside a task whatever else the row holds. --sharded-output, --num-reducers and the partition size are held out because the reference then writes one part per reducer with Hadoop checksums, which the port refuses or writes as one part.
 
 ### PathSeqPipelineSpark
 
