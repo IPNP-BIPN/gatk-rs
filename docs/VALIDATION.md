@@ -32,7 +32,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | BaitDesigner | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | none |
 | BamIndexStats | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | none |
 | BamToBfq | picard-rs | oracle-backed | not vendored | not vendored | 17/17 (100.0%) | 2 | not measured | 0 | 0 | none |
-| BaseRecalibrator | gatk-rs | oracle-backed | 12 suite | 0 suite | 21/21 (100.0%) | 2 | 3759 probes (+28), 0/12 diverge | 8 | 0 | none |
+| BaseRecalibrator | gatk-rs | oracle-backed | 12 suite | 0 suite | 21/21 (100.0%) | 2 | 3759 probes (+28), 0/12 diverge | 9 | 0 | none |
 | BaseRecalibratorSpark | gatk-rs | oracle-backed | 6 | 1 | 22/22 (100.0%) | 2 | 3906 probes (+2), 0/13 diverge | 8 | 1 | none |
 | BedToIntervalList | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
 | BpmToNormalizationManifestCsv | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -475,11 +475,11 @@ BaseRecalibrator's fixtures for the table, PrintReadsSpark's Spark arguments for
 
 Suites: `base-recalibrator`.
 
-Inputs: `groups.bai`, `groups.bam`, `known.bed`, `other.fasta`, `population.vcf`, `reads.bai`, `reads.bam`, `reference.fasta`.
+Inputs: `groups.bai`, `groups.bam`, `known.bed`, `other.fasta`, `population.vcf`, `reads.bai`, `reads.bam`, `reference.fasta`, `sites.vcf.gz`.
 
 Held out: none.
 
---known-sites has both formats GATK registers for it, naming the same loci: the population VCF the corpus already carries and a BED beside it. The reference's own two runs over them produce the same table, so the two values are comparable rather than merely different. --reference has both fastas: other.fasta carries a contig the reads do not. --binary-tag-name is null or XT: no covariate reads it, and the arguments table carries it.
+--known-sites has both formats GATK registers for it, naming the same loci: the population VCF the corpus already carries and a BED beside it. The reference's own two runs over them produce the same table, so the two values are comparable rather than merely different. sites.vcf.gz is the third: block-compressed and tabix-indexed, the form best practices hand it (dbSNP, Mills). The port read every known-sites file as UTF-8 text and refused a bgzipped one as a missing file; chr20 at scale found it (#1453). --reference has both fastas: other.fasta carries a contig the reads do not. --binary-tag-name is null or XT: no covariate reads it, and the arguments table carries it.
 
 ### BaseRecalibratorSpark
 
