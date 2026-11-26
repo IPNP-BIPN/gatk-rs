@@ -6635,19 +6635,19 @@ pub fn print_read_counts(parser: &Parser) -> Outcome {
         })
     };
 
-    // Neither codec hands the engine a dictionary, so only the reads are checked.
+    // `-L` and `-XL` against the best dictionary, then the dictionaries: neither codec hands the
+    // engine one, so only the master, reference and reads meet. The index is `FeatureWalker`'s.
+    let traversal = tool_intervals(parser)?;
     validate_tool_dictionaries(parser)?;
+    require_feature_index(&input, traversal.as_deref())?;
     let dictionary = master_dictionary(parser)?.map(|header| header.sequences);
-    let intervals: Vec<counts::Interval> = arguments(parser, "intervals")
-        .iter()
-        .filter_map(|query| {
-            let (contig, range) = query.split_once(':')?;
-            let (start, end) = range.split_once('-')?;
-            Some(counts::Interval {
-                contig: contig.to_string(),
-                start: start.parse().ok()?,
-                end: end.parse().ok()?,
-            })
+    let intervals: Vec<counts::Interval> = traversal
+        .unwrap_or_default()
+        .into_iter()
+        .map(|interval| counts::Interval {
+            contig: interval.contig,
+            start: interval.start,
+            end: interval.end,
         })
         .collect();
 
@@ -18397,7 +18397,14 @@ pub fn condense_depth_evidence(parser: &Parser) -> Outcome {
         )
     })?;
 
-    records.retain(|record| in_traversal(intervals.as_deref(), &record.contig, record.start, record.end));
+    records.retain(|record| {
+        in_traversal(
+            intervals.as_deref(),
+            &record.contig,
+            record.start,
+            record.end,
+        )
+    });
     condense::check_lengths(&arguments).map_err(refused)?;
     condense::check_output(&output).map_err(refused)?;
     if codecs::find(&output).map(|codec| codec.encoding)
@@ -18705,6 +18712,22 @@ pub fn print_sv_evidence(parser: &Parser) -> Outcome {
                 .collect(),
         });
     }
+    // `initializeIntervals`, the dictionaries, then each input's `setIntervalsForTraversal`.
+    let intervals = tool_intervals(parser)?;
+    validate_tool_dictionaries(parser)?;
+    for input in &inputs {
+        require_feature_index(input, intervals.as_deref())?;
+    }
+    for file in &mut files {
+        file.records.retain(|record| {
+            in_traversal(
+                intervals.as_deref(),
+                &record.contig,
+                record.start,
+                record.end,
+            )
+        });
+    }
 
     let source = |header: Option<SamHeader>, name: &str| {
         header.map(|header| walker::DictSource {
@@ -18716,9 +18739,17 @@ pub fn print_sv_evidence(parser: &Parser) -> Outcome {
             source: name.to_string(),
         })
     };
+    // `getBestAvailableSequenceDictionary`: with neither a master nor a reference, the reads'.
+    let reads = match (&master, &reference, arguments(parser, "input").first()) {
+        (None, None, Some(path)) => Some(SamHeader {
+            sequences: reads_dictionary(parser, path, arguments(parser, "input").len())?,
+            ..SamHeader::default()
+        }),
+        _ => None,
+    };
     let dictionary = walker::choose_dictionary(
         source(master, "sequence-dictionary"),
-        source(reference, "reference"),
+        source(reference, "reference").or(source(reads, "reads")),
     )
     .map_err(|error| {
         user(
@@ -18918,6 +18949,22 @@ pub fn site_depth_to_baf(parser: &Parser) -> Outcome {
             }
         }
         files.push(records);
+    }
+    // `initializeIntervals`, the dictionaries, then each input's `setIntervalsForTraversal`.
+    let intervals = tool_intervals(parser)?;
+    validate_tool_dictionaries(parser)?;
+    for input in &inputs {
+        require_feature_index(input, intervals.as_deref())?;
+    }
+    for records in &mut files {
+        records.retain(|record| {
+            in_traversal(
+                intervals.as_deref(),
+                &record.contig,
+                record.position,
+                record.position,
+            )
+        });
     }
 
     let lengths = |header: &Option<SamHeader>| {
@@ -19332,9 +19379,9 @@ fn in_traversal(
     end: i32,
 ) -> bool {
     gatk_engine::variant_source::intervals_for_traversal(intervals).is_none_or(|intervals| {
-        intervals
-            .iter()
-            .any(|interval| interval.contig == contig && interval.start <= end && start <= interval.end)
+        intervals.iter().any(|interval| {
+            interval.contig == contig && interval.start <= end && start <= interval.end
+        })
     })
 }
 
@@ -20051,7 +20098,12 @@ pub fn example_multi_feature_walker(parser: &Parser) -> Outcome {
     }
     for features in &mut located {
         features.retain(|feature| {
-            in_traversal(intervals.as_deref(), &feature.contig, feature.start, feature.end)
+            in_traversal(
+                intervals.as_deref(),
+                &feature.contig,
+                feature.start,
+                feature.end,
+            )
         });
     }
     let source = |header: Option<SamHeader>, name: &str| {
