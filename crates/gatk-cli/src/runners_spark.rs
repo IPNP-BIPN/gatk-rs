@@ -643,7 +643,10 @@ fn save_as_text_file(output: &str, text: &str) -> Result<(), Thrown> {
         let absolute = std::path::absolute(directory).unwrap_or_else(|_| directory.to_path_buf());
         return Err(Thrown::non_user(
             "org.apache.hadoop.mapred.FileAlreadyExistsException",
-            format!("Output directory file:{} already exists", absolute.display()),
+            format!(
+                "Output directory file:{} already exists",
+                absolute.display()
+            ),
         ));
     }
     std::fs::create_dir_all(directory)
@@ -5061,6 +5064,10 @@ fn write_spark_indexed(
     };
     if flag(parser, "sharded-output") {
         let directory = std::path::Path::new(output);
+        // The oracle writes the shards over a file already at the path (the tests' temp file).
+        if directory.is_file() {
+            std::fs::remove_file(directory).map_err(|error| failed(output, error.to_string()))?;
+        }
         std::fs::create_dir_all(directory).map_err(|error| failed(output, error.to_string()))?;
         for (index, partition) in partitions.iter().enumerate() {
             let mut writer = htsjdk_bam::writer::BamWriter::with_compression(
