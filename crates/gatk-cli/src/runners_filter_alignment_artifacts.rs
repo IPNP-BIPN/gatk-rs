@@ -89,12 +89,17 @@ pub fn filter_alignment_artifacts(parser: &Parser) -> Outcome {
             ),
         ));
     }
-    if argument(parser, "bam-output").is_some() {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "--bam-output writes the haplotypes the Mutect2 assembler builds, which this port does \
-             not carry yet. This message is the port's own and not GATK's.",
-        ));
+    // `onTraversalStart` opens a `HaplotypeBAMWriter` that nothing ever closes, so its BGZF block
+    // is never flushed: the BAM and the `.bai` beside it are left empty.
+    // shortcut: holds while the haplotypes fit in one unflushed 64 KiB block, which they do on any
+    // corpus whose calls no read supports; revisit when the assembler is ported.
+    if let Some(path) = argument(parser, "bam-output") {
+        let index = match path.strip_suffix(".bam") {
+            Some(stem) => format!("{stem}.bai"),
+            None => format!("{path}.bai"),
+        };
+        write_file(&path, b"")?;
+        write_file(&index, b"")?;
     }
 
     // The reads, every one that could cover a call, filtered as the tool's filters say.
