@@ -20,6 +20,19 @@
 //!
 //! `--subsampling-ratio` draws from an unseeded `java.util.Random`, so a ratio strictly between
 //! nought and one is the port's limitation: the reference itself answers differently on each run.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, Thrown>` is "a value, or the exception the reference throws"; `?` after a call
+//!   returns that exception to the caller at once, Java's `throws`;
+//! - `Option<T>` is a value or nothing (`Some(x)` or `None`), Java's nullable reference with the
+//!   null check enforced; `let Some(x) = y else { continue; };` unwraps it or skips the read;
+//! - `&[u8]` is a borrowed, read-only view of a byte array, and `&mut T` a writable borrow that
+//!   only one piece of code may hold at a time; `bases[a..b]` is the half-open slice `a` to `b`;
+//! - `|x| ...` is a closure, Java's lambda;
+//! - `e.length as i32` converts a CIGAR length, a `u32`, to Java's `int`; `as` never fails, and
+//!   a BAM CIGAR length is 28 bits wide, so the value is kept;
+//! - a function's last expression is its value; `return` is only written for early exits.
 use super::*;
 use gatk_tools::flow_based_read::FlowRead;
 use gatk_tools::flow_pairhmm_align_reads_to_haplotypes::FlowHaplotype;
@@ -27,23 +40,33 @@ use gatk_tools::ground_truth_reads_builder as gtrb;
 use htsjdk_bam::cigar::Op;
 use htsjdk_bam::record::BamRecord;
 
-/// One ancestor's reference, haplotype and score.
+/// `ScoredHaplotype`: one ancestor's reference, haplotype and score.
 struct Scored {
+    /// `ref.getInterval()`: the span on the ancestral contig (`<contig>_<ancestor>`).
     contig: String,
     start: i32,
     end: i32,
+    /// `haplotype.getBases()`, oriented as the read was synthesised.
     haplotype: Vec<u8>,
+    /// `haplotype.getGenomeLocation().getLengthOnReference()`, shorter than the span by the
+    /// false SNP skip.
     haplotype_length: i32,
+    /// `clippedRef.getBases()`, built only when the read is start soft clipped.
     clipped: Option<Vec<u8>>,
+    /// `unclippedRef.getBases()`: the span extended by the clips, padding and fill.
     unclipped: Vec<u8>,
+    /// `softclipFrontFillCount`.
     softclip_front_fill: i64,
     score: f64,
 }
 
+/// A library refusal, raised under the class and message the library names.
 fn thrown(error: gtrb::Thrown) -> Thrown {
     Thrown::non_user(error.class, error.message)
 }
 
+/// `getCigar().getFirstCigarElement().getOperator()`, or nothing for an empty CIGAR, where the
+/// Java's `getFirstCigarElement()` returns null and the comparison then throws.
 fn first_op(read: &BamRecord) -> Option<Op> {
     read.cigar.elements.first().map(|element| element.op)
 }
@@ -52,6 +75,7 @@ fn last_op(read: &BamRecord) -> Option<Op> {
     read.cigar.elements.last().map(|element| element.op)
 }
 
+/// `isReverseStrand()`: flag 0x10.
 fn reverse(read: &BamRecord) -> bool {
     read.flags & 0x10 != 0
 }
@@ -76,6 +100,15 @@ fn start_softclipped(read: &BamRecord) -> bool {
 
 /// `isEndPolyTSoftclipped`, which for a forward read tests the length of the FIRST element over
 /// the first bases, whatever the clip at the end is.
+///
+/// ```java
+/// final int      length = read.getCigar().getFirstCigarElement().getLength();
+/// for ( int n = 0 ; n < length ; n++ ) {
+///     if (bases[n] != 'T') {
+/// ```
+///
+/// `bases.get(n)` answers nothing past the end of the bases, which counts as "not T" here;
+/// the Java indexes `bases[n]` directly there and throws `ArrayIndexOutOfBoundsException`.
 fn end_polyt_softclipped(read: &BamRecord) -> bool {
     if !end_softclipped(read) {
         return false;
@@ -91,6 +124,13 @@ fn end_polyt_softclipped(read: &BamRecord) -> bool {
 }
 
 /// `getSoftclippedBases`: the bases between the soft clips.
+///
+/// ```java
+/// return Arrays.copyOfRange(bases, startClip, bases.length - endClip);
+/// ```
+///
+/// The `min`, `saturating_sub` (subtract, stopping at zero) and `max` clamps return an empty
+/// slice where the clips overlap or exceed the bases; `copyOfRange` throws there instead.
 fn softclipped_bases(read: &BamRecord) -> Vec<u8> {
     let start = match read.cigar.elements.first() {
         Some(e) if e.op == Op::S => e.length as usize,
@@ -120,6 +160,14 @@ fn unclipped_end(read: &BamRecord) -> i32 {
 
 /// `buildReferenceHaplotype`: the reference oriented as the read was synthesised, with the false
 /// SNP compensation's skip taken off its front. Returns the bases and the length on reference.
+///
+/// ```java
+/// if ( falseSnpCompensation && (haplotypeBases[0] != readBases[0]) ) {
+/// ```
+///
+/// The two `[0]` reads come in that order, so an empty reference span throws before an empty
+/// read does; each `ok_or_else` raises the same `ArrayIndexOutOfBoundsException`. Only the
+/// length of the shifted `loc` is returned, because `buildExtendedRef` reads nothing else of it.
 fn reference_haplotype(
     reference: &[u8],
     length: i32,
@@ -155,6 +203,18 @@ fn reference_haplotype(
 }
 
 /// `scoreReadAgainstHaplotype` and `scoreReadAgainstReference`, which are the same computation.
+///
+/// A fresh flow read each time, flipped to synthesis direction for a reverse read, and -1 for
+/// one the flow read marks invalid:
+///
+/// ```java
+/// if ( !flowRead.isValid() ) {
+///     return -1;
+/// }
+/// ```
+///
+/// A haplotype `FlowHaplotype::new` cannot key (a base outside the flow order) raises
+/// `baseArrayToKey`'s `GATKException`, whose message is built here.
 fn score(
     read: &BamRecord,
     haplotype: &[u8],
@@ -191,13 +251,24 @@ fn score(
 /// A span on an ancestral contig: its name, its start and its end.
 type Span = (String, i32, i32);
 
-/// The translation tables, read the first time an ancestor and a contig need one.
+/// `AncestralContigLocationTranslator`: the translation tables, read the first time an ancestor
+/// and a contig need one, and kept in the order they were first read, as the Java's
+/// `LinkedHashMap` keeps them.
 struct Translators {
     base: String,
     tables: Vec<(String, gtrb::Translator)>,
 }
 
 impl Translators {
+    /// `translate(ancestor, contig, from)`: one position through the `<ancestor>.<contig>.csv`
+    /// table under the base path.
+    ///
+    /// ```java
+    /// final String                          key = ancestor + "." + contig + ".csv";
+    /// ```
+    ///
+    /// A position before the table's first row is `offset[-index - 2]` with `index == -1`, which
+    /// throws `ArrayIndexOutOfBoundsException: Index -1 out of bounds for length <rows>`.
     fn position(&mut self, ancestor: &str, contig: &str, from: i32) -> Result<i32, Thrown> {
         let key = format!("{ancestor}.{contig}.csv");
         if !self.tables.iter().any(|(k, _)| *k == key) {
@@ -211,6 +282,7 @@ impl Translators {
             self.tables
                 .push((key.clone(), gtrb::Translator::parse(&text)));
         }
+        // The table is in the list now; `expect` states that and would panic if it were not.
         let table = &self
             .tables
             .iter()
@@ -229,6 +301,13 @@ impl Translators {
     }
 
     /// Both ancestors, maternal first; `None` for a span that collapses on either.
+    ///
+    /// ```java
+    /// if ( end > start ) {
+    /// ```
+    ///
+    /// The `else` throws `LocationTranslationException`, which `apply` catches and counts, so
+    /// the read is skipped. The maternal span collapsing means the paternal table is not read.
     fn translate(
         &mut self,
         contig: &str,
@@ -250,6 +329,10 @@ impl Translators {
     }
 }
 
+/// `GroundTruthReadsBuilder`: `onTraversalStart`, the traversal, then `closeTool`.
+///
+/// The CSV is gathered in memory and written whether the traversal succeeded or not, then the
+/// traversal's error (if any) is raised: `closeTool` closes the writer after a failure too.
 pub fn ground_truth_reads_builder(parser: &Parser) -> Outcome {
     let ReadWalkerStart {
         source,
@@ -276,6 +359,8 @@ pub fn ground_truth_reads_builder(parser: &Parser) -> Outcome {
         base: required("ancestral-translators-base-path")?,
         tables: Vec::new(),
     };
+    // `if ( engine instanceof FlowBasedAlignmentLikelihoodEngine)`, else
+    // `throw new GATKException("must use a flow based likelihood calculation engine");`.
     let engine =
         scalar(parser, "likelihood-calculation-engine").unwrap_or_else(|| "PairHMM".to_string());
     if engine != "FlowBased" {
@@ -296,6 +381,7 @@ pub fn ground_truth_reads_builder(parser: &Parser) -> Outcome {
         &mut translators,
         &mut csv,
     );
+    // `new GZIPOutputStream(...)` for a `.gz` name; `java_gzip` writes it at level 6.
     let bytes = if output.ends_with(".gz") {
         java_gzip(csv.as_bytes(), 6)
     } else {
@@ -306,6 +392,10 @@ pub fn ground_truth_reads_builder(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// `PartialReadWalker.traverse` over `apply`: every read in order, until `shouldExitEarly`.
+///
+/// The two ancestral references come in as one two-element array of writable borrows, maternal
+/// then paternal, so the loop can pick one by index.
 #[allow(clippy::too_many_arguments)]
 fn ground_truth_reads_builder_traverse(
     parser: &Parser,
@@ -323,6 +413,7 @@ fn ground_truth_reads_builder_traverse(
     let ratio = double_or(parser, "subsampling-ratio", 1.0);
     let max_output_reads = number_or(parser, "max-output-reads", 20_000_000);
     let output_flow_length = number_or(parser, "output-flow-length", 0);
+    // An unset `String` field renders as `null`, which means "not given".
     let prepend = scalar(parser, "prepend-sequence").filter(|v| v != "null");
     let append = scalar(parser, "append-sequence").filter(|v| v != "null");
     let min_mq = double_or(parser, "min-mq", 0.0);
@@ -362,14 +453,18 @@ fn ground_truth_reads_builder_traverse(
             .query(contig, start, end)
             .map_err(|error| Thrown::user(format!("{error:?}")))
     };
+    // `outputReadsCount`, an `int` as in the Java.
     let mut count = 0i32;
     for read in &reads {
+        // `shouldExitEarly`: `( maxOutputReads != 0) && (outputReadsCount >= maxOutputReads)`.
         if max_output_reads != 0 && count >= max_output_reads {
             break;
         }
+        // `minMappingQuality` is a `double`, so the mapping quality is compared as one.
         if min_mq != 0.0 && f64::from(read.mapping_quality) < min_mq {
             continue;
         }
+        // 0x800 is the supplementary flag.
         if read.flags & 0x800 != 0 && !include_supp {
             continue;
         }
@@ -385,6 +480,8 @@ fn ground_truth_reads_builder_traverse(
             gatk_tools::flow_based_read::read_group_info(read, header).map_err(flow_refusal)?;
         let build =
             || FlowRead::new(read, &info.flow_order, info.max_class, &flow).map_err(flow_refusal);
+        // `getFlowBasedReadQuality(flowRead, flowRead.getMaxHmer())`: the read is built for the
+        // quality filter only when it is on, then reused; otherwise it is built afterwards.
         let mut flow_read: Option<FlowRead> = None;
         if max_rq != 0.0 {
             let built = build()?;
@@ -401,6 +498,8 @@ fn ground_truth_reads_builder_traverse(
             None => build()?,
         };
 
+        // `read.getContig()`, by the read's reference index; a read without one reads as the
+        // empty name here.
         let contig = usize::try_from(read.reference_index)
             .ok()
             .and_then(|at| header.sequences.get(at))
@@ -411,6 +510,8 @@ fn ground_truth_reads_builder_traverse(
             continue;
         };
         let rev = reverse(read);
+        // `buildReferenceHaplotype` for the maternal then the paternal span. `enumerate` pairs
+        // each span with its index, 0 for maternal.
         let mut scored: Vec<Scored> = Vec::new();
         for (index, (ancestor_contig, s, e)) in spans.iter().enumerate() {
             let source: &mut gatk_engine::reference::ReferenceFileSource = if index == 0 {
@@ -433,7 +534,8 @@ fn ground_truth_reads_builder_traverse(
                 score: 0.0,
             });
         }
-        // `buildExtendedRef`, maternal then paternal.
+        // `buildExtendedRef`, maternal then paternal. `iter_mut` hands out a writable borrow of
+        // each, so the clipped and unclipped bases are stored into it in place.
         for (index, sh) in scored.iter_mut().enumerate() {
             let source: &mut gatk_engine::reference::ReferenceFileSource = if index == 0 {
                 maternal_reference
@@ -471,6 +573,9 @@ fn ground_truth_reads_builder_traverse(
                     extend_start += delta;
                 }
             }
+            // `scoredHaplotype.ref.getInterval().size() -
+            // scoredHaplotype.haplotype.getGenomeLocation().getLengthOnReference()`: the false
+            // SNP skip, given back on the side the read starts from.
             let delta = (sh.end - sh.start + 1) - sh.haplotype_length;
             if delta != 0 {
                 if !rev {
@@ -479,6 +584,8 @@ fn ground_truth_reads_builder_traverse(
                     extend_end -= delta;
                 }
             }
+            // `getSequence(loc.getContig()).getEnd()`; the start is 1, so `minStart` is the
+            // literal below.
             let max_end = source.sequence_length(&sh.contig).unwrap_or(0) as i32;
             if start_softclipped(read) {
                 let from = 1.max(sh.start - extend_start);
@@ -502,7 +609,9 @@ fn ground_truth_reads_builder_traverse(
             sh.unclipped = query(source, &sh.contig, from, to)?;
         }
 
-        // The reference's own score, then each ancestor's unless its haplotype IS the reference.
+        // The reference's own score, then each ancestor's unless its haplotype IS the reference:
+        // `areSame` compares the haplotype with the oriented reference bases. The Java's paternal
+        // `arsSame` branch scores the same way as its `else`, so it is not written out.
         let reference_bases = match reference.as_mut() {
             Some(source) => query(source, &contig, start, end)?,
             None => Vec::new(),
@@ -518,6 +627,8 @@ fn ground_truth_reads_builder_traverse(
                 score(read, &sh.haplotype, &info, &flow)?
             };
         }
+        // The two score filters, as written in the Java, under its own comment
+        // `// TODO: this is probaby wrong since the scores are negative. To be handled later`
         let (maternal_score, paternal_score) = (scored[0].score, scored[1].score);
         if min_score != 0.0 && maternal_score.min(paternal_score) > min_score {
             continue;
@@ -527,7 +638,8 @@ fn ground_truth_reads_builder_traverse(
         }
         count += 1;
 
-        // `emit`.
+        // `emit`. `tm` is `getAttributeAsString(FlowBasedRead.CLIPPING_TAG_NAME)`; a string or a
+        // single character is read as text, and any other tag type is the port's limitation.
         let tm =
             match read.tags.get(htsjdk_bam::tag::Tag::new(b"tm")) {
                 Some(htsjdk_bam::tag::TagValue::Str(text)) => Some(text.clone()),
@@ -539,6 +651,7 @@ fn ground_truth_reads_builder_traverse(
                 )),
                 None => None,
             };
+        // `(tm != null) && tm.indexOf(c) >= 0`.
         let has = |c: char| tm.as_deref().is_some_and(|tm| tm.contains(c));
         let fill_value = if end_softclipped(read) {
             gtrb::SOFTCLIP_FILL_VALUE
@@ -551,7 +664,8 @@ fn ground_truth_reads_builder_traverse(
         } else {
             gtrb::DEFAULT_FILL_VALUE
         };
-        // Paternal first, as the reference builds them.
+        // `buildHaplotypeKeyForOutput`, paternal first, as the reference builds them, so the
+        // first refusal raised is the paternal one.
         let mut keys: [Vec<i32>; 2] = [Vec::new(), Vec::new()];
         for index in [1usize, 0] {
             let sh = &mut scored[index];
@@ -567,6 +681,8 @@ fn ground_truth_reads_builder_traverse(
             } else {
                 0
             };
+            // `new int[flowLength]` with a negative length, after both keys of this haplotype
+            // were built, as in the Java.
             if output_flow_length < 0 {
                 return Err(Thrown::non_user(
                     "java.lang.NegativeArraySizeException",
@@ -583,6 +699,8 @@ fn ground_truth_reads_builder_traverse(
             out[..copied].copy_from_slice(&key[..copied]);
             keys[index] = out;
         }
+        // `buildHaplotypeSequenceForOutput`, paternal first: `seq.substring(0, keyBaseCount)`,
+        // whose refusal message this reproduces.
         let mut sequences: [String; 2] = [String::new(), String::new()];
         for index in [1usize, 0] {
             let sh = &scored[index];
@@ -601,6 +719,7 @@ fn ground_truth_reads_builder_traverse(
             }
             sequences[index] = text;
         }
+        // `softclipFill`, after the sequences, so the sequences count the unfilled keys' bases.
         if !fill_softclipped {
             for index in [1usize, 0] {
                 let limit = scored[index]
@@ -611,6 +730,7 @@ fn ground_truth_reads_builder_traverse(
                 }
             }
         }
+        // `(paternal.score > maternal.score) ? paternal: maternal`: a tie picks maternal.
         let same = sequences[0] == sequences[1];
         let best = if paternal_score > maternal_score {
             1
@@ -625,6 +745,7 @@ fn ground_truth_reads_builder_traverse(
         }
         let read_flow_order = gtrb::oriented(info.flow_order.as_bytes(), rev);
         let interval = |sh: &Scored| format!("{}:{}-{}", sh.contig, sh.start, sh.end);
+        // `CSV_FIELD_ORDER`, column for column.
         let columns = [
             read.read_name.clone(),
             contig.clone(),

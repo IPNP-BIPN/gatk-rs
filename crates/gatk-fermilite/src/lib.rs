@@ -1,8 +1,21 @@
 //! fermi-lite, the assembler `FindBreakpointEvidenceSpark` calls through JNI, byte for byte.
 //!
-//! The library GATK 4.6.2.0 bundles answers `FermiLiteAssembler.getFermiLiteVersion()` with
+//! The library GATK 4.7.0.0 bundles answers `FermiLiteAssembler.getFermiLiteVersion()` with
 //! 562638112b7992f4d7a243ccd9ab2b3bd08c6b08, r53, and that is the commit ported here. HEAD (r55)
-//! differs only in returning nothing instead of dying when no read is left to assemble.
+//! differs only in returning nothing instead of dying when no read is left to assemble. The
+//! library is unchanged since 4.6.2.0: both versions' `build.gradle` pin
+//! `org.broadinstitute:gatk-fermilite-jni:1.2.0`, and `FermiLiteAssemblyHandler.java`, the only
+//! caller, is identical between them.
+//!
+//! # The reference is C, and its licence
+//!
+//! The crate's `Cargo.toml` names the source as "fermi-lite (lh3/fermi-lite, MIT, Copyright (c)
+//! 2015 Broad Institute)". `khash.h`, `ksort.h` and `ksw.c` are the klib files of that same r53
+//! tree (`tools/fermilite-conformance/native_driver.c` builds `ksw.c` from it). No JDK or HotSpot
+//! code is involved, so `docs/licence-compatibility-risk.md` has nothing to block here. What the
+//! port does have to reproduce is C's own semantics, compiled for x86-64 by the JNI's Makefile:
+//! unsigned arithmetic that wraps, `char` that is signed, `int` that is 32 bits, bitfields that
+//! drop their high bits, and sorts and hashes whose order is the macro's, not a library's.
 //!
 //! [`assemble`] is `FermiLiteAssembler.createAssembly`: the buffer the Java side writes, the loop in
 //! the JNI's C that reads it, `fml_assemble`, and the marshalling of what comes back.
@@ -76,7 +89,18 @@
 //! The uninitialised memory that exists is not read before it is written: the `ec` and `absent` of
 //! `ecbase_t`, `dummy` and `H1` in `ksw_i16`, `ok.info` in `unitig.c`. Two reads just outside an
 //! array do nothing: `bc[c] -= l` with `c` still -1 and `l` 0 in `rle_insert_cached`, and `H0[-1]`
-//! with an empty target in `ksw_i16`.
+//! with an empty query in `ksw_i16` (`slen` comes from the query; see `ksw.rs`).
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, FmlError>` is "a `T` or an error", the way this crate models what C does instead
+//!   of returning; `?` after a call hands the error straight back to the caller.
+//! - `pub(crate)` is visible inside this crate only, roughly Java's package-private.
+//! - `x as i32`, `x as u8` and the like are C casts: an integer cast keeps the low bits and never
+//!   fails. A float-to-integer `as` saturates instead, which is why `cvttsd2si` exists.
+//! - `c_assert!` is a macro: the compiler pastes its body in at each use. It unwinds the stack
+//!   with a private payload, and [`assemble`] catches that one payload, much as a Java `catch`
+//!   would catch one exception class.
 
 // Conditions stay as they are written in C, to be read side by side with it.
 #![allow(clippy::explicit_auto_deref)]
@@ -286,6 +310,9 @@ pub(crate) const SEQ_NT6_TABLE: [u8; 256] = {
 
 /// `seq_nt6_table[(int)c]` with `c` a signed `char`: what `libfml.Linux.so` has in `.data` under
 /// the table, where it is the same every run. [`read_buffer`] has refused the rest.
+///
+/// Bytes from 0x80 are negative as a signed `char`, so C's index lands before the table; the
+/// zero returned for all of them is right only because the pointer bytes are refused earlier.
 #[inline]
 pub(crate) fn seq_nt6_signed(c: u8) -> u8 {
     if c < 0x80 {
@@ -300,9 +327,11 @@ pub(crate) fn seq_reverse(s: &mut [u8]) {
     s.reverse();
 }
 
-/// `seq_revcomp6`.
+/// `seq_revcomp6`: reverse, then swap A/T and C/G in the 1-to-4 encoding; 0 (`$`) and 5 (`N`)
+/// stay as they are.
 pub(crate) fn seq_revcomp6(s: &mut [u8]) {
     s.reverse();
+    // `iter_mut` yields a writable reference to each element; `*c` is the element itself.
     for c in s.iter_mut() {
         if (1..=4).contains(c) {
             *c = 5 - *c;
@@ -323,6 +352,8 @@ pub(crate) fn cvttsd2si(x: f64) -> i32 {
 
 /// `strlen` from `pos`, refusing to leave `buf`, whose tail C would read as somebody else's heap.
 fn strlen_in(buf: &[u8], pos: usize) -> Result<usize, FmlError> {
+    // `get(pos..)` is the tail from `pos`, or nothing when `pos` is past the end; `position`
+    // finds the first NUL; `ok_or_else` turns "no NUL before the end" into the refusal.
     buf.get(pos..)
         .and_then(|rest| rest.iter().position(|&b| b == 0))
         .ok_or_else(|| FmlError::Undefined("the JNI reads past the read buffer".to_string()))
@@ -336,6 +367,7 @@ fn make_read_data(reads: &[(&[u8], &[u8])]) -> Result<Vec<u8>, FmlError> {
         capacity += 2 * (bases.len() + 1);
     }
     let mut buf = vec![0u8; capacity];
+    // The read count, as the four bytes the JNI's C reads as an `int` on x86-64.
     buf[0..4].copy_from_slice(&(reads.len() as i32).to_le_bytes());
     let mut at = 4;
     for (bases, quals) in reads {
@@ -362,13 +394,18 @@ fn read_buffer(buf: &[u8], n: usize) -> Result<Vec<Bseq>, FmlError> {
         at += skip;
         let ql = strlen_in(buf, at)?;
         let mut qual = buf[at..at + ql].to_vec();
+        // The bases' `skip` again, not `ql + 1`: the JNI steps over both strings by the bases'
+        // length, which is how a NUL in the bases puts the parse out of step (module header).
         at += skip;
         if ql < l {
             return Err(FmlError::Undefined(format!(
                 "read {i} has {l} bases but {ql} quals before a NUL: bfc reads and writes the heap after them"
             )));
         }
+        // Every reader of `qual` stops at `l_seq`, so the tail of longer quals is never seen.
         qual.truncate(l);
+        // 0x80 to 0xCF index `.got.plt` and 0xE1 to 0xE7 the high bytes of `__dso_handle`:
+        // the bytes the module header says vary from run to run.
         if let Some(c) = seq
             .iter()
             .find(|&&c| (0x80..=0xCF).contains(&c) || (0xE1..=0xE7).contains(&c))
@@ -391,6 +428,9 @@ pub fn assemble(opt: &FmlOpt, reads: &[(&[u8], &[u8])]) -> Result<Vec<Contig>, F
     let buf = make_read_data(reads)?;
     let seqs = read_buffer(&buf, reads.len())?;
     drop(buf);
+    // `catch_unwind` runs the closure and catches a panic, Java's `try`/`catch`. Only the
+    // `CAbort` payload of `c_assert!` becomes an error; any other panic is a bug in the port and
+    // is re-raised unchanged.
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         misc::fml_assemble(opt, seqs)
     })) {

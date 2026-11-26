@@ -3,10 +3,29 @@
 //! Nothing in fermi-lite iterates a table where order could show: `bfc_ch_hist` only adds up, and
 //! every other table is looked up by key. The hash and probing are ported regardless, so the keys
 //! alias exactly when they do in C (`_cnt_eq` compares only the top 50 bits).
+//!
+//! # Where C decides the result
+//!
+//! Which bucket a key lands in is visible to the callers that keep bucket indices (`kh_put`'s
+//! return is used as an index into `keys` and `vals`), and it follows from three C details kept
+//! here: the hash is a 32-bit `khint_t` and wraps; a probe steps by 1, 2, 3, ... (`i + step`,
+//! masked to the power-of-two size); and each bucket has two flag bits, "empty" (2) and
+//! "deleted" (1), sixteen buckets to a 32-bit flag word, which start all-empty as `0xaaaaaaaa`.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `KhOps` is a trait, Java's interface, here with static methods only. `Khash<O, V>` is
+//!   generic over it the way `KHASH_INIT` is a macro over a hash and an equality, so each table
+//!   type gets its own copy of the code with the functions inlined.
+//! - `V: Copy + Default` says the value type can be copied bit for bit and has a zero value.
+//! - `PhantomData<O>` holds no data; it only records which `KhOps` the table uses.
+//! - `std::mem::swap(&mut a, &mut b)` exchanges two values in place, the kick-out's swap.
 
 /// `__hash_func` and `__hash_equal` of one `KHASH_INIT`.
 pub(crate) trait KhOps {
+    /// `__hash_func`: the 32-bit hash of a key.
     fn hash(key: u64) -> u32;
+    /// `__hash_equal`.
     fn equal(a: u64, b: u64) -> bool;
 }
 

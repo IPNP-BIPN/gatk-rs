@@ -33,6 +33,15 @@ crates/gatk-annotation/src/site_statistics.rs 0.787
 crates/gatk-annotation/src/strand_bias.rs 0.656
 crates/gatk-annotation/src/tandem_repeat.rs 0.789
 crates/gatk-barclay/src/lib.rs 0.466
+crates/gatk-cli/src/definitions.rs 0.523
+crates/gatk-cli/src/picard/add_comments_to_bam.rs 0.532
+crates/gatk-cli/src/picard/build_bam_index.rs 1.034
+crates/gatk-cli/src/picard/check_terminator_block.rs 0.955
+crates/gatk-cli/src/picard/rename_sample_in_vcf.rs 0.750
+crates/gatk-cli/src/picard/set_nm_and_uq_tags.rs 9.000
+crates/gatk-cli/src/picard/set_nm_md_and_uq_tags.rs 0.471
+crates/gatk-cli/src/runners_genomicsdb_query.rs 0.423
+crates/gatk-cli/src/runners_ground_truth_reads_builder.rs 0.262
 crates/gatk-corpus/src/lib.rs 0.667
 crates/gatk-engine/src/accumulate_data.rs 0.953
 crates/gatk-engine/src/alignment_state.rs 0.777
@@ -141,6 +150,11 @@ crates/gatk-engine/src/variant_context_utils.rs 0.465
 crates/gatk-engine/src/variant_getters.rs 1.345
 crates/gatk-engine/src/variant_source.rs 1.593
 crates/gatk-engine/src/well19937c.rs 1.115
+crates/gatk-fermilite/src/bfc.rs 0.158
+crates/gatk-fermilite/src/htab.rs 0.340
+crates/gatk-fermilite/src/khash.rs 0.180
+crates/gatk-fermilite/src/lib.rs 0.577
+crates/gatk-readfilter/src/counting.rs 0.577
 crates/gatk-tools/src/add_comments_to_bam.rs 1.250
 crates/gatk-tools/src/allele_filtering.rs 0.336
 crates/gatk-tools/src/allele_frequency_qc.rs 0.797

@@ -2,14 +2,39 @@
 //!
 //! The same function, `fml_correct_core`, serves twice: once to correct with `ec_k`, once with
 //! `min_asm_ovlp` (33) to trim every read to its longest streak of counted k-mers, or to empty it.
+//!
+//! # Where C decides the result
+//!
+//! - Bases are 0 to 3 for A, C, G, T in `ecbase_t`, and anything above 3 is not a base. The
+//!   fields `b`, `q`, `ob` and `oq` are C bitfields of 3 and 1 bits (the trailing comments on
+//!   `EcBase`), so `b` is computed `& 7` as the bitfield would store it.
+//! - A k-mer count is one packed integer: the low 8 bits count every occurrence, the next 6 the
+//!   occurrences whose bases were all of high quality (`htab.rs`). `& 0xff` and `>> 8` take
+//!   those fields apart.
+//! - The error-correction heap breaks ties on the total penalty by `ksort.h`'s own heap steps,
+//!   so which of two equal-penalty paths is popped first is the macro's choice.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&BfcCh` is a read-only borrowed reference and `&mut [EcBase]` a writable view of part of
+//!   an array; the caller keeps ownership of both.
+//! - `Option<&EcBase>` is "an element or nothing" and stands in for C's pointer that is past the
+//!   end of the read; `if let Some(c) = c` runs only when there is an element.
+//! - `u8::from(flag)` is a `bool` as 0 or 1, C's `!!flag`.
+//! - `wrapping_add`, `wrapping_sub` and `wrapping_mul` are C's unsigned arithmetic: they wrap
+//!   modulo 2^64 where Rust's plain `+` would stop a debug build.
 
 use crate::htab::{bfc_kmer_append, bfc_kmer_change, bfc_kmer_hash, BfcCh, BfcKmer, BFC_KMER_NULL};
 use crate::ksort::{ks_heapdown, ks_heapup};
 use crate::{cvttsd2si, Bseq, FmlOpt, SEQ_NT6_TABLE};
 
+/// `BFC_MAX_PATHS`: `bfc_ec1dir` stops after this many complete correction paths.
 const BFC_MAX_PATHS: usize = 4;
+/// `BFC_EC_HIST`: how many recent corrections a path remembers, for `win_multi_ec`.
 const BFC_EC_HIST: usize = 5;
+/// `BFC_EC_HIST_HIGH`: the same for corrections of high-quality bases.
 const BFC_EC_HIST_HIGH: usize = 2;
+/// `BFC_EC_MIN_COV_COEF`: `min_cov` is this fraction of the k-mer coverage, rounded.
 const BFC_EC_MIN_COV_COEF: f64 = 0.1;
 
 /// `bfc_opt_t`, as `bfc_opt_init` leaves it.
@@ -49,12 +74,21 @@ impl BfcOpt {
 }
 
 /// The signed `char` of `s->qual[i] - 33 >= q`.
+///
+/// `qual` is a `char` in C, signed on x86-64, and is promoted to `int` before the subtraction.
+/// `as i8 as i32` is that promotion: a byte of 0x80 or more is negative, so it is never high
+/// quality, where reading it as unsigned would make it the highest.
 #[inline]
 fn qual_at_least(qual: u8, q: i32) -> bool {
     (qual as i8 as i32) - 33 >= q
 }
 
 /// `worker_count`, through `bfc_kmer_insert`.
+///
+/// Counts every k-mer of one read. `qmer` keeps one bit per base of the current window, set when
+/// that base's quality is at least `q`; the k-mer counts as high quality when all `k` are set.
+/// The table is indexed by the byte as unsigned here, unlike `bfc_seq_conv` (module header of
+/// `lib.rs`).
 fn worker_count(ch: &mut BfcCh, s: &Bseq, k: i32, q: i32) {
     let mut x = BFC_KMER_NULL;
     let mut qmer = 0u64;
@@ -104,6 +138,7 @@ fn bfc_seq_conv(s: &[u8], q: &[u8], qthres: i32, seq: &mut Vec<EcBase>) {
     seq.clear();
     for i in 0..s.len() {
         let t = crate::seq_nt6_signed(s[i]);
+        // `t - 1` stored in a 3-bit field: 0 wraps to 7, not to 4 (`lib.rs` module header).
         let b = t.wrapping_sub(1) & 7;
         let mut qb = u8::from(qual_at_least(q[i], qthres));
         if b > 3 {
@@ -141,7 +176,9 @@ fn bfc_seq_revcomp(seq: &mut [EcBase]) {
     }
 }
 
-/// `bfc_ec_greedy_k`.
+/// `bfc_ec_greedy_k`: the single-base change of `x` with the highest count, as `(i << 2) | j`
+/// (position `i`, new base `j`), or -1 unless it beats a third of `mode` and the runner-up
+/// stays under 3. Strict `<` keeps the first of two equal counts in position-then-base order.
 fn bfc_ec_greedy_k(k: i32, mode: i32, x: &BfcKmer, ch: &BfcCh) -> i32 {
     let (mut max, mut max_ec, mut max2) = (0i32, -1i32, 0i32);
     for i in 0..k {
@@ -216,6 +253,8 @@ fn bfc_ec_kcov(k: i32, min_occ: i32, s: &mut [EcBase], ch: &BfcCh) {
                     if (r & 0xff) >= min_occ {
                         c.solid_end = true;
                         let high = u8::from(c.high_end);
+                        // `lcov` and `hcov` hold six bits: `& 0x3f` wraps a count of 64 to 0
+                        // rather than letting it grow. `s[i + 1 - k..=i]` is the k-mer's bases.
                         for sj in &mut s[i + 1 - k as usize..=i] {
                             sj.lcov = (sj.lcov + 1) & 0x3f;
                             sj.hcov = (sj.hcov + high) & 0x3f;
@@ -230,7 +269,10 @@ fn bfc_ec_kcov(k: i32, min_occ: i32, s: &mut [EcBase], ch: &BfcCh) {
     }
 }
 
-/// `bfc_ec_best_island`.
+/// `bfc_ec_best_island`: the longest run of solid k-mers, packed as `start << 32 | end`, or 0.
+///
+/// Strict `l > max` keeps the first of two equal runs. The `as i64 as u64` casts are C's
+/// conversion of an `int` to `uint64_t`: sign-extend, then reinterpret.
 fn bfc_ec_best_island(k: i32, s: &[EcBase]) -> u64 {
     let (mut l, mut max, mut max_i) = (0i32, 0i32, -1i32);
     let mut i = k - 1;
@@ -298,7 +340,8 @@ struct Ec1Buf<'a> {
     mode: i32,
 }
 
-/// `heap_lt`.
+/// `heap_lt`: "less" is the larger penalty, so `ksort.h`'s max-heap keeps the smallest total
+/// penalty on top.
 #[inline]
 fn heap_lt(a: &EcHeap1, b: &EcHeap1) -> bool {
     a.tot_pen > b.tot_pen
@@ -313,7 +356,8 @@ fn weighted_penalty(o: &BfcOpt, p: &Penalty) -> i32 {
         + o.w_absent_high * p.absent_high as i32
 }
 
-/// `buf_update`.
+/// `buf_update`: extend path `prev` by one base. The step goes on `stack` (the backtrack record,
+/// whose index is the new `k`) and the extended state on the heap.
 fn buf_update(
     opt: &BfcOpt,
     heap: &mut Vec<EcHeap1>,
@@ -418,6 +462,7 @@ fn bfc_ec1dir(e: &mut Ec1Buf, ec_i: usize, start: i32, end: i32) -> i32 {
             rv = -2;
             break;
         }
+        // C's pop: take the top, move the last element to the top, sift it down.
         let z = e.heap[0];
         let last = e.heap.pop().unwrap();
         if !e.heap.is_empty() {
@@ -458,6 +503,7 @@ fn bfc_ec1dir(e: &mut Ec1Buf, ec_i: usize, start: i32, end: i32) -> i32 {
                 }
             }
             // extension
+            // `c` is `None` past the end of the read, where C's `c` pointer is NULL.
             for b in 0..4i32 {
                 if let (true, Some(c)) = (fixed, c) {
                     if b != c.b as i32 {
@@ -642,6 +688,8 @@ fn bfc_ec1(e: &mut Ec1Buf, seq: &mut [u8], qual: &mut [u8]) {
     }
     for i in 0..e.seq.len() {
         let c = &e.seq[i];
+        // A corrected base is written lower case, with the quality `34 + ob`; an unchanged one
+        // keeps its case and gets `+` or `?` by its quality bit.
         let is_diff = c.b != c.ob;
         seq[i] = (if is_diff { b"acgtn" } else { b"ACGTN" })[c.b as usize];
         qual[i] = if is_diff {
@@ -652,7 +700,12 @@ fn bfc_ec1(e: &mut Ec1Buf, seq: &mut [u8], qual: &mut [u8]) {
     }
 }
 
-/// `max_streak`.
+/// `max_streak`: the longest run of counted k-mers, packed as `count << 32 | first`, where
+/// `first` is the last base of the run's first k-mer.
+///
+/// `t` holds both halves: a counted k-mer adds one to the high word, anything else restarts the
+/// run at the next position. Comparing the packed values orders by count first, then by end, so
+/// of two equal runs the later wins.
 fn max_streak(k: i32, ch: &BfcCh, s: &Bseq) -> u64 {
     let (mut max, mut t) = (0u64, 0u64);
     let mut x = BFC_KMER_NULL;
@@ -681,12 +734,19 @@ fn max_streak(k: i32, ch: &BfcCh, s: &Bseq) -> u64 {
     max
 }
 
-/// The filter's branch of `worker_ec`.
+/// The filter's branch of `worker_ec`: keep the read's longest streak of counted k-mers when it
+/// covers more than `min_trim_frac` of the read, else empty the read.
+///
+/// `min_trim_frac` is a `float` field widened to `double` at the comparison, so the bound is
+/// 0.800000011920929, not 0.8.
 fn worker_fltuniq(o: &BfcOpt, ch: &BfcCh, s: &mut Bseq) {
     let max = max_streak(o.k, ch, s);
     if max >> 32 != 0
         && ((max >> 32) + o.k as u64 - 1) as f64 / s.l_seq as f64 > o.min_trim_frac as f64
     {
+        // `as u32 as i32` keeps the low 32 bits and `(max >> 32) as i32` the high ones.
+        // `wrapping_add` is the two's-complement sum of two `int`s, where Rust's `+` would stop
+        // a debug build on overflow.
         let mut start = max as u32 as i32;
         let end = start.wrapping_add((max >> 32) as i32);
         start -= o.k - 1;
@@ -694,6 +754,7 @@ fn worker_fltuniq(o: &BfcOpt, ch: &BfcCh, s: &mut Bseq) {
             start >= 0 && end <= s.l_seq,
             "worker_ec: start >= 0 && end <= s->l_seq"
         );
+        // `copy_within` is C's `memmove` inside one array; `truncate` shortens it to `l_seq`.
         s.seq.copy_within(start as usize..end as usize, 0);
         s.l_seq = end - start;
         s.seq.truncate(s.l_seq as usize);
@@ -707,6 +768,11 @@ fn worker_fltuniq(o: &BfcOpt, ch: &BfcCh, s: &mut Bseq) {
 }
 
 /// `fml_correct_core`: the k-mer coverage.
+///
+/// Counts the k-mers of all reads, takes `kcov` as the mean count over the histogram from
+/// `min_cnt` up, derives `min_cov` from it clamped to `[min_cnt, max_cnt]`, then either corrects
+/// each read (`flt_uniq` false) or trims it to its counted streak (`flt_uniq` true). `kcov` is a
+/// `float` as in C, and the caller uses it for `min_ensr`.
 pub(crate) fn fml_correct_core(opt: &FmlOpt, flt_uniq: bool, seq: &mut [Bseq]) -> f32 {
     let mut bfc_opt = BfcOpt::init();
     bfc_opt.k = if flt_uniq { opt.min_asm_ovlp } else { opt.ec_k };
