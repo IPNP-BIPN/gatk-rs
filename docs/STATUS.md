@@ -292,8 +292,8 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `PathSeqScoreSpark` | metagenomics | oracle-backed | spark-walkers | 1 | t=2, 15/15 rows (100%) | not measured |
 | `Pileup` | locus-walker | oracle-backed | pileup-tool | 1 | t=2, 18/18 rows (100%) | 0.004 / 0.099 |
 | `PileupSpark` | locus-walker | oracle-backed | spark-walkers | 1 | t=2, 22/22 rows (100%) | not measured |
-| `PlotDenoisedCopyRatios` | cnv-segmentation | oracle-backed | interpreter-tools, r-plots | 2 | t=2, 11/11 rows (100%), **1 distinct output** | not measured |
-| `PlotModeledSegments` | cnv-segmentation | oracle-backed | interpreter-tools, r-plots | 2 | t=2, 11/11 rows (100%), **1 distinct output** | not measured |
+| `PlotDenoisedCopyRatios` | cnv-segmentation | oracle-backed | interpreter-tools, r-plots | 2 | t=2, 11/11 rows (100%) | not measured |
+| `PlotModeledSegments` | cnv-segmentation | oracle-backed | interpreter-tools, r-plots | 2 | t=2, 11/11 rows (100%) | not measured |
 | `PostProcessReadsForRSEM` | record-transform | oracle-backed | post-process-reads-for-rsem | 1 | t=2, 20/20 rows (100%) | 0.002 / 0.029 |
 | `PostprocessGermlineCNVCalls` | cnv-segmentation | oracle-backed | gcnv-frozen, interpreter-tools | 2 | t=2, 20/20 rows (100%), **1 distinct output** | not measured |
 | `PreprocessIntervals` | interval-utility | oracle-backed | preprocess-intervals | 1 | t=2, 20/20 rows (100%) | 0.004 / 0.095 |
@@ -332,7 +332,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `StructuralVariationDiscoveryPipelineSpark` | sv-caller | oracle-backed | sv-evidence, sv-partitions | 2 | t=2, 27/27 rows (100%) | not measured |
 | `SvDiscoverFromLocalAssemblyContigAlignmentsSpark` | sv-caller | oracle-backed | spark-walkers | 1 | t=2, 17/17 rows (100%) | not measured |
 | `TagGermlineEvents` | unclassified | oracle-backed | tag-germline-events | 1 | t=2, 17/17 rows (100%) | 0.002 / 0.054 |
-| `TrainVariantAnnotationsModel` | variant-transform | oracle-backed | interpreter-tools, vets-isolation-forest | 2 | t=2, 11/11 rows (100%), **1 distinct output** | not measured |
+| `TrainVariantAnnotationsModel` | variant-transform | oracle-backed | interpreter-tools, vets-isolation-forest | 2 | t=2, 11/11 rows (100%) | not measured |
 | `TransferReadTags` | record-transform | oracle-backed | transfer-read-tags | 1 | t=2, 19/19 rows (100%) | 0.002 / 0.035 |
 | `UnmarkDuplicates` | record-transform | oracle-backed | record-transform | 1 | t=2, 19/19 rows (100%) | 0.003 / 0.042 |
 | `UpdateVCFSequenceDictionary` | variant-transform | oracle-backed | update-vcf-sequence-dictionary | 1 | t=2, 24/24 rows (100%) | 0.002 / 0.055 |
