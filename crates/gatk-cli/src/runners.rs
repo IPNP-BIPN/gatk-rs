@@ -4219,17 +4219,56 @@ pub fn variant_filtration(parser: &Parser) -> Outcome {
         }
     };
 
-    let records: Vec<filtration::Record> = kept.iter().map(filtration_record).collect();
+    let mut records: Vec<filtration::Record> = kept.iter().map(filtration_record).collect();
     let filtered = filtration::filter_records(&records, &site, &genotype, &mask, &tool_arguments);
 
     let mut written = kept.clone();
+    let allele_specific = flag(parser, "apply-allele-specific-filters");
+    if allele_specific {
+        // `apply` with `applyForAllele`: each alternate is filtered as a record of its own, the
+        // results are merged by `addAlleleAndSiteFilters`, and the record's genotypes are never
+        // filtered at all, because the split carries none.
+        for (index, record) in written.iter_mut().enumerate() {
+            let original = &kept[index];
+            let mut allele_filters = Vec::new();
+            for alternate in original.alleles.iter().skip(1) {
+                let split = filtration_record(&simple_split(original, alternate)?);
+                // The neighbours a cluster test reads are the file's, around the split.
+                let saved = std::mem::replace(&mut records[index], split);
+                let one = filtration::filter_one(
+                    &records,
+                    index,
+                    &site,
+                    &genotype,
+                    &mask,
+                    &tool_arguments,
+                );
+                records[index] = saved;
+                allele_filters.push(one.filters.unwrap_or_default());
+            }
+            if let Some((status, filters)) = filtration::add_allele_and_site_filters(
+                as_filter_status(original).as_deref(),
+                original.filters.clone(),
+                &allele_filters,
+                tool_arguments.invalidate_previous_filters,
+            ) {
+                record.filters = filters;
+                apply_allele_filter(record, false, "", Some(status));
+            }
+        }
+    }
     for (index, record) in written.iter_mut().enumerate() {
+        if allele_specific {
+            // Written above, from the split records.
+            continue;
+        }
         let rendered = filtration::rendered_filters(&filtered[index]);
         record.filters = match rendered.as_str() {
             "." => None,
             "PASS" => Some(Vec::new()),
             names => Some(names.split(';').map(str::to_string).collect()),
         };
+        let mut no_called_any = false;
         for sample in 0..record.genotypes.len() {
             if let Some(ft) = filtration::rendered_genotype_filter(&filtered[index], sample) {
                 record.genotypes[sample].filters = Some(ft);
@@ -4240,8 +4279,16 @@ pub fn variant_filtration(parser: &Parser) -> Outcome {
                 .copied()
                 .unwrap_or(false)
             {
-                record.genotypes[sample].alleles = Vec::new();
+                // `noCallAlleles(g.getPloidy())`: `./.` for a diploid, not an empty genotype.
+                let ploidy = record.genotypes[sample].ploidy();
+                record.genotypes[sample].alleles =
+                    vec![htsjdk_vcf::allele::Allele::no_call(); ploidy];
+                no_called_any = true;
             }
+        }
+        // `calculateChromosomeCounts(..., true, ...)` once a call became a no-call.
+        if no_called_any {
+            gatk_tools::population_priors::chromosome_counts(record);
         }
     }
 
@@ -4293,6 +4340,20 @@ pub fn variant_filtration(parser: &Parser) -> Outcome {
             }
         });
         filter_lines.push((tool_arguments.mask_name.clone(), description));
+    }
+    // `new VCFFilterHeaderLine(name, ...)` validates the ID, and `initializeVcfWriter` turns its
+    // `IllegalArgumentException` into a bad input before anything is written.
+    for (name, _) in &filter_lines {
+        if name.contains('<') || name.contains('>') {
+            return Err(bad_input(
+                "VCFHeaderLine: ID cannot contain angle brackets".to_string(),
+            ));
+        }
+        if name.contains('=') {
+            return Err(bad_input(
+                "VCFHeaderLine: ID cannot contain an equals sign".to_string(),
+            ));
+        }
     }
     // `VCFStandardHeaderLines.getFormatLine(FT)` when any genotype expression was given, the
     // chromosome counts when filtered genotypes become no-calls, and the allele-specific status
@@ -4382,6 +4443,11 @@ pub fn variant_filtration(parser: &Parser) -> Outcome {
         }
     }
 
+    // `hInfo.addAll(getDefaultToolVCFHeaderLines())`, last.
+    file.header
+        .lines
+        .extend(default_tool_vcf_header_lines(parser, "VariantFiltration"));
+
     let keep = variant_output_filter(parser, intervals.as_deref())?;
     written.retain(|record| keep(record));
     apply_sites_only(parser, &mut file.header, &mut written);
@@ -4391,8 +4457,117 @@ pub fn variant_filtration(parser: &Parser) -> Outcome {
             exception: "org.broadinstitute.hellbender.exceptions.UserException",
             message: Some(format!("{error:?}")),
         })?;
-    write_variant_output(parser, &output, &rendered)?;
+    // `getBestAvailableSequenceDictionary` for a VCF that declares no contig: the one synthesized
+    // from its Tribble index, unless a master or reference dictionary outranks it. Measured on
+    // vcfexample2.vcf, whose index the output's carries as `DICT:1=0`.
+    let declares_contigs = file
+        .header
+        .lines
+        .iter()
+        .any(|line| matches!(line, htsjdk_vcf::header::HeaderLine::Contig { .. }));
+    let from_index = if declares_contigs
+        || master_dictionary(parser)?.is_some()
+        || reference_dictionary(parser)?.is_some()
+    {
+        None
+    } else {
+        index_dictionary(&input).map(|dictionary| {
+            dictionary
+                .sequences
+                .iter()
+                .map(|sequence| (sequence.name.clone(), sequence.length))
+                .collect()
+        })
+    };
+    write_variant_output_indexed_by(parser, &output, &rendered, from_index)?;
     Ok(None)
+}
+
+/// `VariantFiltration.splitMultiAllelics` for one alternate: a record of the reference and that
+/// allele alone, trimmed at both ends, with no ID, quality, filter, attribute or genotype.
+fn simple_split(
+    record: &htsjdk_vcf::variant::VariantContext,
+    alternate: &htsjdk_vcf::allele::Allele,
+) -> Result<htsjdk_vcf::variant::VariantContext, Thrown> {
+    use gatk_engine::variant_context_utils as vcu;
+    let reference = &record.alleles[0];
+    let pair = vcu::Variant {
+        contig: record.contig.clone(),
+        start: record.start as i32,
+        stop: record.stop as i32,
+        alleles: vec![
+            vcu::Allele::new(reference.display_string().as_bytes(), true),
+            vcu::Allele::new(alternate.display_string().as_bytes(), false),
+        ],
+        genotypes: Vec::new(),
+        attributes: Vec::new(),
+    };
+    let trimmed = vcu::trim_alleles(&pair, true, true)
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error:?}")))?;
+    let alleles = trimmed
+        .alleles
+        .iter()
+        .enumerate()
+        .map(|(index, allele)| htsjdk_vcf::allele::Allele::create(&allele.bases, index == 0))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error:?}")))?;
+    let mut split =
+        htsjdk_vcf::variant::VariantContext::new(&record.contig, i64::from(trimmed.start), alleles);
+    split.stop = i64::from(trimmed.stop);
+    Ok(split)
+}
+
+/// `GenotypeJEXLContext.get`, laid over the record's context: its fixed names win, then the
+/// genotype's attributes (the inline `DP`, which INFO's `DP` must not shadow, and the extended
+/// ones), then each of its filters as `"1"`.
+///
+/// shortcut: a filter is matched by name, where the reference asks `getFilters().contains(name)`
+/// of the joined string, and `AD`/`PL` (int arrays to JEXL) are left out; upgrade when an
+/// expression reads either.
+fn genotype_jexl_context(genotype: &htsjdk_vcf::variant::Genotype) -> gatk_engine::jexl::Context {
+    use gatk_engine::jexl::Value as JexlValue;
+    let flag = |value: bool| JexlValue::Str(if value { "1" } else { "0" }.to_string());
+    // The codec decodes `PASS` and `.` to no filters at all.
+    let filters = genotype
+        .filters
+        .as_deref()
+        .filter(|text| !text.is_empty() && *text != "PASS" && *text != ".");
+    let mut context = gatk_engine::jexl::Context::new();
+    for name in filters.iter().flat_map(|text| text.split(';')) {
+        context.insert(name.to_string(), flag(true));
+    }
+    for (key, value) in &genotype.extended {
+        if let Some(text) = value.format() {
+            context.insert(key.clone(), JexlValue::Str(text));
+        }
+    }
+    if let Some(depth) = genotype.dp {
+        context.insert("DP".to_string(), JexlValue::Int(depth));
+    }
+    let separator = if genotype.phased { "|" } else { "/" };
+    let alleles: Vec<String> = genotype.alleles.iter().map(|a| a.base_string()).collect();
+    let genotype_string = if alleles.is_empty() {
+        "NA".to_string()
+    } else {
+        alleles.join(separator)
+    };
+    context.insert("GT".to_string(), JexlValue::Str(genotype_string));
+    context.insert("isHom".to_string(), flag(genotype.is_hom()));
+    context.insert("isHomRef".to_string(), flag(genotype.is_hom_ref()));
+    context.insert("isHet".to_string(), flag(genotype.is_het()));
+    context.insert("isHomVar".to_string(), flag(genotype.is_hom_var()));
+    context.insert("isCalled".to_string(), flag(genotype.is_called()));
+    context.insert("isNoCall".to_string(), flag(genotype.is_no_call()));
+    context.insert("isMixed".to_string(), flag(genotype.is_mixed()));
+    context.insert("isAvailable".to_string(), flag(genotype.is_available()));
+    context.insert("isPassFT".to_string(), flag(filters.is_none()));
+    context.insert(
+        "FT".to_string(),
+        JexlValue::Str(filters.unwrap_or("PASS").to_string()),
+    );
+    // `getGQ`, which is -1 where the genotype has none.
+    context.insert("GQ".to_string(), JexlValue::Int(genotype.gq.unwrap_or(-1)));
+    context
 }
 
 /// A record as the filtering reads it: the INFO map, the genotype fields and the FILTER column.
@@ -4442,15 +4617,8 @@ fn filtration_record(
         .genotypes
         .iter()
         .map(|genotype| filtration::GenotypeFields {
-            fields: genotype
-                .extended
-                .iter()
-                .filter_map(|(key, value)| {
-                    value
-                        .format()
-                        .map(|text| (key.clone(), JexlValue::Str(text)))
-                })
-                .collect(),
+            fields: genotype_jexl_context(genotype),
+            called: genotype.is_called(),
             filters: genotype
                 .filters
                 .as_ref()

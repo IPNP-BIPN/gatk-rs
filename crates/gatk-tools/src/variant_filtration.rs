@@ -83,6 +83,9 @@ pub struct Record {
 #[derive(Debug, Clone, PartialEq)]
 pub struct GenotypeFields {
     pub fields: Context,
+    /// `isCalled`: `setFilteredGenotypeToNocall` evaluates no expression on any other genotype
+    /// and passes it through as it arrived.
+    pub called: bool,
     /// The FT the genotype arrived with, already split.
     pub filters: Vec<String>,
 }
@@ -156,7 +159,8 @@ pub fn filter_records(
         .collect()
 }
 
-fn filter_one(
+/// One record's filters, against its neighbours in `records`.
+pub fn filter_one(
     records: &[Record],
     index: usize,
     site_expressions: &[MatchExp],
@@ -206,6 +210,11 @@ fn filter_one(
     let mut no_called = Vec::with_capacity(record.genotypes.len());
     for genotype in &record.genotypes {
         let mut names = genotype.filters.clone();
+        if !genotype.called {
+            no_called.push(false);
+            genotype_filters.push(names);
+            continue;
+        }
         for expression in genotype_expressions {
             let mut context = record.info.clone();
             context.extend(genotype.fields.clone());
@@ -241,6 +250,67 @@ fn filter_one(
         genotype_filters,
         no_called,
     }
+}
+
+/// `AlleleFilterUtils.addAlleleAndSiteFilters`: each alternate's new filters merged into its
+/// `AS_FilterStatus` entry, and the filters every alternate shares added to the site.
+///
+/// Returns the new `AS_FilterStatus` and FILTER column, or `None` where the reference hands the
+/// record back untouched: no alternate, or an existing status of another length.
+pub fn add_allele_and_site_filters(
+    status: Option<&str>,
+    filters: Option<Vec<String>>,
+    new_allele_filters: &[Vec<String>],
+    invalidate_previous_filters: bool,
+) -> Option<(String, Option<Vec<String>>)> {
+    use crate::numt_filter::{decode_as_filters, encode_as_filters, SITE_LEVEL_FILTERS};
+    let first = new_allele_filters.first()?;
+    let mut current = decode_as_filters(status);
+    if !current.is_empty() && current.len() != new_allele_filters.len() {
+        return None;
+    }
+    if current.is_empty() || invalidate_previous_filters {
+        current = vec![vec![SITE_LEVEL_FILTERS.to_string()]; new_allele_filters.len()];
+    }
+    // `addAlleleFilters`: SITE is replaced, anything else is a `LinkedHashSet` union.
+    let updated: Vec<Vec<String>> = current
+        .iter()
+        .zip(new_allele_filters)
+        .map(|(current, new)| {
+            if new.is_empty() {
+                current.clone()
+            } else if current.is_empty() || (current.len() == 1 && current[0] == SITE_LEVEL_FILTERS)
+            {
+                new.clone()
+            } else {
+                let mut union = current.clone();
+                for name in new {
+                    push_once(&mut union, name);
+                }
+                union
+            }
+        })
+        .collect();
+    let mut site = if invalidate_previous_filters {
+        Vec::new()
+    } else {
+        filters.unwrap_or_default()
+    };
+    for name in first {
+        if new_allele_filters[1..]
+            .iter()
+            .all(|other| other.contains(name))
+        {
+            push_once(&mut site, name);
+        }
+    }
+    // `unfiltered()` writes `.`, `passFilters()` writes `PASS`.
+    let filters = match (site.is_empty(), invalidate_previous_filters) {
+        (true, true) => None,
+        (true, false) => Some(Vec::new()),
+        (false, _) => Some(site),
+    };
+    Some((encode_as_filters(&updated), filters))
 }
 
 /// `areClusteredSNPs`: a window below 1 disables it, and only SNPs count, as candidate and as
@@ -336,6 +406,46 @@ pub fn rendered_genotype_filter(filtered: &Filtered, sample: usize) -> Option<St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn names(list: &[&str]) -> Vec<String> {
+        list.iter().map(|name| name.to_string()).collect()
+    }
+
+    #[test]
+    fn allele_filters_merge_into_the_status_and_the_shared_ones_reach_the_site() {
+        // testMaskWithFilters[0]: the mask joins the allele's filters and the site's.
+        let (status, filters) = add_allele_and_site_filters(
+            Some("weak_evidence,low_allele_frac,possible_numt"),
+            Some(names(&[
+                "low_allele_frac",
+                "possible_numt",
+                "weak_evidence",
+            ])),
+            &[names(&["blacklisted_site"])],
+            false,
+        )
+        .expect("one alternate, one status entry");
+        assert_eq!(
+            status,
+            "weak_evidence,low_allele_frac,possible_numt,blacklisted_site"
+        );
+        assert_eq!(filters.expect("filtered").len(), 4);
+        // testMaskWithFilters[1]: invalidated, nothing new, so SITE and an unfiltered record.
+        assert_eq!(
+            add_allele_and_site_filters(Some("weak_evidence"), None, &[vec![]], true),
+            Some(("SITE".to_string(), None))
+        );
+        // Two alternates: only the filter both carry reaches FILTER; an unfiltered record passes.
+        assert_eq!(
+            add_allele_and_site_filters(None, None, &[names(&["a", "b"]), names(&["b"])], false),
+            Some(("a,b|b".to_string(), Some(names(&["b"]))))
+        );
+        // A status of another length leaves the record as it was.
+        assert_eq!(
+            add_allele_and_site_filters(Some("SITE|SITE"), None, &[names(&["a"])], false),
+            None
+        );
+    }
 
     fn record(start: i32, is_snp: bool, info: &[(&str, &str)], filters: Option<&[&str]>) -> Record {
         Record {

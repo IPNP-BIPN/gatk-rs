@@ -108,7 +108,7 @@ fn set(vc: &mut VariantContext, key: &str, value: String) {
 
 /// `VariantContextUtils.calculateChromosomeCounts(builder, true)`: AN over the called alleles of
 /// the unfiltered genotypes, and AC and AF for each alternate.
-fn chromosome_counts(vc: &mut VariantContext) {
+pub fn chromosome_counts(vc: &mut VariantContext) {
     if vc.genotypes.is_empty() {
         return;
     }
@@ -120,6 +120,12 @@ fn chromosome_counts(vc: &mut VariantContext) {
     let allele_number: i32 = called()
         .map(|g| g.alleles.iter().filter(|a| !a.is_no_call()).count() as i32)
         .sum();
+    // Everyone a no-call: the stale counts are removed rather than recomputed.
+    if allele_number == 0 {
+        vc.attributes
+            .retain(|(name, _)| name != "AC" && name != "AF" && name != "AN");
+        return;
+    }
     let mut counts = Vec::new();
     let mut frequencies = Vec::new();
     for allele in &vc.alleles[1..] {

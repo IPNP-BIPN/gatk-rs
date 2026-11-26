@@ -82,6 +82,59 @@ fn definition_values(definition: &gatk_barclay::Definition) -> Vec<String> {
     }
 }
 
+/// Whether any value of an argument was given a tag on the command line (`--mask:BED file`).
+fn has_tag(value: &Value) -> bool {
+    match value {
+        Value::Tagged { tag, .. } => tag.is_some(),
+        Value::List(values) => values.iter().any(has_tag),
+        _ => false,
+    }
+}
+
+/// Each value of a tagged argument as Barclay prints it: the tag joins the NAME, and a
+/// `FeatureInput` the user named prints `tag:absolutePath` (`FeatureInput.toString`).
+///
+/// shortcut: a tag's `key=value` attributes are not printed, as no measured line carries one;
+/// upgrade when one does.
+fn tagged_pairs(definition: &gatk_barclay::Definition) -> Vec<(String, String)> {
+    let values = match &definition.value {
+        Value::List(values) => values.clone(),
+        other => vec![other.clone()],
+    };
+    let feature_input = matches!(
+        definition.class,
+        gatk_barclay::ValueClass::Constructed {
+            simple_name: "FeatureInput",
+            ..
+        }
+    );
+    values
+        .iter()
+        .map(|value| match value {
+            Value::Tagged {
+                value,
+                tag: Some(tag),
+                ..
+            } => {
+                let shown = if feature_input {
+                    let absolute = if value.contains("://") {
+                        value.clone()
+                    } else {
+                        std::path::absolute(value)
+                            .map(|path| path.display().to_string())
+                            .unwrap_or_else(|_| value.clone())
+                    };
+                    format!("{tag}:{absolute}")
+                } else {
+                    value.clone()
+                };
+                (format!("{}:{tag}", definition.long_name()), shown)
+            }
+            other => (definition.long_name().to_string(), display_one(other)),
+        })
+        .collect()
+}
+
 /// `getCommandLine()`: the class's simple name, then the set arguments, then the defaulted ones.
 ///
 /// `class_name` is `callerArguments.getClass().getSimpleName()`, which for every tool here is the
@@ -99,6 +152,12 @@ pub fn expanded(class_name: &str, parser: &Parser) -> String {
     };
 
     for definition in parser.definitions() {
+        if definition.has_been_set() && has_tag(&definition.value) {
+            for (name, value) in tagged_pairs(definition) {
+                push(&mut line, &name, vec![value]);
+            }
+            continue;
+        }
         if definition.has_been_set() {
             let values = definition_values(definition);
             if values.is_empty() {
