@@ -35,8 +35,9 @@ calls.
 bio-identical, exactly as a CPU quarantine is, and no tool's byte-identity claim may rest on it.
 
 On every class the guard also refuses `fma`, `mad`, the `fast::` and `precise::` namespaces,
-SIMD-group and quad-group operations, atomics and threadgroup memory, unless the record lists the
-construct for that source with a reason, and it refuses host code that compiles a kernel source
+SIMD-group and quad-group operations, SIMD-group matrices (the tensor-core path), `half` and
+`bfloat`, the device library's transcendentals (`exp`, `log`, `pow`, `sqrt` and the rest), atomics
+and threadgroup memory, unless the record lists the construct for that source with a reason, and it refuses host code that compiles a kernel source
 without turning fast math off.
 
 ## Why no kernel here is floating point
