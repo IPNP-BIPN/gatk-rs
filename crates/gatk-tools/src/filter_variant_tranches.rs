@@ -1,5 +1,6 @@
 //! `FilterVariantTranches`, ported from
-//! `org.broadinstitute.hellbender.tools.walkers.vqsr.FilterVariantTranches` (GATK 4.6.2.0).
+//! `org.broadinstitute.hellbender.tools.walkers.vqsr.FilterVariantTranches` (GATK 4.7.0.0;
+//! `FilterVariantTranches.java` is unchanged since 4.6.2.0).
 //!
 //! Two passes over the same VCF: the first collects the **input** record's own score wherever it
 //! overlaps a resource, the second turns those scores into cutoffs and filters against them.
@@ -7,10 +8,14 @@
 //! # The cutoff is a truncated index into the resource scores
 //!
 //! ```java
-//! Collections.sort(resourceSNPScores, Collections.reverseOrder());
-//! ...
-//! int snpIndex = (int) ((t / 100.0) * (double) (resourceSNPScores.size() - 1));
-//! snpCutoffs.add(resourceSNPScores.get(snpIndex));
+//!         Collections.sort(resourceSNPScores, Collections.reverseOrder());
+//! ```
+//!
+//! and then, for each tranche `t`:
+//!
+//! ```java
+//!                 int snpIndex = (int) ((t / 100.0) * (double) (resourceSNPScores.size() - 1));
+//!                 snpCutoffs.add(resourceSNPScores.get(snpIndex));
 //! ```
 //!
 //! Descending order and a truncating cast, so this is not a quantile by interpolation and not a
@@ -33,23 +38,40 @@
 //! # The score is the input's, and it is taken once
 //!
 //! The first pass matches an input record against the resources and then reads
-//! `variant.getAttribute(infoKey)` — the **input's** value, not the resource's — and `return`s, so a
+//! `variant.getAttribute(infoKey)` (the **input's** value, not the resource's) and `return`s, so a
 //! record overlapping two resources contributes one score rather than two.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[f64]` is a borrowed, read-only view of a list of doubles; the caller keeps the list.
+//! - `Result<T, E>` is "a value or an error"; [`FilterVariantTranchesError`] is the exception the
+//!   Java throws, and `return Err(..)` is the `throw`.
+//! - `Option<T>` is "a value or nothing": [`score`] answers `None` where `Double.parseDouble`
+//!   would throw.
+//! - `f64::total_cmp` is a total order on doubles (`-0.0` before `0.0`, NaN after everything
+//!   positive), which is `Double.compareTo`'s order for every value but a NaN with its sign
+//!   bit set.
+//! - `.iter().map(..).collect()` is Java's `stream().map().collect()`, and a body's last
+//!   expression, with no `return`, is its value.
 
 use gatk_engine::tsv_table::java_double_to_string;
 
 /// `GATKTool.getToolName()` for this tool.
 pub const TOOL_NAME: &str = "GATK FilterVariantTranches";
 
-/// `SNPString` and `INDELString`.
+/// `SNPString`: the `type` written into a SNP filter's name and description.
 pub const SNP_STRING: &str = "SNP";
+/// `INDELString`.
 pub const INDEL_STRING: &str = "INDEL";
 
-/// The default tranches, which maximise the F1 score on whole-genome human data.
+/// The default `--snp-tranche`. The Java's class comment says the two defaults "maximize the F1
+/// score" for whole-genome human data.
 pub const DEFAULT_SNP_TRANCHE: f64 = 99.95;
+/// The default `--indel-tranche`.
 pub const DEFAULT_INDEL_TRANCHE: f64 = 99.4;
 
-/// What the tool refuses.
+/// What the tool refuses: the exceptions of `validateTranches`, `writeVCFHeader` and
+/// `afterFirstPass`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FilterVariantTranchesError {
     /// `validateTranches`, which is a command-line error rather than a user one.
@@ -60,7 +82,8 @@ pub enum FilterVariantTranchesError {
     NothingScored(String),
     /// No resource overlapped anything.
     NoOverlap,
-    /// SNPs with no SNP resource, or indels with no indel resource.
+    /// SNPs with no SNP resource, or indels with no indel resource. The string is the class as
+    /// the message spells it, `SNP` or `indel`.
     NoResourceFor(&'static str),
 }
 
@@ -89,8 +112,8 @@ impl FilterVariantTranchesError {
                 "Bad input: VCF contains no variants or no variants with INFO score key \"{key}\""
             ),
             FilterVariantTranchesError::NoOverlap => "Bad input: Neither SNP nor indel resource contains variants overlapping input.  Filtering cannot be performed.".to_string(),
-            // The reference writes the two sentences by hand, and the indel one opens with a capital:
-            // `Indels are present ... no overlapping indels were found`.
+            // The reference writes the two sentences by hand, and the indel one opens with a
+            // capital: `Indels are present ... no overlapping indels were found`.
             FilterVariantTranchesError::NoResourceFor(what) => {
                 let opening = if *what == "indel" { "Indel" } else { what };
                 format!(
@@ -103,7 +126,16 @@ impl FilterVariantTranchesError {
 
 /// `validateTranches`: at least one, each in `[0, 100)`, deduplicated and sorted.
 ///
-/// The message says "greater than 0" and the test is `d < 0`, so zero itself is allowed.
+/// ```java
+///         if (tranches.size() < 1 || tranches.stream().anyMatch(d -> d < 0 || d >= 100.0)){
+/// ```
+///
+/// The message says "greater than 0" and the test is `d < 0`, so zero itself is allowed. A NaN
+/// fails both comparisons, so it is allowed too.
+///
+/// The deduplication here compares with `==`, where `stream().distinct()` uses
+/// `Double.equals`, which compares bits: the two disagree on `0.0` against `-0.0` (one value
+/// here, two in Java) and on NaN (kept once in Java, every time here).
 pub fn validate_tranches(tranches: &[f64]) -> Result<Vec<f64>, FilterVariantTranchesError> {
     if tranches.is_empty() || tranches.iter().any(|value| *value < 0.0 || *value >= 100.0) {
         return Err(FilterVariantTranchesError::BadTranches);
@@ -122,6 +154,10 @@ pub fn validate_tranches(tranches: &[f64]) -> Result<Vec<f64>, FilterVariantTran
 /// `afterFirstPass`: the cutoffs, or the refusal the counts imply.
 ///
 /// `scores` are the input's own values at resource sites, in the order the traversal found them.
+/// `scored_snps` and `scored_indels` are `scoredSnps` and `scoredIndels`: every input record that
+/// carries the key, whether or not a resource overlaps it. The four checks run in the Java's
+/// order, so the first one that applies is the one reported. The answer is the SNP cutoffs and
+/// the indel cutoffs, as a pair.
 pub fn cutoffs(
     snp_scores: &[f64],
     indel_scores: &[f64],
@@ -151,7 +187,8 @@ pub fn cutoffs(
     ))
 }
 
-/// One class's cutoffs: the scores sorted descending, indexed by a truncated fraction.
+/// One class's cutoffs: the scores sorted descending, indexed by a truncated fraction. See the
+/// module note for the Java.
 pub fn cutoffs_of(scores: &[f64], tranches: &[f64]) -> Vec<f64> {
     if scores.is_empty() {
         return Vec::new();
@@ -162,24 +199,30 @@ pub fn cutoffs_of(scores: &[f64], tranches: &[f64]) -> Vec<f64> {
     tranches
         .iter()
         .map(|tranche| {
-            // `(int)` truncates towards zero, and the multiplication is by size - 1.
+            // `(int)` truncates towards zero, and the multiplication is by size - 1. `as usize`
+            // truncates the same way for the values in `[0, size - 1]` a valid tranche gives.
             let index = ((tranche / 100.0) * (sorted.len() - 1) as f64) as usize;
             sorted[index]
         })
         .collect()
 }
 
-/// `isTrancheFiltered`: the smallest tranche's cutoff, inclusive.
+/// `isTrancheFiltered`: the smallest tranche's cutoff, inclusive. The `is_empty` test is the
+/// caller's `snpCutoffs.size() != 0` guard, folded in.
 pub fn is_tranche_filtered(score: f64, cutoffs: &[f64]) -> bool {
     !cutoffs.is_empty() && score <= cutoffs[0]
 }
 
-/// `filterKeyFromTranches`, whose two numbers are `%.2f`.
+/// `filterKeyFromTranches`, whose two numbers are `%.2f`:
+///
+/// ```java
+///         return String.format("%s_%s_Tranche_%.2f_%.2f", infoKey, type, t1, t2);
+/// ```
 pub fn filter_key(info_key: &str, class: &str, from: f64, to: f64) -> String {
     format!("{info_key}_{class}_Tranche_{from:.2}_{to:.2}")
 }
 
-/// `filterDescriptionFromTranches`.
+/// `filterDescriptionFromTranches`, the description of the FILTER header line of the same band.
 pub fn filter_description(info_key: &str, class: &str, from: f64, to: f64) -> String {
     format!(
         "{class} truth resource sensitivity between {from:.2} and {to:.2} for info key {info_key}"
@@ -199,6 +242,7 @@ pub fn filter_string_from_score(
     tranches: &[f64],
     cutoffs: &[f64],
 ) -> String {
+    // `.enumerate()` pairs each cutoff with its position, Java's `i` in `for (int i = 0; ...)`.
     for (index, cutoff) in cutoffs.iter().enumerate() {
         if score > *cutoff {
             if index == 0 {
@@ -211,7 +255,8 @@ pub fn filter_string_from_score(
     filter_key(info_key, class, tranches[tranches.len() - 1], 100.0)
 }
 
-/// `addTrancheHeaderFields`: one line per gap between tranches, plus one to 100.
+/// `addTrancheHeaderFields`: one line per gap between tranches, plus one to 100, each as an ID
+/// and a description.
 pub fn tranche_header_lines(
     info_key: &str,
     class: &str,
@@ -219,6 +264,7 @@ pub fn tranche_header_lines(
 ) -> Vec<(String, String)> {
     let mut lines = Vec::new();
     if tranches.len() >= 2 {
+        // `windows(2)` yields each overlapping pair, `tranches.get(i)` and `tranches.get(i+1)`.
         for pair in tranches.windows(2) {
             lines.push((
                 filter_key(info_key, class, pair[0], pair[1]),
@@ -237,7 +283,12 @@ pub fn tranche_header_lines(
 /// The FILTER column of one record of the second pass.
 ///
 /// `previous` are the record's own filters, which `--invalidate-previous-filters` drops. Anything
-/// left with no filter at all is written `PASS`, including a record the tool never scored.
+/// left with no filter at all is written `PASS`, including a record the tool never scored:
+///
+/// ```java
+///         if (builder.getFilters() == null || builder.getFilters().size() == 0){
+///             builder.passFilters();
+/// ```
 pub fn filters_of(
     previous: &[String],
     invalidate_previous: bool,
@@ -257,7 +308,12 @@ pub fn filters_of(
     filters
 }
 
-/// A score as the tool reads it: `Double.parseDouble` of the attribute's own text.
+/// A score as the tool reads it: `Double.parseDouble` of the attribute's own text, `None` where
+/// the Java would throw `NumberFormatException`.
+///
+/// Rust's parser and `parseDouble` accept different spellings: `parseDouble` takes a trailing
+/// `d` or `f` and hexadecimal (`0x1p3`), which this refuses, and this takes `inf` and `nan`,
+/// which `parseDouble` refuses.
 pub fn score(text: &str) -> Option<f64> {
     text.trim().parse::<f64>().ok()
 }

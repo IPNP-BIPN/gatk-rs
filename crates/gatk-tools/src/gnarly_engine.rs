@@ -1,7 +1,8 @@
 //! `GnarlyGenotyperEngine.finalizeGenotype` and the walker's `apply` around it.
 //!
-//! Ported from `org.broadinstitute.hellbender.tools.walkers.gnarlyGenotyper` (GATK 4.6.2.0). The
-//! site's QUAL is not computed but read: `QUALapprox`, the sum of PL[0] over the samples that
+//! Ported from `org.broadinstitute.hellbender.tools.walkers.gnarlyGenotyper` (GATK 4.7.0.0;
+//! `GnarlyGenotyperEngine.java` and `GnarlyGenotyper.java` are unchanged since 4.6.2.0). The
+//! site's QUAL is not computed but read: `QUALapprox`, the sum of `PL[0]` over the samples that
 //! `ReblockGVCF` wrote, or the sum of `AS_QUALapprox`. It is held against a floor, the confidence
 //! threshold less ten times the log of the site prior, 60 for a SNP and about 69.03 for an indel.
 //! A site over it gets its MQ, QD and allele-specific annotations finalized, its genotypes called
@@ -13,6 +14,24 @@
 //! `iterateOnGenotypes` removes `MIN_DP` from a COPY of the genotype's attributes and adds the copy
 //! back onto a builder that still holds the original, so `MIN_DP` survives. Only a genotype
 //! `makeGenotypeCall` stripped (a GQ-0, DP-0 reference call) loses it.
+//!
+//! # Attributes are a list, not a map
+//!
+//! The Java's `VariantContext` attributes are a `Map`; here they are an ordered list of
+//! `(key, value)` pairs, so `attribute`, `put` and `remove` below are `getAttribute`,
+//! `attribute(key, value)` (replace or append) and `rmAttribute`.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, E>` is "a value or an error"; [`EngineError`] stands for the exception the Java
+//!   throws, and `?` after a call returns its error to the caller at once;
+//! - `Option<T>` is "a value or nothing", Java's nullable reference checked by the compiler;
+//!   `let Some(x) = y else { .. }` takes the value or the early exit;
+//! - `&[T]` is a borrowed, read-only view of a list and `&mut T` a writable borrow; the caller
+//!   keeps ownership. `.clone()` makes the copy a Java reference assignment would share;
+//! - `.iter().map(..).collect()` and friends are Java's stream operations, `|x| ...` a lambda;
+//! - `x as f64` converts a count to a `double`; `cond.then(|| v)` and `cond.then_some(v)` are
+//!   `cond ? Optional.of(v) : Optional.empty()`.
 
 use gatk_annotation::catalogue;
 use gatk_engine::genotype_index::genotype_count;
@@ -26,12 +45,18 @@ use crate::reference_confidence_merger::value_to_string;
 
 /// `HomoSapiensConstants.SNP_HETEROZYGOSITY` and `INDEL_HETEROZYGOSITY`.
 const SNP_HETEROZYGOSITY: f64 = 1e-3;
+/// See above.
 const INDEL_HETEROZYGOSITY: f64 = 1.25e-4;
 /// `GenotypeCalculationArgumentCollection.DEFAULT_STANDARD_CONFIDENCE_FOR_CALLING`.
 const DEFAULT_STANDARD_CONFIDENCE_FOR_CALLING: f64 = 30.0;
 
 /// The allele-specific reducible annotations the engine finds by reflection, with the one key
 /// each finalizes and trims.
+///
+/// The Java collects every `InfoFieldAnnotation`, `AS_StrandBiasTest` and `AS_RankSumTest`
+/// subtype under `annotator.allelespecific` and keeps those that are both `AS_StandardAnnotation`
+/// and `ReducibleAnnotation`; this is that list written out, the key being each one's
+/// `getKeyNames().get(0)`.
 const AS_REDUCIBLE: &[(&str, &str)] = &[
     ("AS_QualByDepth", "AS_QD"),
     ("AS_RMSMappingQuality", "AS_MQ"),
@@ -42,10 +67,12 @@ const AS_REDUCIBLE: &[(&str, &str)] = &[
     ("AS_ReadPosRankSumTest", "AS_ReadPosRankSum"),
 ];
 
+/// `Allele.NON_REF_ALLELE`.
 fn non_ref() -> Allele {
     Allele::create(b"<NON_REF>", false).expect("the symbolic <NON_REF>")
 }
 
+/// The `*` allele, `Allele.SPAN_DEL`.
 fn is_span_del(allele: &Allele) -> bool {
     !allele.is_reference() && allele.display_string() == htsjdk_vcf::allele::SPAN_DEL_STRING
 }
@@ -68,6 +95,7 @@ fn remove(vc: &mut VariantContext, key: &str) {
     vc.attributes.retain(|(name, _)| name != key);
 }
 
+/// The `NumberFormatException` `Integer.parseInt` throws on `text`.
 fn number_format(text: &str) -> EngineError {
     EngineError::Runtime {
         class: "java.lang.NumberFormatException".to_string(),
@@ -76,6 +104,9 @@ fn number_format(text: &str) -> EngineError {
 }
 
 /// `getAttributeAsInt(key, default)`.
+///
+/// An absent or missing value is the default, an integer is itself, anything else is parsed
+/// from its text.
 fn attribute_int(vc: &VariantContext, key: &str, default: i64) -> Result<i64, EngineError> {
     match attribute(vc, key) {
         None | Some(Value::Missing) => Ok(default),
@@ -88,6 +119,10 @@ fn attribute_int(vc: &VariantContext, key: &str, default: i64) -> Result<i64, En
 }
 
 /// `getAttributeAsIntList(key, 0)`.
+///
+/// A list is read element by element, a single value split at commas, and `.` reads as the
+/// default 0. The last `.collect()` gathers a list of `Result`s into one `Result` of a list,
+/// failing on the first element that failed.
 fn attribute_int_list(vc: &VariantContext, key: &str) -> Result<Vec<i64>, EngineError> {
     let values: Vec<String> = match attribute(vc, key) {
         None => Vec::new(),
@@ -110,6 +145,10 @@ fn attribute_int_list(vc: &VariantContext, key: &str) -> Result<Vec<i64>, Engine
 }
 
 /// `RMSMappingQuality.finalizeRawMQ(vc)`.
+///
+/// `RAW_MQandDP` is the sum of squared mapping qualities and the depth; MQ is written only when
+/// the depth is positive, and both raw keys are removed. A site carrying only the deprecated
+/// `MQ_DP` is refused as a port limitation rather than computed.
 pub fn finalize_raw_mq(vc: &VariantContext) -> Result<VariantContext, EngineError> {
     let Some(raw) = attribute(vc, "RAW_MQandDP").map(value_to_string) else {
         if attribute(vc, "MQ_DP").is_some() {
@@ -141,6 +180,11 @@ pub fn finalize_raw_mq(vc: &VariantContext) -> Result<VariantContext, EngineErro
 }
 
 /// `AS_QualByDepth.parseQualList(vc)` summed, for a site with `AS_QUALapprox` alone.
+///
+/// The Java splits with `asQuals.split(AnnotationUtils.ALLELE_SPECIFIC_SPLIT_REGEX, -1)`, "allow
+/// for empty tokens at the end": the `-1` keeps trailing empty entries, as Rust's `split` does,
+/// so the count check sees every `|`. The reference's entry is skipped and empty entries count
+/// as nothing.
 fn allele_specific_qual_sum(vc: &VariantContext) -> Result<f64, EngineError> {
     let text = attribute(vc, "AS_QUALapprox")
         .map(value_to_string)
@@ -164,6 +208,11 @@ fn allele_specific_qual_sum(vc: &VariantContext) -> Result<f64, EngineError> {
 }
 
 /// `trimASAnnotation`: the entries of `key` at the target alternates' positions among `vc`'s.
+///
+/// The Java reads `variant.getAttribute(key).toString()`, which for a list is `[a, b]`, then
+/// `decodeAnyASList` strips the brackets and splits at commas; a list is therefore rendered the
+/// same way here first. An index past the entries becomes `.`, and the entries are joined with
+/// commas (`encodeStringList`).
 fn trim_as_annotation(vc: &VariantContext, targets: &[Allele], key: &str) -> Value {
     let Some(value) = attribute(vc, key) else {
         return Value::Missing;
@@ -199,7 +248,8 @@ fn trim_as_annotation(vc: &VariantContext, targets: &[Allele], key: &str) -> Val
     Value::Str(trimmed.join(","))
 }
 
-/// `getSBFieldAsIntArray`.
+/// `getSBFieldAsIntArray`: the genotype's `SB` as four integers, or the `IllegalStateException`
+/// the Java throws when one does not parse.
 fn sb_counts(genotype: &Genotype) -> Result<Vec<i32>, EngineError> {
     let Some((_, value)) = genotype.extended.iter().find(|(key, _)| key == "SB") else {
         return Ok(Vec::new());
@@ -223,7 +273,8 @@ fn sb_counts(genotype: &Genotype) -> Result<Vec<i32>, EngineError> {
         })
 }
 
-/// `GnarlyGenotyperEngine`.
+/// `GnarlyGenotyperEngine`: `keepAllSites`, `maxAltAllelesToOutput` and `stripASAnnotations`.
+/// `emitPls` is always true here, the three-argument constructor's value.
 pub struct GnarlyEngine {
     pub keep_all_sites: bool,
     pub max_alt_alleles_to_output: usize,
@@ -233,6 +284,10 @@ pub struct GnarlyEngine {
 impl GnarlyEngine {
     /// `finalizeGenotype(variant, annotationDBBuilder)`: the site, or `None` under the floor, and
     /// what the annotation database gets when one is written.
+    ///
+    /// The Java mutates the `annotationDBBuilder` it is passed; here the database copy is built
+    /// alongside (`with_database`) and returned as the second half of the pair. `random` is the
+    /// generator the rank-sum finalizers draw from.
     pub fn finalize_genotype(
         &self,
         variant: &VariantContext,
@@ -247,6 +302,7 @@ impl GnarlyEngine {
         } else {
             0.0
         };
+        // `allele != Allele.SPAN_DEL && allele.length() == variant.getReference().length()`:
         // "don't count a '*' as a SNP"
         let reference_length = variant.alleles[0].len();
         let has_snp = variant.alleles[1..]
@@ -258,6 +314,8 @@ impl GnarlyEngine {
         } else {
             SNP_HETEROZYGOSITY
         };
+        // `INDEL_QUAL_THRESHOLD` or `SNP_QUAL_THRESHOLD`, computed the same way: the default
+        // calling confidence less ten times `Math.log10` of the heterozygosity.
         let floor = DEFAULT_STANDARD_CONFIDENCE_FOR_CALLING - 10.0 * jmath::math::log10(prior);
         if qual_approx < floor {
             if self.keep_all_sites {
@@ -271,6 +329,9 @@ impl GnarlyEngine {
 
         let with_mq = finalize_raw_mq(variant)?;
         let mut builder = with_mq.clone();
+        // `annotationsToBeModified`: each annotation's
+        // `finalizeRawData(vcfBuilder.make(), variant)` reads the MQ-finalized site, and its
+        // results are collected separately and set at the end, as the Java's map is.
         let mut modified = with_mq.attributes.clone();
         for (name, _) in AS_REDUCIBLE {
             let entry = catalogue::entry(name).expect("a catalogued annotation");
@@ -294,6 +355,7 @@ impl GnarlyEngine {
         }
         builder.attributes = modified;
 
+        // "tolerate lack of VarDP annotation": QD and the QUAL (as `log10PError`) only with it.
         if attribute(variant, "VarDP").is_some() {
             let depth = attribute_int(variant, "VarDP", 0)?;
             put(
@@ -307,6 +369,8 @@ impl GnarlyEngine {
             remove(&mut builder, "QUALapprox");
         }
 
+        // `int[] SBsum = {0,0,0,0}`, then the target alleles: `<NON_REF>`, when present, is
+        // assumed last and dropped (`subList(0, size - 1)`).
         let mut sb_sum = [0i32; 4];
         let remove_non_ref = variant.alleles.contains(&non_ref());
         let targets: Vec<Allele> = if remove_non_ref {
@@ -316,6 +380,8 @@ impl GnarlyEngine {
         };
         let mut counts: Vec<(Allele, i64)> =
             targets.iter().map(|allele| (allele.clone(), 0)).collect();
+        // `variant.hasAttribute(RAW_GENOTYPE_COUNT_KEY) ? null : rawGenotypeCounts`: the counts are
+        // tallied only when the site does not carry them.
         let tally_genotypes = attribute(variant, "RAW_GT_COUNT").is_none();
         let mut raw_genotype_counts = [0i64; 3];
         let called = self.iterate_on_genotypes(
@@ -334,6 +400,8 @@ impl GnarlyEngine {
                 .filter(|(allele, _)| !allele.is_reference())
                 .map(|(_, count)| *count)
                 .collect();
+            // `targetAlleleCounts.size() == 1 ? targetAlleleCounts.get(0) : targetAlleleCounts`:
+            // a single alternate is written as a scalar, several as a list; AF likewise.
             let ac = if alternates.len() == 1 {
                 Value::Int(alternates[0])
             } else {
@@ -357,6 +425,8 @@ impl GnarlyEngine {
                 put(database, "AN", Value::Int(called_alleles));
             }
         } else {
+            // No genotypes: the site's own `SB_TABLE`, and the database copies AC, AF and AN as the
+            // site had them (null where absent).
             if attribute(variant, "SB_TABLE").is_some() {
                 let table = attribute_int_list(variant, "SB_TABLE")?;
                 for (slot, value) in sb_sum.iter_mut().zip(table) {
@@ -389,6 +459,9 @@ impl GnarlyEngine {
                     ),
                 });
             }
+            // `Math.max(numCalledAlleles / 2 - gtCounts.get(1) - gtCounts.get(2), 0)`: integer
+            // division, and "homRefs don't get counted properly because ref blocks aren't
+            // annotated".
             let reference_count =
                 (called_alleles / 2 - genotype_counts[1] - genotype_counts[2]).max(0);
             genotype_counts[0] = reference_count;
@@ -421,6 +494,7 @@ impl GnarlyEngine {
             }
         }
 
+        // FS and SOR from the summed table, `StrandBiasTest.decodeSBBS(SBsum)`.
         let table = gatk_annotation::strand_bias::decode_sbbs(&sb_sum);
         put(
             &mut builder,
@@ -442,6 +516,8 @@ impl GnarlyEngine {
             database.genotypes = GenotypesContext::new(Vec::new());
         }
 
+        // Trim `<NON_REF>` out of each AS value; then, only after every finalized value is in,
+        // remove the raw keys: "since AS_FS and AS_SOR share the same raw key, we have to wait".
         for (name, key) in AS_REDUCIBLE {
             let entry = catalogue::entry(name).expect("a catalogued annotation");
             let raw_keys = entry.raw_keys.unwrap_or(&[]);
@@ -466,6 +542,9 @@ impl GnarlyEngine {
                 }
             }
         }
+        // `AS_QualByDepth.finalizeRawGVCFVarDPValues(.., targetAlleles.size())`: the reference's
+        // and `<NON_REF>`'s entries dropped, or missing when the count is not one more than the
+        // targets.
         if attribute(variant, "AS_VarDP").is_some() {
             let raw = attribute(variant, "AS_VarDP")
                 .map(value_to_string)
@@ -487,6 +566,16 @@ impl GnarlyEngine {
     }
 
     /// `iterateOnGenotypes`.
+    ///
+    /// Each genotype: a call on `<NON_REF>`, or a GenomicsDB no-call with neither PL nor AD
+    /// (`isGDBnoCall`), becomes a no-call without GQ; AD is trimmed to the targets; PLs are
+    /// trimmed to the target genotype count (`trimPLs`, whose `System.arraycopy` throws on a
+    /// short array), GQ set from them and the call made from them; a GQ-0 genotype without PLs
+    /// is called with null likelihoods. Then SB is summed, the called alleles counted, and the
+    /// raw genotype counts tallied by the number of non-reference alleles in the INPUT call.
+    ///
+    /// `mut raw_genotype_counts: Option<&mut [i64; 3]>` is the Java's nullable `int[]`;
+    /// `as_deref_mut` borrows the array out of the `Option` for one genotype at a time.
     fn iterate_on_genotypes(
         &self,
         vc: &VariantContext,
@@ -508,6 +597,8 @@ impl GnarlyEngine {
             });
         }
         let maximum_allele_count = vc.alleles.len();
+        // `numConcreteAlts = maximumAlleleCount - 2`, "-1 for NON_REF and -1 for ref".
+        // `saturating_sub` stops at zero where the Java's `int` would go negative.
         let concrete_alternates = maximum_allele_count.saturating_sub(2);
         let mut out = Vec::with_capacity(vc.genotypes.len());
         for g in vc.genotypes.iter() {
@@ -520,6 +611,8 @@ impl GnarlyEngine {
                 built.gq = None;
             }
             if non_ref_returned {
+                // `trimADs`: `take` truncates, where the Java's `System.arraycopy` would throw on
+                // an AD shorter than the targets.
                 if let Some(ad) = &g.ad {
                     built.ad = Some(ad.iter().take(targets.len()).copied().collect());
                 }
@@ -606,6 +699,9 @@ impl GnarlyEngine {
 }
 
 /// `MathUtils.secondSmallestMinusSmallest(values, default)`.
+///
+/// One pass keeping the two smallest, the Java's loop line for line; `wrapping_sub` is Java's
+/// `int` subtraction.
 fn second_smallest_minus_smallest(values: &[i32], default: i32) -> i32 {
     if values.len() <= 1 {
         return default;

@@ -1,9 +1,10 @@
-//! `GetSampleName`, ported from `org.broadinstitute.hellbender.tools.GetSampleName` (GATK 4.6.2.0).
+//! `GetSampleName`, ported from `org.broadinstitute.hellbender.tools.GetSampleName`
+//! (GATK 4.7.0.0; `GetSampleName.java` is unchanged since 4.6.2.0).
 //!
 //! The smallest tool of the reporting-walker archetype: its `traverse` is empty and everything
-//! happens in `onTraversalStart`, which reads the header's read groups and writes their sample names
-//! to a file. It reads no records at all, so a BAM holding nothing but a header still produces its
-//! sample.
+//! happens in `onTraversalStart`, which reads the header's read groups and writes their sample
+//! names to a file. It reads no records at all, so a BAM holding nothing but a header still
+//! produces its sample.
 //!
 //! # The file has no trailing newline
 //!
@@ -24,6 +25,15 @@
 //! A read group with no `SM` is not the same thing as no sample: `getSample()` returns null,
 //! `distinct()` keeps the null, and `Collectors.joining` writes the four letters `null`. The tool
 //! finishes and the file is not empty.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<String>` is a string or nothing: `None` stands for Java's `null` sample;
+//! - `Result<String, GetSampleNameError>` is a value or an error, how this port models the
+//!   `UserException.BadInput` the tool throws; `Ok(..)` and `Err(..)` build the two cases;
+//! - `match` lists every case of a value and the compiler refuses one that is missing; a case
+//!   with `if` (a "guard") only applies when the condition holds;
+//! - `.iter().map(..).collect()` is Java's `stream().map(..).collect(..)`.
 
 use gatk_engine::reads::ReadsDataSource;
 use htsjdk_bam::header::SamHeader;
@@ -34,7 +44,8 @@ pub const TOOL_NAME: &str = "GATK GetSampleName";
 /// What this tool refuses.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GetSampleNameError {
-    /// The header, or its read group list, was null. Unreachable through a BAM.
+    /// The header, or its read group list, was null. Unreachable through a BAM, and nothing in
+    /// this file constructs it.
     NoHeaderOrReadGroups,
     /// No read groups at all, which is what an `@RG`-less header actually produces.
     NoSampleNames,
@@ -59,8 +70,12 @@ impl GetSampleNameError {
 ///
 /// `distinct()` keeps the **first** occurrence of each, so the order is the header's and not
 /// alphabetical, and a read group with no `SM` contributes a `None` that survives to the output.
+///
+/// The Java is `getReadGroups().stream().map(s -> s.getSample()).distinct()`. `seen.contains`
+/// is a linear scan, which keeps `distinct()`'s first-wins order.
 pub fn sample_names(header: &SamHeader) -> Vec<Option<String>> {
     let mut seen: Vec<Option<String>> = Vec::new();
+    // `&header.read_groups` borrows the list to read it; the header is not consumed.
     for group in &header.read_groups {
         let sample = group.attributes.get("SM").map(|s| s.to_string());
         if !seen.contains(&sample) {
@@ -81,14 +96,19 @@ pub fn get_sample_name(
 }
 
 /// The same from a header alone, which is all this tool ever looks at.
+///
+/// The null-header guard is not here: a `SamHeader` always exists and its read group list is
+/// never null, so only the empty-list refusal can fire.
 pub fn sample_name_text(
     header: &SamHeader,
     url_encode: bool,
 ) -> Result<String, GetSampleNameError> {
     let samples = sample_names(header);
+    // `if (sampleNames.size() == 0)`.
     if samples.is_empty() {
         return Err(GetSampleNameError::NoSampleNames);
     }
+    // `Collectors.joining("\n")`: separators between names, none after the last.
     Ok(samples
         .iter()
         .map(|sample| match sample {
@@ -106,6 +126,10 @@ pub fn sample_name_text(
 /// The form-encoding rules, not the path ones: a **space becomes `+`**, `*`, `-`, `.` and `_` pass
 /// through beside the alphanumerics, and everything else becomes `%XX` of its UTF-8 bytes with
 /// upper-case hexadecimal.
+///
+/// Walking `text.bytes()` gives the UTF-8 bytes directly, so a non-ASCII character becomes one
+/// `%XX` per byte, as `URLEncoder.encode(string, GetSampleName.STANDARD_ENCODING)` writes it
+/// (`STANDARD_ENCODING` is `"UTF-8"`).
 pub fn url_encode_utf8(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for byte in text.bytes() {

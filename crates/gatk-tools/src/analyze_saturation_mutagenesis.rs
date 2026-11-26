@@ -4,9 +4,44 @@
 //! report type each read lands in, the flank test a variant has to pass, and the codon and
 //! amino-acid names a variant row carries. The alignment itself is not ported.
 //!
-//! Ported from `org.broadinstitute.hellbender.tools.AnalyzeSaturationMutagenesis` in GATK 4.6.2.0.
+//! Ported from `org.broadinstitute.hellbender.tools.AnalyzeSaturationMutagenesis` in GATK 4.7.0.0;
+//! `AnalyzeSaturationMutagenesis.java` is unchanged since 4.6.2.0.
+//!
+//! # This is the measured model, not the tool's own path
+//!
+//! The command line runs [`crate::analyze_saturation_mutagenesis_engine`], which carries its
+//! own copy of each rule written against the reads. The functions here take the rules one at a
+//! time, on plain values, so the `readfilter-conformance` dump
+//! (`tests/data/analyze_saturation_mutagenesis.txt.gz`) can measure each of them alone. Where
+//! the two copies differ (each difference is noted on its item below), the engine's is what the
+//! tool does.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[u8]` is a borrowed, read-only view of a byte array; `u8` is an UNSIGNED byte, where
+//!   Java's `byte` is signed, which matters wherever a quality is compared.
+//! - `Option<T>` is "a value or nothing"; `?` inside a function returning `Option` answers
+//!   nothing as soon as one step does. `Result<(), String>` is "nothing, or an error message".
+//! - `usize` is an unsigned index type, so `saturating_sub` (subtract, but stop at zero) stands
+//!   in for a Java subtraction that could go negative.
+//! - a function's last expression, without a `;`, is its return value.
 
-/// The classes a read or a pair is counted under, in the order the census writes them.
+/// The classes a read or a pair is counted under.
+///
+/// The variants are NOT in the Java's declaration order, which is the order
+/// `writeReportTypeCounts` walks (`for ( final ReportType reportType : ReportType.values() )`):
+///
+/// ```java
+/// WILD_TYPE(null, "Wild type"),
+/// CALLED_VARIANT(null, "Called variants"),
+/// INCONSISTENT("inconsistent", "Inconsistent pair"),
+/// IGNORED_MATE("ignoredMate", "Mate ignored"),
+/// LOW_Q_VAR("lowQVar", "Low quality variation"),
+/// NO_FLANK("noFlank", "Insufficient flank");
+/// ```
+///
+/// [`category_block`] writes the rows in the order a [`Counts`] holds them instead. The
+/// engine's `ReportType` follows the declaration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ReportType {
     Unmapped,
@@ -22,6 +57,8 @@ pub enum ReportType {
 
 impl ReportType {
     /// The label the census writes for each, which is not the enum's own name.
+    ///
+    /// `match` is a `switch` the compiler checks covers every variant.
     pub fn label(self) -> &'static str {
         match self {
             ReportType::Unmapped => "Unmapped Reads",
@@ -50,7 +87,9 @@ pub struct Arguments {
     pub min_mapping_quality: i32,
     /// `--min-variant-obs`: how many observations a variant needs to be reported.
     pub min_variant_observations: u64,
+    /// `--paired-mode`.
     pub paired_mode: bool,
+    /// The negation of `--dont-ignore-disjoint-pairs`.
     pub ignore_disjoint_pairs: bool,
 }
 
@@ -68,7 +107,8 @@ impl Default for Arguments {
     }
 }
 
-/// A half-open interval of read offsets, which is what the trim is.
+/// A half-open interval of read offsets, which is what the trim is: the Java's `Interval`,
+/// without its constructor's refusal of a reversed interval.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Interval {
     pub start: usize,
@@ -88,6 +128,11 @@ impl Interval {
 /// The walk forwards stops at the END of the first such run and then steps back over it, so the
 /// interval starts at the run's first base. A read with no such run at all yields the null
 /// interval, whose size is zero and so under any minimum.
+///
+/// The backward walk here counts `end` from the length down, one past the Java's `readEnd`, so
+/// `end - 1 + min_length` is the Java's `readEnd += minLength`. The Java compares a signed
+/// `byte` (`if ( quals[readStart] < minQ )`), and this compares the unsigned `u8`, so the two
+/// part on a quality above 127; the engine casts to `i8` first.
 pub fn quality_trim(qualities: &[u8], arguments: &Arguments) -> Interval {
     let mut start = 0usize;
     let mut high = 0usize;
@@ -130,6 +175,11 @@ pub fn quality_trim(qualities: &[u8], arguments: &Arguments) -> Interval {
 /// ZERO has its whole trim cut away and is counted LOW_QUALITY however good its bases are. That
 /// is not a guard against a missing TLEN: it is the guard against a fragment shorter than the
 /// read, applied to a fragment length of nothing.
+///
+/// Where the Java returns `Interval.NULL_INTERVAL` because too few calls are left, this returns
+/// the cut-back interval itself; both are shorter than `min_length`, so [`classify_read`]
+/// answers LOW_QUALITY for either. `unsigned_abs` is not Java's `Math.abs`, which leaves `int`'s
+/// minimum negative.
 pub fn fragment_trim(
     trim: Interval,
     read_length: usize,
@@ -186,6 +236,13 @@ pub fn classify_read(
 ///
 /// Both sides are measured inside the read's own evaluable span, so a variant at the very edge of
 /// a trimmed read fails however much reference lies beyond it.
+///
+/// The reference's `hasCleanLeftFlank` clamps the flank at the amplicon's start, and the right
+/// one clamps at its end; this test does not clamp:
+///
+/// ```java
+/// Math.max(0, snvList.get(0).getRefIndex() - minFlankingLength) >= getFirstRefIndex();
+/// ```
 pub fn has_sufficient_flank(
     variant_offset: usize,
     coverage: Interval,
@@ -209,6 +266,8 @@ pub const BASE_ORDER: [u8; 4] = *b"ACGT";
 /// A codon's index into the translation string, which is its three bases in base-four.
 ///
 /// A base that is not one of the four yields nothing, so an `N` in the reference has no codon.
+/// `position` is Java's `indexOf`, answering `None` for -1, and the `?` after it returns that
+/// `None` from the whole function.
 pub fn codon_value(bases: &[u8]) -> Option<usize> {
     if bases.len() != 3 {
         return None;
@@ -221,7 +280,7 @@ pub fn codon_value(bases: &[u8]) -> Option<usize> {
     Some(value)
 }
 
-/// The amino acid a codon translates to.
+/// The amino acid a codon translates to: `codonTranslation.charAt(codonValue)`.
 pub fn translate(bases: &[u8], translation: &str) -> Option<char> {
     codon_value(bases).and_then(|value| translation.chars().nth(value))
 }
@@ -233,6 +292,7 @@ pub const TRANSLATION_LENGTH_MESSAGE: &str =
 /// The refusal an ORF whose length does not divide by three produces.
 pub const ORF_LENGTH_MESSAGE: &str = "ORF length must be divisible by 3.";
 
+/// The `onTraversalStart` refusal of a translation that is not 64 characters long.
 pub fn check_translation(translation: &str) -> Result<(), String> {
     if translation.chars().count() != 64 {
         return Err(TRANSLATION_LENGTH_MESSAGE.to_string());
@@ -248,6 +308,8 @@ pub struct OrfInterval {
 }
 
 /// `--orf`, parsed: `134-180,214-238`, with no spaces.
+///
+/// `collect()` into `Option<Vec<_>>` answers `None` if any one pair failed to parse.
 pub fn parse_orf(text: &str) -> Option<Vec<OrfInterval>> {
     text.split(',')
         .map(|part| {
@@ -270,6 +332,14 @@ pub fn orf_length(intervals: &[OrfInterval]) -> i32 {
         .sum()
 }
 
+/// Two of `getExons`'s refusals: an end past the reference, and a length not divisible by three.
+///
+/// The Java's message ends with the whole `--orf` text, where this one ends with the offending
+/// end coordinate alone:
+///
+/// ```java
+/// throw new UserException("Found ORF end coordinate larger than reference length: " + orfCoords);
+/// ```
 pub fn check_orf(intervals: &[OrfInterval], reference_length: i32) -> Result<(), String> {
     if let Some(past) = intervals.iter().find(|i| i.end > reference_length) {
         return Err(format!(
@@ -287,7 +357,10 @@ pub fn check_orf(intervals: &[OrfInterval], reference_length: i32) -> Result<(),
 // The census.
 // ================================================================================================
 
-/// The counts one category holds.
+/// The counts one category holds, as `(type, count)` pairs in the order they were first bumped.
+///
+/// The Java's `ReportTypeCounts` is an array indexed by ordinal, so its rows always come out in
+/// declaration order; this list comes out in first-bumped order.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Counts {
     pub entries: Vec<(ReportType, u64)>,
@@ -316,6 +389,7 @@ impl Counts {
 /// `new DecimalFormat("0.000")`, which is what every percentage in the census is written with.
 ///
 /// It rounds half to EVEN, which is the Java default and not the half-up a naive port would give.
+/// The engine formats through `gatk_annotation::decimal_format::DecimalFormat` instead.
 pub fn percentage(part: u64, whole: u64) -> String {
     decimal_format(100.0 * part as f64 / whole as f64)
 }
@@ -334,6 +408,11 @@ pub fn decimal_format(value: f64) -> String {
 }
 
 /// Half-to-even rounding, which is what `DecimalFormat` uses unless told otherwise.
+///
+/// The tie is detected on `value * 1000` after the multiplication has rounded, within an
+/// epsilon, not on the double's exact decimal expansion. `100.0 * 1 / 8000` is
+/// `0.01250000000000000069...`, a little above the tie, and scaled it rounds to exactly
+/// `12.5`, so this answers `0.012`.
 fn round_half_even(value: f64) -> f64 {
     let floor = value.floor();
     let difference = value - floor;
@@ -394,7 +473,7 @@ pub fn category_block(
     lines
 }
 
-/// Whether a variant reaches the report at all.
+/// Whether a variant reaches the report at all: `entry.getCount() >= minVariantObservations`.
 pub fn is_reported(observations: u64, arguments: &Arguments) -> bool {
     observations >= arguments.min_variant_observations
 }

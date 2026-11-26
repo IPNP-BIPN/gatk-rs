@@ -24,16 +24,40 @@
 //!
 //! # A property already set is not overwritten
 //!
-//! `injectSystemPropertiesFromConfig` leaves an existing value alone, so `-Dsamjdk.compression_level=5`
-//! on the command line wins over the default. [`resolve`] is that rule.
+//! `injectSystemPropertiesFromConfig` leaves an existing value alone, so
+//! `-Dsamjdk.compression_level=5` on the command line wins over the default. [`resolve`] is that
+//! rule.
 //!
 //! Ported from `org.broadinstitute.hellbender.utils.config.GATKConfig` and
 //! `org.broadinstitute.hellbender.utils.config.ConfigFactory.injectSystemPropertiesFromConfig`.
+//!
+//! GATK 4.7.0.0. `ConfigFactory.java` is unchanged since 4.6.2.0; `GATKConfig.java` gains one
+//! method, `outputCramVersion()` with `@DefaultValue("3.1")`, which carries neither `@Key` nor
+//! `@SystemProperty` and so adds no row here.
+//!
+//! # "Key" means a method with `@Key`
+//!
+//! The interface declares more settings than the twelve here (`codec_packages`,
+//! `cloudPrefetchBuffer`, `createOutputBamIndex` and others). Those carry no `@Key` and no
+//! `@SystemProperty`, are read only inside GATK, and never reach htsjdk. The golden's dumper
+//! (`tools/readfilter-conformance/GatkConfigDump.java`) keeps only methods with `@Key`, and
+//! every one of those is a system property.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is "a value or nothing", Java's nullable reference with the null check
+//!   enforced by the compiler: `Some(v)` holds a value, `None` is the absent case;
+//! - `&str` is a borrowed, read-only string; `&'static str` is one baked into the binary;
+//! - `.iter().find(..).map(..)` is Java's `stream().filter(..).findFirst().map(..)`;
+//! - a function's last expression is its return value.
 
 /// `samjdk.compression_level`, whose default is not htsjdk's.
 pub const COMPRESSION_LEVEL: &str = "samjdk.compression_level";
 
-/// The keys `GATKConfig` declares, with their `@DefaultValue`, sorted by key.
+/// The `@Key` methods `GATKConfig` declares, as (`@Key` value, `@DefaultValue`), sorted by key.
+///
+/// The key is the `@Key` string, not the method name: `samjdk.compression_level` is the
+/// property, `samjdk_compression_level()` the method.
 ///
 /// Sorted because that is the order the golden carries: `getDeclaredMethods` has no defined order,
 /// and a table that depended on a JVM's reflection order would be a table about the JVM.
@@ -64,6 +88,16 @@ pub fn default(key: &str) -> Option<&'static str> {
 ///
 /// `set` is what the process already holds for this key, which is what a `-D` on the command line
 /// put there.
+///
+/// The `'a` and `where 'static: 'a` only say the result may borrow either from `set` or from the
+/// table compiled into the binary; they change nothing at run time.
+///
+/// ```java
+/// if ( systemProperties.containsKey(entry.getKey()) ) {
+///     logger.debug("System property already exists.  Not overriding: " + entry.getKey());
+///     continue;
+/// }
+/// ```
 pub fn resolve<'a>(key: &str, set: Option<&'a str>) -> Option<&'a str>
 where
     'static: 'a,
@@ -81,6 +115,9 @@ where
 /// in and the caller is none the wiser. That is a boundary and it is stated: no golden covers a
 /// malformed property, because `GATKConfig` cannot produce one.
 pub fn compression_level(set: Option<&str>) -> u32 {
+    // `and_then` keeps going only on a value; `.parse().ok()` turns a parse failure into `None`;
+    // `unwrap_or(2)` catches only the unparsable case, since an unset one already resolved to
+    // the table's "2".
     resolve(COMPRESSION_LEVEL, set)
         .and_then(|value| value.parse().ok())
         .unwrap_or(2)

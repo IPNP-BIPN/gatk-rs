@@ -9,6 +9,18 @@
 //! each one the assembly lacks is inserted into the five best haplotypes (the reference first,
 //! then the best scores); and an alternate consistent with a given event (the same length change,
 //! one allele a prefix of the other) is genotyped and emitted whatever its confidence.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[VariantContext]` is a borrowed, read-only view of a list; the caller keeps it;
+//! - `Result<T, String>` is "a value or an error message", how this port carries a Java
+//!   exception; `?` after a call hands its error straight back to the caller, Java's `throws`
+//!   at that one call site, and `.map_err(..)` converts the error type first;
+//! - `|a| ...` is a closure, Java's lambda `a -> ...`;
+//! - `.iter().any(..)` is `stream().anyMatch(..)`, `.filter(..).cloned().collect()` is
+//!   `stream().filter(..).collect(..)` with each kept element copied;
+//! - `as i32` / `as i64` converts between integer widths; narrowing keeps the low bits;
+//! - `if let Some(x) = f()` runs the block only when `f` returned a value, not `None` (null).
 
 use gatk_engine::assembly_result_set::AssemblyResultSet;
 use gatk_engine::event_map::Event;
@@ -22,16 +34,25 @@ use htsjdk_vcf::variant::VariantContext;
 /// `AssemblyBasedCallerUtils.NUM_HAPLOTYPES_TO_INJECT_FORCE_CALLING_ALLELES_INTO`.
 const NUM_HAPLOTYPES_TO_INJECT_INTO: usize = 5;
 
-/// `vc.isNotFiltered()`, or `--force-call-filtered-alleles`.
+/// `vc.isNotFiltered()`, or `--force-call-filtered-alleles`:
+/// `.filter(vc -> hcArgs.forceCallFiltered || vc.isNotFiltered())`.
 fn usable(vc: &VariantContext, force_call_filtered: bool) -> bool {
     force_call_filtered || !vc.is_filtered()
 }
 
+/// Whether the record's `[start, stop]` meets `[start, end]` on the same contig, both closed.
+///
+/// Stands in for the feature query `features.getValues(hcArgs.alleles, ref)` (one locus) and
+/// `features.getValues(hcArgs.alleles)` (the padded region). The `i64::from` widens the `i32`
+/// bounds to the record's `i64` positions without loss.
 fn overlaps(vc: &VariantContext, contig: &str, start: i32, end: i32) -> bool {
     vc.contig == contig && vc.start <= i64::from(end) && i64::from(start) <= vc.stop
 }
 
 /// `isActive`'s test: a usable given record over the locus.
+///
+/// When it holds, `HaplotypeCallerEngine.isActive` returns
+/// `new ActivityProfileState(ref.getInterval(), 1.0)` before looking at the pileup.
 pub fn forced_at(
     alleles: &[VariantContext],
     contig: &str,
@@ -45,12 +66,20 @@ pub fn forced_at(
 
 /// `splitVariantContextToEvents(vc, false, BEST_MATCH_TO_ORIGINAL, false)`: one event per
 /// alternate, each right trimmed when the record had to be split.
+///
+/// `splitVariantContextToEvents` is `splitVariantContextToBiallelics(..)` mapped through
+/// `Event::ofWithoutAttributes`. A biallelic record passes through as it is; a multiallelic one
+/// becomes one (reference, alternate) pair per alternate, then `trim_alleles(.., false, true)`
+/// trims the pair's common suffix only (`trimLeft` is `false`). Genotypes and attributes are left
+/// empty because an `Event` keeps neither.
 fn split_to_events(vc: &VariantContext) -> Result<Vec<Event>, String> {
     if vc.alleles.len() <= 1 {
         return Ok(Vec::new());
     }
+    // Converts a VCF allele to the trimmer's own allele type, by display string.
     let local = |a: &Allele| TrimAllele::new(a.display_string().as_bytes(), a.is_reference());
     let mut out = Vec::new();
+    // `&vc.alleles[1..]` is a view of the alternates: every allele after the reference.
     for alt in &vc.alleles[1..] {
         let pair = if vc.alleles.len() == 2 {
             vec![local(&vc.alleles[0]), local(alt)]
@@ -84,6 +113,13 @@ fn split_to_events(vc: &VariantContext) -> Result<Vec<Event>, String> {
 
 /// The region's given events: the usable records over `padded`, split, and those starting at or
 /// after `span_start`, in the order the file holds them.
+///
+/// ```java
+/// .filter(event -> event.getStart() >= region.getSpan().getStart())
+/// ```
+///
+/// The quote is cut before its trailing comment. An event in the left padding is dropped, one
+/// in the right padding is kept.
 pub fn given_events(
     alleles: &[VariantContext],
     contig: &str,
@@ -106,6 +142,19 @@ pub fn given_events(
 }
 
 /// `allelesAreConsistent(ref1, alt1, ref2, alt2)`.
+///
+/// Two (ref, alt) pairs from different records "could be the same" when they change the length
+/// by the same amount and one alternate's bases are a prefix of the other's:
+///
+/// ```java
+/// return (sizeDiff1 == sizeDiff2) && (alt1.length() < alt2.length() ?
+///         alt1.basesMatch(Arrays.copyOf(alt2.getBases(), alt1.length())) :
+///         alt2.basesMatch(Arrays.copyOf(alt1.getBases(), alt2.length())));
+/// ```
+///
+/// The lengths are widened to `i64` before subtracting, since `usize` (an unsigned index) would
+/// wrap below zero where Java's `int` goes negative. Both alternates are non-symbolic by then,
+/// so the display string is the bases.
 fn alleles_are_consistent(ref1: &Allele, alt1: &Allele, ref2: &Allele, alt2: &Allele) -> bool {
     if alt1.is_symbolic() || alt2.is_symbolic() {
         return false;
@@ -121,7 +170,11 @@ fn alleles_are_consistent(ref1: &Allele, alt1: &Allele, ref2: &Allele, alt2: &Al
         }
 }
 
-/// `allelesConsistentWithGivenAlleles(givenAlleles, mergedVC)`.
+/// `allelesConsistentWithGivenAlleles(givenAlleles, mergedVC)`: the merged record's alternates
+/// that match at least one given event.
+///
+/// Java collects into a `Set` (`Collectors.toSet()`); this returns the alternates in record
+/// order, without repeats only because a record's alternates are already distinct.
 pub fn alleles_consistent_with_given_alleles(
     given: &[Event],
     reference: &Allele,
@@ -141,7 +194,25 @@ pub fn alleles_consistent_with_given_alleles(
         .collect()
 }
 
-/// `addGivenAlleles(givenAlleles, maxMnpDistance, aligner, swParameters)` on a trimmed set.
+/// `AssemblyResultSet.addGivenAlleles(givenAlleles, maxMnpDistance, aligner, swParameters)` on a
+/// trimmed set.
+///
+/// Each given event the assembly did not find, and that is not symbolic, is inserted into each of
+/// the five base haplotypes, and every insertion that succeeds is added to the set. The variation
+/// events are then regenerated, as `regenerateVariationEvents(maxMnpDistance)` does.
+///
+/// The base haplotypes:
+///
+/// `Comparator.comparing(Haplotype::isReference).thenComparingDouble(hap -> hap.getScore())`
+/// then `.reversed()`, then
+/// `.limit(AssemblyBasedCallerUtils.NUM_HAPLOTYPES_TO_INJECT_FORCE_CALLING_ALLELES_INTO)`.
+/// `reversed()` applies to the whole comparator, so the reference comes first and then the scores
+/// descend. The Rust comparator swaps `a` and `b` for the same effect. Both sorts are stable, so
+/// equal scores keep the haplotype list's order.
+///
+/// The Java looks the given event up only among the assembled events with the same start
+/// (`assembledEventsByStart`, keyed by `Event::getStart`); here it is looked up among all of
+/// them, which is the same answer because equal events have equal starts.
 pub fn add_given_alleles(
     assembly: &mut AssemblyResultSet,
     given: &[Event],
@@ -152,7 +223,11 @@ pub fn add_given_alleles(
     if given.is_empty() {
         return Ok(());
     }
+    // One closure that formats any result-set error, reused by every `map_err` below.
     let error = |e: gatk_engine::assembly_result_set::ResultSetError| format!("{e:?}");
+    // `getReferenceHaplotype()` can return null in Java, and the NullPointerException would come
+    // from the first `makeHaplotypeWithInsertedEvent`; here a missing reference is refused before
+    // the loop. `.cloned()` copies the haplotype so `assembly` can be modified below.
     let reference = assembly
         .reference_haplotype()
         .cloned()
@@ -184,6 +259,8 @@ pub fn add_given_alleles(
             }
         }
     }
+    // `regenerateVariationEvents(maxMnpDistance)`. The list is discarded: the call is kept for
+    // building the event map of every haplotype, the inserted ones included, and for its errors.
     assembly.variation_events(max_mnp_distance).map_err(error)?;
     Ok(())
 }

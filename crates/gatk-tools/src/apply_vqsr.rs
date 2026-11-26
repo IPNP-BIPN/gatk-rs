@@ -1,69 +1,104 @@
 //! `ApplyVQSR`, ported from `org.broadinstitute.hellbender.tools.walkers.vqsr.ApplyVQSR`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `ApplyVQSR.java` is unchanged since 4.6.2.0).
 //!
-//! This module is `onTraversalStart` alone: the tranches file read by
-//! [`gatk_engine::tranches`], cut at `--truth-sensitivity-filter-level`, and turned into FILTER
-//! header lines. The per-record filtering is a slice of its own.
+//! `onTraversalStart` (the tranches file read by [`gatk_engine::tranches`], cut at
+//! `--truth-sensitivity-filter-level`, and turned into FILTER header lines) and the decisions
+//! `apply` makes per record: which recal record pairs with a variant, the filter string, and the
+//! site-level and allele-specific annotations. Reading and writing the VCFs is the caller's.
 //!
 //! # The last tranche never becomes a filter, and the first becomes two
+//!
+//! `ApplyVQSR.java:252-260`, each long line broken between tokens to fit here:
 //!
 //! ```java
 //! if( tranches.size() >= 2 ) {
 //!     for( int iii = 0; iii < tranches.size() - 1; iii++ ) {
 //!         final TruthSensitivityTranche t = tranches.get(iii);
-//!         hInfo.add(new VCFFilterHeaderLine(t.name, ... + t.minVQSLod + " <= x < " + tranches.get(iii+1).minVQSLod));
+//!         hInfo.add(new VCFFilterHeaderLine(t.name, String.format(
+//!             "Truth sensitivity tranche level for " + t.model.toString()
+//!             + " model at VQS Lod: " + t.minVQSLod + " <= x < "
+//!             + tranches.get(iii+1).minVQSLod)));
 //!     }
 //! }
 //! if( tranches.size() >= 1 ) {
-//!     hInfo.add(new VCFFilterHeaderLine(tranches.get(0).name + "+", ... + tranches.get(0).minVQSLod));
-//! }
+//!     hInfo.add(new VCFFilterHeaderLine(tranches.get(0).name + "+", String.format(
+//!         "Truth sensitivity tranche level for " + tranches.get(0).model.toString()
+//!         + " model at VQS Lod < " + tranches.get(0).minVQSLod)));
+//! } else {
 //! ```
 //!
-//! The loop stops one short, so the tranche whose variants are all kept has no line at all, and the
-//! first one after the reversal gets two: one interval line bounded above by the **next** tranche's
-//! `minVQSLod`, and one open-ended line under its own name with a `+` appended. A file of three
-//! tranches therefore produces three lines naming two tranches.
+//! The loop stops one short, so the tranche whose variants are all kept has no line at all, and
+//! the first one after the reversal gets two: one interval line bounded above by the **next**
+//! tranche's `minVQSLod`, and one open-ended line under its own name with a `+` appended. A file of
+//! three tranches therefore produces three lines naming two tranches.
 //!
 //! # The IDs are the file's, not the tool's
 //!
 //! `t.name` is the `filterName` column, so a tranches file naming its tranches `loose`, `middling`
-//! and `tight` produces FILTER IDs `middling`, `tight` and `tight+`. Nothing is synthesized from the
-//! model or the sensitivities at this point, unlike the string `VariantRecalibrator` writes into the
-//! column in the first place.
+//! and `tight` produces FILTER IDs `middling`, `tight` and `tight+`. Nothing is synthesized from
+//! the model or the sensitivities at this point, unlike the string `VariantRecalibrator` writes
+//! into the column in the first place.
 //!
 //! # One LOD, one band, one filter
 //!
-//! [`filter_string`] walks the kept tranches backwards and answers `PASS` only for the last of them,
-//! the one whose variants are all kept, so the bands are exactly the intervals the header lines
-//! describe. [`site_specific_filtering`] is what feeds it: the recal record must agree with the
-//! variant on **both** ends, by two different mechanisms, and the LOD is reparsed and written back
-//! through htsjdk's own double format, which sends every negative value to scientific notation.
+//! [`filter_string`] walks the kept tranches backwards and answers `PASS` only for the last of
+//! them, the one whose variants are all kept, so the bands are exactly the intervals the header
+//! lines describe. [`site_specific_filtering`] is what feeds it: the recal record must agree with
+//! the variant on **both** ends, by two different mechanisms, and the LOD is reparsed and written
+//! back through htsjdk's own double format, which sends every negative value to scientific
+//! notation.
 //!
 //! # One entry per alternate allele, whatever the mode
 //!
 //! With `-AS` the three lists are always as long as the alternate allele list:
-//! [`allele_specific_filtering`] **pads** an allele of the other mode and a spanning deletion rather
-//! than skipping either, and the spanning deletion is padded without its recal record ever being
-//! looked for. The class test behind that is a length comparison, so `*` counts as a SNP.
-//! [`site_filter_for_a_single_mode`] then leaves a mixed site unfiltered, because the other mode has
-//! not run yet.
+//! [`allele_specific_filtering`] **pads** an allele of the other mode and a spanning deletion
+//! rather than skipping either, and the spanning deletion is padded without its recal record ever
+//! being looked for. The class test behind that is a length comparison, so `*` counts as a SNP.
+//! [`site_filter_for_a_single_mode`] then leaves a mixed site unfiltered, because the other mode
+//! has not run yet.
 //!
 //! # The second run reads the first run's header
 //!
 //! [`previous_runs`] is `checkForPreviousApplyRecalRun`: a FILTER line counts as a tranche of the
-//! other mode by three magic numbers, and its prefix is compared ignoring case while its mode letter
-//! is not. [`site_filter_from_alleles`] then takes the most lenient filter across both modes, where
-//! lenient means the smallest lower limit [`parse_filter_lower_limit`] pulls out of the **name** —
-//! and that regex is greedy enough to lose a digit, so a tranche starting at 90 can beat one
-//! starting at 5.
+//! other mode by three magic numbers, and its prefix is compared ignoring case while its mode
+//! letter is not. [`site_filter_from_alleles`] then takes the most lenient filter across both
+//! modes, where lenient means the smallest lower limit [`parse_filter_lower_limit`] pulls out of
+//! the **name**, and that regex is greedy enough to lose a digit, so a tranche starting at 90 can
+//! beat one starting at 5.
 //!
 //! # The order is by sensitivity, then cut, then reversed
 //!
-//! `readTranches` sorts by `targetTruthSensitivity`; `onTraversalStart` keeps those at or above the
-//! level and reverses, so the list runs from the least sensitive tranche to the most. A level above
+//! `readTranches` sorts ascending by `targetTruthSensitivity`
+//! (`TruthSensitivityTranche.TRUTH_SENSITIVITY_ORDER` is a `Double.compare` of the two);
+//! `onTraversalStart` keeps those at or above the level and reverses, so the list runs from the
+//! **most** sensitive tranche to the least, `[100, 99, 90]` in this file's unit test. The
+//! reference's own comment on the reversal (`ApplyVQSR.java:221`, broken to fit) says the
+//! opposite:
+//!
+//! ```java
+//! Collections.reverse(tranches); // this algorithm wants the tranches ordered from best
+//!     // (lowest truth sensitivity) to worst (highest truth sensitivity)
+//! ```
+//!
+//! but the code, not the comment, is what decides which tranche is kept whole. A level above
 //! every tranche is a refusal rather than an empty filter set, and the mutual exclusion of the two
 //! cutoff arguments is checked **after** the file has been read, so a broken file is reported in
 //! preference to a contradictory command line.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `pub trait RecalRecord` is a Java interface: the caller's VCF record type implements it, so
+//!   this file never sees the record class itself. `T: RecalRecord` in a signature is a generic
+//!   bounded by that interface, Java's `<T extends RecalRecord>`;
+//! - `Option<T>` is "a value or nothing", Java's nullable reference checked by the compiler, and
+//!   `Result<T, E>` is "a value or an error", how this file models a Java exception;
+//! - `let Some(x) = y else { return ... };` unwraps the value or takes the early exit, and `?`
+//!   after a call returns its error to the caller at once, Java's `throws` at one call site;
+//! - `&[T]` is a borrowed, read-only view of an array; `&str` is the same for text. The `'a` in
+//!   `AlleleSpecificSite<'a>` only says how long the borrowed fields stay valid;
+//! - `|x| ...` is a lambda, and `.iter().filter(..).find(..)` is Java's stream, filter,
+//!   `findFirst`;
+//! - a function's last expression is its return value; `return` is only written for early exits.
 
 use gatk_engine::tranches::{Mode, TruthSensitivityTranche};
 use htsjdk_vcf::variant::format_vcf_double;
@@ -102,7 +137,9 @@ impl ApplyVqsrError {
         }
     }
 
+    /// The refusal's `getMessage()`.
     pub fn message(&self) -> String {
+        // `match` must name every variant, which the compiler checks; there is no fall-through.
         match self {
             ApplyVqsrError::NoTranches(level) => format!(
                 "No tranches were found in the file or were above the truth sensitivity filter level {}",
@@ -134,7 +171,17 @@ impl FilterHeaderLine {
     }
 }
 
-/// The tranches kept by a level: at or above it, then reversed.
+/// The tranches kept by a level: at or above it, then reversed (`onTraversalStart`).
+///
+/// ```java
+/// if (t.targetTruthSensitivity >= TS_FILTER_LEVEL) {
+///     tranches.add(t);
+/// }
+/// ```
+///
+/// over `readTranches`' ascending order, then `Collections.reverse(tranches)`, so the most
+/// sensitive tranche comes first. The result borrows the tranches (`&TruthSensitivityTranche`)
+/// rather than copying them.
 pub fn keep(tranches: &[TruthSensitivityTranche], level: f64) -> Vec<&TruthSensitivityTranche> {
     let mut kept: Vec<&TruthSensitivityTranche> = tranches
         .iter()
@@ -216,7 +263,9 @@ pub enum SiteFilteringError {
     UnreadableLod { record: String },
     /// An alternate allele with no recal record of its own, which is the `-AS` wording.
     NoRecalAllele { record: String },
-    /// An allele's `VQSLOD` that `getAttributeAsDouble` hands to `Double.valueOf` and that refuses.
+    /// An allele's `VQSLOD` that `getAttributeAsDouble` cannot read. In htsjdk 5.0.0 that is
+    /// `VCFUtils.parseVcfDouble`: `Double.parseDouble`, then a case-insensitive `INF`, `INFINITY`
+    /// or `NAN`, and the first `NumberFormatException` rethrown if neither matches.
     AlleleLodNotANumber { text: String },
     /// A second run's previous `AS_VQSLOD` or `AS_FilterStatus` shorter than its `AS_culprit`:
     /// `updateAnnotationsWithoutRecalibrating` checks the index against the culprits alone.
@@ -235,6 +284,7 @@ impl SiteFilteringError {
         }
     }
 
+    /// The cause's `getMessage()`; the two non-`UserException` wordings are the JDK's.
     pub fn message(&self) -> String {
         match self {
             SiteFilteringError::AlleleLodNotANumber { text } => {
@@ -271,6 +321,9 @@ impl SiteFilteringError {
 }
 
 /// As much of a recal record as the pairing and the filtering look at.
+///
+/// A trait is Java's interface: the caller's own VCF record implements these six methods, so the
+/// filtering here never depends on how the recal file was read.
 pub trait RecalRecord {
     fn start(&self) -> i32;
     fn end(&self) -> i32;
@@ -323,6 +376,8 @@ pub fn site_specific_filtering<T: RecalRecord>(
             record: record.to_string(),
         });
     };
+    // `lod = Double.valueOf(lodString)`. `str::parse::<f64>` is Rust's own grammar, not Java's:
+    // they agree on plain decimals, and Java alone takes a `d`/`f` suffix or hex, Rust alone `inf`.
     let Ok(lod) = text.trim().parse::<f64>() else {
         return Err(SiteFilteringError::UnreadableLod {
             record: record.to_string(),
@@ -372,8 +427,21 @@ pub const PASSES_FILTERS: &str = "PASS";
 
 /// `apply`'s gate: whether the record is recalibrated at all.
 ///
-/// `of_this_mode` is `VariantDataManager.checkVariationClass(vc, MODE)`. The filter half is the
-/// reference's own three-way test, whose middle clause is why an unfiltered record always passes.
+/// `of_this_mode` is the reference's `evaluateThisVariant`, which `-AS` sets whatever the class
+/// (`ApplyVQSR.java:332`, broken to fit):
+///
+/// ```java
+/// final boolean evaluateThisVariant = useASannotations
+///         || VariantDataManager.checkVariationClass( vc, MODE );
+/// ```
+///
+/// The filter half is the reference's own three-way test, whose middle clause
+/// (`vc.isNotFiltered()`, here an empty `filters`) is why an unfiltered record always passes:
+///
+/// ```java
+/// final boolean variantIsNotFiltered = IGNORE_ALL_FILTERS || vc.isNotFiltered() ||
+///         (!ignoreInputFilterSet.isEmpty() && ignoreInputFilterSet.containsAll(vc.getFilters()));
+/// ```
 pub fn recalibrates(
     of_this_mode: bool,
     filters: &[String],
@@ -414,12 +482,25 @@ pub fn is_spanning_deletion(allele: &str) -> bool {
 
 /// `VariantDataManager.checkVariationClass(vc, allele, mode)`.
 ///
-/// A **length** comparison rather than a type: SNP mode keeps every allele as long as the reference,
-/// which is why the reference's own comment says a spanning deletion counts as a SNP. INDEL mode
-/// keeps the rest, and anything symbolic.
+/// A **length** comparison rather than a type: SNP mode keeps every allele as long as the
+/// reference, which is why the reference's own comment says a spanning deletion counts as a SNP.
+/// INDEL mode keeps the rest, and anything symbolic.
+///
+/// ```java
+/// case SNP:
+///     //note that spanning deletions are considered SNPs by this logic
+///     return evalVC.getReference().length() == allele.length();
+/// case INDEL:
+///     return (evalVC.getReference().length() != allele.length()) || allele.isSymbolic();
+/// ```
+///
+/// htsjdk's `Allele.length()` is `isSymbolic ? 0 : bases.length`, while `allele.len()` here is
+/// the length of the allele's text, so the two agree only for alleles that are not symbolic.
 pub fn allele_is_of_mode(reference: &str, allele: &str, snp_mode: bool) -> bool {
-    // `isSymbolic()` is the angle brackets alone: the golden's INDEL-mode run pads `*` on both
-    // sides, which it would not if the spanning deletion counted as symbolic here.
+    // htsjdk's `isSymbolic()` (`Allele.wouldBeSymbolicAllele`) is more than the angle brackets: a
+    // trailing `>`, a breakpoint or a single breakend counts too, and nothing one base long does.
+    // Only the leading `<` is tested here. `*` is one base, so it is not symbolic in either: the
+    // golden's INDEL-mode run pads `*` on both sides.
     let symbolic = allele.starts_with('<');
     if snp_mode {
         reference.len() == allele.len()
@@ -457,6 +538,9 @@ impl AlleleAnnotations {
 }
 
 /// What one record brings to [`allele_specific_filtering`]: its locus and its alleles.
+///
+/// `<'a>` says the struct borrows its text from the caller's record, for as long as that record
+/// lives, instead of copying it.
 pub struct AlleleSpecificSite<'a> {
     pub start: i32,
     pub end: i32,
@@ -469,9 +553,9 @@ pub struct AlleleSpecificSite<'a> {
 /// `doAlleleSpecificFiltering` for a first run, where no previous mode has left anything behind.
 ///
 /// One entry per alternate allele, whatever mode is running: an allele of the other mode and a
-/// spanning deletion are **padded** rather than skipped, and the spanning deletion is padded without
-/// its recal record ever being looked for. The LOD is written with `%.4f`, and nothing site-level is
-/// written at all: in this mode there is no `VQSLOD` and no `culprit`.
+/// spanning deletion are **padded** rather than skipped, and the spanning deletion is padded
+/// without its recal record ever being looked for. The LOD is written with `%.4f`, and nothing
+/// site-level is written at all: in this mode there is no `VQSLOD` and no `culprit`.
 pub fn allele_specific_filtering<T: RecalRecord + AllelicRecalRecord>(
     site: &AlleleSpecificSite,
     recals: &[T],
@@ -483,6 +567,17 @@ pub fn allele_specific_filtering<T: RecalRecord + AllelicRecalRecord>(
 }
 
 /// `getMatchingRecalVC` in allele-specific mode, where the allele is compared too.
+///
+/// ```java
+/// if ( target.getEnd() == recalVC.getEnd() ) {
+///     if (!useASannotations)
+///         return recalVC;
+///     else if (allele.equals(recalVC.getAlternateAllele(0)))
+///         return recalVC;
+/// }
+/// ```
+///
+/// The start test is `FeatureContext.getValues(recal, vc.getStart())`'s, as in [`matching_recal`].
 pub fn matching_allele_recal<'a, T: RecalRecord + AllelicRecalRecord>(
     start: i32,
     end: i32,
@@ -507,7 +602,9 @@ pub enum Cut<'a> {
     Lod(f64),
 }
 
+// `'_` is a borrow whose lifetime this block does not need to name.
 impl Cut<'_> {
+    /// `generateFilterString(lod)`, whichever branch the command line chose.
     pub fn filter(&self, lod: f64) -> String {
         match self {
             Cut::Tranches(kept) => filter_string(kept, lod),
@@ -538,6 +635,13 @@ pub struct PreviousAlleleLists {
 }
 
 impl PreviousAlleleLists {
+    /// The three `prev*List` arrays of `doAlleleSpecificFiltering`, from the attribute texts
+    /// (`ApplyVQSR.java:524`, broken to fit; the other two lists are built the same way):
+    ///
+    /// ```java
+    /// prevCulpritList = prevCulprits.isEmpty()? new String[0]
+    ///         : prevCulprits.split(listPrintSeparator);
+    /// ```
     pub fn from_attributes(culprit: &str, vqslod: &str, filter_status: &str) -> Self {
         // `String.split` drops the trailing empty strings, and an empty input is one empty string
         // the reference tests for before splitting.
@@ -560,6 +664,10 @@ impl PreviousAlleleLists {
 }
 
 /// `replaceAll("[\\[\\]\\s]", "").trim()`: the brackets and spaces a Java list prints with.
+///
+/// Rust's `char::is_whitespace` is Unicode's White_Space property, which is wider than Java's
+/// regex `\s` (ASCII space, tab, newline, vertical tab, form feed, carriage return), and there is
+/// no counterpart to `trim()` dropping the other control characters at either end.
 fn without_brackets(entry: &str) -> String {
     entry
         .chars()
@@ -583,6 +691,8 @@ pub fn allele_specific_filtering_with<T: RecalRecord + AllelicRecalRecord>(
     cut: &Cut,
     previous: Option<&PreviousAlleleLists>,
 ) -> Result<(AlleleAnnotations, f64), SiteFilteringError> {
+    // Destructuring: one local per field of `site`, Java's `final int start = site.start;` and so
+    // on in one statement.
     let AlleleSpecificSite {
         start,
         end,
@@ -598,6 +708,9 @@ pub fn allele_specific_filtering_with<T: RecalRecord + AllelicRecalRecord>(
         positive_label: false,
         negative_label: false,
     };
+    // The spanning-deletion values the reference initializes each allele with, and the else branch
+    // of `updateAnnotationsWithoutRecalibrating`. A closure (lambda) given the lists as `&mut`, a
+    // writable borrow, rather than capturing them.
     let pad = |annotations: &mut AlleleAnnotations| {
         annotations
             .filter_status
@@ -608,6 +721,10 @@ pub fn allele_specific_filtering_with<T: RecalRecord + AllelicRecalRecord>(
 
     for (index, allele) in alternates.iter().enumerate() {
         if !allele_is_of(mode, reference, allele) {
+            // `updateAnnotationsWithoutRecalibrating`. `previous` is `Some` exactly when
+            // `foundINDELTranches || foundSNPTranches`; `Some(lists) if ...` is a guarded arm,
+            // and the last arm is the reference's `altIndex >= prevCulpritList.length`, which
+            // adds nothing.
             match previous {
                 None => pad(&mut annotations),
                 Some(lists) if index < lists.culprit.len() => {
@@ -639,6 +756,10 @@ pub fn allele_specific_filtering_with<T: RecalRecord + AllelicRecalRecord>(
                 record: record.to_string(),
             });
         };
+        // `recalDatum.getAttributeAsDouble(VQS_LOD_KEY, MIN_ACCEPTABLE_LOD_SCORE)`, whose parse is
+        // `parseVcfDouble` (see `AlleleLodNotANumber`); Rust's `parse` does not take Java's `d`/`f`
+        // suffixes or hex. `map_err` turns the parse failure into this file's error and `?` returns
+        // it.
         let lod = match recal.lod_string() {
             None => MIN_ACCEPTABLE_LOD_SCORE,
             Some(text) => text
@@ -650,10 +771,15 @@ pub fn allele_specific_filtering_with<T: RecalRecord + AllelicRecalRecord>(
             best_lod = lod;
         }
         annotations.filter_status.push(cut.filter(lod));
+        // `String.format("%.4f", lod)`. Rust's `{:.4}` rounds the exact binary value half to even,
+        // Java's rounds the `Double.toString` digits half up; `gatk_engine::java_format` documents
+        // where they disagree.
         annotations.vqslod.push(format!("{lod:.4}"));
         annotations
             .culprit
             .push(recal.culprit().unwrap_or_else(|| ".".to_string()));
+        // `builder.attribute(POSITIVE_LABEL_KEY, true)` when any matched recal record has it: an or
+        // over the alleles, never reset to false.
         annotations.positive_label |= recal.has_positive_label();
         annotations.negative_label |= recal.has_negative_label();
     }
@@ -661,6 +787,11 @@ pub fn allele_specific_filtering_with<T: RecalRecord + AllelicRecalRecord>(
 }
 
 /// `generateFilterStringFromAlleles` with either cut: [`site_filter_from_alleles`] generalised.
+///
+/// `previous_status` is `vc.getAttributeAsString(AS_FILTER_STATUS_KEY, null)`. A missing or `.`
+/// status is the reference's last `else`, `generateFilterString(bestLod)`; otherwise this mode's
+/// best filter is compared against every previous allele's, a `PASS` anywhere wins, and an entry
+/// [`parse_filter_lower_limit`] cannot read (`-1`) is skipped.
 pub fn site_filter_from_alleles_with(
     is_mixed: bool,
     record_is_of_mode: bool,
@@ -707,13 +838,6 @@ pub trait AllelicRecalRecord {
     fn first_alternate(&self) -> String;
 }
 
-/// `generateFilterStringFromAlleles` for a first run, where neither mode has left a filter behind.
-///
-/// `both_modes_were_run` is false by construction here, so the site is left **unfiltered** unless
-/// `onlyOneModeNeeded` holds: the record must not be mixed and must be of the running mode. A mixed
-/// site therefore comes out with a FILTER of `.` while its `AS_FilterStatus` already names a tranche.
-/// The second run, which reads the first run's filter names back out of the header, is a slice of
-/// its own.
 /// `trancheFilterString`, the prefix a FILTER line must have to be read as a tranche.
 pub const TRANCHE_FILTER_STRING: &str = "VQSRTranche";
 
@@ -758,16 +882,27 @@ pub fn tranche_interval_is_valid(limits: &str) -> Result<bool, ApplyVqsrError> {
 
 /// `checkForPreviousApplyRecalRun`, over the input header's FILTER IDs.
 ///
-/// Three magic numbers: at least 12 characters, `VQSRTranche` **ignoring case** in the first 11, and
-/// `S` or `I` — case-sensitively — in the 12th, after which the interval is `substring(14)` or
+/// Three magic numbers: at least 12 characters, `VQSRTranche` **ignoring case** in the first 11,
+/// and `S` or `I` (case-sensitively) in the 12th, after which the interval is `substring(14)` or
 /// `substring(16)`, the lengths of `VQSRTrancheSNP` and `VQSRTrancheINDEL`. A lowercase name
-/// therefore passes the prefix test and is not a tranche.
+/// therefore passes the prefix test and is not a tranche. `ApplyVQSR.java:303-305`, broken to fit:
+///
+/// ```java
+/// if(filterName.length() < 12
+///         || !filterName.substring(0, 11).equalsIgnoreCase(trancheFilterString)) {
+///     continue;
+/// }
+/// ```
 pub fn previous_runs(filter_ids: &[String]) -> Result<PreviousRuns, ApplyVqsrError> {
     let mut runs = PreviousRuns::default();
     for id in filter_ids {
+        // `len()` and `[..11]` count bytes, where Java's `length()` and `substring` count UTF-16
+        // units; the two agree on ASCII names.
         if id.len() < 12 || !id[..11].eq_ignore_ascii_case(TRANCHE_FILTER_STRING) {
             continue;
         }
+        // `target` is a writable borrow of whichever flag this name sets, Java's choice between
+        // `foundSNPTranches` and `foundINDELTranches`; `*target = true` below writes through it.
         let (from, target) = match id.as_bytes()[11] {
             b'S' => (14, &mut runs.snp),
             b'I' => (16, &mut runs.indel),
@@ -797,9 +932,12 @@ pub fn previous_runs(filter_ids: &[String]) -> Result<PreviousRuns, ApplyVqsrErr
 ///
 /// **`\S+` is greedy**, so it eats into the lower limit itself: it takes as many characters as it
 /// can while still leaving a `digits.digits` before the `to`. `VQSRTrancheINDEL90.00to99.00`
-/// therefore answers `0.00` rather than `90.00`, while `VQSRTrancheSNP5.00to90.00`, whose limit is a
-/// single digit, answers `5.00`. Comparing those two puts the wrong one first, which is exactly what
-/// the golden's second pair of runs writes into the FILTER column.
+/// therefore answers `0.00` rather than `90.00`, while `VQSRTrancheSNP5.00to90.00`, whose limit is
+/// a single digit, answers `5.00`. Comparing those two puts the wrong one first, which is exactly
+/// what the golden's second pair of runs writes into the FILTER column.
+///
+/// **How**: `m.find()` tries each start position in turn, so the outer loop does too, and at each
+/// one the longest `\S+` is tried first. The positions are byte offsets into the name.
 pub fn parse_filter_lower_limit(name: &str) -> f64 {
     let bytes = name.as_bytes();
     for start in 0..name.len() {
@@ -874,6 +1012,13 @@ pub fn site_filter_from_alleles(
     )
 }
 
+/// `generateFilterStringFromAlleles` for a first run, where neither mode has left a filter behind.
+///
+/// `both_modes_were_run` is false by construction here, so the site is left **unfiltered** unless
+/// `onlyOneModeNeeded` holds: the record must not be mixed and must be of the running mode. A
+/// mixed site therefore comes out with a FILTER of `.` while its `AS_FilterStatus` already names a
+/// tranche. The second run, which reads the first run's filter names back out of the header, is
+/// [`site_filter_from_alleles`].
 pub fn site_filter_for_a_single_mode(
     is_mixed: bool,
     record_is_of_mode: bool,

@@ -1,5 +1,6 @@
 //! `FuncotatorDataSourceDownloader`, ported from the tool and the constants it is built on
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `FuncotatorDataSourceDownloader.java` and `DataSourceUtils.java` are unchanged
+//! since 4.6.2.0).
 //!
 //! A tar.gz fetched from a bucket, checked against a sha256 beside it, and optionally unpacked.
 //! The transport is not ported; every decision around it is: which path is fetched, where it
@@ -8,7 +9,9 @@
 //! # With no `-O` the copy lands in the working directory
 //!
 //! ```java
-//! if ( outputFile == null ) { return IOUtils.getPath(dataSourcesPath.getFileName().toString()); }
+//! if ( outputFile == null ) {
+//!     return IOUtils.getPath(dataSourcesPath.getFileName().toString());
+//! }
 //! ```
 //!
 //! That is a RELATIVE path, so the destination has nothing to do with where the source was: it is
@@ -29,8 +32,12 @@
 //! # The cleaner truncates twice, in order
 //!
 //! ```java
-//! if ( cleanString.contains(" ") ) { cleanString = cleanString.substring(0, cleanString.indexOf(" ")); }
-//! if ( cleanString.contains("\t")) { cleanString = cleanString.substring(0, cleanString.indexOf("\t")); }
+//! if ( cleanString.contains(" ") ) {
+//!     cleanString = cleanString.substring(0, cleanString.indexOf(" "));
+//! }
+//! if ( cleanString.contains("\t")) {
+//!     cleanString = cleanString.substring(0, cleanString.indexOf("\t"));
+//! }
 //! ```
 //!
 //! The tab test runs on the string the space test already shortened, so `<sum> <name>\t<x>` is cut
@@ -42,6 +49,16 @@
 //! all-or-nothing test on the two testing arguments. So passing only the sha256 override is
 //! reported as a missing DATA SOURCE rather than as a missing pair, which is not what the argument
 //! it named was about.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&str` is a borrowed, read-only string and `String` an owned one; `format!` is
+//!   `String.format`, with `{name}` substituting the variable `name` and `{month:02}` meaning
+//!   `%02d`.
+//! - `Option<T>` is "a value or nothing" (`Some(x)` or `None`), which is how a nullable Java
+//!   argument such as `outputFile` arrives here.
+//! - `Result<T, E>` is "a value or an error"; an `Err` is a `UserException` the reference throws.
+//! - `match` must cover every case of what it inspects; the compiler refuses one that does not.
 
 use std::path::{Path, PathBuf};
 
@@ -58,12 +75,15 @@ pub const DS_EXTENSION: &str = ".tar.gz";
 /// `DataSourceUtils.DS_CHECKSUM_EXTENSION`.
 pub const DS_CHECKSUM_EXTENSION: &str = ".sha256";
 
-/// `MAX_MAJOR_VERSION_NUMBER`, `MAX_MINOR_VERSION_NUMBER` and `MAX_DATE`.
+/// `MAX_MAJOR_VERSION_NUMBER`, `MAX_MINOR_VERSION_NUMBER` and `MAX_DATE`, as
+/// `(major, minor, year, month, day)`: `LocalDate.of(2023, Month.SEPTEMBER, 8)` is the date.
 pub const MAX_VERSION: (i32, i32, i32, u32, u32) = (1, 8, 2023, 9, 8);
-/// `MIN_MAJOR_VERSION_NUMBER`, `MIN_MINOR_VERSION_NUMBER` and `MIN_DATE`.
+/// `MIN_MAJOR_VERSION_NUMBER`, `MIN_MINOR_VERSION_NUMBER` and `MIN_DATE`, in the same shape:
+/// `LocalDate.of(2019, Month.JANUARY, 24)`.
 pub const MIN_VERSION: (i32, i32, i32, u32, u32) = (1, 6, 2019, 1, 24);
 
-/// `getNewDataSourceVersionString`: `v%d.%d.hg%d.%d%02d%02d`.
+/// `getNewDataSourceVersionString`: `v%d.%d.hg%d.%d%02d%02d`, the year, the month and the day
+/// coming from `date.getYear()`, `date.getMonthValue()` and `date.getDayOfMonth()`.
 pub fn new_data_source_version_string(
     major: i32,
     minor: i32,
@@ -98,7 +118,7 @@ pub fn min_version_string() -> String {
     data_source_version_string(major, minor, year, month, day)
 }
 
-/// Which bundle a run is after.
+/// Which bundle a run is after: `--somatic` or `--germline`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DataSourceKind {
     Somatic,
@@ -106,6 +126,8 @@ pub enum DataSourceKind {
 }
 
 impl DataSourceKind {
+    /// The name modifier appended to the base url: `DS_SOMATIC_NAME_MODIFIER` or
+    /// `DS_GERMLINE_NAME_MODIFIER`.
     pub fn modifier(self) -> &'static str {
         match self {
             DataSourceKind::Somatic => DS_SOMATIC_NAME_MODIFIER,
@@ -116,6 +138,11 @@ impl DataSourceKind {
 
 /// The base url a bundle is fetched from, which is where the reference number ends up INSIDE the
 /// version string rather than beside it.
+///
+/// `HG38_BASE_URL` is `DATA_SOURCES_BUCKET_PATH + DATA_SOURCES_NAME_PREFIX + "." +
+/// getDataSourceMaxVersionString(38)` (each name qualified by `DataSourceUtils.` in the Java).
+/// The Java holds one such constant per reference, each followed by the somatic or germline
+/// modifier; this builds the same string for either reference number.
 pub fn base_url(kind: DataSourceKind, reference: i32) -> String {
     format!(
         "{DATA_SOURCES_BUCKET_PATH}{DATA_SOURCES_NAME_PREFIX}.{}{}",
@@ -124,15 +151,21 @@ pub fn base_url(kind: DataSourceKind, reference: i32) -> String {
     )
 }
 
+/// The `*_GCLOUD_DATASOURCES_PATH` constants: the base url with `DS_EXTENSION`.
 pub fn data_sources_path(kind: DataSourceKind, reference: i32) -> String {
     format!("{}{DS_EXTENSION}", base_url(kind, reference))
 }
 
+/// The `*_GCLOUD_DATASOURCES_SHA256_PATH` constants: the base url with `DS_CHECKSUM_EXTENSION`.
 pub fn checksum_path(kind: DataSourceKind, reference: i32) -> String {
     format!("{}{DS_CHECKSUM_EXTENSION}", base_url(kind, reference))
 }
 
 /// `dataSourceDescription`, which is what the run logs before it starts.
+///
+/// Any reference other than 38 is described as HG19, which is the Java's `else` branch: the two
+/// flags are mutually exclusive and one is required. The testing override's `"TESTING"` is not
+/// produced here.
 pub fn description(kind: DataSourceKind, reference: i32) -> String {
     let reference = if reference == 38 { "HG38" } else { "HG19" };
     let kind = match kind {
@@ -158,10 +191,12 @@ pub enum DownloadError {
 }
 
 impl DownloadError {
+    /// Every refusal here is a plain `UserException`.
     pub fn java_class(&self) -> &'static str {
         "org.broadinstitute.hellbender.exceptions.UserException"
     }
 
+    /// The exception's message, as `getMessage()` would return it.
     pub fn message(&self) -> String {
         match self {
             DownloadError::NoDataSource => {
@@ -186,7 +221,7 @@ impl DownloadError {
     }
 }
 
-/// The arguments `onStartup` looks at.
+/// The arguments `onStartup` looks at. A testing path that is `None` is the Java's `null`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Arguments {
     pub somatic: bool,
@@ -210,6 +245,7 @@ pub fn startup(arguments: &Arguments) -> Result<(), DownloadError> {
     if !arguments.hg38 && !arguments.hg19 && !testing {
         return Err(DownloadError::NoReference);
     }
+    // `!=` on the two presence flags is the Java's two-sided "one null and the other not" test.
     if testing != arguments.testing_sha256_path.is_some() {
         return Err(DownloadError::IncompleteTestingArguments);
     }
@@ -218,8 +254,13 @@ pub fn startup(arguments: &Arguments) -> Result<(), DownloadError> {
 
 /// `cleanExpectedSha256SumString`: trim, lower-case, cut at the first space, then cut what is left
 /// at the first tab.
+///
+/// Java's `trim()` removes every character at or below U+0020 and Rust's `trim()` removes Unicode
+/// white space; the two agree on spaces, tabs and line ends, which is what a checksum line holds.
 pub fn clean_expected_sha256(line: &str) -> String {
     let mut clean = line.trim().to_lowercase();
+    // `if let Some(i) = ..` runs its block only when `find` found something: `contains` and
+    // `indexOf` in one step. The tab test then runs on the already shortened string.
     if let Some(index) = clean.find(' ') {
         clean = clean[..index].to_string();
     }
@@ -231,6 +272,13 @@ pub fn clean_expected_sha256(line: &str) -> String {
 
 /// `readSha256SumFromPath`: the FIRST line of the file, cleaned, or a refusal naming the path as a
 /// URI.
+///
+/// ```java
+/// expectedSha256Sum = Files.lines(sha256Path).findFirst().orElse(null);
+/// ```
+///
+/// The caller passes the file's text; an empty file has no first line and is refused, while a
+/// file whose first line is blank yields an empty sum, as in the Java.
 pub fn expected_sha256(contents: &str, uri: &str) -> Result<String, DownloadError> {
     match contents.lines().next() {
         Some(line) => Ok(clean_expected_sha256(line)),
@@ -241,6 +289,8 @@ pub fn expected_sha256(contents: &str, uri: &str) -> Result<String, DownloadErro
 }
 
 /// `getOutputLocation`: the given file, or the SOURCE'S FILE NAME as a relative path.
+///
+/// The `expect` cannot fire for the paths this tool builds, all of which end in a file name.
 pub fn output_location(output_file: Option<&Path>, data_sources_path: &Path) -> PathBuf {
     match output_file {
         Some(path) => path.to_path_buf(),
@@ -253,11 +303,16 @@ pub fn output_location(output_file: Option<&Path>, data_sources_path: &Path) -> 
 }
 
 /// `isDestFileValid`, which lower-cases both sides even though only one of them can be upper.
+///
+/// ```java
+/// return checksum.toLowerCase().equals(expectedChecksum.toLowerCase());
+/// ```
 pub fn is_dest_file_valid(checksum: &str, expected: &str) -> bool {
     checksum.to_lowercase() == expected.to_lowercase()
 }
 
-/// `validateIntegrity`, which reports the two sums AS THEY ARE rather than as it compared them.
+/// `validateIntegrity`, which reports the two sums AS THEY ARE rather than as it compared them:
+/// `results.getChecksum() + " != " + results.getExpectedChecksum()`.
 pub fn validate_integrity(checksum: &str, expected: &str) -> Result<(), DownloadError> {
     if is_dest_file_valid(checksum, expected) {
         Ok(())
@@ -270,6 +325,9 @@ pub fn validate_integrity(checksum: &str, expected: &str) -> Result<(), Download
 }
 
 /// `DatatypeConverter.printHexBinary`, which is upper case with no separator.
+///
+/// `NioFileCopierWithProgressMeter` applies it to `messageDigest.digest()`. `{byte:02X}` prints
+/// each byte as two upper-case hex digits.
 pub fn print_hex_binary(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02X}")).collect()
 }

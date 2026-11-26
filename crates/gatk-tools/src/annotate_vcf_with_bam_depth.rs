@@ -1,6 +1,6 @@
 //! `AnnotateVcfWithBamDepth`, ported from
 //! `org.broadinstitute.hellbender.tools.walkers.validation.AnnotateVcfWithBamDepth`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `AnnotateVcfWithBamDepth.java` is unchanged since 4.6.2.0).
 //!
 //! Each record is written back out with one INFO field added, counting the reads of a separate bam
 //! that cover it. The count is not a pileup: it is five conditions on the read's own coordinates
@@ -8,10 +8,12 @@
 //!
 //! ```java
 //! if (!read.failsVendorQualityCheck() && !read.isDuplicate() && !read.isUnmapped()
-//!         && read.getEnd() > read.getStart() && new SimpleInterval(read).contains(vc)) {
+//!         && read.getEnd() > read.getStart() && new SimpleInterval(read).contains(vc) ) {
 //!     depth.increment();
 //! }
 //! ```
+//!
+//! (`AnnotateVcfWithBamDepth.java:80-82`; the condition is one line there, broken in two here.)
 //!
 //! # A read one base long is never counted
 //!
@@ -34,13 +36,26 @@
 //!
 //! ```java
 //! final Set<VCFHeaderLine> headerLines = new HashSet<>(inputHeader.getMetaDataInSortedOrder());
-//! headerLines.add(new VCFInfoHeaderLine(POOLED_BAM_DEPTH_ANNOTATION_NAME, 1, Integer, "pooled bam depth"));
+//! headerLines.add(new VCFInfoHeaderLine(POOLED_BAM_DEPTH_ANNOTATION_NAME, 1,
+//!         VCFHeaderLineType.Integer, "pooled bam depth"));
 //! ```
+//!
+//! (`AnnotateVcfWithBamDepth.java:68-69`, the second line broken in two here.)
 //!
 //! The set is a set of **lines**, not of IDs, so an input that already declares `BAM_DEPTH` with a
 //! different description keeps its line and the tool's is added beside it. The output VCF therefore
 //! declares the same INFO ID twice, sorted by description, which is what the golden shows and what
 //! a port deduplicating by ID would silently repair.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Read<'a>` holds a `&'a str`, a borrowed view of a contig name owned elsewhere; `'a` names
+//!   how long that borrow lasts, and the compiler checks no `Read` outlives the name.
+//! - `flags & DUPLICATE != 0` tests one SAM flag bit: in Rust `&` binds tighter than `!=`, the
+//!   opposite of Java, so no parentheses are needed.
+//! - `x as i32` converts an integer to Java's `int`, truncating a value that does not fit.
+//! - `.iter().filter(..).count()` is Java's `stream().filter(..).count()`; `.retain(..)` is
+//!   `removeIf` with the test negated: it keeps what the closure accepts.
 
 use htsjdk_vcf::variant::VariantContext;
 
@@ -57,11 +72,13 @@ pub const BAM_DEPTH_HEADER_LINE: &str =
 /// As much of a read as the five conditions look at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Read<'a> {
+    /// The contig the read is aligned to.
     pub contig: &'a str,
     /// 1-based, inclusive.
     pub start: i32,
     /// 1-based, inclusive, from the cigar's reference length.
     pub end: i32,
+    /// The SAM `FLAG` field.
     pub flags: u16,
 }
 
@@ -93,13 +110,17 @@ pub fn counts_towards_depth(read: &Read, variant: &VariantContext) -> bool {
         && !read.is_unmapped()
         // A one-base read is excluded by this strict inequality.
         && read.end > read.start
-        // Containment of the variant's whole span, not overlap.
+        // Containment of the variant's whole span, not overlap: `SimpleInterval.contains` is the
+    // same contig, the read's start at or before the variant's, and its end at or after the
+    // variant's `getEnd()`, which is `stop`. The reference's positions are `int`s, so the
+    // `as i32` casts lose nothing for any position it can hold.
         && read.contig == variant.contig
         && read.start <= variant.start as i32
         && variant.stop as i32 <= read.end
 }
 
-/// The `BAM_DEPTH` of one record.
+/// The `BAM_DEPTH` of one record: the reads that pass, counted. `reads` is what the
+/// `ReadsContext` for the record holds; the `as i32` is the reference's `depth.intValue()`.
 pub fn bam_depth(reads: &[Read], variant: &VariantContext) -> i32 {
     reads
         .iter()
@@ -109,6 +130,9 @@ pub fn bam_depth(reads: &[Read], variant: &VariantContext) -> i32 {
 
 /// `new VariantContextBuilder(vc).attribute(BAM_DEPTH, depth)`: the annotation replaces whatever
 /// the record carried, and is written even when it is zero.
+///
+/// The old value is removed and the new one appended, so `BAM_DEPTH` moves to the end of the
+/// record's INFO list whatever its position was.
 pub fn annotate(variant: &VariantContext, depth: i32) -> VariantContext {
     let mut annotated = variant.clone();
     annotated.attributes.retain(|(key, _)| key != BAM_DEPTH);
@@ -124,6 +148,9 @@ pub fn annotate(variant: &VariantContext, depth: i32) -> VariantContext {
 /// The input's lines are kept as they are and the tool's `BAM_DEPTH` line is added beside them, so
 /// an input already declaring `BAM_DEPTH` produces **two** lines with that ID. Only an exactly
 /// identical line collapses, the set being a set of lines.
+///
+/// The `contains` checks reproduce the set's de-duplication; the order returned is first seen,
+/// not the order the file writes.
 pub fn header_lines(input_lines: &[String]) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
     for line in input_lines {

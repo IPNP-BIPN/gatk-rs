@@ -1,5 +1,5 @@
 //! Ported from `org.broadinstitute.hellbender.tools.walkers.fasta.FastaAlternateReferenceMaker`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `FastaAlternateReferenceMaker.java` is unchanged since 4.6.2.0).
 //!
 //! [`crate::fasta_reference_maker`] with a VCF applied: every locus of the traversal contributes
 //! zero, one or several bases depending on the record at it and on state carried from the loci
@@ -24,6 +24,18 @@
 //! string `" "`, which the FASTA writer then refuses. The port reproduces the refusal rather than
 //! inventing a base: `fasta-alternate-reference-maker`'s golden carries the exception, so this is
 //! measured behaviour and not a guess about intent.
+//!
+//! # Reading this file without reading Rust
+//!
+//! The FASTA bookkeeping (`Result`, `?`, `Option`, borrowing) is explained once in
+//! [`crate::fasta_reference_maker`]. Three more pieces recur here:
+//!
+//! - `u8` is an unsigned byte, Java's `byte` without the sign; `b'N'` is the byte literal `'N'`,
+//!   and `Vec<u8>` is a growable `byte[]`.
+//! - `match` is Java's `switch`, except that the compiler refuses one that misses a case, and
+//!   `_` is its `default`. `matches!(x, A | B)` is a one-line `match` that answers a boolean.
+//! - `.iter().any(|x| ...)`, `.find(..)`, `.map(..)` are Java's stream `anyMatch`, `filter` plus
+//!   `findFirst`, and `map`; `|x| ...` is a lambda.
 
 use htsjdk_bam::fasta_writer::{FastaOutputs, FastaReferenceWriter};
 use htsjdk_vcf::variant::VariantContext;
@@ -87,6 +99,10 @@ pub enum AlternateError {
 ///
 /// The two bases are ordered first, so the table is only half written; anything that is not a plain
 /// `ACGT` gives `N`, and two equal bases give themselves rather than a code.
+///
+/// The reference compares the ordered first base case-sensitively, `if (base1 == Base.A.base)`,
+/// where this port upper-cases it first. The two differ only on lower-case bases, which htsjdk's
+/// `SimpleAllele` constructor never leaves in an allele (`StringUtil.toUpperCase(bases);`).
 pub fn bases_to_iupac(first: u8, second: u8) -> u8 {
     if second < first {
         return bases_to_iupac(second, first);
@@ -118,7 +134,8 @@ fn is_regular_base(base: u8) -> bool {
     matches!(base.to_ascii_uppercase(), b'A' | b'C' | b'G' | b'T')
 }
 
-/// `VariantContext.isSimpleIndel`.
+/// `VariantContext.isSimpleIndel`: biallelic, lengths differing, one allele a single base, and
+/// both sharing their first base (the VCF padding base).
 fn is_simple_indel(variant: &VariantContext) -> bool {
     if variant.alleles.len() != 2 {
         return false;
@@ -153,6 +170,17 @@ fn is_snp(variant: &VariantContext) -> bool {
 
 /// `getFirstConcreteAltAllele`: the first alternate that is neither symbolic nor the spanning
 /// deletion.
+///
+/// ```java
+/// return altAlleles.stream()
+///         .filter(allele -> !allele.isSymbolic())
+///         .filter(allele -> !GATKVCFConstants.isSpanningDeletion(allele))
+///         .filter(Allele::isCalled)
+///         .findFirst();
+/// ```
+///
+/// The reference's third filter, `isCalled`, is not repeated: a no-call is never an alternate
+/// allele of a decoded record. `.skip(1)` drops the reference allele, which is always first.
 fn first_concrete_alternate(variant: &VariantContext) -> Option<String> {
     variant
         .alleles
@@ -167,6 +195,10 @@ fn first_concrete_alternate(variant: &VariantContext) -> Option<String> {
 /// A spanning deletion in the genotype is handled before anything else, and a HOM VAR spanning
 /// deletion answers `EMPTY_BASE` -- a space, which the writer refuses. That is the reference's
 /// behaviour and the golden carries the crash.
+///
+/// `alleles` holds each allele's `getBaseString()`, so a no-call is `"."`. The reference decides
+/// heterozygosity with `genotype.isHet()`; see the note at the test below for where the port's
+/// two-allele test is narrower.
 fn iupac_base(alleles: &[String]) -> Vec<u8> {
     let spanning = alleles.iter().any(|allele| allele == "*");
     if spanning {
@@ -182,6 +214,8 @@ fn iupac_base(alleles: &[String]) -> Vec<u8> {
         return kept.into_bytes();
     }
     // `isHet` is false for a hom ref and a hom var alike, and both take the first allele whole.
+    // It is also false for a genotype with one no-call (`0/.`, type MIXED), which this test
+    // counts as het; and it can be true for a ploidy other than two, which this test never is.
     let het = alleles.len() == 2 && alleles[0] != alleles[1];
     if !het {
         return alleles[0].clone().into_bytes();
@@ -192,7 +226,8 @@ fn iupac_base(alleles: &[String]) -> Vec<u8> {
     )]
 }
 
-/// The genotype of one sample, as this tool reads it.
+/// The genotype of one sample, as this tool reads it: `vc.getGenotype(iupacSample)`'s alleles as
+/// base strings, or `None` when the record carries no such sample (Java's `null`).
 fn genotype_alleles(variant: &VariantContext, sample: &str) -> Option<Vec<String>> {
     variant
         .genotypes
@@ -220,6 +255,16 @@ pub struct AlternateArguments<'a> {
 
 /// `onTraversalStart`'s two checks, which run before the reference is opened.
 ///
+/// The reference's line, broken here to fit:
+///
+/// ```java
+/// throw new CommandLineException("Cannot specify --" + SNP_MASK_PRIORITY_LONG_NAME
+///         + " without " + " --" + SNP_MASK_LONG_NAME);
+/// ```
+///
+/// That concatenation (`" without " + " --"`) is where [`ArgumentError::message`]'s double space
+/// comes from.
+///
 /// `samples` is the VCF header's sample list, which is where the second check looks: a sample that
 /// appears in no record but is declared in the header passes.
 pub fn check_arguments(
@@ -238,6 +283,9 @@ pub fn check_arguments(
 }
 
 /// `doWork`: the FASTA, its index and its dictionary.
+///
+/// `variants` is the `--variant` VCF already decoded and `samples` its header's sample names;
+/// the run itself is [`run_over`].
 pub fn run(
     reference: &mut ReferenceFileSource,
     intervals: &IntervalArguments,
@@ -287,6 +335,9 @@ pub fn run_over(
         })
         .map_err(|error| AlternateError::Maker(MakerError::Traversal(error)))?;
 
+    // `deletionBasesRemaining`, the one field `handlePosition` carries between loci. It is
+    // passed below as `&mut`, a writable borrow, which is how a Rust function updates a caller's
+    // variable where Java would update a field.
     let mut deletion_bases_remaining = 0i32;
     let mut count = 0usize;
     let mut last: Option<SimpleInterval> = None;
@@ -345,6 +396,14 @@ pub fn run_over(
 }
 
 /// `handlePosition`: what this locus contributes.
+///
+/// The order of the tests is the reference's: a pending deletion, then the mask if it has
+/// priority, then the first unfiltered call starting here that is a simple deletion, a simple
+/// insertion or a SNP, then the mask without priority, then the reference base. A call of any
+/// other type (a MNP, a complex indel) falls through to the mask.
+///
+/// The reference returns `baseToByteArray(base)`, whose `switch` maps each base to a one-byte
+/// array holding that same base, so `vec![base]` writes the same byte.
 fn handle_position(
     interval: &SimpleInterval,
     base: u8,
@@ -362,6 +421,10 @@ fn handle_position(
     }
 
     for variant in variants {
+        // `features.getValues(variants)` hands the reference only the records overlapping this
+        // locus; the contig test is what stands for that here, and the start test is the
+        // reference's `vc.getStart() != interval.getStart()`. `as i32` converts the record's
+        // start to the interval's 32-bit `int` type.
         if variant.contig != interval.contig || variant.start as i32 != interval.start {
             continue;
         }
@@ -374,6 +437,8 @@ fn handle_position(
             return vec![base];
         }
         if is_simple_insertion(variant) || is_snp(variant) {
+            // `unwrap_or_else` is Java's `Optional.orElseGet`: the alternate, or the fallback the
+            // closure builds, `Allele.create(EMPTY_BASE, false)` in the reference.
             let allele = first_concrete_alternate(variant).unwrap_or_else(|| {
                 String::from_utf8(vec![EMPTY_BASE]).expect("a space is a string")
             });
@@ -400,6 +465,15 @@ fn handle_position(
 }
 
 /// `isMasked`: any mask record starting at this locus, filtered or not.
+///
+/// ```java
+/// return features.getValues(snpmask).stream().anyMatch(VariantContext::isSNP);
+/// ```
+///
+/// The reference also requires the record to be a SNP; this port does not test its type.
+///
+/// `let Some(mask) = mask else { return false; };` unwraps the `Option` or takes the early exit:
+/// no `--snp-mask` means nothing is masked.
 fn is_masked(interval: &SimpleInterval, mask: Option<&[VariantContext]>) -> bool {
     let Some(mask) = mask else {
         return false;
@@ -427,7 +501,7 @@ fn finalize(
         .map_err(|error| AlternateError::Maker(MakerError::Writer(error)))
 }
 
-/// `Locatable.withinDistanceOf(interval, 1)`.
+/// `Locatable.withinDistanceOf(interval, 1)`, as in [`crate::fasta_reference_maker`].
 fn within_distance_of(left: &SimpleInterval, right: &SimpleInterval) -> bool {
     left.contig == right.contig && left.start <= right.end + 1 && right.start <= left.end + 1
 }

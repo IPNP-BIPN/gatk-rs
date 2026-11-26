@@ -1,4 +1,5 @@
-//! `FilterFuncotations`, ported from the tool and its `filtrationRules` package (GATK 4.6.2.0).
+//! `FilterFuncotations`, ported from the tool and its `filtrationRules` package (GATK 4.7.0.0;
+//! `FilterFuncotations.java` and every file of `filtrationRules` are unchanged since 4.6.2.0).
 //!
 //! A Funcotated VCF read back and marked with the clinical-significance rules that match it. Five
 //! filters run over the funcotations of each transcript; what comes out is one INFO field naming
@@ -16,6 +17,10 @@
 //! so a filter with no rules is false rather than true, and the funcotations a rule sees have
 //! already had their empty values pruned, which is why a missing key and an empty one are the same
 //! thing here.
+//!
+//! The `reduce` does not stop at the first false: `map` runs every rule. The port writes the
+//! rules as `a && b && c`, which stops at the first false, so the two orders differ only where a
+//! later rule fails rather than answering, which is the gnomAD frequency rule's parse.
 //!
 //! # Three kinds of missing ExAC data all read as a frequency of zero
 //!
@@ -45,21 +50,38 @@
 //! ONCE PER TRANSCRIPT that names the gene, so a variant whose funcotations name the same gene on
 //! two transcripts reaches a list of two on its own; [`compound_het_variants`] keeps that, though
 //! no case in the golden has two transcripts.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<bool, NumberFormatError>` is "a value or an error", how this file models the
+//!   `NumberFormatException` the gnomAD path lets out. `?` after a call hands its error straight
+//!   back to the caller, Java's `throws` at that one call site; `Ok(x)` is the normal return.
+//! - `Option<f64>` is a value or nothing (`Some(x)` / `None`); `.unwrap_or(0.0)` is
+//!   `Optional.orElse(0d)`.
+//! - `.iter().filter(..).map(..).collect()` and `.any(..)` are Java's stream `filter`, `map`,
+//!   `collect` and `anyMatch`; `|x| ...` is a lambda.
+//! - `&str` is a borrowed, read-only string; `String` is an owned one. `format!` is
+//!   `String.format`, with `{name}` naming a variable in scope.
+//! - `match` is an exhaustive `switch` that can also take apart a tuple: `(Some(Err(_)), _)`
+//!   reads "the first is present and failed, the second is anything".
 
 use gatk_engine::java_hash::hash_set_order;
 
-/// `FilterFuncotationsConstants`.
+/// `FilterFuncotationsConstants.CLINSIG_INFO_KEY`, and the three constants after it.
 pub const CLINSIG_INFO_KEY: &str = "CLINSIG";
 pub const CLINSIG_INFO_NOT_SIGNIFICANT: &str = "NONE";
 pub const NOT_CLINSIG_FILTER: &str = "NOT_CLINSIG";
 pub const FILTER_DELIMITER: &str = ",";
 
-/// `AutosomalRecessiveConstants`.
+/// `AutosomalRecessiveConstants.AR_INFO_VALUE`, and `AUTOSOMAL_RECESSIVE_GENES` after it.
 pub const AR_INFO_VALUE: &str = "AR";
 pub const AUTOSOMAL_RECESSIVE_GENES: [&str; 2] = ["ATP7B", "MUTYH"];
 
+/// `ClinVarFilter.CLINSIG_INFO_VALUE`.
 pub const CLINVAR_INFO_VALUE: &str = "CLINVAR";
+/// `LofFilter.CLINSIG_INFO_VALUE`.
 pub const LOF_INFO_VALUE: &str = "LOF";
+/// `LmmFilter.CLINSIG_INFO_VALUE`.
 pub const LMM_INFO_VALUE: &str = "LMM";
 
 const CLINVAR_MAX_MAF: f64 = 0.05;
@@ -84,10 +106,13 @@ const LOF_CLASSIFICATIONS: [&str; 5] = [
     "SPLICE_SITE",
 ];
 
+/// `AlleleFrequencyExacUtils.ExacSubPopulation`, in declaration order (`values()` order).
 const EXAC_SUB_POPULATIONS: [&str; 7] = ["AFR", "AMR", "EAS", "FIN", "NFE", "OTH", "SAS"];
 
+/// `AlleleFrequencyGnomadUtils.GnomadDataset`, in declaration order.
 const GNOMAD_DATASETS: [&str; 2] = ["gnomAD_genome", "gnomAD_exome"];
 
+/// `AlleleFrequencyGnomadUtils.GnomadSubpopSuffixes`, in declaration order.
 const GNOMAD_SUB_POPULATIONS: [&str; 37] = [
     "afr",
     "afr_female",
@@ -137,6 +162,7 @@ pub enum Reference {
 }
 
 impl Reference {
+    /// `Reference.gencodeVersion`: 19 for b37 and hg19, 27 for hg38.
     pub fn gencode_version(&self) -> i32 {
         match self {
             Reference::B37 | Reference::Hg19 => 19,
@@ -144,6 +170,7 @@ impl Reference {
         }
     }
 
+    /// `"Gencode_" + reference.getGencodeVersion() + "_" + suffix`, as each filter builds it.
     fn key(&self, suffix: &str) -> String {
         format!("Gencode_{}_{suffix}", self.gencode_version())
     }
@@ -158,6 +185,9 @@ pub enum AlleleFrequencySource {
 
 /// One transcript's funcotations, already pruned of empty values as
 /// `FilterFuncotationsUtils.getTranscriptFuncotations` prunes them.
+///
+/// The reference hands each rule a `Set<Map.Entry<String, String>>`; this keeps the pairs in a
+/// list in the order given, and every lookup below scans it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Funcotations {
     entries: Vec<(String, String)>,
@@ -175,10 +205,12 @@ impl Funcotations {
         }
     }
 
+    /// `FuncotationFilter.containsKey`: any entry with this key.
     pub fn contains_key(&self, key: &str) -> bool {
         self.entries.iter().any(|(name, _)| name == key)
     }
 
+    /// Every value under this key, the stream `filter(entry -> entry.getKey().equals(key))`.
     pub fn get(&self, key: &str) -> Vec<&str> {
         self.entries
             .iter()
@@ -188,6 +220,9 @@ impl Funcotations {
     }
 
     /// `matchOnKeyOrDefault`, which hands back the default when nothing matched.
+    ///
+    /// The `'a` marks say the returned strings borrow from `self` and `default`, so neither may
+    /// be dropped while the list is in use; Java's garbage collector makes that implicit.
     fn matches_or_default<'a>(&'a self, key: &str, default: &'a str) -> Vec<&'a str> {
         let matched = self.get(key);
         if matched.is_empty() {
@@ -198,7 +233,8 @@ impl Funcotations {
     }
 }
 
-/// A variant, reduced to what the rules ask it.
+/// A variant, reduced to what the rules ask it: its coordinates and alleles, and
+/// `getHetCount()` and `getHomVarCount()`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Variant {
     pub contig: String,
@@ -211,6 +247,20 @@ pub struct Variant {
 }
 
 /// What `variantContextsMatch` compares, which is everything but the attributes.
+///
+/// ```java
+/// return v1.getContig().equals(v2.getContig())
+///         && v1.getStart() == v2.getStart()
+///         && v1.getEnd() == v2.getEnd()
+///         && v1.getReference() == v2.getReference()
+///         && v1.getAlternateAlleles().size() == v2.getAlternateAlleles().size()
+///         && v1.getAlternateAlleles().containsAll(v2.getAlternateAlleles());
+/// ```
+///
+/// The reference compares the reference alleles with `==`, object identity. htsjdk's
+/// `Allele.create` returns a shared constant for a single base and a `new SimpleAllele` for
+/// anything longer, and the two passes decode each record separately, so in the reference a
+/// multi-base reference allele never matches. [`VariantKey::matches`] compares the bases instead.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VariantKey {
     pub contig: String,
@@ -221,6 +271,7 @@ pub struct VariantKey {
 }
 
 impl Variant {
+    /// The fields `variantContextsMatch` reads, copied out (`.clone()` is an explicit copy).
     pub fn key(&self) -> VariantKey {
         VariantKey {
             contig: self.contig.clone(),
@@ -248,6 +299,8 @@ impl VariantKey {
 }
 
 /// A gnomAD frequency that does not parse, which the reference does not catch.
+///
+/// `java_class` and `message` are the exception's class and its `getMessage()`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NumberFormatError {
     pub value: String,
@@ -264,6 +317,19 @@ impl NumberFormatError {
 }
 
 /// `AlleleFrequencyExacUtils.getMaxMinorAlleleFreq`, which never fails.
+///
+/// **How**: for each sub-population whose `ExAC_AC_` key is present, `AC / AN`, with a missing
+/// value taking `orElse(0d)` or `orElse(0)` and a parse failure caught:
+///
+/// ```java
+/// } catch (java.lang.NumberFormatException e) {
+///     logger.warn("Found an inconsistency in the funcotation annotations: " + e.getMessage());
+///     return 0d;
+/// ```
+///
+/// The values are parsed with Rust's `parse`, not `Double.valueOf` and `Integer.valueOf`, so
+/// the two accept the same plain decimals but not the same edge spellings (Java takes `1d`,
+/// Rust takes `inf`). The maximum is a running `>=` scan standing for `.max(Double::compareTo)`.
 pub fn exac_max_maf(funcotations: &Funcotations) -> f64 {
     let mut max: Option<f64> = None;
     for population in EXAC_SUB_POPULATIONS {
@@ -272,6 +338,9 @@ pub fn exac_max_maf(funcotations: &Funcotations) -> f64 {
             continue;
         }
         let number_key = format!("ExAC_AN_{population}");
+        // The two parses are paired in a tuple so that one `match` can test both: `.first()` is
+        // the first value or `None`, and `.map(|v| v.parse())` turns a present value into a
+        // `Result`, so each side is `None`, `Some(Ok(x))` or `Some(Err(_))`.
         let frequency = match (
             funcotations
                 .get(&count_key)
@@ -286,6 +355,8 @@ pub fn exac_max_maf(funcotations: &Funcotations) -> f64 {
             // answers zero.
             (Some(Err(_)), _) | (_, Some(Err(_))) => 0.0,
             (count, number) => {
+                // `.expect("checked")` unwraps the `Ok`; the arm above has already taken every
+                // `Err`, so it cannot fire.
                 let count = count.map(|value| value.expect("checked")).unwrap_or(0.0);
                 let number = number.map(|value| value.expect("checked")).unwrap_or(0);
                 if number == 0 {
@@ -304,7 +375,8 @@ pub fn exac_max_maf(funcotations: &Funcotations) -> f64 {
     max.unwrap_or(0.0)
 }
 
-/// `AlleleFrequencyGnomadUtils.datasetsPresent`.
+/// `AlleleFrequencyGnomadUtils.datasetsPresent`: a dataset with no `_FILTER` funcotation, or one
+/// of whose `_FILTER` values is `PASS`.
 fn gnomad_datasets_present(funcotations: &Funcotations) -> Vec<&'static str> {
     GNOMAD_DATASETS
         .into_iter()
@@ -322,6 +394,13 @@ pub fn gnomad_all_frequencies_filtered(funcotations: &Funcotations) -> bool {
 }
 
 /// `AlleleFrequencyGnomadUtils.getMaxMinorAlleleFreq`, which parses without catching.
+///
+/// ```java
+/// .flatMapToDouble(subpop -> funcotations.get(subpop).stream().mapToDouble(Double::valueOf))
+/// ```
+///
+/// The datasets and sub-populations are walked in their enum order, and the first value that
+/// does not parse is the one the exception names. `?` after the parse returns that error.
 pub fn gnomad_max_maf(funcotations: &Funcotations) -> Result<f64, NumberFormatError> {
     let mut max: Option<f64> = None;
     for dataset in gnomad_datasets_present(funcotations) {
@@ -341,7 +420,11 @@ pub fn gnomad_max_maf(funcotations: &Funcotations) -> Result<f64, NumberFormatEr
     Ok(max.unwrap_or(0.0))
 }
 
-/// `AlleleFrequencyUtils.buildMaxMafRule`.
+/// `AlleleFrequencyUtils.buildMaxMafRule`, the rule applied rather than built.
+///
+/// For gnomAD the reference writes
+/// `!AlleleFrequencyGnomadUtils.allFrequenciesFiltered(condensedFuncotations) && ...`, whose `&&`
+/// stops early as this one does: with every dataset filtered nothing is parsed, so nothing throws.
 pub fn max_maf_rule(
     funcotations: &Funcotations,
     max_maf: f64,
@@ -354,7 +437,7 @@ pub fn max_maf_rule(
     }
 }
 
-/// `ClinVarFilter`.
+/// `ClinVarFilter`: on the ACMG list, a matching ClinVar significance, and the 5% MAF rule.
 pub fn clinvar_filter(
     funcotations: &Funcotations,
     source: AlleleFrequencySource,
@@ -368,7 +451,7 @@ pub fn clinvar_filter(
     Ok(on_acmg_list && significant && max_maf_rule(funcotations, CLINVAR_MAX_MAF, source)?)
 }
 
-/// `LofFilter`.
+/// `LofFilter`: a loss-of-function classification, a `YES` LOF mechanism, and the 1% MAF rule.
 pub fn lof_filter(
     funcotations: &Funcotations,
     reference: Reference,
@@ -385,7 +468,8 @@ pub fn lof_filter(
     Ok(classified && mechanism && max_maf_rule(funcotations, LOF_MAX_MAF, source)?)
 }
 
-/// `LmmFilter`, whose flag is read with `Boolean.valueOf`.
+/// `LmmFilter`, whose flag is read with `Boolean.valueOf`, which is true exactly for `true` in
+/// any case; the values are then or-ed together.
 pub fn lmm_filter(funcotations: &Funcotations) -> bool {
     funcotations
         .matches_or_default(LMM_FLAGGED, "false")
@@ -408,7 +492,11 @@ pub fn ar_homvar_filter(
 }
 
 /// The first pass of `ArHetvarFilter`: the variants of every autosomal recessive gene that carries
-/// more than one het variant.
+/// more than one het variant (`buildArHetByGene`, then `afterFirstPass`).
+///
+/// `by_gene` stands for the reference's `HashMap<String, List<VariantContext>>`. Its order only
+/// decides the order of the result, which is then searched with `any`, so a list of pairs in
+/// first-seen order gives the same answers.
 ///
 /// The reference appends a variant once per transcript whose funcotations name the gene, so a
 /// variant naming the same gene on two transcripts fills a list of two by itself.
@@ -431,6 +519,8 @@ pub fn compound_het_variants(
             if !AUTOSOMAL_RECESSIVE_GENES.contains(&gene.as_str()) || variant.het_count <= 0 {
                 continue;
             }
+            // `iter_mut` hands out writable references, so `keys.push` appends to the list
+            // in place.
             match by_gene.iter_mut().find(|(name, _)| *name == gene) {
                 Some((_, keys)) => keys.push(variant.key()),
                 None => by_gene.push((gene, vec![variant.key()])),
@@ -444,7 +534,8 @@ pub fn compound_het_variants(
         .collect()
 }
 
-/// `ArHetvarFilter`'s rule.
+/// `ArHetvarFilter`'s rule, `arHetvarRule`, which ignores the funcotations and asks only whether
+/// the variant is among the first pass's compound hets.
 pub fn ar_hetvar_filter(compound: &[VariantKey], variant: &Variant) -> bool {
     let key = variant.key();
     compound.iter().any(|candidate| candidate.matches(&key))
@@ -452,6 +543,11 @@ pub fn ar_hetvar_filter(compound: &[VariantKey], variant: &Variant) -> bool {
 
 /// The names of every filter matching any transcript of a variant, in the order the `HashSet`
 /// they were collected into hands them over.
+///
+/// `getMatchingFilters`, with the second-pass filters in their registration order (ClinVar,
+/// LOF, LMM, AR hom-var, AR het-var). The two AR filters push the one name `AR`. Names are kept
+/// unique in first-seen order and then handed to `hash_set_order`, which reproduces the
+/// iteration order of a `java.util.HashSet` built from them.
 pub fn matching_filters(
     transcripts: &[Funcotations],
     variant: &Variant,
@@ -485,6 +581,9 @@ pub fn matching_filters(
 }
 
 /// `applyFilters`: the CLINSIG value, and whether the variant passes.
+///
+/// `true` is `passFilters()`; `false` is the `NOT_CLINSIG` filter. The tuple `(String, bool)`
+/// returns both at once.
 pub fn clinsig(matching: &[String]) -> (String, bool) {
     if matching.is_empty() {
         (CLINSIG_INFO_NOT_SIGNIFICANT.to_string(), false)

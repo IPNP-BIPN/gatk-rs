@@ -1,6 +1,6 @@
 //! `CompareIntervalLists`, ported from
 //! `org.broadinstitute.hellbender.tools.CompareIntervalLists` and `IntervalUtils.equateIntervals`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; both files are unchanged since 4.6.2.0).
 //!
 //! Two interval files, each sorted and `ALL`-merged on its own, walked against one another until
 //! one of them runs out.
@@ -35,6 +35,18 @@
 //! so that pushing leaves the earlier one on top. A test interval strictly inside the master
 //! therefore leaves the master's two remaining pieces in coordinate order, which is what makes the
 //! next comparison meaningful.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[SimpleInterval]` is a borrowed, read-only view of a list; the caller keeps ownership.
+//! - `VecDeque` is a double-ended queue: `pop_front` and `push_front` are `LinkedList.pop` and
+//!   `LinkedList.push`.
+//! - `while let Some(x) = q.pop_front() { .. }` loops while the queue yields an element, which is
+//!   the Java's `while ( ! master.isEmpty() )` and `master.pop()` in one line.
+//! - `let Some(x) = y else { return ..; };` unwraps `y` or returns: here, where the Java's
+//!   `test.pop()` would throw.
+//! - A tuple `(a, b, c)` compares element by element, so `(&right.contig, right.start, right.end)`
+//!   against the same for `left` is a descending sort.
 
 use gatk_engine::interval::SimpleInterval;
 
@@ -70,10 +82,12 @@ fn display(interval: &SimpleInterval) -> String {
     format!("{}:{}-{}", interval.contig, interval.start, interval.end)
 }
 
+/// `GenomeLoc.overlapsP`: same contig, and the two closed ranges share a base.
 fn overlaps(left: &SimpleInterval, right: &SimpleInterval) -> bool {
     left.contig == right.contig && left.start <= right.end && right.start <= left.end
 }
 
+/// `GenomeLoc.containsP`.
 fn contains(outer: &SimpleInterval, inner: &SimpleInterval) -> bool {
     outer.contig == inner.contig && outer.start <= inner.start && outer.end >= inner.end
 }
@@ -81,6 +95,12 @@ fn contains(outer: &SimpleInterval, inner: &SimpleInterval) -> bool {
 /// `GenomeLoc.subtract`, which is only ever called on overlapping intervals here.
 ///
 /// The order of the two pieces is the reference's: the AFTER piece first, then the BEFORE piece.
+///
+/// ```java
+/// if (afterStop - afterStart >= 0) {
+/// ```
+///
+/// is the test written here as `this.end - (that.end + 1) >= 0`.
 fn subtract(this: &SimpleInterval, that: &SimpleInterval) -> Vec<SimpleInterval> {
     if this == that {
         return Vec::new();
@@ -126,6 +146,13 @@ fn subtract(this: &SimpleInterval, that: &SimpleInterval) -> Vec<SimpleInterval>
 ///
 /// Both lists are expected already sorted and `ALL`-merged, which is what the tool's own
 /// `getGenomeLocs` does to each file before it calls this.
+///
+/// ```java
+/// reverse(masterHead.subtract(testHead)).forEach(master::push);
+/// ```
+///
+/// `reverse` is `GenomeLoc.compareTo` in reverse, which orders by contig index; every piece here
+/// is on the master head's own contig, so comparing the contig names instead cannot reorder them.
 pub fn equate_intervals(master: &[SimpleInterval], test: &[SimpleInterval]) -> Comparison {
     let mut master: std::collections::VecDeque<SimpleInterval> = master.iter().cloned().collect();
     let mut test: std::collections::VecDeque<SimpleInterval> = test.iter().cloned().collect();

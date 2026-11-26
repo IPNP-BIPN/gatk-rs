@@ -1,6 +1,6 @@
 //! `EvaluateInfoFieldConcordance`, ported from
 //! `org.broadinstitute.hellbender.tools.walkers.validation.EvaluateInfoFieldConcordance`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `EvaluateInfoFieldConcordance.java` is unchanged since 4.6.2.0).
 //!
 //! The first tool written on [`gatk_engine::concordance_walker`]: for every true positive it takes
 //! the difference between one INFO field of the eval record and one of the truth record, and reports
@@ -9,7 +9,11 @@
 //! # A record whose key is absent is counted but contributes nothing
 //!
 //! ```java
-//! if (truthVersusEval.getEval().isSNP()) { snpCount++; } else if (...isIndel()) { indelCount++; }
+//! if(truthVersusEval.getEval().isSNP()){
+//!     snpCount++;
+//! } else if (truthVersusEval.getEval().isIndel()) {
+//!     indelCount++;
+//! }
 //! this.infoDifference(truthVersusEval.getEval(), truthVersusEval.getTruth());
 //! ```
 //!
@@ -21,8 +25,11 @@
 //! # The standard deviation can be NaN by arithmetic alone
 //!
 //! ```java
-//! final double snpVariance = (sumDeltaSquared - sumDelta * sumDelta / count) / count;
+//! final double snpVariance = (this.snpSumDeltaSquared
+//!         - this.snpSumDelta * this.snpSumDelta / snpCount) / snpCount;
 //! ```
+//!
+//! (One line in the reference, wrapped here.)
 //!
 //! The cancelling form, with no guard. Equal deltas make the two terms equal, and the subtraction
 //! of two rounded doubles can land just below zero, whose square root is NaN. The port keeps the
@@ -45,6 +52,17 @@
 //!
 //! The other four states fall through the switch untouched, and this walker drops filtered records
 //! on both sides, so the two filtered states cannot occur at all.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<f64>` is "a `double` or nothing": `None` is a record without the INFO key. The
+//!   form `let (Some(a), Some(b)) = (x, y) else { return; }` unwraps both or leaves early.
+//! - `Result<(), E>` is "nothing, or an error"; `Err(..)` is the exception the reference throws.
+//! - A `match` must cover every case of the enum it inspects, which is why the `Other` arms are
+//!   written out even though they do nothing.
+//! - `i64` is Java's `long` (the reference's counters are `int`), `f64` is `double`; `x as f64`
+//!   is the cast `(double) x`.
+//! - `|name, bucket| ..` is a closure, Java's lambda.
 
 use gatk_engine::tsv_table::{java_double_to_string, write_table};
 
@@ -75,7 +93,11 @@ impl EvaluateInfoFieldConcordanceError {
         "org.broadinstitute.hellbender.exceptions.UserException"
     }
 
-    /// The message, whose colons have no spaces around them.
+    /// The message, whose colons have no spaces around them:
+    ///
+    /// ```java
+    /// throw new UserException("Missing key:"+evalInfoKey+" in Eval VCF:"+evalVariantsFile);
+    /// ```
     pub fn message(&self) -> String {
         match self {
             EvaluateInfoFieldConcordanceError::MissingEvalKey { key, file } => {
@@ -89,6 +111,10 @@ impl EvaluateInfoFieldConcordanceError {
 }
 
 /// `onTraversalStart`: both headers are checked, eval first.
+///
+/// `getInfoHeaderLine(key) == null` is the test, so a key must be DECLARED in the header; whether
+/// any record carries it is not checked here. `eval_declares` and `truth_declares` are the two
+/// results of that test, made by the caller.
 pub fn check_keys(
     eval_declares: bool,
     eval_key: &str,
@@ -124,12 +150,14 @@ pub struct Bucket {
 }
 
 impl Bucket {
-    /// `snpSumDelta / snpCount`, which is `0/0` for an untouched bucket.
+    /// `snpSumDelta / snpCount`, which is `0/0` for an untouched bucket. The reference divides a
+    /// `double` by an `int`, which Java widens to `double` first, as the cast here does.
     pub fn mean(&self) -> f64 {
         self.sum_delta / self.count as f64
     }
 
-    /// `(sumSq - sum * sum / n) / n`, in that order, and its square root.
+    /// `(sumSq - sum * sum / n) / n`, in that order, and its square root: `Math.sqrt`, which
+    /// is correctly rounded, as `f64::sqrt` is, and gives `NaN` for a negative variance.
     pub fn standard_deviation(&self) -> f64 {
         let count = self.count as f64;
         let variance = (self.sum_delta_squared - self.sum_delta * self.sum_delta / count) / count;
@@ -140,14 +168,18 @@ impl Bucket {
 /// The two buckets, in the order the table writes them.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Concordance {
+    /// `snpCount`, `snpSumDelta`, `snpSumDeltaSquared`.
     pub snp: Bucket,
+    /// `indelCount`, `indelSumDelta`, `indelSumDeltaSquared`.
     pub indel: Bucket,
 }
 
 /// Which bucket a true positive falls in, decided by the **eval** record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EvalType {
+    /// `isSNP()`.
     Snp,
+    /// `isIndel()`, tested only when `isSNP()` was false.
     Indel,
     /// Anything else: counted nowhere, though its delta is still not taken.
     Other,
@@ -155,6 +187,10 @@ pub enum EvalType {
 
 impl Concordance {
     /// `apply` for one true positive: the counter first, the delta only if both keys are there.
+    ///
+    /// `eval_value` and `truth_value` are `Double.valueOf` of the two attributes, or `None` where
+    /// `hasAttribute` is false. The `--warn-big-differences` logging is not ported: it writes only
+    /// to the log.
     pub fn add(&mut self, eval_type: EvalType, eval_value: Option<f64>, truth_value: Option<f64>) {
         match eval_type {
             EvalType::Snp => self.snp.count += 1,
@@ -185,6 +221,8 @@ impl Concordance {
 
     /// The whole summary table: the header line and one row per type.
     pub fn table(&self, eval_key: &str, truth_key: &str) -> String {
+        // `InfoConcordanceRecord` rows, SNP then INDEL. The two doubles go through
+        // `java_double_to_string`, so `NaN` prints as `NaN` and an integral value keeps `.0`.
         let row = |name: &str, bucket: &Bucket| {
             vec![
                 name.to_string(),

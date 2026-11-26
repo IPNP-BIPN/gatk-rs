@@ -1,5 +1,5 @@
 //! `GatherVcfsCloud`, ported from `org.broadinstitute.hellbender.tools.GatherVcfsCloud`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `GatherVcfsCloud.java` is unchanged since 4.6.2.0).
 //!
 //! Concatenating vcfs that are already in order, which sounds like `cat` and is not: two gathering
 //! modes with different code paths, and a validation that runs before anything is written.
@@ -22,6 +22,25 @@
 //! belonging to `s1` comes out under a header declaring only `s0`. The genotype is not dropped, it
 //! is relabelled. Both are reproduced here, because a port that refused where the reference writes
 //! would not be the reference.
+//!
+//! # What is modelled, and what is not
+//!
+//! A shard here is its header's contig names and samples and its records' `(contig, position)`;
+//! the bytes are the caller's business. `--create-output-variant-index` is not an argument: the
+//! reference's default, `createIndex = true`, is assumed throughout. The validation's
+//! `dict.assertSameDictionary(header.getSequenceDictionary())` is not ported.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[Shard]` is a borrowed, read-only view of a list; the caller keeps it;
+//! - `Option<T>` is a value or nothing; `Result<T, GatherError>` is a value or one of the
+//!   refusals, and `?` hands a refusal straight back to the caller;
+//! - `if let Some(x) = y` runs its block only when `y` holds a value, and
+//!   `if let (Some(a), Some(b)) = (..)` only when both do;
+//! - `match` must cover every variant, and `_` is "every other one";
+//! - `|x| ..` is a closure (Java's lambda); `.iter().filter(..).cloned().collect()` is a stream
+//!   that copies each kept element into a new list;
+//! - `..Arguments::default()` (in the tests) fills the fields not named from the defaults.
 
 /// One input file, as far as gathering reads it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,6 +49,7 @@ pub struct Shard {
     pub name: String,
     /// The sequence dictionary from the header: empty where the file has no `##contig` line.
     pub dictionary: Vec<String>,
+    /// `header.getGenotypeSamples()`, in header order.
     pub samples: Vec<String>,
     /// `(contig, position)` for each record, in file order.
     pub records: Vec<(String, i32)>,
@@ -38,11 +58,16 @@ pub struct Shard {
 /// How to gather, which `AUTOMATIC` resolves from the file names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GatherType {
+    /// Copy the inputs' compressed blocks; in the reference the writer's overlap check does not
+    /// run.
     Block,
+    /// Decode and re-encode each record, checking each file's first against the last written.
     Conventional,
+    /// `BLOCK` when every input and the output are block compressed, else `CONVENTIONAL`.
     Automatic,
 }
 
+/// The tool's arguments that change what is gathered or refused.
 pub struct Arguments {
     pub gather_type: GatherType,
     pub ignore_safety_checks: bool,
@@ -68,9 +93,15 @@ impl Default for Arguments {
 /// What the gather refuses, each with the class the reference throws.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GatherError {
-    /// The first file has no `##contig` line, which the INDEXER refuses after validation passed.
+    /// The first file has no `##contig` line, so the output cannot be indexed: `UserException`.
+    ///
+    /// The reference throws this BEFORE the validation, and the port checks it after (see
+    /// [`gather`]).
     NoDictionary,
     /// Two files whose sample lists differ, named in both directions.
+    ///
+    /// Each list is the reference's `TreeSet` after `removeAll`: sorted, and printed by the
+    /// set's `toString` as `[a, b]`.
     DifferentSamples {
         first_only: Vec<String>,
         other: String,
@@ -98,6 +129,7 @@ pub enum GatherError {
 }
 
 impl GatherError {
+    /// The exception's message, as the reference builds it from the file URIs and positions.
     pub fn message(&self) -> String {
         match self {
             GatherError::NoDictionary => {
@@ -144,6 +176,7 @@ impl GatherError {
         }
     }
 
+    /// The fully qualified class of the exception the reference throws for this refusal.
     pub fn java_class(&self) -> &'static str {
         match self {
             GatherError::NoDictionary => "org.broadinstitute.hellbender.exceptions.UserException",
@@ -162,6 +195,14 @@ impl GatherError {
 ///
 /// The records are returned as `(shard, index)` rather than copied, since block gathering copies
 /// bytes and conventional gathering re-encodes: what both agree on is which record goes where.
+///
+/// `GatherVcfsCloud.doWork` checks in this order: the missing dictionary
+/// (`if (createIndex && sequenceDictionary == null)`), then the validation unless
+/// `--ignore-safety-checks`, then the block-copy refusal. This function checks the block copy
+/// first and the dictionary last, so an input that fails two of them gets a different refusal
+/// from the reference's. The writer's check runs whatever the
+/// gather type, where the reference runs it only in `gatherConventionally`; the caller refuses
+/// a block gather on its own afterwards.
 pub fn gather(shards: &[Shard], arguments: &Arguments) -> Result<Vec<(usize, usize)>, GatherError> {
     if arguments.gather_type == GatherType::Block
         && !(arguments.inputs_are_block_compressed && arguments.output_is_block_compressed)
@@ -173,7 +214,9 @@ pub fn gather(shards: &[Shard], arguments: &Arguments) -> Result<Vec<(usize, usi
         validate(shards, arguments)?;
     }
 
-    // The indexer's refusal, which arrives after the validation has passed.
+    // The missing-dictionary refusal, a `UserException` that the reference raises before the
+    // validation.
+    // `is_some_and` is false for an empty list of shards.
     if shards
         .first()
         .is_some_and(|first| first.dictionary.is_empty())
@@ -182,11 +225,16 @@ pub fn gather(shards: &[Shard], arguments: &Arguments) -> Result<Vec<(usize, usi
     }
 
     let mut written: Vec<(usize, usize)> = Vec::new();
+    // `lastContext`: the last record written so far, `None` until a shard with records is seen.
     let mut last: Option<(String, i32)> = None;
+    // `.enumerate()` pairs each shard with its index, used to name the previous file.
     for (index, shard) in shards.iter().enumerate() {
         if let (Some(last), Some(first)) = (&last, shard.records.first()) {
             // The writer's own check, on the LAST record written, which honours the same flag as
             // the validation and says something different when it is set.
+            // Under the flag the reference tests only `vc.getStart() <= lastContext.getStart()` on
+            // one contig; without it, `comparator.compare(vc, lastContext) <= 0`. The previous
+            // file named is `lastFile`, which the reference sets after every file, records or not.
             if arguments.disable_contig_ordering_check {
                 if last.0 == first.0 && first.1 <= last.1 {
                     return Err(GatherError::PositionsOverlap {
@@ -216,7 +264,14 @@ pub fn gather(shards: &[Shard], arguments: &Arguments) -> Result<Vec<(usize, usi
 }
 
 /// `assertSameSamplesAndValidOrdering`: the samples, then the first records.
+///
+/// Each file's samples must equal the first file's, list for list (order included, as
+/// `samples.equals(theseSamples)` compares). Each file's first record must be strictly after the
+/// previous non-empty file's first record. The reference's refusal of a first file without a
+/// dictionary (`UserException.BadInput`) is not here, since with `createIndex` true the
+/// missing-dictionary refusal has already been thrown.
 fn validate(shards: &[Shard], arguments: &Arguments) -> Result<(), GatherError> {
+    // No shards, nothing to validate (the tool requires at least one input).
     let first = match shards.first() {
         None => return Ok(()),
         Some(first) => first,
@@ -226,6 +281,7 @@ fn validate(shards: &[Shard], arguments: &Arguments) -> Result<(), GatherError> 
     let mut previous: Option<(&Shard, (String, i32))> = None;
     for shard in shards {
         if shard.samples != first.samples {
+            // The names in `left` and not in `right`, sorted, as `TreeSet` then `removeAll`.
             let unique = |left: &[String], right: &[String]| {
                 let mut names: Vec<String> = left
                     .iter()
@@ -264,6 +320,8 @@ fn validate(shards: &[Shard], arguments: &Arguments) -> Result<(), GatherError> 
     Ok(())
 }
 
+/// The first shard's contig names, which `gatherConventionally` builds its comparator from
+/// (`new VariantContextComparator(firstHeader.getContigLines())`); empty for no shards.
 fn dictionary_of(shards: &[Shard]) -> Vec<String> {
     shards
         .first()
@@ -272,9 +330,22 @@ fn dictionary_of(shards: &[Shard]) -> Vec<String> {
 }
 
 /// `VariantContextComparator`: is `left` strictly after `right`? Contig order is the DICTIONARY'S,
-/// then position, and a contig the dictionary lacks compares as equal, which is the reference's own
-/// `indexOf` of -1 for both.
+/// then position.
+///
+/// ```java
+/// final int contigCompare = this.contigIndexLookup.get(firstVariantContext.getContig())
+///         - this.contigIndexLookup.get(secondVariantContext.getContig());
+/// ```
+///
+/// and on a tie, the start positions are subtracted.
+///
+/// A contig the dictionary lacks gets index -1 here, so two such contigs compare by position.
+/// The reference has no such case: `contigIndexLookup` is a map, `get` returns null for a
+/// missing contig, and unboxing it throws a `NullPointerException` (htsjdk 5.0.0's own comment:
+/// "Will throw NullPointerException -- happily").
 fn after(left: &(String, i32), right: &(String, i32), dictionary: &[String]) -> bool {
+    // `position` is `indexOf`: `Some(i)` for the first match, `None` for none; `map_or` turns
+    // `None` into -1 and widens the index to `i64`.
     let index = |contig: &String| {
         dictionary
             .iter()

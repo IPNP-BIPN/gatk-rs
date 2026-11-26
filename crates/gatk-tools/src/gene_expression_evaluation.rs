@@ -1,4 +1,6 @@
-//! `GeneExpressionEvaluation`, ported from the tool (GATK 4.6.2.0).
+//! `GeneExpressionEvaluation`, ported from
+//! `org.broadinstitute.hellbender.tools.walkers.rnaseq.GeneExpressionEvaluation`
+//! (GATK 4.7.0.0; `GeneExpressionEvaluation.java` is unchanged since 4.6.2.0).
 //!
 //! RNA-seq fragments counted against gff3 features. A read contributes a WEIGHT rather than a
 //! count, and the two ways of computing that weight disagree about what a read half of which lands
@@ -35,7 +37,9 @@
 //! # EQUAL multi-mapping moves the mapping quality filter
 //!
 //! ```java
-//! if(multiMapMethod == MultiMapMethod.EQUAL) { mappingQualityFilter.minMappingQualityScore = 0; }
+//! if(multiMapMethod == MultiMapMethod.EQUAL) {
+//!     mappingQualityFilter.minMappingQualityScore = 0;
+//! }
 //! ```
 //!
 //! Choosing how multi-mapped reads are weighted also changes which reads survive the filter, and
@@ -49,15 +53,33 @@
 //!
 //! # The integral branch of the writer is dead code
 //!
+//! `DataLine.set(int, double)`, which the count writer goes through:
+//!
 //! ```java
 //! final long rounded = Math.round(value);
-//! if (rounded == value) { set(index, Long.toString(rounded)); }
-//! else { set(index, Double.toString(value)); }
+//! if (rounded == value) {
+//!     set(index, Long.toString(rounded));
+//! } else {
+//!     set(index, Double.toString(value));
+//! }
 //! return set(index, Double.toString(value));
 //! ```
 //!
 //! The `if` writes `1`, and the line after it overwrites that with `1.0` every time. So a count of
 //! exactly one is written `1.0`, and the branch that would have written `1` can never be observed.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[T]` is a borrowed, read-only view of a list; `&mut` is a writable one, only one at a time;
+//! - `Option<T>` is a value or nothing (`Some(v)` / `None`), Java's nullable with the check
+//!   enforced; `Result<T, CountError>` is a value or a refusal, and `?` passes the refusal up;
+//! - `let Some(x) = y else { .. }` unwraps or leaves through the block;
+//! - `match` covers every case, and `Some(x) if cond =>` is a case with a guard;
+//! - `#[derive(PartialOrd, Ord)]` orders a struct field by field in declaration order, which is
+//!   how `Interval` sorts by contig name, then start, then end, as htsjdk's `compareTo` does;
+//! - `.iter().map(..).collect()` is a Java stream; `|x| ..` is a lambda;
+//! - `BTreeMap` is Java's `TreeMap`, keys in sorted order;
+//! - `f64::from(i)` widens an `i32` to `double` exactly; `x as f64` does the same for `usize`.
 
 use gatk_engine::base_recalibration_engine::round_to_n_decimal_places;
 use gatk_engine::tsv_table::{java_double_to_string, quote_if_needed};
@@ -100,6 +122,7 @@ pub struct Interval {
 }
 
 impl Interval {
+    /// `getLengthOnReference()`: both ends are included.
     pub fn length(&self) -> i32 {
         self.end - self.start + 1
     }
@@ -112,6 +135,7 @@ impl Interval {
         (self.end.min(other.end) - self.start.max(other.start) + 1).max(0)
     }
 
+    /// Whether the two share at least one base.
     fn overlaps(&self, other: &Interval) -> bool {
         self.intersection_length(other) > 0
     }
@@ -143,6 +167,7 @@ pub enum FeatureLabel {
 }
 
 impl FeatureLabel {
+    /// The gff3 attribute the label is read from.
     pub fn key(self) -> &'static str {
         match self {
             FeatureLabel::Name => "Name",
@@ -150,6 +175,7 @@ impl FeatureLabel {
         }
     }
 
+    /// The label's first value on `base`, or `None` when the attribute is missing or empty.
     pub fn value(self, base: &BaseData) -> Option<&str> {
         base.attributes
             .get(self.key())
@@ -161,7 +187,10 @@ impl FeatureLabel {
 /// One grouping feature and the intervals its chosen descendants cover.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GroupingFeature {
+    /// The feature, shrunk to its label.
     pub base: BaseData,
+    /// Its descendants of the overlap types, as `getDescendents()` filtered on
+    /// `overlapType.contains(f.getType())` gives them.
     pub overlaps: Vec<Interval>,
 }
 
@@ -210,6 +239,7 @@ pub enum CountError {
 }
 
 impl CountError {
+    /// The fully qualified class of the exception the reference throws.
     pub fn java_class(&self) -> &'static str {
         match self {
             CountError::UnpairedRead => "java.lang.IllegalStateException",
@@ -220,6 +250,7 @@ impl CountError {
         }
     }
 
+    /// The exception's message, as the reference builds it.
     pub fn message(&self) -> String {
         match self {
             CountError::UnpairedRead => {
@@ -242,7 +273,7 @@ impl CountError {
     }
 }
 
-/// `ReadStrands`.
+/// `ReadStrands`: the strand each mate is read from, relative to the transcript.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReadStrands {
     ForwardForward,
@@ -252,6 +283,7 @@ pub enum ReadStrands {
 }
 
 impl ReadStrands {
+    /// `r1TranscriptionStrand`: whether read one is on the transcribed strand.
     fn r1_transcription_strand(self) -> bool {
         matches!(
             self,
@@ -259,6 +291,7 @@ impl ReadStrands {
         )
     }
 
+    /// `r2TranscriptionStrand`, the same for read two.
     fn r2_transcription_strand(self) -> bool {
         matches!(
             self,
@@ -266,11 +299,15 @@ impl ReadStrands {
         )
     }
 
+    /// `this.expectReadsOnSameStrand = r1TranscriptionStrand == r2TranscriptionStrand;`
     fn expect_reads_on_same_strand(self) -> bool {
         self.r1_transcription_strand() == self.r2_transcription_strand()
     }
 
     /// `isSense`, which calls an unstranded feature positive rather than skipping it.
+    ///
+    /// The reference's comment on that line: "call forward strand sense for unstranded
+    /// features".
     pub fn is_sense(self, read: &Read, feature: &BaseData) -> bool {
         let sense_strand = if feature.strand == Strand::None {
             Strand::Positive
@@ -307,10 +344,16 @@ pub enum MultiMapMethod {
 }
 
 /// `getMergedIntervals`: sorted, then merged, with ABUTTING intervals merged too.
+///
+/// The reference is `Collections.sort(intervalsCopy)` and then
+/// `new IntervalList.IntervalMergerIterator(intervalsCopy.iterator(), true, true, false)`, whose
+/// second argument is the one that combines abutting intervals.
 pub fn merged_intervals(intervals: &[Interval]) -> Vec<Interval> {
     let mut sorted = intervals.to_vec();
     sorted.sort();
     let mut merged: Vec<Interval> = Vec::new();
+    // `last_mut()` is a writable reference to the last merged interval, if any, so the guard can
+    // extend it in place; otherwise the interval starts a new run.
     for interval in sorted {
         match merged.last_mut() {
             Some(current) if current.overlaps(&interval) || current.abuts(&interval) => {
@@ -324,6 +367,10 @@ pub fn merged_intervals(intervals: &[Interval]) -> Vec<Interval> {
 }
 
 /// `inGoodPair`, which asks about the mate before it asks whether there is one.
+///
+/// The reference first asks `!read.mateIsUnmapped() && read.isProperlyPaired()` and
+/// `read.getContig().equals(read.getMateContig())`, then the strand test, then the `MQ` test.
+/// `!read.paired` stands for the throw inside `mateIsUnmapped()` (see the module note).
 pub fn in_good_pair(
     read: &Read,
     minimum_mapping_quality: i32,
@@ -335,6 +382,7 @@ pub fn in_good_pair(
     let mut answer = !read.mate_unmapped
         && read.proper_pair
         && read.mate_contig.as_deref() == Some(read.contig.as_str());
+    // `as_deref` views the optional mate contig as an optional `&str`; a missing one is not equal.
     if answer {
         let reads_on_same_strand = read.reverse == read.mate_reverse;
         answer = read_strands.expect_reads_on_same_strand() == reads_on_same_strand;
@@ -349,6 +397,11 @@ pub fn in_good_pair(
 }
 
 /// `getAlignmentIntervals`.
+///
+/// Spliced: the read's alignment blocks, plus the mate's (from its `MC` cigar) for a good pair,
+/// merged. Unspliced: one interval from the leftmost start of the pair over the absolute fragment
+/// length, or the read's own span when not a good pair. The reference's
+/// `if (read.isUnmapped())` early return of an empty list in the unspliced branch is not here.
 pub fn alignment_intervals(
     read: &Read,
     unspliced: bool,
@@ -390,6 +443,16 @@ pub fn alignment_intervals(
 ///
 /// The weights come back in feature order rather than in the order the reference's `HashSet`
 /// happens to give them, which is safe because every consumer of this map is keyed by feature.
+///
+/// One sum does see that order: PROPORTIONAL's `summedUnNormalizedWeights` adds each feature's
+/// weight in the `HashSet` order of `featureOverlapDetector.getOverlaps(..)`, and `summed` here
+/// adds them in feature order. Floating-point addition is not associative, so the normalisation
+/// factor can differ in its last bit once more than two weights go into the sum; the two-place
+/// rounding of the output hides that except at a rounding boundary.
+///
+/// EQUAL gives each overlapped feature `1.0d/nOverlappingFeatures`. PROPORTIONAL gives each the
+/// share of the read's bases it covers, then divides all of them by their sum plus the share
+/// nothing covers (see the module note).
 pub fn overlap_weights(
     method: MultiOverlapMethod,
     alignment_intervals: &[Interval],
@@ -418,6 +481,7 @@ pub fn overlap_weights(
         }
         MultiOverlapMethod::Proportional => {
             let merged = merged_intervals(alignment_intervals);
+            // `reduce(0, Integer::sum)` over the merged lengths.
             let bases_on_reference: i32 = merged.iter().map(Interval::length).sum();
             let mut total_covered_bases = 0;
             let mut summed = 0.0;
@@ -452,7 +516,9 @@ pub fn overlap_weights(
                         .iter()
                         .map(|interval| alignment.intersection_length(interval))
                         .sum();
+                    // The covered bases as a double, divided by `basesOnReference`.
                     let weight = f64::from(covered) / f64::from(bases_on_reference);
+                    // `weights.compute(overlap.getKey(), (k,v) -> v == null? weight : v + weight);`
                     match weights.iter_mut().find(|(existing, _)| *existing == index) {
                         Some((_, value)) => *value += weight,
                         None => weights.push((index, weight)),
@@ -463,6 +529,7 @@ pub fn overlap_weights(
 
             // The share of the read that covered nothing is added as though it were a feature.
             summed += 1.0 - f64::from(total_covered_bases) / f64::from(bases_on_reference);
+            // `1.0d/summedUnNormalizedWeights`, then each weight multiplied by it, not divided.
             let normalization = 1.0 / summed;
             for (_, weight) in weights.iter_mut() {
                 *weight *= normalization;
@@ -472,7 +539,11 @@ pub fn overlap_weights(
     }
 }
 
-/// `MultiMapMethod.getWeights`.
+/// `MultiMapMethod.getWeights`: unchanged for a uniquely mapped read; for a multi-mapped one,
+/// dropped (IGNORE) or divided by the hit count (EQUAL).
+///
+/// The reference first refuses `nHits < 1` with `GATKException("nHits = " + nHits + ...)`; that
+/// check is not here, so an `NH:i:0` read is dropped or divided by zero instead.
 pub fn multi_map_weights(
     method: MultiMapMethod,
     hits: i32,
@@ -490,7 +561,7 @@ pub fn multi_map_weights(
     }
 }
 
-/// The two counts a feature accumulates.
+/// The two counts a feature accumulates, `Coverage.sense_count` and `antisense_count`.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Coverage {
     pub sense: f64,
@@ -525,6 +596,12 @@ impl Settings {
 }
 
 /// `apply` over every read, then the counts in feature declaration order.
+///
+/// A read is counted when it is first of pair or not in a good pair, so a good pair counts once:
+///
+/// The reference tests `read.isFirstOfPair()`, then `inGoodPair` with the filter's
+/// `minMappingQualityScore`.
+/// Its weights go to sense or antisense by `isSense`. A missing `NH` counts as one hit.
 pub fn count(
     features: &[GroupingFeature],
     reads: &[Read],
@@ -594,6 +671,8 @@ pub fn write_counts(
     out
 }
 
+/// One line of `FragmentCountWriter`: label, contig, start, stop, strand, sense or antisense, and
+/// the count, each quoted only if it needs it.
 fn row(feature: &GroupingFeature, label: FeatureLabel, count: f64, sense: bool) -> String {
     let values = [
         label.value(&feature.base).unwrap_or("").to_string(),
@@ -625,6 +704,10 @@ pub struct GffFeature {
 }
 
 /// `URLDecoder.decode(text, "UTF-8")`: `+` is a space and `%XX` a byte.
+///
+/// A `%` with fewer than two characters after it is copied as it is, and a `%XX` that is not hex
+/// is copied as its three characters; the bytes are then read as UTF-8, with any invalid
+/// sequence replaced by U+FFFD.
 fn url_decode(text: &str) -> String {
     let bytes = text.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
@@ -654,6 +737,11 @@ fn url_decode(text: &str) -> String {
 /// `Gff3Codec` over a whole file, DEEP: every feature line, in file order, each linked to its
 /// parents by `ID` among the lines since the last `###` directive. Every feature is returned, a
 /// child as much as a top-level one, which is what the codec flushes.
+///
+/// A `>` line or `##FASTA` ends the features; `###` forgets every `ID` seen so far, so a `Parent`
+/// after it cannot reach a feature before it. Links work in both directions: a child seen before
+/// its parent is attached when the parent arrives (`waiting_for_parent`). Attribute keys and
+/// values, and the first three columns, are URL-decoded; score and phase are kept as text.
 pub fn parse_gff3(text: &str) -> Result<Vec<GffFeature>, String> {
     let mut features: Vec<GffFeature> = Vec::new();
     let mut with_id: std::collections::HashMap<String, Vec<usize>> =
@@ -680,6 +768,7 @@ pub fn parse_gff3(text: &str) -> Result<Vec<GffFeature>, String> {
                 fields.len()
             ));
         }
+        // Both columns must parse as integers, or the line is refused.
         let (Ok(start), Ok(end)) = (fields[3].parse::<i32>(), fields[4].parse::<i32>()) else {
             return Err(format!(
                 "Cannot read integer value for start/end position from line {}.  Line is: {line}",
@@ -748,6 +837,8 @@ pub fn parse_gff3(text: &str) -> Result<Vec<GffFeature>, String> {
 /// `getDescendents`: the children, then each child's own descendants, once each and never back
 /// through a feature already in the lineage.
 pub fn descendants(features: &[GffFeature], index: usize) -> Vec<usize> {
+    // `lineage` is the path from `index` down to the current feature, so a cycle in the
+    // `Parent` links stops instead of recursing for ever; `out` keeps first-seen order.
     fn walk(features: &[GffFeature], index: usize, lineage: &mut Vec<usize>, out: &mut Vec<usize>) {
         for child in &features[index].children {
             if lineage.contains(child) {

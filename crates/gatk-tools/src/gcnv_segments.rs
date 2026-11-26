@@ -16,14 +16,34 @@
 //!
 //! The Python around them is numpy and scipy: `scipy.special.logsumexp` with numpy's pairwise sum,
 //! `np.logaddexp`, and pandas' `precise_xstrtod` reading the shards' tables.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - matrices are flat `Vec<f64>` in row-major order: entry (site `t`, state `c`) of a `t x c`
+//!   table is at `t * c_count + c`, as numpy lays out a C-contiguous array;
+//! - `&[f64]` is a borrowed, read-only view of a vector, `&mut` a writable one, and `&v[a..b]`
+//!   the half-open slice `a` to `b - 1`; `(a..=b)` includes `b`, `(a..b).rev()` counts down;
+//! - `impl Iterator<Item = f64>` takes any lazily produced sequence of doubles, a Java
+//!   `Iterator<Double>` without the boxing; `.map(..)`, `.filter(..)`, `.collect()` are the
+//!   stream operations of the same names, and `|x| ..` is a lambda;
+//! - `Option<f64>` is a double or nothing (`None`), `Result<T, String>` a value or an error
+//!   message, and `?` hands an error straight to the caller;
+//! - `Qualities<'a>` holds borrowed references (`&'a Hmm`) that must not outlive the tables they
+//!   point at; the `'a` is checked at compile time and costs nothing at run time.
 
 use crate::glibc_libm::{exp, expm1, log, log1p};
 
 /// pandas 2.1.3's `precise_xstrtod` (`tokenizer.c`), what `read_csv` parses a float with by
-/// default: at most 17 digits, leading zeros included, accumulated in a double, then one multiplication or
-/// division by a power of ten. Not correctly rounded: on the measured shards it differs from the
-/// nearest double on 41 % of `log_q_tau_tk`'s entries. `None` where pandas would not see a number.
+/// default: at most 17 digits, leading zeros included, accumulated in a double, then one
+/// multiplication or division by a power of ten. Not correctly rounded: on the measured shards it
+/// differs from the nearest double on 41 % of `log_q_tau_tk`'s entries. `None` where pandas would
+/// not see a number.
+///
+/// The power of ten itself is parsed from `1e<n>` by Rust, which rounds correctly; below 1e-308
+/// the division is done in two steps so the divisor stays finite, and below 1e-616 the result is
+/// zero.
 pub fn precise_xstrtod(text: &str) -> Option<f64> {
+    // `as_bytes` views the text as its bytes; `b'-'` is a byte literal, Java's `(byte) '-'`.
     let bytes = text.as_bytes();
     let mut p = 0;
     while p < bytes.len() && bytes[p].is_ascii_whitespace() {
@@ -55,6 +75,7 @@ pub fn precise_xstrtod(text: &str) -> Option<f64> {
             digits += 1;
             decimals += 1;
         }
+        // Fraction digits past the seventeenth are read and dropped.
         while p < bytes.len() && bytes[p].is_ascii_digit() {
             p += 1;
         }
@@ -80,6 +101,7 @@ pub fn precise_xstrtod(text: &str) -> Option<f64> {
             exponent_digits += 1;
             q += 1;
         }
+        // An `e` with no digits after it is not consumed, so the trailing check below refuses it.
         if exponent_digits > 0 {
             exponent += if exponent_negative { -n } else { n };
             p = q;
@@ -108,6 +130,9 @@ pub fn precise_xstrtod(text: &str) -> Option<f64> {
 }
 
 /// pytensor's `scalar_maximum` reduced in order, NaN winning.
+///
+/// The first value is taken whatever it is, so an all -inf input gives -inf, and the first NaN
+/// ends the reduction.
 fn pt_max(values: impl Iterator<Item = f64>) -> f64 {
     let mut best = f64::NEG_INFINITY;
     let mut first = true;
@@ -124,6 +149,9 @@ fn pt_max(values: impl Iterator<Item = f64>) -> f64 {
 }
 
 /// The rewritten `logsumexp` of `x`, as its three parts: `(m1, m2, sum)`.
+///
+/// The sum is a plain loop in index order (pytensor's `CAReduce`), not numpy's pairwise [`np_sum`].
+/// `x.iter().copied()` yields the values themselves rather than references to them.
 fn pt_logsumexp_parts(x: &[f64]) -> (f64, f64, f64) {
     let m1 = pt_max(x.iter().copied());
     let m2 = pt_max(x.iter().map(|v| v - m1));
@@ -163,12 +191,15 @@ pub struct Hmm {
 }
 
 impl Hmm {
+    /// The number of sites `t`, from the emission table's size.
     fn sites(&self) -> usize {
         self.log_emission.len() / self.states
     }
+    /// `log_trans_tcc[t, a, b]`: from state `a` at site `t` to state `b` at site `t + 1`.
     fn trans(&self, t: usize, a: usize, b: usize) -> f64 {
         self.log_trans[(t * self.states + a) * self.states + b]
     }
+    /// `log_emission_tc[t, c]`.
     fn emission(&self, t: usize, c: usize) -> f64 {
         self.log_emission[t * self.states + c]
     }
@@ -177,6 +208,10 @@ impl Hmm {
 /// `get_compiled_copy_number_hmm_specs_pytensor_func` for one contig: the first interval's log
 /// prior and the class-averaged, normalised log transition matrices. `pi_kc` is `classes x
 /// states`, `log_q_tau_tk` is `t x classes`, `stay` has `t - 1` entries.
+///
+/// Returns `(log_prior, log_trans)`: the prior as `log(pi.T) . q_0` minus its log-sum-exp, and
+/// for each step `t` the matrix `sum_k q_(t+1)[k] * log((1 - stay) * pi[k][b] + stay * [a == b])`,
+/// each row minus its own log-sum-exp.
 pub fn hmm_specs(
     pi_kc: &[Vec<f64>],
     stay: &[f64],
@@ -221,7 +256,8 @@ pub fn hmm_specs(
     (prior, trans)
 }
 
-/// What the forward-backward function returns.
+/// What the forward-backward function returns. `alpha`, `beta` and `log_posterior` are `t x c`
+/// row-major; `log_data_likelihood` is the log-sum-exp of the last row of `alpha + beta`.
 #[derive(Debug, Clone)]
 pub struct ForwardBackward {
     pub log_posterior: Vec<f64>,
@@ -231,9 +267,14 @@ pub struct ForwardBackward {
 }
 
 /// `PytensorForwardBackward` with `include_alpha_beta_output` and nothing else.
+///
+/// The forward pass adds the emission after the log-sum-exp (`pt_step`); the backward pass adds
+/// it inside, before the transition. The posterior is normalized row by row, and the likelihood
+/// returned is the one the last row computed, which is why `likelihood` is overwritten in the loop.
 pub fn forward_backward(hmm: &Hmm) -> ForwardBackward {
     let (n, c) = (hmm.sites(), hmm.states);
     let mut alpha = vec![0.0; n * c];
+    // `iter_mut().enumerate()` walks the first row with its index, handing out writable slots.
     for (s, value) in alpha[..c].iter_mut().enumerate() {
         *value = hmm.log_prior[s] + hmm.emission(0, s);
     }
@@ -287,6 +328,9 @@ fn first_argmax(values: impl Iterator<Item = f64>) -> usize {
 }
 
 /// `PytensorViterbi`: `MaxAndArgmax` over departures, then the backtrack.
+///
+/// `psi` keeps, for each site and arrival state, the best departure; a tie goes to the lowest
+/// state, as numpy's `argmax` gives it. The path ends in the best last state and is walked back.
 pub fn viterbi(hmm: &Hmm) -> Vec<usize> {
     let (n, c) = (hmm.sites(), hmm.states);
     let mut omega: Vec<f64> = (0..c)
@@ -311,6 +355,13 @@ pub fn viterbi(hmm: &Hmm) -> Vec<usize> {
 }
 
 /// `numpy.add.reduce` over a contiguous float64 vector: `pairwise_sum` from the identity.
+///
+/// **How**: fewer than 8 values are added in order; up to 128 go into eight running sums
+/// (lanes 0 to 7), which are combined as a fixed tree and then the leftover tail is added; longer
+/// inputs split at a multiple of 8 near the middle and recurse. The final `0.0 +` is the
+/// reduction's identity added first, which turns a -0.0 sum into 0.0.
+///
+/// **Why** not a plain loop: the grouping changes the rounding, and numpy's is this one.
 pub fn np_sum(a: &[f64]) -> f64 {
     fn pairwise(a: &[f64]) -> f64 {
         let n = a.len();
@@ -346,6 +397,9 @@ pub fn np_sum(a: &[f64]) -> f64 {
 }
 
 /// `scipy.special.logsumexp` (1.11.4) of a vector.
+///
+/// Shift by the maximum (NaN winning, and 0 when it is not finite), exponentiate, sum with numpy's
+/// pairwise [`np_sum`], take the log and add the shift back.
 pub fn scipy_logsumexp(a: &[f64]) -> f64 {
     let mut a_max = f64::NEG_INFINITY;
     for &x in a {
@@ -363,7 +417,9 @@ pub fn scipy_logsumexp(a: &[f64]) -> f64 {
     log(np_sum(&tmp)) + a_max
 }
 
-/// `npy_logaddexp`.
+/// `npy_logaddexp`: `log(exp(x) + exp(y))` through `log1p` of the smaller term.
+///
+/// The final `else` is only reached when `x - y` is NaN, and returns that NaN.
 pub fn np_logaddexp(x: f64, y: f64) -> f64 {
     if x == y {
         return x + std::f64::consts::LN_2;
@@ -378,6 +434,7 @@ pub fn np_logaddexp(x: f64, y: f64) -> f64 {
     }
 }
 
+/// `10 * log10(e)`, that is `10 / ln 10`: the natural-log to phred factor.
 const INV_LN_10_TIMES_10: f64 = 4.342944819032518;
 const LN_HALF: f64 = -std::f64::consts::LN_2;
 
@@ -390,7 +447,10 @@ fn py_min(a: f64, b: f64) -> f64 {
     }
 }
 
-/// `gcnvkernel.utils.math.logp_complement`.
+/// `gcnvkernel.utils.math.logp_complement`: `log(1 - exp(logp))`.
+///
+/// Two forms by range, the usual split: `log(-expm1(x))` above `ln(1/2)`, where `1 - exp(x)` is
+/// small, and `log1p(-exp(x))` below it.
 fn logp_complement(logp: f64) -> f64 {
     let capped = py_min(0.0, logp);
     if capped >= LN_HALF {
@@ -400,7 +460,9 @@ fn logp_complement(logp: f64) -> f64 {
     }
 }
 
-/// `gcnvkernel.utils.math.logp_to_phred`.
+/// `gcnvkernel.utils.math.logp_to_phred`: `-10 log10(p)`, or of `1 - p` when `complement`.
+///
+/// `logp` is capped at 0 first, and the result at the phred of the smallest normal double.
 pub fn logp_to_phred(logp: f64, complement: bool) -> f64 {
     let max_phred = -INV_LN_10_TIMES_10 * log(f64::MIN_POSITIVE);
     let capped = py_min(0.0, logp);
@@ -414,6 +476,10 @@ pub fn logp_to_phred(logp: f64, complement: bool) -> f64 {
 }
 
 /// `gcnvkernel.utils.math.logsumexp_double_complement` with its default tolerance.
+///
+/// The log of `1 - prod(1 - p_i)`, built by folding the terms in from the largest with
+/// `x <- logaddexp(x, a_i + log(1 - exp(x)))`, stopping early once the change times the number
+/// of terms left is below `rel_tol * |x|`. Positive inputs are clamped to 0 first.
 pub fn logsumexp_double_complement(a: &[f64]) -> f64 {
     let rel_tol = 1e-3;
     let mut a: Vec<f64> = a.iter().map(|&x| if x > 0.0 { 0.0 } else { x }).collect();
@@ -427,6 +493,7 @@ pub fn logsumexp_double_complement(a: &[f64]) -> f64 {
     });
     a.reverse();
     let size = a.len();
+    // `i` counts from 0 over `a[1..]`, so `size - i - 1` is the number of terms not yet folded in.
     let mut x = a[0];
     for (i, &entry) in a[1..].iter().enumerate() {
         let x_new = np_logaddexp(x, entry + logp_complement(x));
@@ -440,6 +507,10 @@ pub fn logsumexp_double_complement(a: &[f64]) -> f64 {
 
 /// `_constrained_path_logp_pytensor_func`: `alpha_first` and `beta_last` restricted to the
 /// allowed states, `m` of them; `emission` is `steps x m` and `trans` `steps x m x m`.
+///
+/// The forward recursion of [`forward_backward`] run only over the allowed states from the
+/// segment's first site, closed with `beta_last`, and normalized by the full data likelihood:
+/// the log probability that every site of the segment is in an allowed state.
 pub fn constrained_path_logp(
     alpha_first: &[f64],
     beta_last: &[f64],
@@ -472,11 +543,14 @@ pub struct Qualities<'a> {
     pub fb: &'a ForwardBackward,
 }
 
+// `'_` lets the compiler name the borrow's lifetime itself.
 impl Qualities<'_> {
+    /// Every state but `call`, in order.
     fn others(&self, call: usize) -> Vec<usize> {
         (0..self.hmm.states).filter(|&s| s != call).collect()
     }
 
+    /// Row `t` of a `t x c` table, restricted to `states`.
     fn at(&self, table: &[f64], t: usize, states: &[usize]) -> Vec<f64> {
         states
             .iter()
@@ -484,7 +558,9 @@ impl Qualities<'_> {
             .collect()
     }
 
-    /// `get_log_constrained_posterior_prob`.
+    /// `get_log_constrained_posterior_prob`: the log probability that sites `start..=end` all
+    /// lie in `allowed`. A one-site segment is `alpha + beta` at that site, through scipy's
+    /// log-sum-exp; a longer one goes through the compiled [`constrained_path_logp`].
     fn constrained(&self, start: usize, end: usize, allowed: &[usize]) -> f64 {
         let alpha_first = self.at(&self.fb.alpha, start, allowed);
         let beta_last = self.at(&self.fb.beta, end, allowed);
@@ -517,10 +593,15 @@ impl Qualities<'_> {
         )
     }
 
+    /// QS: the phred of "no site of the segment is in the call", the call being at least once
+    /// right.
     pub fn some_called(&self, start: usize, end: usize, call: usize) -> f64 {
         logp_to_phred(self.constrained(start, end, &self.others(call)), false)
     }
 
+    /// QA: the phred of "some site is not the call". The uncorrelated estimate (each site's
+    /// posterior of the other states, combined with [`logsumexp_double_complement`]) stands when
+    /// it is 60 or more; below that the exact constrained value replaces it unless it is NaN.
     pub fn all_called(&self, start: usize, end: usize, call: usize) -> f64 {
         let others = self.others(call);
         let uncorrelated: Vec<f64> = (start..=end)
@@ -536,6 +617,9 @@ impl Qualities<'_> {
         uncorrelated_quality
     }
 
+    /// QSS: the phred of the segment not starting at `start` in the call, from every path through
+    /// the transition into `start` that is not a change into the call, plus the path that stays
+    /// in the call (`path(call, call)`). At the first site, the posterior of the other states.
     pub fn start(&self, start: usize, call: usize) -> f64 {
         let others = self.others(call);
         let logp = if start == 0 {
@@ -559,6 +643,7 @@ impl Qualities<'_> {
         logp_to_phred(logp, false)
     }
 
+    /// QSE: the same at the segment's end, over the transition out of `end`.
     pub fn end(&self, end: usize, call: usize) -> f64 {
         let others = self.others(call);
         let sites = self.hmm.sites();
@@ -612,6 +697,12 @@ pub struct SampleInputs {
 }
 
 /// `ViterbiSegmentationEngine._viterbi_segments_generator`, without `--clustered-breakpoints`.
+///
+/// Per contig, in first-appearance order: build the two classes' copy-number priors (`p_alt` on
+/// every state but the contig's ploidy, which takes the rest; and a flat one), the stay
+/// probabilities `exp(-|midpoint distance| / cnv_coherence_length)`, then the HMM, the
+/// forward-backward and the Viterbi path. Each run of equal calls on the path is a segment; a
+/// one-interval segment reports its QS for all four qualities.
 pub fn segments(inputs: &SampleInputs) -> Result<Vec<Segment>, String> {
     let mut contigs: Vec<&str> = Vec::new();
     for (contig, _, _) in &inputs.intervals {
@@ -632,12 +723,15 @@ pub fn segments(inputs: &SampleInputs) -> Result<Vec<Segment>, String> {
             .map(|(_, p)| *p)
             .ok_or_else(|| format!("no ploidy for contig {contig}"))?;
         // `get_copy_number_prior_for_sample_jkc`.
+        // `get_mut` returns `None` for an index past the end, so a ploidy beyond the states is an
+        // error rather than a panic; `*... = p_baseline` then writes through the slot.
         let p_baseline = 1.0 - ((states - 1) as f64) * inputs.p_alt;
         let mut silent = vec![inputs.p_alt; states];
         *silent
             .get_mut(baseline)
             .ok_or_else(|| format!("ploidy {baseline} past the copy-number states"))? = p_baseline;
         let pi_kc = vec![silent, vec![1.0 / states as f64; states]];
+        // `windows(2)` yields each adjacent pair of interval indices.
         let midpoint = |i: usize| 0.5 * ((inputs.intervals[i].1 + inputs.intervals[i].2) as f64);
         let stay: Vec<f64> = indices
             .windows(2)
@@ -694,6 +788,11 @@ pub fn segments(inputs: &SampleInputs) -> Result<Vec<Segment>, String> {
 }
 
 /// Python's `'{0:.2f}'.format(q)`: the exact binary value rounded half to even.
+///
+/// **How**: write the magnitude out exactly, keep two decimals, and round up on a third digit
+/// above 5, or on a 5 followed by any non-zero digit, or on an exact 5 after an odd digit; the
+/// carry runs left through the nines. The sign is the value's own, so -0.001 prints `-0.00` as
+/// Python does (the test below).
 pub fn python_fixed2(value: f64) -> String {
     if !value.is_finite() {
         return if value.is_nan() {
@@ -740,6 +839,9 @@ pub fn python_fixed2(value: f64) -> String {
 }
 
 /// `io_commons.read_csv`: past the leading `@` lines, a header and tab-separated rows.
+///
+/// Empty lines among the rows are skipped. The cells stay text; `float_rows` and the callers
+/// parse them.
 fn read_table(path: &str) -> Result<(Vec<String>, Vec<Vec<String>>), String> {
     let text = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
     let mut lines = text.lines().skip_while(|line| line.starts_with('@'));
@@ -756,6 +858,7 @@ fn read_table(path: &str) -> Result<(Vec<String>, Vec<Vec<String>>), String> {
     Ok((header, rows))
 }
 
+/// The index of the column `name`, or an error naming the file.
 fn column(header: &[String], name: &str, path: &str) -> Result<usize, String> {
     header
         .iter()
@@ -763,6 +866,10 @@ fn column(header: &[String], name: &str, path: &str) -> Result<usize, String> {
         .ok_or_else(|| format!("{path}: no column {name}"))
 }
 
+/// Every cell of a table through [`precise_xstrtod`], as pandas reads a float table.
+///
+/// Collecting an iterator of `Result`s into a `Result<Vec<..>, String>` stops at the first error
+/// and returns it.
 fn float_rows(path: &str) -> Result<Vec<Vec<f64>>, String> {
     let (_, rows) = read_table(path)?;
     rows.iter()
@@ -803,6 +910,10 @@ fn json_number(path: &str, key: &str) -> Result<f64, String> {
 
 /// What `ViterbiSegmentationEngine.__init__` and the generator read, for `sample_index`, from
 /// shards already in genomic order.
+///
+/// The sample's ploidy comes from the ploidy-calls directory entry whose `contig_ploidy.tsv`
+/// header names this sample; the entries are visited in sorted path order, and if several match,
+/// the last one read is kept.
 pub fn read_sample_inputs(
     model_shards: &[String],
     calls_shards: &[String],

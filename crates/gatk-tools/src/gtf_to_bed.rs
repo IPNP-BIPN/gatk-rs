@@ -1,5 +1,5 @@
 //! `GtfToBed`, ported from `org.broadinstitute.hellbender.tools.walkers.conversion.GtfToBed` and
-//! `GtfInfo` (GATK 4.6.2.0).
+//! `GtfInfo` (GATK 4.7.0.0; `GtfToBed.java` and `GtfInfo.java` are unchanged since 4.6.2.0).
 //!
 //! A Gencode GTF reduced to one row per gene, or one per transcript. The whole tool is a map keyed
 //! by gene or transcript id, a comparator, and four columns.
@@ -30,6 +30,17 @@
 //! order is the same either way: the dictionary's contig INDEX, then the start, then the key, so
 //! two features beginning at one position are separated by their gene or transcript id compared as
 //! STRINGS.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is "a value or nothing" and `Result<T, E>` "a value or an error"; [`GtfError`] is
+//!   how this file models the exceptions the Java throws. A `?` after an expression hands the
+//!   nothing or the error straight back to the caller;
+//! - `&str` is a borrowed, read-only view of a string, and `&[T]` of a list; the caller keeps
+//!   ownership. `.to_string()` and `.clone()` make an owned copy where a value must outlive it;
+//! - `.filter(..)`, `.map(..)`, `.filter_map(..)` (map, dropping the `None`s) and `.collect()` are
+//!   Java's stream operations; `|x| ...` is a lambda;
+//! - `match` must cover every case, which the compiler checks; `_` is "anything else".
 
 use std::collections::BTreeMap;
 
@@ -57,12 +68,17 @@ pub struct Feature {
 
 /// One `tag`, `gene_id` or `gene_name` of a GTF line's ninth column.
 ///
+/// The first entry whose key matches wins. `<'a>` says the returned slice borrows from
+/// `attributes`, so no string is copied.
+///
 /// The column is `key "value"; key "value";`, and a key may repeat: `tag` does, which is why the
 /// tags are a list. Quotes are stripped and nothing else is interpreted.
 fn attribute<'a>(attributes: &'a str, key: &str) -> Option<&'a str> {
     attributes.split("; ").find_map(|entry| {
         let entry = entry.trim().trim_end_matches(';');
         let (name, value) = entry.split_once(' ')?;
+        // `cond.then(|| v)` is `cond ? Optional.of(v) : Optional.empty()`; `find_map` returns the
+        // first `Some`.
         (name == key).then(|| value.trim_matches('"'))
     })
 }
@@ -72,6 +88,10 @@ fn attribute<'a>(attributes: &'a str, key: &str) -> Option<&'a str> {
 /// `GencodeGtfCodec` decodes every feature type and the tool then keeps these two, so a line of any
 /// other type is dropped here rather than carried and ignored. A `gene` line has no
 /// `transcript_id`, which is what leaves that field empty.
+///
+/// A line short of nine columns, with a start or end that is not an integer, or without
+/// `gene_id` or `gene_name` is dropped (each `?` below makes the line's closure return `None`).
+/// That is this reader's leniency, not `GencodeGtfCodec`'s, which this file does not port.
 pub fn parse_features(gtf: &str) -> Vec<Feature> {
     gtf.lines()
         .filter(|line| !line.is_empty() && !line.starts_with('#'))
@@ -109,7 +129,8 @@ pub fn parse_features(gtf: &str) -> Vec<Feature> {
         .collect()
 }
 
-/// `GtfInfo`.
+/// `GtfInfo`: the interval (contig, start, end, one-based and closed as the GTF has them), the
+/// gene's name and the entry's type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GtfInfo {
     pub contig: String,
@@ -132,6 +153,7 @@ pub enum GtfError {
 }
 
 impl GtfError {
+    /// The class of the exception the reference throws, as the golden records it.
     pub fn java_class(&self) -> &str {
         match self {
             GtfError::NoDictionary => "org.broadinstitute.hellbender.exceptions.UserException",
@@ -140,6 +162,12 @@ impl GtfError {
         }
     }
 
+    /// The exception's message.
+    ///
+    /// `onTraversalStart`: `"Sequence Dictionary must be specified (" +
+    /// StandardArgumentDefinitions.SEQUENCE_DICTIONARY_NAME + ")."`; the comparator:
+    /// `"could not get sequence for " + e1Interval.getContig()`. The `MissingGene` text is this
+    /// port's own, since the reference's NullPointerException carries none it chose.
     pub fn message(&self) -> String {
         match self {
             GtfError::NoDictionary => {
@@ -158,6 +186,18 @@ impl GtfError {
 /// `use_basic` is `--use-basic-transcript`, which keeps only transcripts carrying a `tag` whose
 /// value is `basic`. The reference processes such a transcript once per matching tag, which is
 /// idempotent, so a transcript tagged twice lands once.
+///
+/// ```java
+/// if (sortByBasic) {
+///     for (GencodeGtfFeature.OptionalField<?> field : optionalFields) {
+///         if ("basic".equals(field.getValue())) {
+///             processTranscriptFeature(gtfFeature);
+/// ```
+///
+/// The reference's map is a `HashMap`; a `BTreeMap` (sorted by key) is used here because the
+/// map's own order never reaches the output: [`sorted`] orders every entry by a total key.
+/// `insert` is `put`, replacing an existing entry, so a gene or transcript id seen twice keeps the
+/// later line, and a gene line after its transcripts resets the widening they did.
 pub fn collect(
     features: &[Feature],
     use_basic: bool,
@@ -192,6 +232,11 @@ pub fn collect(
                         kind: EntryType::Transcript,
                     },
                 );
+                // `updateGeneStart` and `updateGeneEnd`: the transcript is stored first, then its
+                // gene is looked up, so a missing gene fails after the transcript is in the map,
+                // as the Java's `featureInfoMap.get(gtfFeature.getGeneId()).getStart()` does.
+                // `get_mut` lends a writable reference into the map; `ok_or_else` turns its
+                // `None` into the error.
                 let gene = map
                     .get_mut(&feature.gene_id)
                     .ok_or_else(|| GtfError::MissingGene {
@@ -210,10 +255,23 @@ pub fn collect(
 }
 
 /// `GtfInfoComparator`: contig index, then start, then the key as a string.
+///
+/// After `comparingInt` on the contig's `getSequenceIndex()`:
+///
+/// ```java
+///         .thenComparingInt(e -> e.getValue().getInterval().getStart())
+///         .thenComparing(Map.Entry::getKey)
+/// ```
+///
+/// The key is unique in the map, so the order is total and the sort's stability never matters.
+/// Every contig is looked up before sorting, where the Java checks inside `compare`, so the
+/// Java only checks entries the sort actually compares.
 pub fn sorted(
     map: &BTreeMap<String, GtfInfo>,
     dictionary: &[String],
 ) -> Result<Vec<(String, GtfInfo)>, GtfError> {
+    // A closure (lambda) returning the contig's position in the dictionary, which is
+    // `getSequenceIndex()` for a dictionary listed in order.
     let index = |contig: &str| -> Result<usize, GtfError> {
         dictionary
             .iter()
@@ -239,6 +297,9 @@ pub fn sorted(
 }
 
 /// `formatBedLine`, whose start is the GTF's own.
+///
+/// A transcript row appends `"," + entry.getKey()` to the gene name, so its fourth column is
+/// `name,transcript_id`.
 pub fn bed_line(key: &str, info: &GtfInfo, kind: EntryType) -> String {
     let mut line = format!(
         "{}\t{}\t{}\t{}",
@@ -261,6 +322,8 @@ pub fn run(
     sort_by_transcript: bool,
     use_basic: bool,
 ) -> Result<String, GtfError> {
+    // `let Some(x) = y else { .. }`: unwrap the dictionary or take the early exit, which is
+    // `onTraversalStart`'s `if(sequenceDictionary == null)` throw.
     let Some(dictionary) = dictionary else {
         return Err(GtfError::NoDictionary);
     };

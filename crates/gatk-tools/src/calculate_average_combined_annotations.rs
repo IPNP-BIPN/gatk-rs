@@ -1,14 +1,19 @@
 //! `CalculateAverageCombinedAnnotations`, ported from
-//! `org.broadinstitute.hellbender.tools.CalculateAverageCombinedAnnotations` (GATK 4.6.2.0).
+//! `org.broadinstitute.hellbender.tools.CalculateAverageCombinedAnnotations` (GATK 4.7.0.0;
+//! `CalculateAverageCombinedAnnotations.java` is unchanged since 4.6.2.0).
 //!
 //! Annotations that GenomicsDB summed across samples, divided by the number of samples that were
 //! called het or hom-var.
 //!
+//! Java quotes in this file are verbatim except for line breaks added to fit 100 columns.
+//!
 //! # The divisor is two of three counts, read as doubles
 //!
 //! ```java
-//! List<String> genotypeCounts = variant.getAttributeAsStringList(RAW_GENOTYPE_COUNT_KEY, "");
-//! double counter = Double.parseDouble(genotypeCounts.get(1)) + Double.parseDouble(genotypeCounts.get(2));
+//! List<String> genotypeCounts =
+//!         variant.getAttributeAsStringList(GATKVCFConstants.RAW_GENOTYPE_COUNT_KEY, "");
+//! double counter = Double.parseDouble(genotypeCounts.get(1))
+//!         + Double.parseDouble(genotypeCounts.get(2));
 //! ```
 //!
 //! `RAW_GT_COUNT` is hom-ref, het, hom-var, and the first is ignored. The two that count are
@@ -23,6 +28,16 @@
 //!
 //! Whether any record carries it or not, and whether the input declared it or not. A run asking
 //! for an annotation the file never mentions still declares `AVERAGE_` for it.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is "a value or nothing" (Java's nullable reference, checked by the compiler) and
+//!   `Result<T, E>` is "a value or an error", which is how a `UserException` is returned here.
+//! - `?` after a `Result` returns its error to the caller at once: Java's `throw` at that line.
+//! - `.ok_or_else(..)`, `.and_then(..)`, `.unwrap_or(..)` are `Optional`'s `orElseThrow`,
+//!   `flatMap` and `orElse`.
+//! - `if let Some(x) = y { .. }` runs the block only when `y` holds a value, binding it to `x`.
+//! - `&[String]` is a borrowed, read-only view of a list; `.clone()` is an explicit deep copy.
 
 use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType, VcfHeader};
 use htsjdk_vcf::variant::{Value, VariantContext};
@@ -41,10 +56,18 @@ pub enum AverageError {
 }
 
 impl AverageError {
+    /// The exception class GATK prints: both refusals are `UserException`s.
     pub fn java_class(&self) -> &str {
         "org.broadinstitute.hellbender.exceptions.UserException"
     }
 
+    /// The exception's message, built with the Java's own format strings:
+    ///
+    /// ```java
+    /// throw new UserException("--" + ANNOTATION_LIST_LONG_NAME + " must be provided.");
+    /// throw new UserException(String.format("Need annotation %s at site %s:%d",
+    ///         GATKVCFConstants.RAW_GENOTYPE_COUNT_KEY, variant.getContig(), variant.getStart()));
+    /// ```
     pub fn message(&self) -> String {
         match self {
             AverageError::MissingCounts { contig, start } => {
@@ -58,6 +81,12 @@ impl AverageError {
 }
 
 /// The INFO line one requested annotation adds, which quotes the source twice.
+///
+/// ```java
+/// header.addMetaDataLine(new VCFInfoHeaderLine("AVERAGE_" + annot, 1, VCFHeaderLineType.Float,
+///         "Average of "+ annot +" annotation across samples. See "+ annot
+///         +" header line for more information."));
+/// ```
 pub fn average_header_line(annotation: &str) -> HeaderLine {
     HeaderLine::Compound {
         key: "INFO".to_string(),
@@ -73,6 +102,9 @@ pub fn average_header_line(annotation: &str) -> HeaderLine {
 }
 
 /// `onTraversalStart`: the header the writer gets.
+///
+/// The empty-list check comes first, as it does in the Java, and the lines are added in the order
+/// the annotations were given.
 pub fn header_with_averages(
     header: &VcfHeader,
     annotations: &[String],
@@ -88,6 +120,9 @@ pub fn header_with_averages(
 }
 
 /// `getAttributeAsStringList(key, "")`, for the one key this tool reads.
+///
+/// `None` when the key is absent, which [`apply`] turns into the `hasAttribute` refusal. A single
+/// value becomes a one-element list, as `getAttributeAsStringList` does with a non-list attribute.
 fn counts(record: &VariantContext) -> Option<Vec<String>> {
     record
         .attributes
@@ -99,6 +134,7 @@ fn counts(record: &VariantContext) -> Option<Vec<String>> {
         })
 }
 
+/// One attribute value as text, so the counts can be parsed as the Java parses its strings.
 fn render(value: &Value) -> String {
     match value {
         Value::Int(number) => number.to_string(),
@@ -111,6 +147,9 @@ fn render(value: &Value) -> String {
 }
 
 /// `getAttributeAsDouble(annot, 0)`.
+///
+/// `None` stands for both the absent key (the Java's `hasAttribute` guard) and a value that is not
+/// a number, which the Java does not skip: see the note in [`apply`].
 fn attribute_as_double(record: &VariantContext, key: &str) -> Option<f64> {
     record
         .attributes
@@ -125,6 +164,16 @@ fn attribute_as_double(record: &VariantContext, key: &str) -> Option<f64> {
 }
 
 /// `apply` for one record: the record the writer is handed.
+///
+/// ```java
+/// double counter = Double.parseDouble(genotypeCounts.get(1))
+///         + Double.parseDouble(genotypeCounts.get(2));
+/// if (counter > 0 ) {
+/// ```
+///
+/// Two places are more lenient than the Java, which throws: a `RAW_GT_COUNT` with fewer than three
+/// entries or an unparseable one counts as zero here, and an annotation whose value is not a
+/// number is skipped here where `getAttributeAsDouble` would throw.
 pub fn apply(
     record: &VariantContext,
     annotations: &[String],
@@ -133,6 +182,8 @@ pub fn apply(
         contig: record.contig.clone(),
         start: record.start,
     })?;
+    // `.get(1)` is a bounds-checked `List.get` that answers `None` past the end instead of
+    // throwing.
     let divisor: f64 = counts
         .get(1)
         .and_then(|value| value.parse::<f64>().ok())

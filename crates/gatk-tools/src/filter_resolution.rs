@@ -31,16 +31,30 @@
 //!
 //! Ported from
 //! `org.broadinstitute.hellbender.cmdline.GATKPlugin.GATKReadFilterPluginDescriptor`.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[String]` and `&[&str]` are borrowed, read-only views of a list of strings; the caller keeps
+//!   the list. `&str` is a borrowed string, `String` an owned one, and `.to_string()` or
+//!   `.clone()` makes an owned copy.
+//! - `Result<T, E>` is "a value or an error": `Ok(list)` is the resolved list, `Err(..)` is the
+//!   `CommandLineException` the descriptor would throw.
+//! - an `enum` variant with `{ names }` carries data, like a small final class per exception case;
+//!   `match` must cover every variant, and `_` is "any other".
+//! - `.iter().filter(..).map(..).collect()` is Java's `stream().filter().map().collect()`.
 
-/// One filter of the resolved list.
+/// One filter of the resolved list: a `ReadFilter` instance of `getResolvedInstances`, identified
+/// by its name and whether it is the `ReadFilterNegate` wrapper.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedFilter {
+    /// The filter's simple class name, as given on the command line.
     pub name: String,
     /// Whether it arrived through `--inverted-read-filter`, which wraps it in a `ReadFilterNegate`.
     pub negated: bool,
 }
 
-/// What the descriptor refuses.
+/// What `validateAndResolvePlugins` refuses, one variant per `throw`, in the order the Java
+/// checks them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FilterResolutionError {
     EnabledTwice {
@@ -66,6 +80,9 @@ pub enum FilterResolutionError {
 }
 
 impl FilterResolutionError {
+    /// The class of the exception the Java throws: `CommandLineException.BadArgumentValue` for the
+    /// two duplicate checks and the unknown disabled filter, plain `CommandLineException` for the
+    /// rest.
     pub fn java_class(&self) -> &'static str {
         match self {
             FilterResolutionError::EnabledTwice { .. }
@@ -77,6 +94,8 @@ impl FilterResolutionError {
         }
     }
 
+    /// The exception's message. `BadArgumentValue` prefixes `Illegal argument value: ` to the
+    /// formatted text, which is why only its three variants carry the prefix here.
     pub fn message(&self) -> String {
         match self {
             FilterResolutionError::EnabledTwice { names } => format!(
@@ -112,7 +131,10 @@ impl FilterResolutionError {
     }
 }
 
-/// The names that appear more than once, in first-seen order.
+/// `Utils.getDuplicatedItems`: the names that appear more than once, in first-seen order.
+///
+/// The Java collects them into a `HashSet`, so it joins them in hash order, not first-seen
+/// order. The two differ only when two or more names are duplicated.
 fn duplicated(names: &[String]) -> Vec<String> {
     let mut seen = Vec::new();
     let mut twice = Vec::new();
@@ -132,6 +154,19 @@ fn duplicated(names: &[String]) -> Vec<String> {
 ///
 /// `known` is every filter name the library carries, which is what an unknown name is measured
 /// against; `defaults` is the tool's own list, in the order it declares them.
+///
+/// The checks run in the Java's order, so a command line with two faults reports the first one
+/// the Java reaches. The resolved list is then the defaults minus the disabled ones, followed by
+/// the enabled and the inverted filters not already present:
+///
+/// ```java
+/// userEnabledFilters.stream()
+///         .filter(f -> !finalFilters.contains(f)) // remove redundant filters
+///         .forEach(f -> finalFilters.add(f));
+/// ```
+///
+/// The Java's warnings (a disabled filter the tool never enabled, an enabled filter that is
+/// already a default) change nothing in the output, so they are not reproduced.
 pub fn resolve(
     defaults: &[&str],
     known: &[&str],
@@ -140,6 +175,7 @@ pub fn resolve(
     inverted: &[String],
     disable_defaults: bool,
 ) -> Result<Vec<ResolvedFilter>, FilterResolutionError> {
+    // `return Err(..)` is the `throw`: the function stops and the caller gets the error.
     let twice = duplicated(enabled);
     if !twice.is_empty() {
         return Err(FilterResolutionError::EnabledTwice { names: twice });
@@ -159,10 +195,13 @@ pub fn resolve(
     if !both.is_empty() {
         return Err(FilterResolutionError::EnabledAndDisabled { names: both });
     }
+    // `|name| ...` is a closure, Java's lambda `name -> ...`.
     if enabled.iter().any(|name| inverted.contains(name)) {
         return Err(FilterResolutionError::EnabledAndInverted);
     }
 
+    // `allDiscoveredReadFilters.containsKey(s)`. `as_str()` borrows the `String` as a `&str` so
+    // it can be compared with the `&str` entries of `known`.
     for name in disabled {
         if !known.contains(&name.as_str()) {
             return Err(FilterResolutionError::DisabledDoesNotExist { name: name.clone() });
@@ -170,6 +209,8 @@ pub fn resolve(
         // A filter the tool never enabled is only a warning, which is not an observable here.
     }
 
+    // `redundantInv`, checked only when the defaults are kept. The Java's set is a `HashSet`, so
+    // with two or more names its order is hash order; this lists them in the tool's order.
     if !disable_defaults {
         let redundant: Vec<String> = defaults
             .iter()
@@ -181,12 +222,15 @@ pub fn resolve(
         }
     }
 
+    // `Unrecognized read filter name`: a name neither in the library nor among the tool's
+    // defaults.
     for name in &all_enabled {
         if !known.contains(&name.as_str()) && !defaults.contains(&name.as_str()) {
             return Err(FilterResolutionError::Unrecognized { name: name.clone() });
         }
     }
 
+    // `if` is an expression in Rust: the list is whichever branch runs, like Java's `?:` here.
     let mut resolved: Vec<ResolvedFilter> = if disable_defaults {
         Vec::new()
     } else {
@@ -200,6 +244,7 @@ pub fn resolve(
             .collect()
     };
 
+    // `getUserEnabledInstances` adds the enabled filters first, then the inverted ones.
     for name in enabled {
         let candidate = ResolvedFilter {
             name: name.clone(),
@@ -210,7 +255,10 @@ pub fn resolve(
         }
     }
     for name in inverted {
-        // A negated filter is never equal to the filter it negates, so it is always appended.
+        // A negated filter is never equal to the filter it negates, so it is appended even when
+        // the plain filter is already in the list. The same name inverted twice is appended once
+        // here, but twice by the Java: `negate()` answers a new `ReadFilterNegate` each time and
+        // nothing checks the inverted list for duplicates.
         let candidate = ResolvedFilter {
             name: name.clone(),
             negated: true,

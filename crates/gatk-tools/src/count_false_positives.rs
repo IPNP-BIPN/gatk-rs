@@ -1,12 +1,17 @@
 //! `CountFalsePositives`, ported from
-//! `org.broadinstitute.hellbender.tools.walkers.validation.CountFalsePositives` (GATK 4.6.2.0).
+//! `org.broadinstitute.hellbender.tools.walkers.validation.CountFalsePositives` (GATK 4.7.0.0;
+//! `CountFalsePositives.java` and `FalsePositiveRecord.java` are unchanged since 4.6.2.0).
 //!
 //! Two counters, a denominator and a six-column table. Each of the three hides a decision.
 //!
 //! # Everything that is not an indel is a SNP
 //!
 //! ```java
-//! if (variant.isIndel()) { indelFalsePositiveCount++; } else { snpFalsePositiveCount++; }
+//! if (variant.isIndel()) {
+//!     indelFalsePositiveCount++;
+//! } else {
+//!     snpFalsePositiveCount++;
+//! }
 //! ```
 //!
 //! `isIndel()` is `getType() == INDEL` and nothing looser, so an MNP, a symbolic allele, a mixed
@@ -37,6 +42,15 @@
 //! `count * 1e6 / territory` for every input. They are written through `DataLine.set(double)`,
 //! whose rounding branch is dead code ([`gatk_engine::tsv_table::java_double_to_string`]), so an
 //! integral rate keeps its `.0` and the golden's `5000.0` is not `5000`.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[T]` is a borrowed, read-only view of an array or list; the caller keeps ownership.
+//! - `i64` is Java's `long`, `f64` is `double`; `x as f64` is Java's `(double) x` cast.
+//! - `#[derive(...)]` asks the compiler to write the listed boilerplate (equality, copying, a
+//!   zero `Default`), which Java would spell out as `equals`, `clone` and a constructor.
+//! - A `match` must cover every case, and the compiler checks that it does.
+//! - A function's last expression, written without `;` or `return`, is its return value.
 
 use gatk_engine::interval::SimpleInterval;
 use gatk_engine::tsv_table::{java_double_to_string, write_table};
@@ -69,10 +83,18 @@ pub enum CountFalsePositivesError {
 
 impl CountFalsePositivesError {
     /// The Java class the reference throws: a plain `UserException`, not one of its subclasses.
+    ///
+    /// ```java
+    /// throw new UserException(String.format("Encountered an IO exception while opening %s",
+    ///         outputFile));
+    /// ```
+    ///
+    /// (One line in the reference, wrapped here.)
     pub fn class(&self) -> &'static str {
         "org.broadinstitute.hellbender.exceptions.UserException"
     }
 
+    /// The exception's message: the `String.format` above, with the `-O` argument as given.
     pub fn message(&self) -> String {
         match self {
             CountFalsePositivesError::CouldNotOpenOutput { path } => {
@@ -85,11 +107,16 @@ impl CountFalsePositivesError {
 /// The two counters `apply` keeps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Counts {
+    /// `snpFalsePositiveCount`: every unfiltered record that is not an indel (module note).
     pub snp: i64,
+    /// `indelFalsePositiveCount`: every unfiltered record whose type is exactly `INDEL`.
     pub indel: i64,
 }
 
 /// `apply` over the traversal: filtered records return early, and the rest fall into two buckets.
+///
+/// htsjdk's `CommonInfo.isFiltered()` is `filters != null && !filters.isEmpty()`, so a `PASS`
+/// record (an empty set) and a record with `.` in FILTER (no set) are both counted.
 pub fn count(variants: &[VariantContext]) -> Counts {
     let mut counts = Counts::default();
     for variant in variants {
@@ -106,6 +133,13 @@ pub fn count(variants: &[VariantContext]) -> Counts {
 }
 
 /// The denominator: the merged intervals' bases.
+///
+/// ```java
+/// final long targetTerritory = intervals.stream().mapToLong(i -> i.size()).sum();
+/// ```
+///
+/// `i64::from` widens each `int` size to `long` before the sum, as `mapToLong` does, so a
+/// territory past `Integer.MAX_VALUE` does not wrap.
 pub fn target_territory(intervals: &[SimpleInterval]) -> i64 {
     intervals
         .iter()
@@ -113,14 +147,31 @@ pub fn target_territory(intervals: &[SimpleInterval]) -> i64 {
         .sum()
 }
 
-/// `FalsePositiveRecord.getSnpFalsePositiveRate`: divided first, scaled second.
+/// `FalsePositiveRecord.getSnpFalsePositiveRate` (and its indel twin): divided first, scaled
+/// second, as the module note quotes. Rust's `as f64` binds tighter than `/`, as Java's cast does.
 pub fn false_positive_rate(count: i64, territory: i64) -> f64 {
     count as f64 / territory as f64 * 1e6
 }
 
 /// `GATKPath.getBaseName()`: the file name with **one** extension removed.
+///
+/// htsjdk 5.0.0's `IOPath.getBaseName()` keeps the stem only when the dot is past index one:
+///
+/// ```java
+/// } else if (indexOfLastDot > 1) {
+///     return Optional.of(lastComponent.substring(0, indexOfLastDot));
+/// }
+/// ```
+///
+/// and otherwise returns `Optional.empty()`, which the tool's `.get()` turns into an exception.
+/// This function never fails and keeps any stem of one character or more (`dot > 0`), so the two
+/// differ when the last dot is at index zero or one (`.vcf`, `x.vcf`): there the reference throws.
 pub fn id_from_path(path: &str) -> String {
+    // `rsplit('/').next()` is the text after the last `/`. `rfind` returns an `Option`: the
+    // byte index of the last `.`, or `None` when there is none.
     let name = path.rsplit('/').next().unwrap_or(path);
+    // `Some(dot) if dot > 0` is a match arm with a guard: it applies only when the condition
+    // holds, and every other case (no dot, or a leading dot) falls to `_`.
     match name.rfind('.') {
         Some(dot) if dot > 0 => name[..dot].to_string(),
         _ => name.to_string(),
@@ -128,6 +179,9 @@ pub fn id_from_path(path: &str) -> String {
 }
 
 /// The whole output file: the header line and the one record.
+///
+/// `composeLine` sets the two counts and the territory as `long`, printed as plain integers, and
+/// the two rates as `double`, printed through `java_double_to_string`.
 pub fn table(id: &str, counts: Counts, territory: i64) -> String {
     let row = vec![
         id.to_string(),

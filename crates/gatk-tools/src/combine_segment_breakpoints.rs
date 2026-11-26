@@ -1,6 +1,7 @@
 //! `CombineSegmentBreakpoints`, ported from
 //! `org.broadinstitute.hellbender.tools.copynumber.utils.CombineSegmentBreakpoints` and
-//! `IntervalUtils.combineAndSortBreakpoints` (GATK 4.6.2.0).
+//! `IntervalUtils.combineAndSortBreakpoints` (GATK 4.7.0.0; both files are unchanged since
+//! 4.6.2.0).
 //!
 //! Two segment files cut at every breakpoint either of them carries, each piece annotated from
 //! both.
@@ -26,6 +27,22 @@
 //! is suffixed with that file's label, which defaults to `1` and `2`; a column only one file
 //! carries keeps its name. A piece that no segment of a file overlaps takes EMPTY STRINGS for that
 //! file's columns rather than leaving them out, so every row has every column.
+//!
+//! # Overlapping segments within one file are not refused here
+//!
+//! `combineAndSortBreakpoints` begins with `validateNoOverlappingIntervals(locatables1);` and the
+//! same for the second list, which throws on a file holding `chr1:1-100` and `chr1:50-150`. This
+//! file does not make that check, and cuts such a file like any other.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[AnnotatedInterval]` is a borrowed, read-only view of a list; the caller keeps ownership.
+//! - `#[derive(PartialOrd, Ord)]` on an enum orders its variants as declared, which is how a tuple
+//!   `(position, Breakpoint)` sorts by position and then starts before ends.
+//! - `.chain(..)` concatenates two iterators; `.flat_map(..)` turns each segment into two items.
+//! - `BTreeMap` is Java's `TreeMap`: iteration is in key order.
+//! - `saturating_sub(1)` subtracts but stops at zero, so an empty list loops zero times instead of
+//!   wrapping the unsigned length.
 
 use crate::annotated_interval::AnnotatedInterval;
 use std::collections::BTreeMap;
@@ -38,11 +55,22 @@ pub const DEFAULT_LABELS: [&str; 2] = ["1", "2"];
 /// The order of the enum is the order the sort uses at equal positions: starts first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Breakpoint {
+    /// `IntervalBreakpointType.START_BREAKPOINT`.
     Start,
+    /// `IntervalBreakpointType.END_BREAKPOINT`.
     End,
 }
 
 /// `combineAndSortBreakpoints`, for one contig's worth of segments at a time.
+///
+/// ```java
+/// int start = (!isCurrentBreakpointStart && !isNextBreakpointStart
+///         ? currentBreakpoint + 1 : currentBreakpoint);
+/// int end = (isCurrentBreakpointStart && isNextBreakpointStart
+///         ? nextBreakpoint - 1 : nextBreakpoint);
+/// ```
+///
+/// Line breaks are added to fit 100 columns. The rest of the loop follows the Java's in order.
 fn pieces_for_contig(contig: &str, breakpoints: &[(i32, Breakpoint)]) -> Vec<(i32, i32)> {
     // A `HashSet` in the reference, so a position that is a start in both files appears once.
     let mut unique: Vec<(i32, Breakpoint)> = Vec::new();
@@ -52,6 +80,7 @@ fn pieces_for_contig(contig: &str, breakpoints: &[(i32, Breakpoint)]) -> Vec<(i3
         }
     }
     unique.sort();
+    // `contig` is not needed to cut; the caller attaches it to each piece.
     let _ = contig;
     let mut pieces = Vec::new();
     let mut starts_seen = 0;
@@ -89,6 +118,9 @@ fn pieces_for_contig(contig: &str, breakpoints: &[(i32, Breakpoint)]) -> Vec<(i3
 }
 
 /// Every piece the two files cut each other into, in dictionary order.
+///
+/// The Java returns the other list unchanged when one is empty; cutting a list of non-overlapping
+/// segments against nothing gives back the same segments, so this does not special-case it.
 pub fn combine_and_sort_breakpoints(
     first: &[AnnotatedInterval],
     second: &[AnnotatedInterval],
@@ -147,6 +179,8 @@ pub fn combine(
     labels: [&str; 2],
     columns_of_interest: &[String],
 ) -> Vec<AnnotatedInterval> {
+    // The columns a file contributes, read off its first segment and restricted to
+    // `--columns-of-interest` when that was given.
     let keep = |segment: &AnnotatedInterval| -> Vec<String> {
         segment
             .annotations

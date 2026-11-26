@@ -1,5 +1,5 @@
 //! Ported from `org.broadinstitute.hellbender.tools.walkers.fasta.FastaReferenceMaker`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `FastaReferenceMaker.java` is unchanged since 4.6.2.0).
 //!
 //! A `ReferenceWalker` whose `apply` appends one base, and whose output is a FASTA written through
 //! [`htsjdk_bam::fasta_writer`] with its index and dictionary beside it.
@@ -23,6 +23,17 @@
 //! `currentSequenceStartPosition` is the first locus of the sequence and the end is the last locus
 //! seen, so the header describes what was written. With intervals that is the same thing; with a
 //! gap in the middle it is not.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, MakerError>` is "a value or an error"; it is how a Java exception is modelled.
+//!   `?` after a call returns its error to the caller at once, a `throws` at one call site, and
+//!   `.map_err(MakerError::Writer)` first wraps the callee's error in this file's error type.
+//! - `Option<SimpleInterval>` is a value or nothing (`Some(x)` or `None`); it stands for Java's
+//!   nullable `lastPosition`, with the compiler forcing every use to say what happens on `None`.
+//! - `&` before a type or value is a borrowed reference: the callee reads it and the caller keeps
+//!   it. `&mut` is a borrowed reference the callee may write through.
+//! - A body's last expression, with no `;`, is its return value.
 
 use gatk_engine::interval::SimpleInterval;
 use gatk_engine::interval_args::IntervalArguments;
@@ -44,6 +55,8 @@ pub enum MakerError {
 
 /// `doWork`: the FASTA, the `.fai` and the `.dict`.
 ///
+/// **How**: resolve `-L`/`-XL` against the reference's own dictionary, then [`run_over`].
+///
 /// `bases_per_line` is `--line-width`, whose default is the writer's own.
 pub fn run(
     reference: &mut ReferenceFileSource,
@@ -62,6 +75,13 @@ pub fn run(
 /// middle of the traversal still writes its three files: the FASTA and the `.fai` are empty, and
 /// the dictionary holds nothing but its `@HD` line. This is that state, produced by the same
 /// writer rather than spelled out, so it cannot drift from what a real close would emit.
+///
+/// `closeTool` swallows the writer's `IllegalStateException`, which is why the files survive:
+///
+/// ```java
+/// } catch (IllegalStateException e){
+///     //sink this
+/// ```
 pub fn empty_outputs(bases_per_line: usize) -> Result<FastaOutputs, MakerError> {
     let writer = FastaReferenceWriter::new(bases_per_line, true).map_err(MakerError::Writer)?;
     // `close_streams` and not `close`: an empty reference is refused by `close()`, and what is
@@ -75,6 +95,11 @@ pub fn empty_outputs(bases_per_line: usize) -> Result<FastaOutputs, MakerError> 
 /// It exists for the reason [`reference_walker::traverse_intervals`] does: a command line resolves
 /// its intervals against the BEST available dictionary, which a `--sequence-dictionary` outranks
 /// the reference in, and the traversal then queries the FASTA with them.
+///
+/// **How**: the reference's `apply`/`advancePosition` state machine, run over the list of loci the
+/// traversal returns rather than as a callback: the closure passed to `traverse_intervals`
+/// (`|locus| locus.clone()`, Java's lambda) only records each locus, and the loop below then does
+/// what `addToReference` does to each, in the same order.
 pub fn run_over(
     reference: &mut ReferenceFileSource,
     intervals: &[SimpleInterval],
@@ -124,8 +149,9 @@ pub fn run_over(
     }
 
     // `onTraversalSuccess` finalizes whatever is open. A traversal that applied nothing still calls
-    // it, and the reference then writes a sequence with a null name -- which cannot happen here,
-    // because a reference with no bases has no contigs either.
+    // it, and the reference's `finalizeSequence` then dereferences a null `lastPosition`
+    // (`lastPosition.getContig()`), which cannot happen here, because a reference with no bases
+    // has no contigs either.
     if last.is_some() {
         finalize(
             &mut writer,
@@ -141,6 +167,16 @@ pub fn run_over(
 }
 
 /// `finalizeSequence`: the numbered name, the description, and the bases collected so far.
+///
+/// The description, broken here to fit:
+///
+/// ```java
+/// final String description = lastPosition.getContig() + ":" + currentSequenceStartPosition
+///         + "-" + lastPosition.getEnd();
+/// ```
+///
+/// `.expect(..)` unwraps the `Option` and panics (aborts, like an unchecked Java exception) on
+/// `None`; both callers check `last.is_some()` first.
 fn finalize(
     writer: &mut FastaReferenceWriter,
     count: usize,
@@ -158,6 +194,18 @@ fn finalize(
 }
 
 /// `Locatable.withinDistanceOf`, which is false across contigs whatever the distance.
+///
+/// htsjdk 5.0.0 `Locatable.java` (the second line is broken here to fit):
+///
+/// ```java
+/// return contigsMatch(other)
+///         && CoordMath.overlaps(getStart(), getEnd(),
+///                 other.getStart() - distance, other.getEnd() + distance);
+/// ```
+///
+/// `CoordMath.overlaps` tests whether either end of the second span falls inside the first or
+/// the second encloses the first; for the single-base loci compared here (start equals end) that
+/// is the two inequalities below, with `distance` moved to the other side of the second.
 fn within_distance_of(left: &SimpleInterval, right: &SimpleInterval, distance: i32) -> bool {
     left.contig == right.contig
         && left.start <= right.end + distance

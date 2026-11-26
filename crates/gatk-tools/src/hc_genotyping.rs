@@ -1,6 +1,7 @@
-//! Ported from `org.broadinstitute.hellbender.tools.walkers.haplotypecaller.HaplotypeCallerGenotypingEngine`
-//! (`assignGenotypeLikelihoods`, `calculateGLsForThisEvent`) (GATK 4.6.2.0): the calls
-//! HaplotypeCaller makes from a region's haplotypes and read likelihoods.
+//! Ported from `org.broadinstitute.hellbender`'s
+//! `tools.walkers.haplotypecaller.HaplotypeCallerGenotypingEngine` (`assignGenotypeLikelihoods`,
+//! `calculateGLsForThisEvent`) (GATK 4.7.0.0; `HaplotypeCallerGenotypingEngine.java` is unchanged
+//! since 4.6.2.0): the calls HaplotypeCaller makes from a region's haplotypes and read likelihoods.
 //!
 //! At each event start inside the active window, the events at the start become one merged context
 //! and an allele mapper ([`gatk_engine::allele_mapping`]); the read-by-haplotype matrix is
@@ -30,8 +31,35 @@
 //! resolved per event from the STR at the site, and an indel call is annotated with the period,
 //! the repeat count and the table's values there.
 //!
-//! Not ported here: contamination downsampling, and the reduction of sites with more alleles than
-//! the genotype count allows (refused).
+//! Contamination downsampling runs per event when `ContaminationDownsampling` is given, as
+//! `contaminationDownsampling(configuration.getSampleContamination())` runs it.
+//!
+//! Not ported here: the reduction of sites with more alleles than the genotype count allows
+//! (refused). The Java keeps the best-scored alleles and warns instead
+//! (`HaplotypeCallerGenotypingEngine.java` lines 419-423):
+//!
+//! ```java
+//! if (originalAlleleCount > practicalAlleleCount) {
+//!     final List<Allele> allelesToKeep =
+//!             whichAllelesToKeepBasedonHapScores(alleleMapper, practicalAlleleCount);
+//!     alleleMapper.keySet().retainAll(allelesToKeep);
+//! ```
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is a value that may be absent: `Some(x)` or `None`, where Java would use `null`.
+//!   `if let Some(x) = value { ... }` runs the block only when the value is there.
+//! - `Result<T, E>` is a value or an error. `?` after a call returns the error to the caller at
+//!   once, as an uncaught Java exception would; `.map_err(...)` first turns the error into the
+//!   `EngineError` this file reports, which names the Java exception class it stands for.
+//! - `refused(message)` builds that error as an `IllegalArgumentException`.
+//! - `|read| expr` is a lambda. `.iter().map(...).collect()` is a stream that ends in a list.
+//! - `&x` lends a value without copying it; `&mut x` lends it for changing. `.clone()` copies.
+//! - `Vec<T>` is an `ArrayList`. `BamoutTags` keeps its per-read text as a list of
+//!   `(key, value)` pairs searched in order, where the Java sets an attribute on each read.
+//! - `match` is a `switch` that must cover every case; `_` is the default branch.
+//! - Haplotypes and calls are addressed by index (`usize`) into their slices, where the Java holds
+//!   object references in sets and maps.
 
 use gatk_engine::allele_likelihoods::AlleleLikelihoods;
 use gatk_engine::allele_mapping::{
@@ -59,6 +87,7 @@ use gatk_engine::java_random::JavaRandom;
 /// The `HaplotypeCallerArgumentCollection` fields the genotyping engine reads.
 #[derive(Debug, Clone)]
 pub struct HcGenotypingArguments {
+    /// `--sample-ploidy`, 2 by default.
     pub sample_ploidy: usize,
     /// `--informative-read-overlap-margin`.
     pub informative_read_overlap_margin: i32,
@@ -123,6 +152,7 @@ impl ContaminationDownsampling {
 pub struct VariantResources {
     /// Each overlap name's records, in the annotator's `overlap_names` order.
     pub overlaps: Vec<Vec<VariantContext>>,
+    /// The `--dbsnp` records, when given.
     pub dbsnp: Option<Vec<VariantContext>>,
 }
 
@@ -138,7 +168,9 @@ fn starting_at<'r>(records: &'r [VariantContext], vc: &VariantContext) -> Vec<&'
 /// The DRAGEN genotype models' switches.
 #[derive(Debug, Clone)]
 pub struct DragenModelArguments {
+    /// `--apply-bqd`: the base quality dropout model.
     pub bqd: bool,
+    /// `--apply-frd`: the foreign read detection model.
     pub frd: bool,
     /// `--max-effective-depth-adjustment-for-frd`.
     pub max_effective_depth_adjustment: i32,
@@ -147,6 +179,7 @@ pub struct DragenModelArguments {
 /// What `HaplotypeCallerGenotypingEngine` reads of DRAGstr.
 #[derive(Debug, Clone)]
 pub struct DragstrGenotyping {
+    /// The table read from `--dragstr-params-path`.
     pub params: DragstrParams,
     /// Not `--dont-use-dragstr-priors`.
     pub use_priors: bool,
@@ -154,6 +187,7 @@ pub struct DragstrGenotyping {
     pub het_hom_ratio: i32,
     /// `--heterozygosity` and `--indel-heterozygosity`, not yet in log10.
     pub snp_heterozygosity: f64,
+    /// `--indel-heterozygosity`, not yet in log10.
     pub indel_heterozygosity: f64,
 }
 
@@ -209,7 +243,9 @@ pub fn assign_genotype_likelihoods(
 /// The annotation engine `makeAnnotatedCall` runs, and the tool's random generator, which
 /// `QualByDepth` draws from.
 pub struct CallAnnotator<'a> {
+    /// The annotator engine built from the tool's annotation arguments.
     pub engine: &'a AnnotatorEngine,
+    /// The tool's random generator, a port of `java.util.Random`.
     pub random: &'a mut JavaRandom,
 }
 
@@ -268,6 +304,8 @@ pub fn assign_genotype_likelihoods_full(
     given: &[gatk_engine::event_map::Event],
     mut bamout: Option<&mut BamoutTags>,
 ) -> Result<Vec<VariantContext>, EngineError> {
+    // A local lambda that wraps a message as an `IllegalArgumentException`; most errors here go
+    // through it.
     let refused = |message: String| EngineError::Runtime {
         class: "IllegalArgumentException".to_string(),
         message,
@@ -335,6 +373,12 @@ pub fn assign_genotype_likelihoods_full(
     let mut calls = Vec::new();
     // `calledHaplotypes`: the haplotypes behind any allele of any call, once each.
     let mut called: Vec<usize> = Vec::new();
+    // The Java's loop over the event starts (`HaplotypeCallerGenotypingEngine.java` lines 165-168):
+    //
+    //     for( final int loc : eventStarts ) {
+    //         if( loc < activeRegionWindow.getStart() || loc > activeRegionWindow.getEnd() ) {
+    //             continue;
+    //         }
     for loc in starts {
         if loc < active_region_window.start || loc > active_region_window.end {
             continue;
@@ -345,6 +389,8 @@ pub fn assign_genotype_likelihoods_full(
             .map_err(|e| refused(e.to_string()))?;
         let replaced = replace_span_dels(events, &ref_base, loc);
         let collapsed = replaced.iter().any(|c| c.collapsed);
+        // `let Some(x) = ... else { continue; }`: no merged context at this start skips it, as the
+        // Java's `if (mergedVC == null) { continue; }` does.
         let Some(mut merged) =
             make_merged_variant_context(&replaced).map_err(|e| refused(format!("{e:?}")))?
         else {
@@ -371,11 +417,17 @@ pub fn assign_genotype_likelihoods_full(
         let mut marginal = read_likelihoods
             .marginalize(&new_to_old)
             .map_err(|e| refused(format!("{e:?}")))?;
+        // `variantCallingRelevantOverlap` (`HaplotypeCallerGenotypingEngine.java` line 194):
+        //
+        //     new SimpleInterval(mergedVC).expandWithinContig(
+        //             hcArgs.informativeReadOverlapMargin, sequenceDictionary)
         let overlap = SimpleInterval::new(&merged.contig, merged.start, merged.end)
             .and_then(|span| {
                 span.expand_within_contig(arguments.informative_read_overlap_margin, contig_length)
             })
             .ok_or_else(|| refused("no overlap interval".to_string()))?;
+        // `composeReadQualifiesForGenotypingPredicate`: the soft-unclipped span with the DRAGEN
+        // models, the aligned span otherwise.
         let qualifies = |read: &BamRecord| {
             if dragen_model.is_some() {
                 // `softUnclippedReadOverlapsInterval`.
@@ -394,6 +446,8 @@ pub fn assign_genotype_likelihoods_full(
         for reads in shared_filtered.iter_mut() {
             reads.retain(qualifies);
         }
+        // `if (configuration.isSampleContaminationPresent())`; the shared generator is locked for
+        // the draw, since every ploidy's engine reads the same one.
         if let Some(contamination) = &arguments.contamination {
             let mut random = contamination
                 .random
@@ -734,6 +788,7 @@ impl BamoutTags {
         Ok(())
     }
 
+    /// Adds `text` to a read's `XA`, after `", "` when it already has one.
     fn append(&mut self, key: (String, u16), text: &str) {
         match self.supported.iter_mut().find(|(k, _)| *k == key) {
             Some((_, value)) => {
@@ -761,6 +816,7 @@ enum PhaseGroup {
 }
 
 impl PhaseGroup {
+    /// The `PGT` text.
     fn description(self) -> &'static str {
         match self {
             PhaseGroup::Phase01 => "0|1",
@@ -768,6 +824,7 @@ impl PhaseGroup {
         }
     }
 
+    /// The genotype allele index that holds the alternate.
     fn alt_allele_index(self) -> usize {
         match self {
             PhaseGroup::Phase01 => 1,
@@ -775,6 +832,7 @@ impl PhaseGroup {
         }
     }
 
+    /// The complementary phase.
     fn other(self) -> PhaseGroup {
         match self {
             PhaseGroup::Phase01 => PhaseGroup::Phase10,
@@ -833,6 +891,8 @@ pub fn phase_calls(
     let mut mapping: Vec<Option<(usize, PhaseGroup)>> = vec![None; calls.len()];
     let mut counter = 0usize;
     let contains_all = |a: &[usize], b: &[usize]| b.iter().all(|x| a.contains(x));
+    // `'outer:` labels the loop so `break 'outer` leaves both loops at once, where the Java
+    // returns an empty map. `saturating_sub(1)` is `size - 1` that stops at 0.
     'outer: for i in 0..calls.len().saturating_sub(1) {
         let with_call = &haplotype_map[i];
         if with_call.is_empty() {
@@ -957,7 +1017,14 @@ fn set_extended(genotype: &mut Genotype, key: &str, value: Value) {
 }
 
 /// `calculateGLsForThisEvent`: each sample, no-called, with the PLs of its genotype likelihoods
-/// over the genotyping alleles.
+/// over the genotyping alleles. The choice of alleles is the Java's
+/// (`HaplotypeCallerGenotypingEngine.java` lines 562-563):
+///
+/// ```java
+/// final List<Allele> vcAlleles = mergedVC.getAlleles();
+/// final AlleleList<Allele> alleleList = readLikelihoods.numberOfAlleles() == vcAlleles.size()
+///         ? readLikelihoods : new IndexedAlleleList<>(vcAlleles);
+/// ```
 fn genotypes_for_event(
     marginal: &AlleleLikelihoods<BamRecord, Allele>,
     merged_alleles: &[Allele],
@@ -972,6 +1039,8 @@ fn genotypes_for_event(
     } else {
         merged_alleles.to_vec()
     };
+    // Where each genotyping allele sits in the matrix, so the rows below are read in the
+    // genotyping order. `.collect::<Result<_, _>>()?` stops at the first allele not found.
     let permutation: Vec<usize> = genotyping_alleles
         .iter()
         .map(|allele| {
@@ -989,6 +1058,7 @@ fn genotypes_for_event(
     let mut genotypes = Vec::with_capacity(samples.len());
     for (s, sample) in samples.iter().enumerate() {
         let evidence = marginal.sample_evidence_count(s);
+        // One row per genotyping allele, one column per read: `matrix[a][r]`.
         let matrix: Vec<Vec<f64>> = permutation
             .iter()
             .map(|&a| (0..evidence).map(|r| marginal.value(s, a, r)).collect())
@@ -1053,6 +1123,8 @@ fn set_attribute(vc: &mut VariantContext, key: &str, value: Value) {
 /// `GenotypeIndexCalculator.computeMaxAcceptableAlleleCount(ploidy, maxGenotypeCount)`: the most
 /// alleles whose genotype count stays within the limit.
 fn max_acceptable_allele_count(ploidy: usize, max_genotype_count: usize) -> usize {
+    // `is_ok_and` is false when `genotype_count` reports too many genotypes, which ends the
+    // search there too.
     let mut alleles = 1;
     while genotype_count(ploidy, alleles + 1).is_ok_and(|count| count <= max_genotype_count) {
         alleles += 1;

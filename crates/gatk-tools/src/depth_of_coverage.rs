@@ -6,16 +6,44 @@
 //!
 //! Reading the BAM and the intervals is not ported. Which bases are counted, how they are counted
 //! and which files a set of arguments produces are.
+//!
+//! The reference is `org.broadinstitute.hellbender.tools.walkers.coverage.DepthOfCoverage` with
+//! `CoverageUtils` and `CoverageOutputWriter` (GATK 4.7.0.0; `DepthOfCoverage.java` is unchanged
+//! since 4.6.2.0).
+//!
+//! # What the reference does that this port leaves out
+//!
+//! `apply` counts a locus only when
+//! `includeRefNBases || (hasReference() && BaseUtils.isRegularBase(referenceContext.getBase()))`,
+//! so by default a locus whose reference base is `N` writes no row. [`per_locus`] takes no
+//! reference and writes a row for every position. Deletions (`e.isDeletion()`, which pass the
+//! quality filter whatever their quality) are not modelled either, because only `M` cigars are.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is "a value or nothing" (`Some(x)` or `None`).
+//!   `let Some(x) = y else { continue; }` unwraps it or skips to the next loop iteration.
+//! - `Result<(), CoverageError>` is "nothing, or an error"; `Err(..)` models the exception.
+//! - `&[T]` is a borrowed, read-only view of a list; `Vec<T>` is an owned, growable list.
+//! - `(a..=b)` is the closed range `a` to `b` inclusive; `.map(..).collect()` turns it into a
+//!   list, as a Java stream would.
+//! - `[i32; 5]` is a fixed-length array of five `int`s; `vec![x; n]` is a list of `n` copies.
+//! - `x as usize`, `x as i32`, `x as f64` are casts. `i8` is Java's `byte`, `i64` is `long`.
 
 /// One read, reduced to what the counter reads off it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Read {
+    /// The read name, which no count reads.
     pub name: String,
     /// The read group's SAMPLE, which is what the counter partitions by.
     pub sample: String,
+    /// The contig the read is aligned to.
     pub contig: String,
+    /// The 1-based alignment start.
     pub start: i32,
+    /// The read bases, one per reference position under an all-`M` cigar.
     pub bases: Vec<u8>,
+    /// The base qualities, parallel to `bases`.
     pub base_qualities: Vec<i32>,
 }
 
@@ -30,30 +58,56 @@ impl Read {
         if position < self.start || position > self.end() {
             return None;
         }
+        // The range check above makes the difference non-negative, so the cast to an index is
+        // safe.
         let offset = (position - self.start) as usize;
         Some((self.bases[offset], self.base_qualities[offset]))
     }
 }
 
 /// `MIN_BASE_QUALITY` and `MAX_BASE_QUALITY`, and the byte range the argument itself enforces.
+///
+/// ```java
+/// @Argument(fullName = "min-base-quality",
+///         doc = "Minimum quality of bases to count towards depth",
+///         optional = true, minValue = 0, maxValue = Byte.MAX_VALUE)
+/// private byte minBaseQuality = 0;
+/// ```
+///
+/// (The annotation is one line in the reference, wrapped here.)
+///
+/// `--max-base-quality` is declared the same way with a default of `Byte.MAX_VALUE`.
 pub const DEFAULT_MIN_BASE_QUALITY: i32 = 0;
+/// `maxBaseQuality = Byte.MAX_VALUE`.
 pub const DEFAULT_MAX_BASE_QUALITY: i32 = 127;
+/// The `minValue = 0` of both quality arguments.
 pub const BASE_QUALITY_MIN: i32 = 0;
+/// The `maxValue = Byte.MAX_VALUE` of both quality arguments.
 pub const BASE_QUALITY_MAX: i32 = 127;
 
 /// A base counts when its quality is within BOTH bounds: the ceiling is a filter no other coverage
 /// tool has.
+///
+/// `CoverageUtils.elementWithinQualRange`, without its deletion clause:
+///
+/// ```java
+/// return ( e.getQual() >= minBaseQ && e.getQual() <= maxBaseQ || e.isDeletion() );
+/// ```
 pub fn base_counts(quality: i32, minimum: i32, maximum: i32) -> bool {
     quality >= minimum && quality <= maximum
 }
 
-/// The five columns `--print-base-counts` breaks a depth into, in the order it writes them.
+/// The five columns `--print-base-counts` breaks a depth into, in the order it writes them:
+/// `BaseUtils.BASES_EXTENDED` is `{'A', 'C', 'G', 'T', 'N', 'D'}`, and `D` is skipped unless
+/// deletions are included.
 pub const BASE_COUNT_ORDER: &[u8] = b"ACGTN";
 
 /// One locus of the per-base table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Locus {
+    /// The locus contig.
     pub contig: String,
+    /// The 1-based locus position.
     pub position: i32,
     /// One entry per sample, in the order the samples are listed.
     pub depths: Vec<i32>,
@@ -62,12 +116,14 @@ pub struct Locus {
 }
 
 impl Locus {
+    /// `tDepth`: the per-sample depths summed.
     pub fn total_depth(&self) -> i32 {
         self.depths.iter().sum()
     }
 
     /// `Average_Depth_sample`, which divides by the number of SAMPLES rather than by the number
-    /// that carried anything.
+    /// that carried anything:
+    /// `(double) tDepth / identifiersByType.get(type).size()`.
     pub fn average_depth(&self) -> f64 {
         if self.depths.is_empty() {
             return 0.0;
@@ -89,6 +145,8 @@ pub fn per_locus(
     minimum_base_quality: i32,
     maximum_base_quality: i32,
 ) -> Vec<Locus> {
+    // Every position of the closed interval, each mapped to one row and collected into a list.
+    // The closure body is the reference's per-locus `getBaseCountsByPartition`.
     (start..=end)
         .map(|position| {
             let mut depths = vec![0; samples.len()];
@@ -97,6 +155,8 @@ pub fn per_locus(
                 if read.contig != contig {
                     continue;
                 }
+                // `.position(..)` is the index of the first match, an `Option`: Java's `indexOf`
+                // with `None` where Java would return -1.
                 let Some(index) = samples.iter().position(|sample| *sample == read.sample) else {
                     continue;
                 };
@@ -125,6 +185,9 @@ pub fn per_locus(
 }
 
 /// The header of the per-locus table, whose sample columns depend on `--print-base-counts`.
+///
+/// The column names are `writePerLocusDepthSummary`'s: `"Depth_for_" + sample` and
+/// `sample + "_base_counts"`.
 pub fn per_locus_header(samples: &[String], print_base_counts: bool) -> String {
     let mut out = String::from("Locus,Total_Depth,Average_Depth_sample");
     for sample in samples {
@@ -137,6 +200,9 @@ pub fn per_locus_header(samples: &[String], print_base_counts: bool) -> String {
 }
 
 /// One row of the per-locus table, rendered as the writer renders it.
+///
+/// The locus is `locus.getContig() + ":" + locus.getStart()`, and the average is
+/// `new DecimalFormat("0.00")`, here `{:.2}`: two decimals, at least one integer digit.
 pub fn per_locus_row(locus: &Locus, print_base_counts: bool) -> String {
     let mut out = format!(
         "{}:{},{},{:.2}",
@@ -151,7 +217,9 @@ pub fn per_locus_row(locus: &Locus, print_base_counts: bool) -> String {
             let counts = locus.base_counts[index];
             let mut text = String::new();
             for (at, base) in BASE_COUNT_ORDER.iter().enumerate() {
-                // Each pair is followed by a space, so the field ends with one.
+                // Each pair is followed by a space, so the field ends with one. The reference's
+                // test is `if (nbases < 6)`, which counts the skipped `D` as the sixth base, so
+                // the space after `N` is still written.
                 text.push_str(&format!("{}:{} ", *base as char, counts[at]));
             }
             out.push_str(&format!(",{text}"));
@@ -163,9 +231,13 @@ pub fn per_locus_row(locus: &Locus, print_base_counts: bool) -> String {
 /// The four `omit` arguments, each of which removes its own files.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Omissions {
+    /// `--omit-locus-table`.
     pub locus_table: bool,
+    /// `--omit-depth-output-at-each-base`.
     pub depth_output_at_each_base: bool,
+    /// `--omit-per-sample-statistics`.
     pub per_sample_statistics: bool,
+    /// `--omit-interval-statistics`.
     pub interval_statistics: bool,
 }
 
@@ -212,6 +284,8 @@ pub enum CoverageError {
 }
 
 impl CoverageError {
+    /// The parser's message for each refusal. Barclay has no local source, so these are the
+    /// texts the port records rather than quotes.
     pub fn message(&self) -> String {
         match self {
             CoverageError::MutuallyExclusive { argument, other } => format!(
@@ -236,6 +310,9 @@ impl CoverageError {
 
 /// The argument parser's own check, which runs before a read is seen. A value outside the byte
 /// range fails one of TWO ways depending on which side it is out on.
+///
+/// The field is a Java `byte`, so a value outside -128..=127 cannot be constructed at all; one
+/// inside it but below `minValue = 0` is constructed and then refused by the range check.
 pub fn check_base_quality(argument: &str, value: i64) -> Result<(), CoverageError> {
     if value > i8::MAX as i64 || value < i8::MIN as i64 {
         return Err(CoverageError::BadByte {

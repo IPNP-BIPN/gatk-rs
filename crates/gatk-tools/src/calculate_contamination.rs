@@ -1,4 +1,5 @@
-//! Ported from `org.broadinstitute.hellbender.tools.walkers.contamination.CalculateContamination`.
+//! Ported from `org.broadinstitute.hellbender.tools.walkers.contamination.CalculateContamination`
+//! (GATK 4.7.0.0; `CalculateContamination.java` is unchanged since 4.6.2.0).
 //!
 //! The tool around [`gatk_engine::contamination_model`]. It is small, and everything in it that is
 //! not bookkeeping is the coverage filter.
@@ -25,6 +26,18 @@
 //! With a matched normal the NORMAL's model genotypes the tumour, while the segmentation table, if
 //! one is asked for, comes from a second model built on the TUMOUR. Without one, a single model
 //! does both. That is why the tool can build two models over the same run.
+//!
+//! Java quotes are verbatim apart from line breaks added to fit 100 columns.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[PileupSummary]` is a borrowed, read-only view of a list; the caller keeps ownership.
+//! - `Option<T>` is "a value or nothing": `None` is Java's `null` for an absent matched normal or
+//!   segmentation, checked by the compiler.
+//! - `.iter().filter(..).cloned().collect()` is Java's `stream().filter(..).collect(toList())`;
+//!   `.cloned()` copies each element, because a filtered view would otherwise borrow the input.
+//! - `match x { None => .., Some(v) => .. }` is a null check that must handle both cases.
+//! - A parameter whose name starts with `_` is accepted and deliberately unused.
 
 use gatk_engine::contamination_model::{ContaminationModel, MinorAlleleFractionRecord};
 use gatk_engine::pileup_summary::PileupSummary;
@@ -70,6 +83,18 @@ pub fn mean(values: &[f64]) -> f64 {
 }
 
 /// `filterSitesByCoverage`.
+///
+/// ```java
+/// final double lowCoverageThreshold = medianCoverage * lowCoverageRatioThreshold;
+/// final double highCoverageThreshold = meanCoverage * highCoverageRatioThreshold;
+/// return coveredSites.stream()
+///         .filter(ps -> ps.getTotalCount() > lowCoverageThreshold
+///                 && ps.getTotalCount() < highCoverageThreshold)
+///         .collect(Collectors.toList());
+/// ```
+///
+/// The ratios are parameters here so [`run`] can take them; see [`run_from_command_line`] for why
+/// the tool itself always passes the defaults.
 pub fn filter_sites_by_coverage(
     all_sites: &[PileupSummary],
     low_coverage_ratio_threshold: f64,
@@ -86,10 +111,12 @@ pub fn filter_sites_by_coverage(
         .iter()
         .map(|site| f64::from(site.total_count))
         .collect();
+    // `new Median().evaluate(coverage)` and `new Mean().evaluate(coverage)`, commons-math3's.
     let median_coverage = jmath::percentile::median(&coverage);
     let mean_coverage = mean(&coverage);
     let low = median_coverage * low_coverage_ratio_threshold;
     let high = mean_coverage * high_coverage_ratio_threshold;
+    // `into_iter()` consumes `covered`, so the kept sites move into the result without a copy.
     covered
         .into_iter()
         .filter(|site| {
@@ -128,6 +155,12 @@ pub fn run_from_command_line(
 
 /// `doWork`, on tables already read.
 ///
+/// ```java
+/// final ContaminationModel tumorModel =
+///         matchedPileupSummariesTable == null ? genotypingModel : new ContaminationModel(sites);
+/// ```
+///
+///
 /// `matched` is the matched normal's sites, if there are any. `segmentation` asks for the tumour
 /// segmentation table, which is what decides whether the second model is built at all.
 pub fn run(
@@ -165,6 +198,7 @@ pub fn run(
         None
     };
 
+    // `calculateContaminationFromHoms(sites)` returns a `Pair`; here a tuple, split into two names.
     let (contamination, error) = genotyping_model.calculate_contamination_from_homs(&filtered);
     Output {
         contamination,

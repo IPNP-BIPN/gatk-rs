@@ -7,17 +7,51 @@
 //! Reading the BAM, the VCF and the interval file is not ported, nor are the streaming buffers
 //! that keep each writer's memory bounded. Which read contributes what, and what each contribution
 //! is, are.
+//!
+//! The reference is `org.broadinstitute.hellbender.tools.walkers.sv.CollectSVEvidence` (GATK
+//! 4.7.0.0; `CollectSVEvidence.java` is unchanged since 4.6.2.0), with the encoders of
+//! `DiscordantPairEvidenceCodec` and `SplitReadEvidenceCodec` for the zero-based positions.
+//!
+//! # Two output orders that are not the reference's
+//!
+//! - Split reads: the Java flushes its `PriorityQueue<SplitPos>` whenever the contig changes, so
+//!   the file follows the traversal's contig order. [`split_reads`] sorts the whole run by contig
+//!   NAME, so a BAM with split reads on `chr2` and then `chr10` writes `chr10` first here.
+//! - Discordant pairs: at every new start the Java sorts the buffered reads with
+//!   `DiscordantReadComparator` (contig index, start, read strand, mate contig index, mate start,
+//!   mate strand) before writing them. [`discordant_pairs`] keeps traversal order, so two pairs
+//!   at one start whose mates are at 500 and then 300 come out in the other order.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[Read]` is a borrowed, read-only view of a list; the caller keeps ownership.
+//! - `Option<T>` is "a value or nothing", Java's nullable reference with the check enforced;
+//!   `let Some(x) = y else { .. };` unwraps it or takes the early exit.
+//! - `match` must cover every case; `Some(('M', _))` matches a first cigar element whose operator
+//!   is `M`, whatever its length.
+//! - `(i32, Side)` is a tuple, two values returned together without a holder class.
+//! - `.iter().filter(..).map(..).sum()` is a Java stream ending in `sum()`; `.count() as i32`
+//!   narrows the count to an `int`.
+//! - `x.then_some(v)` is `x ? Optional.of(v) : Optional.empty()`.
 
 /// One read, reduced to what the four writers read off it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Read {
+    /// `getName()`.
     pub name: String,
+    /// The contig's index in the sequence dictionary, `getSequenceIndex(read.getContig())`.
     pub contig_index: usize,
+    /// `getContig()`.
     pub contig: String,
+    /// `getStart()`, one-based.
     pub start: i32,
+    /// `getMappingQuality()`.
     pub mapping_quality: i32,
     /// Cigar as (operator, length), the operator being one of `M`, `S`, `D`, `I`, `N`, `H`.
     pub cigar: Vec<(char, i32)>,
+    // The flags below are the `GATKRead` accessors of the same names (`isPaired()`,
+    // `isProperlyPaired()`, `mateIsUnmapped()` and so on). The mate's fields are `None` where the
+    // read has no mate position to report.
     pub paired: bool,
     pub properly_paired: bool,
     pub mate_unmapped: bool,
@@ -32,10 +66,12 @@ pub struct Read {
     pub unmapped: bool,
     /// The bases and their qualities, for the site-depth counter.
     pub bases: Vec<u8>,
+    /// One quality per base.
     pub base_qualities: Vec<i32>,
 }
 
-/// The two default read filters this tool adds on top of the walker's own.
+/// The two default read filters this tool adds on top of the walker's own:
+/// `ReadFilterLibrary.MAPPED` and `ReadFilterLibrary.NOT_DUPLICATE`.
 pub fn passes_default_filters(read: &Read) -> bool {
     !read.unmapped && !read.duplicate
 }
@@ -43,11 +79,24 @@ pub fn passes_default_filters(read: &Read) -> bool {
 /// The outer test in `apply`: a read whose MATE is unmapped, a supplementary alignment and a
 /// secondary alignment are all skipped by both the split and the discordant writer, and by neither
 /// of the two depth counters.
+///
+/// ```java
+/// if ( !(read.isPaired() && read.mateIsUnmapped()) &&
+///         !read.isSupplementaryAlignment() &&
+///         !read.isSecondaryAlignment() ) {
+/// ```
 pub fn contributes_to_pair_evidence(read: &Read) -> bool {
     !(read.paired && read.mate_unmapped) && !read.supplementary && !read.secondary
 }
 
 /// `isSoftClipped`: EXACTLY one end. A read clipped at both ends is not a split read at all.
+///
+/// ```java
+/// return (firstOperator == CigarOperator.SOFT_CLIP && lastOperator != CigarOperator.SOFT_CLIP) ||
+///         (firstOperator != CigarOperator.SOFT_CLIP && lastOperator == CigarOperator.SOFT_CLIP);
+/// ```
+///
+/// which is "exactly one of the two" and is written here as `!=` on the two tests.
 pub fn is_soft_clipped(read: &Read) -> bool {
     let Some((first, _)) = read.cigar.first() else {
         return false;
@@ -61,13 +110,16 @@ pub fn is_soft_clipped(read: &Read) -> bool {
 /// Which side of the split a position marks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Side {
+    /// `POSITION.LEFT`: the clip is on the left, the position is the read's start.
     Left,
+    /// `POSITION.RIGHT`: the clip is on the right, the position is past the alignment's end.
     Right,
     /// Neither end is a match, so the read gives no position.
     Middle,
 }
 
 impl Side {
+    /// The text the codec writes.
     pub fn name(self) -> &'static str {
         match self {
             Side::Left => "left",
@@ -77,6 +129,7 @@ impl Side {
     }
 }
 
+/// `CigarOperator.consumesReferenceBases()`.
 fn consumes_reference(operator: char) -> bool {
     matches!(operator, 'M' | 'D' | 'N' | '=' | 'X')
 }
@@ -86,6 +139,12 @@ fn consumes_reference(operator: char) -> bool {
 /// The FIRST element being a match wins, whatever the last one is, and the position it gives is the
 /// start plus every reference-consuming length: a deletion inside the alignment moves it out by its
 /// own length. Only when the first is not a match is the last one asked.
+///
+/// ```java
+/// if (read.getCigar().getFirstCigarElement().getOperator() == CigarOperator.M) {
+/// ```
+///
+/// Only `M`: a cigar written with `=` or `X` is neither side.
 pub fn split_position(read: &Read) -> (i32, Side) {
     match read.cigar.first() {
         Some(('M', _)) => {
@@ -107,10 +166,13 @@ pub fn split_position(read: &Read) -> (i32, Side) {
 /// One split-read record: a position, a side and how many reads were clipped there.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SplitRead {
+    /// The read's contig.
     pub contig: String,
     /// The codec writes it zero-based.
     pub position: i32,
+    /// Which side of the clip the position marks.
     pub side: Side,
+    /// How many reads gave this position and side.
     pub count: i32,
 }
 
@@ -133,10 +195,13 @@ pub fn split_reads(reads: &[Read]) -> Vec<SplitRead> {
         }
         positions.push((read.contig.clone(), position, side));
     }
-    // The buffer is a priority queue over position then side, flushed in that order.
+    // The buffer is a priority queue over position then side, flushed in that order. The contig
+    // in front of them is compared by name, which is not the Java's order: see the module note.
     positions.sort_by(|a, b| (&a.0, a.1, a.2).cmp(&(&b.0, b.1, b.2)));
     let mut out: Vec<SplitRead> = Vec::new();
     for (contig, position, side) in positions {
+        // `last_mut` borrows the last record writably so its count can be bumped in place; the
+        // `if` after the pattern is a guard, so a different position falls to `_` and is pushed.
         match out.last_mut() {
             Some(last)
                 if last.contig == contig && last.position == position - 1 && last.side == side =>
@@ -158,14 +223,18 @@ pub fn split_reads(reads: &[Read]) -> Vec<SplitRead> {
 /// One discordant-pair record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscordantPair {
+    /// The read's contig.
     pub contig: String,
     /// Zero-based, as the codec writes it.
     pub position: i32,
     /// `!isReverseStrand`. The codec prints `+` for true, so the two negations cancel and the
     /// output shows the read's own strand.
     pub strand: bool,
+    /// The mate's contig.
     pub mate_contig: String,
+    /// The mate's start, zero-based.
     pub mate_position: i32,
+    /// `!isMateReverseStrand`, as for `strand`.
     pub mate_strand: bool,
 }
 
@@ -174,6 +243,13 @@ pub struct DiscordantPair {
 ///
 /// The last case is tracked by NAME within the locus, so two different pairs at one position are
 /// still two records: the name set only ever suppresses a read's own mate.
+///
+/// ```java
+/// final boolean seenBefore = observedDiscordantNamesAtThisLocus.remove(read.getName());
+/// ```
+///
+/// Records are returned in traversal order, without the Java's per-start sort; see the module
+/// note.
 pub fn discordant_pairs(reads: &[Read]) -> Vec<DiscordantPair> {
     let mut out = Vec::new();
     let mut seen_at_locus: Vec<String> = Vec::new();
@@ -243,9 +319,13 @@ pub fn crashes_on_an_unpaired_read(read: &Read) -> bool {
 /// One candidate site-depth locus.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Site {
+    /// The VCF record's contig.
     pub contig: String,
+    /// Its one-based position.
     pub position: i32,
+    /// The reference allele's bases.
     pub reference: String,
+    /// The alternate alleles' bases, in record order.
     pub alternates: Vec<String>,
 }
 
@@ -277,19 +357,26 @@ pub fn baf_sites(sites: &[Site]) -> Vec<Site> {
 
 /// `MIN_SITE_DEPTH_MAPQ`, `MIN_SITE_DEPTH_BASEQ` and `MIN_DEPTH_EVIDENCE_MAPQ`, whose three
 /// different defaults are what let one read be counted for depth and not for site depth.
+///
+/// `public int minMapQ = 30;`
 pub const DEFAULT_SITE_DEPTH_MIN_MAPQ: i32 = 30;
+/// `public int minQ = 20;`
 pub const DEFAULT_SITE_DEPTH_MIN_BASEQ: i32 = 20;
+/// `public int minDepthEvidenceMapQ = 0;`
 pub const DEFAULT_DEPTH_EVIDENCE_MIN_MAPQ: i32 = 0;
 
 /// One site-depth record: the four base counts, in `A`, `C`, `G`, `T` order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SiteDepth {
+    /// The site's contig.
     pub contig: String,
     /// Zero-based, as the codec writes it.
     pub position: i32,
+    /// Reads carrying `A`, `C`, `G`, `T` at the site.
     pub counts: [i32; 4],
 }
 
+/// The column a base is counted in, either case; any other base counts nowhere.
 fn base_index(base: u8) -> Option<usize> {
     match base {
         b'A' | b'a' => Some(0),
@@ -371,10 +458,13 @@ pub fn reference_offset(read: &Read, position: i32) -> Option<usize> {
 /// One depth-evidence interval and the reads that started inside it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DepthEvidence {
+    /// The interval's contig.
     pub contig: String,
     /// The interval file's own coordinates, written back unchanged.
     pub start: i32,
+    /// The interval's end, as written in the interval file.
     pub end: i32,
+    /// Reads whose start falls in the interval.
     pub count: i32,
 }
 
@@ -452,9 +542,10 @@ const BLOCK_COMPRESSED: [&str; 4] = [".gz", ".gzip", ".bgz", ".bgzf"];
 /// Which of the `kind` writer's two codecs claims `filename`, or `None` where neither does and the
 /// writer refuses it with [`bad_name_message`].
 ///
-/// The writer asks the binary codec first: it lower-cases the name and tests `.<kind>.bci`. The text
-/// codec lower-cases it, strips ONE block-compressed extension, and tests `.<kind>.txt`, so
-/// `x.PE.TXT.BGZ` is block-compressed discordant pair evidence and `x.pe.bci.gz` is neither codec's.
+/// The writer asks the binary codec first: it lower-cases the name and tests `.<kind>.bci`. The
+/// text codec lower-cases it, strips ONE block-compressed extension, and tests `.<kind>.txt`, so
+/// `x.PE.TXT.BGZ` is block-compressed discordant pair evidence and `x.pe.bci.gz` is neither
+/// codec's.
 pub fn encoding(kind: &str, filename: &str) -> Option<Encoding> {
     let lower = filename.to_lowercase();
     if lower.ends_with(&format!(".{kind}.bci")) {

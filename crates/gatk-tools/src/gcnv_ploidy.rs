@@ -9,6 +9,22 @@
 //!
 //! The C's own spelling is kept where clippy would shorten it (`x * -1.0`, AS 103's truncated
 //! Euler constant, fdlibm's long literals, index loops over several arrays).
+//!
+//! # Reading this file without reading Rust
+//!
+//! - every array of the model is one flat `Vec<f64>` in row-major order, as numpy lays out a
+//!   C-contiguous array: entry (sample `si`, contig `jj`, ploidy `kk`) is at
+//!   `(si * j + jj) * k + kk`. The posterior vector `mu`/`rho` holds the `j` biases, then the `j`
+//!   `psi_j`, then the `s` `psi_s`;
+//! - `&[f64]` is a borrowed, read-only view of such a vector, `&mut` a writable one, and
+//!   `&v[a..b]` the half-open slice `a` to `b - 1`;
+//! - `(0..n).map(|i| ..).collect()` builds a vector the way a Java stream over `IntStream.range`
+//!   does; `|i| ..` is a closure (a lambda). `fold(0.0, |acc, x| acc + x)` is a left-to-right sum
+//!   from 0.0, which is why `seq_sum` is a fold and not a library sum;
+//! - `Result<T, String>` is a value or an error message, and `?` passes an error to the caller;
+//!   `Option<T>` is a value or nothing;
+//! - `x as f32 as f64` rounds a double to single precision and widens it back, exactly;
+//! - a body's last expression is its value, so a function often ends without `return`.
 #![allow(
     clippy::approx_constant,
     clippy::excessive_precision,
@@ -22,6 +38,8 @@ use crate::glibc_libm::{exp, expm1, log, log1p};
 use crate::numpy_random::{reseed, Pcg64, RandomState};
 
 /// The script's arguments, as Java hands them over (`%e`, read back by Python's `float`).
+///
+/// The counts are `i64` where Python reads an integer; the rest are doubles.
 #[derive(Clone, Debug)]
 pub struct Settings {
     pub mapping_error_rate: f64,
@@ -72,6 +90,18 @@ pub struct Files {
 
 /// glibc 2.35's `__ieee754_lgamma_r` (fdlibm's `e_lgamma_r.c`) for positive finite `x`, the only
 /// arguments the model gives it, calling the SSE2 `log` the ifunc picks.
+///
+/// **How**, by range of `x`: below 2^-70 `-log(x)`; 1 and 2 exactly zero; below 2 one of three
+/// polynomial fits chosen by where `x` falls (around 1, around the minimum `TC`, around 2), each
+/// with `-log(x)` added below about 0.9; from 2 to 8 a rational fit in the fraction of `x`, times
+/// the product `(y + 2)(y + 3)...` through `log`; from 8 to 2^58 Stirling's series in `1/x`; above
+/// that `x * (log(x) - 1)`. The branch bounds are compared on the high word, as fdlibm does.
+///
+/// **Why** a transcription and not the platform's `lgamma`: the platform's need not be glibc's,
+/// and the goldens hold glibc's bits (the test below pins thirteen of them).
+///
+/// A negative argument panics (`assert!` aborts the run) rather than returning a value the
+/// reference might not give: fdlibm's reflection branch for `x < 0` is not here.
 pub fn lgamma(x: f64) -> f64 {
     const A: [f64; 12] = [
         7.72156649015328655494e-02,
@@ -150,13 +180,17 @@ pub fn lgamma(x: f64) -> f64 {
         8.36339918996282139126e-04,
         -1.63092934096575273989e-03,
     ];
+    // `to_bits` is `Double.doubleToRawLongBits`; `as u32 as i32` keeps the high 32 bits and
+    // reads them as signed, fdlibm's `int32_t hx`.
     let bits = x.to_bits();
     let hx = (bits >> 32) as u32 as i32;
     let lx = bits as u32;
     let ix = hx & 0x7fff_ffff;
+    // Infinite or NaN.
     if ix >= 0x7ff0_0000 {
         return x * x;
     }
+    // A zero: +inf.
     if (ix as u32 | lx) == 0 {
         return 1.0 / x.abs();
     }
@@ -168,6 +202,8 @@ pub fn lgamma(x: f64) -> f64 {
         return 0.0;
     }
     if ix < 0x4000_0000 {
+        // `let (mut r, y, i);` declares three variables to be assigned once on every branch
+        // below; the compiler checks that no path reads one unassigned.
         let (mut r, y, i);
         if ix <= 0x3fec_cccc {
             r = -log(x);
@@ -194,6 +230,7 @@ pub fn lgamma(x: f64) -> f64 {
                 i = 2;
             }
         }
+        // `match` on `i`, Java's `switch`; `_` is the default case.
         match i {
             0 => {
                 let z = y * y;
@@ -219,6 +256,7 @@ pub fn lgamma(x: f64) -> f64 {
         }
         r
     } else if ix < 0x4020_0000 {
+        // 2 <= x < 8: `i` is the integer part (`as i32` truncates, as the C cast does).
         let i = x as i32;
         let y = x - f64::from(i);
         let p =
@@ -226,6 +264,8 @@ pub fn lgamma(x: f64) -> f64 {
         let q = 1.0 + y * (R[1] + y * (R[2] + y * (R[3] + y * (R[4] + y * (R[5] + y * R[6])))));
         let mut r = 0.5 * y + p / q;
         let mut z = 1.0;
+        // `(3..=i).rev()` runs `k` from `i` down to 3, inclusive, so the largest factor is
+        // multiplied in first.
         for k in (3..=i).rev() {
             z *= y + f64::from(k - 1);
         }
@@ -245,6 +285,10 @@ pub fn lgamma(x: f64) -> f64 {
 }
 
 /// pytensor's `_psi` (Bernardo's AS 103), in its C.
+///
+/// **How**: the recurrence `psi(x) = psi(x + 1) - 1/x` moves `x` up to at least 8.5, then the
+/// asymptotic series in `1/x^2`. The constants are the C's, short as they are: the Euler constant
+/// to ten digits and the series coefficients to ten.
 pub fn psi(x: f64) -> f64 {
     let mut y = x;
     let mut psi = 0.0;
@@ -264,7 +308,8 @@ pub fn psi(x: f64) -> f64 {
     psi - r * (8.333333333e-2 - r * (8.333333333e-3 - r * 3.968253968e-3))
 }
 
-/// pytensor's `softplus` C.
+/// pytensor's `softplus` C: `log(1 + exp(x))` by range, so no branch overflows or loses the
+/// small term.
 fn softplus(x: f64) -> f64 {
     if x < -37.0 {
         exp(x)
@@ -288,11 +333,19 @@ fn maximum(a: f64, b: f64) -> f64 {
     }
 }
 
+/// A sum in index order from 0.0, the order pytensor's generated loops add in.
+///
+/// `impl IntoIterator<Item = f64>` accepts anything that yields doubles (a vector, a range mapped
+/// through a closure); it is resolved at compile time, like a Java generic.
 fn seq_sum(values: impl IntoIterator<Item = f64>) -> f64 {
     values.into_iter().fold(0.0, |acc, x| acc + x)
 }
 
 /// `np.median` of a vector without NaN: the middle order statistic, or the mean of the two.
+///
+/// The middle element goes through [`np_sum`] and `/ 1.0` because numpy's median takes the mean
+/// of the middle slice, one or two elements, and that mean is a sum and a division.
+/// `partial_cmp(..).expect(..)` is the comparison of two doubles that panics on a NaN.
 fn np_median(values: &mut [f64]) -> f64 {
     values.sort_by(|a, b| a.partial_cmp(b).expect("no NaN"));
     let n = values.len();
@@ -342,6 +395,7 @@ struct State {
 }
 
 impl Model {
+    /// The posterior's length: `j` biases, `j` contig dispersions, `s` sample dispersions.
     fn d(&self) -> usize {
         2 * self.j + self.s
     }
@@ -376,9 +430,16 @@ impl Model {
 
     /// The step function (graph 2): one draw, the loss before normalization, and Adamax's update
     /// of `mu` and `rho` (gcnvkernel's `FancyAdamax`), with the temperature's linear drop.
+    ///
+    /// The `nNN` labels in the body name the graph's nodes. Spellings such as `0.0 + 1.0 * x`,
+    /// `x * -1.0` and `0.0 + (0.0 + v)` are the graph's own operations, kept as it has them; an
+    /// added `0.0` is not a no-op, since it turns -0.0 into 0.0.
+    ///
+    /// `drop` is `None` when the temperature is not annealed.
     fn step(&self, st: &mut State, rng: &mut Pcg64, settings: &Settings, drop: Option<f64>) -> f64 {
         let (s, j, k, d) = (self.s, self.j, self.k, self.d());
         let temperature = st.temperature;
+        // The draw `e ~ N(0, 1)`, one per posterior coordinate, as `0 + 1 * z`.
         let e: Vec<f64> = (0..d).map(|_| 0.0 + 1.0 * rng.standard_normal()).collect();
         let b1 = settings.adamax_beta1;
         let b2 = settings.adamax_beta2;
@@ -398,6 +459,8 @@ impl Model {
         let z: Vec<f64> = (0..d).map(|i| sigma[i] * e[i] + st.mu[i]).collect();
 
         // n64 to n66: the priors' logp and gradients.
+        // An Exponential prior on `exp(x)` with the log-Jacobian `+ x`: returns the value, the
+        // gradient term and the logp, as a tuple (`.0`, `.1`, `.2` read its fields).
         let exponential = |x: f64, lam: f64, log_lam: f64| {
             let ex = exp(x);
             let positive = ex >= 0.0;
@@ -415,6 +478,8 @@ impl Model {
         let psi_j: Vec<(f64, f64, f64)> = (0..j)
             .map(|i| exponential(z[j + i], self.lam_j, self.log_lam_j))
             .collect();
+        // The bias prior, in the same (value, gradient, logp) shape. Its constant is folded for a
+        // `mean_bias_sd` of 1, which is why `refusals` turns any other value away.
         let bias: Vec<(f64, f64, f64)> = (0..j)
             .map(|i| {
                 let x = z[i];
@@ -549,6 +614,7 @@ impl Model {
         let n94 = over_s(&o2);
         let n95 = over_k(&o2);
         let n96 = over_s(&o3);
+        // pymc's parameter check: when it fails the NB term is -inf, not an error.
         let valid = all_mean_positive
             && self.n_sj.iter().all(|&n| n >= 0.0)
             && alpha.iter().all(|&a| a > 0.0);
@@ -614,6 +680,7 @@ impl Model {
             st.mu[i] -= (a * st.m_mu[i]) / (1e-08 + st.u_mu[i]);
         }
         st.beta1_power = beta1_power;
+        // `if let Some(drop) = drop` runs only when annealing; the temperature never drops below 1.
         if let Some(drop) = drop {
             st.temperature = maximum(temperature - drop, 1.0);
         }
@@ -621,6 +688,10 @@ impl Model {
     }
 
     /// The log-emission sampler (graph 3): the mean of `logp_sjk` over `samples` draws.
+    ///
+    /// The same NB logp as `Model::step` without the gradients, summed draw by draw and scaled
+    /// by `1 / samples` at the end (a multiplication by the reciprocal, not a division). A failed
+    /// parameter check is an error here, where `step` folds it into the loss.
     fn sample(&self, st: &State, rng: &mut Pcg64, samples: usize) -> Result<Vec<f64>, String> {
         let (s, j, k, d) = (self.s, self.j, self.k, self.d());
         let sigma: Vec<f64> = st.rho.iter().map(|&r| softplus(r)).collect();
@@ -633,6 +704,7 @@ impl Model {
         let mut acc = vec![0.0; s * j * k];
         let mut e = vec![0.0; d];
         for _ in 0..samples {
+            // `iter_mut` hands out writable references; `*x = ..` writes through one.
             for x in e.iter_mut() {
                 *x = 0.0 + 1.0 * rng.standard_normal();
             }
@@ -697,6 +769,12 @@ impl Model {
 
     /// The caller (graph 4): admixes the new ploidy posterior into `log_q` and returns the
     /// Hellinger distance per sample and contig.
+    ///
+    /// **How**: the new posterior is `log_p + log_emission` normalized by a log-sum-exp, and the
+    /// admixture `log((1 - r) q_old + r q_new)` is computed as one log term plus `softplus` of
+    /// the difference of the two, the form picked by the difference's sign. The log-sum-exp is the
+    /// double max-shift the graph rewrite leaves (`m1`, then `m2` of the shifted values); see
+    /// `gcnv_segments.rs`'s module note.
     fn call(&self, st: &mut State, admixing: f64) -> Vec<f64> {
         let (s, j, k) = (self.s, self.j, self.k);
         let log_r = log(admixing);
@@ -754,6 +832,10 @@ impl Model {
 /// Each contig's prior, and the number of ploidy states.
 type Priors = (Vec<(String, Vec<f64>)>, usize);
 
+/// Parses the priors TSV: `@` starts a comment, the header is `CONTIG_NAME` then
+/// `PLOIDY_PRIOR_<k>` columns, and the number of states is the largest `k` plus one. Each row's
+/// priors go through pandas' `precise_xstrtod`, are padded with `0.0 +` (which turns -0.0 into
+/// 0.0), checked non-negative, and divided by their sum unless it is already within 1e-10 of 1.
 fn priors(text: &str) -> Result<Priors, String> {
     let mut lines = text
         .lines()
@@ -825,6 +907,9 @@ fn refusals(settings: &Settings) -> Result<(), String> {
 }
 
 /// What the replay test watches: each step's loss, `mu` and `rho`, each draw, each call.
+///
+/// The `'a` says the slices borrow the run's own state for the length of one callback; nothing is
+/// copied.
 pub enum Event<'a> {
     Step {
         loss: f64,
@@ -840,6 +925,12 @@ pub fn run(cohort: &Cohort, settings: &Settings) -> Result<Files, String> {
     run_watched(cohort, settings, &mut |_| {})
 }
 
+/// [`run`], calling `watch` after every step, draw and call. `&mut dyn FnMut(Event)` is a callback
+/// that may modify its own captured state, Java's `Consumer<Event>`.
+///
+/// The order is gcnvkernel's: per epoch, the ADVI steps, then the sampling rounds (stopping once
+/// the median relative change is below the threshold), then the caller (stopping once the mean
+/// Hellinger distance is below its threshold).
 pub fn run_watched(
     cohort: &Cohort,
     settings: &Settings,
@@ -927,11 +1018,15 @@ pub fn run_watched(
     };
 
     // `approx.rng`: the initial point's seed, the step function's, the sampler's.
+    // The first draw is the initial point's seed, unused here because the initial point is
+    // computed directly; it is drawn so the next two match. `.remove(0)` keeps the first of the
+    // spawned generators.
     let mut approx_rng = RandomState::new(1984);
     approx_rng.randint(0, 1 << 30);
     let mut step_rng = reseed(approx_rng.randint(0, 1 << 30) as u32, 1).remove(0);
     let mut sampler_rng = reseed(approx_rng.randint(0, 1 << 30) as u32, 4).remove(0);
 
+    // `bool::then` gives `Some(..)` when the condition holds and `None` otherwise.
     let drop = ((settings.initial_temperature - 1.0).abs() >= 1e-6)
         .then(|| (settings.initial_temperature - 1.0) / settings.num_thermal_advi_iters as f64);
     let normalization = (s * j) as f64;
@@ -1023,6 +1118,8 @@ pub fn run_watched(
         let mut copies: u64 = 0;
         for (jj, contig) in cohort.contigs.iter().enumerate() {
             let log_q = &st.log_q[(si * j + jj) * k..(si * j + jj + 1) * k];
+            // The states by decreasing posterior (a stable sort, so ties keep the lower ploidy);
+            // PLOIDY_GQ is the natural-log gap between the best two, times about `10 / ln 10`.
             let mut order: Vec<usize> = (0..k).collect();
             order.sort_by(|&a, &b| (-log_q[a]).partial_cmp(&-log_q[b]).expect("no NaN"));
             let gq = 4.342944819032518 * (log_q[order[0]] - log_q[order[1]]);

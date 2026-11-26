@@ -1,4 +1,5 @@
-//! `HopscotchCollection` (GATK 4.6.2.0), whose iteration order is what a tool writes.
+//! `HopscotchCollection` (GATK 4.7.0.0; `HopscotchCollection.java` is unchanged since 4.6.2.0),
+//! whose iteration order is what a tool writes.
 //!
 //! The Spark SV and PathSeq tools collect k-mers through this table and print them in the order it
 //! gives them, so its layout is part of the output: bucket by bucket from the first chain head,
@@ -31,10 +32,24 @@
 //! `int`, whatever will go in it. The reference's cost is the arrays, four bytes of reference and a
 //! status byte a bucket, which its heap holds or does not. Here the entries live elsewhere and a
 //! bucket holds a number with 0 for empty, so the two arrays are zeroed pages that only what is
-//! touched ever occupies. At the top of the legal sizes `bucket + offset` passes `Integer.MAX_VALUE`
-//! and comes back negative, which [`Hopscotch::index`] does as Java does.
+//! touched ever occupies. At the top of the legal sizes `bucket + offset` passes
+//! `Integer.MAX_VALUE` and comes back negative, which `Hopscotch::index` does as Java does.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Hopscotch<T: HopscotchEntry>` is a generic class whose element type must implement the
+//!   [`HopscotchEntry`] interface (a Rust `trait`); `impl<T: ..> Hopscotch<T>` is its body;
+//! - `Option<T>` is "a value or nothing" and `Result<T, E>` "a value or an error"; `?` after a
+//!   call returns its error to the caller at once, which is how an `IllegalStateException`
+//!   propagates here;
+//! - `i8` is Java's signed `byte`; `x as i8` keeps the low eight bits, as Java's `(byte)` cast
+//!   does, and `wrapping_add` / `wrapping_mul` are Java's `int` arithmetic (a plain `+` on Rust
+//!   integers panics on overflow in a debug build);
+//! - `&mut self` is a method that may modify the table; `&self` one that only reads it;
+//! - `impl Fn(&T) -> bool` is a parameter of any lambda type taking an entry, Java's
+//!   `Predicate<T>`.
 
-/// `SetSizeUtils.legalSizes`.
+/// `SetSizeUtils.legalSizes`: the sizes the table may take, all of them prime.
 const LEGAL_SIZES: [i32; 47] = [
     251, 359, 509, 719, 1021, 1447, 2039, 2887, 4093, 5791, 8191, 11579, 16381, 23167, 32749,
     46337, 65521, 92681, 131071, 185363, 262139, 370723, 524287, 741431, 1048573, 1482907, 2097143,
@@ -43,10 +58,16 @@ const LEGAL_SIZES: [i32; 47] = [
     1518500213, 2147483629,
 ];
 
+/// `HopscotchCollection.LOAD_FACTOR`.
 const LOAD_FACTOR: f64 = 0.85;
+/// `HopscotchCollection.SPREADER`, the multiplier `hashToIndex` scatters a hash code with.
 const SPREADER: i32 = 241;
 
 /// An entry's `toKey().apply(entry).hashCode()` and `entryCollides()`.
+///
+/// `Clone` is required so an entry can be copied; `collides` is the `BiPredicate` `add` tests
+/// against every entry of the chain, `(t1, t2) -> false` by default in the Java (a collection
+/// that admits duplicates).
 pub trait HopscotchEntry: Clone {
     fn key_hash(&self) -> i32;
     fn collides(&self, other: &Self) -> bool;
@@ -56,6 +77,11 @@ pub trait HopscotchEntry: Clone {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HopscotchFailed(pub String);
 
+/// `HopscotchCollection<T>`.
+///
+/// The Java's `T[] buckets` holds the entries themselves; here `buckets` holds a number that
+/// indexes `entries` (see the module note on the size of the table), with `free` the numbers a
+/// removal gave back for reuse. `status` is the Java's `byte[] status`, one per bucket.
 pub struct Hopscotch<T: HopscotchEntry> {
     capacity: i32,
     size: i32,
@@ -80,6 +106,7 @@ impl<T: HopscotchEntry> Hopscotch<T> {
         }
     }
 
+    /// `buckets[bucket]`, `None` for the Java's null.
     fn entry(&self, bucket: i32) -> Option<&T> {
         match self.buckets[bucket as usize] {
             0 => None,
@@ -105,12 +132,16 @@ impl<T: HopscotchEntry> Hopscotch<T> {
         }
     }
 
+    /// Drop the entry under `held` and give the number back.
     fn release(&mut self, held: u32) {
         self.entries[held as usize - 1] = None;
         self.free.push(held);
     }
 
     /// Move what a bucket holds to another, which leaves it empty.
+    ///
+    /// `buckets[to] = buckets[from]; buckets[from] = null;`. `std::mem::take` reads the value
+    /// and leaves the default, 0, in its place.
     fn shift(&mut self, to: i32, from: i32) {
         self.buckets[to as usize] = std::mem::take(&mut self.buckets[from as usize]);
     }
@@ -128,6 +159,10 @@ impl<T: HopscotchEntry> Hopscotch<T> {
     }
 
     /// `add`: false when an entry that collides was already there.
+    ///
+    /// The retry passes the `bucket` computed before the resize, as the Java does (see the module
+    /// note). The entry is stored first so that `insert` can place it by number; if it was not
+    /// added, the number is given back.
     pub fn add(&mut self, entry: T) -> Result<bool, HopscotchFailed> {
         if self.size == self.capacity {
             self.resize()?;
@@ -148,6 +183,9 @@ impl<T: HopscotchEntry> Hopscotch<T> {
     }
 
     /// `find`: the chain the key hashes to, and no other.
+    ///
+    /// `hash` is the key's `hashCode()` and `matches` the Java's `equivalent(entry, key)`. The
+    /// entry comes back as a writable borrow, so a caller can update it in place.
     pub fn find_mut(&mut self, hash: i32, matches: impl Fn(&T) -> bool) -> Option<&mut T> {
         let mut bucket = self.hash_to_index(hash);
         if !self.is_chain_head(bucket) {
@@ -167,6 +205,11 @@ impl<T: HopscotchEntry> Hopscotch<T> {
     }
 
     /// `iterator`: every chain from its head, heads in bucket order.
+    ///
+    /// `CompleteIterator`: `nextBucketHead` walks the buckets upward for the next chain head, and
+    /// `next` follows the chain's offsets until one is zero. The order is collected into a list
+    /// first and handed out as an iterator (`impl Iterator`, Java's `Iterator<T>`); the `+ '_`
+    /// says it borrows the table.
     pub fn iter(&self) -> impl Iterator<Item = &T> + '_ {
         let mut order = Vec::with_capacity(self.size as usize);
         for head in 0..self.capacity {
@@ -188,12 +231,15 @@ impl<T: HopscotchEntry> Hopscotch<T> {
         order.into_iter()
     }
 
-    /// `contains`, of whatever is in the bucket for this hash.
+    /// `contains`, of whatever is in the bucket for this hash: `find(key) != null`.
     pub fn contains(&self, hash: i32, matches: impl Fn(&T) -> bool) -> bool {
         !self.find_each(hash, matches).is_empty()
     }
 
     /// `findEach`: what the chain holds of a key, in link order.
+    ///
+    /// The `ElementIterator` walk, collected into a list. `expect` aborts with its message if a
+    /// chain link is empty, which the table's invariant rules out.
     pub fn find_each(&self, hash: i32, matches: impl Fn(&T) -> bool) -> Vec<&T> {
         let mut found = Vec::new();
         let mut bucket = self.hash_to_index(hash);
@@ -216,6 +262,7 @@ impl<T: HopscotchEntry> Hopscotch<T> {
     /// `removeEach`, an `ElementIterator` removing all it finds: a removal moves the chain's last
     /// entry into the hole, so the walk backs up to look at what arrived there.
     pub fn remove_each(&mut self, hash: i32, matches: impl Fn(&T) -> bool) -> bool {
+        // `NO_ELEMENT_INDEX`.
         const NONE: i32 = -1;
         let bucket = self.hash_to_index(hash);
         if !self.is_chain_head(bucket) {
@@ -223,6 +270,8 @@ impl<T: HopscotchEntry> Hopscotch<T> {
         }
         let mut current = bucket;
         let mut previous = NONE;
+        // `advanceUntilEquivalent`, as a closure handed the table and the two cursors, since a
+        // closure that held them itself would block the removals below.
         let advance = |table: &Self, current: &mut i32, previous: &mut i32| loop {
             let offset = table.offset(*current);
             if offset == 0 {
@@ -235,11 +284,15 @@ impl<T: HopscotchEntry> Hopscotch<T> {
                 return;
             }
         };
+        // The `ElementIterator` constructor's `ensureEquivalence`.
         if !matches(self.entry(current).expect("a head")) {
             advance(self, &mut current, &mut previous);
         }
         let mut removed = false;
         while current != NONE {
+            // `next()` then `remove()`: note the element and advance, remove it, and if the
+            // removal pulled the chain's last entry into the hole, back up onto it; then
+            // `ensureEquivalence`.
             let (remove_at, remove_previous) = (current, previous);
             advance(self, &mut current, &mut previous);
             self.remove_at_index(remove_at, remove_previous);
@@ -256,6 +309,9 @@ impl<T: HopscotchEntry> Hopscotch<T> {
     }
 
     /// `Collection.removeIf`, through `CompleteIterator`.
+    ///
+    /// The same `next()` and `remove()` dance as [`Hopscotch::remove_each`], over every chain, with
+    /// `next_head` the iterator's `nextBucketHead`.
     pub fn remove_if(&mut self, doomed: impl Fn(&T) -> bool) {
         const NONE: i32 = -1;
         let mut head = NONE;
@@ -294,6 +350,11 @@ impl<T: HopscotchEntry> Hopscotch<T> {
     }
 
     /// `removeAtIndex`.
+    ///
+    /// At the end of a chain the bucket is emptied and the predecessor's offset zeroed
+    /// (`status[predecessorIndex] -= getOffset(predecessorIndex)`, which keeps the head bit). In
+    /// the middle, the chain's LAST entry moves into the hole and the link to it is cut, so the
+    /// chain's order changes: that is why the iterators back up after a removal.
     fn remove_at_index(&mut self, bucket: i32, predecessor: i32) {
         let offset = self.offset(bucket);
         self.release(self.buckets[bucket as usize]);
@@ -322,6 +383,9 @@ impl<T: HopscotchEntry> Hopscotch<T> {
         self.size -= 1;
     }
 
+    /// `hashToIndex`: `(SPREADER * entry.hashCode()) % capacity`, the product wrapping as an
+    /// `int` does, and a negative remainder (Java's `%` keeps the dividend's sign, as Rust's does)
+    /// moved up by the capacity.
     fn hash_to_index(&self, hash: i32) -> i32 {
         let result = SPREADER.wrapping_mul(hash) % self.capacity;
         if result < 0 {
@@ -332,6 +396,12 @@ impl<T: HopscotchEntry> Hopscotch<T> {
     }
 
     /// `insert`, of an entry already stored under `held`.
+    ///
+    /// A squatter in the entry's own bucket is evicted first; an empty bucket takes the entry as a
+    /// chain head (`status[bucketIndex] = Byte.MIN_VALUE`); otherwise the chain is walked to its
+    /// end, testing each entry for a collision when `test` holds, and the entry goes into an empty
+    /// bucket linked into the chain. `test` is false during a resize, the Java's
+    /// `(t1, t2) -> false`.
     fn insert(&mut self, held: u32, bucket: i32, test: bool) -> Result<bool, HopscotchFailed> {
         if !self.is_empty_bucket(bucket) && !self.is_chain_head(bucket) {
             self.evict(bucket)?;
@@ -365,6 +435,9 @@ impl<T: HopscotchEntry> Hopscotch<T> {
         Ok(true)
     }
 
+    /// `insertIntoChain`: find an empty bucket after `bucket`, hopscotch it back while it is more
+    /// than `Byte.MAX_VALUE` past the chain's end, then link it in after the end or, when it lies
+    /// before the end, at its place in the chain. Returns the bucket.
     fn insert_into_chain(
         &mut self,
         bucket: i32,
@@ -389,6 +462,8 @@ impl<T: HopscotchEntry> Hopscotch<T> {
         Ok(empty)
     }
 
+    /// `linkIntoChain`: walk the chain to the link that jumps past `empty` and split that jump in
+    /// two, `status[tmpIndex] -= offset; status[emptyBucketIndex] = (byte) offset;`.
     fn link_into_chain(&mut self, bucket: i32, empty: i32) {
         let mut offset_to_empty = self.index_diff(bucket, empty);
         let mut at = bucket;
@@ -406,6 +481,9 @@ impl<T: HopscotchEntry> Hopscotch<T> {
         self.status[empty as usize] = offset as i8;
     }
 
+    /// `evict`: free `to_evict` for its rightful head by moving its chain's entries forward,
+    /// each time hopscotching an empty bucket into range and moving the chain's last entry into
+    /// it, until the empty bucket is `to_evict` itself.
     fn evict(&mut self, to_evict: i32) -> Result<(), HopscotchFailed> {
         let hash = self.entry(to_evict).expect("a squatter").key_hash();
         let bucket = self.hash_to_index(hash);
@@ -440,6 +518,8 @@ impl<T: HopscotchEntry> Hopscotch<T> {
         }
     }
 
+    /// `findEmptyBucket`: the first empty bucket strictly after `bucket`, wrapping. It never
+    /// fails to stop because `add` resizes a full table first.
     fn find_empty_bucket(&self, mut bucket: i32) -> i32 {
         loop {
             bucket = self.index(bucket, 1);
@@ -449,10 +529,12 @@ impl<T: HopscotchEntry> Hopscotch<T> {
         }
     }
 
+    /// `(status[bucketIndex] & Byte.MIN_VALUE) != 0`: the high bit is the sign bit of an `i8`.
     fn is_chain_head(&self, bucket: i32) -> bool {
         self.status[bucket as usize] < 0
     }
 
+    /// `status[bucketIndex] & Byte.MAX_VALUE`, the low seven bits.
     fn offset(&self, bucket: i32) -> i32 {
         (self.status[bucket as usize] & i8::MAX) as i32
     }
@@ -475,6 +557,7 @@ impl<T: HopscotchEntry> Hopscotch<T> {
         }
     }
 
+    /// `getIndexDiff`: how far `second` lies after `first`, going round the end of the table.
     fn index_diff(&self, first: i32, second: i32) -> i32 {
         let result = second - first;
         if result < 0 {
@@ -484,6 +567,10 @@ impl<T: HopscotchEntry> Hopscotch<T> {
         }
     }
 
+    /// `hopscotch`: bring the empty bucket closer by moving into it an entry from up to
+    /// `Byte.MAX_VALUE - 1` buckets before it whose predecessor link can still reach it, scanning
+    /// from the farthest. Returns the bucket emptied, or the `IllegalStateException` when no entry
+    /// can move.
     fn hopscotch(&mut self, from: i32, empty: i32) -> Result<i32, HopscotchFailed> {
         let from_to_empty = self.index_diff(from, empty);
         let mut offset_to_empty = i8::MAX as i32;
@@ -507,6 +594,9 @@ impl<T: HopscotchEntry> Hopscotch<T> {
     }
 
     /// `move`, a keyword here.
+    ///
+    /// Move the entry at `to_move` into `empty` and relink: the predecessor's offset now reaches
+    /// past `to_move`, and `empty` is spliced into the chain where its distance falls.
     fn relocate(&mut self, predecessor: i32, to_move: i32, empty: i32) {
         let mut predecessor = predecessor;
         let mut to_empty = self.index_diff(to_move, empty);
@@ -534,6 +624,14 @@ impl<T: HopscotchEntry> Hopscotch<T> {
         self.status[to_move as usize] = 0;
     }
 
+    /// `resize`: the next legal size strictly above the capacity, every old entry reinserted
+    /// without a collision test, and on failure the old table restored and the second
+    /// `IllegalStateException` raised. `std::mem::replace` swaps the new arrays in and hands the
+    /// old ones back. The Java's final `size != oldSize` check is not ported.
+    ///
+    /// The message's load factor is printed with Rust's `{}`, which writes a whole number without
+    /// `.0`: a resize triggered by a full table restores `size == capacity`, so the port writes
+    /// `load factor 1` where the Java's `"..."+1.*size/capacity` writes `load factor 1.0`.
     fn resize(&mut self) -> Result<(), HopscotchFailed> {
         let old_capacity = self.capacity;
         let old_size = self.size;
@@ -542,7 +640,9 @@ impl<T: HopscotchEntry> Hopscotch<T> {
         let old_status = std::mem::replace(&mut self.status, vec![0; new_capacity as usize]);
         self.capacity = new_capacity;
         self.size = 0;
-        // Not in bucket order: a stride of 127 around the old table.
+        // Not in bucket order: a stride of 127 around the old table,
+        // `while ( (idx = (idx+127)%oldCapacity) != 0 )`. The capacity is prime, so every bucket
+        // is visited once. The sum is taken as `i64` so `idx + 127` cannot wrap.
         let mut index = 0;
         loop {
             let held = old_buckets[index as usize];
@@ -570,6 +670,9 @@ impl<T: HopscotchEntry> Hopscotch<T> {
 }
 
 /// `computeCapacity`: the first legal size at or above `size / LOAD_FACTOR`.
+///
+/// `as i32` truncates toward zero, as the Java's `(int)` cast does; the guard keeps the quotient
+/// within range.
 fn compute_capacity(size: i32) -> i32 {
     if (size as f64) < LOAD_FACTOR * i32::MAX as f64 {
         let augmented = (size as f64 / LOAD_FACTOR) as i32;
@@ -583,6 +686,9 @@ fn compute_capacity(size: i32) -> i32 {
 }
 
 /// `SetSizeUtils.getLegalSizeAbove`, strictly above.
+///
+/// The load factor is 1.0 there, so the Java's `(long) (minElements / loadFactor)` is the count
+/// itself. Past the largest legal size the Java throws `IllegalArgumentException`; this aborts.
 fn legal_size_above(elements: i32) -> i32 {
     LEGAL_SIZES
         .into_iter()

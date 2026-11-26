@@ -1,6 +1,6 @@
 //! `AnnotateVcfWithExpectedAlleleFraction`, ported from
 //! `org.broadinstitute.hellbender.tools.walkers.validation.AnnotateVcfWithExpectedAlleleFraction`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `AnnotateVcfWithExpectedAlleleFraction.java` is unchanged since 4.6.2.0).
 //!
 //! One Float INFO field per record: the dot product of each sample's genotype weight with its
 //! mixing fraction. Two of the three lines that produce it are not what they look like.
@@ -12,7 +12,15 @@
 //!         .mapToDouble(mixingfractionsMap::get).toArray();
 //! ...
 //! final double[] weights = vc.getGenotypes().stream().mapToDouble(g -> weight(g)).toArray();
-//! final double expected = MathUtils.sum(MathArrays.ebeMultiply(weights, mixingFractionsInSampleOrder));
+//! final double expectedAlleleFraction =
+//!         MathUtils.sum(MathArrays.ebeMultiply(weights, mixingFractionsInSampleOrder));
+//! ```
+//!
+//! (`AnnotateVcfWithExpectedAlleleFraction.java:95-96` and `:101-102`, the last line broken in
+//! two here.) htsjdk 5.0.0's `VCFHeader.buildVCFReaderMaps` is what sorts:
+//!
+//! ```java
+//! Collections.sort(sampleNamesInOrder);
 //! ```
 //!
 //! `getSampleNamesInOrder()` is **sorted**, while `vc.getGenotypes()` is the VCF's **column**
@@ -32,7 +40,8 @@
 //! vcfWriter.writeHeader(vcfHeader);
 //! ```
 //!
-//! The set is added to **after** the header was built from it, and the constructor copies. So this
+//! (`AnnotateVcfWithExpectedAlleleFraction.java:87-88` and `:90`.) The set is added to **after**
+//! the header was built from it, and the constructor copies. So this
 //! tool's output carries no `##source=` and no `##GATKCommandLine`, where its sibling
 //! [`crate::annotate_vcf_with_bam_depth`], whose two statements are the other way round, carries
 //! both. The two goldens differ by exactly those lines.
@@ -47,6 +56,17 @@
 //! They are not required to sum to one, so `AF_EXP` is not bounded by one either. A sample of the
 //! VCF that the table does not name is a `NullPointerException` out of unboxing a null, and a
 //! sample named twice is an `IllegalStateException` out of `Collectors.toMap`.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[f64]` and `&[String]` are borrowed, read-only views of arrays the caller owns, and
+//!   `table[..index]` is the view of the first `index` entries (a slice, not a copy).
+//! - `Result<T, E>` is "a value or an error", this codebase's model of a Java exception; `Ok` is
+//!   the return and `Err` the throw. `Option<T>` is "a value or nothing", and `.ok_or(e)` turns
+//!   the nothing into the error `e`.
+//! - Collecting an iterator of `Result`s into `Result<Vec<_>, _>` stops at the first `Err` and
+//!   answers it, the way the first failing `get` would throw out of the Java stream.
+//! - `.zip(..)` walks two lists side by side, stopping at the shorter.
 
 use htsjdk_vcf::variant::{format_vcf_double, Genotype, VariantContext};
 
@@ -69,13 +89,17 @@ pub enum ExpectedAlleleFractionError {
     SampleMissingFromTable,
     /// A sample the table names twice, out of `Collectors.toMap`.
     DuplicateSample {
+        /// The sample named twice.
         sample: String,
+        /// Its first fraction, as `Double.toString` spells it.
         first: String,
+        /// Its second fraction, likewise.
         second: String,
     },
 }
 
 impl ExpectedAlleleFractionError {
+    /// The fully qualified class of the exception the reference throws.
     pub fn class(&self) -> &'static str {
         match self {
             ExpectedAlleleFractionError::SampleMissingFromTable => "java.lang.NullPointerException",
@@ -99,6 +123,15 @@ impl ExpectedAlleleFractionError {
 }
 
 /// `weight(genotype)`: hom var, het, or nothing at all.
+///
+/// ```java
+/// if (genotype.isHomVar()) {
+///     return 1.0;
+/// } else if (genotype.isHet()) {
+///     return 0.5;
+/// ```
+///
+/// (`AnnotateVcfWithExpectedAlleleFraction.java:114-117`.)
 pub fn weight(genotype: &Genotype) -> f64 {
     if is_hom_var(genotype) {
         1.0
@@ -112,12 +145,14 @@ pub fn weight(genotype: &Genotype) -> f64 {
 /// `isHomVar()`, which is `getType() == HOM_VAR`: every allele called, all the same, and not the
 /// reference. A call carrying a no-call is MIXED and weighs nothing.
 fn is_hom_var(genotype: &Genotype) -> bool {
+    // No alleles at all is `UNAVAILABLE`, not hom var.
     if genotype.alleles.is_empty() {
         return false;
     }
     if genotype.alleles.iter().any(|allele| allele.is_no_call()) {
         return false;
     }
+    // `.all(..)` is `allMatch`: every allele equal to the first, which is not the reference.
     let first = &genotype.alleles[0];
     !first.is_reference() && genotype.alleles.iter().all(|allele| allele == first)
 }
@@ -131,6 +166,8 @@ pub fn fractions_in_sample_order(
     table: &[(String, f64)],
     header_samples: &[String],
 ) -> Result<Vec<f64>, ExpectedAlleleFractionError> {
+    // `Collectors.toMap` throws on the first key it meets twice, in table order: this finds the
+    // first entry whose name an earlier entry already had.
     for (index, (sample, value)) in table.iter().enumerate() {
         if let Some((_, earlier)) = table[..index].iter().find(|(name, _)| name == sample) {
             return Err(ExpectedAlleleFractionError::DuplicateSample {
@@ -140,6 +177,9 @@ pub fn fractions_in_sample_order(
             });
         }
     }
+    // `getSampleNamesInOrder()`. Rust's `sort` on strings compares UTF-8 bytes, and Java's
+    // `Collections.sort` compares UTF-16 code units; the two agree on any name in the Basic
+    // Multilingual Plane below U+E000.
     let mut sorted: Vec<String> = header_samples.to_vec();
     sorted.sort();
     sorted
@@ -163,6 +203,10 @@ fn trim_zeroes(value: f64) -> String {
 ///
 /// The weights are in the record's column order and the fractions in sorted sample order, and this
 /// function pairs them by **position**, as the reference does. The mismatch is the behaviour.
+///
+/// `MathUtils.sum` is a plain `s += v` loop, so multiplying and adding in one pass gives the same
+/// roundings as the reference's product array summed afterwards. `ebeMultiply` refuses arrays of
+/// different lengths where `zip` would stop at the shorter; both lengths are the sample count.
 pub fn expected_allele_fraction(weights: &[f64], fractions: &[f64]) -> f64 {
     let mut sum = 0.0;
     for (weight, fraction) in weights.iter().zip(fractions) {
@@ -173,6 +217,9 @@ pub fn expected_allele_fraction(weights: &[f64], fractions: &[f64]) -> f64 {
 
 /// The whole of `apply` for one record: the value, and the string the writer puts in the INFO
 /// column.
+///
+/// `format_vcf_double` is htsjdk's `VCFEncoder.formatVCFDouble`, which is why the golden reads
+/// `0.100` and `0.00`.
 pub fn annotation(variant: &VariantContext, fractions: &[f64]) -> String {
     let weights: Vec<f64> = variant.genotypes.iter().map(weight).collect();
     format_vcf_double(expected_allele_fraction(&weights, fractions))

@@ -1,5 +1,6 @@
 //! Ported from `org.broadinstitute.hellbender.tools.walkers.haplotypecaller.AlleleFiltering`,
-//! `AlleleFilteringHC`, `AlleleFilteringMutect` and `OccurrenceMatrix` (GATK 4.6.2.0):
+//! `AlleleFilteringHC`, `AlleleFilteringMutect` and `OccurrenceMatrix` (GATK 4.7.0.0; the four
+//! files are unchanged since 4.6.2.0):
 //! `--flow-filter-alleles`, the haplotypes dropped before genotyping for carrying an allele too
 //! weak or too strand-biased to keep.
 //!
@@ -22,6 +23,26 @@
 //! has its haplotypes in that hash order, whether or not any was removed. The two alleles of a
 //! marginalised matrix are a `HashMap`'s keys too, which decides which of them Mutect2's prior
 //! takes as the first.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[T]` is a borrowed, read-only view of an array; `&mut` marks a writable borrow;
+//! - `Result<T, String>` is "a value or an error"; the error text is the exception the reference
+//!   would throw (`java.lang.NullPointerException` and the like), and `?` after a call hands an
+//!   error straight back to the caller, Java's `throws` at one call site. `.map_err(..)` turns
+//!   another error type into that text first, and a `port limitation:` prefix marks a hash order
+//!   this port cannot reproduce rather than a reference exception;
+//! - `Option<T>` is a value or nothing (Java's `null`, checked);
+//!   `let Some(x) = y else { continue }` unwraps it or skips the iteration;
+//! - `|x| ...` is a closure, Java's lambda; it can read the local variables around it;
+//! - `.iter().filter(..).map(..).collect()` is Java's stream pipeline;
+//! - `JavaHashMap<K, ()>` is a `HashSet`: it iterates in the order Java's `HashMap` would, given
+//!   the keys' Java `hashCode`, which is what `JavaHashCode` supplies;
+//! - `wrapping_mul` and `wrapping_add` are Java's `int` arithmetic, which overflows silently; a
+//!   plain `*` or `+` on `i32` panics on overflow in a debug build;
+//! - `x as i32` is a numeric cast; from a float it truncates toward zero, sends `NaN` to zero and
+//!   saturates at the `int` range, which is what Java's `(int)` does;
+//! - a function's last expression is its return value.
 
 use std::collections::BTreeSet;
 
@@ -73,12 +94,21 @@ pub enum FilterModel {
 /// What filtering leaves: the matrix over the haplotypes kept (in their hash order), the starts of
 /// the alleles that were weighed where a candidate was found, and how many haplotypes went.
 pub struct Filtered {
+    /// `removeAllelesToSubset(eventualAlleles)`: the read-by-haplotype matrix over the haplotypes
+    /// kept.
     pub likelihoods: AlleleLikelihoods<BamRecord, Haplotype>,
+    /// What the reference adds to `suspiciousLocations`: every active allele's start in a round
+    /// that found a candidate, here a sorted set where the reference passes a `Set<Integer>`.
     pub suspicious_locations: BTreeSet<i32>,
+    /// `readLikelihoods.numberOfAlleles() - subsettedReadLikelihoodsFinal.numberOfAlleles()`, what
+    /// `setFilteredHaplotypeCount` records.
     pub filtered_haplotype_count: i32,
 }
 
 /// A haplotype as a hash key: its index in the matrix, hashed as `Haplotype.hashCode`.
+///
+/// `Haplotype.hashCode` is `Arrays.hashCode(getBases())`. Carrying the index rather than the
+/// haplotype lets the sets below hold plain positions while iterating in the reference's order.
 #[derive(Debug, Clone, PartialEq)]
 struct HaplotypeKey {
     index: usize,
@@ -95,6 +125,19 @@ impl JavaHashCode for HaplotypeKey {
 ///
 /// The haplotypes' event maps are built first, over `reference` at `ref_loc`, as
 /// `buildEventMapsForHaplotypes` does just before.
+///
+/// The body is `subsetHaplotypesByAlleles`, in its four steps: the occurrence matrix, the linked
+/// groups, the removal loop per group, and the subset. The loop removes one candidate per round
+/// and scores again, and it goes on while this holds (`AlleleFiltering.java`):
+///
+/// ```java
+/// if ((filteringCandidates.size()>0 && activeAlleles.size()>1) ||
+/// (activeAlleles.size()==1 && filteringCandidatesStringent.size()>0) ||
+///         (filteringCandidates.size()>0 && this.assemblyArgs.filterLoneAlleles)) {
+/// ```
+///
+/// The stringent candidates are the same call with a quality threshold of one and an SOR
+/// threshold of `Integer.MAX_VALUE`, so a lone allele goes only when its quality is under one.
 pub fn filter_alleles(
     likelihoods: &AlleleLikelihoods<BamRecord, Haplotype>,
     reference: &[u8],
@@ -103,6 +146,8 @@ pub fn filter_alleles(
     arguments: &AlleleFilterArguments,
     model: FilterModel,
 ) -> Result<Filtered, String> {
+    // `readLikelihoods.alleles()`, in the matrix's order. `expect` stops the program if the index
+    // had no allele, which cannot happen for an index under `number_of_alleles`.
     let haplotypes: Vec<Haplotype> = (0..likelihoods.number_of_alleles())
         .map(|a| likelihoods.get_allele(a).expect("an allele").clone())
         .collect();
@@ -144,6 +189,8 @@ pub fn filter_alleles(
             }
         }
     }
+    // `OccurrenceMatrix.nonCoOcurringColumns`: every pair of columns `(i, j)` with `i < j` that no
+    // row carries both of, in that loop order.
     let occurs = |row: usize, column: usize| events[row].contains(&columns[column]);
     let mut non_co_occurring: Vec<(usize, usize)> = Vec::new();
     for i in 0..columns.len() {
@@ -153,12 +200,17 @@ pub fn filter_alleles(
             }
         }
     }
+    // `filterByDistance(pairs, 0, 3)` and `(pairs, 0, 20)`: the start positions at most that far
+    // apart. The minimum of zero removes nothing.
     let distance = |(i, j): &(usize, usize)| (columns[*i].start() - columns[*j].start()).abs();
     let close: Vec<(usize, usize)> = non_co_occurring
         .iter()
         .copied()
         .filter(|pair| distance(pair) <= 3)
         .collect();
+    // `findReferenceHaplotype` answers `null` when there is no reference haplotype, and the first
+    // `refHaplotype.insertAllele` then throws; `ok_or` turns the missing value into that exception,
+    // and only once a pair within twenty reaches it, as in the reference.
     let reference = haplotypes.iter().find(|h| h.is_reference());
     let mut linked: Vec<(usize, usize)> = Vec::new();
     for pair in non_co_occurring.iter().filter(|pair| distance(pair) <= 20) {
@@ -172,15 +224,20 @@ pub fn filter_alleles(
             )
             .ok_or("java.lang.NullPointerException".to_string())
         };
+        // `insertAllele` answering `null` throws at its `.getBases()` in the reference.
         let left = insert(&columns[pair.0])?;
         let right = insert(&columns[pair.1])?;
         if equal_up_to_hmer_change(&left, &right) {
             linked.push(*pair);
         }
     }
+    // The hmer-linked pairs first, then every close pair after them, as
+    // `nonCoOcurringAlleles.addAll(closeNonCoOccurringAlleles)` appends them: a close pair that is
+    // also hmer-linked is listed twice, which the graph absorbs.
     linked.extend(close);
     let sets = connected_sets(columns.len(), &linked);
 
+    // `disabledHaplotypes`, one flag per matrix index; it accumulates over all the groups.
     let mut disabled: Vec<bool> = vec![false; haplotypes.len()];
     let mut suspicious = BTreeSet::new();
     for set in &sets {
@@ -189,8 +246,14 @@ pub fn filter_alleles(
             let members: Vec<Event> = set.iter().map(|&c| columns[c].clone()).collect();
             write_interaction_graph(likelihoods, &events, &members, model)?;
         }
+        // `new HashSet<>(readLikelihoods.alleles())`, fresh for every group: a haplotype disabled
+        // by an earlier group is still active here, and only `disabled` remembers it.
         let mut active: JavaHashMap<HaplotypeKey, ()> = JavaHashMap::copy_of(keys.iter());
+        // `while (removedAlleles)`: `loop` runs until a `break`, which is the round that removed
+        // nothing.
         loop {
+            // `activeAlleles`: the group's events in the order the active set's iteration first
+            // meets them, which is `.flatMap(..).distinct()` over the `HashSet`.
             let mut active_alleles: Vec<Event> = Vec::new();
             for key in active.keys() {
                 for event in events[key.index].iter().filter(|e| in_set(e)) {
@@ -199,12 +262,14 @@ pub fn filter_alleles(
                     }
                 }
             }
+            // `alleleHaplotypeMap`: the active haplotypes carrying an event, in the matrix's order.
             let is_active = |index: usize| active.keys().any(|k| k.index == index);
             let carriers = |event: &Event| -> Vec<usize> {
                 (0..haplotypes.len())
                     .filter(|&h| is_active(h) && events[h].contains(event))
                     .collect()
             };
+            // `collectedRPLs` and `collectedSORs`, one of each per active allele and in its order.
             let mut rpls = Vec::with_capacity(active_alleles.len());
             let mut sors = Vec::with_capacity(active_alleles.len());
             for event in &active_alleles {
@@ -234,6 +299,8 @@ pub fn filter_alleles(
             if !stringent.is_empty() && candidates.is_empty() {
                 return Err("org.broadinstitute.hellbender.exceptions.GATKException$ShouldNeverReachHereException: The thresholds for stringent allele filtering should always be higher than for the relaxed one".to_string());
             }
+            // `filteringCandidates.get(0)`, its carriers disabled for good and dropped from this
+            // group's active set.
             let candidate = &active_alleles[candidates[0]];
             for h in carriers(candidate) {
                 disabled[h] = true;
@@ -264,6 +331,8 @@ pub fn filter_alleles(
             )
         })
         .collect();
+    // Each kept haplotype maps to itself alone, which is what `removeAllelesToSubset` amounts to:
+    // the same likelihoods, over fewer columns, in `subset`'s order.
     let kept = likelihoods
         .marginalize(&new_to_old)
         .map_err(|e| format!("{e:?}"))?;
@@ -277,6 +346,10 @@ pub fn filter_alleles(
 
 /// One allele against its inverse: the matrix marginalised to the two, its alleles in the order of
 /// the reference's `HashMap` over them.
+///
+/// `getAlleleLikelihoodMatrix`: the enabled haplotypes carrying the event support its alternate
+/// allele, every other enabled one supports `InverseAllele.of(alt, true)`, and the
+/// `DefaultingMap` holding the two lists is what `marginalize` iterates.
 struct Marginal {
     likelihoods: AlleleLikelihoods<BamRecord, Allele>,
     /// Which of the two is the allele, and which its inverse.
@@ -294,7 +367,8 @@ impl Marginal {
         let alt = event.alt_allele().clone();
         let alt_bases = alt.display_string().into_bytes();
         // `InverseAllele.of(alt, true)`: a reference allele, unequal to the alternate, hashed over
-        // its own and the alternate's.
+        // its own and the alternate's:
+        // `int result = super.hashCode(); result = 31 * result + internalAllele.hashCode();`
         let inverse = Allele::create(&alt_bases, true).map_err(|e| format!("{e:?}"))?;
         let alt_hash = allele_hash(&alt_bases, false);
         let inverse_hash = allele_hash(&alt_bases, true)
@@ -310,6 +384,9 @@ impl Marginal {
             .filter(|&&h| !events[h].contains(event))
             .map(|&h| likelihoods.get_allele(h).expect("an allele").clone())
             .collect();
+        // The two keys' iteration order in a Java `HashMap`, as positions 0 (the alternate) and 1
+        // (the inverse). Both lists are pushed even when one is empty: the reference's
+        // `alleleHaplotypeMap.get(notAllele)::add` creates the key before any element is added.
         let order =
             gatk_engine::java_hash::hash_map_order(&[(0usize, alt_hash), (1usize, inverse_hash)])
                 .map_err(|e| format!("port limitation: {e:?}"))?;
@@ -332,7 +409,15 @@ impl Marginal {
         })
     }
 
-    /// `getAlleleLikelihoodVsInverse`.
+    /// `getAlleleLikelihoodVsInverse`, the HC and the Mutect2 versions.
+    ///
+    /// Germline (`AlleleFilteringHC`): the genotype PLs over the allele list `(inverse, allele)`,
+    /// then per sample `Math.min(pls[1] - pls[0], pls[2] - pls[0])`, and the smallest over the
+    /// samples (`Collections.min`, which throws on no samples). At ploidy one there is no `pls[2]`
+    /// and the reference throws, which is reproduced. The subtractions are Java `int` arithmetic.
+    ///
+    /// Somatic (`AlleleFilteringMutect`): `(int)(10*alleleLogOdds)`, where the log odds are the
+    /// log evidence of the inverse alone minus that of both, each zero when there is no evidence.
     fn quality(&self, model: FilterModel) -> Result<i32, String> {
         match model {
             FilterModel::Germline { ploidy } => {
@@ -398,12 +483,18 @@ impl Marginal {
                     crate::mutect2::log_evidence(&without, &pseudocounts(1))
                         .map_err(|e| format!("{e:?}"))?
                 };
+                // `(int)(10*alleleLogOdds)`: `as i32` truncates toward zero like Java's cast.
                 Ok((10.0 * (-with_all + with_out)) as i32)
             }
         }
     }
 
     /// `getAlleleSOR`: `getContingencyTableWrtAll` against the inverse, minimum count one.
+    ///
+    /// Per sample, each informative best allele adds its read to the inverse's row (offset 0) or
+    /// the allele's (offset 2), forward strand first; a sample is kept only when
+    /// `data[0] + data[1] + data[2] + data[3] > minCount`. "WrtAll" then adds the allele's row into
+    /// the inverse's, so the first row counts every read and the second the allele's alone.
     fn sor(&self) -> Result<f64, String> {
         let mut table = [[0i32; 2]; 2];
         for sample in 0..self.likelihoods.number_of_samples() {
@@ -426,6 +517,7 @@ impl Marginal {
                 } else {
                     continue;
                 };
+                // `!read.isReverseStrand()`: SAM flag 0x10 is "reverse strand".
                 let forward = read.flags & 0x10 == 0;
                 sample_table[offset + usize::from(!forward)] += 1;
             }
@@ -436,6 +528,8 @@ impl Marginal {
                 table[1][1] += sample_table[3];
             }
         }
+        // `table[0][i] += table[j][i]`. `zip` walks the two rows side by side; `*cell` writes
+        // through the mutable reference `iter_mut` gives.
         let second = table[1];
         for (cell, below) in table[0].iter_mut().zip(second) {
             *cell += below;
@@ -466,6 +560,13 @@ impl JavaHashCode for EventKey {
 }
 
 /// `Event.toString()`, with `Allele.toString()` starring the reference.
+///
+/// ```java
+/// return "[Event @ " + contig + ":" + (start - stop == 0 ? start : start + "-" + stop) + ", " +
+///         refAllele + "->" + altAllele + ", " + attributesForVariantContext + "]";
+/// ```
+///
+/// The last field is written as `null`, the text Java gives a null `attributesForVariantContext`.
 fn event_label(event: &Event) -> String {
     let position = if event.start() == event.end() {
         event.start().to_string()
@@ -492,6 +593,8 @@ fn write_interaction_graph(
     model: FilterModel,
 ) -> Result<(), String> {
     let haplotype_count = likelihoods.number_of_alleles();
+    // Every `JavaHashMap` below is `check`ed before its order is used: an order this port cannot
+    // reproduce is refused rather than written.
     let limitation = |e: gatk_engine::java_hash::HashOrderError| format!("port limitation: {e:?}");
     // `alleleHaplotypeMap`: the group's alleles in the order the haplotypes first carry them.
     let mut carriers: JavaHashMap<EventKey, Vec<usize>> = JavaHashMap::new();
@@ -509,11 +612,14 @@ fn write_interaction_graph(
     let quality = |event: &Event, enabled: &[usize]| -> Result<i32, String> {
         Marginal::new(likelihoods, events, enabled, event)?.quality(model)
     };
+    // `initialRPLsMap`: each allele scored over every haplotype, as `getInteractionMatrix` does,
+    // not only the ones still active.
     let mut initial: JavaHashMap<EventKey, i32> = JavaHashMap::new();
     for key in &all {
         initial.insert(key.clone(), quality(&key.0, &everyone)?);
     }
     initial.check().map_err(limitation)?;
+    // `getInteractionVector` per allele: the others scored with that allele's carriers disabled.
     let mut matrix: JavaHashMap<EventKey, JavaHashMap<EventKey, i32>> = JavaHashMap::new();
     for disabled in &all {
         let off = carriers.get(disabled).cloned().unwrap_or_default();
@@ -544,6 +650,8 @@ fn write_interaction_graph(
     for from in matrix.keys() {
         let row = matrix.get(from).expect("a row");
         for to in row.keys() {
+            // The edge weight is a `double` printed by `String.valueOf`, so an integral weight is
+            // written with a trailing `.0`.
             let diff = row.get(to).copied().unwrap_or(0) - initial.get(to).copied().unwrap_or(0);
             if diff < 0 {
                 text.push_str(&format!(
@@ -555,6 +663,8 @@ fn write_interaction_graph(
         }
     }
     text.push_str("}\n");
+    // `alleleSet.iterator().next().getContig()`: every member is on the same contig, so which one
+    // comes first does not change the name.
     let first = members.first().expect("a group of two or more");
     let start = members.iter().map(Event::start).min().unwrap_or(0);
     let end = members.iter().map(Event::start).max().unwrap_or(0);
@@ -564,6 +674,9 @@ fn write_interaction_graph(
 }
 
 /// `SimpleAllele.hashCode`: `Arrays.hashCode(bases) * 31 + Boolean.hashCode(isRef)`.
+///
+/// Java's `byte` is signed, so a base is widened through `as i8`; `Boolean.hashCode` is `1231` for
+/// true and `1237` for false.
 fn allele_hash(bases: &[u8], is_ref: bool) -> i32 {
     let mut result: i32 = 1;
     for &base in bases {
@@ -576,6 +689,12 @@ fn allele_hash(bases: &[u8], is_ref: bool) -> i32 {
 
 /// `identifyBadAlleles`: indices into the alleles, the weakest by quality first while above the
 /// negated threshold, then those over the strand odds ratio threshold in the same order.
+///
+/// The qualities are PLs, so a high value is a weak allele. `getSortedIndexList` sorts the indices
+/// by quality with a stable sort, and both loops walk it from the end, stopping the first at the
+/// first allele failing `(collectedRPLs.get(rplsIndices[i])>THRESHOLD)`, where
+/// `THRESHOLD = -1 * qualThreshold`. `sort_by_key` is stable too, so equal qualities keep the
+/// active alleles' order, and the walk from the end puts the later of two equals first.
 fn identify_bad_alleles(
     rpls: &[i32],
     sors: &[f64],
@@ -670,6 +789,17 @@ fn insert_allele(
 
 /// `BaseUtils.equalUpToHmerChange`: the same runs of the same bases, at most one of a different
 /// length.
+///
+/// The reference compares the run lengths as boxed objects:
+///
+/// ```java
+/// if ( p1.getRight() == p2.getRight() ) {
+/// ```
+///
+/// where each length is an `Integer` boxed by `new ImmutablePair<>(hmerBase, hmerLength)`. Java
+/// caches boxed `Integer`s only from -128 to 127 by default, so two runs of the same length 128 or
+/// more compare unequal there and count as the one allowed difference. This compares the values.
+/// The base comparison is boxed too, but every `Byte` is cached, so that one compares values.
 fn equal_up_to_hmer_change(first: &[u8], second: &[u8]) -> bool {
     let runs = |bases: &[u8]| -> Vec<(u8, usize)> {
         let mut out: Vec<(u8, usize)> = Vec::new();
