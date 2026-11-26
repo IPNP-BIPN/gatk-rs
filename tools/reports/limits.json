@@ -1,0 +1,148 @@
+{
+  "$why": [
+    "The ROADMAP's bit-identical bar demands zero quarantined fields. A field a suite sets aside is",
+    "lifted only by a fix in the port, or written down here with the proof that the reference",
+    "itself does not reproduce it, or with the decision that keeps it. tools/reports/generate.py",
+    "renders each entry into docs/VALIDATION.md, links it from the tools it names, and stops",
+    "reporting a compare rule as quarantined once an entry for that tool covers it. An entry whose",
+    "rule no suite of its tools declares any more is refused, so a lifted quarantine cannot leave",
+    "its excuse behind."
+  ],
+  "limits": [
+    {
+      "id": "identity-hashes",
+      "title": "The callers' debug outputs print System.identityHashCode",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "rules": [
+        "mask_identity_hashes",
+        "sort_segments_with"
+      ],
+      "verdict": "bio-identical in the debug outputs of suite `hc-debug-outputs`; no suite of the three tools sets aside anything else",
+      "proof": [
+        "Vertex ids and labels in the dot files, junction-tree node names and the genotyper debug's",
+        "`double[]` renderings are `System.identityHashCode`, and the files holding junction trees",
+        "print them from identity-keyed `HashMap`s, so in an order those hashes decide. Measured",
+        "2026-11-19: the suite's dump ran twice in a row in `gatk-rs-oracle:4.7.0.0` on one arm64 Mac under emulation",
+        "(`python3 tools/conformance/run_suite.py --suites hc-debug-outputs`, twice). The two dumps",
+        "and the CI golden, three runs of the reference on the same input, differ pairwise on 129 of",
+        "214 rows; with `mask_identity_hashes` alone on 3 of them, the junction-tree files; with both",
+        "rules on none. Nothing outside those shapes moves, and those shapes move in every run: no",
+        "port can be byte-identical to a reference that is not byte-identical to itself."
+      ]
+    },
+    {
+      "id": "hdf5-clock",
+      "title": "Java's HDF5 library stamps object headers with the clock",
+      "tools": [
+        "TrainVariantAnnotationsModel",
+        "ScoreVariantAnnotations"
+      ],
+      "rules": [
+        "mask_hdf5_modification_times"
+      ],
+      "verdict": "bio-identical in the 48 bytes of seconds; every other byte of the annotations, the models' score files and the VCF is compared",
+      "proof": [
+        "The masked file is the annotations ExtractVariantAnnotations writes, which the port reads",
+        "as training input and never writes in this suite. The committed golden is its own proof:",
+        "its two passes, `default` and `seven`, run the same ExtractVariantAnnotations command on the",
+        "same fixture in the same container, and their `extract.annot.hdf5` are 175,040 bytes each",
+        "and differ in 12 bytes, every one inside one of the twelve Object Modification Time messages,",
+        "which read 2026-11-05T07:34:31 and 07:34:42 UTC. The same clock is why the dump compares the",
+        "doubles of `score.scores.hdf5` rather than its bytes, and the scorer pickle is hashed without",
+        "the name of the temporary script it ran from, random in every run (`tools/python-tools/dump_vets.py`)."
+      ]
+    },
+    {
+      "id": "nvscorevariants-bits",
+      "title": "NVScoreVariants' bits past the dense layers",
+      "tools": [
+        "NVScoreVariants"
+      ],
+      "verdict": "byte-identical in what the tool writes (the VCF and its `%.3f` scores); the intermediate floats are not claimed",
+      "proof": [
+        "MKL's `SGEMM` sums the dense layers in an order set by the thread count and the batch size,",
+        "so the reference's own floats move with them: against one thread at batch 64, four threads",
+        "differ on 2047 of 2840 dense_2.0 values and on 20 of 71 scores by up to 5 ulp, one thread at",
+        "batch 1 on 43 of 71 scores. Its VCF and score file are identical at 1, 2, 4 and 16 threads,",
+        "and its score file at batch sizes 1, 7 and 64. `docs/nvscorevariants.md`, suite `nvscorevariants`."
+      ]
+    },
+    {
+      "id": "panel-of-normals-rank",
+      "title": "CreateReadCountPanelOfNormals' eigensample count is a solver's rank",
+      "tools": [
+        "CreateReadCountPanelOfNormals"
+      ],
+      "verdict": "bio-identical in the panel's eigensamples: suites hold the cap the rank is taken under, whether the basis is empty, and at `local[1]` the count and the values above the noise",
+      "proof": [
+        "The count is the number of singular values over rCond 1e-9, decided on values that are",
+        "rounding noise on a rank-deficient panel, in the order Spark folds the Gramian. The same",
+        "fixture answered 8, 6 and 7 eigensamples on two CI runs and a laptop with one image; twelve",
+        "runs at `local[4]` gave eleven sets of bits and ranks 6 and 7; two identical runs in one",
+        "container wrote HDF5 panels differing in 268 bytes (#1270). `docs/a-rank-is-not-a-byte.md`,",
+        "`docs/spark-parallel.md`, suites `create-read-count-panel-of-normals`,",
+        "`create-read-count-panel-rank` and `create-read-count-panel-arpack`."
+      ]
+    },
+    {
+      "id": "asm-rejected-reads",
+      "title": "AnalyzeSaturationMutagenesis --write-rejected-reads",
+      "tools": [
+        "AnalyzeSaturationMutagenesis"
+      ],
+      "verdict": "held out of the covering array at false; the other outputs are compared byte for byte",
+      "proof": [
+        "GATK writes BAMs asynchronously, and a read rejected before its report exists is added to",
+        "the rejected BAM twice, once tagged `XX:unmapped` and again, after `processReport` retags the",
+        "same object `XX:lowQ`. Whether the first copy was encoded before the retag depends on the",
+        "writer thread: 4 of 18 reference runs under load kept `XX:unmapped` on `dup1` and `qc1`",
+        "(`tools/coverage/fixtures.json`)."
+      ]
+    },
+    {
+      "id": "bwa-index-pointers",
+      "title": "BwaMemIndexImageCreator writes heap addresses",
+      "tools": [
+        "BwaMemIndexImageCreator"
+      ],
+      "verdict": "byte-identical outside the address fields and padding, which the covering array zeroes from the image's layout; the golden holds the size and the instability",
+      "proof": [
+        "BWA's serialiser writes in-process pointers through JNI, which address-space layout",
+        "randomisation moves on every run: one reference built twice in one process gives two images",
+        "of the same length differing in nine bytes. `docs/pointers-that-reach-the-output.md`."
+      ]
+    },
+    {
+      "id": "genomicsdb-names-and-clock",
+      "title": "GenomicsDBImport names fragments by UUID, thread and clock",
+      "tools": [
+        "GenomicsDBImport"
+      ],
+      "verdict": "byte-identical outside the fragment and metadata names, the header's `Date` and the schema's absolute path, which the dump numbers or masks",
+      "proof": [
+        "Two reference runs on the same input wrote 134 files of which 133 are identical; what",
+        "differs is the fragment and `genomicsdb_meta` file names (a UUID, a thread id and the wall",
+        "clock), `Date` in `vcfheader.vcf` and the absolute path in `__array_schema.tdb` (suite",
+        "`genomicsdb-import`, #1400)."
+      ]
+    },
+    {
+      "id": "double-to-string-above-2-53",
+      "title": "DecimalFormat above 2^53 (68 values)",
+      "tools": [],
+      "verdict": "a decision, not an instability: the reference is stable here, and the port follows the specification where Java 17 departs from it",
+      "proof": [
+        "Above 2^53 Java 17's pre-Schubfach converter stops producing the shortest decimal form, and",
+        "`DecimalFormat` keeps that converter until JDK 26, so 68 renderings across the two",
+        "repositories' corpora differ. Below 2^53 nothing differs on 903,121 measured values. An oracle",
+        "on JDK 26 takes the 68 to 0 for one golden regenerated in each repository, against a runtime",
+        "GATK does not ship on: decision #115, open. The ROADMAP measures nothing a gatk-rs tool prints",
+        "within eleven orders of magnitude of 2^53. `docs/licence-compatibility-risk.md`."
+      ]
+    }
+  ]
+}
