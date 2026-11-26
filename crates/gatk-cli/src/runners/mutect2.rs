@@ -414,13 +414,22 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         intervals
     };
 
-    // Each contig read once and shared: the clipper asks for one per read.
+    // A contig read once and shared: the clipper asks for one per read. Only the two contigs
+    // used last are kept, most recent first. A map of every contig visited grew to the whole
+    // reference over a genome (3 GB), and two, not one, because the clipper runs on the reads a
+    // window ahead of the regions, so at a contig boundary the two ask for adjacent contigs.
+    // A contig asked for again after eviction is read again: the same bases, so the same bytes.
     let reference = std::cell::RefCell::new(reference);
-    let bases_of: std::cell::RefCell<std::collections::HashMap<String, std::rc::Rc<Vec<u8>>>> =
-        Default::default();
+    let bases_of: std::cell::RefCell<Vec<(String, std::rc::Rc<Vec<u8>>)>> = Default::default();
     let shared_bases = |contig: &str| -> Result<std::rc::Rc<Vec<u8>>, String> {
-        if let Some(bases) = bases_of.borrow().get(contig) {
-            return Ok(bases.clone());
+        {
+            let mut kept = bases_of.borrow_mut();
+            if let Some(at) = kept.iter().position(|(name, _)| name == contig) {
+                let hit = kept.remove(at);
+                let bases = hit.1.clone();
+                kept.insert(0, hit);
+                return Ok(bases);
+            }
         }
         let mut reference = reference.borrow_mut();
         let length = reference
@@ -434,12 +443,12 @@ pub fn mutect2(parser: &Parser) -> Outcome {
                 .query(contig, 1, length)
                 .map_err(|error| format!("{error:?}"))?,
         );
-        bases_of
-            .borrow_mut()
-            .insert(contig.to_string(), bases.clone());
+        let mut kept = bases_of.borrow_mut();
+        kept.insert(0, (contig.to_string(), bases.clone()));
+        kept.truncate(2);
         Ok(bases)
     };
-    let mut contig_bases = |contig: &str| shared_bases(contig).map(|bases| (*bases).clone());
+    let mut contig_bases = |contig: &str| shared_bases(contig);
 
     // The filters, then `makePostReadFilterTransformer`'s palindrome clipper.
     let filter = read_filter(parser, &filters, &header)?;
@@ -652,8 +661,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
             None => Vec::new(),
         },
         genotype_pon_sites: flag(parser, "genotype-pon-sites"),
-        permutect: permutect_datasets(parser, &header, &normal_samples)?
-            .map(std::cell::RefCell::new),
+        permutect: permutect_datasets(parser, &header, &normal_samples)?.map(std::sync::Mutex::new),
         f1r2: argument(parser, "f1r2-tar-gz").map(|_| gatk_tools::collect_f1r2_counts::Args {
             min_median_map_qual: number_or(parser, "f1r2-median-mq", 50),
             min_base_quality: number_or(parser, "f1r2-min-bq", 20),
@@ -695,7 +703,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         expressions: Vec::new(),
         allele_concordance: false,
         // The annotations' own arguments, which the plugin descriptor hands to their instances.
-        pseudo_depth: std::cell::RefCell::new(
+        pseudo_depth: std::sync::Mutex::new(
             gatk_annotation::allele_pseudo_depth::AllelePseudoDepth::new(
                 double_or(parser, "dirichlet-prior-pseudo-count", 1.0),
                 flag(parser, "dirichlet-keep-prior-in-count"),
@@ -720,7 +728,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
     let assembly_variants = argument(parser, "debug-assembly-variants-out").map(|path| {
         (
             path,
-            std::cell::RefCell::new(gatk_tools::assembly_variants_out::AssemblyVariantsOut::new(
+            std::sync::Mutex::new(gatk_tools::assembly_variants_out::AssemblyVariantsOut::new(
                 header.sequences.iter().map(|s| s.name.clone()).collect(),
             )),
         )
@@ -741,7 +749,11 @@ pub fn mutect2(parser: &Parser) -> Outcome {
             lines: Vec::new(),
             samples: Vec::new(),
         };
-        let text = super::write_vcf_strict_or_lenient(false, &empty, &queue.borrow().records())?;
+        let text = super::write_vcf_strict_or_lenient(
+            false,
+            &empty,
+            &queue.lock().expect("a sink").records(),
+        )?;
         super::write_variant_file(
             parser,
             path,
@@ -926,7 +938,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
     // `SomaticGenotypingEngine.close`, a failed run's too: each dataset as far as it got, and the
     // contig and read group tables beside it.
     if let Some(permutect) = &arguments.permutect {
-        let permutect = permutect.borrow();
+        let permutect = permutect.lock().expect("a sink");
         let paths = [
             argument(parser, "permutect-training-dataset"),
             argument(parser, "permutect-test-dataset"),

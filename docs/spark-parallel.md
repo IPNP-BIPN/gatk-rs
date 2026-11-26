@@ -11,6 +11,16 @@ The only parallel path in the Spark tools is bwa-mem4's pool. It is reached by `
 and `PathSeqPipelineSpark`, and `bwa_threads` ties its `-t` to `RAYON_NUM_THREADS`. No gatk-rs crate
 uses rayon. `PileupSpark` reads the core count only for a task number in a stderr message.
 
+Outside BWA, HaplotypeCaller (and `HaplotypeCallerSpark`, `RampedHaplotypeCaller`) and Mutect2
+prepare assembly regions on `RAYON_NUM_THREADS` threads, the cores by default
+(`gatk_tools::in_order`). A region's trimming, assembly and likelihoods run on any thread, at most
+two regions per thread ahead of the one being genotyped; its genotyping, which draws from the run's
+generator and moves the genotyping engine's state, and every write run on the calling thread in
+region order. A run with a sink written from inside the preparation (`--debug-assembly-variants-out`,
+`--debug-genotyper-output`, `--alm-path`, `--debug-assembly-region-state`, `--pdhmm-results-file`,
+pileup detection's debug stdout, the graph outputs, an off ramp) stays on one thread. The rows of
+those four tools are run in full by the script below.
+
 `tools/coverage/thread_independence.py` runs every row of those six tools and four rows of each other
 Spark tool at 1 and 4 threads, and compares exit, stdout and each file's digest. The `spark-threads`
 CI job runs it in the container.

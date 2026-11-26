@@ -39,8 +39,8 @@ use crate::genotyping_engine::{Configuration, GenotypePriors, GenotypingEngine};
 use crate::haplotype_caller_engine::{ActiveRegionEvaluator, ActivityType, IsActiveArguments};
 use crate::hc_genotyping::{CallAnnotator, HcGenotypingArguments};
 use crate::hc_region::{
-    assembler_from, call_region, AssemblerArguments, CallRegionContext, RegionAssemblyArguments,
-    RegionAssemblyError,
+    assembler_from, genotype_region, prepare_region, AssemblerArguments, CallRegionContext,
+    RegionAssemblyArguments, RegionAssemblyError,
 };
 use crate::variant_annotator_engine::Engine as AnnotatorEngine;
 
@@ -128,6 +128,8 @@ pub struct HaplotypeCallerError {
     pub calls_before: Vec<VariantContext>,
     /// Raised as the engine is built, before the VCF writer exists: nothing is written.
     pub at_startup: bool,
+    /// Raised as the side outputs close, after the traversal: the run writes its header alone.
+    pub closing: bool,
 }
 
 impl HaplotypeCallerError {
@@ -137,6 +139,14 @@ impl HaplotypeCallerError {
             message: message.into(),
             calls_before: Vec::new(),
             at_startup: false,
+            closing: false,
+        }
+    }
+
+    fn closing(message: impl Into<String>) -> Self {
+        HaplotypeCallerError {
+            closing: true,
+            ..HaplotypeCallerError::new("UserException.CouldNotCreateOutputFile", message)
         }
     }
 }
@@ -234,17 +244,52 @@ pub fn call_variants(
     annotator: &AnnotatorEngine,
     contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>,
     random: &mut JavaRandom,
-    assembly_variants: Option<
-        &std::cell::RefCell<crate::assembly_variants_out::AssemblyVariantsOut>,
-    >,
+    assembly_variants: Option<&std::sync::Mutex<crate::assembly_variants_out::AssemblyVariantsOut>>,
 ) -> Result<Vec<VariantContext>, HaplotypeCallerError> {
+    let mut calls = Vec::new();
+    let outcome = call_variants_to(
+        reads,
+        header,
+        intervals,
+        arguments,
+        annotator,
+        contig_bases,
+        random,
+        assembly_variants,
+        &mut |region_calls| calls.extend(region_calls),
+    );
+    match outcome {
+        Ok(()) => Ok(calls),
+        Err(mut error) => {
+            if !error.closing {
+                error.calls_before = calls;
+            }
+            Err(error)
+        }
+    }
+}
+
+/// [`call_variants`], handing each region's calls to `sink` as they are made, so that a writer
+/// can take them without the run's calls ever being held together (#1452). The error's
+/// `calls_before` is empty: the sink has had them.
+#[allow(clippy::too_many_arguments)]
+pub fn call_variants_to(
+    reads: &WalkerReads<'_>,
+    header: &SamHeader,
+    intervals: &[SimpleInterval],
+    arguments: &HaplotypeCallerArguments,
+    annotator: &AnnotatorEngine,
+    contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>,
+    random: &mut JavaRandom,
+    assembly_variants: Option<&std::sync::Mutex<crate::assembly_variants_out::AssemblyVariantsOut>>,
+    sink: &mut dyn FnMut(Vec<VariantContext>),
+) -> Result<(), HaplotypeCallerError> {
     // `HaplotypeCallerGenotypingDebugger.initialize`, as the engine starts: its stream is never
     // closed, but writes through, so the file holds what was printed before any failure.
     let _genotyper_debug = arguments
         .genotyper_debug_output
         .clone()
         .map(GenotyperDebugFile::open);
-    let mut calls = Vec::new();
     // `PDPairHMMLikelihoodCalculationEngine`, built with the engine, and its results file, opened
     // then with its header line and closed as the engine shuts down, after a failure too.
     let pd_engine = arguments
@@ -266,20 +311,20 @@ pub fn call_variants(
         .as_ref()
         .and_then(|pdhmm| pdhmm.results_file.clone());
     let results = results_file.as_ref().map(|_| {
-        std::cell::RefCell::new(
+        std::sync::Mutex::new(
             "# hap-bases\thap-pd-bases\tread-bases\tread-qual\tread-ins-qual\tread-del-qual\tgcp\texpected-result"
                 .to_string(),
         )
     });
     let bamout = arguments.bamout.as_ref().map(|b| {
-        std::cell::RefCell::new(crate::haplotype_bam_writer::HaplotypeBamWriter::new(
+        std::sync::Mutex::new(crate::haplotype_bam_writer::HaplotypeBamWriter::new(
             b.kind, header,
         ))
     });
     // `createAlleleLikelihoodWriter`: the interval is parsed as the engine starts, and the file
     // created then, written as regions go.
     let alm = match &arguments.alm {
-        Some((_, interval)) => Some(std::cell::RefCell::new(
+        Some((_, interval)) => Some(std::sync::Mutex::new(
             crate::allele_likelihood_writer::AlleleLikelihoodWriter::new(
                 crate::allele_likelihood_writer::parse_simple_interval(interval.as_deref())
                     .map_err(|message| {
@@ -297,11 +342,11 @@ pub fn call_variants(
     let assembly_state = arguments
         .assembly_state_output
         .as_ref()
-        .map(|_| std::cell::RefCell::new(String::new()));
+        .map(|_| std::sync::Mutex::new(String::new()));
     let region_out = arguments
         .assembly_region_out
         .as_ref()
-        .map(|_| std::cell::RefCell::new(crate::hc_region::ASSEMBLY_REGION_OUT_HEADER.to_string()));
+        .map(|_| std::sync::Mutex::new(crate::hc_region::ASSEMBLY_REGION_OUT_HEADER.to_string()));
     let outcome = call_variants_into(
         reads,
         header,
@@ -317,43 +362,33 @@ pub fn call_variants(
         assembly_variants,
         alm.as_ref(),
         assembly_state.as_ref(),
-        &mut calls,
+        sink,
     );
     if let (Some(path), Some(state)) = (&arguments.assembly_state_output, assembly_state) {
-        std::fs::write(path, state.into_inner()).map_err(|e| {
-            HaplotypeCallerError::new("UserException.CouldNotCreateOutputFile", e.to_string())
-        })?;
+        std::fs::write(path, state.into_inner().expect("a sink"))
+            .map_err(|e| HaplotypeCallerError::closing(e.to_string()))?;
     }
     if let (Some((path, _)), Some(alm)) = (&arguments.alm, alm) {
-        std::fs::write(path, alm.into_inner().text).map_err(|e| {
-            HaplotypeCallerError::new("UserException.CouldNotCreateOutputFile", e.to_string())
-        })?;
+        std::fs::write(path, alm.into_inner().expect("a sink").text)
+            .map_err(|e| HaplotypeCallerError::closing(e.to_string()))?;
     }
     if let (Some(path), Some(text)) = (&arguments.assembly_region_out, region_out) {
-        std::fs::write(path, text.into_inner()).map_err(|e| {
-            HaplotypeCallerError::new("UserException.CouldNotCreateOutputFile", e.to_string())
-        })?;
+        std::fs::write(path, text.into_inner().expect("a sink"))
+            .map_err(|e| HaplotypeCallerError::closing(e.to_string()))?;
     }
     // The writer closes with the engine, after a failure too.
     if let (Some(writer), Some(settings)) = (bamout, &arguments.bamout) {
-        close_bamout(writer.into_inner(), settings)
-            .map_err(|e| HaplotypeCallerError::new("UserException.CouldNotCreateOutputFile", e))?;
+        close_bamout(writer.into_inner().expect("a sink"), settings)
+            .map_err(HaplotypeCallerError::closing)?;
     }
     if let (Some(path), Some(text)) = (&results_file, &results) {
-        std::fs::write(path, text.borrow().as_bytes()).map_err(|e| {
-            HaplotypeCallerError::new("UserException.CouldNotCreateOutputFile", e.to_string())
-        })?;
+        std::fs::write(path, text.lock().expect("a sink").as_bytes())
+            .map_err(|e| HaplotypeCallerError::closing(e.to_string()))?;
     }
-    match outcome {
-        Ok(()) => Ok(calls),
-        Err(mut error) => {
-            error.calls_before = calls;
-            Err(error)
-        }
-    }
+    outcome
 }
 
-/// [`call_variants`], appending each region's calls to `calls` as it goes.
+/// [`call_variants_to`]'s traversal, handing each region's calls to `calls` as it goes.
 #[allow(clippy::too_many_arguments)]
 fn call_variants_into(
     reads: &WalkerReads<'_>,
@@ -364,15 +399,13 @@ fn call_variants_into(
     contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>,
     random: &mut JavaRandom,
     pd_engine: Option<&gatk_engine::pair_hmm_likelihood_engine::PairHmmLikelihoodEngine>,
-    pd_results: Option<&std::cell::RefCell<String>>,
-    bamout: Option<&std::cell::RefCell<crate::haplotype_bam_writer::HaplotypeBamWriter>>,
-    region_out: Option<&std::cell::RefCell<String>>,
-    assembly_variants: Option<
-        &std::cell::RefCell<crate::assembly_variants_out::AssemblyVariantsOut>,
-    >,
-    alm: Option<&std::cell::RefCell<crate::allele_likelihood_writer::AlleleLikelihoodWriter>>,
-    assembly_state: Option<&std::cell::RefCell<String>>,
-    calls: &mut Vec<VariantContext>,
+    pd_results: Option<&std::sync::Mutex<String>>,
+    bamout: Option<&std::sync::Mutex<crate::haplotype_bam_writer::HaplotypeBamWriter>>,
+    region_out: Option<&std::sync::Mutex<String>>,
+    assembly_variants: Option<&std::sync::Mutex<crate::assembly_variants_out::AssemblyVariantsOut>>,
+    alm: Option<&std::sync::Mutex<crate::allele_likelihood_writer::AlleleLikelihoodWriter>>,
+    assembly_state: Option<&std::sync::Mutex<String>>,
+    calls: &mut dyn FnMut(Vec<VariantContext>),
 ) -> Result<(), HaplotypeCallerError> {
     let header_samples = samples_from_header(header);
     let partition: Vec<Option<String>> = header_samples.iter().cloned().map(Some).collect();
@@ -481,7 +514,7 @@ fn call_variants_into(
 
     // `buildRamps`: the off ramp is opened before the traversal and written when it ends.
     let off_ramp = arguments.off_ramp.as_ref().map(|(kind, _)| {
-        std::cell::RefCell::new(crate::ramp_files::OffRamp::new(
+        std::sync::Mutex::new(crate::ramp_files::OffRamp::new(
             *kind,
             arguments.compression,
         ))
@@ -644,7 +677,7 @@ fn call_variants_into(
         };
         let trimmer = AssemblyRegionTrimmer::new(arguments.trimmer.clone(), bases.len() as i32)
             .map_err(|e| HaplotypeCallerError::new("IllegalArgumentException", format!("{e:?}")))?;
-        let mut context = CallRegionContext {
+        let context = CallRegionContext {
             header,
             samples: &samples,
             contig_bases: &bases,
@@ -702,7 +735,25 @@ fn call_variants_into(
                 _ => None,
             },
         };
-        for traversed in regions.into_iter().flatten() {
+        // A region's preparation (trimming, assembly, likelihoods) runs on every core unless it
+        // writes to a sink or a debug stream, which then keeps the regions' order on this thread.
+        // Its genotyping, which draws from `random` and moves the engines' state, always does.
+        let sequential = gatk_engine::genotyper_debug::is_enabled()
+            || pd_results.is_some()
+            || assembly_variants.is_some()
+            || alm.is_some()
+            || assembly_state.is_some()
+            || off_ramp.is_some()
+            || detection.debug_stdout
+            || arguments.assembler.graph_output.is_some()
+            || arguments.haplotype_histogram_output.is_some()
+            || arguments.assembler.debug_graph_transformations;
+        let threads = if sequential {
+            1
+        } else {
+            crate::in_order::threads()
+        };
+        let items = regions.into_iter().flatten().map(|traversed| {
             let mut traversed = traversed
                 .map_err(|error| HaplotypeCallerError::new(error.class(), error.message()))?;
             if detection.use_pileup_detection {
@@ -712,10 +763,9 @@ fn call_variants_into(
                     &bases,
                 );
             }
-            if let Some(out) = region_out {
-                out.borrow_mut()
-                    .push_str(&crate::hc_region::assembly_region_rows(&traversed.region));
-            }
+            // Written when the region's turn comes.
+            let rows =
+                region_out.map(|_| crate::hc_region::assembly_region_rows(&traversed.region));
             // `removeReadsFromAllSamplesExcept`.
             if let Some(name) = &arguments.sample_name {
                 traversed.region.retain_reads(|read| {
@@ -731,47 +781,71 @@ fn call_variants_into(
                 span.start,
                 span.end,
             );
-            context.genotyping = match local {
+            Ok((traversed.region, local, rows))
+        });
+        let for_ploidy = |local: Option<usize>| CallRegionContext {
+            genotyping: match local {
                 Some(ploidy) => &custom_genotyping[&ploidy],
                 None => &genotyping,
-            };
-            let local_engine = match local {
-                Some(ploidy) => custom_engines
-                    .get_mut(&ploidy)
-                    .expect("an engine per custom ploidy"),
-                None => &mut engine,
-            };
-            let region_calls = call_region(
-                traversed.region,
-                &context,
-                local_engine,
-                Some(CallAnnotator {
-                    engine: annotator,
-                    random,
-                }),
-            )
-            .map_err(|e| match e {
-                RegionAssemblyError::NoVariationPresent => HaplotypeCallerError::new(
-                    "java.lang.IllegalStateException",
-                    "There is no variation present.".to_string(),
-                ),
-                // A message the reference's own exception names, as `class: message`.
-                RegionAssemblyError::Calling(message) if thrown_class(&message).is_some() => {
-                    let class = thrown_class(&message).expect("just matched");
-                    HaplotypeCallerError::new(class, message[class.len() + 2..].to_string())
+            },
+            ..context.clone()
+        };
+        crate::in_order::map_in_order(
+            items,
+            threads,
+            |(region, local, rows)| (prepare_region(region, &for_ploidy(local)), local, rows),
+            |(prepared, local, rows)| {
+                if let (Some(out), Some(rows)) = (region_out, rows) {
+                    out.lock().expect("a sink").push_str(&rows);
                 }
-                other => HaplotypeCallerError::new("GATKException", format!("{other:?}")),
-            })?;
-            calls.extend(region_calls);
-        }
+                let local_engine = match local {
+                    Some(ploidy) => custom_engines
+                        .get_mut(&ploidy)
+                        .expect("an engine per custom ploidy"),
+                    None => &mut engine,
+                };
+                let region_calls = prepared
+                    .and_then(|prepared| {
+                        genotype_region(
+                            prepared,
+                            &for_ploidy(local),
+                            local_engine,
+                            Some(CallAnnotator {
+                                engine: annotator,
+                                random: &mut *random,
+                            }),
+                        )
+                    })
+                    .map_err(region_failure)?;
+                calls(region_calls);
+                Ok(())
+            },
+        )?;
     }
     // `tearRamps`: the zip is written as the engine shuts down.
     if let (Some(ramp), Some((_, path))) = (&off_ramp, &arguments.off_ramp) {
-        ramp.borrow()
+        ramp.lock()
+            .expect("a sink")
             .write(path)
             .map_err(|message| HaplotypeCallerError::new("GATKException", message))?;
     }
     Ok(())
+}
+
+/// A region's failure as the reference reports it.
+fn region_failure(error: RegionAssemblyError) -> HaplotypeCallerError {
+    match error {
+        RegionAssemblyError::NoVariationPresent => HaplotypeCallerError::new(
+            "java.lang.IllegalStateException",
+            "There is no variation present.".to_string(),
+        ),
+        // A message the reference's own exception names, as `class: message`.
+        RegionAssemblyError::Calling(message) if thrown_class(&message).is_some() => {
+            let class = thrown_class(&message).expect("just matched");
+            HaplotypeCallerError::new(class, message[class.len() + 2..].to_string())
+        }
+        other => HaplotypeCallerError::new("GATKException", format!("{other:?}")),
+    }
 }
 
 /// `IUPACReadTransformer(true)`, HaplotypeCaller's pre-filter transformer: every IUPAC ambiguity
