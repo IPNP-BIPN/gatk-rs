@@ -16928,12 +16928,33 @@ pub fn update_vcf_sequence_dictionary(parser: &Parser) -> Outcome {
                 .message(),
         ));
     }
+    let (start, stream) = variant_walker_startup_streamed(parser, "UpdateVCFSequenceDictionary")?;
     let VariantWalkerStart {
         input,
-        text,
+        mut text,
         intervals,
         ..
-    } = variant_walker_startup(parser, "UpdateVCFSequenceDictionary")?;
+    } = start;
+    let stream = match stream {
+        Some((reader, lines))
+            if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref())
+                .is_none() =>
+        {
+            return update_vcf_sequence_dictionary_streamed(parser, &input, &text, reader, lines);
+        }
+        stream => stream,
+    };
+    // shortcut: `-L` and a GenomicsDB workspace keep the whole text; stream them when a run needs.
+    if let Some((mut reader, _)) = stream {
+        let mut line = String::new();
+        while reader
+            .next_line(&mut line)
+            .map_err(|_| not_block_compressed(&input))?
+        {
+            text.push_str(&line);
+            text.push('\n');
+        }
+    }
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
@@ -16941,30 +16962,7 @@ pub fn update_vcf_sequence_dictionary(parser: &Parser) -> Outcome {
     let file = htsjdk_vcf::reader::read_vcf(&text)
         .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
 
-    let refuse =
-        |error: gatk_tools::update_vcf_sequence_dictionary::UpdateDictionaryError| -> Thrown {
-            // Four of the seven are `CommandLineException`s, which exit at ONE; the one-argument
-            // `BadArgumentValue` also carries the `Illegal argument value: ` its constructor
-            // prefixes. Measured on rows 5 and 7 of this tool's array.
-            if error.java_class().starts_with("org.broadinstitute.barclay") {
-                let message = error.message();
-                return Thrown::command_line(
-                    if error
-                        .java_class()
-                        .ends_with("CommandLineException$BadArgumentValue")
-                    {
-                        format!("Illegal argument value: {message}")
-                    } else {
-                        message
-                    },
-                );
-            }
-            Thrown {
-                failure: Failure::User,
-                exception: error.java_class(),
-                message: Some(error.message()),
-            }
-        };
+    let refuse = update_vcf_sequence_dictionary_refusal;
 
     // `SAMSequenceDictionaryExtractor.extractDictionary`, whose four kinds this reads by name: a
     // `.dict` and a SAM header are the same text, a VCF's is its `##contig` lines, and a FASTA's is
@@ -17033,6 +17031,203 @@ pub fn update_vcf_sequence_dictionary(parser: &Parser) -> Outcome {
         Some(error) => Err(refuse(error)),
         None => Ok(None),
     }
+}
+
+/// How `UpdateVCFSequenceDictionary` refuses: four of the seven are `CommandLineException`s, which
+/// exit at ONE; the one-argument `BadArgumentValue` also carries the `Illegal argument value: ` its
+/// constructor prefixes. Measured on rows 5 and 7 of this tool's array.
+fn update_vcf_sequence_dictionary_refusal(
+    error: gatk_tools::update_vcf_sequence_dictionary::UpdateDictionaryError,
+) -> Thrown {
+    if error.java_class().starts_with("org.broadinstitute.barclay") {
+        let message = error.message();
+        return Thrown::command_line(
+            if error
+                .java_class()
+                .ends_with("CommandLineException$BadArgumentValue")
+            {
+                format!("Illegal argument value: {message}")
+            } else {
+                message
+            },
+        );
+    }
+    Thrown {
+        failure: Failure::User,
+        exception: error.java_class(),
+        message: Some(error.message()),
+    }
+}
+
+/// [`update_vcf_sequence_dictionary`] over the records one at a time, for a run with no `-L`.
+///
+/// The whole-text path decompressed the file at startup and decoded every record before anything
+/// else, so a file that cannot be read was refused first, and a malformed record next. Every
+/// refusal here therefore reads the rest of the file first, and answers with the earliest of
+/// those if there is one.
+fn update_vcf_sequence_dictionary_streamed(
+    parser: &Parser,
+    input: &str,
+    header_text: &str,
+    reader: crate::vcf_stream::LineReader,
+    header_lines: usize,
+) -> Outcome {
+    let unreadable = |mut reader: crate::vcf_stream::LineReader, thrown: Thrown| {
+        let mut line = String::new();
+        loop {
+            match reader.next_line(&mut line) {
+                Ok(true) => {}
+                Ok(false) => return thrown,
+                Err(_) => return not_block_compressed(input),
+            }
+        }
+    };
+    let Some(output) = argument(parser, "output") else {
+        return Err(unreadable(
+            reader,
+            Thrown::command_line("Argument output was missing: Argument 'output' is required"),
+        ));
+    };
+    let file = match htsjdk_vcf::reader::read_vcf(header_text) {
+        Ok(file) => file,
+        Err(failure) => {
+            return Err(unreadable(
+                reader,
+                Thrown::user(format!("{:?}", failure.error)),
+            ))
+        }
+    };
+    let record_refusal = |error| {
+        Thrown::user(format!(
+            "{:?}",
+            htsjdk_vcf::reader::ReadError::Record(error)
+        ))
+    };
+    let mut records = crate::vcf_stream::Records::new(
+        crate::vcf_stream::Body::Stream(reader),
+        &file,
+        header_lines,
+    );
+    let first_failure = |records: &mut crate::vcf_stream::Records| -> Option<Thrown> {
+        let mut first = None;
+        for record in records {
+            match record {
+                Err(crate::vcf_stream::Failure::Read(_)) => {
+                    return Some(not_block_compressed(input))
+                }
+                Err(crate::vcf_stream::Failure::Record(error)) if first.is_none() => {
+                    first = Some(record_refusal(error));
+                }
+                _ => {}
+            }
+        }
+        first
+    };
+    let settle = |records: &mut crate::vcf_stream::Records, thrown: Thrown| -> Thrown {
+        first_failure(records).unwrap_or(thrown)
+    };
+
+    let refuse = update_vcf_sequence_dictionary_refusal;
+    let source = match argument(parser, "source-dictionary") {
+        None => None,
+        Some(path) => match dictionary_from_any(&path) {
+            Ok(sequences) => Some((path.clone(), sequences)),
+            Err(thrown) => return Err(settle(&mut records, thrown)),
+        },
+    };
+    let dictionaries = master_dictionary(parser).and_then(|master| {
+        let reference = reference_dictionary(parser)?;
+        gatk_tools::update_vcf_sequence_dictionary::best_available_dictionary(
+            source
+                .as_ref()
+                .map(|(name, sequences)| (name.as_str(), sequences.as_slice())),
+            master.as_ref().map(|header| header.sequences.as_slice()),
+            reference.as_ref().map(|header| header.sequences.as_slice()),
+            !flag(parser, "disable-sequence-dictionary-validation"),
+        )
+        .map_err(refuse)
+    });
+    let dictionary = match dictionaries {
+        Ok(dictionary) => dictionary,
+        Err(thrown) => return Err(settle(&mut records, thrown)),
+    };
+    let own: Vec<htsjdk_bam::header::SequenceRecord> = sequence_dictionary_of(&file.header)
+        .into_iter()
+        .map(|(name, length)| htsjdk_bam::header::SequenceRecord::new(&name, length))
+        .collect();
+    if let Err(error) =
+        gatk_tools::update_vcf_sequence_dictionary::check_replace(&own, flag(parser, "replace"))
+    {
+        return Err(settle(&mut records, refuse(error)));
+    }
+
+    let mut header = file.header.clone();
+    header
+        .lines
+        .retain(|line| !matches!(line, htsjdk_vcf::header::HeaderLine::Contig { .. }));
+    for line in default_tool_vcf_header_lines(parser, "UpdateVCFSequenceDictionary") {
+        header.lines.push(line);
+    }
+    for (index, record) in dictionary.iter().enumerate() {
+        header.lines.push(htsjdk_vcf::header::HeaderLine::contig(
+            &record.name,
+            i64::from(record.length),
+            index as i32,
+        ));
+    }
+    let keep = match variant_output_filter(parser, None) {
+        Ok(keep) => keep,
+        Err(thrown) => return Err(settle(&mut records, thrown)),
+    };
+    // `apply_sites_only`, on the header now and on each record as it is written.
+    let sites_only = flag(parser, "sites-only-vcf-output");
+    if sites_only {
+        header.samples.clear();
+    }
+    let encoder = htsjdk_vcf::encoder::VcfEncoder::new(&header);
+    // shortcut: an output that cannot be created is refused before the records' own refusals,
+    // where the whole-text path wrote last; read them first if such a run is ever compared.
+    let mut writer = match VariantStreamWriter::create(parser, &output, &header.write()) {
+        Ok(writer) => writer,
+        Err(thrown) => return Err(settle(&mut records, thrown)),
+    };
+    let mut refusal = None;
+    while let Some(record) = records.next() {
+        let mut record = match record {
+            Ok(record) => record,
+            Err(crate::vcf_stream::Failure::Read(_)) => return Err(not_block_compressed(input)),
+            Err(crate::vcf_stream::Failure::Record(error)) => {
+                let thrown = record_refusal(error);
+                return Err(settle(&mut records, thrown));
+            }
+        };
+        // `update_dictionary`: the records before the first the dictionary refuses are written.
+        if let Err(error) =
+            gatk_tools::update_vcf_sequence_dictionary::check_variant(&dictionary, &record)
+        {
+            refusal = Some(error);
+            break;
+        }
+        if !keep(&record) {
+            continue;
+        }
+        if sites_only {
+            record.genotypes = Vec::new().into();
+        }
+        if let Err(thrown) = writer.write(&encoder, &record) {
+            return Err(settle(&mut records, thrown));
+        }
+    }
+    if let Some(error) = refusal {
+        // A malformed or unreadable record after the refused one was refused before any output.
+        if let Some(thrown) = first_failure(&mut records) {
+            return Err(thrown);
+        }
+        writer.finish(parser)?;
+        return Err(refuse(error));
+    }
+    writer.finish(parser)?;
+    Ok(None)
 }
 
 /// `SAMSequenceDictionaryExtractor.extractDictionary`, over the file kinds the corpus can hold.
