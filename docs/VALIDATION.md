@@ -214,7 +214,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | MakeSitesOnlyVcf | gatk-rs | oracle-backed | 20 suite | 0 suite | 16/16 (100.0%) | 2 | not measured | 4 | 0 | none |
 | MakeVcfSampleNameMap | picard-rs | oracle-backed | not vendored | not vendored | 6/6 (100.0%) | 2 | not measured | 0 | 0 | none |
 | MarkDuplicates | picard-rs | oracle-backed | not vendored | not vendored | 47/47 (100.0%) | 2 | not measured | 0 | 0 | none |
-| MarkDuplicatesSpark | gatk-rs | oracle-backed | 368 | 203 | 26/27 (96.3%) | 2 | 3023 probes (+2), 0/12 diverge | 3 | 5 | none |
+| MarkDuplicatesSpark | gatk-rs | oracle-backed | 368 | 203 | 26/27 (96.3%) | 2 | 3023 probes (+2), 0/12 diverge | 6 | 0 | none |
 | MarkDuplicatesWithMateCigar | picard-rs | oracle-backed | not vendored | not vendored | 30/30 (100.0%) | 2 | not measured | 0 | 0 | none |
 | MarkIlluminaAdapters | picard-rs | oracle-backed | not vendored | not vendored | 28/28 (100.0%) | 2 | not measured | 0 | 0 | none |
 | MeanQualityByCycle | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -1147,7 +1147,7 @@ Inputs: `filter.vcf`, `filter_broken.js`, `filter_no_contigs.vcf`, `filter_varia
 
 Held out: none.
 
-picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures' Picard class writes them byte for byte as picard-rs does). filter.vcf (MakeFixtures) has a site for each filter on each side of the thresholds below, and missing QD, FS, GQ and DP, which the reference reads as their defaults (-1 for a genotype's GQ and DP, so MIN_GQ=0 still filters a genotype without one). filter_no_contigs.vcf is refused because an output named .vcf needs a dictionary; trio.vcf, vcf_unsorted_samples.vcf and vcf_sites_only.vcf are the corpus's other shapes. The compared file is output.vcf; the .idx beside it records a timestamp and is not compared. JAVASCRIPT_FILE keeps single-base sites past position 1000 (a site the script rejects is filtered under the script's base name), or is not JavaScript at all. OUTPUT is also a .vcf.gz, which htsjdk block-compresses with a tabix index beside it (picard-rs#374); the .vcf.gz and its .tbi are compared byte for byte.
+picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures' Picard class writes them byte for byte as picard-rs does). filter.vcf (MakeFixtures) has a site for each filter on each side of the thresholds below, and missing QD, FS, GQ and DP, which the reference reads as their defaults (-1 for a genotype's GQ and DP, so MIN_GQ=0 still filters a genotype without one). filter_no_contigs.vcf is refused because an output named .vcf needs a dictionary; trio.vcf, vcf_unsorted_samples.vcf and vcf_sites_only.vcf are the corpus's other shapes. The compared file is output.vcf; the .idx beside it records a timestamp and is not compared. JAVASCRIPT_FILE keeps single-base sites past position 1000 (a site the script rejects is filtered under the script's base name), or is not JavaScript at all. The port runs the script in Boa with stand-ins for the Java objects Nashorn binds; a script that reaches what they do not mirror (Java.type, a string's length(), a run-time error) is a port limitation, never a different answer (docs/filtervcf-javascript.md). OUTPUT is also a .vcf.gz, which htsjdk block-compresses with a tabix index beside it (picard-rs#374); the .vcf.gz and its .tbi are compared byte for byte.
 
 ### FindBadGenomicKmersSpark
 
@@ -1551,11 +1551,11 @@ picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFi
 
 Suites: `spark-walkers`.
 
-Inputs: `marking.bam`, `marking_names.bam`, `marking_one.bam`.
+Inputs: `marking.bai`, `marking.bam`, `marking_names.bam`, `marking_one.bam`, `reference.fasta`, `sv_reference.fasta`.
 
-Held out: `--output-shard-tmp-dir`, `--read-index`, `--reference`, `--remove-all-duplicates`, `--remove-sequencing-duplicates`.
+Held out: none.
 
-Every record type the tool makes, in the three orders of header it treats apart, the one-library copy being what brings the histogram. The two removals exclude --duplicate-tagging-policy, even at false, so they are measured in the spark-walkers golden and left out here. The array keeps to a single input and to fixtures without flow tags; the golden measures several inputs and a flow-tagged fixture.
+Every record type the tool makes, in the three orders of header it treats apart, the one-library copy being what brings the histogram. The two removals and --duplicate-tagging-policy exclude one another whenever two are given, so each has an `<unset>` and the pairs are forbidden. --reference is sv_reference.fasta, whose dictionary is the marking BAMs', and reference.fasta, which lacks chr2 and is still accepted, since the dictionaries are compared only on the contigs they share. A Spark tool never reads --read-index, so its row shows the argument is accepted and ignored. --output-shard-tmp-dir excludes --sharded-output, even at false, so that one has an `<unset>` too; it is where the single BAM's parts are written before they are merged; the directory is gone once the BAM is. The array keeps to a single input and to fixtures without flow tags; the spark-walkers golden measures several inputs and a flow-tagged fixture.
 
 ### MeanQualityByCycleSpark
 
@@ -2027,7 +2027,7 @@ Inputs: `both`, `nothing`, `score.py`, `snp`, `vr_calls.vcf`, `vr_calls2.vcf`.
 
 Held out: `--indel-calibration-sensitivity-threshold`, `--input`, `--read-index`, `--reference`, `--sequence-dictionary`, `--snp-calibration-sensitivity-threshold`, `--variant-output-filtering`.
 
-The variants, resources, annotations and modes are ExtractVariantAnnotations': the same walker's onTraversalStart runs, with the reserved snp label its refusal. The header goes to a writer nothing closes, and only then the backend. The reference runs in the Broad's image, so past the import, and the port behind a stand-in python ($past_the_interpreter); it/both and it/snp then hold scorers the reference trained before the rows (run_array.train_scorers), and nothing holds none. PYTHON_SCRIPT runs a script that does nothing, which the port refuses in its own words: those rows differ. The command line is held off because it records the date. The two thresholds are not varied: their bounds refuse a null where the parser reads one, so a row without them would stop before the pass. The dump covers their refusals.
+The variants, resources, annotations and modes are ExtractVariantAnnotations': the same walker's onTraversalStart runs, with the reserved snp label its refusal. The header goes to a writer nothing closes, and only then the backend. The reference runs in the Broad's image, so past the import, and the port there too, through the pinned image's glibc ($past_the_interpreter); it/both and it/snp then hold scorers the reference trained before the rows (run_array.train_scorers), and nothing holds none. PYTHON_SCRIPT runs it/score.py (MakeFixtures) on each side. The command line is held off because it records the date. The two thresholds are not varied: their bounds refuse a null where the parser reads one, so a row without them would stop before the pass. The dump covers their refusals.
 
 ### SelectVariants
 
@@ -2195,7 +2195,7 @@ Inputs: `extract.annot.hdf5`, `extract.unlabeled.annot.hdf5`, `hyperparameters.j
 
 Held out: none.
 
-The reference runs in the Broad's image, whose python gets it past the import, and the port behind a stand-in python (run_array.py, $past_the_interpreter): the default backend then fits the forest and writes the scorer and its scores. JAVA_BGMM is the reference's own missing module. PYTHON_SCRIPT runs a script that does nothing, which the port refuses in its own words, and so does --unlabeled-annotations-hdf5 under the default backend: those rows differ.
+The reference runs in the Broad's image, whose python gets it past the import, and the port there too, through the pinned image's glibc (run_array.py, $past_the_interpreter): the default backend then fits the forest and writes the scorer and its scores. JAVA_BGMM is the reference's own missing module. PYTHON_SCRIPT runs it/score.py (MakeFixtures), which pickles the means and writes scores, with both sides' own python. The port refuses --unlabeled-annotations-hdf5 under the default backend in its own words, where the reference's script rejects it.
 
 ### TransferReadTags
 

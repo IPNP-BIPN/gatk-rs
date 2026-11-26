@@ -10,8 +10,10 @@ the test that holds it to the CPU path; this script refuses:
 * in a kernel of class `integer`: any floating-point type (`float`, `half`, `double`, `bfloat`
   and their vectors), because a device's float unit is not the host's;
 * in any kernel: fused or fast-math operations (`fma`, `mad`, `fast::`, `precise::`), SIMD-group
-  and threadgroup reductions and atomics, whose order is the scheduler's, unless the record lists
-  the construct for that file with a reason;
+  and threadgroup reductions and atomics, whose order is the scheduler's, SIMD-group matrices (the
+  tensor-core path) and reduced-precision types (`half`, `bfloat`), and the device library's
+  transcendentals (`exp`, `log`, `pow`, `sqrt`, ...), unless the record lists the construct for
+  that file with a reason;
 * host code that compiles a kernel source without turning fast math off (`--fmad=false` and no
   fast math for CUDA), or turning it on;
 * a record naming a CPU-equality test that does not exist.
@@ -45,6 +47,11 @@ FORBIDDEN = {
     r"\bsimd_(sum|product|prefix\w*|min|max|and|or|xor|shuffle\w*|broadcast\w*|ballot)\b":
         "a SIMD-group operation depends on the execution width",
     r"\bquad_\w+\b": "a quad-group operation depends on the execution width",
+    r"\bsimdgroup_\w+\b": "a SIMD-group matrix is the tensor-core path, whose order and precision are the device's",
+    r"\b(half|bfloat)\d*(x\d+)?\b": "a reduced-precision type substitutes for the CPU path's",
+    r"\b(exp|exp2|exp10|log|log2|log10|pow|powr|sqrt|rsqrt|cbrt|sin|cos|tan|asin|acos|atan|atan2"
+    r"|sinh|cosh|tanh|asinh|acosh|atanh|sincos|fmod|remainder|erf|erfc|lgamma|tgamma)\s*\(":
+        "a vendor transcendental is not the one jmath reproduces; compute it in software or on the host",
     r"\batomic\w*\b": "an atomic's order is the scheduler's",
     r"\bthreadgroup\b": "threadgroup memory shares state across threads",
     r"\b__\w*fma\w*": "a fused multiply-add rounds once where the CPU path rounds twice",
@@ -134,6 +141,8 @@ def self_test() -> int:
         (source, "static uint f(uint a) { return fast::max(a, a); }\n"),
         (source, "static uint f(uint a) { return simd_sum(a); }\n"),
         (source, "static void f(device atomic_uint *a) { }\n"),
+        (source, "static void f() { simdgroup_float8x8 m; }\n"),
+        (source, "static ulong f(ulong a) { return exp(a); }\n"),
         (host, "fn f(o: &CompileOptions) { o.set_fast_math_enabled(true); }\n"),
         ("crates/gatk-engine/src/gpu/cuda.rs", "const O: Option<bool> = None; // fmad: Some(true)\n"),
         ("crates/gatk-engine/src/gpu/kernels.cu", "__device__ ulong f(ulong a) { return __fma_rn(a, a, a); }\n"),

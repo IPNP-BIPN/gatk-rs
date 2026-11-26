@@ -13298,7 +13298,10 @@
         "/work/fixtures/marking_names.bam",
         "/work/fixtures/marking_one.bam"
       ],
-      "--read-index": [],
+      "--read-index": [
+        "/work/fixtures/marking.bai",
+        "<unset>"
+      ],
       "--intervals": [
         "chr1:1-3000",
         "chr1:1000-9000",
@@ -13328,7 +13331,15 @@
         "0",
         "1000000"
       ],
-      "--output-shard-tmp-dir": [],
+      "--sharded-output": [
+        "false",
+        "true",
+        "<unset>"
+      ],
+      "--output-shard-tmp-dir": [
+        "/work/out/parts",
+        "<unset>"
+      ],
       "--exclude-intervals": [
         "chr1:2000-2200",
         "<unset>"
@@ -13337,7 +13348,11 @@
         "/work/out/marked.bam",
         "/work/out/marked2.bam"
       ],
-      "--reference": [],
+      "--reference": [
+        "/work/fixtures/sv_reference.fasta",
+        "/work/fixtures/reference.fasta",
+        "<unset>"
+      ],
       "--disable-read-filter": [
         "WellformedReadFilter"
       ],
@@ -13353,10 +13368,17 @@
       "--duplicate-tagging-policy": [
         "DontTag",
         "All",
-        "OpticalOnly"
+        "OpticalOnly",
+        "<unset>"
       ],
-      "--remove-all-duplicates": [],
-      "--remove-sequencing-duplicates": [],
+      "--remove-all-duplicates": [
+        "true",
+        "<unset>"
+      ],
+      "--remove-sequencing-duplicates": [
+        "true",
+        "<unset>"
+      ],
       "--do-not-mark-unmapped-mates": [
         "false",
         "true"
@@ -13408,7 +13430,7 @@
         "3"
       ],
       "$why": [
-        "Every record type the tool makes, in the three orders of header it treats apart, the one-library copy being what brings the histogram. The two removals exclude --duplicate-tagging-policy, even at false, so they are measured in the spark-walkers golden and left out here. The array keeps to a single input and to fixtures without flow tags; the golden measures several inputs and a flow-tagged fixture."
+        "Every record type the tool makes, in the three orders of header it treats apart, the one-library copy being what brings the histogram. The two removals and --duplicate-tagging-policy exclude one another whenever two are given, so each has an `<unset>` and the pairs are forbidden. --reference is sv_reference.fasta, whose dictionary is the marking BAMs', and reference.fasta, which lacks chr2 and is still accepted, since the dictionaries are compared only on the contigs they share. A Spark tool never reads --read-index, so its row shows the argument is accepted and ignored. --output-shard-tmp-dir excludes --sharded-output, even at false, so that one has an `<unset>` too; it is where the single BAM's parts are written before they are merged; the directory is gone once the BAM is. The array keeps to a single input and to fixtures without flow tags; the spark-walkers golden measures several inputs and a flow-tagged fixture."
       ]
     },
     "FindBadGenomicKmersSpark": {
@@ -17296,10 +17318,11 @@
     },
     "TrainVariantAnnotationsModel": {
       "$why": [
-        "The reference runs in the Broad's image, whose python gets it past the import, and the port behind a stand-in python",
-        "(run_array.py, $past_the_interpreter): the default backend then fits the forest and writes the scorer and its scores.",
-        "JAVA_BGMM is the reference's own missing module. PYTHON_SCRIPT runs a script that does nothing, which the port",
-        "refuses in its own words, and so does --unlabeled-annotations-hdf5 under the default backend: those rows differ."
+        "The reference runs in the Broad's image, whose python gets it past the import, and the port there too, through the",
+        "pinned image's glibc (run_array.py, $past_the_interpreter): the default backend then fits the forest and",
+        "writes the scorer and its scores. JAVA_BGMM is the reference's own missing module. PYTHON_SCRIPT runs it/score.py",
+        "(MakeFixtures), which pickles the means and writes scores, with both sides' own python. The port refuses",
+        "--unlabeled-annotations-hdf5 under the default backend in its own words, where the reference's script rejects it."
       ],
       "$past_the_interpreter": "python",
       "--annotations-hdf5": [
@@ -17336,9 +17359,9 @@
       "$why": [
         "The variants, resources, annotations and modes are ExtractVariantAnnotations': the same walker's onTraversalStart runs,",
         "with the reserved snp label its refusal. The header goes to a writer nothing closes, and only then the backend. The",
-        "reference runs in the Broad's image, so past the import, and the port behind a stand-in python ($past_the_interpreter);",
-        "it/both and it/snp then hold scorers the reference trained before the rows (run_array.train_scorers), and nothing holds",
-        "none. PYTHON_SCRIPT runs a script that does nothing, which the port refuses in its own words: those rows differ.",
+        "reference runs in the Broad's image, so past the import, and the port there too, through the pinned image's glibc",
+        "($past_the_interpreter); it/both and it/snp then hold scorers the reference trained before the rows",
+        "(run_array.train_scorers), and nothing holds none. PYTHON_SCRIPT runs it/score.py (MakeFixtures) on each side.",
         "The command line is held off because it records the date. The two thresholds are not varied: their bounds refuse a null",
         "where the parser reads one, so a row without them would stop before the pass. The dump covers their refusals."
       ],
@@ -18025,6 +18048,9 @@
         "compared file is output.vcf; the .idx beside it records a timestamp and is not compared. JAVASCRIPT_FILE keeps",
         "single-base sites past position 1000 (a site the script rejects is filtered under the script's base name), or",
         "is not JavaScript at all.",
+        "The port runs the script in Boa with stand-ins for the Java objects Nashorn binds; a script",
+        "that reaches what they do not mirror (Java.type, a string's length(), a run-time error) is a",
+        "port limitation, never a different answer (docs/filtervcf-javascript.md).",
         "OUTPUT is also a .vcf.gz, which htsjdk block-compresses with a tabix index beside it",
         "(picard-rs#374); the .vcf.gz and its .tbi are compared byte for byte."
       ],
@@ -19956,6 +19982,96 @@
         "--genomicsdb-use-bcf-codec": "true"
       },
       "why": "The port refuses the BCF codec over a workspace in its own words: the records BCF2Codec decodes keep FORMAT in header order and print their floats with htsjdk's two decimals, a second representation it does not reproduce. A row with the pair measures that refusal, which is the same on every row; over a file the flag is inert and stays in the array."
+    },
+    {
+      "tools": [
+        "MarkDuplicatesSpark"
+      ],
+      "forbid": {
+        "--duplicate-tagging-policy": "DontTag",
+        "--remove-all-duplicates": "true"
+      },
+      "why": "Barclay refuses two of the marking arguments given together, whatever their values, so a row holding the pair measures only that refusal."
+    },
+    {
+      "tools": [
+        "MarkDuplicatesSpark"
+      ],
+      "forbid": {
+        "--duplicate-tagging-policy": "DontTag",
+        "--remove-sequencing-duplicates": "true"
+      },
+      "why": "Barclay refuses two of the marking arguments given together, whatever their values, so a row holding the pair measures only that refusal."
+    },
+    {
+      "tools": [
+        "MarkDuplicatesSpark"
+      ],
+      "forbid": {
+        "--duplicate-tagging-policy": "All",
+        "--remove-all-duplicates": "true"
+      },
+      "why": "Barclay refuses two of the marking arguments given together, whatever their values, so a row holding the pair measures only that refusal."
+    },
+    {
+      "tools": [
+        "MarkDuplicatesSpark"
+      ],
+      "forbid": {
+        "--duplicate-tagging-policy": "All",
+        "--remove-sequencing-duplicates": "true"
+      },
+      "why": "Barclay refuses two of the marking arguments given together, whatever their values, so a row holding the pair measures only that refusal."
+    },
+    {
+      "tools": [
+        "MarkDuplicatesSpark"
+      ],
+      "forbid": {
+        "--duplicate-tagging-policy": "OpticalOnly",
+        "--remove-all-duplicates": "true"
+      },
+      "why": "Barclay refuses two of the marking arguments given together, whatever their values, so a row holding the pair measures only that refusal."
+    },
+    {
+      "tools": [
+        "MarkDuplicatesSpark"
+      ],
+      "forbid": {
+        "--duplicate-tagging-policy": "OpticalOnly",
+        "--remove-sequencing-duplicates": "true"
+      },
+      "why": "Barclay refuses two of the marking arguments given together, whatever their values, so a row holding the pair measures only that refusal."
+    },
+    {
+      "tools": [
+        "MarkDuplicatesSpark"
+      ],
+      "forbid": {
+        "--remove-all-duplicates": "true",
+        "--remove-sequencing-duplicates": "true"
+      },
+      "why": "The same mutual exclusion, between the two removals."
+    },
+    {
+      "tools": [
+        "MarkDuplicatesSpark"
+      ],
+      "forbid": {
+        "--sharded-output": "false",
+        "--output-shard-tmp-dir": "/work/out/parts"
+      },
+      "why": "Barclay refuses the parts directory beside --sharded-output, whatever its value, so a row holding the pair measures only that refusal."
+    },
+    {
+      "tools": [
+        "MarkDuplicatesSpark"
+      ],
+      "forbid": {
+        "--sharded-output": "true",
+        "--output-shard-tmp-dir": "/work/out/parts"
+      },
+      "why": "Barclay refuses the parts directory beside --sharded-output, whatever its value, so a row holding the pair measures only that refusal."
     },
     {
       "tools": [
