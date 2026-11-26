@@ -1082,6 +1082,8 @@ pub fn funcotate_segments(parser: &Parser) -> Outcome {
             "Input {segments_path} must support random access to enable traversal by intervals. If it's a file, please index it using the bundled tool IndexFeatureFile"
         )));
     }
+    // `validateSequenceDictionaries`: a BAM under `--input` is opened and checked too.
+    validate_tool_dictionaries(parser)?;
 
     // `onTraversalStart`.
     if scalar(parser, "transcript-selection-mode").as_deref() == Some("ALL") {
