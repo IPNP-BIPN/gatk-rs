@@ -448,7 +448,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         kept.truncate(2);
         Ok(bases)
     };
-    let mut contig_bases = |contig: &str| shared_bases(contig).map(|bases| (*bases).clone());
+    let mut contig_bases = |contig: &str| shared_bases(contig);
 
     // The filters, then `makePostReadFilterTransformer`'s palindrome clipper.
     let filter = read_filter(parser, &filters, &header)?;

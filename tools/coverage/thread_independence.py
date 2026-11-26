@@ -75,10 +75,15 @@ def sample(rows, count):
 
 
 def digest(path):
-    """A file's digest, the wall clock a metrics file opens with taken out."""
+    """A file's digest, with the wall clocks the arrays also mask taken out: a metrics file's
+    start time, a Tribble index's last-modified time, a tar.gz's entry times."""
     raw = path.read_bytes()
     if raw.startswith(b"## htsjdk.samtools.metrics"):
         raw = run_array.without_start_time(raw.decode("utf-8")).encode()
+    elif path.name.endswith(".idx"):
+        raw = run_array.tribble_index_masked(raw) or raw
+    elif path.name.endswith(".tar.gz"):
+        raw = run_array.tar_gz_members(raw).encode()
     return hashlib.sha256(raw).hexdigest()
 
 

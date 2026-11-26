@@ -194,6 +194,9 @@ fn samples_of(header: &SamHeader) -> Vec<String> {
     crate::haplotype_caller::samples_from_header(header)
 }
 
+/// Hands out a contig's bases; shared, so a request does not copy the contig.
+pub type ContigBases<'a> = dyn FnMut(&str) -> Result<std::rc::Rc<Vec<u8>>, String> + 'a;
+
 /// The run: `reads` already filtered and in coordinate order.
 #[allow(clippy::too_many_arguments)]
 pub fn call_variants(
@@ -202,7 +205,7 @@ pub fn call_variants(
     intervals: &[SimpleInterval],
     arguments: &Mutect2Arguments,
     annotator: &AnnotatorEngine,
-    contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>,
+    contig_bases: &mut ContigBases<'_>,
     random: &mut JavaRandom,
     assembly_variants: Option<&std::sync::Mutex<crate::assembly_variants_out::AssemblyVariantsOut>>,
 ) -> Result<Mutect2Output, Mutect2Error> {
@@ -247,7 +250,7 @@ fn call_variants_with(
     intervals: &[SimpleInterval],
     arguments: &Mutect2Arguments,
     annotator: &AnnotatorEngine,
-    contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>,
+    contig_bases: &mut ContigBases<'_>,
     random: &mut JavaRandom,
     bamout: Option<&std::sync::Mutex<crate::haplotype_bam_writer::HaplotypeBamWriter>>,
     region_out: Option<&std::sync::Mutex<String>>,
