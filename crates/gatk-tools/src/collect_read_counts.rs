@@ -103,6 +103,61 @@ pub fn write(
     text
 }
 
+/// `SimpleCountCollection.read`: the counts file at `path` as the TSV text [`write`] makes.
+///
+/// The reference picks its reader by the file's first bytes (`IOUtils.isHDF5File`), not its name.
+/// An HDF5 file is read as `readHDF5` reads it and given back as the TSV the same collection
+/// writes: the stored dictionary, the sample's read group, and each count cast with Java's
+/// `(int)`. So every reader of a counts TSV reads an HDF5 one without a second parser.
+///
+/// An HDF5 file without one of the collection's datasets is refused as the HDF5 library refuses
+/// the first one `readHDF5` asks for, with the path as it was given.
+pub fn read_text(path: &str) -> Result<String, crate::main_entry::Thrown> {
+    use crate::main_entry::Thrown;
+    let unreadable = |error: std::io::Error| Thrown::user(format!("{path}: {error}"));
+    if !crate::hdf5_reader::is_hdf5_file(path) {
+        return std::fs::read_to_string(path).map_err(unreadable);
+    }
+    let reader = crate::hdf5_reader::Hdf5Reader::open(std::fs::read(path).map_err(unreadable)?)
+        .ok_or_else(|| Thrown::user(format!("{path}: not an HDF5 file hdf5-pure can open")))?;
+    hdf5_as_tsv(&reader).map_err(|dataset| {
+        Thrown::non_user(
+            "org.broadinstitute.hdf5.HDF5LibException",
+            format!(
+                "exception when reading from data-set '{dataset}' in file '{path}': Object not found"
+            ),
+        )
+    })
+}
+
+/// `HDF5SimpleCountCollection`'s four paths in the order `readHDF5` reads them, rendered by
+/// [`write`]. `Err` is the first dataset that is missing.
+fn hdf5_as_tsv(reader: &crate::hdf5_reader::Hdf5Reader) -> Result<String, &'static str> {
+    let first = |path: &'static str| {
+        reader
+            .strings(path)
+            .and_then(|values| values.into_iter().next())
+            .ok_or(path)
+    };
+    let sample = first("/sample_metadata/sample_name")?;
+    let dictionary = first("/locatable_metadata/sequence_dictionary")?;
+    let sequences = htsjdk_bam::reader::parse_header_text(&dictionary).sequences;
+    let intervals: Vec<SimpleInterval> =
+        crate::create_read_count_panel_of_normals::read_intervals(reader, "/intervals")
+            .ok_or("/intervals/indexed_contig_names")?
+            .into_iter()
+            .map(|interval| SimpleInterval {
+                contig: interval.contig,
+                start: interval.start,
+                end: interval.end,
+            })
+            .collect();
+    let (_, counts) = reader.doubles("/counts/values").ok_or("/counts/values")?;
+    // Java's `(int)` truncates and saturates, and so does `as`.
+    let counts: Vec<i32> = counts.iter().map(|count| *count as i32).collect();
+    Ok(write(&sequences, &sample, &intervals, &counts))
+}
+
 /// `HDF5SimpleCountCollection.write`: the sample name, the dictionary as
 /// `SAMTextHeaderCodec` encodes a header holding only it, the intervals as `HDF5Utils` writes
 /// them, and the counts as a one-row matrix of doubles.

@@ -36,12 +36,9 @@ struct Counts {
     rows: Vec<(String, i64, i64, i64)>,
 }
 
+/// `SimpleCountCollection.read`, TSV or HDF5, the second read as the TSV it would be written as.
 fn read_counts(path: &str) -> Result<Counts, Thrown> {
-    if path.ends_with(".hdf5") || path.ends_with(".h5") {
-        return Err(port_limit("Reading an HDF5 read-counts file"));
-    }
-    let text =
-        std::fs::read_to_string(path).map_err(|error| Thrown::user(format!("{path}: {error}")))?;
+    let text = gatk_tools::collect_read_counts::read_text(path)?;
     let header: String = text
         .lines()
         .take_while(|line| line.starts_with('@'))

@@ -13,20 +13,11 @@ struct CountsFile {
     counts: Vec<f64>,
 }
 
-/// `SimpleCountCollection.read`, for the TSV the collection writes. An HDF5 counts file is the
-/// other format it reads, and this port has no HDF5 reader.
+/// `SimpleCountCollection.read`, TSV or HDF5, the second read as the TSV it would be written as.
 fn read_counts(path: &str) -> Result<CountsFile, Thrown> {
     use gatk_tools::create_read_count_panel_of_normals::Interval;
     can_read_file(path)?;
-    if path.ends_with(".hdf5") || path.ends_with(".h5") {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "an HDF5 read-counts file is a format this port does not read yet. This message is \
-             the port's own and not GATK's.",
-        ));
-    }
-    let text =
-        std::fs::read_to_string(path).map_err(|error| Thrown::user(format!("{path}: {error}")))?;
+    let text = gatk_tools::collect_read_counts::read_text(path)?;
     let header: String = text
         .lines()
         .take_while(|line| line.starts_with('@'))

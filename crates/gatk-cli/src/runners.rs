@@ -4630,10 +4630,17 @@ pub fn filter_intervals(parser: &Parser) -> Outcome {
     // the message names the file's absolute path. Measured on a row of this tool's array that
     // passed `--annotated-intervals=` with no value, where the reference printed the working
     // directory: "Couldn't read file /work. Error was: The input file does not exist."
-    let read_table = |path: &str| -> Result<Table, Thrown> {
+    //
+    // A counts table is read as `SimpleCountCollection.read` reads it, which takes HDF5 as well;
+    // the annotated intervals are TSV only.
+    let read_table = |path: &str, counts: bool| -> Result<Table, Thrown> {
         can_read_file(path)?;
-        let text = std::fs::read_to_string(path)
-            .map_err(|error| Thrown::user(format!("{path}: {error}")))?;
+        let text = if counts {
+            gatk_tools::collect_read_counts::read_text(path)?
+        } else {
+            std::fs::read_to_string(path)
+                .map_err(|error| Thrown::user(format!("{path}: {error}")))?
+        };
         // The `@SQ` block at the head of the table is the collection's METADATA, which is the
         // dictionary `-L` resolves against and the dictionary the output interval list carries.
         // It is the file's own and not the reference's: this tool takes no `--reference`, and a
@@ -4693,7 +4700,7 @@ pub fn filter_intervals(parser: &Parser) -> Outcome {
             header,
             columns,
             body: rows,
-        } = read_table(path)?;
+        } = read_table(path, false)?;
         metadata = Some(header);
         for row in &rows {
             intervals.push(filtering::Interval {
@@ -4723,7 +4730,7 @@ pub fn filter_intervals(parser: &Parser) -> Outcome {
     for path in &counts_paths {
         let Table {
             header, body: rows, ..
-        } = read_table(path)?;
+        } = read_table(path, true)?;
         if metadata.is_none() {
             metadata = Some(header);
         }
@@ -6128,32 +6135,20 @@ pub fn calculate_genotype_posteriors(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
-/// `DenoiseReadCounts.doWork`, in the branch with no panel: the counts standardised.
+/// `DenoiseReadCounts.doWork`: the counts standardised, and denoised when a panel is given.
 ///
-/// The next link of the copy-number chain, and the shortest: read the counts `CollectReadCounts`
-/// wrote, take them to fractional coverage, divide by the sample median, take the log, and subtract
-/// the median of THAT. Two files come out and they are the same file, because a run with no panel
-/// has nothing to denoise with: `writeResult` is handed the standardised values twice.
+/// The next link of the copy-number chain: read the counts `CollectReadCounts` wrote, take them to
+/// fractional coverage, divide by the sample median, take the log, and subtract the median of THAT.
+/// Two files come out. With no panel they are the same file, because there is nothing to denoise
+/// with: `writeResult` is handed the standardised values twice. With a panel of normals (an HDF5
+/// file `CreateReadCountPanelOfNormals` wrote) the sample is cut to the panel's intervals first,
+/// and the second file has the projection onto the panel's eigensamples subtracted.
 ///
-/// The panel itself is HDF5 and the GC correction reads the annotated intervals' GC column; neither
-/// is written here, so both arguments are refused rather than ignored.
+/// With a panel, `--annotated-intervals` is ignored, as the reference ignores it with a warning.
+/// Without one it turns on a GC correction this runner does not carry, and is refused.
 pub fn denoise_read_counts(parser: &Parser) -> Outcome {
     use gatk_tools::denoise_read_counts as denoise;
 
-    if argument(parser, "count-panel-of-normals").is_some() {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "--count-panel-of-normals is an HDF5 panel this port does not read yet. This message \
-             is the port's own and not GATK's.",
-        ));
-    }
-    if argument(parser, "annotated-intervals").is_some() {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "--annotated-intervals turns on the GC-bias correction, which this port does not \
-             carry yet. This message is the port's own and not GATK's.",
-        ));
-    }
     let standardized = argument(parser, "standardized-copy-ratios").ok_or_else(|| {
         Thrown::command_line(
             "Argument standardized-copy-ratios was missing: Argument 'standardized-copy-ratios' \
@@ -6169,9 +6164,17 @@ pub fn denoise_read_counts(parser: &Parser) -> Outcome {
         Thrown::command_line("Argument input was missing: Argument 'input' is required")
     })?;
 
+    let panel_path = argument(parser, "count-panel-of-normals");
+    let annotated = argument(parser, "annotated-intervals");
+    // `CopyNumberArgumentValidationUtils.validateInputs`, every input before any is opened.
     can_read_file(&input)?;
-    let text = std::fs::read_to_string(&input)
-        .map_err(|error| Thrown::user(format!("{input}: {error}")))?;
+    if let Some(path) = &panel_path {
+        can_read_file(path)?;
+    }
+    if let Some(path) = &annotated {
+        can_read_file(path)?;
+    }
+    let text = gatk_tools::collect_read_counts::read_text(&input)?;
     // The `@SQ` block is the metadata, the `@RG`'s `SM` the sample, and the rows the counts.
     let header = htsjdk_bam::reader::parse_header_text(
         &text
@@ -6188,7 +6191,7 @@ pub fn denoise_read_counts(parser: &Parser) -> Outcome {
         .find_map(|group| group.attributes.get("SM").map(str::to_string))
         .unwrap_or_default();
 
-    let mut intervals: Vec<(String, i32, i32)> = Vec::new();
+    let mut intervals: Vec<denoise::Interval> = Vec::new();
     let mut counts: Vec<f64> = Vec::new();
     for line in text
         .lines()
@@ -6199,20 +6202,74 @@ pub fn denoise_read_counts(parser: &Parser) -> Outcome {
         if columns.len() < 4 {
             continue;
         }
-        intervals.push((
-            columns[0].to_string(),
-            columns[1].parse().unwrap_or_default(),
-            columns[2].parse().unwrap_or_default(),
-        ));
+        intervals.push(denoise::Interval {
+            contig: columns[0].to_string(),
+            start: columns[1].parse().unwrap_or_default(),
+            end: columns[2].parse().unwrap_or_default(),
+        });
         counts.push(columns[3].parse().unwrap_or(f64::NAN));
     }
+    let rows = |intervals: &[denoise::Interval]| -> Vec<(String, i32, i32)> {
+        intervals
+            .iter()
+            .map(|interval| (interval.contig.clone(), interval.start, interval.end))
+            .collect()
+    };
 
-    let values = denoise::standardize(&counts).map_err(|error| Thrown {
-        failure: Failure::User,
-        exception: error.java_class(),
-        message: Some(error.message().to_string()),
-    })?;
-    let table = denoise::write(sequences, &sample, &intervals, &values);
+    if let Some(path) = &panel_path {
+        // `new HDF5File(file)` then `HDF5SVDReadCountPanelOfNormals.read`.
+        let reader = std::fs::read(path)
+            .ok()
+            .and_then(gatk_tools::hdf5_reader::Hdf5Reader::open)
+            .ok_or_else(|| {
+                Thrown::non_user(
+                    "org.broadinstitute.hdf5.HDF5LibException",
+                    format!(
+                        "exception when opening '{}' with READ_ONLY mode: Not an HDF5 file",
+                        java_absolute_path(path)
+                    ),
+                )
+            })?;
+        let panel = denoise::read_panel(&reader).map_err(|error| match error {
+            denoise::PanelError::Missing(_) => Thrown::non_user(
+                "org.broadinstitute.hdf5.HDF5LibException",
+                format!("{}: {}", java_absolute_path(path), error.message()),
+            ),
+            _ => Thrown::user(format!("Bad input: {}", error.message())),
+        })?;
+        // `doWork`'s count: the panel's, or the request when it is smaller.
+        let available = panel.number_of_eigensamples();
+        let requested =
+            scalar(parser, "number-of-eigensamples").and_then(|v| v.parse::<usize>().ok());
+        let eigensamples = requested.map_or(available, |requested| requested.min(available));
+        let (standardized_values, denoised_values) =
+            denoise::denoise(&panel, &intervals, &counts, eigensamples).map_err(|message| {
+                Thrown::non_user("java.lang.IllegalArgumentException", message)
+            })?;
+        let kept = rows(&panel.panel_intervals);
+        write_file(
+            &standardized,
+            denoise::write(sequences, &sample, &kept, &standardized_values).as_bytes(),
+        )?;
+        write_file(
+            &denoised,
+            denoise::write(sequences, &sample, &kept, &denoised_values).as_bytes(),
+        )?;
+        return Ok(None);
+    }
+    if annotated.is_some() {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "--annotated-intervals turns on the GC-bias correction, which this port does not \
+             carry yet. This message is the port's own and not GATK's.",
+        ));
+    }
+
+    // `ParamUtils.isPositive` throws an `IllegalArgumentException`, which is no `UserException`:
+    // status three, as the panel branch above reports the same refusal.
+    let values = denoise::standardize(&counts)
+        .map_err(|error| Thrown::non_user(error.java_class(), error.message()))?;
+    let table = denoise::write(sequences, &sample, &rows(&intervals), &values);
     // The same bytes twice: with no panel the denoised result IS the standardised one.
     write_file(&standardized, table.as_bytes())?;
     write_file(&denoised, table.as_bytes())?;

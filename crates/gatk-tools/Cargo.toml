@@ -40,12 +40,14 @@ sha2.workspace = true
 boa_engine = { version = "0.22.0", default-features = false }
 # HtsgetReader's JSON, which is Jackson's in the reference.
 serde_json = "1"
+# Every HDF5 file the port reads: read counts, panels of normals, VETS annotations. Pure Rust, no
+# libhdf5. Pinned with `=`, which also pins its four sub-crates, since hdf5-pure's own manifest names
+# them with `=`; deflate is off because no file the reference writes is compressed
+# (docs/hdf5-second-reader.md).
+hdf5-pure = { version = "=0.48.0", default-features = false, features = ["std", "checksum"] }
 # RampedHaplotypeCaller's off and on ramps are zip files of the run's state.
 zip = { version = "9", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 # One corpus parser for the whole workspace: two parsers would be two corpora.
 gatk-corpus = { path = "../gatk-corpus" }
-# IPNP-BIPN/gatk-rs#1294: a reader of HDF5 that does not share our reading of the specification,
-# for what hdf5_writer writes. Test-only; the writer stays in-house (docs/hdf5-second-reader.md).
-hdf5-pure = { version = "0.48.0", default-features = false, features = ["std", "checksum"] }

@@ -3718,6 +3718,68 @@ public class MakeFixtures {
         Files.writeString(dir.resolve("pon_annotated.tsv"), ponAnnotated.toString(),
                 StandardCharsets.UTF_8);
 
+        // The same counts in HDF5, each written by the REFERENCE's own HDF5 writer, so the port reads
+        // the layout the HDF5 C library produces rather than its own: `counts.hdf5` by
+        // `CollectReadCounts --format HDF5` over the four windows, and each `pon_sN.counts.hdf5` by
+        // `SimpleCountCollection.writeHDF5` from its TSV twin.
+        new org.broadinstitute.hellbender.tools.copynumber.CollectReadCounts()
+                .instanceMain(new String[] {
+                        "--input", dir.resolve("reads.bam").toString(),
+                        "--reference", dir.resolve("reference.fasta").toString(),
+                        "--intervals", "chr1:1-1000",
+                        "--intervals", "chr1:2001-3000",
+                        "--intervals", "chr1:4001-5000",
+                        "--intervals", "chr1:6001-7000",
+                        "--interval-merging-rule", "OVERLAPPING_ONLY",
+                        "--format", "HDF5",
+                        "--output", dir.resolve("counts.hdf5").toString(),
+                });
+        for (int s = 1; s <= ponDepth.length; s++) {
+            org.broadinstitute.hellbender.tools.copynumber.formats.collections.SimpleCountCollection
+                    .read(dir.resolve("pon_s" + s + ".counts.tsv").toFile())
+                    .writeHDF5(dir.resolve("pon_s" + s + ".counts.hdf5").toFile());
+        }
+        // Three panels for `DenoiseReadCounts`, each made by the reference's own
+        // `CreateReadCountPanelOfNormals` over the eight TSVs: one plain, one that carries the GC
+        // content the sample is then corrected by, and one of a single sample, which stores no
+        // eigensamples at all.
+        String[][] panels = {
+            {"pon.hdf5", "8", null},
+            {"pon_gc.hdf5", "8", dir.resolve("pon_annotated.tsv").toString()},
+            {"pon_one.hdf5", "1", null},
+        };
+        // The tool is a Spark program, and Spark reads JDK internals this JVM was not opened to, so
+        // each panel is built in a child JVM opened the way Spark's own launcher opens it.
+        String[] sparkOpens = {"java.lang", "java.lang.invoke", "java.lang.reflect", "java.io",
+            "java.net", "java.nio", "java.util", "java.util.concurrent",
+            "java.util.concurrent.atomic", "sun.nio.ch", "sun.nio.cs", "sun.security.action",
+            "sun.util.calendar"};
+        for (String[] panel : panels) {
+            List<String> panelArgs = new ArrayList<>();
+            panelArgs.add(Paths.get(System.getProperty("java.home"), "bin", "java").toString());
+            for (String module : sparkOpens) {
+                panelArgs.add("--add-opens=java.base/" + module + "=ALL-UNNAMED");
+            }
+            panelArgs.add("-cp");
+            panelArgs.add(System.getProperty("java.class.path"));
+            panelArgs.add("org.broadinstitute.hellbender.Main");
+            panelArgs.add("CreateReadCountPanelOfNormals");
+            for (int s = 1; s <= Integer.parseInt(panel[1]); s++) {
+                panelArgs.add("--input");
+                panelArgs.add(dir.resolve("pon_s" + s + ".counts.tsv").toString());
+            }
+            if (panel[2] != null) {
+                panelArgs.add("--annotated-intervals");
+                panelArgs.add(panel[2]);
+            }
+            panelArgs.add("--output");
+            panelArgs.add(dir.resolve(panel[0]).toString());
+            Process child = new ProcessBuilder(panelArgs).inheritIO().start();
+            if (child.waitFor() != 0) {
+                throw new IllegalStateException("CreateReadCountPanelOfNormals failed for " + panel[0]);
+            }
+        }
+
         // Two depth-evidence files for `CondenseDepthEvidence`, written in the codec's own layout:
         // a header of column names and zero-based half-open bins. The first is a run of ten
         // adjacent hundred-base bins, a one-base gap, two more, and a contig change, so every
