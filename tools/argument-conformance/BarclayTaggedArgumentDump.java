@@ -136,6 +136,8 @@ public class BarclayTaggedArgumentDump {
         run("zero-length-argument-name", "--:tumour", "a.bam");
         run("tag-with-no-value", "--tagged-scalar:tumour");
         run("tag-followed-by-option", "--tagged-scalar:tumour", "--plain-scalar", "x");
+        // A lone dash is not an option, so it is the tagged value.
+        run("tag-followed-by-dash", "--tagged-scalar:tumour", "-");
         run("empty-attribute", "--tagged-scalar:tumour,", "a.bam");
         run("attribute-without-equals", "--tagged-scalar:tumour,kind", "a.bam");
         run("attribute-with-empty-value", "--tagged-scalar:tumour,kind=", "a.bam");
