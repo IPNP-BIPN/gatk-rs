@@ -231,3 +231,32 @@ fn a_complaint_is_raised_at_the_next_record_or_after_the_traversal() {
     .expect_err("the site at 4000 lost an allele");
     assert_eq!(stopped.at, None);
 }
+
+/// `throwOrWarn` logs a warned difference between asterisks and prints it bare to
+/// `--output-warnings`; a run that stops keeps what was printed before it.
+#[test]
+fn a_warned_difference_is_printed_bare_for_the_warnings_file() {
+    let text = golden();
+    let inputs = [
+        input(&vcf(&text, "expected"), "expected"),
+        input(&vcf(&text, "qual"), "actual"),
+    ];
+    let contigs = ["chr1".to_string()];
+    let finished = compare(
+        &inputs,
+        &contigs,
+        None,
+        None,
+        &with(|o| o.warn_on_errors = true),
+    )
+    .expect("--warn-on-errors finishes");
+    assert_eq!(finished.thrown.len(), 1);
+    assert_eq!(
+        finished.warnings,
+        [format!("***** {} *****", finished.thrown[0])]
+    );
+
+    let stopped = compare(&inputs, &contigs, None, None, &Options::default())
+        .expect_err("the QUAL at 1000 differs");
+    assert!(stopped.thrown.is_empty());
+}
