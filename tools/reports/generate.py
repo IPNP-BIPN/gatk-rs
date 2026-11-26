@@ -13,7 +13,8 @@ Every number is read from a committed source, and a number that no source holds 
   counted per tool; one that does not is counted for the suite, and the column says `suite`;
 * argument coverage and the `t` level, from each port's `measured.json`;
 * inputs and held-out arguments, from `tools/coverage/fixtures.json`. An argument with no values is
-  one no array varies, and the entry's `$why` says why;
+  one no array varies, and the entry's `$why` says why: one its `$why` never names by its long name
+  is counted as unreasoned;
 * quarantined fields, from each suite's `compare` rules;
 * fuzzer coverage, from `tools/fuzz/measured.json`: the reference's JaCoCo probes the covering
   array's rows reach, how many more the fuzzer's mutants reach, and on how many kept cases the
@@ -159,9 +160,10 @@ def fuzz_text(value):
 
 
 def fixture_summary(entry):
-    """Distinct input files an array draws on, and the arguments no array varies."""
+    """Distinct input files an array draws on, the arguments no array varies, and those of them
+    the entry's `$why` never names."""
     if not entry:
-        return [], []
+        return [], [], []
     inputs = set()
     for key, values in entry.items():
         if key.startswith("$"):
@@ -170,7 +172,9 @@ def fixture_summary(entry):
             if isinstance(value, str) and value.startswith("/work/fixtures/"):
                 inputs.add(value.rsplit("/", 1)[1])
     held = sorted(k for k, values in entry.items() if not k.startswith("$") and not values)
-    return sorted(inputs), held
+    why = " ".join(entry.get("$why", []))
+    unreasoned = [h for h in held if not re.search(rf"(?<![\w-]){re.escape(h)}(?![\w-])", why)]
+    return sorted(inputs), held, unreasoned
 
 
 def render(inventory, tools, fixtures):
@@ -195,10 +199,11 @@ def render(inventory, tools, fixtures):
         "Each run's inputs, toolchain and container are in the `provenance` artefact CI keeps "
         "(`tools/provenance/record.py`).",
         "",
-        "| tool | port | state | records | files | argument rows | t | fuzzer branches | inputs | held-out arguments | quarantined |",
-        "|---|---|---|---:|---:|---:|---:|---|---:|---:|---|",
+        "| tool | port | state | records | files | argument rows | t | fuzzer branches | inputs | held-out arguments | unreasoned | quarantined |",
+        "|---|---|---|---:|---:|---:|---:|---|---:|---:|---:|---|",
     ]
     details = []
+    total_held = total_unreasoned = 0
     for name in sorted(tools):
         tool = tools[name]
         states = {status for _, status in tool["suites"]}
@@ -216,11 +221,13 @@ def render(inventory, tools, fixtures):
         else:
             records = files = "not vendored"
         covered, level = coverage_text(tool["coverage"], tool.get("stronger"))
-        inputs, held = fixture_summary(fixtures.get(name))
+        inputs, held, unreasoned = fixture_summary(fixtures.get(name))
+        total_held += len(held)
+        total_unreasoned += len(unreasoned)
         quarantine = ", ".join(sorted(tool["quarantine"])) or "none"
         lines.append(
             f"| {name} | {tool['port'] or '-'} | {state} | {records} | {files} | {covered} | {level} "
-            f"| {fuzz_text(tool['fuzz'])} | {len(inputs)} | {len(held)} | {quarantine} |"
+            f"| {fuzz_text(tool['fuzz'])} | {len(inputs)} | {len(held)} | {len(unreasoned)} | {quarantine} |"
         )
         entry = fixtures.get(name)
         if entry:
@@ -232,11 +239,15 @@ def render(inventory, tools, fixtures):
             block.append("Inputs: " + (", ".join(f"`{i}`" for i in inputs) or "none") + ".")
             block.append("")
             block.append("Held out: " + (", ".join(f"`{h}`" for h in held) or "none") + ".")
+            if unreasoned:
+                block.extend(["", "Held out with no reason in `$why`: "
+                              + ", ".join(f"`{h}`" for h in unreasoned) + "."])
             if why:
                 block.extend(["", why])
             block.append("")
             details.extend(block)
-    lines.extend(["", "## What each array draws on and leaves out", ""])
+    lines.extend(["", f"Held-out arguments: {total_held}, of which {total_unreasoned} have no reason in "
+                  "their tool's `$why`.", "", "## What each array draws on and leaves out", ""])
     lines.extend(details)
     return "\n".join(lines).rstrip() + "\n"
 

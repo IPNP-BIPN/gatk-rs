@@ -206,7 +206,7 @@ fn the_minimum_depth_decides_what_is_used() {
 #[test]
 fn the_error_probabilities_are_precomputed_from_the_hyper_parameters() {
     let parameters = HyperParameters::default();
-    let precomputed = precompute(&parameters);
+    let precomputed = precompute(&parameters).unwrap();
     assert_eq!(
         precomputed.log10_p_error.len(),
         parameters.phred_gp_values.len()
@@ -252,14 +252,28 @@ fn the_gp_floor_depends_on_the_maximum_repeat_length() {
     };
     // A longer repeat needs a HIGHER floor: the per-position error has to be smaller for the
     // whole repeat to survive, and a smaller error is a larger Phred value.
-    assert!(min_gp_index(&twenty, 1) > min_gp_index(&eight, 1));
+    assert!(min_gp_index(&twenty, 1).unwrap() > min_gp_index(&eight, 1).unwrap());
     // A longer period makes the repeat longer in bases, so it raises the floor for the same
     // reason.
-    assert!(min_gp_index(&twenty, 8) > min_gp_index(&twenty, 1));
+    assert!(min_gp_index(&twenty, 8).unwrap() > min_gp_index(&twenty, 1).unwrap());
     // Every floor is inside the array.
     for period in 1..=twenty.max_period {
-        assert!(min_gp_index(&twenty, period) < twenty.phred_gp_values.len());
+        assert!(min_gp_index(&twenty, period).unwrap() < twenty.phred_gp_values.len());
     }
+}
+
+/// A GP grid longer than the API values sends the floor's tolerance past the API array: the
+/// reference's `ArrayIndexOutOfBoundsException` (`Index 9 out of bounds for length 9`, measured on
+/// row 4 of the t=2 array), not a panic.
+#[test]
+fn a_gp_grid_longer_than_the_api_values_is_an_index_error() {
+    let parameters = HyperParameters {
+        phred_gp_values: value_range(5.0, 2.0, 40.0),
+        phred_api_values: value_range(0.0, 5.0, 40.0),
+        max_period: 8,
+        ..HyperParameters::default()
+    };
+    assert_eq!(precompute(&parameters).err(), Some((9, 9)));
 }
 
 /// `log10(1 - 10^a)`, whose two special arguments are answered before any arithmetic.
@@ -338,7 +352,7 @@ fn the_estimation_is_monotone_across_the_row() {
         min_loci_count: 4,
         ..HyperParameters::default()
     };
-    let precomputed = precompute(&parameters);
+    let precomputed = precompute(&parameters).unwrap();
     let mut cases = Cases::empty(parameters.max_period, parameters.max_repeat_length);
     // The longer the repeat, the more reads carry an indel, which is the signal the model is for.
     for repeats in 1..=parameters.max_repeat_length {

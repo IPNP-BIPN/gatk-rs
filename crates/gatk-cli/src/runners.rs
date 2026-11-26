@@ -486,6 +486,50 @@ fn read_filter<'a>(
                 },
                 filter.negated,
             ));
+        } else if name == "ReadStrandFilter" {
+            // `--keep-reverse-strand-only` is required (optional=false); the arrays never leave it off.
+            let keep_reverse = scalar(parser, "keep-reverse-strand-only")
+                .ok_or_else(|| missing_filter_argument(name, "keep-reverse-strand-only"))?;
+            parameterized.push((
+                gatk_readfilter::Parameterized::ReadStrand {
+                    keep_reverse: keep_reverse.eq_ignore_ascii_case("true"),
+                },
+                filter.negated,
+            ));
+        } else if name == "OverclippedReadFilter" {
+            parameterized.push((
+                gatk_readfilter::Parameterized::Overclipped {
+                    min_aligned_bases: number_or(parser, "filter-too-short", 30),
+                    dont_require_both_ends: flag(parser, "dont-require-soft-clips-both-ends"),
+                },
+                filter.negated,
+            ));
+        } else if name == "ReadTagValueFilter" {
+            // `--read-filter-tag` is required; a tag that is not two characters throws in htsjdk,
+            // which this port does not reproduce.
+            let tag = scalar(parser, "read-filter-tag")
+                .filter(|tag| tag.len() == 2)
+                .ok_or_else(|| missing_filter_argument(name, "read-filter-tag"))?;
+            use gatk_readfilter::TagOperator as Op;
+            let op = match scalar(parser, "read-filter-tag-op").as_deref() {
+                None | Some("EQUAL") => Op::Equal,
+                Some("LESS") => Op::Less,
+                Some("LESS_OR_EQUAL") => Op::LessOrEqual,
+                Some("GREATER") => Op::Greater,
+                Some("GREATER_OR_EQUAL") => Op::GreaterOrEqual,
+                Some("NOT_EQUAL") => Op::NotEqual,
+                Some(_) => return Err(missing_filter_argument(name, "read-filter-tag-op")),
+            };
+            parameterized.push((
+                gatk_readfilter::Parameterized::ReadTagValue {
+                    tag,
+                    op,
+                    value: scalar(parser, "read-filter-tag-comp")
+                        .and_then(|text| text.parse().ok())
+                        .unwrap_or(0.0),
+                },
+                filter.negated,
+            ));
         } else {
             return Err(Thrown::non_user(
                 PORT_LIMITATION,
@@ -2417,6 +2461,15 @@ pub(crate) fn apply_bqsr_arguments(
     }
 }
 
+/// A read filter argument the port cannot take as given: required and absent, or a value it
+/// does not parse the way Barclay would.
+fn missing_filter_argument(filter: &str, argument: &str) -> Thrown {
+    Thrown::non_user(
+        PORT_LIMITATION,
+        format!("{filter} needs a --{argument} value this port does not handle. This message is the port's own and not GATK's."),
+    )
+}
+
 /// An integer argument with the tool's own default where it was not given.
 fn number_or(parser: &Parser, long_name: &str, default: i32) -> i32 {
     scalar(parser, long_name)
@@ -4239,8 +4292,12 @@ pub fn variant_filtration(parser: &Parser) -> Outcome {
                 .get(sample)
                 .copied()
                 .unwrap_or(false)
+                && record.genotypes[sample].is_called()
             {
-                record.genotypes[sample].alleles = Vec::new();
+                // `noCallAlleles(g.getPloidy())`: one no-call per allele, so a diploid writes `./.`.
+                let ploidy = record.genotypes[sample].alleles.len();
+                record.genotypes[sample].alleles =
+                    vec![htsjdk_vcf::allele::Allele::no_call(); ploidy];
             }
         }
     }
@@ -4442,15 +4499,8 @@ fn filtration_record(
         .genotypes
         .iter()
         .map(|genotype| filtration::GenotypeFields {
-            fields: genotype
-                .extended
-                .iter()
-                .filter_map(|(key, value)| {
-                    value
-                        .format()
-                        .map(|text| (key.clone(), JexlValue::Str(text)))
-                })
-                .collect(),
+            // `GenotypeJEXLContext`, whose fixed map makes an absent GQ read -1 rather than missing.
+            fields: gatk_tools::select_variants::genotype_jexl_context(genotype),
             filters: genotype
                 .filters
                 .as_ref()
@@ -6558,6 +6608,8 @@ pub fn print_read_counts(parser: &Parser) -> Outcome {
         })
     };
 
+    // Neither codec hands the engine a dictionary, so only the reads are checked.
+    validate_tool_dictionaries(parser)?;
     let dictionary = master_dictionary(parser)?.map(|header| header.sequences);
     let intervals: Vec<counts::Interval> = arguments(parser, "intervals")
         .iter()
@@ -9156,7 +9208,13 @@ pub fn calibrate_dragstr_model(parser: &Parser) -> Outcome {
     let text = if using_defaults {
         cdm::params_file(&annotations, 20, &cdm::default_rows())
     } else {
-        let rows = cdm::estimate(&parameters, &final_sites.as_cases());
+        let rows =
+            cdm::estimate(&parameters, &final_sites.as_cases()).map_err(|(index, length)| {
+                Thrown::non_user(
+                    "java.lang.ArrayIndexOutOfBoundsException",
+                    format!("Index {index} out of bounds for length {length}"),
+                )
+            })?;
         cdm::params_file(&annotations, parameters.max_repeat_length, &rows)
     };
     if let Some(path) = &sites_output {
@@ -15638,6 +15696,16 @@ fn variant_eval_report(
     let mut engine =
         ve::Engine::new(arguments_for_engine, &traversal_contigs).map_err(variant_eval_thrown)?;
 
+    // `MultiVariantWalker.traverse` opens with `makeReadFilter`, and `getPluginDescriptors` here
+    // returns no read-filter plugin: any reads make that a null dereference.
+    if !arguments(parser, "input").is_empty() {
+        return Err(Thrown::non_user(
+            "java.lang.NullPointerException",
+            "Cannot invoke \"org.broadinstitute.hellbender.cmdline.GATKPlugin.\
+             GATKReadFilterPluginDescriptor.getMergedCountingReadFilter(htsjdk.samtools.\
+             SAMFileHeader)\" because \"readFilterPlugin\" is null",
+        ));
+    }
     // The records of every driving input inside the traversal, merged by position.
     let (order, failure) = opened.merged(intervals.as_deref())?;
     let ignore_outside = flag(parser, "ignore-variants-starting-outside-interval");
@@ -19174,6 +19242,96 @@ fn best_dictionary(parser: &Parser) -> Result<Vec<String>, Thrown> {
         .unwrap_or_default())
 }
 
+/// `validateSequenceDictionaries` for a `GATKTool` with no feature inputs: the reads opened for
+/// their dictionary, the master checked against the reads then the reference, then the reference
+/// against the reads. The argument turns all of it off.
+fn validate_tool_dictionaries(parser: &Parser) -> Result<(), Thrown> {
+    let master = master_dictionary(parser)?;
+    let reference = reference_dictionary(parser)?;
+    let inputs = arguments(parser, "input");
+    let reads: Vec<Vec<htsjdk_bam::header::SequenceRecord>> = inputs
+        .iter()
+        .map(|path| reads_dictionary(parser, path, inputs.len()))
+        .collect::<Result<_, _>>()?;
+    if flag(parser, "disable-sequence-dictionary-validation") {
+        return Ok(());
+    }
+    if let Some(master) = &master {
+        for dictionary in &reads {
+            validate_against_master(master, "reads", dictionary)?;
+        }
+        if let Some(reference) = &reference {
+            validate_against_master(master, "reference", &reference.sequences)?;
+        }
+    }
+    if let Some(reference) = &reference {
+        for dictionary in &reads {
+            gatk_tools::sequence_dictionary::validate(
+                "reference",
+                &reference.sequences,
+                "reads",
+                dictionary,
+                false,
+                false,
+            )
+            .map_err(|refusal| Thrown {
+                failure: Failure::User,
+                exception: refusal.java_class(),
+                message: Some(refusal.message()),
+            })?;
+        }
+    }
+    Ok(())
+}
+
+/// `AbstractConcordanceWalker.onStartup` for a walker whose truth and eval are plain strings, so
+/// the engine finds no features: `-L` resolved against the TRUTH file's dictionary, which
+/// `getBestAvailableSequenceDictionary` returns and is final, the engine's dictionaries checked,
+/// then the truth and the eval bounded by the intervals, which an unindexed file refuses.
+fn concordance_walker_startup(
+    parser: &Parser,
+    truth_path: &str,
+    eval_path: &str,
+    truth: &htsjdk_vcf::header::VcfHeader,
+) -> Result<Option<Vec<gatk_engine::interval::SimpleInterval>>, Thrown> {
+    let truth = SamHeader {
+        sequences: sequence_dictionary_of(truth)
+            .into_iter()
+            .map(|(name, length)| htsjdk_bam::header::SequenceRecord::new(&name, length))
+            .collect(),
+        ..SamHeader::default()
+    };
+    let intervals = interval_arguments(parser, &truth)?.map(|parameters| parameters.intervals);
+    validate_tool_dictionaries(parser)?;
+    if intervals.is_some() {
+        for path in [truth_path, eval_path] {
+            if !has_feature_index(path) {
+                return Err(Thrown::user(format!(
+                    "Input {path} must support random access to enable traversal by intervals. \
+                     If it's a file, please index it using the bundled tool IndexFeatureFile"
+                )));
+            }
+        }
+    }
+    Ok(intervals)
+}
+
+/// Whether a record's span reaches the traversal: everything when no interval was given.
+fn in_intervals(
+    intervals: Option<&[gatk_engine::interval::SimpleInterval]>,
+    contig: &str,
+    start: i64,
+    stop: i64,
+) -> bool {
+    intervals.is_none_or(|windows| {
+        windows.iter().any(|window| {
+            window.contig == contig
+                && i64::from(window.start) <= stop
+                && start <= i64::from(window.end)
+        })
+    })
+}
+
 /// `MergeAnnotatedRegions`: overlapping regions of a segment file merged.
 ///
 /// The merge and the file format are [`gatk_tools::annotated_interval`], where a golden measures
@@ -19189,6 +19347,7 @@ pub fn merge_annotated_regions(parser: &Parser) -> Outcome {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
     let _ = resolve_read_filters(parser, "MergeAnnotatedRegions")?;
+    validate_tool_dictionaries(parser)?;
     let dictionary = best_dictionary(parser)?;
     let mut collection = annotated_intervals(&segments)?;
     gatk_tools::annotated_interval::check_sortable(&collection.records, &dictionary)
@@ -19242,6 +19401,7 @@ pub fn merge_annotated_regions_by_annotation(parser: &Parser) -> Outcome {
     let illegal = |message: String| Thrown::non_user("java.lang.IllegalArgumentException", message);
 
     let _ = resolve_read_filters(parser, "MergeAnnotatedRegionsByAnnotation")?;
+    validate_tool_dictionaries(parser)?;
     let dictionary = optional_best_dictionary(parser)?;
     let collection = annotated_intervals(&segments)?;
     let mut wanted: JavaHashMap<String, ()> =
@@ -19321,6 +19481,7 @@ pub fn tag_germline_events(parser: &Parser) -> Outcome {
         .unwrap_or(0.75);
 
     let _ = resolve_read_filters(parser, "TagGermlineEvents")?;
+    validate_tool_dictionaries(parser)?;
     let dictionary = best_dictionary(parser)?;
     let mut tumour = annotated_intervals(&tumour_path)?;
     let normal = annotated_intervals(&normal_path)?;
@@ -21340,14 +21501,9 @@ pub fn sv_concordance(parser: &Parser) -> Outcome {
     // so `FeatureManager` finds no features and neither is compared with anything here.
     let truth_dictionary = vcf_dictionary(&truth_text);
     let eval_dictionary = vcf_dictionary(&eval_text);
+    let intervals =
+        concordance_walker_startup(parser, &truth_path, &eval_path, &truth_file.header)?;
     let master = master_dictionary(parser)?;
-    let reference = reference_dictionary(parser)?;
-    if !flag(parser, "disable-sequence-dictionary-validation") {
-        if let (Some(master), Some(reference)) = (&master, &reference) {
-            validate_against_master(master, "reference", &reference.sequences)?;
-        }
-    }
-
     // `onTraversalStart`.
     let Some(dictionary) = master else {
         return Err(Thrown::user("Reference sequence dictionary required"));
@@ -21665,6 +21821,14 @@ pub fn sv_concordance(parser: &Parser) -> Outcome {
         .records
         .iter()
         .enumerate()
+        .filter(|(_, record)| {
+            in_intervals(
+                intervals.as_deref(),
+                &record.contig,
+                record.start,
+                record.stop,
+            )
+        })
         .map(|(index, record)| ConcordanceLocus {
             index,
             contig: record.contig.clone(),
@@ -21676,6 +21840,14 @@ pub fn sv_concordance(parser: &Parser) -> Outcome {
         .records
         .iter()
         .enumerate()
+        .filter(|(_, record)| {
+            in_intervals(
+                intervals.as_deref(),
+                &record.contig,
+                record.start,
+                record.stop,
+            )
+        })
         .map(|(index, record)| ConcordanceLocus {
             index,
             contig: record.contig.clone(),
@@ -21785,9 +21957,9 @@ pub fn sv_concordance(parser: &Parser) -> Outcome {
     for step in steps {
         let mut add = |index: usize, is_truth: bool| -> Result<(), Thrown> {
             let variant = if is_truth {
-                &truth_file.records[index]
+                &truth_file.records[truth[index].index]
             } else {
-                &eval_file.records[index]
+                &eval_file.records[eval[index].index]
             };
             let call = svr::create(variant, &sequences).map_err(refused)?;
             if is_truth {
@@ -23508,6 +23680,8 @@ pub fn reference_block_concordance(parser: &Parser) -> Outcome {
     };
     let truth_file = read_vcf(&truth_path)?;
     let eval_file = read_vcf(&eval_path)?;
+    let intervals =
+        concordance_walker_startup(parser, &truth_path, &eval_path, &truth_file.header)?;
     let dictionary: Vec<String> = sequence_dictionary_of(&truth_file.header)
         .into_iter()
         .map(|(name, _)| name)
@@ -23519,6 +23693,14 @@ pub fn reference_block_concordance(parser: &Parser) -> Outcome {
     let blocks = |file: &htsjdk_vcf::reader::VcfFile| -> Vec<(rbc::Block, bool)> {
         file.records
             .iter()
+            .filter(|record| {
+                in_intervals(
+                    intervals.as_deref(),
+                    &record.contig,
+                    record.start,
+                    record.stop,
+                )
+            })
             .filter_map(|record| {
                 let first = record.genotypes.first()?;
                 let hom_ref =
@@ -23854,6 +24036,8 @@ pub fn merge_mutect2_calls_with_mc3(parser: &Parser) -> Outcome {
     };
     let truth_file = read_vcf(&truth_path)?;
     let eval_file = read_vcf(&eval_path)?;
+    let intervals =
+        concordance_walker_startup(parser, &truth_path, &eval_path, &truth_file.header)?;
     let dictionary: Vec<String> = sequence_dictionary_of(&truth_file.header)
         .into_iter()
         .map(|(name, _)| name)
@@ -23929,6 +24113,14 @@ pub fn merge_mutect2_calls_with_mc3(parser: &Parser) -> Outcome {
         file.records
             .iter()
             .enumerate()
+            .filter(|(_, record)| {
+                in_intervals(
+                    intervals.as_deref(),
+                    &record.contig,
+                    record.start,
+                    record.stop,
+                )
+            })
             .map(|(index, record)| ConcordanceLocus {
                 index,
                 contig: record.contig.clone(),
@@ -23937,9 +24129,12 @@ pub fn merge_mutect2_calls_with_mc3(parser: &Parser) -> Outcome {
             })
             .collect()
     };
+    // The walk answers with positions in these lists, which `-L` has thinned out of the files.
+    let truth_loci = loci(&truth_file);
+    let eval_loci = loci(&eval_file);
     let steps = gatk_engine::concordance_walker::concordance(
-        &loci(&truth_file),
-        &loci(&eval_file),
+        &truth_loci,
+        &eval_loci,
         &dictionary,
         |truth, eval| {
             let truth = &truth_file.records[truth.index];
@@ -23963,8 +24158,12 @@ pub fn merge_mutect2_calls_with_mc3(parser: &Parser) -> Outcome {
     };
     let mut written: Vec<htsjdk_vcf::variant::VariantContext> = Vec::new();
     for step in steps {
-        let truth = step.truth.map(|index| &truth_file.records[index]);
-        let eval = step.eval.map(|index| &eval_file.records[index]);
+        let truth = step
+            .truth
+            .map(|index| &truth_file.records[truth_loci[index].index]);
+        let eval = step
+            .eval
+            .map(|index| &eval_file.records[eval_loci[index].index]);
         let int_attribute = |record: &htsjdk_vcf::variant::VariantContext, key: &str| {
             record
                 .attributes

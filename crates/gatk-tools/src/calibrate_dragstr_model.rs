@@ -114,7 +114,8 @@ pub struct Precomputed {
 /// The per-position correct probability is `log10(1 - 10^(-log10(0.5) + log10Gp))`, and a repeat's
 /// is that raised to its length IN BASES, which is the repeat count times the period. The error
 /// probability is one less that, so the two always sum to one.
-pub fn precompute(parameters: &HyperParameters) -> Precomputed {
+/// `Err((index, length))` is the reference's `ArrayIndexOutOfBoundsException` from `min_gp_index`.
+pub fn precompute(parameters: &HyperParameters) -> Result<Precomputed, (usize, usize)> {
     let log10_gp: Vec<f64> = parameters
         .phred_gp_values
         .iter()
@@ -134,13 +135,13 @@ pub fn precompute(parameters: &HyperParameters) -> Precomputed {
             }
         }
     }
-    Precomputed {
+    Ok(Precomputed {
         log10_p_error,
         log10_p_correct,
         min_gp_index_by_period: (0..parameters.max_period)
             .map(|i| min_gp_index(parameters, i + 1))
-            .collect(),
-    }
+            .collect::<Result<_, _>>()?,
+    })
 }
 
 /// The first GP index a period's search may start at.
@@ -149,22 +150,25 @@ pub fn precompute(parameters: &HyperParameters) -> Precomputed {
 /// the DEFAULT maximum repeat length rather than a constant, so changing `--max-repeats` moves
 /// every period's floor. The search for the value then falls back on the insertion point, and the
 /// tolerance it applies is read from the API values rather than the GP ones.
-pub fn min_gp_index(parameters: &HyperParameters, period: usize) -> usize {
+pub fn min_gp_index(parameters: &HyperParameters, period: usize) -> Result<usize, (usize, usize)> {
     let gp_min = (-10.0
         * (1.0 - 0.5f64.powf((1.0 / (parameters.max_repeat_length * period) as f64) / 2.0))
             .log10())
     .ceil();
-    match binary_search(&parameters.phred_gp_values, gp_min) {
+    let api = &parameters.phred_api_values;
+    Ok(match binary_search(&parameters.phred_gp_values, gp_min) {
         Ok(index) => index,
-        Err(insertion) => {
-            if insertion >= 2 && (gp_min - parameters.phred_api_values[insertion - 2]).abs() < 0.001
-            {
+        Err(insertion) if insertion >= 2 => {
+            // An index past the API values, which a GP grid longer than them reaches.
+            let tolerance = api.get(insertion - 2).ok_or((insertion - 2, api.len()))?;
+            if (gp_min - tolerance).abs() < 0.001 {
                 insertion - 2
             } else {
                 insertion
             }
         }
-    }
+        Err(insertion) => insertion,
+    })
 }
 
 /// `Arrays.binarySearch` over a sorted array of doubles, as its two outcomes.
@@ -901,13 +905,16 @@ fn gop_calculation(gp: f64, gcp: f64, period: usize, max_gop: f64, step: f64) ->
     best_gop
 }
 
+/// One period's GOP, GCP and API columns, one value per repeat length.
+pub type GopGcpApi = (Vec<f64>, Vec<f64>, Vec<f64>);
+
 /// `DragstrParametersEstimator.estimate`, then `DragstrParamsBuilder.make(gopValues)`: every
 /// period's groups, and GOP derived from each cell's GP by the grid over the GOP values.
 pub fn estimate(
     parameters: &HyperParameters,
     cases: &Cases,
-) -> Vec<(Vec<f64>, Vec<f64>, Vec<f64>)> {
-    let precomputed = precompute(parameters);
+) -> Result<Vec<GopGcpApi>, (usize, usize)> {
+    let precomputed = precompute(parameters)?;
     let values = &parameters.phred_gop_values;
     let (min_gop, max_gop) = match values.len() {
         0 => (f64::NAN, f64::NAN),
@@ -919,7 +926,7 @@ pub fn estimate(
     } else {
         values[1] - values[0]
     };
-    (1..=parameters.max_period)
+    Ok((1..=parameters.max_period)
         .map(|period| {
             let mut gp = vec![0.0; parameters.max_repeat_length];
             let mut gcp = vec![0.0; parameters.max_repeat_length];
@@ -938,7 +945,7 @@ pub fn estimate(
                 .collect();
             (gop, gcp, api)
         })
-        .collect()
+        .collect())
 }
 
 /// `DragstrParamUtils.print`: a banner with the annotations, then the table.

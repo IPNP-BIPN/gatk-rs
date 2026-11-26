@@ -801,6 +801,12 @@ const PIPELINE_HONOURED: &[&str] = &[
     "single-end-reads-end-position-significant",
     "static-quantized-quals",
     "use-original-qualities",
+    // `--output-bam` goes through `write_spark_reads`, which writes the `.sbi` as PrintReadsSpark
+    // does; `--use-nio` moves only the input's split points, and the reads are collected and
+    // sorted whole before anything is written.
+    "create-output-bam-splitting-index",
+    "splitting-index-granularity",
+    "use-nio",
 ];
 
 fn refuse_unported(parser: &Parser, tool: &str) -> Result<(), Thrown> {
