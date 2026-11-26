@@ -3040,8 +3040,154 @@ fn unordered_order(codes: &[u64]) -> Result<Vec<usize>, Reason> {
     Ok(order)
 }
 
+/// `--genomicsdb-use-bcf-codec`: the streamed records as GATK writes them once `BCF2Codec`, and not
+/// `VCFCodec`, has decoded them.
+///
+/// `VCFCodec` keeps an INFO value as the text GenomicsDB printed and writes a genotype column
+/// back as it came in. `BCF2Codec` decodes typed values, so `VCFEncoder` re-encodes the record:
+/// a Float is a `Double` printed by `formatVCFDouble`, QUAL goes through `formatQualValue`, the
+/// FORMAT keys are `GT` then the others sorted, a key no sample sets is dropped, and each sample's
+/// trailing missing values are trimmed. `header` is the workspace's header text.
+///
+/// shortcut: the floats are read back from htslib's six significant digits rather than from the
+/// float32 cells, so a value within 1e-6 of a rounding boundary of `formatVCFDouble` could print
+/// differently; stream the raw bits if a measurement ever shows one.
+pub fn as_bcf2_decoded(header: &str, records: &str) -> String {
+    let floats = |kind: &str| -> std::collections::HashSet<String> {
+        header
+            .lines()
+            .filter_map(|line| line.strip_prefix(&format!("##{kind}=<ID=")))
+            .filter(|rest| rest.contains(",Type=Float"))
+            .filter_map(|rest| rest.split(',').next().map(str::to_string))
+            .collect()
+    };
+    let (info_floats, format_floats) = (floats("INFO"), floats("FORMAT"));
+    let float = |value: &str| -> String {
+        value
+            .split(',')
+            .map(|item| match item.parse::<f32>() {
+                Ok(v) if item != "." => htsjdk_vcf::variant::format_vcf_double(f64::from(v)),
+                _ => item.to_string(),
+            })
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+    let missing = |value: &str| value.chars().all(|c| c == '.' || c == ',');
+    let mut out = String::with_capacity(records.len());
+    for line in records.lines() {
+        let mut columns: Vec<String> = line.split('\t').map(str::to_string).collect();
+        if columns.len() < 8 {
+            out.push_str(line);
+            out.push('\n');
+            continue;
+        }
+        if let Ok(qual) = columns[5].parse::<f32>() {
+            columns[5] = htsjdk_vcf::encoder::format_qual_value(f64::from(qual));
+        }
+        if columns[7] != "." {
+            columns[7] = columns[7]
+                .split(';')
+                .map(|entry| match entry.split_once('=') {
+                    Some((key, value)) if info_floats.contains(key) => {
+                        format!("{key}={}", float(value))
+                    }
+                    _ => entry.to_string(),
+                })
+                .collect::<Vec<_>>()
+                .join(";");
+        }
+        if columns.len() > 9 {
+            let keys: Vec<String> = columns[8].split(':').map(str::to_string).collect();
+            let samples: Vec<Vec<String>> = columns[9..]
+                .iter()
+                .map(|sample| {
+                    let mut values: Vec<String> = sample.split(':').map(str::to_string).collect();
+                    values.resize(keys.len(), ".".to_string());
+                    values
+                })
+                .collect();
+            // `calcVCFGenotypeKeys`: what any sample sets, sorted, with GT in front.
+            let mut kept: Vec<usize> = (0..keys.len())
+                .filter(|&k| keys[k] != "GT" && samples.iter().any(|s| !missing(&s[k])))
+                .collect();
+            kept.sort_by(|&a, &b| keys[a].cmp(&keys[b]));
+            if let Some(gt) = keys.iter().position(|key| key == "GT") {
+                kept.insert(0, gt);
+            }
+            columns[8] = kept
+                .iter()
+                .map(|&k| keys[k].as_str())
+                .collect::<Vec<_>>()
+                .join(":");
+            for (column, values) in columns[9..].iter_mut().zip(&samples) {
+                let mut fields: Vec<String> = kept
+                    .iter()
+                    .map(|&k| {
+                        if format_floats.contains(&keys[k]) && !missing(&values[k]) {
+                            float(&values[k])
+                        } else {
+                            values[k].clone()
+                        }
+                    })
+                    .collect();
+                while fields.len() > 1 && fields.last().is_some_and(|f| missing(f)) {
+                    fields.pop();
+                }
+                *column = fields.join(":");
+            }
+        }
+        out.push_str(&columns.join("\t"));
+        out.push('\n');
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
+    /// Two records of the fixture workspace, as GATK 4.7.0.0's SelectVariants writes them under
+    /// each codec: the VCF codec's text in, the BCF codec's out.
+    #[test]
+    fn the_bcf_codec_re_encodes_floats_and_the_genotype_columns() {
+        let header = r#"##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic depths for the ref and alt alleles in the order listed">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Approximate read depth (reads with MQ=255 or with bad mates are filtered)">
+##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype Quality">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=MIN_DP,Number=1,Type=Integer,Description="Minimum DP observed within the GVCF block">
+##FORMAT=<ID=PGT,Number=1,Type=String,Description="Physical phasing haplotype information, describing how the alternate alleles are phased in relation to one another; will always be heterozygous and is not intended to describe called alleles">
+##FORMAT=<ID=PID,Number=1,Type=String,Description="Physical phasing ID information, where each unique ID within a given sample (but not across samples) connects records within a phasing group">
+##FORMAT=<ID=PL,Number=G,Type=Integer,Description="Normalized, Phred-scaled likelihoods for genotypes as defined in the VCF specification">
+##FORMAT=<ID=PS,Number=1,Type=Integer,Description="Phasing set (typically the position of the first variant in the set)">
+##FORMAT=<ID=SB,Number=4,Type=Integer,Description="Per-sample component statistics which comprise the Fisher's Exact Test to detect strand bias.">
+##INFO=<ID=AC,Number=A,Type=Integer,Description="Allele count in genotypes, for each ALT allele, in the same order as listed">
+##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency, for each ALT allele, in the same order as listed">
+##INFO=<ID=AN,Number=1,Type=Integer,Description="Total number of alleles in called genotypes">
+##INFO=<ID=AS_InbreedingCoeff,Number=A,Type=Float,Description="Allele-specific inbreeding coefficient as estimated from the genotype likelihoods per-sample when compared against the Hardy-Weinberg expectation">
+##INFO=<ID=AS_QD,Number=A,Type=Float,Description="Allele-specific Variant Confidence/Quality by Depth">
+##INFO=<ID=AS_RAW_BaseQRankSum,Number=1,Type=String,Description="raw data for allele specific rank sum test of base qualities">
+##INFO=<ID=AS_RAW_MQ,Number=1,Type=String,Description="Allele-specfic raw data for RMS Mapping Quality">
+##INFO=<ID=AS_RAW_MQRankSum,Number=1,Type=String,Description="Allele-specfic raw data for Mapping Quality Rank Sum">
+##INFO=<ID=AS_RAW_ReadPosRankSum,Number=1,Type=String,Description="allele specific raw data for rank sum test of read position bias">
+##INFO=<ID=AS_SB_TABLE,Number=1,Type=String,Description="Allele-specific forward/reverse read counts for strand bias tests. Includes the reference and alleles separated by |.">
+##INFO=<ID=BaseQRankSum,Number=1,Type=Float,Description="Z-score from Wilcoxon rank sum test of Alt Vs. Ref base qualities">
+##INFO=<ID=DP,Number=1,Type=Integer,Description="Approximate read depth; some reads may have been filtered">
+##INFO=<ID=END,Number=1,Type=Integer,Description="Stop position of the interval">
+##INFO=<ID=ExcessHet,Number=1,Type=Float,Description="Phred-scaled p-value for exact test of excess heterozygosity">
+##INFO=<ID=InbreedingCoeff,Number=1,Type=Float,Description="Inbreeding coefficient as estimated from the genotype likelihoods per-sample when compared against the Hardy-Weinberg expectation">
+##INFO=<ID=MLEAC,Number=A,Type=Integer,Description="Maximum likelihood expectation (MLE) for the allele counts (not necessarily the same as the AC), for each ALT allele, in the same order as listed">
+##INFO=<ID=MLEAF,Number=A,Type=Float,Description="Maximum likelihood expectation (MLE) for the allele frequency (not necessarily the same as the AF), for each ALT allele, in the same order as listed">
+##INFO=<ID=MQRankSum,Number=1,Type=Float,Description="Z-score From Wilcoxon rank sum test of Alt vs. Ref read mapping qualities">
+##INFO=<ID=RAW_MQandDP,Number=2,Type=Integer,Description="Raw data (sum of squared MQ and total depth) for improved RMS Mapping Quality calculation. Incompatible with deprecated RAW_MQ formulation.">
+##INFO=<ID=ReadPosRankSum,Number=1,Type=Float,Description="Z-score from Wilcoxon rank sum test of Alt vs. Ref read position bias">
+"#;
+        let vcf_codec = r#"chr1	90	.	A	<NON_REF>	.	.	END=99	GT:GQ:MIN_DP:PL:DP	./.:45:18:0,45,675:19	./.:30:18:0,30,450:19	.:90:20:0,90:20
+chr1	100	rs100	GGCT	GT,G,<NON_REF>	.	.	AS_RAW_BaseQRankSum=|-0.500,1||;AS_RAW_MQ=39600.000|36000.000||0.000;AS_RAW_MQRankSum=|0.000,1||;AS_RAW_ReadPosRankSum=|1.300,1||;AS_SB_TABLE=6,5|5,5||0,0;BaseQRankSum=0.842;DP=48;ExcessHet=3.0103;MQRankSum=0;RAW_MQandDP=108000,30;ReadPosRankSum=1.253	GT:AD:GQ:MIN_DP:PL:SB:DP	./.:11,10,0,0:99:.:230,0,260,263,290,553,263,290,553,553:6,5,5,5:21	./.:.:30:18:0,30,450,30,450,450,30,450,450,450:.:19	.:0,0,8,0:99:.:300,320,0,320:.:8
+"#;
+        let bcf_codec = r#"chr1	90	.	A	<NON_REF>	.	.	END=99	GT:DP:GQ:MIN_DP:PL	./.:19:45:18:0,45,675	./.:19:30:18:0,30,450	.:20:90:20:0,90
+chr1	100	rs100	GGCT	GT,G,<NON_REF>	.	.	AS_RAW_BaseQRankSum=|-0.500,1||;AS_RAW_MQ=39600.000|36000.000||0.000;AS_RAW_MQRankSum=|0.000,1||;AS_RAW_ReadPosRankSum=|1.300,1||;AS_SB_TABLE=6,5|5,5||0,0;BaseQRankSum=0.842;DP=48;ExcessHet=3.01;MQRankSum=0.00;RAW_MQandDP=108000,30;ReadPosRankSum=1.25	GT:AD:DP:GQ:MIN_DP:PL:SB	./.:11,10,0,0:21:99:.:230,0,260,263,290,553,263,290,553,553:6,5,5,5	./.:.:19:30:18:0,30,450,30,450,450,30,450,450,450	.:0,0,8,0:8:99:.:300,320,0,320
+"#;
+        assert_eq!(super::as_bcf2_decoded(header, vcf_codec), bcf_codec);
+    }
+
     use super::*;
 
     fn kputd_text(d: f64) -> String {
