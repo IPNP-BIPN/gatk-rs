@@ -6,6 +6,7 @@
 //! a case added to the dump needs nothing here.
 
 use gatk_corpus as corpus;
+use gatk_tools::main_entry::{self, Failure};
 
 const GOLDEN: &str = "tests/data/port_limitations.txt.gz";
 
@@ -68,7 +69,9 @@ fn every_case_is_the_reference_s_answer() {
         .to_string();
 
     let files = rows(&text, "file");
+    let dirs = rows(&text, "dir");
     let errors = rows(&text, "error");
+    let kinds = rows(&text, "kind");
     for row in rows(&text, "argv") {
         let (case, argv) = row.split_first().expect("a case");
         let dir = format!("port-limitations/{case}");
@@ -77,41 +80,73 @@ fn every_case_is_the_reference_s_answer() {
 
         match errors.iter().find(|error| error[0] == *case) {
             Some(error) => {
-                let message = error[1]
-                    .split_once(':')
-                    .expect("class:message")
-                    .1
-                    .replace(&theirs, &ours);
-                assert_ne!(run.status, 0, "{case}");
-                assert!(run.stderr.contains(&message), "{case}: {}", run.stderr);
+                let (class, message) = error[1].split_once(':').expect("class:message");
+                let message = message.replace(&theirs, &ours);
+                let kind = &kinds.iter().find(|kind| kind[0] == *case).expect("a kind")[1];
+                // `mainEntry`'s status for each handler, and what `handleNonUserException` prints.
+                let (failure, printed) = match kind.as_str() {
+                    "commandline" => (Failure::CommandLine, message),
+                    "user" => (Failure::User, message),
+                    _ => (Failure::Other, format!("{class}: {message}")),
+                };
+                assert_eq!(
+                    run.status,
+                    main_entry::exit_status(failure),
+                    "{case}: {}",
+                    run.stderr
+                );
+                assert!(run.stderr.contains(&printed), "{case}: {}", run.stderr);
             }
             None => assert_eq!(run.status, 0, "{case}: {}", run.stderr),
         }
 
-        let expected: Vec<(&str, Vec<u8>)> = files
+        // Everything the run left, directories included, against what the reference left.
+        let mut expected: Vec<String> = files
             .iter()
-            .filter(|file| file[0] == *case)
-            .map(|file| (file[1].as_str(), corpus::decode_base64(&file[2])))
+            .chain(dirs.iter())
+            .filter(|entry| entry[0] == *case)
+            .map(|entry| entry[1].clone())
             .collect();
-        let mut produced: Vec<String> = std::fs::read_dir(&dir)
-            .expect("the case's directory")
-            .map(|entry| {
-                entry
-                    .expect("an entry")
-                    .file_name()
-                    .to_string_lossy()
-                    .into_owned()
-            })
-            .collect();
+        expected.sort();
+        let mut produced = Vec::new();
+        let mut pending = vec![std::path::PathBuf::from(&dir)];
+        while let Some(at) = pending.pop() {
+            for entry in std::fs::read_dir(&at).expect("a directory") {
+                let path = entry.expect("an entry").path();
+                if path.is_dir() {
+                    pending.push(path.clone());
+                }
+                let relative = path.strip_prefix(&dir).expect("under the case");
+                produced.push(relative.display().to_string());
+            }
+        }
         produced.sort();
-        let names: Vec<&str> = expected.iter().map(|(name, _)| *name).collect();
-        assert_eq!(produced, names, "{case}: the files left");
-        for (name, bytes) in &expected {
-            let ours = std::fs::read(format!("{dir}/{name}")).expect("a file");
+        assert_eq!(produced, expected, "{case}: what the run left");
+        for file in files.iter().filter(|file| file[0] == *case) {
+            let bytes = std::fs::read(format!("{dir}/{}", file[1])).expect("a file");
             assert!(
-                ours == *bytes,
-                "{case}: {name} differs from the reference's"
+                bytes == corpus::decode_base64(&file[2]),
+                "{case}: {} differs from the reference's",
+                file[1]
             );
         }
+    }
+}
+
+/// AlleleFrequencyQC's refusal for fewer than two bins, which the runner writes out by hand.
+#[test]
+fn the_chi_squared_refusal_is_commons_math_s() {
+    let golden = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(GOLDEN);
+    if !golden.exists() {
+        return;
+    }
+    let probes = rows(&corpus::read_golden(&golden), "probe");
+    let class = "org.apache.commons.math3.exception.NotStrictlyPositiveException";
+    for (case, shape) in [("chi-squared0", "0"), ("chi-squared-1", "-0.5")] {
+        let probe = probes
+            .iter()
+            .find(|probe| probe[0] == case)
+            .expect("a probe");
+        assert_eq!(probe[1], format!("{class}:shape ({shape})"), "{case}");
     }
 }
