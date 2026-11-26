@@ -1,4 +1,5 @@
-//! `GatherVcfs`, ported from `picard.vcf.GatherVcfs` (Picard 3.4.0).
+//! `GatherVcfs`, ported from `picard.vcf.GatherVcfs` (Picard 3.5.0; `GatherVcfs.java` is
+//! unchanged since 3.4.0).
 //!
 //! Shards of one scattered run concatenated into a single file.
 //!
@@ -33,7 +34,25 @@
 //! # Only the first comment survives
 //!
 //! `VCFHeader.addMetaDataLine` keys an unstructured line by its key alone, so a second `CO=`
-//! replaces nothing and is dropped without a word.
+//! replaces nothing and is dropped without a word. The lookup is (htsjdk 5.0.0
+//! `VCFHeader.java:385`):
+//!
+//! ```java
+//! return addMetaDataLineMapLookupEntry(mOtherMetaData, line.getKey(), line);
+//! ```
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, Failure>` is "a `T` or a refusal"; `Err(..)` is the throw (or the caught throw,
+//!   see [`Failure`]) and `?` after a call passes the caller's `Err` straight up, like a Java
+//!   method that lets the exception propagate.
+//! - `Option<T>` is "a value or nothing", Java's nullable reference checked by the compiler.
+//!   `if let Some(x) = y` runs its body only when there is a value.
+//! - `&str` and `&[T]` are borrowed read-only views; the caller keeps ownership. `Input<'a>`
+//!   says the struct holds such views and cannot outlive the text they point into.
+//! - `.iter().filter(..).map(..).collect()` is a Java stream; `collect::<Result<Vec<_>, _>>()`
+//!   stops at the first `Err` and returns it, which is how one bad shard fails the whole read.
+//! - `match` must name every case, so a new [`Failure`] variant cannot be forgotten silently.
 
 use htsjdk_vcf::comparator::VariantContextComparator;
 use htsjdk_vcf::header::{HeaderLine, VcfHeader};
@@ -136,6 +155,17 @@ impl Sequence {
 
     /// `isSameSequence`, minus the MD5 and alternate-name branches no VCF contig line can reach.
     /// A length of `UNKNOWN_SEQUENCE_LENGTH` matches anything, which is why 0 is not a mismatch.
+    ///
+    /// `VCFContigHeaderLine.getSAMSequenceRecord` sets only name, length, assembly and index,
+    /// so neither an `M5` attribute nor an alternate name exists to compare. The length rule is
+    /// htsjdk 5.0.0 `SAMSequenceRecord.java:253-256`:
+    ///
+    /// ```java
+    /// // PIC-439.  Allow undefined length.
+    /// if (mSequenceLength != UNKNOWN_SEQUENCE_LENGTH
+    ///         && that.mSequenceLength != UNKNOWN_SEQUENCE_LENGTH
+    ///         && mSequenceLength != that.mSequenceLength) {
+    /// ```
     fn is_same_sequence(&self, other: &Sequence) -> bool {
         if self.index != other.index {
             return false;
@@ -148,7 +178,12 @@ impl Sequence {
 }
 
 /// `VCFHeader.getSequenceDictionary()`, which is `None` when there are no contig lines.
+///
+/// Each contig line becomes a sequence the way `VCFContigHeaderLine.getSAMSequenceRecord` builds
+/// one: `ID` as the name, `length` (absent means 0, `UNKNOWN_SEQUENCE_LENGTH`), `assembly`, and
+/// the line's position among the contig lines as the index.
 pub fn dictionary(header: &VcfHeader) -> Option<Vec<Sequence>> {
+    // A closure: a small local function that looks one key up in a line's `key=value` fields.
     let field = |fields: &[(String, String)], key: &str| {
         fields
             .iter()
@@ -180,6 +215,11 @@ pub fn dictionary(header: &VcfHeader) -> Option<Vec<Sequence>> {
 }
 
 /// `SAMSequenceDictionary.assertSameDictionary`, whose failure is an `AssertionError`.
+///
+/// Walks both lists in step, as the Java walks two iterators: a sequence missing from `found`,
+/// a pair that is not the same sequence, or a sequence left over in `found` each refuse, with
+/// the message wrapped in `DICT_MISMATCH_TEMPLATE` (`"SAM dictionaries are not the same: %s."`).
+/// `Err(String)` carries only the message; the caller makes it the `AssertionError`.
 pub fn assert_same_dictionary(expected: &[Sequence], found: &[Sequence]) -> Result<(), String> {
     let template = |detail: String| format!("SAM dictionaries are not the same: {detail}.");
     for (position, this) in expected.iter().enumerate() {
@@ -226,7 +266,7 @@ fn samples(header: &VcfHeader) -> Vec<String> {
     header.samples.clone()
 }
 
-/// The `[a, b]` a Java `SortedSet` prints.
+/// The `[a, b]` a Java `SortedSet` prints: `TreeSet.toString`, so sorted and comma-space joined.
 fn rendered_set(names: &[String]) -> String {
     let mut sorted: Vec<&String> = names.iter().collect();
     sorted.sort();
@@ -255,6 +295,8 @@ fn compare(
     })
 }
 
+/// `new VariantContextComparator(firstHeader.getContigLines())`: records ordered by contig
+/// index in the header, then position.
 fn comparator_of(header: &VcfHeader) -> VariantContextComparator {
     // The comparator refuses a list that holds anything but contigs, so it is handed those alone.
     let contigs: Vec<HeaderLine> = header
@@ -273,6 +315,8 @@ struct Shard {
     records: Vec<VariantContext>,
 }
 
+/// `new VCFFileReader(path, false)` and a read of every record, done once per input rather than
+/// once per pass as the Java reopens each file; a parse failure becomes an exit.
 fn read_shard(input: &Input) -> Result<Shard, Failure> {
     // Gathering never looks at a sample column, so it never parses one, as `VCFFileReader` does.
     match read_vcf_with(input.text, GenotypeParsing::Deferred) {
@@ -289,6 +333,11 @@ fn read_shard(input: &Input) -> Result<Shard, Failure> {
 }
 
 /// `assertSameSamplesAndValidOrdering`, which also does the reordering.
+///
+/// The first input's header is the yardstick for every input, itself included: its dictionary,
+/// its sample list in column order, and its comparator. Each input is then checked in the
+/// (possibly reordered) order for the same dictionary, the same samples, and a first record
+/// strictly after the previous non-empty input's first record.
 fn check_and_reorder(shards: Vec<Shard>, args: &Arguments) -> Result<Vec<Shard>, Failure> {
     let first = shards.first().expect("at least one input");
     let expected_dictionary = match dictionary(&first.header) {
@@ -302,7 +351,10 @@ fn check_and_reorder(shards: Vec<Shard>, args: &Arguments) -> Result<Vec<Shard>,
     let mut shards = shards;
     if args.reorder_input_by_first_variant {
         // The comparator answers 1 whenever the left file is empty, so every empty file sorts
-        // last, and `List.sort` is stable so files that tie keep their order.
+        // last, and `List.sort` is stable so files that tie keep their order. Rust's `sort_by`
+        // is stable too, and takes a closure answering `Ordering::{Less, Equal, Greater}` where
+        // Java answers a negative, zero or positive `int`; `answer.cmp(&0)` converts one to the
+        // other.
         shards.sort_by(
             |left, right| match (left.records.first(), right.records.first()) {
                 (None, None) => std::cmp::Ordering::Equal,
@@ -316,6 +368,7 @@ fn check_and_reorder(shards: Vec<Shard>, args: &Arguments) -> Result<Vec<Shard>,
         );
     }
 
+    // `lastContext` and `lastFile` of the Java, kept as one pair since they are set together.
     let mut last: Option<(&VariantContext, &str)> = None;
     for shard in &shards {
         match dictionary(&shard.header) {
@@ -338,6 +391,8 @@ fn check_and_reorder(shards: Vec<Shard>, args: &Arguments) -> Result<Vec<Shard>,
             }
         }
 
+        // `samples.equals(theseSamples)` is list equality, so the same names in another column
+        // order also refuse. The message's two sets are `TreeSet`s with the other list removed.
         let these = samples(&shard.header);
         if these != expected_samples {
             let unique_to_first: Vec<String> = expected_samples
@@ -383,6 +438,14 @@ fn check_and_reorder(shards: Vec<Shard>, args: &Arguments) -> Result<Vec<Shard>,
 }
 
 /// `gatherConventionally`, which is every run where the block copying path was not chosen.
+///
+/// The first input's header, plus the comment, is the output header, and every record of every
+/// input is written in input order. Before each input, its first record must sort strictly after
+/// the last record already written:
+///
+/// ```java
+/// if (comparator.compare(vc, lastContext) <= 0) {
+/// ```
 fn gather_conventionally(shards: &[Shard], args: &Arguments) -> Result<String, Failure> {
     let first = shards.first().expect("at least one input");
     let mut header = first.header.clone();
@@ -423,6 +486,7 @@ fn gather_conventionally(shards: &[Shard], args: &Arguments) -> Result<String, F
         }
     }
 
+    // `map_err` rewrites the error half of a `Result` and leaves a success alone.
     write_vcf(&header, &records).map_err(|error| Failure::Exit {
         class: "java.lang.IllegalStateException".to_string(),
         message: format!("{error:?}"),
@@ -447,6 +511,7 @@ pub fn gather(inputs: &[Input], args: &Arguments) -> Result<String, Failure> {
     }
 
     let shards = check_and_reorder(shards, args)?;
+    // The last expression of a body, with no `;`, is its return value.
     gather_conventionally(&shards, args)
 }
 

@@ -3,7 +3,8 @@
 //! Ported from `org.broadinstitute.hellbender.tools.walkers.haplotypecaller.ramps.OffRampBase`,
 //! `PreFilterOffRamp` and `AssemblerOffRamp`, and from
 //! `org.broadinstitute.hellbender.utils.haplotype.HaplotypeBAMWriter` with its
-//! `HaplotypeBAMDestination` and `SAMFileDestination`, at GATK 4.6.2.0.
+//! `HaplotypeBAMDestination` and `SAMFileDestination`, at GATK 4.7.0.0; those files, and the on
+//! ramps' `OnRampBase`, `PostFilterOnRamp` and `PostAssemblerOnRamp`, are unchanged since 4.6.2.0.
 //!
 //! An off ramp is a zip. Each region it is handed adds an object to the `regions` array of an
 //! `info.json` written last, and, for the pre-filter ramp, CSV entries under a directory named for
@@ -16,6 +17,27 @@
 //! keys come out in the iteration order of a `java.util.HashMap` of strings (see
 //! [`gatk_engine::java_hash`] for what that order rests on), an object or array with exactly one
 //! member is written on one line, and anything longer puts each member on its own line, indented.
+//!
+//! The second half of the file reads such a zip back ([`OnRamp`]): `info.json` with a small parser
+//! of its own, the CSV entries split on commas, and the haplotype BAM decoded in memory.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&str` and `&[T]` are borrowed, read-only views of a string and of an array; the caller keeps
+//!   ownership. `&mut self` is a method that may change its object, and only one such borrow can
+//!   exist at a time. `String` and `Vec<T>` are the owned, growable versions;
+//! - `Option<T>` is "a value or nothing" (Java's nullable reference, checked by the compiler) and
+//!   `Result<T, String>` "a value or an error message"; this file models each Java exception as an
+//!   error string that starts with the exception's class name;
+//! - `?` after a call returns its error to the caller at once, Java's `throws` at one call site;
+//!   `.map_err(..)` rewrites that error first, `.ok_or(..)` turns a "nothing" into an error;
+//! - `let Some(x) = y else { ... };` takes the value out of `y` or runs the block, which must leave
+//!   (`continue`, `return`); Java has no single construct for it;
+//! - `|a| ...` is a closure, Java's lambda; `.iter().map(..).collect()` is Java's stream, map and
+//!   collect, and `.then_with(..)` is `Comparator.thenComparing`, consulted only on a tie;
+//! - `match` must cover every case of what it inspects, so an `enum`'s cases are listed in full;
+//! - `x as i64` is a numeric cast; widening casts such as `i32` to `i64` are exact;
+//! - a function's last expression is its return value; `return` is only written for early exits.
 
 use gatk_engine::allele_likelihoods::AlleleLikelihoods;
 use gatk_engine::assembly_region::AssemblyRegion;
@@ -27,7 +49,8 @@ use htsjdk_bam::header::{ProgramRecord, ReadGroup, SamHeader};
 use htsjdk_bam::record::BamRecord;
 use htsjdk_bam::tag::{Tag, TagValue};
 
-/// A value in `info.json`.
+/// A value in `info.json`, as an off ramp builds it: the four kinds the ramps `put` (an `int`,
+/// a `String`, a `JSONObject`, a `JSONArray`). An interval is put as its `toString()`, a string.
 #[derive(Debug, Clone)]
 pub enum Json {
     Int(i64),
@@ -45,7 +68,8 @@ impl JsonObject {
         JsonObject(JavaHashMap::new())
     }
 
-    /// `put`: a new key takes its bucket's last place, an existing one keeps its own.
+    /// `JSONObject.put`: a new key takes its bucket's last place, an existing one keeps its own.
+    /// That is `java.util.HashMap.put`, which decides the order the keys are written in.
     pub fn put(&mut self, key: &str, value: Json) {
         self.0.insert(key.to_string(), value);
     }
@@ -59,9 +83,21 @@ impl JsonObject {
     }
 
     /// `OffRampBase.addInfo`: a dotted name walks down nested objects, making the missing ones.
+    ///
+    /// ```java
+    /// if (!parent.has(toks[tokIndex])) {
+    ///     parent.put(toks[tokIndex], new JSONObject());
+    /// }
+    /// parent = parent.getJSONObject(toks[tokIndex]);
+    /// ```
+    ///
+    /// Java's `name.split("\\.")` drops trailing empty parts and Rust's `split('.')` keeps them;
+    /// the names the ramps pass (`<name>.readCount`, `<name>.samples.<sample>`) end in no dot.
     pub fn put_path(&mut self, name: &str, value: Json) {
         let mut parts: Vec<&str> = name.split('.').collect();
         let last = parts.pop().expect("a name has at least one part");
+        // `object` is a writable borrow that is moved one level down on each step, the Java's
+        // `parent = parent.getJSONObject(...)`.
         let mut object = self;
         for part in parts {
             if !object.0.contains_key(&part.to_string()) {
@@ -75,7 +111,7 @@ impl JsonObject {
         object.put(last, value);
     }
 
-    /// The text, at an indent of two.
+    /// The text, at an indent of two: `JSONObject.toString(2)`, as `OffRampBase.close` writes it.
     pub fn to_text(&self) -> String {
         let mut out = String::new();
         write_object(self, 2, 0, &mut out);
@@ -83,6 +119,8 @@ impl JsonObject {
     }
 }
 
+/// A JSON string literal. The escapes are those the reference's files show; the strings the ramps
+/// write (contig names, intervals, sample names) are not expected to need any.
 fn quote(text: &str, out: &mut String) {
     out.push('"');
     for c in text.chars() {
@@ -92,6 +130,8 @@ fn quote(text: &str, out: &mut String) {
             '\n' => out.push_str("\\n"),
             '\t' => out.push_str("\\t"),
             '\r' => out.push_str("\\r"),
+            // A guard: this arm takes any other control character, written as `\u` and four
+            // lower-case hex digits.
             c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
             c => out.push(c),
         }
@@ -99,6 +139,8 @@ fn quote(text: &str, out: &mut String) {
     out.push('"');
 }
 
+/// One value at the current indent. `factor` is the indent step (two), `indent` the column the
+/// enclosing member starts at.
 fn write_value(value: &Json, factor: usize, indent: usize, out: &mut String) {
     match value {
         Json::Int(i) => out.push_str(&i.to_string()),
@@ -108,8 +150,12 @@ fn write_value(value: &Json, factor: usize, indent: usize, out: &mut String) {
     }
 }
 
+/// An object: `{}` when empty, `{"key": value}` on one line for one member, otherwise one member
+/// per line at `indent + factor` and the closing brace back at `indent`. A lone member is written
+/// at the enclosing indent, not one step in, so its own children line up with the parent's.
 fn write_object(object: &JsonObject, factor: usize, indent: usize, out: &mut String) {
     out.push('{');
+    // The `HashMap`'s iteration order, collected once so the count is known before writing.
     let entries: Vec<(&String, &Json)> = object.0.iter().collect();
     if entries.len() == 1 {
         quote(entries[0].0, out);
@@ -133,6 +179,7 @@ fn write_object(object: &JsonObject, factor: usize, indent: usize, out: &mut Str
     out.push('}');
 }
 
+/// An array, laid out by the same rule as [`write_object`]'s.
 fn write_array(array: &[Json], factor: usize, indent: usize, out: &mut String) {
     out.push('[');
     if array.len() == 1 {
@@ -154,6 +201,13 @@ fn write_array(array: &[Json], factor: usize, indent: usize, out: &mut String) {
 }
 
 /// `AssemblyRegion.toString()`: its span, whether it is active, and how many reads it holds.
+///
+/// ```java
+/// return "AssemblyRegion "  + activeSpan.toString() + " active?=" + isActive
+///     + " nReads=" + reads.size();
+/// ```
+///
+/// (One Java line, `AssemblyRegion.java:157`, wrapped here at the `+`.)
 pub fn region_description(region: &AssemblyRegion) -> String {
     format!(
         "AssemblyRegion {} active?={} nReads={}",
@@ -168,12 +222,13 @@ fn interval_text(interval: &SimpleInterval) -> String {
     format!("{}:{}-{}", interval.contig, interval.start, interval.end)
 }
 
-/// `RampBase.getLocFilenameSuffix`.
+/// `RampBase.getLocFilenameSuffix`: `contig-start-end`, the directory a region's entries go in.
 fn location_suffix(location: &SimpleInterval) -> String {
     format!("{}-{}-{}", location.contig, location.start, location.end)
 }
 
-/// Which off ramp a file is.
+/// Which off ramp a file is: `PreFilter` is `PreFilterOffRamp`, the two assembler ramps are both
+/// `AssemblerOffRamp`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OffRampType {
     PreFilter,
@@ -183,6 +238,9 @@ pub enum OffRampType {
 
 impl OffRampType {
     /// `OffRampTypeEnum`'s names; `NONE` is no ramp.
+    ///
+    /// The outer `Option` is whether the name is known at all (`None`: an unknown name), the inner
+    /// one whether it names a ramp (`Some(None)`: `NONE`).
     pub fn parse(name: &str) -> Option<Option<OffRampType>> {
         match name {
             "NONE" => Some(None),
@@ -214,6 +272,8 @@ const HAPLOTYPE_READ_GROUP: &str = "ArtificialHaplotypeRG";
 const HAPLOTYPE_SAMPLE_TAG: &str = "HC";
 
 impl OffRamp {
+    /// `new OffRampBase(filename)`: an empty `regions` array. Nothing is written until
+    /// [`OffRamp::write`], where the Java opens the zip at once and fills it as it goes.
     pub fn new(kind: OffRampType, compression: (u32, htsjdk_bgzf::Deflater)) -> OffRamp {
         OffRamp {
             compression,
@@ -226,6 +286,13 @@ impl OffRamp {
         }
     }
 
+    /// The region's object both ramps start from:
+    ///
+    /// ```java
+    /// regionObj.put("contig", loc.getContig());
+    /// regionObj.put("start", loc.getStart());
+    /// regionObj.put("end", loc.getEnd());
+    /// ```
     fn region_object(location: &SimpleInterval) -> JsonObject {
         let mut region = JsonObject::new();
         region.put("contig", Json::Str(location.contig.clone()));
@@ -234,12 +301,20 @@ impl OffRamp {
         region
     }
 
+    /// `OffRampBase.addEntry`: the entry is named under the region's directory, or at the root when
+    /// there is no region. The bytes are kept in order until the zip is written.
     fn add_entry(&mut self, location: Option<&SimpleInterval>, name: &str, bytes: Vec<u8>) {
         let prefix = location.map_or(String::new(), |l| format!("{}/", location_suffix(l)));
         self.entries.push((format!("{prefix}{name}"), bytes));
     }
 
     /// `OffRampBase.addHaplotypes`: the haplotypes as CSV, one row each.
+    ///
+    /// ```java
+    /// pw.println(String.format("%s,%d,%d,%d,%s,%s,%s,%d",
+    /// ```
+    ///
+    /// The score is `Double.toString(haplotype.getScore())`, hence `java_double_to_string`.
     fn add_haplotypes(&mut self, location: &SimpleInterval, name: &str, haplotypes: &[Haplotype]) {
         let mut text =
             String::from("contig,start,end,ref,cigar,bases,score,alignmentStartHapwrtRef\n");
@@ -264,6 +339,10 @@ impl OffRamp {
 
     /// `PreFilterOffRamp.add`: the likelihoods' haplotypes, and for each sample its reads and its
     /// matrix, under the region; the counts and the genotyping spans in `info.json`.
+    ///
+    /// The reads table is the `WIDE_READS = false` branch, `name,supp`. Both tables are written
+    /// from the sample matrix's own evidence list, in its order. Unlike the Java, which builds the
+    /// `msg` text for the wide branch on every sample, nothing is built for the branch not taken.
     pub fn add_likelihoods(
         &mut self,
         location: &SimpleInterval,
@@ -288,6 +367,7 @@ impl OffRamp {
             &format!("{name}.r4gp"),
             Json::Str(interval_text(region_for_genotyping.padded_span())),
         );
+        // `value.alleles()`, one clone per allele index.
         let haplotypes: Vec<Haplotype> = (0..likelihoods.number_of_alleles())
             .filter_map(|index| likelihoods.get_allele(index).cloned())
             .collect();
@@ -303,6 +383,7 @@ impl OffRamp {
             counts.put("readCount", Json::Int(reads.len() as i64));
             region.put_path(&base, Json::Object(counts));
 
+            // `read.isSupplementaryAlignment() ? 1 : 0`; 0x800 is the SAM supplementary flag.
             let supplementary = |read: &BamRecord| if read.flags & 0x800 != 0 { 1 } else { 0 };
             let mut names = String::from("name,supp\n");
             for read in reads {
@@ -310,6 +391,8 @@ impl OffRamp {
             }
             self.add_entry(Some(location), &format!("{base}.reads"), names.into_bytes());
 
+            // `addSampleMatrix`: a header `read,supp,h0,h1,...`, then per read its name, its flag
+            // and its likelihood against each haplotype, each `Double.toString`.
             let mut matrix = String::from("read,supp");
             for allele in 0..likelihoods.number_of_alleles() {
                 matrix.push_str(&format!(",h{allele}"));
@@ -338,6 +421,16 @@ impl OffRamp {
 
     /// `AssemblerOffRamp.add`: the assembly's spans in `info.json` and its haplotypes in the BAM;
     /// before the assembler there is no assembly, and the region's object holds its place alone.
+    ///
+    /// ```java
+    /// if ( assemblerObj.length() != 0 ) {
+    ///     regionObj.put(name, assemblerObj);
+    /// }
+    /// ```
+    ///
+    /// `assembly` is the result set's padded reference span, its region for genotyping and its
+    /// haplotypes, together or not at all, as the Java's `value != null`. `description` is the
+    /// assembly region's `toString()`, which becomes the haplotype reads' `CR` tag.
     #[allow(clippy::too_many_arguments)]
     pub fn add_assembly(
         &mut self,
@@ -379,6 +472,18 @@ impl OffRamp {
     /// `HaplotypeBAMWriter.writeHaplotypesAsReads` for `ALL_POSSIBLE_HAPLOTYPES` with the special
     /// tag on and no best haplotypes: every haplotype as a reverse-strand read at mapping quality
     /// zero, named and tagged as the writer names and tags them.
+    ///
+    /// ```java
+    /// record.setReadName(output.getHaplotypeSampleTag() + "_" + uniqueNameCounter++ + "_"
+    ///     + haplotype_count);
+    /// record.setAttribute(output.getHaplotypeSampleTag(), haplotype.hashCode());
+    /// ```
+    ///
+    /// (The first statement is one Java line, `HaplotypeBAMWriter.java:235`, wrapped at the `+`.)
+    ///
+    /// The counter runs across the whole file and the index restarts at each region. The `HC` tag
+    /// is `Haplotype.hashCode`, which is `Arrays.hashCode(getBases())`. The Java's `XC` tag, set
+    /// only for a haplotype `isCollapsed()`, is never written here.
     fn write_haplotypes(
         &mut self,
         location: &SimpleInterval,
@@ -387,10 +492,13 @@ impl OffRamp {
         haplotypes: &[Haplotype],
         header: &SamHeader,
     ) {
+        // The writer is opened on the first region that has an assembly (`haplotypeBAMWriter ==
+        // null`), so the header is built from that region's source header and kept.
         let output_header = self
             .haplotype_header
             .get_or_insert_with(|| haplotype_bam_header(header))
             .clone();
+        // `getSequenceIndex`, -1 for a contig the dictionary does not hold.
         let reference_index = output_header
             .sequences
             .iter()
@@ -409,11 +517,13 @@ impl OffRamp {
                 mapping_quality: 0,
                 cigar: haplotype.cigar().cloned().unwrap_or_default(),
                 read_bases: bases.to_vec(),
-                // `Utils.dupBytes((byte) '!', length)` as the qualities: the byte 33, a phred of 33.
+                // `Utils.dupBytes((byte) '!', length)` as the qualities: the byte 33, a phred of
+                // 33.
                 base_qualities: vec![b'!'; bases.len()],
                 ..BamRecord::default()
             };
             self.name_counter += 1;
+            // `as i64` widens the `int` hash exactly; a tag holds any integer width.
             record.tags.insert(
                 Tag::new(b"HC"),
                 TagValue::Int(byte_array_hash_code(&bases) as i64),
@@ -425,6 +535,8 @@ impl OffRamp {
             record
                 .tags
                 .insert(Tag::new(b"CR"), TagValue::Str(description.to_string()));
+            // `EXT_SPECIAL_TAG`: reference flag, score, offset and the callable region's
+            // coordinates, so the post-assembler on ramp can restore what a BAM record lacks.
             record.tags.insert(
                 Tag::new(b"XS"),
                 TagValue::Str(format!(
@@ -445,6 +557,8 @@ impl OffRamp {
         let mut entries = self.entries.clone();
         if let Some(header) = &self.haplotype_header {
             let mut records = self.haplotype_records.clone();
+            // The destination's header is coordinate-sorted, so the writer sorts the records
+            // before they reach the file.
             records.sort_by(htsjdk_bam::coordinate::compare);
             // The writer indexes as it writes (`createBamOutIndex`), and an index built that way
             // ends a chunk inside the block its last record closed, where one built from the
@@ -470,7 +584,8 @@ impl OffRamp {
         Ok(entries)
     }
 
-    /// `close()`: the zip, deflated, at `path`.
+    /// `close()`: the zip, deflated, at `path`, its parent directories made first as the
+    /// constructor's `getParentFile().mkdirs()` makes them.
     pub fn write(&self, path: &std::path::Path) -> Result<(), String> {
         use std::io::Write;
         if let Some(parent) = path.parent() {
@@ -491,6 +606,12 @@ impl OffRamp {
 
 /// `HaplotypeBAMDestination`'s header: the source's dictionary, coordinate order, its read groups
 /// and the haplotypes' own, and its program records and the writer's.
+///
+/// ```java
+/// final SAMReadGroupRecord rgRec = new SAMReadGroupRecord(haplotypeReadGroupID.get());
+/// rgRec.setSample(haplotypeSampleTag);
+/// rgRec.setSequencingCenter("BI");
+/// ```
 fn haplotype_bam_header(source: &SamHeader) -> SamHeader {
     let mut header = SamHeader::new();
     header.set_sort_order("coordinate");
@@ -529,7 +650,7 @@ mod tests {
     }
 }
 
-/// Which on ramp a file is.
+/// Which on ramp a file is: `PostFilterOnRamp` or `PostAssemblerOnRamp`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OnRampType {
     PostFilter,
@@ -537,7 +658,7 @@ pub enum OnRampType {
 }
 
 impl OnRampType {
-    /// `OnRampTypeEnum`'s names; `NONE` is no ramp.
+    /// `OnRampTypeEnum`'s names; `NONE` is no ramp. The nesting is [`OffRampType::parse`]'s.
     pub fn parse(name: &str) -> Option<Option<OnRampType>> {
         match name {
             "NONE" => Some(None),
@@ -549,6 +670,9 @@ impl OnRampType {
 }
 
 /// A value read back from `info.json`: what the off ramps write, objects in file order.
+///
+/// File order is enough here because the on ramp only looks keys up; it never writes the object
+/// back out.
 #[derive(Debug, Clone, PartialEq)]
 pub enum JsonValue {
     Int(i64),
@@ -558,7 +682,7 @@ pub enum JsonValue {
 }
 
 impl JsonValue {
-    /// `JSONObject.has(key)` then `get(key)`.
+    /// `JSONObject.has(key)` then `get(key)`: the first member of that name, or nothing.
     pub fn get(&self, key: &str) -> Option<&JsonValue> {
         match self {
             JsonValue::Object(members) => members.iter().find(|(k, _)| k == key).map(|(_, v)| v),
@@ -566,7 +690,8 @@ impl JsonValue {
         }
     }
 
-    /// `getString(key)`.
+    /// `getString(key)`. The error text is the one this port reports for a missing or non-string
+    /// member.
     pub fn string(&self, key: &str) -> Result<&str, String> {
         match self.get(key) {
             Some(JsonValue::Str(text)) => Ok(text),
@@ -584,7 +709,13 @@ impl JsonValue {
 }
 
 /// The JSON the off ramps write: objects, arrays, strings and integers.
+///
+/// Written here rather than taken from a library for the reason the module header gives. It is
+/// not a general parser: there are no floats, booleans or `null`, and a number is a run of `-`
+/// and digits read as an `i64`.
 fn parse_json(text: &str) -> Result<JsonValue, String> {
+    // A cursor over the text's bytes. `'a` is a lifetime: it says the parser borrows `bytes` and
+    // cannot outlive the text it was made from.
     struct Parser<'a> {
         bytes: &'a [u8],
         at: usize,
@@ -620,6 +751,8 @@ fn parse_json(text: &str) -> Result<JsonValue, String> {
                             b'r' => out.push(b'\r'),
                             b'b' => out.push(8),
                             b'f' => out.push(12),
+                            // `\uXXXX`: four hex digits, a code that is no character (a lone
+                            // surrogate half) becoming U+FFFD.
                             b'u' => {
                                 let hex = std::str::from_utf8(
                                     self.bytes.get(self.at..self.at + 4).ok_or("a short \\u")?,
@@ -710,7 +843,9 @@ fn parse_json(text: &str) -> Result<JsonValue, String> {
     parser.value()
 }
 
-/// `new SimpleInterval(String)` for the `contig:start-end` the ramps write.
+/// `new SimpleInterval(String)` for the `contig:start-end` the ramps write: the LAST colon
+/// splits the contig off, commas in the numbers are dropped. A contig name holding a colon or a
+/// bare contig with no range is beyond what the ramps write and is refused here.
 fn parse_interval(text: &str) -> Result<SimpleInterval, String> {
     let bad = || format!("not an interval: {text}");
     let (contig, range) = text.rsplit_once(':').ok_or_else(bad)?;
@@ -719,7 +854,11 @@ fn parse_interval(text: &str) -> Result<SimpleInterval, String> {
     SimpleInterval::new(contig, number(start)?, number(end)?).ok_or_else(bad)
 }
 
-/// `TextCigarCodec.decode`.
+/// `TextCigarCodec.decode` (htsjdk 5.0.0), for the CIGARs `addHaplotypes` writes.
+///
+/// It is looser than the Java on text the ramps never write: the Java requires a digit before
+/// every operator and throws on trailing digits, where this reads a bare operator as length zero
+/// and drops trailing digits.
 fn parse_cigar(text: &str) -> Result<htsjdk_bam::cigar::Cigar, String> {
     use htsjdk_bam::cigar::{Cigar, CigarElement, Op};
     if text == "*" {
@@ -751,6 +890,13 @@ fn parse_cigar(text: &str) -> Result<htsjdk_bam::cigar::Cigar, String> {
 }
 
 /// `OnRampBase.CSVReader`: a header of column names, then rows split on commas.
+///
+/// ```java
+/// row = line.split(",");
+/// ```
+///
+/// Java's `split` drops trailing empty fields and Rust's `split` keeps them, so a row ending in a
+/// comma is one field longer here. The tables the off ramps write end in no empty field.
 struct CsvTable {
     columns: Vec<String>,
     rows: Vec<Vec<String>>,
@@ -772,7 +918,8 @@ impl CsvTable {
         Ok(CsvTable { columns, rows })
     }
 
-    /// `getColumn(name)`: the last column of that name, as the `LinkedHashMap` keeps it.
+    /// `getColumn(name)`: the last column of that name, as the `LinkedHashMap` keeps it
+    /// (`columns.put(toks[n], n)` overwrites an earlier position).
     fn column(&self, name: &str) -> Result<usize, String> {
         self.columns
             .iter()
@@ -781,14 +928,16 @@ impl CsvTable {
     }
 }
 
-/// `Double.parseDouble`, for the `Double.toString` the ramps write.
+/// `Double.parseDouble`, for the `Double.toString` the ramps write. `parseDouble` ignores
+/// surrounding whitespace, hence `trim`; Rust's parse also reads `NaN` and `Infinity`, the two
+/// non-finite texts `Double.toString` produces.
 fn parse_double(text: &str) -> Result<f64, String> {
     text.trim()
         .parse::<f64>()
         .map_err(|_| format!("java.lang.NumberFormatException: For input string: \"{text}\""))
 }
 
-/// `Integer.parseInt`.
+/// `Integer.parseInt`, which, unlike `parseDouble`, does not trim.
 fn parse_int(text: &str) -> Result<i32, String> {
     text.parse::<i32>()
         .map_err(|_| format!("java.lang.NumberFormatException: For input string: \"{text}\""))
@@ -801,6 +950,7 @@ pub struct OnRamp {
     entries: Vec<(String, Vec<u8>)>,
     regions: Vec<JsonValue>,
     /// `regionIndex`: `contig:start-end` to the region's place in `regions`, the last one winning.
+    /// The Java map is a `LinkedHashMap`; it is only looked up, so a plain `HashMap` serves.
     region_index: std::collections::HashMap<String, usize>,
     /// The haplotype BAM's records in file order, with its contig names, for the post-assembler
     /// ramp.
@@ -811,6 +961,10 @@ pub struct OnRamp {
 impl OnRamp {
     /// `new OnRampBase(filename)`: the zip opened and `info.json` read; the post-assembler ramp
     /// also copies out its haplotype BAM and index.
+    ///
+    /// Every entry is read into memory at once, where the Java reads each on demand. The index is
+    /// only checked for presence: the records are read in full and filtered by span in
+    /// [`OnRamp::bam_haplotypes`] rather than queried through it.
     pub fn open(kind: OnRampType, path: &std::path::Path) -> Result<OnRamp, String> {
         use std::io::Read;
         let file = std::fs::File::open(path).map_err(|e| format!("java.io.IOException: {e}"))?;
@@ -833,9 +987,11 @@ impl OnRamp {
             haplotype_contigs: Vec::new(),
         };
         let info = parse_json(&String::from_utf8_lossy(ramp.entry(None, "info.json")?))?;
+        // `info.getJSONArray("regions")`: anything else there is the Java's `JSONException`.
         let Some(JsonValue::Array(regions)) = info.get("regions") else {
             return Err("JSONObject[\"regions\"] is not a JSONArray.".to_string());
         };
+        // `regionKey`, `String.format("%s:%d-%d", ...)` of the object's own fields.
         for (index, region) in regions.iter().enumerate() {
             let key = format!(
                 "{}:{}-{}",
@@ -849,6 +1005,8 @@ impl OnRamp {
         if kind == OnRampType::PostAssembler {
             let bam = ramp.entry(None, "haplotypes.bam")?.to_vec();
             ramp.entry(None, "haplotypes.bai")?;
+            // The Java copies the BAM out to a file and opens it with its index; here it is
+            // decompressed and read in memory.
             let plain = htsjdk_bgzf::read::decompress_all(&bam).map_err(|e| format!("{e:?}"))?;
             let reader =
                 htsjdk_bam::reader::BamReader::new(&plain).map_err(|e| format!("{e:?}"))?;
@@ -868,6 +1026,10 @@ impl OnRamp {
     }
 
     /// `getEntry(loc, name)`: the first entry of that name, under the region's directory.
+    ///
+    /// ```java
+    /// throw new IOException("no such: " + name);
+    /// ```
     fn entry(&self, location: Option<&SimpleInterval>, name: &str) -> Result<&[u8], String> {
         let prefix = location.map_or(String::new(), |l| format!("{}/", location_suffix(l)));
         let full = format!("{prefix}{name}");
@@ -878,13 +1040,22 @@ impl OnRamp {
             .ok_or_else(|| format!("java.io.IOException: no such: {full}"))
     }
 
-    /// `hasRegion(loc)`.
+    /// `hasRegion(loc)`: whether `loc.toString()`, `contig:start-end`, is a key of the index.
     pub fn has_region(&self, location: &SimpleInterval) -> bool {
         self.region_index.contains_key(&interval_text(location))
     }
 
     /// `getRegion(loc, name)`: the region's object, then down the dotted path; nothing where a
     /// level is missing.
+    ///
+    /// ```java
+    /// if ( !obj.has(key) )
+    ///     return null;
+    /// obj = obj.getJSONObject(key);
+    /// ```
+    ///
+    /// The Java's `getJSONObject` throws when a step, the last one included, is not an object;
+    /// here a step that is not an object answers nothing and the last step may be any value.
     pub fn region(&self, location: &SimpleInterval, name: &str) -> Option<&JsonValue> {
         let index = self.region_index.get(&interval_text(location))?;
         let mut object = self.regions.get(*index)?;
@@ -894,7 +1065,8 @@ impl OnRamp {
         Some(object)
     }
 
-    /// `getHaplotypes(loc, name)`: the haplotype table, one haplotype per row.
+    /// `getHaplotypes(loc, name)`: the haplotype table, one haplotype per row, its fields set in
+    /// the Java's order (location, score, CIGAR, offset).
     pub fn haplotypes(
         &self,
         location: &SimpleInterval,
@@ -911,6 +1083,7 @@ impl OnRamp {
         let offset = table.column("alignmentStartHapwrtRef")?;
         let mut haplotypes = Vec::new();
         for row in &table.rows {
+            // `row[column]`: a short row is the Java's `ArrayIndexOutOfBoundsException`.
             let cell = |i: usize| -> Result<&str, String> {
                 row.get(i).map(String::as_str).ok_or_else(|| {
                     format!("java.lang.ArrayIndexOutOfBoundsException: Index {i} out of bounds for length {}", row.len())
@@ -939,10 +1112,21 @@ impl OnRamp {
 
     /// `PostAssemblerOnRamp.readHaplotypes(region)`: the haplotype reads overlapping the region,
     /// in file order, keeping those whose special tag names this very region.
+    ///
+    /// ```java
+    /// if ( !specialAttrToks[3].equals(locStr) )
+    ///     continue;;
+    /// ```
+    ///
+    /// The Java's `query(contig, start, end, false)` is an overlap query; the condition below is
+    /// the same overlap test over the records in file order, which a coordinate-sorted file
+    /// returns in the same order. A record with no `XS` tag is kept with the defaults the Java
+    /// starts from: not reference, no score, offset zero.
     pub fn bam_haplotypes(&self, location: &SimpleInterval) -> Result<Vec<Haplotype>, String> {
         let wanted = interval_text(location);
         let mut haplotypes = Vec::new();
         for record in &self.haplotype_records {
+            // An unplaced record (reference index -1, which `try_from` refuses) is in no region.
             let Some(contig) = usize::try_from(record.reference_index)
                 .ok()
                 .and_then(|i| self.haplotype_contigs.get(i))
@@ -959,6 +1143,8 @@ impl OnRamp {
             let mut is_reference = false;
             let mut score = f64::NAN;
             let mut offset = 0;
+            // `tokens.get(n)` is `None` past the end, where the Java's `specialAttrToks[n]` throws;
+            // the tag this file writes always has four fields.
             if let Some(TagValue::Str(special)) = record.tags.get(Tag::new(b"XS")) {
                 let tokens: Vec<&str> = special.split(',').collect();
                 is_reference = parse_int(tokens.first().copied().unwrap_or(""))? != 0;
@@ -988,6 +1174,14 @@ impl OnRamp {
 
     /// `PostAssemblerOnRamp.parseAssemblyRegion`: an active region of the object's two spans,
     /// with no reads.
+    ///
+    /// ```java
+    /// return new AssemblyRegion(
+    ///         new SimpleInterval(obj.getString("activeSpan")),
+    ///         new SimpleInterval(obj.getString("paddedSpan")),
+    ///         true,
+    ///         header);
+    /// ```
     pub fn assembly_region(object: &JsonValue) -> Result<AssemblyRegion, String> {
         AssemblyRegion::new(
             parse_interval(object.string("activeSpan")?)?,
@@ -997,7 +1191,8 @@ impl OnRamp {
         .map_err(|e| format!("{e:?}"))
     }
 
-    /// `getRegion(span, name).getString(key)` as an interval.
+    /// `getRegion(span, name).getString(key)` as an interval; a missing region or path is the
+    /// Java's `NullPointerException` on the `null` that `getRegion` returns.
     pub fn region_interval(
         &self,
         location: &SimpleInterval,
@@ -1013,6 +1208,17 @@ impl OnRamp {
     /// `PostFilterOnRamp.getAlleleLikelihoods`: the haplotypes, then per sample the reads the
     /// table names (looked up by name and supplementary flag, first among the genotyping reads
     /// then among all the region's, a read found in neither skipped) and their matrix.
+    ///
+    /// `IGNORE_DANGLING_READS` is `true` in the reference, so both of its branches here are the
+    /// skipping ones. A matrix row whose name is not the next expected read is passed over:
+    ///
+    /// ```java
+    /// if ( !readName.equals(reads.get(row).getName()) ) {
+    ///     if (IGNORE_DANGLING_READS) {
+    /// ```
+    ///
+    /// The Java allocates one more column than there are reads and copies the last read's values
+    /// into it (`matrix[i][row] = matrix[i][row - 1]`); this allocates exactly one per read.
     pub fn allele_likelihoods(
         &self,
         location: &SimpleInterval,
@@ -1025,6 +1231,8 @@ impl OnRamp {
         let supp_name = |read_name: &str, supplementary: bool| {
             format!("{read_name},{}", if supplementary { 1 } else { 0 })
         };
+        // `collectReadNames`: name plus supplementary flag to read, a later read replacing an
+        // earlier one of the same key, as `LinkedHashMap.put` does.
         let by_name = |groups: &[Vec<BamRecord>]| {
             let mut map: std::collections::HashMap<String, BamRecord> =
                 std::collections::HashMap::new();
@@ -1051,6 +1259,8 @@ impl OnRamp {
                     row.get(name_column).map_or("", String::as_str),
                     parse_int(row.get(supp_column).map_or("", String::as_str))? != 0,
                 );
+                // `readsByName` first, then `readsByName2`; `or_else` consults the second map
+                // only when the first has nothing.
                 if let Some(read) = first.get(&key).or_else(|| second.get(&key)) {
                     enriched.push(read.clone());
                 }
@@ -1065,6 +1275,7 @@ impl OnRamp {
                     haplotypes.len()
                 ));
             }
+            // `vec![x; n]` is n copies of x: a haplotypes-by-reads matrix of zeros.
             let mut sample_values = vec![vec![0.0; enriched.len()]; haplotypes.len()];
             let mut row_index = 0;
             for row in &matrix.rows {
@@ -1108,6 +1319,10 @@ impl OnRamp {
 
 /// `RampUtils.compareHaplotypes`: the same count, and pairwise equal once both are sorted by
 /// `HaplotypeComparator` (reference flag, contig, start, end, score, bases).
+///
+/// Unlike [`crate::ramped_haplotype_caller::compare_haplotypes`], this one works on the engine's
+/// `Haplotype` and returns an `Ordering`, so only the comparison's sign exists. Contigs compare
+/// as `String.compareTo` does, by UTF-16 code unit (`compare_strings`).
 pub fn compare_haplotypes(
     first: &[gatk_engine::haplotype::Haplotype],
     second: &[gatk_engine::haplotype::Haplotype],
@@ -1127,6 +1342,7 @@ pub fn compare_haplotypes(
         };
         let (ca, sa, ea) = location(a);
         let (cb, sb, eb) = location(b);
+        // `bool as i32` is 0 or 1, the Java's `isReference() ? 1 : 0`.
         (a.is_reference() as i32 - b.is_reference() as i32)
             .cmp(&0)
             .then_with(|| gatk_engine::java_hash::compare_strings(&ca, &cb))
@@ -1161,6 +1377,10 @@ pub fn compare_haplotypes(
 /// `RampUtils.compareReads`: the same count, and pairwise equal once both are sorted by
 /// `GATKReadComparator` (strand, name and span, bases, qualities, soft, aligned and unclipped
 /// ends).
+///
+/// The qualities are compared as bytes where the Java compares
+/// `new String(o1.getBaseQualitiesNoCopy())`; for bytes below 128, every Phred score a SAM can
+/// carry, the two orders agree.
 pub fn compare_reads(
     first: &[htsjdk_bam::record::BamRecord],
     second: &[htsjdk_bam::record::BamRecord],
@@ -1174,6 +1394,9 @@ pub fn compare_reads(
             second.len()
         ));
     }
+    // `GATKRead.commonToString`:
+    // `String.format("%s %s:%d-%d", getName(), getContig(), getStart(), getEnd())`, or
+    // `"<name> UNMAPPED"` for an unmapped read or one with an empty CIGAR.
     let common = |r: &htsjdk_bam::record::BamRecord| {
         let name = r.read_name.clone();
         if r.flags & 0x4 != 0 || r.cigar.elements.is_empty() {

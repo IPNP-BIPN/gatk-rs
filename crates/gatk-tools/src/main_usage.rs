@@ -29,12 +29,28 @@
 //!
 //! # The trailing lines
 //!
-//! The builder ends with a rule, and `println` then adds the newline that makes the last line
-//! blank. The listing therefore ends with a rule, a `KNRM` on its own line and an empty line, and
-//! a port that stopped at the rule is two lines short.
+//! The builder's last append is `WHITE`, the rule, a newline and `KNRM`, and then:
+//!
+//! ```java
+//! destinationStream.println(builder.toString());
+//! ```
+//!
+//! The listing therefore ends with the rule's line and then a line holding only `KNRM`, which
+//! shows as blank on a terminal. A port that stopped at the rule is one line short.
 //!
 //! Ported from `org.broadinstitute.hellbender.Main.printUsage` and
-//! `Main.getDisplaySummaryForTool`.
+//! `Main.getDisplaySummaryForTool` (GATK 4.7.0.0; `Main.java` is unchanged since 4.6.2.0).
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `format!("{GREEN}    {}", x)` is `String.format`: `{NAME}` inserts the constant of that
+//!   name, `{}` the next argument.
+//! - `match tool.maturity { .. }` picks one arm by the case of an `enum`, Java's `switch`, and the
+//!   build fails if a case is left out.
+//! - `sort_by(|a, b| ..)` sorts in place with the comparator written as a closure (Java's
+//!   lambda). It is a stable sort, as `Collections.sort` is.
+//! - `value.len()` counts BYTES, not characters. Every name and heading here is ASCII, where the
+//!   two agree; Java's `length()` counts UTF-16 units.
 
 use crate::main_usage_catalogue::{Group, Maturity, Tool, GROUPS, TOOLS};
 
@@ -60,6 +76,19 @@ fn pad(value: &str, width: usize) -> String {
 }
 
 /// `getDisplaySummaryForTool`, which is one line and two branches.
+///
+/// (`Main.java`, line breaks in the calls added here.)
+///
+/// ```java
+/// if (toolClass.getSimpleName().length() >= 45) {
+///     builder.append(String.format("%s    %s    %s%s\n",
+///             GREEN, annotatedToolName, summaryLine, KNRM));
+/// } else {
+///     builder.append(String.format("%s    %-45s%s%s\n",
+///             GREEN, annotatedToolName, summaryLine, KNRM));
+/// ```
+///
+/// The experimental test comes before the beta one, so a tool marked both reads EXPERIMENTAL.
 pub fn tool_line(tool: &Tool) -> String {
     let summary = match tool.maturity {
         Maturity::Experimental => {
@@ -78,6 +107,11 @@ pub fn tool_line(tool: &Tool) -> String {
 }
 
 /// `printUsage`'s group heading: the name with a colon, then the description.
+///
+/// ```java
+/// builder.append(String.format("%s%-48s %-45s%s\n", RED, programGroup.getName() + ":",
+///         programGroup.getDescription(), KNRM));
+/// ```
 pub fn group_heading(group: &Group) -> String {
     format!(
         "{WHITE}{RULE}\n{KNRM}{RED}{} {}{KNRM}\n",

@@ -1,7 +1,13 @@
 //! numpy 1.26.2's ziggurat tables for the standard normal (BSD 3-Clause),
 //! `random/src/distributions/ziggurat_constants.h`, generated from that header.
+//!
+//! The tables are data, not code, and are not commented line by line. They are read only by
+//! `Pcg64::standard_normal` in `numpy_random.rs`. The `allow` line below silences two style lints
+//! that a generated table of long literals would otherwise raise; it changes nothing compiled.
 #![allow(clippy::unreadable_literal, clippy::excessive_precision)]
 
+/// `ki_double`: per layer, the 52-bit magnitude below which a draw is accepted at once, without
+/// evaluating the density.
 pub const KI_DOUBLE: [u64; 256] = [
     0x000EF33D8025EF6A,
     0x0000000000000000,
@@ -261,6 +267,7 @@ pub const KI_DOUBLE: [u64; 256] = [
     0x000F1A5A4B331C4A,
 ];
 
+/// `wi_double`: per layer, the factor that scales a 52-bit magnitude to an `x` coordinate.
 pub const WI_DOUBLE: [f64; 256] = [
     8.68362706080130616677e-16,
     4.77933017572773682428e-17,
@@ -520,6 +527,8 @@ pub const WI_DOUBLE: [f64; 256] = [
     8.11384933765648418565e-16,
 ];
 
+/// `fi_double`: per layer, the unnormalised density `exp(-x*x/2)` at the layer's edge; the wedge
+/// test draws uniformly between two neighbouring entries and compares with the density at `x`.
 pub const FI_DOUBLE: [f64; 256] = [
     1.00000000000000000000e+00,
     9.77101701267671596263e-01,
@@ -779,5 +788,7 @@ pub const FI_DOUBLE: [f64; 256] = [
     1.26028593049859797236e-03,
 ];
 
+/// `ziggurat_nor_r`: the `x` where the base layer's tail begins, and its reciprocal
+/// `ziggurat_nor_inv_r`, which scales the tail's exponential draw.
 pub const ZIGGURAT_NOR_R: f64 = 3.6541528853610087963519472518;
 pub const ZIGGURAT_NOR_INV_R: f64 = 0.27366123732975827203338247596;

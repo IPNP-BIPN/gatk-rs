@@ -1,13 +1,14 @@
-//! Ported from `org.broadinstitute.hellbender.tools.walkers.qc.TransferReadTags` (GATK 4.6.2.0).
+//! Ported from `org.broadinstitute.hellbender.tools.walkers.qc.TransferReadTags` (GATK 4.7.0.0;
+//! `TransferReadTags.java` is unchanged since 4.6.2.0).
 //!
 //! The tenth whole tool of the record-transform archetype, and the first that is not a walker.
 //!
 //! # The traversal is the tool's own
 //!
-//! It extends `GATKTool` and overrides `traverse()` rather than inheriting a walker's, so **none of
-//! the archetype's usual machinery runs**: no `CountingReadFilter`, no read transformer, no interval
-//! bound. `directlyAccessEngineReadsDataSource().iterator()` is the whole traversal on the aligned
-//! side, and a second `ReadsPathDataSource` is opened by hand for the unmapped side.
+//! It extends `GATKTool` and overrides `traverse()` rather than inheriting a walker's, so **none
+//! of the archetype's usual machinery runs**: no `CountingReadFilter`, no read transformer, no
+//! interval bound. `directlyAccessEngineReadsDataSource().iterator()` is the whole traversal on
+//! the aligned side, and a second `ReadsPathDataSource` is opened by hand for the unmapped side.
 //!
 //! A port that reached for [`crate::read_walker`] would apply `WellformedReadFilter` and drop reads
 //! this tool writes. Measured: the fixture's reads carry no read group, which the wellformed filter
@@ -42,8 +43,8 @@
 //!
 //! The catch-up loop is bounded by `hasNext()`, so when the unmapped side runs out the loop simply
 //! ends: nothing is written, nothing is logged, and the outer loop moves to the next aligned read.
-//! Measured: an aligned file of `a1, a9` against an unmapped file ending at `a6` produces a one-read
-//! output and no error at all.
+//! Measured: an aligned file of `a1, a9` against an unmapped file ending at `a6` produces a
+//! one-read output and no error at all.
 //!
 //! This is the one behaviour here a reasonable port would get wrong by being careful, because the
 //! obvious reading of "the aligned file must be a subset" is that a missing read is refused. It is
@@ -66,6 +67,18 @@
 //! `--read-tags` omitted is refused by Barclay before the tool is built at all, so the
 //! `Utils.nonEmpty(readTags, ...)` written for it in `onTraversalStart` is unreachable.
 //! [`TransferError::NoReadTags`] is that unreachable check, kept because the reference keeps it.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - [`RunResult`] nests two `Result`s: the outer error is the reads layer failing (a file that
+//!   cannot be read), the inner one is this tool's own refusal. `Ok(Err(e))` is "read fine, then
+//!   refused"; `Ok(Ok(bytes))` is a finished output.
+//! - `?` after a call returns its error to the caller at once, Java's propagated exception.
+//! - `Option<String>` is a string or nothing, Java's nullable `String`; `.ok_or_else(..)` turns
+//!   nothing into an error, as `Utils.nonNull` throws on `null`.
+//! - `std::cmp::Ordering` is `Less`, `Equal` or `Greater`, the sign of the Java `diff`; `match`
+//!   on it must handle all three.
+//! - `as u8` and `as char` reinterpret a number as a byte or character, without a range check.
 
 use htsjdk_bam::header::SamHeader;
 use htsjdk_bam::query_name;
@@ -126,6 +139,8 @@ impl TransferError {
 }
 
 /// `SAMFileHeader.getSortOrder() == queryname`.
+///
+/// The `SO` value of the `@HD` line, compared as text.
 fn is_query_name_sorted(header: &SamHeader) -> bool {
     header.attributes.get("SO") == Some("queryname")
 }
@@ -135,6 +150,8 @@ fn is_query_name_sorted(header: &SamHeader) -> bool {
 /// The reference's own branch order, including the empty-array case that returns `""` rather than
 /// decoding nothing.
 pub fn attribute_as_string(read: &BamRecord, name: &str) -> Option<String> {
+    // A tag name is two bytes. The Java's `assertAttributeNameIsLegal` throws on any other
+    // length; this returns nothing, which the caller turns into `AttributeEmpty`.
     let bytes = name.as_bytes();
     if bytes.len() != 2 {
         return None;
@@ -161,6 +178,10 @@ pub fn attribute_as_string(read: &BamRecord, name: &str) -> Option<String> {
 }
 
 /// `Float.toString`, which always prints a decimal point.
+///
+/// Covers a whole number below `1e7` (`2.0`) and Rust's shortest form otherwise. `Float.toString`
+/// switches to computerized scientific notation outside `[1e-3, 1e7)` (`1.0E-4`, `1.0E7`), and
+/// writes `Infinity` where Rust writes `inf`; those values are not covered here.
 fn format_java_float(value: f32) -> String {
     if value == value.trunc() && value.is_finite() && value.abs() < 1e7 {
         format!("{value:.1}")
@@ -170,6 +191,14 @@ fn format_java_float(value: f32) -> String {
 }
 
 /// `updateReadTags`: the aligned read, with each named tag taken from the unmapped one as a string.
+///
+/// ```java
+/// final GATKRead updatedRead = targetRead.copy();
+/// for (String tagName : readTags){
+/// ```
+///
+/// `target.clone()` is that copy; the aligned record itself is not changed. The first tag that is
+/// missing ends the whole run, as `Utils.nonNull` does.
 pub fn update_read_tags(
     target: &BamRecord,
     origin: &BamRecord,
@@ -181,6 +210,7 @@ pub fn update_read_tags(
             attribute_as_string(origin, name).ok_or_else(|| TransferError::AttributeEmpty {
                 unmapped: origin.read_name.clone(),
             })?;
+        // `setAttribute(tagName, String)`: always a `Z` tag, replacing one of the same name.
         let bytes = name.as_bytes();
         updated
             .tags
@@ -250,6 +280,8 @@ pub fn transfer_read_tags_with(
         )?));
     }
 
+    // `traverse()`. The unmapped side is a cursor into the list rather than an iterator, and
+    // `current` is the Java's `currentUnmappedRead`: it only ever moves forward.
     let mut records = Vec::with_capacity(aligned_reads.len());
     for target in &aligned_reads {
         let current = &unmapped_reads[unmapped_cursor];
@@ -262,6 +294,8 @@ pub fn transfer_read_tags_with(
             std::cmp::Ordering::Greater => {
                 // Play the unmapped reads forward until they catch up. If they run out first, this
                 // aligned read is written nowhere and nothing says so.
+                // `while (unmappedSamIterator.hasNext())`: there is a next read when the cursor is
+                // not yet on the last one.
                 let mut matched = None;
                 while unmapped_cursor + 1 < unmapped_reads.len() {
                     unmapped_cursor += 1;

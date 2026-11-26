@@ -10,15 +10,19 @@
 //! ```
 //!
 //! `getMatches` walks `strata.values()`, so the order a record's matches come back in, the order
-//! the refusal message lists them, and the order the split-output files are created are all the
-//! order the configuration declares them in. Up to 4.6.2.0 this was a `HashMap`, and that order
-//! was `java.util.HashMap` iteration over the stratum NAMES.
+//! the split-output files are written in, and the order they are created in are all the order
+//! the configuration declares them in. The refusal message is the exception: it joins the
+//! sorted `stratumNames`. Up to 4.6.2.0 this was a `HashMap` (in `SVStatificationEngine.java`,
+//! as the class was then spelled), and that order was `java.util.HashMap` iteration over the
+//! stratum NAMES.
 //!
 //! # A record is written once per file, with every stratum it matched
 //!
 //! ```java
-//! final List<String> stratumNames = ...map(Stratum::getName).sorted()...;
+//! final List<String> stratumNames = new ArrayList<>(stratifications).stream()
 //! ```
+//!
+//! continues `.map(SVStratificationEngine.Stratum::getName).sorted()` and collects to a list.
 //!
 //! Since 4.7.0.0 `STRAT` is a list (`Number=.`) holding every match, sorted, and only a split
 //! output refuses a second match. Up to 4.6.2.0 a record matching two strata under
@@ -28,7 +32,9 @@
 //! # An insertion ignores both thresholds
 //!
 //! ```java
-//! if (record.getType() == INS) { return matchesTrackBreakpointOverlap(record, 1); }
+//! if (record.getType() == GATKSVVCFConstants.StructuralVariantAnnotationType.INS) {
+//!     // Just require the insertion locus to fall in an interval
+//!     return matchesTrackBreakpointOverlap(record, 1);
 //! ```
 //!
 //! Neither `--stratify-overlap-fraction` nor `--stratify-num-breakpoint-overlaps` reaches an
@@ -55,10 +61,23 @@
 //!
 //! Both halves read the same value, so an extra column is reported as `Expected 6 columns but
 //! found 6`.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<i32>` is Java's nullable `Integer`; `.unwrap_or(i32::MIN)` is the constructor's
+//!   `if (minSize == null) { this.minSize = Integer.MIN_VALUE; }`.
+//! - `Result<T, StratifyError>` is a value or the reference's exception; `?` returns the error
+//!   to the caller at once.
+//! - `if let (Some(max), Some(min)) = (max_size, min_size)` runs only when both are present,
+//!   Java's `maxSize != null && minSize != null`.
+//! - `match` must cover every case; in `matches_tracks` the `_` arm is every type that is not
+//!   named above it.
+//! - `#[derive(PartialOrd, Ord)]` on a struct orders it field by field in declaration order, so
+//!   an [`Interval`] sorts by contig name, then start, then end.
 
 /// `SVStratify.DEFAULT_STRATUM`.
 pub const DEFAULT_STRATUM: &str = "default";
-/// `SVStatificationEngine.NULL_TABLE_VALUES`.
+/// `SVStratificationEngine.NULL_TABLE_VALUES`.
 pub const NULL_TABLE_VALUES: &[&str] = &["-1", "", "NULL", "NA"];
 /// The five columns the configuration table must have, and only those.
 pub const COLUMN_NAMES: &[&str] = &["NAME", "SVTYPE", "MIN_SIZE", "MAX_SIZE", "TRACKS"];
@@ -80,6 +99,8 @@ pub enum SvType {
 }
 
 impl SvType {
+    /// The enum constant by name, `StructuralVariantAnnotationType.valueOf`, for the types this
+    /// file knows; anything else is `None`.
     pub fn parse(text: &str) -> Option<SvType> {
         Some(match text {
             "DEL" => SvType::Del,
@@ -94,6 +115,7 @@ impl SvType {
         })
     }
 
+    /// BND or CTX, the two types `matchesTracks` routes to the interchromosomal threshold.
     fn is_interchromosomal(self) -> bool {
         matches!(self, SvType::Bnd | SvType::Ctx)
     }
@@ -108,10 +130,12 @@ pub struct Interval {
 }
 
 impl Interval {
+    /// `getLengthOnReference()`, both ends counted.
     pub fn length(&self) -> i64 {
         i64::from(self.end - self.start + 1)
     }
 
+    /// Same contig, and the closed intervals share a base.
     pub fn overlaps(&self, other: &Interval) -> bool {
         self.contig == other.contig && self.start <= other.end && other.start <= self.end
     }
@@ -127,6 +151,9 @@ impl Interval {
 
 /// `IntervalUtils.sortAndMergeIntervals(..., IntervalMergingRule.ALL)`, which merges abutting
 /// intervals as well as overlapping ones.
+///
+/// The sort is by contig name, not by the dictionary; every interval handed in lies on the one
+/// contig of the record it was found for, so the two orders agree here.
 pub fn sort_and_merge(intervals: &[Interval]) -> Vec<Interval> {
     let mut sorted = intervals.to_vec();
     sorted.sort();
@@ -147,6 +174,7 @@ pub fn sort_and_merge(intervals: &[Interval]) -> Vec<Interval> {
 /// One record, reduced to what a stratum reads off it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CallRecord {
+    /// `getId()`, which the multiple-match refusal names.
     pub id: String,
     pub sv_type: SvType,
     pub contig_a: String,
@@ -190,6 +218,8 @@ pub enum StratifyError {
 }
 
 impl StratifyError {
+    /// The reference's message for each refusal, from `SVStratificationEngine.java` and
+    /// `SVStratify.java`.
     pub fn message(&self) -> String {
         match self {
             StratifyError::MissingColumn { column } => format!("Missing column {column}"),
@@ -235,6 +265,9 @@ impl StratifyError {
 }
 
 /// `parseIntegerMaybeNull`.
+///
+/// A null value is `None`; anything else goes through `Integer.valueOf`, whose
+/// `NumberFormatException` this reports as a panic (`expect`) rather than a refusal.
 pub fn parse_integer_maybe_null(value: &str) -> Option<i32> {
     if NULL_TABLE_VALUES.contains(&value) {
         None
@@ -244,6 +277,9 @@ pub fn parse_integer_maybe_null(value: &str) -> Option<i32> {
 }
 
 /// `parseTrackString`, which refuses a name no track was registered under.
+///
+/// The Java collects the names into a set; keeping only the first of a repeated name is the
+/// same set, and the constructor sorts it either way.
 pub fn parse_track_string(value: &str, tracks: &[String]) -> Result<Vec<String>, StratifyError> {
     if NULL_TABLE_VALUES.contains(&value) {
         return Ok(Vec::new());
@@ -280,7 +316,7 @@ pub fn check_columns(columns: &[String]) -> Result<(), StratifyError> {
     Ok(())
 }
 
-/// `SVStatificationEngine.Stratum`.
+/// `SVStratificationEngine.Stratum`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Stratum {
     pub name: String,
@@ -336,6 +372,7 @@ impl Stratum {
         })
     }
 
+    /// `matchesType`: `record.getType() == svType`.
     pub fn matches_type(&self, record: &CallRecord) -> bool {
         record.sv_type == self.sv_type
     }
@@ -357,6 +394,9 @@ pub struct Tracks {
 
 impl Tracks {
     /// `loadStratificationConfig`'s two argument checks.
+    ///
+    /// Track names and interval files pair up by position, as `--track-name` and
+    /// `--track-intervals` are given.
     pub fn new(names: &[String], intervals: &[Vec<Interval>]) -> Result<Tracks, StratifyError> {
         if names.len() != intervals.len() {
             return Err(StratifyError::TrackCountMismatch);
@@ -371,10 +411,13 @@ impl Tracks {
         Ok(Tracks { entries })
     }
 
+    /// The registered names, in the order given.
     pub fn names(&self) -> Vec<String> {
         self.entries.iter().map(|(name, _)| name.clone()).collect()
     }
 
+    /// `trackMap.get(name)`. Every caller passes a name the stratum's constructor checked, so a
+    /// missing one is a bug and panics.
     fn intervals(&self, name: &str) -> &[Interval] {
         self.entries
             .iter()
@@ -393,12 +436,16 @@ impl Tracks {
 /// The three thresholds, validated the way `matchesTracks` validates them.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Thresholds {
+    /// `--stratify-overlap-fraction`, on [0, 1].
     pub overlap_fraction: f64,
+    /// `--stratify-num-breakpoint-overlaps`: 0, 1 or 2 ends.
     pub num_breakpoint_overlaps: i32,
+    /// The interchromosomal threshold: 1 or 2 ends.
     pub num_breakpoint_overlaps_interchrom: i32,
 }
 
 impl Thresholds {
+    /// The last of `matchesTracks`' four `Utils.validate` calls.
     pub fn check(&self) -> Result<(), StratifyError> {
         // The only one of the four validations a measured run can reach: the others are guarded by
         // the argument parser's own ranges.
@@ -410,6 +457,11 @@ impl Thresholds {
 }
 
 /// `matchesTracks`, which routes three ways by type before it looks at a threshold.
+///
+/// `matchesTrackOverlapFraction` and `matchesTrackBreakpointOverlap` throw
+/// `GATKException("Track overlap for CPX types not currently supported (" + name + ")")` for a
+/// CPX record against a stratum with tracks and a positive threshold; that refusal is not made
+/// here.
 pub fn matches_tracks(
     stratum: &Stratum,
     record: &CallRecord,
@@ -439,6 +491,12 @@ pub fn matches_tracks(
 }
 
 /// `matchesTrackOverlapFraction`: the merged union of every named track, compared with `>=`.
+///
+/// ```java
+/// return overlapLength / (double) interval.getLengthOnReference() >= overlapFraction;
+/// ```
+///
+/// The record's interval is `contigA:positionA-positionB`.
 pub fn matches_overlap_fraction(
     stratum: &Stratum,
     record: &CallRecord,
@@ -496,6 +554,7 @@ pub fn matches_breakpoint_overlap(
         >= required
 }
 
+/// `countAnyTrackOverlap`: 1 at the first named track that covers the point, else 0.
 fn count_any_track_overlap(stratum: &Stratum, tracks: &Tracks, interval: &Interval) -> i32 {
     for name in &stratum.track_names {
         if tracks.overlaps_any(name, interval) {
@@ -510,11 +569,14 @@ fn count_any_track_overlap(stratum: &Stratum, tracks: &Tracks, interval: &Interv
 pub struct Engine {
     /// In the configuration's order (`LinkedHashMap`).
     pub strata: Vec<Stratum>,
+    /// `trackMap`.
     pub tracks: Tracks,
 }
 
 impl Engine {
     /// The strata as `strata.values()` walks them, a `LinkedHashMap` since 4.7.0.0.
+    ///
+    /// Refuses a stratum named `default`, as `SVStratify` does once the engine is loaded.
     pub fn new(strata: Vec<Stratum>, tracks: Tracks) -> Result<Engine, StratifyError> {
         if strata.iter().any(|stratum| stratum.name == DEFAULT_STRATUM) {
             return Err(StratifyError::ReservedName);
@@ -552,6 +614,9 @@ pub struct Written {
 
 /// `apply`: the record goes to the default group when nothing matched; otherwise once to the
 /// default file, or once to each matching file when the output is split.
+///
+/// The split files are written in `getMatches` order; the `STRAT` value and the refusal's list
+/// are the sorted names.
 pub fn apply(
     engine: &Engine,
     record: &CallRecord,

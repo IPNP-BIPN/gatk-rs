@@ -1,6 +1,6 @@
 //! `ReferenceBlockConcordance`, ported from
 //! `org.broadinstitute.hellbender.tools.walkers.validation.ReferenceBlockConcordance`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `ReferenceBlockConcordance.java` is unchanged since 4.6.2.0).
 //!
 //! Two GVCFs walked side by side by [`gatk_engine::concordance_walker`], and the reference blocks
 //! they hold turned into three metrics files.
@@ -15,8 +15,12 @@
 //! # The concordance histogram counts BASES, not blocks
 //!
 //! ```java
-//! confidenceConcordanceHistogram.increment(pair.toString(), truthInterval.intersect(evalInterval).getLengthOnReference());
+//! confidenceConcordanceHistogram.increment(new Pair<>(currentTruthVariantContext.getGenotype(0)
+//!     .getGQ(), currentEvalVariantContext.getGenotype(0).getGQ()).toString(),
+//!     truthInterval.intersect(evalInterval).getLengthOnReference());
 //! ```
+//!
+//! (one line in `apply`, wrapped here.)
 //!
 //! It fires only while both sides currently hold a block, and each side's held block is cleared as
 //! soon as a step no longer overlaps it. So the value is the number of bases the two blocks share,
@@ -27,10 +31,20 @@
 //! Both filters are `isHomRef` on genotype 0, so a filtered block is walked like any other and a
 //! variant site is dropped from both sides. A multi-sample file passes that filter on its first
 //! sample and is refused afterwards, by the length extraction.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<&Block>` is "a borrowed block or nothing": the Java's nullable
+//!   `currentTruthVariantContext`, pointing into the caller's list rather than owning a copy;
+//! - `if let Some(x) = y { .. }` runs the block only when `y` holds a value, and names it `x`;
+//! - `match (a, b) { (Some(i), _) => .., (None, None) => .. }` matches the two options at once;
+//!   `_` accepts anything, and the compiler checks that every combination is covered;
+//! - `Result<T, E>` is "a value or an error" and `?` hands the error to the caller, which is how
+//!   the `IllegalStateException` leaves `apply` here.
 
 use htsjdk_metrics::file::{Histogram, MetricsFile};
 
-/// One reference block, as far as this tool reads one.
+/// One reference block (a `VariantContext` from either GVCF), as far as this tool reads one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Block {
     pub contig: String,
@@ -54,17 +68,27 @@ impl Block {
     }
 }
 
-/// The refusal the length extraction raises.
+/// The refusal the length extraction raises:
+///
+/// ```java
+/// throw new IllegalStateException(String.format("A multisample GVCF file was provided, however,
+///     only single sample GVCFs are currently supported. This occurred when reading \"%s\".",
+///     variant.toStringDecodeGenotypes()));
+/// ```
+///
+/// (one line in `extractLengthAndGQ`, wrapped here, the format string included.)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MultiSample {
     pub rendered: String,
 }
 
 impl MultiSample {
+    /// The class the reference throws.
     pub fn java_class(&self) -> &str {
         "java.lang.IllegalStateException"
     }
 
+    /// The message, `String.format`'s `%s` filled with the rendered record.
     pub fn message(&self) -> String {
         format!(
             "A multisample GVCF file was provided, however, only single sample GVCFs are currently \
@@ -76,6 +100,9 @@ impl MultiSample {
 
 /// A histogram keyed by a string, which is what the tool builds: counts in insertion order, sorted
 /// as strings when it is written.
+///
+/// A list searched linearly rather than a map, because only the written order matters and
+/// [`Self::sorted`] imposes it.
 #[derive(Debug, Clone, Default)]
 pub struct StringHistogram {
     bins: Vec<(String, f64)>,
@@ -86,11 +113,15 @@ impl StringHistogram {
         Self::default()
     }
 
+    /// `Histogram.increment(key)`: add one.
     pub fn increment(&mut self, key: &str) {
         self.increment_by(key, 1.0);
     }
 
+    /// `Histogram.increment(key, amount)`: add `amount`, creating the bin if it is new.
     pub fn increment_by(&mut self, key: &str, amount: f64) {
+        // `iter_mut().find(..)` yields a writable reference to the matching pair, so `*value +=`
+        // updates the bin in place.
         match self.bins.iter_mut().find(|(bin, _)| bin == key) {
             Some((_, value)) => *value += amount,
             None => self.bins.push((key.to_string(), amount)),
@@ -114,7 +145,8 @@ pub fn pair_key(first: i32, second: i32) -> String {
     format!("{first},{second}")
 }
 
-/// The three histograms one run produces.
+/// The three histograms one run produces: `truthBlockHistogram`, `evalBlockHistogram` and
+/// `confidenceConcordanceHistogram`.
 #[derive(Debug, Clone, Default)]
 pub struct Histograms {
     pub truth_blocks: StringHistogram,
@@ -136,8 +168,8 @@ pub fn accumulate(
     let mut current_eval: Option<&Block> = None;
 
     for (truth_index, eval_index) in steps {
-        // The step's own span, which is whichever side it carries: both sides of a step are at the
-        // same locus, so either one answers.
+        // The step's own span: `TruthVersusEval.getStart()` is
+        // `getTruthIfPresentElseEval().getStart()`, and likewise its contig and end.
         let step = match (truth_index, eval_index) {
             (Some(index), _) => &truth[*index],
             (None, Some(index)) => &eval[*index],
@@ -180,7 +212,8 @@ pub fn accumulate(
     Ok(histograms)
 }
 
-/// `extractLengthAndGQ`, which refuses anything but a single sample.
+/// `extractLengthAndGQ`, which refuses anything but a single sample, then
+/// `new Pair<>(variant.getLengthOnReference(), genotype.getGQ())` as its `toString`.
 fn key_of(block: &Block) -> Result<String, MultiSample> {
     if block.genotypes != 1 {
         return Err(MultiSample {
@@ -190,6 +223,7 @@ fn key_of(block: &Block) -> Result<String, MultiSample> {
     Ok(pair_key(block.length(), block.gq))
 }
 
+/// `Locatable.overlaps`: same contig, and the closed intervals share at least one base.
 fn overlaps(left: &Block, right: &Block) -> bool {
     left.contig == right.contig && left.start <= right.end && right.start <= left.end
 }

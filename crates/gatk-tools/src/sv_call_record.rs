@@ -1,4 +1,5 @@
-//! `SVCallRecordUtils.create` and the `SVCallRecord` constructor it calls, ported from GATK 4.6.2.0.
+//! `SVCallRecordUtils.create` and the `SVCallRecord` constructor it calls, ported from GATK
+//! 4.7.0.0; `SVCallRecordUtils.java` and `SVCallRecord.java` are unchanged since 4.6.2.0.
 //!
 //! Every SV tool of the `sv` package reads its VCF through this one conversion, so it is the brick
 //! the runners of `SVStratify`, `SVCluster`, `GroupedSVCluster`, `SVConcordance` and `SVAnnotate`
@@ -8,12 +9,14 @@
 //!
 //! # The checks run in the order the fields are read
 //!
+//! The five statements, each with its declared type elided as `...`:
+//!
 //! ```java
-//! type = inferStructuralVariantType(variant);
-//! cpxSubtype = getComplexSubtype(variant);
-//! cpxIntervals = parseComplexIntervals(variant, dictionary);
-//! algorithms = getAlgorithms(variant);
-//! evidence = getEvidence(variant);
+//! final ... type = inferStructuralVariantType(variant);
+//! final ... cpxSubtype = getComplexSubtype(variant);
+//! final ... cpxIntervals = parseComplexIntervals(variant, dictionary);
+//! final List<String> algorithms = getAlgorithms(variant);
+//! final ... evidence = getEvidence(variant);
 //! ```
 //!
 //! So a record with no `SVTYPE` and a non-symbolic allele is refused for its allele before its
@@ -24,18 +27,23 @@
 //! # An insertion's second breakpoint is its first
 //!
 //! ```java
-//! if (type == INS) { positionB = positionA; } else { positionB = variant.getEnd(); }
+//! // Force reset of END coordinate
+//! if (type == GATKSVVCFConstants.StructuralVariantAnnotationType.INS) {
+//!     positionB = positionA;
+//! } else {
+//!     positionB = variant.getEnd();
+//! }
 //! ```
 //!
 //! `END` is ignored for an insertion however far it reaches, and for the other intrachromosomal
-//! types it IS the second breakpoint, so a DEL's length is `END - POS + 1` and `SVLEN` is never read
-//! for it: the length is passed as `null` and recomputed by the constructor.
+//! types it IS the second breakpoint, so a DEL's length is `END - POS + 1` and `SVLEN` is never
+//! read for it: the length is passed as `null` and recomputed by the constructor.
 //!
 //! # Only an insertion and a complex event read `SVLEN`
 //!
 //! And for those two it is required: a missing field is an `IllegalArgumentException`, `-1` is the
-//! undefined length, and any other negative value an `IllegalStateException`, which `Utils.validate`
-//! throws where `Utils.validateArg` throws the other.
+//! undefined length, and any other negative value an `IllegalStateException`, which
+//! `Utils.validate` throws where `Utils.validateArg` throws the other.
 //!
 //! # The strands are the type's own for a DEL and a DUP
 //!
@@ -44,10 +52,25 @@
 //!
 //! # One refusal cannot be reproduced
 //!
-//! An unknown `CPX_TYPE` lists the valid subtypes in the iteration order of a `HashBiMap` built from
-//! `Map.ofEntries`, whose order is salted per JVM: two runs of the reference print two different
-//! messages. [`SvRecordError::InvalidComplexSubtype`] lists them in declaration order, and no
-//! fixture should reach it.
+//! An unknown `CPX_TYPE` lists the valid subtypes in the iteration order of a `HashBiMap` built
+//! from `Map.ofEntries`, whose order is salted per JVM: two runs of the reference print two
+//! different messages. [`SvRecordError::InvalidComplexSubtype`] lists them in declaration order,
+//! and no fixture should reach it.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is "a value or nothing", Java's nullable reference checked by the compiler: the
+//!   record's `Boolean strandA` and `Integer length` are `Option<bool>` and `Option<i32>` here;
+//! - `Result<T, SvRecordError>` is "a value or an error", how a Java exception is modelled. A `?`
+//!   after a call returns its error to the caller at once, as an uncaught `throws` would;
+//! - `let Some(x) = y else { ... };` unwraps `y` or runs the block, which must leave the function;
+//! - `|a, b| ...` is a lambda (a closure); one declared inside a function may read that function's
+//!   local variables, as a Java lambda reads effectively final ones;
+//! - `&str`, `&[T]` and `&VariantContext` are borrowed, read-only views; the caller keeps the
+//!   value. `.clone()` makes an owned copy where the record must keep its own;
+//! - `x as i32` converts a number and never throws: a wider integer is truncated to its low 32
+//!   bits and a float is rounded toward zero, saturating at the `i32` bounds;
+//! - a function's last expression, written without `;`, is its return value.
 
 use htsjdk_vcf::variant::{Value, VariantContext};
 
@@ -67,6 +90,7 @@ pub const INVALID_ATTRIBUTES: &[&str] = &[
     CPX_INTERVALS,
 ];
 
+/// The `GATKSVVCFConstants` INFO keys this conversion reads, spelled as the VCF spells them.
 pub const SVTYPE: &str = "SVTYPE";
 pub const SVLEN: &str = "SVLEN";
 pub const EVIDENCE: &str = "EVIDENCE";
@@ -110,7 +134,11 @@ pub enum Evidence {
 }
 
 impl Evidence {
+    /// `EvidenceTypes.valueOf`, with `None` where the Java throws; [`create`] turns that `None`
+    /// into [`SvRecordError::UnknownEvidence`].
     fn value_of(text: &str) -> Option<Evidence> {
+        // A `match` is an expression, so its value is wrapped once; the `return None` arm leaves
+        // the function instead of producing a value.
         Some(match text {
             "BAF" => Evidence::Baf,
             "PE" => Evidence::Pe,
@@ -147,7 +175,8 @@ pub enum SvRecordError {
     NoValidType {
         id: String,
     },
-    /// A `CPX_TYPE` outside the map. See the module documentation for why this message cannot match.
+    /// A `CPX_TYPE` outside the map. See the module documentation for why this message cannot
+    /// match.
     InvalidComplexSubtype {
         subtype: String,
     },
@@ -167,24 +196,31 @@ pub enum SvRecordError {
     ComplexIntervalUnparseable {
         message: String,
     },
+    /// `getAlgorithms`: no `ALGORITHMS` key at all.
     MissingAlgorithms {
         id: String,
     },
+    /// `EvidenceTypes.valueOf` on an `EVIDENCE` entry the enum does not name.
     UnknownEvidence {
         name: String,
     },
+    /// `getStrands`: a `STRANDS` value that is not two characters long.
     StrandsLength {
         id: String,
     },
+    /// `getStrands`: a first character that is neither `+` nor `-`.
     StartStrand {
         id: String,
     },
+    /// `getStrands`: a second character that is neither `+` nor `-`.
     EndStrand {
         id: String,
     },
+    /// `getLength`: no `SVLEN` key on a type that reads it.
     MissingLength {
         id: String,
     },
+    /// `getLength`: an `SVLEN` below `-1`, refused by `Utils.validate`.
     NegativeLength {
         id: String,
     },
@@ -192,6 +228,7 @@ pub enum SvRecordError {
     NotAnInteger {
         text: String,
     },
+    /// A BND or CTX without both `CHR2` and `END2`, the only refusal that is a `UserException`.
     MissingSecondBreakpoint {
         id: String,
     },
@@ -211,6 +248,8 @@ pub enum SvRecordError {
 }
 
 impl SvRecordError {
+    /// The class of the exception the reference throws for this refusal. `_` is the catch-all
+    /// arm: every `Utils.validateArg` and `valueOf` refusal is an `IllegalArgumentException`.
     pub fn class(&self) -> &'static str {
         match self {
             SvRecordError::MissingAltAllele { .. }
@@ -225,10 +264,13 @@ impl SvRecordError {
         }
     }
 
+    /// Whether the reference throws a `UserException` (`BadInput`) rather than a plain Java one.
     pub fn is_user(&self) -> bool {
         matches!(self, SvRecordError::MissingSecondBreakpoint { .. })
     }
 
+    /// The exception's message as the reference builds it. Inside `format!`, `{id}` prints the
+    /// variable `id`, the Java `" + id + "`.
     pub fn message(&self) -> String {
         match self {
             SvRecordError::MissingAltAllele { id } => format!("Missing alt allele for variant {id}"),
@@ -295,19 +337,23 @@ pub struct SvCallRecord {
     pub id: String,
     pub contig_a: String,
     pub position_a: i32,
+    /// `true` for `+`; `None` where the reference's `Boolean` is null.
     pub strand_a: Option<bool>,
     pub contig_b: String,
     pub position_b: i32,
+    /// As `strand_a`, for the second breakpoint.
     pub strand_b: Option<bool>,
     pub sv_type: SvType,
     pub cpx_subtype: Option<String>,
     /// Sorted by their encoding, as `canonicalizeComplexEventList` sorts them.
     pub cpx_intervals: Vec<ComplexEventInterval>,
+    /// `None` where the reference's `Integer` length is null.
     pub length: Option<i32>,
     pub evidence: Vec<Evidence>,
     pub algorithms: Vec<String>,
     /// The variant's attributes without [`INVALID_ATTRIBUTES`].
     pub attributes: Vec<(String, Value)>,
+    /// `None` when `variant.hasLog10PError()` is false.
     pub log10_p_error: Option<f64>,
 }
 
@@ -335,6 +381,8 @@ pub fn validate_coordinates(
     record: &SvCallRecord,
     dictionary: &[(String, i32)],
 ) -> Result<(), SvRecordError> {
+    // `validatePosition`, as a closure that also hands back the contig's dictionary index for the
+    // ordering test below.
     let position = |contig: &str, position: i32| -> Result<usize, SvRecordError> {
         let Some(index) = dictionary.iter().position(|(name, _)| name == contig) else {
             return Err(SvRecordError::ContigNotInDictionary {
@@ -351,6 +399,8 @@ pub fn validate_coordinates(
     };
     let a = position(&record.contig_a, record.position_a)?;
     let b = position(&record.contig_b, record.position_b)?;
+    // `IntervalUtils.compareLocatables(getPositionAInterval(), getPositionBInterval(), dictionary)
+    // > 0`. Tuples compare element by element, so this is contig index first, then position.
     if record.sv_type != SvType::Cpx && (a, record.position_a) > (b, record.position_b) {
         return Err(SvRecordError::EndPrecedesStart {
             id: record.id.clone(),
@@ -370,12 +420,15 @@ pub fn compare_calls(
     second: &SvCallRecord,
     dictionary: &[(String, i32)],
 ) -> std::cmp::Ordering {
+    // `usize::MAX` puts a contig the dictionary lacks after every contig it has.
     let index = |contig: &str| {
         dictionary
             .iter()
             .position(|(name, _)| name == contig)
             .unwrap_or(usize::MAX)
     };
+    // The enum's declaration order in `GATKSVVCFConstants`, which `compareTo` uses: DEL, DUP, INS,
+    // INV, CPX, BND, CTX, CNV. `SvType` is declared in another order, so it is spelled out.
     let ordinal = |sv_type: SvType| match sv_type {
         SvType::Del => 0,
         SvType::Dup => 1,
@@ -386,6 +439,9 @@ pub fn compare_calls(
         SvType::Ctx => 6,
         SvType::Cnv => 7,
     };
+    // `.then(x)` keeps the first ordering unless it is `Equal`, as each `if (c != 0) return c;`
+    // does. An `Option` orders `None` before any `Some`, and `false` before `true` as
+    // `Boolean.compare` does, so the three null tests per field in the Java are one `cmp` here.
     (index(&first.contig_a), first.position_a)
         .cmp(&(index(&second.contig_a), second.position_a))
         .then(
@@ -398,6 +454,7 @@ pub fn compare_calls(
         .then(first.length.cmp(&second.length))
 }
 
+/// `EvidenceTypes.name()`.
 fn evidence_name(evidence: Evidence) -> &'static str {
     match evidence {
         Evidence::Baf => "BAF",
@@ -432,6 +489,8 @@ pub fn to_variant(
     variant.id = record.id.clone();
     variant.stop = end as i64;
     let mut attributes = record.attributes.clone();
+    // `builder.attribute(key, value)`: the attributes are an ordered list here, so an existing key
+    // is overwritten in place and a new one appended.
     let mut put =
         |key: &str, value: Value| match attributes.iter_mut().find(|(name, _)| name == key) {
             Some(slot) => slot.1 = value,
@@ -476,9 +535,13 @@ pub fn to_variant(
             ),
         );
     }
+    // `builder.attribute(SVLEN, record.getLength())` also puts a null, which
+    // `sanitizeNullAttributes` then removes; not putting it has the same result.
     if let Some(length) = record.length {
         put(SVLEN, Value::Int(length as i64));
     }
+    // `matches!` is true when the value fits one of the `|`-separated patterns, the Java chain of
+    // `svtype == ... ||` tests.
     if matches!(
         record.sv_type,
         SvType::Bnd | SvType::Inv | SvType::Ins | SvType::Cpx | SvType::Ctx
@@ -524,6 +587,8 @@ pub fn to_variant(
     variant
 }
 
+/// `getAttribute(key)`: the value under `key`, or `None` when the variant has no such key. The
+/// `'a` says the returned reference lives as long as the `variant` it points into.
 fn attribute<'a>(variant: &'a VariantContext, key: &str) -> Option<&'a Value> {
     variant
         .attributes
@@ -532,7 +597,16 @@ fn attribute<'a>(variant: &'a VariantContext, key: &str) -> Option<&'a Value> {
         .map(|(_, value)| value)
 }
 
-/// `getAttributeAsString(key, default)`: a list joined at `,`.
+/// `getAttributeAsString(key, default)` for a value that is present.
+///
+/// ```java
+/// if (x instanceof String) return (String) x;
+/// return String.valueOf(x); // throws an exception if this isn't a string
+/// ```
+///
+/// A string is returned as is. A list is joined at `,` here, where the reference's
+/// `String.valueOf` of a `List` prints `[a, b]`: a multi-valued `CHR2` or `CPX_TYPE` reads
+/// differently in the two.
 fn as_string(value: &Value) -> String {
     match value {
         Value::Str(text) => text.clone(),
@@ -542,7 +616,8 @@ fn as_string(value: &Value) -> String {
     }
 }
 
-/// `getAttributeAsStringList(key, null)`: nothing when absent, one entry per list element.
+/// `getAttributeAsStringList(key, null)`: nothing when absent, one entry per list element, and a
+/// single value as a one-entry list.
 fn as_string_list(variant: &VariantContext, key: &str) -> Vec<String> {
     match attribute(variant, key) {
         None => Vec::new(),
@@ -551,7 +626,17 @@ fn as_string_list(variant: &VariantContext, key: &str) -> Vec<String> {
     }
 }
 
-/// `getAttributeAsInt(key, default)`.
+/// `getAttributeAsInt(key, default)` (htsjdk `CommonInfo`).
+///
+/// ```java
+/// if (x == null || x == VCFConstants.MISSING_VALUE_v4) return defaultValue;
+/// if (x instanceof Integer) return (Integer) x;
+/// return Integer.parseInt((String) x); // throws an exception if this isn't a string
+/// ```
+///
+/// The missing test is a reference comparison against the constant, which `Value::Missing`
+/// models. A `Double` is truncated here and a list or flag parsed as its text, where the
+/// reference's `(String) x` cast throws `ClassCastException` for all three.
 fn as_int(variant: &VariantContext, key: &str, default: i32) -> Result<i32, SvRecordError> {
     match attribute(variant, key) {
         None | Some(Value::Missing) => Ok(default),
@@ -565,12 +650,14 @@ fn as_int(variant: &VariantContext, key: &str, default: i32) -> Result<i32, SvRe
     }
 }
 
+/// `hasAttribute(key)`.
 fn has(variant: &VariantContext, key: &str) -> bool {
     attribute(variant, key).is_some()
 }
 
 /// `inferStructuralVariantType`: `SVTYPE` when it names a type, else the alternate allele.
 pub fn infer_type(variant: &VariantContext) -> Result<SvType, SvRecordError> {
+    // `getAttributeAsString(SVTYPE, "")`.
     let named = attribute(variant, SVTYPE)
         .map(as_string)
         .unwrap_or_default();
@@ -586,6 +673,8 @@ pub fn infer_type(variant: &VariantContext) -> Result<SvType, SvRecordError> {
     if alternates.is_empty() {
         return Err(SvRecordError::MissingAltAllele { id });
     }
+    // `alleles.contains(GATKSVVCFConstants.DEL_ALLELE) && alleles.contains(...DUP_ALLELE)`,
+    // compared here by the alleles' display text.
     if alternates.len() == 2
         && alternates.iter().any(|allele| allele == "<DEL>")
         && alternates.iter().any(|allele| allele == "<DUP>")
@@ -599,10 +688,12 @@ pub fn infer_type(variant: &VariantContext) -> Result<SvType, SvRecordError> {
     if !allele.is_symbolic() {
         return Err(SvRecordError::ExpectedSymbolicAllele);
     }
+    // Both brackets in one call, as the Java's `.replace("<", "").replace(">", "")`.
     let name = allele.display_string().replace(['<', '>'], "");
     SvType::parse(&name).ok_or(SvRecordError::NoValidType { id })
 }
 
+/// `StructuralVariantAnnotationType.name()`.
 fn type_name(sv_type: SvType) -> &'static str {
     match sv_type {
         SvType::Del => "DEL",
@@ -616,12 +707,22 @@ fn type_name(sv_type: SvType) -> &'static str {
     }
 }
 
-/// `new SimpleInterval(String)`, for the one shape a complex interval takes.
+/// `new SimpleInterval(String)`: the shapes `chr`, `chr:pos`, `chr:pos+` and `chr:pos-end`, with
+/// commas stripped from each number.
+///
+/// The constructor ends with `validatePositions(contig, start, end);`, which refuses a start
+/// below one or an end before the start. That call is not made here; `decode_complex_interval`
+/// tests the same two conditions as part of its dictionary test.
+///
+/// A number that does not parse is `parsePosition`'s refusal. Its message is the reference's, but
+/// the reference throws it as a `UserException`, where [`SvRecordError::class`] reports
+/// `IllegalArgumentException` for it.
 fn simple_interval(text: &str) -> Result<(String, i32, i32), SvRecordError> {
     let unparseable = |message: String| SvRecordError::ComplexIntervalUnparseable { message };
     if text.is_empty() {
         return Err(unparseable("str should not be empty".to_string()));
     }
+    // `str.lastIndexOf(CONTIG_SEPARATOR)`; no colon is the whole contig, `1` to `MAX_VALUE`.
     let Some(colon) = text.rfind(':') else {
         return Ok((text.to_string(), 1, i32::MAX));
     };
@@ -634,6 +735,8 @@ fn simple_interval(text: &str) -> Result<(String, i32, i32), SvRecordError> {
             ))
         })
     };
+    // `str.indexOf(START_END_SEPARATOR, colonIndex)`; a missing dash is `chr:pos+` (to the end
+    // of the contig) or `chr:pos` (one base).
     let (start, end) = match rest.find('-') {
         None if rest.ends_with('+') => (position(&rest[..rest.len() - 1])?, i32::MAX),
         None => {
@@ -645,17 +748,29 @@ fn simple_interval(text: &str) -> Result<(String, i32, i32), SvRecordError> {
     Ok((contig, start, end))
 }
 
-/// `ComplexEventInterval.decode`.
+/// `ComplexEventInterval.decode`: the type before the first `_`, the interval after it, the
+/// dictionary tested before the type is looked up.
+///
+/// ```java
+/// final String[] tokens = str.split("_", 2);
+/// final SimpleInterval interval = new SimpleInterval(tokens[1]);
+/// if (!IntervalUtils.intervalIsOnDictionaryContig(interval, dictionary)) {
+/// ```
 fn decode_complex_interval(
     entry: &str,
     dictionary: &[(String, i32)],
 ) -> Result<ComplexEventInterval, SvRecordError> {
+    // `str.split("_", 2)`: the type before the first underscore and everything after it.
     let Some((name, rest)) = entry.split_once('_') else {
         return Err(SvRecordError::ComplexIntervalFormat {
             entry: entry.to_string(),
         });
     };
     let (contig, start, end) = simple_interval(rest)?;
+    // `IntervalUtils.intervalIsOnDictionaryContig` tests only the contig and the end. The
+    // `start >= 1 && start <= end` terms stand in for the constructor's `validatePositions`, so
+    // an interval that the reference refuses for its positions is refused here as off the
+    // dictionary, with this message instead of `Invalid interval. Contig:...`.
     let on_contig = dictionary
         .iter()
         .find(|(sequence, _)| *sequence == contig)
@@ -686,6 +801,7 @@ fn strands(variant: &VariantContext) -> Result<Option<(bool, bool)>, SvRecordErr
     if text.chars().count() != 2 {
         return Err(SvRecordError::StrandsLength { id });
     }
+    // The length is two, so both `unwrap_or` fallbacks are unreachable.
     let mut chars = text.chars();
     let first = chars.next().unwrap_or(' ');
     let second = chars.next().unwrap_or(' ');
@@ -709,6 +825,7 @@ pub fn create(
     let id = variant.id.clone();
     let sv_type = infer_type(variant)?;
 
+    // `getComplexSubtype`.
     let cpx_subtype = match attribute(variant, CPX_TYPE) {
         None => None,
         Some(value) => {
@@ -719,6 +836,8 @@ pub fn create(
             Some(subtype)
         }
     };
+    // `parseComplexIntervals`. Collecting into `Result<Vec<_>, _>` stops at the first `Err` and
+    // returns it, as the Java stream's `decode` throws out of `toList()`.
     let mut cpx_intervals = as_string_list(variant, CPX_INTERVALS)
         .iter()
         .map(|entry| decode_complex_interval(entry, dictionary))
@@ -734,11 +853,13 @@ pub fn create(
         )
     });
 
+    // `getAlgorithms`.
     if !has(variant, ALGORITHMS_ATTRIBUTE) {
         return Err(SvRecordError::MissingAlgorithms { id });
     }
     let algorithms = as_string_list(variant, ALGORITHMS_ATTRIBUTE);
 
+    // `getEvidence`: `.` entries dropped, every other name through `valueOf`.
     let evidence = as_string_list(variant, EVIDENCE)
         .into_iter()
         .filter(|value| value != ".")
@@ -747,11 +868,13 @@ pub fn create(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
+    // "SVCallRecord class can resolve these": no `STRANDS` read for DEL, CNV and DUP.
     let input_strands = match sv_type {
         SvType::Del | SvType::Cnv | SvType::Dup => None,
         _ => strands(variant)?,
     };
 
+    // The same comment in the Java, for BND, DEL, DUP, CNV, INV and CTX: no `SVLEN` read.
     let input_length = match sv_type {
         SvType::Bnd | SvType::Del | SvType::Dup | SvType::Cnv | SvType::Inv | SvType::Ctx => None,
         _ => {
@@ -770,6 +893,7 @@ pub fn create(
     };
 
     let contig_a = variant.contig.clone();
+    // `getStart()` is an `int`; the port holds positions as 64-bit and narrows them here.
     let position_a = variant.start as i32;
     let (contig_b, position_b) = match sv_type {
         SvType::Bnd | SvType::Ctx => {
@@ -784,7 +908,9 @@ pub fn create(
         SvType::Ins => (contig_a.clone(), position_a),
         _ => (contig_a.clone(), variant.stop as i32),
     };
+    // `.then_some(x)` is `condition ? x : null`.
     let log10_p_error = variant.has_log10_p_error().then_some(variant.log10_p_error);
+    // `sanitizeAttributes`.
     let attributes = variant
         .attributes
         .iter()
@@ -798,6 +924,8 @@ pub fn create(
         SvType::Cnv | SvType::Del | SvType::Dup | SvType::Inv => Some(position_b - position_a + 1),
         _ => input_length,
     };
+    // `inferStrands`. Its `validateArg` checks on a DEL's or DUP's input strands cannot fail from
+    // here, because `create` passes null strands for those two types.
     let (strand_a, strand_b) = match sv_type {
         SvType::Cnv => (None, None),
         SvType::Del => (Some(true), Some(false)),

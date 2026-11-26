@@ -1,4 +1,5 @@
-//! Ported from `org.broadinstitute.hellbender.tools.walkers.RevertBaseQualityScores` (GATK 4.6.2.0).
+//! Ported from `org.broadinstitute.hellbender.tools.walkers.RevertBaseQualityScores` (GATK
+//! 4.7.0.0; `RevertBaseQualityScores.java` is unchanged since 4.6.2.0).
 //!
 //! The third whole tool here, and the other half of G2's calibration gate. Same archetype as
 //! [`crate::unmark_duplicates`], same two-line `apply`, and a materially different failure mode.
@@ -8,10 +9,11 @@
 //! if ( originalQuals != null ){
 //!     read.setBaseQualities(originalQuals);
 //! } else {
-//!     throw new UserException("RevertQualityScores can only be applied to SAM/BAM files with "
-//!         + "original quality scores, caused by read: " + read.getName());
-//! }
 //! ```
+//!
+//! and the `else` throws `new UserException(...)` with the message
+//! `"RevertQualityScores can only be applied to SAM/BAM files with original quality scores, "`
+//! `+ "caused by read: " + read.getName()`, split over two source lines in the reference.
 //!
 //! # One read without `OQ` aborts the whole run
 //!
@@ -21,7 +23,7 @@
 //! than the reference, which is the worst shape a divergence can take.
 //!
 //! The message names the read, so it is part of the observable behaviour and is reproduced. Note
-//! the class in it says `RevertQualityScores`, without `Base`, which is not the tool's name — it
+//! the class in it says `RevertQualityScores`, without `Base`, which is not the tool's name: it
 //! is transcribed rather than corrected.
 //!
 //! # Three ways to have no original qualities, and they are not the same test
@@ -30,7 +32,9 @@
 //! is present and the string is **empty**:
 //!
 //! ```java
-//! if ( ! read.hasAttribute(ORIGINAL_BASE_QUALITIES_TAG) ) { return null; }
+//! if ( ! read.hasAttribute(ORIGINAL_BASE_QUALITIES_TAG) ) {
+//!     return null;
+//! }
 //! final String oqString = read.getAttributeAsString(ORIGINAL_BASE_QUALITIES_TAG);
 //! return !oqString.isEmpty() ? SAMUtils.fastqToPhred(oqString) : null;
 //! ```
@@ -43,6 +47,14 @@
 //! `fastqToPhred` throw `IllegalArgumentException: Invalid fastq character: <c>` from inside
 //! htsjdk, before the tool's own check can run. The valid range is `!` (33) to `~` (126)
 //! inclusive, both endpoints measured.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, E>` is "a value or an error"; [`RunResult`] nests two of them, explained there.
+//!   `?` after a call returns its error to the caller at once, as an uncaught Java exception
+//!   would leave the method;
+//! - `Option<Vec<u8>>` is a byte array or nothing, the Java's `byte[]` that may be `null`;
+//! - `let Some(x) = y else { return ... };` takes the value out or leaves the function.
 
 use gatk_engine::reads::{ReadsDataSource, ReadsError};
 use htsjdk_bam::record::BamRecord;
@@ -96,6 +108,18 @@ impl RevertError {
 }
 
 /// `SAMUtils.fastqToPhred`: ASCII minus 33, refusing anything outside the printable range.
+///
+/// htsjdk 5.0.0's per-character check is
+///
+/// ```java
+/// if (ch < 33 || ch > 126) {
+///     throw new IllegalArgumentException("Invalid fastq character: " + ch);
+/// ```
+///
+/// The Java walks `charAt`, one UTF-16 unit at a time, where `chars()` here walks whole
+/// characters; the two differ only on a character outside the Basic Multilingual Plane, and
+/// either way the first such character is refused. `(code - 33) as u8` cannot truncate, the
+/// range check having bounded `code` to 33..=126 (`..=` is an inclusive range).
 pub fn fastq_to_phred(text: &str) -> Result<Vec<u8>, RevertError> {
     let mut phred = Vec::with_capacity(text.len());
     for character in text.chars() {
@@ -116,9 +140,11 @@ pub fn original_base_qualities(read: &BamRecord) -> Result<Option<Vec<u8>>, Reve
     let Some(value) = read.tags.get(original_base_qualities_tag()) else {
         return Ok(None);
     };
-    // `getAttributeAsString` on anything other than a string would stringify it; nothing in this
-    // archetype's corpus writes `OQ` as another type, and a port that invented a conversion would
-    // be guessing.
+    // `let TagValue::Str(text) = value else` keeps a string tag and treats any other type as
+    // absent. `getAttributeAsString` on anything other than a string would stringify it; nothing
+    // in this archetype's corpus writes `OQ` as another type, and a port that invented a
+    // conversion would be guessing. So a non-string `OQ` aborts the run here, where the reference
+    // would convert its string form.
     let TagValue::Str(text) = value else {
         return Ok(None);
     };
@@ -128,7 +154,8 @@ pub fn original_base_qualities(read: &BamRecord) -> Result<Option<Vec<u8>>, Reve
     fastq_to_phred(text).map(Some)
 }
 
-/// `apply`: revert one read, or fail the run.
+/// `apply`: revert one read, or fail the run. `&mut BamRecord` lets it replace the read's
+/// qualities in place, as `read.setBaseQualities(originalQuals)` does.
 pub fn revert(read: &mut BamRecord) -> Result<(), RevertError> {
     match original_base_qualities(read)? {
         Some(qualities) => {
@@ -143,7 +170,7 @@ pub fn revert(read: &mut BamRecord) -> Result<(), RevertError> {
 
 /// What a run produces: the written bytes, the tool's own refusal, or a failure to read at all.
 ///
-/// The nesting is the two layers, not an accident. The outer `Result` is the source failing —
+/// The nesting is the two layers, not an accident. The outer `Result` is the source failing:
 /// nothing was ever traversed. The inner one is the tool refusing a read it did traverse, which is
 /// a `UserException` in the reference and exits non-zero with a partial file on disk. Collapsing
 /// them into one enum would lose which of those happened, and they need different answers.
@@ -180,6 +207,8 @@ pub fn revert_base_quality_scores_with(
     level: u32,
     deflater: htsjdk_bgzf::Deflater,
 ) -> RunResult {
+    // The default read filter is `ALLOW_ALL_READS`, so `filter` is whatever the command line
+    // added. The first refusal stops the loop and is returned in the inner `Result`.
     let mut records = crate::read_walker::traverse(source, &options.intervals, filter)?;
     for record in &mut records {
         if let Err(error) = revert(record) {

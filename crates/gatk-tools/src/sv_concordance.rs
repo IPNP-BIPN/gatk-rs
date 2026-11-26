@@ -17,13 +17,34 @@
 //! The per-sample contingency string and the per-record metrics come from two DIFFERENT schemes:
 //! `SVConcordanceAnnotator` uses its own cut-down table for the string, and
 //! `GenotypeConcordanceSummaryMetrics` builds a fresh `GA4GHSchemeWithMissingAsHomRef` for the
-//! numbers. The two agree on every cell this tool can reach, so the split is not observable here;
-//! both are ported because only one of them is the one being read at a time.
+//! numbers. On the cells this tool can reach they differ only in the truth `IS_MIXED` column,
+//! which is `NA` in the cut-down table and `EMPTY` in GA4GH's (compare the last column of each
+//! `addRow` in `SVConcordanceAnnotator.SVGenotypeConcordanceScheme` with the same column in
+//! `GA4GHSchemeWithMissingAsHomRef`). A truth genotype such as `./1` is `IS_MIXED`, so its
+//! string reads `NA`.
+//! Neither `NA` nor `EMPTY` is counted by any metric, so the numbers do not see the split; both
+//! tables are ported because each is the one read by a different output.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is "a value or nothing" (`Some(x)` or `None`), Java's nullable reference with
+//!   the null check enforced by the compiler. `Result<T, E>` is "a value or an error", how this
+//!   codebase models a thrown exception; `?` after a call returns its `None` or `Err` to the
+//!   caller at once, and `let Some(x) = y else { ... }` unwraps or takes the early exit.
+//! - `&[T]` is a borrowed, read-only view of an array; `&mut T` a writable borrow. `&'static`
+//!   marks data that lives for the whole run, such as the scheme tables below.
+//! - `match` is a `switch` the compiler checks covers every case; `_` is its `default`.
+//!   `matches!(x, A | B)` is the boolean "is `x` one of these".
+//! - `.iter().map(..).filter(..).collect()` is Java's stream pipeline; `|x| ...` is a lambda.
+//! - Tuples compare field by field, left to right, which is how one tuple here stands in for a
+//!   whole `Comparator.thenComparing` chain.
+//! - A body's last expression, written without `;`, is its value.
 
 use crate::sv_cluster::{CallRecord, Linkage, LinkageResult};
 use crate::sv_stratify::SvType;
 
-/// `GenotypeConcordanceStates.TruthState`.
+/// `GenotypeConcordanceStates.TruthState`, in the Java enum's declaration order, which is the
+/// order every metric below walks it in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TruthState {
     Missing,
@@ -39,7 +60,9 @@ pub enum TruthState {
     IsMixed,
 }
 
-/// `GenotypeConcordanceStates.CallState`.
+/// `GenotypeConcordanceStates.CallState`, in the Java enum's declaration order. Only five of these
+/// are ever produced here (see [`eval_state`]); the rest exist so the schemes and the metric loops
+/// have the same rows the Java iterates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CallState {
     Missing,
@@ -63,9 +86,14 @@ pub enum CallState {
 
 /// The shared code both enums draw from. Two states are "on the diagonal" when their codes are
 /// equal, and every call state that has no truth counterpart shares the one INCOMPARABLE code.
+///
+/// Java's `INCOMPARABLE_CODE` is the twelfth constant of `GenotypeConcordanceStateCodes`, ordinal
+/// 11, not -1. The code is only ever compared for equality with a truth code (0 to 10), so any
+/// value outside that range answers the same.
 const INCOMPARABLE: i32 = -1;
 
 impl TruthState {
+    /// `TruthState.getCode()`: the ordinal of the matching `GenotypeConcordanceStateCodes` entry.
     pub fn code(self) -> i32 {
         match self {
             TruthState::Missing => 0,
@@ -82,6 +110,7 @@ impl TruthState {
         }
     }
 
+    /// `TruthState.values()`.
     pub fn all() -> &'static [TruthState] {
         &[
             TruthState::Missing,
@@ -98,7 +127,8 @@ impl TruthState {
         ]
     }
 
-    /// The column this state indexes in a scheme row.
+    /// The column this state indexes in a scheme row: its position in `TruthState.values()`, which
+    /// is the order `addRow` reads its arguments in.
     fn column(self) -> usize {
         match self {
             TruthState::Missing => 0,
@@ -117,6 +147,7 @@ impl TruthState {
 }
 
 impl CallState {
+    /// `CallState.getCode()`. The six multi-allele states fall to the `_` arm, Java's `default`.
     pub fn code(self) -> i32 {
         match self {
             CallState::Missing => 0,
@@ -134,6 +165,7 @@ impl CallState {
         }
     }
 
+    /// `CallState.values()`.
     pub fn all() -> &'static [CallState] {
         &[
             CallState::Missing,
@@ -170,6 +202,7 @@ pub enum Contingency {
 }
 
 impl Contingency {
+    /// The Java constant's name, which is what `StringUtil.join` writes for it.
     fn name(self) -> &'static str {
         match self {
             Contingency::Tp => "TP",
@@ -182,7 +215,8 @@ impl Contingency {
     }
 }
 
-// The cell values the two schemes are written from.
+// The cell values the two schemes are written from: `GenotypeConcordanceScheme`'s `TP_ONLY`,
+// `TP_FN`, and so on, under the same names.
 const TP_ONLY: &[Contingency] = &[Contingency::Tp];
 const TP_FN: &[Contingency] = &[Contingency::Tp, Contingency::Fn];
 const TP_TN: &[Contingency] = &[Contingency::Tp, Contingency::Tn];
@@ -202,13 +236,18 @@ const NA: &[Contingency] = &[Contingency::Na];
 type Row = (CallState, [&'static [Contingency]; 11]);
 
 /// A `GenotypeConcordanceScheme`: the rows it declares, with every undeclared cell reading `NA`.
+///
+/// The Java scheme is a `HashMap` and returns `null` for an undeclared cell. No reachable cell is
+/// undeclared: GA4GH declares all seventeen rows, and the rows the cut-down table omits are call
+/// states [`eval_state`] never returns.
 #[derive(Debug, Clone, Copy)]
 pub struct Scheme {
     rows: &'static [Row],
 }
 
 impl Scheme {
-    /// `getConcordanceStateArray`.
+    /// `getConcordanceStateArray`: a linear search of at most seventeen rows stands in for the
+    /// Java `HashMap` lookup; `.unwrap_or(NA)` is the "row not declared" answer.
     pub fn states(&self, truth: TruthState, call: CallState) -> &'static [Contingency] {
         self.rows
             .iter()
@@ -227,8 +266,15 @@ impl Scheme {
     }
 }
 
-/// `SVConcordanceAnnotator.SVGenotypeConcordanceScheme`, which is the GA4GH one with the rows it
-/// cannot reach removed, and with `NA` where that one has `EMPTY`.
+/// `SVConcordanceAnnotator.SVGenotypeConcordanceScheme`, whose Java comment reads
+/// `Based on {@link GA4GHSchemeWithMissingAsHomRef}. Unused rows have been removed for
+/// simplicity.`
+///
+/// It is not only that table with rows removed. Its last five columns (`LOW_GQ` to `IS_MIXED`)
+/// are `NA` in every row, where GA4GH has `EMPTY` in most; and its `HET_REF_VAR2` and `HOM_VAR2`
+/// rows fill cells GA4GH leaves `NA` (`FP_TN`, `TP_FP_FN`, `FP_ONLY`, `EMPTY`). Neither
+/// difference is reachable through [`eval_state`] except the truth `IS_MIXED` column (see the
+/// module note). Rows and cells are copied from `initiateScheme` in the Java's order.
 pub const SV_SCHEME: Scheme = Scheme {
     rows: &[
         (
@@ -283,7 +329,14 @@ pub const SV_SCHEME: Scheme = Scheme {
 };
 
 /// `GA4GHSchemeWithMissingAsHomRef`, which is what the summary metrics build for themselves
-/// whatever scheme the caller was using for the strings.
+/// whatever scheme the caller was using for the strings:
+///
+/// ```java
+/// final GenotypeConcordanceSchemeFactory schemeFactory = new GenotypeConcordanceSchemeFactory();
+/// final GenotypeConcordanceScheme scheme = schemeFactory.getScheme(missingSitesFlag);
+/// ```
+///
+/// with `missingSitesFlag` always `true` from the annotator, which selects this scheme.
 pub const GA4GH_SCHEME: Scheme = Scheme {
     rows: &[
         (
@@ -382,10 +435,12 @@ pub const GA4GH_SCHEME: Scheme = Scheme {
     ],
 };
 
-/// The truth states the metrics group over.
+/// The truth and call state groups of `GenotypeConcordanceCounts` (`HET_TRUTH_STATES` and so
+/// on), each in the Java array's order.
 pub const HET_TRUTH_STATES: &[TruthState] = &[TruthState::HetRefVar1, TruthState::HetVar1Var2];
 pub const HOM_VAR_TRUTH_STATES: &[TruthState] = &[TruthState::HomVar1];
-/// Note that this one includes HOM_REF and MISSING, which is not what its name suggests.
+/// Note that this one includes HOM_REF and MISSING, which is not what its name suggests; the
+/// Java array lists the same five in the same order.
 pub const VAR_TRUTH_STATES: &[TruthState] = &[
     TruthState::HetRefVar1,
     TruthState::HetVar1Var2,
@@ -416,12 +471,18 @@ pub const VAR_CALL_STATES: &[CallState] = &[
 ];
 
 /// `GenotypeConcordanceCounts`: how many samples fell in each (truth, call) cell.
+///
+/// The Java keeps a `Histogram<TruthAndCallStates>`; a list of pairs searched linearly holds the
+/// same counts, and nothing reads them in the list's order (every metric walks the enums).
+/// `validateCountsAgainstScheme`, which throws on a count in an `NA` cell, is not ported: no
+/// reachable cell of the GA4GH table is `NA`.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Counts {
     cells: Vec<((TruthState, CallState), u64)>,
 }
 
 impl Counts {
+    /// `increment(TruthAndCallStates)`: one more sample in the cell.
     pub fn increment(&mut self, truth: TruthState, call: CallState) {
         match self
             .cells
@@ -433,6 +494,7 @@ impl Counts {
         }
     }
 
+    /// `getCount`: zero for a cell never incremented, as the Java's `bin == null ? 0L`.
     pub fn get(&self, truth: TruthState, call: CallState) -> u64 {
         self.cells
             .iter()
@@ -443,6 +505,10 @@ impl Counts {
 
     /// `calculateGenotypeConcordanceUtil`. `missing_sites` is always true here, so no cell is
     /// skipped for being missing.
+    ///
+    /// The numerator is the cells "on the diagonal", where the two states share a code; NaN when
+    /// no cell was counted, as the Java's `denominator > 0.0 ? (numerator / denominator) :
+    /// Double.NaN`.
     fn concordance_util(&self, missing_sites: bool, include_hom_ref: bool) -> f64 {
         let mut numerator = 0.0;
         let mut denominator = 0.0;
@@ -468,15 +534,20 @@ impl Counts {
         }
     }
 
+    /// `calculateGenotypeConcordance`: every cell.
     pub fn genotype_concordance(&self, missing_sites: bool) -> f64 {
         self.concordance_util(missing_sites, true)
     }
 
+    /// `calculateNonRefGenotypeConcordance`: only the cells `isVar` keeps.
     pub fn non_ref_genotype_concordance(&self, missing_sites: bool) -> f64 {
         self.concordance_util(missing_sites, false)
     }
 
     /// `getSensitivity`: TP over TP plus FN, with a cell counted once per contingency it carries.
+    ///
+    /// No NaN guard, unlike the concordance: an empty denominator divides zero by zero, which is
+    /// NaN in both languages, and `SVConcordanceAnnotator` writes a NaN metric as `null`.
     pub fn sensitivity(&self, scheme: &Scheme, truth_states: &[TruthState]) -> f64 {
         let mut numerator = 0.0;
         let mut denominator = 0.0;
@@ -543,6 +614,7 @@ impl Counts {
     }
 }
 
+/// `isMissing`. Never consulted here, since `missing_sites` is always true.
 fn is_missing(truth: TruthState, call: CallState) -> bool {
     truth == TruthState::Missing || call == CallState::Missing
 }
@@ -573,6 +645,9 @@ pub struct SummaryMetrics {
 }
 
 impl SummaryMetrics {
+    /// The `GenotypeConcordanceSummaryMetrics` constructor with `missingSitesFlag` true, as the
+    /// annotator calls it. The `*_SPECIFICITY` fields the Java sets to `Double.NaN` for HET and
+    /// HOMVAR are not carried, since the annotator never writes them.
     pub fn new(counts: &Counts) -> SummaryMetrics {
         let scheme = &GA4GH_SCHEME;
         SummaryMetrics {
@@ -589,7 +664,9 @@ impl SummaryMetrics {
     }
 }
 
-/// One sample's call. `None` in `alleles` is a no-call.
+/// One sample's call. `None` in `alleles` is a no-call; `Some(i)` is the record's allele `i`, the
+/// reference being 0. The alleles are indices into THEIR OWN record's allele list, not the
+/// `Allele` objects htsjdk compares (see [`Genotype::same_genotype`]).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Genotype {
     pub sample: String,
@@ -598,18 +675,24 @@ pub struct Genotype {
 }
 
 impl Genotype {
+    /// htsjdk's `isNoCall`: every allele uncalled. An empty allele list (ploidy 0) is not one.
     pub fn is_no_call(&self) -> bool {
         !self.alleles.is_empty() && self.alleles.iter().all(Option::is_none)
     }
 
+    /// htsjdk's `isMixed`: some alleles called and some not, as `./1`.
     pub fn is_mixed(&self) -> bool {
         self.alleles.iter().any(Option::is_none) && self.alleles.iter().any(Option::is_some)
     }
 
+    /// htsjdk's `isHomRef`: every allele called and the reference.
     pub fn is_hom_ref(&self) -> bool {
         !self.alleles.is_empty() && self.alleles.iter().all(|allele| *allele == Some(0))
     }
 
+    /// Every allele called and an alternate. Unlike htsjdk's `isHomVar` this does not require the
+    /// alternates to be the same (`1/2` answers true), which [`truth_state`] and [`eval_state`]
+    /// never see because they ask [`Genotype::is_het`] first.
     pub fn is_hom_var(&self) -> bool {
         !self.alleles.is_empty()
             && self
@@ -618,13 +701,25 @@ impl Genotype {
                 .all(|allele| matches!(allele, Some(index) if *index > 0))
     }
 
-    /// Two called alleles that are not the same.
+    /// htsjdk's `isHet`: every allele called, and at least two of them differ.
     pub fn is_het(&self) -> bool {
         self.alleles.iter().all(Option::is_some)
             && self.alleles.windows(2).any(|pair| pair[0] != pair[1])
     }
 
-    /// `Genotype.sameGenotype`, which compares the allele multiset.
+    /// `Genotype.sameGenotype`, which compares the alleles ignoring their order.
+    ///
+    /// This compares the sorted lists, a multiset of per-record indices. htsjdk 5.0.0 checks
+    /// `if (getPloidy() != other.getPloidy()) return false;`, then compares
+    ///
+    /// ```java
+    /// thisAlleles = new TreeSet<Allele>(thisAlleles); // implemented Allele.compareTo()
+    /// otherAlleles = new TreeSet<Allele>(otherAlleles);
+    /// ```
+    ///
+    /// with `equals`: SETS of `Allele` objects (bases and reference flag). The two answers
+    /// differ for `0/0/1` against `0/1/1` (equal sets, unequal multisets), and for two records
+    /// whose allele `i` has different bases, as `0/0` under REF `A` against `0/0` under REF `C`.
     pub fn same_genotype(&self, other: &Genotype) -> bool {
         let mut mine: Vec<Option<i32>> = self.alleles.clone();
         let mut theirs: Vec<Option<i32>> = other.alleles.clone();
@@ -636,8 +731,19 @@ impl Genotype {
 
 /// `getTruthState`, whose order matters: a genotype that is both hom-ref and fully called is
 /// answered before the no-call test is ever reached, and an ABSENT genotype is NO_CALL rather
-/// than MISSING.
+/// than MISSING, whatever the Java comment above that branch says:
+///
+/// ```java
+/// // Treat non-existent genotype as hom-ref
+/// if (g == null) {
+///     return GenotypeConcordanceStates.TruthState.NO_CALL;
+/// ```
+///
+/// The Java's last branch, `g.isMixed()`, has an `else` that throws; every genotype that reaches
+/// it is mixed (all called is hom-ref, het or hom-var; none called is no-call), so the port's
+/// plain `else` answers the same. `genotype.alleles.is_empty()` is `g.getPloidy() == 0`.
 pub fn truth_state(genotype: Option<&Genotype>) -> TruthState {
+    // `let Some(x) = y else { ... }`: unwrap the genotype, or return NO_CALL for an absent one.
     let Some(genotype) = genotype else {
         return TruthState::NoCall;
     };
@@ -654,7 +760,8 @@ pub fn truth_state(genotype: Option<&Genotype>) -> TruthState {
     }
 }
 
-/// `getEvalState`, the same ladder without the absent case: an eval genotype is never null.
+/// `getEvalState`, the same ladder without the absent case: an eval genotype is never null
+/// (`Utils.nonNull(g)`).
 pub fn eval_state(genotype: &Genotype) -> CallState {
     if genotype.is_hom_ref() {
         CallState::HomRef
@@ -682,10 +789,15 @@ pub struct AlleleCounts {
 
 /// `SVAlleleCounter`: AN counts every CALLED allele, reference ones included, and AF is NaN when
 /// there are none.
+///
+/// The Java counts `Allele` objects and looks each alternate of the list it is given up by
+/// equality; this counts indices, so allele `n` of whichever record the genotypes came from is
+/// taken to be alternate `n`.
 pub fn count_alleles(alternate_count: usize, genotypes: &[Genotype]) -> AlleleCounts {
     let mut number = 0;
     let mut count = vec![0; alternate_count];
     for genotype in genotypes {
+        // `.flatten()` over `Option`s skips the `None`s: the no-calls the Java filters out.
         for allele in genotype.alleles.iter().flatten() {
             number += 1;
             // Allele 0 is the reference, and alternate `n` is index `n - 1` of the count array.
@@ -720,12 +832,14 @@ pub struct Record {
 }
 
 impl Record {
+    /// `getGenotypes().get(sample)`: `None` for a sample the record has no genotype for.
     pub fn genotype(&self, sample: &str) -> Option<&Genotype> {
         self.genotypes
             .iter()
             .find(|genotype| genotype.sample == sample)
     }
 
+    /// `getType() == StructuralVariantAnnotationType.CNV`.
     pub fn is_cnv(&self) -> bool {
         self.call.sv_type == SvType::Cnv
     }
@@ -733,10 +847,18 @@ impl Record {
 
 /// `SVConcordanceLinkage.areClusterable`.
 ///
-/// Its comment says CNV/DEL and CNV/DUP matching is not allowed. The condition it uses,
-/// `(aType == CNV || bType != CNV) && aType != bType`, only refuses the pair when the CNV is the
-/// EVAL record: with a non-CNV eval and a CNV truth both halves of the disjunction are false, and
-/// the pair falls through to the base linkage. The asymmetry is the behaviour, not the comment.
+/// Its comment says CNV/DEL and CNV/DUP matching is not allowed:
+///
+/// ```java
+/// // Don't allow CNV/DEL or CNV/DUP matching, which is problematic for concordance calculations
+/// ```
+///
+/// The condition it uses, abbreviated here by dropping `GATKSVVCFConstants.
+/// StructuralVariantAnnotationType.`, is `(aType == CNV || bType != CNV) && aType != bType`,
+/// with `a` the eval record. It only refuses a CNV pair when the CNV is the EVAL record: with a
+/// non-CNV eval and a CNV truth both halves of the disjunction are false, and the pair falls
+/// through to the base linkage. The asymmetry is the behaviour, not the comment.
+/// `LinkageResult::default()` is the Java's `new CanonicalLinkageResult(false)`.
 pub fn are_clusterable(linkage: &Linkage, eval: &CallRecord, truth: &CallRecord) -> LinkageResult {
     if (eval.sv_type == SvType::Cnv || truth.sv_type != SvType::Cnv)
         && eval.sv_type != truth.sv_type
@@ -746,7 +868,10 @@ pub fn are_clusterable(linkage: &Linkage, eval: &CallRecord, truth: &CallRecord)
     linkage.linkage(eval, truth)
 }
 
-/// `totalDistance`: the sum of both ends.
+/// `totalDistance`: the sum of both ends. The Java's `null` case (`Integer.MAX_VALUE`) and its
+/// same-contig assertions are not carried: both records are always present, and only pairs the
+/// linkage accepted are measured, which `CanonicalSVLinkage.clusterTogetherWithParams` refuses
+/// first when either contig differs.
 pub fn total_distance(a: &CallRecord, b: &CallRecord) -> i32 {
     (a.position_a - b.position_a).abs() + (a.position_b - b.position_b).abs()
 }
@@ -759,6 +884,7 @@ pub fn min_distance(a: &CallRecord, b: &CallRecord) -> i32 {
 }
 
 /// `genotypeDistance`: the NEGATIVE number of matching genotypes, so more matches sorts first.
+/// A sample `b` has no genotype for is not a match, as the Java's `genotypeB != null`.
 pub fn genotype_distance(a: &Record, b: &Record) -> i32 {
     let mut matches = 0;
     for genotype in &a.genotypes {
@@ -774,6 +900,11 @@ pub fn genotype_distance(a: &Record, b: &Record) -> i32 {
 /// The comparator chain `getClosestItem` and `ActiveClosestPair.update` share, in order. The last
 /// two exist only so that a tie resolves the same way twice: a candidate whose id equals the eval
 /// record's wins, and after that the smaller id does.
+///
+/// Rust compares tuples field by field, left to right, so comparing two of these tuples is the
+/// Java's `distanceComparator.thenComparing(minDistanceComparator)...thenComparing(
+/// idOrderComparator)`. `false < true`, as for Java's `Boolean`, so `!=` puts an equal id first.
+/// The `'a` says the returned `&str` borrows from `truth`, not from `eval`.
 fn closeness<'a>(eval: &Record, truth: &'a Record) -> (i32, i32, i32, bool, &'a str) {
     (
         total_distance(&eval.call, &truth.call),
@@ -786,6 +917,9 @@ fn closeness<'a>(eval: &Record, truth: &'a Record) -> (i32, i32, i32, bool, &'a 
 
 /// `getClosestItem`: the closest candidate the linkage allows, keyed by whatever the caller keys
 /// them by, the first of two equal ones in the order given.
+///
+/// `impl IntoIterator<Item = ...>` accepts any sequence of `(key, record)` pairs. Java's
+/// `Stream.min` and Rust's `Iterator::min_by` both keep the first of two equal elements.
 pub fn closest<'a, K>(
     linkage: &Linkage,
     eval: &Record,
@@ -829,6 +963,9 @@ pub struct Annotation {
 }
 
 /// `copyNumbersMatch`: null unless BOTH sides carry a copy number.
+///
+/// Each `?` here returns `None` at once when its operand is `None`: no truth record, no genotype
+/// on either side, or no `CN` on either side, the Java's three `return null`s.
 pub fn copy_numbers_match(sample: &str, eval: &Record, truth: Option<&Record>) -> Option<bool> {
     let truth = truth?;
     let evaluated = eval.genotype(sample)?;
@@ -840,6 +977,10 @@ pub fn copy_numbers_match(sample: &str, eval: &Record, truth: Option<&Record>) -
 ///
 /// `common` is the intersection of the two VCFs' sample sets: a sample outside it is annotated on
 /// neither side, and is not counted either.
+///
+/// Not carried: `getStates` refuses a non-CNV eval record with more than one alternate allele
+/// (`"Record " + eval.getId() + " is multiallelic but this is not supported"`); the port always
+/// counts against one alternate.
 pub fn annotate(
     eval: &Record,
     matched: Option<(&Record, LinkageResult)>,
@@ -883,6 +1024,7 @@ pub fn annotate(
         }
     }
 
+    // `numValidCnvComparisons == 0 ? null : numCnvMatches / (double) numValidCnvComparisons`.
     let copy_number_concordance = if is_cnv {
         if cnv_comparisons == 0 {
             None
@@ -892,6 +1034,7 @@ pub fn annotate(
     } else {
         None
     };
+    // `else if (truthRecord != null)`: a false positive carries no genotype metrics.
     let metrics = if !is_cnv && truth.is_some() {
         Some(SummaryMetrics::new(&counts))
     } else {
@@ -903,6 +1046,8 @@ pub fn annotate(
         (None, None)
     } else {
         let alternate_count = 1;
+        // Carried counts are kept as they are; otherwise counted, unless the record has no
+        // samples, `!evalRecord.getAllSamples().isEmpty()`.
         let own = match &eval.allele_counts {
             Some(existing) => Some(existing.clone()),
             None if eval.genotypes.is_empty() => None,
@@ -940,13 +1085,18 @@ pub fn annotate(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConcordanceError {
     /// `ClosestSVFinder.add`: a record starting before the last one its group was given.
+    /// `Utils.validateArg` with `lastItemStart == null || lastItemStart <= item.getPositionA()`,
+    /// hence `IllegalArgumentException`. A start equal to the last is accepted.
     Unsorted,
     /// `flushEngineToBuffer`: an eval record finished by its group before the engine registered
-    /// it, which only one reaching no further than its own start can be.
+    /// it, which only one reaching short of its own start (`max_start < start`) can be: the
+    /// tracker is created after every `addToEngine` call, each of which flushes.
     Unregistered { id: u64 },
 }
 
 impl ConcordanceError {
+    /// The Java exception class: `Utils.validateArg` throws `IllegalArgumentException`,
+    /// `Utils.validate` throws `IllegalStateException`.
     pub fn class(&self) -> &'static str {
         match self {
             ConcordanceError::Unsorted => "java.lang.IllegalArgumentException",
@@ -954,6 +1104,7 @@ impl ConcordanceError {
         }
     }
 
+    /// The Java message, verbatim; the id is the `Long` the engine numbered the record with.
     pub fn message(&self) -> String {
         match self {
             ConcordanceError::Unsorted => {
@@ -985,11 +1136,17 @@ impl<T> LongMap<T> {
         }
     }
 
+    /// The bucket of `key`: `Long.hashCode` (the two 32-bit halves XORed), then `HashMap.hash`'s
+    /// spread and the mask. On an unsigned integer `>>` shifts in zeros, Java's `>>>`; `as u32`
+    /// keeps the low 32 bits, as Java's `(int)` cast does.
     fn bucket(&self, key: u64) -> usize {
         let hash = (key ^ (key >> 32)) as u32;
         (hash ^ (hash >> 16)) as usize & (self.capacity - 1)
     }
 
+    /// `put` of a key not yet present (the engine numbers every record once), with the two
+    /// resizes that can follow it; a resize keeps each bucket's insertion order, so only the
+    /// capacity needs tracking.
     fn insert(&mut self, key: u64, value: T) {
         self.entries.push((key, value));
         let bucket = self.bucket(key);
@@ -1012,12 +1169,15 @@ impl<T> LongMap<T> {
     /// The positions in `entries`, in the map's iteration order.
     fn order(&self) -> Vec<usize> {
         let mut order: Vec<usize> = (0..self.entries.len()).collect();
+        // `sort_by_key` is stable, so entries sharing a bucket stay in insertion order.
         order.sort_by_key(|&index| self.bucket(self.entries[index].0));
         order
     }
 }
 
-/// One eval record waiting in a group: how far it reaches, and the closest truth record so far.
+/// `ClosestSVFinder.ActiveClosestPair`: one eval record waiting in a group, how far it reaches
+/// (`maxClusterableStartingPosition`), and the closest truth record so far, by id, with what the
+/// linkage measured. `None` is the Java's `closest == null`.
 #[derive(Debug, Clone, Copy)]
 struct Active {
     max_start: i32,
@@ -1028,10 +1188,13 @@ struct Active {
 #[derive(Debug, Clone)]
 struct Finder {
     linkage: Linkage,
-    /// `truthIdToItemMap`, each truth record with how far it reaches.
+    /// `truthIdToItemMap`, each truth record with how far it reaches. The Java asks the linkage
+    /// for the reach again at every flush; it depends only on the record, so it is kept here.
     truth: LongMap<i32>,
     /// `idToClusterMap`.
     active: LongMap<Active>,
+    /// `lastItemContig` and `lastItemStart`, `null` (`None`) until the first add and after a
+    /// forced flush.
     last_contig: Option<String>,
     last_start: Option<i32>,
 }
@@ -1049,6 +1212,12 @@ impl Finder {
 
     /// `add`: a truth record updates every eval record waiting, an eval record takes the closest
     /// truth record already held.
+    ///
+    /// Records are passed by id into `items`, the engine's list of every record added, rather
+    /// than by reference, so a truth id can be looked up again when a later one is compared.
+    /// The Java's other three checks (a new contig, and an id already in either map) are not
+    /// carried: the engine
+    /// force-flushes before a new contig and numbers every record once.
     fn add(
         &mut self,
         id: u64,
@@ -1057,6 +1226,7 @@ impl Finder {
         sequences: &[(String, i32)],
     ) -> Result<(), ConcordanceError> {
         let item = &items[id as usize];
+        // `is_some_and`: true only when there is a last start and the closure holds for it.
         if self
             .last_start
             .is_some_and(|start| start > item.call.position_a)
@@ -1069,9 +1239,12 @@ impl Finder {
             .iter()
             .find(|(name, _)| *name == item.call.contig_a)
             .map_or(0, |(_, length)| *length);
+        // The contig's length from the dictionary, zero for a contig it does not list.
         let reach = self.linkage.max_clusterable_start(&item.call, length);
         if is_truth {
             self.truth.insert(id, reach);
+            // In insertion order rather than the map's: each waiting record is updated on its
+            // own, so the order of the updates cannot change any of them.
             for (eval_id, active) in &mut self.active.entries {
                 let eval = &items[*eval_id as usize];
                 let result = are_clusterable(&self.linkage, &eval.call, &item.call);
@@ -1086,6 +1259,9 @@ impl Finder {
                 }
             }
         } else {
+            // `getClosestItem` streams `truthIdToItemMap.entrySet()`, so the candidates come in
+            // the map's iteration order, which matters only when two candidates tie on every
+            // field of `closeness`, ids included.
             let order = self.truth.order();
             let candidates = order.iter().map(|&index| {
                 let truth_id = self.truth.entries[index].0;
@@ -1107,12 +1283,17 @@ impl Finder {
     /// them, in the map's order.
     fn flush(&mut self, force: bool) -> Vec<(u64, Option<(u64, LinkageResult)>)> {
         let order = self.active.order();
+        // `take` holds positions in `entries`, in map order, of the records to hand back.
         let take: Vec<usize> = if force {
             order
         } else {
+            // With no last start nothing was added since the last forced flush, so both maps
+            // are empty and the Java's comparisons with the `null` start are never evaluated.
             let Some(last) = self.last_start else {
                 return Vec::new();
             };
+            // `truthIdToItemMap.values().removeIf(v -> ... < lastItemStart)`, kept the other way
+            // round: `retain` keeps the entries the closure answers true for.
             self.truth.entries.retain(|(_, reach)| *reach >= last);
             order
                 .into_iter()
@@ -1132,6 +1313,7 @@ impl Finder {
             self.last_contig = None;
             self.last_start = None;
         } else {
+            // Drop the handed-back positions; the closure counts its way through `entries`.
             let mut index = 0;
             self.active.entries.retain(|_| {
                 index += 1;
@@ -1146,9 +1328,14 @@ impl Finder {
 /// kept so far.
 #[derive(Debug, Clone)]
 struct Tracker {
-    /// In priority order: the strata as the configuration lists them, then the default.
+    /// In priority order: the strata in the order the eval record was given them (`add_eval`'s
+    /// `strata`), then the default. A group's priority is its index here, as the Java's
+    /// `groupPriorityMap.put(submittedTo.get(i), i)`; smaller is higher.
     groups: Vec<String>,
+    /// The groups not yet ejected from, the Java's shrinking `groupPriorityMap`.
     pending: Vec<String>,
+    /// `outPriority` and `out`: `None` until the first ejection; the inner `Option` is the
+    /// matched truth record, `None` for a false positive.
     out: Option<(usize, Option<(u64, LinkageResult)>)>,
 }
 
@@ -1156,6 +1343,11 @@ impl Tracker {
     /// `eject`. The first answer is kept whatever it is, and a match replaces it when it comes from
     /// a higher group or the answer kept is no match; so the highest group that matched wins, and
     /// an eval record nothing matched is the same false positive from every group.
+    ///
+    /// The Java condition is `outPriority == null || (isTruePositive(record)) && (priority <
+    /// outPriority || (priority > outPriority && !isTruePositive(out)))`; `&&` binds tighter than
+    /// `||`, as in Rust. `isTruePositive` reads the annotated status, which is `TP` exactly when a
+    /// truth record was matched, so `answer.is_some()` stands in for it.
     fn eject(&mut self, name: &str, answer: Option<(u64, LinkageResult)>) {
         self.pending.retain(|group| group != name);
         let priority = self
@@ -1196,11 +1388,15 @@ pub struct Finished {
 /// two records that start together.
 #[derive(Debug, Clone)]
 pub struct Engine {
-    /// Every record added, numbered by `nextItemId`.
+    /// Every record added, numbered by `nextItemId`: a record's id is its index here.
     items: Vec<Record>,
+    /// `clusterEngineMap`, in its `HashMap` iteration order.
     groups: Vec<(String, Finder)>,
+    /// `defaultEngine`.
     default: Finder,
+    /// `variantStatusMap`. Only looked up by id, never iterated, so a Rust `HashMap` will do.
     trackers: std::collections::HashMap<u64, Tracker>,
+    /// `outputBuffer`.
     finished: Vec<Finished>,
     sequences: Vec<(String, i32)>,
 }
@@ -1213,6 +1409,8 @@ impl Engine {
         default: Linkage,
         sequences: &[(String, i32)],
     ) -> Self {
+        // Each finder is created in the order `java_hash_map_order` gives for the names, which
+        // is the order the Java's `keySet()` walks them in.
         let names: Vec<String> = groups.iter().map(|(name, _)| name.clone()).collect();
         let groups = crate::local_assembler_engine::java_hash_map_order(&names)
             .into_iter()
@@ -1233,7 +1431,8 @@ impl Engine {
         &self.items[id as usize]
     }
 
-    /// `addTruthVariant`: matched in every group.
+    /// `addTruthVariant`: matched in every group. `?` hands an `Unsorted` refusal back to the
+    /// caller at once, as the Java's exception would leave the loop.
     pub fn add_truth(&mut self, record: Record) -> Result<(), ConcordanceError> {
         let id = self.items.len() as u64;
         self.items.push(record);
@@ -1244,6 +1443,10 @@ impl Engine {
     }
 
     /// `addEvalVariant`, with the names of the strata it matched in the stratification's order.
+    ///
+    /// The tracker is registered only after every group has been given the record, as in the
+    /// Java; a group that finishes the record during its own add is the
+    /// [`ConcordanceError::Unregistered`] refusal.
     pub fn add_eval(&mut self, record: Record, strata: &[String]) -> Result<(), ConcordanceError> {
         let id = self.items.len() as u64;
         self.items.push(record);
@@ -1275,10 +1478,13 @@ impl Engine {
             self.flush_group(Some(index), force)?;
         }
         self.flush_group(None, force)?;
+        // `std::mem::take` returns the buffer and leaves an empty one in its place, the Java's
+        // `result = outputBuffer; outputBuffer = new ArrayList<>()`.
         Ok(std::mem::take(&mut self.finished))
     }
 
     /// `addToEngine`: a record on a new contig first flushes the group of everything it holds.
+    /// `group` is an index into `groups`, or `None` for the default group.
     fn add_to(
         &mut self,
         group: Option<usize>,
@@ -1290,6 +1496,8 @@ impl Engine {
             Some(index) => &self.groups[index].1,
             None => &self.default,
         };
+        // The finder is looked up twice because `flush_group` needs `self` whole in between; Rust
+        // allows no borrow of one finder to stay alive across that call.
         if finder
             .last_contig
             .as_ref()
@@ -1305,7 +1513,8 @@ impl Engine {
         self.flush_group(group, false)
     }
 
-    /// `flushEngineToBuffer`.
+    /// `flushEngineToBuffer`: each record the group finishes is ejected from its tracker, and a
+    /// tracker with no group left goes to the output with its groups sorted for `STRAT`.
     fn flush_group(&mut self, group: Option<usize>, force: bool) -> Result<(), ConcordanceError> {
         let (name, finder) = match group {
             Some(index) => {
@@ -1318,6 +1527,7 @@ impl Engine {
             ),
         };
         for (id, answer) in finder.flush(force) {
+            // `ok_or(..)?`: a missing tracker becomes the `Unregistered` error, returned at once.
             let tracker = self
                 .trackers
                 .get_mut(&id)

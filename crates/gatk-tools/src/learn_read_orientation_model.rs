@@ -4,9 +4,28 @@
 //! four are real: hom ref, germline het, somatic het and hom var. The tool fits the prior over
 //! those states by EM over a counts file.
 //!
-//! The EM loop and the counts file are not ported here; the counts file is
-//! [`crate::collect_f1r2_counts`]'s. The two functions the fit is built from are: the flat prior it
-//! starts from, and the responsibilities one site takes given a prior.
+//! The counts file is [`crate::collect_f1r2_counts`]'s and is not read here. The first half of
+//! this file is the two functions the fit is built from: the flat prior it starts from, and the
+//! responsibilities one site takes given a prior. The second half is the EM loop itself,
+//! `LearnReadOrientationModelEngine.learnPriorForArtifactStates`, as [`learn_prior`], with the
+//! reverse complements the tool combines contexts by.
+//!
+//! Reference: GATK 4.7.0.0, `walkers/readorientation/`; `LearnReadOrientationModelEngine.java` is
+//! unchanged since 4.6.2.0.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `[f64; NUM_STATES]` is a fixed-length `double[12]` whose length is part of the type, so it is
+//!   copied by `=` rather than shared: `let old = prior;` is Java's `Arrays.copyOf`.
+//! - `Option<Base>` is "a base or nothing", Java's nullable `Nucleotide` checked by the compiler;
+//!   `Result<(), ModelError>` is "nothing, or the error", how a validation that throws is modelled.
+//! - `.expect("..")` unwraps a value the code knows is present and aborts with that message if it
+//!   is not; it marks a case the reference cannot reach rather than one it handles.
+//! - `match` must cover every case, and `_` is "every other case": in [`State::artifact_base`],
+//!   the four real states.
+//! - `.iter().map(..).collect()` is Java's stream, map, collect, and `|x| ...` is a lambda.
+//! - `as i32` from a double truncates toward zero and saturates at the `int` range, as Java's
+//!   `(int)` cast does.
 
 use gatk_engine::beta_binomial::BetaBinomialDistribution;
 use gatk_engine::natural_log_utils::normalize_from_log_to_linear_space_host_exp;
@@ -131,7 +150,13 @@ pub fn ref_to_ref_artifacts(reference: Base) -> [State; 2] {
     }
 }
 
-/// `getFlatPrior`, which is not flat over twelve states: the two ref-to-ref artefacts take zero and
+/// `getFlatPrior`, which is not flat over twelve states:
+///
+/// ```java
+/// Arrays.fill(prior, 1.0 / (F1R2FilterConstants.NUM_STATES - refToRefStates.size()));
+/// ```
+///
+/// (`LearnReadOrientationModelEngine.java:364`): the two ref-to-ref artefacts take zero and
 /// the remaining TEN share the mass, so no state ever gets a twelfth and the prior depends on the
 /// reference base.
 pub fn flat_prior(reference: Base) -> [f64; NUM_STATES] {
@@ -211,7 +236,11 @@ pub fn alt_f1r2_fraction_shape(state: State) -> BetaShape {
 }
 
 /// `computeLogPosterior`: the state's own prior, then the alternate depth given the depth, then the
-/// alternate F1R2 count given the alternate depth.
+/// alternate F1R2 count given the alternate depth, added in that order
+/// (`LearnReadOrientationModelEngine.java:298-300`).
+///
+/// The reference first validates `MathUtils.isValidProbability(statePrior)`; this does not, and
+/// every prior the EM hands it is a normalised one.
 pub fn log_posterior(
     alt_depth: i32,
     f1r2_alt_count: i32,
@@ -243,6 +272,9 @@ pub fn log_posterior(
 ///
 /// `given_not_hom_ref` zeroes hom ref AFTER the posteriors are computed, so what is left is
 /// renormalised rather than rescaled.
+///
+/// The states are visited in `ArtifactState.values()` order, and a skipped one keeps the
+/// `Double.NEGATIVE_INFINITY` the reference writes for it, which normalises to exactly zero.
 pub fn compute_responsibilities(
     reference: Base,
     alternate: Base,
@@ -318,6 +350,10 @@ pub const REFERENCE_CONTEXT_SIZE: usize = 3;
 
 /// A kmer is canonical when its MIDDLE base is A or C: the other half of the alphabet is reached
 /// by reverse complement, so only one of each pair is kept.
+///
+/// The reference's test is membership of `CANONICAL_KMERS`, which keeps the lexicographically
+/// smaller of each k-mer and its reverse complement (see [`canonical_kmers`]). The two tests are
+/// not the same set: `ATA` is canonical there (it sorts before `TAT`) and its middle base is `T`.
 pub fn is_canonical_kmer(context: &str) -> bool {
     let bases: Vec<char> = context.chars().collect();
     bases.len() == REFERENCE_CONTEXT_SIZE
@@ -326,6 +362,15 @@ pub fn is_canonical_kmer(context: &str) -> bool {
 }
 
 /// The constructor's validations, in its own order, and the crash that follows them.
+///
+/// ```java
+/// Utils.validate(F1R2FilterConstants.CANONICAL_KMERS.contains(referenceContext),
+///         referenceContext + " is not in the set of canonical kmers");
+/// ```
+///
+/// (`LearnReadOrientationModelEngine.java:121-122`.) The crash is the constructor's
+/// `new Array2DRowRealMatrix(altDesignMatrix.size(), F1R2FilterConstants.NUM_STATES)` with zero
+/// rows (`:131`).
 pub fn validate_context(context: &str, alt_design_matrix_size: usize) -> Result<(), ModelError> {
     if context.len() != REFERENCE_CONTEXT_SIZE {
         return Err(ModelError::ContextLength {
@@ -403,6 +448,12 @@ pub fn reverse_complement(context: &str) -> String {
 
 /// `F1R2FilterConstants.CANONICAL_KMERS`: each k-mer or its reverse complement, whichever sorts
 /// first, in the order `ALL_KMERS` meets them.
+///
+/// The reference (`F1R2FilterConstants.java:29-33`) maps each k-mer to the `TreeSet` of it and
+/// its reverse complement, takes `.distinct()` of those sets, and then keeps
+/// `s.first().compareTo(s.last()) < 0 ? s.first() : s.last()`, the smaller member. `distinct`
+/// keeps the first occurrence, so the order is the first time either member of a pair appears;
+/// `out.contains` here is that `distinct`.
 pub fn canonical_kmers() -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for kmer in crate::collect_f1r2_counts::all_kmers() {
@@ -508,6 +559,15 @@ fn sum_array_function(count: usize, f: impl Fn(usize) -> [f64; NUM_STATES]) -> [
 /// responsibility once per iteration and the M-step sums them in the reference's order: the design
 /// matrix row by row, the depth-one histograms in the order they are handed in, then the reference
 /// histogram depth by depth.
+///
+/// The loop is the reference's `do { ... } while`, so it always runs at least once
+/// (`LearnReadOrientationModelEngine.java:161`):
+///
+/// ```java
+/// } while (l2Distance > convergenceThreshold && numIterations.intValue() < maxEMIterations);
+/// ```
+///
+/// The log lines the reference writes after the loop are not reproduced.
 pub fn learn_prior(
     context: &str,
     reference: &std::collections::BTreeMap<i32, f64>,
@@ -517,7 +577,10 @@ pub fn learn_prior(
     max_iterations: i32,
     max_depth: i32,
 ) -> Prior {
+    // `F1R2FilterUtils.getMiddleBase`: the reference base is the context's middle one.
     let ref_base = Base::from_byte(context.as_bytes()[1]).expect("a canonical k-mer");
+    // `numAltExamples` and `numRefExamples`: each histogram's sum is a double cast to `int` on its
+    // own, and the casts are then summed as `int`s.
     let alt_examples = design.len() as i32
         + alt_histograms
             .iter()
@@ -526,13 +589,16 @@ pub fn learn_prior(
     let ref_examples = reference.values().sum::<f64>() as i32;
     let pseudocounts = flat_prior(ref_base);
     let mut prior = pseudocounts;
+    // A histogram's count at one depth, 0 for a bin it does not have.
     let depth_bin = |counts: &std::collections::BTreeMap<i32, f64>, depth: i32| {
         *counts.get(&depth).unwrap_or(&0.0)
     };
     let mut iterations = 0;
+    // `loop` with the test and `break` at its end is Java's `do { ... } while`.
     loop {
         let old = prior;
-        // E-step.
+        // E-step, `takeEstep`: the reference rows one per depth, the design matrix row by row,
+        // and the depth-one sites one per depth, base and orientation (computed lazily below).
         let ref_rows: Vec<[f64; NUM_STATES]> = (1..=max_depth)
             .map(|depth| compute_responsibilities(ref_base, ref_base, 0, 0, depth, &prior, false))
             .collect();
@@ -553,7 +619,9 @@ pub fn learn_prior(
         let depth_one = |alt: Base, f1r2: bool, depth: i32| {
             compute_responsibilities(ref_base, alt, 1, i32::from(f1r2), depth, &prior, false)
         };
-        // M-step.
+        // M-step, `takeMstep`: the design matrix's effective counts, plus every depth-one
+        // histogram's, plus the reference histogram's, plus the pseudocounts, then
+        // `MathUtils.normalizeSumToOne`, which divides each by their plain left-to-right sum.
         let from_design = sum_array_function(alt_rows.len(), |n| alt_rows[n]);
         let mut from_histograms = [0.0; NUM_STATES];
         for histogram in alt_histograms {
@@ -577,6 +645,7 @@ pub fn learn_prior(
         for (p, v) in prior.iter_mut().zip(&with_pseudo) {
             *p = v / total;
         }
+        // `MathArrays.distance(oldStatePrior, statePrior)`: the Euclidean distance.
         let distance = old
             .iter()
             .zip(&prior)

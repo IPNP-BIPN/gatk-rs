@@ -8,6 +8,19 @@
 //! This module is the golden's model of the rules. The tool itself, with the streaming engines of
 //! [`crate::sv_cluster_engine`], the VCFs read and written and the genotypes squared off, is the
 //! `JointGermlineCNVSegmentation` runner in `gatk-cli`.
+//!
+//! Reference: GATK 4.7.0.0, `tools/walkers/sv/JointGermlineCNVSegmentation.java` (unchanged since
+//! 4.6.2.0) and `tools/sv/cluster/CNVLinkage.java`.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<i32>` is "an `int` or nothing", how an absent FORMAT attribute is modelled; in
+//!   `alleles`, `None` is `Allele.NO_CALL`. `.unwrap_or(0)` is `getAttributeAsInt(g, key, 0)`.
+//! - `Result<i32, SegmentationError>` is "the value or the exception the reference would throw".
+//! - `let Some(x) = y else { ... };` unwraps `y` or takes the early exit in the braces.
+//! - `matches!(value, pattern)` is a boolean test of a value's shape, and a `match` arm may join
+//!   several shapes with `|`.
+//! - `x as i32` from a double truncates toward zero, Java's `(int)` cast.
 
 use crate::sv_stratify::SvType;
 
@@ -23,6 +36,8 @@ pub enum SegmentationError {
 }
 
 impl SegmentationError {
+    /// The reference's exception message for each refusal, copied from `SampleDBBuilder.java:103`
+    /// and `JointGermlineCNVSegmentation.java:586-587` and `:747-748`.
     pub fn message(&self) -> String {
         match self {
             SegmentationError::MissingFromPedigree { sample } => format!(
@@ -40,7 +55,8 @@ impl SegmentationError {
     }
 }
 
-/// The contigs whose ploidy comes from the pedigree rather than from an argument.
+/// The contigs whose ploidy comes from the pedigree rather than from an argument:
+/// `Arrays.asList("X","Y","chrX","chrY")` (`JointGermlineCNVSegmentation.java:110`).
 pub const ALLOSOMAL_CONTIGS: &[&str] = &["X", "Y", "chrX", "chrY"];
 
 /// `Sex`, as the pedigree's fifth column spells it.
@@ -69,6 +85,7 @@ pub struct Pedigree {
 }
 
 impl Pedigree {
+    /// `sampleDB.getSample(sampleName).getSex()`, or `None` for a sample with no entry.
     pub fn sex(&self, sample: &str) -> Option<Sex> {
         self.samples
             .iter()
@@ -103,10 +120,13 @@ pub struct Genotype {
 }
 
 impl Genotype {
+    /// htsjdk's `isHomRef`: at least one allele, and every one the reference.
     pub fn is_hom_ref(&self) -> bool {
         !self.alleles.is_empty() && self.alleles.iter().all(|allele| *allele == Some(0))
     }
 
+    /// htsjdk's `isNoCall`: at least one allele, and every one a no-call. A genotype mixing
+    /// called and uncalled alleles is neither this nor hom ref.
     pub fn is_no_call(&self) -> bool {
         !self.alleles.is_empty() && self.alleles.iter().all(Option::is_none)
     }
@@ -133,11 +153,16 @@ pub struct Segment {
 }
 
 impl Segment {
+    /// The closed interval's length, `end - start + 1`.
     pub fn length(&self) -> i32 {
         self.end - self.start + 1
     }
 
-    /// The samples carrying a non-reference allele.
+    /// The samples carrying a non-reference allele: a called allele whose index is above 0.
+    ///
+    /// This is the called-genotype branch of `SVCallRecord.isCarrier` only. The reference also
+    /// counts a no-call genotype as a carrier when its copy number departs from its expected copy
+    /// number (`SVCallRecord.java:281-290`), which this model does not.
     pub fn carriers(&self) -> Vec<String> {
         self.genotypes
             .iter()
@@ -177,7 +202,7 @@ pub fn keeps_record(segment: &Segment, min_quality: i32) -> bool {
     !genotype.is_null_call()
 }
 
-/// `getSamplePloidy`.
+/// `getSamplePloidy` (`JointGermlineCNVSegmentation.java:553-590`).
 ///
 /// An `ECN` already on the genotype is read FIRST, before the contig is even looked at. That value
 /// does not reach the output, though: the ploidy is derived again for every sample when the site is
@@ -221,8 +246,8 @@ pub fn sample_ploidy(
     }
 }
 
-/// `correctGenotypePloidy`: the alleles are padded to the ploidy with reference alleles, and a
-/// genotype with more alleles than that is refused.
+/// `correctGenotypePloidy` (`JointGermlineCNVSegmentation.java:740-755`): the alleles are padded
+/// to the ploidy with reference alleles, and a genotype with more alleles than that is refused.
 ///
 /// A SINGLE no-call allele is a special case: it becomes a no-call of the full ploidy rather than
 /// one no-call padded with reference alleles.
@@ -247,12 +272,17 @@ pub fn correct_genotype_ploidy(
     Ok(alleles)
 }
 
-/// `CNVLinkage.DEFAULT_PADDING_FRACTION` and `DEFAULT_SAMPLE_OVERLAP`.
+/// `CNVLinkage.DEFAULT_PADDING_FRACTION` and `DEFAULT_SAMPLE_OVERLAP` (`CNVLinkage.java:27-28`).
 pub const DEFAULT_PADDING_FRACTION: f64 = 0.25;
 pub const DEFAULT_SAMPLE_OVERLAP: f64 = 0.8;
 
 /// `getPaddedRecordInterval`: the padding is a fraction of the record's OWN length, truncated
-/// toward zero, and it is clipped to the contig.
+/// toward zero, and it is clipped to the contig (`CNVLinkage.java:115-118`):
+///
+/// ```java
+/// return new SimpleInterval(contig, start, end)
+///         .expandWithinContig((int) (paddingFraction * (end - start + 1)), dictionary);
+/// ```
 pub fn padded_interval(
     start: i32,
     end: i32,
@@ -264,6 +294,19 @@ pub fn padded_interval(
 }
 
 /// `hasSampleOverlap`: a fraction of the SMALLER carrier set, and zero asks nothing.
+///
+/// Not what GATK 4.7.0.0 computes. `SVClusterLinkage.getSampleSetOverlap` divides by the LARGER
+/// set and passes two empty sets (`SVClusterLinkage.java:51-57`):
+///
+/// ```java
+/// final double denom = Math.max(a.size(), b.size());
+/// if (denom == 0) {
+///     return 1;
+/// }
+/// ```
+///
+/// and for a record of type `CNV`, `computeSampleOverlap` compares copy states over every sample
+/// rather than carrier sets (`:71-93`).
 pub fn has_sample_overlap(a: &Segment, b: &Segment, threshold: f64) -> bool {
     if threshold <= 0.0 {
         return true;
@@ -281,7 +324,8 @@ pub fn has_sample_overlap(a: &Segment, b: &Segment, threshold: f64) -> bool {
     shared as f64 / smaller as f64 >= threshold
 }
 
-/// `CNVLinkage.areClusterable`.
+/// `CNVLinkage.areClusterable` (`CNVLinkage.java:43-95`): type, padded overlap, sample overlap,
+/// then the singleton rule, each a refusal in that order.
 ///
 /// The last test is the one the class documentation calls out: a SINGLETON is only joined to
 /// another record of the same copy state, compared as the difference from the ploidy rather than
@@ -311,6 +355,7 @@ pub fn are_clusterable(
         return false;
     }
 
+    // `carriersA.size() == 1 && carriersA.equals(carriersB)`.
     let carriers_a = a.carriers();
     let carriers_b = b.carriers();
     if carriers_a.len() == 1 && carriers_a == carriers_b {
@@ -321,6 +366,8 @@ pub fn are_clusterable(
         ) else {
             return true;
         };
+        // Both carry `CN`: compare the copy-number deltas. Otherwise compare the allele lists,
+        // sorted (`SVCallRecordUtils.sortAlleles`), which only equality reads here.
         match (genotype_a.copy_number, genotype_b.copy_number) {
             (Some(copy_a), Some(copy_b)) => {
                 let delta_a = genotype_a.ploidy() as i32 - copy_a;
@@ -366,6 +413,7 @@ pub fn defragment(
     min_sample_overlap: f64,
     contig_length: i32,
 ) -> Vec<Defragmented> {
+    // Each cluster is the list of indices of its member segments.
     let mut clusters: Vec<Vec<usize>> = Vec::new();
     for (index, segment) in segments.iter().enumerate() {
         let linked: Vec<usize> = clusters
@@ -384,6 +432,7 @@ pub fn defragment(
             })
             .map(|(at, _)| at)
             .collect();
+        // `split_first` is `None` for an empty list, or `Some((first, rest))`.
         match linked.split_first() {
             None => clusters.push(vec![index]),
             Some((first, rest)) => {
@@ -401,6 +450,8 @@ pub fn defragment(
             }
         }
     }
+    // A cluster's extent is its members' smallest start and largest end; the clusters come out
+    // ordered by start.
     let mut out: Vec<Defragmented> = clusters
         .into_iter()
         .map(|members| Defragmented {

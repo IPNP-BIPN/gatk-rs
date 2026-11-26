@@ -6,10 +6,11 @@
 //! one order among equals by accident: `dense_2` moves its last bits with the thread count in the
 //! reference itself.
 //!
-//! * **Convolutions** in the 1D model are oneDNN 3.1.1's `jit:avx2`: one accumulator for each output,
-//!   starting from the bias, taking `vfmadd231ps` over input channel blocks of 8, then the kernel's
-//!   height and width, then the channels of the block. In the 2D model they are `brgconv:avx2`: from
-//!   zero over the kernel's height and width, then all the input channels, with the bias added last.
+//! * **Convolutions** in the 1D model are oneDNN 3.1.1's `jit:avx2`: one accumulator for each
+//!   output, starting from the bias, taking `vfmadd231ps` over input channel blocks of 8, then the
+//!   kernel's height and width, then the channels of the block. In the 2D model they are
+//!   `brgconv:avx2`: from zero over the kernel's height and width, then all the input channels,
+//!   with the bias added last.
 //! * **Dense layers** are MKL's `SGEMM`, whose source is not public, so its order was read off from
 //!   outside by `tools/nvscorevariants/probe_gemm.py`: which terms have met before which others is
 //!   observable by adding a huge number and two ones. Terms are taken 256 at a time, the last
@@ -17,6 +18,19 @@
 //! * **Batch norm** is `batch_norm_cpu_contiguous_impl`, where GCC's contraction fused both
 //!   `bias - mean * alpha` and `x * alpha + beta`.
 //! * **Softmax** is `_vec_softmax_lastdim` over SLEEF's `expf8_u10`.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `f32` is Java's `float` and `f64` its `double`; `f64::from(x)` widens exactly, and `x as f32`
+//!   from a double rounds to the nearest float;
+//! - `&[f32]` is a borrowed, read-only view of an array and `&mut [f32]` a writable one; the
+//!   caller keeps the array. `chunks_mut(n)` splits one writable view into disjoint pieces of `n`,
+//!   which is what lets threads write their own outputs with no locking;
+//! - `|a, b| ..` is a closure, Java's lambda; `&(dyn Fn(usize, T) + Sync)` is a reference to any
+//!   closure of that shape that may be called from several threads at once;
+//! - `ConvWeights<'a>` borrows its slices from the loaded weights for as long as `'a`; the
+//!   compiler checks it never outlives them;
+//! - a function's last expression, with no `;`, is its return value.
 
 /// `vfmadd231ps` on one lane: `a * b + c` rounded once.
 ///
@@ -30,8 +44,9 @@ pub fn fused(a: f32, b: f32, c: f32) -> f32 {
     let addend = f64::from(c);
     let sum = product + addend;
     let bits = sum.to_bits();
-    // The midpoint between two normal floats is 29 low bits of 1 followed by zeros; a result too
-    // small to be a normal float has its midpoints elsewhere and goes the long way too.
+    // A double has 29 more fraction bits than a float, so the midpoint between two normal floats
+    // is a double whose 29 low bits are a one followed by 28 zeros, `0x1000_0000` under the mask.
+    // A result too small to be a normal float has its midpoints elsewhere and goes the long way.
     if bits & 0x1FFF_FFFF != 0x1000_0000 && sum.abs() >= 1.1754943508222875e-38 {
         return sum as f32;
     }
@@ -39,6 +54,12 @@ pub fn fused(a: f32, b: f32, c: f32) -> f32 {
 }
 
 /// Round to odd in the double, which a later rounding to fewer bits cannot be fooled by.
+///
+/// `error` is the exact part of `product + addend` that the double sum lost, by the two-sum
+/// identity. When it is zero, or the sum's last bit is already odd, the sum stands. Otherwise the
+/// sum moves one double away from or towards zero, whichever side the exact value is on, which
+/// makes its last bit odd and so takes it off the midpoint. `#[cold]` tells the compiler this path
+/// is rare.
 #[cold]
 fn rounded_once(product: f64, addend: f64, sum: f64) -> f32 {
     let from_product = sum - addend;
@@ -61,16 +82,20 @@ pub struct Shape {
 }
 
 impl Shape {
+    /// How many values the tensor holds.
     pub fn len(&self) -> usize {
         self.batch * self.channels * self.height * self.width
     }
 
+    /// Whether the tensor holds no values.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 }
 
 /// A convolution's weights, `(output channels, input channels, height, width)`, and its bias.
+///
+/// `weight` is flat in that order, `bias` one value per output channel.
 pub struct ConvWeights<'a> {
     pub outputs: usize,
     pub inputs: usize,
@@ -92,6 +117,7 @@ pub fn conv2d(src: &[f32], input: Shape, conv: &ConvWeights, threads: usize) -> 
     }
 }
 
+/// Stride one and no padding: each spatial axis loses the kernel's extent less one.
 fn output_shape(input: Shape, conv: &ConvWeights) -> Shape {
     Shape {
         batch: input.batch,
@@ -182,6 +208,8 @@ pub fn conv2d_on_host(
                     }
                     first = last;
                 }
+                // The zero-padded channels of a partial block add `0 * 0` terms, which change no
+                // sum except a negative zero, and adding `+0.0` once has that same effect.
                 if padded {
                     sum += 0.0;
                 }
@@ -198,6 +226,11 @@ pub fn conv2d_on_host(
 }
 
 /// Hand each piece to a thread, in order within a thread and without any sharing between them.
+///
+/// Piece `at` goes to thread `at % threads`, and `work` gets its index with it. Each piece is a
+/// whole output, so the split decides only which thread computes a value and never how it is
+/// summed. `std::thread::scope` waits for every thread before it returns, which is what lets the
+/// threads borrow `work` and the pieces from the caller.
 fn run_over<T: Send>(items: Vec<T>, threads: usize, work: &(dyn Fn(usize, T) + Sync)) {
     let threads = threads.max(1);
     if threads == 1 || items.len() < 2 {
@@ -231,6 +264,8 @@ pub fn relu(values: &mut [f32]) {
 }
 
 /// `MaxPool2d` with a stride equal to its height and a width of one.
+///
+/// Rows left over when the height does not divide are dropped, as integer division drops them.
 pub fn max_pool_height(src: &[f32], input: Shape, height: usize) -> (Vec<f32>, Shape) {
     let out = Shape {
         height: input.height / height,
@@ -260,6 +295,9 @@ pub fn max_pool_height(src: &[f32], input: Shape, height: usize) -> (Vec<f32>, S
 }
 
 /// A batch norm's parameters, in evaluation mode.
+///
+/// One value per channel in each slice: the learnt scale and shift and the running mean and
+/// variance. `eps` is the module's `eps`, 0.001 in both models.
 pub struct BatchNorm<'a> {
     pub weight: &'a [f32],
     pub bias: &'a [f32],
@@ -269,6 +307,10 @@ pub struct BatchNorm<'a> {
 }
 
 /// `batch_norm_cpu_contiguous_impl`.
+///
+/// Per channel, `alpha = weight / sqrt(var + eps)` written as `1 / sqrt` times the weight, and
+/// `beta = bias - mean * alpha` as one fused step; then every value is `x * alpha + beta`, fused
+/// again. `src` is `(batch, channels)`, so each chunk of `channels` is one row.
 pub fn batch_norm(src: &[f32], parameters: &BatchNorm) -> Vec<f32> {
     let channels = parameters.weight.len();
     let eps = parameters.eps as f32;
@@ -314,6 +356,7 @@ fn gemm_block(remaining: usize) -> usize {
     }
 }
 
+/// One block's dot product, from zero, in the order [`Terms`] names.
 fn block_sum(row: &[f32], column: &[f32], terms: Terms) -> f32 {
     match terms {
         Terms::Chain => row
@@ -355,6 +398,8 @@ pub fn linear(
         for (o, value) in out.iter_mut().enumerate() {
             let line = &weight[o * k..(o + 1) * k];
             let kind = terms(o, row);
+            // `beta` 1 over a copy of the bias: the output starts as the bias, and each block's sum
+            // is added to it with a plain, unfused addition.
             let mut sum = bias[o];
             let mut start = 0;
             while start < k {
@@ -378,6 +423,7 @@ pub fn sleef_expf(d: f32) -> f32 {
     const L2L: f32 = 1.428_606_765_330_187_0e-6;
     // `vrint_vi2_vf`, `_mm256_cvtps_epi32`: to nearest, ties to even.
     let q = (d * R_LN2).round_ties_even();
+    // `as i32` from a float rounds toward zero, but `q` is already whole.
     let integer = q as i32;
     let mut s = fused(q, -L2U, d);
     s = fused(q, -L2L, s);
@@ -400,12 +446,18 @@ pub fn sleef_expf(d: f32) -> f32 {
     u
 }
 
-/// `vpow2i`.
+/// `vpow2i`: two to `exponent`, by writing the biased exponent into a float's exponent field.
+///
+/// No range check: an exponent outside a normal float's range gives whatever those bits are.
+/// Inside the range `sleef_expf`'s checks let through, each half of its exponent is a normal one.
 fn power_of_two(exponent: i32) -> f32 {
     f32::from_bits(((exponent.wrapping_add(0x7f)) as u32) << 23)
 }
 
 /// `_vec_softmax_lastdim` over four outputs.
+///
+/// Per row: subtract the largest logit, take each exponential, add the four left to right, and
+/// multiply each by one over the sum rather than divide each by it.
 pub fn softmax(logits: &[f32]) -> Vec<f32> {
     let mut out = Vec::with_capacity(logits.len());
     for row in logits.chunks(4) {
@@ -426,15 +478,15 @@ pub fn softmax(logits: &[f32]) -> Vec<f32> {
     out
 }
 
-/// `VariantLabel`.
+/// `VariantLabel`: the four columns of the softmax, in the model's output order.
 const NOT_SNP: usize = 0;
 const NOT_INDEL: usize = 1;
 const SNP: usize = 2;
 const INDEL: usize = 3;
 
 /// `torch.log`, which is MKL's `vsLn` at `VML_HA`. Its source is not public and its table is not
-/// reproduced: this is the correctly rounded log of the double, rounded to a float, and the distance
-/// from the reference is what `docs/nvscorevariants.md` measures.
+/// reproduced: this is the correctly rounded log of the double, rounded to a float, and the
+/// distance from the reference is what `docs/nvscorevariants.md` measures.
 fn log(value: f32) -> f32 {
     if value.is_nan() {
         return value;
@@ -443,6 +495,10 @@ fn log(value: f32) -> f32 {
 }
 
 /// `predictions_to_score`, on the softmax and the encoded `VariantType`.
+///
+/// The SNP score is `log(eps + p[SNP] / (p[NOT_SNP] + eps))` and the indel score likewise, with
+/// `eps` 1e-7 as in `common.py`'s `predictions_to_snp_scores` and `predictions_to_indel_scores`. A
+/// SNP takes the first, an indel the second, and any other type the larger of the two.
 pub fn scores(probabilities: &[f32], types: &[i64]) -> Vec<f32> {
     const EPS: f32 = 1e-7;
     probabilities

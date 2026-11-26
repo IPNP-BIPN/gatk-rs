@@ -5,6 +5,9 @@
 //! `org.broadinstitute.hellbender.tools.walkers.PairWalker` and
 //! `org.broadinstitute.hellbender.utils.collections.HopscotchCollection`.
 //!
+//! GATK 4.7.0.0; `LocalAssembler.java`, `PairWalker.java` and `HopscotchCollection.java` are
+//! unchanged since 4.6.2.0.
+//!
 //! What decides the output, and therefore what this reproduces rather than approximates:
 //!
 //!  * **the contig numbers are the kmer set's iteration order.** `buildContigs` numbers a contig
@@ -25,6 +28,34 @@
 //! machine to the next. The transit map is an identity-keyed `HashMap` too; this port walks it in
 //! insertion order. Scaffolds are sorted by contig id before they are written, so the default
 //! FASTA is fully determined.
+//!
+//! # How the Java object graph is held here
+//!
+//! The reference links objects to objects: a `KmerAdjacencyImpl` points at its sole predecessor
+//! and its `ContigImpl`, and each of them has an `RC` twin object that is a reverse-complemented
+//! view of it. Rust does not allow a web of mutable references, so every object lives in one
+//! `Vec` inside `Graph` and is named by its index. `Adj` and `Ctg` are such a name plus an `rc`
+//! flag: `rc: false` is the `...Impl` object, `rc: true` its `...RC` twin, and each accessor on
+//! `Graph` answers for the twin the way the `RC` class does, by reading the other field of the
+//! canonical object and reflecting it. Two names are equal exactly when the Java objects are the
+//! same object, which is what the reference's `==` and identity hashing compare.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is "a `T` or nothing", Java's nullable reference with the null check enforced.
+//!   `if let Some(x) = y { .. }` runs the block only when there is a value, and
+//!   `let Some(x) = y else { .. };` takes the early exit when there is none.
+//! - `Result<T, E>` is "a `T` or an error"; `?` after a call returns its error to the caller
+//!   at once, which is how a Java `throw` that passes through this method is written.
+//! - `&mut self` on a method means it may change the graph; `&self` means it only reads it.
+//! - `match` must cover every case of an `enum`; `_` is the catch-all.
+//! - `x as i32` and similar casts truncate or wrap silently, like Java's `(int)` on a `long`;
+//!   `wrapping_mul` and `wrapping_add` are Java's overflowing `int` arithmetic, which a plain
+//!   `*` or `+` would instead report as a panic in a debug build.
+//! - `|a, b| ...` is a closure, Java's lambda; `impl Fn(..)` in a signature accepts any closure.
+//! - `.iter().map(..).collect()` is Java's stream, map, collect; `.rev()` walks backwards.
+//! - `a..b` is the half-open range `a` to `b - 1`; `&v[a..b]` is a borrowed view of that slice.
+//! - a body's last expression, written without `;`, is its return value.
 
 use std::collections::{HashMap, HashSet};
 
@@ -35,6 +66,7 @@ use htsjdk_bam::tag::Tag;
 
 /// `Kmer.KSIZE`.
 pub const KSIZE: usize = 31;
+/// `Kmer.KMASK`: the low `2 * KSIZE` bits, two per base, that hold one kmer's calls.
 const KMASK: i64 = (1i64 << (2 * KSIZE)) - 1;
 /// `HopscotchCollection.SPREADER`.
 const SPREADER: i32 = 241;
@@ -62,6 +94,9 @@ impl AssemblyError {
 // ---------------------------------------------------------------------------------------------
 
 /// `HopscotchCollection.computeCapacity`: the first legal size at or above `size / 0.85`.
+///
+/// The `as i32` truncates the quotient toward zero, as the reference's `(int)` cast does, and a
+/// size the test refuses falls through to the largest legal size.
 pub fn compute_capacity(size: i32) -> i32 {
     if (size as f64) < LOAD_FACTOR * i32::MAX as f64 {
         let augmented = (size as f64 / LOAD_FACTOR) as i32;
@@ -81,11 +116,18 @@ struct HopscotchFailed;
 ///
 /// `index_of` is the collection's `hashToIndex` applied to an entry's key, and `same_key` its
 /// `equivalent`: the set's order is a property of both and of every insertion and removal.
+///
+/// `T: Clone` says the entries can be copied, which is how an entry is handed back to a caller
+/// while the set keeps its own; Java would hand back the shared reference.
 pub struct Hopscotch<T: Clone> {
     capacity: i32,
     size: i32,
+    /// `buckets`, with `None` for the reference's `null` slot.
     buckets: Vec<Option<T>>,
+    /// `status`: bit `0x80` marks a chain head, the low seven bits the offset to the next link
+    /// of the chain (0 ends it). Held unsigned; `status_add` reproduces the signed `byte`.
     status: Vec<u8>,
+    /// The subclass's `hashToIndex`, passed in as a plain function rather than overridden.
     index_of: fn(&T, i32) -> i32,
 }
 
@@ -105,6 +147,8 @@ impl<T: Clone> Hopscotch<T> {
         self.capacity
     }
 
+    /// `isChainHead`, `getOffset`, `getIndex` and `getIndexDiff`: the bucket arithmetic, with
+    /// every index wrapped around the end of the table.
     fn is_chain_head(&self, index: i32) -> bool {
         self.status[index as usize] & 0x80 != 0
     }
@@ -133,17 +177,27 @@ impl<T: Clone> Hopscotch<T> {
         }
     }
 
+    /// The reference's `status[i] += delta` on a `byte` array, for instance
+    /// `status[predecessorBucketIndex] += toEmptyDistance;` (`HopscotchCollection.java:412`).
+    ///
+    /// Java widens the byte to `int`, adds, and narrows back, which keeps the low eight bits. The
+    /// signed reinterpretation and `wrapping_add` give the same eight bits without the debug-build
+    /// overflow panic a plain `+` on a `u8` would raise.
     fn status_add(&mut self, index: i32, delta: i32) {
         let slot = &mut self.status[index as usize];
         *slot = (*slot as i8).wrapping_add(delta as i8) as u8;
     }
 
     /// `find`: the entry `key_index` names whose key `matches` accepts.
+    ///
+    /// The caller computes the bucket (`hashToIndex(key)`) and supplies the key test as a
+    /// closure, because the Rust set holds entries and not a `toKey` function.
     pub fn find(&self, key_index: i32, matches: impl Fn(&T) -> bool) -> Option<&T> {
         let mut index = key_index;
         if !self.is_chain_head(index) {
             return None;
         }
+        // Walk the chain from its head; `?` gives `None` back if a link is empty.
         loop {
             let entry = self.buckets[index as usize].as_ref()?;
             if matches(entry) {
@@ -158,6 +212,10 @@ impl<T: Clone> Hopscotch<T> {
     }
 
     /// `add`, with the set's collision rule: an entry whose key is already present is refused.
+    ///
+    /// The reference catches the `IllegalStateException` a failed hopscotch throws, resizes, and
+    /// tries once more; `Err(HopscotchFailed)` is that exception here, and a second failure is a
+    /// panic where the reference would let its exception escape.
     pub fn add(&mut self, entry: T, same_key: impl Fn(&T, &T) -> bool) -> bool {
         if self.size == self.capacity {
             self.resize();
@@ -175,6 +233,9 @@ impl<T: Clone> Hopscotch<T> {
     }
 
     /// `findOrAdd`: the entry with this key, or `produce()` inserted at the end of its chain.
+    ///
+    /// `key_index` is a closure of the capacity because the retry after a resize hashes the key
+    /// again, as `findOrAddInternal` does by calling `hashToIndex` itself.
     pub fn find_or_add(
         &mut self,
         key_index: impl Fn(i32) -> i32,
@@ -191,12 +252,15 @@ impl<T: Clone> Hopscotch<T> {
         }
     }
 
+    /// `findOrAddInternal`.
     fn find_or_add_internal(
         &mut self,
         bucket: i32,
         matches: &impl Fn(&T) -> bool,
         produce: &impl Fn() -> T,
     ) -> Result<T, HopscotchFailed> {
+        // No chain starts here, so there is nothing to collide with and the collision test is
+        // never asked; the closure that always says no stands in for `entryCollides()`.
         if !self.is_chain_head(bucket) {
             let entry = produce();
             self.insert(entry.clone(), bucket, &|_: &T, _: &T| false)?;
@@ -244,6 +308,8 @@ impl<T: Clone> Hopscotch<T> {
         true
     }
 
+    /// `removeAtIndex`: a chain's last link is simply cleared; any other is overwritten by the
+    /// chain's last entry, which is unlinked instead, so removal also reorders the chain.
     fn remove_at(&mut self, index: i32, predecessor: i32) {
         let offset = self.offset(index);
         if offset == 0 {
@@ -291,6 +357,9 @@ impl<T: Clone> Hopscotch<T> {
         result
     }
 
+    /// `insert`: evict a squatter from another chain if one holds the home bucket, start a new
+    /// chain there if it is empty, otherwise append to the end of the chain unless an entry
+    /// `collides`. `Ok(false)` is the reference's `return false` for a duplicate.
     fn insert(
         &mut self,
         entry: T,
@@ -326,6 +395,8 @@ impl<T: Clone> Hopscotch<T> {
         Ok(true)
     }
 
+    /// `insertIntoChain`: find an empty bucket, hopscotch it back until it is within an offset of
+    /// 127 (a status byte's seven bits) of the chain's end, then link it in.
     fn insert_into_chain(&mut self, bucket: i32, end: i32) -> Result<i32, HopscotchFailed> {
         let to_end = self.diff(bucket, end);
         let mut empty = self.find_empty(bucket);
@@ -346,6 +417,8 @@ impl<T: Clone> Hopscotch<T> {
         Ok(empty)
     }
 
+    /// `linkIntoChain`: splice `empty` into the chain at the place its distance from the head
+    /// falls, so a chain stays in bucket order.
     fn link_into_chain(&mut self, bucket: i32, empty: i32) {
         let mut to_empty = self.diff(bucket, empty);
         let mut index = bucket;
@@ -363,6 +436,9 @@ impl<T: Clone> Hopscotch<T> {
         self.status[empty as usize] = offset as u8;
     }
 
+    /// `evict`: free `to_evict`, which holds a link of another chain, by linking an empty bucket
+    /// into that chain and moving the chain's last entry there, again and again, until the bucket
+    /// left empty is `to_evict` itself.
     fn evict(&mut self, to_evict: i32) -> Result<(), HopscotchFailed> {
         let bucket = (self.index_of)(
             self.buckets[to_evict as usize].as_ref().expect("an entry"),
@@ -399,6 +475,7 @@ impl<T: Clone> Hopscotch<T> {
         }
     }
 
+    /// `findEmptyBucket`: the next empty bucket after `index`, wrapping round.
     fn find_empty(&self, mut index: i32) -> i32 {
         loop {
             index = self.index(index, 1);
@@ -408,6 +485,9 @@ impl<T: Clone> Hopscotch<T> {
         }
     }
 
+    /// `hopscotch`: move into `empty` an entry linked from a bucket 127 down to 2 places before
+    /// it, the farthest first, and return the bucket it vacated. Finding none is the reference's
+    /// `IllegalStateException`, returned here as `Err(HopscotchFailed)`.
     fn hopscotch(&mut self, from: i32, empty: i32) -> Result<i32, HopscotchFailed> {
         let from_to_empty = self.diff(from, empty);
         let mut to_empty = 127;
@@ -424,6 +504,7 @@ impl<T: Clone> Hopscotch<T> {
         Err(HopscotchFailed)
     }
 
+    /// `move`, renamed because `move` is a Rust keyword.
     fn move_entry(&mut self, predecessor_arg: i32, to_move: i32, empty: i32) {
         let mut predecessor = predecessor_arg;
         let mut to_empty = self.diff(to_move, empty);
@@ -451,6 +532,12 @@ impl<T: Clone> Hopscotch<T> {
         self.status[to_move as usize] = 0;
     }
 
+    /// `resize`: the next legal size, refilled by visiting the old buckets 127 apart rather than
+    /// in order, from the reference's `while ( (idx = (idx+127)%oldCapacity) != 0 );`
+    /// (`HopscotchCollection.java:453`). That visiting order is part of the new table's layout.
+    ///
+    /// `std::mem::take` moves the old bucket vector out and leaves an empty one in its place.
+    /// Where the reference restores the old table and throws, this panics.
     fn resize(&mut self) {
         let old_capacity = self.capacity;
         let old_size = self.size;
@@ -480,6 +567,9 @@ impl<T: Clone> Hopscotch<T> {
 }
 
 /// `String.hashCode`, over the UTF-16 units.
+///
+/// `fold` is a loop with an accumulator: `hash = 31 * hash + unit` for each unit in turn, in
+/// wrapping `int` arithmetic.
 pub fn java_string_hash(text: &str) -> i32 {
     text.encode_utf16().fold(0i32, |hash, unit| {
         hash.wrapping_mul(31).wrapping_add(unit as i32)
@@ -487,6 +577,13 @@ pub fn java_string_hash(text: &str) -> i32 {
 }
 
 /// `HopscotchCollection.hashToIndex` for an entry whose `hashCode` is `hash`.
+///
+/// ```java
+/// int result = entry == null ? 0 : ((SPREADER * entry.hashCode()) % capacity);
+/// ```
+///
+/// (`HopscotchCollection.java:229`.) The product overflows `int`, hence `wrapping_mul`, and
+/// Java's `%` keeps the dividend's sign, as Rust's does, so a negative result is moved up.
 fn default_index(hash: i32, capacity: i32) -> i32 {
     let result = SPREADER.wrapping_mul(hash) % capacity;
     if result < 0 {
@@ -496,7 +593,16 @@ fn default_index(hash: i32, capacity: i32) -> i32 {
     }
 }
 
-/// `KmerSet.hashToIndex`.
+/// `KmerSet.hashToIndex`, which hashes the kmer's `long` value directly:
+///
+/// ```java
+/// final long positiveKval =
+///         ((HopscotchSet.SPREADER * ((Kmer)kmer).getKVal()) & Long.MAX_VALUE);
+/// return (int)(positiveKval % capacity());
+/// ```
+///
+/// (`LocalAssembler.java:1317-1319`.) The `long` product wraps and the mask clears the sign bit,
+/// so the remainder is never negative.
 fn kmer_index(kval: i64, capacity: i32) -> i32 {
     let positive = (SPREADER as i64).wrapping_mul(kval) & i64::MAX;
     (positive % capacity as i64) as i32
@@ -507,6 +613,10 @@ fn kmer_index(kval: i64, capacity: i32) -> i32 {
 /// A bucket is `(h ^ h >>> 16) & (n - 1)` for a table of `n`, which starts at sixteen and doubles
 /// whenever the size passes three quarters of it; a resize keeps each bucket's relative order, so
 /// the order is the buckets in turn, each in insertion order.
+///
+/// `sort_by_key` is a stable sort, so keys sharing a bucket keep their insertion order. The
+/// table above starts at sixteen, which is right for a map made by `new HashMap<>()`, as
+/// `fillGaps` makes `gapFillCounts`.
 pub fn java_hash_map_order(keys: &[String]) -> Vec<usize> {
     let mut capacity = 16usize;
     while keys.len() > capacity * 3 / 4 {
@@ -525,10 +635,14 @@ pub fn java_hash_map_order(keys: &[String]) -> Vec<usize> {
 // Kmers
 // ---------------------------------------------------------------------------------------------
 
+/// `Kmer.isCanonical`: a kmer is canonical when bit `KSIZE` (the middle base's high bit, which
+/// distinguishes A/C from G/T) is clear, so exactly one of a kmer and its reverse complement is.
 fn is_canonical(kval: i64) -> bool {
     kval & (1i64 << KSIZE) == 0
 }
 
+/// `getInitialCall`, `getFinalCall`, `getPredecessorVal` and `getSuccessorVal`: the kmer is two
+/// bits per base, first base highest, so the first call is the top pair and the last the bottom.
 fn initial_call(kval: i64) -> i32 {
     ((kval >> (KSIZE * 2 - 2)) & 3) as i32
 }
@@ -546,6 +660,11 @@ fn successor_val(kval: i64, call: i32) -> i64 {
 }
 
 /// `KmerAdjacency.reverseComplement`, a byte at a time through the same table.
+///
+/// The closure computes `BYTEWISE_REVERSE_COMPLEMENT` on the fly: the four two-bit bases of a
+/// byte reversed and every bit inverted, which complements (A=0 and T=3, C=1 and G=2). Eight
+/// bytes are reversed into a 64-bit word and the 31-base kmer is its top 62 bits, so the final
+/// shift is done on the unsigned value to bring zeros in from the top.
 pub fn reverse_complement_kval(mut val: i64) -> i64 {
     let table = |byte: i64| -> i64 {
         let b = byte & 0xff;
@@ -559,6 +678,7 @@ pub fn reverse_complement_kval(mut val: i64) -> i64 {
     ((result as u64) >> (64 - 2 * KSIZE)) as i64
 }
 
+/// The kmer's 31 bases as text, first base first, for a new contig's leading sequence.
 fn kmer_string(kval: i64) -> Vec<u8> {
     let mut bases = Vec::with_capacity(KSIZE);
     let mut current = kval;
@@ -570,13 +690,20 @@ fn kmer_string(kval: i64) -> Vec<u8> {
     bases
 }
 
+/// `KmerAdjacencyImpl.COUNT_FOR_MASK`: the number of set bits in a four-bit neighbour mask.
 const COUNT_FOR_MASK: [i32; 16] = [0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4];
+/// `KmerAdjacencyRC.NIBREV`: a four-bit mask bit-reversed, which turns a mask of calls into the
+/// mask of their complements (call `c` becomes `3 - c`).
 const NIBREV: [u8; 16] = [
     0b0000, 0b1000, 0b0100, 0b1100, 0b0010, 0b1010, 0b0110, 0b1110, 0b0001, 0b1001, 0b0101, 0b1101,
     0b0011, 0b1011, 0b0111, 0b1111,
 ];
 
 /// A `KmerAdjacency`: a canonical `KmerAdjacencyImpl`, or (`rc`) its `KmerAdjacencyRC`.
+///
+/// `index` is the position in `Graph::adjs`. `Copy` makes it a plain value, copied on every
+/// assignment like a Java `int`, and `PartialEq, Eq, Hash` give it the equality and hashing
+/// that the reference's object identity provides.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 struct Adj {
     index: u32,
@@ -592,7 +719,8 @@ impl Adj {
     }
 }
 
-/// A `Contig`: a `ContigImpl`, or (`rc`) its `ContigRCImpl`.
+/// A `Contig`: a `ContigImpl`, or (`rc`) its `ContigRCImpl`. `index` is the position in
+/// `Graph::contigs`, so a contig made by `join` is a new name even when it keeps an old id.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 struct Ctg {
     index: u32,
@@ -614,6 +742,8 @@ impl Ctg {
     }
 }
 
+/// `KmerAdjacencyImpl`'s fields. Only the canonical object has storage; `rc_kval` is the value
+/// its `KmerAdjacencyRC` twin reports, kept so the twin need not recompute it.
 struct AdjData {
     kval: i64,
     rc_kval: i64,
@@ -626,6 +756,7 @@ struct AdjData {
     contig_offset: i32,
 }
 
+/// `ContigImpl`'s fields, the forward orientation only; `ContigRCImpl` reads them reflected.
 struct ContigData {
     id: i32,
     sequence: Vec<u8>,
@@ -645,10 +776,13 @@ struct KmerEntry {
     adj: u32,
 }
 
+/// The kmer set's `hashToIndex`, for an entry.
 fn kmer_entry_index(entry: &KmerEntry, capacity: i32) -> i32 {
     kmer_index(entry.kval, capacity)
 }
 
+/// `ContigOrientation`: which way a contig is entered at the kmer a `ContigEndKmer` holds, and
+/// `Both` for a contig whose first kmer is its own last kmer reverse-complemented.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Orientation {
     Fwd,
@@ -656,6 +790,7 @@ enum Orientation {
     Both,
 }
 
+/// `ContigEndKmer`: an entry of the set `connectContigs` builds, keyed by the kmer value.
 #[derive(Clone)]
 struct ContigEnd {
     kval: i64,
@@ -668,6 +803,11 @@ fn contig_end_index(entry: &ContigEnd, capacity: i32) -> i32 {
 }
 
 /// Which of a contig's two lists a view reads, and whether it reflects it (`ContigListRC`).
+///
+/// A `ContigRCImpl`'s predecessors are its twin's successors seen backwards and
+/// reverse-complemented, and its successors its twin's predecessors the same way. A view names
+/// the stored list and whether to read it like that, so a write through it lands where the
+/// reference's `ContigListRC.set` would put it.
 #[derive(Clone, Copy)]
 struct ListView {
     contig: u32,
@@ -675,7 +815,9 @@ struct ListView {
     reflected: bool,
 }
 
-/// `PathPart`.
+/// `PathPart`: a read's run over kmers the graph lacks (`PathPartGap`, holding the bases) or
+/// over a stretch of one contig (`PathPartContig`), whose `start` and `stop` count kmers and are
+/// half-open.
 #[derive(Clone, Debug)]
 enum PathPart {
     Gap(Vec<u8>),
@@ -695,6 +837,10 @@ impl PathPart {
 }
 
 /// `TransitPairCount`, one of a pair sharing its count with its reverse complement.
+///
+/// `pair` indexes `Graph::tpcs`; the `rc` side reads that entry's `next` and `prev` swapped and
+/// reverse-complemented. One count serves both because the reference keeps its two counts in
+/// step: `public void resetCount() { count = 0; rc.count = 0; }` (`LocalAssembler.java:2364`).
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct Tpc {
     pair: u32,
@@ -707,6 +853,8 @@ struct TpcData {
     count: i32,
 }
 
+/// `Traversal`: its contig list. The reference's cached `minMaxObservations` is recomputed when
+/// asked for, from the same per-contig values.
 type Traversal = Vec<Ctg>;
 
 /// `TraversalSet`: refuses a traversal whose reverse complement it holds, and explodes past its
@@ -717,6 +865,7 @@ struct TraversalSet {
     too_many: i32,
 }
 
+/// `AssemblyTooComplexException`, as the error side of a `Result`.
 struct TooComplex;
 
 impl TraversalSet {
@@ -729,7 +878,8 @@ impl TraversalSet {
     }
 }
 
-/// The settings `LocalAssembler` declares.
+/// The settings `LocalAssembler` declares; `Default` gives each defaulted argument's `*_DEFAULT`
+/// (`QMIN_DEFAULT = 25`, `TOO_MANY_TRAVERSALS_DEFAULT = 100000` and so on).
 #[derive(Clone, Debug)]
 pub struct Settings {
     pub assembly_name: String,
@@ -771,6 +921,10 @@ pub struct AssemblyRead {
     pub qualities: Vec<u8>,
 }
 
+/// Every object of one assembly, held in vectors and named by index (see the module note).
+///
+/// `adjs` only grows: a kmer removed from `kmers` keeps its slot, so an `Adj` held elsewhere
+/// stays valid, as a Java reference would.
 struct Graph {
     adjs: Vec<AdjData>,
     contigs: Vec<ContigData>,
@@ -780,6 +934,10 @@ struct Graph {
 
 impl Graph {
     // ----- adjacency views -----
+    //
+    // Each accessor answers for `KmerAdjacencyImpl` from its own fields and for
+    // `KmerAdjacencyRC` the way that class does: predecessor and successor swap, neighbours are
+    // reverse-complemented, and a mask is bit-reversed through `NIBREV`.
 
     fn kval(&self, a: Adj) -> i64 {
         let data = &self.adjs[a.index as usize];
@@ -847,6 +1005,7 @@ impl Graph {
         }
     }
 
+    /// `getContigOffset`: on the twin, the offset counted from the contig's other end.
     fn adj_contig_offset(&self, a: Adj) -> i32 {
         let data = &self.adjs[a.index as usize];
         if !a.rc {
@@ -858,6 +1017,8 @@ impl Graph {
         }
     }
 
+    /// `setContigOffset`, which refuses to overwrite: `Err` carries the reference's
+    /// `GATKException` message.
     fn set_contig_offset(&mut self, a: Adj, contig: Ctg, offset: i32) -> Result<(), AssemblyError> {
         let (contig, offset) = if a.rc {
             (contig.rc(), self.size(contig) - offset - KSIZE as i32)
@@ -890,7 +1051,8 @@ impl Graph {
             .map(|entry| entry.adj)
     }
 
-    /// `KmerAdjacency.find`.
+    /// `KmerAdjacency.find`: the set holds canonical kmers only, so a non-canonical value is
+    /// looked up by its reverse complement and answered with that entry's twin.
     fn find(&self, kval: i64) -> Option<Adj> {
         if is_canonical(kval) {
             self.find_canonical(kval & KMASK)
@@ -908,6 +1070,8 @@ impl Graph {
         } else {
             (reverse_complement_kval(kval), true)
         };
+        // The producer cannot push onto `adjs` while the set is borrowed, so it names the slot the
+        // new adjacency will take, and the push follows when that slot is what came back.
         let next_index = self.adjs.len() as u32;
         let entry = self.kmers.find_or_add(
             |capacity| kmer_index(key, capacity),
@@ -936,6 +1100,9 @@ impl Graph {
         }
     }
 
+    /// `observe(predecessor, successor, nObservations)`: record each neighbour's call in the
+    /// mask, keep it as the sole neighbour while it is the only one, and add the count. On the
+    /// twin, the canonical object observes the neighbours swapped and reverse-complemented.
     fn observe(&mut self, a: Adj, predecessor: Option<Adj>, successor: Option<Adj>, count: i32) {
         if a.rc {
             return self.observe(
@@ -976,6 +1143,9 @@ impl Graph {
         self.adjs[a.index as usize].observations += count;
     }
 
+    /// `removePredecessor` and `removeSuccessor`: clear the call's bit, and when one neighbour is
+    /// left, look it up again as the sole one. The twin forwards to the other side with the
+    /// complementary call `3 - call`.
     fn remove_predecessor(&mut self, a: Adj, call: i32) {
         if a.rc {
             return self.remove_successor(a.rc(), 3 - call);
@@ -1016,13 +1186,19 @@ impl Graph {
         }
     }
 
-    /// `KmerAdjacency.kmerize(calls, quals, qMin, set)`.
+    /// `KmerAdjacency.kmerize(calls, quals, qMin, set)`: every run of 31 good calls is a kmer,
+    /// each observed with the one before and after it; a low-quality call or a base other than
+    /// ACGT ends the run, observing the last kmer with no successor.
+    ///
+    /// `kval` is never masked here, as `currentKVal` is not: `find_or_add` masks it.
     fn kmerize_read(&mut self, calls: &[u8], quals: &[u8], q_min: i8) -> Result<(), AssemblyError> {
         let mut count = 0usize;
         let mut kval: i64 = 0;
         let mut prev: Option<Adj> = None;
         let mut current: Option<Adj> = None;
         for (index, &call) in calls.iter().enumerate() {
+            // `quals[idx] < qMin` compares signed Java bytes, hence `as i8`; a read with fewer
+            // qualities than calls throws the reference's `ArrayIndexOutOfBoundsException`.
             let quality = *quals.get(index).ok_or_else(|| AssemblyError {
                 class: "java.lang.ArrayIndexOutOfBoundsException",
                 message: format!("Index {index} out of bounds for length {}", quals.len()),
@@ -1069,6 +1245,11 @@ impl Graph {
     }
 
     /// `KmerAdjacency.kmerize(sequence, nObservations, set)`, for gap fills.
+    ///
+    /// `obs` starts at zero and becomes `observations` only after the first observation, so the
+    /// fill's first and last kmers gain no count:
+    /// "The number of observations applies to all kmers except the 1st and last." (the
+    /// reference's comment on this method).
     fn kmerize_fill(&mut self, sequence: &[u8], observations: i32) -> Result<(), AssemblyError> {
         let mut count = 0usize;
         let mut kval: i64 = 0;
@@ -1106,6 +1287,10 @@ impl Graph {
     }
 
     // ----- contig views -----
+    //
+    // As for kmers: `ContigRCImpl` answers from its twin's fields, its sequence reverse
+    // complemented, its first kmer the twin's last one reversed, and its id `~id`
+    // (`@Override public int getId() { return ~rc.getId(); }`, `LocalAssembler.java:1960`).
 
     fn contig_data(&self, c: Ctg) -> &ContigData {
         &self.contigs[c.index as usize]
@@ -1198,6 +1383,8 @@ impl Graph {
         format!("c{id}{}", if c.rc { "-" } else { "+" })
     }
 
+    /// `getPredecessors()` and `getSuccessors()` as views: on a twin, the other stored list,
+    /// reflected.
     fn predecessors(c: Ctg) -> ListView {
         ListView {
             contig: c.index,
@@ -1232,6 +1419,8 @@ impl Graph {
         }
     }
 
+    /// The list as the reference's `List<Contig>` would iterate it, copied out: a reflected view
+    /// reads backwards with each element's twin (`ContigListRC.get`).
     fn list(&self, view: ListView) -> Vec<Ctg> {
         let raw = self.raw(view);
         if view.reflected {
@@ -1253,6 +1442,8 @@ impl Graph {
         self.list(view).iter().position(|c| *c == contig)
     }
 
+    /// `List.set` and `List.remove(Object)` through a view: a reflected view maps the index from
+    /// the other end and stores the twin, as `ContigListRC.set` does.
     fn list_set(&mut self, view: ListView, index: usize, contig: Ctg) {
         let reflected = view.reflected;
         let raw = self.raw_mut(view);
@@ -1285,7 +1476,9 @@ impl Graph {
 
     // ----- contigs -----
 
-    /// `new ContigImpl(id, firstKmerAdjacency)`.
+    /// `new ContigImpl(id, firstKmerAdjacency)`: extend from the first kmer along sole
+    /// successors while each has exactly one predecessor, stopping where the walk would return
+    /// to the first kmer or turn onto the reverse complement of the last one.
     fn new_contig(&mut self, id: i32, first: Adj) -> Ctg {
         let mut sequence = kmer_string(self.kval(first));
         let mut max_observations = self.observations(first);
@@ -1315,7 +1508,17 @@ impl Graph {
         Ctg { index, rc: false }
     }
 
-    /// `new ContigImpl(id, predecessor, successor)`.
+    /// `LocalAssembler.join`: `new ContigImpl(id, predecessor, successor)`, then
+    /// `clearKmerContig` and `setKmerContig` on the result.
+    ///
+    /// The constructor welds two contigs that overlap by `KSIZE - 1` bases into a new one and
+    /// repoints each outside neighbour's link to the new contig in place, by
+    /// `successors.set(successors.indexOf(predecessor), this);` (`LocalAssembler.java:1833`), so
+    /// the neighbour's list keeps its order. A link from one half to the other becomes a link to
+    /// the new contig, and a link to a half's own twin becomes one to the new contig's twin.
+    ///
+    /// The `ok_or_else` errors stand where an `indexOf` miss would make the reference's `set`
+    /// throw; the class and message written here have not been checked against the reference.
     fn join(&mut self, id: i32, predecessor: Ctg, successor: Ctg) -> Result<Ctg, AssemblyError> {
         if predecessor == successor || predecessor == successor.rc() {
             return Err(AssemblyError::gatk("can't self-join"));
@@ -1381,6 +1584,9 @@ impl Graph {
         Ok(joined)
     }
 
+    /// `clearKmerContig` and `setKmerContig`: walk the contig's kmers by sole successor from
+    /// first to last, clearing or setting each one's contig and offset, and check the walk's
+    /// length against the sequence's. Each `Err` is one of the reference's `GATKException`s.
     fn clear_kmer_contig(&mut self, contig: Ctg) -> Result<(), AssemblyError> {
         let mut count = 0;
         let first = self.first_kmer(contig);
@@ -1439,7 +1645,11 @@ impl Graph {
         Ok(())
     }
 
-    /// `buildContigs`.
+    /// `buildContigs`: in the kmer set's iteration order, start a contig at every kmer not yet on
+    /// one that begins a run (no sole predecessor, a branching or reverse-complementing one), or
+    /// that ends a run, from its twin. A second pass picks up the kmers still uncovered, the
+    /// reference's "smooth circles like a plasmid". Ids count from 1 in that order, which is why
+    /// the set's layout is reproduced.
     fn build_contigs(&mut self) -> Result<Vec<Ctg>, AssemblyError> {
         let mut contigs = Vec::new();
         let mut n_contigs = 0;
@@ -1492,7 +1702,11 @@ impl Graph {
         Ok(contigs)
     }
 
-    /// `connectContigs`.
+    /// `connectContigs`: index every contig's entry kmers (its first kmer, and its last kmer's
+    /// twin) in a kmer set of their own, then for each neighbouring call of a contig's first and
+    /// last kmer, in call order A, C, G, T, look the neighbour up and append the contig it enters
+    /// to the predecessor or successor list. The set is a `Hopscotch` too, but only for lookup:
+    /// nothing iterates it.
     fn connect_contigs(&mut self, contigs: &[Ctg]) -> Result<(), AssemblyError> {
         let mut ends: Hopscotch<ContigEnd> =
             Hopscotch::new(2 * contigs.len() as i32, contig_end_index);
@@ -1578,7 +1792,12 @@ impl Graph {
         Ok(())
     }
 
-    /// `removeThinContigs`.
+    /// `removeThinContigs`: sort by max observations (stably, as `List.sort` is), then repeat:
+    /// mark the cut points, the contigs whose removal would split the graph, and remove the first
+    /// contig in that order that is seen fewer than `min_thin_observations` times and is not a cut
+    /// point. One removal per round, until a round removes nothing; the list ends sorted by id.
+    ///
+    /// The marks are never cleared between rounds, so a contig once a cut point stays protected.
     fn remove_thin_contigs(
         &mut self,
         contigs: &mut Vec<Ctg>,
@@ -1630,6 +1849,9 @@ impl Graph {
         Ok(())
     }
 
+    /// `findCuts`: Tarjan's articulation-point walk over successors then predecessors. The map
+    /// holds each contig's `WalkData` as `(visitNum, minVisitNum)`; a Rust tuple is a value, so
+    /// the entry is written back after each change where the reference mutates the object.
     fn find_cuts(
         &mut self,
         contig: Ctg,
@@ -1668,7 +1890,10 @@ impl Graph {
         (visit, min_visit)
     }
 
-    /// `unlinkContig`.
+    /// `unlinkContig`: drop the contig's links from its neighbours (and the neighbours' kmer
+    /// masks), then remove each of its kmers from the kmer set, walking sole successors from the
+    /// first to the last. A walk that runs out before the last kmer is the reference's
+    /// `NullPointerException`.
     fn unlink_contig(&mut self, contig: Ctg) -> Result<(), AssemblyError> {
         let first = self.first_kmer(contig);
         let first_final = final_call(self.kval(first));
@@ -1713,7 +1938,11 @@ impl Graph {
         Ok(())
     }
 
-    /// `weldPipes`.
+    /// `weldPipes`: join a contig to its only successor when that successor has only it as a
+    /// predecessor, or likewise to its only predecessor, and look at the same index again.
+    ///
+    /// `index` is signed (`isize`) because the reference's `contigIdx -= 1` can take it to -1
+    /// before the loop's increment brings it back to 0.
     fn weld_pipes(&mut self, contigs: &mut Vec<Ctg>) -> Result<(), AssemblyError> {
         let mut index: isize = 0;
         while (index as usize) < contigs.len() {
@@ -1765,7 +1994,9 @@ impl Graph {
         Ok(())
     }
 
-    /// `markCycles`.
+    /// `markCycles`: Tarjan's strongly-connected-components walk along successors. A component
+    /// of two or more contigs, or a single contig that is its own successor, is a cycle; the
+    /// `Vec` used as a stack is the reference's `ArrayDeque`.
     fn mark_cycles(&mut self, contigs: &[Ctg]) {
         for &contig in contigs {
             self.set_cycle_member(contig, false);
@@ -1829,6 +2060,9 @@ impl Graph {
     }
 
     // ----- paths -----
+    //
+    // `PathPartGap` and `PathPartContig`'s `getFirstCall`, `getLastCall` and `rc`, as functions
+    // of the `PathPart` value: `match` picks the variant the reference's virtual call would.
 
     fn gap_last_call(sequence: &[u8]) -> u8 {
         sequence[sequence.len() - KSIZE + 1]
@@ -1872,6 +2106,8 @@ impl Graph {
         path.iter().rev().map(|part| self.part_rc(part)).collect()
     }
 
+    /// `zeroLengthGap`: a gap holding the last `KSIZE - 1` bases of the contig part's final kmer,
+    /// one base short of a kmer, which marks a discontinuity without adding any kmer.
     fn zero_length_gap(&self, current: &PathPart) -> PathPart {
         let PathPart::Contig { contig, stop, .. } = current else {
             unreachable!("a zero-length gap follows a contig part");
@@ -1880,7 +2116,14 @@ impl Graph {
         PathPart::Gap(sequence[*stop as usize..*stop as usize + KSIZE - 1].to_vec())
     }
 
-    /// `PathBuilder.processCalls`.
+    /// `PathBuilder.processCalls`, with `processCall`, `processKval`, `processGap`,
+    /// `processKmer`, `extendCurrentPathPart` and `processNewContig` written inline.
+    ///
+    /// A read becomes a list of parts: runs of consecutive kmers on one contig, and gaps over
+    /// kmers the graph lacks. Unlike kmerizing, an N or any other call does not restart the
+    /// kmer: it counts as A, as the reference's `switch` has no `default`. `current` is the index
+    /// of the reference's `currentPathPart` in `parts`, since Rust cannot hold a reference into a
+    /// list that is still being pushed to.
     fn path(&self, calls: &[u8]) -> Vec<PathPart> {
         let mut parts: Vec<PathPart> = Vec::new();
         let mut kval: i64 = 0;
@@ -1994,6 +2237,10 @@ impl Graph {
     }
 
     /// `gapIsSquashed`: the index of the new current part when the gap was squashed.
+    ///
+    /// A gap exactly `KSIZE` kmers long between two contig parts is what one miscalled base
+    /// makes. Within one contig the two parts are merged and the gap dropped; across two contigs
+    /// that the gap exactly bridges, the gap becomes the start of the second contig's part.
     fn squash(
         &self,
         parts: &mut Vec<PathPart>,
@@ -2039,7 +2286,14 @@ impl Graph {
         None
     }
 
-    /// `fillGaps`.
+    /// `fillGaps`: count each interior gap of each read's path, extended by one call on each
+    /// side and taken in whichever orientation sorts first, then kmerize every fill seen at least
+    /// `min_gapfill_count` times. If any was, every kmer's contig is cleared for a rebuild.
+    ///
+    /// The orientation test is `if ( gapFillRC.compareTo(gapFill) < 0 ) {`
+    /// (`LocalAssembler.java:644`), where `SequenceRC.compareTo` upper-cases the other side as it
+    /// compares; hence `upper`. The counts are kept with `keys` in first-seen order so that
+    /// `java_hash_map_order` can replay the `HashMap`'s `entrySet()` order.
     fn fill_gaps(
         &mut self,
         min_gapfill_count: i32,
@@ -2131,6 +2385,12 @@ impl Graph {
     }
 
     /// `collectTransitPairCounts`, as an insertion-ordered map.
+    ///
+    /// For every contig a read path passes through, count the (previous, next) contig pair it
+    /// passes between; a new pair is also listed, reverse-complemented, under the contig's twin.
+    /// A gap in the window skips ahead: the reference's `partIdx += 1; continue;` and
+    /// `partIdx += 2; continue;` plus its loop's `++partIdx` are the `+= 2` and `+= 3` here,
+    /// because a Rust `while` has no increment clause for `continue` to run.
     fn collect_transits(&mut self, paths: &[Vec<PathPart>]) -> TransitMap {
         let mut map = TransitMap::default();
         for path in paths {
@@ -2176,6 +2436,8 @@ impl Graph {
         map
     }
 
+    /// `TraversalSet.add`: refuse silently a traversal whose reverse complement is held, throw
+    /// `AssemblyTooComplexException` (here `Err(TooComplex)`) once the set is full, else add.
     fn add_traversal(
         &self,
         set: &mut TraversalSet,
@@ -2194,7 +2456,12 @@ impl Graph {
         Ok(())
     }
 
-    /// `traverseAllPaths`.
+    /// `traverseAllPaths`, in its three passes: from every contig no read crosses (sources,
+    /// sinks, and contigs too long to cross); then through each acyclic contig's unused transits,
+    /// joining its backward and forward traversals; then from whatever transits are still unused.
+    ///
+    /// The passes over the transit map walk it in insertion order where the reference walks a
+    /// `HashMap` keyed by identity (see the module note).
     fn traverse_all_paths(
         &mut self,
         contigs: &[Ctg],
@@ -2279,6 +2546,10 @@ impl Graph {
         Ok(set.items)
     }
 
+    /// `traverse`: extend `list` (the reference's `contigsList`, shared and restored on the way
+    /// out) by following every transit into `contig` from `predecessor`, consuming each one, and
+    /// record the traversal where no transit continues. A cycle member hands over to
+    /// `traverse_cycle`. A palindromic step that would only retrace the path is skipped.
     fn traverse(
         &mut self,
         contig: Ctg,
@@ -2321,6 +2592,9 @@ impl Graph {
         Ok(())
     }
 
+    /// `traverseCycle`: through a cycle, follow the longest read paths that match the last two
+    /// contigs of the traversal so far, leaving the cycle where a path does and traversing on from
+    /// there, then clear the transits each extension used.
     fn traverse_cycle(
         &mut self,
         contig: Ctg,
@@ -2368,6 +2642,7 @@ impl Graph {
         Ok(())
     }
 
+    /// `clearTransitPairs`: zero the count of the first transit matching each interior step.
     fn clear_transit_pairs(&mut self, map: &TransitMap, list: &[Ctg]) {
         if list.len() < 3 {
             return;
@@ -2387,6 +2662,8 @@ impl Graph {
         }
     }
 
+    /// `findLongestPaths`: over every read path and its reverse complement, the contigs that
+    /// follow the first occurrence of `to_match`, keeping only sub-paths no other extends.
     fn find_longest_paths(&self, to_match: &[Ctg], paths: &[Vec<PathPart>]) -> Vec<Vec<Ctg>> {
         let mut longest: Vec<Vec<Ctg>> = Vec::new();
         for path in paths {
@@ -2415,6 +2692,8 @@ impl Graph {
         }
     }
 
+    /// `extractSubPath`: the contigs after the match for as long as each is a successor of the
+    /// one before; a gap (`None`) or a non-adjacent contig ends it.
     fn extract_sub_path(&self, contigs: &[Option<Ctg>], suffix: usize) -> Vec<Ctg> {
         let mut prev = contigs[suffix - 1].expect("a matched contig");
         let mut sub = Vec::new();
@@ -2432,6 +2711,7 @@ impl Graph {
 
     // ----- scaffolds -----
 
+    /// `Traversal.getSequenceLength`, `getMinMaxObservations`, `getSequence` and `toString`.
     fn sequence_length(&self, traversal: &[Ctg]) -> i32 {
         traversal.iter().map(|c| self.n_kmers(*c)).sum::<i32>() + KSIZE as i32 - 1
     }
@@ -2463,7 +2743,11 @@ impl Graph {
             .join("+")
     }
 
-    /// `TraversalEndpointComparator`.
+    /// `TraversalEndpointComparator`: by first contig id, last contig id, then the better
+    /// observed first, then the interior ids, then the shorter. A twin's id is `~id`, so it is
+    /// negative and sorts before every forward contig.
+    ///
+    /// The reference's `-Integer.compare(a, b)` is written as `b.cmp(&a)`, the same order.
     fn compare_endpoints(&self, first: &[Ctg], second: &[Ctg]) -> std::cmp::Ordering {
         use std::cmp::Ordering;
         let cmp = self.id(first[0]).cmp(&self.id(second[0]));
@@ -2492,6 +2776,8 @@ impl Graph {
         last1.cmp(&last2)
     }
 
+    /// `TreeSet.add` and `TreeSet.contains` under that comparator, over a sorted `Vec`: a
+    /// traversal the comparator calls equal to one already held is not added, as in a `TreeSet`.
     fn sorted_insert(&self, sorted: &mut Vec<Traversal>, traversal: Traversal) {
         match sorted.binary_search_by(|probe| self.compare_endpoints(probe, &traversal)) {
             Ok(_) => {}
@@ -2505,6 +2791,9 @@ impl Graph {
             .is_ok()
     }
 
+    /// `removeTriviallyDifferentTraversals`: sort every traversal and its reverse complement,
+    /// drop each that is trivially different from the last one kept, then drop each whose
+    /// reverse complement is still present, so one strand of each survivor remains.
     fn remove_trivially_different(
         &self,
         traversals: &mut Vec<Traversal>,
@@ -2542,6 +2831,13 @@ impl Graph {
         Ok(())
     }
 
+    /// `isTriviallyDifferent`: same ends, and too little material differs between the
+    /// interiors to hide an SV of `min_sv_size`, judged by a longest-common-subsequence over the
+    /// interior contigs that counts bases, two rows at a time.
+    ///
+    /// The two `Err` returns are where the reference's indexing would throw on a one-contig
+    /// traversal; `split_at_mut` is how Rust lends one row for writing and the other for reading
+    /// at the same time.
     fn is_trivially_different(
         &self,
         first: &[Ctg],
@@ -2608,6 +2904,10 @@ impl Graph {
     }
 
     /// `createScaffolds`; `Err(None)` is `AssemblyTooComplexException`.
+    ///
+    /// Each traversal not yet touched is extended both ways through every traversal starting
+    /// where it ends (`expandTraversal`), and each downward extension is joined to each upward
+    /// one. A reverse-complemented entry is listed as `!index`, the reference's `~idx`.
     fn create_scaffolds(
         &self,
         traversals: &mut Vec<Traversal>,
@@ -2663,6 +2963,9 @@ impl Graph {
         Ok(scaffolds)
     }
 
+    /// `walkTraversals`: extend recursively by every traversal that starts on this one's last
+    /// contig, stopping at a cycle (`isInextensible`) or where the walk would start again from a
+    /// contig it is already extending from.
     fn walk_traversals(
         &self,
         traversal: Traversal,
@@ -2704,6 +3007,8 @@ impl Graph {
 
     // ----- writers -----
 
+    /// `writeGFA`: the header, every contig reached from each unmarked contig in id order, and
+    /// one `O` line per traversal, built as a string where the reference writes a stream.
     fn write_gfa(&mut self, contigs: &[Ctg], traversals: &[Traversal]) -> String {
         for &contig in contigs {
             self.set_marked(contig, false);
@@ -2728,6 +3033,9 @@ impl Graph {
         out
     }
 
+    /// `writeContig` and `writeEdge`: the canonical contig's `S` line, then depth first each
+    /// unwritten successor and the edge to it, then each unwritten predecessor. The edges are of
+    /// `contig` as reached, so a twin's edges name `-` orientations.
     fn write_contig(&mut self, contig: Ctg, out: &mut String) {
         let canonical = contig.canonical();
         self.set_marked(canonical, true);
@@ -2763,6 +3071,8 @@ impl Graph {
         }
     }
 
+    /// `writeTraversals`. `--assembly-name` is a required argument, so the reference's
+    /// `assemblyName != null` branch is always taken and the `_` always written.
     fn write_traversals(&self, assembly_name: &str, traversals: &[Traversal]) -> String {
         let mut out = String::new();
         for (index, traversal) in traversals.iter().enumerate() {
@@ -2780,7 +3090,8 @@ impl Graph {
     }
 }
 
-/// An insertion-ordered `Map<Contig, List<TransitPairCount>>`.
+/// An insertion-ordered `Map<Contig, List<TransitPairCount>>`: `keys` records the order, and
+/// `values` (a `std` hash map, whose own order is never used) does the lookups.
 #[derive(Default)]
 struct TransitMap {
     keys: Vec<Ctg>,
@@ -2802,6 +3113,8 @@ impl TransitMap {
     }
 }
 
+/// `addSubPathToLongestPaths`: drop `sub` if a kept path extends it, replace the first kept path
+/// it extends, else keep it.
 fn add_sub_path(sub: Vec<Ctg>, longest: &mut Vec<Vec<Ctg>>) {
     for test in longest.iter_mut() {
         if is_prefix(&sub, test) {
@@ -2819,10 +3132,13 @@ fn is_prefix(first: &[Ctg], second: &[Ctg]) -> bool {
     first.len() <= second.len() && first == &second[..first.len()]
 }
 
+/// `Traversal.rc`: the contigs backwards, each its twin.
 fn traversal_rc(traversal: &[Ctg]) -> Traversal {
     traversal.iter().rev().map(|c| c.rc()).collect()
 }
 
+/// `Traversal.combineOverlappers`: `first`, then `second` less the `overlap` contigs it shares
+/// with `first`'s end, which must match.
 fn combine(first: &[Ctg], second: &[Ctg], overlap: usize) -> Result<Traversal, AssemblyError> {
     let len1 = first.len();
     if len1 < overlap || second.len() < overlap || first[len1 - overlap..] != second[..overlap] {
@@ -2833,6 +3149,7 @@ fn combine(first: &[Ctg], second: &[Ctg], overlap: usize) -> Result<Traversal, A
     Ok(combined)
 }
 
+/// `SequenceRC.charAt`'s per-base rule: upper-cased, complemented, anything else an `N`.
 fn complement(base: u8) -> u8 {
     match base.to_ascii_uppercase() {
         b'A' => b'T',
@@ -2857,6 +3174,7 @@ pub fn assemble(
     region_size: i32,
     settings: &Settings,
 ) -> Result<Assembly, AssemblyError> {
+    // `new KmerSet<>(10 * regionSize)`, whose `int` product may wrap: hence `wrapping_mul`.
     let mut graph = Graph {
         adjs: Vec::new(),
         contigs: Vec::new(),
@@ -2873,6 +3191,9 @@ pub fn assemble(
     graph.mark_cycles(&contigs);
     let paths: Vec<Vec<PathPart>> = reads.iter().map(|read| graph.path(&read.bases)).collect();
     let map = graph.collect_transits(&paths);
+    // The reference's two `catch ( final AssemblyTooComplexException x )` blocks: too complex to
+    // traverse writes each contig as its own traversal and no GFA; too complex to scaffold
+    // (`Err(None)`) writes the traversals instead. Any other error propagates.
     match graph.traverse_all_paths(&contigs, &paths, settings.too_many_traversals, &map) {
         Ok(mut traversals) => {
             contigs.sort_by_key(|c| graph.id(*c));
@@ -2925,7 +3246,17 @@ pub struct Span {
 ///
 /// The merge test compares the previous START with the current END twice, so it holds for every
 /// pair of intervals on one contig, and `mergeWithContiguous` then refuses the two that do not
-/// touch: `-L` intervals further apart than twice the padding are a `GATKException`.
+/// touch: `-L` intervals further apart than twice the padding are a `GATKException`. The test as
+/// written (`PairWalker.java:64-66`):
+///
+/// ```java
+/// } else if ( prevInterval.getContig().equals(curInterval.getContig()) &&
+///             prevInterval.getStart() <= curInterval.getEnd() + 1 &&
+///             prevInterval.getStart() <= curInterval.getEnd() + 1 ) {
+/// ```
+///
+/// The intervals padded here size the kmer set only: `pair_reads` is handed the unpadded ones,
+/// as the reference builds its `RegionChecker` from `intervals` before padding them.
 pub fn pad_intervals(
     intervals: &[Span],
     padding: i32,
@@ -2985,7 +3316,11 @@ pub fn pad_intervals(
     Ok(padded)
 }
 
-/// `PairWalker.RegionChecker`.
+/// `PairWalker.RegionChecker`: an iterator over coordinate-sorted intervals that answers, for
+/// each read in coordinate order, whether it overlaps the current interval, advancing first.
+///
+/// `'a` is a lifetime: the checker borrows the caller's interval list and may not outlive it.
+/// `next` is the index the reference's `intervalIterator` would return next.
 struct RegionChecker<'a> {
     intervals: &'a [Span],
     next: usize,
@@ -3007,6 +3342,9 @@ impl<'a> RegionChecker<'a> {
         result
     }
 
+    /// `isInInterval`: catch the iterator up to the read's contig by dictionary index, then to
+    /// an interval ending at or after the read's start, then test overlap. Running out of
+    /// intervals sets `current` to `None` for good, as `currentInterval = null` does.
     fn is_in_interval(
         &mut self,
         read: &BamRecord,
@@ -3065,6 +3403,8 @@ impl<'a> RegionChecker<'a> {
     }
 }
 
+/// `PairWalker.PairBufferEntry`: the read (already restored if it was a distant mate), whether
+/// it overlapped an interval, and whether it carried the `DM` tag.
 struct PairBufferEntry {
     read: BamRecord,
     in_interval: bool,
@@ -3079,6 +3419,8 @@ struct PairSlot {
     entry: u32,
 }
 
+/// The pair buffer's `hashToIndex`: the default one over `PairBufferEntry.hashCode`, which is
+/// `read.getName().hashCode()`.
 fn pair_slot_index(slot: &PairSlot, capacity: i32) -> i32 {
     default_index(slot.hash, capacity)
 }
@@ -3092,6 +3434,15 @@ fn assembly_read(read: &BamRecord) -> AssemblyRead {
 
 /// `PairWalker`'s traversal over the reads that reached `apply`, and `LocalAssembler.apply`'s
 /// `trimOverruns`: the reads in the order `LocalAssembler` stores them.
+///
+/// An unpaired, secondary or supplementary read is stored at once (`applyUnpaired`). A paired
+/// read waits in the buffer for its mate; when the mate arrives the pair is stored, first-seen
+/// read first, if either overlapped an interval; a pair involving a distant mate is stored only
+/// on the first of every two completions of its name. At the end, the reads still waiting that
+/// overlapped an interval are stored in the buffer's iteration order.
+///
+/// `entries` holds the reads, `Option` so a mate can be taken out (`take`) when its pair
+/// completes; the buffer holds only the name's hash and the index.
 pub fn pair_reads(
     reads: Vec<BamRecord>,
     intervals: &[Span],
@@ -3111,6 +3462,8 @@ pub fn pair_reads(
             out.push(assembly_read(&read));
             continue;
         }
+        // The interval test sees the read as it came in, before a distant mate is restored, as
+        // `isInInterval(read)` runs before `new PairBufferEntry(read, inInterval)`.
         let in_interval = checker.is_in_interval(&read, contig_of, index_of);
         let distant = read.tags.get(Tag::new(b"DM")).is_some();
         let read = if distant {
@@ -3156,6 +3509,9 @@ pub fn pair_reads(
                     if !entry.distant && !mate.distant {
                         push_pair(mate.read, entry.read, &mut out);
                     } else if !distant_processed.remove(&name) {
+                        // The first completion of a distant pair is stored and remembered; the
+                        // next one only forgets the name. The set is only asked about
+                        // membership, so a `std` set serves for the `HopscotchSet`.
                         distant_processed.insert(name.clone());
                         push_pair(mate.read, entry.read, &mut out);
                     }
@@ -3184,6 +3540,10 @@ fn push_pair(mut read: BamRecord, mut mate: BamRecord, out: &mut Vec<AssemblyRea
 }
 
 /// `PrintDistantMates.undoDistantMateAlterations`: the alignment the `OA` tag remembers.
+///
+/// The first five comma-separated fields are restored: contig, start, strand, CIGAR and
+/// mapping quality. The reference also restores `NM` from the sixth, which the assembly never
+/// reads, and throws `UserException` on an `OA` it cannot parse, which this does not.
 fn undo_distant_mate(mut read: BamRecord, index_of: &dyn Fn(&str) -> i32) -> BamRecord {
     let Some(htsjdk_bam::tag::TagValue::Str(oa)) = read.tags.get(Tag::new(b"OA")).cloned() else {
         return read;
@@ -3235,7 +3595,9 @@ fn parse_cigar(text: &str) -> Option<htsjdk_bam::cigar::Cigar> {
     Some(htsjdk_bam::cigar::Cigar { elements })
 }
 
-/// `LocalAssembler.trimOverruns`.
+/// `LocalAssembler.trimOverruns`: for a pair on opposite strands whose starts and reference
+/// lengths agree within one base, `trimClips` removes the soft-clipped calls each read has
+/// "gone past the end of a short fragment" (the reference's javadoc).
 fn trim_overruns(read: &mut BamRecord, mate: &mut BamRecord) {
     if read::is_unmapped(read)
         || read::is_unmapped(mate)
@@ -3258,6 +3620,9 @@ fn trim_overruns(read: &mut BamRecord, mate: &mut BamRecord) {
     }
 }
 
+/// `trimClips`: when the forward read is `M..S` and the reverse `S..M`, drop the forward read's
+/// trailing clipped bases and the reverse read's leading ones (qualities too, when present)
+/// and make each clip a hard clip. `truncate` keeps a prefix and `drain(..n)` drops one.
 fn trim_clips(fwd: &mut BamRecord, rev: &mut BamRecord) {
     let (Some(fwd_first), Some(fwd_last)) = (fwd.cigar.elements.first(), fwd.cigar.elements.last())
     else {

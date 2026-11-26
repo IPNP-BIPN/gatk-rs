@@ -1,4 +1,5 @@
-//! Ported from `org.broadinstitute.hellbender.tools.PrintDistantMates` (GATK 4.6.2.0).
+//! Ported from `org.broadinstitute.hellbender.tools.PrintDistantMates` (GATK 4.7.0.0;
+//! `PrintDistantMates.java` is unchanged since 4.6.2.0).
 //!
 //! The sixth whole tool of the record-transform archetype, and the first that **moves** a read
 //! rather than editing it where it lies: the read is rewritten into its mate's position, unmapped,
@@ -55,6 +56,19 @@
 //! else entirely, `Reference index for 'chr9' not found in sequence dictionary.` This port cannot
 //! defer it (a record here holds an index, not a name), so it reports it as
 //! [`UndoError::UnknownContig`], with the reference's own message.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&BamRecord` is a borrowed, read-only view of the caller's record. Where the reference calls
+//!   `read.copy()`, this port calls `read.clone()`: a deep copy the function then owns and changes.
+//! - `Option<T>` is "a value or nothing" (Java's nullable reference, checked by the compiler) and
+//!   `Result<T, UndoError>` is "a value or the exception": `Err(..)` is the throw.
+//! - `?` after an expression returns its `Err` (or, after `ok_or_else`, the error built for a
+//!   `None`) from the function at once: the reference's `throw` at that single point.
+//! - `let Some(x) = y else { .. };` takes the value out or runs the `else`, which must leave.
+//! - `flags &= !BIT` clears a flag bit and `flags |= BIT` sets it; `!` on an integer is Java's `~`.
+//! - `*tokens.first()..` dereferences: `first()` hands back a reference into the list, and `*`
+//!   reads the `&str` it points at.
 
 use std::cmp::Ordering;
 
@@ -89,7 +103,14 @@ const READ_REVERSE_STRAND: u16 = 0x10;
 
 /// `getDefaultReadFilters()`, in the order the list is built.
 ///
-/// The first entry is `super.getDefaultReadFilters()`; the other four are this tool's additions.
+/// The first entry is `super.getDefaultReadFilters()`; the other four are this tool's additions:
+///
+/// ```java
+/// readFilters.add(ReadFilterLibrary.PAIRED);
+/// readFilters.add(ReadFilterLibrary.PRIMARY_LINE);
+/// readFilters.add(ReadFilterLibrary.NOT_DUPLICATE);
+/// readFilters.add(ReadFilterLibrary.MATE_DISTANT);
+/// ```
 pub const DEFAULT_READ_FILTERS: [&str; 5] = [
     "WellformedReadFilter",
     "PairedReadFilter",
@@ -126,7 +147,19 @@ pub fn is_distant_mate(read: &BamRecord) -> bool {
 /// The `OA` value this tool writes: `contig,start,strand,cigar,mapq,NM;`.
 ///
 /// A missing `NM` leaves the field **empty**, which is where this tool and
-/// [`crate::add_original_alignment_tags::original_alignment_value`] part company.
+/// [`crate::add_original_alignment_tags::original_alignment_value`] part company:
+///
+/// ```java
+/// final String oaValue = read.getContig() + "," + read.getStart() + "," +
+///         (read.isReverseStrand() ? "-," : "+,") + read.getCigar() + "," +
+///         read.getMappingQuality() + "," + (nmValue == null ? "" : nmValue) + ";";
+/// ```
+///
+/// `getContig()` and `getStart()` would be `null` and 0 on an unmapped read, but
+/// `MateDistantReadFilter` passes only mapped reads (`!read.isUnmapped()`), so the record's own
+/// fields are what the reference prints. An `NM` that is not an integer tag takes the
+/// `Some(other)` arm, Rust's debug form of the value; the reference's `getAttributeAsInteger`
+/// instead parses its text, or throws `ReadAttributeTypeMismatch`.
 pub fn original_alignment_value(read: &BamRecord, header: &SamHeader) -> String {
     let contig = sequence_name(header, read.reference_index);
     let strand = if read.flags & READ_REVERSE_STRAND != 0 {
@@ -148,6 +181,9 @@ pub fn original_alignment_value(read: &BamRecord, header: &SamHeader) -> String 
 }
 
 /// The name of a reference by its index, which is what `getContig` resolves through the header.
+///
+/// `usize::try_from(index).ok()` turns a negative index (unplaced, -1) into `None` rather than a
+/// huge unsigned number, and `unwrap_or_default` makes every failure the empty string.
 fn sequence_name(header: &SamHeader, index: i32) -> String {
     usize::try_from(index)
         .ok()
@@ -157,7 +193,7 @@ fn sequence_name(header: &SamHeader, index: i32) -> String {
 }
 
 /// The index of a reference by name, which is what `setReferenceName` defers and htsjdk later
-/// resolves.
+/// resolves. `position` is the first match, or `None`.
 fn sequence_index(header: &SamHeader, name: &str) -> Option<i32> {
     header
         .sequences
@@ -170,6 +206,15 @@ fn sequence_index(header: &SamHeader, name: &str) -> Option<i32> {
 ///
 /// The `OA` is built from the read as it stands, before anything is cleared, and the copy is the
 /// thing that changes: the reference returns a copy and leaves its argument alone.
+///
+/// ```java
+/// copy.setPosition(read.getMateContig(), read.getMateStart());
+/// copy.setCigar(SAMRecord.NO_ALIGNMENT_CIGAR);
+/// copy.setMappingQuality(0);
+/// copy.setIsUnmapped();
+/// ```
+///
+/// The mate fields are left alone, so the moved read's mate position is now its own position.
 pub fn do_distant_mate_alterations(read: &BamRecord, header: &SamHeader) -> BamRecord {
     let mut copy = read.clone();
     let original = original_alignment_value(read, header);
@@ -211,6 +256,7 @@ impl UndoError {
         }
     }
 
+    /// The class of the exception the reference throws.
     pub fn class(&self) -> &'static str {
         match self {
             UndoError::Unrecoverable(_) => "org.broadinstitute.hellbender.exceptions.UserException",
@@ -223,6 +269,20 @@ impl UndoError {
 ///
 /// A read with no `OA` is returned unchanged, and the reference returns *the same object* rather
 /// than a copy, which a caller that then mutates the result can observe.
+///
+/// ```java
+/// final String[] tokens = oaValue.split(",");
+/// copy.setPosition(tokens[0], Integer.parseInt(tokens[1]));
+/// copy.setIsReverseStrand("-".equals(tokens[2]));
+/// copy.setCigar(tokens[3]);
+/// copy.setMappingQuality(Integer.parseInt(tokens[4]));
+/// ```
+///
+/// all inside `catch ( final Exception exc )`, which rethrows any failure as the `UserException`.
+/// Three places where the reference's body throws and this one does not: Java's `split` drops
+/// trailing empty fields, so an `OA` ending in `,` has no `tokens[5]` there; `setPosition`
+/// refuses a start below 1 or a contig of `*`; and the `NM` is `Integer.parseInt`, where this
+/// parses an `i64`.
 pub fn undo_distant_mate_alterations(
     read: &BamRecord,
     header: &SamHeader,
@@ -237,6 +297,7 @@ pub fn undo_distant_mate_alterations(
 
     // `oaValue.split(",")`, then five indexed reads and two parseInts, all inside one try.
     let tokens: Vec<&str> = oa.split(',').collect();
+    // A closure with no arguments that builds the error, so each failure below can name it once.
     let unrecoverable = || UndoError::Unrecoverable(oa.clone());
     let contig = *tokens.first().ok_or_else(unrecoverable)?;
     let start: i32 = tokens
@@ -254,6 +315,8 @@ pub fn undo_distant_mate_alterations(
     let edit_distance = *tokens.get(5).ok_or_else(unrecoverable)?;
 
     let cigar = parse_cigar(cigar).map_err(|_| unrecoverable())?;
+    // `setMappingQuality` refuses anything outside 0 to 255, which is exactly what `u8` holds,
+    // and the refusal lands in the same `catch`.
     let mapping_quality =
         u8::try_from(mapping_quality).map_err(|_| UndoError::Unrecoverable(oa.clone()))?;
 
@@ -288,6 +351,9 @@ pub fn undo_distant_mate_alterations(
 /// wrong, and htsjdk's sorting collection sorts what it is handed with
 /// [`htsjdk_bam::coordinate::compare`]. A stable sort, because two records that compare equal keep
 /// the order they arrived in.
+///
+/// The reference's writer is `createSAMWriter(output, false)`. `&dyn Fn(&BamRecord) -> bool` is
+/// the read filter passed as a function value, Java's `ReadFilter` used as a `Predicate`.
 pub fn print_distant_mates(
     source: &ReadsDataSource,
     options: &Options,
@@ -331,7 +397,8 @@ pub fn print_distant_mates_with(
 }
 
 /// The output order of a set of altered records, for a caller that wants the order without the
-/// bytes. Exposed because the order is the measurement.
+/// bytes. Exposed because the order is the measurement. `&mut [BamRecord]` lets it sort the
+/// caller's list in place.
 pub fn output_order(records: &mut [BamRecord]) {
     records.sort_by(coordinate::compare);
 }

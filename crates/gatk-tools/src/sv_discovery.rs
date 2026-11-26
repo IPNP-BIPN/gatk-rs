@@ -15,11 +15,29 @@
 //! * **only the chimeras that are complete and not translocations reach the rest**, so the inverted
 //!   duplication, the reference-order swap and the inter-chromosome paths of the classes above
 //!   cannot be taken from this tool, only from [`assembly`]'s;
-//! * **the order among records that sort equal is `AppendOnlyMap`'s**, the slot being the murmur3 of
-//!   `NovelAdjacencyAndAltHaplotype.hashCode`.
+//! * **the order among records that sort equal is `AppendOnlyMap`'s**, the slot being the
+//!   murmur3 of `NovelAdjacencyAndAltHaplotype.hashCode`.
 //!
 //! Everything thrown between the reads and the collected variants is thrown inside a Spark task.
 //! The runner reports those, so a failure here is its message.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - [`Failed`] is a `String`, the message of what the Java threw. `Result<T, Failed>` is "a `T`
+//!   or that message", and a `?` after a call hands the message straight up, which is Java's
+//!   `throws` at that one call site.
+//! - `Option<T>` is "a `T` or nothing", Java's nullable reference with the check enforced. `let
+//!   Some(x) = y else { ... };` takes the value or leaves through the `else` block.
+//! - `&[T]` is a borrowed, read-only view of a list; `&mut T` is a writable borrow, and only one
+//!   may exist at a time. `.clone()` is an explicit copy, which Java's shared references never
+//!   need.
+//! - `.iter().filter(..).map(..).collect()` is Java's stream, and `|x| ...` is a lambda.
+//! - `a.wrapping_mul(31).wrapping_add(b)` is Java's `31 * a + b` on `int`, overflow wrapping
+//!   round as Java's does; plain `*` and `+` would panic on overflow in a debug build.
+//! - `x as i32` and `x as u32` are casts that truncate or reinterpret bits, Java's `(int)`.
+//! - `match` must name every case, and the compiler refuses one that does not; a `_` arm is
+//!   the explicit "anything else".
+//! - The last expression of a body, written without `;`, is its value.
 
 use gatk_engine::java_hash::{byte_array_hash_code, string_hash_code};
 use htsjdk_bam::cigar::{Cigar, CigarElement, Op};
@@ -66,18 +84,23 @@ impl Interval {
         }
     }
 
+    /// `SimpleInterval.size`: the span is closed at both ends.
     fn size(&self) -> i32 {
         self.end - self.start + 1
     }
 
+    /// `contains`: same contig and `other` wholly inside, ends included.
     fn contains(&self, other: &Interval) -> bool {
         self.contig == other.contig && self.start <= other.start && self.end >= other.end
     }
 
+    /// `overlaps`, `overlapsWithMargin(other, 0)`.
     fn overlaps(&self, other: &Interval) -> bool {
         self.contig == other.contig && self.start <= other.end && other.start <= self.end
     }
 
+    /// `SimpleInterval.hashCode`: start, then end, then the contig's `String.hashCode`, each folded
+    /// as `31 * result + value`.
     fn hash_code(&self) -> i32 {
         self.start
             .wrapping_mul(31)
@@ -86,11 +109,13 @@ impl Interval {
             .wrapping_add(string_hash_code(&self.contig))
     }
 
+    /// `SimpleInterval.toString`: `contig:start-end`.
     fn text(&self) -> String {
         format!("{}:{}-{}", self.contig, self.start, self.end)
     }
 }
 
+/// `SAMSequenceDictionary.getSequenceIndex`, -1 where the contig is absent.
 fn contig_index(header: &SamHeader, contig: &str) -> i32 {
     header
         .sequences
@@ -126,22 +151,27 @@ struct Alignment {
     modification: char,
 }
 
+/// `CigarOperator.isClipping`. `matches!(x, A | B)` is `x == A || x == B`.
 fn is_clipping(op: Op) -> bool {
     matches!(op, Op::S | Op::H)
 }
 
+/// `CigarOperator.isAlignment`: `M`, `=` or `X`.
 fn is_alignment(op: Op) -> bool {
     matches!(op, Op::M | Op::Eq | Op::X)
 }
 
+/// `CigarOperator.isIndel`: `I` or `D`, never `N`.
 fn is_indel(op: Op) -> bool {
     matches!(op, Op::I | Op::D)
 }
 
+/// `CigarOperator.consumesReadBases`.
 fn consumes_read(op: Op) -> bool {
     matches!(op, Op::M | Op::I | Op::S | Op::Eq | Op::X)
 }
 
+/// `CigarOperator.consumesReferenceBases`.
 fn consumes_reference(op: Op) -> bool {
     matches!(op, Op::M | Op::D | Op::N | Op::Eq | Op::X)
 }
@@ -157,6 +187,7 @@ fn cigar_text(elements: &[CigarElement]) -> String {
     .to_text()
 }
 
+/// `Cigar.getReadLength`. `element.length` is unsigned here; `as i32` is Java's `int`.
 fn read_length(elements: &[CigarElement]) -> i32 {
     elements
         .iter()
@@ -165,6 +196,7 @@ fn read_length(elements: &[CigarElement]) -> i32 {
         .sum()
 }
 
+/// `Cigar.getReferenceLength`.
 fn reference_length(elements: &[CigarElement]) -> i32 {
     elements
         .iter()
@@ -174,6 +206,10 @@ fn reference_length(elements: &[CigarElement]) -> i32 {
 }
 
 /// `CigarUtils.countClippedBases(cigar, tail)`, both clip types of one end.
+///
+/// One walk over both clip types, where the Java makes one walk per type and adds the two.
+/// Each Java walk stops at the same first non-clip element and refuses the same cigars, so the
+/// sum and the message are the same.
 fn clipped_bases(elements: &[CigarElement], from_left: bool) -> Result<i32, Failed> {
     if elements.len() < 2 {
         return match elements.first() {
@@ -181,6 +217,8 @@ fn clipped_bases(elements: &[CigarElement], from_left: bool) -> Result<i32, Fail
             _ => Err("cigar is empty or completely clipped.".to_string()),
         };
     }
+    // `Box<dyn Iterator>` lets the two branches, a forward and a reversed iterator (two different
+    // types in Rust), be stored in one variable, as Java's `Iterator<CigarElement>` would.
     let walk: Box<dyn Iterator<Item = &CigarElement>> = if from_left {
         Box::new(elements.iter())
     } else {
@@ -200,6 +238,10 @@ fn clipped_bases(elements: &[CigarElement], from_left: bool) -> Result<i32, Fail
 }
 
 /// `CigarUtils.computeAssociatedDistOnRead`.
+///
+/// The refusal at the end is not the reference's text: the Java writes
+/// `"Cigar " + cigar + "does not contain at least "`, with no space after the cigar, and the
+/// message here has one.
 fn associated_distance_on_read(
     cigar: &[CigarElement],
     start: i32,
@@ -244,6 +286,8 @@ fn associated_distance_on_read(
     ))
 }
 
+/// `ReadUtils.getOptionalIntAttribute(record, tag).orElse(NO_NM)` (or `NO_AS`): the tag's
+/// integer value, -1 where it is absent or not an integer.
 fn optional_int(record: &BamRecord, tag: &[u8; 2]) -> i32 {
     match record.tags.get(htsjdk_bam::tag::Tag::new(tag)) {
         Some(htsjdk_bam::tag::TagValue::Int(value)) => *value as i32,
@@ -253,6 +297,9 @@ fn optional_int(record: &BamRecord, tag: &[u8; 2]) -> i32 {
 
 impl Alignment {
     /// `AlignmentInterval(SAMRecord)`.
+    ///
+    /// `0x4` is the unmapped flag and `0x10` the reverse-strand flag. A reverse-strand line's cigar
+    /// is reversed so the alignment reads along the contig, as `CigarUtils.invertCigar` does.
     fn from_record(record: &BamRecord, header: &SamHeader) -> Result<Self, Failed> {
         if record.flags & 0x4 != 0 {
             return Err(format!(
@@ -339,6 +386,8 @@ impl Alignment {
     }
 }
 
+/// `AlignmentInterval.overlapOnContig`: contig bases both cover, never negative. The `+ 1`
+/// makes the closed ends half-open, so spans that only touch overlap by zero.
 fn overlap_on_contig(one: &Alignment, two: &Alignment) -> i32 {
     ((one.end_on_contig + 1).min(two.end_on_contig + 1)
         - one.start_on_contig.max(two.start_on_contig))
@@ -354,6 +403,10 @@ fn overlap_on_reference(one: &Alignment, two: &Alignment) -> i32 {
 }
 
 /// `ContigAlignmentsModifier.GapSplitter.splitGaps`.
+///
+/// The pieces either side of every `I` or `D` of at least 50 bases, or the alignment itself
+/// when that leaves fewer than two. The Java's `grabCurrentInterval` is the second loop here:
+/// the first loop records each piece's six boundaries as a tuple, the second builds them.
 fn split_gaps(one: Alignment, unclipped_length: i32) -> Result<Vec<Alignment>, Failed> {
     const NOT_SET: i32 = -1;
     let elements = one.cigar.clone();
@@ -370,6 +423,8 @@ fn split_gaps(one: Alignment, unclipped_length: i32) -> Result<Vec<Alignment>, F
     if elements[count - 1].op == Op::H {
         count -= 1;
     }
+    // A reverse-strand alignment walks the reference backwards; negating the offset keeps it
+    // increasing, and the span is negated back below.
     let mut reference_offset = if one.forward {
         one.span.start
     } else {
@@ -422,6 +477,7 @@ fn split_gaps(one: Alignment, unclipped_length: i32) -> Result<Vec<Alignment>, F
     if chunks.len() < 2 {
         return Ok(vec![one]);
     }
+    // A small lambda for `new CigarElement(length, CigarOperator.S)`.
     let soft = |length: i32| CigarElement {
         length: length as u32,
         op: Op::S,
@@ -472,6 +528,9 @@ fn split_gaps(one: Alignment, unclipped_length: i32) -> Result<Vec<Alignment>, F
 
 /// `AlignedContig`.
 #[derive(Clone)]
+///
+/// `sequence` is the primary line's bases, reverse-complemented when the primary is on the
+/// reverse strand, so it reads 5' to 3' along the contig as the alignments do.
 struct Contig {
     name: String,
     sequence: Vec<u8>,
@@ -514,6 +573,9 @@ fn record_text(record: &BamRecord, header: &SamHeader) -> String {
 }
 
 /// `AlignedContig.parseReadsAndOptionallySplitGappedAlignments`.
+///
+/// The primary is the first line without the supplementary flag (`0x800`), which may not carry
+/// a hard clip. An unmapped primary leaves the contig with no alignments.
 fn parse_contig(
     reads: &[&BamRecord],
     header: &SamHeader,
@@ -541,6 +603,8 @@ fn parse_contig(
         if primary.flags & 0x10 != 0 {
             sequence = reverse_complement(&sequence);
         }
+        // `primaryAlignment.getReadLength()`, the bases on the line, which a primary without hard
+        // clips holds in full.
         let unclipped = primary.read_bases.len() as i32;
         for read in reads {
             let alignment = Alignment::from_record(read, header)?;
@@ -575,6 +639,8 @@ enum StrandSwitch {
 
 /// `SimpleChimera`.
 #[derive(Debug, Clone)]
+///
+/// `lower` and `higher` are the alignments with the lower and the higher start on the contig.
 struct Chimera {
     contig: String,
     lower: Alignment,
@@ -613,6 +679,7 @@ struct Distances {
 }
 
 impl Chimera {
+    /// The constructor, which also derives the strand switch and the representation.
     fn new(
         lower: &Alignment,
         higher: &Alignment,
@@ -630,6 +697,8 @@ impl Chimera {
         };
         let same_contig = lower.span.contig == higher.span.contig;
         // `isForwardStrandRepresentation`.
+        // A `match` arm with `if` (a guard) is tried in order: with a switch across two contigs the
+        // dictionary order decides, before the switch's own arm is reached.
         let forward_representation = match switch {
             StrandSwitch::None => lower.forward,
             _ if !same_contig => {
@@ -649,6 +718,7 @@ impl Chimera {
         })
     }
 
+    /// `StrandSwitch.name()`.
     fn switch_name(&self) -> &'static str {
         match self.switch {
             StrandSwitch::None => "NO_SWITCH",
@@ -706,6 +776,9 @@ impl Chimera {
     }
 
     /// `isCandidateSimpleTranslocation`.
+    ///
+    /// An incomplete chimera is never one; two contigs always are; on one contig, only without a
+    /// strand switch and with the higher alignment before the lower on the strand's direction.
     fn translocation(&self) -> bool {
         if self.incomplete() {
             return false;
@@ -725,6 +798,10 @@ impl Chimera {
     }
 
     /// `getDistancesBetweenAlignmentsOnRefAndOnRead`.
+    ///
+    /// The reference gap runs between the representation's left and right spans, the contig gap
+    /// between the two alignments' contig ends; each is minus one for adjacency, so 0 means the
+    /// two meet exactly.
     fn distances(&self) -> Distances {
         let (left, right) = if self.forward_representation {
             (&self.lower.span, &self.higher.span)
@@ -742,6 +819,10 @@ impl Chimera {
     }
 
     /// `inferType`.
+    ///
+    /// A gap on the reference only is a deletion, a gap on both a replacement, a gap on the contig
+    /// only an insertion; a negative reference gap (an overlap) is a duplication, expanded if the
+    /// contig does not overlap too and complex if it does. No gap anywhere is the refusal.
     fn infer_type(&self, header: &SamHeader) -> Result<ChimeraType, Failed> {
         if self.translocation() {
             return Ok(if self.lower.span.contig == self.higher.span.contig {
@@ -837,11 +918,15 @@ fn stitchable(one: &Alignment, two: &Alignment) -> Result<bool, Failed> {
     })
 }
 
+/// `firstAlignmentIsTooShort`: the reference span less the contig overlap is under 50.
 fn first_too_short(first: &Alignment, second: &Alignment) -> bool {
     first.span.size() - overlap_on_contig(first, second) < MIN_ALIGNMENT_LENGTH
 }
 
 /// `nextAlignmentMayBeInsertion`, wholly contained alignments filtered as the tool asks.
+///
+/// Not unique (MQ under 60, or `next` too short against `current`, the arguments swapped from
+/// `first_too_short`'s other use), or one reference span wholly containing the other.
 fn next_may_be_insertion(current: &Alignment, next: &Alignment) -> bool {
     next.map_quality < HIGH_MQ
         || first_too_short(next, current)
@@ -850,10 +935,18 @@ fn next_may_be_insertion(current: &Alignment, next: &Alignment) -> bool {
 }
 
 /// `parseOneContig`.
+///
+/// Skip to the first alignment at MQ 60, then pair it with each next alignment: a too-short or
+/// stitchable next is skipped, a possible insertion is noted as a packed string (the last one
+/// is not; the walk ends there), and anything else makes a chimera with the current one and
+/// becomes current. Translocations and incomplete chimeras are dropped, as this tool's Java
+/// sends them down another path.
 fn parse_one_contig(contig: &Contig, header: &SamHeader) -> Result<Vec<Chimera>, Failed> {
     if contig.alignments.len() < 2 {
         return Ok(Vec::new());
     }
+    // Java's iterator is here an index into the list: `position` is `current`, `walk` the next
+    // one `iterator.next()` would return.
     let mut position = 0;
     while contig.alignments[position].map_quality < HIGH_MQ
         && position + 1 < contig.alignments.len()
@@ -884,6 +977,8 @@ fn parse_one_contig(contig: &Contig, header: &SamHeader) -> Result<Vec<Chimera>,
         current = next;
     }
     // One list, shared, read once it is whole.
+    // The Java hands every chimera the same `ArrayList` and keeps adding to it; giving each the
+    // final list here is the same contents once the walk is over, which is when it is read.
     for chimera in &mut results {
         chimera.insertion_mappings = mappings.clone();
     }
@@ -892,6 +987,10 @@ fn parse_one_contig(contig: &Contig, header: &SamHeader) -> Result<Vec<Chimera>,
 
 /// `BreakpointComplications`, of the classes this tool's chimeras can reach.
 #[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `None` is a complication with no duplication; `Precise` is
+/// `SmallDuplicationWithPreciseDupSeqBreakpointComplications` with its duplicated sequence's
+/// cigars; `Imprecise` is the imprecise subclass with its affected range.
 enum Duplication {
     None,
     Precise { cigars: Vec<String> },
@@ -899,6 +998,8 @@ enum Duplication {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Which `BreakpointComplications` subclass a complication is, as far as `equals` (which
+/// compares classes) can tell them apart here.
 enum ComplicationClass {
     SimpleOrDuplication,
     StrandSwitch,
@@ -907,6 +1008,8 @@ enum ComplicationClass {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// `BreakpointComplications`: homology and inserted sequence, and for a duplication its unit,
+/// copy numbers on reference and contig, and the precise or imprecise detail.
 struct Complication {
     /// The class, which `equals` compares: the classes without a duplication have the same fields.
     class: ComplicationClass,
@@ -924,19 +1027,30 @@ fn fold(result: i32, value: i32) -> i32 {
 }
 
 impl Complication {
+    /// `hasDuplicationAnnotation`: only the duplication classes carry a unit.
     fn has_duplication(&self) -> bool {
         self.unit.is_some()
     }
 
+    /// `isDupContraction`: more copies on the reference than on the contig.
     fn contraction(&self) -> bool {
         self.copies_on_reference > self.copies_on_contig
     }
 
+    ///
+    /// `BreakpointComplications.hashCode` and its subclasses' overrides, which each start from
+    /// `super.hashCode()`:
+    ///
+    /// ```java
+    /// int result = homologyForwardStrandRep.hashCode();
+    /// result = 31 * result + insertedSequenceForwardStrandRep.hashCode();
+    /// ```
     fn hash_code(&self) -> i32 {
         let mut result = fold(
             string_hash_code(&self.homology),
             string_hash_code(&self.inserted),
         );
+        // `let ... else`: bind `unit` if there is one, otherwise return the base class's hash.
         let Some(unit) = &self.unit else {
             return result;
         };
@@ -944,11 +1058,14 @@ impl Complication {
         result = fold(result, self.copies_on_reference);
         result = fold(result, self.copies_on_contig);
         // Each `Strand.POSITIVE`, whose ordinal is zero.
+        // `result = 31 * result + strand.ordinal();` for each strand of `dupSeqStrandOnRef`,
+        // then of `dupSeqStrandOnCtg`; every strand in these classes is positive.
         for _ in 0..self.copies_on_reference + self.copies_on_contig {
             result = fold(result, 0);
         }
         match &self.duplication {
             Duplication::Precise { cigars } => {
+                // `List.hashCode`: start at 1, fold each element's hash.
                 let mut list = 1;
                 for cigar in cigars {
                     list = fold(list, string_hash_code(cigar));
@@ -961,6 +1078,8 @@ impl Complication {
     }
 
     /// `toVariantAttributes`.
+    ///
+    /// Returned as (key, value) pairs in the order the Java `put`s them.
     fn attributes(&self) -> Vec<(&'static str, Value)> {
         let mut attributes = Vec::new();
         if !self.inserted.is_empty() {
@@ -1008,6 +1127,8 @@ impl Complication {
 }
 
 /// `Arrays.copyOfRange`, which pads past the end with zeros.
+///
+/// `vec![0u8; n]` is a zero-filled array of `n` bytes, `new byte[n]`.
 fn copy_of_range(bases: &[u8], from: i32, to: i32) -> Result<Vec<u8>, Failed> {
     if from > to {
         return Err(format!("{from} > {to}"));
@@ -1022,6 +1143,10 @@ fn copy_of_range(bases: &[u8], from: i32, to: i32) -> Result<Vec<u8>, Failed> {
 }
 
 /// `reverseComplementIfNecessary`.
+///
+/// The bases are reported along the reference's forward strand: flip when both alignments are
+/// on the reverse strand, or, with a strand switch, when the first alignment's strand agrees
+/// with whether it lies after the second.
 fn oriented(bases: Vec<u8>, first: &Alignment, second: &Alignment, first_after: bool) -> Vec<u8> {
     let flip = if first.forward == second.forward {
         !first.forward
@@ -1035,11 +1160,15 @@ fn oriented(bases: Vec<u8>, first: &Alignment, second: &Alignment, first_after: 
     }
 }
 
+/// `new String(bytes)`. The bases are ASCII; `from_utf8_lossy` would only differ on bytes that
+/// are not.
 fn text_of(bases: Vec<u8>) -> String {
     String::from_utf8_lossy(&bases).into_owned()
 }
 
 /// `inferHomology`.
+///
+/// The contig bases the two alignments share, empty when they do not overlap on the contig.
 fn infer_homology(
     first: &Alignment,
     second: &Alignment,
@@ -1055,6 +1184,8 @@ fn infer_homology(
 }
 
 /// `inferInsertedSequence`.
+///
+/// The contig bases between the two alignments, empty when there are none.
 fn infer_inserted(
     first: &Alignment,
     second: &Alignment,
@@ -1070,6 +1201,10 @@ fn infer_inserted(
 }
 
 /// `extractCigarForTandupExpansion`.
+///
+/// The part of a region's cigar that falls inside the duplicated reference range, walking the
+/// reference forward or backward with the strand. The first element entered is cut to its
+/// overlap, and the element that leaves the range is cut and ends the walk.
 fn tandem_expansion_cigar(
     region: &Alignment,
     one_end: i32,
@@ -1125,6 +1260,8 @@ fn tandem_expansion_cigar(
 }
 
 /// `SmallDuplicationWithImpreciseDupRangeBreakpointComplications.TandemRepeatStructure`.
+///
+/// Lower and higher copy number, the repeat unit's length, and the pseudo-homology length.
 struct TandemRepeat {
     lower: i32,
     higher: i32,
@@ -1132,6 +1269,13 @@ struct TandemRepeat {
     pseudo_homology: i32,
 }
 
+/// `TandemRepeatStructure`'s constructor: the copy numbers, unit and pseudo-homology lengths
+/// whose implied overlaps best fit the two observed ones.
+///
+/// A brute-force search over lower copy number 1 to 9 (`MAX_LOWER_CN` is 10, exclusive), and
+/// the first strictly better fit wins, so ties keep the earliest. The Java's error is a
+/// `double`; it only ever holds sums of two `int` absolute values, which an `i64` holds
+/// exactly, so the comparisons are the same.
 fn tandem_repeat(on_reference: i32, on_contig: i32) -> TandemRepeat {
     let expansion = on_reference < on_contig;
     let (on_lower, on_higher) = if expansion {
@@ -1145,6 +1289,7 @@ fn tandem_repeat(on_reference: i32, on_contig: i32) -> TandemRepeat {
         unit_length: 0,
         pseudo_homology: 0,
     };
+    // `double err = Double.MAX_VALUE;`, which any first fit beats.
     let mut error = i64::MAX;
     for lower in 1..10 {
         for higher in lower + 1..=2 * lower {
@@ -1179,6 +1324,8 @@ fn tandem_repeat(on_reference: i32, on_contig: i32) -> TandemRepeat {
 
 /// `NovelAdjacencyAndAltHaplotype`.
 #[derive(Debug, Clone)]
+///
+/// `left` and `right` are the left-justified breakpoints, each one base wide.
 struct NovelAdjacency {
     left: Interval,
     right: Interval,
@@ -1189,6 +1336,7 @@ struct NovelAdjacency {
     alt_haplotype: Vec<u8>,
 }
 
+/// `NovelAdjacencyAndAltHaplotype.equals`, written out because it leaves out `kind`.
 impl PartialEq for NovelAdjacency {
     fn eq(&self, other: &Self) -> bool {
         self.left == other.left
@@ -1242,6 +1390,8 @@ impl NovelAdjacency {
     }
 
     /// `getLengthForDupTandemExpansion`.
+    ///
+    /// The inserted sequence plus the extra copies of the unit.
     fn expansion_length(&self) -> Result<i32, Failed> {
         if self.complication.contraction() {
             return Err(format!(
@@ -1255,6 +1405,7 @@ impl NovelAdjacency {
     }
 }
 
+/// `makeLocationString`: `contig_pos_pos` on one contig, `contig_pos_contig_pos` across two.
 fn location_string(one: &str, position_one: i32, two: &str, position_two: i32) -> String {
     if one == two {
         format!("{one}_{position_one}_{position_two}")
@@ -1264,6 +1415,8 @@ fn location_string(one: &str, position_one: i32, two: &str, position_two: i32) -
 }
 
 /// `BreakpointsInference.validateInferredLocations`.
+///
+/// `Result<(), Failed>` is a `void` method that may throw: `()` is the empty value.
 fn validate_locations(left: &Interval, right: &Interval, header: &SamHeader) -> Result<(), Failed> {
     let (left_index, right_index) = (
         contig_index(header, &left.contig),
@@ -1285,6 +1438,11 @@ fn validate_locations(left: &Interval, right: &Interval, header: &SamHeader) -> 
 
 /// `new NovelAdjacencyAndAltHaplotype(chimera, contigSequence, dictionary)`, through the inference
 /// and complication classes the chimera's type selects.
+///
+/// One `match` on the chimera's type stands for the Java's dispatch to the `BreakpointsInference`
+/// and `BreakpointComplications` subclass that type selects. Each arm fills the complication and
+/// the two breakpoint positions; the breakpoints are then built and, except for the simple
+/// insertion and deletion family, validated against the dictionary.
 fn novel_adjacency(
     chimera: &Chimera,
     sequence: &[u8],
@@ -1306,6 +1464,8 @@ fn novel_adjacency(
         copies_on_contig: 0,
         duplication: Duplication::None,
     };
+    // Declared without a value: every `match` arm below must assign all three before they are
+    // read, and the compiler checks that it does. Java's blank `final` locals.
     let (upstream, downstream, alt_haplotype);
     let mut validate = true;
     match kind {
@@ -1484,6 +1644,7 @@ fn novel_adjacency(
             };
             left_contig = one.span.contig.clone();
             right_contig = two.span.contig.clone();
+            // Assigning to a tuple of existing variables sets both at once.
             (upstream, downstream) = match chimera.switch {
                 StrandSwitch::None => {
                     // `first` always keeps the homology; which end depends on the representation.
@@ -1540,10 +1701,18 @@ fn novel_adjacency(
 
 /// Spark's `AppendOnlyMap` walked in slot order, as `ExternalAppendOnlyMap.iterator` walks it when
 /// nothing has spilled. A key keeps its first arrival's object.
+///
+/// Open addressing with quadratic probing (the step grows by one each miss) over a power-of-two
+/// table that starts at 64 slots and doubles once more than 0.7 of it is used, each key placed
+/// by the murmur3 of its `hashCode`. The result is the groups in final slot order, each with
+/// its values in arrival order. `impl Fn(&K) -> i32` is a lambda parameter, Java's
+/// `ToIntFunction<K>`.
 pub fn append_only_group<K: PartialEq, V>(
     pairs: Vec<(K, V)>,
     hash_of: impl Fn(&K) -> i32,
 ) -> Vec<(K, Vec<V>)> {
+    // `as u32` reinterprets the signed hash's bits as unsigned before it is widened, so a
+    // negative hash masks the same way Java's `hash & mask` on an `int` does.
     let slot_hash = |hash: i32| crate::pathseq_filter::murmur3_32_int(hash) as u32 as usize;
     let mut capacity = 64usize;
     let mut slots: Vec<Option<usize>> = vec![None; capacity];
@@ -1586,6 +1755,7 @@ pub fn append_only_group<K: PartialEq, V>(
             }
         }
     }
+    // `flatten` over a list of `Option`s keeps the filled slots, in slot order.
     let order: Vec<usize> = slots.into_iter().flatten().collect();
     let mut taken: Vec<Option<(K, Vec<V>)>> = groups
         .into_iter()
@@ -1598,6 +1768,8 @@ pub fn append_only_group<K: PartialEq, V>(
 }
 
 /// What `produceAnnotatedVcFromAssemblyEvidence` needs from outside.
+///
+/// A trait is Java's interface; `&mut dyn Reference` below is a reference to any implementation.
 pub trait Reference {
     /// `BasicReference.getBases`.
     fn bases(&mut self, contig: &str, start: i32, end: i32) -> Result<Vec<u8>, Failed>;
@@ -1614,6 +1786,10 @@ pub struct CnvCall {
 }
 
 /// `inferSimpleTypeFromNovelAdjacency` and `produceAnnotatedVcFromAssemblyEvidence`.
+///
+/// No strand switch and one breakpoint is an insertion (or a tandem expansion as `<DUP>`);
+/// no switch and two is a deletion (or a tandem contraction); a switch is an inversion, `INV55`
+/// or `INV33` by direction. The REF allele is the reference base at the left breakpoint.
 fn annotated_variant(
     adjacency: &NovelAdjacency,
     evidence: &[Chimera],
@@ -1628,6 +1804,7 @@ fn annotated_variant(
     let contig = &adjacency.left.contig;
     let position = adjacency.left.start;
     let mut extra: Vec<(&'static str, Value)> = Vec::new();
+    // Each branch below assigns all five, as with the blank `final` locals of the Java.
     let (stop, id, symbol, svtype, length);
     if adjacency.switch == StrandSwitch::None {
         if start == end {
@@ -1704,6 +1881,8 @@ fn annotated_variant(
         extra.push((name, Value::Bool(true)));
     }
     let bases = reference.bases(contig, position, position)?;
+    // `map_err` turns the allele library's error into this file's message string, so `?` can pass
+    // it on.
     let reference_allele = Allele::create(&bases, true).map_err(|error| format!("{error:?}"))?;
     let alternate = Allele::from_str(symbol, false).map_err(|error| format!("{error:?}"))?;
     let mut variant = VariantContext::new(
@@ -1733,6 +1912,9 @@ fn set(variant: &mut VariantContext, key: &str, value: Value) {
 }
 
 /// What `produceAnnotatedVcFromAssemblyEvidence` adds to a type's basic information.
+///
+/// The complication's attributes, then `getAssemblyEvidenceRelatedAnnotations` over the
+/// chimeras sorted by contig name, then the alt haplotype, then the external CNV calls.
 fn annotate_from_evidence(
     variant: &mut VariantContext,
     adjacency: &NovelAdjacency,
@@ -1749,6 +1931,9 @@ fn annotate_from_evidence(
 
     // `getAssemblyEvidenceRelatedAnnotations`.
     let mut sorted: Vec<&Chimera> = evidence.iter().collect();
+    // `sorted(Comparator.comparing(evidence -> evidence.sourceContigName))`. Both sorts are
+    // stable; Rust's `String` order is by bytes and Java's by UTF-16 units, the same for the
+    // ASCII contig names.
     sorted.sort_by(|one, two| one.contig.cmp(&two.contig));
     let minimum_quality =
         |chimera: &Chimera| chimera.lower.map_quality.min(chimera.higher.map_quality);
@@ -1809,6 +1994,7 @@ fn annotate_from_evidence(
                 .collect(),
         )),
     );
+    // `flatMap(List::stream).sorted()`.
     let mut mappings: Vec<String> = sorted
         .iter()
         .flat_map(|chimera| chimera.insertion_mappings.iter().cloned())
@@ -1862,6 +2048,9 @@ fn annotate_from_evidence(
 }
 
 /// `SVVCFWriter.sortVariantsByCoordinate`, stable as `Stream.sorted` is.
+///
+/// Dictionary order of contig, then start, then end, then the `INSSEQ` text (empty where
+/// absent), then the ID.
 fn sort_variants(variants: &mut [VariantContext], header: &SamHeader) {
     let inserted = |variant: &VariantContext| -> String {
         variant
@@ -1889,6 +2078,10 @@ fn sort_variants(variants: &mut [VariantContext], header: &SamHeader) {
 pub struct Adjacencies(Vec<(NovelAdjacency, Vec<Chimera>)>);
 
 /// The tool's first job: the reads to the novel adjacencies.
+///
+/// Secondary lines (`0x100`) are dropped, the rest grouped by read name in `AppendOnlyMap`
+/// order, each group parsed into a contig with gaps split, and contigs with fewer than two
+/// alignments set aside before chimeras are looked for.
 pub fn adjacencies(records: &[BamRecord], header: &SamHeader) -> Result<Adjacencies, Failed> {
     // `filter(!isSecondaryAlignment).groupBy(getName)`.
     let by_name = append_only_group(
@@ -1911,6 +2104,8 @@ pub fn adjacencies(records: &[BamRecord], header: &SamHeader) -> Result<Adjacenc
 }
 
 /// The pipeline's first job: its contigs in the order `parallelize` keeps, each one's mapped lines.
+///
+/// The same as [`adjacencies`] from contigs already grouped.
 pub fn adjacencies_of_contigs(
     lines: &[Vec<BamRecord>],
     header: &SamHeader,

@@ -7,11 +7,15 @@
 //! # Two NM tags, computed by two different functions
 //!
 //! ```java
+//! // only recalculate NM if it isn't bisulfite, since it needs to be treated specially below
 //! SequenceUtil.calculateMdAndNmTags(record, referenceBases, true, !isBisulfiteSequence);
-//! if (isBisulfiteSequence) {
-//!     record.setAttribute(SAMTag.NM.name(), SequenceUtil.calculateSamNmTag(record, referenceBases, 0, isBisulfiteSequence));
+//! if (isBisulfiteSequence) {  // recalculate the NM tag for bisulfite data
+//!     record.setAttribute(SAMTag.NM.name(),
+//!         SequenceUtil.calculateSamNmTag(record, referenceBases, 0, isBisulfiteSequence));
 //! }
 //! ```
+//!
+//! (`AbstractAlignmentMerger.fixNmMdAndUq`; the `setAttribute` is one line there, wrapped here.)
 //!
 //! For an ordinary read one walk writes both MD and NM. For a bisulfite read the NM is written
 //! again by `calculateSamNmTag`, which forgives a C read as a T, while the MD from the first walk
@@ -28,6 +32,16 @@
 //!
 //! `fixRecord` checks `getReadUnmappedFlag()` first, so a wrong NM, MD or UQ on an unmapped read
 //! survives the run.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&mut BamRecord` is a writable borrow: the function edits the caller's record in place, as
+//!   the Java mutates its `SAMRecord`; `&[u8]` is a read-only view of the reference bases;
+//! - `x & FLAG != 0` tests a bit of the SAM flag word, which is what `getReadUnmappedFlag()` and
+//!   `getReadNegativeStrandFlag()` read;
+//! - `.expect("..")` asserts a `Result` or `Option` holds a value and aborts with the message if
+//!   not; it marks a failure the reference cannot reach, not a refusal;
+//! - `i64::from(n)` widens a narrower integer without loss.
 
 use htsjdk_bam::alignment_block::alignment_blocks;
 use htsjdk_bam::md_nm::calculate_md_and_nm;
@@ -40,7 +54,7 @@ const READ_UNMAPPED: u16 = 0x4;
 /// `SAMFlag.READ_REVERSE_STRAND`, which only the bisulfite comparison reads.
 const READ_REVERSE_STRAND: u16 = 0x10;
 
-/// The arguments the run reads.
+/// The arguments the run reads: `IS_BISULFITE_SEQUENCE` and `SET_ONLY_UQ`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Arguments {
     pub is_bisulfite_sequence: bool,
@@ -56,10 +70,13 @@ pub enum SetTagsError {
 }
 
 impl SetTagsError {
+    /// The class the reference throws.
     pub fn java_class(&self) -> &str {
         "htsjdk.samtools.SAMException"
     }
 
+    /// `"Input must be coordinate-sorted for this program to run. Found: " +
+    /// reader.getFileHeader().getSortOrder()`.
     pub fn message(&self) -> String {
         match self {
             SetTagsError::NotCoordinateSorted { found } => {
@@ -73,6 +90,9 @@ impl SetTagsError {
 ///
 /// The reference bases are the whole contig, which is what `ReferenceSequenceFileWalker.get`
 /// hands over, so the offset is always zero.
+///
+/// `SET_ONLY_UQ` calls `fixUq` alone; otherwise `fixNmMdAndUq`, which ends by calling `fixUq`. So
+/// both branches end in `fix_uq` here, written once after the `if`.
 pub fn fix_record(record: &mut BamRecord, reference_bases: &[u8], arguments: &Arguments) {
     if record.flags & READ_UNMAPPED != 0 {
         return;
@@ -140,6 +160,13 @@ fn fix_uq(record: &mut BamRecord, reference_bases: &[u8], is_bisulfite_sequence:
 }
 
 /// `doWork()`'s sort-order check, which reads the header's claim and nothing else.
+///
+/// ```java
+/// if (reader.getFileHeader().getSortOrder() != SAMFileHeader.SortOrder.coordinate) {
+/// ```
+///
+/// `sort_order` is the header's raw `SO` value. htsjdk's `getSortOrder` turns an absent one into
+/// `unsorted`, which is what `unwrap_or` supplies here.
 pub fn check_sort_order(sort_order: Option<&str>) -> Result<(), SetTagsError> {
     let found = sort_order.unwrap_or("unsorted");
     if found == "coordinate" {

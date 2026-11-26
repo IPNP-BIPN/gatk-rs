@@ -1,6 +1,6 @@
 //! `MTLowHeteroplasmyFilterTool`, ported from
 //! `org.broadinstitute.hellbender.tools.walkers.mutect.filtering.MTLowHeteroplasmyFilterTool`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `MTLowHeteroplasmyFilterTool.java` is unchanged since 4.6.2.0).
 //!
 //! Low-heteroplasmy mitochondrial calls filtered, but only once there are too many of them.
 //!
@@ -36,6 +36,17 @@
 //! without a precondition while the second reads only those that have one. The `Double.MAX_VALUE`
 //! substitution is for a missing entry WITHIN a multi-valued array: `AF=0.05,.` filters its first
 //! alternate and never its second.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<f64>` is "a number or nothing", Java's nullable `Double`. `Vec<Option<Vec<..>>>` is
+//!   therefore one entry per genotype, each either absent or a list of fractions.
+//! - `value.unwrap_or(f64::MAX)` is the value, or `Double.MAX_VALUE` when there is none.
+//! - `Result<bool, LowHetError>` is "an answer or a refusal"; a `?` after a call returns the
+//!   refusal to this function's caller, as an uncaught Java exception would.
+//! - `.iter().flatten()` over the genotypes skips the `None` ones, which is the reference's
+//!   `g -> g.hasExtendedAttribute(GATKVCFConstants.ALLELE_FRACTION_KEY)` precondition.
+//! - `.zip(..)` pairs two lists element by element and stops at the shorter.
 
 use crate::numt_filter::{merged_as_filter_string, NuMTError, Record as FilterRecord};
 
@@ -81,6 +92,7 @@ pub enum LowHetError {
 }
 
 impl LowHetError {
+    /// The class of the exception the reference throws.
     pub fn java_class(&self) -> &str {
         match self {
             LowHetError::NoAlleleFraction => "java.lang.NullPointerException",
@@ -88,6 +100,7 @@ impl LowHetError {
         }
     }
 
+    /// The exception's message as the reference prints it.
     pub fn message(&self) -> String {
         match self {
             LowHetError::NoAlleleFraction => {
@@ -111,6 +124,15 @@ fn fractions(genotype: &Option<Vec<Option<f64>>>) -> Result<Vec<f64>, LowHetErro
 }
 
 /// `isSiteLowHeteroplasmy`, which reads EVERY genotype and therefore throws on one without `AF`.
+///
+/// ```java
+/// return !(v.getGenotypes().stream().flatMap(g -> getData(g).stream()
+///         .filter(x -> x < lowHetThreshold)).collect(Collectors.toList()).isEmpty());
+/// ```
+///
+/// The `collect` drains the whole stream before `isEmpty` is asked. This loop instead returns at
+/// the first genotype with a fraction under the threshold, so a genotype without `AF` after that
+/// one is never reached and does not throw here.
 pub fn is_site_low_heteroplasmy(record: &Record) -> Result<bool, LowHetError> {
     for genotype in &record.allele_fractions {
         if fractions(genotype)?
@@ -130,6 +152,14 @@ pub fn is_not_filtered(record: &Record) -> bool {
 
 /// `areAllelesArtifacts`: per alternate allele, the maximum across the genotypes that HAVE an
 /// allele fraction, compared strictly against the threshold.
+///
+/// ```java
+/// return dataByAllele.values().stream()
+///         .map(afList -> afList.stream().max(Double::compareTo).orElse(0.0) < lowHetThreshold)
+/// ```
+///
+/// The `fold` is the stream's `max`, with `None` until a first value is seen, and `unwrap_or(0.0)`
+/// is `orElse(0.0)` for an allele no genotype gave a fraction for.
 pub fn alleles_are_artifacts(record: &Record) -> Vec<bool> {
     let mut by_alternate: Vec<Vec<f64>> = vec![Vec::new(); record.alternates.len()];
     for genotype in record.allele_fractions.iter().flatten() {
@@ -160,6 +190,13 @@ pub fn alleles_are_artifacts(record: &Record) -> Vec<bool> {
 }
 
 /// Both passes over a whole file: count, decide, then filter.
+///
+/// `TwoPassVariantWalker`'s `firstPassApply`, `afterFirstPass` and `secondPassApply`, in that
+/// order:
+///
+/// ```java
+/// failedLowHet = unfilteredLowHetSites > maxAllowedLowHets;
+/// ```
 pub fn run(records: &[Record], arguments: &Arguments) -> Result<Vec<Record>, LowHetError> {
     let mut unfiltered_low_hets = 0;
     for record in records {
@@ -181,6 +218,9 @@ pub fn run(records: &[Record], arguments: &Arguments) -> Result<Vec<Record>, Low
                 out.filters.push(FILTER_NAME.to_string());
             }
             if applied.contains(&true) {
+                // `AlleleFilterUtils.getMergedASFilterString`, through the NuMT filter's record
+                // type. The merge reads only the existing `AS_FilterStatus`, so the other fields
+                // need only be well formed.
                 let filter_record = FilterRecord {
                     alleles: std::iter::once(String::new())
                         .chain(record.alternates.iter().cloned())

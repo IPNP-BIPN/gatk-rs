@@ -1,18 +1,40 @@
 //! `numpy.random.RandomState` as scikit-learn reaches it: MT19937 seeded by an integer, and the
 //! legacy draws its bagging and its trees ask for.
-//! Also `Generator(PCG64(seed))` as pymc's `reseed_rngs` builds it from a `SeedSequence` and spawns,
-//! with the ziggurat normal pytensor's `NormalRV` draws (`random/bit_generator.pyx`,
+//! Also `Generator(PCG64(seed))` as pymc's `reseed_rngs` builds it from a `SeedSequence` and
+//! spawns, with the ziggurat normal pytensor's `NormalRV` draws (`random/bit_generator.pyx`,
 //! `random/src/pcg64/pcg64.h`).
 //!
 //! Ported from numpy 1.26.2 (BSD 3-Clause), `random/src/mt19937/mt19937.c`,
 //! `random/src/distributions/distributions.c` and `random/mtrand.pyx`, and checked by the stream
 //! the isolation forest draws from it: the seeds in a scorer the reference pickled are this
 //! generator's output.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `u32`, `u64` and `u128` are **unsigned** integers of 32, 64 and 128 bits. Java has none; the
+//!   C sources these port use `uint32_t` and `uint64_t`. On an unsigned value `>>` is the logical
+//!   shift, Java's `>>>`.
+//! - `a.wrapping_mul(b)`, `wrapping_add`, `wrapping_sub` are arithmetic modulo 2^bits, which is
+//!   what C's unsigned arithmetic and Java's `int` arithmetic do silently. Rust's plain `*` and `+`
+//!   abort on overflow in a debug build, so the modular intent is spelled out.
+//! - `x as u32` (or any `as` between integer types) keeps the low bits and drops the rest, like a
+//!   C cast; `as f64` converts to the nearest double.
+//! - `&mut self` on a method means it advances the generator's state in place, like a Java
+//!   instance method that writes fields.
+//! - `|i| { ... }` is a closure, Java's lambda `i -> { ... }`.
 
+/// MT19937's state length `N` (624 words) and middle offset `M` (397), the constants
+/// `mt19937.c` names `RK_STATE_LEN` and the twist reads ahead by.
 const STATE: usize = 624;
 const PERIOD: usize = 397;
 
 /// `RandomState(seed)`, for a seed `int` in `[0, 2^32)`.
+///
+/// **What**: the Mersenne Twister state, 624 words and the index of the next word to temper.
+///
+/// **Why only an integer seed**: `RandomState` also accepts an array seed, which goes through a
+/// different initialisation (`init_by_array`); scikit-learn hands it an integer, so only
+/// `mt19937_seed` is here.
 #[derive(Debug, Clone)]
 pub struct RandomState {
     key: [u32; STATE],
@@ -20,10 +42,13 @@ pub struct RandomState {
 }
 
 impl RandomState {
-    /// `mt19937_seed`.
+    /// `mt19937_seed`: Knuth's linear recurrence fills the 624 words, and `position` starts at
+    /// the end so the first draw twists the whole state before tempering.
     pub fn new(seed: u32) -> RandomState {
         let mut key = [0u32; STATE];
         let mut value = seed;
+        // `iter_mut().enumerate()` walks the array yielding each index with a writable
+        // reference to its slot; `*slot = value` stores through that reference.
         for (position, slot) in key.iter_mut().enumerate() {
             *slot = value;
             value = 1812433253u32
@@ -37,10 +62,15 @@ impl RandomState {
     }
 
     /// `mt19937_gen`, the whole state at a time.
+    ///
+    /// **How**: the twist in its usual three pieces, so no index is taken modulo 624: words
+    /// whose partner `i + 397` is still in range, words whose partner wraps to the front, and the
+    /// last word, whose successor is word 0.
     fn generate(&mut self) {
         const MATRIX: u32 = 0x9908_b0df;
         const UPPER: u32 = 0x8000_0000;
         const LOWER: u32 = 0x7fff_ffff;
+        // A local writable borrow of the state array, so the loops read as `key[i]`.
         let key = &mut self.key;
         for i in 0..STATE - PERIOD {
             let y = (key[i] & UPPER) | (key[i + 1] & LOWER);
@@ -55,7 +85,7 @@ impl RandomState {
         self.position = 0;
     }
 
-    /// `mt19937_next32`.
+    /// `mt19937_next32`: one state word, tempered.
     pub fn next_u32(&mut self) -> u32 {
         if self.position == STATE {
             self.generate();
@@ -70,13 +100,17 @@ impl RandomState {
 
     /// `mt19937_next_double`, which `RandomState.uniform(size=n)` returns as it stands over
     /// `[0, 1)`.
+    ///
+    /// **How**: 27 high bits of one word and 26 of the next form a 53-bit integer, divided by
+    /// 2^53. Both products are exact in a double, so the result is the same bits as numpy's.
     pub fn next_double(&mut self) -> f64 {
         let a = i64::from(self.next_u32() >> 5);
         let b = i64::from(self.next_u32() >> 6);
         (a as f64 * 67108864.0 + b as f64) / 9007199254740992.0
     }
 
-    /// The smallest mask of ones covering `value`.
+    /// The smallest mask of ones covering `value`: every bit below its highest set bit is set,
+    /// by OR-ing in shifted copies. The masked rejection loops below draw under this mask.
     fn mask(value: u64) -> u64 {
         let mut mask = value;
         mask |= mask >> 1;
@@ -89,6 +123,13 @@ impl RandomState {
 
     /// `randint(low, high)` of the default dtype: `_rand_int64` with `_masked=True`, drawing 32
     /// bits at a time for a range under 2^32, which is every range scikit-learn asks for here.
+    ///
+    /// **How**: draw a word, keep the bits under `mask(high - low - 1)`, and redraw until the
+    /// value falls in range. Rejection, not `%`, because the order and number of draws consumed is
+    /// what later draws depend on.
+    ///
+    /// **`debug_assert!`** is checked only in debug builds. It guards the one assumption made
+    /// here: a range of 2^32 or more would need numpy's 64-bit path, which this does not port.
     pub fn randint(&mut self, low: u64, high: u64) -> u64 {
         let range = high - low - 1;
         if range == 0 {
@@ -104,7 +145,8 @@ impl RandomState {
         }
     }
 
-    /// `random_interval`, what `shuffle` draws its swaps with.
+    /// `random_interval`, what `shuffle` draws its swaps with: a uniform value in
+    /// `[0, maximum]`, by the same masked rejection as `randint`, for a `maximum` under 2^32.
     fn interval(&mut self, maximum: u64) -> u64 {
         if maximum == 0 {
             return 0;
@@ -119,6 +161,9 @@ impl RandomState {
     }
 
     /// `permutation(n)`: `arange(n)` shuffled from the last element down.
+    ///
+    /// **How**: Fisher-Yates, swapping element `i` with a draw from `[0, i]` for `i` from `n - 1`
+    /// to 1. `(1..n).rev()` is that descending range; `(0..n).collect()` builds `[0, n)`.
     pub fn permutation(&mut self, n: usize) -> Vec<usize> {
         let mut out: Vec<usize> = (0..n).collect();
         for i in (1..n).rev() {
@@ -131,6 +176,17 @@ impl RandomState {
 
 /// `sklearn.utils.random.sample_without_replacement(population, samples, method="auto")`, of
 /// scikit-learn 1.3.2 (BSD 3-Clause), `utils/_random.pyx`.
+///
+/// **What**: `samples` distinct indices from `[0, population)`, in the order the reference
+/// returns them, drawn from `random`.
+///
+/// **How**: the `auto` method picks one of three algorithms by `samples / population`: a full
+/// permutation truncated when the ratio is strictly between 0.01 and 0.99; otherwise tracking
+/// selection (redraw on a repeat) below 0.2, and reservoir sampling at or above it.
+///
+/// **Why all three**: each consumes a different number of draws and yields a different order, so
+/// matching the reference's output means taking the same branch it takes. A ratio of one, as in
+/// the test below, takes the reservoir branch and draws nothing at all.
 pub fn sample_without_replacement(
     population: usize,
     samples: usize,
@@ -148,6 +204,8 @@ pub fn sample_without_replacement(
     }
     if ratio < 0.2 {
         // `_sample_without_replacement_with_tracking_selection`.
+        // Only membership is asked of the set, so its ordering does not reach the output; the
+        // output order is `out`, the order of acceptance.
         let mut selected = std::collections::BTreeSet::new();
         let mut out = Vec::with_capacity(samples);
         for _ in 0..samples {
@@ -163,6 +221,7 @@ pub fn sample_without_replacement(
     // `_sample_without_replacement_with_reservoir_sampling`.
     let mut out: Vec<usize> = (0..samples).collect();
     for i in samples..population {
+        // Each later index replaces a random slot with probability `samples / (i + 1)`.
         let j = random.randint(0, i as u64 + 1) as usize;
         if j < samples {
             out[j] = i;
@@ -173,6 +232,10 @@ pub fn sample_without_replacement(
 
 /// `SeedSequence(entropy, spawn_key=...)` with the default pool of four words, for an entropy and
 /// spawn keys under 2^32 (one word each), which is what `reseed_rngs` passes.
+///
+/// **What**: numpy's entropy mixer. The four-word `pool` is fixed at construction from the
+/// entropy and spawn key; `children` counts how many children `spawn` has handed out, so a second
+/// `spawn` continues the key numbering rather than repeating it.
 #[derive(Debug, Clone)]
 pub struct SeedSequence {
     entropy: u32,
@@ -181,6 +244,8 @@ pub struct SeedSequence {
     children: u32,
 }
 
+/// The hash constants of `bit_generator.pyx`: `INIT_A`/`MULT_A` for mixing entropy into the
+/// pool, `INIT_B`/`MULT_B` for drawing words out of it, and the two `mix` multipliers.
 const INIT_A: u32 = 0x43b0_d7e5;
 const MULT_A: u32 = 0x931e_8875;
 const INIT_B: u32 = 0x8b51_f9dd;
@@ -188,6 +253,10 @@ const MULT_B: u32 = 0x58f3_8ded;
 const MIX_MULT_L: u32 = 0xca01_f9dd;
 const MIX_MULT_R: u32 = 0x4973_f715;
 
+/// `hashmix`: hash one word with the running constant, then advance that constant.
+///
+/// `hash: &mut u32` stands for the one-element array numpy passes (`hash_const`) so the
+/// multiplier sequence carries from one call to the next.
 fn hashmix(value: u32, hash: &mut u32) -> u32 {
     let mut value = value ^ *hash;
     *hash = hash.wrapping_mul(MULT_A);
@@ -195,6 +264,7 @@ fn hashmix(value: u32, hash: &mut u32) -> u32 {
     value ^ (value >> 16)
 }
 
+/// `mix`: combine two hashed words into one.
 fn mix(x: u32, y: u32) -> u32 {
     let result = MIX_MULT_L
         .wrapping_mul(x)
@@ -203,10 +273,16 @@ fn mix(x: u32, y: u32) -> u32 {
 }
 
 impl SeedSequence {
+    /// `SeedSequence(entropy)` with no spawn key.
     pub fn new(entropy: u32) -> SeedSequence {
         SeedSequence::with_key(entropy, Vec::new())
     }
 
+    /// `SeedSequence(entropy, spawn_key=...)`: `get_assembled_entropy` then `mix_entropy`.
+    ///
+    /// **How**: hash the first four assembled words (zero where there are fewer) into the pool,
+    /// cross-mix every pool word into every other, then fold in any words past the fourth, which
+    /// are the spawn key.
     fn with_key(entropy: u32, spawn_key: Vec<u32>) -> SeedSequence {
         // `get_assembled_entropy`: with a spawn key, the run entropy is padded to the pool size.
         let mut assembled = vec![entropy];
@@ -217,6 +293,8 @@ impl SeedSequence {
         let mut pool = [0u32; 4];
         let mut hash = INIT_A;
         for (i, slot) in pool.iter_mut().enumerate() {
+            // `get(i)` is `None` past the end, and `unwrap_or(0)` turns that into zero: numpy's
+            // `hashmix(0, hash_const)` for a missing word.
             *slot = hashmix(assembled.get(i).copied().unwrap_or(0), &mut hash);
         }
         for source in 0..4 {
@@ -239,6 +317,8 @@ impl SeedSequence {
         }
     }
 
+    /// `SeedSequence.spawn(n)`: `n` children whose spawn key is this one's key plus the child's
+    /// index, numbered on from the children already spawned.
     pub fn spawn(&mut self, n: u32) -> Vec<SeedSequence> {
         let children = (self.children..self.children + n)
             .map(|i| {
@@ -252,6 +332,9 @@ impl SeedSequence {
     }
 
     /// `generate_state(n, np.uint64)`.
+    ///
+    /// **How**: `2n` 32-bit words cycled out of the pool with the `INIT_B` hash, then paired low
+    /// word first into 64-bit words, which is the little-endian view numpy takes of them.
     pub fn generate_state_u64(&self, n: usize) -> Vec<u64> {
         let mut hash = INIT_B;
         let words: Vec<u32> = (0..2 * n)
@@ -272,6 +355,10 @@ impl SeedSequence {
 const PCG_MULTIPLIER: u128 = (2549297995355413924u128 << 64) | 4865540595714422341u128;
 
 /// `Generator(PCG64(seed_sequence))`: PCG XSL-RR 128/64.
+///
+/// **What**: a 128-bit linear congruential state and its odd increment; each draw steps the state
+/// and folds it to 64 bits. The fields are public so a test can compare them with a state the
+/// reference printed.
 #[derive(Debug, Clone)]
 pub struct Pcg64 {
     pub state: u128,
@@ -279,6 +366,9 @@ pub struct Pcg64 {
 }
 
 impl Pcg64 {
+    /// `PCG64(seed_seq)`: four 64-bit words from `generate_state`, the first pair as the initial
+    /// state and the second as the stream, then `pcg_setseq_128_srandom_r`: zero, step, add the
+    /// initial state, step.
     pub fn new(seed: &SeedSequence) -> Pcg64 {
         let words = seed.generate_state_u64(4);
         let initstate = (u128::from(words[0]) << 64) | u128::from(words[1]);
@@ -293,6 +383,7 @@ impl Pcg64 {
         rng
     }
 
+    /// One LCG step, `state * multiplier + inc` modulo 2^128.
     fn step(&mut self) {
         self.state = self
             .state
@@ -300,17 +391,29 @@ impl Pcg64 {
             .wrapping_add(self.inc);
     }
 
+    /// `pcg64_next64`: step, then XSL-RR on the new state, the high and low halves XOR-ed and
+    /// rotated right by the top six bits.
     pub fn next_u64(&mut self) -> u64 {
         self.step();
         let value = ((self.state >> 64) as u64) ^ (self.state as u64);
         value.rotate_right((self.state >> 122) as u32)
     }
 
+    /// `next_double`: the top 53 bits of one draw over 2^53, so `[0, 1)`.
     pub fn next_double(&mut self) -> f64 {
         (self.next_u64() >> 11) as f64 * (1.0 / 9007199254740992.0)
     }
 
     /// `random_standard_normal`, the ziggurat; `exp` and `log1p` are glibc's, as numpy calls them.
+    ///
+    /// **How**: the low eight bits of a draw pick a layer, the next bit the sign, the next 52 the
+    /// magnitude. Inside the layer's rectangle the draw is accepted at once. Layer 0 falls back to
+    /// sampling the tail beyond `ZIGGURAT_NOR_R`; any other layer tests a uniform point against
+    /// the density. Each rejection loops back with fresh draws.
+    ///
+    /// **Why glibc's functions and not the platform's**: the tail and wedge tests compare against
+    /// `exp` and `log1p`, so one ulp of difference can flip an acceptance and shift the whole
+    /// stream after it.
     pub fn standard_normal(&mut self) -> f64 {
         use crate::glibc_libm::{exp, log1p};
         use crate::numpy_ziggurat::{
@@ -331,9 +434,11 @@ impl Pcg64 {
             }
             if idx == 0 {
                 loop {
+                    // `log1p(-u)` is `log(1 - u)`, which never takes the log of zero.
                     let xx = -ZIGGURAT_NOR_INV_R * log1p(-self.next_double());
                     let yy = -log1p(-self.next_double());
                     if yy + yy > xx * xx {
+                        // The tail's sign comes from bit 8 of the magnitude already drawn.
                         return if (rabs >> 8) & 1 == 1 {
                             -(ZIGGURAT_NOR_R + xx)
                         } else {

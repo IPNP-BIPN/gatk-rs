@@ -1,23 +1,28 @@
-//! Ported from `org.broadinstitute.hellbender.tools.LeftAlignIndels` (GATK 4.6.2.0).
+//! Ported from `org.broadinstitute.hellbender.tools.LeftAlignIndels` (GATK 4.7.0.0;
+//! `LeftAlignIndels.java` is unchanged since 4.6.2.0).
 //!
 //! The eighth whole tool of the record-transform archetype, and the first whose
 //! `requiresReference()` is true.
 //!
+//! `LeftAlignIndels.apply` (`LeftAlignIndels.java:74-89`) passes two classes of read through:
+//!
 //! ```java
-//! public void apply(GATKRead read, ReferenceContext ref, FeatureContext featureContext) {
-//!     if (read.isUnmapped() || read.numCigarElements() <= 1) {
-//!         outputWriter.addRead(read);
-//!         return;
-//!     }
-//!     final CigarBuilder.Result result =
-//!         AlignmentUtils.leftAlignIndels(read.getCigar(), ref.getBases(), read.getBases(), 0);
-//!     read.setCigar(result.getCigar());
-//!     if (result.getLeadingDeletionBasesRemoved() > 0) {
-//!         read.setPosition(read.getContig(), read.getStart() + result.getLeadingDeletionBasesRemoved());
-//!     }
+//! if ( read.isUnmapped() || read.numCigarElements() <= 1 ) {
 //!     outputWriter.addRead(read);
+//!     return;
 //! }
 //! ```
+//!
+//! calls `AlignmentUtils.leftAlignIndels(read.getCigar(), ref.getBases(), read.getBases(), 0)` on
+//! the rest, and then
+//!
+//! ```java
+//! read.setCigar(result.getCigar());
+//! if (result.getLeadingDeletionBasesRemoved() > 0) {
+//! ```
+//!
+//! moves the read with
+//! `read.setPosition(read.getContig(), read.getStart() + result.getLeadingDeletionBasesRemoved())`.
 //!
 //! # The window is the read, not the contig
 //!
@@ -44,6 +49,17 @@
 //! An unmapped read, and a read whose cigar has one element or none, are written straight out. The
 //! guard is `read.isUnmapped()`, which is the adapter's three criteria rather than the flag alone,
 //! and it runs before the reference is touched.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, E>` is "a `T` or the error `E`", how this codebase models a method that throws;
+//!   `?` after a call hands its error straight to the caller, Java's `throws` at one call site.
+//!   [`RunResult`] nests two: the outer error is the reads source failing, the inner one is the
+//!   alignment util refusing a read.
+//! - `&mut BamRecord` is a writable borrowed reference: [`left_align`] changes the caller's record
+//!   in place, as `read.setCigar` does to the `GATKRead`.
+//! - `&dyn Fn(&BamRecord) -> bool` is a borrowed function value, the read filter, which Java would
+//!   pass as a `ReadFilter` (a `Predicate<GATKRead>`).
 
 use htsjdk_bam::record::BamRecord;
 
@@ -74,6 +90,7 @@ pub fn left_align(read: &mut BamRecord, reference_bases: &[u8]) -> Result<bool, 
     let result =
         alignment_utils::left_align_indels(&read.cigar, reference_bases, &read.read_bases, 0)?;
     read.cigar = result.cigar;
+    // `as i32` converts the count to the type of the position it is added to.
     if result.leading_deletion_bases_removed > 0 {
         // `setPosition(read.getContig(), read.getStart() + removed)`: the contig does not change,
         // so only the start moves.
@@ -112,6 +129,7 @@ pub fn left_align_indels_with(
     level: u32,
     deflater: htsjdk_bgzf::Deflater,
 ) -> RunResult {
+    // Every read the traversal reaches, each with its `ReferenceContext` over its own span.
     let applied = crate::read_walker::traverse_with_reference(
         source,
         Some(reference),
@@ -126,15 +144,16 @@ pub fn left_align_indels_with(
             .context
             .bases(reference)
             .map_err(|error| match error {
-                // The window is queried PER READ, so a reference that does not carry the read's contig
-                // is refused here and not at startup, and it is a `UserException` naming the contig
-                // rather than a format error. The caller turns it into the message, because the
-                // dictionary that message prints is the caller's to pretty-print.
+                // The window is queried PER READ, so a reference that does not carry the read's
+                // contig is refused here and not at startup, and it is a `UserException` naming the
+                // contig rather than a format error. The caller turns it into the message, because
+                // the dictionary that message prints is the caller's to pretty-print.
                 gatk_engine::context::ContextError::Reference(
                     gatk_engine::reference::ReferenceError::UnknownContig(contig),
                 ) => ReadsError::ContigNotInDictionary(contig),
                 other => ReadsError::Malformed(format!("{other:?}")),
             })?;
+        // The first read the util refuses ends the run, as the exception does in `apply`.
         if let Err(error) = left_align(&mut entry.read, &bases) {
             return Ok(Err(error));
         }

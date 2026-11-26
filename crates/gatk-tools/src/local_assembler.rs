@@ -1,11 +1,22 @@
 //! `LocalAssembler`: the graph it writes and the sequences it reads off it.
 //!
 //! The de Bruijn assembly lives in `local_assembler_engine`. What is here is everything the two
-//! output files are made of: the kmer size the overlaps rest on, a contig's orientation and its reverse
-//! complement, the sequence a traversal spells out, and the shape of every line in the GFA and
-//! the FASTA.
+//! output files are made of: the kmer size the overlaps rest on, a contig's orientation and its
+//! reverse complement, the sequence a traversal spells out, and the shape of every line in the
+//! GFA and the FASTA.
 //!
 //! Ported from `org.broadinstitute.hellbender.tools.LocalAssembler`.
+//!
+//! GATK 4.7.0.0; `LocalAssembler.java` is unchanged since 4.6.2.0.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&str` is a borrowed, read-only string and `String` an owned one; `&[Step]` is a borrowed
+//!   view of a list.
+//! - `Option<String>` is "a string or nothing"; `let Some(x) = y else { .. };` takes the early
+//!   exit when there is nothing, and `?` inside a closure returning `Option` does the same.
+//! - `.iter().map(..).collect()` is Java's stream, map, collect, and `format!` is
+//!   `String.format` with the arguments named in the braces.
 
 /// `LocalAssembler.Kmer.KSIZE`, which must be an odd number under thirty-two.
 pub const KMER_SIZE: usize = 31;
@@ -15,6 +26,10 @@ pub const MIN_THIN_OBS_DEFAULT: i32 = 4;
 pub const GFA_HEADER: &str = "H\tVN:Z:2.0";
 
 /// The reverse complement of a sequence, which is what a contig's other orientation is.
+///
+/// A base other than upper-case `ACGT` is kept as it is, where the reference's `SequenceRC`
+/// upper-cases it and writes `N` for anything else (the engine's `reverse_complement_bases`
+/// does that). Only the tests call this one; the tool's path goes through the engine.
 pub fn reverse_complement(sequence: &str) -> String {
     sequence
         .chars()
@@ -67,10 +82,23 @@ pub fn traversal_name(steps: &[Step]) -> String {
 ///
 /// Adjacent contigs therefore overlap by THIRTY bases and each contributes its length less thirty,
 /// which is why three contigs of 59, 61 and 60 bases spell out 120 and not 180.
+///
+/// ```java
+/// final StringBuilder sb =
+///         new StringBuilder(contigs.get(0).getSequence().subSequence(0, Kmer.KSIZE - 1));
+/// for ( final Contig contig : contigs ) {
+///     final CharSequence seq = contig.getSequence();
+///     sb.append(seq.subSequence(Kmer.KSIZE - 1, seq.length()));
+/// }
+/// ```
+///
+/// (`LocalAssembler.java:2441-2446`.) `sequence_of` looks a contig up by name; an unknown name
+/// gives the empty string, a case the reference, holding the contigs themselves, cannot meet.
 pub fn traversal_sequence(steps: &[Step], sequence_of: impl Fn(&str) -> Option<String>) -> String {
     if steps.is_empty() {
         return String::new();
     }
+    // A closure returning `Option<String>`: the `?` hands back `None` for an unknown contig.
     let oriented = |step: &Step| {
         let sequence = sequence_of(&step.contig)?;
         Some(if step.reverse_complemented {
@@ -164,7 +192,8 @@ pub fn parse_traversal_name(name: &str) -> Vec<Step> {
         .collect()
 }
 
-/// A traversal parsed back out of a GFA path's references, like `c1+ c3- c4-`.
+/// A traversal parsed back out of a GFA path's references, like `c1+ c3- c4-`: the last
+/// character of each is the orientation and the rest the contig.
 pub fn parse_gfa_path(references: &str) -> Vec<Step> {
     references
         .split_whitespace()

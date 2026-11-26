@@ -1,5 +1,6 @@
 //! `PathSeqBuildReferenceTaxonomy`, ported from the tool, `PSBuildReferenceTaxonomyUtils`,
-//! `PSTree` and `PSPathogenReferenceTaxonProperties` (GATK 4.6.2.0).
+//! `PSTree` and `PSPathogenReferenceTaxonProperties` (GATK 4.7.0.0; all four `.java` files, and
+//! `PSTreeNode.java`, are unchanged since 4.6.2.0).
 //!
 //! The NCBI taxonomy dump and one or two accession catalogs turned into the tree PathSeq scores
 //! against, trimmed to the taxa the reference actually holds. The tool writes a Kryo serialisation
@@ -38,8 +39,11 @@
 //!
 //! ```java
 //! for (int i = 0; i < tokens.length - 1 && recordTaxId == PSTree.NULL_NODE; i++) {
-//!     if (tokens[i].equals("ref")) { recordAccession = tokens[i + 1]; }
-//!     else if (tokens[i].equals("taxid")) { recordTaxId = parseTaxonId(tokens[i + 1]); }
+//!     if (tokens[i].equals("ref")) {
+//!         recordAccession = tokens[i + 1];
+//!     } else if (tokens[i].equals("taxid")) {
+//!         recordTaxId = parseTaxonId(tokens[i + 1]);
+//!     }
 //! }
 //! ```
 //!
@@ -49,10 +53,10 @@
 //!
 //! # A blank line ends a catalog
 //!
-//! `while ((line = reader.readLine()) != null && !line.isEmpty())` stops on the first empty line, so
-//! everything after it is invisible and its contigs are merely reported as not found. A line with
-//! too few columns, on the other hand, is a refusal, and its message says GenBank whatever format
-//! was being read.
+//! `while ((line = reader.readLine()) != null && !line.isEmpty())` stops on the first empty line,
+//! so everything after it is invisible and its contigs are merely reported as not found. A line
+//! with too few columns, on the other hand, is a refusal, and its message says GenBank whatever
+//! format was being read.
 //!
 //! # The length filter is on the map, not the tree
 //!
@@ -60,6 +64,19 @@
 //! were summed before it ran and still count the contigs it drops. So a node can carry a length no
 //! reachable contig accounts for. A contig whose path holds the virus node, 10239, is never
 //! dropped whatever its length.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, E>` is "a `T` or the error `E`", how a Java `throw` is modelled: `Ok(..)` returns,
+//!   `Err(..)` throws, and a `?` after a call passes an `Err` straight up to the caller.
+//! - `Option<T>` is a nullable value made explicit: `Some(x)` or `None`. A Java `String` field
+//!   that may be `null` is an `Option<String>` here.
+//! - `JavaHashMap` reproduces `java.util.HashMap`'s iteration order, capacity included; a
+//!   `JavaHashMap<K, ()>` is a `HashSet<K>`. `BTreeSet` and `BTreeMap` are sorted collections,
+//!   used only where the reference's collection is consulted for membership or lookup.
+//! - `&T` is a read-only borrow and `&mut T` a writable one: the callee may change the value, but
+//!   the caller still owns it.
+//! - `.iter().map(..).collect()` is Java's stream, map and collect; `|x| ..` is a lambda.
 
 use gatk_engine::java_hash::{HashOrderError, JavaHashMap};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -73,7 +90,8 @@ pub const ROOT_ID: i32 = 1;
 /// `PSTaxonomyConstants.VIRUS_ID`, the node the length filter is exempted by.
 pub const VIRUS_ID: i32 = 10239;
 
-/// What the run refuses.
+/// What the run refuses. Every refusal is a `UserException.BadInput`, which is why
+/// `java_class` has a single answer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TaxonomyError {
     /// `parseTaxonId` on anything that is not an integer.
@@ -133,7 +151,7 @@ impl TaxonomyError {
     }
 }
 
-/// `parseTaxonId`.
+/// `parseTaxonId`: `Integer.valueOf`, its `NumberFormatException` rethrown as `BadInput`.
 fn parse_taxon_id(value: &str) -> Result<i32, TaxonomyError> {
     value
         .parse::<i32>()
@@ -143,9 +161,15 @@ fn parse_taxon_id(value: &str) -> Result<i32, TaxonomyError> {
 }
 
 /// `String.split("\\s*\\|\\s*")`, whose trailing empty fields Java drops.
+///
+/// `VERTICAL_BAR_DELIMITER_REGEX`, walked by hand rather than through a regex engine. A leading
+/// empty field is kept, as Java keeps one before a separator of non-zero width. Whitespace here is
+/// Rust's `char::is_whitespace`, which is Unicode's, where Java's `\s` is ASCII only; the two
+/// differ only on non-ASCII whitespace.
 fn split_bars(text: &str) -> Vec<String> {
     let mut fields: Vec<String> = Vec::new();
     let mut current = String::new();
+    // Characters, not bytes, despite the name, so a multi-byte character is one step.
     let bytes: Vec<char> = text.chars().collect();
     let mut index = 0;
     while index < bytes.len() {
@@ -167,13 +191,14 @@ fn split_bars(text: &str) -> Vec<String> {
         index += 1;
     }
     fields.push(current);
+    // `split` with no limit drops trailing empty strings.
     while fields.last().is_some_and(|field| field.is_empty()) {
         fields.pop();
     }
     fields
 }
 
-/// `PSPathogenReferenceTaxonProperties`.
+/// `PSPathogenReferenceTaxonProperties`: what the catalogs and dump files say about one taxon.
 #[derive(Debug, Clone)]
 pub struct TaxonProperties {
     pub name: Option<String>,
@@ -185,6 +210,9 @@ pub struct TaxonProperties {
     pub accessions: JavaHashMap<String, i64>,
 }
 
+/// The no-argument constructor: no name, no rank, `NULL_NODE` parent, length zero, and
+/// `accessions = new HashMap<>(SVUtils.hashMapCapacity(1));`, where `hashMapCapacity(1)` is
+/// `(int)((1*4L)/3) + 1`, two.
 impl Default for TaxonProperties {
     fn default() -> Self {
         TaxonProperties {
@@ -198,6 +226,8 @@ impl Default for TaxonProperties {
 }
 
 impl TaxonProperties {
+    /// `new PSPathogenReferenceTaxonProperties(name)`. `..Default::default()` fills every other
+    /// field from the no-argument constructor.
     fn named(name: &str) -> Self {
         TaxonProperties {
             name: Some(name.to_string()),
@@ -205,6 +235,7 @@ impl TaxonProperties {
         }
     }
 
+    /// `addAccession`: a repeated name replaces its length in the map but still adds to the total.
     fn add_accession(&mut self, name: &str, length: i64) {
         self.accessions.insert(name.to_string(), length);
         self.length += length;
@@ -212,6 +243,14 @@ impl TaxonProperties {
 }
 
 /// `addReferenceAccessionToTaxon`: `putIfAbsent`, then the accession.
+///
+/// ```java
+/// taxIdToProperties.putIfAbsent(taxId, new PSPathogenReferenceTaxonProperties());
+/// taxIdToProperties.get(taxId).addAccession(accession, length);
+/// ```
+///
+/// The first contig of a taxon is what inserts it, so the contigs' order decides the taxa's place
+/// in the properties map.
 fn add_reference_accession(
     properties: &mut JavaHashMap<i32, TaxonProperties>,
     tax_id: i32,
@@ -227,7 +266,8 @@ fn add_reference_accession(
         .add_accession(name, length);
 }
 
-/// One node of `PSTree`.
+/// One node of `PSTree`: `PSTreeNode`. `Default` is a placeholder node with no name or rank,
+/// the `new PSTreeNode()` that `addNode` creates for a parent it has not seen yet.
 #[derive(Debug, Clone, Default)]
 pub struct TreeNode {
     pub name: Option<String>,
@@ -251,7 +291,7 @@ impl TreeNode {
     }
 }
 
-/// `PSTree`.
+/// `PSTree`: nodes by id, in a `HashMap` whose order is the order the Kryo file lists them.
 #[derive(Debug, Clone)]
 pub struct PsTree {
     root: i32,
@@ -259,6 +299,7 @@ pub struct PsTree {
 }
 
 impl PsTree {
+    /// `new PSTree(rootId)`: a `new HashMap<>()` holding only the root, named and ranked "root".
     pub fn new(root: i32) -> Self {
         let mut nodes = JavaHashMap::new();
         nodes.insert(
@@ -275,6 +316,10 @@ impl PsTree {
     }
 
     /// `addNode`, which creates a placeholder for a parent it has not seen.
+    ///
+    /// The reference's `Utils.validateArg` checks (non-null name and rank, ids not `NULL_NODE`,
+    /// not the root) are not repeated: `build_taxonomic_tree` calls this only with a name, a rank
+    /// and a parent, and never for the root.
     pub fn add_node(&mut self, id: i32, name: &str, parent: i32, length: i64, rank: &str) {
         if !self.nodes.contains_key(&id) {
             self.nodes.insert(id, TreeNode::default());
@@ -314,6 +359,7 @@ impl PsTree {
         self.nodes.keys().copied().collect()
     }
 
+    /// The root's id.
     pub fn root(&self) -> i32 {
         self.root
     }
@@ -333,10 +379,13 @@ impl PsTree {
         Ok(())
     }
 
+    /// `hasNode`.
     pub fn has_node(&self, id: i32) -> bool {
         self.nodes.contains_key(&id)
     }
 
+    /// `getNameOf`, `getRankOf`, `getParentOf` and `getLengthOf`. The reference refuses an id
+    /// that is not in the tree (`Utils.validateArg`); these answer `None`, `NULL_NODE` or zero.
     pub fn name_of(&self, id: i32) -> Option<&str> {
         self.nodes.get(&id).and_then(|node| node.name.as_deref())
     }
@@ -354,11 +403,15 @@ impl PsTree {
     }
 
     /// `getPathOf`, from the node up to the root.
+    ///
+    /// The reference throws `BadInput` on a cycle or a missing parent; this stops the path there.
+    /// Neither is reachable on a tree that came through `checkStructure`.
     pub fn path_of(&self, id: i32) -> Vec<i32> {
         let mut path = Vec::new();
         let mut seen = BTreeSet::new();
         let mut current = id;
         while current != NULL_NODE {
+            // `insert` answers false when the id was already there: a cycle.
             if !seen.insert(current) {
                 break;
             }
@@ -374,6 +427,11 @@ impl PsTree {
     }
 
     /// `traverse`, breadth first from the root.
+    ///
+    /// The reference refuses a node visited twice or a child missing from the map; this skips
+    /// both. Neither can happen on the tree `addNode` builds: every child it records is also a key,
+    /// and each id is added once, so each node sits in a single parent's children. The answer is
+    /// used only for membership, so a sorted set stands in for the `HashSet`.
     fn reachable(&self) -> BTreeSet<i32> {
         let mut visited = BTreeSet::new();
         let mut queue = VecDeque::new();
@@ -390,7 +448,7 @@ impl PsTree {
         visited
     }
 
-    /// `removeUnreachableNodes`.
+    /// `removeUnreachableNodes`: keeps what `traverse` reaches and answers the rest.
     pub fn remove_unreachable_nodes(&mut self) -> BTreeSet<i32> {
         let reachable = self.reachable();
         let unreachable: BTreeSet<i32> = self
@@ -426,6 +484,10 @@ impl PsTree {
 
 /// `parseReferenceRecords`: the contigs that name a taxon go straight to the properties, the rest
 /// go to a map from accession to the contig's name and length.
+///
+/// The accession map is a `HashMap` upstream but is only looked up and copied into a set of keys
+/// still to find, so a sorted map serves. A later contig with the same accession replaces the
+/// earlier, as `put` does.
 #[allow(clippy::type_complexity)]
 pub fn parse_reference_records(
     records: &[(String, i64)],
@@ -461,7 +523,8 @@ pub fn parse_reference_records(
     Ok(by_accession)
 }
 
-/// Which columns a catalog holds its taxon and its accession in.
+/// Which columns a catalog holds its taxon and its accession in: `RefSeqCatalogFormat` (0 and 2)
+/// and `GenBankCatalogFormat` (6 and 1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CatalogFormat {
     RefSeq,
@@ -485,6 +548,9 @@ impl CatalogFormat {
 }
 
 /// `parseCatalog`, which returns the accessions still not found.
+///
+/// `not_found_in` is the previous catalog's answer, or `None` on the first catalog, which then
+/// starts from every accession the reference named.
 pub fn parse_catalog(
     text: &str,
     format: CatalogFormat,
@@ -500,12 +566,17 @@ pub fn parse_catalog(
     let accession_column = format.accession_column();
     let min_columns = tax_column.max(accession_column) + 1;
     let mut line_number: u64 = 1;
+    // Lines are split on `\n` only, where `readLine` also ends one at `\r\n`; the `trim()`
+    // below removes the `\r` of a CRLF line. A blank CRLF line is the case that differs:
+    // `readLine` makes it the empty line that stops the loop, here it is `\r`, not empty, and
+    // trims to a one-field refusal.
     #[allow(clippy::explicit_counter_loop)]
     for line in text.split('\n') {
         // The read loop stops at the first empty line, so everything after it is invisible.
         if line.is_empty() {
             break;
         }
+        // `line.trim().split("\t", minColumns + 1)`.
         let tokens = split_with_limit(line.trim(), '\t', min_columns + 1);
         if tokens.len() < min_columns {
             return Err(TaxonomyError::TooFewColumns {
@@ -544,6 +615,9 @@ fn split_with_limit(text: &str, separator: char, limit: usize) -> Vec<String> {
 }
 
 /// `parseNamesFile`, which keeps only the scientific names.
+///
+/// Every line must have four fields, whatever its name type. A taxon not seen yet is inserted with
+/// the name, which is where a taxon no contig names enters the properties map.
 pub fn parse_names(
     text: &str,
     properties: &mut JavaHashMap<i32, TaxonProperties>,
@@ -572,6 +646,9 @@ pub fn parse_names(
 }
 
 /// `parseNodesFile`, which returns the taxa it had never seen.
+///
+/// The reference's closing `put(taxId, taxonProperties)` on a key already present does not move
+/// it, so mutating the entry in place keeps the same order.
 pub fn parse_nodes(
     text: &str,
     properties: &mut JavaHashMap<i32, TaxonProperties>,
@@ -603,7 +680,9 @@ pub fn parse_nodes(
     Ok(not_found)
 }
 
-/// `buildTaxonomicTree`.
+/// `buildTaxonomicTree`: every taxon with a name, a parent and a rank goes into the tree in the
+/// properties map's order; the tree is pruned to what the root reaches; then pruned again to the
+/// paths of taxa that hold a contig.
 pub fn build_taxonomic_tree(
     properties: &JavaHashMap<i32, TaxonProperties>,
 ) -> Result<PsTree, TaxonomyError> {
@@ -625,6 +704,8 @@ pub fn build_taxonomic_tree(
     // re-sizes every table.
     tree.remove_unreachable_nodes();
 
+    // `relevantNodes`, a `HashSet` upstream, consulted by `retainNodes` only for membership
+    // and its size, so a sorted set does the same.
     let mut relevant: BTreeSet<i32> = BTreeSet::new();
     for (tax_id, taxon) in properties.iter() {
         if !taxon.accessions.is_empty() && tree.has_node(*tax_id) {
@@ -638,12 +719,16 @@ pub fn build_taxonomic_tree(
     Ok(tree)
 }
 
-/// `removeUnusedTaxIds`.
+/// `removeUnusedTaxIds`: `keySet().retainAll(tree.getNodeIDs())`, which keeps the survivors'
+/// order.
 pub fn remove_unused_tax_ids(properties: &mut JavaHashMap<i32, TaxonProperties>, tree: &PsTree) {
     properties.retain(|tax_id, _| tree.has_node(*tax_id));
 }
 
 /// `buildAccessionToTaxIdMap`, which is the map keyed by contig name.
+///
+/// A `new HashMap<>()` filled taxon by taxon in the properties map's order, and within a taxon in
+/// the order of its two-bucket contig map, which is why both are `JavaHashMap`s.
 pub fn build_accession_to_tax_id(
     properties: &JavaHashMap<i32, TaxonProperties>,
     tree: &PsTree,
@@ -662,6 +747,9 @@ pub fn build_accession_to_tax_id(
 }
 
 /// The whole run: the reference's contigs, the catalogs and the two dump files, in.
+///
+/// `PathSeqBuildReferenceTaxonomy.doWork`, in its order: the RefSeq catalog first, then the
+/// GenBank one starting from what RefSeq did not find.
 ///
 /// The third element is the accessions no catalog accounted for, which the reference only logs.
 #[allow(clippy::type_complexity)]

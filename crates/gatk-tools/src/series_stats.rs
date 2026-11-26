@@ -4,6 +4,22 @@
 //! map. That is what makes several of them not the statistic their name suggests: the percentile is
 //! an observed value rather than an interpolation, and `getUniq` counts bins rather than distinct
 //! numbers, which is not the same thing once a negative zero is involved.
+//!
+//! The reference is `org.broadinstitute.hellbender.tools.walkers.groundtruth.SeriesStats`
+//! (GATK 4.7.0.0). Its `auxBins` map is not ported: nothing here reads or writes it.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `BTreeMap<K, V>` is Java's `TreeMap`: iteration is in key order. The order comes from the
+//!   key type's `Ord` implementation, which is why [`Key`] exists: Rust's `f64` has no total
+//!   order of its own, and the one written here is `Double.compareTo`'s;
+//! - `impl PartialEq for Key { .. }` and the three blocks after it are Java's `equals` and
+//!   `compareTo` for that key, written as separate interfaces ("traits");
+//! - `&mut self` is a method that mutates the object, `&self` one that only reads it;
+//! - `x as f64` and `x as i32` are Java's `(double)` and `(int)` casts. Float to int saturates
+//!   at the type's bounds and sends NaN to zero, as Java's does;
+//! - `*map.entry(k).or_insert(0) += 1` is "get the count for `k`, inserting 0 first if absent,
+//!   and add one": the `containsKey` / `incrementAndGet` / `put` of `add(double)` in one step.
 
 use std::collections::BTreeMap;
 
@@ -53,7 +69,8 @@ impl Ord for Key {
     }
 }
 
-/// The accumulator.
+/// `SeriesStats`, the accumulator. The fields are the Java's, with `AtomicInteger` counts held
+/// as plain `i32`s.
 #[derive(Debug, Clone, Default)]
 pub struct SeriesStats {
     last: f64,
@@ -67,6 +84,7 @@ pub struct SeriesStats {
 }
 
 impl SeriesStats {
+    /// The field initialisers: NaN for `last`, `min` and `max`, zero for the counts and the sum.
     pub fn new() -> SeriesStats {
         SeriesStats {
             last: f64::NAN,
@@ -101,14 +119,17 @@ impl SeriesStats {
         *self.bins.entry(Key(value)).or_insert(0) += 1;
     }
 
+    /// `getLast`.
     pub fn last(&self) -> f64 {
         self.last
     }
 
+    /// `getCount`.
     pub fn count(&self) -> i32 {
         self.count
     }
 
+    /// `getMin`: NaN for an empty series.
     pub fn min(&self) -> f64 {
         if self.count != 0 {
             self.min
@@ -117,6 +138,7 @@ impl SeriesStats {
         }
     }
 
+    /// `getMax`: NaN for an empty series.
     pub fn max(&self) -> f64 {
         if self.count != 0 {
             self.max
@@ -130,6 +152,7 @@ impl SeriesStats {
         self.bins.len()
     }
 
+    /// `getMean`: the running sum over the count, NaN for an empty series.
     pub fn mean(&self) -> f64 {
         if self.count != 0 {
             self.sum / self.count as f64
@@ -138,6 +161,7 @@ impl SeriesStats {
         }
     }
 
+    /// `getMedian`, which is `getPercentile(50)`.
     pub fn median(&self) -> f64 {
         self.percentile(50.0)
     }
@@ -147,6 +171,10 @@ impl SeriesStats {
     /// The index is TRUNCATED and the walk returns a bin KEY, so the answer is always a value that
     /// was actually added. A single value short-circuits to the LAST added rather than to the only
     /// bin.
+    ///
+    /// ```java
+    /// int percentileIndex = (int)(count * precentile / 100);
+    /// ```
     pub fn percentile(&self, percentile: f64) -> f64 {
         if self.count == 0 {
             return f64::NAN;
@@ -162,7 +190,9 @@ impl SeriesStats {
             }
             index += size;
         }
-        // Past the last bin, which is where a percentile of 100 lands.
+        // Past the last bin, which is where a percentile of 100 lands: `bins.lastKey()`.
+        // `next_back` takes the last key; the `unwrap_or` is never reached, since a count of two
+        // or more means there is a bin.
         self.bins
             .keys()
             .next_back()
@@ -184,6 +214,7 @@ impl SeriesStats {
         (sum / self.count as f64).sqrt()
     }
 
+    /// `getBins`, as a read-only borrow of the map rather than the live map Java hands out.
     pub fn bins(&self) -> &BTreeMap<Key, i32> {
         &self.bins
     }
@@ -196,6 +227,16 @@ impl SeriesStats {
     }
 
     /// `csvWrite`'s body: `%d` under integer keys and `%f` otherwise, for the WHOLE file.
+    ///
+    /// ```java
+    /// pw.println(String.format("%d,%d", entry.getKey().intValue(), entry.getValue().get()));
+    /// ...
+    /// pw.println(String.format("%f,%d", entry.getKey(), entry.getValue().get()));
+    /// ```
+    ///
+    /// `{:.6}` is Rust's six-decimal format, written for Java's `%f`. The two round differently
+    /// (see `gatk_engine::java_format`): Java rounds the `Double.toString` digits half-up, so a key
+    /// of 0.1234565 is `0.123457` there and `0.123456` here.
     pub fn csv(&self) -> String {
         let mut out = String::from("value,count\n");
         let integers = self.is_int_keys();
@@ -214,6 +255,8 @@ impl SeriesStats {
     /// Under integer keys the three statistics are cast with `(int)`, and `(int)Double.NaN` is
     /// ZERO in Java, so the digest of an EMPTY series claims a minimum of nought while every other
     /// reader of it is told NaN.
+    ///
+    /// The non-integer branch's `%f` is written as `{:.6}`, with the same caveat as [`Self::csv`].
     pub fn to_digest(&self) -> String {
         if self.is_int_keys() {
             format!(
@@ -238,6 +281,8 @@ impl SeriesStats {
 }
 
 /// `(int)` on a double: NaN becomes zero, and anything out of range saturates.
+///
+/// Rust's own `as i32` already does both; the branches spell the Java rule out.
 pub fn java_double_to_int(value: f64) -> i32 {
     if value.is_nan() {
         0

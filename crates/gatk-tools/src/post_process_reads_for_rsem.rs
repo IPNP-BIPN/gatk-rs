@@ -1,8 +1,8 @@
 //! Ported from `org.broadinstitute.hellbender.tools.walkers.qc.PostProcessReadsForRSEM` and its
-//! `ReadPair` (GATK 4.6.2.0).
+//! `ReadPair` (GATK 4.7.0.0; both `.java` files are unchanged since 4.6.2.0).
 //!
-//! The twelfth whole tool of the record-transform archetype, the third that is not a walker, and the
-//! first that groups the traversal into query-name runs of its own accord.
+//! The twelfth whole tool of the record-transform archetype, the third that is not a walker, and
+//! the first that groups the traversal into query-name runs of its own accord.
 //!
 //! # A fourth `getDefaultReadFilters` pattern
 //!
@@ -32,9 +32,10 @@
 //! `Cannot invoke "GATKRead.getName()" because "read1" is null`.
 //!
 //! `groupSecondaryReads` has the same shape. It collects into
-//! `Collectors.groupingBy(GATKRead::isFirstOfPair)`, which produces no `false` key at all when every
-//! secondary is a first-of-pair, and then calls `read2Reads.size()` on the line before the guard
-//! that would have caught it: `Cannot invoke "List.size()" because "read2Reads" is null`.
+//! `Collectors.groupingBy(r -> r.isFirstOfPair())`, which produces no `false` key at all when every
+//! secondary is a first-of-pair, and then calls `read2Reads.size()` inside the very size check
+//! (`if(read1Reads.size() != read2Reads.size()){`) that was meant to catch an uneven split:
+//! `Cannot invoke "List.size()" because "read2Reads" is null`.
 //!
 //! Both are [`RsemError::NullDereference`] here rather than a panic. A port that returned an empty
 //! result, or skipped the pair, would write a file the reference never wrote: the reference writes
@@ -43,9 +44,9 @@
 //! # The output order is not the input order
 //!
 //! Primary pair first, then each secondary pair, and within each pair first-of-pair before
-//! second-of-pair. A secondary finds its mate by contig plus `getStart() == mate.getMateStart()` and
-//! `getMateStart() == mate.getStart()`, not by anything in the record that says the two belong
-//! together.
+//! second-of-pair. A secondary finds its mate by contig plus
+//! `getStart() == mate.getMateStart()` and `getMateStart() == mate.getStart()`, not by anything
+//! in the record that says the two belong together.
 //!
 //! # Three reasons drop both reads, and one of them drops more
 //!
@@ -53,6 +54,20 @@
 //! `100=` is a single element and is still refused, because the test is on the operator. A primary
 //! pair that fails takes its secondary alignments with it, since the secondary loop sits inside the
 //! primary's `if`; a secondary pair that fails on its own drops only itself.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<BamRecord>` is "a record or nothing", the reference's nullable `GATKRead` checked by
+//!   the compiler: `None` is `null`. `.as_ref()` lends the record inside without moving it out.
+//! - `Result<T, RsemError>` is "a value or the exception": `Err(..)` is the throw, and `?` after a
+//!   call passes that call's `Err` straight up to the caller.
+//! - [`RunResult`] nests two `Result`s: the outer is a read failure of the input, the inner is
+//!   one of this tool's own refusals. `Ok(Err(..))` is "read the input fine, then refused".
+//! - `match (read1, read2) { (None, _) => .. }` tests both values at once; `_` matches anything.
+//! - `.clone()` is a deep copy; the reference shares one `GATKRead` object where this port stores
+//!   its own copy of the record.
+//! - `|r| ..` is a closure, Java's lambda, and `.iter().filter(..).collect()` is Java's
+//!   `stream().filter(..).collect(Collectors.toList())`.
 
 use htsjdk_bam::cigar::Op;
 use htsjdk_bam::record::BamRecord;
@@ -84,6 +99,9 @@ pub enum RsemError {
     PrimaryAlreadySet { name: String, first: bool },
     /// `UserException("Unknown read type: " + read.getContig())`, which `ReadPair.add` raises for a
     /// primary read that is neither first nor second of pair.
+    ///
+    /// [`ReadPair::add`] fills `contig` with the record's reference INDEX as text, where the
+    /// reference's `read.getContig()` is the contig's name, or `null` for an unmapped read.
     UnknownReadType { contig: String },
     /// One of the two `NullPointerException`s the reference throws out of its own null guards. The
     /// message is the JVM's, and it is what the golden carries.
@@ -112,7 +130,8 @@ impl RsemError {
     }
 }
 
-/// The JVM's message for `read1.getName()` inside the guard that exists because `read1` may be null.
+/// The JVM's message for `read1.getName()` inside the guard that exists because `read1` may be
+/// null.
 pub const READ1_IS_NULL: &str =
     "Cannot invoke \"org.broadinstitute.hellbender.utils.read.GATKRead.getName()\" \
      because \"read1\" is null";
@@ -142,6 +161,8 @@ pub struct ReadPair {
 }
 
 impl ReadPair {
+    /// `new ReadPair(read)`: the group is named after its first read, which is then added like
+    /// any other.
     pub fn new(read: &BamRecord) -> Result<ReadPair, RsemError> {
         let mut pair = ReadPair {
             query_name: read.read_name.clone(),
@@ -152,6 +173,9 @@ impl ReadPair {
     }
 
     /// `ReadPair.add`, including the two `Utils.validate` calls and the final `else`.
+    ///
+    /// The branches are the reference's, tested in its order, so a primary that is somehow both
+    /// first and second of pair is filed as first.
     pub fn add(&mut self, read: &BamRecord) -> Result<(), RsemError> {
         if self.query_name != read.read_name {
             return Err(RsemError::NameMismatch {
@@ -193,6 +217,10 @@ impl ReadPair {
 }
 
 /// `passesRSEMFilter`, including the null guard that dereferences null.
+///
+/// The three refusals in the reference's order: either read unmapped, then
+/// `!read1.contigsMatch(read2)`, then a cigar that is not one element whose operator is `M`.
+/// Every refusal is `false`, not an error: the pair is dropped and the run goes on.
 pub fn passes_rsem_filter(
     read1: Option<&BamRecord>,
     read2: Option<&BamRecord>,
@@ -204,6 +232,8 @@ pub fn passes_rsem_filter(
         (Some(_), None) => return Ok(false),
         _ => {}
     }
+    // `expect` takes the value out of an `Option` and would panic on `None`, which the `match`
+    // above has already ruled out.
     let (read1, read2) = (read1.expect("checked"), read2.expect("checked"));
 
     if read::is_unmapped(read1) || read::is_unmapped(read2) {
@@ -216,6 +246,8 @@ pub fn passes_rsem_filter(
     if read1.cigar.num_elements() != 1 || read2.cigar.num_elements() != 1 {
         return Ok(false);
     }
+    // `getCigarElement(0).getOperator() != CigarOperator.M`: the operator, so `100=` and `100X`
+    // are refused although they are single elements.
     let single_m = |record: &BamRecord| record.cigar.elements[0].op == Op::M;
     Ok(single_m(read1) && single_m(read2))
 }
@@ -223,7 +255,17 @@ pub fn passes_rsem_filter(
 /// `groupSecondaryReads`: the secondary alignments, paired up by their mate positions.
 ///
 /// Returns `Err` for the shape the reference dereferences null on: every secondary a first-of-pair,
-/// so `groupingBy` produced no `false` key.
+/// so `groupingBy` produced no `false` key (or, checked first, no secondary a first-of-pair).
+///
+/// Two filters over the list stand in for the reference's one `groupingBy`; each keeps the
+/// list's order, as `groupingBy` into a `List` does. A mate is the second-of-pair whose position
+/// and mate position cross the first-of-pair's:
+///
+/// ```java
+/// .filter(r -> r.contigsMatch(read1)
+///         && r.getStart() == read1.getMateStart()
+///         && r.getMateStart() == read1.getStart())
+/// ```
 pub fn group_secondary_reads(
     secondary: &[BamRecord],
 ) -> Result<Vec<(BamRecord, BamRecord)>, RsemError> {
@@ -255,6 +297,8 @@ pub fn group_secondary_reads(
 
     let mut result = Vec::with_capacity(read1s.len());
     for read1 in &read1s {
+        // `&&BamRecord`: `read2s` already holds references, and iterating it lends a reference to
+        // each of those. `**mates[0]` below follows both back to the record.
         let mates: Vec<&&BamRecord> = read2s
             .iter()
             .filter(|r| {
@@ -272,6 +316,15 @@ pub fn group_secondary_reads(
 }
 
 /// `writeReads`: the records one query-name group contributes, in the order it contributes them.
+///
+/// The reference's own comment gives the order:
+///
+/// ```java
+/// /** Write reads in this order
+///  *  1. Primary. First of pair, second of pair
+///  *  2. For each secondary. First of pair, second of pair.
+///  *  **/
+/// ```
 pub fn write_reads(pair: &ReadPair) -> Result<Vec<BamRecord>, RsemError> {
     let mut out = Vec::new();
     if !passes_rsem_filter(pair.first_of_pair.as_ref(), pair.second_of_pair.as_ref())? {
@@ -294,6 +347,9 @@ pub fn write_reads(pair: &ReadPair) -> Result<Vec<BamRecord>, RsemError> {
 pub type RunResult = Result<Result<(Vec<u8>, Option<Vec<u8>>), RsemError>, ReadsError>;
 
 /// `PostProcessReadsForRSEM`: the query-name groups that survive, reordered for RSEM.
+///
+/// Runs with [`default_read_filter`] and htsjdk's default compression; see
+/// [`post_process_reads_for_rsem_with`] for the run a command line drives.
 pub fn post_process_reads_for_rsem(source: &ReadsDataSource, options: &Options) -> RunResult {
     post_process_reads_for_rsem_with(
         source,
@@ -317,6 +373,8 @@ pub fn post_process_reads_for_rsem_with(
     level: u32,
     deflater: htsjdk_bgzf::Deflater,
 ) -> RunResult {
+    // `onTraversalStart`:
+    // `getHeaderForReads().getSortOrder() != SAMFileHeader.SortOrder.queryname`.
     if source.header().attributes.get("SO") != Some("queryname") {
         return Ok(Err(RsemError::NotQueryNameSorted));
     }
@@ -327,9 +385,14 @@ pub fn post_process_reads_for_rsem_with(
         .filter(|record| filter(record))
         .collect();
 
+    // `traverse()`: gather consecutive reads with one name into a `ReadPair`, write it out when
+    // the name changes, and write the last one after the loop. A refusal anywhere returns at once,
+    // before the writer below has been handed anything.
     let mut records = Vec::new();
     let mut current: Option<ReadPair> = None;
     for read in &reads {
+        // `&mut current` lends the `Option` writably, so the `Some(pair)` arms can `add` to the
+        // pair in place; the guarded arm (`if ..`) is the reference's name-change test.
         match &mut current {
             None => {
                 current = match ReadPair::new(read) {

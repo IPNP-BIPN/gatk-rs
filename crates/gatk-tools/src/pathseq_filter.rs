@@ -1,4 +1,5 @@
-//! `PSFilter` and its transformers (GATK 4.6.2.0): the first step of PathSeq, without its BWA step.
+//! `PSFilter` and its transformers (GATK 4.7.0.0; `PSFilter.java` and every transformer and filter
+//! it calls here are unchanged since 4.6.2.0): the first step of PathSeq, without its BWA step.
 //!
 //! # One partition's order is three tables
 //!
@@ -10,9 +11,38 @@
 //!
 //! # A read is rebuilt twice, and only the second time is what is written
 //!
-//! `clearReadAlignment` keeps the name, bases, qualities, pairing and read group, turning a
-//! reverse-strand read around, and drops every other tag. It runs again after the pairing flags are
+//! `clearReadAlignment` keeps the name, bases, qualities, pairing and read group, and drops every
+//! other tag. It looks as if it turns a reverse-strand read around, and it does not:
+//!
+//! ```java
+//! if (read.isReverseStrand()) {
+//!     SequenceUtil.reverseComplement(newRead.getBases());
+//!     SequenceUtil.reverseQualities(newRead.getBaseQualities());
+//! }
+//! ```
+//!
+//! `getBases()` and `getBaseQualities()` each return a fresh copy ("Make a defensive copy to
+//! protect against direct modification of the returned array", `SAMRecordToGATKReadAdapter`), so
+//! the reversal is applied to an array nobody keeps. It runs again after the pairing flags are
 //! set, so a read that lost its mate loses the mate flags too.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Vec<T>` is Java's `ArrayList<T>`; `&[T]` is a borrowed, read-only view of one, and `&mut T`
+//!   a borrowed, writable reference, so a function taking `&mut BamRecord` edits the caller's
+//!   read in place, as a Java transformer edits the `GATKRead` it is given.
+//! - `Option<T>` is "a value or nothing" (`Some(v)` or `None`), checked by the compiler; `Result<T,
+//!   String>` is "a value or an error message", and `?` after a call hands that error straight to
+//!   the caller, like an exception propagating.
+//! - `match` is a `switch` the compiler checks covers every case; `_` is its `default`, and
+//!   `Some(x) if cond =>` an arm that also needs the condition.
+//! - `|x| ...` is a closure, Java's lambda. `.iter().map(..).collect()` is a stream, map, collect.
+//! - `wrapping_add`, `wrapping_mul` and `wrapping_sub` are Java's `int` and `long` arithmetic,
+//!   which wraps on overflow; plain `+` and `*` would panic in a debug build. `as` between integer
+//!   types truncates or reinterprets bits as Java's casts do: `x as i8 as i32` is Java's read of a
+//!   signed `byte`, sign extension included.
+//! - `u32` and `u64` are unsigned, which Java lacks. On them `>>` shifts zeros in, Java's `>>>`.
+//! - A function's last expression, written without `;`, is its return value.
 
 use std::collections::{HashSet, VecDeque};
 
@@ -38,7 +68,9 @@ const ADAPTERS: [&str; 6] = [
     "AGATCGGAAGAGCACACGTCTGAACTCCAGTCACNNNNNNNNATCTCGTATGCCGTCTTCTGCTTG",
 ];
 
-/// `PSFilterArgumentCollection`, without the BWA arguments.
+/// `PSFilterArgumentCollection`, without the BWA arguments. Each field is the Java argument of
+/// the same meaning; `reads_per_partition` is `filterReadsPerPartition`, which sizes the two
+/// `getPairedAndUnpairedLists` collections and so decides the unpaired reads' `HashMap` order.
 #[derive(Debug, Clone)]
 pub struct FilterArguments {
     pub aligned_input: bool,
@@ -59,7 +91,8 @@ pub struct FilterArguments {
     pub reads_per_partition: i32,
 }
 
-/// What the tool hands the writer and the logger.
+/// What the tool hands the writer and the logger: the two outputs of
+/// `PSPairedUnpairedSplitterSpark`, and the counts `PSFilterFileLogger` records.
 pub struct Filtered {
     pub paired: Vec<BamRecord>,
     pub unpaired: Vec<BamRecord>,
@@ -69,7 +102,8 @@ pub struct Filtered {
 /// `PSBwaFilter.apply`, given to `do_filter` by whoever holds the image.
 pub type HostFilter<'a> = dyn Fn(Vec<BamRecord>) -> Result<Vec<BamRecord>, String> + 'a;
 
-/// `PSFilterMetrics`.
+/// `PSFilterMetrics`: the six counts the filter records. The five derived columns are computed
+/// when the file is written, in `values`.
 #[derive(Debug, Clone, Default)]
 pub struct FilterMetrics {
     pub primary: i64,
@@ -102,7 +136,9 @@ impl MetricBean for FilterMetrics {
     }
 
     fn values(&self) -> Vec<Value> {
-        // `computeDerivedMetrics`.
+        // `computeDerivedMetrics`, in column order: the unpaired count is
+        // `FINAL_UNPAIRED_READS = FINAL_TOTAL_READS - FINAL_PAIRED_READS;`, the total is the
+        // deduplicated count, and the three "filtered" counts are differences of the stages.
         [
             self.primary,
             self.after_prealigned_host,
@@ -122,7 +158,7 @@ impl MetricBean for FilterMetrics {
     }
 }
 
-/// `PSFilterFileLogger.close`'s file.
+/// `PSFilterFileLogger.close`'s file: the header lines, then the one metric row.
 pub fn metrics_file(metrics: &FilterMetrics, headers: &[String]) -> String {
     let mut file = MetricsFile::default();
     for line in headers {
@@ -133,6 +169,11 @@ pub fn metrics_file(metrics: &FilterMetrics, headers: &[String]) -> String {
 }
 
 /// `PSKmerCollection`, read: membership is all the filter asks of it.
+///
+/// `Set` is `PSKmerSet`, whose `LargeLongHopscotchSet` is held as a plain set of its values;
+/// `Bloom` is `PSKmerBloomFilter`. Each carries the k and the mask the file was built with,
+/// because `contains` canonicalises and masks a raw k-mer before looking it up, as both Java
+/// classes do.
 pub enum KmerLibrary {
     Set {
         kmer_size: usize,
@@ -146,7 +187,7 @@ pub enum KmerLibrary {
     },
 }
 
-/// `LongBloomFilter`, read.
+/// `LongBloomFilter`, read: the fields the deserializer keeps, in the file's order.
 pub struct LongBloomFilter {
     total_bits: i64,
     num_hashes: i32,
@@ -155,6 +196,17 @@ pub struct LongBloomFilter {
 }
 
 impl LongBloomFilter {
+    /// `LongBloomFilter.contains`: `numHashes` bit positions by double hashing, all of which must
+    /// be set.
+    ///
+    /// ```java
+    /// final long result = (fnvHash1+ i * fnvHash2) % totalBits;
+    /// return result < 0 ? result + totalBits : result;
+    /// ```
+    ///
+    /// Java's `long` arithmetic wraps, hence `wrapping_add` and `wrapping_mul`; Rust's `%` on a
+    /// signed integer keeps the sign of the dividend as Java's does, so the same correction for a
+    /// negative remainder follows.
     fn contains(&self, key: i64) -> bool {
         const HASH_SEED_2: i64 = 0x6cebe6dca7f118a6;
         let hash1 = fnv_long_64(FNV64_DEFAULT_SEED, key);
@@ -181,6 +233,9 @@ impl LongBloomFilter {
 const FNV64_DEFAULT_SEED: i64 = 14695981039346656037u64 as i64;
 
 /// Kryo's fixed-width reads and its reference marker, over the bytes of a k-mer file.
+///
+/// `at` is the read position, and a read past the end is an `Err`. The integers are read
+/// big-endian, and `marker` skips one byte, the reference marker ahead of an object.
 struct Input<'a> {
     bytes: &'a [u8],
     at: usize,
@@ -214,6 +269,14 @@ impl Input<'_> {
 }
 
 /// `PSKmerUtils.readKmerFilter`: the extension chooses the class.
+///
+/// **How**: the `.hss` branch reads `PSKmerSet` (k, then the mask), then the
+/// `LargeLongHopscotchSet` (the number of sets, then each set's capacity, element count and
+/// elements). The sets inside carry no marker, because the outer set turns references off before
+/// reading them: `kryo.setReferences(false);`. Anything else is read as a `PSKmerBloomFilter`;
+/// the caller has already refused any extension that is neither `.hss` nor `.bfi`, as
+/// `readKmerFilter` does. The Bloom filter's trailing false-positive probability is not read,
+/// because `contains` does not use it.
 pub fn read_kmer_library(path: &str, bytes: &[u8]) -> Result<KmerLibrary, String> {
     let mut input = Input { bytes, at: 0 };
     if path.ends_with(".hss") {
@@ -266,12 +329,15 @@ pub fn read_kmer_library(path: &str, bytes: &[u8]) -> Result<KmerLibrary, String
 }
 
 impl KmerLibrary {
+    /// `PSKmerCollection.kmerSize`.
     fn kmer_size(&self) -> usize {
         match self {
             KmerLibrary::Set { kmer_size, .. } | KmerLibrary::Bloom { kmer_size, .. } => *kmer_size,
         }
     }
 
+    /// `PSKmerSet.contains` and `PSKmerBloomFilter.contains`, which both look up
+    /// `canonicalizeAndMask(rawKmer, kmerSize, kmerMask)`.
     fn contains(&self, kmer: Kmer) -> bool {
         let size = self.kmer_size();
         // `canonicalizeAndMask`. A file holds an odd size, which is the only one `canonical` takes.
@@ -287,7 +353,17 @@ impl KmerLibrary {
     }
 }
 
-/// `PSUtils.getMatchesLessDeletions`.
+/// `PSUtils.getMatchesLessDeletions`: the aligned bases that match, less the deleted ones.
+///
+/// **How**: NM counts substitutions plus inserted and deleted bases, so the substitutions are NM
+/// less the indel lengths, and the matches are the aligned (M, =, X) length less those. Either
+/// going negative is the reference's "Invalid arguments" warning, returning 0.
+///
+/// The reference first refuses a negative NM, which this function does not:
+///
+/// ```java
+/// Utils.validateArg(nmTagValue >= 0, "NM tag value cannot be negative");
+/// ```
 pub fn matches_less_deletions_of(elements: &[CigarElement], nm: i32) -> i32 {
     let (mut aligned, mut deletions, mut insertions) = (0i32, 0i32, 0i32);
     for element in elements {
@@ -306,8 +382,10 @@ pub fn matches_less_deletions_of(elements: &[CigarElement], nm: i32) -> i32 {
     matches - deletions
 }
 
-/// `HostAlignmentReadFilter.test`.
-/// `HostAlignmentReadFilter.test`, over a line of BWA's.
+/// `HostAlignmentReadFilter.test`, over a line of BWA's: true keeps the read as not host.
+///
+/// Only an integer NM is read. `getAttributeAsInteger` would also parse an NM stored as a string,
+/// which this does not.
 pub fn host_alignment_keeps(line: &BamRecord, min_identity: i32) -> bool {
     match line.tags.get(Tag::new(b"NM")) {
         Some(TagValue::Int(nm)) => {
@@ -317,6 +395,16 @@ pub fn host_alignment_keeps(line: &BamRecord, min_identity: i32) -> bool {
     }
 }
 
+/// `HostAlignmentReadFilter.test`, over a pre-aligned input read: true keeps it.
+///
+/// ```java
+/// if ( read.isUnmapped() ) return true;
+/// if ( excludedContigs.contains(read.getContig()) ) return true;
+/// ```
+///
+/// then the NM test of `host_alignment_keeps`. `usize::try_from` turns the record's reference
+/// index into a list index, failing for the `-1` of no contig, and `ok().and_then` chains the two
+/// lookups that may each find nothing.
 fn survives_host_alignment(
     record: &BamRecord,
     contigs: &[String],
@@ -340,12 +428,19 @@ fn survives_host_alignment(
     }
 }
 
-/// `SequenceUtil.reverseComplement`, in place over a copy.
+/// `SequenceUtil.reverseComplement`, in place over a copy: `canonicalizeRead` reverses the array
+/// `getBases()` returned, which is already a copy, so the read itself is never changed.
 fn reverse_complement(bases: &[u8]) -> Vec<u8> {
     bases.iter().rev().map(|base| complement(*base)).collect()
 }
 
-/// `clearReadAlignment`.
+/// `clearReadAlignment`: a new unmapped record with the name, bases, qualities, pair flags and
+/// read group of the old one. See the module note for why a reverse read is not turned round.
+///
+/// The flags are built as bits: 0x4 unmapped; if paired, 0x1 paired and 0x8 mate unmapped, then
+/// 0x40 first or 0x80 second of pair, as `setIsPaired`, `setMateIsUnmapped`, `setIsFirstOfPair`
+/// and `setIsSecondOfPair` set them. `..BamRecord::default()` fills every other field with its
+/// empty value, the port's stand-in for the Java's `new SAMRecord(header)`.
 fn cleared(record: &BamRecord) -> BamRecord {
     // A reverse read stays as it is: the reference reverses `getBases()`, which is a copy.
     let mut out = BamRecord {
@@ -371,6 +466,15 @@ fn cleared(record: &BamRecord) -> BamRecord {
 }
 
 /// `StripMateNumberTransformer`: `String.trim`, a mate suffix, and `trim` again.
+///
+/// ```java
+/// final String name = read.getName().trim();
+/// ```
+///
+/// Java's `trim` removes every character up to and including the space, control characters
+/// among them, which is the closure here; Rust's own `trim` removes Unicode whitespace instead.
+/// The name is replaced only when a suffix went, as in the reference, so a name with surrounding
+/// blanks and no suffix keeps them.
 fn strip_mate_number(record: &mut BamRecord) {
     let is_trimmed = |c: char| c <= ' ';
     let name = record.read_name.trim_matches(is_trimmed);
@@ -380,8 +484,12 @@ fn strip_mate_number(record: &mut BamRecord) {
     }
 }
 
-/// `ReadClipper` with `HARDCLIP_BASES`, over a read with no alignment: `stop` is inclusive, and past
-/// the end it means the end. An `emptyRead` is the same flags and the read group.
+/// `ReadClipper` with `HARDCLIP_BASES`, over a read with no alignment: `stop` is inclusive, and
+/// past the end it means the end. An `emptyRead` is the same flags and the read group.
+///
+/// The only two shapes the callers ask for are a clip from the start (`start == 0`, which drops
+/// `0..=stop`) and a clip to the end (which keeps `0..start`). Bases and qualities are each cut
+/// only when their length is the read length, so a read with no qualities keeps none.
 fn hard_clip(record: &mut BamRecord, start: usize, stop: usize) {
     let length = record.read_bases.len();
     if start >= length {
@@ -401,7 +509,17 @@ fn hard_clip(record: &mut BamRecord, start: usize, stop: usize) {
     keep(&mut record.base_qualities);
 }
 
-/// `AdapterTrimTransformer`.
+/// `AdapterTrimTransformer`: hard-clip from the best adapter match to the end of the read.
+///
+/// **How**: for each of the six adapters, every start from `length - minClipLength` down to 0 is
+/// tried, aligning one more adapter base per step until the adapter is used up. The best match is
+/// the fewest mismatches, then the earliest start; a start counts only if it has fewer
+/// mismatches than `--max-adapter-mismatches` or ties it, because the best starts at that bound.
+///
+/// ```java
+/// if (numMismatches < bestNumMismatches || (numMismatches == bestNumMismatches
+///         && alignmentStart < bestAlignmentStart)) {
+/// ```
 fn trim_adapters(record: &mut BamRecord, max_mismatches: i32, min_clip_length: i32) {
     let bases = &record.read_bases;
     if (bases.len() as i32) < min_clip_length {
@@ -417,7 +535,9 @@ fn trim_adapters(record: &mut BamRecord, max_mismatches: i32, min_clip_length: i
         while start >= 0 {
             let mut mismatches = 0;
             for j in 0..alignment_length {
-                // `charAt` past the adapter, for a --min-adapter-length longer than it, throws.
+                // `charAt` past the adapter, for a --min-adapter-length longer than it, throws
+                // in the reference. The port reads an `N` there instead, which counts as no call,
+                // so where Java stops with `StringIndexOutOfBoundsException` this carries on.
                 let wanted = adapter.get(j as usize).copied().unwrap_or(b'N');
                 let is_no_call = matches!(wanted, b'N' | b'n' | b'.');
                 if !is_no_call && bases[(start + j) as usize] != wanted {
@@ -445,7 +565,20 @@ fn trim_adapters(record: &mut BamRecord, max_mismatches: i32, min_clip_length: i
     }
 }
 
-/// `SimpleRepeatMaskTransformer`.
+/// `SimpleRepeatMaskTransformer`: `N` out every window of `window` bases with at least
+/// `thresh_at` A, T or N, or at least `thresh_gc` G, C or N.
+///
+/// **How**: one window slides a base at a time over the original bases, with a count per byte
+/// value. Consecutive repeat windows extend one mask; a gap writes the mask so far and starts a
+/// new one. Masking writes `N` and quality 0 over `maskStart .. maskEnd - 1` inclusive:
+///
+/// ```java
+/// readClipper.addOp(new ClippingOp(maskStart, maskEnd - 1));
+/// return readClipper.clipRead(ClippingRepresentation.WRITE_NS_Q0S);
+/// ```
+///
+/// **Why the counts are `i8` and wrap**: Java counts in `byte[] baseCounts = new byte[255];`,
+/// which wraps past 127. The windows here are 30 and 100 bases, so no count reaches the wrap.
 fn mask_simple_repeats(record: &mut BamRecord, thresh_at: i32, thresh_gc: i32, window: usize) {
     let original = record.read_bases.clone();
     let mut counts = [0i8; 256];
@@ -485,7 +618,7 @@ fn mask_simple_repeats(record: &mut BamRecord, thresh_at: i32, thresh_gc: i32, w
     mask(record, mask_start, mask_end);
 }
 
-/// `WRITE_NS_Q0S` over `start .. end`.
+/// `WRITE_NS_Q0S` over `start .. end`, `end` exclusive: the Java's `maskEnd - 1` inclusive stop.
 fn mask(record: &mut BamRecord, start: usize, end: usize) {
     for at in start..end.min(record.read_bases.len()) {
         record.read_bases[at] = b'N';
@@ -495,6 +628,8 @@ fn mask(record: &mut BamRecord, start: usize, end: usize) {
     }
 }
 
+/// `DUSTReadTransformer.PStruct`: a perfect interval, its start and finish in read coordinates
+/// and its score.
 #[derive(Clone, Copy)]
 struct Perfect {
     start: i32,
@@ -502,6 +637,12 @@ struct Perfect {
     score: f64,
 }
 
+/// `DUSTReadTransformer.save_masked_regions`: once the last perfect interval starts before the
+/// window, merge it into the result (or append it), then drop every perfect interval that starts
+/// before the window. The Java's `LinkedList` is a `Vec` whose end is the list's last element.
+///
+/// `let Some(last) = ... else { return; }` takes the last element or returns when there is none:
+/// the Java's `if (!perfect_intervals.isEmpty())`.
 fn save_masked_regions(perfect: &mut Vec<Perfect>, intervals: &mut Vec<(i32, i32)>, wstart: i32) {
     let Some(last) = perfect.last().copied() else {
         return;
@@ -521,8 +662,21 @@ fn save_masked_regions(perfect: &mut Vec<Perfect>, intervals: &mut Vec<(i32, i32
 }
 
 /// `DUSTReadTransformer.runDUST`, the sDUST pseudocode as the reference wrote it. `None` is the
-/// `NoSuchElementException` a window of two or less pops from an empty list.
+/// `NoSuchElementException` a window of two or less pops from an empty list:
+///
+/// ```java
+/// if (window_triplets.size() >= window - 2) {
+///     s = window_triplets.pop();
+/// ```
+///
+/// **How**: bases become two-bit codes (A=0 T=1 C=2 G=3, not the k-mer coding), anything else a
+/// draw from `new Random()` seeded 0, created at the first such base and shared by the rest. Each
+/// window position then adds one triplet; the triplet lists, counts and scores are the Java's
+/// variables one for one. The Java's `--x` and `x++` inside an expression are written as separate
+/// statements in the same order.
 fn run_dust(bases: &[u8], window: i32, tscore: f64) -> Option<Vec<(i32, i32)>> {
+    // `get_or_insert_with` creates the generator the first time it is needed, as the Java's
+    // `if (rng == null)` does, and the `map` draws in base order, so the stream is the same.
     let mut rng: Option<JavaRandom> = None;
     let q: Vec<i32> = bases
         .iter()
@@ -590,6 +744,7 @@ fn run_dust(bases: &[u8], window: i32, tscore: f64) -> Option<Vec<(i32, i32)>> {
                 }
                 next
             };
+            // `iter.hasNext() ? iter.next() : null`.
             let mut perf = advance(&mut cursor, &perfect);
             let mut max_score = 0.0f64;
             let mut i = triplets.len() as i32 - l - 1;
@@ -608,6 +763,9 @@ fn run_dust(bases: &[u8], window: i32, tscore: f64) -> Option<Vec<(i32, i32)>> {
                     }
                     if new_score >= max_score {
                         max_score = new_score;
+                        // `iter.previous()`, or a fresh iterator at the head when there is no
+                        // previous, then `iter.add` and `if (iter.hasNext()) {iter.next();}`.
+                        // `perf` is not refreshed, as it is not in the reference.
                         cursor = cursor.saturating_sub(1);
                         perfect.insert(
                             cursor,
@@ -636,7 +794,9 @@ fn run_dust(bases: &[u8], window: i32, tscore: f64) -> Option<Vec<(i32, i32)>> {
     Some(intervals)
 }
 
-/// `DUSTReadTransformer.apply`.
+/// `DUSTReadTransformer.apply`: `N` over each DUST interval, both ends included, and the mask
+/// quality over the same bases when the read has a quality per base. `mask_quality as u8` is the
+/// Java's `(byte)MASK_PHRED`.
 fn dust(record: &mut BamRecord, mask_quality: i32, window: i32, tscore: f64) -> Result<(), String> {
     let intervals = run_dust(&record.read_bases, window, tscore)
         .ok_or_else(|| "java.util.NoSuchElementException".to_string())?;
@@ -652,7 +812,17 @@ fn dust(record: &mut BamRecord, mask_quality: i32, window: i32, tscore: f64) -> 
     Ok(())
 }
 
-/// `BaseQualityClipReadTransformer`.
+/// `BaseQualityClipReadTransformer`: hard-clip the low-quality end on the right, then on the left.
+///
+/// ```java
+/// clipSum += (qTrimmingThreshold - quals[i]);
+/// if (clipSum >= 0 && (clipSum >= lastMax)) {
+/// ```
+///
+/// `point` is both `getRightClipPoint` and `getLeftClipPoint`: it is handed the qualities in the
+/// order to walk them, so `.enumerate().rev()` is the right-to-left loop with each original
+/// index kept. `None` is the reference's `-1`, no clip. `quality as i8` is Java's signed `byte`.
+/// The left walk reads the qualities after the right clip, as `clipReadLeftEnd` does.
 fn clip_low_quality(record: &mut BamRecord, threshold: i32) {
     let point = |qualities: &mut dyn Iterator<Item = (usize, u8)>| {
         let (mut sum, mut last_max, mut clip) = (0i32, -1i32, None);
@@ -678,6 +848,14 @@ fn clip_low_quality(record: &mut BamRecord, threshold: i32) {
 }
 
 /// `SVUtils.fnvByteArray64(byte[])`, whose seed the reference notes is the wrong constant.
+///
+/// ```java
+/// return fnvByteArray64(1099511628211L, toHash);
+/// ```
+///
+/// The bytes are folded eight at a time, big-endian, into a long, the last chunk possibly short,
+/// and each long is hashed by `fnvLong64`. `*byte as i8 as i64` sign-extends as the Java's
+/// `val = (val << 8) | toHash[i + j];` does, so a byte above 127 would set every higher bit.
 fn fnv_byte_array_64(bytes: &[u8]) -> i64 {
     let mut start = 1099511628211i64;
     for chunk in bytes.chunks(8) {
@@ -690,7 +868,9 @@ fn fnv_byte_array_64(bytes: &[u8]) -> i64 {
     start
 }
 
-/// `Hashing.murmur3_32().hashInt`, which is what `AppendOnlyMap.rehash` calls.
+/// `Hashing.murmur3_32().hashInt`, which is what `AppendOnlyMap.rehash` calls: murmur3 with a
+/// zero seed over one four-byte block. `u32` keeps the arithmetic unsigned; `rotate_left` is
+/// Java's `Integer.rotateLeft`.
 pub(crate) fn murmur3_32_int(input: i32) -> i32 {
     let mut k = (input as u32).wrapping_mul(0xcc9e2d51);
     k = k.rotate_left(15).wrapping_mul(0x1b873593);
@@ -707,6 +887,11 @@ pub(crate) fn murmur3_32_int(input: i32) -> i32 {
 
 /// `AppendOnlyMap` keyed on a `Long`, holding the first value and whatever `first` keeps, walked in
 /// slot order as `ExternalAppendOnlyMap.iterator` walks it when nothing has spilled.
+///
+/// **How**: the slot of a key is the murmur3 of `Long.hashCode`, which `slot_hash` computes as
+/// `key ^ (key >> 32)` over the unsigned bits, cut to an `int`, masked to the capacity; a taken slot is probed at growing steps of 1, 2, 3 ...; the
+/// table starts at 64 and doubles once it holds more than seven tenths of its capacity, re-placing
+/// every key. The groups come out in slot order, each holding its values in arrival order.
 fn group_by_key<T>(pairs: Vec<(i64, T)>) -> Vec<Vec<T>> {
     let slot_hash =
         |key: i64| murmur3_32_int((key ^ ((key as u64) >> 32) as i64) as i32) as u32 as usize;
@@ -761,6 +946,11 @@ fn group_by_key<T>(pairs: Vec<(i64, T)>) -> Vec<Vec<T>> {
 }
 
 /// `getPairedAndUnpairedLists`: a name seen twice joins the paired list, ahead of the read waiting.
+///
+/// The read arriving second goes in first, as `pairedReadsList.add(read);` precedes
+/// `pairedReadsList.add(unpairedReads.remove(readName));`. The reads still waiting come out in
+/// the iteration order of a Java `HashMap` created with `readsPerPartitionGuess`, which is what
+/// `JavaHashMap` reproduces.
 fn paired_and_unpaired(reads: Vec<BamRecord>, guess: i32) -> (Vec<BamRecord>, Vec<BamRecord>) {
     let mut paired = Vec::new();
     let mut waiting: JavaHashMap<String, BamRecord> = JavaHashMap::with_capacity(guess as usize);
@@ -779,11 +969,13 @@ fn paired_and_unpaired(reads: Vec<BamRecord>, guess: i32) -> (Vec<BamRecord>, Ve
     (paired, unpaired)
 }
 
-/// `setPairFlags`.
+/// `setPairFlags`, one partition: the paired reads, then the unpaired with their pair flag off.
 fn set_pair_flags(reads: Vec<BamRecord>, guess: i32) -> Vec<BamRecord> {
     let (mut all, unpaired) = paired_and_unpaired(reads, guess);
     for mut record in unpaired {
         // `setIsPaired(false)`: the proper-pair flag goes with it, the mate flags stay.
+        // `samRecord.setReadPairedFlag(isPaired);` then, for false,
+        // `samRecord.setProperPairFlag(false);` (`SAMRecordToGATKReadAdapter.setIsPaired`).
         record.flags &= !(0x1 | 0x2);
         all.push(record);
     }
@@ -791,6 +983,17 @@ fn set_pair_flags(reads: Vec<BamRecord>, guess: i32) -> Vec<BamRecord> {
 }
 
 /// `filterDuplicateSequences`: the first unpaired read of a sequence, else its first read.
+///
+/// ```java
+/// for (final GATKRead read : iter) {
+///     if (!read.isPaired()) return read;
+/// }
+/// return iter.iterator().next();
+/// ```
+///
+/// The key is `canonicalizeRead`'s, the smaller of the two `fnvByteArray64` hashes of the bases
+/// and their reverse complement. `position` finds the first unpaired index, `unwrap_or(0)` falls
+/// back to the first read, and `swap_remove` takes that one read out of the group.
 fn filter_duplicate_sequences(reads: Vec<BamRecord>) -> Vec<BamRecord> {
     let pairs = reads
         .into_iter()
@@ -814,6 +1017,17 @@ fn filter_duplicate_sequences(reads: Vec<BamRecord>) -> Vec<BamRecord> {
 
 /// `PSFilter.doFilter`, with `load` opening the k-mer file on the first read that needs it, as the
 /// task's filter does. `ambiguous` and the rest stay arguments for the caller's read filters.
+///
+/// The steps follow `doFilter` in order: primary reads, the pre-aligned host filter, clearing,
+/// the mate suffix, then (unless `--skip-filters`) adapters, the two simple-repeat masks with
+/// `MAX_AT_CONTENT_1 = 29`, `MAX_GC_CONTENT_1 = 29`, a 30-base window and then 87, 89 and 100,
+/// DUST, the quality clip, the length filter, low qualities to `N`, and the ambiguous-base
+/// filter; then the k-mer filter, the BWA filter, deduplication, the pair flags and a last
+/// clearing. Each metric is the read count after its step, as the logger records it. The
+/// repartitions between steps are not here: this is one partition's work.
+///
+/// `load_kmers` and `host_filter` are `Option`s of borrowed closures (`&dyn Fn`), `None` when the
+/// argument was not given.
 pub fn do_filter(
     reads: Vec<BamRecord>,
     contigs: &[String],
@@ -862,7 +1076,7 @@ pub fn do_filter(
             if (record.read_bases.len() as i32) < arguments.min_read_length {
                 continue;
             }
-            // `BaseQualityReadTransformer`.
+            // `BaseQualityReadTransformer`: only a read with one quality per base is touched.
             if record.base_qualities.len() == record.read_bases.len() {
                 for at in 0..record.read_bases.len() {
                     if (record.base_qualities[at] as i8 as i32) < arguments.quality_threshold {
@@ -886,6 +1100,9 @@ pub fn do_filter(
         if !reads.is_empty() {
             let library = load()?;
             let size = library.kmer_size();
+            // `ContainsKmerReadFilter.test`: drop the read at the threshold-th host k-mer,
+            // `if (++numKmersFound >= kmerCountThreshold) {`. `retain` keeps a read when the
+            // closure returns true.
             reads.retain(|record| {
                 let mut found = 0;
                 for kmer in kmerize(&record.read_bases, size, 1) {
@@ -921,7 +1138,8 @@ pub fn do_filter(
     })
 }
 
-/// Scala's `MurmurHash3.bytesHash`.
+/// Scala's `MurmurHash3.bytesHash`: murmur3 over little-endian four-byte words, the tail bytes
+/// mixed in last, then the length and the final avalanche.
 fn scala_bytes_hash(data: &[u8], seed: i32) -> i32 {
     let mix_last = |hash: i32, data: i32| {
         (hash as u32
@@ -956,6 +1174,11 @@ fn scala_bytes_hash(data: &[u8], seed: i32) -> i32 {
 }
 
 /// Where `new XORShiftRandom(index).nextInt(bound)` starts.
+///
+/// **How**: the seed is two `bytesHash` passes over the index's eight big-endian bytes, the
+/// second seeded with the first, joined into one long; `next` is one xorshift step and its low 31
+/// bits. `bound` is answered as `java.util.Random.nextInt(bound)` answers over `next(31)`: a
+/// multiply and shift for a power of two, otherwise rejection of the top partial range.
 fn spark_xorshift_start(index: i64, bound: i32) -> i32 {
     let bytes = index.to_be_bytes();
     let low = scala_bytes_hash(&bytes, 0x3c074a61);
@@ -982,6 +1205,9 @@ fn spark_xorshift_start(index: i64, bound: i32) -> i32 {
 
 /// `RDD.repartition` of one partition: round the new partitions from where the generator of that
 /// partition starts, each keeping the order items came in.
+///
+/// Each item goes to the partition after the previous one's, the first to the one after the
+/// start, wrapping round. With one partition there is nothing to choose, so no draw is made.
 pub fn spark_repartition<T>(items: Vec<T>, partitions: usize) -> Vec<Vec<T>> {
     let mut output: Vec<Vec<T>> = (0..partitions).map(|_| Vec::new()).collect();
     let mut position = if partitions == 1 {

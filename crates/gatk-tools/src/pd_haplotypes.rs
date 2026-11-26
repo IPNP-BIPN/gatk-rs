@@ -1,6 +1,7 @@
 //! The partially determined haplotypes, ported from
 //! `tools.walkers.haplotypecaller.PartiallyDeterminedHaplotypeComputationEngine`,
-//! `utils.haplotype.PartiallyDeterminedHaplotype` and `utils.SmallBitSet` (GATK 4.6.2.0).
+//! `utils.haplotype.PartiallyDeterminedHaplotype` and `utils.SmallBitSet` (GATK 4.7.0.0; all
+//! three Java files are unchanged since 4.6.2.0).
 //!
 //! DRAGEN's alternative to the assembled haplotypes: every event the assembly found, less the bad
 //! pileup events and with the good ones, is grouped with the events it cannot share a haplotype
@@ -22,6 +23,24 @@
 //! A group of more than seventeen events, more than 128 branches at a locus, or more than 512
 //! haplotypes (or 128 fully determined ones from a branch) abandons the construction and leaves the
 //! assembled haplotypes as they were, without marking the set as overwritten.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, Failure>` is "a `T` or the Java exception, as its class and message in one
+//!   string"; `?` after a call hands an `Err` straight to the caller, like an uncaught throw.
+//!   `Option<T>` is a nullable value checked by the compiler; `.ok_or_else(..)` turns its
+//!   "nothing" into the `NullPointerException` the Java would raise there.
+//! - `let Some(x) = y else { ... };` takes the value or runs the block, which must leave the
+//!   function. It is the Java `if (x == null) return ...;` written once.
+//! - `&[Event]` is a borrowed read-only view of a `List<Event>`; `&mut` is a writable one, and
+//!   only one may exist at a time.
+//! - A `SmallBitSet` is a plain `usize` here: bit `i` is event `i` of the group, `a & b == b`
+//!   is `a.contains(b)`, and a group of `n` events has `1 << n` subsets.
+//! - `JavaHashMap` reproduces `java.util.HashMap`'s bucket layout, so iterating it gives the
+//!   order a Java `HashSet` would, which the debug output and the branch order both show.
+//! - `as` casts between integer types truncate or wrap silently, as a Java narrowing cast does;
+//!   `wrapping_add` is Java's `byte`/`int` `+`, which wraps instead of failing.
+//! - `.then(..)`/`.then_with(..)` on an `Ordering` is Java's `Comparator.thenComparing`.
 
 use crate::pileup_based_alleles::EventKey;
 use gatk_engine::assembly_result_set::AssemblyResultSet;
@@ -60,14 +79,31 @@ fn illegal_state(message: String) -> Failure {
     format!("java.lang.IllegalStateException: {message}")
 }
 
-/// `Allele.compareTo` between two alternate alleles: their bases as strings.
+/// `Allele.compareTo`: a reference allele before a non-reference one, then the bases. htsjdk
+/// 5.0.0 `SimpleAllele.java:285-286`:
+///
+/// ```java
+/// if (isReference() && other.isNonReference()) return -1;
+/// else if (isNonReference() && other.isReference()) return 1;
+/// ```
+///
+/// `bool` orders `false < true`, so `b.is_reference().cmp(&a.is_reference())` puts the
+/// reference first. The bases compare as strings, which for `ACGTN` agrees with the Java's
+/// signed byte-by-byte `compareBases`.
 fn compare_alleles(a: &Allele, b: &Allele) -> Ordering {
     b.is_reference()
         .cmp(&a.is_reference())
         .then_with(|| a.display_string().cmp(&b.display_string()))
 }
 
-/// `HAPLOTYPE_SNP_FIRST_COMPARATOR`.
+/// `HAPLOTYPE_SNP_FIRST_COMPARATOR`: start, then reference length, then alternate length, then
+/// the alternate allele, so a SNP sorts before an indel anchored on the same base:
+///
+/// ```java
+///         .thenComparingInt(e -> e.refAllele().length())
+///         .thenComparingInt(e -> e.altAllele().length())
+///         .thenComparing(Event::altAllele);
+/// ```
 pub fn snp_first(a: &Event, b: &Event) -> Ordering {
     a.start()
         .cmp(&b.start())
@@ -76,7 +112,8 @@ pub fn snp_first(a: &Event, b: &Event) -> Ordering {
         .then_with(|| compare_alleles(a.alt_allele(), b.alt_allele()))
 }
 
-/// `dragenStart`.
+/// `dragenStart`: the start in DRAGEN's "U space", where a deletion begins one base after its
+/// anchor and an insertion half a base after it, so neither overlaps on its anchor base.
 fn dragen_start(event: &Event) -> f64 {
     f64::from(event.start())
         + if event.is_indel() {
@@ -90,7 +127,8 @@ fn dragen_start(event: &Event) -> f64 {
         }
 }
 
-/// `eventsOverlapForPDHapsCode`.
+/// `eventsOverlapForPDHapsCode`: closed-interval overlap on the `dragenStart` and an end pushed
+/// half a base right for an insertion. The `f64`s are the Java's `double end1`, `end2`.
 fn events_overlap(e1: &Event, e2: &Event) -> bool {
     if e1.contig() != e2.contig() {
         return false;
@@ -99,7 +137,8 @@ fn events_overlap(e1: &Event, e2: &Event) -> bool {
     !(dragen_start(e1) > end(e2) || dragen_start(e2) > end(e1))
 }
 
-/// `Locatable.withinDistanceOf`.
+/// `Locatable.withinDistanceOf`: same contig, and the two closed intervals overlap once `other`
+/// is widened by `distance` on each side.
 fn within_distance_of(event: &Event, other: &Event, distance: i32) -> bool {
     event.contig() == other.contig()
         && event.start() <= other.end() + distance
@@ -130,7 +169,9 @@ pub fn event_string(event: &Event) -> String {
     )
 }
 
-/// `getDRAGENDebugEventString(offset)`.
+/// `getDRAGENDebugEventString(offset)`: `(start,Rlen=n,alt)` in coordinates relative to
+/// `offset`, with a deletion shifted one base and an insertion marked `.5`, as in DRAGEN's logs.
+/// `i32::from(bool)` is the Java `? 1 : 0`.
 fn dragen_string(event: &Event, offset: i32) -> String {
     format!(
         "({}{},Rlen={},{})",
@@ -145,7 +186,8 @@ fn dragen_string(event: &Event, offset: i32) -> String {
     )
 }
 
-/// `formatEventsLikeDragenLogs(events, refStart, delimiter)`.
+/// `formatEventsLikeDragenLogs(events, refStart, delimiter)`. `impl IntoIterator<Item = &Event>`
+/// accepts any collection of events, as the Java's `Collection<Event>` parameter does.
 fn format_events<'a>(
     events: impl IntoIterator<Item = &'a Event>,
     offset: i32,
@@ -158,7 +200,9 @@ fn format_events<'a>(
         .join(delimiter)
 }
 
-/// The iteration order of a `HashSet<Event>` filled in `events`' order.
+/// The iteration order of a `HashSet<Event>` filled in `events`' order, which is where the
+/// Java's `Collectors.toSet()` leaves it: by bucket of `Event.hashCode`, then insertion order
+/// within a bucket.
 fn hash_set_order(events: &[Event]) -> Vec<Event> {
     let mut set: JavaHashMap<EventKey, ()> = JavaHashMap::new();
     for event in events {
@@ -168,6 +212,11 @@ fn hash_set_order(events: &[Event]) -> Vec<Event> {
 }
 
 /// `PartiallyDeterminedHaplotype.toString()`, or `Haplotype.toString()` for any other.
+///
+/// The PD form is three lines: the display bases (a `P` wherever the PD byte has a base bit
+/// set, `getDisplayBases`'s `(alternateBases[i] & ~7) != 0`), the PD bytes as
+/// `Arrays.toString(byte[])` prints them, signed, and the cigar followed by the constituent
+/// events, a `*` marking each determined one.
 pub fn haplotype_string(haplotype: &Haplotype) -> String {
     let bases = haplotype.bases();
     let Some(pd) = haplotype.partially_determined() else {
@@ -178,6 +227,7 @@ pub fn haplotype_string(haplotype: &Haplotype) -> String {
         .zip(&pd.alternate_bases)
         .map(|(&b, &alt)| if alt & !7 != 0 { 'P' } else { b as char })
         .collect();
+    // `b as i8` reinterprets the byte as signed, so 128 prints `-128` as Java's `byte` does.
     let flags: Vec<String> = pd
         .alternate_bases
         .iter()
@@ -209,6 +259,8 @@ pub fn haplotype_string(haplotype: &Haplotype) -> String {
     )
 }
 
+/// `Utils.printIf(debug, supplier)`: the line is built only when it is printed, which the
+/// closure (`impl FnOnce() -> String`, Java's `Supplier<String>`) makes explicit.
 fn print(debug: bool, line: impl FnOnce() -> String) {
     if debug {
         crate::tool_stdout::println(&line());
@@ -219,7 +271,11 @@ fn bases(allele: &Allele) -> Vec<u8> {
     allele.display_string().into_bytes()
 }
 
-/// `getPDBytesForHaplotypes(refAllele, altAllele)`.
+/// `getPDBytesForHaplotypes(refAllele, altAllele)`: the PD bytes one undetermined event
+/// contributes. A SNP marks its single byte `SNP` plus the alternate base's bit; an indel gets
+/// one byte per base after the anchor, the first marked `DEL_START` and the last `DEL_END` (the
+/// same byte, `DEL_START + DEL_END`, for a one-base indel). The Java's `output[0] += ...` on a
+/// `byte` wraps, which `wrapping_add` reproduces.
 fn pd_bytes_for(reference: &Allele, alt: &Allele) -> Result<Vec<u8>, Failure> {
     let length = if alt.len() == reference.len() {
         reference.len()
@@ -248,11 +304,13 @@ fn pd_bytes_for(reference: &Allele, alt: &Allele) -> Result<Vec<u8>, Failure> {
     Ok(output)
 }
 
-/// `actualStartExcludingInitialIndelBase`.
+/// `actualStartExcludingInitialIndelBase`: the first base an event changes, one past the anchor
+/// base for an indel.
 fn actual_start(event: &Event) -> i32 {
     event.start() + i32::from(event.is_indel())
 }
 
+/// `runningCigar.make()`; `make(false)` is the Java's no-argument overload.
 fn make_cigar(builder: &mut CigarBuilder) -> Result<Cigar, Failure> {
     builder.make(false).map_err(|e| format!("{e:?}"))
 }
@@ -273,6 +331,8 @@ fn reference_start(reference: &Haplotype) -> Result<i32, Failure> {
         .ok_or_else(|| "java.lang.NullPointerException".to_string())
 }
 
+/// `Utils.validate(refHap.isReference() && refHap.getCigar().numCigarElements() == 1, ...)`, the
+/// check both constructors open with.
 fn validate_reference(reference: &Haplotype) -> Result<(), Failure> {
     let single = reference.cigar().is_some_and(|c| c.elements.len() == 1);
     if !(reference.is_reference() && single) {
@@ -283,7 +343,14 @@ fn validate_reference(reference: &Haplotype) -> Result<(), Failure> {
     Ok(())
 }
 
-/// `constructHaplotypeFromEvents(refHap, events, setEventMap)`.
+/// `constructHaplotypeFromEvents(refHap, events, setEventMap)`: the reference with every event
+/// applied, a fully determined haplotype.
+///
+/// The cigar is `M` up to each event, then `X` for a substitution or `I`/`D` for the length
+/// difference of an indel, then `M` to the end. The events must lie inside the reference and
+/// be strictly ordered (`getEnd() < actualStartExcludingInitialIndelBase(next)`). The
+/// alignment offset is set only after the event map is built, because, in the Java's words,
+/// the event map code "is being generated from the ref hap".
 pub fn construct_haplotype_from_events(
     reference: &Haplotype,
     events: &[Event],
@@ -307,7 +374,10 @@ pub fn construct_haplotype_from_events(
     let ref_start = location.start;
     let mut last = ref_start;
     let ref_bases = reference.bases();
+    // `new CigarBuilder()`, whose default removes deletions at the ends.
     let mut cigar = CigarBuilder::new(true);
+    // `windows(2)` yields each adjacent pair: the Java's `IntStream.range(0, size - 1)` over
+    // `n` and `n + 1`.
     for pair in events.windows(2) {
         if pair[0].end() >= actual_start(&pair[1]) {
             return Err(illegal_state(format!(
@@ -329,6 +399,7 @@ pub fn construct_haplotype_from_events(
                 if difference < 0 { Op::D } else { Op::I },
             )?;
         }
+        // `a..b` is the half-open range `ArrayUtils.subarray(refbases, a, b)` takes.
         out.extend_from_slice(
             &ref_bases[(last - ref_start) as usize..(start - ref_start) as usize],
         );
@@ -356,6 +427,9 @@ pub fn construct_haplotype_from_events(
 
 /// `constructArtificialHaplotypeAndTestEquivalentEvents`: whether the events, applied to the
 /// reference and realigned, give the reference back or an event of the list not among them.
+///
+/// `all` is every event of the region and `tested` the two or three applied. `&dyn
+/// SmithWatermanAligner` is an interface reference, Java's `SmithWatermanAligner aligner`.
 fn equivalent_events(
     reference: &Haplotype,
     aligner: &dyn SmithWatermanAligner,
@@ -401,6 +475,12 @@ fn equivalent_events(
 
 /// `smithWatermanRealignPairsOfVariantsForEquivalentEvents`: the pairs, then the trios, that
 /// realign into another event of the list.
+///
+/// Each pair has an indel first and a non-overlapping second event, an indel second only when
+/// it comes later in the list (so no pair of indels is tested twice). A trio extends a pair that
+/// was not disallowed by a third event later than the second, skipping it when either new pair
+/// was disallowed. Both loops are the Java's index loops kept as written, so the tests (and the
+/// debug lines) come in the same order.
 fn disallowed_combinations(
     reference: &Haplotype,
     aligner: &dyn SmithWatermanAligner,
@@ -467,6 +547,10 @@ fn disallowed_combinations(
 
 /// `EventGroup`: a connected set of mutually exclusive events and which subsets of it may share a
 /// haplotype.
+///
+/// `allowed` is the Java's `BitSet allowedSubsets`: entry `s` is true when the subset whose bits
+/// are `s` contains no mutex. `cached` is `cachedEventSets`, the answer when the determined
+/// locus lies outside the group, which is the same at every such locus.
 struct EventGroup {
     events: Vec<Event>,
     /// `allowedSubsets`, indexed by the subset's bits.
@@ -475,6 +559,20 @@ struct EventGroup {
 }
 
 impl EventGroup {
+    /// `new EventGroup(events, mutexPairsAndTrios)` with `computeAllowedSubsets`.
+    ///
+    /// Two SNPs at one start are a mutex for forming the group but not for the subsets, because
+    /// a PD haplotype carries both as one undetermined base. The Java's filter:
+    ///
+    /// ```java
+    /// .filter(mutex -> !(mutex.size() == 2 && mutex.get(0).getStart() == mutex.get(1).getStart()
+    ///         && mutex.get(0).isSNP() && mutex.get(1).isSNP()))
+    /// ```
+    ///
+    /// (one Java line, wrapped here to fit).
+    ///
+    /// A group of one leaves every subset disallowed (the Java returns before setting any), which
+    /// `event_sets` never reads because it answers a group of one directly.
     fn new(component: Vec<Event>, mutexes: &[Vec<Event>]) -> Result<EventGroup, Failure> {
         let mut events = component;
         events.sort_by(snp_first);
@@ -494,6 +592,8 @@ impl EventGroup {
             }
         }
         let size = events.len();
+        // `allowedSubsets.set(1, 1 << size)`, then every subset containing a mutex cleared. The
+        // Java loop runs while `!subset.hasElementGreaterThan(size)`, i.e. `bits < 1 << size`.
         let mut allowed = vec![false; 1 << size];
         if size >= 2 {
             for slot in allowed.iter_mut().skip(1) {
@@ -522,6 +622,7 @@ impl EventGroup {
         })
     }
 
+    /// `overlapSet`: the bits of those of `events` that belong to this group.
     fn overlap_set(&self, events: &[Event]) -> usize {
         events
             .iter()
@@ -530,6 +631,12 @@ impl EventGroup {
     }
 
     /// `eventSetsForPDHaplotypes(determinedEvents, locusEvents)`.
+    ///
+    /// The maximal allowed subsets whose events at the determined locus are exactly the
+    /// determined ones. The search counts down from the full set, so a larger subset is found
+    /// before any subset of it, and a candidate inside one already found is skipped. A group of
+    /// one answers directly: no events when it sits at the locus and the reference is
+    /// determined, else its event.
     fn event_sets(&mut self, determined: &[Event], locus: &[Event]) -> Vec<Vec<Event>> {
         let locus_set = self.overlap_set(locus);
         let determined_set = self.overlap_set(determined);
@@ -576,6 +683,13 @@ impl EventGroup {
 }
 
 /// `getEventGroupClusters`: none when a group is too large.
+///
+/// The Java builds a JGraphT `SimpleGraph` with an edge between consecutive events of each
+/// mutex (overlapping pairs and the Smith-Waterman pairs and trios) and asks
+/// `ConnectivityInspector.connectedSets()` for its components. A union-find over the event
+/// indices gives the same partition, and listing components by their lowest index gives the
+/// inspector's order, which walks the vertices in insertion order. The members' order within a
+/// component does not matter, because `EventGroup::new` sorts them.
 fn event_groups(
     events: &[Event],
     disallowed: &[Vec<Event>],
@@ -593,6 +707,8 @@ fn event_groups(
     }
     // The connected components, in the order of their first event.
     let mut parent: Vec<usize> = (0..events.len()).collect();
+    // The root of `i`'s component, flattening the path on the way. The lower root always wins
+    // a union, so a root is its component's first event.
     fn find(parent: &mut [usize], i: usize) -> usize {
         let mut root = i;
         while parent[root] != root {
@@ -653,6 +769,12 @@ fn branch_events(branch: &Branch) -> Vec<Event> {
 }
 
 /// `computeBranches`: none past the branch limit. Each branch in its `HashSet`'s order.
+///
+/// Every branch is extended by each group in turn: the group's first event set is added to
+/// every existing branch in place, and for each further set a copy of every branch with that
+/// set added is appended. The copies are made before the in-place additions, as the Java's
+/// eager `.toList()` makes them, and each copy is `Sets.newHashSet(Sets.union(branch,
+/// setToAdd))`: the branch's events, then the set's that it lacks, into a set sized for them.
 fn compute_branches(
     groups: &mut [EventGroup],
     determined: &[Event],
@@ -704,6 +826,15 @@ fn compute_branches(
 
 /// `createNewPDHaplotypeFromEvents(refHap, determinedEvents, determinedLocus, constituentEvents,
 /// allEventsAtDeterminedLocus)`.
+///
+/// Builds the bases, the PD bytes and the cigar in one pass over the sorted events. An
+/// undetermined SNP keeps the reference base and flags its alternate in the PD byte; a second
+/// SNP at the same base ORs its flag into the previous byte. An undetermined indel contributes
+/// its longer allele, flagged as a deletion of it. The determined event contributes its
+/// alternate allele unflagged, or, when the reference is determined, every event at the
+/// determined locus is skipped and an event elsewhere uses the reference allele. The cigar is
+/// built with `new CigarBuilder(false)`, which keeps a deletion at an end, because (the Java's
+/// comment) "a deletion can hang past the edge of an active window".
 fn new_pd_haplotype(
     reference: &Haplotype,
     determined: &[Event],
@@ -796,6 +927,7 @@ fn new_pd_haplotype(
     }
     let index = (last - ref_start) as usize;
     out.extend_from_slice(&ref_bases[index..]);
+    // `repeat_n(0, n)` is `new byte[n]`, the zero PD bytes of resolved bases.
     pd.extend(std::iter::repeat_n(0u8, ref_bases.len() - index));
     add(&mut cigar, (ref_bases.len() - index) as i32, Op::M)?;
     let made = make_cigar(&mut cigar)?;
@@ -805,6 +937,8 @@ fn new_pd_haplotype(
         .genome_location()
         .cloned()
         .ok_or_else(|| "java.lang.NullPointerException".to_string())?;
+    // The `PartiallyDeterminedHaplotype` constructor's `Utils.validateArg`, after the base
+    // `Haplotype` was made, as in the Java.
     if out.len() != pd.len() {
         return Err(
             "java.lang.IllegalArgumentException: pdBytes array must have same length as base haplotype."
@@ -814,6 +948,7 @@ fn new_pd_haplotype(
     haplotype.set_cigar(&made).map_err(|e| format!("{e:?}"))?;
     haplotype.set_genome_location(location.clone());
     haplotype.set_alignment_start_hap_wrt_ref(reference.alignment_start_hap_wrt_ref());
+    // `determinedExtent`: the span of every event at the locus, or the locus itself if none.
     let start = locus_events
         .iter()
         .map(Event::start)
@@ -836,7 +971,13 @@ fn new_pd_haplotype(
 }
 
 /// `makeFinalListOfEventsInOrder`: the assembled events less the bad pileup events, the good ones
-/// added unless a SNP within range of an assembled indel, in `HAPLOTYPE_SNP_FIRST_COMPARATOR` order.
+/// added unless a SNP within range of an assembled indel, in `HAPLOTYPE_SNP_FIRST_COMPARATOR`
+/// order.
+///
+/// The Java collects into a `HashSet` and sorts it; here a list is sorted and adjacent equal
+/// events dropped (`dedup`). Equal events compare equal, so they sort next to each other, and
+/// the set's order cannot matter: two events that tie on start, both lengths and the alternate
+/// allele also share the reference allele (the same bases of one contig), so they are equal.
 fn final_events(
     assembled: &[Event],
     bad: &[Event],
@@ -867,6 +1008,12 @@ fn final_events(
 }
 
 /// `generatePDHaplotypes(sourceSet, badPileupEvents, goodPileupEvents, aligner, args)`, in place.
+///
+/// Every `return Ok(())` before the end is one of the Java's `return sourceSet;` fallbacks, and
+/// leaves `set` untouched. The output is the Java's `LinkedHashSet<Haplotype>`: a list that
+/// refuses a haplotype already in it (by `Haplotype.equals`, which for a PD haplotype also
+/// compares the PD bytes and the determined position), in insertion order, then sorted by
+/// bases with a stable sort as `Comparator.comparing(Haplotype::getBaseString)` is.
 pub fn generate_pd_haplotypes(
     set: &mut AssemblyResultSet,
     bad: &[Event],
@@ -937,6 +1084,8 @@ pub fn generate_pd_haplotypes(
         )
     });
 
+    // `groupingBy(Event::getStart, TreeMap::new, toList())`: the events by start, each list in
+    // the sorted order, the starts ascending.
     let mut loci: Vec<(i32, Vec<Event>)> = Vec::new();
     for event in &events {
         match loci.iter_mut().find(|(start, _)| *start == event.start()) {
@@ -973,6 +1122,7 @@ pub fn generate_pd_haplotypes(
             });
             continue;
         }
+        // Index -1 is the reference allele, which determined mode does not make a haplotype for.
         let first: i64 = if determined_mode { 0 } else { -1 };
         for index in first..here.len() as i64 {
             let determined: Vec<Event> = if index < 0 {
@@ -1030,6 +1180,8 @@ pub fn generate_pd_haplotypes(
                         here,
                     )?]
                 } else {
+                    // The seed holds the determined event; each later locus appends, for each
+                    // of its events in the branch and each haplotype so far, the two together.
                     let mut full: Vec<Vec<Event>> = vec![determined.clone()];
                     for (other, at_other) in &loci {
                         if locus < other {

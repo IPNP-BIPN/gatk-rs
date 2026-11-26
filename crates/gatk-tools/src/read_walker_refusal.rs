@@ -28,6 +28,14 @@
 //! `org.broadinstitute.hellbender.engine.ReadsPathDataSource` and
 //! `org.broadinstitute.hellbender.exceptions.UserException` as measured in
 //! `read-walker-refusals`.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is "a value or nothing", Java's nullable reference checked by the compiler. A
+//!   `None` from [`refusal`] means "no refusal: the run goes on";
+//! - `?` after an `Option` returns `None` from the whole function when the value is missing;
+//! - `&[u8]` is a borrowed, read-only view of a byte array; the caller keeps ownership;
+//! - `match` must name every variant of an enum, so each refusal has a class and a message.
 
 /// What the reference throws, and whether `Main` calls it the user's fault.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,9 +52,12 @@ pub enum Refusal {
     EmptyDictionary,
 }
 
+/// The class `UserException.CouldNotReadInputFile` reports as (a nested class, hence the `$`).
 pub const COULD_NOT_READ: &str =
     "org.broadinstitute.hellbender.exceptions.UserException$CouldNotReadInputFile";
+/// The class htsjdk's `SAMLineParser` throws from `reportFatalErrorParsingLine`.
 pub const SAM_FORMAT: &str = "htsjdk.samtools.SAMFormatException";
+/// The class `Utils.validateArg` throws.
 pub const ILLEGAL_ARGUMENT: &str = "java.lang.IllegalArgumentException";
 /// `BinaryCodec.readBytes` when the record body it was promised is not there.
 pub const RUNTIME_EOF: &str = "htsjdk.samtools.util.RuntimeEOFException";
@@ -67,12 +78,33 @@ impl Refusal {
     }
 
     /// The message, in the reference's own words.
+    ///
+    /// `CouldNotRead` is `UserException.CouldNotReadInputFile`'s
+    /// `String.format("Couldn't read file. Error was: %s with exception: %s", message, ...)`.
+    /// `NotSamText` is htsjdk's `SAMLineParser.makeErrorString` with the reason
+    /// `"Not enough fields"` and, always here, line number one:
+    ///
+    /// ```java
+    /// String fileMessage = "";
+    /// if (mFile != null) {
+    ///     fileMessage = "File " + mFile + "; ";
+    /// }
+    /// return "Error parsing text SAM file. "
+    ///         + reason + "; " + fileMessage + "Line "
+    ///         + (this.currentLineNumber <= 0 ? "unknown" : this.currentLineNumber)
+    ///         + "\nLine: " + this.currentLine;
+    /// ```
+    ///
+    /// `EmptyDictionary` is `MRUCachingSAMSequenceDictionary`'s
+    /// `Utils.validateArg( !dict.isEmpty(), "Dictionary cannot have size zero");`.
     pub fn message(&self) -> String {
         match self {
             Refusal::CouldNotRead { path, reason } => {
                 format!("Couldn't read file. Error was: {path} with exception: {reason}")
             }
             Refusal::NotSamText { file, line } => {
+                // `"; " + fileMessage + "Line "` split differently: the `;` and the spaces are
+                // in the format string, so an absent file still leaves one `; ` before `Line`.
                 let named = match file {
                     Some(name) => format!(" File {name};"),
                     None => String::new(),
@@ -105,6 +137,9 @@ pub fn is_block_compressed(bytes: &[u8]) -> bool {
 
 /// What a read walker makes of a file, given its bytes and whether an interval was asked for.
 ///
+/// The checks run in the order the reader meets them: the path (`CouldNotReadInputFile`), the
+/// BAM magic, the dictionary an interval asks for, and only then the first record's line.
+///
 /// `decompressed` is what the reader would be looking at: the file's own bytes for a plain file,
 /// and the inflated stream for a block-compressed one. `None` where the caller could not inflate
 /// it, which is a file that claims to be BGZF and is not.
@@ -122,6 +157,8 @@ pub fn refusal(
             reason: cannot_read(path, is_directory),
         });
     }
+    // A file that claims BGZF and cannot be inflated is not decided here (`None`): the caller
+    // reports it.
     let bytes = decompressed?;
     if bytes.starts_with(&BAM_MAGIC) {
         return None;
@@ -136,6 +173,9 @@ pub fn refusal(
         // Nothing to parse and nothing to refuse: the tool returns zero.
         return None;
     }
+    // The first line, without its `\n` (and a `\r` before it), is what the parser says it
+    // could not split into eleven fields. `split(..).next()` is the bytes up to the first
+    // `\n`; `split` always yields at least one piece, so `unwrap_or_default` is never taken.
     let line = bytes
         .split(|byte| *byte == b'\n')
         .next()

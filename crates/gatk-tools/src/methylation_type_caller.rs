@@ -1,19 +1,23 @@
 //! `MethylationTypeCaller`, ported from
-//! `org.broadinstitute.hellbender.tools.walkers.MethylationTypeCaller` (GATK 4.6.2.0).
+//! `org.broadinstitute.hellbender.tools.walkers.MethylationTypeCaller` (GATK 4.7.0.0;
+//! `MethylationTypeCaller.java` is unchanged since 4.6.2.0).
 //!
-//! A `LocusWalker` over bisulfite-sequenced reads, and the first tool here whose output is a **VCF**
-//! rather than a BAM. Bisulfite treatment turns an unmethylated C into a T, so at every reference C
-//! the tool counts the reads that stayed C against those that became T; on the other strand the same
-//! event reads as a G that became an A.
+//! A `LocusWalker` over bisulfite-sequenced reads, and the first tool here whose output is a
+//! **VCF** rather than a BAM. Bisulfite treatment turns an unmethylated C into a T, so at every
+//! reference C the tool counts the reads that stayed C against those that became T; on the other
+//! strand the same event reads as a G that became an A.
 //!
 //! # The strand is chosen by the reference base, not by the reads
 //!
+//! Excerpts of `apply`, the lines between them left out:
+//!
 //! ```java
 //! if (referenceBase == (byte)'C') {
-//!     final ReadPileup forwardBasePileup = alignmentContext.stratify(FORWARD).getBasePileup();
-//! } else if (referenceBase == (byte)'G') {
-//!     final ReadPileup reverseBasePileup = alignmentContext.stratify(REVERSE).getBasePileup();
-//! } else { return; }
+//!     alignmentContext.stratify(AlignmentContext.ReadOrientation.FORWARD).getBasePileup();
+//! else if (referenceBase == (byte)'G') {
+//!     alignmentContext.stratify(AlignmentContext.ReadOrientation.REVERSE).getBasePileup();
+//! else {
+//!     return;
 //! ```
 //!
 //! A C is counted from forward reads alone and a G from reverse reads alone. A C covered only by
@@ -23,11 +27,21 @@
 //!
 //! # The two contexts are read on their own strands
 //!
-//! The forward context is `getBases(0, 2)`, three bases starting at the site. The reverse context is
-//! `getBases(2, 0)` **reverse complemented**, three bases ending at the site read backwards, so both
-//! begin with the C of the site as that strand sees it. Near a contig edge the window is trimmed
-//! rather than padded, so a site two bases from the end gets a two-base context and the last base of
-//! the contig gets one.
+//! The forward context is `getBases(0, 2)`, three bases starting at the site. The reverse context
+//! is `getBases(2, 0)` **reverse complemented**, three bases ending at the site read backwards, so
+//! both begin with the C of the site as that strand sees it. Near a contig edge the window is
+//! trimmed rather than padded, so a site two bases from the end gets a two-base context and the
+//! last base of the contig gets one.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, MethylationError>` is "a value or a refusal"; a `?` after a call returns the
+//!   refusal to this function's caller, as an uncaught Java exception would.
+//!   `.map_err(..)` converts another module's error into this file's type on the way.
+//! - `let Some(x) = y else { return ..; };` takes the value out of `y` or leaves the function.
+//! - `b'C'` is the byte of the character C, Java's `(byte)'C'`.
+//! - `|element| ..` is a closure, Java's lambda.
+//! - `x as i64` widens to Java's `long`; `x as usize` makes an array index.
 
 use gatk_engine::base_utils;
 use gatk_engine::context::ReferenceContext;
@@ -80,8 +94,19 @@ impl MethylationError {
 
 /// `createMethylationHeader(header, headerLines)`.
 ///
-/// The samples are the read groups' `SM` values **sorted then deduplicated**, in that order: sorting
-/// first is what makes the deduplication remove neighbours rather than every later repeat.
+/// The samples are the read groups' `SM` values **sorted then deduplicated**:
+///
+/// ```java
+/// .map(SAMReadGroupRecord::getSample)
+/// .sorted()
+/// .distinct()
+/// ```
+///
+/// Java's `distinct` drops every repeat. Rust's `dedup` drops only a repeat next to its twin, so
+/// sorting first is what makes the two agree.
+///
+/// A read group with no `SM` is skipped here. The reference maps it to null and hands that to
+/// `sorted()`, which compares it as soon as there is a second read group.
 ///
 /// `default_lines` is what `getDefaultToolVCFHeaderLines` returned. It is a parameter because it
 /// carries the run's own date, which no golden can hold: a caller that wants a comparable file

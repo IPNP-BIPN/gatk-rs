@@ -1,6 +1,7 @@
 //! `PrintFileDiagnostics`, ported from
 //! `org.broadinstitute.hellbender.tools.PrintFileDiagnostics` and the analyzers under
-//! `org.broadinstitute.hellbender.tools.filediagnostics` (GATK 4.6.2.0).
+//! `org.broadinstitute.hellbender.tools.filediagnostics` (GATK 4.7.0.0; `PrintFileDiagnostics.java`
+//! and every file under `filediagnostics` are unchanged since 4.6.2.0).
 //!
 //! An index printed as text. The BAI branch is `htsjdk.samtools.TextualBAMIndexWriter`, which no
 //! other tool in this repository reaches, and it is the only place a `.bai` is written as anything
@@ -9,11 +10,20 @@
 //! # The analyzer is chosen by the name
 //!
 //! ```java
-//! if (inputPath.isCram()) { ... } else if (hasExtension(CRAM_INDEX)) { ... }
-//! else if (hasExtension(BAI_INDEX)) { ... } else { throw new RuntimeException(...); }
+//! if (inputPath.isCram()) {
+//!     return new CRAMAnalyzer(inputPath, outputPath, countLimit);
+//! } else if (inputPath.hasExtension(FileExtensions.CRAM_INDEX)) {
+//!     return new CRAIAnalyzer(inputPath, outputPath);
+//! } else if (inputPath.hasExtension(FileExtensions.BAI_INDEX)) {
+//!     return new BAIAnalyzer(inputPath, outputPath);
+//! } else {
+//!     throw new RuntimeException("Unsupported diagnostic file type: "
+//!         + inputPath.getRawInputString());
+//! }
 //! ```
 //!
-//! Nothing reads the file to decide, and the refusal quotes the RAW argument.
+//! (`HTSAnalyzerFactory.java:13-21`, the `throw` wrapped to fit.) Nothing reads the file to
+//! decide, and the refusal quotes the RAW argument.
 //!
 //! # An empty reference is printed with different spacing
 //!
@@ -26,10 +36,19 @@
 //! `n_bin` is the real bins plus one whenever the pseudo-bin is there, and the pseudo-bin is then
 //! printed after every real bin, out of numeric order, always claiming two chunks: the first pair
 //! is offsets, the second is the aligned and unaligned counts printed in the same hexadecimal.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<Analyzer, DiagnosticsError>` is "an analyzer, or the exception": `Err(..)` is the
+//!   throw. `?` after a call returns that call's `Err` from this function at once, which is Java's
+//!   exception propagating out of a single call site.
+//! - `.map_err(|error| ..)` rewrites the error on the way out and leaves a success alone; the
+//!   `|error| ..` is a closure, Java's lambda.
+//! - `&str` and `&[u8]` are borrowed, read-only views of a string and a `byte[]`.
 
 use htsjdk_bam::index::{read_bai, BaiParseError, BamIndex};
 
-/// Which analyzer the name selects.
+/// Which analyzer the name selects: `CRAMAnalyzer`, `CRAIAnalyzer` or `BAIAnalyzer`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Analyzer {
     Cram,
@@ -47,6 +66,7 @@ pub enum DiagnosticsError {
 }
 
 impl DiagnosticsError {
+    /// The class of the exception the reference throws for this refusal.
     pub fn java_class(&self) -> &'static str {
         match self {
             DiagnosticsError::Unsupported { .. } => "java.lang.RuntimeException",
@@ -54,6 +74,8 @@ impl DiagnosticsError {
         }
     }
 
+    /// The exception's message. The unsupported one is the factory's
+    /// `"Unsupported diagnostic file type: " + inputPath.getRawInputString()`.
     pub fn message(&self) -> String {
         match self {
             DiagnosticsError::Unsupported { raw } => {
@@ -65,6 +87,19 @@ impl DiagnosticsError {
 }
 
 /// `HTSAnalyzerFactory.getFileAnalyzer`, which reads the name and nothing else.
+///
+/// The reference's `hasExtension` (htsjdk `IOPath`) compares the URI's path after lowercasing
+/// both sides:
+///
+/// ```java
+/// return hierarchicalPath == null ? false
+///     : hierarchicalPath.toLowerCase().endsWith(extension.toLowerCase());
+/// ```
+///
+/// (wrapped to fit).
+///
+/// `ends_with` here is case-sensitive and sees the raw argument, so the two part on a name such as
+/// `x.BAI`.
 pub fn analyzer_for(raw: &str) -> Result<Analyzer, DiagnosticsError> {
     if raw.ends_with(".cram") {
         Ok(Analyzer::Cram)
@@ -80,6 +115,15 @@ pub fn analyzer_for(raw: &str) -> Result<Analyzer, DiagnosticsError> {
 }
 
 /// `BAIAnalyzer.doAnalysis`: the whole report of one `.bai`.
+///
+/// The reference hands the file to htsjdk and asks for text, the final `true`:
+///
+/// ```java
+/// BAMIndexer.createAndWriteIndex(inputPath.toPath().toFile(),
+///     new File(outputPath.getRawInputString()), true);
+/// ```
+///
+/// (wrapped to fit).
 pub fn bai_report(bai: &[u8]) -> Result<String, DiagnosticsError> {
     let index = read_bai(bai).map_err(|error| DiagnosticsError::Unreadable {
         detail: match error {
