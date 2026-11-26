@@ -34,7 +34,9 @@
 //! leaves it NaN for the caller to deal with.
 
 use crate::allele_likelihoods::log10_to_log;
-use crate::natural_log_utils::{log1mexp, normalize_from_log_to_linear_space, NonFiniteSum};
+use crate::natural_log_utils::{
+    log1mexp, normalize_from_log_to_linear_space_host_exp, NonFiniteSum,
+};
 #[cfg(test)]
 use crate::tsv_table::java_double_to_string;
 
@@ -120,7 +122,8 @@ pub fn posterior_probability_of_error(
         log_odds_of_real_versus_error + log_prior_of_real,
         log1mexp(log_prior_of_real),
     ];
-    let posterior = normalize_from_log_to_linear_space(&unweighted)?;
+    // The host `exp`, chosen by measurement: see docs/numeric-functions-a-ported-call-site-reaches.md.
+    let posterior = normalize_from_log_to_linear_space_host_exp(&unweighted)?;
     // The second entry: the error, not the truth.
     Ok(posterior[1])
 }

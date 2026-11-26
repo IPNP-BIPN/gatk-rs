@@ -182,7 +182,7 @@ fn decode(bytes: &[u8], path: &str) -> Result<String, Refusal> {
 }
 
 /// `File.lastModified()` in milliseconds, which the index header carries.
-fn modified_millis(path: &str) -> i64 {
+pub(crate) fn modified_millis(path: &str) -> i64 {
     std::fs::metadata(path)
         .and_then(|data| data.modified())
         .ok()
@@ -937,15 +937,27 @@ fn read_walker_startup_with(
     let reference = reference_dictionary(parser)?;
 
     // `initializeReads`: the file itself, which is a refusal only when it cannot be read at all.
-    let bytes = std::fs::read(path).ok();
-    // SAM text and CRAM are read as the BAM they transcode to; anything else goes on as before.
+    // Only the start of the stream decides a refusal, so only the start is kept: the file's own
+    // bytes, or for BGZF the inflated ones once the whole file is known to inflate.
+    let bytes = gatk_engine::reads::file_start(path);
+    // SAM text and CRAM are read as the BAM they transcode to, which needs the whole file; a BAM,
+    // a block-compressed or an empty file goes on as before without it.
     let transcoded = match &bytes {
-        Some(bytes) => transcode_reads(parser, path, bytes)?,
-        None => None,
+        Some(start)
+            if !start.is_empty()
+                && !start.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC)
+                && !gatk_tools::read_walker_refusal::is_block_compressed(start) =>
+        {
+            match std::fs::read(path) {
+                Ok(whole) => transcode_reads(parser, path, &whole)?,
+                Err(_) => None,
+            }
+        }
+        _ => None,
     };
-    let (bytes, transcoded) = match transcoded {
-        Some(mut transcoded) => (Some(std::mem::take(&mut transcoded.bam)), Some(transcoded)),
-        None => (bytes, None),
+    let bytes = match &transcoded {
+        Some(transcoded) => Some(transcoded.bam.clone()),
+        None => bytes,
     };
     let compressed = bytes
         .as_deref()
@@ -954,7 +966,12 @@ fn read_walker_startup_with(
     let decompressed = match (&bytes, compressed) {
         (None, _) => None,
         (Some(bytes), false) => Some(bytes.clone()),
-        (Some(bytes), true) => htsjdk_bgzf::read::decompress_all(bytes).ok(),
+        (Some(bytes), true) if transcoded.is_some() => {
+            htsjdk_bgzf::read::decompress_all(bytes).ok()
+        }
+        (Some(_), true) => ReadsDataSource::check(path)
+            .and_then(|()| gatk_engine::reads::inflated_start(path))
+            .ok(),
     };
     let reader_refusal = gatk_tools::read_walker_refusal::refusal(
         &input,
@@ -1004,11 +1021,18 @@ fn read_walker_startup_with(
     };
     let source = if deferred_parse_refusal.is_some() {
         None
-    } else if let (Some(bytes), true, Some(inflated)) = (bytes, compressed, decompressed) {
-        // The file read and inflated above, rather than once more each by `open` and by
+    } else if let (Some(transcoded), Some(_)) = (&transcoded, &decompressed) {
+        let mut source = ReadsDataSource::from_bam_bytes(path, &transcoded.bam)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        if let Some(index) = &index {
+            let _ = source.load_index(index);
+        }
+        Some(source)
+    } else if let (Some(_), true, Some(_)) = (bytes, compressed, decompressed) {
+        // The file checked above, rather than once more each by `open` and by
         // `open_unindexed`. The answer is `open`'s or its fallback's: a header that does not
         // parse is the fallback's refusal, and an index that does not parse is no index.
-        let mut source = ReadsDataSource::from_inflated(path, bytes, inflated)
+        let mut source = ReadsDataSource::open_checked(path)
             .map_err(|error| Thrown::user(format!("{error:?}")))?;
         if let Some(index) = &index {
             let _ = source.load_index(index);
@@ -1401,6 +1425,31 @@ fn variant_walker_validation(
 
     let master = master_dictionary(parser)?;
     let reference = reference_dictionary(parser)?;
+    // `initializeIntervals` runs before `validateSequenceDictionaries`, so a bad `-L` is refused
+    // ahead of any dictionary mismatch.
+    // The master dictionary is validated against the features, and then again as `best available`.
+    // What `-L` resolves against is NOT the master here: a variant walker prefers the DRIVING
+    // VARIANTS' dictionary unless that one was synthesized from an index, and a VCF carrying
+    // `##contig` lines gives a real one.
+    //
+    // A VCF with no `##contig` line has its dictionary SYNTHESIZED from its Tribble index: the
+    // index's contig names at an unknown length. That one is used only when no other source has a
+    // dictionary (`VariantWalkerBase.getBestAvailableSequenceDictionary`), and an unknown length
+    // is not checked against an interval's stop, so `-L` over such a VCF is accepted.
+    let best = if header.sequences.is_empty() {
+        match master.clone().or_else(|| reference.clone()).or_else(|| {
+            reads_dictionaries.first().map(|sequences| SamHeader {
+                sequences: sequences.clone(),
+                ..SamHeader::default()
+            })
+        }) {
+            Some(other) => other,
+            None => index_dictionary(&input).unwrap_or_else(|| header.clone()),
+        }
+    } else {
+        header.clone()
+    };
+    let intervals = interval_arguments(parser, &best)?.map(|parameters| parameters.intervals);
     // `validateSequenceDictionaries` is ONE method and the argument turns all of it off, the
     // master block included: a guard around part of it refuses command lines the reference runs.
     if !flag(parser, "disable-sequence-dictionary-validation") {
@@ -1469,30 +1518,6 @@ fn variant_walker_validation(
             })?;
         }
     }
-
-    // The master dictionary is validated against the features, and then again as `best available`.
-    // What `-L` resolves against is NOT the master here: a variant walker prefers the DRIVING
-    // VARIANTS' dictionary unless that one was synthesized from an index, and a VCF carrying
-    // `##contig` lines gives a real one.
-    //
-    // A VCF with no `##contig` line has its dictionary SYNTHESIZED from its Tribble index: the
-    // index's contig names at an unknown length. That one is used only when no other source has a
-    // dictionary (`VariantWalkerBase.getBestAvailableSequenceDictionary`), and an unknown length
-    // is not checked against an interval's stop, so `-L` over such a VCF is accepted.
-    let best = if header.sequences.is_empty() {
-        match master.clone().or_else(|| reference.clone()).or_else(|| {
-            reads_dictionaries.first().map(|sequences| SamHeader {
-                sequences: sequences.clone(),
-                ..SamHeader::default()
-            })
-        }) {
-            Some(other) => other,
-            None => index_dictionary(&input).unwrap_or_else(|| header.clone()),
-        }
-    } else {
-        header.clone()
-    };
-    let intervals = interval_arguments(parser, &best)?.map(|parameters| parameters.intervals);
 
     Ok(VariantWalkerStart {
         input,
@@ -1803,14 +1828,24 @@ pub fn print_reads(parser: &Parser) -> Outcome {
     })?;
     let path = std::path::Path::new(&input);
 
-    let bytes = std::fs::read(path)
-        .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&input, false)))?;
+    // The start of the file decides what it is; for BGZF, once the whole file is known to inflate.
+    let bytes = gatk_engine::reads::file_start(path)
+        .ok_or_else(|| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&input, false)))?;
     let is_binary = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
-        htsjdk_bgzf::read::decompress_all(&bytes)
+        ReadsDataSource::check(path)
+            .and_then(|()| gatk_engine::reads::inflated_start(path))
             .map(|inflated| inflated.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC))
             .unwrap_or(false)
     } else {
         bytes.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC)
+    };
+    // A binary input passed the check above, so opening it does not inflate it again.
+    let open_unindexed = |path: &std::path::Path| {
+        if is_binary {
+            ReadsDataSource::open_checked(path)
+        } else {
+            ReadsDataSource::open_unindexed(path)
+        }
     };
     let named_index = read_index(
         parser,
@@ -1827,22 +1862,21 @@ pub fn print_reads(parser: &Parser) -> Outcome {
     // opens the file, `initializeIntervals` runs next, and a query that does not resolve is
     // refused before anything asks the index what it is.
     let (source, bad_index) = match &index {
-        Some(index) => match ReadsDataSource::open(path, index) {
-            Ok(source) => (source, None),
-            Err(_) => (
-                ReadsDataSource::open_unindexed(path)
-                    .map_err(|error| Thrown::user(format!("{error:?}")))?,
-                Some(
-                    index
-                        .file_name()
-                        .map(|name| name.to_string_lossy().into_owned())
-                        .unwrap_or_default(),
-                ),
-            ),
-        },
+        // `open` is the unindexed open then the index: a refusal of either leaves the source
+        // unindexed, and the index's is the one that waits.
+        Some(index) => {
+            let mut source =
+                open_unindexed(path).map_err(|error| Thrown::user(format!("{error:?}")))?;
+            let bad_index = source.load_index(index).err().map(|_| {
+                index
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            });
+            (source, bad_index)
+        }
         None => (
-            ReadsDataSource::open_unindexed(path)
-                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+            open_unindexed(path).map_err(|error| Thrown::user(format!("{error:?}")))?,
             None,
         ),
     };
@@ -1850,6 +1884,15 @@ pub fn print_reads(parser: &Parser) -> Outcome {
     let header = source.header().clone();
     let master = master_dictionary(parser)?;
     let reference = reference_dictionary(parser)?;
+    // `initializeIntervals` runs before `validateSequenceDictionaries`, against the best
+    // available dictionary, so an interval the master does not hold is refused first.
+    let best = master
+        .clone()
+        .or_else(|| reference.clone())
+        .unwrap_or_else(|| header.clone());
+    let intervals = interval_arguments(parser, &best)?
+        .map(|parameters| parameters.intervals)
+        .unwrap_or_default();
     if !flag(parser, "disable-sequence-dictionary-validation") {
         if let Some(master) = &master {
             validate_against_master(master, "reads", &header.sequences)?;
@@ -1858,13 +1901,6 @@ pub fn print_reads(parser: &Parser) -> Outcome {
             }
         }
     }
-    let best = master
-        .clone()
-        .or_else(|| reference.clone())
-        .unwrap_or_else(|| header.clone());
-    let intervals = interval_arguments(parser, &best)?
-        .map(|parameters| parameters.intervals)
-        .unwrap_or_default();
     if !intervals.is_empty() && index.is_none() {
         return Err(Thrown::user(
             "Traversal by intervals was requested but some input files are not indexed.",
@@ -1932,12 +1968,50 @@ fn on_the_fly_index(
     size: i64,
     timestamp: i64,
 ) -> Vec<u8> {
-    use htsjdk_tribble::index::{TribbleIndex, INTERVAL_TREE, LINEAR, VERSION};
-    use htsjdk_tribble::index_write::{BalanceApproach, BuiltIndex, DynamicIndexCreator, Feature};
-
-    let mut creator = DynamicIndexCreator::new(BalanceApproach::ForSeekTime);
-    let mut at: i64 = 0;
+    let mut index = OnTheFlyIndex::new();
     for line in text.split_inclusive('\n') {
+        index.add_line(line);
+    }
+    index.finish(dictionary, path, size, timestamp)
+}
+
+/// The dictionary an on-the-fly index takes from a VCF's own `##contig` lines.
+pub(crate) fn header_dictionary(text: &str) -> Vec<(String, i32)> {
+    text.lines()
+        .take_while(|line| line.starts_with('#'))
+        .filter_map(|line| {
+            let body = line.strip_prefix("##contig=<")?.trim_end_matches('>');
+            let name = body.split(',').find_map(|f| f.strip_prefix("ID="))?;
+            let length = body
+                .split(',')
+                .find_map(|f| f.strip_prefix("length="))
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(0);
+            Some((name.to_string(), length))
+        })
+        .collect()
+}
+
+/// [`on_the_fly_index`] fed one line at a time, as the writer feeds it, for a file that is never
+/// held whole.
+pub(crate) struct OnTheFlyIndex {
+    creator: htsjdk_tribble::index_write::DynamicIndexCreator,
+    /// The position before the next line: every byte written so far, the header's included.
+    at: i64,
+}
+
+impl OnTheFlyIndex {
+    pub(crate) fn new() -> Self {
+        use htsjdk_tribble::index_write::{BalanceApproach, DynamicIndexCreator};
+        OnTheFlyIndex {
+            creator: DynamicIndexCreator::new(BalanceApproach::ForSeekTime),
+            at: 0,
+        }
+    }
+
+    /// One line of the file, its newline included.
+    pub(crate) fn add_line(&mut self, line: &str) {
+        use htsjdk_tribble::index_write::Feature;
         let body = line.trim_end_matches('\n');
         if !body.starts_with('#') {
             let columns: Vec<&str> = body.split('\t').collect();
@@ -1949,50 +2023,62 @@ fn on_the_fly_index(
                         .find(|(key, _)| *key == "END")
                         .and_then(|(_, value)| value.parse::<i32>().ok())
                         .unwrap_or(start + columns[3].len() as i32 - 1);
-                    creator.add_feature(
+                    self.creator.add_feature(
                         &Feature {
                             contig: columns[0].to_string(),
                             start,
                             end,
                         },
-                        at,
+                        self.at,
                     );
                 }
             }
         }
-        at += line.len() as i64;
+        self.at += line.len() as i64;
     }
 
-    let mut properties: Vec<(String, String)> = dictionary
-        .iter()
-        .map(|(name, length)| (format!("DICT:{name}"), length.to_string()))
-        .collect();
-    properties.extend(creator.properties());
+    /// `close()`: the index of every line added, closed at the end of the last one.
+    pub(crate) fn finish(
+        self,
+        dictionary: &[(String, i32)],
+        path: &str,
+        size: i64,
+        timestamp: i64,
+    ) -> Vec<u8> {
+        use htsjdk_tribble::index::{TribbleIndex, INTERVAL_TREE, LINEAR, VERSION};
+        use htsjdk_tribble::index_write::BuiltIndex;
 
-    let (index_type, contigs, interval_contigs) = match creator.finalize(text.len() as i64) {
-        Ok(BuiltIndex::Linear(contigs)) => (LINEAR, contigs, Vec::new()),
-        Ok(BuiltIndex::IntervalTree(intervals)) => (INTERVAL_TREE, Vec::new(), intervals),
-        Err(_) => (LINEAR, Vec::new(), Vec::new()),
-    };
+        let mut properties: Vec<(String, String)> = dictionary
+            .iter()
+            .map(|(name, length)| (format!("DICT:{name}"), length.to_string()))
+            .collect();
+        properties.extend(self.creator.properties());
 
-    TribbleIndex {
-        index_type,
-        version: VERSION,
-        indexed_path: format!("file://{path}"),
-        // `close()` writes the index with `writeBasedOnFeaturePath`, which STATS the file it has
-        // just finished: the size and the timestamp are the written file's. The md5 is not
-        // computed and stays empty.
-        indexed_file_size: size,
-        indexed_file_timestamp: timestamp,
-        indexed_file_md5: String::new(),
-        // Zero, not the dictionary flag: from version 3 the dictionary is properties.
-        flags: 0,
-        properties,
-        contigs,
-        interval_contigs,
+        let (index_type, contigs, interval_contigs) = match self.creator.finalize(self.at) {
+            Ok(BuiltIndex::Linear(contigs)) => (LINEAR, contigs, Vec::new()),
+            Ok(BuiltIndex::IntervalTree(intervals)) => (INTERVAL_TREE, Vec::new(), intervals),
+            Err(_) => (LINEAR, Vec::new(), Vec::new()),
+        };
+
+        TribbleIndex {
+            index_type,
+            version: VERSION,
+            indexed_path: format!("file://{path}"),
+            // `close()` writes the index with `writeBasedOnFeaturePath`, which STATS the file it has
+            // just finished: the size and the timestamp are the written file's. The md5 is not
+            // computed and stays empty.
+            indexed_file_size: size,
+            indexed_file_timestamp: timestamp,
+            indexed_file_md5: String::new(),
+            // Zero, not the dictionary flag: from version 3 the dictionary is properties.
+            flags: 0,
+            properties,
+            contigs,
+            interval_contigs,
+        }
+        .write()
+        .unwrap_or_default()
     }
-    .write()
-    .unwrap_or_default()
 }
 
 /// One input VCF, read as far as the gather looks at it.
@@ -2302,6 +2388,15 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
     let header = source.header().clone();
     let master = master_dictionary(parser)?;
     let reference = reference_dictionary(parser)?;
+    // `initializeIntervals` runs before `validateSequenceDictionaries`, against the best
+    // available dictionary, so an interval the master does not hold is refused first.
+    let best = master
+        .clone()
+        .or_else(|| reference.clone())
+        .unwrap_or_else(|| header.clone());
+    let intervals = interval_arguments(parser, &best)?
+        .map(|parameters| parameters.intervals)
+        .unwrap_or_default();
     if !flag(parser, "disable-sequence-dictionary-validation") {
         if let Some(master) = &master {
             validate_against_master(master, "reads", &header.sequences)?;
@@ -2310,13 +2405,6 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
             }
         }
     }
-    let best = master
-        .clone()
-        .or_else(|| reference.clone())
-        .unwrap_or_else(|| header.clone());
-    let intervals = interval_arguments(parser, &best)?
-        .map(|parameters| parameters.intervals)
-        .unwrap_or_default();
     if !intervals.is_empty() && index.is_none() {
         return Err(Thrown::user(
             "Traversal by intervals was requested but some input files are not indexed.",
@@ -2353,14 +2441,18 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
     // The failure follows the CLASS rather than being assumed: the transformer throws a
     // `GATKException`, which leaves exit 3 and is printed as a stack trace rather than as
     // `A USER ERROR has occurred`.
-    .map_err(|error| Thrown {
-        failure: if error.is_user() {
-            Failure::User
-        } else {
-            Failure::Other
+    .map_err(|error| match error {
+        // A record that does not decode is htsjdk's, not a user error: the shared mapping.
+        gatk_tools::apply_bqsr::ApplyBqsrError::Reads(reads) => reads_traversal_error(reads),
+        error => Thrown {
+            failure: if error.is_user() {
+                Failure::User
+            } else {
+                Failure::Other
+            },
+            exception: error.java_class(),
+            message: Some(error.message()),
         },
-        exception: error.java_class(),
-        message: Some(error.message()),
     })?;
 
     std::fs::write(&output, &bam).map_err(|error| {
@@ -17296,8 +17388,34 @@ fn update_header_contig_lines(
     parser: &Parser,
     header: htsjdk_vcf::header::VcfHeader,
 ) -> Result<htsjdk_vcf::header::VcfHeader, Thrown> {
+    let name_only = flag(parser, "suppress-reference-path");
+    rebuild_contig_lines(parser, header, false, name_only)
+}
+
+/// The same rebuild over `getBestAvailableSequenceDictionary`, as `VariantRecalibrator` and the
+/// `LabeledVariantAnnotationsWalker`s call it, with `referenceNameOnly` true.
+///
+/// A variant walker's best dictionary is the DRIVING variants' own, and the reference's only where
+/// theirs is missing or was synthesized from an index (`IndexUtils.isSequenceDictionaryFromIndex`:
+/// every length unknown). The reference then only names the `assembly=`. Measured on chr20 30x,
+/// where a call set over the whole genome scored against `chr20.fasta` kept every contig.
+pub(crate) fn update_header_contig_lines_best_available(
+    parser: &Parser,
+    header: htsjdk_vcf::header::VcfHeader,
+) -> Result<htsjdk_vcf::header::VcfHeader, Thrown> {
+    rebuild_contig_lines(parser, header, true, true)
+}
+
+fn rebuild_contig_lines(
+    parser: &Parser,
+    header: htsjdk_vcf::header::VcfHeader,
+    prefer_own: bool,
+    name_only: bool,
+) -> Result<htsjdk_vcf::header::VcfHeader, Thrown> {
     let reference = argument(parser, "reference");
+    let own = sequence_dictionary_of(&header);
     let dictionary: Vec<(String, i32)> = match &reference {
+        _ if prefer_own && own.iter().any(|(_, length)| *length != 0) => own,
         Some(path) => {
             let source =
                 gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(path))
@@ -17308,7 +17426,7 @@ fn update_header_contig_lines(
                 .map(|sequence| (sequence.name.clone(), sequence.length))
                 .collect()
         }
-        None => sequence_dictionary_of(&header),
+        None => own,
     };
     if dictionary.is_empty() {
         return Ok(header);
@@ -17340,7 +17458,7 @@ fn update_header_contig_lines(
     if let Some(path) = &reference {
         // `referencePath.toUri()`, which is an ABSOLUTE URI: the runner is handed whatever the
         // command line wrote, so the path is resolved before it is rendered.
-        let value = if flag(parser, "suppress-reference-path") {
+        let value = if name_only {
             let name = std::path::Path::new(path)
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())
@@ -17796,21 +17914,7 @@ fn write_variant_companions(
     if !create_index {
         return Ok(());
     }
-    let dictionary: Vec<(String, i32)> = index_dictionary.unwrap_or_else(|| {
-        text.lines()
-            .take_while(|line| line.starts_with('#'))
-            .filter_map(|line| {
-                let body = line.strip_prefix("##contig=<")?.trim_end_matches('>');
-                let name = body.split(',').find_map(|f| f.strip_prefix("ID="))?;
-                let length = body
-                    .split(',')
-                    .find_map(|f| f.strip_prefix("length="))
-                    .and_then(|value| value.parse().ok())
-                    .unwrap_or(0);
-                Some((name.to_string(), length))
-            })
-            .collect()
-    });
+    let dictionary = index_dictionary.unwrap_or_else(|| header_dictionary(text));
     // The index records the output as `Path.toUri` prints it, which is always absolute.
     let mut source = index_feature_file::Source::new(&java_absolute_path(output));
     source.timestamp = modified_millis(output);

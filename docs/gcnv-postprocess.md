@@ -12,11 +12,12 @@ bytes depend on the CPU, so there is nothing CPU-independent to be identical to.
 | --- | --- | --- |
 | Intervals VCF | `GermlineCNVIntervalVariantComposer`, Java | `runners_postprocess_gcnv.rs` |
 | Denoised copy ratios | `concatenateDenoisedCopyRatioFiles`, Java | `runners_postprocess_gcnv.rs` |
-| Segments VCF | `segment_gcnv_calls.py` (gcnvkernel's Viterbi segmentation), then `GermlineCNVSegmentVariantComposer` | `gatk_tools::gcnv_segments`, then `runners_postprocess_gcnv.rs` |
+| Segments VCF | `segment_gcnv_calls.py` (gcnvkernel's Viterbi segmentation), then `GermlineCNVSegmentVariantComposer` | the same script, run by `python`, then `runners_postprocess_gcnv.rs` |
 
 `python` must be on the path and `gcnvkernel` must import, as for the reference; without them the port
-gives the reference's refusal, which the `interpreter-tools` golden holds. No Python runs beyond that
-check.
+gives the reference's refusal, which the `interpreter-tools` golden holds. The CLI runs GATK's own
+`segment_gcnv_calls.py` as GATK does. `gatk_tools::gcnv_segments`, the segmenter reproduced natively,
+is a library the CLI does not call, kept and checked against the frozen golden.
 
 ## What the segmenter's numbers are
 
@@ -54,8 +55,8 @@ AVX2-only run of [gcnv-reproducible-oracle.md](gcnv-reproducible-oracle.md), and
 Postprocess files byte for byte. All three CPUs are x86-64 with or without AVX-512; an AMD runner has
 not been seen yet.
 
-Not ported: `--input-intervals-vcf` and `--clustered-breakpoints` (the joint-calling path) and
-`--reference`, which the port refuses in its own words.
+Not ported: `--clustered-breakpoints` (the joint-calling path) and `--reference`, which the port
+refuses in its own words after the segmentation, where GATK would use them.
 
 ## Reproducing
 
@@ -78,3 +79,6 @@ GCNV_LIBM_VECTORS=<dir> cargo test --release -p gatk-tools --lib glibc_libm
 GATK_RS_GCNV_DUMP=<gcnv_dump.sh output> \
   cargo test --release -p gatk-cli --test gcnv_postprocess_end_to_end
 ```
+
+The last one segments with `gatk_tools::gcnv_segments` and hands the result to the CLI through a
+stand-in `python`, so it checks the library and the CLI's Java together.
