@@ -2515,7 +2515,7 @@ public class MakeFixtures {
      *  - short: a proper pair whose TLEN is shorter than the reads; unm, dup, qc: reads rejected as
      *    unmapped; half: a pair whose second read is unmapped; orph: a paired read with no mate;
      *    sec: a secondary alignment, which the tool's stream drops.
-     * `asm_coord.bam` holds the same records coordinate-sorted, which paired mode refuses.
+     * `asm_coord.bam` holds the same records coordinate-sorted and indexed, which paired mode refuses.
      */
     static final String AMPLICON =
             "GCTAGCCGACTTATGGCTAAAGACCTGGTTCGCAAGTTCGAAACCCAGGGTATCTACCCAGAGCACTGGATGAACCGTGCAGTCC"
@@ -2652,7 +2652,7 @@ public class MakeFixtures {
         }
         final SAMFileHeader coordinate = header.clone();
         coordinate.setSortOrder(SAMFileHeader.SortOrder.coordinate);
-        try (final SAMFileWriter writer = new SAMFileWriterFactory()
+        try (final SAMFileWriter writer = new SAMFileWriterFactory().setCreateIndex(true)
                 .makeBAMWriter(coordinate, false, dir.resolve("asm_coord.bam").toFile())) {
             records.forEach(writer::addAlignment);
         }
@@ -3287,6 +3287,7 @@ public class MakeFixtures {
         aseBam(dir.resolve("ase.bam"));
         moleculeGroups(dir.resolve("molecules.bam"), false);
         moleculeGroups(dir.resolve("molecules_backwards.bam"), true);
+        coordinateCopy(dir.resolve("molecules.bam"), dir.resolve("molecules_coord.bam"));
         requalified(dir.resolve("requal.bam"));
         // The indel VCF, INDEXED: a variant walker refuses `-L` over an input with no random
         // access, so an unindexed one would answer a refusal on every interval row.
@@ -6449,6 +6450,7 @@ public class MakeFixtures {
         }
         bwaReadBam(dir.resolve("bwa_reads.bam"), pairs, SAMFileHeader.SortOrder.queryname, true, null);
         bwaReadBam(dir.resolve("bwa_reads_unsorted.bam"), pairs, SAMFileHeader.SortOrder.unsorted, true, null);
+        coordinateCopy(dir.resolve("bwa_reads.bam"), dir.resolve("bwa_reads_coord.bam"));
         bwaReadBam(dir.resolve("bwa_reads_no_group.bam"), pairs, SAMFileHeader.SortOrder.queryname, false, null);
         bwaReadBam(dir.resolve("bwa_reads_dictionary.bam"), pairs, SAMFileHeader.SortOrder.queryname, true,
                 new String[] {"bwa1", String.valueOf(first.length()), "bwa2", String.valueOf(second.length())});
@@ -6560,6 +6562,21 @@ public class MakeFixtures {
                 "-R", microbes.toString(), "--tax-dump", dir.resolve("ps_taxa.tar.gz").toString(),
                 "-O", dir.resolve("ps_taxa.db").toString(), "--genbank-catalog", dir.resolve("ps_taxa.catalog").toString(),
                 "--min-non-virus-contig-length", "0"});
+    }
+
+    /**
+     * `out` holds `in`'s records coordinate-sorted, with the `.bai` beside it: the indexed copy a
+     * `--read-index` row needs where the tool's own input is unsorted or queryname-sorted.
+     */
+    static void coordinateCopy(final Path in, final Path out) throws Exception {
+        try (final htsjdk.samtools.SamReader reader = htsjdk.samtools.SamReaderFactory.makeDefault().open(in)) {
+            final SAMFileHeader header = reader.getFileHeader().clone();
+            header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+            try (final SAMFileWriter writer = new SAMFileWriterFactory().setCreateIndex(true)
+                    .makeBAMWriter(header, false, out.toFile())) {
+                reader.forEach(writer::addAlignment);
+            }
+        }
     }
 
     static void bwaReadBam(final Path bam, final List<String[]> pairs, final SAMFileHeader.SortOrder order,

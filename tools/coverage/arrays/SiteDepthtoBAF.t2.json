@@ -4,8 +4,8 @@
   "t": 2,
   "numeric_policy": "strict",
   "arguments_total": 50,
-  "arguments_in_array": 35,
-  "arguments_excluded": 15,
+  "arguments_in_array": 36,
+  "arguments_excluded": 14,
   "excluded": [
     {
       "argument": "--arguments_file",
@@ -64,13 +64,6 @@
       "source": "none"
     },
     {
-      "argument": "--reference",
-      "type": "GATKPath",
-      "reason": "excluded by the repository: no value is declared for this tool",
-      "held_at": null,
-      "source": "none"
-    },
-    {
       "argument": "--sample-names",
       "type": "List[String]",
       "reason": "excluded by the repository: no value is declared for this tool",
@@ -114,8 +107,8 @@
     }
   ],
   "rows": 18,
-  "tuples_total": 2447,
-  "tuples_covered": 2447,
+  "tuples_total": 2589,
+  "tuples_covered": 2589,
   "tuples_forbidden": 1,
   "constraint_notes": [],
   "coverage": 1.0,
@@ -153,6 +146,7 @@
         "--read-filter": "fixture[0]",
         "--read-index": "fixture[0]",
         "--read-validation-stringency": "STRICT",
+        "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
         "--site-depth": "fixture[0]",
         "--sites-only-vcf-output": "true",
@@ -190,6 +184,7 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-index=<unset>",
         "--read-validation-stringency=STRICT",
+        "--reference=<unset>",
         "--seconds-between-progress-updates=10.0",
         "--site-depth=/work/fixtures/depth.sd.txt",
         "--sites-only-vcf-output=true",
@@ -230,6 +225,7 @@
         "--read-filter": "fixture[1]",
         "--read-index": "fixture[1]",
         "--read-validation-stringency": "LENIENT",
+        "--reference": "fixture[1]",
         "--seconds-between-progress-updates": "fixture[1]",
         "--site-depth": "fixture[1]",
         "--sites-only-vcf-output": "false",
@@ -267,6 +263,7 @@
         "--read-filter=MappedReadFilter",
         "--read-index=/work/fixtures/reads.bai",
         "--read-validation-stringency=LENIENT",
+        "--reference=/work/fixtures/sv_reference.fasta",
         "--seconds-between-progress-updates=60.0",
         "--site-depth=/work/fixtures/sd.list",
         "--sites-only-vcf-output=false",
@@ -307,11 +304,12 @@
         "--read-filter": "fixture[0]",
         "--read-index": "fixture[1]",
         "--read-validation-stringency": "SILENT",
-        "--seconds-between-progress-updates": "fixture[0]",
-        "--site-depth": "fixture[1]",
-        "--sites-only-vcf-output": "true",
-        "--tmp-dir": "fixture[1]",
-        "--use-jdk-deflater": "true"
+        "--reference": "fixture[0]",
+        "--seconds-between-progress-updates": "fixture[1]",
+        "--site-depth": "fixture[0]",
+        "--sites-only-vcf-output": "false",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "false"
       },
       "arguments": [
         "--add-output-sam-program-record=false",
@@ -344,11 +342,12 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-index=/work/fixtures/reads.bai",
         "--read-validation-stringency=SILENT",
-        "--seconds-between-progress-updates=10.0",
-        "--site-depth=/work/fixtures/sd.list",
-        "--sites-only-vcf-output=true",
-        "--tmp-dir=/work/tmp2",
-        "--use-jdk-deflater=true"
+        "--reference=<unset>",
+        "--seconds-between-progress-updates=60.0",
+        "--site-depth=/work/fixtures/depth.sd.txt",
+        "--sites-only-vcf-output=false",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=false"
       ]
     },
     {
@@ -384,11 +383,12 @@
         "--read-filter": "fixture[1]",
         "--read-index": "fixture[0]",
         "--read-validation-stringency": "SILENT",
-        "--seconds-between-progress-updates": "fixture[1]",
-        "--site-depth": "fixture[0]",
-        "--sites-only-vcf-output": "false",
-        "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "false"
+        "--reference": "fixture[1]",
+        "--seconds-between-progress-updates": "fixture[0]",
+        "--site-depth": "fixture[1]",
+        "--sites-only-vcf-output": "true",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--add-output-sam-program-record=false",
@@ -421,11 +421,12 @@
         "--read-filter=MappedReadFilter",
         "--read-index=<unset>",
         "--read-validation-stringency=SILENT",
-        "--seconds-between-progress-updates=60.0",
-        "--site-depth=/work/fixtures/depth.sd.txt",
-        "--sites-only-vcf-output=false",
-        "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=false"
+        "--reference=/work/fixtures/sv_reference.fasta",
+        "--seconds-between-progress-updates=10.0",
+        "--site-depth=/work/fixtures/sd.list",
+        "--sites-only-vcf-output=true",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=true"
       ]
     },
     {
@@ -461,10 +462,11 @@
         "--read-filter": "fixture[1]",
         "--read-index": "fixture[1]",
         "--read-validation-stringency": "STRICT",
+        "--reference": "fixture[1]",
         "--seconds-between-progress-updates": "fixture[1]",
-        "--site-depth": "fixture[1]",
+        "--site-depth": "fixture[0]",
         "--sites-only-vcf-output": "true",
-        "--tmp-dir": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
         "--use-jdk-deflater": "false"
       },
       "arguments": [
@@ -498,10 +500,11 @@
         "--read-filter=MappedReadFilter",
         "--read-index=/work/fixtures/reads.bai",
         "--read-validation-stringency=STRICT",
+        "--reference=/work/fixtures/sv_reference.fasta",
         "--seconds-between-progress-updates=60.0",
-        "--site-depth=/work/fixtures/sd.list",
+        "--site-depth=/work/fixtures/depth.sd.txt",
         "--sites-only-vcf-output=true",
-        "--tmp-dir=/work/tmp",
+        "--tmp-dir=/work/tmp2",
         "--use-jdk-deflater=false"
       ]
     },
@@ -538,10 +541,11 @@
         "--read-filter": "fixture[0]",
         "--read-index": "fixture[0]",
         "--read-validation-stringency": "LENIENT",
+        "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
-        "--site-depth": "fixture[0]",
+        "--site-depth": "fixture[1]",
         "--sites-only-vcf-output": "false",
-        "--tmp-dir": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
       },
       "arguments": [
@@ -575,10 +579,11 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-index=<unset>",
         "--read-validation-stringency=LENIENT",
+        "--reference=<unset>",
         "--seconds-between-progress-updates=10.0",
-        "--site-depth=/work/fixtures/depth.sd.txt",
+        "--site-depth=/work/fixtures/sd.list",
         "--sites-only-vcf-output=false",
-        "--tmp-dir=/work/tmp2",
+        "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true"
       ]
     },
@@ -615,11 +620,12 @@
         "--read-filter": "fixture[0]",
         "--read-index": "fixture[0]",
         "--read-validation-stringency": "LENIENT",
+        "--reference": "fixture[1]",
         "--seconds-between-progress-updates": "fixture[1]",
-        "--site-depth": "fixture[1]",
+        "--site-depth": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "false"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -652,11 +658,12 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-index=<unset>",
         "--read-validation-stringency=LENIENT",
+        "--reference=/work/fixtures/sv_reference.fasta",
         "--seconds-between-progress-updates=60.0",
-        "--site-depth=/work/fixtures/sd.list",
+        "--site-depth=/work/fixtures/depth.sd.txt",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=false"
       ]
     },
     {
@@ -692,11 +699,12 @@
         "--read-filter": "fixture[1]",
         "--read-index": "fixture[0]",
         "--read-validation-stringency": "STRICT",
+        "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
-        "--site-depth": "fixture[0]",
+        "--site-depth": "fixture[1]",
         "--sites-only-vcf-output": "false",
         "--tmp-dir": "fixture[1]",
-        "--use-jdk-deflater": "false"
+        "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -729,11 +737,12 @@
         "--read-filter=MappedReadFilter",
         "--read-index=<unset>",
         "--read-validation-stringency=STRICT",
+        "--reference=<unset>",
         "--seconds-between-progress-updates=10.0",
-        "--site-depth=/work/fixtures/depth.sd.txt",
+        "--site-depth=/work/fixtures/sd.list",
         "--sites-only-vcf-output=false",
         "--tmp-dir=/work/tmp2",
-        "--use-jdk-deflater=false"
+        "--use-jdk-deflater=true"
       ]
     },
     {
@@ -769,10 +778,11 @@
         "--read-filter": "fixture[0]",
         "--read-index": "fixture[0]",
         "--read-validation-stringency": "LENIENT",
+        "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
-        "--site-depth": "fixture[0]",
-        "--sites-only-vcf-output": "false",
-        "--tmp-dir": "fixture[0]",
+        "--site-depth": "fixture[1]",
+        "--sites-only-vcf-output": "true",
+        "--tmp-dir": "fixture[1]",
         "--use-jdk-deflater": "false"
       },
       "arguments": [
@@ -806,10 +816,11 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-index=<unset>",
         "--read-validation-stringency=LENIENT",
+        "--reference=<unset>",
         "--seconds-between-progress-updates=10.0",
-        "--site-depth=/work/fixtures/depth.sd.txt",
-        "--sites-only-vcf-output=false",
-        "--tmp-dir=/work/tmp",
+        "--site-depth=/work/fixtures/sd.list",
+        "--sites-only-vcf-output=true",
+        "--tmp-dir=/work/tmp2",
         "--use-jdk-deflater=false"
       ]
     },
@@ -846,10 +857,11 @@
         "--read-filter": "fixture[0]",
         "--read-index": "fixture[0]",
         "--read-validation-stringency": "STRICT",
+        "--reference": "fixture[1]",
         "--seconds-between-progress-updates": "fixture[1]",
-        "--site-depth": "fixture[1]",
-        "--sites-only-vcf-output": "true",
-        "--tmp-dir": "fixture[1]",
+        "--site-depth": "fixture[0]",
+        "--sites-only-vcf-output": "false",
+        "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
       },
       "arguments": [
@@ -883,10 +895,11 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-index=<unset>",
         "--read-validation-stringency=STRICT",
+        "--reference=/work/fixtures/sv_reference.fasta",
         "--seconds-between-progress-updates=60.0",
-        "--site-depth=/work/fixtures/sd.list",
-        "--sites-only-vcf-output=true",
-        "--tmp-dir=/work/tmp2",
+        "--site-depth=/work/fixtures/depth.sd.txt",
+        "--sites-only-vcf-output=false",
+        "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true"
       ]
     },
@@ -923,11 +936,12 @@
         "--read-filter": "fixture[1]",
         "--read-index": "fixture[0]",
         "--read-validation-stringency": "STRICT",
+        "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
         "--site-depth": "fixture[0]",
-        "--sites-only-vcf-output": "true",
-        "--tmp-dir": "fixture[1]",
-        "--use-jdk-deflater": "true"
+        "--sites-only-vcf-output": "false",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "false"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -960,11 +974,12 @@
         "--read-filter=MappedReadFilter",
         "--read-index=<unset>",
         "--read-validation-stringency=STRICT",
+        "--reference=<unset>",
         "--seconds-between-progress-updates=10.0",
         "--site-depth=/work/fixtures/depth.sd.txt",
-        "--sites-only-vcf-output=true",
-        "--tmp-dir=/work/tmp2",
-        "--use-jdk-deflater=true"
+        "--sites-only-vcf-output=false",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=false"
       ]
     },
     {
@@ -1000,6 +1015,7 @@
         "--read-filter": "fixture[0]",
         "--read-index": "fixture[0]",
         "--read-validation-stringency": "STRICT",
+        "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
         "--site-depth": "fixture[0]",
         "--sites-only-vcf-output": "true",
@@ -1037,6 +1053,7 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-index=<unset>",
         "--read-validation-stringency=STRICT",
+        "--reference=<unset>",
         "--seconds-between-progress-updates=10.0",
         "--site-depth=/work/fixtures/depth.sd.txt",
         "--sites-only-vcf-output=true",
@@ -1077,6 +1094,7 @@
         "--read-filter": "fixture[0]",
         "--read-index": "fixture[1]",
         "--read-validation-stringency": "STRICT",
+        "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
         "--site-depth": "fixture[0]",
         "--sites-only-vcf-output": "true",
@@ -1114,6 +1132,7 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-index=/work/fixtures/reads.bai",
         "--read-validation-stringency=STRICT",
+        "--reference=<unset>",
         "--seconds-between-progress-updates=10.0",
         "--site-depth=/work/fixtures/depth.sd.txt",
         "--sites-only-vcf-output=true",
@@ -1154,6 +1173,7 @@
         "--read-filter": "fixture[0]",
         "--read-index": "fixture[0]",
         "--read-validation-stringency": "STRICT",
+        "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
         "--site-depth": "fixture[0]",
         "--sites-only-vcf-output": "true",
@@ -1191,6 +1211,7 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-index=<unset>",
         "--read-validation-stringency=STRICT",
+        "--reference=<unset>",
         "--seconds-between-progress-updates=10.0",
         "--site-depth=/work/fixtures/depth.sd.txt",
         "--sites-only-vcf-output=true",
@@ -1221,7 +1242,7 @@
         "--interval-exclusion-padding": "fixture[0]",
         "--interval-merging-rule": "OVERLAPPING_ONLY",
         "--interval-padding": "fixture[0]",
-        "--interval-set-rule": "UNION",
+        "--interval-set-rule": "INTERSECTION",
         "--intervals": "fixture[0]",
         "--inverted-read-filter": "fixture[1]",
         "--lenient": "true",
@@ -1231,6 +1252,7 @@
         "--read-filter": "fixture[0]",
         "--read-index": "fixture[0]",
         "--read-validation-stringency": "STRICT",
+        "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
         "--site-depth": "fixture[0]",
         "--sites-only-vcf-output": "true",
@@ -1258,7 +1280,7 @@
         "--interval-exclusion-padding=0",
         "--interval-merging-rule=OVERLAPPING_ONLY",
         "--interval-padding=0",
-        "--interval-set-rule=UNION",
+        "--interval-set-rule=INTERSECTION",
         "--intervals=<unset>",
         "--inverted-read-filter=PrimaryLineReadFilter",
         "--lenient=true",
@@ -1268,6 +1290,7 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-index=<unset>",
         "--read-validation-stringency=STRICT",
+        "--reference=<unset>",
         "--seconds-between-progress-updates=10.0",
         "--site-depth=/work/fixtures/depth.sd.txt",
         "--sites-only-vcf-output=true",
@@ -1308,6 +1331,7 @@
         "--read-filter": "fixture[0]",
         "--read-index": "fixture[0]",
         "--read-validation-stringency": "SILENT",
+        "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
         "--site-depth": "fixture[0]",
         "--sites-only-vcf-output": "true",
@@ -1345,6 +1369,7 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-index=<unset>",
         "--read-validation-stringency=SILENT",
+        "--reference=<unset>",
         "--seconds-between-progress-updates=10.0",
         "--site-depth=/work/fixtures/depth.sd.txt",
         "--sites-only-vcf-output=true",
@@ -1385,6 +1410,7 @@
         "--read-filter": "fixture[0]",
         "--read-index": "fixture[0]",
         "--read-validation-stringency": "LENIENT",
+        "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
         "--site-depth": "fixture[0]",
         "--sites-only-vcf-output": "true",
@@ -1422,6 +1448,7 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-index=<unset>",
         "--read-validation-stringency=LENIENT",
+        "--reference=<unset>",
         "--seconds-between-progress-updates=10.0",
         "--site-depth=/work/fixtures/depth.sd.txt",
         "--sites-only-vcf-output=true",
@@ -1462,7 +1489,8 @@
         "--read-filter": "fixture[0]",
         "--read-index": "fixture[0]",
         "--read-validation-stringency": "STRICT",
-        "--seconds-between-progress-updates": "fixture[1]",
+        "--reference": "fixture[1]",
+        "--seconds-between-progress-updates": "fixture[0]",
         "--site-depth": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
@@ -1499,7 +1527,8 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-index=<unset>",
         "--read-validation-stringency=STRICT",
-        "--seconds-between-progress-updates=60.0",
+        "--reference=/work/fixtures/sv_reference.fasta",
+        "--seconds-between-progress-updates=10.0",
         "--site-depth=/work/fixtures/depth.sd.txt",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
