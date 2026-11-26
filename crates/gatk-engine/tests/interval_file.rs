@@ -264,3 +264,38 @@ fn every_argument_resolves_the_way_the_reference_resolves_it() {
     assert!(compared > 0, "the golden carries no case rows");
     println!("{compared} -L arguments resolved identically, none pending");
 }
+
+/// A bgzipped VCF (`-L sites.vcf.gz`) gives the intervals the same VCF gives uncompressed.
+#[test]
+fn a_bgzipped_vcf_resolves_as_the_plain_one() {
+    use std::io::Write;
+
+    let header = header();
+    let dir = std::env::temp_dir().join(format!("gatk-rs-intervalgz-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let plain = dir.join("h.vcf");
+    let gz = dir.join("h.vcf.gz");
+    std::fs::write(&plain, VCF_BODY).unwrap();
+    let mut writer = htsjdk_bgzf::BgzfWriter::new(std::fs::File::create(&gz).unwrap());
+    writer.write_all(VCF_BODY.as_bytes()).unwrap();
+    writer.finish().unwrap();
+
+    let resolve = |path: &std::path::Path| {
+        interval_args::parse_interval_arguments(
+            &path.display().to_string(),
+            &header,
+            &gatk_engine::feature_intervals::RegisteredCodecs,
+        )
+        .map(|intervals| {
+            intervals
+                .iter()
+                .map(genome_loc_to_string)
+                .collect::<Vec<_>>()
+        })
+        .map_err(|error| class_of(&error))
+    };
+    let (expected, ours) = (resolve(&plain), resolve(&gz));
+    std::fs::remove_dir_all(&dir).ok();
+    assert!(expected.is_ok(), "{expected:?}");
+    assert_eq!(ours, expected);
+}

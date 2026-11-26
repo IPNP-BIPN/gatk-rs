@@ -232,9 +232,17 @@ impl FeatureIntervals for RegisteredCodecs {
             }
             Claimed::Vcf
         };
-        let text = match std::fs::read_to_string(path) {
-            Ok(text) => text,
-            Err(_) => return Some(Err(IntervalArgumentError::IntervalFileMissing(name))),
+        // A `.vcf.gz` (or `.bed.gz`) is read through its codec's decompressing stream.
+        let text = match std::fs::read(path).ok().and_then(|bytes| {
+            let bytes = if bytes.starts_with(&[0x1f, 0x8b]) {
+                htsjdk_bgzf::read::decompress_all(&bytes).ok()?
+            } else {
+                bytes
+            };
+            String::from_utf8(bytes).ok()
+        }) {
+            Some(text) => text,
+            None => return Some(Err(IntervalArgumentError::IntervalFileMissing(name))),
         };
         Some(match claimed {
             Claimed::Bed => self.bed_intervals(&text, header, &name),
