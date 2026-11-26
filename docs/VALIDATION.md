@@ -246,7 +246,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | PlotDenoisedCopyRatios | gatk-rs | oracle-backed | 379 | 0 | 11/11 (100.0%) | 2 | 1457 probes (+2), 0/6 diverge | 5 | 0 | none |
 | PlotModeledSegments | gatk-rs | oracle-backed | 338 | 0 | 11/11 (100.0%) | 2 | 1656 probes (+2), 0/8 diverge | 6 | 0 | none |
 | PositionBasedDownsampleSam | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
-| PostProcessReadsForRSEM | gatk-rs | oracle-backed | 43 suite | 0 suite | 20/20 (100.0%) | 2 | 2146 probes (+24), 0/10 diverge | 2 | 2 | none |
+| PostProcessReadsForRSEM | gatk-rs | oracle-backed | 43 suite | 0 suite | 20/20 (100.0%) | 2 | 2146 probes (+24), 0/10 diverge | 2 | 1 | none |
 | PostprocessGermlineCNVCalls | gatk-rs | oracle-backed | 333 suite | 150 suite | 20/20 (100.0%) | 2 | 1748 probes (+0), 0/6 diverge | 3 | 5 | none |
 | PreprocessIntervals | gatk-rs | oracle-backed | 21 suite | 0 suite | 20/20 (100.0%) | 2 | 2009 probes (+15), 0/8 diverge | 4 | 0 | none |
 | PrintBGZFBlockInformation | gatk-rs | oracle-backed | 18 suite | 8 suite | 6/6 (100.0%) | 2 | 1005 probes (+4), 0/6 diverge | 0 | 0 | none |
@@ -1783,9 +1783,9 @@ Suites: `post-process-reads-for-rsem`.
 
 Inputs: `qname.bam`, `reads.bam`.
 
-Held out: `--inverted-read-filter`, `--read-index`.
+Held out: `--read-index`.
 
-qname.bam holds the four answers passesRSEMFilter gives -- a proper pair of single-M reads with a pair of secondary alignments beside it, a pair whose second read is unmapped, a pair whose first read carries an insertion, and a first of pair with no second -- so a row's output is the groups that survive rather than the file back again. reads.bam is coordinate-sorted, which this tool refuses outright, so the argument has a row that traverses and a row that refuses. --read-index is held out for the reason it is held out of TransferReadTags: a query-name sorted BAM has no index. --inverted-read-filter is held out, and the first measurement is why: all nineteen rows were REFUSED and not one of them reached the reordering. Inverting either filter the corpus offers leaves a query-name group with no PRIMARY first-of-pair in it -- FirstOfPairReadFilter keeps the second reads and PrimaryLineReadFilter keeps the secondary ones -- and the reference then dereferences null inside the guard that exists because read1 may be null. That exception is the tool's behaviour and is measured, in the module's own tests and against the golden; what an array of nineteen refusals cannot measure is the argument surface it is for.
+qname.bam holds the four answers passesRSEMFilter gives -- a proper pair of single-M reads with a pair of secondary alignments beside it, a pair whose second read is unmapped, a pair whose first read carries an insertion, and a first of pair with no second -- so a row's output is the groups that survive rather than the file back again. reads.bam is coordinate-sorted, which this tool refuses outright, so the argument has a row that traverses and a row that refuses. --read-index is held out for the reason it is held out of TransferReadTags: a query-name sorted BAM has no index. --inverted-read-filter is absent or SecondOfPairReadFilter. Inverting FirstOfPairReadFilter or PrimaryLineReadFilter leaves a query-name group with no PRIMARY first-of-pair, and the reference then dereferences null inside the guard that exists because read1 may be null; that refusal is measured by the module's own tests. Inverting SecondOfPairReadFilter keeps the first reads and the unpaired ones, so every group the filter passes has its read1 and the rows reach the reordering.
 
 ### PostprocessGermlineCNVCalls
 
