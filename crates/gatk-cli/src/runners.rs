@@ -14366,7 +14366,7 @@ pub fn combine_gvcfs(parser: &Parser) -> Outcome {
             format!("{what} This message is the port's own and not GATK's."),
         )
     };
-    for configured in ["pedigree", "founder-id", "flow-order-for-annotations"] {
+    for configured in ["pedigree", "founder-id"] {
         if !arguments(parser, configured).is_empty() || argument(parser, configured).is_some() {
             return Err(limitation(&format!(
                 "--{configured} configures an annotation this tool never computes, and GATK \
@@ -14375,6 +14375,9 @@ pub fn combine_gvcfs(parser: &Parser) -> Outcome {
             )));
         }
     }
+    // A flow annotation is not reducible, so it only adds its header line: the order is validated
+    // and never read.
+    flow_order_for_annotations(parser, &resolved)?;
 
     let inputs = multi_variant::feature_inputs(parser);
     if inputs.is_empty() {
@@ -14599,14 +14602,17 @@ pub fn reblock_gvcf(parser: &Parser) -> Outcome {
             format!("{what} This message is the port's own and not GATK's."),
         )
     };
-    for configured in ["pedigree", "founder-id", "flow-order-for-annotations"] {
+    for configured in ["pedigree", "founder-id"] {
         if !arguments(parser, configured).is_empty() || argument(parser, configured).is_some() {
             return Err(limitation(&format!(
-                "--{configured} configures a pedigree or flow annotation, which this port does not \
+                "--{configured} configures a pedigree annotation, which this port does not \
                  carry for ReblockGVCF yet."
             )));
         }
     }
+    // The flow annotations add their header lines and leave every reblocked record as it was: the
+    // order is validated and never read.
+    flow_order_for_annotations(parser, &resolved)?;
     if argument(parser, "population-callset").is_some() {
         return Err(limitation("--population-callset is not ported."));
     }
