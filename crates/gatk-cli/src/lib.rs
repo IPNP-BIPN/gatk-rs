@@ -24,6 +24,7 @@ pub mod definitions;
 pub mod picard;
 pub mod runners;
 pub mod variant_bridge;
+pub mod vcf_stream;
 
 use gatk_tools::main_entry::{self, Failure, Route, Stream, Thrown};
 

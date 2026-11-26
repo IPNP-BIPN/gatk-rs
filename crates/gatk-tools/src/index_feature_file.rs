@@ -57,7 +57,7 @@
 // `VCFCodec.decodeLoc` and `BEDCodec.decodeLoc` are the codec's rather than this tool's, and two
 // tools reach them now, so they live in [`crate::feature_codec`]. They are re-exported here
 // because a caller that indexes a file names this module, not the codec.
-pub use crate::feature_codec::{codec_for, features, Codec};
+pub use crate::feature_codec::{codec_for, feature_of_line, features, Codec};
 
 use htsjdk_bgzf::read::BgzfReader;
 use htsjdk_bgzf::{vfp, Deflater};
@@ -215,13 +215,10 @@ impl BlockMap {
             return vfp::make_file_pointer(self.end_address, 0).unwrap_or(0) as i64;
         }
         // The last block whose text begins at or before this offset, which is the one holding it.
-        let (address, start) = self
-            .blocks
-            .iter()
-            .rev()
-            .find(|(_, start)| *start <= offset)
-            .copied()
-            .expect("a block for every offset of the text");
+        let holding = self.blocks.partition_point(|(_, start)| *start <= offset);
+        let (address, start) = self.blocks[holding
+            .checked_sub(1)
+            .expect("a block for every offset of the text")];
         vfp::make_file_pointer(address, (offset - start) as u32).unwrap_or(0) as i64
     }
 }
@@ -314,8 +311,25 @@ pub fn build_tabix(
                 detail: format!("{}: {}", error.java_class(), error.message()),
             })?;
     }
+    write_tabix(
+        creator,
+        map.virtual_offset(map.text_length),
+        source,
+        deflater,
+        level,
+    )
+}
+
+/// A tabix creator finished at `end` and its index written, block compressed at the run's level.
+pub fn write_tabix(
+    creator: TabixIndexCreator,
+    end: i64,
+    source: &Source,
+    deflater: Deflater,
+    level: u32,
+) -> Result<Vec<u8>, Refusal> {
     let index = creator
-        .finish(map.virtual_offset(map.text_length))
+        .finish(end)
         .map_err(|error| Refusal::CouldNotIndexFile {
             path: source.path.clone(),
             detail: format!("{}: {}", error.java_class(), error.message()),

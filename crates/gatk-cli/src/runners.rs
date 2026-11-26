@@ -1321,6 +1321,86 @@ fn open_feature_input(input: &str) -> Result<(gatk_tools::feature_codec::Codec, 
     Ok((codec, text))
 }
 
+/// [`variant_walker_startup`] that reads the driving file's header and leaves its records in the
+/// file, for a tool that reads them one at a time. A GenomicsDB workspace has no file to leave
+/// them in, so its records come back as the text they always were.
+fn variant_walker_startup_streamed(
+    parser: &Parser,
+    tool: &str,
+) -> Result<
+    (
+        VariantWalkerStart,
+        Option<(crate::vcf_stream::LineReader, usize)>,
+    ),
+    Thrown,
+> {
+    let _ = resolve_read_filters(parser, tool)?;
+    let input = argument(parser, "variant").ok_or_else(|| {
+        Thrown::command_line("Argument variant was missing: Argument 'variant' is required")
+    })?;
+    if genomicsdb_query_runner::genomicsdb_path(&input).is_some() {
+        return Ok((
+            genomicsdb_query_runner::genomicsdb_startup(parser, tool, input)?,
+            None,
+        ));
+    }
+    let (codec, mut reader) = open_feature_stream(&input)?;
+    let (header, lines) = reader
+        .read_header()
+        .map_err(|_| not_block_compressed(&input))?;
+    let dictionary = vcf_dictionary(&header);
+    let start = variant_walker_validation(parser, input, header, codec, dictionary)?;
+    Ok((start, Some((reader, lines))))
+}
+
+/// [`open_feature_input`] with nothing read past the first block: the same codec, the same
+/// refusals for a file that is not there, and a reader of its decompressed lines.
+fn open_feature_stream(
+    input: &str,
+) -> Result<
+    (
+        gatk_tools::feature_codec::Codec,
+        crate::vcf_stream::LineReader,
+    ),
+    Thrown,
+> {
+    let codec = gatk_tools::feature_codec::codec_for(input).ok_or_else(|| {
+        Thrown::user(
+            index_feature_file::Refusal::NoSuitableCodecs {
+                path: input.to_string(),
+            }
+            .message(),
+        )
+    })?;
+    let missing = || {
+        Thrown::user(format!(
+            "Couldn't read file file://{}. Error was: It doesn't exist.",
+            java_absolute_path(input)
+        ))
+    };
+    let mut file = std::io::BufReader::new(std::fs::File::open(input).map_err(|_| missing())?);
+    let first = std::io::BufRead::fill_buf(&mut file).map_err(|_| missing())?;
+    let reader = if gatk_tools::read_walker_refusal::is_block_compressed(first) {
+        crate::vcf_stream::LineReader::new(
+            Box::new(std::io::BufReader::new(htsjdk_bgzf::read::BgzfReader::new(
+                file,
+            ))),
+            true,
+        )
+    } else {
+        crate::vcf_stream::LineReader::new(Box::new(file), false)
+    };
+    Ok((codec, reader))
+}
+
+/// What [`open_feature_input`] says of a block compressed file it cannot decompress as UTF-8.
+fn not_block_compressed(input: &str) -> Thrown {
+    Thrown::non_user(
+        gatk_tools::read_walker_refusal::SAM_FORMAT,
+        format!("{input} is not a block compressed file"),
+    )
+}
+
 /// The half of a variant walker's startup that follows the driving file's opening: the reads,
 /// the dictionaries compared, and `-L` resolved, against `header` as the features' dictionary.
 ///
@@ -16998,22 +17078,51 @@ pub(crate) fn dictionary_from_any(
 /// it is [`gatk_engine::java_random::JavaRandom::gatk`] here and one draw per record that reaches
 /// it reproduces the reference's selection.
 pub fn select_variants(parser: &Parser) -> Outcome {
+    let (start, stream) = variant_walker_startup_streamed(parser, "SelectVariants")?;
     let VariantWalkerStart {
         input,
         text,
         codec: _,
         intervals,
-    } = variant_walker_startup(parser, "SelectVariants")?;
+    } = start;
 
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
 
-    let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+    let read_failure = |error: htsjdk_vcf::reader::ReadError| Thrown {
         failure: Failure::User,
         exception: "htsjdk.tribble.TribbleException",
-        message: Some(failure.error.message()),
-    })?;
+        message: Some(error.message()),
+    };
+    // The header alone, and the records one at a time after it, read from the file as they are
+    // reached. A file with no `#CHROM` line is all header, which refuses it as the codec does.
+    let (header_text, body, header_lines) = match stream {
+        Some((reader, lines)) => (
+            text.as_str(),
+            crate::vcf_stream::Body::Stream(reader),
+            lines,
+        ),
+        None => {
+            let (header, body) =
+                text.split_at(crate::vcf_stream::header_end(&text).unwrap_or(text.len()));
+            (
+                header,
+                crate::vcf_stream::Body::Text(body.lines()),
+                header.lines().count(),
+            )
+        }
+    };
+    let file =
+        htsjdk_vcf::reader::read_vcf(header_text).map_err(|failure| read_failure(failure.error))?;
+    let mut records =
+        crate::vcf_stream::Records::new(body, &file, header_lines).map(|record| match record {
+            Ok(record) => Ok(record),
+            Err(crate::vcf_stream::Failure::Record(error)) => {
+                Err(read_failure(htsjdk_vcf::reader::ReadError::Record(error)))
+            }
+            Err(crate::vcf_stream::Failure::Read(_)) => Err(not_block_compressed(&input)),
+        });
 
     // `createSampleNameInclusionList(vcfHeaders)`, over the driving variants' own samples.
     let sample_arguments = gatk_tools::select_variants::SampleArguments {
@@ -17088,17 +17197,6 @@ pub fn select_variants(parser: &Parser) -> Outcome {
 
     // The traversal, which is the intervals' if there are any. A feature file with no index is
     // refused here rather than earlier, exactly as `CountVariants`' is.
-    let located: Vec<LocatedRecord> = file
-        .records
-        .iter()
-        .enumerate()
-        .map(|(index, record)| LocatedRecord {
-            index,
-            contig: record.contig.clone(),
-            start: record.start as i32,
-            stop: record.stop as i32,
-        })
-        .collect();
     if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()).is_some()
         && !has_feature_index(&input)
     {
@@ -17132,34 +17230,51 @@ pub fn select_variants(parser: &Parser) -> Outcome {
         || output_arguments.set_filtered_genotypes_to_no_call
         || !output_arguments.genotype_annotations_to_drop.is_empty();
 
-    // The genotype text every record was READ with, taken before anything decodes it: the first
-    // accessor drops it, and this port has to decode to decide what to keep.
-    let unparsed: Vec<Option<String>> = file
-        .records
-        .iter()
-        .map(|record| record.genotypes.unparsed().map(|text| text.to_string()))
-        .collect();
     let sample_names: std::sync::Arc<[String]> = file.header.samples.clone().into();
+    // Whether any expression reads a record: `passesJexlFilters` answers without one otherwise.
+    let jexl = !(filter_arguments.select_expressions.is_empty()
+        && filter_arguments.select_genotype_expressions.is_empty());
+    let jexl_after_subset = jexl && !filter_arguments.apply_jexl_filters_first;
+
+    // `--variant-output-filtering` wraps the writer here as it does on the other two tools that
+    // write a VCF: the traversal reached the record and the writer decides whether it lands.
+    let keep = variant_output_filter(parser, intervals.as_deref())?;
+    let encoder = htsjdk_vcf::encoder::VcfEncoder::new(&header);
+    let mut writer = VariantStreamWriter::create(parser, &output, &header.write())?;
+    let mut emit = |mut vc: htsjdk_vcf::variant::VariantContext| -> Result<(), Thrown> {
+        if !keep(&vc) {
+            return Ok(());
+        }
+        if sites_only {
+            vc.genotypes.clear();
+        }
+        writer.write(&encoder, &vc)
+    };
 
     let mut pending: gatk_tools::select_variants::PendingWriter<
         htsjdk_vcf::variant::VariantContext,
     > = gatk_tools::select_variants::PendingWriter::new();
-    let mut written: Vec<htsjdk_vcf::variant::VariantContext> = Vec::new();
-    for located in gatk_engine::variant_source::traverse(&located, intervals.as_deref()) {
-        let original = &file.records[located.index];
+    let mut select = |original: &htsjdk_vcf::variant::VariantContext| -> Result<(), Thrown> {
+        // The genotype text the record was READ with, taken before anything decodes it: the first
+        // accessor drops it, and this port has to decode to decide what to keep.
+        let unparsed = original
+            .genotypes
+            .unparsed()
+            .filter(|_| !touches_genotypes)
+            .map(|text| text.to_string());
         // `apply` drains BEFORE it looks at the record, which is what lets a record trimmed onto a
         // later start be written first.
         for (_, vc) in pending.drain_before(&original.contig, original.start as i32) {
-            written.push(vc);
+            emit(vc)?;
         }
 
-        let bridged = crate::variant_bridge::to_engine(original);
+        let bridged = crate::variant_bridge::to_engine_for(original, jexl);
         if !gatk_tools::select_variants::passes_variant_filter(
             &bridged.record,
             &bridged.filter_record,
             &filter_arguments,
         ) {
-            continue;
+            return Ok(());
         }
         if !tracks.keeps(
             &bridged.record,
@@ -17167,7 +17282,7 @@ pub fn select_variants(parser: &Parser) -> Outcome {
             filter_arguments.exclude_filtered,
             &mut random,
         ) {
-            continue;
+            return Ok(());
         }
         if !gatk_tools::select_variants::keeps_after_tracks(
             &bridged.record,
@@ -17177,31 +17292,31 @@ pub fn select_variants(parser: &Parser) -> Outcome {
         )
         .map_err(select_error)?
         {
-            continue;
+            return Ok(());
         }
 
-        let subset = gatk_tools::select_variants::subset_record(
-            &bridged.record,
-            &selection,
-            &subset_arguments,
-        )
-        .map_err(|error| Thrown {
-            failure: Failure::User,
-            exception: "org.broadinstitute.hellbender.exceptions.GATKException",
-            message: Some(error.message()),
-        })?;
+        let subset =
+            gatk_tools::select_variants::into_subset(bridged.record, &selection, &subset_arguments)
+                .map_err(|error| Thrown {
+                    failure: Failure::User,
+                    exception: "org.broadinstitute.hellbender.exceptions.GATKException",
+                    message: Some(error.message()),
+                })?;
         // The second round of JEXL sees the record the subset produced, not the one that was read.
-        let after = crate::variant_bridge::to_engine(&crate::variant_bridge::from_engine(
-            original, &subset,
-        ));
+        // With no expression to evaluate nothing reads it, so it is not built.
+        let after = jexl_after_subset.then(|| {
+            crate::variant_bridge::to_engine(&crate::variant_bridge::from_engine(original, &subset))
+        });
         if !gatk_tools::select_variants::keeps_after_subset(
             &subset,
-            &after.filter_record,
+            after
+                .as_ref()
+                .map_or(&bridged.filter_record, |after| &after.filter_record),
             &filter_arguments,
         )
         .map_err(select_error)?
         {
-            continue;
+            return Ok(());
         }
 
         let mut record = subset;
@@ -17217,37 +17332,48 @@ pub fn select_variants(parser: &Parser) -> Outcome {
         // keeps the input's `GT:GQ:DP` where a subsetting run recomputes and sorts to `GT:DP:GQ`.
         // The port decodes to decide, so it puts the text back rather than never taking it out.
         if !touches_genotypes {
-            if let Some(text) = &unparsed[located.index] {
+            if let Some(text) = unparsed {
                 vc.genotypes = htsjdk_vcf::genotypes_context::GenotypesContext::lazy(
                     vc.genotypes.to_vec(),
-                    text.clone(),
+                    text,
                     sample_names.clone(),
                 );
             }
         }
         pending.add(record, vc);
-    }
-    for (_, vc) in pending.drain() {
-        written.push(vc);
-    }
+        Ok(())
+    };
 
-    // `--variant-output-filtering` wraps the writer here as it does on the other two tools that
-    // write a VCF: the traversal reached the record and the writer decides whether it lands.
-    let keep = variant_output_filter(parser, intervals.as_deref())?;
-    written.retain(|record| keep(record));
-
-    if sites_only {
-        for record in &mut written {
-            record.genotypes.clear();
+    match gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()) {
+        // The whole file in file order, which needs no record but the one being selected.
+        None => {
+            for record in records {
+                select(&record?)?;
+            }
+        }
+        // A query per interval, which may reach a record more than once and out of file order.
+        Some(_) => {
+            let all: Vec<htsjdk_vcf::variant::VariantContext> =
+                records.by_ref().collect::<Result<_, _>>()?;
+            let located: Vec<LocatedRecord> = all
+                .iter()
+                .enumerate()
+                .map(|(index, record)| LocatedRecord {
+                    index,
+                    contig: record.contig.clone(),
+                    start: record.start as i32,
+                    stop: record.stop as i32,
+                })
+                .collect();
+            for located in gatk_engine::variant_source::traverse(&located, intervals.as_deref()) {
+                select(&all[located.index])?;
+            }
         }
     }
-
-    let text = htsjdk_vcf::vcf_file::write_vcf(&header, &written).map_err(|error| Thrown {
-        failure: Failure::User,
-        exception: "org.broadinstitute.hellbender.exceptions.UserException",
-        message: Some(format!("{error:?}")),
-    })?;
-    write_variant_output(parser, &output, &text)?;
+    for (_, vc) in pending.drain() {
+        emit(vc)?;
+    }
+    writer.finish(parser)?;
     Ok(None)
 }
 
@@ -17755,13 +17881,33 @@ pub(crate) fn write_variant_file(
     std::fs::write(output, &bytes).map_err(|error| {
         Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
     })?;
+    write_variant_companions(
+        parser,
+        output,
+        text,
+        &bytes,
+        create_index,
+        create_md5,
+        index_dictionary,
+    )
+}
 
+/// The MD5 and the index [`write_variant_file`] leaves beside a VCF already on disk as `bytes`.
+fn write_variant_companions(
+    parser: &Parser,
+    output: &str,
+    text: &str,
+    bytes: &[u8],
+    create_index: bool,
+    create_md5: bool,
+    index_dictionary: Option<Vec<(String, i32)>>,
+) -> Result<(), Thrown> {
     // `--create-output-variant-md5`, which digests the file as it was WRITTEN: a block compressed
     // output is digested compressed, because the digest is taken by the stream the writer wraps.
     if create_md5 {
         write_file(
             &format!("{output}.md5"),
-            gatk_tools::gather_bam_files::md5_file(&bytes).as_bytes(),
+            gatk_tools::gather_bam_files::md5_file(bytes).as_bytes(),
         )?;
     }
 
@@ -17785,7 +17931,7 @@ pub(crate) fn write_variant_file(
             {
                 &bytes[..bytes.len() - EOF_BLOCK]
             } else {
-                &bytes[..]
+                bytes
             };
             gatk_tools::index_feature_file::build_tabix(body, &source, output, deflater, level)
                 .map_err(|refusal| Thrown {
@@ -17809,6 +17955,234 @@ pub(crate) fn write_variant_file(
             format!("could not write {companion}: {error}"),
         )
     })
+}
+
+/// [`write_variant_output`] fed one record at a time, for a tool that need not hold its records.
+///
+/// The output is written beside itself and renamed into place by [`finish`](Self::finish), so a
+/// run refused part way leaves none, as the whole-text writer did. A `.vcf.gz` is tabix indexed as
+/// it is written, at the pointer the BGZF stream reports before each record, which is what
+/// `IndexingVariantContextWriter` does. The rest of what the whole-text path does -- the shards of
+/// `--max-variants-per-shard`, an MD5, a `.idx`, and a tabix the records' order refuses -- is that
+/// path's, over the file read back.
+struct VariantStreamWriter {
+    output: String,
+    sink: VariantSink,
+    tabix: Option<TabixStream>,
+    create_index: bool,
+    create_md5: bool,
+    line: String,
+    _partial: PartialFile,
+}
+
+enum VariantSink {
+    Plain(std::io::BufWriter<std::fs::File>),
+    Bgzf(Box<htsjdk_bgzf::BgzfWriter<std::io::BufWriter<std::fs::File>>>),
+    /// `--max-variants-per-shard`, which splits the whole text after the fact.
+    Text(String),
+}
+
+/// A file removed when it is dropped, which after the rename onto the output is a no-op.
+struct PartialFile(String);
+
+impl Drop for PartialFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+struct TabixStream {
+    creator: htsjdk_tribble::tabix::TabixIndexCreator,
+    /// Where a refusal of the finished index says the file is.
+    source: index_feature_file::Source,
+    /// Every contig seen and the last record's start: the order `check_ordering` refuses.
+    visited: std::collections::HashSet<String>,
+    last: Option<(String, i32)>,
+    /// Set once the records cannot be indexed as they come. The whole file is then indexed the old
+    /// way, which refuses it in the reference's words.
+    failed: bool,
+}
+
+impl TabixStream {
+    fn add(&mut self, line: &str, pointer: i64) {
+        let Some(feature) =
+            index_feature_file::feature_of_line(line, gatk_tools::feature_codec::Codec::Vcf)
+        else {
+            return;
+        };
+        let sorted = match &self.last {
+            Some((contig, start)) if *contig == feature.contig => feature.start >= *start,
+            _ => self.visited.insert(feature.contig.clone()),
+        };
+        // The description is quoted only by a refusal, and a refusal sends the file to the whole
+        // file's index, which builds its own.
+        let entry = htsjdk_tribble::tabix::FeatureRef {
+            contig: &feature.contig,
+            start: feature.start,
+            end: feature.end,
+            description: "",
+            sequence_length: 0,
+        };
+        if !sorted || self.creator.add_feature(entry, pointer).is_err() {
+            self.failed = true;
+            return;
+        }
+        self.last = Some((feature.contig, feature.start));
+    }
+}
+
+impl VariantStreamWriter {
+    fn create(parser: &Parser, output: &str, header: &str) -> Result<Self, Thrown> {
+        let create_index = flag(parser, "create-output-variant-index");
+        let partial = PartialFile(format!("{output}.partial"));
+        let mut tabix = None;
+        let sink = if number_or(parser, "max-variants-per-shard", 0) > 0 {
+            VariantSink::Text(String::new())
+        } else {
+            let file = std::fs::File::create(&partial.0).map_err(|error| {
+                Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
+            })?;
+            let file = std::io::BufWriter::new(file);
+            if output.ends_with(".gz") || output.ends_with(".bgz") {
+                let (level, deflater) = output_compression(parser);
+                let mut writer = htsjdk_bgzf::BgzfWriter::with_deflater(file, level, deflater);
+                if create_index
+                    && index_feature_file::codec_for(output)
+                        == Some(gatk_tools::feature_codec::Codec::Vcf)
+                {
+                    // A pointer per record drains the deflate queue, so the queue would only cost.
+                    writer = writer.parallel(false);
+                    tabix = Some(TabixStream {
+                        creator: htsjdk_tribble::tabix::TabixIndexCreator::new(
+                            htsjdk_tribble::tabix::TabixFormat::VCF,
+                        ),
+                        source: index_feature_file::Source::new(&java_absolute_path(output)),
+                        visited: std::collections::HashSet::new(),
+                        last: None,
+                        failed: false,
+                    });
+                }
+                VariantSink::Bgzf(Box::new(writer))
+            } else {
+                VariantSink::Plain(file)
+            }
+        };
+        let mut writer = VariantStreamWriter {
+            output: output.to_string(),
+            sink,
+            tabix,
+            create_index,
+            create_md5: flag(parser, "create-output-variant-md5"),
+            line: String::new(),
+            _partial: partial,
+        };
+        writer.write_text(header)?;
+        Ok(writer)
+    }
+
+    fn write_text(&mut self, text: &str) -> Result<(), Thrown> {
+        let written = match &mut self.sink {
+            VariantSink::Plain(file) => std::io::Write::write_all(file, text.as_bytes()),
+            VariantSink::Bgzf(writer) => std::io::Write::write_all(writer, text.as_bytes()),
+            VariantSink::Text(whole) => {
+                whole.push_str(text);
+                Ok(())
+            }
+        };
+        written.map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error}")))
+    }
+
+    fn write(
+        &mut self,
+        encoder: &htsjdk_vcf::encoder::VcfEncoder,
+        record: &htsjdk_vcf::variant::VariantContext,
+    ) -> Result<(), Thrown> {
+        let mut line = std::mem::take(&mut self.line);
+        line.clear();
+        encoder
+            .encode_into(record, &mut line)
+            .map_err(|error| Thrown {
+                failure: Failure::User,
+                exception: "org.broadinstitute.hellbender.exceptions.UserException",
+                message: Some(format!("{error:?}")),
+            })?;
+        line.push('\n');
+        if let (Some(tabix), VariantSink::Bgzf(writer)) = (&mut self.tabix, &mut self.sink) {
+            if !tabix.failed {
+                let pointer = writer
+                    .file_pointer()
+                    .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error}")))?;
+                tabix.add(&line, pointer as i64);
+            }
+        }
+        self.write_text(&line)?;
+        self.line = line;
+        Ok(())
+    }
+
+    fn finish(self, parser: &Parser) -> Result<(), Thrown> {
+        let output = self.output.as_str();
+        let failed = |error: std::io::Error| {
+            Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
+        };
+        let mut end = 0;
+        match self.sink {
+            VariantSink::Text(text) => return write_variant_output(parser, output, &text),
+            VariantSink::Plain(file) => {
+                file.into_inner()
+                    .map_err(|error| failed(error.into_error()))?;
+            }
+            VariantSink::Bgzf(mut writer) => {
+                // The index ends where the EOF block starts, which is after the last data block.
+                std::io::Write::flush(&mut writer).map_err(failed)?;
+                end = writer.file_pointer().map_err(failed)? as i64;
+                (*writer)
+                    .into_inner()
+                    .map_err(failed)?
+                    .into_inner()
+                    .map_err(|error| failed(error.into_error()))?;
+            }
+        }
+        std::fs::rename(&self._partial.0, output).map_err(failed)?;
+
+        let streamed = self.tabix.filter(|tabix| !tabix.failed);
+        let index_from_file = self.create_index && streamed.is_none();
+        if self.create_md5 || index_from_file {
+            // shortcut: an MD5, a `.idx` or a refused tabix read the whole output back, as the
+            // whole-text writer held it; stream them too when a large run asks for one.
+            let bytes = std::fs::read(output).map_err(failed)?;
+            let text = if output.ends_with(".gz") || output.ends_with(".bgz") {
+                String::from_utf8_lossy(
+                    &htsjdk_bgzf::read::decompress_all(&bytes)
+                        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error:?}")))?,
+                )
+                .into_owned()
+            } else {
+                String::from_utf8_lossy(&bytes).into_owned()
+            };
+            write_variant_companions(
+                parser,
+                output,
+                &text,
+                &bytes,
+                index_from_file,
+                self.create_md5,
+                None,
+            )?;
+        }
+        if let Some(tabix) = streamed {
+            let (level, deflater) = output_compression(parser);
+            let index =
+                index_feature_file::write_tabix(tabix.creator, end, &tabix.source, deflater, level)
+                    .map_err(|refusal| Thrown {
+                        failure: Failure::User,
+                        exception: refusal.java_class(),
+                        message: Some(refusal.message()),
+                    })?;
+            write_file(&index_feature_file::default_output(output), &index)?;
+        }
+        Ok(())
+    }
 }
 
 /// `PathSeqBuildReferenceTaxonomy.doWork`, with every file read in the order the tool opens it.

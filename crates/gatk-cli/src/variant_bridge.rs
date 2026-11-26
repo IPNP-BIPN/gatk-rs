@@ -33,10 +33,8 @@ use gatk_tools::select_variants::{genotype_jexl_context, FilterRecord, Record};
 use htsjdk_vcf::allele::Allele as VcfAllele;
 use htsjdk_vcf::variant::{Genotype as VcfGenotype, Value, VariantContext};
 
-/// One record in both models, with the file's own copy kept for the write-back's diff.
+/// One record in the engine's model, and what an expression over it reads.
 pub struct Bridged {
-    /// The record as it was decoded. Nothing writes to it; it is the baseline the diff is against.
-    pub original: VariantContext,
     pub record: Record,
     pub filter_record: FilterRecord,
 }
@@ -96,8 +94,14 @@ fn engine_genotype(genotype: &VcfGenotype, alleles: &[VcfAllele]) -> EngineGenot
     }
 }
 
-/// The record as the ported statics read it, with the file's copy kept beside it.
+/// The record as the ported statics read it.
 pub fn to_engine(vc: &VariantContext) -> Bridged {
+    to_engine_for(vc, true)
+}
+
+/// [`to_engine`], with the JEXL contexts left empty when no expression will read them: they are a
+/// map per record and one per genotype, and building them is most of the bridge's cost.
+pub fn to_engine_for(vc: &VariantContext, jexl: bool) -> Bridged {
     let genotypes: Vec<EngineGenotype> = vc
         .genotypes
         .iter()
@@ -120,7 +124,9 @@ pub fn to_engine(vc: &VariantContext) -> Bridged {
     let filter_record = FilterRecord {
         id: vc.id.clone(),
         filters: vc.filters.clone().unwrap_or_default(),
-        info: {
+        info: if !jexl {
+            JexlContext::new()
+        } else {
             // `VariantJEXLContext.get`, whose resolution order is a fixed map, then the INFO
             // attributes, then a filter NAME that the record carries. The fixed names are why an
             // expression can say `QUAL > 50` at all: none of them is an INFO field, and a context
@@ -165,10 +171,13 @@ pub fn to_engine(vc: &VariantContext) -> Bridged {
             }
             context
         },
-        genotype_fields: vc.genotypes.iter().map(genotype_jexl_context).collect(),
+        genotype_fields: if jexl {
+            vc.genotypes.iter().map(genotype_jexl_context).collect()
+        } else {
+            Vec::new()
+        },
     };
     Bridged {
-        original: vc.clone(),
         record: Record {
             variant,
             samples: vc
@@ -191,8 +200,12 @@ fn vcf_allele(original: &[VcfAllele], allele: &EngineAllele) -> VcfAllele {
     let text = String::from_utf8_lossy(&allele.bases).to_string();
     original
         .iter()
+        // The length first: a decoded allele's bases are a line's text, so the display string is
+        // the bases themselves and only an allele of the same length can be the one.
         .find(|candidate| {
-            candidate.display_string() == text && candidate.is_reference() == allele.is_reference
+            candidate.len() == allele.bases.len()
+                && candidate.is_reference() == allele.is_reference
+                && candidate.display_string() == text
         })
         .cloned()
         .unwrap_or_else(|| {

@@ -67,16 +67,22 @@ pub fn features(text: &str, codec: Codec) -> Vec<(Feature, i64)> {
     found
 }
 
-/// The feature one line holds, or none for a line the codec skips.
+/// The feature one line of the file holds, or `None` for a line `decodeLoc` skips.
 pub fn feature_of_line(line: &str, codec: Codec) -> Option<Feature> {
     let trimmed = line.trim_end_matches(['\n', '\r']);
     if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with("track") {
         return None;
     }
-    let columns: Vec<&str> = trimmed.split('\t').collect();
+    // The first eight columns are all either codec reads, so the rest are never split.
+    let mut columns: [&str; 8] = [""; 8];
+    let mut count = 0;
+    for column in trimmed.split('\t').take(8) {
+        columns[count] = column;
+        count += 1;
+    }
     match codec {
         Codec::Vcf => {
-            if columns.len() < 8 {
+            if count < 8 {
                 return None;
             }
             let start: i32 = columns[1].parse().ok()?;
@@ -89,7 +95,7 @@ pub fn feature_of_line(line: &str, codec: Codec) -> Option<Feature> {
             })
         }
         Codec::Bed => {
-            if columns.len() < 3 {
+            if count < 3 {
                 return None;
             }
             let start: i32 = columns[1].parse().ok()?;
