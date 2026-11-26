@@ -1,8 +1,9 @@
 //! `FilterVcf.doWork`.
 
 use gatk_barclay::Parser;
-use gatk_tools::filter_vcf::{filter_to, Thresholds};
-use gatk_tools::main_entry::{Thrown, PORT_LIMITATION};
+use gatk_tools::filter_vcf::{filter_to, ScriptFilter, Thresholds};
+use gatk_tools::javascript_variant_filter::{JavascriptVariantFilter, SCRIPT_ERROR};
+use gatk_tools::main_entry::Thrown;
 use htsjdk_vcf::reader::{read_vcf, ReadError, ReadFailure};
 
 use super::vcf_format_converter::{is_bcf, output_type};
@@ -40,26 +41,54 @@ pub(super) fn run(parser: &Parser, _stderr: &mut String) -> Result<i32, Thrown> 
     let text = vcf_text(&input)?;
     // The script filter is built once `new VCFFileReader` has read the header, before the first
     // record is read and before the dictionary check: only a header failure comes first.
-    if argument(parser, "JAVASCRIPT_FILE").is_some_and(|file| file != "null")
-        && !matches!(
+    let header_fails = || {
+        matches!(
             read_vcf(&text),
             Err(ReadFailure {
                 error: ReadError::Header(_) | ReadError::HeaderLine(_),
                 ..
             })
         )
-    {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "FilterVcf's JAVASCRIPT_FILE runs a Nashorn script, which this port does not. This \
-             message is the port's own and not GATK's.",
-        ));
-    }
-    let filtered = filter_to(&text, &thresholds, vcf_or_bcf)
+    };
+    let mut script = match argument(parser, "JAVASCRIPT_FILE").filter(|file| file != "null") {
+        Some(file) if !header_fails() => Some(script_filter(&file)?),
+        _ => None,
+    };
+    let filtered = filter_to(&text, &thresholds, vcf_or_bcf, script.as_mut())
         .map_err(|error| thrown(error.java_class(), error.message()))?;
     output_type(&output)?;
     // Picard 3.5.0 sets or unsets `INDEX_ON_THE_FLY` from `CREATE_INDEX` (b976447cf); 3.4.0 kept
     // the builder's default and indexed whatever it said.
     write_vcf(parser, &output, &filtered, flag(parser, "CREATE_INDEX"))?;
     Ok(0)
+}
+
+/// `new VariantContextJavascriptFilter(JAVASCRIPT_FILE, header)`: the file read, the script
+/// compiled, and the filter named after `IOUtil.basename`, or `JSFILTER` when that is empty.
+fn script_filter(file: &str) -> Result<ScriptFilter, Thrown> {
+    // `new FileReader(scriptFile)`, whose IOException Picard wraps.
+    let bytes = std::fs::read(file).map_err(|_| {
+        thrown(
+            "picard.PicardException",
+            "javascript-related error".to_string(),
+        )
+    })?;
+    let script = JavascriptVariantFilter::new(&String::from_utf8_lossy(&bytes)).map_err(|_| {
+        thrown(
+            "htsjdk.samtools.util.RuntimeScriptException",
+            SCRIPT_ERROR.to_string(),
+        )
+    })?;
+    let file_name = file.rsplit('/').next().unwrap_or_default();
+    let name = match file_name.rfind('.') {
+        Some(dot) if dot > 0 => &file_name[..dot],
+        _ => file_name,
+    };
+    Ok(ScriptFilter {
+        name: if name.is_empty() { "JSFILTER" } else { name }.to_string(),
+        // shortcut: `File.toString()` also collapses `//` and drops a trailing `/`; a path given
+        // that way is written as given.
+        path: file.to_string(),
+        script,
+    })
 }

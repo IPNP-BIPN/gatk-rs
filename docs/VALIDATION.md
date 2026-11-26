@@ -135,7 +135,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | CrosscheckReadGroupFingerprints | picard-rs | oracle-backed | not vendored | not vendored | 20/20 (100.0%) | 2 | not measured | 0 | 0 | none |
 | DenoiseReadCounts | gatk-rs | oracle-backed | 13 suite | 0 suite | 6/6 (100.0%) | 2 | 1458 probes (+0), 0/3 diverge | 1 | 3 | none |
 | DepthOfCoverage | gatk-rs | oracle-backed | 60 suite | 0 suite | 20/20 (100.0%) | 2 | 3023 probes (+74), 0/14 diverge | 2 | 1 | none |
-| DetermineGermlineContigPloidy | gatk-rs | oracle-backed | 306 suite | 150 suite | 32/32 (100.0%) | 2 | 1046 probes (+2), 0/4 diverge | 2 | 0 | none |
+| DetermineGermlineContigPloidy | gatk-rs | oracle-backed | 306 suite | 150 suite | 18/18 (100.0%) | 2 | 1046 probes (+2), 0/4 diverge | 4 | 0 | none |
 | DiscoverVariantsFromContigAlignmentsSAMSpark | gatk-rs | oracle-backed | 96 | 12 | 19/19 (100.0%) | 2 | 3995 probes (+6), 0/12 diverge | 5 | 5 | none |
 | DownsampleByDuplicateSet | gatk-rs | oracle-backed | 23 suite | 0 suite | 18/18 (100.0%) | 2 | 1955 probes (+0), 0/9 diverge | 2 | 6 | none |
 | DownsampleSam | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -148,7 +148,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | ExtractOriginalAlignmentRecordsByNameSpark | gatk-rs | oracle-backed | 13 | 6 | 22/22 (100.0%) | 2 | 1989 probes (+7), 0/11 diverge | 6 | 1 | none |
 | ExtractSVEvidenceSpark | gatk-rs | oracle-backed | 69 | 36 | 24/24 (100.0%) | 2 | 2970 probes (+0), 0/11 diverge | 5 | 6 | none |
 | ExtractSequences | picard-rs | oracle-backed | not vendored | not vendored | 7/7 (100.0%) | 2 | not measured | 0 | 0 | none |
-| ExtractVariantAnnotations | gatk-rs | oracle-backed | 178 suite | 0 suite | 29/29 (100.0%) | 2 | 2998 probes (+1), 0/12 diverge | 2 | 4 | none |
+| ExtractVariantAnnotations | gatk-rs | oracle-backed | 178 suite | 0 suite | 29/29 (100.0%) | 2 | 2998 probes (+1), 0/12 diverge | 3 | 3 | none |
 | FastaAlternateReferenceMaker | gatk-rs | oracle-backed | 13 suite | 0 suite | 21/21 (100.0%) | 2 | 2488 probes (+2), 0/12 diverge | 7 | 0 | none |
 | FastaReferenceMaker | gatk-rs | oracle-backed | 28 suite | 0 suite | 21/21 (100.0%) | 2 | 2069 probes (+2), 0/11 diverge | 4 | 0 | none |
 | FastqToSam | picard-rs | oracle-backed | not vendored | not vendored | 21/21 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -184,7 +184,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | GenomicsDBImport | gatk-rs | oracle-backed | 3620 | 3341 | 19/19 (100.0%) | 2 | 2174 probes (+48), 0/9 diverge | 6 | 11 | none; limit [genomicsdb-names-and-clock](#genomicsdb-names-and-clock) |
 | GenotypeConcordance | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
 | GenotypeGVCFs | gatk-rs | oracle-backed | 19 suite | 0 suite | 39/39 (100.0%) | 2 | 5528 probes (+6), 0/19 diverge | 11 | 0 | none |
-| GermlineCNVCaller | gatk-rs | oracle-backed | 297 suite | 150 suite | 46/46 (100.0%) | 2 | 1062 probes (+0), 0/3 diverge | 2 | 0 | none |
+| GermlineCNVCaller | gatk-rs | oracle-backed | 297 suite | 150 suite | 19/19 (100.0%) | 2 | 1062 probes (+0), 0/3 diverge | 5 | 0 | none |
 | GetNormalArtifactData | gatk-rs | oracle-backed | 7 suite | 0 suite | 19/19 (100.0%) | 2 | 2729 probes (+0), 0/6 diverge | 2 | 0 | none |
 | GetPileupSummaries | gatk-rs | oracle-backed | 8 suite | 0 suite | 19/19 (100.0%) | 2 | 3053 probes (+2), 0/10 diverge | 6 | 0 | none |
 | GetSampleName | gatk-rs | oracle-backed | 35 suite | 0 suite | 21/21 (100.0%) | 2 | 1824 probes (+2), 0/9 diverge | 5 | 0 | none |
@@ -216,7 +216,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | MakeSitesOnlyVcf | gatk-rs | oracle-backed | 20 suite | 0 suite | 16/16 (100.0%) | 2 | not measured | 4 | 0 | none |
 | MakeVcfSampleNameMap | picard-rs | oracle-backed | not vendored | not vendored | 6/6 (100.0%) | 2 | not measured | 0 | 0 | none |
 | MarkDuplicates | picard-rs | oracle-backed | not vendored | not vendored | 47/47 (100.0%) | 2 | not measured | 0 | 0 | none |
-| MarkDuplicatesSpark | gatk-rs | oracle-backed | 368 | 203 | 26/27 (96.3%) | 2 | 3023 probes (+2), 0/12 diverge | 3 | 5 | none |
+| MarkDuplicatesSpark | gatk-rs | oracle-backed | 368 | 203 | 26/27 (96.3%) | 2 | 3023 probes (+2), 0/12 diverge | 6 | 0 | none |
 | MarkDuplicatesWithMateCigar | picard-rs | oracle-backed | not vendored | not vendored | 30/30 (100.0%) | 2 | not measured | 0 | 0 | none |
 | MarkIlluminaAdapters | picard-rs | oracle-backed | not vendored | not vendored | 28/28 (100.0%) | 2 | not measured | 0 | 0 | none |
 | MeanQualityByCycle | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -249,7 +249,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | PlotModeledSegments | gatk-rs | oracle-backed | 338 | 0 | 11/11 (100.0%) | 2 | 1656 probes (+2), 0/8 diverge | 6 | 0 | none |
 | PositionBasedDownsampleSam | picard-rs | oracle-backed | not vendored | not vendored | 12/12 (100.0%) | 2 | not measured | 0 | 0 | none |
 | PostProcessReadsForRSEM | gatk-rs | oracle-backed | 43 suite | 0 suite | 20/20 (100.0%) | 2 | 2146 probes (+24), 0/10 diverge | 2 | 2 | none |
-| PostprocessGermlineCNVCalls | gatk-rs | oracle-backed | 333 suite | 150 suite | 20/20 (100.0%) | 2 | 1748 probes (+0), 0/6 diverge | 3 | 5 | none |
+| PostprocessGermlineCNVCalls | gatk-rs | oracle-backed | 333 suite | 150 suite | 20/20 (100.0%) | 2 | 1748 probes (+0), 0/6 diverge | 5 | 5 | none |
 | PreprocessIntervals | gatk-rs | oracle-backed | 21 suite | 0 suite | 20/20 (100.0%) | 2 | 2009 probes (+15), 0/8 diverge | 4 | 0 | none |
 | PrintBGZFBlockInformation | gatk-rs | oracle-backed | 18 suite | 8 suite | 6/6 (100.0%) | 2 | 1005 probes (+4), 0/6 diverge | 0 | 0 | none |
 | PrintDistantMates | gatk-rs | oracle-backed | 75 suite | 0 suite | 19/19 (100.0%) | 2 | 2221 probes (+0), 0/9 diverge | 4 | 0 | none |
@@ -318,7 +318,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | VariantAnnotator | gatk-rs | oracle-backed | 13 suite | 0 suite | 83/83 (100.0%) | 2 | 5219 probes (+4), 0/21 diverge | 8 | 13 | none |
 | VariantEval | gatk-rs | oracle-backed | 258 suite | 0 suite | 68/68 (100.0%) | 2 | 4051 probes (+2), 0/33 diverge | 7 | 6 | none |
 | VariantFiltration | gatk-rs | oracle-backed | 227 suite | 0 suite | 24/24 (100.0%) | 2 | 2470 probes (+0), 0/9 diverge | 3 | 2 | none |
-| VariantRecalibrator | gatk-rs | oracle-backed | 270 suite | 0 suite | 26/26 (100.0%) | 2 | 4076 probes (+2), 0/14 diverge | 4 | 4 | none |
+| VariantRecalibrator | gatk-rs | oracle-backed | 270 suite | 0 suite | 26/26 (100.0%) | 2 | 4076 probes (+2), 0/14 diverge | 5 | 3 | none |
 | VariantsToTable | gatk-rs | oracle-backed | 75 suite | 0 suite | 23/23 (100.0%) | 2 | 2355 probes (+5), 0/12 diverge | 2 | 2 | none |
 | VcfFormatConverter | gatk-rs | oracle-backed | 13 suite | 0 suite | 17/17 (100.0%) | 2 | not measured | 6 | 0 | none |
 | VcfToAdpc | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -1056,11 +1056,11 @@ A SMALL window, chr1:101-200, because every base of the interval is a row whethe
 
 Suites: `interpreter-tools`, `gcnv-frozen`.
 
-Inputs: `nothing`, `nothing.tsv`.
+Inputs: `intervals.interval_list`, `p-model`, `priors.tsv`, `sample3.counts.tsv`.
 
 Held out: none.
 
-The import in onStartup fails for want of python before doWork, so every row the parser accepts ends on the same line and no input is opened. What the array measures is the parser over the tool's arguments, in-range values only.
+Past the interpreter: both sides run in the Broad's image, the port through the pinned image's glibc, and hand gcnvkernel GATK's own cohort or case script, under gcnv_frozen_env.sh with one pytensor compile directory between them ($environment). Four samples of make_gcnv_fixture.py (three contigs, ten intervals each) and the case-mode model under gcnv/ are made once by the reference before the rows (run_array.build_gcnv). Every numeric argument has two in-range values, the iteration, epoch and sampling counts small ones so that a row takes seconds: the parser's bounds are measured on every other tool, and a third, out-of-range value would refuse all but a row or two before the script. --mapping-error-rate keeps 0.0 for the collection's own refusal. --convergence-snr-averaging-window takes 20, not 10: Java allows any window, but gcnvkernel's ELBO convergence tracker asserts one above 10.
 
 ### DiscoverVariantsFromContigAlignmentsSAMSpark
 
@@ -1136,11 +1136,11 @@ Reads with every kind of evidence, another template size, and an unpaired read f
 
 Suites: `extract-variant-annotations`.
 
-Inputs: `vr_calls.vcf`, `vr_calls2.vcf`.
+Inputs: `vr_calls.vcf`, `vr_calls2.vcf`, `vr_ref.fasta`.
 
-Held out: `--input`, `--read-index`, `--reference`, `--sequence-dictionary`.
+Held out: `--input`, `--read-index`, `--sequence-dictionary`.
 
---variant is one of VariantRecalibrator's two call sets (vr_calls.vcf, vr_calls2.vcf), whose INFO carries QD, MQ, FS, SOR, MQRankSum (absent on some records) and a Number=A AS_QD, which turns allele-specific mode on. --resource is a set of tagged resources: training and calibration over vr_train.vcf with a known set whose genotypes are sometimes 0/0 (which --do-not-trust-all-polymorphic decides), the training set alone, and a set labelled with the reserved snp label, which is the refusal. --annotation and --mode are whole lists ($lists). The HDF5 matrices are compared as their tree of datasets (run_array.py's hdf5_members), since two runs of the reference already write different bytes. A plain VCF output with an index is forbidden because its .idx records the output's modification time; the command line is held off because it records the date. --input, --read-index, --reference and --sequence-dictionary are not given: the tool reads no base and no read, and a reference only rewrites the ##contig lines' assembly.
+--variant is one of VariantRecalibrator's two call sets (vr_calls.vcf, vr_calls2.vcf), whose INFO carries QD, MQ, FS, SOR, MQRankSum (absent on some records) and a Number=A AS_QD, which turns allele-specific mode on. --resource is a set of tagged resources: training and calibration over vr_train.vcf with a known set whose genotypes are sometimes 0/0 (which --do-not-trust-all-polymorphic decides), the training set alone, and a set labelled with the reserved snp label, which is the refusal. --annotation and --mode are whole lists ($lists). The HDF5 matrices are compared as their tree of datasets (run_array.py's hdf5_members), since two runs of the reference already write different bytes. A plain VCF output with an index is forbidden because its .idx records the output's modification time; the command line is held off because it records the date. --input, --read-index and --sequence-dictionary are not given: the tool reads no base and no read. --reference is absent or vr_ref.fasta, which holds chr2 alone: the output's ##contig lines come from getBestAvailableSequenceDictionary, the call sets' own dictionary, and the reference only names their assembly= and the ##reference line, by name. chr20 30x is where the port wrote the reference's dictionary instead (gatk-rs#1453).
 
 ### FastaAlternateReferenceMaker
 
@@ -1218,7 +1218,7 @@ Inputs: `filter.vcf`, `filter_broken.js`, `filter_no_contigs.vcf`, `filter_varia
 
 Held out: none.
 
-picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures' Picard class writes them byte for byte as picard-rs does). filter.vcf (MakeFixtures) has a site for each filter on each side of the thresholds below, and missing QD, FS, GQ and DP, which the reference reads as their defaults (-1 for a genotype's GQ and DP, so MIN_GQ=0 still filters a genotype without one). filter_no_contigs.vcf is refused because an output named .vcf needs a dictionary; trio.vcf, vcf_unsorted_samples.vcf and vcf_sites_only.vcf are the corpus's other shapes. The compared file is output.vcf; the .idx beside it records a timestamp and is not compared. JAVASCRIPT_FILE keeps single-base sites past position 1000 (a site the script rejects is filtered under the script's base name), or is not JavaScript at all. OUTPUT is also a .vcf.gz, which htsjdk block-compresses with a tabix index beside it (picard-rs#374); the .vcf.gz and its .tbi are compared byte for byte.
+picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFixtures' Picard class writes them byte for byte as picard-rs does). filter.vcf (MakeFixtures) has a site for each filter on each side of the thresholds below, and missing QD, FS, GQ and DP, which the reference reads as their defaults (-1 for a genotype's GQ and DP, so MIN_GQ=0 still filters a genotype without one). filter_no_contigs.vcf is refused because an output named .vcf needs a dictionary; trio.vcf, vcf_unsorted_samples.vcf and vcf_sites_only.vcf are the corpus's other shapes. The compared file is output.vcf; the .idx beside it records a timestamp and is not compared. JAVASCRIPT_FILE keeps single-base sites past position 1000 (a site the script rejects is filtered under the script's base name), or is not JavaScript at all. The port runs the script in Boa with stand-ins for the Java objects Nashorn binds; a script that reaches what they do not mirror (Java.type, a string's length(), a run-time error) is a port limitation, never a different answer (docs/filtervcf-javascript.md). OUTPUT is also a .vcf.gz, which htsjdk block-compresses with a tabix index beside it (picard-rs#374); the .vcf.gz and its .tbi are compared byte for byte.
 
 ### FindBadGenomicKmersSpark
 
@@ -1426,11 +1426,11 @@ The inputs are the CombineGVCFs corpus: cg_a.g.vcf, a diploid sample with a know
 
 Suites: `interpreter-tools`, `gcnv-frozen`.
 
-Inputs: `nothing`, `nothing.tsv`.
+Inputs: `annotated.tsv`, `g-model`, `intervals.interval_list`, `p-calls`, `sample3.counts.tsv`.
 
 Held out: none.
 
-The import in onStartup fails for want of python before doWork, so every row the parser accepts ends on the same line and no input is opened. What the array measures is the parser over the tool's arguments, in-range values only.
+Past the interpreter as DetermineGermlineContigPloidy is: the same image, environment and fixture, with the reference's ploidy calls, and its cohort model for case mode and as an initial model, under gcnv/. Two in-range values per numeric argument, the iteration, epoch and sampling counts small. The arguments a model fixes are refused in CASE mode once SET, and a row carries every argument it varies, so each has <unset> as a value and a constraint keeps the other off CASE rows; --num-gc-bins is left free so that the refusal is measured. --convergence-snr-averaging-window takes 20, not 10: Java allows any window, but gcnvkernel's ELBO convergence tracker asserts one above 10.
 
 ### GetNormalArtifactData
 
@@ -1622,11 +1622,11 @@ picard-rs's fixtures for this tool, under the corpus's picard/ directory (MakeFi
 
 Suites: `spark-walkers`.
 
-Inputs: `marking.bam`, `marking_names.bam`, `marking_one.bam`.
+Inputs: `marking.bai`, `marking.bam`, `marking_names.bam`, `marking_one.bam`, `reference.fasta`, `sv_reference.fasta`.
 
-Held out: `--output-shard-tmp-dir`, `--read-index`, `--reference`, `--remove-all-duplicates`, `--remove-sequencing-duplicates`.
+Held out: none.
 
-Every record type the tool makes, in the three orders of header it treats apart, the one-library copy being what brings the histogram. The two removals exclude --duplicate-tagging-policy, even at false, so they are measured in the spark-walkers golden and left out here. The array keeps to a single input and to fixtures without flow tags; the golden measures several inputs and a flow-tagged fixture.
+Every record type the tool makes, in the three orders of header it treats apart, the one-library copy being what brings the histogram. The two removals and --duplicate-tagging-policy exclude one another whenever two are given, so each has an `<unset>` and the pairs are forbidden. --reference is sv_reference.fasta, whose dictionary is the marking BAMs', and reference.fasta, which lacks chr2 and is still accepted, since the dictionaries are compared only on the contigs they share. A Spark tool never reads --read-index, so its row shows the argument is accepted and ignored. --output-shard-tmp-dir excludes --sharded-output, even at false, so that one has an `<unset>` too; it is where the single BAM's parts are written before they are merged; the directory is gone once the BAM is. The array keeps to a single input and to fixtures without flow tags; the spark-walkers golden measures several inputs and a flow-tagged fixture.
 
 ### MeanQualityByCycleSpark
 
@@ -1862,11 +1862,11 @@ qname.bam holds the four answers passesRSEMFilter gives -- a proper pair of sing
 
 Suites: `interpreter-tools`, `gcnv-frozen`.
 
-Inputs: `nothing`, `nothing.vcf`, `shard`.
+Inputs: `g-calls`, `g-model`, `nothing`, `nothing.vcf`, `p-calls`.
 
 Held out: `--input`, `--read-index`, `--reference`, `--sequence-dictionary`, `--variant-output-filtering`.
 
-GATKTool's startup comes first, and -L there reads the shards' interval lists for its dictionary, so a -L over a shard directory that holds none is refused ahead of the import that otherwise ends every row. --reference, --input and the rest of the standard arguments are held out: past that import nothing reads them.
+Past the interpreter: both sides run in the Broad's image under gcnv_frozen_env.sh ($environment), the port through the pinned image's glibc, and hand gcnvkernel GATK's segment_gcnv_calls.py; the call and model shards and the ploidy calls are the reference's own, made before the rows (run_array.build_gcnv). GATKTool's startup comes first, and -L there reads the shards' interval lists for its dictionary. --input-intervals-vcf and --clustered-breakpoints name a file that is not there, which the script refuses: the composer's joint-calling path is not ported. --reference, --input and the rest of the standard arguments are held out: past the import nothing reads them.
 
 ### PreprocessIntervals
 
@@ -2098,7 +2098,7 @@ Inputs: `both`, `nothing`, `score.py`, `snp`, `vr_calls.vcf`, `vr_calls2.vcf`.
 
 Held out: `--indel-calibration-sensitivity-threshold`, `--input`, `--read-index`, `--reference`, `--sequence-dictionary`, `--snp-calibration-sensitivity-threshold`, `--variant-output-filtering`.
 
-The variants, resources, annotations and modes are ExtractVariantAnnotations': the same walker's onTraversalStart runs, with the reserved snp label its refusal. The header goes to a writer nothing closes, and only then the backend. The reference runs in the Broad's image, so past the import, and the port behind a stand-in python ($past_the_interpreter); it/both and it/snp then hold scorers the reference trained before the rows (run_array.train_scorers), and nothing holds none. PYTHON_SCRIPT runs a script that does nothing, which the port refuses in its own words: those rows differ. The command line is held off because it records the date. The two thresholds are not varied: their bounds refuse a null where the parser reads one, so a row without them would stop before the pass. The dump covers their refusals.
+The variants, resources, annotations and modes are ExtractVariantAnnotations': the same walker's onTraversalStart runs, with the reserved snp label its refusal. The header goes to a writer nothing closes, and only then the backend. The reference runs in the Broad's image, so past the import, and the port there too, through the pinned image's glibc ($past_the_interpreter); it/both and it/snp then hold scorers the reference trained before the rows (run_array.train_scorers), and nothing holds none. PYTHON_SCRIPT runs it/score.py (MakeFixtures) on each side. The command line is held off because it records the date. The two thresholds are not varied: their bounds refuse a null where the parser reads one, so a row without them would stop before the pass. The dump covers their refusals.
 
 ### SelectVariants
 
@@ -2266,7 +2266,7 @@ Inputs: `extract.annot.hdf5`, `extract.unlabeled.annot.hdf5`, `hyperparameters.j
 
 Held out: none.
 
-The reference runs in the Broad's image, whose python gets it past the import, and the port behind a stand-in python (run_array.py, $past_the_interpreter): the default backend then fits the forest and writes the scorer and its scores. JAVA_BGMM is the reference's own missing module. PYTHON_SCRIPT runs a script that does nothing, which the port refuses in its own words, and so does --unlabeled-annotations-hdf5 under the default backend: those rows differ.
+The reference runs in the Broad's image, whose python gets it past the import, and the port there too, through the pinned image's glibc (run_array.py, $past_the_interpreter): the default backend then fits the forest and writes the scorer and its scores. JAVA_BGMM is the reference's own missing module. PYTHON_SCRIPT runs it/score.py (MakeFixtures), which pickles the means and writes scores, with both sides' own python. The port refuses --unlabeled-annotations-hdf5 under the default backend in its own words, where the reference's script rejects it.
 
 ### TransferReadTags
 
@@ -2370,11 +2370,11 @@ indexed.vcf and population.vcf: the first has a sample and a GT, the second an I
 
 Suites: `multi-variant-walker`, `variant-recalibrator`.
 
-Inputs: `vr_aggregate.vcf`, `vr_calls.vcf`, `vr_calls2.vcf`, `vr_model.report`.
+Inputs: `vr_aggregate.vcf`, `vr_calls.vcf`, `vr_calls2.vcf`, `vr_model.report`, `vr_ref.fasta`.
 
-Held out: `--input`, `--read-index`, `--reference`, `--sequence-dictionary`.
+Held out: `--input`, `--read-index`, `--sequence-dictionary`.
 
---variant is vr_calls.vcf, vr_calls2.vcf (drawn from another seed, on positions of the other parity) or both, which MakeFixtures draws as 2,600 and 2,200 annotated calls over two contigs: SNPs, indels, two-allele SNPs, MIXED sites and spanning deletions, three quarters from a good cluster. --resource is a set of tagged resources: a training and truth set with a known set whose genotypes are sometimes 0/0 (which --trust-all-polymorphic decides), the same training set with a bad=true set, training and truth split over two files. --use-annotation, --variant and --truth-sensitivity-tranche are whole lists ($lists), since a model over one annotation is another model. --input-model is the reference's own --output-model over QD MQ FS SOR. The index is held off because a .idx records the output's modification time; the command line is held off because it records the date. --rscript-file without --dont-run-rscript is refused, the pinned container having no Rscript. --input, --read-index, --reference and --sequence-dictionary are not given: the tool reads no base and no read, and a reference only rewrites the ##contig lines' assembly. --output-model is held absent, and the reason is a-rank-is-not-a-byte's: the report prints every mean, covariance and weight at %.16E, and those digits come out of a variational Bayes loop that calls Math.pow millions of times. The port's pow is the host libm, which agrees with HotSpot's intrinsic on 99.94% of calls (docs/numeric-functions-a-ported-call-site-reaches.md), so a trained model matches the reference's to fifteen or sixteen digits and not always to seventeen: two of the first array's rows differed there and nowhere else. The scores the recal file carries at four decimals, the tranches and the plotting script do not reach those digits and are measured on every row; --input-model reads the reference's own report.
+--variant is vr_calls.vcf, vr_calls2.vcf (drawn from another seed, on positions of the other parity) or both, which MakeFixtures draws as 2,600 and 2,200 annotated calls over two contigs: SNPs, indels, two-allele SNPs, MIXED sites and spanning deletions, three quarters from a good cluster. --resource is a set of tagged resources: a training and truth set with a known set whose genotypes are sometimes 0/0 (which --trust-all-polymorphic decides), the same training set with a bad=true set, training and truth split over two files. --use-annotation, --variant and --truth-sensitivity-tranche are whole lists ($lists), since a model over one annotation is another model. --input-model is the reference's own --output-model over QD MQ FS SOR. The index is held off because a .idx records the output's modification time; the command line is held off because it records the date. --rscript-file without --dont-run-rscript is refused, the pinned container having no Rscript. --input, --read-index and --sequence-dictionary are not given: the tool reads no base and no read. --reference is absent or vr_ref.fasta, which holds chr2 alone: the output's ##contig lines come from getBestAvailableSequenceDictionary, the call sets' own dictionary, and the reference only names their assembly= and the ##reference line, by name. chr20 30x is where the port wrote the reference's dictionary instead (gatk-rs#1453). --output-model is held absent, and the reason is a-rank-is-not-a-byte's: the report prints every mean, covariance and weight at %.16E, and those digits come out of a variational Bayes loop that calls Math.pow millions of times. The port's pow is the host libm, which agrees with HotSpot's intrinsic on 99.94% of calls (docs/numeric-functions-a-ported-call-site-reaches.md), so a trained model matches the reference's to fifteen or sixteen digits and not always to seventeen: two of the first array's rows differed there and nowhere else. The scores the recal file carries at four decimals, the tranches and the plotting script do not reach those digits and are measured on every row; --input-model reads the reference's own report.
 
 ### VariantsToTable
 

@@ -225,6 +225,97 @@ fn definitions() -> Vec<Definition> {
     ]
 }
 
+/// `BarclayValueModelDump.Positionals.boundedLong`: a `Long` with a minimum, beside the positionals.
+fn bounded_long() -> Definition {
+    Definition::new(
+        Annotation {
+            full_name: "bounded-long",
+            doc: "a Long with a minimum",
+            optional: true,
+            min_value: 1.0,
+            ..Annotation::default()
+        },
+        "boundedLong",
+        ValueClass::Long,
+        false,
+        false,
+        Value::Null,
+    )
+}
+
+/// `BarclayValueModelDump.Positionals.boundedByte`, declared as `DepthOfCoverage` declares its base
+/// qualities: a primitive `byte` from 0 to `Byte.MAX_VALUE`.
+fn bounded_byte() -> Definition {
+    Definition::new(
+        Annotation {
+            full_name: "bounded-byte",
+            doc: "a byte with a range",
+            optional: true,
+            min_value: 0.0,
+            max_value: 127.0,
+            ..Annotation::default()
+        },
+        "boundedByte",
+        ValueClass::Byte,
+        false,
+        true,
+        Value::Int(0),
+    )
+}
+
+/// `BarclayValueModelDump.Eleven`, in declaration order: with `[arguments]`, twelve names.
+const ELEVEN: [(&str, &str); 11] = [
+    ("echo", ""),
+    ("sierra", ""),
+    ("charlie", ""),
+    ("india", ""),
+    ("delta", ""),
+    ("papa", ""),
+    ("oscar", ""),
+    ("uniform", ""),
+    ("mike", ""),
+    ("golf", ""),
+    ("victor", ""),
+];
+
+/// `BarclayValueModelDump.Twelve`: twelve specs, one of them with a short name of four characters.
+const TWELVE: [(&str, &str); 12] = [
+    ("alpha", ""),
+    ("bravo", ""),
+    ("charlie", ""),
+    ("delta", ""),
+    ("echo", ""),
+    ("foxtrot", ""),
+    ("golf", ""),
+    ("hotel", ""),
+    ("india", ""),
+    ("juliett", ""),
+    ("kilo", ""),
+    ("max-low-mapq", "mlmq"),
+];
+
+/// Optional `String` fields with these (full, short) names, which is all `Eleven` and `Twelve` hold.
+fn scalars(names: &[(&'static str, &'static str)]) -> Vec<Definition> {
+    names
+        .iter()
+        .map(|&(full_name, short_name)| {
+            Definition::new(
+                Annotation {
+                    full_name,
+                    short_name,
+                    optional: true,
+                    ..Annotation::default()
+                },
+                full_name,
+                ValueClass::Text,
+                false,
+                false,
+                Value::Null,
+            )
+        })
+        .collect()
+}
+
 /// The long names the dump prints a `field` row for, in its order.
 const REPORTED: [&str; 13] = [
     "required-string",
@@ -280,11 +371,30 @@ fn every_vector_is_read_the_way_the_reference_reads_it() {
 
         produced.push(format!("case\t{label}\t{argv_text}"));
 
-        let mut parser = Parser::new(definitions());
+        // `<target>:<rest>` names one of the dump's other targets; anything else is `Args`.
+        let target = label.split_once(':').map_or("", |(target, _)| target);
+        let mut parser = match target {
+            "positional" => {
+                Parser::new(vec![bounded_long(), bounded_byte()]).with_positional_arguments(1, 2)
+            }
+            "eleven" => Parser::new(scalars(&ELEVEN)),
+            "twelve" => Parser::new(scalars(&TWELVE)),
+            _ => Parser::new(definitions()),
+        };
         match parser.parse_arguments(&argv) {
             Ok(()) => {
                 produced.push(format!("result\t{label}\tok"));
-                for name in REPORTED {
+                if target == "positional" {
+                    produced.push(format!(
+                        "field\t{label}\tpositional\t[{}]",
+                        parser.positional_values().join(", ")
+                    ));
+                }
+                let reported: &[&str] = match target {
+                    "positional" => &["bounded-long", "bounded-byte"],
+                    _ => &REPORTED,
+                };
+                for name in reported {
                     let value = parser.value_of(name).expect("a declared field");
                     produced.push(format!(
                         "field\t{label}\t{name}\t{}",
@@ -349,4 +459,75 @@ fn the_recommended_range_is_checked_against_the_hard_one() {
     );
     // The only value the warning can fire for.
     assert_eq!(recommended.check_argument_range(&Value::Null), Ok(true));
+
+    // And it cannot fire at all without a recommended range: `primitive-int` has neither range.
+    let plain = definitions
+        .iter()
+        .find(|definition| definition.long_name() == "primitive-int")
+        .expect("a declared field");
+    assert!(!plain.has_recommended_range());
+    assert_eq!(plain.check_argument_range(&Value::Null), Ok(false));
+    // `hasRecommendedRange` is either bound, not both.
+    for (min_recommended_value, max_recommended_value) in
+        [(5.0, f64::INFINITY), (f64::NEG_INFINITY, 8.0)]
+    {
+        let one_sided = Definition::new(
+            Annotation {
+                full_name: "one-sided",
+                min_recommended_value,
+                max_recommended_value,
+                ..Annotation::default()
+            },
+            "oneSided",
+            ValueClass::Integer,
+            false,
+            false,
+            Value::Null,
+        );
+        assert!(one_sided.has_recommended_range());
+    }
+}
+
+/// A value the tool assigns after parsing replaces the command line's and counts as set.
+#[test]
+fn an_overridden_value_replaces_the_command_lines() {
+    let mut parser = Parser::new(definitions());
+    parser
+        .parse_arguments(&["-R", "r", "--required-collection", "c", "-S", "given"])
+        .expect("a valid command line");
+    parser
+        .override_value("optional-string", "assigned")
+        .expect("a declared argument");
+    assert_eq!(
+        parser.value_of("optional-string"),
+        Some(&Value::Str("assigned".to_string()))
+    );
+    let unknown = parser
+        .override_value("no-such-argument", "x")
+        .expect_err("not declared");
+    assert_eq!(unknown.class, "java.lang.IllegalArgumentException");
+}
+
+/// `ModeArgumentUtils.setArgValues`: a mode sets what the command line left alone, and only that.
+#[test]
+fn a_mode_sets_only_what_the_command_line_did_not() {
+    let mut parser = Parser::new(definitions());
+    parser
+        .parse_arguments(&["-R", "r", "--required-collection", "c", "-S", "given"])
+        .expect("a valid command line");
+    parser
+        .set_mode_values(&[("optional-string", "mode"), ("defaulted-required", "mode")])
+        .expect("declared arguments");
+    assert_eq!(
+        parser.value_of("optional-string"),
+        Some(&Value::Str("given".to_string()))
+    );
+    assert_eq!(
+        parser.value_of("defaulted-required"),
+        Some(&Value::Str("mode".to_string()))
+    );
+    let unknown = parser
+        .set_mode_values(&[("no-such-argument", "x")])
+        .expect_err("not declared");
+    assert_eq!(unknown.class, "java.lang.IllegalArgumentException");
 }
