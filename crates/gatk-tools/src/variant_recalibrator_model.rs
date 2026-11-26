@@ -95,7 +95,7 @@ fn ln(x: f64) -> f64 {
     jmath::math::log(x)
 }
 
-/// `Math.log(10.0)`, which every datum's evaluation divides by, computed once.
+/// `Math.log` of 10.0, which every datum's evaluation divides by, computed once.
 fn ln_10() -> f64 {
     static LN_10: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
     *LN_10.get_or_init(|| ln(10.0))
