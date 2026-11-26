@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Read counts for the gCNV measurement: a few samples over two autosomes and an X.
+"""Read counts for the gCNV measurement: a few samples over two autosomes and an X, their priors,
+and the intervals annotated with a GC content.
 
 Seeded, and free of numpy, so the host and the image write the same bytes. Sample 0 carries a
 duplication on chr1 and sample 1 a deletion on chr2, so that the calls have something to say.
@@ -70,6 +71,14 @@ def main():
         f.write("chr1\t0.01\t0.01\t0.97\t0.01\n")
         f.write("chr2\t0.01\t0.01\t0.97\t0.01\n")
         f.write("chrX\t0.01\t0.49\t0.49\t0.01\n")
+    # Annotated intervals for GermlineCNVCaller's GC-bias model, from a generator of their own so the
+    # counts above stay what they were.
+    gc = random.Random(20261119)
+    with open(directory + "/annotated.tsv", "w") as f:
+        f.write(dictionary)
+        f.write("CONTIG\tSTART\tEND\tGC_CONTENT\n")
+        for contig, start, end in intervals:
+            f.write("%s\t%d\t%d\t%.6f\n" % (contig, start, end, gc.uniform(0.3, 0.6)))
 
 
 if __name__ == "__main__":
