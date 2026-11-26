@@ -5413,11 +5413,13 @@
     "FlowPairHMMAlignReadsToHaplotypes": {
       "$why": [
         "flow.bam as for AddFlowBaseQuality: 60 reads, so one full buffer of fifty and a final one of ten,",
-        "each taking the flow order and class of its first read. haplotypes.fasta is the reference stretch,",
-        "a copy with three substitutions, one with a three-base deletion and one shorter than any read;",
-        "haplotypes_dup.fasta repeats the reference's bases under a second name. --ref-haplotype names",
-        "the first, the second, or nothing in the file. --aligner PairHMM is the engine refusal;",
-        "FlowBasedHMM is not ported and left out. The PairHMM engine's own paths are held."
+        "each taking the flow order and class of its first read. haplotypes.fasta is the reference stretch, a",
+        "copy with three substitutions, one with a three-base deletion and one shorter than any read;",
+        "haplotypes_dup.fasta repeats the reference's bases under a second name. --ref-haplotype names the",
+        "first, the second, or nothing in the file. --aligner PairHMM is the engine refusal; FlowBasedHMM is",
+        "not ported and left out. The PairHMM engine's own paths are held. --dragstr-params-path and",
+        "--pair-hmm-results-file are absent, given or (the parameters) a file that does not exist: this tool",
+        "builds its aligner itself and reads neither, so every value answers the same."
       ],
       "--input": [
         "/work/fixtures/flow.bam"
@@ -5497,8 +5499,15 @@
         "false",
         "true"
       ],
-      "--dragstr-params-path": [],
-      "--pair-hmm-results-file": [],
+      "--dragstr-params-path": [
+        "<unset>",
+        "/work/fixtures/dragstr.txt",
+        "/work/fixtures/no_such_dragstr.txt"
+      ],
+      "--pair-hmm-results-file": [
+        "<unset>",
+        "/work/out/pairhmm_results.txt"
+      ],
       "--read-index": [],
       "--sequence-dictionary": [],
       "--exclude-intervals": [],
@@ -7604,8 +7613,15 @@
       "--pair-hmm-implementation": [
         "FASTEST_AVAILABLE"
       ],
-      "--pair-hmm-results-file": [],
-      "--dragstr-params-path": [],
+      "--pair-hmm-results-file": [
+        "<unset>",
+        "/work/out/pairhmm_results.txt"
+      ],
+      "--dragstr-params-path": [
+        "<unset>",
+        "/work/fixtures/dragstr.txt",
+        "/work/fixtures/no_such_dragstr.txt"
+      ],
       "--flow-fill-empty-bins-value": [
         "0.001",
         "0",
@@ -7671,14 +7687,15 @@
         "gt.bam is the tool's own corpus: substitutions at shared sites, an insertion and a deletion that",
         "make cycle skips, a left, a right and a two-sided soft clip (only a one-sided clip is clipped),",
         "reverse reads and an rq tag that is a float, an integer or absent; flow_snv.bam is the mapper's.",
-        "--likelihood-calculation-engine must be FlowBased: PairHMM is the refusal",
-        "onTraversalStart makes before the CSV is opened. gt_prior_short.csv is the index the prior",
-        "reader runs past. --report-file is never paired with --omit-zeros-from-report false: the",
-        "four-level table is then five million rows whatever the reads say, so the pair measures the",
-        "writer's patience; the constraint says so. --pair-hmm-results-file and --dragstr-params-path",
-        "belong to the PairHMM engine, which the tool refuses, and the implementation is held at its",
-        "default for the same reason.",
-        "--gt-no-output, --add-mean-call and the other switches name false first, so the rows the generator fills write the CSV."
+        "--likelihood-calculation-engine must be FlowBased: PairHMM is the refusal onTraversalStart makes",
+        "before the CSV is opened. gt_prior_short.csv is the index the prior reader runs past. --report-file",
+        "is never paired with --omit-zeros-from-report false: the four-level table is then five million rows",
+        "whatever the reads say, so the pair measures the writer's patience; the constraint says so.",
+        "--gt-no-output, --add-mean-call and the other switches name false first, so the rows the generator",
+        "fills write the CSV. --dragstr-params-path is absent, dragstr.txt or a file that does not exist, and",
+        "--pair-hmm-results-file absent or given: the engine factory parses the parameters and opens the",
+        "results file for a PairHMM engine, which the tool then refuses, so the missing file is refused first",
+        "and the results file is left empty; the FlowBased engine reads neither."
       ],
       "--gt-no-output": [
         "false",
@@ -7782,8 +7799,15 @@
       "--pair-hmm-implementation": [
         "FASTEST_AVAILABLE"
       ],
-      "--pair-hmm-results-file": [],
-      "--dragstr-params-path": [],
+      "--pair-hmm-results-file": [
+        "<unset>",
+        "/work/out/pairhmm_results.txt"
+      ],
+      "--dragstr-params-path": [
+        "<unset>",
+        "/work/fixtures/dragstr.txt",
+        "/work/fixtures/no_such_dragstr.txt"
+      ],
       "--flow-fill-empty-bins-value": [
         "0.001",
         "0",
@@ -7847,13 +7871,16 @@
       ],
       "$why": [
         "gt.bam over its two ancestors: gt_maternal.fasta carries substitutions at 650, 700 and 820,",
-        "gt_paternal.fasta a two-base insertion after 760, and gtrb/ the translation tables between",
-        "them; gtrb_late/ starts its tables at 620, so the reads before it index a table at minus one.",
-        "The reads carry tm tags of Q, Z and AQ, one-sided and two-sided soft clips and both strands.",
-        "--subsampling-ratio is held at one: the tool draws from an unseeded java.util.Random, so any",
-        "other ratio in (0, 1) is a different answer on every run of the reference itself. --gt-debug",
-        "is held at false: it only logs. PairHMM is the engine refusal onTraversalStart makes after",
-        "opening both ancestral references."
+        "gt_paternal.fasta a two-base insertion after 760, and gtrb/ the translation tables between them;",
+        "gtrb_late/ starts its tables at 620, so the reads before it index a table at minus one. The reads",
+        "carry tm tags of Q, Z and AQ, one-sided and two-sided soft clips and both strands.",
+        "--subsampling-ratio is held at one: the tool draws from an unseeded java.util.Random, so any other",
+        "ratio in (0, 1) is a different answer on every run of the reference itself. --gt-debug is held at",
+        "false: it only logs. PairHMM is the engine refusal onTraversalStart makes after opening both",
+        "ancestral references. --dragstr-params-path is absent, dragstr.txt or a file that does not exist,",
+        "and --pair-hmm-results-file absent or given: the engine factory parses the parameters and opens the",
+        "results file for a PairHMM engine, which the tool then refuses, so the missing file is refused first",
+        "and the results file is left empty; the FlowBased engine reads neither."
       ]
     },
     "HaplotypeBasedVariantRecaller": {

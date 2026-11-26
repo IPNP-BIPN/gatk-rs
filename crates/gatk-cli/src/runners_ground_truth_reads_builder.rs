@@ -278,6 +278,7 @@ pub fn ground_truth_reads_builder(parser: &Parser) -> Outcome {
     };
     let engine =
         scalar(parser, "likelihood-calculation-engine").unwrap_or_else(|| "PairHMM".to_string());
+    likelihood_engine_side_effects(parser, &engine)?;
     if engine != "FlowBased" {
         return Err(Thrown::non_user(
             "org.broadinstitute.hellbender.exceptions.GATKException",
