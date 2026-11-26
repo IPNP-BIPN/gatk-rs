@@ -56,6 +56,33 @@ now STATUS.md's cost column; the baseline stays in `baseline.json`):
 both directions, which is what an unchanged path does. The other 131 tools moved a median 7% cold
 and 10% steady, at most 45%, the same spread two runs of one commit showed in the baseline.
 
+## Scale G. Every variant walker that traverses with `variants_in_traversal` finds each kept record by a scan
+
+**Ratio.** Measured at scale (the every-tool pass of `tools/speed/scale.json`, gnomAD chr20 sites,
+linux/arm64 in the pinned container): `RemoveNearbyIndels` 58 s CPU for the port against GATK's
+15 s (3.77x).
+
+**Where the time goes.** `variants_in_traversal` (fifteen tools: `RemoveNearbyIndels`,
+`UpdateVCFSequenceDictionary`, `GenotypeGVCFs`, `FilterMutectCalls`, `VariantAnnotator`, ...) and
+`VariantsToTable` map each span `traverse` returns back to its record with
+`spans.iter().position(|other| ptr::eq(other, span))`: a scan of the whole list per record, so
+quadratic. On 5.6 million gnomAD records the old binary had not finished after ten minutes natively.
+
+**The optimisation.** `index_in`: the span's address, in elements past the slice's start, checked
+with `ptr::eq` on the element it names.
+
+**Why it cannot move a byte.** `traverse` returns references into `spans`, so the address names the
+element the scan found, and the assert proves it on every call. The records kept, their order and
+everything downstream are unchanged.
+
+**The suites that prove it.** The covering arrays of `RemoveNearbyIndels` and
+`UpdateVCFSequenceDictionary` on linux/amd64, and every suite of the fifteen tools in CI.
+
+**Result.** `RemoveNearbyIndels` on gnomAD chr20 natively: 14.1 s CPU (from more than ten minutes),
+against GATK's 15 s in its container, and the inflated output is GATK's byte for byte (md5
+8546ba19). Its peak RSS (11.7 GB natively, the whole VCF held) is the variant walkers' and not
+this change's.
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are

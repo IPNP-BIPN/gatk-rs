@@ -1524,6 +1524,15 @@ fn reads_dictionary(
     Ok(source.header().sequences.clone())
 }
 
+/// Where `span`, a reference `traverse` returned into `spans`, sits in it: its address, in
+/// elements past the slice's start. A scan for it was quadratic over a chromosome's records.
+fn index_in(spans: &[Locus], span: &Locus) -> usize {
+    let index =
+        (span as *const Locus as usize - spans.as_ptr() as usize) / std::mem::size_of::<Locus>();
+    assert!(std::ptr::eq(&spans[index], span), "a span of this list");
+    index
+}
+
 /// One decoded locus, which is all the traversal looks at.
 struct Locus {
     contig: String,
@@ -13956,12 +13965,7 @@ pub fn variants_to_table(parser: &Parser) -> Outcome {
     }
     let kept: Vec<usize> = gatk_engine::variant_source::traverse(&spans, intervals.as_deref())
         .into_iter()
-        .map(|span| {
-            spans
-                .iter()
-                .position(|other| std::ptr::eq(other, span))
-                .expect("a span of this list")
-        })
+        .map(|span| index_in(&spans, span))
         .collect();
     let records: Vec<&(gatk_tools::variants_to_table::Record, String)> =
         kept.into_iter().map(|index| &all[index]).collect();
@@ -14296,13 +14300,7 @@ fn variants_in_traversal<'a>(
     }
     Ok(gatk_engine::variant_source::traverse(&spans, intervals)
         .into_iter()
-        .map(|span| {
-            let index = spans
-                .iter()
-                .position(|other| std::ptr::eq(other, span))
-                .expect("a span of this list");
-            &records[index]
-        })
+        .map(|span| &records[index_in(&spans, span)])
         .collect())
 }
 
