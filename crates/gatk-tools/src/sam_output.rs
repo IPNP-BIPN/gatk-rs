@@ -127,6 +127,9 @@ pub fn write_records_with(
     level: u32,
     deflater: htsjdk_bgzf::Deflater,
 ) -> Result<(Vec<u8>, Option<Vec<u8>>), ReadsError> {
+    // `SAMFileWriterFactory.initializeBAMWriter` indexes only a writer whose sort order is
+    // `coordinate`, whatever was asked: a queryname or unsorted BAM gets no `.bai`.
+    let create_index = create_index && header.attributes.get("SO") == Some("coordinate");
     let writer = BamWriter::with_compression(Vec::new(), header, level, deflater)
         .map_err(|e| ReadsError::Io(e.to_string()))?;
     let mut writer = if create_index {
@@ -147,5 +150,21 @@ pub fn write_records_with(
     } else {
         let bam = writer.finish().map_err(|e| ReadsError::Io(e.to_string()))?;
         Ok((bam, None))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::write_records;
+    use htsjdk_bam::header::SamHeader;
+
+    #[test]
+    fn only_a_coordinate_sorted_bam_is_indexed() {
+        let mut header = SamHeader::new();
+        header.set_sort_order("queryname");
+        assert!(write_records(&header, &[], true).unwrap().1.is_none());
+        header.set_sort_order("coordinate");
+        assert!(write_records(&header, &[], true).unwrap().1.is_some());
+        assert!(write_records(&header, &[], false).unwrap().1.is_none());
     }
 }
