@@ -211,7 +211,7 @@ fn the_quality_bounds_filter_a_base() {
 /// A fixed order, each pair followed by a space.
 #[test]
 fn the_base_counts_are_a_fixed_order() {
-    assert_eq!(BASE_COUNT_ORDER, b"ACGTN");
+    assert_eq!(BASE_COUNT_ORDER, b"ACGTND");
     let table = per_locus(&reads(), &samples(), "chr1", 1000, 1000, 0, 127);
     let row = per_locus_row(&table[0], true);
     assert!(row.contains("A:2 C:0 G:0 T:0 N:0 "), "{row}");

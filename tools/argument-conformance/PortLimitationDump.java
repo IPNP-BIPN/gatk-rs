@@ -28,6 +28,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -132,6 +133,28 @@ public class PortLimitationDump {
         counts("counts-start-after-end", countsHeader + "chr1\t200\t100\t5\n");
         counts("counts-start-zero", countsHeader + "chr1\t0\t100\t5\n");
 
+        // DepthOfCoverage's --include-deletions puts the deletions in the pileup, where they count
+        // into the depth and into a D column whatever their quality; --ignore-deletion-sites takes
+        // them out of the pileup again but leaves the column, at zero.
+        final String fasta = reference();
+        final String covered = bam("depthofcoverage",
+                cigarRead(1, 100, "10M", "IIIIIIIIII"),
+                cigarRead(1, 102, "4M2D6M", "IIII#IIIII"),
+                cigarRead(1, 104, "2S3M1D5M", "IIIIIIIIII"),
+                cigarRead(1, 105, "3M1I6M", "#IIIIIIIII"));
+        for (final String[] variant : new String[][] {
+                {"default"}, {"include-deletions", "--include-deletions"},
+                {"include-deletions-ignore-sites", "--include-deletions", "--ignore-deletion-sites"},
+                {"include-deletions-min-quality", "--include-deletions", "--min-base-quality", "20"}}) {
+            final List<String> argv = new ArrayList<>(List.of("DepthOfCoverage", "-R", fasta, "-I",
+                    covered, "-L", "chr1:98-118", "-O", "{out}/out", "--omit-locus-table",
+                    "--omit-interval-statistics", "--omit-per-sample-statistics"));
+            argv.addAll(Arrays.asList(variant).subList(1, variant.length));
+            run("depthofcoverage-" + variant[0], argv.toArray(new String[0]));
+            argv.add("--print-base-counts");
+            run("depthofcoverage-" + variant[0] + "-base-counts", argv.toArray(new String[0]));
+        }
+
         for (final String input : INPUTS) {
             final Path path = Paths.get(input);
             if (Files.isRegularFile(path)) {
@@ -154,6 +177,40 @@ public class PortLimitationDump {
         return String.join("\t", "r" + contig + "_" + start, "0", "chr" + contig,
                 String.valueOf(start), "60", "10M", "*", "0", "0", "ACGTACGTAC", "IIIIIIIIII", "RG:Z:rg")
                 + (tag == null ? "" : "\t" + tag);
+    }
+
+    /** One mapped read on a contig with its own cigar and qualities, its bases cut to fit. */
+    static String cigarRead(final int contig, final int start, final String cigar, final String quals) {
+        return String.join("\t", "r" + contig + "_" + start, "0", "chr" + contig,
+                String.valueOf(start), "60", cigar, "*", "0", "0",
+                "ACGTACGTACGT".substring(0, quals.length()), quals, "RG:Z:rg");
+    }
+
+    /** The two contigs of the BAMs' header as a FASTA, with its index and dictionary. */
+    static String reference() throws Exception {
+        final Path dir = Paths.get("inputs");
+        Files.createDirectories(dir);
+        final StringBuilder fasta = new StringBuilder();
+        final StringBuilder fai = new StringBuilder();
+        final StringBuilder dict = new StringBuilder("@HD\tVN:1.6\n");
+        for (final String contig : new String[] {"chr1", "chr2"}) {
+            fasta.append('>').append(contig).append('\n');
+            fai.append(String.format("%s\t10000\t%d\t60\t61%n", contig, fasta.length()));
+            for (int at = 0; at < 10000; at++) {
+                fasta.append("ACGTTGCA".charAt(at % 8));
+                if (at % 60 == 59 || at == 9999) {
+                    fasta.append('\n');
+                }
+            }
+            dict.append("@SQ\tSN:").append(contig).append("\tLN:10000\n");
+        }
+        final String[][] files = {{"reference.fasta", fasta.toString()},
+                {"reference.fasta.fai", fai.toString()}, {"reference.dict", dict.toString()}};
+        for (final String[] file : files) {
+            Files.writeString(dir.resolve(file[0]), file[1], StandardCharsets.US_ASCII);
+            INPUTS.add(dir.resolve(file[0]).toString());
+        }
+        return dir.resolve("reference.fasta").toString();
     }
 
     /**
