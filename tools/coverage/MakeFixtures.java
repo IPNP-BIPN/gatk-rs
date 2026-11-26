@@ -3431,6 +3431,26 @@ public class MakeFixtures {
                         indexed, new htsjdk.variant.vcf.VCFCodec(),
                         htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
                 .write(dir.resolve("indexed.vcf.idx"));
+        // ValidateVariants' `--dbsnp`: rs100 as `indexed.vcf` names it, rs800 under another ID, so
+        // the record at 800 fails the ID check, and a `.` at 1500, which is an ID like any other.
+        // `vv_filtered.vcf` is `indexed.vcf` with the record at 800 filtered and called 0/0, so it also
+        // fails the allele check, which `--do-not-validate-filtered-records` skips with the rest.
+        Files.writeString(dir.resolve("vv_dbsnp.vcf"), "##fileformat=VCFv4.2\n"
+                + "##contig=<ID=chr1,length=100000>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
+                + "chr1\t100\trs100\tA\tC\t.\t.\t.\n"
+                + "chr1\t800\trs9800\tA\tC\t.\t.\t.\n"
+                + "chr1\t1500\t.\tA\tC\t.\t.\t.\n",
+                StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", dir.resolve("vv_dbsnp.vcf").toString()});
+        final Path filtered = dir.resolve("vv_filtered.vcf");
+        Files.writeString(filtered, vcf()
+                        .replace("##contig", "##FILTER=<ID=LowQual,Description=\"Low quality\">\n##contig")
+                        .replace("rs800\tA\tC\t100\tPASS\t.\tGT\t0/1", "rs800\tA\tC\t100\tLowQual\t.\tGT\t0/0"),
+                StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", filtered.toString()});
         // A reference, with the .fai and .dict beside it that GATK requires: the writer names all
         // three, so the naming is htsjdk's rather than this harness's.
         try (final htsjdk.samtools.reference.FastaReferenceWriter reference =
