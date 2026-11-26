@@ -3718,6 +3718,17 @@ pub fn annotate_vcf_with_bam_depth(parser: &Parser) -> Outcome {
                 extra: Vec::new(),
             });
     }
+    if flag(parser, "add-output-vcf-command-line") {
+        file.header
+            .lines
+            .push(htsjdk_vcf::header::HeaderLine::Unstructured {
+                key: "source".to_string(),
+                value: "AnnotateVcfWithBamDepth".to_string(),
+            });
+        if let Some(command_line) = command_line_header_line(parser, "AnnotateVcfWithBamDepth") {
+            file.header.lines.push(command_line);
+        }
+    }
 
     let keep = variant_output_filter(parser, intervals.as_deref())?;
     written.retain(|record| keep(record));
