@@ -10432,9 +10432,72 @@ pub fn compare_references(parser: &Parser) -> Outcome {
             "Index 0 out of bounds for length 0",
         ));
     }
-    // FULL_ALIGNMENT runs mummer, which no row of this tool's array reaches: the mode's two
-    // non-default constants are held out of the fixtures for that reason.
+    // FULL_ALIGNMENT runs mummer, which the oracle image does not carry: no row of this tool's
+    // array reaches it.
+    if base_comparison == "FIND_SNPS_ONLY" {
+        let directory = argument(parser, "base-comparison-output").expect("checked at startup");
+        compare_references_find_snps(&table, &references, &pairs[0], &paths, &directory)?;
+    }
     Ok(None)
+}
+
+/// `runFindSNPS`: for each name carried by exactly two rows of equal length, every position
+/// whose bytes differ, read with case and ambiguity codes preserved.
+fn compare_references_find_snps(
+    table: &gatk_tools::compare_references::Table,
+    references: &[gatk_tools::compare_references::Reference],
+    pair: &gatk_tools::compare_references::Pair,
+    paths: &[String],
+    directory: &str,
+) -> Result<(), Thrown> {
+    use gatk_tools::compare_references as compare;
+    if !pair.analysis.contains(&compare::Status::DifferInSequence) {
+        return Ok(());
+    }
+    let snps =
+        std::path::Path::new(directory).join(format!("{}_{}_snps.tsv", pair.first, pair.second));
+    let mut out = format!("Sequence Name\tPosition\t{}\t{}\n", pair.first, pair.second);
+    let open = |path: &String| {
+        htsjdk_bam::fasta_index::IndexedFasta::open(std::path::Path::new(path))
+            .map_err(|error| Thrown::user(error.message()))
+    };
+    let (mut first, mut second) = (open(&paths[0])?, open(&paths[1])?);
+    // `tableBySequenceName` is a LinkedHashMap filled reference by reference, dictionary order.
+    let mut names: Vec<&str> = Vec::new();
+    for reference in references {
+        for sequence in &reference.sequences {
+            if !names.contains(&sequence.name.as_str()) {
+                names.push(&sequence.name);
+            }
+        }
+    }
+    for name in names {
+        let rows: Vec<&compare::Row> = table
+            .rows
+            .iter()
+            .filter(|row| row.cells.iter().any(|cell| cell.as_deref() == Some(name)))
+            .collect();
+        if rows.len() != 2 || rows[0].length != rows[1].length {
+            continue;
+        }
+        let one = first
+            .query(name, 1, rows[0].length)
+            .map_err(|error| Thrown::user(error.message()))?;
+        let two = second
+            .query(name, 1, rows[0].length)
+            .map_err(|error| Thrown::user(error.message()))?;
+        for (index, (a, b)) in one.iter().zip(&two).enumerate() {
+            if a != b {
+                out.push_str(&format!(
+                    "{name}\t{}\t{}\t{}\n",
+                    index + 1,
+                    *a as char,
+                    *b as char
+                ));
+            }
+        }
+    }
+    write_file(&snps.to_string_lossy(), out.as_bytes())
 }
 
 /// Each reference as the table reads it: the file's NAME as the column, and its `.dict`.

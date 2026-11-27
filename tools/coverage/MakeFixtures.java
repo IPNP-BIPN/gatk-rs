@@ -3476,6 +3476,24 @@ public class MakeFixtures {
             }
             renamed.startSequence("chrRenamed").appendBases(bases.toString());
         }
+        // `reference.fasta`'s chr1 with three bases changed, one an ambiguity code: the same name
+        // and length under another MD5, which is the DIFFER_IN_SEQUENCE pair that
+        // `CompareReferences --base-comparison FIND_SNPS_ONLY` compares base by base.
+        try (final htsjdk.samtools.reference.FastaReferenceWriter snp =
+                     new htsjdk.samtools.reference.FastaReferenceWriterBuilder()
+                             .setFastaFile(dir.resolve("snp.fasta"))
+                             .setMakeFaiOutput(true)
+                             .setMakeDictOutput(true)
+                             .build()) {
+            final StringBuilder bases = new StringBuilder();
+            for (int i = 0; i < 100000; i++) {
+                bases.append("ACGT".charAt(i % 4));
+            }
+            bases.setCharAt(9, 'T');
+            bases.setCharAt(500, 'N');
+            bases.setCharAt(99999, 'R');
+            snp.startSequence("chr1").appendBases(bases.toString());
+        }
         // The reads again, under `reference.fasta`'s own dictionary: the one input in this corpus
         // whose `@SQ` line carries an M5, which is the only way a command line reaches
         // `CheckReferenceCompatibility`'s MD5 path.
