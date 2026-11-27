@@ -31,11 +31,13 @@ libm the machine ships.
 | call site | function | status |
 |---|---|---|
 | `gatk-engine/src/math_utils.rs:79` — `pow10` | `powf` | **99.9378% against `Math.pow`**, unbounded per call. A bounded alternative now exists (`strict_math::pow`, 1 ulp, decision 0027) and was **measured to be worse here**: switching broke a passing byte-identity claim, because on the points these suites reach the libm is simply closer |
-| `gatk-engine/src/fisher_exact.rs:109` — `pow10` | `powf` | as above |
+| `gatk-engine/src/fisher_exact.rs:194`: `pow10` | `powf` | as above |
 | `gatk-annotation/src/allele_pseudo_depth.rs:339,341` — `calculateWeights` | `powf` ×2 | as above. Which of the two runs depends on `weightDecay`, so the exposure varies with an argument |
 | `gatk-engine/src/natural_log_utils.rs:172,174` — `log1mexp` | `ln_1p`, `exp_m1` | **not exact**, and the module says so at the call site. Neither has a ported equivalent, and nothing in G1 reaches this branch |
 | `gatk-engine/src/activity_profile.rs:98` | `exp` | the **host** `exp`, not `strict_math::exp`, and now **measured to be the right one**: the `activityprofile` suite compares 266 kernel values as raw bits and the host `exp` matches every one, where `strict_math::exp` moves 10 of them by an ulp. See below |
 | `gatk-engine/src/natural_log_utils.rs` — `normalize_from_log_to_linear_space_host_exp` | `exp` | the **host** `exp`, for `LearnReadOrientationModel`'s E-step only. Built on `strict_math::exp`, two of the eight covering-array rows printed one prior an ulp from the oracle's; built on the host `exp`, every row of the array matches. The reference run with `-XX:-UseLibmIntrinsic` matches the fdlibm build exactly, which pins the difference on the `Math.exp` intrinsic. See below |
+| `gatk-engine/src/mutect_engine.rs` — `posterior_probability_of_error` | `exp` | the **host** `exp`, through `normalize_from_log_to_linear_space_host_exp`. Its callers are FilterMutectCalls' filters only (contamination, normal artifact, slippage, the clustering model's sequencing-error probability). Measured with the filters' answers as raw bits: see below |
+| `gatk-engine/src/somatic_clustering_model.rs` — `performEMIteration`, `backgroundProbGivenSomatic` | `exp` | the **host** `exp`, as above. The model's `log_sum_exp` calls keep fdlibm: no measured row depended on them |
 | `gatk-engine/src/mann_whitney.rs:167` | `powi(3)` | **exact**: an integer power of a `f64` is repeated multiplication, and the reference computes it the same way |
 
 ### The activity profile's `exp`, measured (2026-08-19)
@@ -84,11 +86,31 @@ between the two stand-ins is the whole question. As for the activity profile, th
 the closer one on the points this call site reaches. Every other caller of
 `normalize_from_log_to_linear_space` keeps fdlibm, because none of them has been measured.
 
+### FilterMutectCalls' `exp`, measured (2026-11-19)
+
+FilterMutectCalls learns two passes of state (the strand artifact EM, `SomaticClusteringModel`) and
+prints the learned priors in its filtering stats to the last digit, so an ulp in pass 0 is still
+visible at the end. A harness in the filters' package (reflection on `Mutect2FilteringEngine`, every
+filter's answer and every learned value as raw bits, per pass) was compared against a traced port
+on `mutect.vcf`, at contamination 0.1 with the orientation priors, and at 0.0 without them:
+
+| what the port is built with | trace lines matching the oracle bit-for-bit (0.1 + priors / 0.0) |
+|---|---|
+| fdlibm in `posterior_probability_of_error` and in the clustering EM (and the strand fix below not yet in) | not counted, from pass 0 on / 10 of 314 differ |
+| host `exp` in `posterior_probability_of_error`, fdlibm in the EM, strand fix in | 66 of 350 differ / 0 of 314: pass 0's answers all match, the EM's clusters and weights still differ from pass 0's learning on |
+| host `exp` in both | **350 of 350 / 314 of 314** |
+
+(The 0.0 column also needed a separate fix that is not a stand-in: the port computed the strand
+filter's accumulated E-steps with the initial prior and shape instead of the learned ones.) With
+both, the FilterMutectCalls t=2 covering array goes from 24/25 to 25/25: row 16's `Ln prior of SNV`
+was the one row that printed the drift. As before, this is a claim about the points these call
+sites reach, not that the host `exp` equals `Math.exp`.
+
 ## What this changes
 
 Nothing in the code, and two things in what is claimed.
 
-**The gap is seven call sites, not "the corpus".** Every one is named above with the number attached,
+**The gap is nine call sites, not "the corpus".** Every one is named above with the number attached,
 so a future byte claim over any of them knows what it is standing on.
 
 **`BinomialDistribution` and SVD, the other two names in H.5, are not reached by anything ported.**

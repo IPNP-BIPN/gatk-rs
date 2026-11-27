@@ -35,6 +35,9 @@ libz-sys = "1"
 md-5.workspace = true
 # NVScoreVariants refuses weights whose hash is not the one pinned.
 sha2.workspace = true
+# FilterVcf's JAVASCRIPT_FILE, which Picard runs in Nashorn: a pure-Rust ECMAScript engine with
+# the bindings htsjdk's JavascriptVariantFilter gives a script. No default features: none is ES5.
+boa_engine = { version = "0.22.0", default-features = false }
 # HtsgetReader's JSON, which is Jackson's in the reference.
 serde_json = "1"
 # RampedHaplotypeCaller's off and on ramps are zip files of the run's state.

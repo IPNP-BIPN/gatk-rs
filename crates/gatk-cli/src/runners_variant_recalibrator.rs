@@ -993,7 +993,7 @@ fn recal_file(
             ],
         });
     }
-    let header = update_header_contig_lines(
+    let header = update_header_contig_lines_best_available(
         parser,
         VcfHeader {
             lines,

@@ -16,9 +16,9 @@ AVX2 and FMA and no AVX-512, against 4.6.2.0. CI has since re-derived them on re
 | --- | --- | --- |
 | `TrainVariantAnnotationsModel` | **Byte-identical reachable, and landed**, for `PYTHON_IFOREST` with a seed | h5py score files identical; scorer identical but for its random script name |
 | `ScoreVariantAnnotations` | **Byte-identical reachable, and landed**, for `PYTHON_IFOREST` | VCF identical; `.scores.hdf5` doubles identical (the reference's file holds the time) |
-| `DetermineGermlineContigPloidy` | **Ported against the frozen reference** ([gcnv-ploidy.md](gcnv-ploidy.md)), cohort mode with ADVI's convergence tracker out of reach: all 38 golden files byte-identical | The six compiled graphs reproduced op by op under `gcnv_frozen_env.sh`, checked call by call against a trace |
-| `GermlineCNVCaller` | **Keeps the interpreter** | Same |
-| `PostprocessGermlineCNVCalls` | **Ported against the frozen reference** ([gcnv-postprocess.md](gcnv-postprocess.md)): all three outputs byte-identical locally, CI golden pending | Stable on fixed shards; the segmenter's compiled C reproduced op by op under `gcnv_frozen_env.sh` |
+| `DetermineGermlineContigPloidy` | **Runs GATK's scripts, as GATK does**; its arguments measured past the interpreter under `gcnv_frozen_env.sh`. A native port of cohort mode is kept as a library ([gcnv-ploidy.md](gcnv-ploidy.md)): all 38 golden files byte-identical | The six compiled graphs reproduced op by op under `gcnv_frozen_env.sh`, checked call by call against a trace |
+| `GermlineCNVCaller` | **Runs GATK's scripts, as GATK does**; its arguments measured past the interpreter under `gcnv_frozen_env.sh` | Same |
+| `PostprocessGermlineCNVCalls` | **Runs GATK's script, as GATK does**; its arguments measured past the interpreter under `gcnv_frozen_env.sh`. The segmenter's native port is kept as a library ([gcnv-postprocess.md](gcnv-postprocess.md)): all three outputs byte-identical | Stable on fixed shards; the segmenter's compiled C reproduced op by op under `gcnv_frozen_env.sh` |
 
 No tool is in the "only a stated numeric tolerance" class. A tolerance would need a reimplementation
 of the inference to measure against, and none exists.
@@ -86,11 +86,19 @@ by `%.4f`: a last-place difference in the Hipparchus distribution would not show
 * `pickle._Pickler` at protocol 4 with dill's reducers, including `_Framer`'s frame boundaries.
 * Hipparchus' `EmpiricalDistribution` for the calibration sensitivity.
 
+### `PYTHON_SCRIPT`
+
+A user's script is Python, so the port does what GATK does: it runs `python` on it, as
+`PythonScriptExecutor` does, with the arguments `PythonVariantAnnotationsModel` and
+`PythonVariantAnnotationsScorer` compose, over the same temporary files (`subset.annot<n>.hdf5`,
+`temp<n>.scores.hdf5` under `--tmp-dir`, gone at exit). A missing `python` is the executor's user
+error, a name not ending in `.py` its `IllegalArgumentException`, and a status other than nought its
+`PythonScriptExecutorException`, with the command line and both streams' first 8192 bytes.
+
 ### What is still refused
 
 Each ends with the port's own sentence.
 
-* `PYTHON_SCRIPT`: a user's script is Python. There is nothing to port.
 * `--unlabeled-annotations-hdf5` with `PYTHON_IFOREST`: the default script rejects the argument and the
   reference fails with exit status 2 and temporary names in its message.
 * Hyperparameters whose effect was not measured: anything but `random_state`, `n_estimators`, `n_jobs`
@@ -139,11 +147,11 @@ scikit-learn's mixture would describe a model GATK does not run.
 
 ### `PostprocessGermlineCNVCalls`
 
-Ported against the frozen reference (`gcnv_frozen_env.sh`), not against GATK's own configuration,
-which has no CPU-independent target: the intervals VCF and the denoised table are Java, and
-`segment_gcnv_calls.py`'s compiled forward-backward, Viterbi and qualities are reproduced op by op
-in `gatk_tools::gcnv_segments`, with glibc's SSE2 `exp`/`log`/`log1p`/`expm1` in
-`gatk_tools::glibc_libm`. `python` and `gcnvkernel` must still import, as for the reference.
+The CLI runs `segment_gcnv_calls.py` as GATK does; the intervals VCF, the denoised table and the
+segments VCF around it are Java. Against the frozen reference (`gcnv_frozen_env.sh`), not GATK's own
+configuration, which has no CPU-independent target, the script's compiled forward-backward, Viterbi
+and qualities are also reproduced op by op in the library `gatk_tools::gcnv_segments`, with glibc's
+SSE2 `exp`/`log`/`log1p`/`expm1` in `gatk_tools::glibc_libm`.
 [gcnv-postprocess.md](gcnv-postprocess.md) says what is proven and how.
 
 ## What #806 can and cannot claim
@@ -151,22 +159,26 @@ in `gatk_tools::gcnv_segments`, with glibc's SSE2 `exp`/`log`/`log1p`/`expm1` in
 Can claim, **once CI confirms**: `TrainVariantAnnotationsModel` and `ScoreVariantAnnotations` reproduce
 the reference for the default backend with a seeded forest, the scorer modulo its random script name.
 
-Cannot claim: anything for `GermlineCNVCaller` beyond the checks before the import,
-`DetermineGermlineContigPloidy` in case mode or where the convergence tracker could stop ADVI, `PostprocessGermlineCNVCalls` before the `gcnv-frozen` golden lands, and any byte target for
-a scorer's name or for the time inside a Java-written HDF5 file.
+Cannot claim: a byte target for the gCNV tools under GATK's own configuration (only under
+`gcnv_frozen_env.sh`), a native `GermlineCNVCaller`, the native `DetermineGermlineContigPloidy` in
+case mode or where the convergence tracker could stop ADVI, and any byte target for a scorer's name
+or for the time inside a Java-written HDF5 file.
 
 ## What needs CI
 
 * ~~That any of this holds on real x86-64.~~ Done: `vets-isolation-forest` is oracle-backed, in
   `broadinstitute/gatk:4.7.0.0` pulled by the job that runs it.
 * **The arguments past the interpreter.** `TrainVariantAnnotationsModel`'s covering array runs its
-  reference in the Broad's image and the port behind a stand-in `python` (`$past_the_interpreter` in
-  `tools/coverage/fixtures.json`), so its rows reach the fit instead of stopping at the import. That
+  reference in the Broad's image, and the port there too, through the pinned image's glibc loader so
+  that the binary CI links runs on that image's older glibc while the python it starts runs on the
+  image's own (`run_array.port_glibc`, `$past_the_interpreter` in `tools/coverage/fixtures.json`), so
+  its rows reach the fit instead of stopping at the import. That
   turned up one divergence, now fixed: the scorer names the script under `--tmp-dir`, which the port
   had written as `/tmp` whatever the argument said. `ScoreVariantAnnotations` does the same, over
   scorers the reference trains into the corpus before the rows (`run_array.train_scorers`), and
   turned up a second divergence, now fixed: the port wrote the genotypes under
-  `--sites-only-vcf-output`. Its `PYTHON_SCRIPT` rows still differ, as the port's own refusal.
+  `--sites-only-vcf-output`. Its `PYTHON_SCRIPT` rows, and Train's, run `it/score.py` with each
+  side's python.
 * **AVX-512.** On an AVX-512 CPU numpy takes other loops for `power` (SVML) and `log`. The port follows
   the path without AVX-512. A first golden made on an AVX-512 runner differed from the port on every
   row, so `vets_dump.sh` sets `NPY_DISABLE_CPU_FEATURES` to the AVX-512 family: the reference then
