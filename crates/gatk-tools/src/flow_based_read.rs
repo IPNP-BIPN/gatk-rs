@@ -761,8 +761,8 @@ impl FlowRead {
         if args.remove_one_to_zero_probs {
             for i in 0..flows {
                 if self.key[i] == 0 {
-                    for j in 1..rows {
-                        self.matrix[j][i] = min;
+                    for row in &mut self.matrix[1..rows] {
+                        row[i] = min;
                     }
                 }
             }
@@ -832,9 +832,9 @@ impl FlowRead {
                 let column: Vec<f64> = (0..hmers).map(|j| self.matrix[j][i]).collect();
                 let k = ((self.key[i] + 1) / 2) as usize;
                 let kth = find_kth_largest(&column, k + 1);
-                for j in 0..hmers {
-                    if self.matrix[j][i] < kth {
-                        self.matrix[j][i] = min;
+                for row in &mut self.matrix[..hmers] {
+                    if row[i] < kth {
+                        row[i] = min;
                     }
                 }
             }

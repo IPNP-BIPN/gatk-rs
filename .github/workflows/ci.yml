@@ -65,7 +65,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           # Pinned; must match rust-toolchain.toml.
-          toolchain: "1.97.1"
+          toolchain: "1.98.0"
           components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v2
@@ -98,11 +98,19 @@ jobs:
         # docs/COMMENTING.md. The guard is a ratchet, not a floor for the whole tree: it fails only
         # when a file on tools/audit/commented.txt drops below the density it was recorded at, so
         # the remaining files are a measured list rather than a feeling.
-        run: python3 tools/audit/comment_density.py --check
+        run: |
+          python3 tools/audit/comment_density.py --check
+          python3 tools/audit/comment_density.py --self-test
 
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace --release
+
+      - name: Which PairHMM kernels this runner held to the single pair, and what each costs
+        # docs/speed/targets.md, entry 4. The test above already forced every kernel the runner has;
+        # a passing test's output is captured, so this prints the list, the time per kernel and the
+        # one dispatch picks. The binaries are the step above's, so it costs seconds.
+        run: cargo test --release -p gatk-engine --test pair_hmm_port reads_side_by_side -- --nocapture
 
       - name: The ports below are pinned by revision, and every revision resolves
         # GATK's build.gradle pins picardVersion and htsjdkVersion. A floating dependency would let
@@ -152,7 +160,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           # Pinned; must match rust-toolchain.toml.
-          toolchain: "1.97.1"
+          toolchain: "1.98.0"
 
       - uses: Swatinem/rust-cache@v2
 
@@ -207,7 +215,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           # Pinned; must match rust-toolchain.toml.
-          toolchain: "1.97.1"
+          toolchain: "1.98.0"
 
       - uses: Swatinem/rust-cache@v2
 
@@ -682,7 +690,10 @@ jobs:
         # rather than on the host, and the reason is the output: a Tribble index records the file
         # it was built from by path and by last-modified time, so a port run at a different mount
         # point produces a different index for a reason that is not the port's.
-        run: cargo build --release -p gatk-cli
+        #
+        # `dist` is the shipped binary's profile (fat LTO, one codegen unit): the arrays run THAT
+        # binary, so a constant LTO folds differently is caught here (docs/speed/byte-neutrality.md).
+        run: cargo build --profile dist -p gatk-cli
 
       - name: h5py, which reads an HDF5 output back as its tree of datasets
         # The HDF5 library stamps every object header with the time it was made, so two runs of the
@@ -827,7 +838,7 @@ jobs:
             --tool MakeSitesOnlyVcf --tool MergeVcfs --tool RenameSampleInVcf \
             --tool SetNmAndUqTags --tool SetNmMdAndUqTags --tool SortVcf --tool SplitVcfs \
             --tool UpdateVcfSequenceDictionary --tool VcfFormatConverter --tool VcfToIntervalList \
-            --port target/release/gatk --corpus-dir /tmp/coverage-corpus
+            --port target/dist/gatk --corpus-dir /tmp/coverage-corpus
 
       - name: The committed measurement is the one this run produces
         # Same rule as a golden: the number in the tree has to be the number CI re-derives, or the
@@ -973,16 +984,17 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.97.1"
+          toolchain: "1.98.0"
 
       - uses: Swatinem/rust-cache@v2
 
-      - run: cargo build --release -p gatk-cli
+      - name: Build the port binary, in the shipped profile (as in `argument-coverage`)
+        run: cargo build --profile dist -p gatk-cli
 
       - name: Fuzz the reference and replay against the port
         run: |
           python3 tools/fuzz/run_fuzz.py --shard ${{ matrix.shard }}/8 --iterations 30 \
-            --port target/release/gatk
+            --port target/dist/gatk
 
       - name: Publish the findings
         if: always()
@@ -1005,7 +1017,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.97.1"
+          toolchain: "1.98.0"
 
       - name: Weights, fixture, and the reference's dump and layers
         env:
@@ -1063,13 +1075,13 @@ jobs:
           sudo apt-get install -y -qq nasm
           nasm -v
 
-      - name: Build the port binary
-        run: cargo build --release -p gatk-cli
+      - name: Build the port binary, in the shipped profile (as in `argument-coverage`)
+        run: cargo build --profile dist -p gatk-cli
 
       - name: Every Spark tool's rows, at RAYON_NUM_THREADS 1 and 4
         # #72: a parallel path has to be proved byte-equal, not concordant. docs/spark-parallel.md.
         timeout-minutes: 60
-        run: python3 tools/coverage/thread_independence.py --port target/release/gatk --threads 4
+        run: python3 tools/coverage/thread_independence.py --port target/dist/gatk --threads 4
 
   oracle-with-r:
     name: "Oracle with R: the plots around their images"
@@ -1097,7 +1109,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           # Pinned; must match rust-toolchain.toml.
-          toolchain: "1.97.1"
+          toolchain: "1.98.0"
 
       - uses: Swatinem/rust-cache@v2
 

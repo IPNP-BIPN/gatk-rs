@@ -355,8 +355,8 @@ impl QualityScoreCovariate {
                 );
             }
         } else {
-            for i in 0..base_quality_count {
-                values.add_covariate(record.base_qualities[i] as i32, 0, 0, i);
+            for (i, &quality) in record.base_qualities.iter().enumerate() {
+                values.add_covariate(quality as i32, 0, 0, i);
             }
         }
     }

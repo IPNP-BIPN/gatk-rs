@@ -109,8 +109,10 @@ fn the_port_pow_matches_a_measured_numpy() {
     let doubles = |name: &str| -> Vec<f64> {
         std::fs::read(format!("{directory}/{name}"))
             .unwrap()
-            .chunks_exact(8)
-            .map(|b| f64::from_le_bytes(b.try_into().unwrap()))
+            .as_chunks::<8>()
+            .0
+            .iter()
+            .map(|b| f64::from_le_bytes(*b))
             .collect()
     };
     let (ys, wanted) = (doubles("ys.bin"), doubles("nppow.bin"));

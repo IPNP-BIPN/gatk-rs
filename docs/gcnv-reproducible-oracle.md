@@ -8,6 +8,7 @@ hash identically (sha256 of the sorted `*.py` sums) and the same reference BLAS 
 **Everything here was measured under amd64 emulation (Rosetta) on an arm64 Mac, whose emulated CPU
 reports AVX2 and FMA and no AVX-512. Whether the frozen configuration gives the same bits on another
 CPU family is exactly what it cannot show; the `gcnv-frozen` suite is there for CI to show it.**
+CI has shown it since: see [Settled](#settled-the-byte-identical-target).
 
 ## Verdict
 
@@ -22,8 +23,8 @@ CPU family is exactly what it cannot show; the `gcnv-frozen` suite is there for 
 * **Cost: on the order of 3 to 4 months of one person, roughly 15,000 lines of Rust**, for 46
   compiled functions (1,840 nodes) plus pymc's ADVI driver, three RNGs, glibc's libm and the I/O.
   Start with `PostprocessGermlineCNVCalls`' segments: 11 functions, 390 nodes, no RNG, one BLAS call.
-* **No golden is committed.** The suite is `golden-pending`; a golden is worth something only once two
-  runners of different CPU families have produced the same lines.
+* **The golden is committed** (`gcnv_frozen.txt.gz`, suite `gcnv-frozen`, oracle-backed): two runners of
+  different CPU families produced the same lines; see [Settled](#settled-the-byte-identical-target).
 
 ## The frozen configuration
 
@@ -200,6 +201,24 @@ above say which knob to look at first.
 GATK as shipped on any given machine, since the shipped configuration differs between machines
 already. Whether the port then accepts only the frozen configuration, and refuses otherwise, is a
 decision for #806.
+
+## Settled: the byte-identical target
+
+Measured, for #545, #547 and #549.
+
+* **Under the frozen configuration a byte-identical target exists on the pinned image.** The
+  `gcnv-frozen` golden comes from CI run 42048939031 (Xeon 6973P-C). Run 42040149376 (Xeon Platinum
+  8573C) and the emulated AVX2-only run above produced the same bytes in all 132 files.
+* **Under GATK's own configuration there is none, and this is a documented limit.** MKL 2022.2.1 picks
+  its kernels per CPU, pytensor compiles with the host's `-march`, and glibc's libm picks its FMA/AVX2
+  variants through ifunc. On a single CPU, moving those knobs changes 81 of the 132 files. Two machines
+  running GATK as shipped can disagree, so neither one's output is a target. No claim here is made
+  against that configuration.
+* **The #806 decision: the port neither requires nor refuses the frozen configuration.** It runs
+  gcnvkernel's own scripts through the interpreter, as GATK does (#1466). In whatever environment it is
+  given, it computes what GATK computes in that same environment on the same machine. Byte identity is
+  claimed and measured only under `gcnv_frozen_env.sh`: the `gcnv-frozen` suite, and the arrays'
+  `$environment`.
 
 ## Reproducing
 

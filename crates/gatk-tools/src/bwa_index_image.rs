@@ -624,10 +624,10 @@ mod tests {
         let mut random = Rand48::new(7);
         for length in [0usize, 1, 2, 3, 5, 17, 64, 200, 1000] {
             for _ in 0..20 {
-                let mut text: Vec<u32> = (0..length)
+                let text: Vec<u32> = (0..length)
                     .map(|_| (random.next() % 4) as u32 + 1)
+                    .chain([0])
                     .collect();
-                text.push(0);
                 assert_eq!(suffix_array(&text, 5), naive(&text));
             }
         }

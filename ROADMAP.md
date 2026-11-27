@@ -376,8 +376,10 @@ copy, which is a worse position than reading the source rather than a better one
       learn Rust to check the port. `tools/audit/comment_density.py --check` is a ratchet, not a
       floor: it fails only when a file already on the list loses its explanations
 - [ ] the tranches, in the order a reader needs them: the engine's numeric primitives, then the
-      likelihood matrix, then the annotations, then the readers and writers. **3 of 122 files** in
-      this repository, 332 across the three
+      likelihood matrix, then the annotations, then the readers and writers. **13 of the 475 files
+      under `crates/*/src/`** in this repository are on `tools/audit/commented.txt`; htsjdk-rs has
+      159 and picard-rs 279, so 913 across the three (tests are out of scope: a fixture table
+      explains itself)
 
 ### G1.8 The argument layer
 
