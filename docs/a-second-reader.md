@@ -86,6 +86,6 @@ says when to query every record again: when the index writer or either reader ch
 ## Pinning
 
 `noodles = { version = "0.119.0", features = [...] }`, plus the 23 packages it adds to `Cargo.lock`.
-Its rust-version is 1.91, below the pinned 1.97.1. Its README calls the API experimental, so an
+Its rust-version is 1.91, below the pinned 1.98.0. Its README calls the API experimental, so an
 upgrade can break the test's code. That is a test-only change, and the `KNOWN` list says what the
 upgraded reader must still refuse.
