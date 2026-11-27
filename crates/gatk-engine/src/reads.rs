@@ -35,6 +35,9 @@
 //! record filter. Records are decompressed by `htsjdk-bgzf` and decoded by `htsjdk-bam`, which
 //! are this programme's own ports, because what a record *is* is htsjdk's decision.
 
+use std::fs::File;
+use std::io::{BufReader, Read};
+use std::os::unix::fs::FileExt;
 use std::path::Path;
 
 use htsjdk_bam::header::SamHeader;
@@ -242,16 +245,16 @@ pub enum FilterState {
 /// `BAMQueryMultipleIntervalsIteratorFilter`: stateful, and that is the point.
 ///
 /// `interval_index` never goes backwards, and `StopIteration` ends the traversal outright.
-pub struct IntervalFilter<'a> {
-    intervals: &'a [QueryInterval],
+pub struct IntervalFilter {
+    intervals: Vec<QueryInterval>,
     contained: bool,
     interval_index: usize,
 }
 
-impl<'a> IntervalFilter<'a> {
-    pub fn new(intervals: &'a [QueryInterval], contained: bool) -> Self {
+impl IntervalFilter {
+    pub fn new(intervals: &[QueryInterval], contained: bool) -> Self {
         IntervalFilter {
-            intervals,
+            intervals: intervals.to_vec(),
             contained,
             interval_index: 0,
         }
@@ -367,18 +370,248 @@ pub fn minimum_offset(linear_index: &[u64], start_pos: i32) -> u64 {
     linear_index.get(bin).copied().unwrap_or(0)
 }
 
+/// The compressed BAM where it lies, read a block at a time rather than held whole.
+///
+/// Positional reads (`pread`) rather than a seek and a read, so two cursors over one source, or two
+/// threads, never move each other's position. Every read below asks for bytes `&data[at..]` would
+/// have given, so what comes back is the same as when the file was a `Vec`.
+struct CompressedFile {
+    file: File,
+    len: u64,
+}
+
+/// What `BufReader` sits on: the file from a position, read forward.
+struct At<'a> {
+    file: &'a File,
+    pos: u64,
+}
+
+impl Read for At<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        loop {
+            match self.file.read_at(buf, self.pos) {
+                Ok(read) => {
+                    self.pos += read as u64;
+                    return Ok(read);
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(error) => return Err(error),
+            }
+        }
+    }
+}
+
+/// A block's worth twice over, so a header and its body are one read.
+const READ_BUFFER: usize = 1 << 17;
+
+impl CompressedFile {
+    /// `std::fs::read`'s refusals, without its read: the open, then one byte, which is where a
+    /// directory is refused.
+    fn open(path: &Path) -> Result<CompressedFile, ReadsError> {
+        let io = |error: std::io::Error| ReadsError::Io(error.to_string());
+        let file = File::open(path).map_err(io)?;
+        file.read_at(&mut [0u8; 1], 0).map_err(io)?;
+        let len = file.metadata().map_err(io)?.len();
+        Ok(CompressedFile { file, len })
+    }
+
+    fn len(&self) -> u64 {
+        self.len
+    }
+
+    /// The file from `address` on, as `&data[address..]` was.
+    fn reader_at(&self, address: u64) -> BufReader<At<'_>> {
+        BufReader::with_capacity(
+            READ_BUFFER,
+            At {
+                file: &self.file,
+                pos: address,
+            },
+        )
+    }
+
+    /// The blocks from `address` on, inflated in order.
+    fn blocks_from(&self, address: u64) -> BgzfReader<BufReader<At<'_>>> {
+        BgzfReader::new(self.reader_at(address))
+    }
+
+    /// `data.get(at..at + length)`.
+    fn get(&self, at: u64, length: usize) -> Result<Option<Vec<u8>>, ReadsError> {
+        match at.checked_add(length as u64) {
+            Some(end) if end <= self.len => {}
+            _ => return Ok(None),
+        }
+        let mut bytes = vec![0u8; length];
+        self.file
+            .read_exact_at(&mut bytes, at)
+            .map_err(|error| ReadsError::Io(error.to_string()))?;
+        Ok(Some(bytes))
+    }
+}
+
+fn malformed(error: impl std::fmt::Debug) -> ReadsError {
+    ReadsError::Malformed(format!("{error:?}"))
+}
+
+/// How many blocks [`check_blocks`] inflates at once: at most 16 MiB either side of the inflate.
+const CHECKED_BLOCKS: usize = 256;
+
+/// `decompress_all`'s answer for the whole file, keeping none of what it inflates.
+///
+/// Opening a BAM inflated it whole, so a damaged block anywhere was refused at the open, before
+/// any argument check that follows it. The refusal stays where it was; only the inflated copy goes.
+/// The file is cut at frames `BgzfReader::next_block` would accept, so each batch's first failing
+/// block is the one the whole stream would have stopped at; where the walk cannot vouch for a
+/// frame the serial reader takes over and refuses it in its own way.
+fn check_blocks(compressed: &CompressedFile) -> Result<(), ReadsError> {
+    let mut address = 0u64;
+    loop {
+        let end = frames(compressed, address, CHECKED_BLOCKS)?;
+        if end == address {
+            let mut reader = compressed.blocks_from(address);
+            while reader.next_block().map_err(malformed)?.is_some() {}
+            return Ok(());
+        }
+        let bytes = compressed
+            .get(address, (end - address) as usize)?
+            .expect("frames inside the file");
+        htsjdk_bgzf::read::decompress_all(&bytes).map_err(malformed)?;
+        address = end;
+    }
+}
+
+/// Where up to `count` blocks from `address` end, walking only frames `BgzfReader::next_block`
+/// would accept: `address` itself where it cannot vouch for the first.
+fn frames(compressed: &CompressedFile, address: u64, count: usize) -> Result<u64, ReadsError> {
+    let mut end = address;
+    for _ in 0..count {
+        let Some(head) = compressed.get(end, 18)? else {
+            break;
+        };
+        if head[..4] != [0x1f, 0x8b, 8, 4] || u16::from_le_bytes([head[10], head[11]]) != 6 {
+            break;
+        }
+        let length = u64::from(u16::from_le_bytes([head[16], head[17]])) + 1;
+        if length < 18 || end + length > compressed.len() {
+            break;
+        }
+        end += length;
+    }
+    Ok(end)
+}
+
+/// How many blocks a stream inflates at once: at most 4 MiB either side of the inflate.
+const STREAM_BLOCKS: usize = 64;
+
+/// The blocks from an address on, inflated a batch at a time on rayon's workers, which is how the
+/// whole file was inflated when it was held. The bytes are the serial reader's: where a batch
+/// does not inflate, its blocks go through the serial reader one at a time, so a refusal comes
+/// after the bytes before it, as it did.
+struct Inflating<'a> {
+    file: &'a CompressedFile,
+    address: u64,
+}
+
+impl Inflating<'_> {
+    /// The next blocks' bytes appended to `out`; false at the end of the stream.
+    fn next_into(&mut self, out: &mut Vec<u8>) -> Result<bool, ReadsError> {
+        let end = frames(self.file, self.address, STREAM_BLOCKS)?;
+        if end > self.address {
+            let bytes = self
+                .file
+                .get(self.address, (end - self.address) as usize)?
+                .expect("frames inside the file");
+            if let Ok(inflated) = htsjdk_bgzf::read::decompress_all(&bytes) {
+                out.extend_from_slice(&inflated);
+                self.address = end;
+                return Ok(true);
+            }
+        }
+        match self
+            .file
+            .blocks_from(self.address)
+            .next_block()
+            .map_err(malformed)?
+        {
+            Some(block) => {
+                out.extend_from_slice(&block.data);
+                self.address += block.block_compressed_size as u64;
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
+}
+
+/// `BamReader::new` over the whole inflated stream, inflating only the blocks the header spans:
+/// a `Truncated` refusal is final only once the stream has run out, which is when the whole
+/// stream would have given it. The header, and where the records start.
+fn read_header(compressed: &CompressedFile) -> Result<(SamHeader, usize), ReadsError> {
+    let mut blocks = compressed.blocks_from(0);
+    let mut inflated = Vec::new();
+    let mut ended = false;
+    loop {
+        match BamReader::new(&inflated) {
+            Ok(reader) => {
+                let start = reader.records_start();
+                return Ok((reader.header.text, start));
+            }
+            Err(htsjdk_bam::reader::ReadError::Truncated { .. }) if !ended => {}
+            Err(error) => return Err(malformed(error)),
+        }
+        match blocks.next_block().map_err(malformed)? {
+            Some(block) => inflated.extend_from_slice(&block.data),
+            None => ended = true,
+        }
+    }
+}
+
+/// Whether `start` holds what a reader decides a stream by: the first line, and the four bytes a
+/// magic needs.
+fn decides(start: &[u8]) -> bool {
+    start.len() >= 4 && start.contains(&b'\n')
+}
+
+/// The start of a file, as `std::fs::read` would have begun it: up to the end of its first line
+/// and at least four bytes, or the whole of a shorter file. `None` where the read is refused.
+pub fn file_start(path: &Path) -> Option<Vec<u8>> {
+    let mut file = File::open(path).ok()?;
+    let mut start = Vec::new();
+    let mut buffer = [0u8; 1 << 16];
+    while !decides(&start) {
+        match file.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(read) => start.extend_from_slice(&buffer[..read]),
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(_) => return None,
+        }
+    }
+    Some(start)
+}
+
+/// [`file_start`] of the inflated stream, for a file [`ReadsDataSource::check`] passed.
+pub fn inflated_start(path: &Path) -> Result<Vec<u8>, ReadsError> {
+    let compressed = CompressedFile::open(path)?;
+    let mut blocks = compressed.blocks_from(0);
+    let mut start = Vec::new();
+    while !decides(&start) {
+        match blocks.next_block().map_err(malformed)? {
+            Some(block) => start.extend_from_slice(&block.data),
+            None => break,
+        }
+    }
+    Ok(start)
+}
+
 /// `ReadsPathDataSource` over a single indexed BAM.
 ///
-/// The whole compressed file is held in memory. That is right for the conformance corpus and
-/// wrong for a genome, and it is a property of this slice rather than of the port: the seeking
-/// below only needs a byte offset, so a file-backed reader replaces it without touching the
-/// query semantics.
+/// The file is read where a query needs it: a traversal holds a block and the record it is
+/// decoding, whatever the size of the file.
 pub struct ReadsDataSource {
-    compressed: Vec<u8>,
-    /// `compressed` inflated, when opening already inflated it: inflating a BAM again costs as
-    /// much as the first time, and `decompress_all` gives the same bytes for the same input.
-    inflated: Option<Vec<u8>>,
+    compressed: CompressedFile,
     header: SamHeader,
+    /// Where the records start in the inflated stream, which is the header's length.
+    records_start: usize,
     /// The path the BAM was opened from, which a `RuntimeEOFException` names.
     path: String,
     /// One entry per reference sequence: its bins' chunks and its linear index.
@@ -397,32 +630,22 @@ impl ReadsDataSource {
     /// Open a BAM and its `.bai`, which must exist: GATK raises a `UserException` naming the
     /// `samtools index` command rather than falling back to a linear scan.
     pub fn open(bam: &Path, bai: &Path) -> Result<ReadsDataSource, ReadsError> {
-        let compressed = std::fs::read(bam).map_err(|e| ReadsError::Io(e.to_string()))?;
-        let decompressed = htsjdk_bgzf::read::decompress_all(&compressed)
-            .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?;
-        let header = BamReader::new(&decompressed)
-            .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?
-            .header
-            .text;
-
-        let index = Self::read_reference_indexes(bai)?;
-        Ok(ReadsDataSource {
-            compressed,
-            inflated: Some(decompressed),
-            header,
-            path: bam.display().to_string(),
-            index,
-            split_start: 0,
-        })
+        let mut source = Self::open_unindexed(bam)?;
+        source.index = Self::read_reference_indexes(bai)?;
+        Ok(source)
     }
 
     fn read_reference_indexes(bai: &Path) -> Result<Vec<ReferenceIndex>, ReadsError> {
+        let bai_bytes = std::fs::read(bai).map_err(|e| ReadsError::Io(e.to_string()))?;
+        Self::parse_reference_indexes(&bai_bytes)
+    }
+
+    fn parse_reference_indexes(bai_bytes: &[u8]) -> Result<Vec<ReferenceIndex>, ReadsError> {
         // The `.bai` is parsed by the port's own reader rather than by a dependency. It is the
         // same file either way; what differs is who answers for it, and htsjdk-bam's `read_bai`
         // is measured by the `textual-index` suite, which parses six `.bai` files and reprints
         // each through `TextualBAMIndexWriter`'s format.
-        let bai_bytes = std::fs::read(bai).map_err(|e| ReadsError::Io(e.to_string()))?;
-        let parsed = htsjdk_bam::index::read_bai(&bai_bytes)
+        let parsed = htsjdk_bam::index::read_bai(bai_bytes)
             .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?;
         Ok(parsed
             .references
@@ -460,27 +683,25 @@ impl ReadsDataSource {
     /// on a source opened this way finds no bins and returns nothing, which is the shape a caller
     /// with no intervals never reaches.
     pub fn open_unindexed(bam: &Path) -> Result<ReadsDataSource, ReadsError> {
-        let compressed = std::fs::read(bam).map_err(|e| ReadsError::Io(e.to_string()))?;
-        let decompressed = htsjdk_bgzf::read::decompress_all(&compressed)
-            .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?;
-        Self::from_inflated(bam, compressed, decompressed)
+        Self::check(bam)?;
+        Self::open_checked(bam)
     }
 
-    /// [`Self::open_unindexed`] for a caller that has already read the file and inflated it
-    /// whole, so that it is not inflated a second time.
-    pub fn from_inflated(
-        bam: &Path,
-        compressed: Vec<u8>,
-        inflated: Vec<u8>,
-    ) -> Result<ReadsDataSource, ReadsError> {
-        let header = BamReader::new(&inflated)
-            .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?
-            .header
-            .text;
+    /// Whether the whole file inflates, which [`Self::open_unindexed`] asks before it reads the
+    /// header. A caller that needs the answer before it opens asks here and then opens with
+    /// [`Self::open_checked`], so the file is inflated once and not twice.
+    pub fn check(bam: &Path) -> Result<(), ReadsError> {
+        check_blocks(&CompressedFile::open(bam)?)
+    }
+
+    /// [`Self::open_unindexed`] for a file [`Self::check`] has already passed.
+    pub fn open_checked(bam: &Path) -> Result<ReadsDataSource, ReadsError> {
+        let compressed = CompressedFile::open(bam)?;
+        let (header, records_start) = read_header(&compressed)?;
         Ok(ReadsDataSource {
             compressed,
-            inflated: Some(inflated),
             header,
+            records_start,
             path: bam.display().to_string(),
             index: Vec::new(),
             split_start: 0,
@@ -493,14 +714,43 @@ impl ReadsDataSource {
         Ok(())
     }
 
-    /// The whole file inflated: the copy opening kept, or a fresh inflate.
-    fn inflated(&self) -> Result<std::borrow::Cow<'_, [u8]>, ReadsError> {
-        match &self.inflated {
-            Some(inflated) => Ok(std::borrow::Cow::Borrowed(inflated)),
-            None => htsjdk_bgzf::read::decompress_all(&self.compressed)
-                .map(std::borrow::Cow::Owned)
-                .map_err(|e| ReadsError::Malformed(format!("{e:?}"))),
-        }
+    /// [`Self::load_index`] from `.bai` bytes already in memory.
+    pub fn load_index_bytes(&mut self, bai: &[u8]) -> Result<(), ReadsError> {
+        self.index = Self::parse_reference_indexes(bai)?;
+        Ok(())
+    }
+
+    /// The header the tool sees, in place of the one the BAM bytes carry: a source transcoded
+    /// from SAM text or CRAM keeps its file's header rather than the one a BAM writer stamps.
+    pub fn with_header(mut self, header: SamHeader) -> Self {
+        self.header = header;
+        self
+    }
+
+    /// A BAM built in memory, as SAM text and CRAM are transcoded, read like a file: it is written
+    /// to the temporary directory and unlinked once open, so the source holds a descriptor and the
+    /// file is gone when the source is.
+    pub fn from_bam_bytes(path: &Path, bam: &[u8]) -> Result<ReadsDataSource, ReadsError> {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let io = |error: std::io::Error| ReadsError::Io(error.to_string());
+        let scratch = std::env::temp_dir().join(format!(
+            ".gatk-rs-transcoded.{}.{}.bam",
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        std::fs::write(&scratch, bam).map_err(io)?;
+        let opened = CompressedFile::open(&scratch);
+        let _ = std::fs::remove_file(&scratch);
+        let compressed = opened?;
+        let (header, records_start) = read_header(&compressed)?;
+        Ok(ReadsDataSource {
+            compressed,
+            header,
+            records_start,
+            path: path.display().to_string(),
+            index: Vec::new(),
+            split_start: 0,
+        })
     }
 
     pub fn header(&self) -> &SamHeader {
@@ -551,7 +801,12 @@ impl ReadsDataSource {
     /// `optimizeIntervals` first, exactly as `SamReaderQueryingIterator` does, so abutting
     /// intervals merge and a read is returned once rather than once per interval.
     pub fn query(&self, intervals: &[SimpleInterval]) -> Result<Vec<BamRecord>, ReadsError> {
-        self.query_within(intervals, self.split_start, u64::MAX)
+        self.query_iter(intervals)?.collect()
+    }
+
+    /// [`Self::query`], a record at a time.
+    pub fn query_iter(&self, intervals: &[SimpleInterval]) -> Result<Records<'_>, ReadsError> {
+        self.query_within_iter(intervals, self.split_start, u64::MAX)
     }
 
     /// `query` over what `span.removeContentsBefore(splitSpan)` and `removeContentsAfter` leave of
@@ -562,13 +817,23 @@ impl ReadsDataSource {
         from: u64,
         to: u64,
     ) -> Result<Vec<BamRecord>, ReadsError> {
+        self.query_within_iter(intervals, from, to)?.collect()
+    }
+
+    /// [`Self::query_within`], a record at a time.
+    pub fn query_within_iter(
+        &self,
+        intervals: &[SimpleInterval],
+        from: u64,
+        to: u64,
+    ) -> Result<Records<'_>, ReadsError> {
         let converted: Result<Vec<_>, _> = intervals
             .iter()
             .map(|i| convert_simple_interval_to_query_interval(i, &self.header))
             .collect();
         let optimized = optimize_intervals(&converted?);
         if optimized.is_empty() {
-            return Ok(Vec::new());
+            return Ok(self.records(Kind::Done));
         }
 
         // BAMFileReader.getFileSpan: one span per interval, merged with minimumOffset 0.
@@ -577,29 +842,12 @@ impl ReadsDataSource {
             spans.extend(self.chunks_overlapping(interval));
         }
         let span = optimize_chunk_list(&spans, 0);
-
-        let mut filter = IntervalFilter::new(&optimized, false);
-        let mut kept = Vec::new();
-        'chunks: for chunk in span {
-            // `removeContentsBefore(splitSpan)`: Disq's split clips the index's chunks.
-            if chunk.end <= from || chunk.start >= to {
-                continue;
-            }
-            let start = chunk.start.max(from);
-            let end = chunk.end.min(to);
-            let mut cursor = BlockCursor::seek(&self.compressed, start)?;
-            while cursor.virtual_pos() < end {
-                let Some(record) = cursor.next_record().map_err(|e| self.name_the_file(e))? else {
-                    break;
-                };
-                match filter.compare_to_filter(&record) {
-                    FilterState::MatchesFilter => kept.push(record),
-                    FilterState::ContinueIteration => {}
-                    FilterState::StopIteration => break 'chunks,
-                }
-            }
-        }
-        Ok(kept)
+        Ok(self.records(Kind::Chunks {
+            chunks: span.into_iter(),
+            clip: Some((from, to)),
+            cursor: None,
+            filter: Some(IntervalFilter::new(&optimized, false)),
+        }))
     }
 
     /// `ReadsPathDataSource.queryUnmapped`: the unplaced unmapped reads at the tail of the file.
@@ -608,24 +856,21 @@ impl ReadsDataSource {
     /// with no reference, which is why a file whose unmapped reads are not at the end returns
     /// nothing here.
     pub fn query_unmapped(&self) -> Result<Vec<BamRecord>, ReadsError> {
+        self.query_unmapped_iter()?.collect()
+    }
+
+    /// [`Self::query_unmapped`], a record at a time.
+    pub fn query_unmapped_iter(&self) -> Result<Records<'_>, ReadsError> {
         let start = match self.start_of_last_linear_bin() {
             Some(pointer) => pointer,
             // No mapped reads in the file, so start at the first record.
             None => self.first_record_pointer()?,
         };
-        let mut cursor = BlockCursor::seek(&self.compressed, start)?;
-        let mut kept = Vec::new();
-        let mut reached = false;
-        while let Some(record) = cursor.next_record().map_err(|e| self.name_the_file(e))? {
-            if !reached {
-                if record.reference_index != -1 {
-                    continue;
-                }
-                reached = true;
-            }
-            kept.push(record);
-        }
-        Ok(kept)
+        let cursor = BlockCursor::seek(&self.compressed, start)?;
+        Ok(self.records(Kind::Unmapped {
+            cursor,
+            reached: false,
+        }))
     }
 
     /// `AbstractBAMFileIndex.getStartOfLastLinearBin`: the **last** entry of the last reference
@@ -649,25 +894,17 @@ impl ReadsDataSource {
     /// The header can span BGZF blocks, so this walks blocks counting decompressed bytes rather
     /// than assuming the records start in the first one.
     fn first_record_pointer(&self) -> Result<u64, ReadsError> {
-        let decompressed = self.inflated()?;
-        let header_end = BamReader::new(&decompressed)
-            .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?
-            .records_start();
-
+        let header_end = self.records_start;
         let mut consumed = 0usize;
         let mut address = 0u64;
-        while (address as usize) < self.compressed.len() {
-            let mut reader = BgzfReader::new(&self.compressed[address as usize..]);
-            let Some(block) = reader
-                .next_block()
-                .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?
-            else {
+        let mut blocks = self.compressed.blocks_from(0);
+        while address < self.compressed.len() {
+            let Some(block) = blocks.next_block().map_err(malformed)? else {
                 break;
             };
             if consumed + block.data.len() > header_end {
                 let offset = (header_end - consumed) as u32;
-                return vfp::make_file_pointer(address, offset)
-                    .map_err(|e| ReadsError::Malformed(format!("{e:?}")));
+                return vfp::make_file_pointer(address, offset).map_err(malformed);
             }
             consumed += block.data.len();
             address += block.block_compressed_size as u64;
@@ -677,47 +914,217 @@ impl ReadsDataSource {
 
     /// A full traversal, which is what a walker with no `-L` does.
     pub fn iter_all(&self) -> Result<Vec<BamRecord>, ReadsError> {
+        self.records_all()?.collect()
+    }
+
+    /// [`Self::iter_all`], a record at a time.
+    pub fn records_all(&self) -> Result<Records<'_>, ReadsError> {
         if self.split_start != 0 {
-            let mut cursor = BlockCursor::seek(&self.compressed, self.split_start)?;
-            let mut records = Vec::new();
-            while let Some(record) = cursor.next_record().map_err(|e| self.name_the_file(e))? {
-                records.push(record);
-            }
-            return Ok(records);
+            let cursor = BlockCursor::seek(&self.compressed, self.split_start)?;
+            return Ok(self.records(Kind::Tail(cursor)));
         }
-        let decompressed = self.inflated()?;
-        let reader =
-            BamReader::new(&decompressed).map_err(|e| ReadsError::Malformed(format!("{e:?}")))?;
-        reader
-            .map(|r| r.map_err(|e| ReadsError::Malformed(format!("{e:?}"))))
-            .collect()
+        Ok(self.records(Kind::Stream(Stream::new(
+            &self.compressed,
+            self.records_start,
+        )?)))
+    }
+
+    fn records<'a>(&'a self, kind: Kind<'a>) -> Records<'a> {
+        Records { source: self, kind }
+    }
+}
+
+/// The records a query, a chunk or a traversal reads, a record at a time, in the order the
+/// `Vec` forms return them: those are this collected.
+pub struct Records<'a> {
+    source: &'a ReadsDataSource,
+    kind: Kind<'a>,
+}
+
+enum Kind<'a> {
+    /// The inflated stream from the first record, as `BamReader` reads it.
+    Stream(Stream<'a>),
+    /// From a pointer to the end of the file.
+    Tail(BlockCursor<'a>),
+    /// Each chunk from its start until the cursor passes its end, clipped to a split when there
+    /// is one, through the interval filter when there is one.
+    Chunks {
+        chunks: std::vec::IntoIter<Chunk>,
+        clip: Option<(u64, u64)>,
+        cursor: Option<(BlockCursor<'a>, u64)>,
+        filter: Option<IntervalFilter>,
+    },
+    /// Skipping to the first record with no reference, then everything.
+    Unmapped {
+        cursor: BlockCursor<'a>,
+        reached: bool,
+    },
+    Done,
+}
+
+impl Iterator for Records<'_> {
+    type Item = Result<BamRecord, ReadsError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let next = self.advance();
+        if !matches!(next, Ok(Some(_))) {
+            // An error ends the traversal, as the `Vec` forms' `?` did.
+            self.kind = Kind::Done;
+        }
+        next.transpose()
+    }
+}
+
+impl Records<'_> {
+    fn advance(&mut self) -> Result<Option<BamRecord>, ReadsError> {
+        let source = self.source;
+        match &mut self.kind {
+            Kind::Done => Ok(None),
+            Kind::Stream(stream) => stream.next_record(),
+            Kind::Tail(cursor) => cursor.next_record().map_err(|e| source.name_the_file(e)),
+            Kind::Unmapped { cursor, reached } => loop {
+                let Some(record) = cursor.next_record().map_err(|e| source.name_the_file(e))?
+                else {
+                    return Ok(None);
+                };
+                if !*reached {
+                    if record.reference_index != -1 {
+                        continue;
+                    }
+                    *reached = true;
+                }
+                return Ok(Some(record));
+            },
+            Kind::Chunks {
+                chunks,
+                clip,
+                cursor,
+                filter,
+            } => loop {
+                let Some((reading, end)) = cursor else {
+                    let Some(chunk) = chunks.next() else {
+                        return Ok(None);
+                    };
+                    let (start, end) = match *clip {
+                        // `removeContentsBefore(splitSpan)`: Disq's split clips the index's chunks.
+                        Some((from, to)) => {
+                            if chunk.end <= from || chunk.start >= to {
+                                continue;
+                            }
+                            (chunk.start.max(from), chunk.end.min(to))
+                        }
+                        None => (chunk.start, chunk.end),
+                    };
+                    *cursor = Some((BlockCursor::seek(&source.compressed, start)?, end));
+                    continue;
+                };
+                if reading.virtual_pos() >= *end {
+                    *cursor = None;
+                    continue;
+                }
+                let Some(record) = reading.next_record().map_err(|e| source.name_the_file(e))?
+                else {
+                    *cursor = None;
+                    continue;
+                };
+                let Some(filter) = filter else {
+                    return Ok(Some(record));
+                };
+                match filter.compare_to_filter(&record) {
+                    FilterState::MatchesFilter => return Ok(Some(record)),
+                    FilterState::ContinueIteration => {}
+                    FilterState::StopIteration => return Ok(None),
+                }
+            },
+        }
+    }
+}
+
+/// The inflated stream from the first record, decoded as `BamReader` decodes the whole stream: a
+/// length the stream cannot honour is `Truncated` with what was left, not `RuntimeEOFException`.
+struct Stream<'a> {
+    blocks: Inflating<'a>,
+    buffer: Vec<u8>,
+    at: usize,
+    ended: bool,
+}
+
+/// How much decoded stream is kept before it is dropped from the front.
+const STREAM_KEPT: usize = 4 << 20;
+
+impl<'a> Stream<'a> {
+    fn new(compressed: &'a CompressedFile, records_start: usize) -> Result<Stream<'a>, ReadsError> {
+        let mut stream = Stream {
+            blocks: Inflating {
+                file: compressed,
+                address: 0,
+            },
+            buffer: Vec::new(),
+            at: 0,
+            ended: false,
+        };
+        stream.fill(records_start)?;
+        stream.at = records_start.min(stream.buffer.len());
+        Ok(stream)
+    }
+
+    /// At least `wanted` bytes past `at`, or the rest of the stream.
+    fn fill(&mut self, wanted: usize) -> Result<(), ReadsError> {
+        if self.at > STREAM_KEPT {
+            self.buffer.drain(..self.at);
+            self.at = 0;
+        }
+        while !self.ended && self.buffer.len() - self.at < wanted {
+            self.ended = !self.blocks.next_into(&mut self.buffer)?;
+        }
+        Ok(())
+    }
+
+    fn next_record(&mut self) -> Result<Option<BamRecord>, ReadsError> {
+        self.fill(4)?;
+        let have = &self.buffer[self.at..];
+        if have.is_empty() {
+            return Ok(None);
+        }
+        if have.len() >= 4 {
+            let length = i32::from_le_bytes([have[0], have[1], have[2], have[3]]);
+            if length >= FIXED_BLOCK_SIZE as i32 {
+                // shortcut: a damaged length reads the rest of the stream to report `have`; the
+                // file passed `check_blocks`, so only a corrupt record gets here.
+                self.fill(4 + length as usize)?;
+            }
+        }
+        match BamRecord::decode(&self.buffer[self.at..]) {
+            Ok(None) => Ok(None),
+            Ok(Some((record, used))) => {
+                self.at += used;
+                Ok(Some(record))
+            }
+            Err(error) => Err(malformed(htsjdk_bam::reader::ReadError::Record(error))),
+        }
     }
 }
 
 impl ReadsDataSource {
     /// A BAM and, under intervals, its `.bai`, inflating the header's blocks and no others: the
     /// whole file inflated at once is what a split exists to avoid.
-    ///
-    /// shortcut: the compressed file is still held whole, as [`ReadsDataSource`] says.
     pub fn open_for_splits(bam: &Path, bai: Option<&Path>) -> Result<ReadsDataSource, ReadsError> {
-        let compressed = std::fs::read(bam).map_err(|e| ReadsError::Io(e.to_string()))?;
+        let compressed = CompressedFile::open(bam)?;
         let mut inflated = Vec::new();
-        let mut address = 0usize;
-        let header = loop {
+        let mut blocks = compressed.blocks_from(0);
+        let (header, records_start) = loop {
             match BamReader::new(&inflated) {
-                Ok(reader) => break reader.header.text,
+                Ok(reader) => {
+                    let start = reader.records_start();
+                    break (reader.header.text, start);
+                }
                 Err(htsjdk_bam::reader::ReadError::Truncated { .. }) => {}
-                Err(error) => return Err(ReadsError::Malformed(format!("{error:?}"))),
+                Err(error) => return Err(malformed(error)),
             }
-            let mut reader = BgzfReader::new(&compressed[address.min(compressed.len())..]);
-            let Some(block) = reader
-                .next_block()
-                .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?
-            else {
+            let Some(block) = blocks.next_block().map_err(malformed)? else {
                 let error = BamReader::new(&inflated).err();
-                return Err(ReadsError::Malformed(format!("{error:?}")));
+                return Err(malformed(error));
             };
-            address += block.block_compressed_size;
             inflated.extend_from_slice(&block.data);
         };
         let index = match bai {
@@ -726,9 +1133,8 @@ impl ReadsDataSource {
         };
         Ok(ReadsDataSource {
             compressed,
-            // A split source inflates what it reads, not the whole file.
-            inflated: None,
             header,
+            records_start,
             path: bam.display().to_string(),
             index,
             split_start: 0,
@@ -761,19 +1167,13 @@ impl ReadsDataSource {
         let total = blocks
             .last()
             .map_or(0, |block| block.linear as usize + block.size as usize);
-        let mut stream = InflatedStream {
-            data: &self.compressed,
-            blocks: &blocks,
-            total,
-            window: Vec::new(),
-            window_start: 0,
-            next_block: 0,
-        };
+        let mut stream = InflatedStream::new(&self.compressed, &blocks, total);
+        let mut window = ByteWindow::new(&self.compressed);
         let lengths: Vec<i32> = self.header.sequences.iter().map(|s| s.length).collect();
         let mut partitions = Vec::with_capacity(splits.len());
         for (start, end) in splits {
             partitions.push(first_read_in_split(
-                &self.compressed,
+                &mut window,
                 &blocks,
                 &mut stream,
                 &lengths,
@@ -786,15 +1186,17 @@ impl ReadsDataSource {
 
     /// `BAMFileReader.getIterator(chunks)`: a record belongs to the chunk it starts in.
     pub fn read_chunk(&self, chunk: &Chunk) -> Result<Vec<BamRecord>, ReadsError> {
-        let mut cursor = BlockCursor::seek(&self.compressed, chunk.start)?;
-        let mut records = Vec::new();
-        while cursor.virtual_pos() < chunk.end {
-            let Some(record) = cursor.next_record().map_err(|e| self.name_the_file(e))? else {
-                break;
-            };
-            records.push(record);
-        }
-        Ok(records)
+        self.read_chunk_iter(chunk).collect()
+    }
+
+    /// [`Self::read_chunk`], a record at a time.
+    pub fn read_chunk_iter(&self, chunk: &Chunk) -> Records<'_> {
+        self.records(Kind::Chunks {
+            chunks: vec![*chunk].into_iter(),
+            clip: None,
+            cursor: None,
+            filter: None,
+        })
     }
 
     /// Disq's `BamSource.getFirstReadInPartition` with no `.sbi`: the reads start where its
@@ -806,47 +1208,46 @@ impl ReadsDataSource {
     /// within ten of it is never read: the reads are lost, not refused. No accepted position in
     /// the first ten million is a partition with no reads.
     ///
+    /// Every block is inflated before the guess starts, as when the blocks were collected whole,
+    /// so a damaged block is refused here wherever it lies; only their lengths are kept.
+    ///
     /// shortcut: one partition, which is what a file under the split size gets; a larger file is
     /// split and each split guesses its own start, which [`Self::disq_partitions`] does.
     pub fn with_disq_split_start(mut self) -> Result<ReadsDataSource, ReadsError> {
         let mut blocks = Vec::new();
-        let mut address = 0usize;
+        let mut address = 0u64;
+        let mut linear = 0u64;
+        let mut reader = self.compressed.blocks_from(0);
         while address < self.compressed.len() {
-            let mut reader = BgzfReader::new(&self.compressed[address..]);
-            let Some(block) = reader
-                .next_block()
-                .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?
-            else {
+            let Some(block) = reader.next_block().map_err(malformed)? else {
                 break;
             };
-            let size = block.block_compressed_size;
-            blocks.push((address as u64, block.data));
-            address += size;
+            blocks.push(BlockEntry {
+                address,
+                linear,
+                size: block.data.len() as u32,
+            });
+            linear += block.data.len() as u64;
+            address += block.block_compressed_size as u64;
         }
-        let flat: Vec<u8> = blocks
-            .iter()
-            .flat_map(|(_, data)| data.iter().copied())
-            .collect();
+        let mut stream = InflatedStream::new(&self.compressed, &blocks, linear as usize);
         let lengths: Vec<i32> = self.header.sequences.iter().map(|s| s.length).collect();
-        let mut linear = 0usize;
         let mut index = 0usize;
-        'blocks: for (address, data) in &blocks {
-            for up in 0..data.len() {
+        'blocks: for block in &blocks {
+            for up in 0..block.size as usize {
                 index += 1;
                 if index > 10_000_000 {
                     break 'blocks;
                 }
-                if guess_chain(&mut flat.as_slice(), &lengths, linear + up)? {
-                    self.split_start = vfp::make_file_pointer(*address, up as u32)
-                        .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?;
+                if guess_chain(&mut stream, &lengths, block.linear as usize + up)? {
+                    self.split_start =
+                        vfp::make_file_pointer(block.address, up as u32).map_err(malformed)?;
                     return Ok(self);
                 }
             }
-            linear += data.len();
         }
         // Nothing accepted: past every block, so nothing is read.
-        self.split_start = vfp::make_file_pointer(self.compressed.len() as u64, 0)
-            .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?;
+        self.split_start = vfp::make_file_pointer(self.compressed.len(), 0).map_err(malformed)?;
         Ok(self)
     }
 }
@@ -855,15 +1256,6 @@ impl ReadsDataSource {
 trait GuessedStream {
     fn total(&self) -> usize;
     fn bytes(&mut self, at: usize, length: usize) -> Result<&[u8], ReadsError>;
-}
-
-impl GuessedStream for &[u8] {
-    fn total(&self) -> usize {
-        self.len()
-    }
-    fn bytes(&mut self, at: usize, length: usize) -> Result<&[u8], ReadsError> {
-        Ok(&self[at..at + length])
-    }
 }
 
 /// `BamRecordGuesser.checkRecordStart`: ten records chaining from `at`, or the end of the
@@ -1038,23 +1430,65 @@ struct BlockEntry {
     size: u32,
 }
 
+/// `data.get(at..at + length)` over the file, through a window that is read again only when a
+/// request falls outside it.
+struct ByteWindow<'a> {
+    file: &'a CompressedFile,
+    start: u64,
+    bytes: Vec<u8>,
+}
+
+/// How much of the file one read of a [`ByteWindow`] brings in.
+const BYTE_WINDOW: usize = 1 << 18;
+
+impl<'a> ByteWindow<'a> {
+    fn new(file: &'a CompressedFile) -> ByteWindow<'a> {
+        ByteWindow {
+            file,
+            start: 0,
+            bytes: Vec::new(),
+        }
+    }
+
+    fn get(&mut self, at: u64, length: usize) -> Result<Option<&[u8]>, ReadsError> {
+        let Some(end) = at.checked_add(length as u64) else {
+            return Ok(None);
+        };
+        if end > self.file.len() {
+            return Ok(None);
+        }
+        if at < self.start || end > self.start + self.bytes.len() as u64 {
+            let wanted = length.max(BYTE_WINDOW).min((self.file.len() - at) as usize);
+            self.bytes = self.file.get(at, wanted)?.expect("inside the file");
+            self.start = at;
+        }
+        let from = (at - self.start) as usize;
+        Ok(Some(&self.bytes[from..from + length]))
+    }
+}
+
 /// The file's blocks, read from their headers and trailers with nothing inflated.
-fn block_table(data: &[u8]) -> Result<Vec<BlockEntry>, ReadsError> {
+fn block_table(data: &CompressedFile) -> Result<Vec<BlockEntry>, ReadsError> {
+    let mut window = ByteWindow::new(data);
     let mut blocks = Vec::new();
     let mut address = 0usize;
     let mut linear = 0u64;
     let malformed = |address: usize| {
         ReadsError::Malformed(format!("no BGZF block where one was due at {address}"))
     };
-    while address < data.len() {
-        let head = data.get(address..address + 12).ok_or(malformed(address))?;
+    while (address as u64) < data.len() {
+        let head = window
+            .get(address as u64, 12)?
+            .ok_or(malformed(address))?
+            .to_vec();
         if head[..4] != [0x1f, 0x8b, 8, 4] {
             return Err(malformed(address));
         }
         let extra = usize::from(u16::from_le_bytes([head[10], head[11]]));
-        let fields = data
-            .get(address + 12..address + 12 + extra)
-            .ok_or(malformed(address))?;
+        let fields = window
+            .get(address as u64 + 12, extra)?
+            .ok_or(malformed(address))?
+            .to_vec();
         let mut at = 0;
         let mut size = None;
         while at + 4 <= fields.len() {
@@ -1068,8 +1502,8 @@ fn block_table(data: &[u8]) -> Result<Vec<BlockEntry>, ReadsError> {
             at += 4 + length;
         }
         let compressed = size.ok_or(malformed(address))? + 1;
-        let trailer = data
-            .get(address + compressed - 4..address + compressed)
+        let trailer = window
+            .get((address + compressed - 4) as u64, 4)?
             .ok_or(malformed(address))?;
         let inflated = u32::from_le_bytes([trailer[0], trailer[1], trailer[2], trailer[3]]);
         blocks.push(BlockEntry {
@@ -1088,12 +1522,25 @@ const WINDOW_KEPT: usize = 16 * 1024 * 1024;
 
 /// The decompressed stream, inflated as the guesser walks it, keeping a window behind.
 struct InflatedStream<'a> {
-    data: &'a [u8],
+    data: &'a CompressedFile,
     blocks: &'a [BlockEntry],
     total: usize,
     window: Vec<u8>,
     window_start: usize,
     next_block: usize,
+}
+
+impl<'a> InflatedStream<'a> {
+    fn new(data: &'a CompressedFile, blocks: &'a [BlockEntry], total: usize) -> Self {
+        InflatedStream {
+            data,
+            blocks,
+            total,
+            window: Vec::new(),
+            window_start: 0,
+            next_block: 0,
+        }
+    }
 }
 
 impl GuessedStream for InflatedStream<'_> {
@@ -1118,7 +1565,7 @@ impl GuessedStream for InflatedStream<'_> {
             let Some(block) = self.blocks.get(self.next_block) else {
                 break;
             };
-            let mut reader = BgzfReader::new(&self.data[block.address as usize..]);
+            let mut reader = self.data.blocks_from(block.address);
             let inflated = reader
                 .next_block()
                 .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?
@@ -1132,19 +1579,40 @@ impl GuessedStream for InflatedStream<'_> {
 }
 
 /// `BgzfBlockGuesser.guessNextBGZFPos`: (pos, cSize, uSize), or null at the end or on a short read.
-fn guess_next_block(data: &[u8], mut p: i64, end: i64) -> Option<(i64, i32, i32)> {
+fn guess_next_block(
+    data: &mut ByteWindow<'_>,
+    mut p: i64,
+    end: i64,
+) -> Result<Option<(i64, i32, i32)>, ReadsError> {
     const MAGIC: u32 = 0x0408_8b1f;
     const MAGIC_SUB: u32 = 0x0002_4342;
-    let at = |p: i64, n: usize| -> Option<&[u8]> {
-        usize::try_from(p)
-            .ok()
-            .and_then(|p| data.get(p..p.checked_add(n)?))
-    };
-    let int = |p: i64| at(p, 4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]));
-    let short = |p: i64| at(p, 2).map(|b| i64::from(u16::from_le_bytes([b[0], b[1]])));
+    // `data.get(p..p + n)` on the file, and the `None` it gave ends the guess.
+    macro_rules! at {
+        ($p:expr, $n:expr) => {
+            match u64::try_from($p) {
+                Ok(p) => match data.get(p, $n)? {
+                    Some(bytes) => bytes,
+                    None => return Ok(None),
+                },
+                Err(_) => return Ok(None),
+            }
+        };
+    }
+    macro_rules! int {
+        ($p:expr) => {{
+            let b = at!($p, 4);
+            u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+        }};
+    }
+    macro_rules! short {
+        ($p:expr) => {{
+            let b = at!($p, 2);
+            i64::from(u16::from_le_bytes([b[0], b[1]]))
+        }};
+    }
     loop {
         loop {
-            let n = int(p)?;
+            let n = int!(p);
             if n == MAGIC {
                 break;
             }
@@ -1156,31 +1624,31 @@ fn guess_next_block(data: &[u8], mut p: i64, end: i64) -> Option<(i64, i32, i32)
                 p += 3;
             }
             if p >= end {
-                return None;
+                return Ok(None);
             }
         }
         let start = p;
         p += 10;
-        let xlen = short(p)?;
+        let xlen = short!(p);
         p += 2;
         let sub_end = p + xlen;
         while p < sub_end {
-            let found = int(p)?;
+            let found = int!(p);
             if found != MAGIC_SUB {
                 p += 4 + i64::from(found >> 16);
                 continue;
             }
-            let bsize = short(p + 4)?;
+            let bsize = short!(p + 4);
             p += 6;
             while p < sub_end {
-                p += 4 + i64::from(int(p)? >> 16);
+                p += 4 + i64::from(int!(p) >> 16);
             }
             if p != sub_end {
                 break;
             }
             p += bsize - xlen - 19 + 4;
-            let size = int(p)?;
-            return Some((start, (p + 4 - start) as i32, size as i32));
+            let size = int!(p);
+            return Ok(Some((start, (p + 4 - start) as i32, size as i32)));
         }
         p = start + 4;
     }
@@ -1239,7 +1707,7 @@ fn sbi_chunk(offsets: &[u64], start: i64, end: i64) -> Option<Chunk> {
 
 /// `getFirstReadInPartition`, over the blocks `BgzfBlockSource` guesses in one split.
 fn first_read_in_split(
-    data: &[u8],
+    data: &mut ByteWindow<'_>,
     blocks: &[BlockEntry],
     stream: &mut InflatedStream<'_>,
     lengths: &[i32],
@@ -1249,7 +1717,7 @@ fn first_read_in_split(
     let mut index = 0usize;
     let mut start = split_start;
     while start < split_end {
-        let Some((position, compressed, size)) = guess_next_block(data, start, split_end) else {
+        let Some((position, compressed, size)) = guess_next_block(data, start, split_end)? else {
             break;
         };
         start = position + i64::from(compressed);
@@ -1282,7 +1750,9 @@ fn first_read_in_split(
 /// `BAMFileIndexIterator` checks the position *before* pulling a record, so a record that starts
 /// inside a chunk is read whole even when it runs past the chunk's end.
 struct BlockCursor<'a> {
-    data: &'a [u8],
+    data: &'a CompressedFile,
+    /// The blocks from `next_address` on, while the cursor reads forward.
+    reader: Option<BgzfReader<BufReader<At<'a>>>>,
     /// Byte offset of the current block in the compressed file.
     block_address: u64,
     /// Byte offset of the block after the current one.
@@ -1292,10 +1762,11 @@ struct BlockCursor<'a> {
 }
 
 impl<'a> BlockCursor<'a> {
-    fn seek(data: &'a [u8], pointer: u64) -> Result<BlockCursor<'a>, ReadsError> {
+    fn seek(data: &'a CompressedFile, pointer: u64) -> Result<BlockCursor<'a>, ReadsError> {
         let address = vfp::block_address(pointer);
         let mut cursor = BlockCursor {
             data,
+            reader: None,
             block_address: address,
             next_address: address,
             block: Vec::new(),
@@ -1307,10 +1778,14 @@ impl<'a> BlockCursor<'a> {
     }
 
     fn load_block(&mut self, address: u64) -> Result<bool, ReadsError> {
-        if address as usize >= self.data.len() {
+        if address >= self.data.len() {
             return Ok(false);
         }
-        let mut reader = BgzfReader::new(&self.data[address as usize..]);
+        // The reader carries on from the block before; anywhere else is a new one.
+        let reader = match &mut self.reader {
+            Some(reader) if address == self.next_address && self.block_address != address => reader,
+            reader => reader.insert(self.data.blocks_from(address)),
+        };
         match reader
             .next_block()
             .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?
@@ -1343,7 +1818,7 @@ impl<'a> BlockCursor<'a> {
     /// `RuntimeEOFException`. Both need the count, which is why this returns what it read rather
     /// than `None`.
     fn read_up_to(&mut self, n: usize) -> Result<Vec<u8>, ReadsError> {
-        let mut out = Vec::with_capacity(n.min(self.data.len()));
+        let mut out = Vec::with_capacity(n.min(self.data.len() as usize));
         while out.len() < n {
             if self.offset >= self.block.len() {
                 let next = self.next_address;
@@ -1351,7 +1826,7 @@ impl<'a> BlockCursor<'a> {
                     return Ok(out);
                 }
                 // An empty block (the BGZF terminator) is not the end of the stream by itself.
-                if self.block.is_empty() && self.next_address as usize >= self.data.len() {
+                if self.block.is_empty() && self.next_address >= self.data.len() {
                     return Ok(out);
                 }
                 continue;

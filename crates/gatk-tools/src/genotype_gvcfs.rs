@@ -60,7 +60,7 @@ const PHASED_HOM_VAR_STRING: &str = "1|1";
 /// `RAW_GT_COUNT`.
 const MANUAL_RAW_KEYS: [&str; 4] = [AS_QUAL_KEY, "QUALapprox", "VarDP", "RAW_GT_COUNT"];
 
-/// `VariantAnnotatorEngine`, over the resolved annotations, with no reads and no pedigree.
+/// `VariantAnnotatorEngine`, over the resolved annotations, with no reads.
 pub struct AnnotationEngine {
     /// The resolved annotations, sorted by simple name as the plugin descriptor hands them out.
     pub resolved: Vec<&'static Entry>,
@@ -71,6 +71,8 @@ pub struct AnnotationEngine {
     pub raw_keys_to_keep: Vec<&'static str>,
     /// The `--dbsnp` records, in file order, when the argument was given.
     pub dbsnp: Option<Vec<VariantContext>>,
+    /// The founders `ExcessHet` and `InbreedingCoeff` count: `--founder-id`'s, then the pedigree's.
+    pub founder_ids: Vec<String>,
 }
 
 pub(crate) fn value_of(annotation: AnnotationValue) -> Value {
@@ -186,7 +188,7 @@ impl AnnotationEngine {
             if hom_ref_site && !annotation_should_be_skipped_for_hom_ref_sites(entry) {
                 continue;
             }
-            for (key, value) in annotate(entry, vc, random)? {
+            for (key, value) in annotate(entry, vc, random, &self.founder_ids)? {
                 put(&mut attributes, &key, value);
             }
         }
@@ -384,8 +386,23 @@ fn annotate(
     entry: &Entry,
     vc: &VariantContext,
     random: &mut JavaRandom,
+    founder_ids: &[String],
 ) -> Result<Vec<(String, Value)>, EngineError> {
     use gatk_annotation as a;
+    // `PedigreeAnnotation.getFounderGenotypes`: every genotype, or only the founders' when any.
+    let founders = || {
+        let mut subset = vc.clone();
+        if !founder_ids.is_empty() {
+            subset.genotypes = htsjdk_vcf::genotypes_context::GenotypesContext::new(
+                vc.genotypes
+                    .iter()
+                    .filter(|g| founder_ids.contains(&g.sample_name))
+                    .cloned()
+                    .collect(),
+            );
+        }
+        subset
+    };
     let from_trait = |annotation: &dyn InfoFieldAnnotation| -> Vec<(String, Value)> {
         annotation
             .annotate(None, vc, None)
@@ -402,10 +419,10 @@ fn annotate(
         "BaseQualityRankSumTest" => from_trait(&a::rank_sum::BaseQualityRankSumTest),
         "MappingQualityRankSumTest" => from_trait(&a::rank_sum::MappingQualityRankSumTest),
         "ReadPosRankSumTest" => from_trait(&a::rank_sum::ReadPosRankSumTest),
-        "ExcessHet" => a::heterozygosity::excess_het(vc)
+        "ExcessHet" => a::heterozygosity::excess_het(&founders())
             .map(|value| vec![("ExcessHet".to_string(), Value::Str(value))])
             .unwrap_or_default(),
-        "InbreedingCoeff" => a::heterozygosity::inbreeding_coeff(vc)
+        "InbreedingCoeff" => a::heterozygosity::inbreeding_coeff(&founders())
             .map(|value| vec![("InbreedingCoeff".to_string(), Value::Str(value))])
             .unwrap_or_default(),
         "AS_QualByDepth" => finalize_as_qual_by_depth(vc, vc, random)?

@@ -11,7 +11,7 @@ python3 tools/speed/bench.py --compare first.json second.json
 ```
 
 The port binary must be linux/amd64, because it runs inside the pinned container: CI builds one,
-and a Mac builds one in `rust:1.97.1-bookworm` with `--target-dir target-linux`. On Apple
+and a Mac builds one in `rust:1.98.0-bookworm` with `--target-dir target-linux`. On Apple
 silicon both sides run under Rosetta, so local ratios are a smoke test; the numbers that are
 published come from the `Speed` workflow on real x86-64.
 

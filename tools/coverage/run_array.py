@@ -75,13 +75,21 @@ JAVA_OPENS = " ".join([*(f"--add-opens={module}=ALL-UNNAMED" for module in ADD_O
 # The Broad's own image of the release, which has the `python` and the `Rscript` the pinned one
 # deliberately lacks. A tool under `$past_the_interpreter` runs its REFERENCE there, so the array
 # measures its arguments past the interpreter rather than up to it. Its PORT runs, for "python",
-# behind a stand-in that answers every import, since the port's only use of python is that check;
-# for "Rscript", in PORT_WITH_R, since the port runs its own rewritten scripts. numpy takes other
+# in that same image, since the port hands python the reference's own scripts and a user's: the
+# binary through the pinned image's glibc loader (`port_glibc`), the Broad's glibc being older than
+# the one CI links against, and python, which it starts, on the Broad's own libraries. For
+# "Rscript", in PORT_WITH_R, since the port runs its own rewritten scripts. numpy takes other
 # loops on an AVX-512 CPU, so those features are turned off as `vets_dump.sh` does.
 # `run_fuzz.py` turns this off: its branch probes run in the pinned image, without either.
 PAST_THE_INTERPRETER = True
 PORT_WITH_R = "gatk-rs-port-with-r:4.7.0.0"
 BROAD = json.loads((REPO / "tools" / "conformance" / "manifest.json").read_text())["oracle_with_r"]
+# The htsget server a tool under `$htsget_server` reaches, pinned in the manifest. It runs beside the
+# rows on a docker network of its own, as `htsget`; SERVER holds what each row then adds to its
+# container (the network, the certificate's mount) and the reference's trust store, or None.
+HTSGET = json.loads((REPO / "tools" / "conformance" / "manifest.json").read_text())["htsget_server"]
+SERVER = None
+TRUST = "-Djavax.net.ssl.trustStore=/work/htsget/trust.p12 -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=PKCS12"
 NUMPY_WITHOUT_AVX512 = "AVX512F AVX512CD AVX512_SKX AVX512_CLX AVX512_CNL AVX512_ICL AVX512_SPR"
 
 # Values that mean "the argument is absent", so a held-at value carrying one must not be passed.
@@ -160,6 +168,78 @@ def train_scorers(fixtures):
     if result.returncode != 0:
         print(result.stdout[-2000:])
         raise SystemExit("could not train the scorers")
+
+
+def build_gcnv(fixtures):
+    """The gCNV corpus: read counts, then a ploidy model and calls and a denoising model and calls,
+    made by the reference in the Broad's image under the frozen environment.
+
+    The gCNV tools read one another's outputs, and a placeholder would measure nothing but the
+    refusal to read it. Done once, before the rows, like `train_scorers`; a corpus that already
+    holds the calls is left alone.
+    """
+    gcnv = fixtures / "gcnv"
+    if (gcnv / "g-calls").exists():
+        return
+    inputs = " ".join(f"-I /work/fixtures/gcnv/sample{i}.counts.tsv" for i in range(4))
+    small = (
+        "--max-advi-iter-first-epoch 50 --max-advi-iter-subsequent-epochs 20 --num-thermal-advi-iters 20 "
+        "--min-training-epochs 1 --max-training-epochs 2 --max-calling-iters 2 --output /work/fixtures/gcnv"
+    )
+    gatk = 'java -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main'
+    command = (
+        "mkdir -p /work/fixtures/gcnv && python3 /harness/make_gcnv_fixture.py /work/fixtures/gcnv 4 10"
+        f" && {gatk} DetermineGermlineContigPloidy {inputs} --contig-ploidy-priors /work/fixtures/gcnv/priors.tsv"
+        f" --output-prefix p {small}"
+        f" && {gatk} GermlineCNVCaller --run-mode COHORT {inputs} --contig-ploidy-calls /work/fixtures/gcnv/p-calls"
+        f" --output-prefix g {small}"
+    )
+    result = subprocess.run(
+        [
+            "docker", "run", "--rm", "--platform", PLATFORM,
+            "-v", f"{fixtures}:/work/fixtures",
+            "-v", f"{REPO}/tools/python-tools:/harness:ro",
+            *frozen_environment("tools/python-tools/gcnv_frozen_env.sh", fixtures),
+            "-e", f"ORACLE_CP={BROAD['classpath']}",
+            "-w", "/work", "--entrypoint", "sh", BROAD["image"], "-c",
+            f"{ENVIRONMENT}{command}; rc=$?; chmod -R a+rwX /work/fixtures/gcnv; exit $rc",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(result.stdout[-2000:])
+        print(result.stderr[-2000:])
+        raise SystemExit("could not build the gCNV fixtures")
+
+
+def uses_gcnv(tool):
+    """Whether a tool's fixtures read the gCNV corpus `build_gcnv` makes."""
+    path = REPO / "tools" / "coverage" / "fixtures.json"
+    return path.exists() and "/work/fixtures/gcnv/" in json.dumps(json.loads(path.read_text()).get("per_tool", {}).get(tool, {}))
+
+
+# What a row under `$environment` runs first: the script, sourced, and pytensor's compile directory,
+# one for both sides and every row, so that the reference and the port compile the same modules once.
+# `umask 0` keeps what root writes there removable by the host.
+ENVIRONMENT = 'umask 0 && . /work/env.sh && export PYTENSOR_FLAGS="base_compiledir=/work/pytensor,$PYTENSOR_EXTRA" && '
+
+
+def environment(tool):
+    """The script a tool's both sides source, per tool under `$environment`; None for most."""
+    path = REPO / "tools" / "coverage" / "fixtures.json"
+    if not path.exists():
+        return None
+    return json.loads(path.read_text()).get("per_tool", {}).get(tool, {}).get("$environment")
+
+
+def frozen_environment(script, fixtures):
+    """The mounts `ENVIRONMENT` needs: the script, and the compile directory beside the corpus."""
+    if not script:
+        return []
+    compiled = fixtures.parent / "pytensor"
+    compiled.mkdir(exist_ok=True)
+    return ["-v", f"{REPO / script}:/work/env.sh:ro", "-v", f"{compiled}:/work/pytensor"]
 
 
 def row_arguments(row, held):
@@ -261,7 +341,8 @@ def run_oracle(tool, row_args, workdir, positional=(), tagged=(), lists=()):
     cli = " ".join(as_cli(row_args, positional, tagged, lists))
     # `gatk <Tool> <args>`: the tool name is the first token, which is the shape the bit-identity
     # claim is defined against, and the wrapper is what fixes the parser to Barclay.
-    command = f'rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && {copies}java {JAVA_OPENS} -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {tool} {cli}; rc=$?; chmod -R a+rwX /work/out; exit $rc'
+    trust = f" {TRUST}" if SERVER else ""
+    command = f'{ENVIRONMENT if environment(tool) else ""}rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && {copies}java {JAVA_OPENS}{trust} -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {tool} {cli}; rc=$?; chmod -R a+rwX /work/out; exit $rc'
     image = [IMAGE, command]
     if past_the_interpreter(tool):
         image = [
@@ -273,6 +354,8 @@ def run_oracle(tool, row_args, workdir, positional=(), tagged=(), lists=()):
             "docker", "run", "--rm", "--platform", PLATFORM,
             "-v", f"{fixtures_of(workdir)}:/work/fixtures:ro",
             "-v", f"{out_dir}:/work/out",
+            *frozen_environment(environment(tool), fixtures_of(workdir)),
+            *(SERVER or []),
             "-w", "/work", *image,
         ],
         capture_output=True,
@@ -334,8 +417,10 @@ def read_output(out_dir, row_args=()):
             parts.append(f"{name}: {png_shape(raw)}")
             continue
         if name.endswith(".scorer.pkl"):
-            digest = hashlib.sha256(scorer_masked(raw)).hexdigest()
-            parts.append(f"{name}: SCORER sha256={digest} bytes={len(raw)} (frames and the script's digits masked)")
+            # The masked length: the script's random digits are not always the same count.
+            masked = scorer_masked(raw)
+            digest = hashlib.sha256(masked).hexdigest()
+            parts.append(f"{name}: SCORER sha256={digest} bytes={len(masked)} (frames and the script's digits masked)")
             continue
         if name.endswith(".img"):
             masked = bwa_image_masked(raw)
@@ -611,6 +696,97 @@ def build_port_with_r():
         raise SystemExit("could not build the port's image with R")
 
 
+def htsget_files(tool):
+    """The corpus files a tool under `$htsget_server` has served, or none."""
+    path = REPO / "tools" / "coverage" / "fixtures.json"
+    if not path.exists():
+        return []
+    return json.loads(path.read_text()).get("per_tool", {}).get(tool, {}).get("$htsget_server", [])
+
+
+def start_htsget(files, workdir):
+    """The pinned htsget server, serving `files` of the corpus, on a network the rows then join.
+
+    HtsgetReader asks for https whatever `--url` says, so the ticket server speaks TLS under a
+    certificate made here for the name `htsget`: the reference trusts it through the trust store
+    the JVM is told of, as the htsget-reader golden does, and the port through SSL_CERT_FILE, as
+    its own test does. The data server is plain http, which a block's URL keeps. htsget-rs looks
+    for a BAM's index at `<name>.bai` and the corpus writes `<stem>.bai`, so the files are copied.
+    """
+    global SERVER
+    served = workdir / "htsget"
+    (served / "data").mkdir(parents=True, exist_ok=True)
+    (served / "config.toml").write_text(
+        'locations = "file://data"\n'
+        'ticket_server.addr = "0.0.0.0:8080"\n'
+        'ticket_server.tls.key = "key.pem"\n'
+        'ticket_server.tls.cert = "cert.pem"\n'
+        'data_server.addr = "0.0.0.0:8081"\n'
+        'data_server.local_path = "data"\n'
+        'data_server.ticket_origin = "http://htsget:8081/"\n'
+    )
+    copies = []
+    for name in files:
+        index = f"{name.removesuffix('.bam')}.bai" if name.endswith(".bam") else f"{name}.tbi"
+        copies.append(f"cp /work/fixtures/{name} data/ && cp /work/fixtures/{index} data/{name}.{index.rsplit('.', 1)[1]}")
+    prepare = (
+        "openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 2 -subj /CN=htsget "
+        "-addext subjectAltName=DNS:htsget -addext basicConstraints=critical,CA:FALSE "
+        "&& keytool -importcert -noprompt -alias htsget -file cert.pem -keystore trust.p12 "
+        f"-storetype PKCS12 -storepass changeit && {' && '.join(copies)} && chmod -R a+rX /work/htsget"
+    )
+    network = f"{workdir.name}-htsget"
+    SERVER = ["--network", network, "-v", f"{served}:/work/htsget:ro", "-e", "SSL_CERT_FILE=/work/htsget/cert.pem"]
+    steps = [
+        ["docker", "run", "--rm", "--platform", PLATFORM, "-v", f"{fixtures_of(workdir)}:/work/fixtures:ro",
+         "-v", f"{served}:/work/htsget", "-w", "/work/htsget", IMAGE, prepare],
+        ["docker", "network", "create", network],
+        ["docker", "run", "-d", "--name", network, "--network", network, "--network-alias", "htsget",
+         "--platform", HTSGET["platform"], "-v", f"{served}:/work/htsget:ro", "-w", "/work/htsget",
+         HTSGET["image"], "htsget-axum", "--config", "config.toml"],
+        # Up once its ticket server answers over TLS.
+        ["docker", "run", "--rm", "--platform", PLATFORM, "--network", network, "-v", f"{served}:/work/htsget:ro",
+         IMAGE, "curl -sf --retry 30 --retry-delay 1 --retry-all-errors --cacert /work/htsget/cert.pem "
+         "-o /dev/null https://htsget:8080/reads/service-info"],
+    ]
+    for step in steps:
+        result = subprocess.run(step, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(result.stdout[-2000:])
+            print(result.stderr[-2000:])
+            raise SystemExit("could not start the htsget server")
+
+
+def stop_htsget(workdir):
+    """Take the server and its network away again."""
+    if SERVER:
+        network = f"{workdir.name}-htsget"
+        subprocess.run(["docker", "rm", "-f", network], capture_output=True)
+        subprocess.run(["docker", "network", "rm", network], capture_output=True)
+
+
+def port_glibc(workdir):
+    """The pinned image's loader, libc, libm and libgcc_s, which is all the port binary links.
+
+    Run as `ld-linux-x86-64.so.2 --library-path <dir> <binary>`, the binary gets them without
+    LD_LIBRARY_PATH, so the processes it starts load the image's own.
+    """
+    glibc = workdir / "glibc"
+    if not (glibc / "libc.so.6").exists():
+        glibc.mkdir(exist_ok=True)
+        libraries = " ".join(f"/usr/lib/x86_64-linux-gnu/{name}" for name in ("libc.so.6", "libm.so.6", "libgcc_s.so.1"))
+        result = subprocess.run(
+            ["docker", "run", "--rm", "--platform", PLATFORM, "-v", f"{glibc}:/out", IMAGE,
+             f"cp -L /lib64/ld-linux-x86-64.so.2 {libraries} /out/ && chmod -R a+rX /out"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            print(result.stderr[-2000:])
+            raise SystemExit("could not copy the pinned image's glibc")
+    return glibc
+
+
 def bwa_image_masked(raw):
     """A BWA-MEM index image with its addresses and padding zeroed, or None if it is not one.
 
@@ -819,25 +995,26 @@ def run_port(binary, tool, row_args, workdir, positional=(), tagged=(), lists=()
     binary = Path(binary).resolve()
     copies, row_args = writable_copies(tool, row_args)
     cli = " ".join(as_cli(row_args, positional, tagged, lists))
-    command = f"rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && {copies}/work/port-binary/{binary.name} {tool} {cli}"
-    stand_in, image = [], IMAGE
-    if past_the_interpreter(tool) == "Rscript":
-        image = PORT_WITH_R
-    if past_the_interpreter(tool) == "python":
-        python = workdir / "stand-in" / "python"
-        python.parent.mkdir(exist_ok=True)
-        python.write_text("#!/bin/sh\nexit 0\n")
-        python.chmod(0o755)
-        stand_in = ["-v", f"{python.parent}:/work/stand-in:ro"]
-        command = f"export PATH=/work/stand-in:$PATH && {command}"
+    python = past_the_interpreter(tool) == "python"
+    loader = "/work/glibc/ld-linux-x86-64.so.2 --library-path /work/glibc " if python else ""
+    command = f"{ENVIRONMENT if environment(tool) else ''}rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && {copies}{loader}/work/port-binary/{binary.name} {tool} {cli}"
+    broad, image = [], [PORT_WITH_R if past_the_interpreter(tool) == "Rscript" else IMAGE, command]
+    if python:
+        broad = [
+            "-v", f"{port_glibc(workdir)}:/work/glibc:ro",
+            "-e", f"NPY_DISABLE_CPU_FEATURES={NUMPY_WITHOUT_AVX512}", "--entrypoint", "sh",
+        ]
+        image = [BROAD["image"], "-c", command]
     result = subprocess.run(
         [
             "docker", "run", "--rm", "--platform", PLATFORM,
             "-v", f"{fixtures_of(workdir)}:/work/fixtures:ro",
             "-v", f"{out_dir}:/work/out",
             "-v", f"{binary.parent}:/work/port-binary:ro",
-            *stand_in,
-            "-w", "/work", image, command,
+            *frozen_environment(environment(tool), fixtures_of(workdir)),
+            *broad,
+            *(SERVER or []),
+            "-w", "/work", *image,
         ],
         capture_output=True,
         text=True,
@@ -929,6 +1106,7 @@ def main(argv):
         try:
             return run_rows(options, array, held, workdir)
         finally:
+            stop_htsget(workdir)
             empty_output_in_container(workdir)
 
 
@@ -1063,8 +1241,12 @@ def run_rows(options, array, held, workdir):
             build_fixtures(workdir)
         if past_the_interpreter(options.tool) == "python":
             train_scorers(fixtures_of(workdir))
+        if uses_gcnv(options.tool):
+            build_gcnv(fixtures_of(workdir))
         if past_the_interpreter(options.tool) == "Rscript" and options.port:
             build_port_with_r()
+        if htsget_files(options.tool):
+            start_htsget(htsget_files(options.tool), workdir)
         (workdir / "tmp").mkdir(exist_ok=True)
         for row in array["array"]:
             args = row_arguments(row, held)
