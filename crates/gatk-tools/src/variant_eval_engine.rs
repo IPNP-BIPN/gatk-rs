@@ -1845,11 +1845,13 @@ impl Evaluator {
                 if comp_good && eval_good {
                     *n_at_comp += 1;
                     let (eval, comp) = (eval.expect("eval"), comp.expect("comp"));
+                    // `comp.hasAllele(a, true)`: the reference flag is ignored, so an eval
+                    // reference that is a comp alternate still matches.
                     let discordant = eval.alleles.iter().any(|allele| {
-                        !comp.alleles.iter().any(|candidate| {
-                            candidate.display_string() == allele.display_string()
-                                && candidate.is_reference() == allele.is_reference()
-                        })
+                        !comp
+                            .alleles
+                            .iter()
+                            .any(|candidate| candidate.display_string() == allele.display_string())
                     });
                     if !discordant {
                         *n_concordant += 1;
