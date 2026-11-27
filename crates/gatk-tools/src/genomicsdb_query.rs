@@ -355,10 +355,10 @@ fn vid_fields(json: &Json) -> Result<Vec<VidField>, Reason> {
         }
         if original.types.len() > 1 {
             for parent in std::iter::once(original_index).chain(both.then_some(format_index)) {
-                for element in 0..original.types.len() {
+                for (element, &kind) in original.types.iter().enumerate() {
                     let mut copy = fields[parent].clone();
                     copy.name = format!("{}_tuple_element_{element}", fields[parent].name);
-                    copy.types = vec![original.types[element]];
+                    copy.types = vec![kind];
                     copy.parent = Some(parent);
                     copy.tuple_index = element;
                     fields.push(copy);
@@ -884,12 +884,13 @@ fn tiles(path: &Path) -> Result<Vec<Vec<u8>>, Reason> {
 /// A tile of TileDB's delta filter undone.
 fn delta_decode(tile: &[u8], stride: usize) -> Vec<i64> {
     let mut previous = vec![0i64; stride];
-    tile.chunks_exact(8)
+    tile.as_chunks::<8>()
+        .0
+        .iter()
         .enumerate()
         .map(|(index, chunk)| {
             let slot = index % stride;
-            let value =
-                previous[slot].wrapping_add(i64::from_le_bytes(chunk.try_into().expect("8 bytes")));
+            let value = previous[slot].wrapping_add(i64::from_le_bytes(*chunk));
             previous[slot] = value;
             value
         })
@@ -972,8 +973,10 @@ fn field_data(slot: &Slot, field: &VidField, bytes: &[u8]) -> Result<Option<Data
     let data = match field.elem() {
         Elem::Int => {
             let values: Vec<i32> = bytes
-                .chunks_exact(4)
-                .map(|chunk| i32::from_le_bytes(chunk.try_into().expect("4 bytes")))
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|chunk| i32::from_le_bytes(*chunk))
                 .collect();
             if values.iter().all(|value| *value == NULL_INT32) {
                 return Ok(None);
@@ -982,8 +985,10 @@ fn field_data(slot: &Slot, field: &VidField, bytes: &[u8]) -> Result<Option<Data
         }
         Elem::Float => {
             let values: Vec<u32> = bytes
-                .chunks_exact(4)
-                .map(|chunk| u32::from_le_bytes(chunk.try_into().expect("4 bytes")))
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|chunk| u32::from_le_bytes(*chunk))
                 .collect();
             if values.iter().all(|value| *value == NULL_FLOAT32) {
                 return Ok(None);
@@ -2097,9 +2102,14 @@ impl<'a> Operator<'a> {
                 let count_elem = config.field(*count_slot).elem();
                 for (entry, (bin_bytes, count_bytes)) in bins.iter().zip(counts.iter()).enumerate()
                 {
-                    for (bin, count) in bin_bytes.chunks_exact(4).zip(count_bytes.chunks_exact(4)) {
-                        let bin = u32::from_le_bytes(bin.try_into().expect("4 bytes"));
-                        let count = u32::from_le_bytes(count.try_into().expect("4 bytes"));
+                    for (bin, count) in bin_bytes
+                        .as_chunks::<4>()
+                        .0
+                        .iter()
+                        .zip(count_bytes.as_chunks::<4>().0)
+                    {
+                        let bin = u32::from_le_bytes(*bin);
+                        let count = u32::from_le_bytes(*count);
                         let (Some(bin), Some(count)) = (
                             element_value(bin, bin_elem),
                             element_value(count, count_elem),
@@ -2561,8 +2571,10 @@ fn element_wise_sum_2d(inputs: &[Option<Data>], field: &VidField) -> Option<Info
         }
         for (entry, bytes) in entries.iter().enumerate() {
             let values: Vec<u32> = bytes
-                .chunks_exact(4)
-                .map(|chunk| u32::from_le_bytes(chunk.try_into().expect("4 bytes")))
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|chunk| u32::from_le_bytes(*chunk))
                 .collect();
             if values.len() > sums[entry].len() {
                 sums[entry].resize(values.len(), None);
@@ -2922,10 +2934,8 @@ fn hash_bytes(bytes: &[u8]) -> u64 {
     let shift_mix = |v: u64| v ^ (v >> 47);
     let mut hash = 0xc70f_6907u64 ^ (bytes.len() as u64).wrapping_mul(MUL);
     let aligned = bytes.len() & !7;
-    for chunk in bytes[..aligned].chunks_exact(8) {
-        let data =
-            shift_mix(u64::from_le_bytes(chunk.try_into().expect("8 bytes")).wrapping_mul(MUL))
-                .wrapping_mul(MUL);
+    for chunk in bytes[..aligned].as_chunks::<8>().0 {
+        let data = shift_mix(u64::from_le_bytes(*chunk).wrapping_mul(MUL)).wrapping_mul(MUL);
         hash ^= data;
         hash = hash.wrapping_mul(MUL);
     }
