@@ -1,0 +1,56 @@
+gatk-rs
+Copyright 2026 Benjamin Demaille
+
+This product is a Rust port of the Genome Analysis Toolkit (GATK),
+https://github.com/broadinstitute/gatk, Copyright 2021 Broad Institute, Inc.,
+licensed under the Apache License, Version 2.0.
+It is not the official GATK and is not affiliated with or endorsed by the Broad Institute.
+
+It includes code ported from the following Apache-2.0 works, whose NOTICE files read:
+
+Apache Commons Math
+Copyright 2001-2015 The Apache Software Foundation
+
+This product includes software developed at
+The Apache Software Foundation (http://www.apache.org/).
+
+This product includes software developed for Orekit by
+CS Systèmes d'Information (http://www.c-s.fr/)
+Copyright 2010-2012 CS Systèmes d'Information
+
+--
+
+Apache Commons JEXL
+Copyright 2001-2011 The Apache Software Foundation
+
+This product includes software developed by
+The Apache Software Foundation (http://www.apache.org/).
+
+--
+
+Hipparchus
+Copyright 2016-2021 The Hipparchus project
+
+This product includes software developed at
+The Apache Software Foundation (http://www.apache.org/)
+Copyright 2001-2016 The Apache Software Foundation
+
+This product includes software developed for Orekit by
+CS GROUP (https://www.csgroup.eu/en/)
+Copyright 2010-2012 CS GROUP
+
+This product includes software developed for by Ulf Adams
+Copyright 2018 Ulf Adams
+
+The javascript files included in the source release (required only to build 
+the website) include the following notices:
+
+html5.js
+HTML5 Shiv 3.7.3 | @afarkas @jdalton @jon_neal @rem | MIT/GPL2 Licensed
+
+jquery.min.js
+jQuery v1.9.1 | (c) 2005, 2012 jQuery Foundation, Inc. | jquery.org/license
+
+--
+
+Every other third-party notice is in THIRD-PARTY-NOTICES.

@@ -3,6 +3,7 @@ members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
+version = "0.1.0"
 edition = "2021"
 # GATK is Apache 2.0, not BSD-3-Clause, whatever several third-party descriptions say. htsjdk-rs
 # and picard-rs are MIT, matching their references; the three repositories of this programme
