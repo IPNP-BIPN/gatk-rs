@@ -39,7 +39,7 @@ fn log1mexp(a: f64) -> f64 {
         return f64::NEG_INFINITY;
     }
     if a < 0.5f64.ln() {
-        (-a.exp()).ln_1p()
+        (-gatk_engine::natural_log_utils::host_exp(a)).ln_1p()
     } else {
         (-a.exp_m1()).ln()
     }

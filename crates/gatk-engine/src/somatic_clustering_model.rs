@@ -758,7 +758,10 @@ impl SomaticClusteringModel {
             "Background beta-binomial cluster".to_string(),
             format!(
                 "weight = {}, {}",
-                format_decimals(self.log_cluster_weights[0].exp(), 4),
+                format_decimals(
+                    crate::natural_log_utils::host_exp(self.log_cluster_weights[0]),
+                    4
+                ),
                 Self::describe(&self.clusters[0])
             ),
         ));
@@ -766,7 +769,10 @@ impl SomaticClusteringModel {
             "High-AF beta-binomial cluster".to_string(),
             format!(
                 "weight = {}, {}",
-                format_decimals(self.log_cluster_weights[1].exp(), 4),
+                format_decimals(
+                    crate::natural_log_utils::host_exp(self.log_cluster_weights[1]),
+                    4
+                ),
                 Self::describe(&self.clusters[1])
             ),
         ));
@@ -780,7 +786,10 @@ impl SomaticClusteringModel {
                 "Binomial cluster".to_string(),
                 format!(
                     "weight = {}, {}",
-                    format_decimals(self.log_cluster_weights[index].exp(), 4),
+                    format_decimals(
+                        crate::natural_log_utils::host_exp(self.log_cluster_weights[index]),
+                        4
+                    ),
                     Self::describe(&self.clusters[index])
                 ),
             ));
