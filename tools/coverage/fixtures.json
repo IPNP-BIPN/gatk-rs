@@ -6395,7 +6395,11 @@
         "FisherStrand",
         "ReadPosRankSumTest",
         "TandemRepeat",
-        "ReferenceBases"
+        "ReferenceBases",
+        "RMSMappingQuality",
+        "AllelePseudoDepth",
+        "AssemblyComplexity",
+        "HmerIndelLength"
       ],
       "--annotation-group": [
         "null",
@@ -6410,12 +6414,24 @@
       "--enable-all-annotations": [
         "false"
       ],
-      "--allow-old-rms-mapping-quality-annotation-data": [],
-      "--assembly-complexity-reference-mode": [],
-      "--dirichlet-keep-prior-in-count": [],
+      "--allow-old-rms-mapping-quality-annotation-data": [
+        "<unset>",
+        "true"
+      ],
+      "--assembly-complexity-reference-mode": [
+        "<unset>",
+        "true"
+      ],
+      "--dirichlet-keep-prior-in-count": [
+        "<unset>",
+        "true"
+      ],
       "--pedigree": [],
       "--founder-id": [],
-      "--flow-order-for-annotations": [],
+      "--flow-order-for-annotations": [
+        "<unset>",
+        "TGCA"
+      ],
       "--read-filter": [
         "null",
         "MappingQualityNotZeroReadFilter",
@@ -6432,7 +6448,11 @@
       "--read-filter-tag-op": [],
       "--keep-reverse-strand-only": [],
       "--dont-require-soft-clips-both-ends": [],
-      "--read-validation-stringency": [],
+      "--read-validation-stringency": [
+        "SILENT",
+        "LENIENT",
+        "STRICT"
+      ],
       "--sequence-dictionary": [],
       "--read-index": [],
       "--variant-output-filtering": [],
@@ -6446,43 +6466,46 @@
         "0"
       ],
       "$why": [
-        "va.vcf is three samples written out of order over va_ref.fasta (an AC repeat at 501-520 and an",
-        "N at 700): a SNP, a three-base deletion, a two-base insertion, a deletion of one repeat unit, a",
-        "triallelic SNP, an MNP, a SNP over the N, a filtered SNP with an rsID, a record with no",
-        "alternate and a SNP no read reaches. Every called genotype carries PLs but the one over the N,",
-        "so a -G StandardAnnotation row runs with the reference, which skips that site, and is refused",
-        "by ExcessHet without it. va_noidx.vcf is the same file with no index, refused under -L.",
-        "va.bam is the three samples' reads with varied mapping and base qualities, soft clips,",
-        "duplicates, QC failures, secondary and supplementary lines, reads starting inside the deletion",
-        "and varied fragment lengths; va2.bam is two of the samples at another length and step.",
-        "--min-base-quality-score, --disable-read-filter NotDuplicateReadFilter and the two enabled",
-        "filters change which pileup elements pick an allele, and the pileup's rank is the likelihood",
-        "row it fills, whichever read that row belongs to.",
-        "--annotation names one annotation per row among those whose output the reads decide; the",
-        "rest the port carries were compared by hand against the oracle, one run each, over this",
-        "corpus. --annotation-group is limited to the groups every member of which the port carries:",
-        "StandardMutectAnnotation, GenotypeAnnotation and AS_StandardAnnotation each hold one it does",
-        "not (AS_StrandBiasMutectAnnotation, AllelePseudoDepth, the allele-specific rank sums), and",
-        "--enable-all-annotations is held at false for the same reason and the flow annotations.",
-        "--resource is tagged res (va_res.vcf) or res and res2 (va_res2.vcf), and --expression reads one",
-        "field per row: per-allele, per-reference-and-allele, scalar, ID, FILTER, a flag, the second",
-        "resource's field (refused when only res is given) and an unbounded field, which",
-        "--resource-allele-concordance refuses at the multiallelic site it cannot index into.",
-        "--comparison is untagged, so its flag is named by the file's absolute path: va_comp.vcf, or",
-        "va_dbsnp.vcf; a comparison tagged DB, refused, and one tagged after a standard key were",
-        "compared by hand. --dbsnp is va_dbsnp.vcf, which matches some sites and not others, or its",
-        "copy with no index, refused at the first site annotated.",
-        "--allow-old-rms-mapping-quality-annotation-data, --assembly-complexity-reference-mode and",
-        "--dirichlet-keep-prior-in-count are held out: each is refused without its annotation, and",
-        "the port's parser does not yet tie an annotation's arguments to it. --pedigree, --founder-id",
-        "and --flow-order-for-annotations are held out: the port carries no pedigree or flow",
-        "annotation for this tool. --read-filter-tag-op, --keep-reverse-strand-only and",
-        "--dont-require-soft-clips-both-ends belong to filters no row enables, and each is refused without it;",
-        "--read-validation-stringency, --sequence-dictionary and --read-index are held out, as for the",
-        "other variant walkers that read BAMs. --variant-output-filtering is held out: every mode but",
-        "ANYWHERE needs -L, and was compared by hand.",
-        "--add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the",
-        "reason every variant writer holds them, and --max-variants-per-shard at 0."
+        "va.vcf is three samples written out of order over va_ref.fasta (an AC repeat at 501-520 and an N at",
+        "700): a SNP, a three-base deletion, a two-base insertion, a deletion of one repeat unit, a",
+        "triallelic SNP, an MNP, a SNP over the N, a filtered SNP with an rsID, a record with no alternate",
+        "and a SNP no read reaches. Every called genotype carries PLs but the one over the N, so a -G",
+        "StandardAnnotation row runs with the reference, which skips that site, and is refused by ExcessHet",
+        "without it. va_noidx.vcf is the same file with no index, refused under -L. va.bam is the three",
+        "samples' reads with varied mapping and base qualities, soft clips, duplicates, QC failures,",
+        "secondary and supplementary lines, reads starting inside the deletion and varied fragment lengths;",
+        "va2.bam is two of the samples at another length and step. --min-base-quality-score, --disable-read-",
+        "filter NotDuplicateReadFilter and the two enabled filters change which pileup elements pick an",
+        "allele, and the pileup's rank is the likelihood row it fills, whichever read that row belongs to.",
+        "--annotation names one annotation per row among those whose output the reads decide; the rest the",
+        "port carries were compared by hand against the oracle, one run each, over this corpus. --annotation-",
+        "group is limited to the groups every member of which the port carries: StandardMutectAnnotation,",
+        "GenotypeAnnotation and AS_StandardAnnotation each hold one it does not",
+        "(AS_StrandBiasMutectAnnotation, AllelePseudoDepth, the allele-specific rank sums), and --enable-all-",
+        "annotations is held at false for the same reason and the flow annotations. --resource is tagged res",
+        "(va_res.vcf) or res and res2 (va_res2.vcf), and --expression reads one field per row: per-allele,",
+        "per-reference-and-allele, scalar, ID, FILTER, a flag, the second resource's field (refused when only",
+        "res is given) and an unbounded field, which --resource-allele-concordance refuses at the",
+        "multiallelic site it cannot index into. --comparison is untagged, so its flag is named by the file's",
+        "absolute path: va_comp.vcf, or va_dbsnp.vcf; a comparison tagged DB, refused, and one tagged after a",
+        "standard key were compared by hand. --dbsnp is va_dbsnp.vcf, which matches some sites and not",
+        "others, or its copy with no index, refused at the first site annotated. --allow-old-rms-mapping-",
+        "quality-annotation-data, --assembly-complexity-reference-mode and --dirichlet-keep-prior-in-count",
+        "are held out: each is refused without its annotation, and the port's parser does not yet tie an",
+        "annotation's arguments to it. --pedigree, --founder-id and --flow-order-for-annotations are held",
+        "out: the port carries no pedigree or flow annotation for this tool. --read-filter-tag-op, --keep-",
+        "reverse-strand-only and --dont-require-soft-clips-both-ends belong to filters no row enables, and",
+        "each is refused without it; --read-validation-stringency, --sequence-dictionary and --read-index are",
+        "held out, as for the other variant walkers that read BAMs. --variant-output-filtering is held out:",
+        "every mode but ANYWHERE needs -L, and was compared by hand. --add-output-vcf-command-line and",
+        "--create-output-variant-index are held at FALSE for the reason every variant writer holds them, and",
+        "--max-variants-per-shard at 0. --annotation also names RMSMappingQuality, AllelePseudoDepth,",
+        "AssemblyComplexity and HmerIndelLength, the owners of --allow-old-rms-mapping-quality-annotation-",
+        "data, --dirichlet-keep-prior-in-count, --assembly-complexity-reference-mode and --flow-order-for-",
+        "annotations. Each of those four is <unset> or set, and constraints keep a set one beside its owner:",
+        "the plugin refuses an annotation's argument when its annotation is not enabled. The old-RMS flag",
+        "reaches only finalizeRawData, which this tool never calls, so a row holding it measures that it is",
+        "accepted. --read-validation-stringency is SILENT, LENIENT or STRICT over va.bam."
       ]
     },
     "FuncotatorDataSourceDownloader": {
@@ -20498,6 +20521,486 @@
         "--exclude-intervals": "null"
       },
       "why": "A filtering mode with no -L or -XL is the one MissingArgument at the end of onStartup, on every such row."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--allow-old-rms-mapping-quality-annotation-data": "true",
+        "--annotation": "Coverage"
+      },
+      "why": "--allow-old-rms-mapping-quality-annotation-data belongs to RMSMappingQuality, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--allow-old-rms-mapping-quality-annotation-data": "true",
+        "--annotation": "null"
+      },
+      "why": "--allow-old-rms-mapping-quality-annotation-data belongs to RMSMappingQuality, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--allow-old-rms-mapping-quality-annotation-data": "true",
+        "--annotation": "DepthPerAlleleBySample"
+      },
+      "why": "--allow-old-rms-mapping-quality-annotation-data belongs to RMSMappingQuality, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--allow-old-rms-mapping-quality-annotation-data": "true",
+        "--annotation": "AlleleFraction"
+      },
+      "why": "--allow-old-rms-mapping-quality-annotation-data belongs to RMSMappingQuality, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--allow-old-rms-mapping-quality-annotation-data": "true",
+        "--annotation": "StrandBiasBySample"
+      },
+      "why": "--allow-old-rms-mapping-quality-annotation-data belongs to RMSMappingQuality, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--allow-old-rms-mapping-quality-annotation-data": "true",
+        "--annotation": "FisherStrand"
+      },
+      "why": "--allow-old-rms-mapping-quality-annotation-data belongs to RMSMappingQuality, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--allow-old-rms-mapping-quality-annotation-data": "true",
+        "--annotation": "ReadPosRankSumTest"
+      },
+      "why": "--allow-old-rms-mapping-quality-annotation-data belongs to RMSMappingQuality, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--allow-old-rms-mapping-quality-annotation-data": "true",
+        "--annotation": "TandemRepeat"
+      },
+      "why": "--allow-old-rms-mapping-quality-annotation-data belongs to RMSMappingQuality, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--allow-old-rms-mapping-quality-annotation-data": "true",
+        "--annotation": "ReferenceBases"
+      },
+      "why": "--allow-old-rms-mapping-quality-annotation-data belongs to RMSMappingQuality, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--allow-old-rms-mapping-quality-annotation-data": "true",
+        "--annotation": "AllelePseudoDepth"
+      },
+      "why": "--allow-old-rms-mapping-quality-annotation-data belongs to RMSMappingQuality, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--allow-old-rms-mapping-quality-annotation-data": "true",
+        "--annotation": "AssemblyComplexity"
+      },
+      "why": "--allow-old-rms-mapping-quality-annotation-data belongs to RMSMappingQuality, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--allow-old-rms-mapping-quality-annotation-data": "true",
+        "--annotation": "HmerIndelLength"
+      },
+      "why": "--allow-old-rms-mapping-quality-annotation-data belongs to RMSMappingQuality, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--dirichlet-keep-prior-in-count": "true",
+        "--annotation": "Coverage"
+      },
+      "why": "--dirichlet-keep-prior-in-count belongs to AllelePseudoDepth, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--dirichlet-keep-prior-in-count": "true",
+        "--annotation": "null"
+      },
+      "why": "--dirichlet-keep-prior-in-count belongs to AllelePseudoDepth, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--dirichlet-keep-prior-in-count": "true",
+        "--annotation": "DepthPerAlleleBySample"
+      },
+      "why": "--dirichlet-keep-prior-in-count belongs to AllelePseudoDepth, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--dirichlet-keep-prior-in-count": "true",
+        "--annotation": "AlleleFraction"
+      },
+      "why": "--dirichlet-keep-prior-in-count belongs to AllelePseudoDepth, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--dirichlet-keep-prior-in-count": "true",
+        "--annotation": "StrandBiasBySample"
+      },
+      "why": "--dirichlet-keep-prior-in-count belongs to AllelePseudoDepth, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--dirichlet-keep-prior-in-count": "true",
+        "--annotation": "FisherStrand"
+      },
+      "why": "--dirichlet-keep-prior-in-count belongs to AllelePseudoDepth, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--dirichlet-keep-prior-in-count": "true",
+        "--annotation": "ReadPosRankSumTest"
+      },
+      "why": "--dirichlet-keep-prior-in-count belongs to AllelePseudoDepth, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--dirichlet-keep-prior-in-count": "true",
+        "--annotation": "TandemRepeat"
+      },
+      "why": "--dirichlet-keep-prior-in-count belongs to AllelePseudoDepth, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--dirichlet-keep-prior-in-count": "true",
+        "--annotation": "ReferenceBases"
+      },
+      "why": "--dirichlet-keep-prior-in-count belongs to AllelePseudoDepth, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--dirichlet-keep-prior-in-count": "true",
+        "--annotation": "RMSMappingQuality"
+      },
+      "why": "--dirichlet-keep-prior-in-count belongs to AllelePseudoDepth, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--dirichlet-keep-prior-in-count": "true",
+        "--annotation": "AssemblyComplexity"
+      },
+      "why": "--dirichlet-keep-prior-in-count belongs to AllelePseudoDepth, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--dirichlet-keep-prior-in-count": "true",
+        "--annotation": "HmerIndelLength"
+      },
+      "why": "--dirichlet-keep-prior-in-count belongs to AllelePseudoDepth, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--assembly-complexity-reference-mode": "true",
+        "--annotation": "Coverage"
+      },
+      "why": "--assembly-complexity-reference-mode belongs to AssemblyComplexity, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--assembly-complexity-reference-mode": "true",
+        "--annotation": "null"
+      },
+      "why": "--assembly-complexity-reference-mode belongs to AssemblyComplexity, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--assembly-complexity-reference-mode": "true",
+        "--annotation": "DepthPerAlleleBySample"
+      },
+      "why": "--assembly-complexity-reference-mode belongs to AssemblyComplexity, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--assembly-complexity-reference-mode": "true",
+        "--annotation": "AlleleFraction"
+      },
+      "why": "--assembly-complexity-reference-mode belongs to AssemblyComplexity, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--assembly-complexity-reference-mode": "true",
+        "--annotation": "StrandBiasBySample"
+      },
+      "why": "--assembly-complexity-reference-mode belongs to AssemblyComplexity, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--assembly-complexity-reference-mode": "true",
+        "--annotation": "FisherStrand"
+      },
+      "why": "--assembly-complexity-reference-mode belongs to AssemblyComplexity, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--assembly-complexity-reference-mode": "true",
+        "--annotation": "ReadPosRankSumTest"
+      },
+      "why": "--assembly-complexity-reference-mode belongs to AssemblyComplexity, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--assembly-complexity-reference-mode": "true",
+        "--annotation": "TandemRepeat"
+      },
+      "why": "--assembly-complexity-reference-mode belongs to AssemblyComplexity, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--assembly-complexity-reference-mode": "true",
+        "--annotation": "ReferenceBases"
+      },
+      "why": "--assembly-complexity-reference-mode belongs to AssemblyComplexity, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--assembly-complexity-reference-mode": "true",
+        "--annotation": "RMSMappingQuality"
+      },
+      "why": "--assembly-complexity-reference-mode belongs to AssemblyComplexity, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--assembly-complexity-reference-mode": "true",
+        "--annotation": "AllelePseudoDepth"
+      },
+      "why": "--assembly-complexity-reference-mode belongs to AssemblyComplexity, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--assembly-complexity-reference-mode": "true",
+        "--annotation": "HmerIndelLength"
+      },
+      "why": "--assembly-complexity-reference-mode belongs to AssemblyComplexity, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--flow-order-for-annotations": "TGCA",
+        "--annotation": "Coverage"
+      },
+      "why": "--flow-order-for-annotations belongs to HmerIndelLength, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--flow-order-for-annotations": "TGCA",
+        "--annotation": "null"
+      },
+      "why": "--flow-order-for-annotations belongs to HmerIndelLength, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--flow-order-for-annotations": "TGCA",
+        "--annotation": "DepthPerAlleleBySample"
+      },
+      "why": "--flow-order-for-annotations belongs to HmerIndelLength, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--flow-order-for-annotations": "TGCA",
+        "--annotation": "AlleleFraction"
+      },
+      "why": "--flow-order-for-annotations belongs to HmerIndelLength, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--flow-order-for-annotations": "TGCA",
+        "--annotation": "StrandBiasBySample"
+      },
+      "why": "--flow-order-for-annotations belongs to HmerIndelLength, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--flow-order-for-annotations": "TGCA",
+        "--annotation": "FisherStrand"
+      },
+      "why": "--flow-order-for-annotations belongs to HmerIndelLength, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--flow-order-for-annotations": "TGCA",
+        "--annotation": "ReadPosRankSumTest"
+      },
+      "why": "--flow-order-for-annotations belongs to HmerIndelLength, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--flow-order-for-annotations": "TGCA",
+        "--annotation": "TandemRepeat"
+      },
+      "why": "--flow-order-for-annotations belongs to HmerIndelLength, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--flow-order-for-annotations": "TGCA",
+        "--annotation": "ReferenceBases"
+      },
+      "why": "--flow-order-for-annotations belongs to HmerIndelLength, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--flow-order-for-annotations": "TGCA",
+        "--annotation": "RMSMappingQuality"
+      },
+      "why": "--flow-order-for-annotations belongs to HmerIndelLength, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--flow-order-for-annotations": "TGCA",
+        "--annotation": "AllelePseudoDepth"
+      },
+      "why": "--flow-order-for-annotations belongs to HmerIndelLength, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--flow-order-for-annotations": "TGCA",
+        "--annotation": "AssemblyComplexity"
+      },
+      "why": "--flow-order-for-annotations belongs to HmerIndelLength, and the annotation plugin refuses it with any other annotation; the pair would measure that refusal."
     },
     {
       "tools": [

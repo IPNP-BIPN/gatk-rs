@@ -15870,11 +15870,13 @@ pub fn variant_annotator(parser: &Parser) -> Outcome {
             format!("{what} This message is the port's own and not GATK's."),
         )
     };
-    for configured in ["pedigree", "founder-id", "flow-order-for-annotations"] {
+    // `validateAndResolvePlugins`, at parse time, before the tool starts.
+    let annotation_flow_order = flow_order_for_annotations(parser, &resolved)?;
+    for configured in ["pedigree", "founder-id"] {
         if !arguments(parser, configured).is_empty() || argument(parser, configured).is_some() {
             return Err(limitation(&format!(
-                "--{configured} configures a pedigree or flow annotation, which this port does not \
-                 carry for VariantAnnotator yet."
+                "--{configured} configures a pedigree annotation, which this port does not carry \
+                 for VariantAnnotator yet."
             )));
         }
     }
@@ -16092,10 +16094,19 @@ pub fn variant_annotator(parser: &Parser) -> Outcome {
         overlap_names: overlap_names.clone(),
         expressions,
         allele_concordance: flag(parser, "resource-allele-concordance"),
-        pseudo_depth: Default::default(),
-        assembly_complexity_reference_mode: false,
+        // The annotations' own arguments, which the plugin descriptor hands to their instances.
+        // `--allow-old-rms-mapping-quality-annotation-data` is RMSMappingQuality's and reaches
+        // only `finalizeRawData`, which this tool never calls.
+        pseudo_depth: std::cell::RefCell::new(
+            gatk_annotation::allele_pseudo_depth::AllelePseudoDepth::new(
+                double_or(parser, "dirichlet-prior-pseudo-count", 1.0),
+                flag(parser, "dirichlet-keep-prior-in-count"),
+                double_or(parser, "pseudo-count-weight-decay-rate", 1.0),
+            ),
+        ),
+        assembly_complexity_reference_mode: flag(parser, "assembly-complexity-reference-mode"),
         pedigree: Default::default(),
-        flow_order_for_annotations: None,
+        flow_order_for_annotations: annotation_flow_order,
     };
     let minimum_base_quality = number_or(parser, "min-base-quality-score", 10);
 
