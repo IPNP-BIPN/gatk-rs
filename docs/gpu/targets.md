@@ -4,49 +4,42 @@ Milestone GPU, GPU.2 (#77) and GPU.3 (#78). A kernel is listed with the test tha
 CPU path's bytes and the measurement that says whether it pays. One that does not pay is deleted
 rather than kept, and a target that cannot pay is recorded here instead of built.
 
-## 1. `PairHMM`: shipped
+## 1. `PairHMM`: built, measured, deleted because it cannot pay
 
-**What runs on the device.** `LoglessPairHMM`'s lattice and its last-row sum, one read/haplotype
-pair per thread, in `crates/gatk-engine/src/gpu/kernels.metal`. The transitions, the priors and the
-initial condition are computed on the host by the CPU path's own functions and sent down as bits;
-the sum comes back as bits and the host takes `jmath`'s `log10`. No transcendental runs on the
-device.
+**What ran on the device.** `LoglessPairHMM`'s lattice and its last-row sum, one read/haplotype pair
+per thread, in software binary64 on `ulong` (class `integer`). It was bit-identical to the CPU path
+on every test and on every HaplotypeCaller and Mutect2 golden run on the device path. Removed on
+2026-11-26. Before that it lived in `kernels.metal` (`pair_hmm`), `gpu::pair_hmm_log10`, the
+`PairHMMLikelihoodCalculationEngine` call site, `tests/gpu.rs` and `examples/gpu_speed.rs`; see git
+history.
 
-**Why it cannot move a byte.** Each cell is the CPU expression, operation for operation, in
-software binary64 on integers (docs/gpu/eligibility.md); the parallelism is between pairs, never
-inside one, so no sum is regrouped. `PairHMMLikelihoodCalculationEngine.computeReadLikelihoods`
-takes the device's values when `GATK_RS_GPU` is set and its own otherwise, and raises a DRAGstr
-imputation refusal at the same read, after the same results-file lines, either way. A Metal command
-that ends in error (in run 43382302494, on GitHub's paravirtualised GPU, one sample came back with no
-reads, which is what an output left at zero gives; the host did not look then) makes the call answer `None`, so the CPU path computes it, and says so on stderr;
-the `gpu` job counts those calls.
+**Why it was deleted: PairHMM is 3.3% of HaplotypeCaller.** HaplotypeCaller on chr20:10–11 Mb of
+NA12878 30x (Apple M4 Max, 16 cores, load average 57–90 from other work). The port is built with
+rustc 1.98.0, `--features gatk-engine/gpu`. The VCF is the same on both paths (records md5
+`f0281f9b…`, 1,629 records), and no device call fell back.
 
-**The tests that prove it.** `crates/gatk-engine/tests/gpu.rs`: 800,648 additions and
-multiplications against the host bit for bit, and 732 read/haplotype pairs (reads of 1 to 150
-bases with `N`s and an empty read, edited haplotypes of 40 to 340) against
-`read_likelihood_given_haplotype_log10`. Flipping the tie-breaking of the rounding fails both,
-on 50,357 additions and on the 40th read. Then every suite of the workspace runs again on the
-device path (`GATK_RS_GPU=1 cargo test --workspace --release --features gatk-engine/gpu`), the
-HaplotypeCaller and Mutect2 end-to-end goldens among them.
+| path | CPU user+sys | peak RSS | wall | PairHMM time over all calls |
+|---|---:|---:|---:|---:|
+| CPU | 56.7 / 59.6 s | 19.1 / 18.0 GB | 64.9 / 78.0 s | 1.89 s (0.68 ns/cell) |
+| device (`GATK_RS_GPU=1`) | 59.0 / 57.7 s | 18.8 / 17.3 GB | 108.7 / 128.9 s | 47.4 s (17.1 ns/cell) |
 
-**Speed.** `crates/gatk-engine/examples/gpu_speed.rs` on an Apple M4 Max (16 cores, 40 GPU
-cores), second of two runs, with the device's compilation charged to a warm-up. The engine runs the
-CPU path on one thread, so that is the column the gate reads; all cores are shown for honesty. The
-host had other work on it (load average about 24), so the CPU columns are pessimistic and the
-ratios are a floor rather than a figure to quote to two digits.
+- **The ceiling.** The tool made 1,237 PairHMM calls totalling 2.77 G cells. The CPU path spent 1.89 s
+  on them, 3.3% of the tool's CPU. A free device could take at most that off, which is under the
+  10% bar §1b sets.
+- **The device loses besides.** A call costs about 38 ms on the device against 1.5 ms on the CPU.
+  Even the 839 calls under 1 M cells cost 11.5 ms each, so the dispatch's fixed cost dominates.
+  Regions are small: the mean call is 2.2 M cells, none reaches 10^8, and only 66 reach 10^7.
+- **A size threshold cannot rescue it.** In `gpu_speed` the device was still 0.19× one CPU thread at
+  18 M cells, and 1.06–1.17× sixteen threads at 480 M to 4.8 G. Real regions sit far below where it
+  pays, so a threshold would route almost every call back to the CPU.
+- **GitHub's paravirtualised macOS GPU** (run 45304648109): 0.12–0.47× the CPU path, and the
+  4.8 G-cell workload hung the GPU (`kIOGPUCommandBufferCallbackErrorHang`).
+- The CPU path got faster since this kernel was first measured: 16 threads on the 480 M-cell workload
+  went from 1.07 s to 0.31 s, while the device stayed at 0.29 s.
 
-| Workload | pairs | cells | CPU, 1 thread | CPU, 16 threads | device | vs 1 thread | vs 16 threads | same bits |
-|---|---:|---:|---:|---:|---:|---:|---:|:---:|
-| 4 haplotypes of 300, 100 reads of 150 | 400 | 18 M | 0.270 s | 0.062 s | 0.158 s | 1.7x | 0.39x | yes |
-| 16 of 400, 500 reads | 8,000 | 480 M | 6.30 s | 1.07 s | 0.297 s | 21x | 3.6x | yes |
-| 32 of 500, 2,000 reads | 64,000 | 4.8 G | 58.9 s | 9.65 s | 2.63 s | 22x | 3.7x | yes |
-
-The kernel stays: it is faster than the path it replaces at every size measured, and from a few
-thousand pairs it is faster than the CPU path spread over every core. At the smallest region the
-fixed cost of a dispatch is most of its time, which is the case a size threshold would route back
-to the CPU if a profile ever shows small regions dominating.
-
-To run it: build with `--features gatk-engine/gpu` on macOS and set `GATK_RS_GPU=1`.
+**Scope of the verdict.** One 30x germline slice on a loaded host. Mutect2 and deep or high-ploidy
+data, where regions are larger, were not measured. A kernel for them would have to clear the same
+ceiling first.
 
 ## 1b. NVScoreVariants' convolutions: shipped (GPU.4, #1021)
 

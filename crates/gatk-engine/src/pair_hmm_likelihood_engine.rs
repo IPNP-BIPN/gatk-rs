@@ -33,7 +33,6 @@ use crate::allele_likelihoods::{AlleleLikelihoods, LikelihoodsError};
 use crate::allele_list::{AlleleList, SampleList};
 use crate::clipping::{hard_clip_soft_clipped_bases, ClipError};
 use crate::dragstr::{dragstr_impute, DragstrError, DragstrParams};
-use crate::gpu;
 use crate::haplotype::Haplotype;
 use crate::pair_hmm::{fast_round, reads_likelihoods_given_haplotype_log10, HmmRead};
 use crate::read_utils::{base_deletion_qualities, base_insertion_qualities};
@@ -330,42 +329,18 @@ impl PairHmmLikelihoodEngine {
                     gap_continuation,
                 })
                 .collect();
-            // Milestone GPU: the same likelihoods from the device, for every read up to the first
-            // the imputation refuses.
-            let device = if gpu::requested() {
-                let inputs: Vec<_> = hmm_reads
-                    .iter()
-                    .map(|read| gpu::ReadInputs {
-                        bases: read.bases,
-                        qualities: read.quals,
-                        insertion: read.insertion_quals,
-                        deletion: read.deletion_quals,
-                        gap_continuation: read.gap_continuation,
-                    })
-                    .collect();
-                gpu::pair_hmm_log10(&haplotype_bases, &inputs)
-            } else {
-                None
-            };
-            // Otherwise one haplotype at a time against every read: the same bits as one pair at
-            // a time.
-            if device.is_none() {
-                for (a, haplotype) in haplotype_bases.iter().enumerate() {
-                    reads_likelihoods_given_haplotype_log10(
-                        haplotype,
-                        &hmm_reads,
-                        &mut sample_values[a][..hmm_reads.len()],
-                    );
-                }
+            // One haplotype at a time against every read: the same bits as one pair at a time.
+            for (a, haplotype) in haplotype_bases.iter().enumerate() {
+                reads_likelihoods_given_haplotype_log10(
+                    haplotype,
+                    &hmm_reads,
+                    &mut sample_values[a][..hmm_reads.len()],
+                );
             }
             // The checks and the results file in the reference's order: read by read.
             for (r, read) in hmm_reads.iter().enumerate() {
                 for (a, haplotype) in haplotype_bases.iter().enumerate() {
-                    let likelihood = match &device {
-                        Some(values) => values[r * haplotype_bases.len() + a],
-                        None => sample_values[a][r],
-                    };
-                    sample_values[a][r] = likelihood;
+                    let likelihood = sample_values[a][r];
                     if likelihood > 0.0 || likelihood.is_nan() {
                         return Err(LikelihoodEngineError::InvalidLikelihood(likelihood));
                     }
