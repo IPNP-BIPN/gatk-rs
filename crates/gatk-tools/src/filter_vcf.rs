@@ -39,6 +39,8 @@ use htsjdk_vcf::reader::read_vcf;
 use htsjdk_vcf::variant::{Genotype, Value, VariantContext};
 use htsjdk_vcf::vcf_file::write_vcf;
 
+use crate::javascript_variant_filter::JavascriptVariantFilter;
+
 /// The tool's defaults, which filter nothing: every threshold is at the edge of its range, and
 /// `MAX_FS` is `Double.MAX_VALUE`. A run with no arguments rewrites the file with `FT` set on the
 /// genotypes and changes no verdict.
@@ -85,6 +87,8 @@ pub enum FilterError {
     NoSequenceDictionary,
     /// The reader or the writer refused.
     Vcf(String, String),
+    /// The `JAVASCRIPT_FILE` script raised at a record, with the port engine's message.
+    Script(String),
 }
 
 impl FilterError {
@@ -92,6 +96,7 @@ impl FilterError {
         match self {
             FilterError::NoSequenceDictionary => "picard.PicardException",
             FilterError::Vcf(class, _) => class,
+            FilterError::Script(_) => crate::main_entry::PORT_LIMITATION,
         }
     }
 
@@ -101,6 +106,11 @@ impl FilterError {
                  in order to create indexed vcf or bcfs."
                 .to_string(),
             FilterError::Vcf(_, message) => message.clone(),
+            FilterError::Script(message) => format!(
+                "FilterVcf's JAVASCRIPT_FILE raised {message} in this port's JavaScript engine, \
+                 where Picard's Nashorn would raise an error in its own words, which this port \
+                 does not reproduce. This message is the port's own and not GATK's."
+            ),
         }
     }
 }
@@ -271,7 +281,15 @@ pub fn filter_record(record: &VariantContext, thresholds: &Thresholds) -> Varian
 
 /// `doWork()`: the whole run, to a `.vcf` or `.bcf` output.
 pub fn filter(input: &str, thresholds: &Thresholds) -> Result<String, FilterError> {
-    filter_to(input, thresholds, true)
+    filter_to(input, thresholds, true, None)
+}
+
+/// `VariantContextJavascriptFilter`: the compiled script, the filter it sets on a record it
+/// rejects, named after the script's base name, and the script's path as the FILTER line gives it.
+pub struct ScriptFilter {
+    pub name: String,
+    pub path: String,
+    pub script: JavascriptVariantFilter,
 }
 
 /// `doWork()`: the whole run. Only an output named `.vcf` or `.bcf` (`isVcfOrBcf`) needs the
@@ -280,6 +298,7 @@ pub fn filter_to(
     input: &str,
     thresholds: &Thresholds,
     vcf_or_bcf_output: bool,
+    mut script: Option<&mut ScriptFilter>,
 ) -> Result<String, FilterError> {
     let file = read_vcf(input).map_err(|failure| {
         FilterError::Vcf(failure.error.class().to_string(), failure.error.message())
@@ -305,7 +324,11 @@ pub fn filter_to(
         HeaderLine::Compound { key, id, .. } => Some((key.clone(), id.clone())),
         _ => None,
     };
-    for line in added_header_lines() {
+    let script_line = script.as_ref().map(|script| HeaderLine::Filter {
+        id: script.name.clone(),
+        description: format!("Variant Filtered by Javascript file {}", script.path),
+    });
+    for line in added_header_lines().into_iter().chain(script_line) {
         if !header
             .lines
             .iter()
@@ -315,11 +338,28 @@ pub fn filter_to(
         }
     }
 
-    let records: Vec<VariantContext> = file
-        .records
-        .iter()
-        .map(|record| filter_record(record, thresholds))
-        .collect();
+    if let Some(script) = script.as_mut() {
+        script
+            .script
+            .bind_header(&header)
+            .map_err(FilterError::Script)?;
+    }
+    let mut records: Vec<VariantContext> = Vec::with_capacity(file.records.len());
+    for record in &file.records {
+        let mut filtered = filter_record(record, thresholds);
+        if let Some(script) = script.as_mut() {
+            // The script sees the record as it was read, and a rejection joins the site filters.
+            let accepted = script.script.accept(record).map_err(|error| {
+                FilterError::Script(format!("{error} at {}:{}", record.contig, record.start))
+            })?;
+            let filters = filtered.filters.get_or_insert_with(Vec::new);
+            if !accepted && !filters.contains(&script.name) {
+                filters.push(script.name.clone());
+                filters.sort();
+            }
+        }
+        records.push(filtered);
+    }
 
     write_vcf(&header, &records).map_err(|error| match error {
         EncodeError::MissingFromHeader {

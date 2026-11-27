@@ -152,6 +152,26 @@ of the log is compared:
 }
 ```
 
+## An environment both sides source
+
+The gCNV tools' bytes depend on the CPU under GATK's own configuration, so both sides of their rows
+run under `tools/python-tools/gcnv_frozen_env.sh` (docs/gcnv-reproducible-oracle.md). A tool names
+the script under `$environment`; `run_array.py` mounts it, sources it before the command, and points
+pytensor at one compile directory beside the corpus, shared by both sides and every row:
+
+```json
+{
+  "per_tool": {
+    "GermlineCNVCaller": { "$environment": "tools/python-tools/gcnv_frozen_env.sh" }
+  }
+}
+```
+
+Their corpus is built once before the rows, like the scorers: `build_gcnv` writes the read counts
+with `make_gcnv_fixture.py` and has the reference make a ploidy model and calls (`gcnv/p-*`) and a
+denoising model and calls (`gcnv/g-*`) under that script, for any tool whose fixtures name
+`/work/fixtures/gcnv/`.
+
 ## A refusal that comes after the answer
 
 A refused row is compared on its exit status and its error line, because for most tools a failed
@@ -195,3 +215,18 @@ looks covered. So a value is used only when it traces to the inventory (`enum_me
 `max`, `default`) or to a declared fixture, and everything else is **excluded by name with a
 reason**. The exclusion list is part of the coverage claim: a tool at "t=2 covered" with half its
 arguments excluded is covered over half a tool.
+
+## t=3 on the critical path
+
+The best-practices chain (MarkDuplicatesSpark, BaseRecalibrator, ApplyBQSR, HaplotypeCaller,
+GenotypeGVCFs, Mutect2, FilterMutectCalls, SelectVariants, VariantFiltration, VariantRecalibrator,
+ApplyVQSR) also has a `<Tool>.t3.json`. CI's `argument-coverage-t3` job runs one tool per shard and
+writes a fragment (`measure.py --t 3 --fragment`). `argument-coverage-t3-merge` folds the fragments
+into `measured.json`'s `t3` section (`measure.py --merge`), which the t=2 job leaves alone.
+`docs/VALIDATION.md` then shows both measurements, and its `t` column shows the strongest level measured.
+A t=3 array is regenerated whenever its tool's fixtures change:
+
+```sh
+python3 tools/coverage/covering.py --tool HaplotypeCaller --t 3 \
+  --fixtures tools/coverage/fixtures.json --verify --json tools/coverage/arrays/HaplotypeCaller.t3.json
+```

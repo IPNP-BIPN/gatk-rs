@@ -1,14 +1,15 @@
-//! `PostprocessGermlineCNVCalls` past the interpreter, against the frozen reference.
+//! `PostprocessGermlineCNVCalls` against the frozen reference.
 //!
 //! The dump comes from `tools/python-tools/gcnv_dump.sh`, which runs the gCNV trio in
 //! `broadinstitute/gatk:4.7.0.0` under `gcnv_frozen_env.sh`, then the postprocessing of every
 //! sample, and prints the shards' bytes (`input` rows) and every output's sha256 (`file` rows). Its
-//! golden is frozen from a CI artefact like every other; until then the replay reads
-//! `GATK_RS_GCNV_DUMP`, or says it has nothing to compare (docs/gcnv-postprocess.md).
+//! golden is frozen from a CI artefact; `GATK_RS_GCNV_DUMP` replays another dump.
 //!
-//! The reference stops without `python` or `gcnvkernel` and the port keeps that refusal, so a
-//! `python` that imports anything stands in for the environment. `PATH` is process-wide, so this
-//! file holds one test.
+//! The port hands gcnvkernel GATK's own `segment_gcnv_calls.py`, as the reference does. Here a
+//! `python` stands in for it and leaves the segments table the native port of that script,
+//! `gatk_tools::gcnv_segments`, computes from the same shards, so the check is the CLI's Java (the
+//! intervals VCF, the denoised table, the segments read back and composed) and the library
+//! together. `PATH` is process-wide, so this file holds one test.
 
 use sha2::{Digest, Sha256};
 use std::path::Path;
@@ -72,6 +73,39 @@ fn postprocess(sample: usize) -> Result<(), String> {
     }
 }
 
+/// `segment_gcnv_calls.py`'s table for one sample, from the native segmenter.
+fn segments_table(sample: usize) -> String {
+    use gatk_tools::gcnv_segments::{python_fixed2, read_sample_inputs, segments};
+    let inputs = read_sample_inputs(
+        &["gcnv/g-model".to_string()],
+        &["gcnv/g-calls".to_string()],
+        "ploidy/p-calls",
+        sample,
+    )
+    .expect("the shards");
+    let name = std::fs::read_to_string(format!("gcnv/g-calls/SAMPLE_{sample}/sample_name.txt"))
+        .expect("a sample name");
+    let mut text = gatk_tools::model_segments_tool::header(name.trim_end(), None);
+    text.push_str(
+        "CONTIG\tSTART\tEND\tNUM_POINTS\tCALL_COPY_NUMBER\tBASELINE_COPY_NUMBER\t\
+         QUALITY_SOME_CALLED\tQUALITY_ALL_CALLED\tQUALITY_START\tQUALITY_END\n",
+    );
+    for s in segments(&inputs).expect("the segments") {
+        let q: Vec<String> = s.qualities.iter().map(|&q| python_fixed2(q)).collect();
+        text.push_str(&format!(
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
+            s.contig,
+            s.start,
+            s.end,
+            s.num_points,
+            s.call,
+            s.baseline,
+            q.join("\t")
+        ));
+    }
+    text
+}
+
 fn replay(dump: &str, root: &Path, bin: &Path) {
     let mut wanted = Vec::new();
     for line in dump.lines().filter(|line| !line.starts_with('#')) {
@@ -93,6 +127,23 @@ fn replay(dump: &str, root: &Path, bin: &Path) {
         }
     }
     assert_eq!(wanted.len(), 18, "three files for each of six samples");
+    let staged = root.join("staged");
+    for sample in 0..6 {
+        let dir = staged.join(format!("SAMPLE_{sample}"));
+        std::fs::create_dir_all(&dir).expect("a directory");
+        std::fs::write(dir.join("copy_number_segments.tsv"), segments_table(sample))
+            .expect("a table");
+    }
+    // The import check passes; the script's run leaves the staged table where it was asked to.
+    executable(
+        &bin.join("python"),
+        &format!(
+            "#!/bin/sh\n[ \"$1\" = -c ] && exit 0\n\
+             while [ $# -gt 0 ]; do case \"$1\" in --output_path) out=$2;; --sample_index) i=$2;; esac; shift; done\n\
+             /bin/cp -R {}/SAMPLE_$i \"$out/\"\n",
+            staged.display()
+        ),
+    );
     let mut failures = Vec::new();
     for sample in 0..6 {
         std::fs::create_dir_all(root.join(format!("post-s{sample}"))).expect("a directory");
