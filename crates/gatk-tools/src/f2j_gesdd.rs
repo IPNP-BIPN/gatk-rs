@@ -17,6 +17,27 @@
 //! BLAS (`dnrm2.f`, `dgemv.f`, `dger.f`, `dtrmv.f`, `dtrmm.f`, `dgemm.f`), BSD 3-Clause, with what
 //! F2J does to them: `x**2` is `Math.pow(x, 2)`, which HotSpot answers as `x * x`, and `MAX` and
 //! `MIN` are `Math.max` and `Math.min`.
+//!
+//! The values are checked against the oracle bit for bit, 2 to 128 samples, by
+//! `tests/f2j_dgesdd.rs` (golden `tests/data/f2j_dgesdd.txt.gz`, from `DgesddDump.java`).
+//!
+//! # Reading this file without reading Rust
+//!
+//! Every routine keeps the Fortran's one-based indices and the Fortran's order of operations; the
+//! index helpers (`Square::at` here, closures in `dlarft` and `dlarfb`) subtract the one.
+//! Pieces of syntax that recur:
+//!
+//! - `&[f64]` is a borrowed, read-only view of an array, and `&mut [f64]` a borrowed, writable
+//!   one: the caller keeps ownership, and only one writable borrow may exist at a time. A Fortran
+//!   output argument is either a `&mut` parameter or part of the returned tuple, so
+//!   `let (cs, sn, r) = dlartg(f, g)` is the Fortran `CALL DLARTG(F, G, CS, SN, R)`;
+//! - `*x` reads or writes through a reference; Java's references are implicit, so it has none;
+//! - `vec![0.0; n]` is a new `double[n]` of zeros, and `&v[i..]` a view of `v` from index `i`;
+//! - `(a..b)` counts `a` to `b - 1` and `(a..=b)` counts `a` to `b`; `.rev()` counts down;
+//! - `f64::from_bits(bits)` is Java's `Double.longBitsToDouble`, used for a constant whose bits
+//!   were measured rather than computed;
+//! - `r#as` is a variable named `as`, the Fortran's name, which Rust reserves as a keyword;
+//! - a function's last expression is its return value; `return` is only written for early exits.
 
 /// The largest matrix `dgebrd` leaves to `dgebd2`: `NX`, `ilaenv(3, 'DGEBRD', ...)`.
 pub const LARGEST: usize = 128;
@@ -29,16 +50,23 @@ const PRECISION: f64 = f64::EPSILON;
 pub(crate) const SAFE_MINIMUM: f64 = f64::MIN_POSITIVE;
 /// `Math.pow(EPS, -0.125)`, measured on the oracle: 2^(53/8), under `dbdsqr`'s cap of a hundred.
 pub(crate) const TOLERANCE_MULTIPLIER: f64 = f64::from_bits(0x4058_ACE5_422A_A0DB);
-/// `SAFMN2`, `2**INT(LOG(SAFMIN / EPS) / LOG(2) / 2)`: the logarithms give -484.5, and INT truncates.
+/// `SAFMN2`, `2**INT(LOG(SAFMIN / EPS) / LOG(2) / 2)`: the logarithms give -484.5, and INT
+/// truncates.
 const SAFE_MINIMUM_2: f64 = f64::from_bits((1023 - 484) << 52);
 
 /// A square matrix, column major, read as Fortran reads it: one-based.
+///
+/// `<'a>` names how long the borrowed `values` live: a `Square` is a window on the caller's
+/// array and may not outlive it. Nothing is copied.
 struct Square<'a> {
+    /// The order, which is also the leading dimension: `LDA` is `N` on every call here.
     n: usize,
+    /// The caller's array, written in place as the Fortran writes `A`.
     values: &'a mut [f64],
 }
 
 impl Square<'_> {
+    /// The buffer index of `A(row, column)`, both one-based.
     fn at(&self, row: usize, column: usize) -> usize {
         (row - 1) + (column - 1) * self.n
     }
@@ -55,6 +83,10 @@ pub(crate) fn sign(a: f64, b: f64) -> f64 {
 }
 
 /// Fortran's `MAX`, which F2J writes as `Math.max`: a negative zero is under a positive one.
+///
+/// Written out rather than `f64::max` because Rust's returns the other argument when one is NaN,
+/// and leaves the sign of `max(-0.0, 0.0)` unspecified; here either NaN gives NaN (`a >= b` is
+/// false for a NaN `b`) and the zero test fixes the sign.
 pub(crate) fn max(a: f64, b: f64) -> f64 {
     if a.is_nan() {
         a
@@ -67,7 +99,7 @@ pub(crate) fn max(a: f64, b: f64) -> f64 {
     }
 }
 
-/// Fortran's `MIN`, `Math.min`.
+/// Fortran's `MIN`, `Math.min`: the mirror of `max`, a negative zero under a positive one.
 pub(crate) fn min(a: f64, b: f64) -> f64 {
     if a.is_nan() {
         a
@@ -86,6 +118,10 @@ pub(crate) fn max3(a: f64, b: f64, c: f64) -> f64 {
 }
 
 /// `dnrm2`, the scaled sum of squares rather than a square root of a dot product.
+///
+/// `scale` is the largest magnitude so far and `ssq` the sum of squares divided by its square,
+/// so no square overflows; the obvious `sqrt(sum(x * x))` rounds differently, and every
+/// reflector's norm goes through here.
 pub(crate) fn dnrm2(x: &[f64]) -> f64 {
     match x.len() {
         0 => 0.0,
@@ -125,6 +161,9 @@ pub(crate) fn dlapy2(x: f64, y: f64) -> f64 {
 }
 
 /// `dlarfg`: `alpha` and `x` become beta and the reflector's tail. Returns tau.
+///
+/// The Householder reflector `H = I - tau v v'`, `v = (1, x)`, that sends `(alpha, x)` to
+/// `(beta, 0)`. `alpha: &mut f64` is the Fortran's in-out `ALPHA`: the caller sees the write.
 fn dlarfg(alpha: &mut f64, x: &mut [f64]) -> f64 {
     let mut xnorm = dnrm2(x);
     if xnorm == 0.0 {
@@ -133,10 +172,14 @@ fn dlarfg(alpha: &mut f64, x: &mut [f64]) -> f64 {
     let mut beta = -sign(dlapy2(*alpha, xnorm), *alpha);
     let safmin = SAFE_MINIMUM / EPS;
     if beta.abs() < safmin {
+        // A beta this small would lose accuracy: scale up by powers of `1 / safmin`, counting the
+        // steps in `knt`, and scale beta back down by the same count at the end.
         let rsafmn = 1.0 / safmin;
         let mut knt = 0;
+        // `loop` with a `break` is Fortran's `GO TO 10` back to the top: it runs at least once.
         loop {
             knt += 1;
+            // `.iter_mut()` yields a writable reference to each element in turn.
             for value in x.iter_mut() {
                 *value *= rsafmn;
             }
@@ -170,12 +213,18 @@ fn dlarfg(alpha: &mut f64, x: &mut [f64]) -> f64 {
 }
 
 /// `dlarf('L', ...)` on the block of `c` from `(row, column)`: `dgemv('T')` then `dger`.
+///
+/// `C := C - tau v (C' v)'`, in the two BLAS calls' loop order: `work = C' v`, then each column
+/// of `C` minus `v` times `tau * work`. The zero test skips a column whose multiplier is zero;
+/// adding a zero product instead would not leave a negative zero in `C` unchanged.
 fn dlarf_left(v: &[f64], tau: f64, c: &mut Square, row: usize, column: usize) {
     if tau == 0.0 {
         return;
     }
     let (m, columns) = (v.len(), c.n + 1 - column);
     let mut work = vec![0.0; columns];
+    // `.enumerate()` pairs each element with its zero-based position; `.take(m)` stops after m,
+    // which is all of `v` here.
     for (j, slot) in work.iter_mut().enumerate() {
         let mut temp = 0.0;
         for (i, element) in v.iter().enumerate().take(m) {
@@ -196,6 +245,10 @@ fn dlarf_left(v: &[f64], tau: f64, c: &mut Square, row: usize, column: usize) {
 }
 
 /// `dlarf('R', ...)` on the block of `c` from `(row, column)`: `dgemv('N')` then `dger`.
+///
+/// `C := C - tau (C v) v'`: `work = C v`, accumulated column by column as `dgemv('N')` does,
+/// then each column of `C` minus `work` times `tau * v(j)`. The `row > n` guard is defensive:
+/// `dgebd2`, the only caller, passes `row <= n`.
 fn dlarf_right(v: &[f64], tau: f64, c: &mut Square, row: usize, column: usize) {
     if tau == 0.0 || row > c.n {
         return;
@@ -224,6 +277,12 @@ fn dlarf_right(v: &[f64], tau: f64, c: &mut Square, row: usize, column: usize) {
 
 /// `dgebd2`, for a square matrix: the diagonal, the superdiagonal and the left taus. The left
 /// reflectors stay below the diagonal of `a`.
+///
+/// Step `i` reflects column `i` below the diagonal to zero from the left, then row `i` right of
+/// the superdiagonal to zero from the right. The right taus are dropped: nothing here forms the
+/// right vectors (see the module note). Each reflector's tail is copied out, reflected and
+/// written back; `v` is built apart with its leading one, so `a` never holds that one, and the
+/// diagonal entry is written after `dlarf`.
 fn dgebd2(a: &mut Square) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
     let n = a.n;
     let mut d = vec![0.0; n];
@@ -231,6 +290,8 @@ fn dgebd2(a: &mut Square) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
     let mut tauq = vec![0.0; n];
     for i in 1..=n {
         let mut alpha = a.values[a.at(i, i)];
+        // `(i + 1..=n).map(|r| ...).collect()` is a stream: for each row r below the diagonal,
+        // the entry `A(r, i)`, gathered into a new vector. `|r| ...` is a lambda.
         let mut tail: Vec<f64> = (i + 1..=n).map(|r| a.values[a.at(r, i)]).collect();
         tauq[i - 1] = dlarfg(&mut alpha, &mut tail);
         d[i - 1] = alpha;
@@ -267,6 +328,12 @@ fn dgebd2(a: &mut Square) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
 }
 
 /// `dlartg`: `(cs, sn, r)`.
+///
+/// The plane rotation with `cs * f + sn * g = r` and `-sn * f + cs * g = 0`. When the larger of
+/// `|f|` and `|g|` is at or past `SAFMN2` or `1 / SAFMN2`, both are scaled by the other bound
+/// until it is not, and `r` scaled back the same number of times, so the squares neither overflow
+/// nor vanish.
+/// The final flip makes `cs` positive when `|f| > |g|`.
 pub(crate) fn dlartg(f: f64, g: f64) -> (f64, f64, f64) {
     if g == 0.0 {
         return (1.0, 0.0, f);
@@ -278,6 +345,8 @@ pub(crate) fn dlartg(f: f64, g: f64) -> (f64, f64, f64) {
     let safmx2 = 1.0 / safmn2;
     let (mut f1, mut g1) = (f, g);
     let mut scale = max(f1.abs(), g1.abs());
+    // Declared without a value: each branch below assigns them once before they are read, and
+    // the compiler checks that it does.
     let (mut cs, mut sn, mut r);
     if scale >= safmx2 {
         let mut count = 0;
@@ -326,7 +395,7 @@ pub(crate) fn dlartg(f: f64, g: f64) -> (f64, f64, f64) {
     (cs, sn, r)
 }
 
-/// `dlas2`: `(ssmin, ssmax)`.
+/// `dlas2`: `(ssmin, ssmax)`, the singular values of the 2 by 2 upper triangular `[f g; 0 h]`.
 pub(crate) fn dlas2(f: f64, g: f64, h: f64) -> (f64, f64) {
     let (fa, ga, ha) = (f.abs(), g.abs(), h.abs());
     let fhmn = min(fa, ha);
@@ -362,7 +431,12 @@ pub(crate) fn dlas2(f: f64, g: f64, h: f64) -> (f64, f64) {
     }
 }
 
-/// `dlasv2`: `(ssmin, ssmax, snr, csr, snl, csl)`.
+/// `dlasv2`: `(ssmin, ssmax, snr, csr, snl, csl)`, the singular value decomposition of the 2 by 2
+/// upper triangular `[f g; 0 h]` with its left and right rotations.
+///
+/// `pmax` records which of `f`, `g`, `h` has the largest magnitude (1, 2, 3), which decides how
+/// the signs of the values are fixed at the end. When `h` is the larger diagonal entry the two
+/// are swapped first, and the rotations swapped back.
 pub(crate) fn dlasv2(f: f64, g: f64, h: f64) -> (f64, f64, f64, f64, f64, f64) {
     let mut ft = f;
     let mut fa = ft.abs();
@@ -372,6 +446,7 @@ pub(crate) fn dlasv2(f: f64, g: f64, h: f64) -> (f64, f64, f64, f64, f64, f64) {
     let swap = ha > fa;
     if swap {
         pmax = 3;
+        // `std::mem::swap` exchanges two variables in place, the Fortran's three assignments.
         std::mem::swap(&mut ft, &mut ht);
         std::mem::swap(&mut fa, &mut ha);
     }
@@ -447,6 +522,7 @@ pub(crate) fn dlasv2(f: f64, g: f64, h: f64) -> (f64, f64, f64, f64, f64, f64) {
     } else {
         (clt, slt, crt, srt)
     };
+    // `match` must cover every value; `_` is the remaining case, which is `pmax == 3`.
     let tsign = match pmax {
         1 => sign(1.0, csr) * sign(1.0, csl) * sign(1.0, f),
         2 => sign(1.0, snr) * sign(1.0, csl) * sign(1.0, g),
@@ -462,6 +538,10 @@ const DORMQR_BLOCK: usize = 32;
 
 /// `dlarft('F', 'C', rows, k, V, tau, T)`, V being `a` from `(first, first)`: the triangular
 /// factor of k reflectors, k by k.
+///
+/// `T` is upper triangular with `H(1) ... H(k) = I - V T V'`. `v` and `at` are closures (lambdas
+/// capturing `first`, `n` and `k`) giving the buffer index of `V(r, s)` and `T(r, s)`, one-based.
+/// A zero tau leaves its column of `T` zero, as the fresh vector already is.
 fn dlarft(a: &mut [f64], n: usize, first: usize, rows: usize, k: usize, tau: &[f64]) -> Vec<f64> {
     let v = |r: usize, s: usize| (first + r - 2) + (first + s - 2) * n;
     let at = |r: usize, s: usize| (r - 1) + (s - 1) * k;
@@ -479,6 +559,8 @@ fn dlarft(a: &mut [f64], n: usize, first: usize, rows: usize, k: usize, tau: &[f
             for r in i..=rows {
                 temp += a[v(r, j)] * a[v(r, i)];
             }
+            // `dgemv` with a zero beta clears `y` and then adds `alpha * temp` to it. That is not
+            // an assignment: `0.0 + (-0.0)` is `+0.0`, so a negative zero product is not kept.
             t[at(j, i)] = 0.0;
             t[at(j, i)] += alpha * temp;
         }
@@ -500,12 +582,19 @@ fn dlarft(a: &mut [f64], n: usize, first: usize, rows: usize, k: usize, tau: &[f
 
 /// `dlarfb('L', 'N', 'F', 'C', m, n, k, V, T, C)`, V being `a` from `(first, first)` and C the rows
 /// of `c` from `first`: `dtrmm`, `dgemm`, `dtrmm`, `dgemm`, `dtrmm` through the workspace.
+///
+/// `C := (I - V T V') C` with `V = (V1; V2)`, V1 the unit lower triangle of the first k rows.
+/// The workspace is `W = C' V T'`, built in place as the Fortran builds it, then `C2 -= V2 W'`,
+/// `W := W V1'` and `C1 -= W'`. The BLAS calls are inlined; their `alpha` and `beta` are one or
+/// minus one, and multiplying by either is exact, so only the loop order and the zero tests carry
+/// over. `cc`, `tt` and `wa` index `C`, `T` and `W`.
 fn dlarfb(a: &[f64], n: usize, first: usize, m: usize, k: usize, t: &[f64], c: &mut [f64]) {
     let v = |r: usize, s: usize| (first + r - 2) + (first + s - 2) * n;
     let cc = |r: usize, s: usize| (first + r - 2) + (s - 1) * n;
     let tt = |r: usize, s: usize| (r - 1) + (s - 1) * k;
     let wa = |r: usize, s: usize| (r - 1) + (s - 1) * n;
     let mut w = vec![0.0; n * k];
+    // `dcopy` of each row j of C1 into column j of W: W = C1'.
     for j in 1..=k {
         for r in 1..=n {
             w[wa(r, j)] = c[cc(j, r)];
@@ -576,6 +665,7 @@ fn dlarfb(a: &[f64], n: usize, first: usize, m: usize, k: usize, t: &[f64], c: &
             }
         }
     }
+    // C1 -= W'.
     for j in 1..=k {
         for r in 1..=n {
             c[cc(j, r)] -= w[wa(r, j)];
@@ -597,6 +687,9 @@ fn dormqr(n: usize, a: &mut [f64], tau: &[f64], c: &mut [f64]) {
         }
         return;
     }
+    // Backwards, as `dormqr` takes `H = H(1) ... H(k)` from the left without a transpose: the
+    // first block starts at the last multiple of 32 plus one, and may be shorter than 32. Integer
+    // division truncates, as Fortran's does.
     let mut i = ((n - 1) / DORMQR_BLOCK) * DORMQR_BLOCK + 1;
     loop {
         let ib = DORMQR_BLOCK.min(n - i + 1);
@@ -611,6 +704,10 @@ fn dormqr(n: usize, a: &mut [f64], tau: &[f64], c: &mut [f64]) {
 
 /// Whether [`dgesdd`] takes this matrix down the path the reference takes: small enough, finite,
 /// and inside the range `dgesdd` does not scale. `SMLNUM`, `sqrt(safe minimum) / precision`.
+///
+/// `anrm` is the largest magnitude, `dlange('M')`. Outside `[SMLNUM, 1 / SMLNUM]` the reference
+/// scales the matrix before and after, which this port does not do, so it answers `false` and
+/// `truncated_svd` in `create_read_count_panel_of_normals` takes Jacobi instead.
 pub fn reachable(n: usize, values: &[f64]) -> bool {
     let smlnum = SAFE_MINIMUM.sqrt() / PRECISION;
     let bignum = 1.0 / smlnum;
@@ -627,6 +724,9 @@ pub fn reachable(n: usize, values: &[f64]) -> bool {
 /// The singular values, decreasing, and the left singular vectors, column major. `None` where
 /// `dbdsdc` did not converge, which is `info > 0` in the reference and a `NotConvergedException` in
 /// Breeze. `a` is column major, and is overwritten.
+///
+/// `Option<T>` is "a value or nothing": `Some((s, u))` or `None`, which the caller must check.
+/// Only the path [`reachable`] admits is implemented; the caller asks first.
 pub fn dgesdd(n: usize, a: &mut [f64]) -> Option<(Vec<f64>, Vec<f64>)> {
     let mut matrix = Square { n, values: a };
     let (mut d, mut e, tauq) = dgebd2(&mut matrix);

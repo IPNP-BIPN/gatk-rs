@@ -14,8 +14,21 @@
 //! name a refusal would carry and whether a tag on the argument is a tag or an error.
 //!
 //! [`UNCONVERTIBLE_CLASSES`] is therefore empty. It stays as a named place for the next class the
-//! declarations grow, and the test beside this file asserts the emptiness against the declarations
+//! declarations grow, and `tests/definitions.rs` asserts the emptiness against the declarations
 //! rather than against a number written down here.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is a value or nothing. `?` after an `Option` returns nothing from the whole
+//!   function when there is no value, so `definition` gives up on an unconverted class in one
+//!   character;
+//! - `match` tries its arms in order and the compiler checks that every case is covered; `_`
+//!   is the catch-all, and a pattern such as `[short, long] if ...` matches a two-element list
+//!   and then tests the guard;
+//! - `let Some(x) = y else { return ...; };` unwraps the value or takes the early exit;
+//! - `.iter().filter_map(f).collect()` is Java's stream: keep each element `f` turns into a
+//!   value, drop each it turns into nothing, and gather the rest into a list;
+//! - `&'static str` is a string fixed in the program itself, alive for the whole run.
 
 use gatk_barclay::{Annotation, Definition, PluginControl, Value, ValueClass};
 use gatk_tools::plugin_ownership;
@@ -77,8 +90,8 @@ pub fn value_class(type_name: &str, type_class: &str) -> Option<ValueClass> {
             simple_name: "DoubleSequence",
             taggable: false,
         }),
-        // `GroundTruthScorer`'s `--features-file`, a data source built from its path by its `String`
-        // constructor, and not a `TaggedArgument`.
+        // `GroundTruthScorer`'s `--features-file`, a data source built from its path by its
+        // `String` constructor, and not a `TaggedArgument`.
         "FeatureDataSource" => Some(ValueClass::Constructed {
             simple_name: "FeatureDataSource",
             taggable: false,
@@ -96,6 +109,8 @@ pub fn value_class(type_name: &str, type_class: &str) -> Option<ValueClass> {
         "Float" => Some(ValueClass::Float),
         "Long" => Some(ValueClass::Long),
         "Byte" => Some(ValueClass::Byte),
+        // Anything else is an enum or nothing: `enum_type` knows the constants by binary name,
+        // and an unknown class comes back as `None`, which makes the argument unconverted.
         _ => enum_type(type_class).map(|type_| ValueClass::Enum {
             simple_name: type_.name,
             constants: type_.constants,
@@ -114,6 +129,7 @@ pub fn initial_value(declaration: &Declaration, class: &ValueClass) -> Value {
         // `AbstractCollection.toString`: `[a, b, c]`. A field initialised with elements keeps
         // them until the command line names the argument, and `getCommandLine` prints them as
         // one pair each (`--gvcf-gq-bands 1 --gvcf-gq-bands 2 ...` for `FlowFeatureMapper`).
+        // Strip the brackets; an empty `[]` and a missing default both leave no elements.
         let elements = declaration
             .default
             .and_then(|text| text.strip_prefix('['))
@@ -134,6 +150,10 @@ pub fn initial_value(declaration: &Declaration, class: &ValueClass) -> Value {
 }
 
 /// One default rendered by `String.valueOf`, read back as a value of the argument's class.
+///
+/// A rendering that does not parse becomes `Value::Null` rather than an error, so the definition
+/// is still built. `.parse::<i32>()` names the target type in the turbofish
+/// `::<...>`, since `parse` can produce any type.
 fn scalar_value(default: &str, class: &ValueClass) -> Value {
     match class {
         ValueClass::Integer => default
@@ -170,6 +190,9 @@ fn scalar_value(default: &str, class: &ValueClass) -> Value {
 }
 
 /// One declaration as a definition, or nothing when its class is not one this port converts.
+///
+/// The Barclay `@Argument` annotation is rebuilt from what the golden reports, the initial
+/// value from the field's rendering, and the plugin ownership from the measured tables.
 pub fn definition(declaration: &Declaration) -> Option<Definition> {
     let class = value_class(declaration.type_name, declaration.type_class)?;
     // `getArgumentAliases()` is the short name first and then the long one, so an argument with

@@ -6,7 +6,20 @@
 //! one does not. What is ported is the routing between them, the five exit statuses, and the two
 //! handlers `mainEntry` calls on its way out.
 //!
-//! Ported from `org.broadinstitute.hellbender.Main`.
+//! Ported from `org.broadinstitute.hellbender.Main` (GATK 4.7.0.0; `Main.java` is unchanged
+//! since 4.6.2.0).
+//!
+//! # Reading this file without reading Rust
+//!
+//! - An `enum` here is a closed list of cases, and `match` over one must name every case or the
+//!   build fails, so a new exception kind cannot be added without deciding its status.
+//! - `Option<&str>` is "a string or nothing" (Java's nullable `String`); `as_deref()` borrows the
+//!   text out of an `Option<String>` without copying it.
+//! - `&'static str` is a string fixed in the program itself, like a Java string literal.
+//! - `impl Into<String>` accepts anything convertible to an owned `String`, so a caller may pass a
+//!   literal or a built string alike.
+//! - `&args[1..]` is a borrowed view of the arguments from the second onwards, not a copy:
+//!   Java's `Arrays.copyOfRange(args, 1, args.length)` without the copy.
 
 use crate::main_catalogue;
 use crate::main_dispatch;
@@ -65,9 +78,18 @@ pub enum Failure {
 
 /// Which of the two handlers `mainEntry` gives a throwable to.
 ///
-/// `handleUserException` catches `CommandLineException` and `UserException`; everything else,
-/// `OutOfMemoryError` included, falls to `handleNonUserException`. The two write different things,
-/// so the answer is not a detail of the status.
+/// `mainEntry` hands `CommandLineException` and `UserException` to `handleUserException`. An
+/// `OutOfMemoryError` and every other exception fall to `handleNonUserException`. A
+/// `PicardNonZeroExitException` reaches neither: `mainEntry` calls `handleResult` on it instead.
+///
+/// ```java
+/// } catch (final PicardNonZeroExitException e) {
+///     // a Picard tool returned a non-zero exit code
+///     handleResult(e.getToolReturnCode());
+///     System.exit(PICARD_TOOL_EXCEPTION);
+/// ```
+///
+/// The two handlers write different things, so the answer is not a detail of the status.
 pub fn is_user_exception(failure: Failure) -> bool {
     matches!(failure, Failure::CommandLine | Failure::User)
 }
@@ -150,6 +172,9 @@ impl Thrown {
 }
 
 /// `mainEntry`'s catch blocks, in the order they are written.
+///
+/// `StorageException` (`com.google.cloud.storage`, which the reference sends to
+/// `handleStorageException` and then status three) has no case of its own here.
 pub fn exit_status(failure: Failure) -> i32 {
     match failure {
         Failure::CommandLine => COMMANDLINE_EXCEPTION_EXIT_VALUE,
@@ -166,6 +191,10 @@ pub fn exit_status(failure: Failure) -> i32 {
 /// tool and lets it answer for itself. The version test looks at EVERY argument, so the same tool
 /// name followed by `--version` never runs. And a name that resolves to nothing takes the usage
 /// with it: the refusal is the usage on stderr and the message both.
+///
+/// ```java
+/// if (args.length < 1 || args[0].equals("-h") || args[0].equals("--help")) {
+/// ```
 pub fn route(args: &[String]) -> Route {
     if args.is_empty() || args[0] == "-h" || args[0] == "--help" {
         return Route::Usage(Stream::Stdout);
@@ -181,10 +210,17 @@ pub fn route(args: &[String]) -> Route {
             name: args[0].clone(),
         };
     }
+    // The reference prints the usage before it throws:
+    // `printUsage(System.err, classes, commandLineName);` then
+    // `throw new UserException(getUnknownCommandMessage(classes, args[0]));`. Here the route only
+    // carries the message, and printing is left to whoever acts on `Route::Unknown`.
     let catalogue: Vec<String> = main_catalogue::CATALOGUE
         .iter()
         .map(|name| (*name).to_string())
         .collect();
+    // `.expect(..)` takes the `Ok` value and stops the program on an `Err`. The only `Err` is the
+    // reference's `Command matches:` exception, for a name in the catalogue, and `resolves` has
+    // just said this one is not.
     Route::Unknown {
         message: main_dispatch::unknown_command_message(&catalogue, &args[0])
             .expect("a name that resolves is not this path"),
@@ -207,7 +243,12 @@ pub fn tool_returned(result: Option<&str>) -> Option<String> {
 }
 
 /// `printDecoratedExceptionMessage`, whose banner is printed twice with a blank line inside each
-/// side of the message.
+/// side of the message: five `println` calls, so five newlines.
+///
+/// ```java
+/// ps.println();
+/// ps.println(prefix + e.getMessage());
+/// ```
 pub fn decorated_exception_message(prefix: &str, message: &str) -> String {
     format!("{BANNER}\n\n{prefix}{message}\n\n{BANNER}\n")
 }

@@ -1,4 +1,5 @@
-//! `CRAMIssue8768Detector`, ported from the tool and `CRAMIssue8768Analyzer` (GATK 4.6.2.0).
+//! `CRAMIssue8768Detector`, ported from the tool and `CRAMIssue8768Analyzer` (GATK 4.7.0.0; both
+//! Java files are unchanged since 4.6.2.0).
 //!
 //! A CRAM walked container by container, looking for the containers that GATK issue 8768 would
 //! have corrupted. Reading the containers is not ported; deciding which of them is a suspect, and
@@ -56,6 +57,20 @@
 //!
 //! `isForeignCRAM` returns true from inside the container loop and `doAnalysis` RETURNS, so there
 //! is no report body, no averages, and a return code of 0 as though nothing were wrong.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is "a value or nothing" (`Some(x)` or `None`), Java's nullable reference with the
+//!   null check enforced by the compiler. `if let Some(x) = y` runs its block only when there is
+//!   a value.
+//! - `Result<T, E>` is "a value or an error"; `?` after a call returns the error to the caller at
+//!   once, like an exception propagating out of a single call site.
+//! - An `enum` here is a closed set of cases that may carry data (`Single(i32)` holds the
+//!   reference id), and a `match` over it must cover every case.
+//! - `|a, b| ..` is a closure, Java's lambda. `impl FnMut(usize) -> ..` is "any callable taking a
+//!   `usize`", which may update state it captured.
+//! - `&[T]` is a borrowed, read-only view of a list; `&mut Vec<T>` is a writable borrow of a list.
+//! - `x as usize` and `x as f64` are casts, Java's `(int)` and `(double)`.
 
 use gatk_engine::java_format::format_decimals;
 use gatk_engine::tsv_table::{java_double_to_string, quote_if_needed};
@@ -72,8 +87,11 @@ pub const DEFAULT_MISMATCH_RATE_THRESHOLD: f64 = 0.05;
 /// `ReferenceContext`, reduced to what the report reads off it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RefContext {
+    /// `SINGLE_REFERENCE_TYPE`, with its reference (contig) id.
     Single(i32),
+    /// `MULTIPLE_REFERENCE_TYPE`.
     Multiple,
+    /// `UNMAPPED_UNPLACED_TYPE`, which the EOF container also carries.
     UnmappedUnplaced,
 }
 
@@ -83,6 +101,15 @@ impl RefContext {
 
     /// `getReferenceContextID`. The reference throws for the two non-single cases; here they carry
     /// the ids the constants give them, because the good-container loop compares them by id.
+    ///
+    /// htsjdk 5.0.0 `ReferenceContext`:
+    ///
+    /// ```java
+    /// public static final int UNMAPPED_UNPLACED_ID = SAMRecord.NO_ALIGNMENT_REFERENCE_INDEX; // -1
+    /// public static final int MULTIPLE_REFERENCE_ID = -2;
+    /// ```
+    ///
+    /// Only single-ref containers reach the good list, so the throwing cases are never asked.
     pub fn id(self) -> i32 {
         match self {
             RefContext::Single(id) => id,
@@ -91,6 +118,7 @@ impl RefContext {
         }
     }
 
+    /// `isMappedSingleRef()`. `matches!` is a one-arm `match` that yields `true` or `false`.
     pub fn is_mapped_single_ref(self) -> bool {
         matches!(self, RefContext::Single(_))
     }
@@ -109,31 +137,45 @@ impl RefContext {
 /// and the two numbers computed from its records.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ContainerMeta {
+    /// `getAlignmentContext().getReferenceContext()`.
     pub context: RefContext,
+    /// `getAlignmentContext().getAlignmentStart()`.
     pub start: i32,
+    /// `getAlignmentContext().getAlignmentSpan()`.
     pub span: i32,
+    /// `getSlices().size()`.
     pub slices: usize,
     /// `getCompressionHeader().isReferenceRequired()`. The EOF container carries no compression
     /// header at all, so this is `None` there, and the reference only ever asks for it when the
     /// context is single-ref, which the EOF container is not.
     pub reference_required: Option<bool>,
+    /// The first slice's `getEmbeddedReferenceContentID()`. Only the first is needed: a container
+    /// with more than one slice is refused as multi-slice before the slices are looked at.
     pub embedded_reference: i32,
     /// The total base count of the container's records, which the report prints as a count.
     pub bases: i64,
+    /// The summed `SequenceUtil.countMismatches` of the container's records.
     pub mismatches: i64,
+    /// `container.isEOF()`, which ends the reference's loop after the container is processed.
     pub is_eof: bool,
 }
 
 /// `ContainerStats`, with the reference's field names.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ContainerStats {
+    /// `containerOrdinal`: the container's position within its contig, counting from one.
     pub container_ordinal: i32,
+    /// `isBad`.
     pub is_bad: bool,
+    /// The three parts of the record's `AlignmentContext`, which the reference stores whole.
     pub context: RefContext,
+    /// See `context`.
     pub alignment_start: i32,
+    /// See `context`.
     pub alignment_span: i32,
     /// Named as the reference names it. It holds the TOTAL BASE COUNT: see the module header.
     pub mismatch_count: i64,
+    /// `misMatchRate`: `misMatches/(double) totalBases`.
     pub mismatch_rate: f64,
 }
 
@@ -141,7 +183,13 @@ impl ContainerStats {
     /// The report's line for one container, used for both lists.
     ///
     /// `AlignmentContext.toString` is `sequenceId=%s, start=%d, span=%d`, and the whole of it sits
-    /// inside the parentheses.
+    /// inside the parentheses:
+    ///
+    /// ```java
+    /// final String badStatStr = String.format("  Ordinal: %d (%s) Mismatch Rate/Count: %f/%d",
+    /// ```
+    ///
+    /// `%f` is six decimals, which `format_decimals(.., 6)` reproduces.
     pub fn line(&self) -> String {
         format!(
             "  Ordinal: {} (sequenceId={}, start={}, span={}) Mismatch Rate/Count: {}/{}",
@@ -161,6 +209,7 @@ pub struct Analysis {
     /// The bad contigs in the order they were closed, which is a `LinkedHashMap`'s order. The key
     /// is `ReferenceContext.toString()`, not a contig name.
     pub bad_contigs: Vec<(String, Vec<ContainerStats>)>,
+    /// `goodContainers`, across every contig, in walk order.
     pub good: Vec<ContainerStats>,
     /// The line `isForeignCRAM` emitted, if it stopped the walk.
     pub foreign: Option<String>,
@@ -169,14 +218,17 @@ pub struct Analysis {
 /// `recordContigStats` refusing to close the same contig twice.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DuplicateBadContig {
+    /// The `ReferenceContext.toString()` key that was already present.
     pub contig: String,
 }
 
 impl DuplicateBadContig {
+    /// The class `recordContigStats` throws.
     pub fn java_class(&self) -> &'static str {
         "java.lang.IllegalStateException"
     }
 
+    /// `String.format("Attempt to add a bad contig (%s) more than once", ..)`.
     pub fn message(&self) -> String {
         format!(
             "Attempt to add a bad contig ({}) more than once",
@@ -189,6 +241,9 @@ impl DuplicateBadContig {
 ///
 /// The reference-less test is guarded by the context being single-ref, which is what keeps it away
 /// from the EOF container's absent compression header.
+///
+/// The three tests run in the reference's order, multi-slice first, so a container that fails two
+/// of them reports the first. `None` means the container is not foreign.
 pub fn foreign_message(meta: &ContainerMeta) -> Option<String> {
     if meta.slices > 1 {
         return Some(
@@ -196,6 +251,8 @@ pub fn foreign_message(meta: &ContainerMeta) -> Option<String> {
                 .to_string(),
         );
     }
+    // `.expect(..)` unwraps the `Option` and panics with that text if it is `None`; the guard on
+    // the left of `&&` means it is only reached where the compression header exists.
     if meta.context.is_mapped_single_ref()
         && !meta
             .reference_required
@@ -218,12 +275,19 @@ pub fn foreign_message(meta: &ContainerMeta) -> Option<String> {
 
 /// What the lazy analysis can refuse: a contig closed twice, or the stats of a container.
 #[derive(Debug, Clone, PartialEq)]
+///
+/// `<E>` makes the type generic over the error the caller's decoder returns.
 pub enum AnalyseError<E> {
+    /// `recordContigStats`'s `IllegalStateException`.
     Duplicate(DuplicateBadContig),
+    /// Whatever decoding a container's records refused with.
     Stats(E),
 }
 
 /// `doAnalysis`, over containers already read.
+///
+/// The counts already sit in each `ContainerMeta`, so the lookup cannot fail; its error type is
+/// `()` (Rust's empty value), and `unreachable!` states that the `Stats` case never happens.
 pub fn analyse(
     containers: &[ContainerMeta],
     verbose: bool,
@@ -246,6 +310,8 @@ pub fn analyse_with<E>(
     verbose: bool,
     mut stats: impl FnMut(usize) -> Result<(i64, i64), E>,
 ) -> Result<Analysis, AnalyseError<E>> {
+    // `recordContainerStats`: a closure rather than a function because it calls `stats`, which the
+    // caller lent to this function. Only single-ref containers are decoded and recorded.
     let mut record_at = |into: &mut Vec<ContainerStats>,
                          is_bad: bool,
                          index: usize,
@@ -256,6 +322,7 @@ pub fn analyse_with<E>(
             return Ok(());
         }
         let (bases, mismatches) = stats(index).map_err(AnalyseError::Stats)?;
+        // A copy carrying the counts just decoded; `containers` itself is read-only here.
         let mut measured = meta.clone();
         measured.bases = bases;
         measured.mismatches = mismatches;
@@ -264,10 +331,14 @@ pub fn analyse_with<E>(
     };
     let mut analysis = Analysis::default();
     let mut bad_for_contig: Vec<ContainerStats> = Vec::new();
+    // `containerOrdinalForContig` and `nGoodContainersReportedForContig`, both starting at zero.
     let mut ordinal = 0;
     let mut reported_good = 0;
+    // `previousAlignmentContext`, reduced to the two parts the loop reads: `None` is the Java
+    // `null` before the first container. The span is never read, so it is not kept.
     let mut previous: Option<(RefContext, i32)> = None;
 
+    // `.iter().enumerate()` yields each container with its index, which `stats` is asked by.
     for (index, meta) in containers.iter().enumerate() {
         ordinal += 1;
         if let Some(message) = foreign_message(meta) {
@@ -281,14 +352,20 @@ pub fn analyse_with<E>(
                 reported_good += 1;
             }
             Some((previous_context, previous_start)) => {
+                // `!previousAlignmentContext.getReferenceContext().equals(..)`: a new contig, or a
+                // change into or out of a multi-ref or unmapped run.
                 if previous_context != meta.context {
                     if !bad_for_contig.is_empty() {
+                        // `recordContigStats`: `putIfAbsent` on a `LinkedHashMap`, which keeps
+                        // insertion order and throws when the key is already present.
                         let key = previous_context.text();
                         if analysis.bad_contigs.iter().any(|(name, _)| name == &key) {
                             return Err(AnalyseError::Duplicate(DuplicateBadContig {
                                 contig: key,
                             }));
                         }
+                        // `std::mem::take` moves the list out and leaves an empty one behind,
+                        // the reference's `badContainersForContig = new ArrayList<>()`.
                         analysis
                             .bad_contigs
                             .push((key, std::mem::take(&mut bad_for_contig)));
@@ -304,6 +381,8 @@ pub fn analyse_with<E>(
                 }
             }
         }
+        // `for (boolean isEOF = false; !isEOF;)`: the EOF container is processed like any other,
+        // which is what flushes the last contig (module note), and then ends the walk.
         previous = Some((meta.context, meta.start));
         if meta.is_eof {
             break;
@@ -313,6 +392,8 @@ pub fn analyse_with<E>(
 }
 
 /// `recordContainerStats`, which drops anything that is not single-ref.
+///
+/// `record_at` has already made the same test; it is repeated so this function stands alone.
 fn record(into: &mut Vec<ContainerStats>, is_bad: bool, meta: &ContainerMeta, ordinal: i32) {
     if !meta.context.is_mapped_single_ref() {
         return;
@@ -325,6 +406,7 @@ fn record(into: &mut Vec<ContainerStats>, is_bad: bool, meta: &ContainerMeta, or
         alignment_span: meta.span,
         // `.a` of the tuple, which is the total base count.
         mismatch_count: meta.bases,
+        // `misMatches/(double) totalBases`: a container with no bases gives `NaN`, not a refusal.
         mismatch_rate: meta.mismatches as f64 / meta.bases as f64,
     });
 }
@@ -333,16 +415,22 @@ fn record(into: &mut Vec<ContainerStats>, is_bad: bool, meta: &ContainerMeta, or
 /// CRAM still has them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CramHeaderInfo {
+    /// `inputPath.toPath().getFileName()`: the last path component, not the path as given.
     pub file_name: String,
+    /// `cramHeader.getCRAMVersion().toString()`.
     pub version: String,
+    /// `Base64.getEncoder().encodeToString(cramHeader.getId())`.
     pub id_base64: String,
 }
 
 /// The text file, what reached `System.out`, and what `doWork` returned.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Report {
+    /// Every `emitln` line, each followed by `'\n'`.
     pub text: String,
+    /// Every `System.out.println` line.
     pub stdout: String,
+    /// `retCode`: 1 when any bad contig was found, otherwise 0 (including a foreign CRAM).
     pub code: i32,
 }
 
@@ -355,6 +443,8 @@ pub fn report(
 ) -> Report {
     let mut text = String::new();
     let mut stdout = String::new();
+    // `emitln`: the line, then a newline. The buffer is passed in rather than captured, so that
+    // `text` stays usable between calls.
     let emit = |line: &str, text: &mut String| {
         text.push_str(line);
         text.push('\n');
@@ -367,6 +457,8 @@ pub fn report(
         &mut text,
     );
 
+    // `isForeignCRAM` returned true: its line is the last thing written, and `doAnalysis` returns
+    // before `printTextResults`, so `retCode` keeps its initial 0.
     if let Some(message) = &analysis.foreign {
         emit(message, &mut text);
         return Report {
@@ -468,6 +560,7 @@ pub fn report(
         }
     }
 
+    // A blank line between two contigs' good containers, never before the first.
     emit("\nPresumed GOOD Containers:", &mut text);
     let mut last_contig = RefContext::UNINITIALIZED_REFERENCE_ID;
     for stats in &analysis.good {
@@ -492,6 +585,10 @@ pub fn report(
 }
 
 /// `printTSVResults`: the same rows, and the only place a contig NAME is ever resolved.
+///
+/// `dictionary` holds the header's sequence names in index order, standing in for
+/// `getSequenceDictionary().getSequence(id).getSequenceName()`. The rate goes through
+/// `DataLine.set(double)`, so it prints as `java_double_to_string` and not as `%f`.
 pub fn tsv(analysis: &Analysis, file_name: &str, dictionary: &[String]) -> String {
     let mut out = String::new();
     out.push_str(
@@ -499,6 +596,7 @@ pub fn tsv(analysis: &Analysis, file_name: &str, dictionary: &[String]) -> Strin
          alignment_start\talignment_span\n",
     );
     let row = |stats: &ContainerStats, out: &mut String| {
+        // Every recorded container is single-ref, so its id is a non-negative index.
         let values = [
             file_name.to_string(),
             dictionary[stats.context.id() as usize].clone(),

@@ -23,6 +23,21 @@
 //! `org.broadinstitute.hellbender.tools.spark.sv.utils.CNVInputReader`,
 //! `org.broadinstitute.hellbender.tools.spark.sv.utils.SVVCFWriter` and
 //! `org.broadinstitute.hellbender.tools.spark.sv.utils.GATKSVVCFHeaderLines`.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is "a value or nothing" (`Some(x)` or `None`), Java's nullable reference with the
+//!   check enforced by the compiler; an `Option<String>` sample name is a Java `String` that may be
+//!   `null`. `Result<T, E>` is "a value or an error" (`Ok` or `Err`), and `SvError` carries the
+//!   Java exception class and message the reference would throw;
+//! - `?` after a call returns its error to the caller at once, like an exception propagating;
+//! - `let Some(x) = y else { ... };` takes the value out of `y`, or runs the block, which must
+//!   leave the function: an unwrap-or-return with no Java equivalent;
+//! - `&[T]` is a borrowed, read-only view of a list and `&mut T` a borrowed, writable reference;
+//!   `.clone()` is the explicit copy;
+//! - `.iter().map(..).collect()` is Java's `stream().map(..).collect(..)`; `|x| ...` is a lambda;
+//! - `BTreeMap` is Java's `TreeMap`: its keys iterate in sorted order;
+//! - a function's last expression is its return value; `return` is only written for early exits.
 
 use crate::sv_contig_alignments::{
     overlap_on_contig, AlignedContig, AlignmentInterval, AlignmentSignature, ContigRead,
@@ -37,11 +52,13 @@ use std::collections::BTreeMap;
 /// `gatk_rs::PortLimitation`, the class a refusal of the complex-event path is reported under.
 pub const PORT_LIMITATION: &str = crate::main_entry::PORT_LIMITATION;
 
-/// `StructuralVariationDiscoveryArgumentCollection.STRUCTURAL_VARIANT_SIZE_LOWER_BOUND`.
+/// `StructuralVariationDiscoveryArgumentCollection.STRUCTURAL_VARIANT_SIZE_LOWER_BOUND`: a DEL,
+/// INS or DUP whose `|SVLEN|` is below it is dropped by `filter_merged_variant_list`.
 const SIZE_LOWER_BOUND: i32 = 50;
 /// `CHIMERIC_ALIGNMENTS_HIGHMQ_THRESHOLD`, which `HQ_MAPPINGS` counts.
 const HIGH_MQ: i32 = 60;
-/// `StructuralVariantDiscoverer.SCORE_DIFF_TOLERANCE`.
+/// `StructuralVariantDiscoverer.SCORE_DIFF_TOLERANCE`, handed to the best-configuration pick:
+/// `private static final double SCORE_DIFF_TOLERANCE = 0.;`
 const SCORE_DIFF_TOLERANCE: f64 = 0.0;
 
 /// The message the tool refuses anything but a queryname-sorted file with.
@@ -68,6 +85,12 @@ impl SortOrder {
 
 /// `onTraversalStart`'s first refusal: the tool gathers a contig by walking CONSECUTIVE lines of
 /// one name, which only a queryname-sorted file keeps together.
+///
+/// ```java
+/// if ( header.getSortOrder() != SAMFileHeader.SortOrder.queryname ) {
+///     throw new UserException("This tool requires a queryname-sorted source of reads.");
+/// }
+/// ```
 pub fn check_sort_order(order: SortOrder) -> Result<(), SvError> {
     if order == SortOrder::Queryname {
         Ok(())
@@ -77,7 +100,10 @@ pub fn check_sort_order(order: SortOrder) -> Result<(), SvError> {
 }
 
 /// The tool's own read filters, `MAPPED` and `NOT_SECONDARY_ALIGNMENT`, as a predicate over the
-/// two flags they read.
+/// two flags they read:
+/// `return Arrays.asList(ReadFilterLibrary.MAPPED, ReadFilterLibrary.NOT_SECONDARY_ALIGNMENT);`
+///
+/// Supplementary lines pass: they are the contig's other alignments, which is what the tool reads.
 pub fn passes_default_read_filters(unmapped: bool, secondary: bool) -> bool {
     !unmapped && !secondary
 }
@@ -86,7 +112,14 @@ pub fn passes_default_read_filters(unmapped: bool, secondary: bool) -> bool {
 ///
 /// `SVUtils.getSampleId` prints the set of samples it found when there is not exactly one, and
 /// that set is a `HashSet`, so the order it prints is `String.hashCode`'s rather than the header's.
+/// The set is built by `Collectors.toSet()` (`SVUtils.java` line 34), a `HashSet`.
+///
+/// **How**: the set is rebuilt as `java.util.HashMap` lays it out. The table starts at 16 buckets
+/// and doubles while the count is over three quarters of it; a value's bucket is its
+/// `String.hashCode` (0 for `null`) with the high half folded into the low half (`h ^ (h >>> 16)`),
+/// masked to the table size; values in one bucket keep their insertion order.
 fn java_hash_set_order(values: &[Option<String>]) -> Vec<Option<String>> {
+    // First occurrence of each value, in input order: the set's insertion order.
     let mut unique: Vec<Option<String>> = Vec::new();
     for value in values {
         if !unique.contains(value) {
@@ -97,6 +130,9 @@ fn java_hash_set_order(values: &[Option<String>]) -> Vec<Option<String>> {
     while unique.len() as f64 > capacity as f64 * 0.75 {
         capacity *= 2;
     }
+    // `String.hashCode` is `31 * h + c` over UTF-16 code units in `int` arithmetic; the
+    // `wrapping_*` calls overflow the way Java's `int` does, where plain Rust `*` and `+` panic
+    // on overflow in a debug build. `as u32` reinterprets the bits so `>>` is Java's `>>>`.
     let hash = |value: &Option<String>| -> u32 {
         let h = match value {
             None => 0i32,
@@ -106,6 +142,7 @@ fn java_hash_set_order(values: &[Option<String>]) -> Vec<Option<String>> {
         } as u32;
         h ^ (h >> 16)
     };
+    // Sort by (bucket, insertion position): the order a `HashSet` iterator walks.
     let mut ordered: Vec<(usize, usize, Option<String>)> = unique
         .into_iter()
         .enumerate()
@@ -116,6 +153,16 @@ fn java_hash_set_order(values: &[Option<String>]) -> Vec<Option<String>> {
 }
 
 /// `SVUtils.getSampleId`: the one sample the read groups carry, which `Utils.validate` insists on.
+///
+/// ```java
+/// Utils.validate(sampleSet.size() == 1,
+///         "Read groups must contain reads from one and only one sample, " +
+/// ```
+///
+/// The message goes on with the rest of the sentence, a tab and `sampleSet.toString()`
+/// (`SVUtils.java` lines 36 to 38). `Utils.validate` throws `IllegalStateException`. The list is
+/// `AbstractCollection.toString`, `[a, b]` with `null` spelled out, in the set's hash order; a
+/// header with no read group prints `[]`. A read group without `SM` is a `null` sample, which counts as one sample.
 pub fn sample_id(read_group_samples: &[Option<String>]) -> Result<Option<String>, SvError> {
     let set = java_hash_set_order(read_group_samples);
     if set.len() != 1 {
@@ -131,11 +178,16 @@ pub fn sample_id(read_group_samples: &[Option<String>]) -> Result<Option<String>
             ),
         ));
     }
+    // `.next()` is the set's only element, itself an `Option`; `.flatten()` merges the two layers
+    // into the one `Option` the caller gets, `None` for a `null` sample.
     Ok(set.into_iter().next().flatten())
 }
 
 /// `SVUtils.getCanonicalChromosomes`: every contig of the dictionary, less the names a file lists
 /// one per line.
+///
+/// `non_canonical_file` is the `--non-canonical-contig-names-file` path with its text, `None` for
+/// the text where it could not be read, which is the `UserException` of `SVUtils.java` line 110.
 pub fn canonical_chromosomes(
     dictionary: &Dictionary,
     non_canonical_file: Option<(&str, Option<&str>)>,
@@ -150,14 +202,18 @@ pub fn canonical_chromosomes(
             format!("Can't read nonCanonicalContigNamesFile file {path}"),
         ));
     };
-    // `Files.lines` splits on any of the three line terminators.
+    // `Files.lines` splits on any of the three line terminators. Splitting `\r\n` at both
+    // characters leaves an empty name between them, and removing "" changes nothing.
     for line in text.split('\n').flat_map(|line| line.split('\r')) {
         contigs.retain(|name| name != line);
     }
     Ok(contigs)
 }
 
-/// One record of the external copy-number calls, reduced to what the annotation reads.
+/// One record of the external copy-number calls, reduced to what the annotation reads: its key in
+/// the interval tree (dictionary index, `POS`, `END`) and the three fields
+/// `formatExternalCNVCallAnnotation` prints, the genotype's `CN` and `CNQ` as text (`None` prints
+/// as `null`, what `getExtendedAttribute` returns for an absent key).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CnvCall {
     pub contig_index: i32,
@@ -171,6 +227,17 @@ pub struct CnvCall {
 /// `CNVInputReader.loadCNVCalls`: a single-sample VCF over the reads' own dictionary, held in an
 /// interval tree keyed on `[start, end)` where a second record with the same key replaces the
 /// first.
+///
+/// The header is checked in `validateCNVcallDataSource`'s order (`CNVInputReader.java` lines 44
+/// to 49), each a `Utils.validate`, so each an `IllegalStateException`: one sample, that sample
+/// the reads' sample, a contig line present, the same dictionary as the reads'. The first two:
+///
+/// ```java
+/// Utils.validate(sampleNamesInOrder.size() == 1, "CNV call VCF should be single sample");
+/// Utils.validate(sampleNamesInOrder.contains(sampleId),
+/// ```
+///
+/// The result is returned sorted by its key, the order the tree's `overlappers` walks.
 pub fn load_cnv_calls(
     text: &str,
     sample: Option<&str>,
@@ -223,6 +290,9 @@ pub fn load_cnv_calls(
             "CNV calls file does not have a valid sequence dictionary",
         ));
     }
+    // `isSameDictionary`: the same names in the same order, and the same length unless one side's
+    // is unknown, here a CNV contig line without `length=` (htsjdk's
+    // `SAMSequenceRecord.isSameSequence`: `// PIC-439.  Allow undefined length.`).
     let same = contigs.len() == dictionary.names.len()
         && contigs
             .iter()
@@ -242,6 +312,7 @@ pub fn load_cnv_calls(
         if columns.len() < 10 {
             continue;
         }
+        // `vc.getEnd()`: the `END` key where present, else the last base the `REF` allele covers.
         let start: i32 = columns[1].parse().unwrap_or(0);
         let end = columns[7]
             .split(';')
@@ -264,6 +335,8 @@ pub fn load_cnv_calls(
             copy_number: field("CN"),
             copy_number_quality: field("CNQ"),
         };
+        // `new SVInterval(contig, start, end)` refuses a negative value in this order, contig
+        // first; a contig missing from the reads' dictionary has index -1.
         if call.contig_index < 0 || call.start < 0 || call.end < 0 {
             return Err(SvError::new(
                 ILLEGAL_ARGUMENT,
@@ -276,6 +349,8 @@ pub fn load_cnv_calls(
                 },
             ));
         }
+        // `SVIntervalTree.put` on an equal key replaces the value and keeps the node
+        // (`result = parent.setValue(value);`), so the later record wins.
         match calls.iter_mut().find(|other| {
             (other.contig_index, other.start, other.end)
                 == (call.contig_index, call.start, call.end)
@@ -288,7 +363,8 @@ pub fn load_cnv_calls(
     Ok(calls)
 }
 
-/// The arguments the tool reads for itself.
+/// The arguments the tool reads for itself, from
+/// `DiscoverVariantsFromContigAlignmentsArgumentCollection`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscoveryArguments {
     /// `--min-mq`.
@@ -322,6 +398,15 @@ pub struct VariantRecord {
 
 impl VariantRecord {
     /// `SvType.getBasicInformation`.
+    ///
+    /// A breakend has no `END`, so its stop is its start and it carries neither `END` nor `SVLEN`:
+    ///
+    /// ```java
+    /// .chr(variantChromosome).start(variantStart).stop(variantStart)
+    /// ```
+    ///
+    /// Every other type writes `END`, `SVTYPE` and `SVLEN`, then its type-specific attributes,
+    /// which replace a key of the same name.
     fn from_type(sv: &SvRecordType) -> VariantRecord {
         let mut attributes = BTreeMap::new();
         let stop = if sv.kind == SvKind::BreakEnd {
@@ -347,7 +432,8 @@ impl VariantRecord {
         }
     }
 
-    /// `SVUtils.getAttributeAsStringList`: the value split at every comma.
+    /// `SVUtils.getAttributeAsStringList`: the value split at every comma, empty where the key is
+    /// absent.
     fn attribute_list(&self, key: &str) -> Vec<String> {
         self.attributes
             .get(key)
@@ -355,7 +441,8 @@ impl VariantRecord {
             .unwrap_or_default()
     }
 
-    /// `VariantContext.getAttributeAsInt`, with the default where the key is absent.
+    /// `VariantContext.getAttributeAsInt`, with the default where the key is absent. Every value
+    /// this file reads through it is one this file wrote from an `i32`, so the parse does not fail.
     fn attribute_as_int(&self, key: &str, default: i32) -> i32 {
         self.attributes
             .get(key)
@@ -363,7 +450,9 @@ impl VariantRecord {
             .unwrap_or(default)
     }
 
-    /// One line of the VCF body, as `VCFEncoder` writes a site with no samples.
+    /// One line of the VCF body, as `VCFEncoder` writes a site with no samples: `QUAL` is always
+    /// missing, an empty filter list is `.`, a flag (held as the empty string) is its bare key, and
+    /// the INFO keys come out in the map's sorted order.
     fn to_line(&self) -> String {
         let info: Vec<String> = self
             .attributes
@@ -398,6 +487,18 @@ impl VariantRecord {
 }
 
 /// `getAssemblyEvidenceRelatedAnnotations`: one entry per contig, in contig-name order.
+///
+/// Each contig's two alignments give one mapping quality, the lower of the two, and one alignment
+/// length, the shorter reference span less the bases the two share on the contig:
+///
+/// ```java
+/// minMQ = Math.min(simpleChimera.regionWithLowerCoordOnContig.mapQual,
+///         simpleChimera.regionWithHigherCoordOnContig.mapQual);
+/// ```
+///
+/// `HQ_MAPPINGS` counts the contigs whose lower quality EQUALS the high-quality threshold (`==`
+/// in the Java, not `>=`), and `MAX_ALIGN_LENGTH` is `0` for no evidence. `INSSEQ_MAP` and
+/// `CTG_GOOD_NONCANONICAL_MAPPING` are left out when they would be empty.
 fn evidence_annotations(evidence: &[SimpleChimera]) -> Vec<(&'static str, String)> {
     let mut sorted: Vec<&SimpleChimera> = evidence.iter().collect();
     sorted.sort_by(|one, two| one.source_contig_name.cmp(&two.source_contig_name));
@@ -458,6 +559,8 @@ fn evidence_annotations(evidence: &[SimpleChimera]) -> Vec<(&'static str, String
             ),
         ),
     ];
+    // Every contig's insertion mappings flattened into one list and sorted as strings:
+    // `.map(annotation -> annotation.insSeqMappings).flatMap(List::stream).sorted()`.
     let mut insertion_mappings: Vec<String> = annotations
         .iter()
         .flat_map(|(.., chimera)| chimera.insertion_mappings.iter().cloned())
@@ -480,6 +583,13 @@ fn evidence_annotations(evidence: &[SimpleChimera]) -> Vec<(&'static str, String
 }
 
 /// `annotateWithExternalCNVCalls`: the calls whose half-open span overlaps the record's.
+///
+/// ```java
+/// return this.contig == that.contig && this.start < that.end && that.start < this.end;
+/// ```
+///
+/// That is `SVInterval.overlaps`, with `END` taken as an exclusive bound on both sides. Nothing is
+/// written when no call overlaps; when `--cnv-calls` was not given, nothing is checked either.
 fn annotate_with_cnv_calls(
     record: &mut VariantRecord,
     sv: &SvRecordType,
@@ -531,6 +641,14 @@ fn annotate_with_cnv_calls(
 }
 
 /// `produceAnnotatedVcFromAssemblyEvidence`.
+///
+/// The attributes go on in the Java's order (type, complications, evidence, alternate haplotype,
+/// CNV calls), and a later one replaces an earlier one of the same key, as `vcBuilder::attribute`
+/// does. A breakend never carries the alternate haplotype:
+///
+/// ```java
+/// if (altHaplotypeSequence != null && altHaplotypeSequence.length != 0)
+/// ```
 fn annotated_record(
     sv: &SvRecordType,
     adjacency: &NovelAdjacency,
@@ -556,6 +674,10 @@ fn annotated_record(
 }
 
 /// `toVariantContexts`: one record, or a pair linked by `MATEID` (breakends) or `LINK`.
+///
+/// For a pair, `produceLinkedAssemblyBasedVariants` strips the inserted sequence, its length and
+/// the alternate haplotype from whichever of the two is a deletion, the first one tested first
+/// (`if (svType1 instanceof SimpleSVType.Deletion)`).
 fn to_variant_records(
     types: &[SvRecordType],
     adjacency: &NovelAdjacency,
@@ -598,6 +720,11 @@ fn to_variant_records(
 
 /// `AnnotatedVariantProducer.filterMergedVariantList`: small simple variants dropped, and the two
 /// assembly filters applied to what is left.
+///
+/// Both filters pass any record without `CTG_NAMES`. `SVMappingQualityFilter` parses each
+/// mapping quality with `Integer.valueOf`, so a value that is not an integer is a
+/// `NumberFormatException`; `LOW_MQ` and `SHORT_ALN` go into a `HashSet` that the encoder writes
+/// sorted, which is why `applied` is sorted.
 fn filter_merged_variant_list(
     variants: Vec<VariantRecord>,
     arguments: &DiscoveryArguments,
@@ -644,6 +771,13 @@ fn filter_merged_variant_list(
 }
 
 /// `processContigAlignments`: one contig's lines, interpreted, and what they add to the evidence.
+///
+/// The contig's sequence is the last non-supplementary line's bases, reverse-complemented when
+/// that line is on the reverse strand; a contig with only supplementary lines is a
+/// `UserException`. A contig without good mapping quality adds nothing. Two contigs whose
+/// chimeras imply an equal novel adjacency share one evidence entry, in the order found. A
+/// complex signature, which the reference queues for `CpxVariantInterpreter`, refuses the run;
+/// the other signatures add nothing, as the Java's `if` / `else if` does nothing for them.
 fn process_contig(
     reads: &[ContigRead],
     dictionary: &Dictionary,
@@ -727,6 +861,8 @@ pub fn discover(
     reference: &mut dyn FnMut(&Interval) -> Result<Vec<u8>, SvError>,
 ) -> Result<Vec<VariantRecord>, SvError> {
     let mut evidence: Vec<(NovelAdjacency, Vec<SimpleChimera>)> = Vec::new();
+    // `apply` gathers consecutive reads of one name and processes the run when the name changes,
+    // and `onTraversalSuccess` processes the last one; `reads[start..end]` is that run.
     let mut start = 0;
     while start < reads.len() {
         let mut end = start + 1;
@@ -749,6 +885,13 @@ pub fn discover(
 }
 
 /// `SVVCFWriter.sortVariantsByCoordinate`: position, then inserted sequence, then ID, stably.
+///
+/// Position is `IntervalUtils.compareLocatables`: dictionary index, start, end. Java's
+/// `Stream.sorted` on an ordered stream is stable, and so is Rust's `sort_by`. The contig check
+/// runs before the sort; a contig absent from the dictionary is the refusal `compareContigs`
+/// raises. That refusal comes only from a comparison, so a single record on such a contig would
+/// pass the Java and is refused here; the records' contigs come from alignments against the same
+/// dictionary.
 fn sort_variants(variants: &mut [VariantRecord], dictionary: &Dictionary) -> Result<(), SvError> {
     for variant in variants.iter() {
         if dictionary.index(&variant.contig) < 0 {
@@ -776,7 +919,7 @@ fn sort_variants(variants: &mut [VariantRecord], dictionary: &Dictionary) -> Res
 }
 
 /// One structured header line of `GATKSVVCFHeaderLines`: key, ID, number and type where the key
-/// has them, and the description.
+/// has them, and the description. `info` and `simple` build the two shapes.
 struct HeaderLine {
     key: &'static str,
     id: &'static str,
@@ -785,6 +928,7 @@ struct HeaderLine {
     description: &'static str,
 }
 
+/// An `INFO` line. `const fn` lets the table below be built at compile time.
 const fn info(
     id: &'static str,
     number: &'static str,
@@ -800,6 +944,7 @@ const fn info(
     }
 }
 
+/// An `ALT` or `FILTER` line: ID and description only.
 const fn simple(key: &'static str, id: &'static str, description: &'static str) -> HeaderLine {
     HeaderLine {
         key,
@@ -887,7 +1032,8 @@ pub fn write_vcf(
     dictionary: &Dictionary,
     default_lines: &[String],
 ) -> String {
-    // (text without the leading `##`, contig index for a contig line)
+    // (text without the leading `##`, contig index for a contig line). A `"` inside a
+    // description is written escaped as `\"`.
     let mut lines: Vec<(String, Option<usize>)> = HEADER_LINES
         .iter()
         .map(|line| {

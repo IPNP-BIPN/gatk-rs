@@ -1,14 +1,16 @@
-//! Ported from `org.broadinstitute.hellbender.engine.filters.CountingReadFilter` (GATK 4.6.2.0).
+//! Ported from `org.broadinstitute.hellbender.engine.filters.CountingReadFilter` (GATK 4.7.0.0;
+//! `CountingReadFilter.java` is unchanged since 4.6.2.0).
 //!
 //! This is the first piece of *output text* in this crate. Every GATK tool that reads reads ends
 //! its run by printing this block, so the summary is part of the bytes a run produces, and the
 //! byte-identity claim covers it.
 //!
-//! It is also what makes the order of a conjunction observable. `WellformedReadFilter` is eight
-//! filters and'ed together; the boolean it returns cannot say which of the eight rejected a read,
-//! but the counts can, because `and` short-circuits and only the first failing filter increments.
-//! That is why [`crate::with_header::wellformed`] is ported as the same chain in the same order
-//! rather than as one predicate.
+//! It is also what makes the order of a conjunction observable. `fromList` wraps every filter of
+//! the tool's list in its own `CountingReadFilter` and joins them with the counting `and`, which
+//! short-circuits, so only the first failing filter of the list increments. That holds between
+//! the filters of the list and not inside one: `WellformedReadFilter` is eight filters joined by
+//! the plain `ReadFilter.and`, wrapped as a single leaf, so its count cannot say which of the
+//! eight rejected a read, and [`parse`] builds it as one leaf.
 //!
 //! # Where the bytes hide
 //!
@@ -18,6 +20,26 @@
 //! - a composite's line ends `"<name>\n"`, without it, **except** when its count is zero, in which
 //!   case it takes the leaf's branch and the space comes back;
 //! - the flattened summary ends without a trailing newline at all.
+//!
+//! The three as the Java writes them, in that order (the leaf's `getSummaryLineForLevel`, the
+//! non-zero branch of `CountingBinopReadFilter`'s, and the end of the flattened summary):
+//!
+//! ```java
+//! " read(s) filtered by: " + getName() + " \n";
+//! " read(s) filtered by: " + getName() + "\n"
+//! " total reads filtered out of "+ this.totalCount+ " reads processed");
+//! ```
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `enum Node` is a closed set of shapes, each carrying its own fields; `match` on it must
+//!   name every shape, which the compiler checks. Java spreads the same four shapes over four
+//!   subclasses;
+//! - `Box<T>` is a heap-allocated `T` the node owns; a tree of nodes needs it, since a node
+//!   cannot contain itself directly. `Box<dyn Fn(&BamRecord) -> bool>` is an owned closure,
+//!   Java's `Predicate<GATKRead>`;
+//! - `&mut self` lets `test` update the counts; only one such borrow can exist at a time;
+//! - `Option<T>` is a value or nothing; `?` after one returns nothing from the function.
 
 use htsjdk_bam::header::SamHeader;
 use htsjdk_bam::record::BamRecord;
@@ -49,6 +71,10 @@ pub struct Counting {
 }
 
 impl Counting {
+    /// `new CountingReadFilter(readFilter)`: a plain filter, counted under its own name.
+    ///
+    /// `impl Fn(&BamRecord) -> bool + 'static` accepts any closure or function of that shape
+    /// that owns everything it captures, so it can be stored for the whole run.
     pub fn leaf(name: &str, filter: impl Fn(&BamRecord) -> bool + 'static) -> Counting {
         Counting {
             node: Node::Leaf {
@@ -60,6 +86,7 @@ impl Counting {
         }
     }
 
+    /// A composite with both counters at zero, as each counting subclass starts.
     fn binop(node: Node) -> Counting {
         Counting {
             node,
@@ -68,20 +95,31 @@ impl Counting {
         }
     }
 
+    /// `CountingReadFilter.and`: a `CountingAndReadFilter` over this and `other`. `self` is
+    /// taken by value, so the two children move into the new node.
     pub fn and(self, other: Counting) -> Counting {
         Counting::binop(Node::And(Box::new(self), Box::new(other)))
     }
 
+    /// `CountingReadFilter.or`: a `CountingOrReadFilter`.
     pub fn or(self, other: Counting) -> Counting {
         Counting::binop(Node::Or(Box::new(self), Box::new(other)))
     }
 
+    /// `CountingReadFilter.negate`: a `CountingNegateReadFilter`.
     pub fn negate(self) -> Counting {
         Counting::binop(Node::Not(Box::new(self)))
     }
 
     /// `CountingReadFilter.fromList`: a left-nested chain of ANDs, the shape the engine builds
     /// from `--read-filter` arguments. An empty list is `ALLOW_ALL_READS`, not an error.
+    ///
+    /// ```java
+    /// CountingReadFilter compositeFilter = new CountingReadFilter(readFilters.get(0));
+    /// for (int i = 1; i < readFilters.size(); i++) {
+    ///     compositeFilter = compositeFilter.and(new CountingReadFilter(readFilters.get(i)));
+    /// }
+    /// ```
     pub fn from_list(filters: Vec<(&str, crate::ReadFilter)>) -> Counting {
         let mut iter = filters.into_iter();
         let Some((name, filter)) = iter.next() else {
@@ -94,10 +132,12 @@ impl Counting {
         composite
     }
 
+    /// `getFilteredCount`.
     pub fn filtered_count(&self) -> u64 {
         self.filtered_count
     }
 
+    /// `getName`: a leaf's own name, `(a AND b)`, `(a OR b)` or `NOT a`, built recursively.
     pub fn name(&self) -> String {
         match &self.node {
             Node::Leaf { name, .. } => name.clone(),
@@ -107,6 +147,10 @@ impl Counting {
         }
     }
 
+    /// `test`: the node's verdict, counting a rejection at this node.
+    ///
+    /// Every node counts its own rejections, so a read that fails a leaf inside an AND increments
+    /// both the leaf and each AND above it that it fails.
     pub fn test(&mut self, read: &BamRecord) -> bool {
         let accept = match &mut self.node {
             Node::Leaf { filter, .. } => filter(read),
@@ -131,6 +175,7 @@ impl Counting {
         self.summary_line_for_level(0)
     }
 
+    /// `getSummaryLineForLevel`, dispatched by shape where the Java dispatches by subclass.
     fn summary_line_for_level(&self, indent_level: usize) -> String {
         let indent = "  ".repeat(indent_level);
         match &self.node {
@@ -157,6 +202,7 @@ impl Counting {
         }
     }
 
+    /// `CountingBinopReadFilter.getSummaryLineForLevel`, shared by AND and OR.
     fn binop_summary(&self, indent_level: usize, lhs: &Counting, rhs: &Counting) -> String {
         let indent = "  ".repeat(indent_level);
         if self.filtered_count == 0 {
@@ -188,6 +234,7 @@ impl Counting {
             return None;
         };
         let mut out = String::new();
+        // `Stack<CountingReadFilter>`: a `Vec` used as a stack, `push` and `pop` at its end.
         let mut unread: Vec<&Counting> = vec![rhs, lhs];
         while let Some(current) = unread.pop() {
             match &current.node {
@@ -218,6 +265,7 @@ pub fn parse(spec: &str, header: &SamHeader) -> Option<Counting> {
     if let Some(rest) = spec.strip_prefix("NOT ") {
         return Some(parse(rest, header)?.negate());
     }
+    // `strip_prefix` gives the rest of the string, or nothing when the prefix is not there.
     if let Some(inner) = spec.strip_prefix('(').and_then(|s| s.strip_suffix(')')) {
         // Split on the operator at depth zero, which is the one this node owns.
         let bytes = inner.as_bytes();
@@ -250,6 +298,7 @@ pub fn parse(spec: &str, header: &SamHeader) -> Option<Counting> {
         "AlignmentAgreesWithHeaderReadFilter" => Counting::leaf(spec, move |read| {
             crate::with_header::alignment_agrees_with_header(read, &owned)
         }),
+        // An unknown name gives nothing, and so does the whole parse.
         _ => Counting::leaf(spec, crate::by_name(spec)?),
     })
 }

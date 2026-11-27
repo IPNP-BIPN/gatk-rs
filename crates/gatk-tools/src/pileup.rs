@@ -1,4 +1,5 @@
-//! Ported from `org.broadinstitute.hellbender.tools.walkers.qc.Pileup` (GATK 4.6.2.0).
+//! Ported from `org.broadinstitute.hellbender.tools.walkers.qc.Pileup` (GATK 4.7.0.0; `Pileup.java`
+//! is unchanged since 4.6.2.0).
 //!
 //! One samtools-style line per locus, with three optional columns. Everything here is a format
 //! rather than a computation, which is why the golden compares whole files.
@@ -20,6 +21,16 @@
 //!
 //! `String.format("%s %s", pileupString, features)` with no metadata gives a line ending in a
 //! space. Every line in the golden's plain case does.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&ReadPileup` and `&[String]` are borrowed, read-only views: the function reads the caller's
+//!   pileup or list and neither copies nor keeps it.
+//! - `|element| expr` is a closure, Java's lambda `element -> expr`. `pileup.filtered(..)` and
+//!   `number_of_elements(..)` take one as their `Predicate<PileupElement>`.
+//! - `.iter().map(..).collect::<Vec<String>>().join(",")` is Java's
+//!   `stream().map(..).collect(Collectors.joining(","))`, in two steps because Rust collects into a
+//!   list first and joins the list.
 
 use gatk_engine::read_pileup::ReadPileup;
 use gatk_readfilter::{self as filters, with_header};
@@ -37,6 +48,13 @@ pub const ADDITIONAL_READ_FILTERS: [&str; 3] = [
 ];
 
 /// `getDefaultReadFilters`: the walker's two, then this tool's three.
+///
+/// ```java
+/// final List<ReadFilter> defaultFilters = super.getDefaultReadFilters();
+/// defaultFilters.add(ReadFilterLibrary.NOT_DUPLICATE);
+/// defaultFilters.add(ReadFilterLibrary.PASSES_VENDOR_QUALITY_CHECK);
+/// defaultFilters.add(ReadFilterLibrary.NOT_SECONDARY_ALIGNMENT);
+/// ```
 pub fn default_read_filter(read: &BamRecord, header: &SamHeader) -> bool {
     with_header::wellformed(read, header)
         && filters::mapped(read)
@@ -46,6 +64,10 @@ pub fn default_read_filter(read: &BamRecord, header: &SamHeader) -> bool {
 }
 
 /// `insertLengthOutput`: one fragment length per read, comma joined, in pileup order.
+///
+/// The reference's `r.getFragmentLength()` is the record's TLEN, which this codebase stores as
+/// `inferred_insert_size`; `to_string` on an `i32` prints it as `String.valueOf(int)` does, minus
+/// sign included.
 pub fn insert_length_output(pileup: &ReadPileup) -> String {
     pileup
         .elements
@@ -60,6 +82,15 @@ pub fn insert_length_output(pileup: &ReadPileup) -> String {
 /// The count is of the pileup it is handed, which the caller has already stripped of deletions, so
 /// it is zero on every line this tool writes. Kept as a count rather than a constant because the
 /// function is `@VisibleForTesting` and the reference tests it on unfiltered pileups.
+///
+/// ```java
+/// sb.append(pileup.getNumberOfElements(PileupElement::isDeletion));
+/// sb.append(" ");
+/// ```
+///
+/// The entries are then `name@offset@length@mappingQuality`, where the length is
+/// `getRead().getLength()`, the number of read bases, and the entries are comma separated with no
+/// trailing comma (the reference's `isFirst` flag; `join` here).
 pub fn create_verbose_output(pileup: &ReadPileup) -> String {
     let mut text = String::new();
     text.push_str(
@@ -99,7 +130,11 @@ pub fn features_string(features: &[String]) -> String {
 /// `apply`: the line for one locus, newline included.
 ///
 /// `reference_base` is `'N'` when the run has no reference, which the reference decides with
-/// `hasReference()` rather than by looking at the context.
+/// `hasReference()` rather than by looking at the context:
+///
+/// ```java
+/// basePileup.getPileupString((hasReference()) ? (char) referenceContext.getBase() : 'N'),
+/// ```
 pub fn line(
     pileup: &ReadPileup,
     reference_base: char,
@@ -120,6 +155,9 @@ pub fn line(
 
 /// `PileupSpark`'s line: the same columns over the pileup as it comes, deletions included, because
 /// its `pileupFunction` never makes the filtered pileup `Pileup.apply` makes.
+///
+/// Also the body of [`line`] once the deletions are gone: the `"%s %s"` of pileup string and
+/// features, then the two optional columns, each behind one space, in the reference's order.
 pub fn line_unfiltered(
     pileup: &ReadPileup,
     reference_base: char,

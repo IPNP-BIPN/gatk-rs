@@ -1,8 +1,17 @@
-//! `scorevariants/models/gatk_1d.py` and `gatk_2d.py`, as the pickled modules in the jar build them.
+//! `scorevariants/models/gatk_1d.py` and `gatk_2d.py`, as the pickled modules in the jar build
+//! them.
 //!
 //! The dropouts are in evaluation mode and do nothing, so they are not here. Every step stores what
 //! it produced under the name its module has in the reference, for the comparison that
 //! `tools/nvscorevariants/dump_layers.py` is the other half of.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `let (mut x, shape) = f(..)` takes a pair apart, and a later `let x` with the same name is a
+//!   new variable that hides the old one, not an assignment to it;
+//! - `&mut Trace` is a writable borrow: the caller's trace is filled in place;
+//! - `|outputs, k| move |output, column| ..` is a closure that returns a closure; `move` makes the
+//!   inner one keep its own copies of `outputs`, `k` and `batch`.
 
 use super::kernels::{
     batch_norm, conv2d, linear, max_pool_height, relu, BatchNorm, ConvWeights, Shape, Terms,
@@ -13,7 +22,9 @@ use std::collections::HashMap;
 /// What the layers produced, by module name. Empty unless the caller asks for them.
 #[derive(Default)]
 pub struct Trace {
+    /// Whether to store anything; `Trace::default()` has it `false`.
     pub keep: bool,
+    /// Each layer's output, flat, under its name in the reference's module tree.
     pub layers: HashMap<String, Vec<f32>>,
 }
 
@@ -25,6 +36,8 @@ impl Trace {
     }
 }
 
+/// The 1D model's convolutions, which oneDNN runs as `jit:avx2`: from the bias, by blocks of eight
+/// input channels.
 fn convolution(
     weights: &Weights,
     prefix: &str,
@@ -46,6 +59,8 @@ fn brg_convolution(
     convolve(weights, prefix, src, shape, threads, true)
 }
 
+/// The convolution whose weights are `{prefix}.weight` and `{prefix}.bias`, with its shape read
+/// from the stored tensor.
 fn convolve(
     weights: &Weights,
     prefix: &str,
@@ -73,6 +88,8 @@ fn convolve(
     conv2d(src, shape, &parameters, threads)
 }
 
+/// The `BatchNorm1d` stored under `prefix`, in evaluation mode: its running statistics, not the
+/// batch's.
 fn normalize(weights: &Weights, prefix: &str, src: &[f32], eps: f64) -> Vec<f32> {
     batch_norm(
         src,
@@ -86,6 +103,8 @@ fn normalize(weights: &Weights, prefix: &str, src: &[f32], eps: f64) -> Vec<f32>
     )
 }
 
+/// The `Linear` stored under `prefix`; `terms` says which summation order `SGEMM` gives each
+/// output, see [`gemm_terms`].
 fn dense(
     weights: &Weights,
     prefix: &str,
@@ -132,9 +151,15 @@ fn concatenate(a: &[f32], a_row: usize, b: &[f32], b_row: usize) -> Vec<f32> {
     out
 }
 
+/// The seven annotations of `encode::annotations`, the width of `best_practices` per record.
 const BEST_PRACTICES: usize = 7;
 
-/// `GATK1D.forward`: the logits of `reference`, `(B, 128, 4)`, and `best_practices`, `(B, 7)`.
+/// `GATK_CNN_1D.forward`: the logits of `reference`, `(B, 128, 4)`, and `best_practices`, `(B, 7)`.
+///
+/// Three convolutions of width 12, each followed by a ReLU, over the reference as four channels;
+/// the annotations through the batch norm and `dense_1`; the flattened convolution output joined
+/// with `dense_1`'s into `dense_2`; and `dense_2`'s joined with the normalised annotations into
+/// `dense_3`, whose four outputs are the logits.
 pub fn forward_1d(
     weights: &Weights,
     reference: &[f32],
@@ -150,6 +175,7 @@ pub fn forward_1d(
         height: 1,
         width,
     };
+    // From position-major `(B, W, 4)` to channel-major `(B, 4, W)`, the layout a convolution reads.
     let mut planar = vec![0f32; reference.len()];
     for b in 0..batch {
         for w in 0..width {
@@ -208,7 +234,12 @@ pub fn forward_1d(
     logits
 }
 
-/// `GATK2D.forward`: the logits of `read_tensor`, `(B, 128, 128, 15)`, and `best_practices`.
+/// `GATK_CNN_2D.forward`: the logits of `read_tensor`, `(B, 128, 128, 15)`, and `best_practices`.
+///
+/// Four convolutions, alternately 25 tall and 25 wide, each followed by a ReLU, with a pooling of
+/// three rows after the third and the fourth; the annotations through `dense_1`, a batch norm and
+/// then a `Linear`; and the flattened convolution output joined with that into `dense_2`, a
+/// `Linear`, a ReLU and a last `Linear` to the four logits.
 pub fn forward_2d(
     weights: &Weights,
     read_tensor: &[f32],
@@ -218,6 +249,7 @@ pub fn forward_2d(
 ) -> Vec<f32> {
     let batch = best_practices.len() / BEST_PRACTICES;
     let (height, width, channels) = (128, 128, 15);
+    // From channels last, `(B, H, W, C)`, to channels first, `(B, C, H, W)`.
     let mut planar = vec![0f32; read_tensor.len()];
     for b in 0..batch {
         for h in 0..height {
@@ -287,8 +319,12 @@ pub fn forward_2d(
 /// 127 to 129. Outputs in sixteens get the one-accumulator kernel over batch rows in sixes, and a
 /// tail of four or five. Everything else gets the even and odd one.
 ///
-/// A batch of one goes another way through MKL that has not been decoded; `Chain` is the nearest and
-/// `docs/nvscorevariants.md` gives its distance.
+/// A batch of one goes another way through MKL that has not been decoded; `Chain` is the nearest
+/// and `docs/nvscorevariants.md` gives its distance.
+///
+/// `_k` is unused, which the leading underscore tells the compiler. [`super::kernels::linear`]'s
+/// order is a property of `M`, `N` and `K`, and the map measured for these sizes needs only the
+/// first two.
 pub fn gemm_terms(outputs: usize, batch: usize, _k: usize, output: usize, column: usize) -> Terms {
     if batch == 1 {
         return Terms::Chain;

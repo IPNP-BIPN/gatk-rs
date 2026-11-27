@@ -7,6 +7,25 @@
 //! Reading the GTF, the BED and the VCF is not ported, nor is the interval tree that makes the
 //! lookup fast: the transcripts a variant reaches are given to the rules directly. Every rule that
 //! turns a variant and a transcript into a word is.
+//!
+//! The reference is `org.broadinstitute.hellbender.tools.walkers.sv.SVAnnotateEngine` and the
+//! static helpers of `SVAnnotate` in GATK 4.7.0.0. `SVAnnotate.java` is unchanged since 4.6.2.0;
+//! `SVAnnotateEngine.java` changed in one statement besides whitespace: `parseComplexIntervals` now
+//! returns `segments.stream().sorted().collect(Collectors.toList());`, a sort that
+//! [`parse_complex_intervals`] does not make.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&'static str` is a string fixed into the program, used here for the consequence words; a
+//!   function returning one returns one of the constants below, never a new string;
+//! - `Option<T>` is "a value or nothing", Java's nullable reference checked by the compiler, and
+//!   `Result<T, AnnotateError>` is "a value or an error", how a Java exception is modelled. A `?`
+//!   after a call returns its error to the caller at once;
+//! - `match` must name every case of an enum, or end in a catch-all `_`; `matches!(x, A | B)` is
+//!   the Java `x == A || x == B`;
+//! - `let Some(x) = y else { ... };` unwraps `y` or runs the block, which must leave the function;
+//! - `|a| ...` is a lambda (a closure); `&[T]` is a borrowed, read-only view of an array;
+//! - a function's last expression, written without `;`, is its return value.
 
 /// The consequence words, as `GATKSVVCFConstants` spells them in the output.
 pub const LOF: &str = "PREDICTED_LOF";
@@ -66,7 +85,11 @@ pub enum SvType {
     Cpx,
 }
 
-/// The complex subtypes the annotation rules ask about by name.
+/// The complex subtypes the annotation rules ask about by name:
+/// `GATKSVVCFConstants.ComplexVariantSubtype` less `piDUP_FR` and `piDUP_RF`.
+///
+/// The two missing subtypes are valid in the reference and carry no rule of their own, but with no
+/// variant here [`complex_subtype`] answers `None` for them, the same as for an absent `CPX_TYPE`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ComplexSubtype {
     DDup,
@@ -106,6 +129,13 @@ pub struct Interval {
 
 impl Interval {
     /// The constructor's own validation, which is where two of this tool's arguments end up.
+    ///
+    /// ```java
+    /// return contig != null && start > 0 && end >= start;
+    /// ```
+    ///
+    /// That is `SimpleInterval.isValid`; a failure is `validatePositions`'
+    /// `IllegalArgumentException`.
     pub fn new(contig: &str, start: i32, end: i32) -> Result<Interval, AnnotateError> {
         if start > end || start < 1 {
             return Err(AnnotateError::InvalidInterval {
@@ -121,10 +151,12 @@ impl Interval {
         })
     }
 
+    /// `SimpleInterval.overlaps`: same contig and the closed ranges share a base.
     pub fn overlaps(&self, other: &Interval) -> bool {
         self.contig == other.contig && self.start <= other.end && other.start <= self.end
     }
 
+    /// `SimpleInterval.contains`: same contig and `other` lies wholly inside `self`.
     pub fn contains(&self, other: &Interval) -> bool {
         self.contig == other.contig && self.start <= other.start && other.end <= self.end
     }
@@ -133,8 +165,11 @@ impl Interval {
 /// What this tool refuses, and what it accepts and then crashes on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AnnotateError {
+    /// A CPX record with no `CPX_INTERVALS`; a `UserException` in the reference.
     CpxWithoutIntervals,
+    /// A CPX record with no `CPX_TYPE`; a `UserException` in the reference.
     CpxWithoutType,
+    /// A CTX record with no `CHR2`; a `UserException` in the reference.
     CtxWithoutContig2,
     /// `SimpleInterval`'s own message, which is what both the zero promoter window and the
     /// negative breakend length end up producing.
@@ -150,6 +185,7 @@ pub enum AnnotateError {
 }
 
 impl AnnotateError {
+    /// The exception's message as the reference builds it.
     pub fn message(&self) -> String {
         match self {
             AnnotateError::CpxWithoutIntervals => {
@@ -182,6 +218,7 @@ pub enum FeatureKind {
     Utr,
 }
 
+/// One GTF line under a transcript, by type and closed one-based range.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Feature {
     pub kind: FeatureKind,
@@ -202,6 +239,7 @@ pub struct Transcript {
 }
 
 impl Transcript {
+    /// `new SimpleInterval(gtfTranscript)`.
     pub fn interval(&self) -> Interval {
         Interval {
             contig: self.contig.clone(),
@@ -220,6 +258,7 @@ impl Transcript {
         }
     }
 
+    /// A feature's range on the transcript's contig, which every feature of a transcript shares.
     fn feature_interval(&self, feature: &Feature) -> Interval {
         Interval {
             contig: self.contig.clone(),
@@ -231,7 +270,12 @@ impl Transcript {
 
 /// `getPromoterInterval`: the window upstream of the start site, which on the plus strand ends one
 /// base BEFORE it. A window of zero therefore asks for an interval that ends before it begins, and
-/// `--promoter-window-length` declares `minValue = 0`, so the argument accepts it.
+/// `--promoter-window-length` declares `minValue=0`, so the argument accepts it.
+///
+/// ```java
+/// final int promoterLeft = negativeStrand ? tss + 1 : Math.max(tss - promoterWindow, 1);
+/// final int promoterRight = negativeStrand ? tss + promoterWindow : tss - 1;
+/// ```
 pub fn promoter_interval(
     transcript: &Transcript,
     promoter_window: i32,
@@ -262,6 +306,7 @@ pub fn count_breakends_inside_feature(variant: &Interval, feature: &Interval) ->
     }
 }
 
+/// `variantOverlapsTranscriptionStartSite`: the variant reaches the one-base start site.
 fn variant_overlaps_transcription_start_site(variant: &Interval, transcript: &Transcript) -> bool {
     let tss = transcript.transcription_start_site();
     variant.overlaps(&Interval {
@@ -288,6 +333,7 @@ fn simple_consequence(variant: &Interval, transcript: &Transcript) -> &'static s
     consequence
 }
 
+/// `annotateInsertion`: the simple consequence alone.
 pub fn annotate_insertion(variant: &Interval, transcript: &Transcript) -> &'static str {
     simple_consequence(variant, transcript)
 }
@@ -430,7 +476,8 @@ pub fn annotate_transcript(
     }
 }
 
-/// One piece of a variant, with the type it is annotated as rather than the record's own.
+/// `SVSegment`: one piece of a variant, with the type it is annotated as rather than the record's
+/// own.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SvSegment {
     pub sv_type: SvType,
@@ -468,6 +515,8 @@ pub fn annotation_type_for_breakend(variant: &Variant, max_breakend_len: i32) ->
     ) {
         return SvType::Ctx;
     }
+    // `chr2 != null && chrom.equals(chr2)`. `as_deref` views the owned `Option<String>` as an
+    // `Option<&str>`, so the two sides compare.
     let same_contig = variant.contig2.as_deref() == Some(variant.contig.as_str());
     if max_breakend_len > 0 && same_contig && variant.sv_length <= max_breakend_len {
         match variant.strands.as_deref() {
@@ -489,12 +538,16 @@ pub fn sv_segments(
 ) -> Result<Vec<SvSegment>, AnnotateError> {
     let contig = variant.contig.as_str();
     let pos = variant.position;
+    // `variant.getAttributeAsInt(GATKSVVCFConstants.END2_ATTRIBUTE, pos)`: no `END2` reads as POS.
     let end2 = variant.end2.unwrap_or(pos);
     match variant.sv_type {
         SvType::Cpx => {
             if variant.complex_intervals.is_empty() {
                 return Err(AnnotateError::CpxWithoutIntervals);
             }
+            // `complexType == null`. `complex_subtype` also answers `None` for `piDUP_FR` and
+            // `piDUP_RF`, so a CPX record of either subtype is refused here where the reference,
+            // holding a non-null subtype, goes on to annotate it.
             if variant.complex_type.is_none() {
                 return Err(AnnotateError::CpxWithoutType);
             }
@@ -597,9 +650,27 @@ pub fn sv_segments(
 }
 
 /// `parseComplexIntervals`: each item reads `SVTYPE_CHROM:POS-END`.
+///
+/// ```java
+/// final String[] parsed = cpxInterval.split("_");
+/// ... = GATKSVVCFConstants.StructuralVariantAnnotationType.valueOf(parsed[0]);
+/// final SimpleInterval interval = new SimpleInterval(parsed[1]);
+/// ```
+///
+/// Three differences from those lines, none measured by a golden:
+///
+/// - a type name `valueOf` refuses becomes `Bnd` here rather than an `IllegalArgumentException`;
+/// - only the `CHROM:POS-END` shape is read: the other `SimpleInterval` shapes (`CHROM`,
+///   `CHROM:POS`, `CHROM:POS+`) and commas in the numbers stop on an `expect`, and a number that
+///   does not parse is a `NumberFormatException` where `parsePosition` throws a `UserException`;
+/// - the 4.7.0.0 sort of the result (see the module documentation) is not made.
+///
+/// `.expect(msg)` stops the program with `msg` when the value is absent, an unchecked crash.
 pub fn parse_complex_intervals(items: &[String]) -> Result<Vec<SvSegment>, AnnotateError> {
     let mut out = Vec::new();
     for item in items {
+        // At the FIRST underscore. `split("_")` splits at every one and keeps `parsed[1]`, so a
+        // contig name with an underscore is cut short in the reference and kept whole here.
         let (type_text, locus) = item.split_once('_').expect("a type and a locus");
         let (contig, range) = locus.split_once(':').expect("a contig and a range");
         let (start, end) = range.split_once('-').expect("a start and an end");
@@ -627,6 +698,17 @@ pub fn parse_complex_intervals(items: &[String]) -> Result<Vec<SvSegment>, Annot
 
 /// `getComplexAnnotationIntervals`, reduced to what the segments carry here: the intervals are
 /// taken as they were parsed.
+///
+/// The reference does not take them as parsed. It drops the INV segment of a dDUP, dDUP_iDEL or
+/// INS_iDEL and the INS segment of an INS_iDEL, and for dupINV, INVdup, dupINVdup, delINVdup and
+/// dupINVdel it replaces the INV segment with what remains after subtracting every DUP segment:
+///
+/// ```java
+/// inversionIntervalToAdjust = inversionIntervalToAdjust.subtract(dupInterval);
+/// ```
+///
+/// None of that is done here, and `_complex_type` (the leading `_` marks an unused parameter) is
+/// read for nothing.
 pub fn complex_annotation_intervals(
     segments: &[SvSegment],
     _complex_type: Option<ComplexSubtype>,
@@ -656,11 +738,13 @@ pub fn is_intergenic(consequences: &[(String, Vec<String>)]) -> bool {
         .any(|(consequence, _)| PROTEIN_CODING_CONSEQUENCES.contains(&consequence.as_str()))
 }
 
+/// `includesDispersedDuplication`. `is_some_and` is false for `None` and otherwise asks the
+/// closure, the Java `complexType != null && ...contains(complexType)`.
 pub fn includes_dispersed_duplication(complex_type: Option<ComplexSubtype>) -> bool {
     complex_type.is_some_and(|kind| COMPLEX_SUBTYPES_WITH_DISPERSED_DUP.contains(&kind))
 }
 
-/// One non-coding element.
+/// One non-coding element from the BED: `getName()` and its one-based closed range.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NonCodingElement {
     pub name: String,
@@ -689,6 +773,7 @@ impl Consequences {
         }
     }
 
+    /// `variantConsequenceDict.containsKey(consequence)`.
     pub fn contains(&self, consequence: &str) -> bool {
         self.entries.iter().any(|(key, _)| key == consequence)
     }
@@ -805,6 +890,7 @@ pub fn annotate_structural_variant(
         }
     }
 
+    // `INTERGENIC` is put only when a GTF was given: `then_some` is `haveGtf ? intergenic : null`.
     Ok(Annotation {
         id: variant.id.clone(),
         consequences: consequences.sorted(),
@@ -814,6 +900,16 @@ pub fn annotate_structural_variant(
 
 /// `getSegmentForNearestTSS`: the subtypes whose remaining segments are merged into one, so that a
 /// complex event gets a single nearest start site from its outer breakpoints.
+///
+/// The reference merges them pairwise, in list order:
+///
+/// ```java
+/// spanningSegment = spanningSegment.mergeWithContiguous(svSegments.get(i).getInterval());
+/// ```
+///
+/// `mergeWithContiguous` throws `GATKException` ("The two intervals need to be contiguous") when
+/// the next segment neither overlaps nor abuts the span so far. Here the span is the plain minimum
+/// and maximum, so segments with a gap between them merge where the reference refuses.
 pub fn segments_for_nearest_tss(
     segments: &[SvSegment],
     complex_type: Option<ComplexSubtype>,
@@ -828,6 +924,8 @@ pub fn segments_for_nearest_tss(
             | Some(ComplexSubtype::DelInvDup)
             | Some(ComplexSubtype::DelInvDel)
     );
+    // `svSegments.get(0)` on an empty list throws in the reference; here the empty list is
+    // returned as it is.
     if !merged || segments.is_empty() {
         return segments.to_vec();
     }
@@ -872,6 +970,7 @@ pub fn nearest_transcription_start_site(
             (0, false)
         };
         let candidate = (gap, before, transcript.gene_name.clone());
+        // `Some(current) if ...` is a pattern with a guard: it matches only when the test holds.
         best = match best {
             Some(current) if (current.0, current.1) <= (candidate.0, candidate.1) => Some(current),
             _ => Some(candidate),
@@ -917,6 +1016,8 @@ pub fn sv_type_named(name: &str) -> Option<SvType> {
     })
 }
 
+/// The value of one `key "value"` pair of a GTF line's ninth column, quotes stripped. Inside the
+/// closure, `?` on an `Option` answers `None` for an entry with no space, so `find_map` moves on.
 fn gtf_attribute<'a>(attributes: &'a str, key: &str) -> Option<&'a str> {
     attributes.split(';').find_map(|entry| {
         let (name, value) = entry.trim().split_once(' ')?;

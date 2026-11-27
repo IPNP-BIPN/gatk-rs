@@ -1,5 +1,6 @@
 //! `PrintReadCounts`, ported from `org.broadinstitute.hellbender.tools.sv.PrintReadCounts`
-//! and the two codecs it accepts, `DepthEvidenceCodec` and `SimpleCountCodec` (GATK 4.6.2.0).
+//! and the two codecs it accepts, `DepthEvidenceCodec` and `SimpleCountCodec` (GATK 4.7.0.0; all
+//! three `.java` files are unchanged since 4.6.2.0).
 //!
 //! A depth-evidence file, or a counts file, rewritten as one counts file per sample for the CNV
 //! callers. The walk is a plain `FeatureWalker`; what is here is the two headers it can be handed,
@@ -53,6 +54,20 @@
 //! length, the surviving file is the second writer's throughout. [`Disk`] carries those offsets,
 //! because a model that simply overwrites by name would agree here by accident and diverge as soon
 //! as two samples wrote different amounts.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is "a value or nothing", Java's nullable reference checked by the compiler:
+//!   `None` is `null`. `Result<T, PrintError>` is "a value or the exception"; `Err(..)` is the
+//!   throw.
+//! - `&mut Disk` is a writable borrowed reference: the function changes the caller's `Disk` in
+//!   place, and only one such reference may exist at a time. That is why every write takes the
+//!   `Disk` as an argument rather than each writer holding its own.
+//! - `match` must name every case; `Input::Depth(file) =>` both tests the variant and binds its
+//!   contents, Java's `instanceof` with a cast.
+//! - `let Some(x) = y else { .. };` takes the value out of an `Option` or runs the `else` block,
+//!   which must leave (here with `break 'records`, a labelled break out of the outer loop).
+//! - `.iter().map(..).collect()` is Java's stream, map, collect.
 
 use htsjdk_bam::header::{ReadGroup, SamHeader, SequenceRecord};
 use std::collections::BTreeMap;
@@ -64,7 +79,8 @@ pub const CNV_READ_GROUP_ID: &str = "GATKCopyNumber";
 /// The line the tool writes itself, rather than through any codec.
 pub const COLUMN_HEADER: &str = "CONTIG\tSTART\tEND\tCOUNT";
 
-/// `BufferedWriter.defaultCharBufferSize`.
+/// `BufferedWriter.defaultCharBufferSize`, the JDK's, which every `new BufferedWriter(..)` in the
+/// tool gets because none passes a size.
 pub const BUFFER_CHARS: usize = 8192;
 
 /// One count, one-based and closed, as a `.counts.tsv` holds it and as `SimpleCount` carries it.
@@ -76,7 +92,7 @@ pub struct SimpleCount {
     pub count: i32,
 }
 
-/// `SimpleCountCodec.encode`.
+/// `SimpleCountCodec.encode`: the four fields, tab separated, no newline (the tool adds it).
 pub fn encode_count(count: &SimpleCount) -> String {
     format!(
         "{}\t{}\t{}\t{}",
@@ -95,6 +111,15 @@ pub struct DepthEvidence {
 }
 
 /// `DepthEvidenceCodec.decode`, which returns null for the header line and adds one to the start.
+///
+/// ```java
+/// final int start = Integer.parseUnsignedInt(tokens.get(1)) + 1; // Adjust for 0-based indexing
+/// ```
+///
+/// The parsing is looser than the reference's: `unwrap_or(0)` turns a field that does not parse
+/// as an `i32` into 0, where `parseUnsignedInt` throws `NumberFormatException` (and also refuses a
+/// leading minus sign that `parse::<i32>` accepts). The reference's "Expected at least 3 columns"
+/// check has no counterpart either.
 pub fn decode_depth(line: &str) -> Option<DepthEvidence> {
     if line.starts_with("#Chr") {
         return None;
@@ -114,7 +139,14 @@ pub fn decode_depth(line: &str) -> Option<DepthEvidence> {
 }
 
 /// `DepthEvidenceCodec.readActualHeader`: the sample names are every column past the third, and
-/// the dictionary is null.
+/// the dictionary is null:
+///
+/// ```java
+/// final List<String> headerCols = splitter.splitToList(reader.next());
+/// ```
+///
+/// then `headerCols.subList(3, headerCols.size())`, which `skip(3)` mirrors on a line of at least
+/// three columns.
 pub fn depth_header_samples(line: &str) -> Vec<String> {
     line.split('\t').skip(3).map(str::to_string).collect()
 }
@@ -140,7 +172,8 @@ pub enum Input {
     Counts(CountsFile),
 }
 
-/// One `-L`, one-based and closed.
+/// One `-L`, one-based and closed. `Interval::overlaps` is the closed-interval test, so a
+/// record that only touches an interval's end is kept.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Interval {
     pub contig: String,
@@ -149,6 +182,7 @@ pub struct Interval {
 }
 
 impl Interval {
+    /// True when the two closed intervals share at least one base on the same contig.
     fn overlaps(&self, contig: &str, start: i32, end: i32) -> bool {
         self.contig == contig && self.start <= end && start <= self.end
     }
@@ -177,6 +211,7 @@ pub enum PrintError {
 }
 
 impl PrintError {
+    /// The class of the exception the reference throws for this refusal.
     pub fn java_class(&self) -> &str {
         match self {
             PrintError::NoDictionary
@@ -191,6 +226,7 @@ impl PrintError {
         }
     }
 
+    /// The exception's message, text for text.
     pub fn message(&self) -> String {
         match self {
             // The reference misspells "dictionary" here, and the two spaces are its own.
@@ -249,7 +285,16 @@ pub fn reader_error_chain(path: &str, inner: &PrintError) -> Vec<(String, String
 ///
 /// The distinct list is built from `SAMReadGroupRecord::getSample`, which is nullable, so a read
 /// group with no `SM` contributes a null that survives both `distinct` and the emptiness test and
-/// is handed back as the sample name.
+/// is handed back as the sample name:
+///
+/// ```java
+/// final List<String> sampleNames = header.getReadGroups().stream()
+///     .map(SAMReadGroupRecord::getSample).distinct().collect(Collectors.toList());
+/// ```
+///
+/// (`MetadataUtils.java:24`, wrapped to fit.) `Option<String>` is that nullable sample, and the
+/// linear `contains` keeps first-seen order as `distinct` does. `Ok(None)` is the null return the
+/// caller then refuses as [`PrintError::NullSampleName`].
 pub fn read_sample_name(header: &SamHeader) -> Result<Option<String>, PrintError> {
     if header.read_groups.is_empty() {
         return Err(PrintError::NoReadGroups);
@@ -261,6 +306,7 @@ pub fn read_sample_name(header: &SamHeader) -> Result<Option<String>, PrintError
             distinct.push(sample);
         }
     }
+    // `unwrap_or_default` turns a null into "", which is how `StringUtils.join` prints a null.
     if distinct.len() > 1 {
         return Err(PrintError::ManySampleNames(
             distinct
@@ -269,16 +315,26 @@ pub fn read_sample_name(header: &SamHeader) -> Result<Option<String>, PrintError
                 .collect(),
         ));
     }
+    // The first, and only, entry; `flatten` turns "no entry" and "a null entry" into one `None`,
+    // and the first cannot happen after the emptiness check above.
     Ok(distinct.into_iter().next().flatten())
 }
 
 /// `createWriter`'s filename: raw concatenation, so a prefix that does not end in a separator
-/// glues onto the sample name.
+/// glues onto the sample name: `outputPrefix + sampleName + ".counts.tsv"`.
 pub fn output_name(prefix: &str, sample: &str) -> String {
     format!("{prefix}{sample}.counts.tsv")
 }
 
 /// The header every output carries: the dictionary, and one read group whose ID is fixed.
+///
+/// The `.rd.txt` path in the reference, which the `.counts.tsv` path reaches through
+/// `metadata.toHeader()`:
+///
+/// ```java
+/// final SAMFileHeader samFileHeader = new SAMFileHeader(dictionary);
+/// final SAMReadGroupRecord readGroupRecord = new SAMReadGroupRecord("GATKCopyNumber");
+/// ```
 pub fn output_header(sample: &str, sequences: &[SequenceRecord]) -> SamHeader {
     let mut header = SamHeader::new();
     header.sequences = sequences.to_vec();
@@ -306,6 +362,9 @@ impl Disk {
     }
 
     /// A write at this descriptor's own offset, which is not the file's length.
+    ///
+    /// Writing past the end pads with zero bytes first, as a file write at an offset beyond the
+    /// end does; `file[offset..end]` is the slice of the file the bytes land on.
     fn write_at(&mut self, path: &str, offset: usize, bytes: &[u8]) {
         let file = self.files.entry(path.to_string()).or_default();
         if file.len() < offset {
@@ -318,6 +377,7 @@ impl Disk {
         file[offset..end].copy_from_slice(bytes);
     }
 
+    /// The file's contents as text, or `None` when nothing opened it.
     pub fn read(&self, path: &str) -> Option<String> {
         self.files
             .get(path)
@@ -353,6 +413,13 @@ impl JavaWriter {
         }
     }
 
+    /// `Writer.write(String)`: append to the buffer, and push each full 8192-character chunk to
+    /// disk as it fills.
+    ///
+    /// The buffer is counted in `char`s, standing in for Java's UTF-16 units; the two agree on
+    /// every character outside the supplementary planes. `char_indices().nth(BUFFER_CHARS)` finds
+    /// the byte position of the 8193rd character, because a Rust `String` is indexed in UTF-8
+    /// bytes, and `drain(..split)` removes the bytes before it from the buffer and hands them back.
     pub fn write(&mut self, disk: &mut Disk, text: &str) {
         self.buffer.push_str(text);
         while self.buffer.chars().count() >= BUFFER_CHARS {
@@ -366,19 +433,25 @@ impl JavaWriter {
         }
     }
 
+    /// `BufferedWriter.newLine`, which writes the platform's line separator; `\n` on the pinned
+    /// container.
     pub fn new_line(&mut self, disk: &mut Disk) {
         self.write(disk, "\n");
     }
 
+    /// Push whatever is buffered. `std::mem::take` moves the buffer out and leaves an empty one
+    /// in its place.
     pub fn flush(&mut self, disk: &mut Disk) {
         let chunk = std::mem::take(&mut self.buffer);
         self.push(disk, &chunk);
     }
 
+    /// `close`, which flushes; there is nothing else to release in this model.
     pub fn close(&mut self, disk: &mut Disk) {
         self.flush(disk);
     }
 
+    /// Write a chunk at this writer's offset and advance the offset by its length in bytes.
     fn push(&mut self, disk: &mut Disk, chunk: &str) {
         if chunk.is_empty() {
             return;
@@ -412,6 +485,8 @@ pub fn run(
     intervals: &[Interval],
 ) -> Run {
     let mut disk = Disk::new();
+    // `onTraversalStart`: the sample names and the dictionary, from whichever header the input
+    // has, or the refusal. Each `return Run { .. }` leaves with nothing written.
     let (samples, sequences) = match input {
         Input::Depth(file) => match dictionary {
             Some(sequences) => (file.samples.clone(), sequences.to_vec()),
@@ -467,6 +542,8 @@ pub fn run(
         writer.close(&mut disk);
     }
 
+    // `apply`, one record at a time. The `.counts.tsv` path writes only `writers[0]`, as the
+    // reference's `apply(SimpleCount)` does.
     let mut error = None;
     match input {
         Input::Counts(file) => {
@@ -485,6 +562,9 @@ pub fn run(
                 }
                 let interval_fields =
                     format!("{}\t{}\t{}\t", record.contig, record.start, record.end);
+                // `counts[idx]` in the reference, which throws `ArrayIndexOutOfBoundsException`
+                // when a record has fewer counts than there are samples; `get` returns `None`
+                // there instead. The samples before it have already been written.
                 for (index, writer) in writers.iter_mut().enumerate() {
                     let Some(count) = record.counts.get(index) else {
                         error = Some(PrintError::IndexOutOfBounds {

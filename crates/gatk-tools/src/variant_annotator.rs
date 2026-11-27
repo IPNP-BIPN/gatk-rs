@@ -5,6 +5,21 @@
 //! what key, and what happens when the two files disagree about the alleles.
 //!
 //! Reading the VCFs and the read-based annotations are not ported. The expression machinery is.
+//!
+//! The reference is `VariantAnnotatorEngine` (GATK 4.7.0.0): `VAExpression` parses an
+//! expression, `annotateExpressions` copies the values, and `VariantOverlapAnnotator` adds the
+//! `--comp` flags. The model here is narrower than that Java in the places each item notes, and
+//! the conformance suite `tests/variant_annotator.rs` measures it against its golden.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is "a value or nothing", Java's nullable reference checked by the compiler. A
+//!   `?` after an `Option` returns `None` from the function at once when there is nothing.
+//! - `let Some(x) = y else { continue; };` takes the value out of an `Option`, or skips to the
+//!   next loop iteration when there is none. Java has no single construct for it.
+//! - `match` must cover every case; `ID_FIELD if ...` is a case with an extra condition.
+//! - `impl Fn(&str) -> Arity` is a parameter that accepts any function or lambda from a field
+//!   name to its arity, as a Java `Function<String, Arity>` would.
 
 /// One record, reduced to what an expression reads off it.
 #[derive(Debug, Clone, PartialEq)]
@@ -19,6 +34,7 @@ pub struct Record {
 }
 
 impl Record {
+    /// The first INFO value under `key`, or `None` when the record does not carry it.
     pub fn attribute(&self, key: &str) -> Option<&str> {
         self.attributes
             .iter()
@@ -27,6 +43,10 @@ impl Record {
     }
 
     /// The alternates two records share, which is what a per-allele value has to be mapped through.
+    ///
+    /// This is equality of the whole ALT list, in order. The Java instead splits both records
+    /// into minimal-representation biallelics (`getMinRepresentationBiallelics`) and matches
+    /// them one by one.
     pub fn shares_alternates(&self, other: &Record) -> bool {
         self.alternates == other.alternates
     }
@@ -51,6 +71,15 @@ pub struct Expression {
 
 impl Expression {
     /// `tag.field`, which is both how the expression is written and the key it produces.
+    ///
+    /// `split_once('.')` cuts at the first dot. `VAExpression` cuts at the last:
+    ///
+    /// ```java
+    /// final int indexOfDot = fullExpression.lastIndexOf(".");
+    /// ```
+    ///
+    /// so the two agree only while neither the tag nor the field contains a dot. No dot at all is
+    /// `None` here and `UserException.BadInput` in the Java.
     pub fn parse(text: &str) -> Option<Expression> {
         let (tag, field) = text.split_once('.')?;
         Some(Expression {
@@ -59,6 +88,7 @@ impl Expression {
         })
     }
 
+    /// The annotation key, which is the expression as written (`expression.fullName`).
     pub fn key(&self) -> String {
         format!("{}.{}", self.tag, self.field)
     }
@@ -66,7 +96,9 @@ impl Expression {
 
 /// The three fields an expression may name that are not INFO attributes.
 pub const ID_FIELD: &str = "ID";
+/// The ALT column, special-cased by `annotateExpressions` as `ID` is.
 pub const ALT_FIELD: &str = "ALT";
+/// The FILTER column, special-cased by `annotateExpressions` as `ID` is.
 pub const FILTER_FIELD: &str = "FILTER";
 
 /// The VCF's own text for a field that has no value.
@@ -79,6 +111,19 @@ pub const MISSING: &str = ".";
 ///
 /// A record whose ID is the VCF's missing marker yields NOTHING rather than an annotation whose
 /// value is a dot: the tool asks whether the record HAS an id, not what its text is.
+///
+/// ```java
+/// if (expression.fieldName.equals("ID")) {
+///     if (expressionVC.hasID()) {
+///         attributes.put(expression.fullName, expressionVC.getID());
+///     }
+/// } else if (expression.fieldName.equals("ALT")) {
+///     attributes.put(expression.fullName, expressionVC.getAlternateAllele(0).getDisplayString());
+/// ```
+///
+/// The Java's `ALT` is the first alternate only, and its `FILTER` is
+/// `getFilters().stream().collect(Collectors.joining(","))`, or `"PASS"` for an unfiltered
+/// record. This port joins every alternate with `,` and the filters with `;`.
 pub fn value_of(record: &Record, field: &str) -> Option<String> {
     match field {
         ID_FIELD if record.id == MISSING => None,
@@ -94,6 +139,10 @@ pub fn value_of(record: &Record, field: &str) -> Option<String> {
 /// A PER-ALLELE value cannot cross to a different alternate and is withheld whatever the arguments
 /// say. A SCALAR one crosses freely unless `--resource-allele-concordance` is given, and so do the
 /// three record fields, whose meaning does not depend on an alternate either.
+///
+/// In `annotateExpressions` the concordance test sits only in the INFO branch, gated by
+/// `if ((useAltAlleles || useRefAndAltAlleles) || expressionAlleleConcordance)`; the `ID`,
+/// `ALT` and `FILTER` branches before it take the value with no allele test.
 pub fn annotates(
     input: &Record,
     resource: &Record,
@@ -114,6 +163,7 @@ pub fn annotates(
 /// One annotation the tool adds.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Annotation {
+    /// `tag.field` for an expression, or the tag alone for `--comp`.
     pub key: String,
     /// `None` for a `--comp` flag, which is a bare key.
     pub value: Option<String>,
@@ -123,6 +173,10 @@ pub struct Annotation {
 ///
 /// Every annotation the input already carried is kept: these are added to them, never instead of
 /// them. A record with no resource at its position collects nothing rather than an empty value.
+///
+/// `resources` pairs each resource record with its tag. The Java takes, per expression,
+/// `features.getValues(expression.binding, vc.getStart())` and then its first element; the
+/// `find` below is that first record with the expression's tag at the input's position.
 pub fn annotate(
     input: &Record,
     resources: &[(String, &Record)],
@@ -160,6 +214,10 @@ pub fn annotate(
 
 /// `--comp`, which adds a BARE FLAG under the tag alone rather than a key and a value, and which
 /// is subject to the same allele test as a scalar expression.
+///
+/// `VariantOverlapAnnotator.annotateOverlap` puts `attribute(attributeKey, true)`, which the VCF
+/// writer prints as a flag. Its own allele test matches any one alternate of the input against
+/// the comparison's; the whole-list equality here is narrower.
 pub fn comparison_annotation(
     input: &Record,
     tag: &str,
@@ -183,6 +241,8 @@ pub enum AnnotatorError {
 }
 
 impl AnnotatorError {
+    /// The `UserException.BadInput` text from the `VAExpression` constructor, `Bad input: ` being
+    /// the prefix that class adds.
     pub fn message(&self) -> String {
         match self {
             AnnotatorError::UnknownResource { expression } => format!(
@@ -194,6 +254,9 @@ impl AnnotatorError {
 }
 
 /// `addExpressions`' own check, which runs before a record is read.
+///
+/// The check itself is in the `VAExpression` constructor that `addExpressions` calls once per
+/// expression, so the first unknown tag in iteration order is the one refused.
 pub fn check_expressions(
     expressions: &[Expression],
     tags: &[String],

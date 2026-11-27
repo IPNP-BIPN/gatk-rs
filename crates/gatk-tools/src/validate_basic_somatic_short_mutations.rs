@@ -1,6 +1,6 @@
 //! `ValidateBasicSomaticShortMutations`, ported from
 //! `org.broadinstitute.hellbender.tools.walkers.validation.basicshortmutpileup.ValidateBasicSomaticShortMutations`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `ValidateBasicSomaticShortMutations.java` is unchanged since 4.6.2.0).
 //!
 //! Each discovery call is asked whether a separate tumour-normal pair of bams confirms it. The
 //! counting is [`gatk_engine::allele_pileup_counter`] and the arithmetic is
@@ -39,6 +39,16 @@
 //! counts as a false positive even when there was no power to validate it at all. The judgment and
 //! the table disagree on purpose for such a record: `validated` in the table is
 //! `isOutOfNoiseFloor`, which does not know about the normal, and `JUDGMENT` in the VCF does.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<Option<Applied>, ToolError>` is three outcomes: an error (the Java exception), `None`
+//!   (the Java's bare `return`, nothing written), or a record's outcome.
+//! - `.map_err(ToolError::Validation)?` wraps a lower layer's error in this file's type and
+//!   returns it at once; Java would let the exception propagate unchanged.
+//! - `let Some(x) = y else { return ...; };` takes the value or leaves the function.
+//! - `ReadPileup<'_>` carries a lifetime: the pileup borrows reads owned elsewhere, and the
+//!   compiler checks it does not outlive them. It changes nothing at run time.
 
 use gatk_engine::allele_pileup_counter::AllelePileupCounter;
 use gatk_engine::basic_somatic_short_mutation_validator::{
@@ -61,10 +71,16 @@ pub const DEFAULT_MAX_VALIDATION_NORMAL_COUNT: i32 = 1;
 
 /// `POWER_INFO_FIELD_KEY`, `VALIDATION_AD_INFO_FIELD_KEY` and `JUDGMENT_INFO_FIELD_KEY`.
 pub const POWER_KEY: &str = "POWER";
+/// `VALIDATION_AD_INFO_FIELD_KEY`.
 pub const VALIDATION_AD_KEY: &str = "VAL_AD";
+/// `JUDGMENT_INFO_FIELD_KEY`.
 pub const JUDGMENT_KEY: &str = "JUDGMENT";
 
 /// The three INFO lines the tool adds to the annotated VCF's header.
+///
+/// `JUDGMENT_HEADER_LINE`, `POWER_HEADER_LINE` and `VALIDATION_AD_HEADER_LINE` as htsjdk writes
+/// them, in sorted order. `VAL_AD` is declared `VCFHeaderLineCount.A` although the tool writes
+/// two values (reference, then alternate) into it.
 pub const HEADER_LINES: [&str; 3] = [
     "##INFO=<ID=JUDGMENT,Number=1,Type=String,Description=\"Validation judgment: validated, unvalidated, or skipped.\">",
     "##INFO=<ID=POWER,Number=1,Type=Float,Description=\"Power to validate variant in validation bam.\">",
@@ -93,11 +109,17 @@ impl Judgment {
 /// The arguments the walker reads, with the reference's defaults.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Arguments {
+    /// `discoverySampleInVcf`: the genotype of the discovery VCF that is validated.
     pub discovery_sample: String,
+    /// The validation tumour's sample name in the validation bam.
     pub validation_case_name: String,
+    /// The validation normal's sample name; a record with no reads for it is skipped.
     pub validation_control_name: String,
+    /// `minPower`: a power above this counts an unvalidated record as a false positive.
     pub min_power: f64,
+    /// `maxValidationNormalCount`: more alternate reads than this in the normal is an artifact.
     pub max_validation_normal_count: i32,
+    /// `minBqCutoff`: the base quality below which the counter ignores a read.
     pub min_bq_cutoff: i32,
 }
 
@@ -133,6 +155,10 @@ pub struct Applied {
 
 impl Applied {
     /// The INFO field the annotated VCF carries, in the writer's sorted order.
+    ///
+    /// A skipped record has `JUDGMENT` alone, as the Java's skip branch adds only that attribute.
+    /// The Java writes `basicValidationResult == null ? 0 : basicValidationResult.getPower()`
+    /// for `POWER`; a null result never reaches here, because it is [`ToolError::NullResult`].
     pub fn info(&self) -> String {
         match (self.power, self.validation_ad) {
             (Some(power), Some((reference, alternate))) => format!(
@@ -157,6 +183,7 @@ pub enum ToolError {
 }
 
 impl ToolError {
+    /// The fully-qualified class of the exception the reference throws.
     pub fn java_class(&self) -> &'static str {
         match self {
             ToolError::NullResult => "java.lang.NullPointerException",
@@ -182,6 +209,11 @@ impl ToolError {
 /// of `None` is the record being skipped in silence: nothing is written, not even a judgment. A
 /// case of `None` is a null pileup handed to the counter, which counts nothing and leaves the
 /// validation depth at zero.
+///
+/// The Java's order of checks is followed: symbolic reference, `isAbleToValidateGenotype`, the
+/// validation normal's pileup, then the counts. `genotype.alleles[1]` is
+/// `genotype.getAllele(1)`: "We assume that there is only one alternate allele that we are
+/// interested in."
 #[allow(clippy::too_many_arguments, reason = "the walker's own inputs")]
 pub fn apply(
     contig: &str,
@@ -209,6 +241,7 @@ pub fn apply(
             powered: false,
         }));
     }
+    // `if (validationNormalPileup == null){ return; }`, which writes nothing at all.
     let Some(control_pileup) = control_pileup else {
         return Ok(None);
     };
@@ -223,6 +256,8 @@ pub fn apply(
             ))
         })?;
     }
+    // `getOrDefault(altAllele, new MutableInt(0))` for the alternate and a bare `get` for the
+    // reference, see the module header; `expect` panics with that text if the key is absent.
     let validation_alt_count = counter.count(alternate).unwrap_or(0);
     let validation_ref_count = counter
         .count(reference)
@@ -251,6 +286,8 @@ pub fn apply(
     let Some(result) = result else {
         return Err(ToolError::NullResult);
     };
+    // The three decisions of the Java's `apply`, with the `!= null` tests dropped because the
+    // result is known to be present here.
     let normal_artifact = result.num_alt_supporting_reads_in_normal
         > i64::from(arguments.max_validation_normal_count);
     let validated = !normal_artifact && result.is_out_of_noise_floor;
@@ -269,11 +306,14 @@ pub fn apply(
     }))
 }
 
-/// `onTraversalSuccess`'s summary, which counts a record by its own type rather than its genotype's.
+/// `onTraversalSuccess`'s summary, which counts a record by its own type rather than its
+/// genotype's.
 ///
 /// A record is a true positive when it validated and a false positive when it did not but was
 /// powered; a record that is neither is counted nowhere, and the false negatives are the literal
 /// zero the tool passes in.
+///
+/// `is_snp` is `discoveryVariantContext.isSNP()`; anything else counts as an indel.
 pub fn count_towards_summary(
     summary: &mut crate::concordance::Summary,
     applied: &Applied,
@@ -313,6 +353,7 @@ pub fn header_lines(input_lines: &[String]) -> Vec<String> {
             lines.push(line);
         }
     }
+    // The `##source` line carries the tool name without its `GATK ` prefix.
     let source = format!("##source={}", TOOL_NAME.trim_start_matches("GATK "));
     if !lines.contains(&source) {
         lines.push(source);

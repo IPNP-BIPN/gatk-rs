@@ -9,25 +9,42 @@
 //! `gatk-cli` runner's.
 //!
 //! Ported from `org.broadinstitute.hellbender.tools.walkers.groundtruth.GroundTruthScorer` in
-//! GATK 4.6.2.0.
+//! GATK 4.7.0.0; `GroundTruthScorer.java` is unchanged since 4.6.2.0.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is "a value or nothing" and `Result<T, E>` "a value or an error"; `?` after an
+//!   expression hands the nothing or the error straight back to the caller;
+//! - `&[T]` is a borrowed, read-only view of an array and `&mut T` a writable borrow; the caller
+//!   keeps ownership;
+//! - `u64`, `i64`, `i32` are unsigned and signed integers of those widths, `usize` an unsigned
+//!   index type Java lacks; `x as f64` converts to a `double`, and `as i64` from a double
+//!   truncates toward zero as Java's `(long)` does for the values here;
+//! - `.iter().map(..).collect()` and friends are Java's stream operations, `|x| ...` a lambda,
+//!   and a `match` must cover every case, which the compiler checks.
 
 use crate::series_stats::SeriesStats;
 
-/// The bounds the report is allocated with.
+/// The bounds the report is allocated with: `QUAL_VALUE_MAX`.
 pub const QUAL_VALUE_MAX: usize = 60;
+/// `HMER_VALUE_MAX`.
 pub const HMER_VALUE_MAX: usize = 100;
 /// `FlowBasedRead.DEFAULT_FLOW_ORDER.length() - 1`, the flow order being `TGCA`.
 pub const BASE_VALUE_MAX: usize = 3;
+/// `FlowBasedRead.DEFAULT_FLOW_ORDER`, which the base bins index.
 pub const DEFAULT_FLOW_ORDER: &str = "TGCA";
 
 /// `NORMALIZED_SCORE_THRESHOLD_DEFAULT`, which is NEGATIVE: the scores it bounds are.
 pub const NORMALIZED_SCORE_THRESHOLD_DEFAULT: f64 = -0.1;
+/// `DEFAULT_RATIO_THRESHOLD`, the rate an error-free non-empty cell reports its phred at.
 pub const DEFAULT_RATIO_THRESHOLD: f64 = 0.003;
 
 /// The percentile columns the report carries when none are asked for.
 pub const DEFAULT_QUALITY_PERCENTILES: &str = "10,25,50,75,90";
 
 /// One cell of the report: how many observations were true and how many false.
+///
+/// `BooleanAccumulator` without its `bins`: the nesting lives in [`QualReport`]'s flat arrays.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Accumulator {
     pub false_count: u64,
@@ -35,6 +52,7 @@ pub struct Accumulator {
 }
 
 impl Accumulator {
+    /// `add(b)`: one observation.
     pub fn add(&mut self, value: bool) {
         if value {
             self.true_count += 1;
@@ -43,11 +61,13 @@ impl Accumulator {
         }
     }
 
+    /// `getCount()`.
     pub fn count(&self) -> u64 {
         self.false_count + self.true_count
     }
 
-    /// The FALSE rate, which is zero for an empty cell rather than a NaN.
+    /// The FALSE rate, which is zero for an empty cell rather than a NaN:
+    /// `(getCount() == 0) ? 0.0 : ((double)falseCount / getCount())`.
     pub fn false_rate(&self) -> f64 {
         if self.count() == 0 {
             0.0
@@ -78,7 +98,8 @@ pub fn bin_to_deviation(bin: usize) -> String {
     }
 }
 
-/// `binToBase`, which indexes the flow order.
+/// `binToBase`, which indexes the flow order. `expect` aborts on a bin past `TGCA`, where the
+/// Java's `charAt` would throw; the report only asks for bins 0 to 3.
 pub fn bin_to_base(bin: usize) -> char {
     DEFAULT_FLOW_ORDER.chars().nth(bin).expect("a base")
 }
@@ -88,6 +109,11 @@ pub fn bin_to_base(bin: usize) -> char {
 /// A rate of zero over a NON-EMPTY cell is replaced by the probability threshold before the
 /// logarithm, so a cell that saw observations and no errors reports the threshold's phred rather
 /// than zero. A rate of zero over an EMPTY cell is left alone and reports zero.
+///
+/// The Java's `phredRate` is
+/// `(rate == 0.0 && report[i].getCount() != 0 && probThreshold != 0.0) ? probThreshold : rate`,
+/// then, when `phredRate != 0`, the `int` ceiling of -10.0 times `Math.log10` of `phredRate`, and 0
+/// otherwise, with the logarithm taken by the port's `jmath` rendering of `Math.log10`.
 pub fn phred(rate: f64, count: u64, probability_threshold: f64) -> i64 {
     let effective = if rate == 0.0 && count != 0 && probability_threshold != 0.0 {
         probability_threshold
@@ -101,15 +127,18 @@ pub fn phred(rate: f64, count: u64, probability_threshold: f64) -> i64 {
     }
 }
 
-/// The four table names the report carries, built from the column names.
+/// The four table names the report carries, built from the column names: `name + "Report"`.
 pub fn one_level_table_name(name: &str) -> String {
     format!("{name}Report")
 }
 
+/// `name1 + "_" + name2 + "Report"`.
 pub fn two_level_table_name(first: &str, second: &str) -> String {
     format!("{first}_{second}Report")
 }
 
+/// `name1 + "_" + name2 + "_" + name3 + "_" + name4 + "_Report"`, the last underscore
+/// included.
 pub fn four_level_table_name(first: &str, second: &str, third: &str, fourth: &str) -> String {
     format!("{first}_{second}_{third}_{fourth}_Report")
 }
@@ -118,6 +147,9 @@ pub fn four_level_table_name(first: &str, second: &str, third: &str, fourth: &st
 ///
 /// The ORIGIN is always written: `omit_zeros` skips an empty row only when at least one of its
 /// indices is non-zero, so the first row of every table survives however empty it is.
+///
+/// The four-level table's test reads
+/// `omitZeros && (i != 0 || j != 0 || k != 0 || m != 0) && ...getCount() == 0`.
 pub fn keeps_row(omit_zeros: bool, indices: &[usize], count: u64) -> bool {
     if !omit_zeros {
         return true;
@@ -139,10 +171,12 @@ pub fn four_level_row_count() -> usize {
 
 /// The percentile table's columns, which are fixed except for the percentiles themselves.
 pub const PERCENTILE_TABLE_NAME: &str = "PhredBinAccumulator";
+/// `flow` and `count` are `%d`, the rest `%f`, as `PercentileReport.newReportTable` adds them.
 pub const PERCENTILE_FIXED_COLUMNS: [&str; 7] =
     ["flow", "count", "min", "max", "mean", "median", "std"];
 
-/// The percentile table's column names for a given `--quality-percentiles`.
+/// The percentile table's column names for a given `--quality-percentiles`: the fixed seven,
+/// then `"p" + p` for each comma-separated entry as typed.
 pub fn percentile_columns(quality_percentiles: &str) -> Vec<String> {
     let mut columns: Vec<String> = PERCENTILE_FIXED_COLUMNS
         .iter()
@@ -164,11 +198,15 @@ pub struct PercentileReport {
 }
 
 impl PercentileReport {
+    /// `addProb(p)`: adds -10 times `Math.log10` of `p` to the series.
     pub fn add_probability(&mut self, probability: f64) {
         self.stats.add(-10.0 * jmath::math::log10(probability));
     }
 
     /// One row of the percentile table, in the column order above.
+    ///
+    /// Each percentile is `getPercentile(Double.parseDouble(p))`; `expect` aborts on an entry
+    /// that is not a number, where the Java's `parseDouble` would throw.
     pub fn row(&self, index: usize, quality_percentiles: &str) -> Vec<f64> {
         let mut values = vec![
             index as f64,
@@ -189,7 +227,9 @@ impl PercentileReport {
     }
 }
 
-/// The arguments that decide what is scored and what is written.
+/// The arguments that decide what is scored and what is written: `--use-softclipped-bases`,
+/// `--normalized-score-threshold`, `--add-mean-call`, `--no-output`, `--omit-zeros-from-report`,
+/// `--quality-percentiles` and `--exclude-zero-flows`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Arguments {
     pub use_softclipped_bases: bool,
@@ -218,7 +258,8 @@ impl Default for Arguments {
 /// Whether a read's normalized score keeps it.
 ///
 /// The comparison is a strict less-than against a NEGATIVE default, so a read is dropped when its
-/// score falls below the threshold rather than above it.
+/// score falls below the threshold rather than above it:
+/// `if ( normalizedScore < normalizedScoreThreshold ) return;`.
 pub fn keeps_read(normalized_score: f64, arguments: &Arguments) -> bool {
     normalized_score >= arguments.normalized_score_threshold
 }
@@ -260,6 +301,7 @@ pub enum CycleSkipStatus {
 }
 
 impl CycleSkipStatus {
+    /// The constant's `name()`, which is what the CSV's `CycleSkipStatus` column prints.
     pub fn name(self) -> &'static str {
         match self {
             CycleSkipStatus::NS => "NS",
@@ -280,12 +322,22 @@ pub struct PeriodGuard {
 ///
 /// `ArrayUtils.subarray` clamps rather than throws, so an element running past either array is
 /// compared over what is there.
+///
+/// ```java
+/// if ( cigarElement.getOperator() == CigarOperator.M ) {
+/// ```
+///
+/// Only `M` is examined, not `=` or `X`. The statuses are ordered `NS < PCS < CS` (the derived
+/// `Ord` follows declaration order, the Java's priorities 0, 1, 2), so `max` is "keep the worse",
+/// and the walk stops at the first `CS`. A base the flow order lacks trips the period guard,
+/// returned as [`PeriodGuard`].
 pub fn cycle_skip_status(
     bases: &[u8],
     cigar: &[(char, usize)],
     reference: &[u8],
     flow_order: &str,
 ) -> Result<CycleSkipStatus, PeriodGuard> {
+    // `ArrayUtils.subarray(array, from, from + length)`, both ends clamped to the array.
     let sub = |array: &[u8], from: usize, length: usize| -> Vec<u8> {
         let start = from.min(array.len());
         let end = (from + length).min(array.len());
@@ -323,6 +375,7 @@ pub fn cycle_skip_status(
                 status = status.max(value);
             }
         }
+        // `consumesReadBases()` and `consumesReferenceBases()`, spelled out per operator.
         if matches!(op, 'M' | 'I' | 'S' | '=' | 'X') {
             read_offset += length;
         }
@@ -339,13 +392,25 @@ pub fn cycle_skip_status(
 /// `GenomePriorDB`: per base, a hundred and one hmer frequencies.
 ///
 /// The row's first frequency is read TWICE, into the first two slots, and every later slot takes
-/// the column of its own index, so the row's last column is never read.
+/// the column of its own index, so the row's last column is never read:
+///
+/// ```java
+/// if ( i == 0 ){
+///     prior[i] = Long.parseLong(line[i+1]);
+/// } else {
+///     prior[i] = Long.parseLong(line[i]);
+/// }
+/// ```
+///
+/// The rows are kept in first-seen order, as the Java's `LinkedHashMap<Byte, long[]>`, keyed by
+/// the first byte of the first field.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GenomePrior {
     pub rows: Vec<(u8, Vec<i64>)>,
 }
 
-/// What reading the prior refused, as the JVM raises it.
+/// What reading the prior refused, as the JVM raises it. An empty `class` marks a refusal that is
+/// the port's own rather than the reference's.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PriorError {
     pub class: &'static str,
@@ -353,7 +418,8 @@ pub struct PriorError {
 }
 
 impl GenomePrior {
-    /// The CSV, one row per base. A quoted field is refused as the port's: opencsv would unquote it.
+    /// The CSV, one row per base. A quoted field is refused as the port's: opencsv would unquote
+    /// it.
     pub fn parse(text: &str) -> Result<GenomePrior, PriorError> {
         let mut rows: Vec<(u8, Vec<i64>)> = Vec::new();
         for line in text.lines() {
@@ -389,6 +455,7 @@ impl GenomePrior {
         Ok(GenomePrior { rows })
     }
 
+    /// `getPriorForBase(base)`, `None` where the Java's map returns null.
     fn prior_for_base(&self, base: u8) -> Option<&[i64]> {
         self.rows
             .iter()
@@ -402,6 +469,15 @@ impl GenomePrior {
 ///
 /// Each value also feeds that flow's percentile row, when the report is kept, unless the call is
 /// zero and `--exclude-zero-flows` leaves those out.
+///
+/// Per flow: read the column of probabilities and sum it, normalise when the sum is not zero,
+/// then either take `1 - column[min(key, maxHmer)]` or, with a prior for the flow's base,
+/// multiply the column by the prior and take `1 - column[min(len - 1, key, maxHmer)] / sum`,
+/// falling back to the unscaled form when the scaled sum is zero (no prior for the base, or all
+/// zero). The order of the additions and divisions is the Java's.
+///
+/// `percentiles` is the Java's nullable `percentileReports`; `as_deref_mut` borrows the list out
+/// of the `Option` for one flow at a time, and it grows on demand as `Vector.add` does there.
 pub fn error_probabilities(
     read: &crate::flow_based_read::FlowRead,
     prior: Option<&GenomePrior>,
@@ -455,7 +531,11 @@ pub fn error_probabilities(
 /// `computeLowestQBaseTP`: per flow, the `tp` of the lowest-quality base in the first half of the
 /// hmer, the key walked over the bases in the order both are stored in.
 ///
-/// `None` where the reference indexes past an array, which it does not catch.
+/// `Err(index)` where the reference indexes past an array, which it does not catch; the index is
+/// the one the Java's `ArrayIndexOutOfBoundsException` would name.
+///
+/// `(hmer + 1) / 2` bases are scanned ("as qualities and tp are symetric, we can scan up to the
+/// middle"), and a strictly lower quality is needed to move, so the first of equal lows wins.
 pub fn lowest_q_base_tp(key: &[i32], tp: &[i8], qualities: &[u8]) -> Result<Vec<i8>, usize> {
     let mut result = vec![0i8; key.len()];
     let mut sequence = 0usize;
@@ -487,6 +567,13 @@ pub fn lowest_q_base_tp(key: &[i32], tp: &[i8], qualities: &[u8]) -> Result<Vec<
 
 /// `collectReadProbs`: the matrix flattened flow by flow, and each flow's mean call, which divides
 /// by the sum of the hmer lengths rather than of the probabilities.
+///
+/// ```java
+/// mc += (p * hmer);
+/// mc_sum += hmer;
+/// ```
+///
+/// and `meanCall[flow] = mc / mc_sum`, `mc_sum` being the integer `0 + 1 + .. + maxHmer`.
 pub fn read_probs(read: &crate::flow_based_read::FlowRead) -> (Vec<f64>, Vec<f64>) {
     let max_hmer = read.max_hmer;
     let mut probs = Vec::with_capacity(read.key.len() * (max_hmer as usize + 1));
@@ -507,6 +594,10 @@ pub fn read_probs(read: &crate::flow_based_read::FlowRead) -> (Vec<f64>, Vec<f64
 
 /// `new DecimalFormat("0.0#####")`: at least one integer and one fraction digit, at most six
 /// fraction digits, half to even on the shortest decimal.
+///
+/// The shared six-place formatter is reused and its output padded to the pattern's minimum:
+/// a `0` before an empty integer part and after an empty fraction. A non-finite value is left as
+/// the formatter writes it.
 pub fn error_format(value: f64) -> String {
     let body = gatk_annotation::decimal_format::DecimalFormat::new(6).format(value);
     if !value.is_finite() {
@@ -524,6 +615,11 @@ pub fn error_format(value: f64) -> String {
 
 /// `Precision.round(x, scale)`: `Double.toString(x)` as a `BigDecimal`, set to `scale` places
 /// HALF_UP, back to a double, with a zero taking the sign of `x`.
+///
+/// **How**: take the decimal digits and exponent of `Double.toString(x)`; when there are no more
+/// places than `scale` the value is already exact and returned; otherwise drop the extra digits,
+/// round up on a first dropped digit of five or more (HALF_UP on the magnitude), and parse
+/// `<digits>e-<scale>` back. `0.0 * x` gives a zero the sign of `x`.
 pub fn precision_round(x: f64, scale: usize) -> f64 {
     if x.is_infinite() {
         return x;
@@ -592,6 +688,9 @@ pub fn precision_round(x: f64, scale: usize) -> f64 {
 
 /// The qual report: `BooleanAccumulator.newReport(61, 101, 202, 4)`, a tree four levels deep kept
 /// here as one flat array of cells per level.
+///
+/// A cell at level `n` is indexed by its parents' indices in row-major order, so
+/// `hmer[q * HMERS + h]` is the Java's `qualReport[q].bins[h]` and so on down.
 pub struct QualReport {
     top: Vec<Accumulator>,
     hmer: Vec<Accumulator>,
@@ -599,10 +698,14 @@ pub struct QualReport {
     base: Vec<Accumulator>,
 }
 
-/// The dimensions of the four levels.
+/// The dimensions of the four levels, `newReport(QUAL_VALUE_MAX + 1, HMER_VALUE_MAX + 1,
+/// deviationToBin(HMER_VALUE_MAX + 1), BASE_VALUE_MAX + 1)`: 61.
 const QUALS: usize = QUAL_VALUE_MAX + 1;
+/// 101.
 const HMERS: usize = HMER_VALUE_MAX + 1;
+/// 202, `deviationToBin(101)`.
 const DEVIATIONS: usize = (HMER_VALUE_MAX + 1) * 2;
+/// 4.
 const BASES: usize = BASE_VALUE_MAX + 1;
 
 impl Default for QualReport {
@@ -616,13 +719,17 @@ impl Default for QualReport {
     }
 }
 
-/// `BooleanAccumulator.add`'s clipping: a bin out of range is logged and clamped.
+/// `BooleanAccumulator.add`'s clipping: a bin out of range is logged and clamped,
+/// `bins[Math.max(0, Math.min(bin, bins.length - 1))]`. The warning is not reproduced.
 fn clamp(bin: i64, length: usize) -> usize {
     bin.max(0).min(length as i64 - 1) as usize
 }
 
 impl QualReport {
     /// `qualReport[qual].add(same, hmer, deviationBin, baseBin)`.
+    ///
+    /// Every level on the path gets the observation, each lower bin clamped. `qual` itself is
+    /// not clamped: the caller has checked it.
     pub fn add(&mut self, same: bool, qual: usize, hmer: i64, deviation: i64, base: i64) {
         self.top[qual].add(same);
         let h = qual * HMERS + clamp(hmer, HMERS);
@@ -638,6 +745,16 @@ impl QualReport {
 /// whether the read's call there is the reference's, filed by the call, the deviation and the
 /// flow's base on the forward strand. A read whose key is not as long as the reference's files
 /// nothing.
+///
+/// ```java
+/// final double        prob = Precision.round(errorProb[flow], (QUAL_VALUE_MAX / 10) + 1);
+/// ```
+///
+/// The next Java line makes `qual` the `int` ceiling of -10 times `Math.log10` of `prob`.
+///
+/// A qual at or past the report's 61 rows is not filed (`if ( qual < qualReport.length )`). The
+/// Java's base bin is `DEFAULT_FLOW_ORDER.indexOf(trueBase)`, `-1` for a base not in it, which the
+/// clamp then files under bin 0.
 pub fn add_to_qual_report(
     report: &mut QualReport,
     read_key: &[i32],
@@ -657,6 +774,7 @@ pub fn add_to_qual_report(
         let deviation = read_key[flow] - reference_key[flow];
         if qual >= 0 && (qual as usize) < QUALS {
             let base = flow_order[flow % flow_order.len()];
+            // `BaseUtils.simpleComplement(base)` on a reverse read: the base on the forward strand.
             let base = if reverse {
                 match base {
                     b'A' => b'T',
@@ -686,6 +804,12 @@ pub fn add_to_qual_report(
 /// One table of the report, written as `GATKReportTable.write` writes it, from rows produced
 /// twice: once to size the columns and once to print them. The four-level table has five million
 /// rows when its zeros are kept, which a table held in memory cell by cell cannot afford.
+///
+/// `rows` is a closure that is called twice and hands each row to the `emit` callback it is
+/// given (`&mut dyn FnMut`, a borrowed callback that may change what it captures). The first pass
+/// measures each column's width and whether every value in it is right-aligned
+/// (`is_right_align`); the second writes the header lines and the padded rows, two spaces between
+/// columns, and a blank line after the table.
 fn write_table<F>(
     out: &mut String,
     name: &str,
@@ -709,6 +833,7 @@ fn write_table<F>(
             }
         }
     });
+    // `write!` into a `String` cannot fail; `let _ =` discards the `Result` it still returns.
     let _ = write!(out, "#:GATKTable:{}:{}", columns.len(), count);
     for (_, format) in columns {
         let _ = write!(out, ":{format}");
@@ -738,7 +863,7 @@ fn write_table<F>(
     out.push('\n');
 }
 
-/// `%f`: six places, HALF_UP.
+/// `%f`: six places, HALF_UP; a non-finite value as `Double.toString` writes it.
 fn six(value: f64) -> String {
     if value.is_finite() {
         gatk_engine::java_format::format_decimals(value, 6)
@@ -749,6 +874,9 @@ fn six(value: f64) -> String {
 
 /// `closeTool`'s report: a `GATKReport` over four tables, which it keeps in a `TreeMap` by name,
 /// so the percentile table comes first whatever order they were handed in.
+///
+/// `PhredBinAccumulator` sorts before the three `qual` tables, which follow in name order:
+/// `qualReport`, `qual_hmerReport`, `qual_hmer_deviation_base_Report`, since `R` sorts before `_`.
 pub fn report_text(
     report: &QualReport,
     percentiles: &[PercentileReport],

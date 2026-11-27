@@ -1,5 +1,14 @@
 /// `__log_data` of glibc 2.35 (`e_log_data.c`), read from the image's `libm.so.6` at 0xb01e0:
-/// `ln2hi`, `ln2lo`, `poly[5]`, `poly1[11]`, then `tab[128]` as (invc, logc) and `tab2[128]` as (chi, clo).
+/// `ln2hi`, `ln2lo`, `poly[5]`, `poly1[11]`, then `tab[128]` as (invc, logc) and `tab2[128]` as
+/// (chi, clo).
+///
+/// So the indices are: 0 and 1 the two halves of ln 2, 2 to 6 `poly`, 7 to 17 `poly1`, 18 to
+/// 273 `tab` and 274 to 529 `tab2`, each pair two entries wide (2 + 5 + 11 + 256 + 256 = 530).
+///
+/// The entries are IEEE 754 bit patterns, not decimal literals, so the values are the bytes read
+/// from the library and no decimal-to-binary conversion stands between them and the table.
+/// `glibc_libm.rs` pastes this file in with `include!` and reads an entry as
+/// `f64::from_bits(LOG_DATA[i])`; that is why the file has no `//!` header of its own.
 pub(crate) const LOG_DATA: [u64; 530] = [
     0x3fe62e42fefa3800, 0x3d2ef35793c76730, 0xbfe0000000000001, 0x3fd555555551305b,
     0xbfcfffffffeb4590, 0x3fc999b324f10111, 0xbfc55575e506c89f, 0xbfe0000000000000,

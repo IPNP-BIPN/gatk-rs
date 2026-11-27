@@ -12,12 +12,40 @@
 //! * **every failure to read the JSON is an `IOException`** and reports the request, not the JSON:
 //!   an unknown property, a root other than `htsget`, a constant out of its enum;
 //! * **a block's status is never looked at**: its body is written whatever the server answered.
+//!
+//! The reference is `org.broadinstitute.hellbender.tools.HtsgetReader` and the
+//! `org.broadinstitute.hellbender.tools.htsgetreader` classes in GATK 4.7.0.0. The JSON is read
+//! by a mapper built as
+//!
+//! ```java
+//! .enable(DeserializationFeature.UNWRAP_ROOT_VALUE)
+//! .configure(MapperFeature.ACCEPT_CASE_INSENSITIVE_PROPERTIES, true)
+//! ```
+//!
+//! which is why every property name below is matched lowercased, and why the object must sit
+//! under a single `htsget` key. Jackson, Jersey and the JDK's `java.net.URI` and `Base64` have no
+//! source in this tree: what this file reproduces of them is their observable behaviour, as the
+//! goldens record it.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is "a value or nothing" and `Result<T, E>` "a value or an error"; `?` after an
+//!   expression hands the nothing or the error straight back to the caller;
+//! - `&str` is a borrowed, read-only view of a string; `text[a..b]` is the substring between two
+//!   BYTE offsets, and `find` returns a byte offset;
+//! - `if let Some(x) = y { .. }` runs the block only when `y` holds a value, and `let Some(x) = y
+//!   else { .. }` takes the value or the early exit;
+//! - `match` must cover every case (the compiler checks), `_` is "anything else", and `x if
+//!   cond =>` is an arm that applies only when `cond` holds;
+//! - `|x| ...` is a lambda; `.iter().any(..)`, `.filter(..)`, `.map(..)`, `.collect()` are
+//!   Java's stream operations.
 
 use gatk_engine::interval::SimpleInterval;
 use gatk_engine::java_hash::hash_set_order;
 use serde_json::Value;
 
-/// `HtsgetRequestField`'s constants, in the order an `EnumSet` walks them.
+/// `HtsgetRequestField`'s constants, in the order an `EnumSet` walks them, which is declaration
+/// order: `--fields` given in any order is sent in this one.
 pub const FIELDS: [&str; 11] = [
     "QNAME", "FLAG", "RNAME", "POS", "MAPQ", "CIGAR", "RNEXT", "PNEXT", "TLEN", "SEQ", "QUAL",
 ];
@@ -31,6 +59,10 @@ pub struct RequestInterval {
 }
 
 /// `HtsgetRequestBuilder`.
+///
+/// `endpoint` is `--url` as typed and `id` is `--id`; `format` and `data_class` are the enum
+/// constants' names. `tags` and `notags` are kept as given; [`Request::validate`] and
+/// [`Request::to_uri`] put them in the `HashSet` order the Java's sets have.
 #[derive(Debug, Clone, Default)]
 pub struct Request {
     pub endpoint: String,
@@ -44,12 +76,22 @@ pub struct Request {
 }
 
 /// A `HashSet<String>` of these strings, in its own order.
+///
+/// `unwrap_or_else` falls back to the order given when `hash_set_order` cannot compute one.
 fn java_set(values: &[String]) -> Vec<String> {
     hash_set_order(values).unwrap_or_else(|_| values.to_vec())
 }
 
 impl Request {
     /// `validateRequest`: the message of the `UserException`, when there is one.
+    ///
+    /// ```java
+    /// if ((this.id.endsWith(FileExtensions.BAM) || this.id.endsWith(FileExtensions.SAM) && (
+    ///     this.format != HtsgetFormat.BAM && this.format != HtsgetFormat.CRAM))
+    /// ```
+    ///
+    /// `&&` binds tighter than `||`, so the format test applies to `.sam` alone and a `.bam` id
+    /// fails whatever the format: the module header's first point.
     pub fn validate(&self) -> Result<(), String> {
         if self.data_class.as_deref() == Some("header")
             && (self.interval.is_some()
@@ -77,6 +119,8 @@ impl Request {
                 ));
             }
         }
+        // `this.tags.stream().filter(getNoTags()::contains).collect(Collectors.joining(", "))`:
+        // the overlap listed in the tag set's iteration order.
         let notags = java_set(&self.notags);
         let overlap: Vec<String> = java_set(&self.tags)
             .into_iter()
@@ -93,6 +137,16 @@ impl Request {
 
     /// `toURI`, past the validation: Jersey's `UriBuilder` over the endpoint. What it throws is an
     /// exception class and its message, since neither is a `UserException`.
+    ///
+    /// ```java
+    /// final UriBuilder builder = UriBuilder.fromUri(this.endpoint)
+    ///     .scheme("https")
+    ///     .path(this.id);
+    /// ```
+    ///
+    /// then one `queryParam` per argument given, in the order `format`, `class`, `referenceName`,
+    /// `start`, `end`, `fields`, `tags`, `notags`, appended after any query the endpoint had.
+    /// Whether the call to `validateRequest` that opens `toURI` has run is the caller's business.
     pub fn to_uri(&self) -> Result<String, UriFailure> {
         let endpoint = split_uri(&self.endpoint);
         if uri_scheme(&self.endpoint).is_some()
@@ -127,6 +181,8 @@ impl Request {
         for value in self.tags.iter().chain(&self.notags) {
             check_braces(value)?;
         }
+        // A closure that appends `name=value` to `query`. It is `mut` because it writes to the
+        // `query` it captures; `query.take()` moves the current value out, leaving `None`.
         let mut parameter = |name: &str, value: &str| {
             let pair = format!("{name}={}", encode(value, Component::QueryParameter));
             query = Some(match query.take() {
@@ -173,7 +229,8 @@ impl Request {
     }
 }
 
-/// What `UriBuilder` threw.
+/// What `UriBuilder` threw: the exception's class and message, since neither is a
+/// `UserException`.
 #[derive(Debug, PartialEq, Eq)]
 pub struct UriFailure {
     pub class: &'static str,
@@ -227,6 +284,8 @@ fn unresolved_template(uri: &str) -> Result<(), UriFailure> {
 }
 
 /// The five parts RFC 3986's appendix B splits a reference into, the scheme left out.
+///
+/// Each part borrows from the text it was split from (the `'a`), so nothing is copied.
 struct UriParts<'a> {
     authority: Option<&'a str>,
     path: &'a str,
@@ -234,6 +293,8 @@ struct UriParts<'a> {
     fragment: Option<&'a str>,
 }
 
+/// Split off the fragment at the first `#`, then the query at the first `?`, then the scheme,
+/// then an authority introduced by `//` and running to the next `/`; what is left is the path.
 fn split_uri(text: &str) -> UriParts<'_> {
     let (text, fragment) = match text.split_once('#') {
         Some((before, after)) => (before, Some(after)),
@@ -263,6 +324,10 @@ fn split_uri(text: &str) -> UriParts<'_> {
 }
 
 /// `URI.getScheme`.
+///
+/// The text before the first `:` when no `/`, `?` or `#` comes first, and only if it is a
+/// letter followed by letters, digits, `+`, `-` or `.` (RFC 3986's scheme grammar).
+/// `.then_some(scheme)` is `cond ? Optional.of(scheme) : Optional.empty()`.
 pub fn uri_scheme(text: &str) -> Option<&str> {
     let end = text.find([':', '/', '?', '#'])?;
     let scheme = &text[..end];
@@ -278,6 +343,10 @@ pub fn uri_scheme(text: &str) -> Option<&str> {
 }
 
 /// `new SimpleInterval(String)`, for `--intervals`.
+///
+/// Split at the LAST colon: `contig` alone is the whole contig (`1` to `Integer.MAX_VALUE`),
+/// `contig:start-end` a range, `contig:start+` from `start` to the end, and `contig:start` the
+/// one base. The `(String, i32, i32)` is a tuple: contig, start, end.
 pub fn interval(text: &str) -> Result<(String, i32, i32), String> {
     let position = |digits: &str| {
         SimpleInterval::parse_position(digits).ok_or_else(|| {
@@ -307,6 +376,10 @@ pub fn java_interval_parses(text: &str) -> bool {
 }
 
 /// Whether `new URI(text)` parses: only the characters RFC 2396 allows, and each escape whole.
+///
+/// Also refused: an empty authority with an empty path (`scheme://`), a colon that ends a
+/// would-be scheme which is not one, a scheme with nothing after its colon, and a second `#`.
+/// Non-ASCII characters that are neither control nor space characters pass.
 pub fn java_uri_parses(text: &str) -> bool {
     if split_uri(text).authority == Some("") && split_uri(text).path.is_empty() {
         return false;
@@ -347,6 +420,8 @@ pub fn java_uri_parses(text: &str) -> bool {
     true
 }
 
+/// Which part of the URI is being encoded: a path segment allows more characters unescaped than a
+/// query parameter does, and only a query parameter turns a space into `+`.
 #[derive(Clone, Copy, PartialEq)]
 enum Component {
     Path,
@@ -377,6 +452,9 @@ fn encode(text: &str, component: Component) -> String {
                         | '+'
                 ))
     };
+    // `char_indices` yields each character with its byte offset, so a `%` can look at the two
+    // bytes after it. A character outside the allowed set is written as the `%XX` of each of its
+    // UTF-8 bytes, upper-case hex.
     let bytes = text.as_bytes();
     let mut out = String::with_capacity(text.len());
     for (at, character) in text.char_indices() {
@@ -399,14 +477,21 @@ fn encode(text: &str, component: Component) -> String {
     out
 }
 
-/// One of `urls`.
+/// One of `urls`: `HtsgetResponse.Block`.
+///
+/// `url` is `None` where the JSON held null. `headers` keeps the JSON object's order, and a null
+/// header value becomes the empty string. The block's `class` is checked (see `block`) but not
+/// kept: nothing reads it.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Block {
     pub url: Option<String>,
     pub headers: Option<Vec<(String, String)>>,
 }
 
-/// A body that is the JSON literal, which Jackson reads as no object at all, whatever follows it.
+/// A body that is the JSON literal `null`, which Jackson reads as no object at all, whatever
+/// follows it.
+///
+/// `null` must be a whole token: `nullx` is not the literal.
 pub fn is_null_literal(body: &str) -> bool {
     body.trim_start()
         .strip_prefix("null")
@@ -420,7 +505,7 @@ pub struct Response {
     pub md5: Option<String>,
 }
 
-/// `HtsgetErrorResponse`.
+/// `HtsgetErrorResponse`: its `@JsonProperty("error")` and `@JsonProperty("message")`.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ErrorResponse {
     pub error: Option<String>,
@@ -428,6 +513,10 @@ pub struct ErrorResponse {
 }
 
 /// `UNWRAP_ROOT_VALUE`: an object whose first and only key is `htsget`, then nothing it reads.
+///
+/// `@JsonRootName(value = "htsget")` on both response classes names the key. Only the first
+/// JSON value of the body is parsed (`into_iter().next()`), so trailing text after it is not
+/// read, and every failure is the one [`Unreadable`].
 fn root(body: &str) -> Result<serde_json::Map<String, Value>, Unreadable> {
     let value = serde_json::Deserializer::from_str(body)
         .into_iter::<Value>()
@@ -447,6 +536,9 @@ fn root(body: &str) -> Result<serde_json::Map<String, Value>, Unreadable> {
 }
 
 /// `StringDeserializer`: a scalar is its text, and a structure is refused.
+///
+/// `true` reads as `"true"` and a number as serde_json renders it (`"md5":1` reads as `"1"`,
+/// see the tests).
 fn text_of(value: &Value) -> Result<Option<String>, Unreadable> {
     match value {
         Value::Null => Ok(None),
@@ -458,6 +550,8 @@ fn text_of(value: &Value) -> Result<Option<String>, Unreadable> {
 }
 
 /// An enum constant, by its exact spelling or null.
+///
+/// Case-insensitivity covers property NAMES only: `"format":"bam"` is refused (see the tests).
 fn constant(value: &Value, allowed: &[&str]) -> Result<(), Unreadable> {
     match value {
         Value::Null => Ok(()),
@@ -466,6 +560,9 @@ fn constant(value: &Value, allowed: &[&str]) -> Result<(), Unreadable> {
     }
 }
 
+/// One `HtsgetResponse.Block`: `url` parsed as a `java.net.URI` (a text `new URI` refuses fails
+/// the whole body), `headers` as a string map, `class` as an `HtsgetClass`, and any other key
+/// refused, since the mapper does not ignore unknown properties.
 fn block(value: &Value) -> Result<Block, Unreadable> {
     let Value::Object(fields) = value else {
         return Err(Unreadable);
@@ -505,6 +602,10 @@ fn block(value: &Value) -> Result<Block, Unreadable> {
 pub struct Unreadable;
 
 /// `mapper.readValue(jsonBody, HtsgetResponse.class)`. The refusal's text is never read.
+///
+/// The three properties are `@JsonProperty("format")` (an `HtsgetFormat`), `"urls"` (a list of
+/// blocks) and `"md5"`; any other name is refused. A null `urls` leaves `blocks` as `None`, which
+/// is the Java's null list.
 pub fn read_response(body: &str) -> Result<Response, Unreadable> {
     let mut response = Response::default();
     for (name, value) in root(body)? {
@@ -529,7 +630,8 @@ pub fn read_response(body: &str) -> Result<Response, Unreadable> {
     Ok(response)
 }
 
-/// `mapper.readValue(jsonBody, HtsgetErrorResponse.class)`.
+/// `mapper.readValue(jsonBody, HtsgetErrorResponse.class)`: `error` and `message` as text, any
+/// other property refused.
 pub fn read_error_response(body: &str) -> Result<ErrorResponse, Unreadable> {
     let mut response = ErrorResponse::default();
     for (name, value) in root(body)? {
@@ -544,11 +646,21 @@ pub fn read_error_response(body: &str) -> Result<ErrorResponse, Unreadable> {
 
 /// The `data:` branch of `getData`, with what `IllegalArgumentException` says when it throws.
 pub enum DataFailure {
+    /// `"data URI must be base64 encoded: " + dataUri`, the `UserException`.
     NotBase64,
+    /// The decoder's `IllegalArgumentException`, with its message.
     Decode(String),
 }
 
 /// `getData` on a `data:` URI.
+///
+/// ```java
+/// if (!dataUri.matches("^data:.*;base64,.*")) {
+/// ```
+///
+/// then `dataUri.replaceFirst("^data:.*;base64,", "")`. The `.*` is greedy, so what is decoded
+/// is everything after the LAST `;base64,`, hence `rfind`. `.filter(..)` on the `Option` keeps
+/// the match only when the URI also starts with `data:`.
 pub fn decode_data_uri(uri: &str) -> Result<Vec<u8>, DataFailure> {
     let marker = ";base64,";
     let Some(at) = uri.rfind(marker).filter(|_| uri.starts_with("data:")) else {
@@ -558,6 +670,13 @@ pub fn decode_data_uri(uri: &str) -> Result<Vec<u8>, DataFailure> {
 }
 
 /// `Base64.getDecoder().decode`, refusing what it refuses and saying what it says.
+///
+/// **How**: four characters make three bytes, accumulated six bits at a time into `bits` from
+/// bit 18 down; `=` ends the input, valid only as the third character of a unit followed by a
+/// second `=`, or as the fourth. A partial last unit of two or three characters yields one or
+/// two bytes; one character alone is refused. Anything after the padding is refused with its
+/// offset. The messages are the ones the tests assert. `byte as i8` reads the offending byte as
+/// Java's signed `byte`, which is how the message prints a byte above 127 (as `-` and hex).
 pub fn java_base64_decode(source: &[u8]) -> Result<Vec<u8>, String> {
     if source.is_empty() {
         return Ok(Vec::new());

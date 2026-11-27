@@ -7,11 +7,24 @@
 //! Ported from `org.broadinstitute.hellbender.tools.walkers.vqsr.TrancheManager`,
 //! `org.broadinstitute.hellbender.tools.walkers.vqsr.Tranche`,
 //! `org.broadinstitute.hellbender.tools.walkers.vqsr.TruthSensitivityTranche` and
-//! `org.broadinstitute.hellbender.tools.walkers.vqsr.VQSLODTranche` in GATK 4.6.2.0.
+//! `org.broadinstitute.hellbender.tools.walkers.vqsr.VQSLODTranche` in GATK 4.7.0.0; the four
+//! `.java` files are unchanged since 4.6.2.0.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[Datum]` is a borrowed, read-only view of a list; `.to_vec()` makes an owned copy, which
+//!   is how [`sorted`] avoids the Java's in-place `Collections.sort` of the caller's list.
+//! - `std::cmp::Ordering` is `Less`, `Equal` or `Greater`, the sign of a Java `compare` result.
+//! - `Option<Tranche>` is a tranche or nothing, the Java's `null` return of `findTranche`;
+//!   `Result<Vec<Tranche>, String>` is the tranches or the `UserException` text.
+//! - `Tranche { min_vqs_lod: threshold, ..other }` builds a copy of `other` with one field
+//!   replaced.
+//! - `as f64` turns a count into a `double`, as Java's implicit widening in `n / (1.0 * d)`.
 
 /// One scored variant, reduced to what the tranche arithmetic reads off it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Datum {
+    /// The VQSLOD score, `VariantDatum.lod`.
     pub lod: f64,
     /// Present in a resource tagged `known=true`.
     pub is_known: bool,
@@ -30,6 +43,7 @@ pub enum Mode {
 }
 
 impl Mode {
+    /// The enum constant's name, which is what `model.toString()` prints in a tranche row.
     pub fn name(self) -> &'static str {
         match self {
             Mode::Snp => "SNP",
@@ -48,6 +62,10 @@ pub fn compare_lod(a: &Datum, b: &Datum) -> std::cmp::Ordering {
 }
 
 /// `Double.compare`: numeric first, then the signed bit pattern.
+///
+/// Only equal values and NaN reach the bit comparison. Every NaN maps to the one canonical NaN,
+/// as `doubleToLongBits` does, so NaN sorts above `+inf` and all NaNs are equal; `-0.0` has the
+/// sign bit set, so as an `i64` it is negative and sorts below `0.0`.
 fn compare_double(a: f64, b: f64) -> std::cmp::Ordering {
     if a < b {
         return std::cmp::Ordering::Less;
@@ -66,6 +84,9 @@ fn compare_double(a: f64, b: f64) -> std::cmp::Ordering {
 }
 
 /// The variants in LOD order, which is what every step below assumes.
+///
+/// `Collections.sort( data, VariantDatum.VariantDatumLODComparator )`. Both sorts are stable,
+/// so equal LODs keep their input order.
 pub fn sorted(data: &[Datum]) -> Vec<Datum> {
     let mut sorted = data.to_vec();
     sorted.sort_by(compare_lod);
@@ -78,9 +99,18 @@ pub fn sorted(data: &[Datum]) -> Vec<Datum> {
 /// The walk runs from the TOP DOWN, so the entry at zero is one less the whole sensitivity and
 /// the last entry is one less the last variant's own contribution. `n_true_sites` is the count
 /// the tool was given rather than the count in `data`, which is why it is a parameter.
+///
+/// ```java
+/// for ( int i = data.size() - 1; i >= 0; i-- ) {
+///     VariantDatum datum = data.get(i);
+///     nCalledAtTruth += datum.atTruthSite ? 1 : 0;
+///     runningSensitivity[i] = 1 - nCalledAtTruth / (1.0 * nTrueSites);
+/// }
+/// ```
 pub fn running_sensitivity(data: &[Datum], n_true_sites: usize) -> Vec<f64> {
     let mut running = vec![0.0; data.len()];
     let mut called_at_truth = 0;
+    // `(0..n).rev()` counts n-1 down to 0, the Java's `i--` loop.
     for i in (0..data.len()).rev() {
         if data[i].at_truth_site {
             called_at_truth += 1;
@@ -96,6 +126,9 @@ pub fn sensitivity_threshold(target: f64) -> f64 {
 }
 
 /// `countCallsAtTruth`: the truth sites whose LOD reaches `minimum`.
+///
+/// `VariantDatum.countCallsAtTruth` counts a `long` and casts it, `//XXX cast to int for
+/// compatibility`; `as i32` is that cast.
 pub fn calls_at_truth(data: &[Datum], minimum: f64) -> i32 {
     data.iter()
         .filter(|datum| datum.at_truth_site && datum.lod >= minimum)
@@ -107,18 +140,28 @@ pub fn calls_at_truth(data: &[Datum], minimum: f64) -> i32 {
 pub struct Tranche {
     /// The value the first column carries: the target sensitivity, or the REQUESTED score.
     pub index: f64,
+    /// Known variants at or above the minimum LOD; a `long` in the Java.
     pub num_known: i64,
+    /// The rest of those variants.
     pub num_novel: i64,
+    /// `knownTi / Math.max(1.0 * knownTv, 1.0)`, see [`tranche_of_variants`].
     pub known_ti_tv: f64,
     pub novel_ti_tv: f64,
+    /// The LOD that bounds the tranche from below, printed as `minVQSLod`.
     pub min_vqs_lod: f64,
     pub model: Mode,
+    /// Truth sites anywhere in the callset (`countCallsAtTruth(data, Double.NEGATIVE_INFINITY)`).
     pub accessible_truth_sites: i32,
+    /// Truth sites at or above the minimum LOD.
     pub calls_at_truth_sites: i32,
 }
 
 impl Tranche {
     /// `getTruthSensitivity`, which is zero rather than a division when there is no truth site.
+    ///
+    /// ```java
+    /// return accessibleTruthSites > 0 ? callsAtTruthSites / (1.0*accessibleTruthSites) : 0.0;
+    /// ```
     pub fn truth_sensitivity(&self) -> f64 {
         if self.accessible_truth_sites > 0 {
             self.calls_at_truth_sites as f64 / (1.0 * self.accessible_truth_sites as f64)
@@ -133,6 +176,10 @@ impl Tranche {
 /// The counts are NOT over the variants the walk had reached: they are over the whole callset
 /// filtered by that LOD, so a looser target's tranche contains a stricter one's rather than
 /// sitting beside it.
+///
+/// ```java
+/// final double knownTiTv = knownTi / Math.max(1.0 * knownTv, 1.0);
+/// ```
 pub fn tranche_of_variants(data: &[Datum], min_index: usize, index: f64, model: Mode) -> Tranche {
     let min_lod = data[min_index].lod;
     let (mut num_known, mut num_novel) = (0i64, 0i64);
@@ -202,6 +249,8 @@ pub fn empty_tranche(data: &[Datum], min_index: usize, index: f64, model: Mode) 
 /// meets the target. A target no index reaches yields nothing.
 pub fn find_tranche(data: &[Datum], running: &[f64], target: f64, model: Mode) -> Option<Tranche> {
     let threshold = sensitivity_threshold(target);
+    // `find` yields the first `i` that passes, or `None`; `?` then returns `None` from this
+    // function, the Java's `return null` after the loop.
     let index = (0..data.len()).find(|i| running[*i] >= threshold)?;
     Some(tranche_of_variants(data, index, target, model))
 }
@@ -211,6 +260,10 @@ pub fn find_tranche(data: &[Datum], running: &[f64], target: f64, model: Mode) -
 /// Two things separate it from the sensitivity search. The minimum it reports is the REQUEST
 /// rather than the LOD it found, and a request no variant reaches still produces a row: an empty
 /// tranche over the last variant, again with the request as its minimum.
+///
+/// That is `emptyTranche(data, n-1, ...)`. With no data the Java passes -1, which
+/// `emptyTranche` never reads because it tests `data.isEmpty()` first; `saturating_sub` stops
+/// at 0 instead of wrapping below zero, and is equally unread.
 pub fn find_vqslod_tranche(data: &[Datum], threshold: f64, model: Mode) -> Tranche {
     match data.iter().position(|datum| datum.lod >= threshold) {
         Some(index) => Tranche {
@@ -225,6 +278,9 @@ pub fn find_vqslod_tranche(data: &[Datum], threshold: f64, model: Mode) -> Tranc
 }
 
 /// The refusal a first target that no tranche reaches produces.
+///
+/// `UserException` text with `%s` the metric's name and `%.2f` its threshold, which
+/// `format_decimals` renders as Java's `String.format` does.
 pub fn no_tranche_refusal(metric: &str, threshold: f64) -> String {
     format!(
         "Couldn't find any tranche containing variants with a {metric} > {}. Are you \
@@ -277,9 +333,13 @@ pub fn find_vqslod_tranches(data: &[Datum], thresholds: &[f64], model: Mode) -> 
 // ================================================================================================
 
 /// The two headers, which differ in their version number and in their first column.
+///
+/// `TruthSensitivityTranche.CURRENT_VERSION`.
 pub const TRUTH_SENSITIVITY_VERSION: i32 = 5;
+/// `VQSLODTranche.CURRENT_VERSION`.
 pub const VQSLOD_VERSION: i32 = 6;
 
+/// The three `stream.println` lines `TruthSensitivityTranche.printHeader` writes.
 pub fn truth_sensitivity_header() -> String {
     format!(
         "# Variant quality score tranches file\n# Version number {TRUTH_SENSITIVITY_VERSION}\n\
@@ -288,6 +348,7 @@ pub fn truth_sensitivity_header() -> String {
     )
 }
 
+/// The same three lines from `VQSLODTranche`, whose first column is `requestedVQSLOD`.
 pub fn vqslod_header() -> String {
     format!(
         "# Variant quality score tranches file\n# Version number {VQSLOD_VERSION}\n\
@@ -300,6 +361,12 @@ pub fn vqslod_header() -> String {
 ///
 /// It is not the target sensitivity, though the two agree whenever the targets were given in
 /// increasing order. Given 100, 99.9, 99 and 90 the file comes out 90, 99.9, 99, 100.
+///
+/// ```java
+/// return Double.compare(tranche1.callsAtTruthSites, tranche2.callsAtTruthSites);
+/// ```
+///
+/// The `int` counts are widened to `double` for that call, which the `as f64` repeats.
 pub fn tranche_order(a: &Tranche, b: &Tranche) -> std::cmp::Ordering {
     compare_double(a.calls_at_truth_sites as f64, b.calls_at_truth_sites as f64)
 }
@@ -312,7 +379,16 @@ pub fn tranche_order(a: &Tranche, b: &Tranche) -> std::cmp::Ordering {
 ///
 /// Every decimal is `String.format`'s, which rounds half-up on `Double.toString`'s digits: a Ti/Tv
 /// of 363/160 is `2.26875` there and prints `2.2688`, where Rust's own `{:.4}` prints `2.2687`.
+///
+/// The Java format string, field for field:
+///
+/// ```java
+/// return String.format("%.2f,%d,%d,%.4f,%.4f,%.4f,VQSRTranche%s%.2fto%.2f,%s,%d,%d,%.4f%n",
+/// ```
+///
+/// `%n` is the platform line separator; this port writes `\n`.
 pub fn tranche_row(tranche: &Tranche, previous: Option<&Tranche>) -> String {
+    // `use ... as f` imports the function under a short local name for the fields below.
     use gatk_engine::java_format::format_decimals as f;
     format!(
         "{},{},{},{},{},{},VQSRTranche{}{}to{},{},{},{},{}\n",
@@ -336,6 +412,10 @@ pub fn tranche_row(tranche: &Tranche, previous: Option<&Tranche>) -> String {
 ///
 /// The sort is STABLE, so two targets that found the same tranche keep the order they were given
 /// in, and a list of one is not sorted at all.
+///
+/// The Java sorts the caller's list in place with `TrancheComparator` and prints each row with
+/// `stream.printf(t.getTrancheString(prev))`; a row carries no `%`, so using it as a format
+/// string changes nothing.
 pub fn tranches_string(tranches: &[Tranche]) -> String {
     let mut tranches = tranches.to_vec();
     if tranches.len() > 1 {
@@ -350,7 +430,7 @@ pub fn tranches_string(tranches: &[Tranche]) -> String {
     text
 }
 
-/// The whole truth-sensitivity file.
+/// The whole truth-sensitivity file: header, then the sorted rows.
 pub fn truth_sensitivity_file(tranches: &[Tranche]) -> String {
     truth_sensitivity_header() + &tranches_string(tranches)
 }

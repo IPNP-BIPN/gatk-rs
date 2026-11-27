@@ -1,6 +1,8 @@
 //! `CalculateMixingFractions`, ported from
 //! `org.broadinstitute.hellbender.tools.walkers.validation.CalculateMixingFractions`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `CalculateMixingFractions.java` is unchanged since 4.6.2.0).
+//!
+//! Java quotes are verbatim apart from line breaks added to fit 100 columns.
 //!
 //! One bucket per sample, filled at singleton het SNPs from the pileup of a pooled bam, and
 //! normalised at the end by the sum of every bucket's alt fraction.
@@ -9,8 +11,13 @@
 //!
 //! ```java
 //! private final Map<String, AltAndTotalReadCounts> sampleCounts = new HashMap<>();
-//! ...
-//! sampleCounts.entrySet().stream().map(e -> new MixingFraction(e.getKey(), ...))
+//! ```
+//!
+//! ```java
+//! final List<MixingFraction> mixingFractions = sampleCounts.entrySet().stream()
+//!         .map(e -> new MixingFraction(e.getKey(),
+//!                 e.getValue().getAltFraction() / mixingFractionNormalizer))
+//!         .collect(Collectors.toList());
 //! ```
 //!
 //! The rows come out in the order a `HashMap` iterates its keys, which is neither the header's
@@ -31,8 +38,10 @@
 //! # Singleton is either of two tests, and the first one wins
 //!
 //! ```java
-//! vc.isBiallelic() && vc.isSNP() && ((vc.hasAttribute(AC) && AC[0] == 1)
-//!     || vc.getGenotypes().stream().filter(Genotype::isHet).count() == 1)
+//! return vc.isBiallelic() && vc.isSNP()
+//!         && ( (vc.hasAttribute(VCFConstants.ALLELE_COUNT_KEY)
+//!         && getArrayAttribute(vc, VCFConstants.ALLELE_COUNT_KEY)[0] == 1)
+//!         || vc.getGenotypes().stream().filter(genotype -> genotype.isHet()).count() == 1);
 //! ```
 //!
 //! `AC=2` with one het is still counted, because the second test is reached when the first fails;
@@ -48,6 +57,19 @@
 //! never towards the alt. A read that ends before the site contributes nothing.
 //!
 //! Vendor-failed reads are skipped by the tool itself rather than by a read filter.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[T]` is a borrowed, read-only view of a list, and `&HashMap<..>` a borrowed map; the caller
+//!   keeps ownership.
+//! - `Option<T>` is "a value or nothing" (Java's `Optional`), and `?` after one returns `None`
+//!   from the whole function at once.
+//! - `Result<T, E>` is "a value or an error"; `?` after one hands the error to the caller.
+//! - `.iter().filter(..).count()`, `.find(..)`, `.map(..).sum()` are the stream operations of the
+//!   same names (`find` is `filter(..).findFirst()`).
+//! - `x as f64` converts an integer to `double`, as Java's implicit widening does.
+//! - `while let Ok(Some(_)) = f() { .. }` loops for as long as `f` answers a value.
+//! - `#[derive(Default)]` gives a struct an all-zero constructor, used for an empty bucket.
 
 use std::collections::HashMap;
 
@@ -92,12 +114,18 @@ impl CalculateMixingFractionsError {
 /// One sample's bucket: `AltAndTotalReadCounts`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct AltAndTotalReadCounts {
+    /// `altCount`, a `MutableLong` in the Java.
     pub alt: i64,
+    /// `totalCount`, a `MutableLong` in the Java.
     pub total: i64,
 }
 
 impl AltAndTotalReadCounts {
     /// `getAltFraction()`, which is `0/0` and therefore NaN for a bucket nothing was added to.
+    ///
+    /// ```java
+    /// public double getAltFraction() { return altCount.doubleValue() / totalCount.doubleValue(); }
+    /// ```
     pub fn alt_fraction(&self) -> f64 {
         self.alt as f64 / self.total as f64
     }
@@ -142,6 +170,8 @@ fn first_allele_count(variant: &VariantContext) -> Option<f64> {
     first_number(value)
 }
 
+/// The first number in one attribute value, whatever shape the codec decoded it into: a list's
+/// first element, or the text before the first comma.
 fn first_number(value: &Value) -> Option<f64> {
     match value {
         Value::Int(number) => Some(*number as f64),
@@ -193,6 +223,8 @@ pub fn site_counts(reads: &[BamRecord], start: i32, alt_base: u8) -> AltAndTotal
         if read.flags & VENDOR_QUALITY_CHECK_FAILED != 0 {
             continue;
         }
+        // The Java steps while `asm.stepForwardOnGenome() != null` and the position is still
+        // `< vc.getStart()`; this breaks on the same condition after the same step.
         let mut machine = AlignmentStateMachine::new(read);
         // The reference's loop ends on a null step, and a malformed read would have been refused
         // by the walker's filters long before this point.
@@ -205,6 +237,8 @@ pub fn site_counts(reads: &[BamRecord], start: i32, alt_base: u8) -> AltAndTotal
             continue;
         }
         let offset = machine.read_offset();
+        // `offset as usize` would wrap a negative offset to a huge index, so the sign is tested
+        // first; `||` short-circuits as in Java.
         let base = if offset < 0 || offset as usize >= read.read_bases.len() {
             // A deletion, whose pileup element reports the deletion base rather than a read base.
             b'D'
@@ -222,6 +256,15 @@ pub fn site_counts(reads: &[BamRecord], start: i32, alt_base: u8) -> AltAndTotal
 /// `onTraversalSuccess`: the rows, in the order the `HashMap` iterates them.
 ///
 /// `samples` is the header's sample list, which is the insertion order of the map.
+///
+/// ```java
+/// final double mixingFractionNormalizer = sampleCounts.values().stream()
+///         .mapToDouble(AltAndTotalReadCounts::getAltFraction).sum();
+/// ```
+///
+/// The normalizer here is a left-to-right sum in HEADER order, while the Java's runs over
+/// `values()` in hash order through `DoubleStream.sum`. The two agree whenever the sum is exact
+/// (the unit tests' quarters and halves); this port has not shown they agree otherwise.
 pub fn mixing_fractions(
     samples: &[String],
     counts: &HashMap<String, AltAndTotalReadCounts>,
@@ -240,6 +283,8 @@ pub fn mixing_fractions(
         .iter()
         .map(|sample| (sample.clone(), string_hash_code(sample)))
         .collect();
+    // `hash_map_order` lays the keys out as `HashMap<String, _>` iterates them, from each key's
+    // `String.hashCode`; it refuses (the `?`) a layout it does not model.
     Ok(hash_map_order(&entries)?
         .into_iter()
         .map(|sample| {

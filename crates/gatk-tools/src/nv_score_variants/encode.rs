@@ -2,6 +2,22 @@
 //!
 //! Each `Err` is a Python exception the reference would have ended on. The tool's Java half turns
 //! any of them into `Tool returned: 1` and a success.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, String>` is "a value or an error"; here the error is the text of the Python
+//!   exception. `?` after an expression returns that error to the caller at once;
+//! - `Option<T>` is "a value or nothing", and `let Some(x) = y else { .. }` takes the value or
+//!   runs the block, which must leave the function;
+//! - `&[u8]` is a borrowed, read-only view of bytes; `&mut [f32]` a writable one;
+//! - `.iter().map(..).collect()` is Java's stream, map, collect, and `.zip` walks two sequences in
+//!   step, stopping at the shorter;
+//! - `x as usize`, `x as i32` between integer types truncate or wrap and never fail, as Java's
+//!   `(int)` on a `long` does; `as f32` from a double rounds to the nearest float;
+//! - `BTreeMap` is a sorted map, Java's `TreeMap`; iterating it in reverse is Python's
+//!   `sorted(d, reverse=True)` over a dict's keys;
+//! - `sort_by_key` is a stable sort, as Python's `list.sort` is, so two sorts in a row order by
+//!   the second key first and the first key among ties.
 
 use super::vcf::{Definition, InfoEntry, InfoValue, Kind, Number, Record};
 use htsjdk_bam::cigar::Op;
@@ -11,8 +27,12 @@ use std::collections::{BTreeMap, HashMap};
 
 /// The tensors' edge: reads by positions, and the window of reference.
 pub const WINDOW: usize = 128;
+/// How many reads a read tensor holds: the reservoir's size, and the tensor's first axis.
 const READ_LIMIT: usize = 128;
 /// `ReadTensorEncoder._create_channel_map`.
+///
+/// Channels 0 to 3 are the read's A, C, G, T and 4 its indel; 5 to 8 the reference's A, C, G, T and
+/// 9 its indel; 10 to 13 the flag bits `0x10`, `0x20`, `0x40` and `0x80`; 14 the mapping quality.
 pub const READ_CHANNELS: usize = 15;
 const READ_INDEL: usize = 4;
 const REFERENCE_BASE: usize = 5;
@@ -28,6 +48,10 @@ const SKIP: u8 = b'~';
 const INDEL: u8 = b'*';
 
 /// `SeqIO.to_dict(SeqIO.parse(reference_file, format="fasta"))`, upper-cased where it is used.
+///
+/// A contig's name is its title up to the first white space, a repeated name is the `ValueError`
+/// `to_dict` raises, and spaces and carriage returns inside the sequence lines are dropped. The
+/// sequence is kept as written; the encoders upper-case it as they read it.
 pub fn read_fasta(path: &str) -> Result<HashMap<String, Vec<u8>>, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("FileNotFoundError: {path}: {e}"))?;
     let mut contigs = HashMap::new();
@@ -54,7 +78,11 @@ pub fn read_fasta(path: &str) -> Result<HashMap<String, Vec<u8>>, String> {
     Ok(contigs)
 }
 
-/// `get_variant_window`.
+/// `get_variant_window`: the zero-based, half-open window of reference around `position`.
+///
+/// Sixty-four either side. Near the start of a contig `start` is negative, and the end moves right
+/// by as much, but never by more than the reference allele's length less one; the test below shows
+/// it. The `window_size % 2` the reference adds to the end is zero for 128 and so not written.
 fn variant_window(position: i64, reference_size: i64) -> (i64, i64) {
     let half = WINDOW as i64 / 2;
     let start = position - half;
@@ -100,6 +128,10 @@ pub fn variant_type(record: &Record) -> i64 {
 }
 
 /// Python's `float(text)`: blanks around it, and underscores between digits.
+///
+/// An underscore is allowed only with a digit on both sides; any other underscore refuses the
+/// whole text, and then the underscores are removed and the rest parsed. The test below pins
+/// what is taken and what is not.
 fn python_float(text: &str) -> Option<f64> {
     let trimmed = text.trim();
     let bytes = trimmed.as_bytes();
@@ -118,8 +150,8 @@ fn python_float(text: &str) -> Option<f64> {
 /// `encoding[i] = variant.info.get(key, 0.0)`: `bcf_info_get_value`, then what NumPy makes of it.
 ///
 /// `tools/nvscorevariants/probe_edges.py` measures each arm. Only `Number=1`, or no definition at
-/// all, is a scalar to pysam; anything else is a tuple, even of one, which NumPy will not take. What
-/// is missing is `None`, which it takes as a NaN, and text goes through `float`.
+/// all, is a scalar to pysam; anything else is a tuple, even of one, which NumPy will not take.
+/// What is missing is `None`, which it takes as a NaN, and text goes through `float`.
 fn annotation(entry: &InfoEntry, definition: Option<&Definition>) -> Result<f64, String> {
     let sequence_error = || "ValueError: setting an array element with a sequence.".to_string();
     if definition.is_some_and(|d| d.kind == Kind::Flag) {
@@ -145,6 +177,10 @@ fn annotation(entry: &InfoEntry, definition: Option<&Definition>) -> Result<f64,
 }
 
 /// `AnnotationEncoder` with `BEST_PRACTICES`.
+///
+/// Seven values in the order of the list. An absent key stays `0.0`, which is `get(key, 0.0)`'s
+/// default; a present one goes through `annotation`, computed as a double and then rounded to
+/// a float by `as f32`, the model's input type.
 pub fn annotations(
     record: &Record,
     definitions: &HashMap<String, Definition>,
@@ -161,6 +197,11 @@ pub fn annotations(
 }
 
 /// `ReferenceEncoder` with `_LeftStrategy` and `DNAVectorEncoder("N")`: `(window, 4)`.
+///
+/// One row per position of the window, A C G T one-hot, an ambiguity code a quarter in each, and
+/// any other byte all zeros. A window that starts before the contig is read from position zero,
+/// and the `+ 1` when `start < 0` is `_LeftStrategy.get_interval_end`'s own; it can push the
+/// window one past 128 positions, which is the `IndexError` below.
 pub fn reference_tensor(
     contigs: &HashMap<String, Vec<u8>>,
     record: &Record,
@@ -199,6 +240,10 @@ pub fn reference_tensor(
 }
 
 /// `random_generator.Random`, which is `java.util.Random` by way of NumPy's wrapping integers.
+///
+/// GATK's Python reimplements the generator so the reservoir keeps the same reads as
+/// `CNNScoreVariants` did. Its arithmetic is on NumPy's `int64` and `int32`, which wrap on
+/// overflow rather than growing as Python integers do, hence the `wrapping_*` calls and the casts.
 struct JavaRandom {
     seed: i64,
 }
@@ -214,11 +259,20 @@ impl JavaRandom {
         }
     }
 
+    /// `next(bits)`: one step of the 48-bit linear congruence, then its top `bits` bits.
+    ///
+    /// `wrapping_mul` and `wrapping_add` are two's-complement arithmetic that wraps on overflow, as
+    /// Java's `long` and NumPy's `int64` do; a plain `*` would stop a debug build with a panic.
     fn next(&mut self, bits: u32) -> i32 {
         self.seed = (self.seed.wrapping_mul(MULTIPLIER).wrapping_add(ADDEND)) & MASK;
         (self.seed >> (48 - bits)) as i32
     }
 
+    /// `nextInt(n)`: uniform in `[0, n)`.
+    ///
+    /// A power of two takes the top bits at once. Anything else rejects the draws whose remainder
+    /// would favour small values; the test is the sum cast to an `int32`, so it is negative exactly
+    /// when the `int32` sum wraps. The test below pins 20000 answers against the reference's class.
     fn next_int(&mut self, n: i64) -> i32 {
         if n > 0 && n.count_ones() == 1 {
             return ((n.wrapping_mul(i64::from(self.next(31)))) >> 31) as i32;
@@ -233,7 +287,9 @@ impl JavaRandom {
     }
 }
 
-/// `pysam`'s `query_alignment_start`.
+/// `pysam`'s `query_alignment_start`: how many read bases the leading soft clips cover.
+///
+/// Hard clips hold no bases and are passed over; the first operation of any other kind ends it.
 fn query_alignment_start(read: &BamRecord) -> i64 {
     let mut offset = 0i64;
     for element in &read.cigar.elements {
@@ -246,7 +302,9 @@ fn query_alignment_start(read: &BamRecord) -> i64 {
     offset
 }
 
-/// `get_start`.
+/// `get_start`: zero-based, where the read's first base would sit, soft clips included.
+///
+/// An unmapped read answers -1.
 fn start_of(read: &BamRecord) -> i64 {
     if read.read_unmapped() {
         return -1;
@@ -263,12 +321,15 @@ fn cigar_tuples(read: &BamRecord) -> Vec<(u8, i64)> {
         .collect()
 }
 
+/// BAM's numeric codes for the operations `encoders.py` names; `CODE_TO_CIGAR` is the letter for
+/// each code, in BAM's order.
 const CIGAR_M: u8 = 0;
 const CIGAR_I: u8 = 1;
 const CIGAR_D: u8 = 2;
 const CIGAR_S: u8 = 4;
 const CODE_TO_CIGAR: &[u8] = b"MIDNSHP=XB";
 
+/// `CODES_TO_COUNT`: the operations that move along the read tensor's columns.
 fn counts(code: u8) -> bool {
     matches!(code, CIGAR_M | CIGAR_I | CIGAR_D | CIGAR_S)
 }
@@ -283,7 +344,12 @@ fn variant_is_snp(record: &Record) -> bool {
             .all(|alt| matches!(alt.as_str(), "A" | "C" | "G" | "T" | "N" | "*"))
 }
 
-/// `get_base_to_sort_by`.
+/// `get_base_to_sort_by`: the byte a read is sorted by, which is its base at the variant.
+///
+/// For a SNP, the base at the variant's offset from the read's start, clamped into the read. For
+/// anything else, the operation covering that offset decides: an `M` gives the base, any other
+/// gives the operation's letter. `Z` for a read with no bases and `Y` for one whose operations end
+/// first; both letters sort after the four bases.
 fn base_to_sort_by(read: &BamRecord, record: &Record, snp: bool) -> u8 {
     if read.read_bases.is_empty() {
         return b'Z';
@@ -325,6 +391,9 @@ fn phred_table() -> Vec<(f32, f32)> {
 }
 
 /// `AMBIGUITY_CODES`, for a read's base.
+///
+/// The thirds are written as the reference writes them, `0.333` and `0.334`, not as `1/3`, and
+/// `None` is any byte that is not a code, which leaves the cell at zero.
 fn read_ambiguity(base: u8) -> Option<[f64; 4]> {
     Some(match base {
         b'K' => [0.0, 0.0, 0.5, 0.5],
@@ -343,6 +412,13 @@ fn read_ambiguity(base: u8) -> Option<[f64; 4]> {
 }
 
 /// `_add_insertions` over any sequence. A read's quality and a read's bases go through it in step.
+///
+/// `<T: Clone>` makes it generic: the same code for a `Vec<u8>` of bases and of qualities. Keys
+/// are taken from the highest down so that an insertion never moves the index of one still to
+/// come. A key before `beginning` prepends. A key inside the sequence, or anywhere when it is not
+/// `padded`, splices; a slice past the end clamps to the end, as Python's does. A padded key past
+/// the end but inside the window pads with `padded` up to the key and then appends. A negative
+/// count is an empty insertion, as a Python string times a negative number is empty.
 fn add_insertions<T: Clone>(
     sequence: Vec<T>,
     insertions: &BTreeMap<i64, i64>,
@@ -376,6 +452,10 @@ fn add_insertions<T: Clone>(
 }
 
 /// `ReadTensorEncoder`, with its reservoir, whose state runs across the whole file.
+///
+/// One instance per run, seeded once with `GATK_RANDOM_SEED` as the reference's module-level
+/// `mRandomGenerator` is, so which reads a variant keeps depends on how many reads every variant
+/// before it drew. `phred` is `phred_table`, computed once.
 pub struct ReadTensorEncoder {
     random: JavaRandom,
     phred: Vec<(f32, f32)>,
@@ -388,6 +468,9 @@ impl Default for ReadTensorEncoder {
 }
 
 /// What `filter_read` keeps, or the exception one of its `len()`s or the unbound name ends on.
+///
+/// The reference's other checks are written `if ...: True`, which does nothing, so they are not
+/// here; only the `len()` of a missing value and the read group can stop or drop a read.
 fn keeps(read: &BamRecord) -> Result<bool, String> {
     if read.base_qualities.is_empty() {
         return Err("TypeError: object of type 'NoneType' has no len()".to_string());
@@ -407,16 +490,19 @@ fn keeps(read: &BamRecord) -> Result<bool, String> {
     Ok(!group.to_ascii_lowercase().contains("artificial"))
 }
 
+/// The `RG` tag as text, or `None`.
 fn read_group(read: &BamRecord) -> Option<String> {
     match read.tags.get(Tag::new(b"RG")) {
         Some(TagValue::Str(group)) => Some(group.clone()),
         // `get_tag` answers with whatever it is, and `.lower()` is what then fails.
         Some(TagValue::Char(group)) => Some((*group as char).to_string()),
+        // No tag, and a tag of any other type, both come out as the unbound name.
         _ => None,
     }
 }
 
 impl ReadTensorEncoder {
+    /// A fresh encoder, seeded with `GATK_RANDOM_SEED`, 47382911.
     pub fn new() -> ReadTensorEncoder {
         ReadTensorEncoder {
             random: JavaRandom::new(47382911),
@@ -425,6 +511,10 @@ impl ReadTensorEncoder {
     }
 
     /// `__call__`: `(reads, window, channels)`. `fetched` is `fetch(contig, start, stop)`.
+    ///
+    /// The steps are the reference's: keep up to 128 reads by reservoir sampling, find the
+    /// insertions they share, sort them, write the reference into every row, then each read into
+    /// its own row. Rows past the reads kept hold only the reference.
     pub fn encode(
         &mut self,
         contigs: &HashMap<String, Vec<u8>>,
@@ -457,11 +547,12 @@ impl ReadTensorEncoder {
         }
         let insertions = get_insertions(&reads, start);
         let snp = variant_is_snp(record);
+        // `_sort_reads`: by start, then stably by the base at the variant.
         reads.sort_by_key(start_of);
         reads.sort_by_key(|read| base_to_sort_by(read, record, snp));
 
         let mut tensor = vec![0f32; READ_LIMIT * WINDOW * READ_CHANNELS];
-        // `get_reference`.
+        // `get_reference`, with the same `+ 1` when the window starts before the contig.
         let contig = contigs
             .get(&record.contig)
             .ok_or_else(|| format!("KeyError: '{}'", record.contig))?;
@@ -506,6 +597,11 @@ impl ReadTensorEncoder {
     }
 
     /// `_fill_rows`.
+    ///
+    /// A base's four channels are its probability and the other three a third of the rest, from
+    /// `phred_table`; an indel marks channel 4; an ambiguity code writes its fractions. The flag
+    /// and mapping-quality channels then cover the read's columns from its first base up to, but
+    /// not including, its last.
     fn fill_row(
         &self,
         row: usize,
@@ -567,7 +663,10 @@ impl ReadTensorEncoder {
     }
 }
 
-/// `get_insertions`.
+/// `get_insertions`: for each tensor column, the longest insertion any kept read has there.
+///
+/// Keys are columns relative to the window's start, so a read starting before the window gives
+/// negative ones. A read whose start is 128 or more from the window's either way is skipped.
 fn get_insertions(reads: &[BamRecord], interval_start: i64) -> BTreeMap<i64, i64> {
     let mut insertions = BTreeMap::new();
     for read in reads {
@@ -592,7 +691,12 @@ fn get_insertions(reads: &[BamRecord], interval_start: i64) -> BTreeMap<i64, i64
     insertions
 }
 
-/// `_get_sequence_and_quality`.
+/// `_get_sequence_and_quality`: a read's bases and qualities, aligned to the window's columns.
+///
+/// The read's own insertions shrink the shared ones to the extra columns it lacks, its deletions
+/// become runs of `*`, and the shared insertions it does not have at all are filled whole. The
+/// read is cut to 128 bases first, then trimmed at the front or padded with `~` (which the row
+/// filling skips) so its first base lands in its column.
 fn sequence_and_quality(
     read: &BamRecord,
     insertions: &BTreeMap<i64, i64>,
@@ -639,7 +743,12 @@ fn sequence_and_quality(
     (sequence, quality)
 }
 
-/// `AlignmentFile.fetch`'s test on top of what the index returned: `bam_endpos` against `[beg, end)`.
+/// `AlignmentFile.fetch`'s test on top of what the index returned: `bam_endpos` against
+/// `[beg, end)`.
+///
+/// The reference span counts `M`, `D`, `N`, `=` and `X`. A read that covers nothing, unmapped or
+/// all insertions and clips, is given a span of one, as `bam_endpos` gives it, which is why
+/// `mod.rs` queries one position wider than the record.
 pub fn overlaps(read: &BamRecord, begin: i64, end: i64) -> bool {
     let start = i64::from(read.alignment_start) - 1;
     let mut length = 0i64;

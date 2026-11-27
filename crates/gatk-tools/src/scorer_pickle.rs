@@ -6,11 +6,30 @@
 //! with a random `long` in its name, so two runs of the reference differ there and nothing can
 //! match it. The port writes the same pickle with that name zeroed, at the twenty digits the name
 //! usually has, and the suite compares with the digits masked. The framing is `_Framer`'s: a
-//! frame closes at the first `save` past 64 KiB, which is why the writer checks before each one.
+//! frame closes at the first `save` that finds it at or past 64 KiB, which is why the writer checks
+//! before each one.
 //!
 //! **Reading**: the opcodes are interpreted into plain values and nothing in the file runs. A
 //! scorer written by something other than this script at scikit-learn 1.3.2 is refused, and
 //! keeps its interpreter's refusal in the tool.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is "a `T` or nothing", and `?` after an expression returns `None` from the
+//!   whole function when that expression is `None`. The reader is written almost entirely in
+//!   it: any byte it does not expect makes the read `None`, which is the refusal;
+//! - `let Value::List(list) = x else { return None; }` takes `x` apart if it is that variant and
+//!   leaves the function otherwise. It has no Java equivalent; think `instanceof` with a cast and
+//!   an early return;
+//! - `Rc<T>` is a shared, reference-counted pointer and `RefCell<T>` makes its contents writable
+//!   through it. Together they give the interpreter what Java gives every object: the memo and
+//!   the stack can hold the same list, and appending through one is seen through the other, as
+//!   pickle's memo requires;
+//! - `impl FnMut(&mut Writer, usize)` is a closure parameter, Java's functional interface, and
+//!   `|w, index| { ... }` is the closure itself;
+//! - `to_le_bytes` and `to_be_bytes` are the value's bytes little- and big-endian. Pickle's
+//!   integers and lengths are little-endian, its `BINFLOAT` big-endian, and numpy's array data in
+//!   these files little-endian.
 use crate::isolation_forest::{Forest, Node, Scorer, ScoringTree};
 use crate::scorer_pickle_template as template;
 use std::cell::RefCell;
@@ -27,7 +46,10 @@ pub fn script_name(tmp_dir: &str) -> String {
     format!("{dir}{}", &SCRIPT_NAME["/tmp".len()..])
 }
 
+/// The size at or past which `_Framer` closes the frame it is building.
 const FRAME_TARGET: usize = 64 * 1024;
+
+// Pickle's opcodes, by their names in `pickle.py`.
 
 const MARK: u8 = b'(';
 const STOP: u8 = b'.';
@@ -85,13 +107,16 @@ const COUNT_KEY: u8 = 184;
 const NODES_KEY: u8 = 185;
 const DEPTH_KEY: u8 = 132;
 
-/// `pickle._Framer` and the opcodes it is asked to write.
+/// `pickle._Framer` and the opcodes it is asked to write. `frame` is the frame being built and
+/// `out` what has been committed: the `PROTO 4` header and every closed frame.
 struct Writer {
     out: Vec<u8>,
     frame: Vec<u8>,
 }
 
 impl Writer {
+    /// `commit_frame`: close the frame once it reaches the target, or at the end (`force`). A
+    /// frame shorter than four bytes goes out bare, without the `FRAME` opcode and its length.
     fn commit(&mut self, force: bool) {
         if self.frame.len() >= FRAME_TARGET || (force && !self.frame.is_empty()) {
             if self.frame.len() >= 4 {
@@ -116,10 +141,15 @@ impl Writer {
         self.frame.push(op);
     }
 
+    /// `MEMOIZE`: the value on top of the stack takes the next memo index. The fixed runs leave
+    /// the memo at the indices the constants above name, so every `MEMOIZE` written here has to
+    /// match the reference's one for one, or each later `BINGET` reads the wrong value.
     fn memoize(&mut self) {
         self.op(MEMOIZE);
     }
 
+    /// `BINGET`: push memo entry `index` again, which is how pickle writes an object it has
+    /// already written.
     fn get(&mut self, index: u8) {
         self.check();
         self.op(BINGET);
@@ -141,7 +171,8 @@ impl Writer {
         self.op(NEWTRUE);
     }
 
-    /// `save_long`.
+    /// `save_long`: the shortest of `BININT1` (unsigned byte), `BININT2` (unsigned short), `BININT`
+    /// (signed int) and `LONG1` (length-prefixed two's complement) that holds the value.
     fn int(&mut self, value: i64) {
         self.check();
         if (0..=0xff).contains(&value) {
@@ -172,13 +203,16 @@ impl Writer {
         }
     }
 
+    /// `save_float`: `BINFLOAT` and the eight bytes big-endian.
     fn float(&mut self, value: f64) {
         self.check();
         self.op(BINFLOAT);
         self.raw(&value.to_be_bytes());
     }
 
-    /// `save_str`.
+    /// `save_str`: `SHORT_BINUNICODE` up to 255 UTF-8 bytes, `BINUNICODE` past that, then
+    /// memoized. The length is in bytes, not characters (`len()` of a Rust string is its UTF-8
+    /// byte count).
     fn string(&mut self, value: &str) {
         self.check();
         if value.len() <= 0xff {
@@ -235,6 +269,8 @@ impl Writer {
         self.memoize();
     }
 
+    /// The rest of `save_ndarray` after the dtype: `False` (not Fortran order), the data bytes,
+    /// then the closing tuples and the `REDUCE` that calls `_create_array`.
     fn array_end(&mut self, data: &[u8]) {
         self.falsity();
         self.bytes(data);
@@ -247,13 +283,16 @@ impl Writer {
         self.memoize();
     }
 
+    /// A whole array whose dtype is already in the memo at `dtype`.
     fn array(&mut self, shape: &[i64], dtype: u8, data: &[u8]) {
         self.array_start(shape);
         self.get(dtype);
         self.array_end(data);
     }
 
-    /// `_batch_appends`, with the list's elements written by `item`.
+    /// `_batch_appends`, with the list's elements written by `item`: batches of 1000 under
+    /// `MARK ... APPENDS`, a batch of one as a bare `APPEND`. A list whose length is a multiple of
+    /// 1000 ends on an empty batch, which writes nothing.
     fn appends(&mut self, count: usize, mut item: impl FnMut(&mut Writer, usize)) {
         let mut at = 0;
         loop {
@@ -275,7 +314,8 @@ impl Writer {
         }
     }
 
-    /// `save_tuple`, with the elements written by `item`.
+    /// `save_tuple`, with the elements written by `item`: up to three elements as `EMPTY_TUPLE`,
+    /// `TUPLE1`, `TUPLE2` or `TUPLE3` after them, more under `MARK ... TUPLE`.
     fn tuple(&mut self, count: usize, mut item: impl FnMut(&mut Writer, usize)) {
         if count <= 3 {
             for index in 0..count {
@@ -294,15 +334,21 @@ impl Writer {
     }
 }
 
+/// A `float64` array's data. `flat_map` concatenates each value's eight bytes.
 fn little_doubles(values: impl Iterator<Item = f64>) -> Vec<u8> {
     values.flat_map(f64::to_le_bytes).collect()
 }
 
+/// An `int64` array's data.
 fn little_ints(values: impl Iterator<Item = i64>) -> Vec<u8> {
     values.flat_map(i64::to_le_bytes).collect()
 }
 
 /// `Tree.nodes` as the struct array holds it: `missing_go_to_left` and its padding are zero.
+///
+/// Sixty-four bytes a node, in field order: three `int64`s, two `float64`s, an `int64`, a
+/// `float64`, then the byte and seven of padding. [`read`] takes the first four fields back at the
+/// same offsets.
 fn node_bytes(nodes: &[Node]) -> Vec<u8> {
     let mut out = Vec::with_capacity(nodes.len() * 64);
     for node in nodes {
@@ -319,6 +365,10 @@ fn node_bytes(nodes: &[Node]) -> Vec<u8> {
 }
 
 /// What follows the first tree's dictionary in each of the others.
+///
+/// The first tree memoized every key and class a tree needs, so this one is written almost
+/// entirely as `BINGET`s of those indices, with the tree's own numbers between them. The bare
+/// numbers passed to `get` are memo indices from that first tree, as fixed as the named ones.
 fn later_tree(w: &mut Writer, forest: &Forest, index: usize) {
     let tree = &forest.trees[index];
     let columns = forest.statistics.len() as i64;
@@ -395,6 +445,9 @@ fn later_tree(w: &mut Writer, forest: &Forest, index: usize) {
 }
 
 /// The first tree, which is where the memo learns the shape of the others.
+///
+/// A run that follows a spliced string or bytes value is written from its second byte (`[1..]`):
+/// its first is the `MEMOIZE` (`0x94`) that `string` and `bytes` have already written.
 fn first_tree(w: &mut Writer, forest: &Forest) {
     let tree = &forest.trees[0];
     let columns = forest.statistics.len() as i64;
@@ -421,6 +474,10 @@ fn first_tree(w: &mut Writer, forest: &Forest) {
 }
 
 /// `dill.dump(scorer_lambda, f)`, from a script run as `script_name`.
+///
+/// The fixed runs of [`crate::scorer_pickle_template`] in order, with the fit's values written
+/// between them: the code object's file name, the imputer's statistics, the forest's
+/// hyperparameters and trees, then the forest's per-tree arrays and the annotation names.
 pub fn write(forest: &Forest, script_name: &str) -> Vec<u8> {
     let columns = forest.statistics.len() as i64;
     let mut w = Writer {
@@ -543,6 +600,8 @@ pub fn write(forest: &Forest, script_name: &str) -> Vec<u8> {
     w.op(TUPLE);
     w.memoize();
     w.op(BUILD);
+    // numpy's `U<n>` dtype: each name is `n` UTF-32 code points, zero-padded, where `n` is the
+    // longest name in characters; hence the itemsize `longest * 4` above.
     let mut names = Vec::with_capacity(forest.annotation_names.len() * longest * 4);
     for name in &forest.annotation_names {
         let mut written = 0;
@@ -567,6 +626,11 @@ pub fn write(forest: &Forest, script_name: &str) -> Vec<u8> {
 }
 
 /// A value on the interpreter's stack. Nothing it names is ever looked up.
+///
+/// A Rust `enum` with data is a closed set of variants, each with its own fields; `match` over
+/// one must handle every variant, which the compiler checks. Floats and booleans keep no value
+/// because the reader never needs one from the pickle's own opcodes; the arrays it needs are
+/// bytes.
 #[derive(Debug, Clone)]
 enum Value {
     Mark,
@@ -583,6 +647,7 @@ enum Value {
     Call(Rc<Call>),
 }
 
+/// A `REDUCE` or `NEWOBJ`: what was called with what, and the state a later `BUILD` gave it.
 #[derive(Debug)]
 struct Call {
     callable: Value,
@@ -598,6 +663,7 @@ impl Value {
         }
     }
 
+    /// This value, if it is a call of the global `name` (`module.qualname`).
     fn call_of(&self, name: &str) -> Option<&Call> {
         match self {
             Value::Call(call) => match &call.callable {
@@ -619,6 +685,7 @@ impl Value {
         })
     }
 
+    /// A tuple's or list's elements, copied out.
     fn elements(&self) -> Option<Vec<Value>> {
         match self {
             Value::Tuple(values) => Some(values.as_ref().clone()),
@@ -635,7 +702,8 @@ impl Value {
         }
     }
 
-    /// `_create_array(...)`'s shape and data.
+    /// `_create_array(...)`'s shape, data and dtype, from the third argument, the
+    /// `(1, shape, dtype, False, bytes)` state the writer's `array_start` and `array_end` lay out.
     fn array(&self) -> Option<(Vec<i64>, Rc<Vec<u8>>, Value)> {
         let call = self.call_of("dill._dill._create_array")?;
         let arguments = call.arguments.elements()?;
@@ -654,16 +722,23 @@ impl Value {
 }
 
 /// Interprets a pickle, keeping every array and instance that was made along the way.
+///
+/// A stack machine over the opcodes these scorers contain and no others: an unknown opcode,
+/// a short read or a stack in the wrong shape is `None`. `REDUCE` and `NEWOBJ` record the call
+/// instead of making it, so no global is imported and no code in the file runs.
 fn interpret(bytes: &[u8]) -> Option<Vec<Value>> {
     let mut stack: Vec<Value> = Vec::new();
     let mut memo: HashMap<u32, Value> = HashMap::new();
     let mut made = Vec::new();
     let mut at = 0usize;
+    // The next `n` bytes, or `None` past the end. `checked_add` refuses a length that would
+    // overflow instead of wrapping.
     fn take<'a>(bytes: &'a [u8], at: &mut usize, n: usize) -> Option<&'a [u8]> {
         let slice = bytes.get(*at..at.checked_add(n)?)?;
         *at += n;
         Some(slice)
     }
+    // Everything above the topmost `MARK`, with the mark itself removed.
     fn until_mark(stack: &mut Vec<Value>) -> Option<Vec<Value>> {
         let mark = stack.iter().rposition(|v| matches!(v, Value::Mark))?;
         let items = stack.split_off(mark + 1);
@@ -693,6 +768,7 @@ fn interpret(bytes: &[u8]) -> Option<Vec<Value>> {
                     b.try_into().ok()?,
                 ))));
             }
+            // Little-endian two's complement in `n` bytes, sign-extended to eight.
             LONG1 => {
                 let n = usize::from(take(bytes, &mut at, 1)?[0]);
                 let b = take(bytes, &mut at, n)?;
@@ -779,6 +855,7 @@ fn interpret(bytes: &[u8]) -> Option<Vec<Value>> {
                     dict.push((pair[0].clone(), pair[1].clone()));
                 }
             }
+            // The next index is the memo's size, so entries are numbered in the order made.
             MEMOIZE => {
                 memo.insert(memo.len() as u32, stack.last()?.clone());
             }
@@ -837,11 +914,14 @@ fn interpret(bytes: &[u8]) -> Option<Vec<Value>> {
     }
 }
 
+/// A `float64` array's values. `as_chunks::<8>` cuts the bytes into eight-byte arrays and
+/// returns any remainder separately, which is ignored.
 fn doubles_of(data: &[u8]) -> Vec<f64> {
     let (chunks, _) = data.as_chunks::<8>();
     chunks.iter().map(|b| f64::from_le_bytes(*b)).collect()
 }
 
+/// An `int64` array's values.
 fn ints_of(data: &[u8]) -> Vec<i64> {
     let (chunks, _) = data.as_chunks::<8>();
     chunks.iter().map(|b| i64::from_le_bytes(*b)).collect()
@@ -866,6 +946,11 @@ fn strings_of(data: &[u8], width: usize) -> Option<Vec<String>> {
 }
 
 /// A scorer the default script wrote at scikit-learn 1.3.2, or `None` for anything else.
+///
+/// The fields are found by class and key rather than by position: the first `SimpleImputer` and
+/// `IsolationForest` made, each forest estimator's `tree_` and its `nodes`, the forest's two
+/// per-tree tuples, and the last `U` string array made. A `_max_samples` outside 1 to 256 is
+/// refused as well.
 pub fn read(bytes: &[u8]) -> Option<Scorer> {
     let made = interpret(bytes)?;
     let state_of = |class: &str| -> Option<Value> {

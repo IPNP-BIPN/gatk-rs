@@ -6,8 +6,18 @@
 //! 2432 bytes long whatever `n` is, and the only fields `n` moves are the end of the file, the
 //! dataspace's two dimensions and the layout's size: the rest is the template below, as the
 //! reference leaves it.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `b"..."` is a byte string (Java's `byte[]` literal), with `\xNN` one byte and `\0` a zero;
+//! - `&[u8]` is a borrowed, read-only view of bytes; `out[a..b]` is the slice from `a` up to but
+//!   not including `b`;
+//! - `x.to_le_bytes()` is the value's eight bytes, little-endian, which is HDF5's byte order here.
 
 /// The runs of the template that are not zero, as `(offset, bytes)`.
+///
+/// Every byte between them is zero, so the template is the metadata of a file h5py wrote with
+/// its four `n`-dependent fields at whatever value that run had; [`write`] overwrites them.
 const TEMPLATE: [(usize, &[u8]); 7] = [
     (0x0000, b"\x89HDF\r\n\x1a\n\0\0\0\0\0\x08\x08\0\x04\0\x10\0\0\0\0\0\0\0\0\0\0\0\0\0\xff\xff\xff\xff\xff\xff\xff\xff\0\0\0\0\0\0\0\0\xff\xff\xff\xff\xff\xff\xff\xff\0\0\0\0\0\0\0\0\x60\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0\x88\0\0\0\0\0\0\0\xa8\x02\0\0\0\0\0\0\x01\0\x01\0\x01\0\0\0\x18\0\0\0\0\0\0\0\x11\0\x10\0\0\0\0\0\x88\0\0\0\0\0\0\0\xa8\x02\0\0\0\0\0\0TREE\0\0\x01\0\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\0\0\0\0\0\0\0\0\xe0\x05\0\0\0\0\0\0\x08"),
     (0x02a8, b"HEAP\0\0\0\0\x58\0\0\0\0\0\0\0\x10\0\0\0\0\0\0\0\xc8\x02\0\0\0\0\0\0\0\0\0\0\0\0\0\0data\0\0\0\0\x01\0\0\0\0\0\0\0\x48"),
@@ -18,13 +28,22 @@ const TEMPLATE: [(usize, &[u8]); 7] = [
     (0x0838, b"SNOD\x01\0\x01\0\x08\0\0\0\0\0\0\0\x28\x07"),
 ];
 
+/// The metadata's length, 2432 bytes; the doubles start here, and the layout message's address
+/// in the template (at `0x792`, bytes `\x80\x09`) already points at it.
 const METADATA: usize = 0x980;
+/// The superblock's end-of-file address: metadata plus eight bytes per score.
 const END_OF_FILE: usize = 0x28;
+/// The dataspace's current and maximum size, both `n`: `(n,)` with no `maxshape`.
 const DIMENSION: usize = 0x748;
 const MAXIMUM_DIMENSION: usize = 0x750;
+/// The contiguous layout's size in bytes, `8 * n`.
 const LAYOUT_SIZE: usize = 0x79a;
 
-/// The file.
+/// The file: the template, its four `n`-dependent fields, then the scores as little-endian
+/// doubles, in order.
+///
+/// `scores.len() as u64` widens the length (an unsigned index type) to the 64-bit field width;
+/// it cannot truncate.
 pub fn write(scores: &[f64]) -> Vec<u8> {
     let mut out = vec![0u8; METADATA];
     for (at, bytes) in TEMPLATE {

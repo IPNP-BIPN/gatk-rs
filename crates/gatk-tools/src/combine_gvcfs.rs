@@ -1,7 +1,8 @@
 //! `CombineGVCFs`: how several single-sample GVCFs become one multi-sample one.
 //!
 //! Ported from `org.broadinstitute.hellbender.tools.walkers.CombineGVCFs` and the
-//! `MultiVariantWalkerGroupedOnStart` it extends (GATK 4.6.2.0). The merge of the records that meet
+//! `MultiVariantWalkerGroupedOnStart` it extends (GATK 4.7.0.0; both files are unchanged since
+//! 4.6.2.0). The merge of the records that meet
 //! at a variant is [`crate::reference_confidence_merger`]; what is here is the walk that decides
 //! where the output's records start and stop, and the cheap merge it uses where only reference
 //! blocks meet.
@@ -25,8 +26,8 @@
 //! # The last block written picks its reference from the last record overlapping
 //!
 //! The stopped records are collected walking the overlap list BACKWARDS, and the block merge takes
-//! the first of them. So when two samples' blocks close at one position, the block's reference allele
-//! and its start come from the one added last.
+//! the first of them. So when two samples' blocks close at one position, the block's reference
+//! allele and its start come from the one added last.
 //!
 //! # `--convert-to-base-pair-resolution` is `--break-bands-at-multiples-of 1`
 //!
@@ -39,6 +40,19 @@
 //!
 //! Both arguments together are therefore base-pair resolution whatever the grid says, and a grid of
 //! one also drops every `END`, which a grid of two does not.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&mut dyn Reference` is a borrowed, writable reference to any value implementing the
+//!   `Reference` trait (a Java interface); `dyn` means the method is chosen at run time.
+//! - `Walker<'a, 'r>` names two lifetimes: the walker borrows the merger's data (`'a`) and the
+//!   reference (`'r`) and cannot outlive either. Java has no counterpart; it is checked at compile
+//!   time.
+//! - `Result<(), Failure>` is "nothing, or the exception the reference would throw"; `?` after a
+//!   call hands that exception to the caller, Java's `throws` at one call site.
+//! - `impl From<MergeError> for Failure` is what lets `?` convert a merger error into a `Failure`.
+//! - `Option<T>` is "a value or nothing": `previous: None` is the Java's `prevPos = null`.
+//! - `.max(1)` and `.min(length)` are `Math.max` and `Math.min` written as methods.
 
 use crate::reference_confidence_merger::{
     is_unmixed_mnp_ignoring_non_ref, make_genotype_call, non_ref, MergeError, MergeNotes, Merger,
@@ -92,7 +106,9 @@ pub trait Reference {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Context {
     contig: String,
+    /// The locus, `(start, end)`.
     interval: (i64, i64),
+    /// What `getBases` reads, `(start, end)`, already clamped to the contig.
     window: (i64, i64),
 }
 
@@ -105,6 +121,7 @@ impl Context {
         );
     }
 
+    /// `getBases()`: the window's bases, none when the clamping left it empty.
     fn bases(&self, reference: &mut dyn Reference) -> Vec<u8> {
         if self.window.1 < self.window.0 {
             return Vec::new();
@@ -136,6 +153,7 @@ pub enum Failure {
     Runtime { class: String, message: String },
 }
 
+/// A missing `<NON_REF>` is the merger's `UserException`; anything else it raises keeps its class.
 impl From<MergeError> for Failure {
     fn from(error: MergeError) -> Self {
         match error {
@@ -151,7 +169,9 @@ impl From<MergeError> for Failure {
 /// One record and the name of the input it came from, which is `VariantContext.getSource()`.
 #[derive(Debug, Clone)]
 pub struct Sourced {
+    /// The record as read.
     pub record: VariantContext,
+    /// The input's name.
     pub source: String,
 }
 
@@ -170,12 +190,14 @@ pub struct Walker<'a, 'r> {
     /// The user's intervals, when there were any: `isWithinInterval`'s overlap detector.
     intervals: Option<Vec<(String, i64, i64)>>,
 
-    // `MultiVariantWalkerGroupedOnStart`.
+    // `MultiVariantWalkerGroupedOnStart`: `currentVariants`, `firstCurrentVariantStart` and
+    // `lastCurrentVariantStart`.
     current: Vec<Sourced>,
     first_current_start: i64,
     last_current_start: i64,
 
-    // `CombineGVCFs`.
+    // `CombineGVCFs`: the records still open, then `samples` (a `HashSet` there, used only for
+    // membership, so a list does), `prevPos`, `refAfterPrevPos` and `storedReferenceContext`.
     overlapping: Vec<Sourced>,
     samples: Vec<String>,
     previous: Option<(String, i64)>,
@@ -184,12 +206,15 @@ pub struct Walker<'a, 'r> {
 
     /// What has been written, in order.
     pub written: Vec<VariantContext>,
+    /// What the merger recorded along the way, for the warnings the reference logs.
     pub notes: MergeNotes,
     /// Whether `onTraversalSuccess` found state left over and warned about it.
     pub cut_blocks: bool,
 }
 
 impl<'a, 'r> Walker<'a, 'r> {
+    /// The walker before the first record, with `onTraversalStart`'s argument fix-up applied:
+    /// `--break-bands-at-multiples-of 1` and `--convert-to-base-pair-resolution` become each other.
     pub fn new(
         merger: Merger<'a>,
         mut arguments: Arguments,

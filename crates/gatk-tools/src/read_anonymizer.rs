@@ -1,4 +1,5 @@
-//! Ported from `org.broadinstitute.hellbender.tools.walkers.ReadAnonymizer` (GATK 4.6.2.0).
+//! Ported from `org.broadinstitute.hellbender.tools.walkers.ReadAnonymizer` (GATK 4.7.0.0;
+//! `ReadAnonymizer.java` is unchanged since 4.6.2.0).
 //!
 //! The ninth whole tool of the record-transform archetype, and the first whose transform makes the
 //! read a **different length**. Every base that disagrees with the reference is replaced by the
@@ -9,26 +10,31 @@
 //! ```java
 //! case X:
 //! case D:
+//!     // For these operators we need to add in the reference bases as matches:
 //!     for (int i = 0; i < cigarElement.getLength(); ++i) {
 //!         newReadBases.add(refBases[refIndex + i]);
+//!         // Since we know it's the reference base, we set it to the max quality (60):
 //!         newBaseQualities.add((byte)refQual);
 //!     }
 //!     iterCigarOp = useSimpleCigar ? CigarOperator.M : CigarOperator.EQ;
-//! ...
+//!     iterCigarOpCount = cigarElement.getLength();
+//!     break;
 //! case I:
+//!     // Inserted bases are simply removed and ignored.
 //!     iterCigarOp = currentNewCigarOp;
 //!     iterCigarOpCount = 0;
+//!     break;
 //! ```
 //!
-//! A deletion puts the reference bases the read did not have **into** it, so `4M2D6M` over ten bases
-//! comes out twelve. An insertion drops its bases and contributes a cigar element of length **zero**
-//! under whatever operator was already accumulating, so it merges into the previous element rather
-//! than ending it.
+//! A deletion puts the reference bases the read did not have **into** it, so `4M2D6M` over ten
+//! bases comes out twelve. An insertion drops its bases and contributes a cigar element of length
+//! **zero** under whatever operator was already accumulating, so it merges into the previous
+//! element rather than ending it.
 //!
 //! # And every M, X and D becomes one operator
 //!
-//! `=` by default, `M` under `--use-simple-cigar`. Consecutive elements of different kinds therefore
-//! collapse into one, which is why `4M2D6M` comes out as a single `12=`.
+//! `=` by default, `M` under `--use-simple-cigar`. Consecutive elements of different kinds
+//! therefore collapse into one, which is why `4M2D6M` comes out as a single `12=`.
 //!
 //! The last element is added **unconditionally** after the loop, so a read whose cigar ends in an
 //! insertion emits whatever the accumulator held at that point.
@@ -39,6 +45,16 @@
 //! alignment end, read length equals cigar length, sequence is stored, matching bases and quals,
 //! mapped, and alignment agrees with the header. Six of the seven are what `WellformedReadFilter`
 //! itself is made of, listed separately.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `match element.op { A | B => ..., }` is a `switch` whose arms cannot fall through and must
+//!   cover every operator; that is why the Java's `default:` throw has no counterpart: the nine
+//!   arms here are all nine CIGAR operators;
+//! - `Option<Op>` is an operator or nothing, the Java's `CigarOperator` that may be `null`, and
+//!   `==` on two of them is the Java's `==` on enum references, `null` included;
+//! - `&[u8]` is a borrowed, read-only view of a byte array; `&contig_bases[start..end]` is the
+//!   view of `start` up to but not including `end`, with no copy.
 
 use gatk_engine::reads::{ReadsDataSource, ReadsError};
 use htsjdk_bam::cigar::{Cigar, CigarElement, Op};
@@ -56,7 +72,8 @@ pub const DEFAULT_REF_BASE_QUALITY: u8 = 60;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AnonymizerArguments {
     /// `--ref-base-quality`. The parser refuses anything above sixty before the tool runs, so the
-    /// port takes a `u8` and the range check belongs to the caller.
+    /// port takes a `u8` and the range check belongs to the caller. The Java's `(byte)refQual`
+    /// is therefore never a narrowing that changes the value.
     pub ref_base_quality: u8,
     /// `--use-simple-cigar`: `M` instead of `=`.
     pub use_simple_cigar: bool,
@@ -73,8 +90,11 @@ impl Default for AnonymizerArguments {
 
 /// `anonymizeRead(read, referenceContext)`.
 ///
-/// `reference_bases` is the read's own span, which is what `referenceContext.getBases(readInterval)`
-/// hands over.
+/// `reference_bases` is the read's own span, which is what
+/// `referenceContext.getBases(readInterval)` hands over.
+///
+/// The record is cloned rather than changed in place, where the Java mutates the read it was
+/// given; nothing reads the input read afterwards, so the output is the same.
 pub fn anonymize_read(
     record: &BamRecord,
     reference_bases: &[u8],
@@ -99,6 +119,7 @@ pub fn anonymize_read(
 
     for element in &record.cigar.elements {
         let length = element.length as usize;
+        // Each arm yields the pair the Java assigns to `iterCigarOp` and `iterCigarOpCount`.
         let (iter_op, iter_count): (Option<Op>, u32) = match element.op {
             // Nothing to copy and nothing to replace.
             Op::H | Op::N | Op::P => (Some(element.op), element.length),
@@ -135,6 +156,7 @@ pub fn anonymize_read(
             Op::I => (current_op, 0),
         };
 
+        // "Update Cigar": the same operator extends the element in hand, a new one closes it.
         if iter_op == current_op {
             current_count += iter_count;
         } else {
@@ -156,7 +178,9 @@ pub fn anonymize_read(
         }
     }
 
-    // Added unconditionally, which is where a trailing insertion's accumulator lands.
+    // Added unconditionally, which is where a trailing insertion's accumulator lands. The Java's
+    // `new CigarElement(currentNewCigarOpCount, currentNewCigarOp)` runs even when the operator
+    // is still `null` (a cigar of insertions only); the port adds nothing then.
     if let Some(op) = current_op {
         new_cigar.push(CigarElement {
             length: current_count,
@@ -190,6 +214,9 @@ pub fn read_anonymizer(
     filter: &dyn Fn(&BamRecord) -> bool,
 ) -> Result<(Vec<u8>, Option<Vec<u8>>), ReadsError> {
     let records = crate::read_walker::traverse(source, &options.intervals, filter)?;
+    // `.iter().map(..).collect()` is Java's stream, map, collect. The span is the read's
+    // one-based closed `[start, end]` as a zero-based half-open slice, clamped to the contig;
+    // `as usize` converts the engine's signed position to an index.
     let anonymised: Vec<BamRecord> = records
         .iter()
         .map(|record| {

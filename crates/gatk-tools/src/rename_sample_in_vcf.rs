@@ -1,14 +1,25 @@
-//! `RenameSampleInVcf`, ported from `picard.vcf.RenameSampleInVcf` (Picard 3.4.0).
+//! `RenameSampleInVcf`, ported from `picard.vcf.RenameSampleInVcf` (Picard 3.5.0;
+//! `RenameSampleInVcf.java` is unchanged since 3.4.0).
 //!
 //! A single-sample VCF written back out with its one sample column renamed.
 //!
 //! # The tool is two checks and a list of one name
 //!
 //! ```java
-//! if (header.getGenotypeSamples().size() > 1) { throw ... }
-//! if (OLD_SAMPLE_NAME != null && !OLD_SAMPLE_NAME.equals(header.getGenotypeSamples().get(0))) { throw ... }
-//! final VCFHeader outHeader = new VCFHeader(header.getMetaDataInInputOrder(), makeList(NEW_SAMPLE_NAME));
+//! if (header.getGenotypeSamples().size() > 1) {
+//!     throw new IllegalArgumentException("Input VCF must be single-sample.");
+//! }
+//!
+//! if (OLD_SAMPLE_NAME != null && !OLD_SAMPLE_NAME.equals(header.getGenotypeSamples().get(0))) {
+//!     throw new IllegalArgumentException("Input VCF did not contain expected sample. Contained: "
+//!         + header.getGenotypeSamples().get(0));
+//! }
+//! ...
+//! final VCFHeader outHeader = new VCFHeader(header.getMetaDataInInputOrder(),
+//!     CollectionUtil.makeList(NEW_SAMPLE_NAME));
 //! ```
+//!
+//! (`doWork`; the second `throw` and the `outHeader` line are one line each there, wrapped here.)
 //!
 //! Everything else in the output is the writer's. The records are not touched at all: they are read
 //! and handed straight back, so what changes in them is whatever the encoder spells differently
@@ -20,9 +31,14 @@
 //! appends it verbatim rather than looking each sample up by name.
 //!
 //! ```java
-//! if (gc.isLazyWithData() && ((LazyGenotypesContext) gc).getUnparsedGenotypeData() instanceof String) {
-//!     vcfOutput.append(((LazyGenotypesContext) gc).getUnparsedGenotypeData().toString());
+//! if (gc.isLazyWithData() &&
+//!         ((LazyGenotypesContext) gc).getUnparsedGenotypeData() instanceof String) {
+//!     vcfOutput.append(VCFConstants.FIELD_SEPARATOR);
+//!     vcfOutput.append(
+//!             ((LazyGenotypesContext) gc).getUnparsedGenotypeData().toString());
 //! ```
+//!
+//! (htsjdk 5.0.0 `VCFEncoder.java`; the `if` is one line there, wrapped here.)
 //!
 //! That is the only reason a rename keeps its data: the writer would otherwise ask the record for
 //! a sample called by the NEW name and find nothing, writing `./.` on every row. This port decodes
@@ -39,6 +55,13 @@
 //!
 //! A name with a space, a name that is a number, and the name the file already had are all
 //! accepted, and go into the column header as they are.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, E>` is "a value or an error", how a Java exception is modelled here; `?` after a
+//!   call hands its error straight back to the caller, and `.map_err(..)` converts the error first;
+//! - `Option<&str>` is "a string or nothing", Java's nullable `String`;
+//! - `match` must cover every case of an enum, so each refusal below has a class and a message.
 
 use htsjdk_vcf::encoder::EncodeError;
 use htsjdk_vcf::genotypes_context::GenotypesContext;
@@ -57,6 +80,7 @@ pub enum RenameError {
 }
 
 impl RenameError {
+    /// The class of the exception the reference throws.
     pub fn java_class(&self) -> &str {
         match self {
             RenameError::NotSingleSample | RenameError::UnexpectedSample { .. } => {
@@ -66,6 +90,7 @@ impl RenameError {
         }
     }
 
+    /// The exception's message, as the reference's `throw` builds it.
     pub fn message(&self) -> String {
         match self {
             RenameError::NotSingleSample => "Input VCF must be single-sample.".to_string(),
@@ -100,9 +125,13 @@ pub fn rename(input: &str, new_name: &str, old_name: Option<&str>) -> Result<Str
     // The reference does this by not decoding at all; see the note above. A record whose genotypes
     // are still the file's text stays lazy under the new name, so the writer copies the text
     // (FORMAT key order included) rather than re-encoding it.
+    // `Arc<[String]>` is a shared, reference-counted list (one allocation every record points at,
+    // the new one-name sample list); `.clone()` on it copies the pointer, not the names.
     let mut records = file.records.clone();
     let renamed: std::sync::Arc<[String]> = std::sync::Arc::from(vec![new_name.to_string()]);
     for record in &mut records {
+        // `mem::replace` takes the record's genotypes out by value and leaves an empty context in
+        // their place, so they can be rebuilt without copying; Java would just reassign a field.
         let context = std::mem::replace(&mut record.genotypes, GenotypesContext::new(Vec::new()));
         let unparsed = context.unparsed().map(str::to_string);
         let mut genotypes = context.into_vec();

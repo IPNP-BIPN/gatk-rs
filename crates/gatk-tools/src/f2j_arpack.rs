@@ -26,6 +26,23 @@
 //! `dlarfg.f`) and reference BLAS (`dnrm2.f`, `dgemv.f`, `dger.f`), BSD 3-Clause, with what F2J does
 //! to them: `x**2` is `Math.pow(x, 2)`, which HotSpot answers as `x * x`, and ARPACK's REAL
 //! constant `0.717` stays a float.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - Fortran arrays are 1-based and Rust slices 0-based. The functions keep ARPACK's 1-based
+//!   loop variables (`j`, `k`, `np`) and subtract one at each index, so `self.h[j - 1]` is
+//!   Fortran's `h(j,1)`. Matrices are column major, as in Fortran: column `j` of an `n`-row matrix
+//!   is `v[(j - 1) * n..j * n]`.
+//! - `&[f64]` is a borrowed, read-only view of an array; `&mut [f64]` a writable one. Only one
+//!   writable borrow of a buffer may exist at a time, so where the Fortran passes two pieces of
+//!   `workd` to one call, `split_at_mut(i)` splits it into two disjoint writable halves first.
+//! - `a..b` is the half-open range `a` to `b - 1`; `(a..b).rev()` walks it downwards, Fortran's
+//!   `DO i = b-1, a, -1`.
+//! - `Result<T, i32>` is "a value, or ARPACK's non-zero `info`"; `.map_err(..)` turns that `info`
+//!   into Spark's message, and `?` returns it to the caller.
+//! - `dyn FnMut(..)` is any callable; the operator is a closure the caller lends.
+//! - `x as usize`, `x as isize` and `0.717f32 as f64` are casts; the last widens a `float` to a
+//!   `double` exactly, as Java's widening does.
 
 /// `dlamch('E')`: F2J's is the rounding unit.
 const EPS: f64 = f64::EPSILON / 2.0;
@@ -51,6 +68,8 @@ pub fn symmetric_eigs(
     k: usize,
     op: &mut Operator,
 ) -> Result<(Vec<f64>, Vec<f64>), String> {
+    // `assert!` aborts with the message when the condition is false, a Java `assert` that is
+    // always enabled.
     assert!(k > 0 && k < n, "symmetricEigs requires 0 < k < n");
     let ncv = (2 * k).min(n);
     let mxiter = 300.max(3 * k);
@@ -97,6 +116,9 @@ pub fn symmetric_eigs(
             negated
         }
     };
+    // Sort the indices rather than the values, so that values and vectors move together.
+    // `sort_by` is stable, and `total_cmp` orders as `Double.compare` does once every NaN is the
+    // one canonical NaN.
     let mut order: Vec<usize> = (0..nconv).collect();
     order.sort_by(|a, b| key(d[*a]).total_cmp(&key(d[*b])));
     let values = order.iter().map(|i| d[*i]).collect();
@@ -108,27 +130,38 @@ pub fn symmetric_eigs(
 }
 
 /// `dsaupd`'s state between calls, the parts `bmat = "I"` reads.
+///
+/// `'a` and `'b` are lifetimes: the struct borrows the caller's operator and may not outlive it.
 struct Lanczos<'a, 'b> {
+    /// The order of the operator, ARPACK's `n`.
     n: usize,
+    /// The basis size, ARPACK's `ncv`.
     ncv: usize,
     /// The Lanczos basis, `n` by `ncv`, column major.
     v: Vec<f64>,
     /// The tridiagonal `H`, `ldh = ncv`: the subdiagonal in the first column (`h(1,1)` unused),
     /// the diagonal in the second.
     h: Vec<f64>,
+    /// The residual vector, ARPACK's `resid`.
     resid: Vec<f64>,
+    /// ARPACK's `workd`, `3 n` long: the three `n`-vectors reverse communication passes.
     workd: Vec<f64>,
+    /// The residual norm, ARPACK's `rnorm`.
     rnorm: f64,
     /// `dgetv0`'s `iseed`.
     seed: [i32; 4],
+    /// The operator, applied where ARPACK would return `ido = 1`.
     op: &'a mut Operator<'b>,
 }
 
+// `'_` lets the compiler infer the two lifetimes.
 impl Lanczos<'_, '_> {
+    /// `h(j,1)`, the subdiagonal entry of column `j`.
     fn sub(&self, j: usize) -> f64 {
         self.h[j - 1]
     }
 
+    /// The index range of column `j` (1-based) of `v`.
     fn column(&self, j: usize) -> std::ops::Range<usize> {
         (j - 1) * self.n..j * self.n
     }
@@ -143,6 +176,7 @@ impl Lanczos<'_, '_> {
             return (rnorm0, 0);
         }
         let mut iter = 0;
+        // Up to six passes: once `iter` passes 5 the vector is zeroed and `ierr = -1` returned.
         loop {
             let (x, y) = self.workd.split_at_mut(n);
             gemv_t(n, j - 1, &self.v, x, &mut y[..j - 1]);
@@ -165,6 +199,7 @@ impl Lanczos<'_, '_> {
     /// `dsaitr`: extends the factorization from step `k` by `np` steps. Returns `info`.
     fn saitr(&mut self, k: usize, np: usize) -> usize {
         let n = self.n;
+        // The 0-based offsets of `workd(ipj)`, `workd(irj)` and `workd(ivj)`.
         let (ipj, irj, ivj) = (0, n, 2 * n);
         let mut j = k + 1;
         let mut rstart = false;
@@ -185,6 +220,8 @@ impl Lanczos<'_, '_> {
                     break;
                 }
             }
+            // A `Range` is consumed when used as an index, so each use after the first takes a
+            // `.clone()`.
             let column = self.column(j);
             self.v[column.clone()].copy_from_slice(&self.resid);
             if self.rnorm >= SAFE_MINIMUM {
@@ -200,6 +237,7 @@ impl Lanczos<'_, '_> {
                 dlascl(self.rnorm, 1.0, &mut self.workd[ipj..ipj + n]);
             }
             self.workd[ivj..ivj + n].copy_from_slice(&self.v[column]);
+            // The braces end the two borrows of `workd` before the next statement reads it.
             {
                 let (low, high) = self.workd.split_at_mut(ivj);
                 (self.op)(&high[..n], &mut low[irj..irj + n]);
@@ -264,8 +302,8 @@ impl Lanczos<'_, '_> {
         gemv_n_minus(n, j, &self.v, &y[..j], &mut self.resid);
     }
 
-    /// `dsaup2` with exact shifts and `which = "LM"`: the number of converged values, or `None`
-    /// where `dsaupd` leaves a non-zero `info` behind.
+    /// `dsaup2` with exact shifts and `which = "LM"`: the number of converged values, or
+    /// `Err(info)` where `dsaupd` leaves a non-zero `info` behind.
     #[allow(clippy::too_many_arguments)]
     fn saup2(
         &mut self,
@@ -1152,6 +1190,7 @@ fn dsortr(which: Which, n: usize, x1: &mut [f64], mut x2: Option<&mut [f64]>) {
     let mut igap = n / 2;
     while igap != 0 {
         for i in igap..n {
+            // A signed index, because the loop runs `j` below zero to stop.
             let mut j = i as isize - igap as isize;
             while j >= 0 {
                 let ju = j as usize;

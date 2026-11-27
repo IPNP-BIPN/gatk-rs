@@ -1,6 +1,6 @@
 //! `MergeMutect2CallsWithMC3`, ported from
 //! `org.broadinstitute.hellbender.tools.walkers.validation.MergeMutect2CallsWithMC3`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `MergeMutect2CallsWithMC3.java` is unchanged since 4.6.2.0).
 //!
 //! Mutect2 calls merged into the MC3 pan-cancer call set. The walk is
 //! [`gatk_engine::concordance_walker`]; what is here is what each of the five states writes.
@@ -11,7 +11,8 @@
 //! MC3's annotations are authoritative. A false positive is rebuilt from scratch:
 //!
 //! ```java
-//! new VariantContextBuilder(m2.getSource(), m2.getContig(), m2.getStart(), m2.getEnd(), m2.getAlleles())
+//! new VariantContextBuilder(m2.getSource(), m2.getContig(), m2.getStart(), m2.getEnd(),
+//!         m2.getAlleles())
 //!     .attribute(CENTERS_KEY, M2_CENTER_NAME).genotypes(genotypes).make()
 //! ```
 //!
@@ -35,6 +36,17 @@
 //! An M2 genotype without `AD` leaves the output genotype without one: `getAD()` answers null and
 //! `GenotypeBuilder.AD(null)` sets nothing, rather than throwing or writing zeroes. The `NREF` and
 //! `NALT` fallback does write zeroes, and only a truth-only record reaches it.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<&Variant>` is "a record or nothing": `TruthVersusEval`'s `hasTruth` and `hasEval`
+//!   are whether its two sides are `Some`. `.expect(..)` takes the value out and stops the program
+//!   when there is none, which a concordance state guarantees cannot happen.
+//! - `match` over `ConcordanceState` must name every state or the build fails, which is why there
+//!   is no `default:` arm here where the Java throws `IllegalStateException`.
+//! - `impl ConcordanceRecord for Variant` is Java's `implements`: the walker reads a record only
+//!   through those three methods.
+//! - `.clone()` is an explicit copy. Without it a value is moved, not shared.
 
 use gatk_engine::concordance_walker::{ConcordanceRecord, ConcordanceState, TruthVersusEval};
 
@@ -117,6 +129,16 @@ pub struct Merged {
 
 /// `areVariantsAtSameLocusConcordant`: the same reference allele, and the eval containing the
 /// truth's FIRST alternate.
+///
+/// ```java
+/// final boolean sameRefAllele = truth.getReference().equals(eval.getReference());
+/// // we assume that the truth has a single alternate allele
+/// final boolean containsAltAllele =
+///         eval.getAlternateAlleles().contains(truth.getAlternateAllele(0));
+/// ```
+///
+/// A truth record with no alternate answers `false` here; the reference's `getAlternateAllele(0)`
+/// would throw on it instead.
 pub fn concordant(truth: &Variant, eval: &Variant) -> bool {
     let same_reference = truth.alleles.first() == eval.alleles.first();
     let truth_alternate = match truth.alleles.get(1) {
@@ -127,6 +149,15 @@ pub fn concordant(truth: &Variant, eval: &Variant) -> bool {
 }
 
 /// `makeVariantContextBuilderWithM2Center`: appended to, not replaced.
+///
+/// ```java
+/// final List<String> centers = mc3.hasAttribute(CENTERS_KEY) ?
+///         mc3.getAttributeAsStringList(CENTERS_KEY, "") : new ArrayList<>();
+/// centers.add(M2_CENTER_NAME);
+/// ```
+///
+/// The list is written back comma-joined, so appending `,M2` to the text is the same value. The
+/// key keeps its place among the INFO fields; the writer sorts them by key in any case.
 fn with_m2_center(mc3: &Variant) -> Vec<(String, String)> {
     let mut info = mc3.info.clone();
     match info.iter_mut().find(|(name, _)| name == CENTERS_KEY) {
@@ -157,7 +188,11 @@ fn genotype_for(truth: Option<&Variant>, eval: Option<&Variant>) -> (Vec<usize>,
     ((0..site.alleles.len()).collect(), depths)
 }
 
-/// `apply` for one step. `None` is a filtered true negative, which writes nothing.
+/// `apply` for one step. `None` is a filtered true negative, which writes nothing:
+///
+/// ```java
+/// case FILTERED_TRUE_NEGATIVE:    // absent in MC3, filtered in M2.  Skip.
+/// ```
 pub fn apply(step: &TruthVersusEval, truth: &[Variant], eval: &[Variant]) -> Option<Merged> {
     let truth_record = step.truth.map(|index| &truth[index]);
     let eval_record = step.eval.map(|index| &eval[index]);
@@ -212,6 +247,8 @@ pub fn apply(step: &TruthVersusEval, truth: &[Variant], eval: &[Variant]) -> Opt
         ConcordanceState::FilteredFalseNegative => {
             let mc3 = truth_record.expect("a filtered false negative has truth");
             let m2 = eval_record.expect("a filtered false negative has eval");
+            // M2's filters go in as a list, `getFilters().stream().collect(Collectors.toList())`,
+            // which the writer joins with commas.
             let mut info = with_m2_center(mc3);
             info.push((M2_FILTERS_KEY.to_string(), m2.filters.join(",")));
             Some(Merged {
@@ -230,6 +267,9 @@ pub fn apply(step: &TruthVersusEval, truth: &[Variant], eval: &[Variant]) -> Opt
 }
 
 /// Every step of a whole run, in the order the writer receives them.
+///
+/// `filter_map` keeps the `Some` answers and drops the `None` ones, so a filtered true negative
+/// leaves no row.
 pub fn merge(steps: &[TruthVersusEval], truth: &[Variant], eval: &[Variant]) -> Vec<Merged> {
     steps
         .iter()

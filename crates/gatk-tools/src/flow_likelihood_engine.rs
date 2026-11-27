@@ -1,6 +1,8 @@
 //! Ported from `org.broadinstitute.hellbender.tools.walkers.haplotypecaller.
 //! FlowBasedAlignmentLikelihoodEngine` and `org.broadinstitute.hellbender.utils.haplotype.
-//! FlowBasedHaplotype` (GATK 4.6.2.0): the callers' `FlowBased` read likelihoods.
+//! FlowBasedHaplotype` (GATK 4.7.0.0; both files, and `FlowBasedHMMEngine.java`,
+//! `FlowBasedPairHMM.java` and `FlowBasedKeyCodec.java`, are unchanged since 4.6.2.0): the
+//! callers' `FlowBased` and `FlowBasedHMM` read likelihoods.
 //!
 //! Each sample's reads become flow reads under the flow order and maximal hmer of the sample's
 //! FIRST read's read group, whichever group the others belong to; each haplotype becomes a key in
@@ -13,6 +15,17 @@
 //! The matrix is then normalized to the reference within the mismapping rate, and the poorly
 //! modelled reads dropped against a threshold of their own: at most three errors at the expected
 //! rate per base and two at the filling value, both base-ten.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, E>` is "a value or an error", how a thrown exception is modelled; `?` after a call
+//!   returns its error to the caller at once, and `.map_err(..)` converts the error on the way.
+//! - `Option<T>` is "a value or nothing"; `.ok_or_else(..)` turns a `None` into an error.
+//! - `&[T]` is a borrowed, read-only view of an array; `&mut` is a writable borrow.
+//! - A closure `|x| ...` is a Java lambda `x -> ...`.
+//! - `as` converts between number types and truncates or wraps a value that does not fit: `as i8`
+//!   is Java's `(byte)`, and `as u8` reads the same eight bits unsigned, Java's `0xff & b`.
+//! - `i32`, `usize`, `f64` are `int`, an unsigned index type Java lacks, and `double`.
 
 use htsjdk_bam::header::SamHeader;
 use htsjdk_bam::record::BamRecord;
@@ -31,7 +44,8 @@ const MAX_ERRORS_FOR_READ_CAP: f64 = 3.0;
 const MAX_CATASTROPHIC_ERRORS_FOR_READ_CAP: f64 = 2.0;
 /// `ALIGNMENT_UNCERTAINTY`.
 const ALIGNMENT_UNCERTAINTY: i32 = 4;
-/// `FlowBasedRead.MINIMAL_READ_LENGTH`.
+/// `FlowBasedRead.MINIMAL_READ_LENGTH`, private in the Java (`= 10; // check if this is the
+/// right number`) and passed explicitly here.
 const MINIMAL_READ_LENGTH: i32 = 10;
 
 /// `FlowBasedAlignmentArgumentCollection`: the matrix's arguments and the engine's own.
@@ -60,7 +74,8 @@ impl Default for FlowEngineArguments {
     }
 }
 
-/// `FlowBasedAlignmentLikelihoodEngine`.
+/// `FlowBasedAlignmentLikelihoodEngine`, with the four values its constructor takes from the
+/// likelihood arguments.
 #[derive(Debug, Clone)]
 pub struct FlowLikelihoodEngine {
     pub arguments: FlowEngineArguments,
@@ -73,15 +88,19 @@ pub struct FlowLikelihoodEngine {
 /// Why the engine stopped: the reference's exception, or a layout the port does not read.
 #[derive(Debug, Clone, PartialEq)]
 pub enum FlowEngineError {
+    /// A `FlowBasedRead` refusal, carried through unchanged.
     Read(FlowReadError),
     /// `GATKException.ShouldNeverReachHereException` and `IllegalStateException`.
     Thrown(&'static str, String),
+    /// A refusal from the likelihood matrix itself (construction, normalising or filtering).
     Likelihoods(String),
 }
 
 impl FlowEngineError {
     /// A reference exception as `class: message`; anything else as the port describes it.
     pub fn render(&self) -> String {
+        // A `match` arm may carry an `if` guard; the arm is taken only when the guard holds, and
+        // otherwise the next arm is tried.
         match self {
             FlowEngineError::Read(error) if !error.port_limitation && !error.class.is_empty() => {
                 format!("{}: {}", error.class, error.message)
@@ -118,6 +137,10 @@ struct ScoredHaplotype {
 impl FlowLikelihoodEngine {
     /// `computeReadLikelihoods(haplotypes, header, samples, perSampleReadList, filterPoorly)`,
     /// normalized and filtered.
+    ///
+    /// The filter's threshold is `log10MinTrueLikelihood`: capped when the disqualification is
+    /// not dynamic, uncapped and then taken against the dynamic threshold when it is, the smaller
+    /// of the two winning.
     pub fn compute_read_likelihoods(
         &self,
         haplotypes: &[Haplotype],
@@ -165,6 +188,17 @@ impl FlowLikelihoodEngine {
     }
 
     /// `computeReadLikelihoods(likelihoodMatrix, header)`: one sample's values, by haplotype.
+    ///
+    /// The flow order is the FIRST read's read group's, cut to the cycle length:
+    ///
+    /// ```java
+    /// final String flowOrder = (rgInfo != null)
+    ///         ? rgInfo.flowOrder.substring(0, fbargs.flowOrderCycleLength)
+    ///         : FlowBasedReadUtils.findFirstUsableFlowOrder(hdr, fbargs);
+    /// ```
+    ///
+    /// With no reads the Java's `rgInfo` is `null` and its `maxClass` is never read; the `0` here
+    /// stands in for it and is likewise never used.
     fn sample_matrix(
         &self,
         haplotypes: &[Haplotype],
@@ -213,6 +247,8 @@ impl FlowLikelihoodEngine {
                 cigar: haplotype.cigar().cloned(),
             });
         }
+        // `//NOTE: we assume all haplotypes start and end on the same place!`: every read is
+        // trimmed to the FIRST haplotype's span.
         if self.arguments.trim_to_haplotype {
             if let Some(first) = scored_haplotypes.first() {
                 let (haplotype_start, haplotype_end) = (first.start, first.end);
@@ -241,6 +277,9 @@ impl FlowLikelihoodEngine {
         Ok(values)
     }
 
+    /// The second guard at the top of `haplotypeReadMatching` and its exact-length twin. The first
+    /// (`"Read should be aligned with the reference"`) is not written: `apply_alignment` has run on
+    /// every read before it gets here.
     fn check_read(&self, read: &ScoredRead) -> Result<(), FlowEngineError> {
         if !read.base_clipped && self.arguments.trim_to_haplotype {
             return Err(FlowEngineError::Thrown(
@@ -251,7 +290,7 @@ impl FlowLikelihoodEngine {
         Ok(())
     }
 
-    /// `haplotypeReadMatchingExactLength`.
+    /// `haplotypeReadMatchingExactLength`: the read scored against the whole haplotype key.
     fn exact_matching(
         &self,
         haplotype: &ScoredHaplotype,
@@ -270,7 +309,19 @@ impl FlowLikelihoodEngine {
         ))
     }
 
-    /// `haplotypeReadMatching`.
+    /// `haplotypeReadMatching`: the haplotype clipped to the read's span, then scored.
+    ///
+    /// Each step is the Java's, in its order: the read's trimmed start and end mapped onto the
+    /// haplotype through its CIGAR, widened by how much longer the read is than that stretch, then
+    /// converted from bases to flows (`findLeftClipping`, `findRightClipping`), then widened by
+    /// `ALIGNMENT_UNCERTAINTY` flows each way:
+    ///
+    /// ```java
+    /// clipLeft = clipLeft-ALIGNMENT_UNCERTAINTY>0 ? clipLeft-ALIGNMENT_UNCERTAINTY:0;
+    /// ```
+    ///
+    /// Note that `clip_right` changes meaning on the way, as `clipRight` does in the Java: it is a
+    /// count of flows clipped from the right, then the END index of the kept flows.
     fn haplotype_read_matching(
         &self,
         haplotype: &ScoredHaplotype,
@@ -280,6 +331,9 @@ impl FlowLikelihoodEngine {
         if !read.flow.valid {
             return Ok(f64::NEG_INFINITY);
         }
+        // A haplotype with no CIGAR is read with an empty one. `index` is a closure over the
+        // haplotype's start and CIGAR; `.0` takes the first half of the pair the helper returns,
+        // the Java's `.getLeft()`.
         let cigar = haplotype.cigar.clone().unwrap_or_default();
         let index = |coordinate: i32| {
             gatk_engine::read_utils::read_index_for_reference_coordinate(
@@ -299,6 +353,7 @@ impl FlowLikelihoodEngine {
             return Ok(f64::NEG_INFINITY);
         }
         let (clip_left, left_hmer_clip) = find_clipping(left_clip, &haplotype.flow.key);
+        // `findRightClipping` is `findLeftClipping` over the reversed key.
         let reversed: Vec<i32> = haplotype.flow.key.iter().rev().copied().collect();
         let (clip_right, right_hmer_clip) = find_clipping(right_clip, &reversed);
         let key_length = haplotype.flow.key.len() as i32;
@@ -333,6 +388,10 @@ impl FlowLikelihoodEngine {
 
 /// The engine's `log10MinTrueLikelihood`: the expected errors, at least three when capped, at
 /// the expected rate, and the catastrophic ones, at least two when capped, at the filling value.
+///
+/// The catastrophic rate is `Math.max(fbargs.fillingValue, 0.000001)`, so a filling value of
+/// zero still gives a finite logarithm. `length` is the read's length in bases,
+/// `read.getLength()`. `jmath::math::log10` stands in for `Math.log10`.
 pub fn log10_min_true_likelihood(
     length: usize,
     expected_error_rate: f64,
@@ -355,7 +414,9 @@ pub fn log10_min_true_likelihood(
     errors * log10_error_rate + catastrophic * log10_catastrophic
 }
 
-/// `flowOrder.substring(0, cycle)`.
+/// `flowOrder.substring(0, cycle)`, with the exception and message the JDK throws when the
+/// order is shorter than the cycle. `.get(..cycle)` answers `None` instead of panicking on a
+/// short string.
 fn substring(order: &str, cycle: usize) -> Result<String, FlowEngineError> {
     order.get(..cycle).map(str::to_string).ok_or_else(|| {
         FlowEngineError::Thrown(
@@ -365,7 +426,8 @@ fn substring(order: &str, cycle: usize) -> Result<String, FlowEngineError> {
     })
 }
 
-/// `FlowBasedReadUtils.findFirstUsableFlowOrder`.
+/// `FlowBasedReadUtils.findFirstUsableFlowOrder`: the first read group, in header order, whose
+/// `FO` is at least a cycle long, cut to the cycle.
 fn first_usable_flow_order(header: &SamHeader, cycle: usize) -> Result<String, FlowEngineError> {
     for group in &header.read_groups {
         if let Some(order) = group.attributes.get("FO") {
@@ -381,6 +443,9 @@ fn first_usable_flow_order(header: &SamHeader, cycle: usize) -> Result<String, F
 }
 
 /// `ReadLikelihoodCalculationEngine`, as `createLikelihoodCalculationEngine` picks it.
+///
+/// An `enum` whose variants carry data: the Java interface with its three implementations, where
+/// a `match` on the variant replaces the virtual call.
 #[derive(Debug, Clone)]
 pub enum ReadLikelihoodEngine {
     PairHmm(gatk_engine::pair_hmm_likelihood_engine::PairHmmLikelihoodEngine),
@@ -418,6 +483,9 @@ impl ReadLikelihoodEngine {
 
     /// `createLikelihoodCalculationEngine`: FlowBasedHMM, FlowBased or the PairHMM, as the
     /// arguments ask.
+    ///
+    /// FlowBasedHMM is tried first, then FlowBased, then the PairHMM. The error is a pair of the
+    /// exception class and its message.
     pub fn create(
         likelihoods: &gatk_engine::pair_hmm_likelihood_engine::LikelihoodEngineArguments,
         flow: &Option<FlowEngineArguments>,
@@ -465,7 +533,8 @@ pub struct FlowHmmArguments {
     pub flat_deletion_penalty: u8,
 }
 
-/// `FlowBasedHMMEngine`.
+/// `FlowBasedHMMEngine`, with the same four values from the likelihood arguments as
+/// [`FlowLikelihoodEngine`].
 #[derive(Debug, Clone)]
 pub struct FlowHmmEngine {
     pub arguments: FlowHmmArguments,
@@ -495,6 +564,10 @@ impl FlowHmmEngine {
     }
 
     /// `computeReadLikelihoods(haplotypes, header, samples, perSampleReadList, filterPoorly)`.
+    ///
+    /// The same shape as the `FlowBased` engine's, with this engine's own threshold, which
+    /// ignores the cap flag (`Math.max(3.0, Math.ceil(read.getLength() * expectedErrorRate))`
+    /// whatever `capLikelihoods` says) and puts its catastrophic rate at a fixed `0.001`.
     pub fn compute_read_likelihoods(
         &self,
         haplotypes: &[Haplotype],
@@ -545,6 +618,14 @@ impl FlowHmmEngine {
     }
 
     /// `getErrorModelAdjustedQual` with the engine's floor, as the `byte` it is cast to.
+    ///
+    /// The Java is `(byte) Math.max(minUsableIndelScoreToUse, MathUtils.fastRound(INITIAL_QSCORE -
+    /// e + 1.0))`, where `e` is `Math.exp` of `repeatLength / (rateFactor * Math.PI)` and
+    /// `INITIAL_QSCORE` is 40, for every repeat length up to `MAX_REPEAT_LENGTH`.
+    ///
+    /// `None` is the Java's cache never built, when the PCR model has no rate factor. Where the
+    /// Java calls `Math.exp`, this calls `jmath::strict_exp::exp`, the `StrictMath` one, because
+    /// `docs/licence-compatibility-risk.md` records `Math.exp` as unported.
     fn pcr_cache(&self) -> Option<Vec<i8>> {
         let model = self.arguments.pcr_error_model;
         if !model.has_rate_factor() {
@@ -564,6 +645,12 @@ impl FlowHmmEngine {
         )
     }
 
+    /// `FlowBasedHMMEngine.computeReadLikelihoods(likelihoods, hdr)` with
+    /// `FlowBasedPairHMM.computeLog10LikelihoodsFlowBased`: one sample's values, by haplotype.
+    ///
+    /// Per read: the gap penalties imputed (DRAGstr's, or the flat ones), the PCR model and the
+    /// floor applied, and the three arrays moved from bases into flows. Then every read against
+    /// every haplotype through `flow_pair_hmm` below.
     fn sample_matrix(
         &self,
         haplotypes: &[Haplotype],
@@ -587,6 +674,9 @@ impl FlowHmmEngine {
                 .map_err(FlowEngineError::Read)?;
             flow.apply_alignment().map_err(FlowEngineError::Read)?;
             let bases = &read.read_bases;
+            // `inputScoreImputator.impute(fbRead)`: DRAGstr's imputator when its table is given,
+            // otherwise `NonSymmetricalPairHMMInputScoreImputator` with the flat penalties. DRAGstr
+            // gives one open penalty used for both insertions and deletions.
             let (mut insertion, mut deletion, gcp): (Vec<i8>, Vec<i8>, Vec<i8>) = match &self
                 .arguments
                 .dragstr_params
@@ -617,6 +707,7 @@ impl FlowHmmEngine {
                     deletion[i - 1] = (deletion[i - 1] as u8).min(cap) as i8;
                 }
             }
+            // Signed: `(byte)Math.max(readInsQuals[i], minUsableQualScore)` on two Java bytes.
             for i in 0..insertion.len() {
                 insertion[i] = insertion[i].max(min_usable);
                 deletion[i] = deletion[i].max(min_usable);
@@ -624,6 +715,8 @@ impl FlowHmmEngine {
             let to_key = |quals: &[i8], fill: i8| -> Result<Vec<u8>, FlowEngineError> {
                 base_array_to_key_space(bases, flow.key.len(), quals, fill, &flow.flow_order)
             };
+            // `DEFAULT_INDEL_NO_DATA_FILL` (40) for the two open penalties and
+            // `DEFAULT_MATCH_NO_DATA_FILL` (10) for the continuation penalty.
             let flow_insertion = to_key(&insertion, 40)?;
             let flow_deletion = to_key(&deletion, 40)?;
             let flow_gcp = to_key(&gcp, 10)?;
@@ -643,6 +736,8 @@ impl FlowHmmEngine {
         let mut values = vec![vec![0.0; processed.len()]; haplotypes.len()];
         for (r, (read, ins, del, gcp)) in processed.iter().enumerate() {
             for (h, haplotype) in scored.iter().enumerate() {
+                // `startingPoint`: the first index of the haplotype's flow order that reads the
+                // read's first flow base, or 0 when none does.
                 let read_first = read.flow_order.first().copied().unwrap_or(0);
                 let start = haplotype
                     .flow_order
@@ -658,6 +753,10 @@ impl FlowHmmEngine {
 
 /// `FlowBasedKeyCodec.baseArrayToKeySpace`: each flow's smallest value over the bases it reads,
 /// a flow reading none the last flow's value (the fill before any).
+///
+/// An `N` is read by whichever flow is current, as `BaseUtils.Base.N.base` is in the Java. The
+/// returned bytes are the Java's signed `byte[]` reinterpreted unsigned (`as u8`), which is how
+/// the PairHMM's transition table indexes them.
 fn base_array_to_key_space(
     bases: &[u8],
     key_length: usize,
@@ -678,6 +777,8 @@ fn base_array_to_key_space(
     let mut flow_number = 0;
     let mut last = fill;
     while loc < bases.len() {
+        // `get_mut` answers `None` past the end rather than panicking; that `None` becomes the
+        // exception the Java's `result[flowNumber]` throws.
         let flow_base = order[flow_number % order.len()];
         let slot = result.get_mut(flow_number).ok_or_else(|| {
             FlowEngineError::Thrown(
@@ -704,6 +805,18 @@ fn base_array_to_key_space(
 /// `subComputekeayLikelihoodGivenHaplotypeKeysLog10`: the PairHMM over flows, a step of four
 /// flows on either axis, a cell's prior the read's probability of the haplotype's hmer where the
 /// two flows read the same base and zero elsewhere.
+///
+/// **Why fresh matrices per call give the Java's numbers**: `FlowBasedPairHMM` keeps its matrices
+/// between reads and haplotypes and only zeroes the last row, under a comment warning that stale
+/// values could leak in. They cannot, on this recurrence: row `i` visits columns
+/// `(hapStart + i) % 4 + 4`, step 4, so the cells it reads at `[i - 1][j - 1]`, `[i - 4][j]` and
+/// `[i][j - 4]` lie on the stride of a row already computed in the same call, or in rows 0 to 4
+/// and columns 0 to 3, which the Java never writes after allocation except for the deletion rows'
+/// initial value. Every cell read therefore holds the same value in both.
+///
+/// The final sum is over the last row of the match and insertion matrices, so paths ending in a
+/// deletion are dropped, and its base-ten logarithm (`Math.log10` in the Java) has
+/// `LoglessPairHMM.INITIAL_CONDITION_LOG10` subtracted.
 fn flow_pair_hmm(
     hap_start: usize,
     haplotype: &FlowHaplotype,
@@ -722,12 +835,14 @@ fn flow_pair_hmm(
     let mut matches = vec![vec![0.0f64; hap_len]; read_len];
     let mut insertions = vec![vec![0.0f64; hap_len]; read_len];
     let mut deletions = vec![vec![0.0f64; hap_len]; read_len];
+    // `LoglessPairHMM.INITIAL_CONDITION / haplotypeKey.length`, written into deletion rows 0 to 4.
     let initial = initial_condition() / haplotype.key.len() as f64;
     for row in deletions.iter_mut().take(FLOW_SIZE + 1) {
         for cell in row.iter_mut() {
             *cell = initial;
         }
     }
+    // `initializeProbabilities`: row `i + 1` from the read's `i`-th flow penalties.
     let mut transition = vec![[0.0f64; 6]; read_len];
     for i in 0..insertion.len() {
         transition[i + 1] = qual_to_trans_probs(insertion[i], deletion[i], gcp[i]);

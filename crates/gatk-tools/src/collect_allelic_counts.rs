@@ -1,5 +1,5 @@
 //! Ported from `org.broadinstitute.hellbender.tools.copynumber.CollectAllelicCounts` and
-//! `datacollection.AllelicCountCollector` (GATK 4.6.2.0).
+//! `datacollection.AllelicCountCollector` (GATK 4.7.0.0; both files are unchanged since 4.6.2.0).
 //!
 //! Reference and alternate counts at every locus of the requested intervals, which is what the
 //! copy-number tools segment on.
@@ -13,8 +13,8 @@
 //!
 //! # The alternate count is not the alternate base's count
 //!
-//! `altReadCount = totalBaseCount - refReadCount`, and the reference's own comment says so: "we take
-//! alt = total - ref instead of the actual alt count". A locus carrying three different
+//! `altReadCount = totalBaseCount - refReadCount`, and the reference's own comment says so: "we
+//! take alt = total - ref instead of the actual alt count". A locus carrying three different
 //! non-reference bases has all three in the alternate count, while the alternate BASE names only
 //! the most common of them.
 //!
@@ -22,6 +22,15 @@
 //!
 //! It defaults to 20 and is applied per PILEUP ELEMENT, so a read whose one base at this locus is
 //! at quality 19 still passes every read filter and still contributes nothing here.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<AllelicCount>` is "a row or nothing": `None` is the Java's early `return` that adds
+//!   no row.
+//! - `[i32; 4]` is a fixed-size array of four `int`s, and `*b"ACGT"` the four bytes of that text.
+//! - `.iter().position(..)` is `indexOf` with a predicate, answering `None` when nothing matches;
+//!   `.expect(..)` unwraps a value the code has just guaranteed and would abort if it were absent.
+//! - `.sort_by(..)` is a stable sort, like Java's `Stream.sorted` on a sequential stream.
 
 use gatk_engine::read_pileup::ReadPileup;
 use gatk_readfilter::{self as filters, Parameterized};
@@ -89,6 +98,8 @@ pub fn collect_at_locus(
 
     // Deletions first, then the quality threshold: both are per element, and an `N` survives both
     // and is then not counted by either total.
+    // `Nucleotide.Counter`, restricted to the four bases that `totalBaseCount` sums: an `N` or any
+    // other code is never stored, which is the same as storing it and not summing it.
     let mut counts = [0i32; 4];
     for element in &pileup.elements {
         if element.is_deletion() || element.qual() < minimum_base_quality {
@@ -125,10 +136,18 @@ pub fn collect_at_locus(
 
 /// `inferAltFromPileupBaseCounts`: the most common base that is not the reference.
 ///
+/// ```java
+/// return BASES.stream()
+///         .filter(b -> b != refNucleotide)
+///         .sorted((b1, b2) -> Long.compare(baseCounts.get(b2), baseCounts.get(b1)))
+///         .findFirst().get();
+/// ```
+///
 /// The reference sorts descending by count and takes the first. Java's sort is stable, so a tie is
 /// broken by the order of `BASES`, which is `A C G T`.
 fn infer_alternate(counts: &[i32; 4], reference_index: usize) -> u8 {
     let mut candidates: Vec<usize> = (0..4).filter(|index| *index != reference_index).collect();
+    // `right` before `left` makes the comparison descending, as `Long.compare(b2, b1)` does.
     candidates.sort_by(|left, right| counts[*right].cmp(&counts[*left]));
     BASES[candidates[0]]
 }

@@ -1,4 +1,5 @@
-//! Ported from `org.broadinstitute.hellbender.tools.PrintReadsHeader` (GATK 4.6.2.0).
+//! Ported from `org.broadinstitute.hellbender.tools.PrintReadsHeader` (GATK 4.7.0.0;
+//! `PrintReadsHeader.java` is unchanged since 4.6.2.0).
 //!
 //! The eleventh whole tool of the record-transform archetype, the second that is not a walker, and
 //! the smallest: forty-six lines of which four do anything.
@@ -6,12 +7,15 @@
 //! ```java
 //! public void traverse() {
 //!     final SAMFileHeader bamHeader = getHeaderForReads();
-//!     try ( final OutputStreamWriter outputWriter = new OutputStreamWriter(outputFile.getOutputStream()) ) {
+//!     try ( final OutputStreamWriter outputWriter =
+//!             new OutputStreamWriter(outputFile.getOutputStream()) ) {
 //!         final SAMTextHeaderCodec codec = new SAMTextHeaderCodec();
 //!         codec.encode(outputWriter, bamHeader);
 //!     } catch (IOException e ) { ... }
 //! }
 //! ```
+//!
+//! (The `try` line wrapped to fit, the `catch` body elided.)
 //!
 //! # The header it prints is not the header it was given
 //!
@@ -28,8 +32,8 @@
 //! measurement turned up: `SAMFileWriterImpl.writeHeader(SAMFileHeader)` goes through the *same*
 //! two-argument overload, so **no BAM htsjdk produced can carry a non-current `VN` in the first
 //! place**. The three-argument call that would keep it lives in
-//! `BAMFileWriter.writeHeader(BinaryCodec, SAMFileHeader)` and is reachable only from the standalone
-//! block-copy reheader.
+//! `BAMFileWriter.writeHeader(BinaryCodec, SAMFileHeader)` and is reachable only from the
+//! standalone block-copy reheader.
 //!
 //! That makes it htsjdk-rs's problem rather than this tool's: `BamWriter` calls
 //! [`htsjdk_bam::header::SamHeader::encode`], whose own comment claims the writer passes `true`, so
@@ -38,9 +42,9 @@
 //!
 //! # Nothing is appended
 //!
-//! `getHeaderForReads()`, not `getHeaderForSAMWriter()`, so the `@PG` chain is the file's own and no
-//! record is added to it. Every other tool of this archetype does the opposite, which is the only
-//! reason this one needs a module rather than a line.
+//! `getHeaderForReads()`, not `getHeaderForSAMWriter()`, so the `@PG` chain is the file's own and
+//! no record is added to it. Every other tool of this archetype does the opposite, which is the
+//! only reason this one needs a module rather than a line.
 //!
 //! # The output is text, in the platform's charset
 //!
@@ -48,6 +52,13 @@
 //! which is what the golden's bytes show and what this port writes. A container with a different
 //! default would produce different bytes from the same header, which is why the dump records the
 //! charset's name beside the bytes rather than leaving it to be inferred.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&SamHeader` is a borrowed, read-only view of the caller's header; `header.clone()` is a deep
+//!   copy this function owns and may change, so the caller's header is never touched.
+//! - `Vec<u8>` is a `byte[]` the caller owns; `into_bytes` hands over the string's UTF-8 bytes
+//!   without copying them.
 
 use htsjdk_bam::header::{Attributes, SamHeader, CURRENT_VERSION};
 
@@ -62,6 +73,16 @@ pub const TOOL_NAME: &str = "GATK PrintReadsHeader";
 /// `writeHDLine(false)` builds a fresh `SAMFileHeader` and copies every attribute except `VN` into
 /// it, so `VN` is the current version and leads the line. The rest of the header is untouched:
 /// [`SamHeader::encode`] is the `true` behaviour and is correct for everything below `@HD`.
+///
+/// ```java
+/// newHeader = new SAMFileHeader();
+///
+/// for (final Map.Entry<String, String> entry : mFileHeader.getAttributes()) {
+///     if (!entry.getKey().equals(SAMFileHeader.VERSION_TAG)) {
+///         newHeader.setAttribute(entry.getKey(), entry.getValue());
+///     }
+/// }
+/// ```
 pub fn encode_without_existing_version(header: &SamHeader) -> String {
     let mut rebuilt = header.clone();
     let mut attributes = Attributes::new();

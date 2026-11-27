@@ -1,24 +1,38 @@
 //! `CheckPileup`, ported from `org.broadinstitute.hellbender.tools.walkers.qc.CheckPileup`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `CheckPileup.java` is unchanged since 4.6.2.0).
 //!
 //! A `LocusWalker` that compares GATK's own pileup against a samtools mpileup file, locus by locus,
 //! and prints every disagreement. The truth file is read by [`gatk_engine::sam_pileup`].
 //!
 //! # The pileup it reports is not the qualities the reads carry
 //!
-//! `fixOverlaps` runs by default and does what samtools does to an overlapping pair: where two mates
-//! cover one locus with the same base, one quality becomes their sum and the other becomes **zero**.
-//! Two mates carrying `I` and `J` come out `r!`. `--ignore-overlaps` turns it off, and the same run
-//! then agrees with a truth file that recorded the reads' own qualities.
+//! `fixOverlaps` runs by default and does what samtools does to an overlapping pair: where two
+//! mates cover one locus with the same base, one quality becomes their sum and the other becomes
+//! **zero**. Two mates carrying `I` and `J` come out `r!`. `--ignore-overlaps` turns it off, and
+//! the same run then agrees with a truth file that recorded the reads' own qualities.
 //!
 //! # The comparison stops at the first failure
 //!
 //! Size, then location, then bases, then qualities, and the message names the one that failed. The
 //! bases are compared case-insensitively and the qualities are not.
 //!
-//! The message prints the qualities as **raw Phred bytes cast to characters**, where the report line
-//! above it prints them as SAM qualities: the same two qualities appear as `IJ` in one and `()` in
-//! the other.
+//! The message prints the qualities as **raw Phred bytes cast to characters**, where the report
+//! line above it prints them as SAM qualities: the same two qualities appear as `IJ` in one and
+//! `()` in the other.
+//!
+//! Java quotes are verbatim apart from line breaks added to fit 100 columns.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[u8]` is a borrowed, read-only view of bytes (Java's `byte[]`); `&str` a borrowed string.
+//! - `Option<T>` is "a value or nothing": [`pileup_diff`] answers `None` where the Java's
+//!   `pileupDiff` returns `null`.
+//! - `let Some(x) = y else { .. };` unwraps `y` or runs the block, which must leave the function:
+//!   the Java's `if (truePileup == null)` branch.
+//! - `(A, B)` is a tuple, two values returned together without a holder class.
+//! - `ReadPileup<'_>` carries a lifetime: the pileup borrows the reads and cannot outlive them.
+//! - `|&q| q as char` is a lambda that copies the byte out and casts it to the character of that
+//!   code point.
 
 use gatk_engine::interval::SimpleInterval;
 use gatk_engine::locus_iterator::AlignmentContext;
@@ -68,6 +82,14 @@ pub struct CheckPileupResult {
 
 /// `pileupDiff(a, b)`: the first comparison that fails, or nothing.
 ///
+/// ```java
+/// final String aQuals = new String(a.getBaseQuals());
+/// final String bQuals = new String(b.getBaseQuals());
+/// if ( ! aQuals.equals(bQuals) ) {
+///     return String.format("Quals not equal: %s vs. %s", aQuals, bQuals);
+/// }
+/// ```
+///
 /// The order is the reference's, and so is the asymmetry: the bases are upper-cased on both sides
 /// and the qualities are not touched. The qualities are a parameter rather than the pileup's own,
 /// because the overlap fixing happens before this is called and changes them.
@@ -85,12 +107,17 @@ pub fn pileup_diff(
             truth.size()
         ));
     }
+    // `IntervalUtils.compareLocatables(a.getLocation(), b, ..) != 0`. The Java's message prints
+    // `b` itself, and `SAMPileupFeature` has no `toString`, which this does not reproduce. The
+    // branch is unreachable: the truth feature is one base long (`getStart()` and `getEnd()` both
+    // return `position`) and is looked up as overlapping this very locus.
     if contig != truth.contig || position != truth.position {
         return Some(format!(
             "Locations not equal: {contig}:{position}-{position} vs. {}",
             truth.contig
         ));
     }
+    // `String::from_utf8_lossy` decodes bytes as `new String(byte[])` does for ASCII.
     let ours = String::from_utf8_lossy(bases).to_uppercase();
     let theirs = truth.bases_string().to_uppercase();
     if ours != theirs {
@@ -121,6 +148,8 @@ fn raw_chars(quals: &[u8]) -> String {
 /// pileup rather than a mutation of the reads, because the reads themselves are not changed by this
 /// tool and a caller that wrote the new qualities back would change what the next locus sees.
 pub fn fixed_overlap_quals(pileup: &ReadPileup<'_>) -> Vec<u8> {
+    // `elements` is the pileup in its sorted order, and `quals` a writable copy of their
+    // qualities that the pair fixing below overwrites in place.
     let elements = pileup.sorted();
     let mut quals: Vec<u8> = elements.iter().map(|element| element.qual()).collect();
 
@@ -136,6 +165,7 @@ pub fn fixed_overlap_quals(pileup: &ReadPileup<'_>) -> Vec<u8> {
         if !could_overlap {
             continue;
         }
+        // `position` is `indexOf` with a predicate; `remove` takes the held first mate out.
         match waiting.iter().position(|(name, _)| name == &read.read_name) {
             Some(position) => {
                 let (_, first) = waiting.remove(position);
@@ -158,6 +188,12 @@ pub fn fixed_overlap_quals(pileup: &ReadPileup<'_>) -> Vec<u8> {
 ///
 /// Returns the line to write, if any, and the error the run would throw. Both can be present: the
 /// reference writes the line and then throws, so a failing run leaves the line that explains it.
+/// `--continue-after-error` is the caller's to apply, by not throwing the error.
+///
+/// ```java
+/// out.printf("%s vs. %s%n", pileup.getPileupString((char) ref.getBase()),
+///         truePileup.getPileupString());
+/// ```
 pub fn apply(
     context: &AlignmentContext<'_>,
     reference_base: u8,
@@ -205,6 +241,8 @@ pub fn apply(
 }
 
 /// `ReadPileup.getPileupString(ref)`, with the qualities the caller decided on.
+///
+/// `q + 33` is the SAM (Phred+33) encoding, where [`pileup_diff`]'s message uses the raw byte.
 fn pileup_string(
     contig: &str,
     position: i32,

@@ -1,9 +1,9 @@
 //! `VariantOverlapAnnotator` with `--dbsnp` as its one input: the rsID and the `DB` flag.
 //!
 //! Ported from `org.broadinstitute.hellbender.tools.walkers.annotator.VariantOverlapAnnotator`
-//! (GATK 4.6.2.0). The overlap map holds `--dbsnp` under `DB` and nothing else, so
-//! `annotateOverlaps` asks the same question `annotateRsID` does and sets the flag exactly when an
-//! rsID was found.
+//! (GATK 4.7.0.0; `VariantOverlapAnnotator.java` is unchanged since 4.6.2.0). The overlap map
+//! holds `--dbsnp` under `DB` and nothing else, so `annotateOverlaps` asks the same question
+//! `annotateRsID` does and sets the flag exactly when an rsID was found.
 //!
 //! # What "the same variant" means
 //!
@@ -13,6 +13,17 @@
 //! it stands, gives a record with no alternate no event at all, and trims every pair it cuts out
 //! of a multi-allelic record at both ends. The `Event` then cuts the suffix its two alleles
 //! share, so an untrimmed biallelic `GGCT>GT` still matches the `GGC>G` a split trims to.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, String>` is "a value or an error message"; `?` after a call hands the error
+//!   to the caller at once, which is how each Java `throw` here reaches the tool.
+//! - `Option<String>` is "a string or nothing", Java's nullable `String`; `cond.then(|| x)` is
+//!   `Some(x)` when `cond` holds and `None` otherwise.
+//! - `let cut = |index, original| { ... };` is a lambda bound to a name, which may read the
+//!   local variables around it (`trimmed`, `pair`) as a Java lambda reads effectively-final ones.
+//! - `&ours[..n]` is a borrowed view of the first `n` bytes, Java's `Arrays.copyOf(a, n)`
+//!   without the copy.
 
 use gatk_engine::variant_context_utils::{
     trim_alleles, Allele as EngineAllele, Variant as EngineVariant,
@@ -31,6 +42,13 @@ struct Event {
 /// `new Event(contig, start, ref, alt)`, which cuts the two alleles to their minimal
 /// representation: the suffix they share, unless either is one base long or their last bases
 /// differ. A pair with no base left on one side is `Allele.create` of nothing, which throws.
+///
+/// ```java
+/// Utils.validateArg(!ref.basesMatch(alt), "ref and alt alleles are identical");
+/// ```
+///
+/// The shared suffix is then counted from the right while the bases agree, never past the
+/// shorter allele, which the `zip` bounds as Java's `minLen` does.
 fn event(start: i64, reference: &Allele, alternate: &Allele) -> Result<Event, String> {
     let (ours, theirs) = (reference.display_string(), alternate.display_string());
     let (ours, theirs) = (ours.as_bytes(), theirs.as_bytes());
@@ -44,6 +62,8 @@ fn event(start: i64, reference: &Allele, alternate: &Allele) -> Result<Event, St
     if ours == theirs {
         return Err("ref and alt alleles are identical".to_string());
     }
+    // `.rev()` walks from the last base; `zip` pairs the two allele tails and stops at the
+    // shorter; `take_while(..).count()` is Java's `while (... == ...) overlapCount++`.
     let shared = ours
         .iter()
         .rev()
@@ -62,6 +82,9 @@ fn event(start: i64, reference: &Allele, alternate: &Allele) -> Result<Event, St
 
 /// `splitVariantContextToEvents(vc, true, SET_TO_NO_CALL_NO_ANNOTATIONS, true)`, as far as an
 /// event reads it: genotypes and attributes never reach the comparison.
+///
+/// A biallelic record becomes one event untrimmed; a multi-allelic one becomes one event per
+/// alternate, each pair trimmed first by [`trim_pair`].
 fn events(vc: &VariantContext) -> Result<Vec<Event>, String> {
     if vc.alleles.len() <= 1 {
         return Ok(Vec::new());
@@ -93,6 +116,8 @@ pub fn trim_pair(vc: &VariantContext, alternate: &Allele) -> Result<(i64, Allele
         genotypes: Vec::new(),
         attributes: Vec::new(),
     };
+    // `trim_alleles` works on the engine's own record type, so the pair is rebuilt as one with
+    // no genotypes or attributes, which the trim does not read.
     let trimmed = trim_alleles(&pair, true, true).map_err(|error| format!("{error:?}"))?;
     let cut = |index: usize, original: &Allele| {
         if original.is_symbolic() || trimmed.alleles[index].bases == pair.alleles[index].bases {
@@ -111,6 +136,17 @@ pub fn trim_pair(vc: &VariantContext, alternate: &Allele) -> Result<(i64, Allele
 
 /// `getRsID(rsIDSourceVCs, vcToAnnotate)`: the IDs of every unfiltered source sharing an event
 /// with the record, joined with `;`, in the sources' order. A source with no ID contributes `.`.
+///
+/// ```java
+/// if ( vcCompSource.isFiltered() ) {
+///     continue; // don't process any failed VCs
+/// }
+/// ```
+///
+/// The off-contig refusal is `IllegalArgumentException` in the Java, whose message prints the
+/// whole `VariantContext` (`"source rsID VariantContext " + vcCompSource + ...`); this one
+/// prints `contig:start`. The sources are taken at the record's own start, so it is not reached
+/// from [`annotate`].
 pub fn rs_id(sources: &[&VariantContext], vc: &VariantContext) -> Result<Option<String>, String> {
     let annotated = events(vc)?;
     let mut ids: Vec<String> = Vec::new();
@@ -142,15 +178,22 @@ pub fn annotate(
     sources: &[&VariantContext],
     vc: &VariantContext,
 ) -> Result<VariantContext, String> {
+    // `let Some(id) = ... else { ... }`: take the rsID, or return the record unchanged when
+    // there is none, as `annotateRsID` returns `vcToAnnotate`.
     let Some(id) = rs_id(sources, vc)? else {
         return Ok(vc.clone());
     };
     let mut out = vc.clone();
+    // `! vcToAnnotate.hasID()`, then `! vcToAnnotate.getID().contains(rsID)`: a substring test,
+    // so an ID of `rs10` already "contains" `rs1`.
     if vc.id == "." {
         out.id = id;
     } else if !vc.id.contains(&id) {
         out.id = format!("{};{id}", vc.id);
     }
+    // `annotateOverlap` puts `attribute(attributeKey, true)` with the key `DB`, replacing any
+    // value already there. `iter_mut` yields writable references, and `*value = ...` writes
+    // through one.
     match out.attributes.iter_mut().find(|(key, _)| key == "DB") {
         Some((_, value)) => *value = Value::Bool(true),
         None => out.attributes.push(("DB".to_string(), Value::Bool(true))),

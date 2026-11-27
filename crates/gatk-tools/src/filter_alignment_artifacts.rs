@@ -1,11 +1,27 @@
-//! `FilterAlignmentArtifacts`: whether a variant is an artefact of alignment.
+//! `FilterAlignmentArtifacts`: whether a variant is an artefact of alignment
+//! (`org.broadinstitute.hellbender.tools.walkers.realignmentfilter`, GATK 4.7.0.0;
+//! `FilterAlignmentArtifacts.java` and `RealignmentEngine.java` are unchanged since 4.6.2.0).
 //!
 //! The tool has three steps: reassemble the reads supporting a variant into unitigs, realign the
 //! unitigs, and filter the variant if they map somewhere else just as well. The middle step is
 //! BWA's and the first is the Mutect2 assembler's; neither is ported. The two rules the tool owns
-//! are, along with the filter decision they feed.
+//! are ported here (`RealignmentEngine.supportsVariant` and `findJointAlignments`), along with the
+//! filter decision they feed (the end of `FilterAlignmentArtifacts.apply`).
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is a value or nothing: `Some(x)` or `None`, Java's nullable return without the
+//!   null. `let Some(x) = y else { return ...; };` unwraps it or takes the early exit.
+//! - `&[T]` is a borrowed, read-only view of an array; `&x` passes `x` without copying it.
+//! - `match` with `Some(('S', length))` tests a shape and binds its parts in one step;
+//!   `matches!(op, 'M' | 'I')` is the same test answering a boolean.
+//! - `.iter().map(..).sum()`, `.all(..)`, `.any(..)` are Java's `mapToInt(..).sum()`,
+//!   `allMatch` and `anyMatch`; `|x| ...` is a lambda.
+//! - `as usize` and `as f64` are casts: `usize` is an unsigned index type Java lacks, and `as`
+//!   wraps a negative `i32` to a huge `usize` rather than failing.
 
-/// One read, reduced to what `supportsVariant` reads off it.
+/// One read, reduced to what `supportsVariant` reads off it: `getStart()`, `getCigarElements()`
+/// and `getBasesNoCopy()`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Read {
     pub name: String,
@@ -40,7 +56,8 @@ pub struct ReadIndex {
     pub operator: char,
 }
 
-/// `READ_INDEX_NOT_FOUND` is returned as `None` here.
+/// `ReadUtils.getReadIndexForReferenceCoordinate(read, refCoord)`, called on the read's soft
+/// start. `READ_INDEX_NOT_FOUND` is returned as `None` here.
 ///
 /// Three things about this walk are not what they look like. It starts from the SOFT start, which
 /// is the alignment start less any leading soft clip. A SOFT CLIP CONSUMES REFERENCE here, though
@@ -49,7 +66,17 @@ pub struct ReadIndex {
 /// coordinate after an insertion falls in the following match, whose first read position is
 /// already past the inserted bases. That last one is why an insertion cannot be supported by an
 /// `I` at a tolerance of zero.
+///
+/// The soft-clip rule is this line of the reference (broken here to fit):
+///
+/// ```java
+/// lastRefPosOfElement += operator.consumesReferenceBases() || operator == CigarOperator.S
+///         ? element.getLength() : 0;
+/// ```
 pub fn read_index_for_reference_coordinate(read: &Read, coordinate: i32) -> Option<ReadIndex> {
+    // `ReadUtils.getSoftStart`, which subtracts every leading soft clip and steps over hard
+    // clips (it stops only at `else if (op != CigarOperator.HARD_CLIP)`). This reads only the
+    // first element, so it agrees whenever the cigar does not open with `H`.
     let leading_clip = match read.cigar.first() {
         Some(('S', length)) => *length,
         _ => 0,
@@ -87,10 +114,12 @@ pub fn read_index_for_reference_coordinate(read: &Read, coordinate: i32) -> Opti
     None
 }
 
+/// `RealignmentEngine.mightSupportDeletion`: `D`, or a soft clip, which may hide one.
 fn might_support_deletion(operator: char) -> bool {
     operator == 'D' || operator == 'S'
 }
 
+/// `RealignmentEngine.mightSupportInsertion`: `I`, or a soft clip.
 fn might_support_insertion(operator: char) -> bool {
     operator == 'I' || operator == 'S'
 }
@@ -105,6 +134,19 @@ fn might_support_insertion(operator: char) -> bool {
 /// offset. The sum is advanced ONLY when the element is outside the tolerance, so as soon as one
 /// element is within it the sum freezes and every element after it is treated as being at the
 /// variant, however far away it really is.
+///
+/// The reference's loop body (the inner condition broken here to fit):
+///
+/// ```java
+/// if (Math.abs(readPosition - variantPositionInRead) <= indelStartTolerance) {
+///     if (isDeletion && mightSupportDeletion(cigarElement)
+///             || !isDeletion && mightSupportInsertion(cigarElement)) {
+///         return true;
+///     }
+/// } else {
+///     readPosition += cigarElement.getLength();
+/// }
+/// ```
 pub fn supports_variant(read: &Read, variant: &Variant, indel_start_tolerance: i32) -> bool {
     let Some(index) = read_index_for_reference_coordinate(read, variant.start) else {
         return false;
@@ -117,7 +159,10 @@ pub fn supports_variant(read: &Read, variant: &Variant, indel_start_tolerance: i
     for allele in &variant.alternates {
         let reference_length = variant.reference.len();
         if allele.len() == reference_length {
-            // A SNP or an MNP: the read's bases from the offset, truncated at its end.
+            // A SNP or an MNP: the read's bases from the offset, truncated at its end, which is
+            // `ArrayUtils.subarray(readBases, variantPositionInRead, Math.min(...))`.
+            // `read.bases[a..b]` is the slice from `a` up to but not including `b`; slicing past
+            // the end would panic, hence the `<=` test first.
             let end = (variant_position + allele.len()).min(read.bases.len());
             if variant_position <= end && read.bases[variant_position..end] == allele[..] {
                 return true;
@@ -154,7 +199,14 @@ pub struct Alignment {
 }
 
 impl Alignment {
-    /// `convertToInterval`, as the pair the overlap detector compares.
+    /// `convertToInterval`, as the triple the overlap detector compares.
+    ///
+    /// The reference also moves the start to one-based, which this does not (broken here to fit):
+    ///
+    /// ```java
+    /// return new SimpleInterval(Integer.toString(alignment.getRefId()),
+    ///         alignment.getRefStart() + 1, alignment.getRefEnd());
+    /// ```
     fn interval(&self) -> (i32, i32, i32) {
         (self.reference_id, self.reference_start, self.reference_end)
     }
@@ -163,6 +215,19 @@ impl Alignment {
 /// Two intervals overlap once each has been padded by half the maximum fragment length on each
 /// side. The reference builds the detector with a NEGATIVE padding of that size, which widens the
 /// query rather than narrowing it.
+///
+/// The reference's construction, broken here to fit:
+///
+/// ```java
+/// final OverlapDetector<BwaMemAlignment> overlapDetector = new OverlapDetector<BwaMemAlignment>(
+///         -maxReasonableFragmentLength/2, -maxReasonableFragmentLength/2);
+/// ```
+///
+/// htsjdk's `OverlapDetector` applies the buffer to the stored interval (`interval.getStart() +
+/// this.lhsBuffer`, `interval.getEnd() - this.lhsBuffer`) and again to the query
+/// (`locatable.getStart() + this.rhsBuffer`, `locatable.getEnd() - this.rhsBuffer`), so in the
+/// reference the two sides together are widened by twice `padding`. The test below widens by
+/// `padding` once.
 fn overlaps(a: &Alignment, b: &Alignment, max_reasonable_fragment_length: i32) -> bool {
     let padding = max_reasonable_fragment_length / 2;
     let (contig_a, start_a, end_a) = a.interval();
@@ -179,6 +244,8 @@ fn overlaps(a: &Alignment, b: &Alignment, max_reasonable_fragment_length: i32) -
 /// The reference collects the result in a `HashSet<List<BwaMemAlignment>>` whose elements define no
 /// `equals`, so its order is identity-hash order and is not reproducible. The order here is the
 /// first unitig's, and any comparison against the reference has to sort.
+///
+/// The `out.contains` test stands for the set: a group already collected is not added twice.
 pub fn find_joint_alignments(
     unitig_alignments: &[Vec<Alignment>],
     max_reasonable_fragment_length: i32,
@@ -230,12 +297,12 @@ pub fn find_joint_alignments(
     out
 }
 
-/// `jointAlignmentScore`: the sum over the group.
+/// `jointAlignmentScore`: the sum of `getAlignerScore` over the group.
 pub fn joint_alignment_score(group: &[Alignment]) -> i32 {
     group.iter().map(|alignment| alignment.score).sum()
 }
 
-/// `totalMismatches`: the sum over the group.
+/// `totalMismatches`: the sum of `getNMismatches` over the group.
 pub fn total_mismatches(group: &[Alignment]) -> i32 {
     group.iter().map(|alignment| alignment.mismatches).sum()
 }
@@ -254,6 +321,19 @@ pub struct Decision {
 /// The best joint alignment landing on ANOTHER contig filters outright. Otherwise a second joint
 /// alignment filters only when BOTH the score difference and the mismatch difference, each per
 /// base of unitig, fall below their thresholds: either one on its own leaves the variant alone.
+///
+/// The reference's test, with `totalBases` the summed unitig lengths (broken here to fit):
+///
+/// ```java
+/// final boolean multimapping = (double) scoreDiff / totalBases
+///         < realignmentArgumentCollection.minAlignerScoreDifferencePerBase
+///         && (double) mismatchDiff / totalBases
+///         < realignmentArgumentCollection.minMismatchDifferencePerBase;
+/// ```
+///
+/// The groups are ranked by `jointAlignments.sort(Comparator.comparingInt(FilterAlignmentArtifacts
+/// ::jointAlignmentScore).reversed())`; sorting on the negated score is the same descending,
+/// stable order.
 pub fn decide(
     joint_alignments: &[Vec<Alignment>],
     variant_contig_id: i32,

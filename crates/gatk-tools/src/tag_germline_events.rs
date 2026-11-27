@@ -1,6 +1,7 @@
 //! `TagGermlineEvents`, ported from
 //! `org.broadinstitute.hellbender.tools.copynumber.utils.TagGermlineEvents` and the
-//! `SimpleGermlineTagger` under it (GATK 4.6.2.0).
+//! `SimpleGermlineTagger` under it (GATK 4.7.0.0; `TagGermlineEvents.java` and
+//! `SimpleGermlineTagger.java` are unchanged since 4.6.2.0).
 //!
 //! Each tumour segment is asked whether the matched normal carries the same event, and the answer
 //! is written as one more column.
@@ -29,6 +30,18 @@
 //!
 //! `mergedRegionsByAnnotation` builds each merged region with a map holding the call annotation and
 //! nothing else, so whatever else those rows carried is gone before any comparison.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[AnnotatedInterval]` is a borrowed, read-only list; `.to_vec()` makes an owned copy, which
+//!   is how the inputs stay unmodified as the Java promises ("This method will not modify the
+//!   input segments.").
+//! - `Option<String>` is a string or nothing; `.unwrap_or_default()` turns nothing into `""`.
+//! - `.iter().enumerate()` yields `(index, item)` pairs, Java's indexed `for` loop.
+//! - `|segment| ...` is a lambda; a lambda stored in a `let` (such as `empty` below) can be passed
+//!   to `.any(..)` like a Java `Predicate`.
+//! - `a..=b` is an inclusive range, so `(0.0..=1.0).contains(&x)` is `0.0 <= x && x <= 1.0`.
+//! - `as f64` widens an integer to a `double`, as Java does implicitly in `size() * threshold`.
 
 use crate::annotated_interval::{sort_by_dictionary, AnnotatedInterval};
 use std::collections::BTreeMap;
@@ -63,6 +76,7 @@ pub enum TagError {
 }
 
 impl TagError {
+    /// The fully-qualified class of the exception the reference throws.
     pub fn java_class(&self) -> &'static str {
         match self {
             TagError::OverlappingIntervals { .. } => {
@@ -72,6 +86,8 @@ impl TagError {
         }
     }
 
+    /// The reference's message. The two empty-call texts differ in wording (`name must be` for
+    /// the normal, `must be` for the tumour), as the two `Utils.validateArg` calls do.
     pub fn message(&self) -> String {
         match self {
             TagError::EmptyTumourCall(column) => format!(
@@ -112,6 +128,7 @@ pub fn java_string(interval: &AnnotatedInterval) -> String {
     )
 }
 
+/// `Locatable.overlaps`: same contig, and closed intervals that share at least one base.
 fn overlaps(left: &AnnotatedInterval, right: &AnnotatedInterval) -> bool {
     left.contig == right.contig && left.start <= right.end && right.start <= left.end
 }
@@ -124,12 +141,19 @@ fn intersection(left: &AnnotatedInterval, right: &AnnotatedInterval) -> i64 {
     i64::from(left.end.min(right.end) - left.start.max(right.start) + 1)
 }
 
+/// `SimpleInterval.size()`, which counts both ends.
 fn size(interval: &AnnotatedInterval) -> i64 {
     i64::from(interval.end - interval.start + 1)
 }
 
 /// `IntervalUtils.isReciprocalOverlap`, whose comparisons are both `>=` and which answers true for
 /// any pair at all when the threshold is zero.
+///
+/// ```java
+/// if (reciprocalOverlapThreshold == 0.) {
+///     return true;
+/// }
+/// ```
 pub fn is_reciprocal_overlap(
     first: &AnnotatedInterval,
     second: &AnnotatedInterval,
@@ -145,11 +169,17 @@ pub fn is_reciprocal_overlap(
 
 /// `mergedRegionsByAnnotation`: neighbouring regions of the same contig and the same call, merged
 /// into a region carrying ONLY that call.
+///
+/// "Neighbouring" means next in the list, not adjacent on the genome: `isMergeableByAnnotation`
+/// compares the call and the contig and nothing else, so a gap between two same-call regions is
+/// absorbed. Each candidate is compared with the FIRST region of the run, which the `first`
+/// binding here keeps, as the Java's `normalSegment` stays fixed while `nextSegment` advances.
 pub fn merged_regions_by_annotation(
     regions: &[AnnotatedInterval],
     call_annotation: &str,
 ) -> Vec<AnnotatedInterval> {
     let mut merged = Vec::new();
+    // The Java's `PeekableIterator`, written as an index into the list.
     let mut index = 0;
     while index < regions.len() {
         let first = &regions[index];
@@ -163,6 +193,7 @@ pub fn merged_regions_by_annotation(
             end = regions[index].end;
             index += 1;
         }
+        // `ImmutableSortedMap.of(annotationToMerge, ...)`. A `BTreeMap` is Java's `TreeMap`.
         let mut annotations = BTreeMap::new();
         if let Some(call) = call {
             annotations.insert(call_annotation.to_string(), call);
@@ -207,6 +238,13 @@ fn validate_no_overlaps(
 }
 
 /// `tagTumorSegmentsWithGermlineActivity`.
+///
+/// The checks run in the Java's order: overlaps in each input, padding, threshold, the two
+/// dictionary sorts, then the empty calls. The Java's `Output annotation name cannot be empty.`
+/// check, between the sorts and the empty calls, is not made here.
+///
+/// The returned segments are the tumour's, sorted, each with `output_annotation` set to the call
+/// of a normal region that tagged it, or `0` (`Call.NEUTRAL`) otherwise.
 pub fn tag_tumour_segments(
     tumour: &[AnnotatedInterval],
     normal: &[AnnotatedInterval],
@@ -260,9 +298,14 @@ pub fn tag_tumour_segments(
         })
         .collect();
 
-    // The tag of each tumour segment, by its position in the sorted list.
+    // The tag of each tumour segment, by its position in the sorted list. It stands in for the
+    // Java's `HashMap<AnnotatedInterval, Call>`; a later normal region overwrites an earlier one,
+    // as `result.putAll` does, but the Java visits the normal regions in `HashMap` key order and
+    // this loop visits them in sorted order.
     let mut tags: Vec<Option<String>> = vec![None; tumour_segments.len()];
     for normal_region in interesting {
+        // `IntervalUtils.createOverlapMap`'s entry for this normal region: the tumour segments
+        // overlapping it, in sorted order.
         let overlapping: Vec<usize> = tumour_segments
             .iter()
             .enumerate()
@@ -286,6 +329,7 @@ pub fn tag_tumour_segments(
         let end_seen = overlapping_segments
             .iter()
             .any(|segment| (segment.end - normal_region.end).abs() <= padding_in_bp);
+        // `if ((isStartPositionSeen && isEndPositionSeen) || isReciprocalOverlapSeen)`.
         if !((start_seen && end_seen) || reciprocal_seen) {
             continue;
         }
@@ -294,6 +338,7 @@ pub fn tag_tumour_segments(
             .get(call_annotation)
             .cloned()
             .unwrap_or_default();
+        // The third test from the module header, per segment.
         for index in overlapping {
             let segment = &tumour_segments[index];
             let breakpoint = (segment.start - normal_region.start).abs() <= padding_in_bp

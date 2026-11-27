@@ -1,4 +1,5 @@
-//! Ported from `org.broadinstitute.hellbender.tools.SplitReads` (GATK 4.6.2.0).
+//! Ported from `org.broadinstitute.hellbender.tools.SplitReads` (GATK 4.7.0.0; `SplitReads.java`
+//! is unchanged since 4.6.2.0), with the `readersplitters` package it uses.
 //!
 //! The seventh whole tool of the record-transform archetype, and the first whose `-O` is a
 //! **directory** and whose run opens more than one writer. Its `apply` is one line; everything
@@ -54,6 +55,19 @@
 //! which is null when the read carries no `RG`. What saves the tool is a filter rather than the
 //! tool: `WellformedReadFilter`'s `HAS_READ_GROUP` drops the read first. Measured with that filter
 //! disabled, the run ends in `java.lang.NullPointerException`.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<String>` is "a string or nothing", the Java `String` that may be null; the
+//!   compiler makes every use say what to do with the nothing, which is how the two spellings
+//!   of null below stay apart (`unwrap_or("null")` against `unwrap_or("unknown")`);
+//! - `Result<T, E>` is "a value or an error", how this file models a Java exception; a `?`
+//!   after a call hands its error straight back to the caller;
+//! - [`RunResult`] nests two of them: the outer error is an I/O failure reading or writing, the
+//!   inner one is the tool's own refusal;
+//! - `&[Splitter]` is a borrowed, read-only view of an array; the caller keeps ownership;
+//! - `.iter().position(..)` is the index of the first match, or `None`: the stand-in here for
+//!   the `LinkedHashMap` lookup.
 
 use htsjdk_bam::header::SamHeader;
 use htsjdk_bam::record::BamRecord;
@@ -67,10 +81,18 @@ use crate::sam_output::{header_for_sam_writer, Options};
 pub const TOOL_NAME: &str = "GATK SplitReads";
 
 /// `UNKNOWN_OUT_PREFIX`: what a **read** contributes when its splitter has no value for it.
+///
+/// ```java
+/// return key == null ? UNKNOWN_OUT_PREFIX : key.toString();
+/// ```
 pub const UNKNOWN_OUT_PREFIX: &str = "unknown";
 
 /// What a **header** contributes for the same missing value, because `addKey` concatenates the
-/// value as an `Object` and Java prints a null reference as these four characters.
+/// value as an `Object` and Java prints a null reference as these four characters:
+///
+/// ```java
+/// addKey(listKeys, listIndex + 1, key + "." + newKey, adder);
+/// ```
 pub const NULL_FROM_THE_HEADER: &str = "null";
 
 /// The three `ReaderSplitter`s this tool offers, in the order `onTraversalStart` adds them: the
@@ -87,7 +109,9 @@ pub enum Splitter {
 }
 
 impl Splitter {
-    /// The selector a `ReadGroupSplitter` applies to a read group.
+    /// The selector a `ReadGroupSplitter` applies to a read group: `getSplitByFunction()`, which
+    /// is `SAMReadGroupRecord::getSample`, `::getId` or `::getLibrary`. The ID is always present;
+    /// `SM` and `LB` may be absent, which is Java's null.
     fn value(self, group: &htsjdk_bam::header::ReadGroup) -> Option<String> {
         match self {
             Splitter::Sample => group.attributes.get("SM").map(str::to_string),
@@ -114,6 +138,10 @@ impl Splitter {
         read: &BamRecord,
         header: &SamHeader,
     ) -> Result<Option<String>, NoReadGroup> {
+        // `ReadUtils.getSAMReadGroupRecord(record, header)`: the read's `RG` tag looked up in the
+        // header. A read with no `RG`, or one naming a group the header lacks, both give Java a
+        // null group; both are the error here. `let ... = match` binds the tag's string or
+        // returns early.
         let id = match read.tags.get(Tag::new(b"RG")) {
             Some(TagValue::Str(id)) => id.clone(),
             _ => return Err(NoReadGroup),
@@ -127,7 +155,11 @@ impl Splitter {
     }
 }
 
-/// The read had no read group to ask, and the reference asked it anyway.
+/// The read had no read group to ask, and the reference asked it anyway:
+///
+/// ```java
+/// return getSplitByFunction().apply(ReadUtils.getSAMReadGroupRecord(record, header));
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NoReadGroup;
 
@@ -137,6 +169,7 @@ impl NoReadGroup {
         "null".to_string()
     }
 
+    /// The class of what the reference throws.
     pub fn class(&self) -> &'static str {
         "java.lang.NullPointerException"
     }
@@ -153,6 +186,8 @@ pub enum SplitError {
 }
 
 impl SplitError {
+    /// The message of what the reference throws. The unrecognised key's is
+    /// `"Unrecognized attribute value found: " + attributeValue`.
     pub fn message(&self) -> String {
         match self {
             SplitError::NoReadGroup(error) => error.message(),
@@ -162,6 +197,8 @@ impl SplitError {
         }
     }
 
+    /// The class of what the reference throws; `$` is how Java names the nested class
+    /// `GATKException.ShouldNeverReachHereException`.
     pub fn class(&self) -> &'static str {
         match self {
             SplitError::NoReadGroup(error) => error.class(),
@@ -177,6 +214,9 @@ impl SplitError {
 /// One `.value` per splitter, and a missing value spelled [`NULL_FROM_THE_HEADER`]. With no
 /// splitters at all this is a single empty key, which is what makes a run with no `--split-*`
 /// write one file named after the input.
+///
+/// Java recurses (`addKey(listKeys, listIndex + 1, ...)`); the loop here builds the same list
+/// level by level, the first splitter's value varying slowest, which is the recursion's order.
 pub fn keys_from_header(header: &SamHeader, splitters: &[Splitter]) -> Vec<String> {
     let mut keys = vec![String::new()];
     for splitter in splitters {
@@ -184,6 +224,8 @@ pub fn keys_from_header(header: &SamHeader, splitters: &[Splitter]) -> Vec<Strin
         let mut next = Vec::with_capacity(keys.len() * values.len());
         for key in &keys {
             for value in &values {
+                // `as_deref` views an `Option<String>` as an `Option<&str>` so the fallback can be
+                // a plain string literal.
                 next.push(format!(
                     "{key}.{}",
                     value.as_deref().unwrap_or(NULL_FROM_THE_HEADER)
@@ -196,6 +238,13 @@ pub fn keys_from_header(header: &SamHeader, splitters: &[Splitter]) -> Vec<Strin
 }
 
 /// `getKey`: the same shape for one read, with a missing value spelled [`UNKNOWN_OUT_PREFIX`].
+///
+/// ```java
+/// .reduce("", (acc, item) -> acc + "." + item);
+/// ```
+///
+/// The first splitter that finds no read group ends it with [`NoReadGroup`], as the Java
+/// `map` throws on the first.
 pub fn key_for_read(
     read: &BamRecord,
     header: &SamHeader,
@@ -210,7 +259,8 @@ pub fn key_for_read(
     Ok(key)
 }
 
-/// One file the run left behind.
+/// One file the run left behind: its name, the BAM bytes, and the index bytes when
+/// `--create-output-bam-index` is on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutputFile {
     /// `<input base name><key><input extension>`.
@@ -220,6 +270,12 @@ pub struct OutputFile {
 }
 
 /// `prepareSAMFileWriter`: the file a key is written to.
+///
+/// ```java
+/// pathSpec.getBaseName().orElse("") + keyName + pathSpec.getExtension().get()).toString());
+/// ```
+///
+/// The directory is the caller's to add: `OUTPUT_DIRECTORY.toPath().resolve(...)`.
 pub fn file_name(base_name: &str, key: &str, extension: &str) -> String {
     format!("{base_name}{key}{extension}")
 }
@@ -274,6 +330,9 @@ pub fn split_reads_with(
     let mut headers: Vec<SamHeader> = Vec::new();
     // The reads header the reference mutates in place, once per writer created.
     let mut growing = input_header.clone();
+    // `prepareSAMFileWriter` plus `outs.put`, as a closure (a lambda that captures and updates
+    // `growing`). `keys` and `headers` are passed in as `&mut`, borrowed writable references,
+    // rather than captured, because the loop below also reads them between calls.
     let mut open_writer = |key: &str, keys: &mut Vec<String>, headers: &mut Vec<SamHeader>| {
         growing = header_for_sam_writer(&growing, TOOL_NAME, options);
         match keys.iter().position(|existing| existing == key) {
@@ -290,6 +349,7 @@ pub fn split_reads_with(
     }
 
     let mut written: Vec<Vec<BamRecord>> = vec![Vec::new(); keys.len()];
+    // `apply`, one read at a time: `outs.computeIfAbsent(getKey(...), ...)`.
     for record in &records {
         let key = match key_for_read(record, &input_header, splitters) {
             Ok(key) => key,
@@ -310,6 +370,8 @@ pub fn split_reads_with(
         written[at].push(record.clone());
     }
 
+    // `closeTool`: every writer in `outs` closed in insertion order. `.zip` walks two lists in
+    // step, pairing each key with its header and its reads.
     let mut files = Vec::with_capacity(keys.len());
     for ((key, header), records) in keys.iter().zip(&headers).zip(&written) {
         let (bam, index) = crate::sam_output::write_records_with(

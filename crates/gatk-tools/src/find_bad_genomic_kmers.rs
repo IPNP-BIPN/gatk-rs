@@ -1,4 +1,5 @@
-//! `FindBadGenomicKmersSpark` (GATK 4.6.2.0): the k-mers a reference holds more than three times.
+//! `FindBadGenomicKmersSpark` (GATK 4.7.0.0; `FindBadGenomicKmersSpark.java` is unchanged since
+//! 4.6.2.0): the k-mers a reference holds more than three times.
 //!
 //! # The order is the partitions' and the tables'
 //!
@@ -6,14 +7,26 @@
 //! contig into records of 10000 bases overlapping by K-1 and `parallelize`s them into
 //! `records / 104 + 1` slices. Each slice counts its k-mers in its own hopscotch map, which it
 //! iterates into a `HashPartitioner` over the same number of partitions, and each reducer sums what
-//! arrives, map by map, in another map, keeps the counts over three, and iterates that. The partitions
-//! come back in order. So what decides a k-mer's place is the order of the slices and of the two
+//! arrives, map by map, in another map, keeps the counts over three, and iterates that. The
+//! partitions come back in order. So what decides a k-mer's place is the order of the slices and of the two
 //! tables, all of which are reproduced here.
 //!
 //! # The second pass is another table
 //!
 //! `--high-copy-fasta` adds every k-mer of that file, repeats and all, through `SVUtils.uniquify`:
 //! a hopscotch set sized for both lists, holding the first list then the second, and iterated.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, KmerFailure>` is "a value or an error"; each [`KmerFailure`] variant is one of the
+//!   exceptions the Java would throw. `?` after a call hands its error straight to the caller,
+//!   Java's `throws` at that one call site.
+//! - `impl From<HopscotchFailed> for KmerFailure` lets `?` turn a table failure into a
+//!   `KmerFailure` on the way out, with no explicit conversion at the call.
+//! - `&[Vec<u8>]` is a borrowed, read-only list of byte arrays; `&mut Vec<..>` is a borrowed list
+//!   the function appends to, which the caller keeps.
+//! - `as` between integer types converts without a check: `as i32` from a `usize` drops the high
+//!   bits, `as usize` from a non-negative `i64` keeps the value.
 
 use crate::hopscotch::{Hopscotch, HopscotchEntry, HopscotchFailed};
 use crate::sv_kmer::{DustFilteredKmerizer, SvKmerLong};
@@ -25,6 +38,7 @@ pub enum KmerFailure {
     EvenSize,
     /// `charAt(0)` on an empty line of the high-copy FASTA.
     EmptyLine,
+    /// The hopscotch table's own `IllegalStateException`, out of a resize.
     Table(HopscotchFailed),
 }
 
@@ -34,7 +48,11 @@ impl From<HopscotchFailed> for KmerFailure {
     }
 }
 
-/// `canonical(k)`.
+/// `SVKmerLong.canonical(kSize)`, with its argument check made a refusal:
+///
+/// ```java
+///         Utils.validateArg( (kSize & 1) != 0, "Kmer length must be odd to canonicalize.");
+/// ```
 fn canonical(kmer: SvKmerLong, k: i32) -> Result<SvKmerLong, KmerFailure> {
     if k & 1 == 0 {
         return Err(KmerFailure::EvenSize);
@@ -42,14 +60,15 @@ fn canonical(kmer: SvKmerLong, k: i32) -> Result<SvKmerLong, KmerFailure> {
     Ok(kmer.canonical(k))
 }
 
-/// `REF_RECORD_LEN`.
+/// `REF_RECORD_LEN`: the length of the records `getReferenceBasesRDD` cuts a contig into.
 pub const REF_RECORD_LEN: usize = 10000;
-/// `REF_RECORDS_PER_PARTITION`: `1024*1024 / REF_RECORD_LEN`.
+/// `REF_RECORDS_PER_PARTITION`: `1024*1024 / REF_RECORD_LEN`, integer division, so 104.
 pub const REF_RECORDS_PER_PARTITION: usize = 1024 * 1024 / REF_RECORD_LEN;
-/// `MAX_KMER_FREQ`.
+/// `MAX_KMER_FREQ`: a k-mer is kept when its count is strictly greater than this.
 pub const MAX_KMER_FREQ: i32 = 3;
 
-/// `KmerAndCount`, keyed on the k-mer alone.
+/// `KmerAndCount`, keyed on the k-mer alone: the hash and the equality the hopscotch map sees are
+/// the k-mer's, so a count never splits one k-mer into two entries.
 #[derive(Clone)]
 struct KmerAndCount {
     kmer: SvKmerLong,
@@ -65,6 +84,7 @@ impl HopscotchEntry for KmerAndCount {
     }
 }
 
+/// An `SVKmer` as `HopscotchSetSpark` holds it in `SVUtils.uniquify`: keyed on itself.
 #[derive(Clone)]
 struct Kmer(SvKmerLong);
 
@@ -77,8 +97,23 @@ impl HopscotchEntry for Kmer {
     }
 }
 
-/// `getReferenceBasesRDD`'s chunks of one contig. A step that does not advance is the reference's
-/// unbounded loop; the caller has refused it.
+/// `SVReferenceUtils.getReferenceBasesRDD`'s chunks of one contig, appended to `chunks` so that
+/// the contigs follow one another in dictionary order:
+///
+/// ```java
+///         final int effectiveRecLen = refRecordLen - kSize + 1;
+/// ```
+///
+/// ```java
+///                 for ( int start = 0; start < seqLen; start += effectiveRecLen ) {
+/// ```
+///
+/// and each record is `bases[start, min(start + refRecordLen, seqLen))`, so records overlap by
+/// K-1 bases and the last one is short.
+///
+/// A step that does not advance is the reference's unbounded loop; the caller has refused it.
+/// The arithmetic is in `i64` so that a K past the record length gives a step of zero or less
+/// rather than an unsigned wrap.
 pub fn chunk_contig(bases: &[u8], k: i32, chunks: &mut Vec<Vec<u8>>) {
     let step = REF_RECORD_LEN as i64 - k as i64 + 1;
     let mut start = 0i64;
@@ -90,6 +125,10 @@ pub fn chunk_contig(bases: &[u8], k: i32, chunks: &mut Vec<Vec<u8>>) {
     }
 }
 
+/// `kmerCounts.find(kmer)`, then `add(new KmerAndCount(kmer, by))` or `entry.bumpCount(by)`.
+///
+/// `bumpCount` is `count += extra` on a Java `int`, which wraps on overflow; `wrapping_add` is
+/// that wrap written out, where Rust's plain `+` would stop a debug build.
 fn bump(
     table: &mut Hopscotch<KmerAndCount>,
     kmer: SvKmerLong,
@@ -104,13 +143,24 @@ fn bump(
     Ok(())
 }
 
-/// `collectUbiquitousKmersInReference`.
+/// `collectUbiquitousKmersInReference`, with Spark's two stages run one after the other.
+///
+/// **What**: the canonical k-mers whose count over all chunks is above `max_frequency`.
+///
+/// **How**: the first loop is the first `mapPartitions`: one hopscotch map per slice, iterated
+/// into the target partition of `HashPartitioner(nPartitions)`. The second loop is the second
+/// `mapPartitions`, each partition summing what arrived into a fresh map and iterating it.
+///
+/// **Why it is not one global count**: the output has no sort, so its order is `collect()`'s:
+/// partition by partition and, inside each, the iteration order of that partition's map. One
+/// global map would hold the same k-mers in a different order.
 pub fn collect_ubiquitous_kmers(
     k: i32,
     max_dust: i32,
     max_frequency: i32,
     chunks: &[Vec<u8>],
 ) -> Result<Vec<SvKmerLong>, KmerFailure> {
+    // `ctx.parallelize(sequenceChunks, sequenceChunks.size()/refRecordsPerPartition+1)`.
     let partitions = chunks.len() / REF_RECORDS_PER_PARTITION + 1;
     let hash_size = (2 * REF_RECORDS_PER_PARTITION) as i32;
 
@@ -121,6 +171,8 @@ pub fn collect_ubiquitous_kmers(
         let end = (slice + 1) * chunks.len() / partitions;
         let mut counts = Hopscotch::new(hash_size);
         for chunk in &chunks[start..end] {
+            // `SVDUSTFilteredKmerizer.canonicalStream`: the kmerizer yields the k-mers that pass
+            // the DUST filter, and `canonical` is applied to each.
             for kmer in DustFilteredKmerizer::new(chunk, k, max_dust) {
                 bump(&mut counts, canonical(kmer, k)?, 1)?;
             }
@@ -132,6 +184,7 @@ pub fn collect_ubiquitous_kmers(
         }
     }
 
+    // Each partition in turn, as `collect()` concatenates them.
     let mut kept = Vec::new();
     for arrived in &shuffled {
         let mut counts = Hopscotch::new(hash_size);
@@ -148,7 +201,15 @@ pub fn collect_ubiquitous_kmers(
     Ok(kept)
 }
 
-/// `processFasta` over what `readLine` handed back, whose first character decides each line.
+/// `processFasta` over what `readLine` handed back, whose first character decides each line:
+///
+/// ```java
+///                 if ( line.charAt(0) != '>' ) sb.append(line);
+///                 else if ( sb.length() > 0 ) {
+/// ```
+///
+/// So the sequence lines of one record are joined before they are cut into k-mers, a header ends
+/// the record, and an empty line throws on `charAt(0)` ([`KmerFailure::EmptyLine`]).
 pub fn process_fasta(
     lines: &[Vec<u8>],
     k: i32,
@@ -156,12 +217,15 @@ pub fn process_fasta(
 ) -> Result<Vec<SvKmerLong>, KmerFailure> {
     let mut kmers = Vec::new();
     let mut sequence = Vec::new();
+    // A closure, Java's lambda: the `canonicalStream(...).forEach(kmers::add)` both the header
+    // branch and the end of the file run.
     let flush = |sequence: &Vec<u8>, kmers: &mut Vec<SvKmerLong>| -> Result<(), KmerFailure> {
         for kmer in DustFilteredKmerizer::new(sequence, k, max_dust) {
             kmers.push(canonical(kmer, k)?);
         }
         Ok(())
     };
+    // `line.first()` is `None` for an empty line, and `ok_or(..)?` turns that into the refusal.
     for line in lines {
         match line.first().ok_or(KmerFailure::EmptyLine)? {
             b'>' => {
@@ -179,7 +243,9 @@ pub fn process_fasta(
     Ok(kmers)
 }
 
-/// `SVUtils.uniquify`.
+/// `SVUtils.uniquify`: a `HopscotchSetSpark` sized `coll1.size() + coll2.size()`, given the first
+/// list then the second, and returned as the set itself, so its iteration order is the output
+/// order. A k-mer already held is not added again.
 pub fn uniquify(
     first: &[SvKmerLong],
     second: &[SvKmerLong],
@@ -191,7 +257,7 @@ pub fn uniquify(
     Ok(set.iter().map(|kmer| kmer.0).collect())
 }
 
-/// `SVFileUtils.writeKmersFile`.
+/// `SVFileUtils.writeKmersFile`: one k-mer per line, as K bases of text, in the order given.
 pub fn kmers_file(kmers: &[SvKmerLong], k: i32) -> String {
     let mut text = String::new();
     for kmer in kmers {

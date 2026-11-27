@@ -8,10 +8,25 @@
 //! module takes them and lays them out.
 //!
 //! Ported from `org.broadinstitute.barclay.argparser.CommandLineArgumentParser` (Barclay 5.0.0).
+//! Barclay has no local source in this repository, so the comments below describe the output
+//! the usage golden measures rather than quoting the Java.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - The text is built as a `Vec<String>` of lines and joined with `\n` at the end; `String` is
+//!   an owned, growable string and `push_str` is `StringBuilder.append`.
+//! - `Option<&str>` is a string or nothing; `.unwrap_or(x)` takes the string, or `x` when
+//!   there is none.
+//! - `match` on a slice pattern such as `[short, long]` matches a list of exactly two elements
+//!   and names them; `_` is every other case.
+//! - `.iter().filter(..).map(..).collect()` is Java's stream, filter, map, collect;
+//!   `flat_map` is `flatMap`.
+//! - A function returning `(Vec<Entry>, Vec<Entry>, Vec<Entry>)` returns three lists at once,
+//!   a tuple, which Java would wrap in a small class.
 
-/// `CommandLineArgumentParser.ARGUMENT_COLUMN_WIDTH`: where an argument's description starts.
 use crate::tool_declarations::Declaration;
 
+/// `CommandLineArgumentParser.ARGUMENT_COLUMN_WIDTH`: where an argument's description starts.
 pub const ARGUMENT_COLUMN_WIDTH: usize = 30;
 /// `CommandLineArgumentParser.DESCRIPTION_COLUMN_WIDTH`: how wide that description may be.
 pub const DESCRIPTION_COLUMN_WIDTH: usize = 90;
@@ -21,8 +36,11 @@ pub const CONDITIONAL_TITLE_PREFIX: &str = "Conditional Arguments for ";
 
 /// The section titles, in the order they are printed.
 pub const POSITIONAL_TITLE: &str = "Positional Arguments:";
+/// The second section's title.
 pub const REQUIRED_TITLE: &str = "Required Arguments:";
+/// The third section's title.
 pub const OPTIONAL_TITLE: &str = "Optional Arguments:";
+/// The fourth section's title.
 pub const ADVANCED_TITLE: &str = "Advanced Arguments:";
 
 /// One argument, as the usage needs it: the declaration's names and type, and the text.
@@ -125,6 +143,8 @@ pub fn wrap(text: &str, width: usize) -> Vec<String> {
         .collect()
 }
 
+/// One paragraph of [`wrap`]: a token is added to the line while the line stays within `width`,
+/// and a token longer than `width` on its own still starts a line rather than being split.
 fn wrap_paragraph(text: &str, width: usize) -> Vec<String> {
     let mut lines = Vec::new();
     let mut line = String::new();
@@ -160,9 +180,9 @@ pub fn entry_lines(entry: &Entry) -> Vec<String> {
     let wrapped = wrap(&entry.description, DESCRIPTION_COLUMN_WIDTH);
     let indent = " ".repeat(ARGUMENT_COLUMN_WIDTH);
     let mut lines = Vec::new();
-    // A name column exactly as wide as the column takes no padding and keeps the description on
-    // its own line: `--ambig-filter-bases <Integer>Threshold number of ambiguous bases` is thirty
-    // characters and then the text, with nothing between them.
+    // A name column exactly as wide as the column takes no padding and the description follows
+    // on the same line: `--ambig-filter-bases <Integer>Threshold number of ambiguous bases` is
+    // thirty characters and then the text, with nothing between them.
     if names.len() <= ARGUMENT_COLUMN_WIDTH {
         let mut first = names.clone();
         first.push_str(&" ".repeat(ARGUMENT_COLUMN_WIDTH - names.len()));
@@ -186,6 +206,7 @@ pub fn entry_lines(entry: &Entry) -> Vec<String> {
 /// of such a tool does not start where a reader would expect. The two strings are the reference's
 /// own.
 pub const EXPERIMENTAL_BANNER: &str = "**EXPERIMENTAL FEATURE - USE AT YOUR OWN RISK**";
+/// The banner of a beta tool, printed the same way as [`EXPERIMENTAL_BANNER`].
 pub const BETA_BANNER: &str = "**BETA FEATURE - WORK IN PROGRESS**";
 
 /// Which banner a tool prints, if any.
@@ -197,6 +218,7 @@ pub enum Maturity {
 }
 
 impl Maturity {
+    /// The banner text, or `None` for a released tool, which prints none.
     pub fn banner(self) -> Option<&'static str> {
         match self {
             Maturity::Released => None,
@@ -294,6 +316,8 @@ pub fn entry_for_in(declaration: &Declaration, all: &[Declaration], tool: Option
         ),
         None => declaration.doc.to_string(),
     };
+    // A `match` is an expression, so its value is the default; `.unwrap_or("null")` then prints
+    // an absent default as `null`.
     // `COMPRESSION_LEVEL`'s default is htsjdk's `Defaults.COMPRESSION_LEVEL`, read from
     // `samjdk.compression_level`, which `Main` has set from `GATKConfig` before the tool exists.
     let default = match declaration.long_name {
@@ -439,6 +463,7 @@ pub fn conditionals(list: &[Declaration]) -> Vec<Conditional> {
 
 /// The annotation descriptor, by the class a declaration names and the name a heading prints.
 pub const ANNOTATION_DESCRIPTOR_CLASS: &str = "GATKAnnotationPluginDescriptor";
+/// The annotation descriptor's name, as its `Conditional Arguments for` heading prints it.
 pub const ANNOTATION_DESCRIPTOR: &str = "annotation";
 
 /// `Valid only if "<plugin>" is specified:`, the line each group opens on.
@@ -492,6 +517,7 @@ pub fn render_with_positional(
     advanced: &[Entry],
     conditional: &[Conditional],
 ) -> String {
+    // `pop` removes the header's last line, its second trailing blank.
     let mut lines = header(tool, summary, version, maturity);
     if positional.is_empty() && required.is_empty() {
         lines.pop();
@@ -507,6 +533,8 @@ pub fn render_with_positional(
         }
         lines.push(title.to_string());
         lines.push(String::new());
+        // Case-insensitive first; the exact name breaks a tie between two names that differ only
+        // in case, so the order is total.
         let mut sorted: Vec<&Entry> = entries.iter().collect();
         sorted.sort_by(|a, b| {
             a.long_name

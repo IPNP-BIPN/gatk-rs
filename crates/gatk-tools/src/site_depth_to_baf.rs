@@ -35,27 +35,45 @@
 //! counts alone while the total that feeds the expectation is the sum of **all four**. So a site
 //! whose other two counts are large has a high expectation and fails a test its two named alleles
 //! would have passed.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is "a value or nothing", Java's nullable reference checked by the compiler:
+//!   `calc_baf` answers `None` where `calcBAF` answers `null`;
+//! - `Result<T, BafError>` is "a value or an error", how this file models the `UserException`s;
+//!   a `?` after a call hands its error straight back to the caller, like an uncaught `throws`;
+//! - `&[T]` is a borrowed, read-only view of an array; the caller keeps ownership;
+//! - `.iter().map(..).collect()` is Java's `stream().map(..).collect(..)`, and `filter_map`
+//!   keeps only the calls that answer `Some`, which is the `if ( bafEvidence != null )` loop;
+//! - `.expect("...")` unwraps a value the caller guarantees is there and panics with that text
+//!   otherwise; it is an internal assertion, not one of the tool's refusals;
+//! - a function's last expression, written without `return`, is its value.
 
 use jmath::gamma::regularized_gamma_p;
 
-/// One row of a `.sd.txt` file, one-based as the tool holds it.
+/// `SiteDepth`: one row of a `.sd.txt` file, one-based as the tool holds it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SiteDepth {
     pub contig: String,
     pub position: i32,
     pub sample: String,
-    /// A, C, G, T.
+    /// A, C, G, T, in that order: the index is `Nucleotide.ordinal()`, which is what
+    /// `getDepth(idx)` is indexed by (`// idx is index into "ACGT"` in `SiteDepth.java`).
     pub counts: [i32; 4],
 }
 
 impl SiteDepth {
     /// `getTotalDepth()`: all four, not the two the alleles name.
+    ///
+    /// ```java
+    /// public int getTotalDepth() { return depths[0] + depths[1] + depths[2] + depths[3]; }
+    /// ```
     pub fn total_depth(&self) -> i32 {
         self.counts.iter().sum()
     }
 }
 
-/// One row of a `.baf.txt` file.
+/// `BafEvidence`: one row of a `.baf.txt` file, held one-based like [`SiteDepth`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct BafEvidence {
     pub sample: String,
@@ -75,8 +93,21 @@ pub struct Site {
 
 impl Site {
     /// `BAFSiteIterator.advance`: a SNP, biallelic, and at a locus after the last one taken.
+    ///
+    /// ```java
+    /// if ( vc.isSNP() && vc.isBiallelic() &&
+    ///         (last == null || !last.getContig().equals(vc.getContig()) ||
+    ///                 last.getStart() < vc.getStart()) ) {
+    /// ```
+    ///
+    /// `last` is the site last handed out, not the last line read, so a skipped line never moves
+    /// the bar. "A SNP and biallelic" is tested as one base on each side of the raw REF and ALT
+    /// columns: a multiallelic ALT `C,G` is three bytes long and fails it, as Java's
+    /// `isBiallelic` does.
     fn usable(&self, last: Option<&Site>) -> bool {
         let snp = self.reference.len() == 1 && self.alternate.len() == 1;
+        // A `match` arm `_ if cond` matches anything when `cond` holds; arms are tried top to
+        // bottom, so a non-SNP is refused before `last` is looked at.
         match last {
             _ if !snp => false,
             None => true,
@@ -85,11 +116,20 @@ impl Site {
     }
 }
 
-/// The arguments, with the tool's own defaults.
+/// The three tuning arguments, with the tool's own defaults.
+///
+/// ```java
+/// private double maxStdDev = .2;
+/// private int minTotalDepth = 10;
+/// private double minHetProbability = .5;
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Arguments {
+    /// `--max-std`: a locus whose BAFs deviate by more is dropped whole.
     pub max_std_dev: f64,
+    /// `--min-total-depth`: compared with all four counts summed.
     pub min_total_depth: i32,
+    /// `--min-het-probability`: the floor on the chi-squared fit probability.
     pub min_het_probability: f64,
 }
 
@@ -122,10 +162,19 @@ pub enum BafError {
 }
 
 impl BafError {
+    /// The class the reference throws: every refusal of this tool is a plain `UserException`.
     pub fn java_class(&self) -> &str {
         "org.broadinstitute.hellbender.exceptions.UserException"
     }
 
+    /// The exception's message, word for word from `SiteDepthtoBAF.java`.
+    ///
+    /// The mismatch names the depth record's locus as "expecting" and the site's as "found":
+    ///
+    /// ```java
+    /// throw new UserException("expecting locus " + loc.getContig() + ":" + loc.getStart() +
+    ///         ", but found locus " + vc.getContig() + ":" + vc.getStart() + " in baf sites vcf");
+    /// ```
     pub fn message(&self) -> String {
         match self {
             BafError::SitesExhausted => {
@@ -152,6 +201,13 @@ impl BafError {
 
 /// `Nucleotide.decode(base).ordinal()`, for the four the tool accepts. Anything else answers a
 /// value above three, which is how both refusals are phrased.
+///
+/// The enum declares `A`, `C`, `G`, `T` first, so those are ordinals 0 to 3, and every other
+/// constant (the IUPAC ambiguity letters, `N`, and `X`, which `INVALID` aliases) is above three.
+/// The exact ordinal of those does not matter: the caller only tests `> 3`, so one stand-in
+/// value, 4, is enough. `decode` reads both cases, hence the uppercasing. One difference: Java's
+/// `U` is an alias of `T` (`public static final Nucleotide U = T;`), ordinal 3, where this
+/// answers 4.
 pub fn nucleotide_ordinal(base: u8) -> usize {
     match base.to_ascii_uppercase() {
         b'A' => 0,
@@ -168,13 +224,30 @@ pub fn nucleotide_ordinal(base: u8) -> usize {
 /// a gamma's CDF is `Gamma.regularizedGammaP(shape, x / scale)` at the default epsilon of `1e-14`
 /// and an iteration cap of `Integer.MAX_VALUE`.
 pub fn chi_squared_cdf_one_dof(x: f64) -> f64 {
+    // `x <= 0.0` is false for a NaN, so a NaN reaches `regularized_gamma_p`, which answers NaN.
     if x <= 0.0 {
         return 0.0;
     }
+    // `regularized_gamma_p` returns a `Result`; `unwrap_or` takes its error (the iteration cap
+    // reached) as NaN rather than propagating it.
     regularized_gamma_p(0.5, x / 2.0, 1e-14, i32::MAX).unwrap_or(f64::NAN)
 }
 
 /// `calcBAF`: the depth floor, then the chi-squared fit, then the alt fraction.
+///
+/// ```java
+/// final double expectRefAlt = totalDepth / 2.;
+/// final double altDepth = sd.getDepth(altIndex);
+/// final double refDiff = sd.getDepth(refIndex) - expectRefAlt;
+/// final double altDiff = altDepth - expectRefAlt;
+/// final double chiSq = (refDiff * refDiff + altDiff * altDiff) / expectRefAlt;
+/// final double fitProb = 1. - chiSqDist.cumulativeProbability(chiSq);
+/// ```
+///
+/// The same operations in the same order. `f64::from` is the widening `int` to `double` Java
+/// does implicitly. The fraction written is over the four-count total, not over ref plus alt.
+/// With `--min-total-depth 0` and four zero counts every step is `0 / 0`, so the record is kept
+/// with a NaN value: `NaN < min` is false here as in Java.
 pub fn calc_baf(
     depth: &SiteDepth,
     reference_index: usize,
@@ -204,8 +277,14 @@ pub fn calc_baf(
 
 /// `MathUtils.RunningAverage.stddev()`: Welford's incremental variance, over `n - 1`.
 ///
+/// ```java
+/// mean += (obs - mean) / obs_count; // update mean
+/// s += (obs - oldMean) * (obs - mean);
+/// ```
+///
 /// Written as the accumulation rather than as a two-pass formula because the two do not agree in
-/// the last bits, and the order the values arrive in is part of the answer.
+/// the last bits, and the order the values arrive in is part of the answer. `obs_count` is a
+/// Java `long`, hence the `i64` and the `as f64` conversion at each division.
 pub fn running_stddev(values: &[f64]) -> f64 {
     let mut mean = 0.0;
     let mut s = 0.0;
@@ -220,6 +299,14 @@ pub fn running_stddev(values: &[f64]) -> f64 {
 }
 
 /// The median of the sorted values, the even case being the mean of the two in the middle.
+///
+/// ```java
+/// final double median =
+///         (nBafs % 2) != 0 ? vals[midIdx] : (vals[midIdx] + vals[midIdx - 1])/2.;
+/// ```
+///
+/// `&mut [f64]` is a borrowed, writable view: the sort happens in the caller's copy.
+/// `partial_cmp` has no answer for a NaN, and the `expect` then panics.
 fn median(values: &mut [f64]) -> f64 {
     values.sort_by(|left, right| left.partial_cmp(right).expect("a comparable baf"));
     let middle = values.len() / 2;
@@ -231,11 +318,17 @@ fn median(values: &mut [f64]) -> f64 {
 }
 
 /// `processBuffer`: one locus of depth records against one site, and what it writes.
+///
+/// The checks run in the reference's order: locus, then reference base, then alternate base,
+/// each refusal ending the run. Java writes each record as it goes; this returns the locus's
+/// records for the caller to append.
 pub fn process_locus(
     buffer: &[SiteDepth],
     site: &Site,
     arguments: &Arguments,
 ) -> Result<Vec<BafEvidence>, BafError> {
+    // The caller only calls this with a non-empty buffer, as `processBuffer` is only reached with
+    // `sameLocusBuffer` holding at least the record that started it.
     let held = buffer.first().expect("a non-empty locus");
     if held.contig != site.contig || held.position != site.position {
         return Err(BafError::LocusMismatch {
@@ -265,6 +358,8 @@ pub fn process_locus(
         .collect();
     if kept.len() <= 1 {
         // One survivor is written as a half whatever it measured, and none is written at all.
+        // `BafEvidence { value: 0.5, ..evidence }` copies every other field from `evidence`,
+        // which is Java's `new BafEvidence(beList.get(0), .5)`.
         return Ok(kept
             .into_iter()
             .map(|evidence| BafEvidence {
@@ -274,6 +369,8 @@ pub fn process_locus(
             .collect());
     }
     let values: Vec<f64> = kept.iter().map(|evidence| evidence.value).collect();
+    // Java writes only `if ( stddev <= maxStdDev )`; this is its negation for every stddev that is
+    // not NaN.
     if running_stddev(&values) > arguments.max_std_dev {
         // The whole locus goes, not the outlying sample, and nothing in the file says so.
         return Ok(Vec::new());
@@ -289,6 +386,10 @@ pub fn process_locus(
 }
 
 /// The whole traversal: depth records grouped by locus, each group against the next usable site.
+///
+/// `apply` and `onTraversalSuccess` of the walker: a record at a new locus first flushes the
+/// buffer, and the last buffer is flushed at the end. Each flush takes exactly one site, so the
+/// sites file is consumed one usable line per locus of depth, in step.
 pub fn run(
     depths: &[SiteDepth],
     sites: &[Site],
@@ -298,6 +399,9 @@ pub fn run(
     let mut buffer: Vec<SiteDepth> = Vec::new();
     let mut remaining = sites.iter();
     let mut last: Option<Site> = None;
+    // `nextSite()` over `BAFSiteIterator`, as a closure (a lambda that captures `remaining`).
+    // `by_ref` lets the `for` advance the shared iterator without consuming it, so the next call
+    // resumes after the site this one returned.
     let mut next_site = |last: &mut Option<Site>| -> Result<Site, BafError> {
         for site in remaining.by_ref() {
             if site.usable(last.as_ref()) {
@@ -308,6 +412,7 @@ pub fn run(
         Err(BafError::SitesExhausted)
     };
     for depth in depths {
+        // `sameLocus`: true for an empty buffer (`is_none_or`), else start and contig equal.
         let same = buffer
             .first()
             .is_none_or(|held| held.position == depth.position && held.contig == depth.contig);
@@ -328,7 +433,14 @@ pub fn run(
 /// Two decimals always, and no integer digit when the integer part is zero, so a half comes out
 /// `.50` rather than `0.50`. Ties go to even, which is `DecimalFormat`'s default and not
 /// `String.format`'s.
+///
+/// The tie is judged here on `value * 100.0` after that product has been rounded to a double.
+/// `DecimalFormat` judges the double's exact binary value instead, and the two part where the
+/// product rounds onto an exact half: `0.525` (`21 / 40`) is stored a little above 0.525, so
+/// Java 17 prints `.53`, while the product here is exactly `52.5` and goes to even, `.52`.
 pub fn format_baf(value: f64) -> String {
+    // The match decides the rounded hundredths: above a half up, below it down, and on it to the
+    // even neighbour. `floor as i64` truncates the (already whole) floor to an integer for `% 2`.
     let scaled = value * 100.0;
     let floor = scaled.floor();
     let rounded = match (scaled - floor).partial_cmp(&0.5) {
@@ -349,6 +461,11 @@ pub fn format_baf(value: f64) -> String {
 }
 
 /// `BafEvidenceCodec.encode` over a whole file: zero-based on disk, one-based inside.
+///
+/// ```java
+/// Integer.toString(ev.getStart() - 1),
+/// valueFormatter.format(ev.getValue()),
+/// ```
 pub fn write(records: &[BafEvidence]) -> String {
     let mut out = String::new();
     for record in records {
@@ -364,6 +481,9 @@ pub fn write(records: &[BafEvidence]) -> String {
 }
 
 /// `SiteDepthCodec.decode` over a whole file.
+///
+/// The columns are trusted: a malformed line panics in an `expect` rather than being refused.
+/// The runner does not call this; it parses and checks each line itself.
 pub fn read_depths(text: &str) -> Vec<SiteDepth> {
     text.lines()
         .filter(|line| !line.is_empty() && !line.starts_with('#'))
@@ -385,7 +505,8 @@ pub fn read_depths(text: &str) -> Vec<SiteDepth> {
         .collect()
 }
 
-/// The sites VCF, reduced to the four fields the tool reads.
+/// The sites VCF, reduced to the four fields the tool reads: columns 1, 2, 4 and 5 (`CHROM`,
+/// `POS`, `REF`, `ALT`), the raw text with no allele parsing.
 pub fn read_sites(text: &str) -> Vec<Site> {
     text.lines()
         .filter(|line| !line.is_empty() && !line.starts_with('#'))

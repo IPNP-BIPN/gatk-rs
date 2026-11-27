@@ -1,5 +1,6 @@
 //! `CheckReferenceCompatibility`, ported from
-//! `org.broadinstitute.hellbender.tools.reference.CheckReferenceCompatibility` (GATK 4.6.2.0).
+//! `org.broadinstitute.hellbender.tools.reference.CheckReferenceCompatibility` (GATK 4.7.0.0;
+//! `CheckReferenceCompatibility.java` is unchanged since 4.6.2.0).
 //!
 //! A BAM or a VCF checked against several references, on the table
 //! [`crate::compare_references`] already builds.
@@ -7,8 +8,15 @@
 //! # One property of the input decides the whole algorithm
 //!
 //! ```java
-//! if(md5sPresent){ ... compareAgainstKeyReference ... } else { ... compareDictionaries ... }
+//! if(md5sPresent){
+//!     ReferenceSequenceTable table = new ReferenceSequenceTable(dictionaries);
+//!     table.build();
+//!
+//!     List<ReferencePair> refPairs = table.compareAgainstKeyReference(queryDictionaryPath);
 //! ```
+//!
+//! and otherwise, per reference, `SequenceDictionaryUtils.compareDictionaries(referenceDict,
+//! queryDictionary, false)`.
 //!
 //! With MD5s the sequences are compared by their bases; without, by name and length alone, and the
 //! summaries say so outright. `dictionaryHasMD5s` needs EVERY sequence to have one, so a single
@@ -26,18 +34,31 @@
 //! The MD5 path reads `ReferencePair`'s `SUBSET`, which means the INPUT is contained in the
 //! reference. The other path reads `SequenceDictionaryUtils`' `SUPERSET`, which is the same
 //! relation named from the reference's side. Both produce `COMPATIBLE_SUBSET`.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<(), InputError>` is "nothing, or a refusal": `Ok(())` lets the run go on and `Err(..)`
+//!   is the `UserException.BadInput` the Java throws.
+//! - `&[Option<String>]` is a borrowed list of "an MD5 or nothing", Java's nullable `getMd5()`.
+//! - `Other(&'static str)` is an enum variant that carries data: the name of any compatibility
+//!   answer other than the two this tool treats specially.
+//! - `match` must name every variant, so a verdict cannot be left unhandled.
 
 use crate::compare_references::{Pair, Status};
 
 /// The verdict one reference earns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Compatibility {
+    /// `COMPATIBLE`.
     Compatible,
+    /// `COMPATIBLE_SUBSET`.
     CompatibleSubset,
+    /// `NOT_COMPATIBLE`.
     NotCompatible,
 }
 
 impl Compatibility {
+    /// `toString()` of the Java constant, which is what the `Compatibility` column holds.
     pub fn name(&self) -> &'static str {
         match self {
             Compatibility::Compatible => "COMPATIBLE",
@@ -47,27 +68,35 @@ impl Compatibility {
     }
 }
 
-/// One row of the output table.
+/// One row of the output table: `CompatibilityRecord`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Record {
+    /// `getRefAsString()`: the reference's file name, without its directory.
     pub reference: String,
+    /// The verdict.
     pub compatibility: Compatibility,
+    /// The sentence that explains it.
     pub summary: String,
 }
 
 /// What the tool refuses before it reads anything.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputError {
+    /// `"Both BAM and VCF specified. Tool analyzes one input at a time."`
     BothBamAndVcf,
+    /// `"No input provided."`
     NoInput,
+    /// `"Tool analyzes one reads input at a time."`
     ManyReadInputs,
 }
 
 impl InputError {
+    /// All three are `UserException.BadInput`.
     pub fn java_class(&self) -> &str {
         "org.broadinstitute.hellbender.exceptions.UserException$BadInput"
     }
 
+    /// The message with the `"Bad input: "` prefix `BadInput` adds.
     pub fn message(&self) -> String {
         match self {
             InputError::BothBamAndVcf => {
@@ -82,7 +111,11 @@ impl InputError {
     }
 }
 
-/// `initializeSequenceDictionaryForInput`'s two refusals, in the order it makes them.
+/// `initializeSequenceDictionaryForInput`'s three refusals, in the order it makes them.
+///
+/// The Java reads the input's and every reference's dictionary between the second check and the
+/// third, so a bad reference path fails before `No input provided.` is reached; that reading is the
+/// caller's, not this function's.
 pub fn check_input(has_reads: bool, read_inputs: usize, has_vcf: bool) -> Result<(), InputError> {
     if has_reads && has_vcf {
         return Err(InputError::BothBamAndVcf);
@@ -97,11 +130,27 @@ pub fn check_input(has_reads: bool, read_inputs: usize, has_vcf: bool) -> Result
 }
 
 /// `dictionaryHasMD5s`: every sequence, or the run takes the other path.
+///
+/// ```java
+/// for (SAMSequenceRecord record : dictionary.getSequences()) {
+///     String md5FromDict = record.getMd5();
+///     if (md5FromDict == null) {
+///         return false;
+///     }
+/// }
+/// return true;
+/// ```
+///
+/// The Java answers `true` for a dictionary with no sequences at all; this answers `false`.
 pub fn md5s_present(md5s: &[Option<String>]) -> bool {
     !md5s.is_empty() && md5s.iter().all(|md5| md5.is_some())
 }
 
 /// `evaluateCompatibilityWithMD5Table`, whose verdict is read off the pair's flags alone.
+///
+/// `if(status.contains(ReferencePair.Status.EXACT_MATCH))` first, then
+/// `else if(status.contains(ReferencePair.Status.SUBSET) && status.size() == 1)`: a subset that
+/// also carries any other flag is not compatible.
 ///
 /// `missing` is what `getMissingSequencesIfSubset` answers: the reference's sequence names the
 /// input does not have, in the reference's own order.
@@ -139,12 +188,18 @@ pub fn evaluate_with_md5(pair: &Pair, missing: &[String]) -> Record {
 /// does not.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DictionaryCompatibility {
+    /// `IDENTICAL`.
     Identical,
+    /// `SUPERSET`.
     Superset,
+    /// Any other constant, by its name, which the summary prints as `Status: %s`.
     Other(&'static str),
 }
 
 /// `evaluateCompatibilityWithoutMD5`.
+///
+/// A reference whose dictionary `equals` the input's never reaches this: the Java's loop skips it
+/// with `if(!entry.getValue().equals(queryDictionary))`, and so does the caller.
 pub fn evaluate_without_md5(
     reference_name: &str,
     input_name: &str,
@@ -182,7 +237,7 @@ pub fn evaluate_without_md5(
     }
 }
 
-/// A Java `List.toString`.
+/// A Java `List.toString`: `[a, b]`.
 fn rendered_list(values: &[String]) -> String {
     format!("[{}]", values.join(", "))
 }

@@ -1,12 +1,12 @@
 //! Mutect2's Permutect datasets, ported from `PermutectDatasetEngine` and `FeaturizedReadSets`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; both `.java` files are unchanged since 4.6.2.0).
 //!
 //! `--permutect-training-dataset` and `--permutect-test-dataset` each get an engine, and every
 //! annotated call (before phasing) adds one datum per alternate it labels: the label, the site, the
-//! reference bases around it, five variant features, the tumour's featurized reference and alternate
-//! reads, the pre-downsampling counts, and the sequencing-error log likelihoods of the tumour and
-//! the normal. When the engine closes, `contigs.table` and `read-groups.table` are written beside
-//! the dataset.
+//! reference bases around it, five variant features, the tumour's featurized reference and
+//! alternate reads, the pre-downsampling counts, and the sequencing-error log likelihoods of the
+//! tumour and the normal. When the engine closes, `contigs.table` and `read-groups.table` are
+//! written beside the dataset.
 //!
 //! What a reader would not guess:
 //!
@@ -20,6 +20,22 @@
 //!  * `read-groups.table` lists a `HashMap` of the read group ids, in its iteration order;
 //!  * the variant features are written `%.2f` from their `float` values, the log likelihoods
 //!    `%.3f` from their doubles.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, E>` is "a `T` or the error `E`", how a Java `throw` is modelled: `Ok(..)` returns,
+//!   `Err(..)` throws, and a `?` after a call passes an `Err` straight up to the caller.
+//!   `map_err` rewrites an error into the Java exception the reference would throw at that call.
+//! - `Option<T>` is a nullable value made explicit, `Some(x)` or `None`. A featurized read is a
+//!   `Vec<Option<i64>>` because the reference's `List<Integer>` can hold a `null`, and it prints
+//!   as "null".
+//! - `let Some(x) = y else { .. }` unwraps or runs the block, which must leave (`continue`,
+//!   `return`).
+//! - `&[T]` is a read-only borrowed view of a list; `&mut T` a writable borrow, so the callee may
+//!   change the engine's queues and text while the caller keeps them.
+//! - `.iter().map(..).collect()` is Java's stream, map and collect; `|x| ..` is a lambda.
+//! - `x as f32`, `as i64` and `as usize` are casts; float to integer truncates toward zero, as
+//!   Java's `(int)` does.
 
 use gatk_annotation::assembly_complexity;
 use gatk_annotation::per_allele::{BaseQuality, ReadPosition};
@@ -40,13 +56,21 @@ use std::collections::VecDeque;
 
 /// `PermutectDatasetEngine.CAPACITY`, each queue's bound.
 const CAPACITY: usize = 100_000;
+/// `RARE_POPAF_THRESHOLD`: above this `POPAF` (negative log10 frequency) a low-AF call is an
+/// artifact for training.
 const RARE_POPAF_THRESHOLD: f64 = 5.9;
+/// `COMMON_POPAF_THRESHOLD`: below this `POPAF` a high-AF call is germline for training.
 const COMMON_POPAF_THRESHOLD: f64 = 1.0;
+/// `TLOD_THRESHOLD`: below this `TLOD` a call is a sequencing error, neither artifact nor germline.
 const TLOD_THRESHOLD: f64 = 6.0;
 /// `FeaturizedReadSets.DEFAULT_BASE_QUALITY`.
 const DEFAULT_BASE_QUALITY: i32 = 25;
+/// `FeaturizedReadSets.RANGES`: the distances from the variant the ranged features are counted
+/// over, the first range that contains a distance taking it.
 const RANGES: [i32; 3] = [5, 10, 20];
+/// `FEATURES_PER_RANGE`: inserted bases, deletions, mismatches, very bad and bad qualities.
 const FEATURES_PER_RANGE: usize = 5;
+/// `VERY_BAD_QUAL_THRESHOLD` and `BAD_QUAL_THRESHOLD`.
 const VERY_BAD_QUAL_THRESHOLD: u8 = 10;
 const BAD_QUAL_THRESHOLD: u8 = 20;
 
@@ -58,6 +82,7 @@ pub enum DatasetMode {
 }
 
 impl DatasetMode {
+    /// The enum constant's name, or `None` for anything else.
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
             "ILLUMINA" => Some(DatasetMode::Illumina),
@@ -67,6 +92,7 @@ impl DatasetMode {
     }
 }
 
+/// `PermutectDatasetEngine.Label`; `name` is the `toString` the dataset's first line prints.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Label {
     Artifact,
@@ -89,10 +115,13 @@ impl Label {
 /// What a datum refuses, in the reference's classes, or the port's own limitation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DatasetError {
+    /// An exception the reference throws, by its Java class and message.
     Runtime { class: String, message: String },
+    /// An input the port refuses because the reference's answer is not reproducible.
     Limitation(String),
 }
 
+/// A `DatasetError::Runtime`, shortened. `impl Into<String>` accepts a `&str` or a `String`.
 fn runtime(class: &str, message: impl Into<String>) -> DatasetError {
     DatasetError::Runtime {
         class: class.to_string(),
@@ -113,6 +142,10 @@ pub struct DatasetArguments {
 }
 
 /// One `PermutectDatasetEngine`: its dataset's text so far.
+///
+/// `queues` is `unmatchedArtifactAltCounts`, one `ArrayBlockingQueue` per `VariantType` (SNV,
+/// insertion, deletion, the order `kind` indexes them in). `random` is the engine's
+/// `new Random(1)`, so each engine draws its own stream.
 #[derive(Debug, Clone)]
 pub struct DatasetEngine {
     pub training: bool,
@@ -124,6 +157,7 @@ pub struct DatasetEngine {
 }
 
 impl DatasetEngine {
+    /// The constructor's state: empty queues, `Random(1)`, no text yet.
     pub fn new(training: bool, truth: Option<Vec<VariantContext>>) -> Self {
         DatasetEngine {
             training,
@@ -149,7 +183,8 @@ pub struct Datasets {
 }
 
 impl Datasets {
-    /// `close()`'s two tables.
+    /// `close()`'s two tables. `contigs.table` is each dictionary contig and its index, one per
+    /// line, in dictionary order.
     pub fn contigs_table(&self) -> String {
         self.contigs
             .iter()
@@ -158,6 +193,15 @@ impl Datasets {
             .collect()
     }
 
+    /// `read-groups.table`: `readGroupIndices`, a `new HashMap<>()` of id to header position,
+    /// printed in its iteration order.
+    ///
+    /// ```java
+    /// for (final Map.Entry<String, Integer> entry : readGroupIndices.entrySet()) {
+    /// ```
+    ///
+    /// `hash_set_order` gives that order for the ids; if it cannot (an order it has not
+    /// measured), the header's order is used instead.
     pub fn read_groups_table(&self) -> String {
         let order = gatk_engine::java_hash::hash_set_order(&self.read_groups)
             .unwrap_or_else(|_| self.read_groups.clone());
@@ -171,6 +215,10 @@ impl Datasets {
     }
 
     /// Every engine's `addData`, the training engine first.
+    ///
+    /// `vc` is the annotated call, `numbers` the same call before annotation (where `POPAF`,
+    /// `TLOD` and `NALOD` still hold the doubles the reference reads), `reads` the read-allele
+    /// likelihoods and `fragments` the fragment-haplotype ones.
     #[allow(clippy::too_many_arguments)]
     pub fn add_data(
         &mut self,
@@ -182,6 +230,7 @@ impl Datasets {
         haplotypes: &[&Haplotype],
         contig_index: usize,
     ) -> Result<(), DatasetError> {
+        // Copies, so the loop can borrow each engine writably while these are read.
         let arguments = self.arguments.clone();
         let normal_samples = self.normal_samples.clone();
         let read_groups = self.read_groups.clone();
@@ -216,6 +265,9 @@ impl Datasets {
 }
 
 /// `getAttributeAsDoubleArray` / `getAttributeAsDoubleList(key, 0)`.
+///
+/// A missing key is an empty list; a string that does not parse is 0.0. The callers then read a
+/// missing index as 0.0 where the reference's array or list would throw.
 fn doubles(vc: &VariantContext, key: &str) -> Vec<f64> {
     vc.attributes
         .iter()
@@ -227,6 +279,7 @@ fn doubles(vc: &VariantContext, key: &str) -> Vec<f64> {
         .unwrap_or_default()
 }
 
+/// One attribute value as a double, 0.0 for anything that is not a number.
 fn double_of(value: &Value) -> f64 {
     match value {
         Value::Double(d) => *d,
@@ -236,7 +289,14 @@ fn double_of(value: &Value) -> f64 {
     }
 }
 
-/// `sumADsOverSamples`.
+/// `sumADsOverSamples`: each allele's `AD` summed over the named samples.
+///
+/// ```java
+/// .forEach(ad -> new IndexRange(0, vc.getNAlleles()).forEach(n -> ADs[n] += ad[n]));
+/// ```
+///
+/// A genotype without `AD` is skipped and a short one adds what it has, where the reference would
+/// throw on the `null` or the index.
 fn sum_ads(vc: &VariantContext, samples: &[String]) -> Vec<i32> {
     let mut ads = vec![0; vc.alleles.len()];
     for genotype in vc.genotypes.iter() {
@@ -253,6 +313,11 @@ fn sum_ads(vc: &VariantContext, samples: &[String]) -> Vec<i32> {
 }
 
 /// `Random.nextInt(origin, bound)`: `RandomSupport.boundedNextInt`.
+///
+/// A power-of-two range masks one draw; any other range takes the draw's top 31 bits modulo the
+/// range and redraws while that lands in the final partial block. The overflow test is Java's
+/// `int` arithmetic, so it uses `wrapping_add` and `wrapping_sub`, which wrap instead of
+/// panicking. `(r as u32) >> 1` is Java's `r >>> 1`.
 fn bounded_next_int(random: &mut JavaRandom, origin: i32, bound: i32) -> i32 {
     let mut r = random.next_int();
     let n = bound - origin;
@@ -271,6 +336,19 @@ fn bounded_next_int(random: &mut JavaRandom, origin: i32, bound: i32) -> i32 {
     r + origin
 }
 
+/// `PermutectDatasetEngine.addData` for one engine: label every alternate, then write one datum
+/// for each alternate not labelled `IGNORE`.
+///
+/// The training labels follow the reference's chain (`PermutectDatasetEngine.java`):
+///
+/// ```java
+/// if  (probableArtifact) {
+///     if (unmatchedQueue.size() > 0.9 * CAPACITY) { // this should rarely come up
+/// ```
+///
+/// An artifact pushes `nonArtifactPerArtifact` copies of its alt count onto its type's queue; a
+/// true variant is labelled only while that queue is non-empty, pops one, and draws its alt
+/// downsampling count from the engine's `Random`.
 #[allow(clippy::too_many_arguments)]
 fn add_datum(
     engine: &mut DatasetEngine,
@@ -298,6 +376,8 @@ fn add_datum(
         .filter(|s| !normal_samples.contains(s))
         .cloned()
         .collect();
+    // That set's order, which is the order the tumour reads are gathered in; if it cannot be
+    // reproduced the likelihoods' order stands.
     let tumor_samples =
         gatk_engine::java_hash::hash_set_order(&tumor_in_order).unwrap_or(tumor_in_order);
     let num_alt = vc.alleles.len() - 1;
@@ -312,18 +392,23 @@ fn add_datum(
     let normal_depth: i32 = normal_ads.iter().sum();
     let has_normal = normal_depth > 0;
 
-    // The longest reference among the call's and the truth records', the first of a length.
+    // The longest reference among the call's and the truth records', the first of a length:
+    // `sorted(Comparator.comparingInt(Allele::length).reversed()).findFirst()` is a stable sort,
+    // so among equal lengths the earliest wins, which strict `>` reproduces.
     let mut longest = &vc.alleles[0];
     for record in truth.unwrap_or(&[]) {
         if record.alleles[0].len() > longest.len() {
             longest = &record.alleles[0];
         }
     }
+    // `ReferenceConfidenceVariantContextMerger.remapAlleles(record, longestRef)` as a closure,
+    // its refusal turned into the exception it would be.
     let remap = |record: &VariantContext| {
         crate::reference_confidence_merger::remap_alleles(record, longest)
             .map_err(|e| runtime("java.lang.IllegalStateException", format!("{e:?}")))
     };
     let remapped_alts: Vec<Allele> = remap(vc)?.into_iter().skip(1).collect();
+    // `truthAlleles`, a `Set` upstream, only asked `contains`, so a list does the same.
     let mut truth_alleles: Vec<Allele> = Vec::new();
     for record in truth.unwrap_or(&[]) {
         if record.is_filtered() {
@@ -333,6 +418,7 @@ fn add_datum(
     }
 
     let mut labels = Vec::with_capacity(num_alt);
+    // `altDownsampleMap`, a `HashMap` only looked up by allele, so a list of pairs serves.
     let mut alt_downsample: Vec<(Allele, usize)> = Vec::new();
     for n in 0..num_alt {
         let tumor_af = f64::from(tumor_ads[n + 1]) / f64::from(tumor_depth);
@@ -343,6 +429,8 @@ fn add_datum(
         };
         let alt = &vc.alleles[n + 1];
         let remapped = &remapped_alts[n];
+        // `VariantType`: SNV for equal lengths (any same-length change), insertion when the
+        // alternate is longer, deletion when shorter.
         let diff = alt.base_string().len() as i64 - ref_allele.len() as i64;
         let kind = match diff.signum() {
             0 => 0,
@@ -387,6 +475,7 @@ fn add_datum(
                 }
             } else if true_variant && !queue.is_empty() {
                 labels.push(Label::Variant);
+                // `unmatchedQueue.poll(); // just to pop off a value`, then the draw.
                 queue.pop_front();
                 let count = bounded_next_int(&mut engine.random, 5, 20);
                 alt_downsample.push((alt.clone(), count as usize));
@@ -407,6 +496,7 @@ fn add_datum(
             labels.push(Label::Unlabeled);
         }
     }
+    // Nothing to write: return before the assembly complexity and the read vectors are built.
     if engine.training && labels.iter().all(|l| *l == Label::Ignore) {
         return Ok(());
     }
@@ -426,6 +516,9 @@ fn add_datum(
             "no reference haplotype",
         ),
     })?;
+    // Only the tumour's reads: the reference also builds the normal's, then writes `0 0` in
+    // their place and never prints them. So a refusal only a normal read would raise (an
+    // unpaired normal read in Illumina mode, at `getMateStart`) is not raised here.
     let tumor_reads = read_vectors(
         vc,
         &tumor_samples,
@@ -469,6 +562,7 @@ fn add_datum(
         text.push_str(&format!("{contig_index}:{position},{ref_allele}->{alt}\n"));
         text.push_str(&ref_bases);
         text.push('\n');
+        // `String.format("%.2f", x.floatValue())`: each feature is rounded to `float` first.
         let featured: Vec<String> = features
             .iter()
             .map(|x| format_decimals(f64::from(*x as f32), 2))
@@ -493,6 +587,8 @@ fn add_datum(
             normal_depth,
             normal_ads[n + 1]
         ));
+        // `-MathUtils.log10ToLog(tlod)` minus the natural log of `tumorDepth + 1`, with
+        // `jmath::math::log` standing for Java's `Math.log`.
         let log10_to_log = gatk_engine::allele_likelihoods::log10_to_log;
         let seq_error = -log10_to_log(tlod) - jmath::math::log(f64::from(tumor_depth) + 1.0);
         text.push_str(&format_decimals(seq_error, 3));
@@ -511,10 +607,23 @@ fn add_datum(
 }
 
 /// One featurized read: `None` where the reference adds a null.
+///
+/// The read group index (`readGroupIndices.get` of an unknown group) and Ultima's `si` are the
+/// two entries that can be `null`.
 type ReadVector = Vec<Option<i64>>;
 
 /// `FeaturizedReadSets.getReadVectors` for the tumour: in the call's allele order, each allele's
 /// informative best reads over the samples, downsampled, then featurized.
+///
+/// The downsampling is where the port stops:
+///
+/// ```java
+/// if (readsByAllele.get(allele).size() > downsample) {
+///     Collections.shuffle(readsByAllele.get(allele));
+/// ```
+///
+/// `Collections.shuffle` with no `Random` draws from a generator nobody seeds, so any set over its
+/// count refuses as a `Limitation` instead of answering one of its outputs.
 fn read_vectors(
     vc: &VariantContext,
     samples: &[String],
@@ -561,6 +670,12 @@ fn read_vectors(
         }
     }
     // `bestHaplotypes`: each fragment's reads, the later put winning.
+    //
+    // ```java
+    // .forEach(ba -> ba.evidence.getReads().forEach(read -> bestHaplotypes.put(read, ba.allele)));
+    // ```
+    //
+    // A `HashMap<GATKRead, Haplotype>` only looked up, so a list searched by equality serves.
     let mut best_haplotypes: Vec<(BamRecord, Haplotype)> = Vec::new();
     for sample in samples {
         let Some(s) = fragments.index_of_sample(sample) else {
@@ -579,6 +694,7 @@ fn read_vectors(
             }
         }
     }
+    // In the call's allele order, which need not be the likelihoods'.
     let mut out = Vec::new();
     for allele in &vc.alleles {
         let Some(index) = reads.index_of_allele(allele) else {
@@ -600,11 +716,18 @@ fn read_vectors(
     Ok(out)
 }
 
+/// A read's tag by its two-letter name. `'r` says the answer borrows from the read.
 fn tag<'r>(read: &'r BamRecord, name: &[u8; 2]) -> Option<&'r htsjdk_bam::tag::TagValue> {
     read.tags.get(htsjdk_bam::tag::Tag::new(name))
 }
 
 /// `FeaturizedReadSets.featurize`.
+///
+/// In order: read group index, mapping quality, base quality at the variant (25 when absent),
+/// first of pair, reverse strand, the variant's position in the read and the distance to the
+/// read's end (hard clips counted), the absolute fragment length; for Illumina the distances from
+/// the fragment's ends, for Ultima `si` and `1000 * rq`; then fifteen ranged features from the read
+/// re-aligned to its best haplotype, or fifteen zeros when the read has none.
 fn featurize(
     read: &BamRecord,
     vc: &VariantContext,
@@ -682,6 +805,8 @@ fn featurize(
         return Ok(result);
     };
     let haplotype_bases = haplotype.bases();
+    // `aligner.align(haplotypeBases, read.getBases(), ALIGNMENT_TO_BEST_HAPLOTYPE_SW_PARAMETERS,
+    // SWOverhangStrategy.SOFTCLIP)`, on the Java aligner the reference names.
     let alignment = SmithWatermanJavaAligner
         .align(
             &haplotype_bases,
@@ -697,12 +822,15 @@ fn featurize(
     let malformed = |e: gatk_engine::alignment_state::MalformedRead| {
         runtime("htsjdk.samtools.SAMFormatException", format!("{e:?}"))
     };
+    // Walk the copy, re-cigared against the haplotype, one genome position at a time.
     machine.step_forward_on_genome().map_err(malformed)?;
     let mut ranged = [[0i64; FEATURES_PER_RANGE]; 3];
     while !machine.is_right_edge() {
         let Some(pe) = gatk_engine::pileup::PileupElement::from_state(&copy, &machine) else {
             break;
         };
+        // `IntStream.range(0, RANGES.size()).filter(n -> distanceFromVariant <= RANGES.get(n))
+        // .findFirst()`: `position` is the first range that holds the distance, `None` past 20.
         let distance = (machine.read_offset() - position).abs();
         if let Some(range) = RANGES.iter().position(|&r| distance <= r) {
             let features = &mut ranged[range];
@@ -714,6 +842,8 @@ fn featurize(
             } else {
                 let base = pe.base();
                 let qual = pe.qual();
+                // `haplotypeBases[asm.getGenomeOffset() + readStartInHaplotype]`, whose
+                // out-of-range index is the reference's `ArrayIndexOutOfBoundsException`.
                 let index = (machine.genome_offset() + start_in_haplotype) as usize;
                 let haplotype_base = *haplotype_bases.get(index).ok_or_else(|| {
                     runtime(

@@ -1,6 +1,7 @@
 //! `CompareReferences`, ported from
 //! `org.broadinstitute.hellbender.tools.reference.CompareReferences`,
-//! `ReferenceSequenceTable` and `ReferencePair` (GATK 4.6.2.0).
+//! `ReferenceSequenceTable` and `ReferencePair` (GATK 4.7.0.0; all three files are unchanged
+//! since 4.6.2.0).
 //!
 //! Several references compared by the MD5 of each sequence.
 //!
@@ -31,6 +32,17 @@
 //!
 //! `USE_DICT` refuses a dictionary with no `M5` and TRUSTS one that lies, which produces a table
 //! with a row per lie. `ALWAYS_RECALCULATE` ignores what the dictionary says.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[Reference]` is a borrowed, read-only view of a list; the caller keeps ownership.
+//! - `Option<String>` is "a string or nothing": a cell is `None` where the Java's table entry is
+//!   empty and prints `---`.
+//! - `Result<T, TableError>` is "a value or a refusal", and `?` hands the refusal to the caller.
+//! - `BTreeSet<Status>` is a sorted set; with `#[derive(Ord)]` on the enum it iterates in
+//!   declaration order, which is what `EnumSet` does.
+//! - `Some(md5) if !md5.is_empty() =>` is a `match` case with an extra guard.
+//! - `a ^ b` on two `bool`s is exclusive or, as in Java.
 
 use std::collections::BTreeSet;
 
@@ -42,13 +54,16 @@ pub const MISSING_ENTRY: &str = "---";
 pub struct Reference {
     /// `getReferenceColumnName`, which is the file NAME and not the path.
     pub column: String,
+    /// The dictionary's records, in its own order.
     pub sequences: Vec<Sequence>,
 }
 
 /// One `@SQ` line, as far as the comparison reads one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Sequence {
+    /// `getSequenceName()`.
     pub name: String,
+    /// `getSequenceLength()`.
     pub length: i64,
     /// `M5`, absent when the dictionary has none.
     pub md5: Option<String>,
@@ -60,8 +75,11 @@ pub struct Sequence {
 /// `CompareReferences.MD5CalculationMode`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Md5Mode {
+    /// `USE_DICT`: the dictionary's `M5` only; a missing one is refused.
     UseDict,
+    /// `RECALCULATE_IF_MISSING`: the dictionary's `M5`, or the sequence's own digest without one.
     RecalculateIfMissing,
+    /// `ALWAYS_RECALCULATE`: the sequence's own digest, whatever the dictionary says.
     AlwaysRecalculate,
 }
 
@@ -79,10 +97,12 @@ pub enum TableError {
 }
 
 impl TableError {
+    /// Both refusals are `UserException.BadInput`.
     pub fn java_class(&self) -> &str {
         "org.broadinstitute.hellbender.exceptions.UserException$BadInput"
     }
 
+    /// The message, with the `"Bad input: "` prefix `BadInput` adds.
     pub fn message(&self) -> String {
         match self {
             TableError::MissingMd5 { sequence } => format!(
@@ -103,7 +123,9 @@ impl TableError {
 /// One row of the table: an MD5, a length, and one cell per reference.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Row {
+    /// The key.
     pub md5: String,
+    /// The length of the first sequence that created the row.
     pub length: i64,
     /// The sequence's name in each reference, in the references' own order, or `None` for a
     /// reference that does not have it.
@@ -120,7 +142,9 @@ impl Row {
 /// The built table, in MD5 insertion order, which is the order the rows are written.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Table {
+    /// `MD5`, `Length`, then one column per reference.
     pub columns: Vec<String>,
+    /// `tableByMD5.values()`, a `LinkedHashMap` in the Java.
     pub rows: Vec<Row>,
 }
 
@@ -142,6 +166,16 @@ fn md5_of(sequence: &Sequence, mode: Md5Mode) -> Result<String, TableError> {
 }
 
 /// `ReferenceSequenceTable.build`.
+///
+/// ```java
+/// if (!tableByMD5.containsKey(md5)) {
+///     newRow = new TableRow(md5, length, new ArrayList<>(referenceDictionaries.keySet()));
+///     tableByMD5.put(md5, newRow);
+/// }
+/// tableByMD5.get(md5).add(newEntry);
+/// ```
+///
+/// The `LinkedHashMap` is a list searched by MD5 here: insertion order is what both iterate in.
 pub fn build(references: &[Reference], mode: Md5Mode) -> Result<Table, TableError> {
     let mut columns = vec!["MD5".to_string(), "Length".to_string()];
     for reference in references {
@@ -171,15 +205,22 @@ pub fn build(references: &[Reference], mode: Md5Mode) -> Result<Table, TableErro
 /// `ReferencePair.Status`, in the enum's own declaration order, which is also `EnumSet`'s.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Status {
+    /// `EXACT_MATCH`.
     ExactMatch,
+    /// `DIFFER_IN_SEQUENCE_NAMES`: one MD5 under two names.
     DifferInSequenceNames,
+    /// `DIFFER_IN_SEQUENCE`: one name over two MD5s.
     DifferInSequence,
+    /// `DIFFER_IN_SEQUENCES_PRESENT`: a sequence in one reference and not the other.
     DifferInSequencesPresent,
+    /// `SUPERSET`: "ref1 is a superset of ref2".
     Superset,
+    /// `SUBSET`.
     Subset,
 }
 
 impl Status {
+    /// The constant's `name()`.
     pub fn name(&self) -> &'static str {
         match self {
             Status::ExactMatch => "EXACT_MATCH",
@@ -195,7 +236,9 @@ impl Status {
 /// One compared pair and what the analysis concluded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pair {
+    /// `getRef1AsString()`: the first reference's column name.
     pub first: String,
+    /// `getRef2AsString()`.
     pub second: String,
     /// A `BTreeSet` so the order is the enum's, which is what `EnumSet` gives the printing.
     pub analysis: BTreeSet<Status>,
@@ -230,6 +273,7 @@ fn analyse(
     first: usize,
     second: usize,
 ) -> Result<Pair, TableError> {
+    // `analysis = EnumSet.of(Status.EXACT_MATCH);` in the `ReferencePair` constructor.
     let mut analysis: BTreeSet<Status> = BTreeSet::new();
     analysis.insert(Status::ExactMatch);
 
@@ -400,16 +444,26 @@ pub fn sequence_names(references: &[Reference]) -> Vec<String> {
 }
 
 /// `ReferenceUtils.calculateMD5`: every base upper-cased, and the digest printed as a
-/// `BigInteger` left-padded to thirty-two characters rather than as fixed-width hex.
+/// `BigInteger` left-padded to thirty-two characters.
 ///
-/// The two agree on every digest whose leading bytes are non-zero and differ on the rest, which is
-/// why the padding is written out rather than left to a formatter.
+/// ```java
+/// String hash = new BigInteger(1, md5.digest()).toString(16);
+/// if (hash.length() != 32) {
+///     final String zeros = "00000000000000000000000000000000";
+///     hash = zeros.substring(0, 32 - hash.length()) + hash;
+/// }
+/// ```
+///
+/// The padding puts back exactly the leading zeroes `toString(16)` dropped, so the result is the
+/// plain 32-character lower-case hex of the digest for every input.
 pub fn calculate_md5(bases: &[u8]) -> String {
     use md5::Digest;
     let mut digest = md5::Md5::new();
     for base in bases {
         digest.update([base.to_ascii_uppercase()]);
     }
+    // Hex per byte, then the leading zeroes dropped and the string left-padded back to 32: the
+    // Java's `BigInteger` round trip spelled out, which returns the hex unchanged.
     let bytes = digest.finalize();
     let hash = bytes
         .iter()

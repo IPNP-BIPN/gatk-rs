@@ -1,5 +1,6 @@
 //! `CollectF1R2Counts`, ported from `F1R2CountsCollector`, `DepthOneHistograms`,
-//! `F1R2FilterConstants` and `F1R2FilterUtils` (GATK 4.6.2.0).
+//! `F1R2FilterConstants` and `F1R2FilterUtils` (GATK 4.7.0.0; all five Java files are unchanged
+//! since 4.6.2.0).
 //!
 //! The counts Mutect2's orientation-bias filter is trained on: for every three-base reference
 //! context, how deep the reference sites were, and what the alt sites looked like. The traversal is
@@ -25,13 +26,25 @@
 //!
 //! # Every skip is a skip of the whole site
 //!
+//! In `F1R2CountsCollector.process`, with the lines between them left out and two lines broken to
+//! fit 100 columns:
+//!
 //! ```java
 //! for (final Map.Entry<String, ReadPileup> entry : splitPileup.entrySet()) {
-//!     ...
-//!     if (!isPileupGood(samplePileup)) { return; }
-//!     ...
-//!     if (referenceSite) { ...; return; }
-//!     if (altCount == 1) { ...; return; }
+//!             if (!isPileupGood(samplePileup)) {
+//!                 return;
+//!             }
+//!             if (referenceSite) {
+//!                 refSiteHistograms.get(sample).get(refContext)
+//!                         .increment(Math.min(depth, CF1R2Args.maxDepth));
+//!                 return;
+//!             }
+//!             if (altCount == 1) {
+//!                 final ReadOrientation type =
+//!                         altF1R2 == 1 ? ReadOrientation.F1R2 : ReadOrientation.F2R1;
+//!                 depthOneAltHistograms.get(sample).increment(refContext, altBase, type, depth);
+//!                 return;
+//!             }
 //! ```
 //!
 //! Every branch but the alt-table one leaves `process` rather than the iteration, so at any site
@@ -46,7 +59,21 @@
 //! the bins from one to `--f1r2-max-depth`. The reference histograms come out in the `HashMap`
 //! order of their 64 context strings, which is reproducible; the alt histograms are keyed by a pair
 //! holding an enum, whose `hashCode` is an identity hash, so THEIR order is not reproducible from
-//! one JVM to the next and [`alt_histograms`] hands them back sorted by label instead.
+//! one JVM to the next and [`Collector::alt_histograms`] hands them back sorted by label instead.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[Element]` is a borrowed, read-only view of a list; `&mut self` is a method that may change
+//!   the collector, the only kind that can.
+//! - `Option<&str>` is "a string or nothing"; `let Some(x) = y else { return; };` unwraps it or
+//!   leaves the method, the Java's `if (refContext == null) return;`.
+//! - `*map.entry(k).or_default().entry(b).or_insert(0) += 1` is "get or create the inner map for
+//!   `k`, get or create the count for `b`, add one": Java's `computeIfAbsent` then `merge`.
+//! - `.expect("..")` unwraps a value the code knows is there, and aborts with that text if not.
+//! - `(String, u8, ReadOrientation)` is a tuple used as a map key, standing for the Java's
+//!   context, alt base and orientation.
+//! - `x as i32`, `x as f64` are explicit numeric casts; Java widens implicitly.
+//! - `[0; 4]` is an array of four zeroes; `(1..=n)` is the inclusive range `1` to `n`.
 
 use gatk_engine::java_hash::{hash_map_order, string_hash_code};
 use htsjdk_metrics::file::Histogram;
@@ -70,11 +97,14 @@ pub const BASES: &[u8; 4] = b"ACGT";
 /// `ReadOrientation`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ReadOrientation {
+    /// `F1R2`.
     F1R2,
+    /// `F2R1`.
     F2R1,
 }
 
 impl ReadOrientation {
+    /// The constant's `name()`, as it appears in an alt histogram's label.
     pub fn label(&self) -> &'static str {
         match self {
             ReadOrientation::F1R2 => "F1R2",
@@ -86,8 +116,12 @@ impl ReadOrientation {
 /// `CollectF1R2CountsArgumentCollection`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Args {
+    /// `minMedianMapQual`, default 50: `isPileupGood` needs a median mapping quality at least this.
     pub min_median_map_qual: i32,
+    /// `minBaseQuality`, default 20: an element is kept only when its quality is STRICTLY above it
+    /// (`pe.getQual() > CF1R2Args.minBaseQuality`).
     pub min_base_quality: i32,
+    /// `maxDepth`: the last histogram bin, into which every deeper site falls.
     pub max_depth: i32,
 }
 
@@ -148,15 +182,23 @@ pub type AltCounts = HashMap<(String, u8, ReadOrientation), HashMap<i32, i64>>;
 /// One pileup element, reduced to what the collector reads from it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Element {
+    /// `ReadUtils.getSampleName(pe.getRead(), header)`, empty when the read has none.
     pub sample: String,
     /// `PileupElement.getBase()`, which is `D` for a deletion and counts nowhere.
     pub base: u8,
+    /// `getQual()`.
     pub qual: u8,
+    /// `isReverseStrand()`.
     pub reverse_strand: bool,
+    /// `isFirstOfPair()`, which is `isPaired() && samRecord.getFirstOfPairFlag()`.
     pub first_of_pair: bool,
+    /// The read's mapping quality, what `getMappingQuals()` reads.
     pub mapping_quality: i32,
+    /// `isDeletion()`.
     pub deletion: bool,
+    /// `isAfterInsertion()`.
     pub after_insertion: bool,
+    /// `isBeforeDeletionStart()`.
     pub before_deletion_start: bool,
 }
 
@@ -182,6 +224,10 @@ impl Element {
 
     /// `ReadUtils.isF1R2`, which for an UNPAIRED read makes a forward read F2R1 and a reverse read
     /// F1R2, `isFirstOfPair` being false when the flag is not set.
+    ///
+    /// ```java
+    /// return read.isReverseStrand() != read.isFirstOfPair();
+    /// ```
     pub fn orientation(&self) -> ReadOrientation {
         if self.reverse_strand != self.first_of_pair {
             ReadOrientation::F1R2
@@ -194,11 +240,17 @@ impl Element {
 /// One row of the alt table, as `AltSiteRecord` writes it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AltSiteRecord {
+    /// The three-base reference context.
     pub context: String,
+    /// `refCount`: reads carrying the reference base.
     pub ref_count: i32,
+    /// `altCount`: reads carrying the chosen alt base, never the other alt bases.
     pub alt_count: i32,
+    /// `refF1R2`: of the reference reads, those in F1R2 orientation.
     pub ref_f1r2: i32,
+    /// `altF1R2`: of the alt reads, those in F1R2 orientation.
     pub alt_f1r2: i32,
+    /// The alt base.
     pub alt: u8,
 }
 
@@ -232,10 +284,13 @@ pub struct Collector {
     ref_counts: HashMap<String, HashMap<String, HashMap<i32, i64>>>,
     /// Per sample, per (context, alt base, orientation), the counts by depth bin.
     alt_counts: HashMap<String, AltCounts>,
+    /// Per sample, the alt table's rows in the order they were written.
     alt_tables: HashMap<String, Vec<AltSiteRecord>>,
 }
 
 impl Collector {
+    /// `new F1R2CountsCollector(..)`: an empty set of counts for every sample, kept in the
+    /// `HashMap` order of [`sample_order`].
     pub fn new(args: Args, samples: &[String]) -> Self {
         let samples = sample_order(samples);
         let mut collector = Collector {
@@ -296,6 +351,8 @@ impl Collector {
                 return;
             }
 
+            // `[i32; 4]` is copied on assignment, so this is `Arrays.copyOf` and `base_counts`
+            // keeps the reference's count.
             let mut copy = base_counts;
             copy[base_index(ref_base).expect("a reference base")] = -1;
             let alt_index = max_element_index(&copy);
@@ -369,6 +426,8 @@ impl Collector {
             .count() as i32;
         let mut is_indel = indels > indel_threshold;
         is_indel = is_indel || (depth == 0 && !pileup.is_empty());
+        // The Java recomputes `getBaseCounts()` here; the caller's counts are the same, and this
+        // parameter is not otherwise read.
         let _ = base_counts;
         depth > 0
             && !is_indel
@@ -397,10 +456,12 @@ impl Collector {
         files
     }
 
+    /// The samples, in the order the collector holds them.
     pub fn samples(&self) -> &[String] {
         &self.samples
     }
 
+    /// One sample's alt table rows, empty for a sample the collector does not know.
     pub fn alt_table(&self, sample: &str) -> &[AltSiteRecord] {
         self.alt_tables
             .get(sample)
@@ -500,6 +561,8 @@ fn max_element_index(counts: &[i32; 4]) -> usize {
     best
 }
 
+/// `samplePileup.getNumberOfElements(pe -> Nucleotide.decode(pe.getBase()) == base &&
+/// ReadUtils.isF1R2(pe.getRead()))`.
 fn count_f1r2(pileup: &[&Element], base: u8) -> i32 {
     pileup
         .iter()

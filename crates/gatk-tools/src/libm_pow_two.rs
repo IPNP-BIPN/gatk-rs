@@ -13,7 +13,23 @@
 //!
 //! A CPU with AVX-512 goes elsewhere: numpy dispatches `power` to SVML there, which is not ported
 //! and which this file cannot reach.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `f64::from_bits(u64)` and `x.to_bits()` reinterpret the 64 bits of a double, with no
+//!   conversion: Java's `Double.longBitsToDouble` and `Double.doubleToRawLongBits`.
+//! - `as u32`, `as usize` convert between integer widths; from a wider type they keep the low
+//!   bits. `as` binds tighter than both `>>` and `&`, which is why the shift is parenthesised:
+//!   `(bits >> 52) as u32 & 0x7ff` is `((bits >> 52) as u32) & 0x7ff`, the 11-bit exponent field.
+//! - `wrapping_sub` and `wrapping_add` are C's unsigned arithmetic, which wraps modulo 2^32 or
+//!   2^64. Plain `-` and `+` would panic in a debug build where C wraps.
+//! - `Option<f64>` is "a double or nothing": `Some(x)` is an answer, `None` is "this exponent
+//!   leaves the ported path", and the caller turns `None` into its own error.
 
+// Each constant as its IEEE bit pattern: `f64::from_bits` turns it back into the double with no
+// decimal conversion in between. `LN2_HI + LN2_LO` is ln 2 split in two, `INV_LN2_N` is 128 / ln 2
+// (the table has 128 entries), `SHIFT` is 1.5 * 2^52, `NEG_LN2_*_N` are -ln 2 / 128 split in two,
+// and `C2` to `C5` are the polynomial's coefficients.
 const LN2_HI: u64 = 0x3fe62e42fefa3800;
 const LN2_LO: u64 = 0x3d2ef35793c76730;
 const INV_LN2_N: u64 = 0x40671547652b82fe;
@@ -72,22 +88,34 @@ pub(crate) fn exact_fma(a: f64, b: f64, c: f64) -> f64 {
 /// magnitude under 2^-65 or over 2^63, or a result libm scales specially), where the exact
 /// branches were not ported because the score cannot reach them.
 pub fn pow_two(y: f64) -> Option<f64> {
+    // The exponent field of `y` must lie in 0x3be..=0x43d, which is 2^-65 <= |y| < 2^63. The
+    // unsigned wrap folds both bounds into one comparison: a field below 0x3be wraps to a huge
+    // value.
     let top_y = (y.to_bits() >> 52) as u32 & 0x7ff;
     if top_y.wrapping_sub(0x3be) > 0x7f {
         return None;
     }
     let ln2_hi = f64::from_bits(LN2_HI);
     let ln2_lo = f64::from_bits(LN2_LO);
+    // `log_inline(2)` collapsed to its table entry at 1: ln 2 as a rounded head `hi` and the
+    // remainder `lo`.
     let hi = ln2_hi + ln2_lo;
     let lo = ln2_hi - hi + ln2_lo;
 
+    // `y * ln 2` as a head and a tail. The inner `exact_fma` is the rounding error of `y * hi`,
+    // which only a fused multiply-add gives exactly.
     let e_hi = y * hi;
     let e_lo = exact_fma(y, lo, exact_fma(y, hi, -e_hi));
     let top = (e_hi.to_bits() >> 52) as u32 & 0x7ff;
+    // `exp_inline`'s main path: 2^-54 <= |y ln 2| < 2^9. Outside it libm leaves the main path,
+    // and so does this port.
     if top.wrapping_sub(0x3c9) > 0x3e {
         return None;
     }
 
+    // `k = round(y ln 2 * 128 / ln 2)` by the shift trick: adding 1.5 * 2^52 leaves the rounded
+    // integer in the low bits of `kd`, read back as `ki`, and subtracting it again gives `k` as a
+    // double. `r` is then what is left of the exponent once `k / 128` is taken out.
     let shift = f64::from_bits(SHIFT);
     let kd = exact_fma(e_hi, f64::from_bits(INV_LN2_N), shift);
     let ki = kd.to_bits();
@@ -99,9 +127,14 @@ pub fn pow_two(y: f64) -> Option<f64> {
     );
     let r = e_lo + r;
 
+    // `2^(k/128)` from the table: entry `k mod 128` gives the fraction, and `ki << 45` adds the
+    // integer part of `k / 128` straight into the exponent field (52 - 7 = 45). The tail corrects
+    // the fraction's rounding.
     let index = 2 * (ki % 128) as usize;
     let tail = f64::from_bits(EXP_TABLE[index]);
     let scale = f64::from_bits(EXP_TABLE[index + 1].wrapping_add(ki << 45));
+    // The polynomial `tail + r + r^2 (C2 + r C3) + r^4 (C4 + r C5)`, then `scale + scale * tmp`,
+    // fused at each step the build fused it.
     let r2 = r * r;
     let low = exact_fma(r, f64::from_bits(C3), f64::from_bits(C2));
     let high = exact_fma(r, f64::from_bits(C5), f64::from_bits(C4));

@@ -14,7 +14,22 @@
 //! `org.broadinstitute.hellbender.tools.walkers.vqsr.scalable.LabeledVariantAnnotationsWalker`,
 //! `org.broadinstitute.hellbender.tools.walkers.vqsr.scalable.data.VariantType` and
 //! `org.broadinstitute.hellbender.tools.walkers.vqsr.scalable.data.LabeledVariantAnnotationsDatum`
-//! in GATK 4.6.2.0.
+//! in GATK 4.7.0.0 (all four Java files are unchanged since 4.6.2.0).
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is "a value or nothing" (`Some(x)` or `None`), Java's nullable reference with the
+//!   check enforced; `let Some(x) = y else { .. }` unwraps it or takes the early exit.
+//! - `Result<(), String>` is "nothing, or an error message"; `Err(..)` is the exception.
+//! - `BTreeSet` and `BTreeMap` are sorted collections, Java's `TreeSet` and `TreeMap`: iterating
+//!   one yields its keys in order.
+//! - `&[T]` is a borrowed, read-only view of a list; `&str` is the same for text.
+//! - `.iter().filter(..).map(..).collect()` is a Java stream; `.any(..)` is `anyMatch`, `.all(..)`
+//!   is `allMatch`, `.position(..)` is the index of the first match, as an `Option`.
+//! - `|x| ..` is a closure, Java's lambda; `&mut dyn FnMut(usize) -> usize` is a callable the
+//!   caller lends, which may update its own state (here, a random stream).
+//! - An `enum` is a closed set of cases, and a `match` must cover all of them; a `Some(x) if ..`
+//!   arm applies only when its guard holds.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -25,16 +40,22 @@ use std::collections::{BTreeMap, BTreeSet};
 /// One VCF record, reduced to what the extraction reads off it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Record {
+    /// `getContig()`.
     pub contig: String,
+    /// `getStart()`, 1-based.
     pub start: i32,
+    /// The reference allele's bases.
     pub reference: String,
+    /// The alternate alleles, in record order; `*` for a spanning deletion.
     pub alternates: Vec<String>,
     /// The FILTER column, split; empty means the record passed.
     pub filters: Vec<String>,
+    /// The INFO attributes as written, key and raw text.
     pub attributes: Vec<(String, String)>,
 }
 
 impl Record {
+    /// `getAttribute(key)` as raw text, `None` when the record does not carry the key.
     pub fn attribute(&self, key: &str) -> Option<&str> {
         self.attributes
             .iter()
@@ -56,11 +77,17 @@ impl Record {
 /// `VariantContext.Type`, as far as the extraction needs it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContextType {
+    /// `NO_VARIATION`: no alternate allele.
     NoVariation,
+    /// `SNP`.
     Snp,
+    /// `MNP`.
     Mnp,
+    /// `INDEL`.
     Indel,
+    /// `SYMBOLIC`.
     Symbolic,
+    /// `MIXED`: alternates of more than one type.
     Mixed,
 }
 
@@ -106,12 +133,18 @@ pub fn context_type(record: &Record) -> ContextType {
 
 /// The two classes an extraction sorts variants into.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+///
+/// `PartialOrd, Ord` give it the declaration order, SNP before INDEL, which is what a sorted set of
+/// modes iterates in.
 pub enum VariantType {
+    /// `VariantType.SNP`, which also takes MNPs.
     Snp,
+    /// `VariantType.INDEL`, which takes everything else that varies.
     Indel,
 }
 
 impl VariantType {
+    /// The enum constant's name, as `toString()` prints it.
     pub fn name(self) -> &'static str {
         match self {
             VariantType::Snp => "SNP",
@@ -122,7 +155,14 @@ impl VariantType {
 
 /// `getVariantType`, which puts an MNP with the SNPs and everything else with the indels.
 ///
-/// A record with no alternate at all has no type and is refused rather than dropped.
+/// A record with no alternate at all has no type and is refused rather than dropped:
+///
+/// ```java
+/// throw new IllegalStateException("Encountered unknown variant type: " + vc.getType());
+/// ```
+///
+/// Here that refusal is `None`, and [`extract_variant_metadata`] drops such a record rather than
+/// refusing it.
 pub fn variant_type(record: &Record) -> Option<VariantType> {
     match context_type(record) {
         ContextType::Snp | ContextType::Mnp => Some(VariantType::Snp),
@@ -187,9 +227,13 @@ pub fn decode_annotation(
         // The index is into the ALTERNATES, which is the allele index less one.
         let alternate = alternate.expect("allele-specific mode is one alternate at a time");
         let Some(index) = record.alternates.iter().position(|a| a == alternate) else {
-            // The allele is not one of this record's, which is a refusal rather than a NaN.
+            // The allele is not one of this record's. The reference refuses here
+            // (`throw new IllegalStateException("Allele " + altAllele + " is not contained in the
+            // input VariantContext.")`); this returns NaN instead.
             return f64::NAN;
         };
+        // `valueList.get(altIndex)` throws when the list is shorter than the alternates; `get`
+        // returns `None` instead, so a short list is NaN here.
         values.get(index).and_then(|v| parse_double(v))
     } else {
         record.attribute(name).and_then(parse_double)
@@ -204,7 +248,10 @@ pub fn decode_annotation(
 
 /// `getAttributeAsDouble`, whose failures all become the default rather than a refusal.
 fn parse_double(text: &str) -> Option<f64> {
-    // `Double.parseDouble` accepts these three spellings, which Rust's parser also accepts.
+    // `getAttributeAsDouble` is htsjdk's `VCFUtils.parseVcfDouble`: `Double.parseDouble`, then an
+    // infinity-or-NaN pattern on failure. Rust's `parse` also accepts `inf`, `infinity` and `nan`,
+    // and `.ok()` turns a parse failure into `None`. Java's grammar also takes forms Rust's does
+    // not, such as a trailing `d` (`1d`), which here becomes `None` and so NaN.
     text.trim().parse::<f64>().ok()
 }
 
@@ -230,7 +277,9 @@ pub const DEFAULT_MATCHING_STRATEGY: MatchingStrategy = MatchingStrategy::StartP
 /// resource's alternates, once both pairs are trimmed.
 ///
 /// The two records already share a start, so reconciling means removing the bases they pad with:
-/// a common suffix first, then a common prefix.
+/// a common suffix first, then a common prefix. The reference is
+/// `GATKVariantContextUtils.isAlleleInList`, whose `IllegalStateException` on a reference mismatch
+/// `isMatchingVariant` rethrows; this function has no such refusal.
 pub fn is_allele_in_list(
     reference: &str,
     alternate: &str,
@@ -246,6 +295,9 @@ pub fn is_allele_in_list(
 
 /// The minimal representation of one reference and one alternate: the shared suffix goes first,
 /// and then the shared prefix, and at least one base is always left on each side.
+///
+/// `<'a>` is a lifetime parameter: it ties the two borrowed inputs together and constrains nothing
+/// here, since the result is owned.
 fn trim<'a>(reference: &'a str, alternate: &'a str) -> (String, String) {
     let mut reference: Vec<u8> = reference.as_bytes().to_vec();
     let mut alternate: Vec<u8> = alternate.as_bytes().to_vec();
@@ -271,6 +323,18 @@ fn trim<'a>(reference: &'a str, alternate: &'a str) -> (String, String) {
 /// The three preconditions run before the strategy does, and a resource record that is filtered,
 /// carries no alternate, or is of the other variant class never labels anything whatever the
 /// strategy says.
+///
+/// ```java
+/// if (resourceVC != null && resourceVC.isNotFiltered() && resourceVC.isVariant() &&
+///         VariantType.checkVariantType(vc, resourceVC) &&
+///         (trustAllPolymorphic || !resourceVC.hasGenotypes() ||
+///         resourceVC.isPolymorphicInSamples())) {
+/// ```
+///
+/// (Two lines in the reference, wrapped here, with its trailing comment dropped.)
+///
+/// `alternate` is `null` (`None`) outside allele-specific mode, where any alternate of the input
+/// may match.
 pub fn is_matching_variant(
     record: &Record,
     resource: &Record,
@@ -321,11 +385,15 @@ pub fn is_matching_variant(
 /// One resource file and the labels its tag carries.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Resource {
+    /// The resource's argument name.
     pub name: String,
     /// The tag's key-and-value pairs, of which only those whose value is exactly `true` label.
     pub tags: Vec<(String, String)>,
+    /// The resource's records, all of them; the start-position query is made per input record.
     pub records: Vec<Record>,
+    /// `resourceVC.hasGenotypes()`, taken per resource rather than per record.
     pub has_genotypes: bool,
+    /// `resourceVC.isPolymorphicInSamples()`, likewise per resource.
     pub is_polymorphic: bool,
 }
 
@@ -333,7 +401,8 @@ impl Resource {
     /// The labels this resource applies, sorted, which is what a `TreeSet` gives.
     ///
     /// The value has to be the STRING `true`: a tag written `training=false` labels nothing, and
-    /// so a run whose only resource is tagged that way extracts nothing at all.
+    /// so a run whose only resource is tagged that way extracts nothing at all:
+    /// `.filter(e -> e.getValue().equals("true"))`.
     pub fn labels(&self) -> BTreeSet<String> {
         self.tags
             .iter()
@@ -346,7 +415,9 @@ impl Resource {
 /// The label the matrix carries for the variant class, which is why it may not come from a
 /// resource: a run's own `snp` column would collide with it.
 pub const SNP_LABEL: &str = "snp";
+/// The label a training resource carries.
 pub const TRAINING_LABEL: &str = "training";
+/// The label a calibration resource carries.
 pub const CALIBRATION_LABEL: &str = "calibration";
 
 /// The refusal a resource tagged with the reserved label produces.
@@ -364,6 +435,8 @@ pub fn check_resource_labels(labels: &BTreeSet<String>) -> Result<(), String> {
 pub struct Extracted {
     /// In allele-specific mode a single alternate; otherwise every alternate that passed.
     pub alternates: Vec<String>,
+    /// The middle of the reference's `Triple`: the record's type, or the allele's in
+    /// allele-specific mode.
     pub variant_type: VariantType,
     /// Sorted, and empty for an unlabelled row.
     pub labels: BTreeSet<String>,
@@ -380,6 +453,7 @@ pub struct Arguments {
     pub ignore_all_filters: bool,
     /// The opposite of `--do-not-trust-all-polymorphic`.
     pub trust_all_polymorphic: bool,
+    /// `--resource-matching-strategy`.
     pub strategy: MatchingStrategy,
     /// Whether any requested annotation is declared `Number=A`, which switches the WHOLE run.
     pub allele_specific: bool,
@@ -400,7 +474,14 @@ impl Default for Arguments {
 
 /// Whether a record's filters let it through.
 ///
-/// `--ignore-filter` has to name EVERY filter the record carries, not just one of them.
+/// `--ignore-filter` has to name EVERY filter the record carries, not just one of them:
+///
+/// ```java
+/// if (vc == null || !(ignoreAllFilters || vc.isNotFiltered() ||
+///         ignoreInputFilterSet.containsAll(vc.getFilters()))) {
+/// ```
+///
+/// (One line in the reference, wrapped here.)
 pub fn passes_filters(record: &Record, arguments: &Arguments) -> bool {
     arguments.ignore_all_filters
         || record.is_not_filtered()
@@ -414,6 +495,9 @@ pub fn passes_filters(record: &Record, arguments: &Arguments) -> bool {
 ///
 /// `extract_unlabeled` is on exactly when a reservoir was asked for, and it is what decides
 /// whether a row with no label survives this function at all.
+///
+/// The two branches are the reference's: outside allele-specific mode one entry for the whole
+/// record; inside it one per alternate, spanning deletions excluded.
 pub fn extract_variant_metadata(
     record: &Record,
     resources: &[Resource],
@@ -424,6 +508,7 @@ pub fn extract_variant_metadata(
         return Vec::new();
     }
     if !arguments.allele_specific {
+        // The reference throws for a record with no type (see `variant_type`); this drops it.
         let Some(kind) = variant_type(record) else {
             return Vec::new();
         };
@@ -462,6 +547,8 @@ pub fn extract_variant_metadata(
 
 /// `findMatchingResourceLabels`: every label of every resource with a matching record at the
 /// input's start.
+///
+/// A `TreeSet`, so the labels come out sorted whichever resource supplied them.
 fn matching_labels(
     record: &Record,
     alternate: Option<&str>,
@@ -471,7 +558,8 @@ fn matching_labels(
     let mut labels = BTreeSet::new();
     for resource in resources {
         // The resource is queried at the START position alone, so a record that merely overlaps
-        // is not consulted.
+        // is not consulted: `featureContext.getValues(resource, featureContext.getInterval()
+        // .getStart())`. Allele-specific mode forces the strictest strategy (below).
         let matches = resource
             .records
             .iter()
@@ -508,13 +596,21 @@ fn matching_labels(
 /// One row of a matrix: where it came from, what it is, what labelled it, and its numbers.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Row {
+    /// The record's contig.
     pub contig: String,
+    /// The record's start.
     pub start: i32,
+    /// The record's end, see [`Record::end`].
     pub end: i32,
+    /// The record's reference allele.
     pub reference: String,
+    /// The alternates this row stands for.
     pub alternates: Vec<String>,
+    /// The row's class, which fills the `snp` column.
     pub variant_type: VariantType,
+    /// The resource labels that matched, sorted.
     pub labels: BTreeSet<String>,
+    /// One value per annotation, in [`sorted_annotation_names`] order; NaN where absent.
     pub annotations: Vec<f64>,
 }
 
@@ -532,7 +628,8 @@ pub fn sorted_labels(resource_labels: &BTreeSet<String>) -> Vec<String> {
     labels.into_iter().collect()
 }
 
-/// One row built from one extracted entry.
+/// One row built from one extracted entry: `decodeAnnotation` for each annotation name, with
+/// the entry's single alternate in allele-specific mode and none otherwise.
 pub fn row(record: &Record, extracted: &Extracted, names: &[String], allele_specific: bool) -> Row {
     let alternate = if allele_specific {
         Some(extracted.alternates[0].as_str())
@@ -560,13 +657,16 @@ pub fn row(record: &Record, extracted: &Extracted, names: &[String], allele_spec
 /// genomic order: a record that arrives late lands wherever the index says.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Reservoir {
+    /// `--maximum-number-of-unlabeled-variants`.
     pub maximum: usize,
+    /// The sampled rows, at most `maximum` records' worth.
     pub rows: Vec<Row>,
     /// How many unlabelled records have been offered, which is what the index is drawn against.
     pub seen: usize,
 }
 
 impl Reservoir {
+    /// An empty reservoir of the given capacity.
     pub fn new(maximum: usize) -> Reservoir {
         Reservoir {
             maximum,
@@ -579,6 +679,16 @@ impl Reservoir {
     ///
     /// `index` is `rng.nextInt(seen)` and is consulted ONLY once the reservoir is full, so a
     /// caller that has not filled it yet may pass anything.
+    ///
+    /// ```java
+    /// if (unlabeledIndex < maximumNumberOfUnlabeledVariants) {
+    ///     addExtractedVariantToData(unlabeledDataReservoir, variant, unlabeledMetadata);
+    /// } else {
+    ///     final int j = rng.nextInt(unlabeledIndex);
+    /// ```
+    ///
+    /// `nextInt(unlabeledIndex)` draws from `0..seen`, not `0..=seen` as the textbook Algorithm R
+    /// does; the reference's bound is kept.
     pub fn offer(&mut self, rows: Vec<Row>, index: usize) {
         if self.seen < self.maximum {
             self.rows.extend(rows);
@@ -594,8 +704,11 @@ impl Reservoir {
 /// them.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Extraction {
+    /// The annotation columns, sorted.
     pub names: Vec<String>,
+    /// The labelled rows, in input order.
     pub labeled: Vec<Row>,
+    /// The reservoir, `None` when `--maximum-number-of-unlabeled-variants` is zero.
     pub unlabeled: Option<Reservoir>,
 }
 
@@ -610,6 +723,7 @@ impl Extraction {
 
     /// The unlabelled matrix is written only when a reservoir was asked for at all.
     pub fn writes_unlabeled_matrix(&self) -> bool {
+        // `as_ref` borrows the reservoir inside the `Option`; `is_some_and` is false for `None`.
         self.unlabeled.as_ref().is_some_and(|r| !r.rows.is_empty())
     }
 }
@@ -627,6 +741,8 @@ pub fn extract(
 ) -> Extraction {
     let names = sorted_annotation_names(requested);
     let mut labeled = Vec::new();
+    // `cond.then(|| x)` is `Some(x)` when the condition holds and `None` otherwise: the
+    // reference's `maximumNumberOfUnlabeledVariants == 0 ? null : ...`.
     let mut reservoir = (maximum_unlabeled > 0).then(|| Reservoir::new(maximum_unlabeled));
     for record in records {
         let metadata = extract_variant_metadata(record, resources, arguments, reservoir.is_some());
@@ -636,6 +752,7 @@ pub fn extract(
         for extracted in metadata.iter().filter(|e| !e.labels.is_empty()) {
             labeled.push(row(record, extracted, &names, arguments.allele_specific));
         }
+        // `as_mut` borrows the reservoir writably for this iteration only.
         let Some(reservoir) = reservoir.as_mut() else {
             continue;
         };
@@ -708,12 +825,15 @@ pub fn attributes(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
 
 /// A convenience for the suffixes the two matrices are written under.
 pub const ANNOTATIONS_HDF5_SUFFIX: &str = ".annot.hdf5";
+/// The tag inserted before the suffix for the unlabelled matrix.
 pub const UNLABELED_TAG: &str = ".unlabeled";
 
 /// The paths the matrix's datasets live at, which is what makes `--omit-alleles-in-hdf5`
 /// observable: those two go and the rest stay.
 pub const ALLELES_REF_PATH: &str = "/alleles/ref";
+/// The alternate alleles' dataset, flattened (see [`alternate_alleles`]).
 pub const ALLELES_ALT_PATH: &str = "/alleles/alt";
+/// The intervals' dataset, which is always written.
 pub const INTERVALS_PATH: &str = "/intervals";
 
 /// Which datasets a matrix carries.

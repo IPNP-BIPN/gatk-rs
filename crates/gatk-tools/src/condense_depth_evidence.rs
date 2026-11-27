@@ -1,6 +1,6 @@
 //! `CondenseDepthEvidence`, ported from
 //! `org.broadinstitute.hellbender.tools.sv.CondenseDepthEvidence` and `DepthEvidenceCodec`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; both files are unchanged since 4.6.2.0).
 //!
 //! Adjacent depth-evidence bins merged.
 //!
@@ -8,7 +8,7 @@
 //!
 //! ```java
 //! final int intervalLength = accumulator.getLengthOnReference();
-//! if ( !isAdjacent(accumulator, feature) || intervalLength >= maxIntervalLength ) { ... }
+//! if ( !isAdjacent(accumulator, feature) || intervalLength >= maxIntervalLength ) {
 //! ```
 //!
 //! The length tested is the one ALREADY accumulated, before the next bin is added, so the check
@@ -24,13 +24,34 @@
 //!
 //! `DepthEvidenceCodec.decode` adds one to the start it reads, and `encode` subtracts it again, so
 //! a bin written `0 100` is the closed interval 1..=100 and is a hundred bases long.
+//!
+//! ```java
+//! final int start = Integer.parseUnsignedInt(tokens.get(1)) + 1; // Adjust for 0-based indexing
+//! ```
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<DepthEvidence>` is "a bin or nothing": `None` is the Java's `accumulator == null`.
+//! - `match accumulator { None => .., Some(ref held) => .. }` tests it and borrows the held bin
+//!   without taking it out.
+//! - `Result<T, CondenseError>` is "a value or the exception the reference throws"; `?` hands the
+//!   error to the caller.
+//! - `wrapping_add` is Java's `int` addition: it wraps on overflow, where Rust's `+` would stop
+//!   the program in a debug build.
+//! - `value as i32` on a `u32` reinterprets the bits, so `4294967295` becomes `-1`, which is what
+//!   `Integer.parseUnsignedInt` returns.
+//! - `.collect::<Result<_, _>>()?` gathers a list of results into one, stopping at the first error.
 
 /// One bin, as the tool holds it: one-based and closed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DepthEvidence {
+    /// The contig.
     pub contig: String,
+    /// One-based start, the file's zero-based value plus one.
     pub start: i32,
+    /// One-based closed end, as written.
     pub end: i32,
+    /// One count per sample, in the header's sample order.
     pub counts: Vec<i32>,
 }
 
@@ -44,7 +65,9 @@ impl DepthEvidence {
 /// The arguments, with the tool's own defaults.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Arguments {
+    /// `maxIntervalLength`, default 1000.
     pub max_interval_length: i32,
+    /// `minIntervalLength`, default 0.
     pub min_interval_length: i32,
 }
 
@@ -60,6 +83,7 @@ impl Default for Arguments {
 /// What the run refuses, both before a record is read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CondenseError {
+    // `minIntervalLength > maxIntervalLength`.
     MinimumAboveMaximum,
     /// No codec answers for the output's name, which `FeatureOutputCodecFinder.find` refuses.
     NoOutputCodec {
@@ -75,6 +99,7 @@ pub enum CondenseError {
 }
 
 impl CondenseError {
+    /// The exception class the reference throws.
     pub fn java_class(&self) -> &'static str {
         match self {
             CondenseError::CountMismatch => "java.lang.IllegalArgumentException",
@@ -82,6 +107,7 @@ impl CondenseError {
         }
     }
 
+    /// The exception's message.
     pub fn message(&self) -> String {
         match self {
             CondenseError::MinimumAboveMaximum => {
@@ -121,7 +147,8 @@ pub fn check_output(path: &str) -> Result<(), CondenseError> {
     }
 }
 
-/// `isAdjacent`.
+/// `isAdjacent`: `ev1.getEnd() + 1 == ev2.getStart()` on one contig, so a gap of even one base
+/// breaks the run.
 fn adjacent(left: &DepthEvidence, right: &DepthEvidence) -> bool {
     left.contig == right.contig && left.end + 1 == right.start
 }
@@ -137,6 +164,7 @@ pub fn condense(
     let mut written = Vec::new();
     let mut accumulator: Option<DepthEvidence> = None;
     for record in records {
+        // A copy of the held bin, so `accumulator` can be reassigned below while it is read.
         let held = match accumulator {
             None => {
                 accumulator = Some(record.clone());

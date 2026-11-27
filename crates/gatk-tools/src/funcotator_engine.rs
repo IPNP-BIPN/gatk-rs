@@ -11,10 +11,36 @@
 //! deletion is refused as the port's limitation by [`EngineError::Limitation`], because the
 //! reference's indel branches are not.
 //!
-//! Ported from `org.broadinstitute.hellbender.tools.funcotator.dataSources.gencode.GencodeFuncotationFactory`,
+//! Ported from `org.broadinstitute.hellbender`'s
+//! `tools.funcotator.dataSources.gencode.GencodeFuncotationFactory`,
 //! `GencodeFuncotation`, `FuncotatorUtils`, `ProteinChangeInfo`, `TranscriptSelectionMode`,
 //! `SegmentExonUtils` and `org.broadinstitute.hellbender.utils.codecs.gtf.GencodeGtfCodec` in
 //! GATK 4.6.2.0.
+//!
+//! # Which GATK, more exactly
+//!
+//! `GencodeFuncotationFactory.java`, `GencodeFuncotation.java`, `TranscriptSelectionMode.java` and
+//! `FuncotatorUtils.java` all differ between 4.6.2.0 and 4.7.0.0. The MANE transcript selection
+//! here is 4.7.0.0's (`retrieveMANEAndBasicTranscripts`, `ComparatorByManeStatus`), while the
+//! transcript-id comparison goes through `crate::funcotator::transcript_id_without_version_number`,
+//! which keeps the 4.6.2.0 body of `getTranscriptIdWithoutVersionNumber`.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is "a value or nothing" (`Some(x)` or `None`), Java's nullable field with the
+//!   check enforced by the compiler; `.unwrap_or(..)` supplies the value used for `None`.
+//! - `Result<T, E>` is "a value or an error"; `?` after a call returns its error at once, as an
+//!   exception would leave the Java method.
+//! - `let Some(x) = .. else { .. }` takes the value out or runs the `else` block, which must leave
+//!   the function (`return` or `continue`).
+//! - `match` must cover every case; `_` is the catch-all arm. A `match` on a pair `(a, b)` tests
+//!   both at once, which is how the comparators below read two nullable fields.
+//! - `std::cmp::Ordering` is a `Comparator`'s negative, zero or positive as `Less`, `Equal`,
+//!   `Greater`; `a.then_with(f)` is `thenComparing`: `f` is consulted only when `a` is `Equal`.
+//! - `.iter().map(..).filter(..).collect()` is a Java stream; a closure `|x| ...` is a lambda.
+//! - `Vec<(K, V)>` searched in order stands in for a `LinkedHashMap` where insertion order is
+//!   output order; `BTreeMap` is a `TreeMap`.
+//! - `x as i32` and the like convert between number types, truncating a value that does not fit.
 
 use crate::funcotator as fu;
 use std::collections::BTreeMap;
@@ -48,6 +74,7 @@ pub struct Span {
 }
 
 impl Span {
+    /// A span from one-based, inclusive `start` and `end`.
     pub fn new(start: i32, end: i32) -> Self {
         Span { start, end }
     }
@@ -59,6 +86,7 @@ impl Span {
     pub fn contains(&self, other: &Span) -> bool {
         self.start <= other.start && other.end <= self.end
     }
+    /// `getLengthOnReference()`: inclusive, so a one-base span has length one.
     pub fn length(&self) -> i32 {
         self.end - self.start + 1
     }
@@ -110,6 +138,8 @@ struct GtfLine {
 }
 
 impl GtfLine {
+    /// The FIRST value given for `key`, or `None`. A key such as `tag` that repeats is read
+    /// through `attributes` directly.
     fn attribute(&self, key: &str) -> Option<&str> {
         self.attributes
             .iter()
@@ -122,6 +152,8 @@ impl GtfLine {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GtfError(pub String);
 
+/// One tab-separated GTF line: nine columns, positions as `int`, strand `+` or `-`, and the
+/// attribute column split into `key value` pairs at `;`, with surrounding quotes removed.
 fn parse_gtf_line(line: &str) -> Result<GtfLine, GtfError> {
     let fields: Vec<&str> = line.split('\t').collect();
     if fields.len() != 9 {
@@ -144,6 +176,7 @@ fn parse_gtf_line(line: &str) -> Result<GtfLine, GtfError> {
         if part.is_empty() {
             continue;
         }
+        // A part with no space is a key with an empty value.
         let (key, value) = part.split_once(' ').unwrap_or((part, ""));
         attributes.push((key.to_string(), value.trim().trim_matches('"').to_string()));
     }
@@ -165,6 +198,9 @@ type OpenTranscript = (Transcript, Vec<Exon>, Vec<GtfLine>);
 pub fn parse_gencode_gtf(text: &str) -> Result<Vec<Gene>, GtfError> {
     let mut genes: Vec<Gene> = Vec::new();
     let mut current: Option<(Gene, Option<OpenTranscript>)> = None;
+    // Attach the transcript's leaf features to its exons and hand it to its gene. `retain` keeps
+    // the leaves for which the closure answers `true`, so a leaf is consumed by the FIRST exon, in
+    // file order, that contains it; one contained by no exon is dropped.
     let flush_transcript = |gene: &mut Gene, transcript: Option<OpenTranscript>| {
         if let Some((mut transcript, exons, mut leaves)) = transcript {
             for mut exon in exons {
@@ -193,6 +229,7 @@ pub fn parse_gencode_gtf(text: &str) -> Result<Vec<Gene>, GtfError> {
         let parsed = parse_gtf_line(line)?;
         match parsed.feature.as_str() {
             "gene" => {
+                // `take()` moves the open gene out and leaves `None` behind.
                 if let Some((mut gene, transcript)) = current.take() {
                     flush_transcript(&mut gene, transcript);
                     genes.push(gene);
@@ -352,6 +389,9 @@ impl TranscriptFasta {
     }
 
     /// `queryAndPrefetch` over a record, one-based and inclusive.
+    ///
+    /// The bounds are clipped to the record rather than refused. `self.sequences[key]` panics on an
+    /// unknown key; callers look the key up in `ids` first.
     fn query(&self, key: &str, start: i32, end: i32) -> String {
         let sequence = &self.sequences[key];
         let from = (start - 1).max(0) as usize;
@@ -368,6 +408,7 @@ impl TranscriptFasta {
 pub trait Reference {
     /// The bases over `[start, end]`, one-based, clipped to the contig.
     fn bases(&self, contig: &str, start: i64, end: i64) -> Vec<u8>;
+    /// The contig's length in bases.
     fn length(&self, contig: &str) -> i64;
 }
 
@@ -387,6 +428,8 @@ fn window_bases(
     reference.bases(contig, from, to)
 }
 
+/// The reverse complement, case kept; anything other than `ACGTacgt` (an `N`, say) is copied
+/// as it is.
 fn reverse_complement(bases: &str) -> String {
     bases
         .bytes()
@@ -414,9 +457,12 @@ fn reverse_complement(bases: &str) -> String {
 pub struct Allele(pub String);
 
 impl Allele {
+    /// Whether the allele is symbolic as this port reads one: `<...>`, a breakend (`[` or `]`), or
+    /// `*`.
     pub fn is_symbolic(&self) -> bool {
         self.0.starts_with('<') || self.0.contains('[') || self.0.contains(']') || self.0 == "*"
     }
+    /// `Allele.length()`, which counts a symbolic allele as zero bases.
     pub fn len(&self) -> usize {
         if self.is_symbolic() {
             0
@@ -424,6 +470,7 @@ impl Allele {
             self.0.len()
         }
     }
+    /// Zero length, which a symbolic allele is.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -448,6 +495,7 @@ pub struct Variant {
 }
 
 impl Variant {
+    /// The variant's `[start, end]`.
     fn span(&self) -> Span {
         Span::new(self.start, self.end)
     }
@@ -473,6 +521,8 @@ enum Failure {
     Engine(EngineError),
 }
 
+// `impl From` lets `?` convert an `EngineError` into a `Failure` on its own, in a function whose
+// error type is `Failure`.
 impl From<EngineError> for Failure {
     fn from(error: EngineError) -> Self {
         Failure::Engine(error)
@@ -495,6 +545,7 @@ fn is_indel(reference: &Allele, alternate: &Allele) -> bool {
 fn is_insertion(reference: &Allele, alternate: &Allele) -> bool {
     reference.len() < alternate.len()
 }
+/// The deletion half of the pair above.
 fn is_deletion(reference: &Allele, alternate: &Allele) -> bool {
     reference.len() > alternate.len()
 }
@@ -532,6 +583,7 @@ pub enum VariantClassification {
 }
 
 impl VariantClassification {
+    /// Every constant, in the enum's declaration order.
     pub const ALL: [VariantClassification; 23] = [
         VariantClassification::CouldNotDetermine,
         VariantClassification::Intron,
@@ -558,6 +610,7 @@ impl VariantClassification {
         VariantClassification::Lincrna,
     ];
 
+    /// The constant's serialized name, the first constructor argument.
     pub fn name(self) -> &'static str {
         match self {
             VariantClassification::CouldNotDetermine => "COULD_NOT_DETERMINE",
@@ -586,10 +639,13 @@ impl VariantClassification {
         }
     }
 
+    /// The constant whose [`VariantClassification::name`] is exactly `name`, or `None`.
     pub fn from_name(name: &str) -> Option<VariantClassification> {
         Self::ALL.into_iter().find(|vc| vc.name() == name)
     }
 
+    /// The second constructor argument: lower is more severe, so `NONSENSE` (0) sorts before
+    /// `IGR` (20) in the best-effect order.
     pub fn default_severity(self) -> i32 {
         match self {
             VariantClassification::CouldNotDetermine => 99,
@@ -614,7 +670,8 @@ impl VariantClassification {
     }
 }
 
-/// `GencodeFuncotation.VariantType`.
+/// `GencodeFuncotation.VariantType`, without the Java's `MNP` constant, which nothing in
+/// `tools/funcotator` produces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VariantType {
     Ins,
@@ -627,6 +684,7 @@ pub enum VariantType {
 }
 
 impl VariantType {
+    /// The serialized name.
     pub fn name(self) -> &'static str {
         match self {
             VariantType::Ins => "INS",
@@ -740,6 +798,7 @@ pub struct GencodeFuncotation {
 }
 
 impl GencodeFuncotation {
+    /// A funcotation with every field unset, which the builders fill in.
     fn empty() -> Self {
         GencodeFuncotation {
             hugo_symbol: None,
@@ -775,6 +834,7 @@ impl GencodeFuncotation {
         }
     }
 
+    /// The field-name prefix, `<data source name>_<version>_`.
     fn prefix(&self) -> String {
         format!("{}_{}_", self.data_source_name, self.version)
     }
@@ -793,6 +853,8 @@ impl GencodeFuncotation {
         Allele(self.tumor_seq_allele2.clone().unwrap_or_default())
     }
 
+    /// The transcript position field: empty with no start, the start alone when it equals the end,
+    /// otherwise `start_end`.
     fn transcript_pos_string(&self) -> String {
         match (self.transcript_start_pos, self.transcript_end_pos) {
             (None, _) => String::new(),
@@ -877,6 +939,7 @@ impl GencodeFuncotation {
         Ok(())
     }
 
+    /// The classification's severity; only classified funcotations are sorted, hence `expect`.
     fn severity(&self, severities: &Severities) -> i32 {
         severities.of(self
             .variant_classification
@@ -891,6 +954,7 @@ pub struct Severities {
 }
 
 impl Severities {
+    /// The custom severity when one is given, otherwise the enum's default.
     pub fn of(&self, vc: VariantClassification) -> i32 {
         self.custom
             .get(&vc)
@@ -1032,9 +1096,13 @@ pub struct Factory {
     pub transcripts: TranscriptFasta,
 }
 
+/// `referenceWindow`, the reference-context snippet's padding.
 const REFERENCE_WINDOW: i32 = 10;
+/// `gcContentWindowSizeBases`.
 const GC_WINDOW: i32 = 200;
+/// Bases before the variant kept when a five-prime UTR variant's sequence is cut.
 const LEADING_UTR_BASES: i32 = 2;
+/// The fewest bases after the variant read with a five-prime UTR's sequence.
 const TRAILING_UTR_BASES: i32 = 3;
 
 /// The segment fields' suffixes, in the order the metadata declares them.
@@ -1063,13 +1131,17 @@ pub enum Funcotation {
     Table(TableFuncotation),
 }
 
+// `Box<T>` holds the GENCODE funcotation on the heap, so the enum stays the size of its smaller
+// variant; it changes nothing a Java reader would see.
 impl Funcotation {
+    /// `getFieldNames`, in the funcotation's own order.
     pub fn field_names(&self) -> Vec<String> {
         match self {
             Funcotation::Gencode(g) => g.field_names(),
             Funcotation::Table(t) => t.fields.iter().map(|(name, _)| name.clone()).collect(),
         }
     }
+    /// `getField`, or `None` for a field the funcotation does not carry.
     pub fn field(&self, name: &str) -> Option<String> {
         match self {
             Funcotation::Gencode(g) => g.field(name),
@@ -1080,12 +1152,14 @@ impl Funcotation {
                 .map(|(_, value)| value.clone()),
         }
     }
+    /// `getAltAllele`.
     pub fn alt_allele(&self) -> Allele {
         match self {
             Funcotation::Gencode(g) => g.alt_allele(),
             Funcotation::Table(t) => t.alt_allele.clone(),
         }
     }
+    /// `getDataSourceName`.
     pub fn data_source_name(&self) -> &str {
         match self {
             Funcotation::Gencode(g) => &g.data_source_name,
@@ -1224,6 +1298,8 @@ impl Factory {
         Ok(out)
     }
 
+    /// `funcotationList.sort(gencodeFuncotationComparator)`. `sort_by` is a stable sort, as
+    /// `List.sort` is, so funcotations the comparator calls equal keep their order.
     fn sort(&self, list: &mut [GencodeFuncotation]) {
         list.sort_by(|a, b| {
             compare_funcotations(
@@ -1256,8 +1332,8 @@ impl Factory {
         }
         if !list.is_empty() {
             self.sort(&mut list);
-            // `populateOtherTranscriptsMapForFuncotation`: a LinkedHashMap keyed by transcript, so a
-            // repeated transcript keeps its first place and its last value.
+            // `populateOtherTranscriptsMapForFuncotation`: a LinkedHashMap keyed by transcript, so
+            // a repeated transcript keeps its first place and its last value.
             let mut condensed: Vec<(String, String)> = Vec::new();
             for f in &list {
                 let key = f.annotation_transcript.clone().unwrap_or_default();
@@ -1941,6 +2017,7 @@ impl Factory {
             .collect()
     }
 
+    /// The seven segment field names, `<name>_<version>` and each of [`SEGMENT_SUFFIXES`].
     fn segment_fields_always(&self) -> Vec<String> {
         SEGMENT_SUFFIXES
             .iter()
@@ -2112,6 +2189,7 @@ fn transcript_allele_start(variant: &Variant, exons: &[Exon], strand: Strand) ->
     transcript_allele_start_spans(variant, &spans, strand)
 }
 
+/// `transcript_allele_start`'s body, on bare exon spans.
 fn transcript_allele_start_spans(variant: &Variant, exons: &[Span], strand: Strand) -> i32 {
     let mut filtered: Vec<Span>;
     let mut position;
@@ -2261,6 +2339,8 @@ fn in_frame_with_end_of_region(start: i32, length: i32) -> bool {
     }
 }
 
+/// `isFivePrimeFlank`: upstream of the transcript within `size` bases, which is the LEFT side on
+/// the positive strand and the right side on the negative.
 fn is_five_prime_flank(variant: &Variant, transcript: &Transcript, size: i32) -> bool {
     match transcript.strand {
         Strand::Positive => left_flank(variant, transcript, size),
@@ -2268,6 +2348,7 @@ fn is_five_prime_flank(variant: &Variant, transcript: &Transcript, size: i32) ->
     }
 }
 
+/// `isThreePrimeFlank`: the mirror of `is_five_prime_flank`.
 fn is_three_prime_flank(variant: &Variant, transcript: &Transcript, size: i32) -> bool {
     match transcript.strand {
         Strand::Positive => right_flank(variant, transcript, size),
@@ -2275,12 +2356,14 @@ fn is_three_prime_flank(variant: &Variant, transcript: &Transcript, size: i32) -
     }
 }
 
+/// Entirely before the transcript on its contig, its end at most `size` bases short of the start.
 fn left_flank(variant: &Variant, transcript: &Transcript, size: i32) -> bool {
     variant.contig == transcript.contig
         && variant.end < transcript.span.start
         && transcript.span.start - variant.end <= size
 }
 
+/// Entirely after the transcript on its contig, its start at most `size` bases past the end.
 fn right_flank(variant: &Variant, transcript: &Transcript, size: i32) -> bool {
     variant.contig == transcript.contig
         && variant.start > transcript.span.end
@@ -2402,6 +2485,7 @@ fn segment_exon_position(transcript: &Transcript, segment: Span) -> (String, Str
 // The sequence comparison.
 // ================================================================================================
 
+/// `ProteinChangeInfo`: the amino-acid positions and sequences a change spans.
 struct ProteinChange {
     start: i32,
     end: i32,
@@ -2409,12 +2493,14 @@ struct ProteinChange {
     alt_aa: String,
 }
 
+/// The aligned coding alleles and the protein change computed from them.
 struct SequenceInfo {
     aligned_coding_reference: String,
     aligned_coding_alternate: String,
     protein: ProteinChange,
 }
 
+/// `SequenceComparison`: what the factory knows about one variant on one transcript.
 struct SequenceComparison {
     strand: Strand,
     reference_bases: String,
@@ -2777,6 +2863,8 @@ impl FuncotationMap {
         map
     }
 
+    /// `add(txId, funcotations)`: a new transcript goes at the end, and a funcotation already held
+    /// for it is not added twice, as in the Java's `LinkedHashMap` of `LinkedHashSet`s.
     pub fn add(&mut self, transcript: &str, list: &[Funcotation]) {
         let index = match self.entries.iter().position(|(key, _)| key == transcript) {
             Some(index) => index,
@@ -2792,10 +2880,12 @@ impl FuncotationMap {
         }
     }
 
+    /// `getTranscriptList`: the transcripts in insertion order.
     pub fn transcripts(&self) -> Vec<String> {
         self.entries.iter().map(|(key, _)| key.clone()).collect()
     }
 
+    /// `get(transcriptId)`: the transcript's funcotations, empty for an unknown one.
     pub fn get(&self, transcript: &str) -> &[Funcotation] {
         self.entries
             .iter()
@@ -2861,6 +2951,7 @@ impl FuncotationMap {
         Ok(values.pop())
     }
 
+    /// Every transcript's field names, first appearance first, without repeats.
     fn all_field_names(&self) -> Vec<String> {
         let mut out: Vec<String> = Vec::new();
         for (key, _) in &self.entries {
@@ -3723,6 +3814,7 @@ pub struct MafRenderer {
     pub header_written: bool,
 }
 
+/// `LinkedHashMap.put` on an ordered list of pairs: replace the value in place, or append.
 fn put(map: &mut Vec<(String, String)>, key: &str, value: String) {
     match map.iter_mut().find(|(k, _)| k == key) {
         Some(slot) => slot.1 = value,
@@ -4155,6 +4247,8 @@ pub struct SimpleTsv {
 }
 
 impl SimpleTsv {
+    /// A renderer over the given column aliases and the user's default, override and excluded
+    /// fields, with nothing written yet.
     pub fn new(
         aliases: &'static [(&'static str, &'static [&'static str])],
         defaults: &[(String, String)],
@@ -4223,6 +4317,8 @@ impl SimpleTsv {
         result
     }
 
+    /// Fix the columns on the first record and write the header line; an empty column list is the
+    /// reference's refusal.
     fn initialize(&mut self, columns: Vec<(String, String)>) -> Result<(), EngineError> {
         if columns.is_empty() {
             return Err(EngineError::User {
@@ -4331,6 +4427,7 @@ pub struct GeneList {
 }
 
 impl GeneList {
+    /// The renderer over the gene-list aliases, with no entries yet.
     pub fn new(
         defaults: &[(String, String)],
         overrides: &[(String, String)],
@@ -4344,6 +4441,9 @@ impl GeneList {
         }
     }
 
+    /// `TreeMap.put` with `PairedSimpleNaturalComparator`: the entries are kept sorted, an equal
+    /// key has its value REPLACED (so the later segment wins), and a new one is inserted where the
+    /// binary search says it belongs (`Err(index)` is "not found, would go at `index`").
     fn put(&mut self, key: GeneExon, value: SegmentRecord) {
         match self.entries.binary_search_by(|(k, _)| {
             natural_compare(&k.0, &key.0).then_with(|| natural_compare(&k.1, &key.1))
@@ -4437,6 +4537,8 @@ impl GeneList {
                 self.put((gene, exon), record.clone());
             }
         }
+        // `genes.stream().filter(g -> !g.equals(startGene) && !g.equals(endGene))`: a covered gene
+        // gets an empty-exon row only when it is neither end's gene.
         for gene in genes_value.split(',').filter(|g| !g.is_empty()) {
             if gene != start_gene && gene != end_gene {
                 self.put((gene.to_string(), String::new()), record.clone());

@@ -1,5 +1,6 @@
 //! The three gathers a scattered Mutect run ends with, ported from
-//! `MergeMutectStats`, `GatherPileupSummaries` and `GatherNormalArtifactData` (GATK 4.6.2.0).
+//! `MergeMutectStats`, `GatherPileupSummaries` and `GatherNormalArtifactData` (GATK 4.7.0.0;
+//! the three, and `MutectStats.java`, are unchanged since 4.6.2.0).
 //!
 //! The record formats are already ported: [`gatk_engine::pileup_summary`] and
 //! [`crate::get_normal_artifact_data`]. What is here is what each tool does with several shards.
@@ -18,6 +19,17 @@
 //!
 //! `MutectStats` holds a `double` and the writer formats it as one, so shards of `1` and `2` come
 //! back as `3.0`.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<String, GatherError>` is "the output text or a refusal", the port's form of a Java
+//!   method that may throw. A `?` after a call returns its error to this function's caller.
+//!   `.map_err(GatherError::PileupSummary)` wraps the reader's own error in this file's type on
+//!   the way.
+//! - `text.lines().skip(1).filter(..).map(..).collect()` is Java's stream: every line after the
+//!   header, kept or dropped, converted, gathered into a list.
+//! - `if let Some(first) = records.first()` runs its body only when there is a first record.
+//! - `&[&str]` is a borrowed list of borrowed texts: the caller keeps the files' contents.
 
 use gatk_engine::pileup_summary::{self, PileupSummary, PileupSummaryError};
 use gatk_engine::tsv_table::java_double_to_string;
@@ -38,6 +50,8 @@ pub enum GatherError {
 }
 
 impl GatherError {
+    /// The class of the exception the reference throws for this refusal. `Utils.validate` throws
+    /// `IllegalStateException`; the pileup-summary errors carry their own.
     pub fn java_class(&self) -> &'static str {
         match self {
             GatherError::UnknownStatistic(_) => "java.lang.IllegalStateException",
@@ -45,6 +59,7 @@ impl GatherError {
         }
     }
 
+    /// The exception's message as the tool prints it.
     pub fn message(&self) -> String {
         match self {
             GatherError::UnknownStatistic(statistic) => {
@@ -72,6 +87,10 @@ pub struct MutectStat {
 }
 
 /// `MutectStats.readFromFile`, which is the two columns and nothing else.
+///
+/// A value that does not parse becomes NaN here, where the reference's `DataLine.getDouble`
+/// throws (`expected int value for column %s but found %s`). The two agree only on files the
+/// reference can read.
 pub fn read_stats(text: &str) -> Vec<MutectStat> {
     text.lines()
         .skip(1)
@@ -90,6 +109,15 @@ pub fn read_stats(text: &str) -> Vec<MutectStat> {
 /// The reference accumulates into a `HashMap` and writes the entry set, so a file with more than
 /// one statistic would have Java's hash order; every file this port has met carries `callable`
 /// alone, which is the only key the aggregation map allows anyway, so first-seen order is enough.
+///
+/// ```java
+/// aggregations.put(Mutect2Engine.CALLABLE_SITES_NAME,
+///         list -> list.stream().mapToDouble(x -> x).sum());
+/// ```
+///
+/// ```java
+/// Utils.validate(aggregations.containsKey(stat), () -> "aggregations list missing key " + stat);
+/// ```
 pub fn merge_stats(shards: &[&str]) -> Result<String, GatherError> {
     let mut order: Vec<String> = Vec::new();
     let mut totals: Vec<f64> = Vec::new();
@@ -121,6 +149,15 @@ pub fn merge_stats(shards: &[&str]) -> Result<String, GatherError> {
 /// then concatenated.
 ///
 /// Each input is its text and the name the messages use.
+///
+/// ```java
+/// final List<File> nonEmptyFiles = removeEmptyFiles(input);
+/// Collections.sort(nonEmptyFiles, new PileupSummaryFileComparator(sequenceDictionary));
+/// PileupSummary.writeToFile(nonEmptyFiles, output);
+/// ```
+///
+/// `sort_by` is stable, as `Collections.sort` is, so two files whose first records compare equal
+/// keep the order they were given in.
 pub fn gather_pileup_summaries(
     inputs: &[(&str, &str)],
     dictionary: &[String],
@@ -146,6 +183,15 @@ pub fn gather_pileup_summaries(
 ///
 /// The reader and the writer are the record's own, so an empty shard contributes its nothing and
 /// the header is written once.
+///
+/// ```java
+/// for (final File inputFile : input) {
+///     writer.writeAllRecords(NormalArtifactRecord.readFromFile(inputFile));
+/// }
+/// ```
+///
+/// The records are copied as text rather than parsed and rewritten. That is the same bytes only
+/// for shards the reference's own writer produced, which is what a scatter hands this tool.
 pub fn gather_normal_artifact_data(shards: &[&str]) -> String {
     let mut records = Vec::new();
     for shard in shards {

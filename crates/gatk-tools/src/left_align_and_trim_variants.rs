@@ -1,16 +1,19 @@
 //! `LeftAlignAndTrimVariants`, ported from
 //! `org.broadinstitute.hellbender.tools.walkers.variantutils.LeftAlignAndTrimVariants`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `LeftAlignAndTrimVariants.java` is unchanged since 4.6.2.0).
 //!
 //! The tool three engine bricks were built for. Its own logic is short: choose a window, call
 //! [`gatk_engine::variant_context_utils::left_align_and_trim`], remember the record just written.
 //!
 //! # Aligning one record frees the next
 //!
-//! ```java
-//! final int distanceToLastVariant = (lastVariant != null && splitVariant.contigsMatch(lastVariant)) ? splitVariant.getStart() - lastVariant.getEnd() : Integer.MAX_VALUE;
-//! lastVariant = GATKVariantContextUtils.leftAlignAndTrim(splitVariant, ref, Math.min(maxLeadingBases, distanceToLastVariant - 1), !dontTrimAlleles);
-//! ```
+//! `LeftAlignAndTrimVariants.java:237-238`, too long to quote whole within this file's width:
+//! the distance is `splitVariant.getStart() - lastVariant.getEnd()` when
+//! `(lastVariant != null && splitVariant.contigsMatch(lastVariant))` and `Integer.MAX_VALUE`
+//! otherwise, and the window passed down is
+//! `Math.min(maxLeadingBases, distanceToLastVariant - 1)`. The result of
+//! `GATKVariantContextUtils.leftAlignAndTrim` is assigned to `lastVariant`, and then
+//! `vcfWriter.add(lastVariant)` writes that same record (`:238-239`).
 //!
 //! `lastVariant` is the record **as written**, not as read. It has already moved left, so the
 //! distance to the next one is larger than it was in the input: two indels a base apart become
@@ -22,6 +25,15 @@
 //! An indel longer than `--max-indel-length` is written untouched, and the assignment to
 //! `lastVariant` happens on that branch too, so it bounds the record after it though it was never
 //! aligned.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<Variant>` is "a record or nothing", the checked form of Java's nullable
+//!   `lastVariant`; `None` is `lastVariant == null`.
+//! - `Result<Vec<Variant>, SplitError>` is "the records or an error", and `?` after a call hands
+//!   that call's error to the caller, Java's `throws` at one call site.
+//! - `match &last { Some(previous) if ... => ..., _ => ... }` tests the shape and a condition at
+//!   once; `_` is every other case, here both "no previous record" and "another contig".
 
 use gatk_engine::variant_context_utils::{
     left_align_and_trim, split_variant_context_to_biallelics, SplitError, Variant,
@@ -57,6 +69,12 @@ impl Default for Arguments {
 }
 
 /// `getIndelLengths` mapped through `abs` and maxed: the largest length change of any allele.
+///
+/// The reference computes `indelLengths.stream().map(Math::abs).max(Integer::compareTo).orElse(0)`
+/// and reads a `null` list as 0 (`LeftAlignAndTrimVariants.java:229`). htsjdk's
+/// `getIndelLengths` returns `null` unless the type is `INDEL` or `MIXED`; this measures every
+/// record instead, which gives the same 0 for a SNP or an MNP, whose alleles all have the
+/// reference's length.
 ///
 /// A record with a 300-base deletion and a one-base insertion is tested as 300, and a record with
 /// no length change at all is tested as 0.

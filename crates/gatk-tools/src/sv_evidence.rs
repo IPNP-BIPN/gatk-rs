@@ -1,5 +1,7 @@
 //! `ReadClassifier`, `BreakpointEvidence`, `KSWindowFinder` and `IntervalCoverageFinder`
-//! (GATK 4.6.2.0): what `ExtractSVEvidenceSpark` finds in a partition of reads, as text.
+//! (GATK 4.7.0.0; those four files, `FindBreakpointEvidenceSpark.java` and
+//! `ExtractSVEvidenceSpark.java` are unchanged since 4.6.2.0): what `ExtractSVEvidenceSpark`
+//! finds in a partition of reads, as text.
 //!
 //! # Windows are counted from where the reads are
 //!
@@ -22,6 +24,23 @@
 //!
 //! A discordant pair with no `MQ` tag takes its mate's mapping quality to be the largest there is,
 //! so its distal target always passes `--min-evidence-mapq`.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, EvidenceError>` is a value or the text of the exception the Spark task dies
+//!   with; `?` after a call returns that error to the caller at once. Several errors are the
+//!   literal `"null"`, which stands for a null dereference in the Java.
+//! - `Option<T>` is "a value or nothing"; `let Some(x) = y else { ... };` takes the value or
+//!   leaves early.
+//! - `flags & MASK != 0` tests a SAM flag bit, as `read.isReverseStrand()` and the like do.
+//! - `as i32`, `as usize` convert between integer widths and truncate or wrap rather than
+//!   throw; `i32::from(x)` widens without loss.
+//! - `fn(SvInterval) -> ReadKind` is a plain function pointer. In [`evidence`] the discordant
+//!   pair's subclass is chosen as one of four such functions before the target interval it
+//!   needs has been computed, then called with it.
+//! - `cond.then_some(x)` is `Some(x)` when `cond` holds, otherwise `None`.
+//! - `Box<dyn Iterator<..>>` holds either of two iterator types behind one name, so one loop
+//!   can walk a list forwards or backwards.
 
 use crate::read_metadata::{LibraryName, MetadataArguments, ReadMetadata};
 use gatk_engine::java_hash::JavaHashMap;
@@ -32,19 +51,28 @@ use htsjdk_bam::tag::{Tag, TagValue};
 
 /// `FindBreakpointEvidenceSpark.DEPTH_WINDOW_SIZE`.
 const DEPTH_WINDOW_SIZE: i32 = 100000;
-/// `ReadClassifier`'s constants.
+/// `ReadClassifier`'s constants: the minimum length of an interesting soft clip.
 const MIN_SOFT_CLIP_LEN: i32 = 30;
+/// The minimum length of an interesting indel.
 const MIN_INDEL_LEN: u32 = 40;
+/// The minimum acceptable quality in a soft-clip window, a `byte` in the Java.
 const MIN_QUALITY: u8 = 15;
+/// The most low-quality calls a soft-clip window may hold.
 const MAX_LOW_QUALITY_SCORES: i32 = 3;
+/// The fragment-length "z" score above which a pair is a `WeirdTemplateSize`, a `float`.
 const MAX_NON_OUTLIER_ZISH_SCORE: f32 = 6.0;
 /// `SplitRead.UNCERTAINTY`, and `LargeIndel`'s.
 const SPLIT_UNCERTAINTY: i32 = 3;
+/// `LargeIndel.UNCERTAINTY`.
 const INDEL_UNCERTAINTY: i32 = 4;
-/// `KSWindowFinder`'s.
+/// `KSWindowFinder`'s: the window step.
 const BLOCK_SIZE: i32 = 250;
+/// `KS_SIGNIFICANCE = 3.1E-4f`, a `float`, widened to `double` where it is used.
 const KS_SIGNIFICANCE: f32 = 3.1E-4;
+/// The weight of a `TemplateSizeAnomaly`.
 const EVIDENCE_WEIGHT: i32 = 5;
+
+// The SAM flag bits, as htsjdk's `SAMFlag` values.
 
 const PAIRED: u16 = 0x1;
 const UNMAPPED: u16 = 0x4;
@@ -61,17 +89,25 @@ const SUPPLEMENTARY: u16 = 0x800;
 /// What the reference throws inside the task, as the root cause's message.
 pub type EvidenceError = String;
 
+/// The `IllegalStateException` text of a mate accessor called on an unpaired read.
 const UNPAIRED_MATE: &str = "Cannot get mate information for an unpaired read";
 
 /// `FindBreakpointEvidenceSparkArgumentCollection`, the arguments this tool reads.
 #[derive(Debug, Clone, Copy)]
 pub struct EvidenceArguments {
+    /// The arguments `ReadMetadata` and the read filter also read.
     pub metadata: MetadataArguments,
+    /// `--high-depth-coverage-peak-factor`: times the mean coverage, the depth a region must
+    /// reach somewhere to be ignored.
     pub high_depth_coverage_peak_factor: i32,
+    /// `--high-depth-coverage-factor`: times the mean coverage, the depth that bounds it.
     pub high_depth_coverage_factor: i32,
 }
 
 /// `SVInterval`, half open.
+///
+/// The derived ordering compares `contig`, then `start`, then `end`, which is `SVInterval`'s
+/// `compareTo`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SvInterval {
     pub contig: i32,
@@ -80,10 +116,12 @@ pub struct SvInterval {
 }
 
 impl SvInterval {
+    /// `overlaps`, on half-open intervals: touching is not overlapping.
     pub fn overlaps(&self, that: &SvInterval) -> bool {
         self.contig == that.contig && self.start < that.end && that.start < self.end
     }
 
+    /// `overlapLen`, zero for two that do not meet.
     pub fn overlap_len(&self, that: &SvInterval) -> i32 {
         if self.contig != that.contig {
             return 0;
@@ -91,10 +129,12 @@ impl SvInterval {
         (self.end.min(that.end) - self.start.max(that.start)).max(0)
     }
 
+    /// `isUpstreamOf`: an earlier contig, or the same contig and ending at or before `that`.
     pub fn is_upstream_of(&self, that: &SvInterval) -> bool {
         self.contig < that.contig || (self.contig == that.contig && self.end <= that.start)
     }
 
+    /// `gapLen`, `Integer.MAX_VALUE` across contigs; negative when the two overlap.
     pub fn gap_len(&self, that: &SvInterval) -> i32 {
         if self.contig != that.contig {
             return i32::MAX;
@@ -102,6 +142,7 @@ impl SvInterval {
         that.start - self.end
     }
 
+    /// `join`: the smallest interval covering both, on `self`'s contig.
     pub fn join(&self, that: &SvInterval) -> SvInterval {
         SvInterval {
             contig: self.contig,
@@ -110,6 +151,7 @@ impl SvInterval {
         }
     }
 
+    /// `toString`, `contig[start:end]`.
     pub fn text(&self) -> String {
         format!("{}[{}:{}]", self.contig, self.start, self.end)
     }
@@ -122,6 +164,7 @@ pub(crate) fn is_mapped(record: &BamRecord) -> bool {
         && record.alignment_start != 0
 }
 
+/// `SVReadFilter.isPrimaryLine`: neither secondary nor supplementary.
 pub(crate) fn is_primary_line(record: &BamRecord) -> bool {
     record.flags & (SECONDARY | SUPPLEMENTARY) == 0
 }
@@ -171,6 +214,7 @@ fn is_template_length_testable(
             <= record.mate_alignment_start)
 }
 
+/// `getReadGroup()`: the `RG` tag's text, or nothing.
 fn read_group(record: &BamRecord) -> Option<&str> {
     match record.tags.get(Tag::new(b"RG")) {
         Some(TagValue::Str(group)) => Some(group),
@@ -178,6 +222,7 @@ fn read_group(record: &BamRecord) -> Option<&str> {
     }
 }
 
+/// A `Z` tag's text. `'a` says the returned text borrows from `record`.
 fn string_tag<'a>(record: &'a BamRecord, tag: &[u8; 2]) -> Option<&'a str> {
     match record.tags.get(Tag::new(tag)) {
         Some(TagValue::Str(value)) => Some(value),
@@ -229,13 +274,15 @@ fn text_cigar(text: &str) -> Result<Vec<CigarElement>, EvidenceError> {
     })
 }
 
-/// `getLeadingMismatches`: the `MD` elements up to the first run of matches, through `TextMDCodec`'s
-/// `\G(?:([0-9]+)|([ACTGNactgn])|(\^[ACTGNactgn]+))`, which stops at what it cannot read.
+/// `getLeadingMismatches`: the `MD` elements up to the first run of matches, through
+/// `TextMDCodec`'s `\G(?:([0-9]+)|([ACTGNactgn])|(\^[ACTGNactgn]+))`, which stops at what it
+/// cannot read.
 fn leading_mismatches(record: &BamRecord, from_start: bool) -> i32 {
     let Some(md) = string_tag(record, b"MD") else {
         return 0;
     };
-    // (length, is a match)
+    // (length, is a match). A digit run is a match of that length, a base a one-base mismatch,
+    // and `^` with bases a deletion of their count.
     let mut elements = Vec::new();
     let bytes = md.as_bytes();
     let is_base = |byte: u8| b"ACTGNactgn".contains(&byte);
@@ -276,7 +323,12 @@ fn leading_mismatches(record: &BamRecord, from_start: bool) -> i32 {
     count
 }
 
-/// `restOfFragmentInterval`.
+/// `restOfFragmentInterval`: where the rest of the fragment lies, from the read's aligned end
+/// out to the library's 90th-percentile fragment size.
+///
+/// A reverse read looks upstream of its start, a forward read downstream of its end, each
+/// moved past the mismatches at that end of the `MD` tag. A start below 1 is clamped and the
+/// width shrunk to match.
 fn rest_of_fragment(
     record: &BamRecord,
     metadata: &ReadMetadata,
@@ -305,7 +357,7 @@ fn rest_of_fragment(
     })
 }
 
-/// `fixedWidthInterval`.
+/// `fixedWidthInterval`: `offset` plus or minus `uncertainty`, clamped at position 1.
 pub fn fixed_width(contig: i32, offset: i32, uncertainty: i32) -> SvInterval {
     let mut width = 2 * uncertainty;
     let mut start = offset - uncertainty;
@@ -320,7 +372,7 @@ pub fn fixed_width(contig: i32, offset: i32, uncertainty: i32) -> SvInterval {
     }
 }
 
-/// `TemplateFragmentOrdinal.forRead`.
+/// `TemplateFragmentOrdinal.forRead`: the suffix the template name is printed with.
 pub(crate) fn fragment_ordinal(record: &BamRecord) -> &'static str {
     if record.flags & PAIRED == 0 {
         return "";
@@ -343,6 +395,10 @@ struct SaMapping {
 }
 
 /// `parseSATag`.
+///
+/// Each `;`-separated entry must have six `,`-separated fields; the position, mapping quality
+/// and edit distance go through `Integer.parseInt`, whose `NumberFormatException` message is
+/// `For input string: "..."`. The edit distance is parsed and thrown away.
 fn parse_sa_tag(tag: &str) -> Result<Vec<SaMapping>, EvidenceError> {
     // `String.split` drops the empty strings at the end.
     let mut pieces: Vec<&str> = tag.split(';').collect();
@@ -373,7 +429,7 @@ fn parse_sa_tag(tag: &str) -> Result<Vec<SaMapping>, EvidenceError> {
     Ok(mappings)
 }
 
-/// `getContigID`.
+/// `getContigID`, which refuses a contig the header does not name.
 fn contig_id(metadata: &ReadMetadata, name: &str) -> Result<i32, EvidenceError> {
     metadata
         .contig_ids
@@ -486,11 +542,15 @@ pub enum ReadKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReadEvidence {
     pub kind: ReadKind,
+    /// The read name.
     pub template_name: String,
+    /// `fragment_ordinal`'s suffix.
     pub ordinal: &'static str,
     /// `evidenceUpstreamOfBreakpoint`.
     pub forward: bool,
+    /// `getFragmentLength()`, the `TLEN` field.
     pub template_size: i32,
+    /// The read's CIGAR as text.
     pub cigar: String,
     pub mapping_quality: u8,
 }
@@ -504,6 +564,8 @@ pub enum EvidenceKind {
     TemplateSizeAnomaly {
         read_count: i32,
     },
+    /// One of the `ReadEvidence` subclasses. `Box` puts the larger payload on the heap so the
+    /// enum stays small; it changes nothing a reader can observe.
     Read(Box<ReadEvidence>),
 }
 
@@ -512,6 +574,8 @@ pub enum EvidenceKind {
 pub struct Evidence {
     pub location: SvInterval,
     pub weight: i32,
+    /// `validated`: "this piece of evidence is consistent with enough other evidence". Every
+    /// constructor here leaves it false.
     pub validated: bool,
     pub kind: EvidenceKind,
     /// `getDistalTargets(...)` where `hasDistalTargets`: the reference never finds more than one.
@@ -519,7 +583,8 @@ pub struct Evidence {
 }
 
 impl Evidence {
-    /// `stringRep`.
+    /// `stringRep`: location, weight, class name and distal target, tab-separated, then the
+    /// subclass's own fields.
     pub fn string_rep(&self) -> String {
         let class = match &self.kind {
             EvidenceKind::Cluster => "BreakpointEvidence",
@@ -628,7 +693,7 @@ pub fn after_collect(
     Ok(one)
 }
 
-/// `ReadEvidence`'s constructor.
+/// `ReadEvidence`'s constructor, at weight 1.
 fn read_evidence(
     record: &BamRecord,
     location: SvInterval,
@@ -653,7 +718,8 @@ fn read_evidence(
     }
 }
 
-/// `hasInitialSoftClip`.
+/// `hasInitialSoftClip`: a soft clip of at least 30 bases, past one leading hard clip, whose
+/// last 30 bases are high quality.
 fn has_initial_soft_clip(record: &BamRecord) -> bool {
     let elements = &record.cigar.elements;
     let Some(mut first) = elements.first() else {
@@ -666,7 +732,7 @@ fn has_initial_soft_clip(record: &BamRecord) -> bool {
     first.op == Op::S && clip_start >= 0 && is_high_quality(&record.base_qualities, clip_start)
 }
 
-/// `hasFinalSoftClip`.
+/// `hasFinalSoftClip`: the same at the other end, the window being the clip's first 30 bases.
 fn has_final_soft_clip(record: &BamRecord) -> bool {
     let elements = &record.cigar.elements;
     let Some(mut last) = elements.last() else {
@@ -683,7 +749,7 @@ fn has_final_soft_clip(record: &BamRecord) -> bool {
         )
 }
 
-/// `isHighQualityRegion`.
+/// `isHighQualityRegion`: at most three calls under quality 15 among 30 from `start`.
 fn is_high_quality(qualities: &[u8], start: i32) -> bool {
     let mut low = 0;
     for at in start..start + MIN_SOFT_CLIP_LEN {
@@ -698,8 +764,13 @@ fn is_high_quality(qualities: &[u8], start: i32) -> bool {
 }
 
 /// `IntHistogram`, as a pair of `long[]` the finder toggles between.
+///
+/// One histogram fills for the current block while the other holds the block before it, so a
+/// test always covers two blocks (500 bases).
 struct HistogramPair {
+    /// The two histograms of template length, the last bin catching everything longer.
     counts: [Vec<i64>; 2],
+    /// Each histogram's total count.
     totals: [i64; 2],
 }
 
@@ -707,14 +778,22 @@ struct HistogramPair {
 struct KsWindowFinder<'a> {
     metadata: &'a ReadMetadata,
     arguments: MetadataArguments,
+    /// Per library, iterated in Java `HashMap` order, which is the order the anomalies of one
+    /// window come out in.
     libraries: JavaHashMap<LibraryName, HistogramPair>,
+    /// Which of the two histograms is filling, 0 or 1.
     fill: usize,
+    /// The current block's contig; `None` before the first testable read.
     contig: Option<i32>,
+    /// The current block's end.
     end: i32,
 }
 
 impl<'a> KsWindowFinder<'a> {
+    /// One empty histogram pair per library, sized as that library's CDF is.
     fn new(metadata: &'a ReadMetadata, arguments: MetadataArguments) -> KsWindowFinder<'a> {
+        // `new HashMap<>(SVUtils.hashMapCapacity(libraryStatisticsMap.size()))`: the capacity
+        // decides the iteration order `JavaHashMap` reproduces.
         let capacity = (metadata.libraries.len() as u64 * 4 / 3) as usize + 1;
         let mut libraries = JavaHashMap::with_capacity(capacity);
         for (name, statistics) in metadata.libraries.iter() {
@@ -766,7 +845,8 @@ impl<'a> KsWindowFinder<'a> {
         Ok(())
     }
 
-    /// `checkHistograms`.
+    /// `checkHistograms`: add the filling histogram into the older one, test the sum against
+    /// the library's CDF, and clear the older one for reuse.
     fn check_histograms(&mut self, lines: &mut Vec<Evidence>) {
         let Some(contig) = self.contig else {
             return;
@@ -782,6 +862,8 @@ impl<'a> KsWindowFinder<'a> {
         for name in names {
             let fill = self.fill;
             let pair = self.libraries.get_mut(&name).expect("a key just listed");
+            // Destructure the array into two separately borrowable halves, so one can be written
+            // while the other is read.
             let [first, second] = &mut pair.counts;
             let (old_counts, fill_counts) = if old == 0 {
                 (first, &*second)
@@ -817,7 +899,8 @@ impl<'a> KsWindowFinder<'a> {
         }
     }
 
-    /// `advanceBlock`.
+    /// `advanceBlock`: swap histograms and move the block on by 250 bases, or restart it at
+    /// the read when the read is on another contig or past the next block.
     fn advance_block(&mut self, record: &BamRecord) {
         let old = self.fill;
         self.fill ^= 1;
@@ -836,6 +919,12 @@ impl<'a> KsWindowFinder<'a> {
 }
 
 /// `IntHistogram.CDF.isDifferentByKSStatistic`, at `KS_SIGNIFICANCE`.
+///
+/// The critical value is `c(alpha) * sqrt((n + m) / (n * m))` with
+/// `c(alpha) = sqrt(-0.5 * log(alpha / 2))`, computed in `double` through `jmath` and
+/// narrowed to `float`. The walk compares the CDF with the sample's running fraction at each
+/// non-empty bin and, after a run of empty bins, at the last empty one as well. It stops once
+/// the counts of every bin but the last have been seen.
 fn is_different_by_ks(fractions: &[f32], n_counts: i64, sample: &[i64], m_counts: i64) -> bool {
     let c_of_alpha = (-0.5 * jmath::math::log(f64::from(KS_SIGNIFICANCE) / 2.0)).sqrt();
     let significant = (c_of_alpha
@@ -879,17 +968,24 @@ pub fn high_coverage_intervals(
 }
 
 /// `findGenomewideHighCoverageIntervalsToIgnore`, whose `reduceByKey` sums the arrays of a window
-/// over the partitions that reached it, and whose driver sorts what comes back, so that nothing here
-/// shows the order of the shuffle.
+/// over the partitions that reached it, and whose driver sorts what comes back, so that nothing
+/// here shows the order of the shuffle.
 pub struct CoverageFinder<'a> {
     metadata: &'a ReadMetadata,
+    /// Every `DEPTH_WINDOW_SIZE` window of every contig, in contig order.
     windows: Vec<SvInterval>,
+    /// Per window, a depth per base, or `None` for a window no read reached (which the Java
+    /// never emits, so it is never summed).
     coverage: Vec<Option<Vec<i32>>>,
+    /// The depth a region must hold throughout.
     min_flanking: i32,
+    /// The depth a region must reach somewhere.
     min_peak: i32,
 }
 
 impl<'a> CoverageFinder<'a> {
+    /// The windows, and the two depth thresholds: each factor times the mean coverage, in
+    /// `float`, truncated to `int` by the cast.
     pub fn new(
         metadata: &'a ReadMetadata,
         contig_lengths: &[i32],
@@ -954,7 +1050,12 @@ impl<'a> CoverageFinder<'a> {
         }
     }
 
+    /// The high-coverage intervals: per window, each run at or above the flanking depth that
+    /// reaches the peak depth, or that starts at the window's first base (kept with its flag
+    /// as found, for the join). Then runs a window boundary cut are joined and kept if either
+    /// part reached the peak, and runs closer than the mean read length are merged.
     pub fn finish(self) -> Vec<SvInterval> {
+        // Take the struct apart into its fields, consuming it.
         let CoverageFinder {
             metadata,
             windows,
@@ -1058,7 +1159,8 @@ pub fn high_coverage_bed(intervals: &[SvInterval], metadata: &ReadMetadata) -> S
     text
 }
 
-/// `ReadClassifier` over one partition and its sentinel, each piece of evidence through `stringRep`.
+/// `ReadClassifier` over one partition and its sentinel, each piece of evidence through
+/// `stringRep`.
 pub fn classify(
     records: &[BamRecord],
     metadata: &ReadMetadata,
@@ -1070,6 +1172,8 @@ pub fn classify(
         .map(Evidence::string_rep)
         .collect())
 }
+
+// The four discordant-pair subclasses as functions of their target, for `evidence`.
 
 fn inter_contig(target: SvInterval) -> ReadKind {
     ReadKind::InterContigPair { target }
@@ -1101,6 +1205,11 @@ pub(crate) fn contained_in_region_to_ignore(interval: &SvInterval, ignored: &[Sv
 }
 
 /// `ReadClassifier` over one partition and its sentinel.
+///
+/// Per read, in `ReadClassifier.apply`'s order: the mapped-to-primary-contig, `isEvidence`
+/// and ignored-region filters, then `checkForSplitRead` (both ends, then `checkBigIndel`),
+/// `checkDiscordantPair`, and `testReadAndGatherEvidence`. The final `check_histograms` is the
+/// sentinel's.
 pub fn evidence(
     records: &[BamRecord],
     metadata: &ReadMetadata,
@@ -1183,7 +1292,8 @@ pub fn evidence(
                 locus += element.length as i32;
             }
         }
-        // `checkDiscordantPair`.
+        // `checkDiscordantPair`. The `if ... else if if forward { .. } else { .. } { .. }`
+        // below is Java's `read.isReverseStrand() ? a : b` used as an `else if` condition.
         if is_primary_line(record) {
             let forward = record.flags & REVERSE == 0;
             if mate_is_unmapped(record)? {

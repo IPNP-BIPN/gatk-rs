@@ -9,6 +9,24 @@
 //!
 //! The batch is the partition, as the JNI's is: `-K` is set past anything a partition can hold,
 //! because a batch's insert-size statistics decide the pairs in it.
+//!
+//! The GATK classes are `BwaSparkEngine` and `BwaMemAlignmentUtils` (GATK 4.7.0.0; both files are
+//! unchanged since 4.6.2.0). `BwaMemAligner` and `BwaMemAlignment` are `gatk-bwamem-jni`'s, which
+//! has no local source, and BWA itself is reached only through the `bwa-mem4` crates: nothing here
+//! quotes either.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, String>` is "a value or an error message"; `?` hands the error to the caller, and
+//!   `.map_err(..)` turns another error type into the message first.
+//! - `|at: usize| -> Result<u64, String> { .. }` is a closure (a Java lambda) with its types
+//!   written out; `bad` is one that builds the single error message.
+//! - `image.get(a..b)` is a bounds-checked slice: `None` past the end instead of an exception.
+//! - `x as usize` and `x as i32` are numeric casts that truncate or wrap silently.
+//! - `impl Fn(&BamRecord) -> bool` is any function or lambda of that shape, Java's `Predicate`.
+//! - `BamRecord { read_name: .., ..alignment }` builds a record from `alignment`, replacing only
+//!   the fields named.
+//! - `_directory` is held only so the temporary directory is deleted when the aligner is dropped.
 
 use std::path::Path;
 
@@ -41,7 +59,10 @@ pub fn image_contigs(image: &[u8]) -> Result<Vec<String>, String> {
         .collect())
 }
 
-/// `FmIndex` and `BntSeq` read a prefix on disk, and the image is the only thing naming the contigs.
+/// The reference FASTA, rebuilt from an index image.
+///
+/// `FmIndex` and `BntSeq` read a prefix on disk, and the image is the only thing naming the
+/// contigs. The offsets read below are the image's layout from [`crate::bwa_index_image`].
 pub fn fasta_from_image(image: &[u8]) -> Result<Vec<u8>, String> {
     let bad = || "not a BWA-MEM index image".to_string();
     let read64 = |at: usize| -> Result<u64, String> {
@@ -270,6 +291,17 @@ fn record_index(record: &BamRecord, paired: bool) -> Result<usize, String> {
 
 /// `applyAlignment` over one line: the bases and qualities are the input's, turned round for a
 /// reverse strand and cut to what a supplementary line's hard clips leave.
+///
+/// ```java
+/// if ( SAMFlag.READ_REVERSE_STRAND.isSet(samFlag) &&
+///         SAMFlag.SECONDARY_ALIGNMENT.isUnset(samFlag) ) {
+///     bases = BaseUtils.simpleReverseComplement(bases);
+/// ```
+///
+/// `generic` is `alwaysGenerateASandXS`: the `AS:0` and `XS:0` of an unmapped line, and the `SA`
+/// tag, belong to the generic aligner and not the PathSeq one. A secondary line's bases come back
+/// empty here because the line's own `*` differs in length from the read, where the Java sets
+/// `SAMRecord.NULL_SEQUENCE` outright.
 fn apply_alignment(read: &BamRecord, alignment: BamRecord, generic: bool) -> BamRecord {
     const REVERSE: u16 = 0x10;
     const SECONDARY: u16 = 0x100;
@@ -315,7 +347,8 @@ fn apply_alignment(read: &BamRecord, alignment: BamRecord, generic: bool) -> Bam
     if let Some(group) = read.tags.get(Tag::new(b"RG")) {
         tags.insert(Tag::new(b"RG"), group.clone());
     }
-    // `BwaMemAlignmentUtils.makeSAMRecords` writes it, which the PathSeq aligner does not go through.
+    // `BwaMemAlignmentUtils.makeSAMRecords` writes it, which the PathSeq aligner does not go
+    // through.
     if generic {
         if let Some(value) = alignment.tags.get(Tag::new(b"SA")) {
             tags.insert(Tag::new(b"SA"), value.clone());
@@ -330,6 +363,7 @@ fn apply_alignment(read: &BamRecord, alignment: BamRecord, generic: bool) -> Bam
     }
 }
 
+/// The length of a leading `H`, which is where a supplementary line's bases start in the read.
 fn leading_hard_clip(cigar: &Cigar) -> usize {
     match cigar.elements.first() {
         Some(element) if element.op.to_char() == b'H' => element.length as usize,
@@ -399,26 +433,38 @@ fn run_bwa(
 /// them in. `ref_id` is -1 on the one line of a contig that did not align.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContigAlignment {
+    /// `getRefId()`: the contig's index, -1 when unaligned.
     pub ref_id: i32,
+    /// `getRefStart()`, zero-based.
     pub start: i64,
+    /// The reverse-strand flag.
     pub reverse: bool,
+    /// The supplementary flag: every line after a contig's first.
     pub supplementary: bool,
+    /// `getMapQual()`.
     pub mapq: u32,
+    /// `getCigar()`, empty when unaligned.
     pub cigar: String,
+    /// `getNMismatches()`, the `NM`.
     pub mismatches: i32,
+    /// `getAlignerScore()`, the `AS`.
     pub score: i32,
+    /// `getSuboptimalScore()`, the `XS`.
     pub suboptimal: i32,
+    /// `getMDTag()`.
     pub md: String,
+    /// `getXATag()`, when there are alternates.
     pub xa: Option<String>,
 }
 
-/// `BwaMemAligner` after `setIntraCtgOptions` and `setZDropOption`, for `FindBreakpointEvidenceSpark`.
+/// `BwaMemAligner` after `setIntraCtgOptions` and `setZDropOption`, for
+/// `FindBreakpointEvidenceSpark`.
 ///
-/// `setIntraCtgOptions` writes its fields into the C struct through a `ByteBuffer`, and libbwa fills
-/// its scoring matrix only once, when the options are initialized. So a mismatch still costs what
-/// the matrix says, 4, while `b` is 9 for what reads it directly, the MAPQ's identity and the
-/// near-tie window. `bwa mem -B 9` refills the matrix and could not give this, which is why this is
-/// the library and not the command.
+/// `setIntraCtgOptions` writes its fields into the C struct through a `ByteBuffer`, and libbwa
+/// fills its scoring matrix only once, when the options are initialized. So a mismatch still costs
+/// what the matrix says, 4, while `b` is 9 for what reads it directly, the MAPQ's identity and the
+/// near-tie window. `bwa mem -B 9` refills the matrix and could not give this, which is why this
+/// is the library and not the command.
 pub struct ContigAligner {
     fm: bwa_index::FmIndex,
     bns: bwa_index::BntSeq,
@@ -427,6 +473,8 @@ pub struct ContigAligner {
 }
 
 impl ContigAligner {
+    /// The index rebuilt from the image in a temporary directory, with the intra-contig options
+    /// set as the struct fields above describe.
     pub fn from_image(image: &[u8], z_dropoff: i32) -> Result<ContigAligner, String> {
         let directory = tempfile::tempdir().map_err(|error| error.to_string())?;
         let fasta = directory.path().join("reference.fa");

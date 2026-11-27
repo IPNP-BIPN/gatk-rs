@@ -1,5 +1,6 @@
 //! `CountVariants`, ported from `org.broadinstitute.hellbender.tools.walkers.CountVariants`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `CountVariants.java` and `OptionalTextOutputArgumentCollection.java` are
+//! unchanged since 4.6.2.0).
 //!
 //! The tool's own body is three lines: a counter, an increment in `apply`, and `out.print(count)`
 //! in `onTraversalSuccess`. Everything there is to be identical about therefore sits on either side
@@ -13,7 +14,13 @@
 //!
 //! ```java
 //! public void print(Object value) {
-//!     if (output != null) { Files.write(output.toPath(), value.toString().getBytes()); }
+//!     if (output != null) {
+//!         try {
+//!             Files.write(output.toPath(), value.toString().getBytes());
+//!         } catch (IOException e) {
+//!             throw new UserException.CouldNotCreateOutputFile(output.toString(), e);
+//!         }
+//!     }
 //! }
 //! ```
 //!
@@ -53,6 +60,17 @@
 //! .toString(), e)` selects the `(String message, Exception e)` overload, so the filename is the
 //! whole message and the `IOException` behind it is dropped from the text. None of the "Couldn't
 //! write file %s because %s" overloads is the one this call site reaches.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is "a value or nothing", Java's nullable reference with the check enforced;
+//!   `Some(x)` is the value and `None` the nothing.
+//! - `Result<T, E>` is "a value or an error"; `Err(..)` is how this codebase models the exception
+//!   the reference throws, and `Ok(..)` the normal return.
+//! - `&[T]` is a borrowed, read-only view of a list; `&str` is the same for text.
+//! - `<T: Located>` makes a function generic over any type that implements the `Located` trait
+//!   (Java: `<T extends Locatable>`).
+//! - A `match` must cover every enum variant, and the compiler checks that it does.
 
 use std::path::Path;
 
@@ -100,12 +118,17 @@ impl CountVariantsError {
 ///
 /// `intervals` is the merged list the argument layer produces, and `indexed` is whether the input
 /// supports random access, which only matters when there are intervals to traverse by.
+///
+/// The index check comes first, as `setIntervalsForTraversal` runs before the traversal, and the
+/// count is the length of what [`traverse`] yields. `len()` is a `usize` (an unsigned index type);
+/// `as i64` converts it to Java's `long`.
 pub fn count<T: Located>(
     features: &[T],
     intervals: Option<&[SimpleInterval]>,
     indexed: bool,
     path: &str,
 ) -> Result<i64, CountVariantsError> {
+    // `None` here means "traverse the whole file", which needs no index.
     let restricted = gatk_engine::variant_source::intervals_for_traversal(intervals);
     if restricted.is_some() && !indexed {
         return Err(CountVariantsError::IntervalsWithoutRandomAccess {
@@ -131,9 +154,14 @@ pub fn output_bytes(count: i64, has_output: bool) -> Option<Vec<u8>> {
 ///
 /// The error carries the path as its whole message, as the reference's overload does.
 pub fn write_output(output: Option<&Path>, count: i64) -> Result<(), CountVariantsError> {
+    // `let Some(x) = y else { .. }` unwraps an `Option` or takes the early exit: no `-O`, nothing
+    // written, and no error.
     let Some(output) = output else {
         return Ok(());
     };
+    // `std::fs::write` creates or truncates, as `Files.write` with no options does. `map_err`
+    // replaces the I/O error with the reference's exception; `|_| ..` is a closure (Java's lambda)
+    // that ignores its argument, because the reference's message drops the `IOException` too.
     std::fs::write(output, count.to_string().as_bytes()).map_err(|_| {
         CountVariantsError::CouldNotCreateOutputFile {
             path: output.display().to_string(),

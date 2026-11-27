@@ -1,5 +1,6 @@
 //! `CountBases`, `CountReads` and `FlagStat`, ported from
-//! `org.broadinstitute.hellbender.tools` (GATK 4.6.2.0).
+//! `org.broadinstitute.hellbender.tools` (GATK 4.7.0.0; `CountBases.java`, `CountReads.java` and
+//! `FlagStat.java` are unchanged since 4.6.2.0).
 //!
 //! The first three tools here whose output is a **number** rather than a BAM. All three are
 //! `ReadWalker`s whose `apply` is one line, so what they measure is the traversal and the
@@ -25,12 +26,27 @@
 //! # And `read2` is tested before `read1`
 //!
 //! ```java
-//! if ( read.isSecondOfPair() ) { this.read2++; }
-//! else if ( read.isFirstOfPair() ) { this.read1++; }
+//! if ( read.isSecondOfPair() ) {
+//!     this.read2++;
+//! }
+//! else if ( read.isFirstOfPair() ) {
+//!     this.read1++;
+//! }
 //! ```
 //!
 //! A read carrying both 0x40 and 0x80 counts as `read2` only. Both tests also go through
 //! `isPaired()` first, because `isFirstOfPair` is `isPaired() && flag` and not the bare flag.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[BamRecord]` is a borrowed, read-only view of a list of records; `&mut self` is a method
+//!   that may modify its object (only one such borrow may exist at a time).
+//! - `i64` is Java's `long`, `f32` is `float` and `f64` is `double`; `x as f32` is the cast
+//!   `(float) x`, and `len()` returns an unsigned `usize` that `as i64` turns into a `long`.
+//! - `.iter().map(..).sum()` is Java's `stream().mapToLong(..).sum()`.
+//! - `|numerator| ..` is a closure, Java's lambda; it may read the variables around it.
+//! - `Option<&str>` is a contig name or nothing; two `Option`s compare equal when both are `None`
+//!   or both hold equal text.
 
 use gatk_engine::read;
 use htsjdk_bam::record::BamRecord;
@@ -39,6 +55,10 @@ use htsjdk_bam::record::BamRecord;
 ///
 /// A read carrying a deletion covers more reference than it has bases and one carrying an insertion
 /// covers less; neither changes what this counts.
+///
+/// ```java
+/// count += read.getLength();
+/// ```
 pub fn count_bases(records: &[BamRecord]) -> i64 {
     records
         .iter()
@@ -46,7 +66,7 @@ pub fn count_bases(records: &[BamRecord]) -> i64 {
         .sum()
 }
 
-/// `CountReads`: how many reads the traversal kept.
+/// `CountReads`: how many reads the traversal kept, the `++count` in its `apply`.
 pub fn count_reads(records: &[BamRecord]) -> i64 {
     records.len() as i64
 }
@@ -73,6 +93,9 @@ impl FlagStatus {
     ///
     /// Every paired counter is inside the `isPaired()` branch, so an unpaired read contributes to
     /// `readCount`, `QC_failure`, `duplicates` and `mapped` and to nothing else.
+    ///
+    /// `contig` and `mate_contig` are `getContig()` and `getMateContig()`, already resolved
+    /// through the header by the caller, because a `BamRecord` holds only reference indices.
     pub fn add(&mut self, record: &BamRecord, contig: Option<&str>, mate_contig: Option<&str>) {
         self.read_count += 1;
 
@@ -103,9 +126,11 @@ impl FlagStatus {
             if !read::is_unmapped(record) && !read::mate_is_unmapped(record) {
                 self.with_itself_and_mate_mapped += 1;
 
-                // `read.getContig().equals(read.getMateContig())`, both resolved through the header.
+                // `! read.getContig().equals(read.getMateContig())`, both resolved through the
+                // header. Both reads are mapped here, so neither side is `None` in practice.
                 if contig != mate_contig {
                     self.with_mate_mapped_to_a_different_chr += 1;
+                    // `getMappingQuality() >= 5`; the stored byte is widened to `int` first.
                     if record.mapping_quality as i32 >= 5 {
                         self.with_mate_mapped_to_a_different_chr_maq_greaterequal_than_5 += 1;
                     }
@@ -135,7 +160,10 @@ impl FlagStatus {
             other.with_mate_mapped_to_a_different_chr_maq_greaterequal_than_5;
     }
 
-    /// `toString()`: thirteen lines, the last without a trailing newline.
+    /// `toString()`: twelve lines, the last without a trailing newline.
+    ///
+    /// Each percentage is the module note's `((float) n / (float) readCount) * 100.0`: the
+    /// quotient in `float`, widened to `double`, then multiplied, as `percent` below does.
     pub fn to_text(&self) -> String {
         let percent = |numerator: i64| {
             format_percent((numerator as f32 / self.read_count as f32) as f64 * 100.0)
@@ -188,14 +216,19 @@ pub fn format_percent(value: f64) -> String {
             "-∞".to_string()
         };
     }
-    // Two decimal places, ties to even. `f64::round_ties_even` on the scaled value is that rule.
+    // Two decimal places, ties to even, applied to the value scaled by a hundred. That is not
+    // `DecimalFormat`'s method, which rounds the double's exact decimal expansion, so the two
+    // could part where the scaling itself rounds a value onto or off a tie.
     let scaled = value * 100.0;
     let rounded = round_half_even(scaled) / 100.0;
-    // `#0.00` always shows two decimals and at least one integer digit.
+    // `#0.00` always shows two decimals and at least one integer digit, as `{:.2}` does.
     format!("{rounded:.2}")
 }
 
 /// Ties to even, which is what `RoundingMode.HALF_EVEN` means.
+///
+/// `partial_cmp` is a comparison that may have no answer (`None` for `NaN`), so the `match` has a
+/// catch-all `_`; `_ if ..` is a catch-all with a guard, taken only when the condition holds.
 fn round_half_even(value: f64) -> f64 {
     let floor = value.floor();
     let difference = value - floor;
@@ -218,7 +251,7 @@ mod tests {
         let text = status.to_text();
         assert!(text.starts_with("0 in total\n"), "{text}");
         assert!(text.contains("0 mapped (NaN%)"), "{text}");
-        // Thirteen lines, and the last carries no newline.
+        // Twelve lines, and the last carries no newline.
         assert_eq!(text.lines().count(), 12);
         assert!(!text.ends_with('\n'));
     }

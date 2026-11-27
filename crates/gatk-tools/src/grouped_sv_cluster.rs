@@ -8,6 +8,19 @@
 //! Reading the VCF, collapsing a cluster into a representative record and the order the records
 //! come out in are not ported. The tool disables its own output index because that order is not
 //! guaranteed, so what is compared here is which records ended up together and under which stratum.
+//!
+//! The reference is `org.broadinstitute.hellbender.tools.walkers.sv.GroupedSVCluster` and
+//! `org.broadinstitute.hellbender.tools.sv.cluster.StratifiedClusteringTableParser` (GATK
+//! 4.7.0.0).
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, E>` is "a value or an error"; [`GroupedError`] models the exceptions the Java
+//!   throws, and `?` after a call returns its error to the caller at once;
+//! - `Option<T>` is "a value or nothing", Java's nullable reference checked by the compiler;
+//! - `&[T]` is a borrowed, read-only view of a list; the caller keeps ownership;
+//! - `.iter().find(..)`, `.map(..)`, `.collect()` are Java's stream, `filter(..).findFirst()`,
+//!   `map` and `collect`; a `|x| ...` is a lambda.
 
 use crate::sv_cluster::{cluster, Algorithm, CallRecord, ClusteringParameters, Linkage};
 use crate::sv_stratify::{Engine, StratifyError, Thresholds, DEFAULT_STRATUM};
@@ -22,7 +35,7 @@ pub const COLUMN_NAMES: &[&str] = &[
     "SAMPLE_OVERLAP",
 ];
 
-/// One row of the clustering configuration.
+/// One row of the clustering configuration: `StratifiedClusteringTableParser.StratumParameters`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StratumParameters {
     pub name: String,
@@ -33,8 +46,12 @@ pub struct StratumParameters {
 }
 
 /// What this tool refuses, on top of what the stratification engine refuses on its own.
+///
+/// Each variant is one of the Java's `throw` or `Utils.validate` sites; [`GroupedError::message`]
+/// is the text it carries.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GroupedError {
+    // `"Missing column " + column`, for the first of `COLUMN_NAMES` that is absent.
     MissingColumn {
         column: String,
     },
@@ -43,8 +60,11 @@ pub enum GroupedError {
     ColumnCount {
         count: usize,
     },
+    /// `onTraversalStart`: the stratification configuration defined nothing.
     NoStrata,
+    /// `onTraversalStart`: `stratEngine.getStrata().size() == clusterEngineMap.size()` failed.
     GroupCountMismatch,
+    /// `onTraversalStart`: a stratum the clustering configuration does not name.
     GroupNotFound {
         name: String,
     },
@@ -58,9 +78,14 @@ pub enum GroupedError {
 }
 
 impl GroupedError {
+    /// The exception's message, character for character the Java's string concatenation.
     pub fn message(&self) -> String {
         match self {
             GroupedError::MissingColumn { column } => format!("Missing column {column}"),
+            // `{count}` inside `format!` is the variable `count`, interpolated. The Java reads
+            // `columns.columnCount()` for both halves, so both print the same number:
+            // `"Expected " + columns.columnCount() + " columns but found "
+            // + columns.columnCount()`.
             GroupedError::ColumnCount { count } => {
                 format!("Expected {count} columns but found {count}")
             }
@@ -85,6 +110,18 @@ impl GroupedError {
 
 /// `StratifiedClusteringTableParser.tableParser`: every column must be present, and there must be
 /// no others.
+///
+/// ```java
+/// for (final String column : COLUMN_NAMES) {
+///     if (!columns.contains(column)) {
+///         throw exceptionFactory.apply("Missing column " + column);
+///     }
+/// }
+/// if (columns.columnCount() != COLUMN_NAMES.size()) {
+/// ```
+///
+/// The presence check runs first, so a table missing a column and carrying an extra one reports
+/// the missing column, not the count.
 pub fn check_columns(columns: &[String]) -> Result<(), GroupedError> {
     for name in COLUMN_NAMES {
         if !columns.iter().any(|column| column == name) {
@@ -103,6 +140,10 @@ pub fn check_columns(columns: &[String]) -> Result<(), GroupedError> {
 
 /// One row becomes all three parameter sets. Unlike `SVCluster`, depth-only, PESR and mixed pairs
 /// cannot be given different thresholds here, so which set a pair takes stops mattering.
+///
+/// `readStrataClusteringConfig` says so, `// Identical parameters for each linkage type`, and
+/// passes the row's same four values, in the same order, to `createPesrParameters`,
+/// `createMixedParameters` and `createDepthParameters`.
 pub fn linkage_for(parameters: &StratumParameters, cluster_del_with_dup: bool) -> Linkage {
     let (overlap, similarity, window, sample) = (
         parameters.reciprocal_overlap,
@@ -128,6 +169,11 @@ pub struct Engines {
 }
 
 impl Engines {
+    /// `readStrataClusteringConfig`'s `clusterEngineMap.put(parameters.name(), clusterEngine)`,
+    /// row by row: a repeated name overwrites the earlier entry in place, as `put` does.
+    ///
+    /// The list keeps first-insertion order, which is not the `HashMap`'s; [`run`] recomputes the
+    /// Java iteration order where it matters.
     pub fn new(configuration: &[StratumParameters]) -> Engines {
         let mut entries: Vec<(String, StratumParameters)> = Vec::new();
         for parameters in configuration {
@@ -142,6 +188,7 @@ impl Engines {
         Engines { entries }
     }
 
+    /// `clusterEngineMap.get(name)`, `None` where the Java returns null.
     pub fn get(&self, name: &str) -> Option<&StratumParameters> {
         self.entries
             .iter()
@@ -152,6 +199,14 @@ impl Engines {
 
 /// `onTraversalStart`, in its own order: the strata must exist, the two configurations must hold
 /// the same number of groups, and then every stratum must be named in the clustering one.
+///
+/// ```java
+/// Utils.validate(stratEngine.getStrata().size() == clusterEngineMap.size(),
+///         "Stratification and clustering configurations have a different number of groups.");
+/// ```
+///
+/// `clusterEngineMap.size()` counts distinct names, which is why a duplicated row can fail the
+/// count here (see [`Engines`]).
 pub fn validate(engine: &Engine, engines: &Engines) -> Result<(), GroupedError> {
     if engine.strata.is_empty() {
         return Err(GroupedError::NoStrata);
@@ -178,9 +233,19 @@ pub struct Cluster {
 
 /// `applyRecord` over the whole input, then `onTraversalSuccess`.
 ///
-/// The returned order is the strata in the engine's order with the unmatched records last, which is
-/// NOT the order the tool writes them in: it writes each unmatched record as it is read and flushes
-/// the engines afterwards, and it disables its own output index because of it.
+/// The returned order is the strata in the Java `HashMap` iteration order of their names (the
+/// order `clusterEngineMap.values()` flushes in), each stratum's clusters in the order
+/// `sv_cluster::cluster` returns them, with the unmatched records last. That is NOT the order the
+/// tool writes them in: it writes each unmatched record as it is read, emits clusters through
+/// `addAndFlush` as they close and flushes the engines afterwards, and it disables its own output
+/// index because of it.
+///
+/// ```java
+/// if (stratifications.size() > 1) {
+/// ```
+///
+/// A record matching two strata throws on that record, so records before it have already been
+/// grouped; here the error is returned and nothing is.
 pub fn run(
     records: &[CallRecord],
     engine: &Engine,
@@ -194,7 +259,8 @@ pub fn run(
     let mut grouped: Vec<(String, Vec<CallRecord>)> = Vec::new();
     let mut unmatched: Vec<Cluster> = Vec::new();
     for record in records {
-        // The stratification engine reads a leaner record than the linkage does.
+        // The stratification engine reads a leaner record than the linkage does. `.clone()` copies
+        // a string, since the new record must own its own; Java would share the reference.
         let stratified = crate::sv_stratify::CallRecord {
             id: record.id.clone(),
             sv_type: record.sv_type,
@@ -211,6 +277,10 @@ pub fn run(
             .into_iter()
             .map(|stratum| stratum.name.clone())
             .collect();
+        // `match` on the count: `0`, `1` and `_` (anything else). The compiler refuses a `match`
+        // that leaves a case uncovered. The three arms are the Java's `isEmpty()`, "exactly one
+        // match" and `size() > 1` branches; the unmatched record keeps
+        // `SVStratify.DEFAULT_STRATUM`.
         match names.len() {
             0 => unmatched.push(Cluster {
                 stratum: DEFAULT_STRATUM.to_string(),
@@ -244,9 +314,13 @@ pub fn run(
             )
         })
         .collect();
+    // `expect` aborts with that message where the call failed; it marks a failure the code
+    // treats as impossible rather than one it reports.
     let flushed = gatk_engine::java_hash::hash_map_order(&entries).expect("a hashable stratum set");
     let mut out = Vec::new();
     for stratum in flushed {
+        // `let Some(..) = .. else { continue }`: take the stratum's records, or skip a stratum
+        // that no record matched (its engine flushes nothing).
         let Some((_, members)) = grouped.iter().find(|(key, _)| *key == stratum.name) else {
             continue;
         };

@@ -1,9 +1,9 @@
 //! `UpdateVCFSequenceDictionary`, ported from
 //! `org.broadinstitute.hellbender.tools.walkers.variantutils.UpdateVCFSequenceDictionary`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `UpdateVCFSequenceDictionary.java` is unchanged since 4.6.2.0).
 //!
 //! The second member of the variant-transform archetype: it replaces a vcf's contig lines with a
-//! dictionary taken from elsewhere, and refuses in five different Java classes.
+//! dictionary taken from elsewhere, and refuses in four different Java classes.
 //!
 //! # The header order is the writer's, not the tool's
 //!
@@ -19,7 +19,8 @@
 //! # The check that needs an argument reads the file's own header
 //!
 //! ```java
-//! SAMSequenceDictionary oldDictionary = inputHeader == null ? null : inputHeader.getSequenceDictionary();
+//! SAMSequenceDictionary oldDictionary =
+//!         inputHeader == null ? null : inputHeader.getSequenceDictionary();
 //! ```
 //!
 //! and not the engine's best dictionary, "since it might dig one up from an index", says the
@@ -32,6 +33,16 @@
 //! record are on disk when the refusal comes. A contig the input's header had and the dictionary
 //! lacks is dropped from the output header by `setSequenceDictionary` and only refused when the
 //! traversal reaches a record on it.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, E>` is "a value or an error"; each refusal is a variant of
+//!   [`UpdateDictionaryError`], and the command line turns it into the Java exception.
+//! - `Option<T>` is "a value or nothing", Java's nullable reference; `Option<(&str, &[T])>`
+//!   is an optional pair of a name and a borrowed, read-only list.
+//! - `match` must cover every case, and a tuple pattern such as `(None, Some(master))` matches
+//!   two values at once. `Some(record) if ...` is a case with an extra condition (a guard).
+//! - `.iter().filter(..).map(..).collect()` is Java's stream, filter, map, collect.
 
 use htsjdk_bam::header::SequenceRecord;
 use htsjdk_vcf::variant::VariantContext;
@@ -73,6 +84,11 @@ pub enum UpdateDictionaryError {
 
 impl UpdateDictionaryError {
     /// The message the reference carries, without the prefix its exception class adds.
+    ///
+    /// Each text is the `String.format` of the matching `throw` in
+    /// `UpdateVCFSequenceDictionary.java`, with `%s` for `REPLACE_ARGUMENT_NAME` already filled
+    /// in as `replace`, and the `Only one of` names filled in from
+    /// `StandardArgumentDefinitions.SEQUENCE_DICTIONARY_NAME` and `DICTIONARY_ARGUMENT_NAME`.
     pub fn message(&self) -> String {
         match self {
             UpdateDictionaryError::AlreadyHasDictionary { input_name } => format!(
@@ -117,7 +133,8 @@ impl UpdateDictionaryError {
         }
     }
 
-    /// The Java class, which is a different one for four of the seven.
+    /// The Java class each refusal is thrown as. Four classes cover the seven refusals:
+    /// `CommandLineException.BadArgumentValue` takes the four that `_` matches below.
     pub fn java_class(&self) -> &'static str {
         match self {
             UpdateDictionaryError::TwoDictionaries => {
@@ -163,6 +180,9 @@ pub fn best_available_dictionary(
 
     // The length check runs on whichever dictionary won, and names the SOURCE argument even when
     // the dictionary came from somewhere else, which is why the source is threaded through.
+    // The Java is `new UserException.SequenceDictionaryIsMissingContigLengths(
+    // dictionarySource.getRawInputString(), resultDictionary)`, which dereferences
+    // `dictionarySource` even when it is null; this port names an empty source instead.
     let missing: Vec<String> = dictionary
         .iter()
         .filter(|record| record.length == UNKNOWN_SEQUENCE_LENGTH)
@@ -193,6 +213,13 @@ pub fn check_replace(
 }
 
 /// `apply`: one record against the dictionary, refusing on the contig or on the end.
+///
+/// ```java
+/// SAMSequenceRecord samSeqRec = sourceDictionary.getSequence(vc.getContig());
+/// if (samSeqRec == null) {
+/// ```
+///
+/// `getSequence` is a lookup by name, which the linear `find` here reproduces.
 pub fn check_variant(
     dictionary: &[SequenceRecord],
     variant: &VariantContext,

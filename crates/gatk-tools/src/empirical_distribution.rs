@@ -4,8 +4,31 @@
 //!
 //! A bin holding one value, or values all equal, is a point; any other is a Gaussian of the bin's
 //! own mean and deviation, cut off at the bin's edges and scaled to the bin's mass.
+//!
+//! The GATK call site (`VariantAnnotationsScorer`, GATK 4.7.0.0):
+//!
+//! ```java
+//! final EmpiricalDistribution empiricalDistribution = new EmpiricalDistribution();
+//! empiricalDistribution.load(calibrationScores);
+//! return score -> 1. - empiricalDistribution.cumulativeProbability(score);
+//! ```
+//!
+//! Hipparchus has no local source in this workspace, so the item comments below name the
+//! Hipparchus symbol each function stands for and describe the Rust, without quoting it.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[f64]` is a borrowed, read-only view of a `double[]`; `usize` is an unsigned index type.
+//! - `x as i32` from a float truncates toward zero, saturates at the `int` limits and turns `NaN`
+//!   into 0, which is what Java's `(int)` cast does; `wrapping_sub` is subtraction that wraps on
+//!   overflow, as Java's `int` arithmetic does, where a plain `-` would abort in a debug build.
+//! - An `enum` is a closed set of cases that may carry data, here `Constant(mean)` or
+//!   `Normal { mean, deviation }`, and a `match` must handle every case.
+//! - `match self.n { 0 => .., 1 => .., n => .. }`: the last arm matches anything and names it `n`.
+//! - A function's last expression, without `;`, is its return value.
 use jmath::gamma::{erf, erfc};
 
+/// The default bin count of `new EmpiricalDistribution()`, as the module header says.
 const BINS: usize = 1000;
 
 /// `Erf.X_CRIT`, the median of the normal over `sqrt(2)`.
@@ -14,13 +37,16 @@ const X_CRIT: f64 = 0.476_936_276_204_469_7;
 /// `StreamingStatistics`: the count, and the mean and second moment `SecondMoment` keeps.
 #[derive(Debug, Clone, Default)]
 struct Statistics {
+    /// The number of values added.
     n: u64,
+    /// The running mean.
     mean: f64,
+    /// The running sum of squared deviations from the mean.
     moment: f64,
 }
 
 impl Statistics {
-    /// `SecondMoment.increment`.
+    /// `SecondMoment.increment`: Welford's running update of the mean and the moment.
     fn add(&mut self, value: f64) {
         if self.n < 1 {
             self.mean = 0.0;
@@ -34,7 +60,8 @@ impl Statistics {
         self.moment += (n - 1.0) * deviation * scaled;
     }
 
-    /// `Variance.getResult`, bias-corrected.
+    /// `Variance.getResult`, bias-corrected: the moment over `n - 1`, zero for one value and
+    /// `NaN` for none.
     fn variance(&self) -> f64 {
         match self.n {
             0 => f64::NAN,
@@ -46,11 +73,14 @@ impl Statistics {
 
 /// `getKernel`: a point at the mean, or a Gaussian.
 enum Kernel {
+    /// All of the bin's mass at one point, its mean.
     Constant(f64),
+    /// A normal of the bin's mean and standard deviation.
     Normal { mean: f64, deviation: f64 },
 }
 
 impl Kernel {
+    /// The kernel of one bin: a point when it holds fewer than two values or no spread.
     fn of(statistics: &Statistics) -> Kernel {
         if statistics.n < 2 || statistics.variance() == 0.0 {
             Kernel::Constant(statistics.mean)
@@ -62,7 +92,8 @@ impl Kernel {
         }
     }
 
-    /// `NormalDistribution.cumulativeProbability`.
+    /// `NormalDistribution.cumulativeProbability`: exactly 0 or 1 beyond forty deviations, the
+    /// complementary error function in between.
     fn normal_cumulative(mean: f64, deviation: f64, x: f64) -> f64 {
         let dev = x - mean;
         if dev.abs() > 40.0 * deviation {
@@ -89,7 +120,8 @@ impl Kernel {
         }
     }
 
-    /// `NormalDistribution.probability(x0, x1)`.
+    /// `NormalDistribution.probability(x0, x1)`: the mass between two points, through
+    /// `erf_between` on the standardised ends.
     fn normal_probability(mean: f64, deviation: f64, x0: f64, x1: f64) -> f64 {
         let denominator = deviation * std::f64::consts::SQRT_2;
         let v0 = (x0 - mean) / denominator;
@@ -101,16 +133,23 @@ impl Kernel {
 /// A loaded distribution.
 #[derive(Debug, Clone)]
 pub struct EmpiricalDistribution {
+    /// The smallest loaded value.
     min: f64,
+    /// The largest loaded value.
     max: f64,
+    /// The bin width, `(max - min) / 1000`.
     delta: f64,
+    /// One running statistic per bin.
     bins: Vec<Statistics>,
+    /// The cumulative mass at each bin's upper edge; the last is exactly 1.
     upper_bounds: Vec<f64>,
 }
 
 impl EmpiricalDistribution {
     /// `load(double[])`, whose values the caller has already checked are finite.
     pub fn load(values: &[f64]) -> EmpiricalDistribution {
+        // `fold` is a reduce with a starting value. `f64::min` of `NaN` and a number is the
+        // number, so starting at `NaN` yields the smallest value (or `NaN` for an empty list).
         let min = values.iter().copied().fold(f64::NAN, f64::min);
         let max = values.iter().copied().fold(f64::NAN, f64::max);
         let mut out = EmpiricalDistribution {
@@ -124,6 +163,8 @@ impl EmpiricalDistribution {
             let bin = out.find_bin(*value);
             out.bins[bin].add(*value);
         }
+        // Each upper bound is the previous one plus this bin's share, a running sum, and the
+        // last is set to exactly one rather than summed.
         let n = values.len() as f64;
         out.upper_bounds[0] = out.bins[0].n as f64 / n;
         for i in 1..BINS - 1 {
@@ -136,11 +177,13 @@ impl EmpiricalDistribution {
     /// `findBin`: `(int) ceil(...)`, which saturates, and a `NaN` of a zero width becomes 0.
     fn find_bin(&self, value: f64) -> usize {
         let raw = ((value - self.min) / self.delta).ceil();
+        // `(int)` of the ceiling, then less one, then clamped into 0..=999.
         let index = (raw as i32).wrapping_sub(1);
         index.max(0).min(BINS as i32 - 1) as usize
     }
 
-    /// `getUpperBounds()[i]`.
+    /// `getUpperBounds()[i]`: the bin's upper edge, `min + delta * (i + 1)`, except that the last
+    /// bin's edge is `max` itself rather than the product.
     fn bin_upper(&self, i: usize) -> f64 {
         if i == BINS - 1 {
             self.max
@@ -150,6 +193,10 @@ impl EmpiricalDistribution {
     }
 
     /// `cumulativeProbability(x)`.
+    ///
+    /// The mass of the bins wholly below `x`, plus the share of `x`'s own bin that its kernel puts
+    /// below `x`. For a point kernel that share is all or nothing; for a normal it is the normal's
+    /// mass from the bin's lower edge to `x` over its mass across the whole bin.
     pub fn cumulative_probability(&self, x: f64) -> f64 {
         if x < self.min {
             return 0.0;

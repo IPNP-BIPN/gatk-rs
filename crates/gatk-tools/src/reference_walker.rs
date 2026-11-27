@@ -6,8 +6,14 @@
 //!
 //! # An absent `-L` is the whole reference
 //!
-//! `getTraversalIntervals` is `hasUserSuppliedIntervals() ? userIntervals : hasReference() ?
-//! getAllIntervalsForReference(dictionary) : null`. [`crate::interval_walker`] cannot get there:
+//! `getTraversalIntervals` is
+//!
+//! ```java
+//! return hasUserSuppliedIntervals() ? userIntervals : hasReference() ?
+//!     IntervalUtils.getAllIntervalsForReference(getReferenceDictionary()) : null;
+//! ```
+//!
+//! (one line in `GATKTool.java`, wrapped here). [`crate::interval_walker`] cannot get there:
 //! its `requiresIntervals()` is true, so Barclay rejects a run without `-L` before any interval is
 //! parsed. `ReferenceWalker`'s is false, so all three arms are live here, and the golden measures
 //! the first two.
@@ -23,6 +29,26 @@
 //! `ReferenceContext` built from the locus and from `getReferenceWindow(locus)` -- a METHOD, not an
 //! argument, so a tool that wants flanking bases overrides it and still sees one locus at a time.
 //! The window it returns is what decides which bases, reads and features `apply` sees.
+//!
+//! ```java
+//! for(final SimpleInterval locus : getIntervalIterator()){
+//!     final SimpleInterval referenceWindow = getReferenceWindow(locus);
+//!     final ReferenceContext referenceContext =
+//!         new ReferenceContext(reference, locus, referenceWindow);
+//! ```
+//!
+//! (`ReferenceWalker.traverse`; the last statement is one line there, wrapped here.)
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, E>` is "a value or an error", how a Java exception is modelled here, and `?` after
+//!   a call hands that call's error straight back to this function's caller;
+//! - `.map_err(TraversalError::Reference)` wraps the callee's error type in this module's, so the
+//!   caller sees one error type; an enum variant that carries a value can be used as a function;
+//! - `impl Fn(&SimpleInterval) -> SimpleInterval` is a function argument (a lambda), Java's
+//!   `Function<SimpleInterval, SimpleInterval>`;
+//! - `&mut ReferenceFileSource` is a writable borrow: the reader's cursor state changes as it is
+//!   queried, and the caller keeps ownership.
 
 use gatk_engine::interval::SimpleInterval;
 use gatk_engine::interval_args::{self, IntervalArgumentError, IntervalArguments};
@@ -39,7 +65,7 @@ pub struct Applied {
     pub bases: Vec<u8>,
 }
 
-/// What stopped a traversal.
+/// What stopped a traversal: the two kinds of exception the Java can throw on the way.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TraversalError {
     /// The interval arguments did not resolve.
@@ -55,6 +81,8 @@ pub enum TraversalError {
 pub fn dictionary(reference: &ReferenceFileSource) -> SamHeader {
     let mut header = SamHeader::new();
     for (name, length) in reference.sequences() {
+        // `as i32` narrows the index's `usize` length to Java's `int`, the type a dictionary
+        // record holds; it truncates rather than fails on a length past `i32::MAX`.
         header
             .sequences
             .push(SequenceRecord::new(name, *length as i32));

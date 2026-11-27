@@ -1,8 +1,26 @@
 //! `kmer.h` and `htab.c`: the k-mer arithmetic of BFC and its counting hash.
+//!
+//! # Where C decides the result
+//!
+//! A k-mer is held as bit planes, base `c` (0 to 3) split into its low bit (`x[0]`) and high bit
+//! (`x[1]`), with the reverse complement kept alongside in `x[2]` and `x[3]`. The hash mixes in
+//! `uint64_t`, whose arithmetic wraps; `wrapping_add` is that wrap, and every step is masked to
+//! `k` bits as C masks it. A table key packs the k-mer's remaining bits above 14 bits of counts:
+//! bits 0 to 7 count every occurrence and saturate at 255, bits 8 to 13 count the high-quality
+//! ones and saturate at 63. The `& 0xff` and `& 0x3f` tests below are those saturations.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `[u64; 4]` is a fixed-size array of four `uint64_t`, copied by value like a C struct.
+//! - `!x` on an integer is C's `~x`.
+//! - `Option<Box<CntHash>>` is a sub-table that may not exist yet, C's NULL-or-pointer.
+//! - `let Some(h) = &self.h[i] else { return -1; };` takes the sub-table or leaves early.
 
 use crate::khash::{KhOps, Khash};
 
+/// `BFC_CH_KEYBITS`: the bits of a k-mer that go into the key, above its 14 count bits.
 const BFC_CH_KEYBITS: i32 = 50;
+/// `BFC_CH_MAXPRE`: at most 2^20 sub-tables, chosen by the k-mer's leading bits.
 const BFC_CH_MAXPRE: i32 = 20;
 
 /// `bfc_kmer_t`: the k-mer as two bit planes, and its reverse complement as two more.
@@ -46,6 +64,9 @@ fn bfc_hash_64(mut key: u64, mask: u64) -> u64 {
 }
 
 /// `bfc_kmer_hash`, the `h` it fills.
+///
+/// Canonical: of the k-mer and its reverse complement, the one whose middle base has the lower
+/// high bit is hashed, so both strands land on the same key.
 #[inline]
 pub(crate) fn bfc_kmer_hash(k: i32, x: &BfcKmer) -> [u64; 2] {
     let t = k >> 1;
@@ -60,14 +81,18 @@ pub(crate) fn bfc_kmer_hash(k: i32, x: &BfcKmer) -> [u64; 2] {
 struct CntOps;
 
 impl KhOps for CntOps {
+    /// The key without its counts, cut to its low 32 bits by `as u32`, the width of a khash hash.
     fn hash(key: u64) -> u32 {
         (key >> 14) as u32
     }
+    /// Equal when everything but the counts is equal, so a lookup finds the k-mer whatever its
+    /// counts are.
     fn equal(a: u64, b: u64) -> bool {
         a >> 14 == b >> 14
     }
 }
 
+/// `KHASH_INIT(cnt, ...)`: a set; the counts live in the key itself.
 type CntHash = Khash<CntOps, ()>;
 
 /// `bfc_ch_t`. A million empty sub-tables are allocated per pass in C; here they arrive on first
@@ -97,7 +122,8 @@ impl BfcCh {
         BfcCh { k, l_pre, h }
     }
 
-    /// `get_subhash`.
+    /// `get_subhash`: which sub-table, from the hash's leading `l_pre` bits, and the key for it,
+    /// from the rest shifted above the 14 count bits with a count of 1 already in place.
     #[inline]
     fn subhash(&self, x: &[u64; 2]) -> (usize, u64) {
         if self.k <= 32 {
@@ -121,7 +147,9 @@ impl BfcCh {
     /// `forced` have no case left.
     pub(crate) fn insert(&mut self, x: &[u64; 2], is_high: bool) {
         let (i, key) = self.subhash(x);
+        // `get_or_insert_with` creates the sub-table the first time it is needed.
         let h = self.h[i].get_or_insert_with(|| Box::new(CntHash::new()));
+        // `ret` non-zero: a new key, already counted once by `subhash`'s `| 1`.
         let (k, ret) = h.put(key);
         let slot = &mut h.keys[k as usize];
         if ret != 0 {
@@ -155,8 +183,13 @@ impl BfcCh {
     }
 
     /// `bfc_ch_hist`: `cnt`, and the mode the function returns.
+    ///
+    /// The histogram only adds up, so the order the buckets are walked in cannot show. The mode
+    /// is searched from count 3 with a strict `>`, so the lowest of two equal peaks wins, and it
+    /// is -1 when nothing reaches 3.
     pub(crate) fn hist(&self) -> ([u64; 256], i32) {
         let mut cnt = [0u64; 256];
+        // `flatten` skips the sub-tables that were never created, which in C are empty.
         for h in self.h.iter().flatten() {
             for k in 0..h.end() {
                 if h.exist(k) {

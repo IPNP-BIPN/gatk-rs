@@ -1,7 +1,8 @@
 //! Ported from `org.broadinstitute.hellbender.tools.walkers.haplotypecaller.
-//! LongHomopolymerHaplotypeCollapsingEngine` (GATK 4.6.2.0): `--flow-assembly-collapse-hmer-size`,
-//! the haplotypes put back to the reference's hmer lengths once the reads (flow reads, whose hmers
-//! are capped) have been scored against them.
+//! LongHomopolymerHaplotypeCollapsingEngine` (GATK 4.7.0.0;
+//! `LongHomopolymerHaplotypeCollapsingEngine.java` is unchanged since 4.6.2.0):
+//! `--flow-assembly-collapse-hmer-size`, the haplotypes put back to the reference's hmer lengths
+//! once the reads (flow reads, whose hmers are capped) have been scored against them.
 //!
 //! An engine exists for a region only when its reference haplotype holds a run longer than the
 //! threshold. Each non-reference haplotype is then aligned to the reference under its span, both
@@ -11,16 +12,38 @@
 //! base); the longer of the two results is kept and marked collapsed when anything was put back.
 //! Every haplotype is realigned to the reference haplotype, and haplotypes that became identical
 //! are merged, their likelihoods the best of the group's, the reference's group under it.
+//!
+//! # Exceptions are strings
+//!
+//! The Java fails here with an unchecked exception (an `ArrayIndexOutOfBoundsException` from an
+//! array read past either end, a `NullPointerException` for a haplotype with no location). The
+//! port returns the exception's class name as the error string instead, so a caller can report
+//! the same failure the reference would.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, String>` is "a value or an error message"; `?` after a call returns its error to
+//!   the caller at once, and `map_err` converts another error type into the string first;
+//! - `Option<T>` is "a value or nothing", Java's nullable reference checked by the compiler;
+//! - `&[u8]` is a borrowed, read-only view of a byte array, `&mut [u8]` a writable one, and
+//!   `a[from..to]` the slice from `from` up to but not including `to`;
+//! - `x as usize` converts to the unsigned index type; a negative `i32` would become a huge
+//!   index, which is why every such cast below is guarded by a sign check or a `max(0)` first;
+//! - `&dyn SmithWatermanAligner` is a borrowed reference to any implementation of the aligner
+//!   interface, as a Java parameter of interface type is.
 
 use gatk_engine::haplotype::Haplotype;
 use gatk_engine::interval::SimpleInterval;
 use gatk_engine::smith_waterman::{SmithWatermanAligner, SwOverhangStrategy, SwParameters};
 use htsjdk_bam::cigar::Op;
 
-/// `DETERMINE_COLLAPSE_THRESHOLD`: the threshold is the largest maximal class of the read groups.
+/// `AssemblyBasedCallerUtils.DETERMINE_COLLAPSE_THRESHOLD`: the threshold is the largest maximal
+/// class of the read groups (see [`determine_collapse_threshold`]).
 pub const DETERMINE_COLLAPSE_THRESHOLD: i32 = -1;
 
-/// `LongHomopolymerHaplotypeCollapsingEngine`.
+/// `LongHomopolymerHaplotypeCollapsingEngine`: the constructor's `hmerSizeThreshold`,
+/// `partialMode`, `fullRef`, `refLoc` and `swParameters`. The aligner is passed to each call
+/// rather than held, and `logger` and `debug` only log.
 #[derive(Debug, Clone)]
 pub struct HaplotypeCollapsing {
     pub hmer_size_threshold: i32,
@@ -30,6 +53,7 @@ pub struct HaplotypeCollapsing {
     pub parameters: SwParameters,
 }
 
+/// `UncollapseResult`, the tuple `uncollapseByRef` returns.
 struct Uncollapsed {
     bases: Vec<u8>,
     offset: i32,
@@ -37,6 +61,14 @@ struct Uncollapsed {
 }
 
 /// `needsCollapsing(bases, threshold)`: a run of more than `threshold` of one base.
+///
+/// ```java
+/// if ( base == lastBase ) {
+///     if ( ++baseSameCount >= hmerSizeThreshold ) {
+/// ```
+///
+/// The count starts at zero on the run's first base, so `threshold` repeats means a run of
+/// `threshold + 1`.
 pub fn needs_collapsing(bases: &[u8], threshold: i32) -> bool {
     let mut last = 0u8;
     let mut same = 0i32;
@@ -54,7 +86,7 @@ pub fn needs_collapsing(bases: &[u8], threshold: i32) -> bool {
     false
 }
 
-/// `SequenceUtil.reverseComplement`, in place.
+/// `SequenceUtil.reverseComplement`, in place: case kept, anything but `ACGTacgt` left as it is.
 fn reverse_complement(bases: &mut [u8]) {
     bases.reverse();
     for base in bases.iter_mut() {
@@ -72,10 +104,16 @@ fn reverse_complement(bases: &mut [u8]) {
     }
 }
 
+/// The class an out-of-range array read raises in the Java.
 const OUT_OF_BOUNDS: &str = "java.lang.ArrayIndexOutOfBoundsException";
 
 impl HaplotypeCollapsing {
     /// `uncollapseHmersInHaplotypes(haplotypes, false, null)`.
+    ///
+    /// `limitToHmerSizeThreshold` is false, so `collapseBases` never runs, and `refBasesArg` is
+    /// null, so the first reference haplotype supplies the bases every other one is realigned
+    /// against. The Java's `refMap` caches each location's partial reference; here it is
+    /// recomputed per haplotype, which reads the same bytes.
     pub fn uncollapse_hmers_in_haplotypes(
         &self,
         haplotypes: &[Haplotype],
@@ -90,9 +128,12 @@ impl HaplotypeCollapsing {
         let mut result: Vec<Haplotype> = Vec::with_capacity(haplotypes.len());
         for h in haplotypes {
             let mut aligned = self.uncollapse_single(h, aligner)?;
+            // `alignedHaplotype.setUniquenessValue(result.size())`: the haplotype's position.
             aligned.set_uniqueness_value(result.len() as i32);
             result.push(aligned);
         }
+        // `if ( refBases != null )`: every non-reference haplotype gets a new CIGAR against the
+        // reference haplotype, and its start shifted by the reference's own.
         if let Some((ref_bases, start)) = reference {
             for h in result.iter_mut().filter(|h| !h.is_reference()) {
                 let alignment = aligner
@@ -112,6 +153,10 @@ impl HaplotypeCollapsing {
     }
 
     /// `uncollapseSingleHaplotype`.
+    ///
+    /// `(resultRev.bases.length > resultFwd.bases.length) ? resultRev : resultFwd`: strictly
+    /// longer, so a tie keeps the forward result. The reference haplotype is returned
+    /// unchanged (the Java returns the same object; this returns a copy).
     fn uncollapse_single(
         &self,
         h: &Haplotype,
@@ -120,6 +165,7 @@ impl HaplotypeCollapsing {
         if h.is_reference() {
             return Ok(h.clone());
         }
+        // `ok_or(..)?`: no location is the Java's `NullPointerException` at `ucLoc.getStart()`.
         let location = h
             .genome_location()
             .ok_or("java.lang.NullPointerException")?
@@ -146,6 +192,13 @@ impl HaplotypeCollapsing {
     }
 
     /// `uncollapsedPartialRef`: the full reference under the haplotype's span.
+    ///
+    /// ```java
+    /// final byte[]      bases =  Arrays.copyOfRange(fullRef, ucOfs, ucOfs + size);
+    /// ```
+    ///
+    /// `copyOfRange` throws when the start is negative or past the array's end, which is the
+    /// first check below.
     fn uncollapsed_partial_ref(&self, location: &SimpleInterval) -> Result<Vec<u8>, String> {
         let offset = location.start - self.ref_loc.start;
         let size = location.end - location.start + 1;
@@ -161,6 +214,20 @@ impl HaplotypeCollapsing {
     }
 
     /// `uncollapseByRef(bases, ref, rev)`.
+    ///
+    /// **What**: the haplotype's bases with the deletions its alignment to the reference makes
+    /// next to a long hmer filled back in from the reference.
+    ///
+    /// **How**: align, then walk the CIGAR. Every non-deletion that consumes read bases copies
+    /// them; a deletion is filled only when the threshold's worth of haplotype bases after it or
+    /// before it holds a run of the threshold's length (`needsCollapsing(slice, threshold - 1)`),
+    /// and only when the reference has an hmer at the deletion's start (filled with its first
+    /// base) or, failing that, at its end (filled with its last). Partial mode stops filling at
+    /// the first deleted base that is not the hmer's.
+    ///
+    /// **Why** the result is sized by the deletions: the Java allocates `bases.length` plus every
+    /// `D` length and trims to what was written, and `System.arraycopy` past that size throws,
+    /// which the capacity check below reproduces.
     fn uncollapse_by_ref(
         &self,
         bases_arg: &[u8],
@@ -195,6 +262,7 @@ impl HaplotypeCollapsing {
         let mut bases_offset = alignment.alignment_offset;
         let mut ref_offset: i32 = 0;
         let mut collapsed = false;
+        // A closure (lambda) for the Java's `ref[i]`: the byte, or the out-of-bounds exception.
         let at = |array: &[u8], i: i32| -> Result<u8, String> {
             if i < 0 {
                 return Err(OUT_OF_BOUNDS.to_string());
@@ -210,6 +278,8 @@ impl HaplotypeCollapsing {
                 if element.op.consumes_read_bases() {
                     let from = bases_offset.max(0) as usize;
                     let to = from + length as usize;
+                    // `System.arraycopy(bases, basesOfs, result, resultOfs, c.getLength())`,
+                    // which throws on a negative offset or a range past either array.
                     if bases_offset < 0 || to > bases.len() || result.len() + (to - from) > capacity
                     {
                         return Err(OUT_OF_BOUNDS.to_string());
@@ -218,6 +288,9 @@ impl HaplotypeCollapsing {
                     bases_offset += length;
                 }
             } else {
+                // `Arrays.copyOfRange(bases, basesOfs, Math.min(basesOfs + hmerSizeThreshold,
+                // bases.length))` and `Arrays.copyOfRange(bases, Math.max(0, basesOfs -
+                // hmerSizeThreshold), basesOfs)`, borrowed as slices rather than copied.
                 let fwd_end = (bases_offset + threshold).min(bases.len() as i32);
                 let forward: &[u8] =
                     if bases_offset as usize <= bases.len() && bases_offset <= fwd_end {
@@ -231,6 +304,8 @@ impl HaplotypeCollapsing {
                 if needs_collapsing(forward, threshold - 1)
                     || needs_collapsing(backward, threshold - 1)
                 {
+                    // `onHomoPolymer(ref, refOfs - hmerSizeThreshold, ref[refOfs], ..)`: an hmer
+                    // ending at the deletion's start.
                     let first = at(&reference, ref_offset)?;
                     if self.on_homopolymer(&reference, ref_offset - threshold, first, threshold) {
                         for size in 0..length {
@@ -241,6 +316,8 @@ impl HaplotypeCollapsing {
                         }
                         collapsed = true;
                     } else {
+                        // The `else if`: an hmer starting right after the deletion, filled with the
+                        // deletion's last base, and partial mode reading the deletion backwards.
                         let last = at(&reference, ref_offset + length - 1)?;
                         if self.on_homopolymer(&reference, ref_offset + length, last, threshold) {
                             for size in 0..length {
@@ -271,13 +348,16 @@ impl HaplotypeCollapsing {
     }
 
     /// `onHomoPolymer`: a run of `length` of the base starting at any of the `threshold` offsets
-    /// from `offset`.
+    /// from `offset`. `.any(..)` is Java's `anyMatch`, stopping at the first true.
     fn on_homopolymer(&self, bases: &[u8], offset: i32, base: u8, length: i32) -> bool {
         (0..self.hmer_size_threshold).any(|tick| same_base(bases, offset + tick, base, length))
     }
 }
 
 /// `sameBase`: `length` of the base from `offset`, an index outside the array answering false.
+///
+/// The Java reads `bases[ofs++]` and catches the `ArrayIndexOutOfBoundsException` a negative
+/// offset raises, returning false; the explicit `offset < 0` test is the same answer.
 fn same_base(bases: &[u8], offset: i32, base: u8, length: i32) -> bool {
     if offset + length > bases.len() as i32 {
         return false;
@@ -291,6 +371,16 @@ fn same_base(bases: &[u8], offset: i32, base: u8, length: i32) -> bool {
 /// `identicalBySequence`: the haplotypes grouped by their bases, each group under its first, and
 /// the reference's group moved under the reference (to the end of the map) when it is not its
 /// first.
+///
+/// The Java returns a `LinkedHashMap<Haplotype, List<Haplotype>>`; this returns its entries in
+/// the same order as `(key index, member indices)` into `haplotypes`. The move is
+///
+/// ```java
+/// result.put(refHaplotype, result.get(k));
+/// result.remove(k);
+/// ```
+///
+/// and `put` of a new key appends it to the end of a `LinkedHashMap`, hence `push` here.
 pub fn identical_by_sequence(haplotypes: &[Haplotype]) -> Result<Vec<(usize, Vec<usize>)>, String> {
     let mut groups: Vec<(Vec<u8>, Vec<usize>)> = Vec::new();
     for (index, h) in haplotypes.iter().enumerate() {
@@ -321,6 +411,11 @@ pub fn identical_by_sequence(haplotypes: &[Haplotype]) -> Result<Vec<(usize, Vec
 
 /// `determineFlowAssemblyColapseHmer`: the largest maximal class over the header's read groups, a
 /// flow group's `mc` or twelve, any other group's zero.
+///
+/// Each group is read through `new FlowBasedReadUtils.ReadGroupInfo(rg)`, so an `ULTIMA` group
+/// with no flow order throws `"Malformed Ultima read group identified, aborting: " + readGroup`
+/// and an `mc` that is not an integer throws from `Integer.parseInt(mc)`. The error is the
+/// exception's class and message as a pair.
 pub fn determine_collapse_threshold(
     header: &htsjdk_bam::header::SamHeader,
 ) -> Result<i32, (&'static str, String)> {

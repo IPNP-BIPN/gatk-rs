@@ -8,9 +8,18 @@
 //!
 //! # The tool's own sample refusal cannot be reached
 //!
+//! (The string literal below is split to fit 100 columns; the Java has it on one line.)
+//!
 //! ```java
-//! if (sampleName == null) { sampleName = header.getSampleName();
-//!     if (sampleName == null) throw new UserException.BadInput("Sample name is not provided ...
+//! if(sampleName == null)
+//! {
+//!     sampleName = header.getSampleName();
+//!
+//!     if (sampleName == null)
+//!     {
+//!         throw new UserException.BadInput(
+//!             "Sample name is not provided and the input file header does not contain "
+//!             + "sample name." +
 //! ```
 //!
 //! The header is `SimpleCountCodec.readActualHeader`'s `SimpleSampleLocatableMetadata`, whose
@@ -23,6 +32,20 @@
 //! `FeatureOutputCodecFinder.find` picks the codec by the output's name and `FeatureOutputStream`
 //! compresses when the name has a block-compressed extension, at `--compression-level`, with a
 //! tabix index beside it built over the counts header's dictionary. A plain name ignores the level.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, E>` is "a value or an error"; `?` hands the error to the caller, and
+//!   `.map_err(BlockError::Deflate)` wraps it in this file's error type first.
+//! - `Result<Counts, Result<HeaderError, String>>` nests two: the inner one tells a header refusal
+//!   (`Ok`) from a bad record line (`Err`).
+//! - `lines.by_ref()` lets the first loop consume the header lines and leaves the rest of the same
+//!   iterator for the second loop.
+//! - `match (a, b, c, d) { (Some(..), ..) => .., _ => .. }` tests four optional fields at once.
+//! - `x << 16` builds a BGZF virtual file offset: the block's byte address in the high bits and
+//!   the offset within the uncompressed block (zero here) in the low sixteen.
+//! - `use std::io::Write;` brings the `write_all` method into scope; Rust methods of a trait are
+//!   only callable once the trait is imported.
 
 use crate::condense_depth_evidence::{self as depth, DepthEvidence};
 use crate::print_read_counts::{read_sample_name, PrintError, SimpleCount};
@@ -46,6 +69,7 @@ pub enum HeaderError {
 }
 
 impl HeaderError {
+    /// The class of the innermost exception.
     pub fn java_class(&self) -> &'static str {
         match self {
             HeaderError::Malformed(_) => {
@@ -55,6 +79,7 @@ impl HeaderError {
         }
     }
 
+    /// The innermost exception's message.
     pub fn message(&self) -> String {
         match self {
             HeaderError::Malformed(problem) => format!("Unknown file is malformed: {problem}"),
@@ -85,8 +110,11 @@ pub fn header_error_chain(path: &str, inner: &HeaderError) -> Vec<(String, Strin
 /// A `.counts.tsv` as the codec reads it: the SAM header, its one sample, and the records.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Counts {
+    /// The `@` lines, parsed; its dictionary is what the tabix index is built over.
     pub header: SamHeader,
+    /// The read group's `SM`.
     pub sample: String,
+    /// The count lines, in file order.
     pub records: Vec<SimpleCount>,
 }
 
@@ -162,6 +190,7 @@ pub enum OutputError {
 }
 
 impl OutputError {
+    /// The exception class the reference throws.
     pub fn java_class(&self) -> &'static str {
         match self {
             OutputError::NoOutputCodec { .. } => {
@@ -173,6 +202,13 @@ impl OutputError {
         }
     }
 
+    /// The message, the tool's own being
+    ///
+    /// ```java
+    /// throw new UserException.BadInput(
+    ///         outputFilePath.getURIString() + " is not a valid format for " +
+    ///         DepthEvidence.class.getSimpleName());
+    /// ```
     pub fn message(&self) -> String {
         match self {
             OutputError::NoOutputCodec { path } => codecs::no_output_codec(path),
@@ -197,6 +233,14 @@ pub fn check_output(path: &str, uri: &str) -> Result<Encoding, OutputError> {
 }
 
 /// `apply`: one count, one sample, the same closed interval.
+///
+/// ```java
+/// final DepthEvidence depthEvidence = new DepthEvidence(
+///         feature.getContig(),
+///         feature.getStart(),
+///         feature.getEnd(),
+///         new int[] {feature.getCount()});
+/// ```
 pub fn to_depth(count: &SimpleCount) -> DepthEvidence {
     DepthEvidence {
         contig: count.contig.clone(),

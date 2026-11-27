@@ -3,12 +3,25 @@
 //! Ported from `org.broadinstitute.hellbender.tools.copynumber.ModelSegments`,
 //! `org.broadinstitute.hellbender.tools.copynumber.utils.genotyping.NaiveHeterozygousPileupGenotypingUtils`
 //! and `org.broadinstitute.hellbender.tools.copynumber.segmentation.MultisampleMultidimensionalKernelSegmenter`.
+//! GATK 4.7.0.0; the three files are unchanged since 4.6.2.0.
 //!
 //! The kernel segmenter itself is not here: it draws a subsample through a seeded
 //! `java.util.Random`, which may not be transcribed. What is here is everything around it, which
 //! is what decides the answer once the changepoints are known: which sites reach the genotyper,
 //! which of them are called heterozygous, how many changepoints the cap allows, and how a list of
 //! changepoint indices becomes a list of intervals.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<f64, BetaError>` is "a number or a refusal" from the incomplete-beta routine; a `?`
+//!   after a call returns the refusal to this function's caller, as an uncaught Java exception
+//!   would.
+//! - `counts.iter().copied().filter(..).collect()` is Java's
+//!   `getRecords().stream().filter(..).collect(Collectors.toList())`; `copied()` takes each small
+//!   record by value rather than by reference.
+//! - `(i32, i32)` is a pair, here an interval's start and end on one contig.
+//! - `as usize` and `as i64` are numeric casts; `previous` is an `i64` so it can start at -1,
+//!   which an index type (`usize`, unsigned) cannot hold.
 
 use jmath::beta::{regularized_beta, BetaError};
 
@@ -20,7 +33,14 @@ pub const DEFAULT_GENOTYPING_HOMOZYGOUS_LOG_RATIO_THRESHOLD: f64 = -10.0;
 pub const DEFAULT_GENOTYPING_BASE_ERROR_RATE: f64 = 5E-2;
 /// `MultisampleMultidimensionalKernelSegmenter.MIN_NUM_POINTS_REQUIRED_PER_CHROMOSOME`.
 pub const MINIMUM_POINTS_REQUIRED_PER_CHROMOSOME: usize = 10;
-/// `MultisampleMultidimensionalKernelSegmenter.findSegmentation`, on intervals that disagree.
+/// The `ModelSegmentsData` constructor in `ModelSegments`, on case samples whose copy-ratio
+/// intervals disagree:
+///
+/// ```java
+/// "Copy-ratio intervals must be identical across all case samples.");
+/// ```
+///
+/// The segmenter's own check says `across all samples.` without `case`; this is not that one.
 pub const MISMATCHED_COPY_RATIO_INTERVALS_MESSAGE: &str =
     "Copy-ratio intervals must be identical across all case samples.";
 
@@ -44,6 +64,16 @@ impl AllelicCount {
 ///
 /// The reference asks `Beta.regularizedBeta(1, r + 1, n - r + 1)` for the whole mass, which is one
 /// up to the tolerance, and subtracts the two partial integrals from it rather than from one.
+///
+/// ```java
+/// final double betaHom = betaError + betaAll - betaOneMinusError;
+/// final double betaHet = betaOneMinusError - betaError;
+/// ```
+///
+/// The result is `Math.log` of `betaHom` less `Math.log` of `betaHet`.
+///
+/// The additions are kept in that order (`betaError + betaAll` first), because floating-point
+/// addition is not associative.
 pub fn homozygous_log_ratio(count: AllelicCount, base_error_rate: f64) -> Result<f64, BetaError> {
     let r = f64::from(count.reference_count);
     let n = f64::from(count.total_read_count());
@@ -57,6 +87,11 @@ pub fn homozygous_log_ratio(count: AllelicCount, base_error_rate: f64) -> Result
 }
 
 /// `filterByHeterozygosity`'s predicate, which is STRICTLY below the threshold.
+///
+/// ```java
+/// .filter(ac -> calculateHomozygousLogRatio(ac, genotypingBaseErrorRate)
+///         < genotypingHomozygousLogRatioThreshold)
+/// ```
 pub fn is_heterozygous(
     count: AllelicCount,
     homozygous_log_ratio_threshold: f64,
@@ -69,6 +104,11 @@ pub fn is_heterozygous(
 ///
 /// A floor of zero returns the collection untouched rather than filtering it, which is the same
 /// answer because no total is negative.
+///
+/// ```java
+/// return minTotalAlleleCount == 0
+///         ? allelicCounts
+/// ```
 pub fn filter_by_total_count(counts: &[AllelicCount], minimum: i32) -> Vec<AllelicCount> {
     if minimum == 0 {
         return counts.to_vec();
@@ -81,6 +121,16 @@ pub fn filter_by_total_count(counts: &[AllelicCount], minimum: i32) -> Vec<Allel
 }
 
 /// `filterByOverlap`, whose EMPTY collection keeps nothing rather than everything.
+///
+/// ```java
+/// return locatableCollection.size() == 0
+///         ? new AllelicCountCollection(
+///                 allelicCounts.getMetadata(),
+///                 Collections.emptyList())
+/// ```
+///
+/// An interval is inclusive at both ends, as the reference's `overlapsAny` treats a one-base site.
+/// The contig is not compared: the caller passes one contig's counts and intervals.
 pub fn filter_by_overlap(counts: &[AllelicCount], intervals: &[(i32, i32)]) -> Vec<AllelicCount> {
     if intervals.is_empty() {
         return Vec::new();
@@ -120,6 +170,11 @@ pub fn genotype_hets(
 
 /// The intersection `genotypeHets` takes over the samples, which it reaches only for MORE than
 /// one: the sites called heterozygous in every sample, in the first sample's order.
+///
+/// The reference counts the sites in a `HashMultiset` and keeps those counted once per sample,
+/// then runs `filterByOverlap` on each sample against that set. Which order the set is in does
+/// not reach the output: `AbstractLocatableCollection` sorts its records by the sequence
+/// dictionary when it is built.
 pub fn intersect_het_sites(per_sample: &[Vec<AllelicCount>]) -> Vec<i32> {
     if per_sample.len() <= 1 {
         return per_sample
@@ -154,6 +209,10 @@ pub fn window_sizes(named: &[i32]) -> Vec<i32> {
 }
 
 /// `maxNumSegmentsPerChromosome - 1`: the cap counts SEGMENTS, and one changepoint makes two.
+///
+/// ```java
+/// final int maxNumChangepointsPerChromosome = maxNumSegmentsPerChromosome - 1;
+/// ```
 pub fn maximum_changepoints_per_chromosome(maximum_segments_per_chromosome: i32) -> i32 {
     maximum_segments_per_chromosome - 1
 }
@@ -169,6 +228,12 @@ pub fn maximum_changepoints_per_chromosome(maximum_segments_per_chromosome: i32)
 /// therefore always true and the closing index is always appended, which is what makes the last
 /// segment close on the final point. Handing the final index in as a changepoint as well would
 /// have it appended a second time and then read one point past the end.
+///
+/// ```java
+/// if (!changepoints.contains(numMultidimensionalPointsInChromosome)) {
+///     changepoints.add(numMultidimensionalPointsInChromosome - 1);
+/// }
+/// ```
 pub fn segments_from_changepoints(
     points: &[(i32, i32)],
     changepoints: &[usize],

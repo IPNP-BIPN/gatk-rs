@@ -6,16 +6,36 @@
 //!
 //! Ported from `org.broadinstitute.hellbender.Main`,
 //! `org.broadinstitute.hellbender.cmdline.DeprecatedToolsRegistry` and
-//! `htsjdk.samtools.util.StringUtil`.
+//! `htsjdk.samtools.util.StringUtil` (GATK 4.7.0.0, htsjdk 5.0.0; `Main.java` and
+//! `DeprecatedToolsRegistry.java` are unchanged since 4.6.2.0).
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<String>` is "a string or nothing", the port's spelling of a Java method that may
+//!   return null; `Some(x)` is the value and `None` the null.
+//! - `Result<T, String>` is "a value or an error message". It stands for a Java `throw`: `Ok(x)`
+//!   is the normal return and `Err(m)` the exception. A `?` after a call hands an `Err` straight
+//!   back to this function's caller, which is what an uncaught Java exception does.
+//! - `.iter().find(..).map(..)` is Java's `stream().filter(..).findFirst().map(..)`.
+//! - `first.as_bytes()` is the string's UTF-8 bytes, where the reference calls `getBytes()`.
 
 /// `Main.HELP_SIMILARITY_FLOOR`, which the distance must be STRICTLY under.
 pub const HELP_SIMILARITY_FLOOR: i32 = 7;
 /// `Main.MINIMUM_SUBSTRING_LENGTH`, from which a substring anywhere in a name scores zero.
 pub const MINIMUM_SUBSTRING_LENGTH: usize = 5;
-/// The weights `getSuggestedAlternateCommand` hands to the Levenshtein distance, in its order.
+/// The weights `getSuggestedAlternateCommand` hands to the Levenshtein distance, in its order:
+///
+/// ```java
+/// distance = StringUtil.levenshteinDistance(command, name, 0, 2, 1, 4);
+/// ```
+///
+/// This one is the swap (a transposition of two adjacent characters).
 pub const SWAP_COST: i32 = 0;
+/// The second weight: one character replaced by another.
 pub const SUBSTITUTION_COST: i32 = 2;
+/// The third weight: a character the command lacks and the tool name has.
 pub const INSERTION_COST: i32 = 1;
+/// The fourth weight: a character the command has and the tool name lacks.
 pub const DELETION_COST: i32 = 4;
 
 /// `DeprecatedToolsRegistry.deprecatedTools`: the tool, the version it went out in, and what to do
@@ -48,6 +68,14 @@ pub const DEPRECATED_TOOLS: &[(&str, &str, &str)] = &[
 pub const COMMAND_MATCHES_PREFIX: &str = "Command matches: ";
 
 /// `DeprecatedToolsRegistry.getToolDeprecationInfo`, which answers nothing for a live tool.
+///
+/// The message is the reference's own format string:
+///
+/// ```java
+/// String.format("%s is no longer included in GATK as of version %s. %s",
+/// ```
+///
+/// The match is exact and case-sensitive, as `deprecatedTools.containsKey(toolName)` is.
 pub fn tool_deprecation_info(tool_name: &str) -> Option<String> {
     DEPRECATED_TOOLS
         .iter()
@@ -80,6 +108,8 @@ pub fn levenshtein_distance(
     let mut row0 = vec![0i32; b.len() + 1];
     let mut row1 = vec![0i32; b.len() + 1];
     let mut row2 = vec![0i32; b.len() + 1];
+    // `iter_mut().enumerate()` visits each cell with its index, and `take(b.len())` stops one
+    // short of the end: Java's `for (j = 0; j < str2.length; j++)` over an array one longer.
     for (j, cell) in row1.iter_mut().enumerate().take(b.len()) {
         *cell = j as i32 * insertion;
     }
@@ -105,6 +135,9 @@ pub fn levenshtein_distance(
                 row2[j + 1] = row2[j] + insertion;
             }
         }
+        // The reference rotates the three rows through a temporary:
+        // `dummy = row0; row0 = row1; row1 = row2; row2 = dummy;`. `std::mem::swap` exchanges
+        // two variables, and these two swaps leave the same three rows in the same three names.
         std::mem::swap(&mut row0, &mut row1);
         std::mem::swap(&mut row1, &mut row2);
     }
@@ -117,6 +150,7 @@ pub fn levenshtein_distance(
 /// A name the command matches EXACTLY is not scored at all: the reference throws there, the search
 /// being reached only once resolution has failed.
 pub fn distance(command: &str, name: &str) -> Result<i32, String> {
+    // `throw new RuntimeException("Command matches: " + command);`
     if name == command {
         return Err(format!("{COMMAND_MATCHES_PREFIX}{command}"));
     }
@@ -145,6 +179,7 @@ pub fn suggested_alternate_command(classes: &[String], command: &str) -> Result<
     let mut distances = Vec::with_capacity(classes.len());
     let mut best_distance = i32::MAX;
     let mut best_count = 0usize;
+    // One score per class, kept in the classes' own order, as the reference's `LinkedHashMap` is.
     for name in classes {
         let d = distance(command, name)?;
         distances.push(d);
@@ -158,6 +193,7 @@ pub fn suggested_alternate_command(classes: &[String], command: &str) -> Result<
     if best_distance == 0 && best_count == classes.len() {
         best_distance = HELP_SIMILARITY_FLOOR + 1;
     }
+    // `System.lineSeparator()` is written as `\n`, which is what it is on Linux.
     let mut message = format!("'{command}' is not a valid command.\n");
     if best_distance < HELP_SIMILARITY_FLOOR {
         message.push_str(if best_count < 2 {

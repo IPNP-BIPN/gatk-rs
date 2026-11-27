@@ -19,6 +19,21 @@
 //!   trees run in other threads and land at the same index, so the thread count moves no byte.
 //! * **`score_samples`** sums, per row and in tree order, the leaf's depth plus the average path
 //!   length of its samples less one.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, String>` is "a `T` or an error message", how this file models a Python exception;
+//!   `?` after a call hands its error straight to the caller.
+//! - `Option<T>` is "a value or nothing", Python's `None` checked by the compiler. `.ok_or(..)` and
+//!   `.ok_or_else(..)` turn a `None` into an error.
+//! - `&[f32]` is a borrowed, read-only view of an array; `&mut u32` is a writable reference, which
+//!   is how `our_rand_r` advances the caller's seed, as a C pointer argument would.
+//! - `x as f32` rounds a double to the nearest float, as numpy's `astype(float32)` does, and gives
+//!   an infinity where the value is out of range. `as i64`, `as usize`, `as u32` between integers
+//!   keep the low bits.
+//! - `.iter().map(..).collect()` is a list comprehension; `|x| ...` is a lambda.
+//! - `f64` and `f32` are numpy's `float64` and `float32`, `i64` is `intp`, and `usize` is an
+//!   unsigned index type.
 use crate::numpy_random::{sample_without_replacement, RandomState};
 
 /// `sklearn.tree._utils.RAND_R_MAX`.
@@ -41,7 +56,9 @@ const TREE_UNDEFINED: i64 = -2;
 /// The arguments of `IsolationForest(**hyperparameters)` this port reaches.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Hyperparameters {
+    /// `random_state`, required: an unseeded forest has no bytes to match.
     pub random_state: u32,
+    /// `n_estimators`, 100 unless given.
     pub n_estimators: usize,
     /// Written in the pickle, and otherwise moves nothing: measured.
     pub n_jobs: Option<i64>,
@@ -103,7 +120,13 @@ impl Hyperparameters {
         };
         let mut seeded = false;
         for (key, value) in object {
+            // A closure building the refusal for this key, called only on the paths that refuse.
             let unsupported = || format!("IsolationForest({key}={value})");
+            // Each arm accepts one key, and an arm with `if` accepts it only at the value whose
+            // effect was measured: the defaults, which leave the fit as it is. Every other key or
+            // value falls to `_` and is refused by name. `max_features` must be the float `1.0`,
+            // not `1`: scikit-learn reads an integer `max_features` as a count of features and a
+            // float as a fraction of them.
             match key.as_str() {
                 "random_state" => {
                     out.random_state = value
@@ -167,6 +190,8 @@ pub struct Forest {
 }
 
 impl Forest {
+    /// The parts of the fit that scoring reads, with each tree's nodes split into the columns
+    /// `apply` walks.
     pub fn scorer(&self) -> Scorer {
         Scorer {
             annotation_names: self.annotation_names.clone(),
@@ -211,7 +236,11 @@ pub fn median_statistics(rows: &[Vec<f64>]) -> Result<Vec<f64>, String> {
                     .to_string(),
             );
         }
+        // The missing values are already filtered out and an infinity refused, so `total_cmp`
+        // only orders finite doubles here.
         values.sort_by(f64::total_cmp);
+        // `high` is the middle value of an odd count, or the upper of the two middle values of
+        // an even one.
         let half = values.len() / 2;
         let high = values[half];
         let low = if values.len() % 2 == 1 {
@@ -244,6 +273,9 @@ fn imputed_float32(rows: &[Vec<f64>], statistics: &[f64]) -> Result<Vec<f32>, St
 }
 
 /// `_iforest._average_path_length`, one element at a time.
+///
+/// The logarithm is of `n - 1`, read from `LOG_OF_WHOLE` at index `n - 2` rather than computed:
+/// see that table for why.
 fn average_path_length(n: i64) -> f64 {
     if n <= 1 {
         return 0.0;
@@ -256,10 +288,11 @@ fn average_path_length(n: i64) -> f64 {
     2.0 * (log + EULER_GAMMA) - 2.0 * (n - 1.0) / n
 }
 
-/// numpy's logarithm of the whole numbers `1..=256`, as bits: glibc's `log`, measured in the reference's
-/// image. `max_samples='auto'` caps a tree at 256 samples, so nothing else is ever asked; the FMA and
-/// the SSE2 variants of glibc agree on every whole number to 200000. fdlibm does not, by one unit in
-/// the last place at 3, 48, 74 and 196 among these, and that is enough to change a scorer's bytes.
+/// numpy's logarithm of the whole numbers `1..=256`, as bits: glibc's `log`, measured in the
+/// reference's image. Entry `k` is the logarithm of `k + 1`. `max_samples='auto'` caps a tree at
+/// 256 samples, so nothing else is ever asked; the FMA and the SSE2 variants of glibc agree on
+/// every whole number to 200000. fdlibm does not, by one unit in the last place at 3, 48, 74 and
+/// 196 among these, and that is enough to change a scorer's bytes.
 const LOG_OF_WHOLE: [u64; 256] = [
     0x0000000000000000,
     0x3fe62e42fefa39ef,
@@ -519,7 +552,10 @@ const LOG_OF_WHOLE: [u64; 256] = [
     0x40162e42fefa39ef,
 ];
 
-/// `our_rand_r`.
+/// `our_rand_r` in `sklearn.tree._utils`: a 32-bit xorshift, with a zero seed replaced by one so
+/// the generator cannot stick at zero.
+///
+/// The shifts are on a `u32`, so bits shifted past the top are discarded, as on C's `UINT32_t`.
 fn our_rand_r(seed: &mut u32) -> u32 {
     if *seed == 0 {
         *seed = 1;
@@ -532,11 +568,18 @@ fn our_rand_r(seed: &mut u32) -> u32 {
 }
 
 /// `_splitter.pyx`'s and `_criterion.pyx`'s state over one tree.
+///
+/// `<'a>` says the struct borrows `x` and `y` from the caller for as long as it lives; it holds
+/// views of the matrix and the targets, not copies.
 struct Builder<'a> {
+    /// The imputed `float32` matrix, flat by row: row `i`, feature `f` is `x[i * columns + f]`.
     x: &'a [f32],
     columns: usize,
     y: &'a [f64],
+    /// The kept rows, permuted in place as nodes are partitioned, so a node is always the range
+    /// `start..end` of it.
     samples: Vec<usize>,
+    /// The feature indices, with those known to be constant at the front.
     features: Vec<usize>,
     constant_features: Vec<usize>,
     rand_r_state: u32,
@@ -554,6 +597,7 @@ struct Builder<'a> {
     position: usize,
 }
 
+/// The split a node takes: where its samples divide, and on what.
 struct Split {
     position: usize,
     feature: i64,
@@ -581,6 +625,7 @@ impl Builder<'_> {
         self.reset();
     }
 
+    /// `RegressionCriterion.reset`: everything on the right, the split at `start`.
     fn reset(&mut self) {
         self.sum_left = 0.0;
         self.sum_right = self.sum_total;
@@ -589,6 +634,7 @@ impl Builder<'_> {
         self.position = self.start;
     }
 
+    /// `RegressionCriterion.reverse_reset`: everything on the left, the split at `end`.
     fn reverse_reset(&mut self) {
         self.weighted_right = 0.0;
         self.weighted_left = self.weighted_n_node;
@@ -598,6 +644,10 @@ impl Builder<'_> {
     }
 
     /// `RegressionCriterion.update`, from whichever end is nearer.
+    ///
+    /// The two directions reach `sum_left` by different arithmetic (adding the left samples, or
+    /// subtracting the right ones from the total), so which one runs can change its last bit; the
+    /// choice is the reference's, distance for distance.
     fn update(&mut self, new_position: usize) {
         if new_position - self.position <= self.end - new_position {
             for p in self.position..new_position {
@@ -666,6 +716,9 @@ impl Builder<'_> {
         let mut found = false;
         while f_i > n_total && (n_visited < 1 || n_visited <= n_found + n_drawn) {
             n_visited += 1;
+            // Draw a feature uniformly from those not yet drawn and not known to be constant.
+            // One that turns out to be a known constant is swapped to the front and the draw
+            // goes again.
             let range = (f_i - n_found - n_drawn) as u32;
             let mut f_j = n_drawn + (our_rand_r(&mut self.rand_r_state) % range) as usize;
             if f_j < n_known {
@@ -687,6 +740,8 @@ impl Builder<'_> {
                     high = value;
                 }
             }
+            // The `float32` bounds are widened to double before the threshold is added. A constant
+            // feature is swapped into the constant block and costs a visit but no split.
             if f64::from(high) <= f64::from(low) + FEATURE_THRESHOLD {
                 self.features[f_j] = self.features[n_total];
                 self.features[n_total] = feature;
@@ -697,7 +752,8 @@ impl Builder<'_> {
             f_i -= 1;
             self.features.swap(f_i, f_j);
 
-            // `rand_uniform`.
+            // `rand_uniform`, then the threshold moved off `high`, so the partition below always
+            // leaves the samples at `high` on the right.
             let (low, high) = (f64::from(low), f64::from(high));
             let draw = f64::from(our_rand_r(&mut self.rand_r_state));
             let mut threshold = (high - low) * draw / f64::from(RAND_R_MAX) + low;
@@ -705,7 +761,9 @@ impl Builder<'_> {
                 threshold = low;
             }
 
-            // `partition_samples`.
+            // `partition_samples`: samples at or below the threshold to the front, the rest swapped
+            // to the back. The swap order is the reference's, and it decides the row order every
+            // later node sees.
             let mut p = start;
             let mut partition_end = end;
             while p < partition_end {
@@ -716,6 +774,7 @@ impl Builder<'_> {
                     self.samples.swap(p, partition_end);
                 }
             }
+            // A split that leaves either side empty is no split, and the loop draws again.
             if partition_end == start || partition_end == end {
                 continue;
             }
@@ -724,6 +783,8 @@ impl Builder<'_> {
             best.feature = feature as i64;
             best.threshold = threshold;
         }
+        // The loop's condition fails once a non-constant feature has been visited, so at most
+        // one split is found and it is the best; the criterion is evaluated for it once, here.
         if found && best.position < end {
             self.reset();
             self.update(best.position);
@@ -751,8 +812,12 @@ fn build_tree(
     random_state: u32,
     max_depth: i64,
 ) -> Tree {
+    // The splitter's `rand_r_state`, one draw from a fresh `RandomState` seeded with the tree's
+    // own `random_state`.
     let mut random = RandomState::new(random_state);
     let rand_r_state = random.randint(0, u64::from(RAND_R_MAX)) as u32;
+    // Only the rows bagging kept enter `samples`, in row order; the dropped ones carry weight
+    // zero and contribute nothing. Every kept row has weight one.
     let samples: Vec<usize> = (0..kept.len()).filter(|i| kept[*i]).collect();
     let n = samples.len();
     let mut builder = Builder {
@@ -775,6 +840,7 @@ fn build_tree(
         end: 0,
         position: 0,
     };
+    // A node waiting to be built, and where its id goes in its parent.
     struct Pending {
         start: usize,
         end: usize,
@@ -794,6 +860,7 @@ fn build_tree(
     let mut nodes: Vec<Node> = Vec::new();
     let mut deepest = 0;
     let mut first = true;
+    // `while let Some(..) = stack.pop()` runs until the stack is empty: `pop` returns `None` then.
     while let Some(mut pending) = stack.pop() {
         let (start, end) = (pending.start, pending.end);
         builder.node_reset(start, end);
@@ -818,6 +885,7 @@ fn build_tree(
                 nodes[parent].right_child = id as i64;
             }
         }
+        // A leaf's threshold is `TREE_UNDEFINED`, written as a double in the node table.
         let leaf_or = |number: f64| {
             if is_leaf {
                 TREE_UNDEFINED as f64
@@ -840,6 +908,7 @@ fn build_tree(
             value,
         });
         deepest = deepest.max(pending.depth);
+        // The right child is pushed first so the left is popped, and numbered, first.
         if !is_leaf {
             let split = split.expect("a split on a node that is no leaf");
             stack.push(Pending {
@@ -868,6 +937,9 @@ fn build_tree(
 }
 
 /// `Tree.compute_node_depths`: the root is at one.
+///
+/// One pass in id order is enough because a node is always numbered after its parent: the builder
+/// appends a node only when it pops it, and it pushes children only after appending the parent.
 fn node_depths(nodes: &[Node]) -> Vec<i64> {
     let mut depths = vec![0i64; nodes.len()];
     depths[0] = 1;
@@ -891,15 +963,18 @@ pub fn fit(
     let columns = statistics.len();
     let n_samples = rows.len();
 
+    // The targets, one uniform double per row from a `RandomState` of their own.
     let seed = hyperparameters.random_state;
     let mut for_y = RandomState::new(seed);
     let y: Vec<f64> = (0..n_samples).map(|_| for_y.next_double()).collect();
 
     let max_samples = n_samples.min(256);
     let bits = max_samples.max(2);
-    // The base-two logarithm of `max_samples`, rounded up, which is exact on the integers this can be.
+    // The base-two logarithm of `max(max_samples, 2)`, rounded up, in integer arithmetic: the
+    // count of bits needed for `bits - 1`. Exact for every integer `max_samples` can be.
     let max_depth = i64::from(usize::BITS - (bits - 1).leading_zeros());
 
+    // `BaseBagging._fit`: one seed per tree, from another fresh `RandomState`.
     let mut for_seeds = RandomState::new(seed);
     let seeds: Vec<i64> = (0..hyperparameters.n_estimators)
         .map(|_| for_seeds.randint(0, MAX_INT) as i64)
@@ -966,12 +1041,17 @@ pub fn score_samples(
     }
     let x = imputed_float32(rows, &scorer.statistics)?;
     let columns = scorer.statistics.len();
+    // The number of trees times the average path length of `max_samples`.
     let denominator = scorer.trees.len() as f64 * average_path_length(scorer.max_samples);
     let mut depths = vec![0.0f64; rows.len()];
     for (index, tree) in scorer.trees.iter().enumerate() {
         let lengths = &scorer.average_path_lengths[index];
         let decisions = &scorer.decision_path_lengths[index];
+        // `.iter_mut()` yields a writable reference to each row's running depth, so `*depth +=`
+        // adds to the vector in place.
         for (row, depth) in depths.iter_mut().enumerate() {
+            // `apply`: down from the root, left when the widened `float32` value is at most the
+            // threshold.
             let mut node = 0usize;
             while tree.left_child[node] != TREE_LEAF {
                 let value = x[row * columns + tree.feature[node] as usize];

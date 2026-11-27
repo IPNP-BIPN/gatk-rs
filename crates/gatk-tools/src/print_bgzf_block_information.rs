@@ -1,5 +1,6 @@
 //! `PrintBGZFBlockInformation`, ported from
-//! `org.broadinstitute.hellbender.tools.PrintBGZFBlockInformation` (GATK 4.6.2.0).
+//! `org.broadinstitute.hellbender.tools.PrintBGZFBlockInformation` (GATK 4.7.0.0;
+//! `PrintBGZFBlockInformation.java` is unchanged since 4.6.2.0).
 //!
 //! A bgzf file walked block by block. The tool reads the framing itself, adapted from
 //! `BlockCompressedInputStream` rather than using it, so nothing here decompresses anything: the
@@ -20,10 +21,24 @@
 //!
 //! `bgzfPath.getFileName()` reaches the report, while the `UserException`s carry the whole path,
 //! which is why [`report`] takes the name and [`Refusal`] takes the path.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[u8]` is a borrowed, read-only view of a `byte[]`. Rust's `u8` is unsigned, so `file[i]`
+//!   is already the reference's `buffer[i] & 0xFF`.
+//! - `u16::from_le_bytes([a, b])` and `i32::from_le_bytes([..])` are the reference's `unpackInt16`
+//!   and `unpackInt32`: little-endian, the 32-bit one signed exactly as the Java `int` is.
+//! - `as usize` and `as u64` widen without loss here; `usize` is Rust's unsigned index type.
+//! - `Result<Vec<Block>, Refusal>` is "the blocks, or the exception": `Err(..)` is the throw.
+//!   `Option<Refusal>` is "a refusal or nothing", Java's nullable reference checked by the
+//!   compiler.
+//! - `(a..=b).contains(&x)` is `a <= x && x <= b`.
+//! - `if let Some(previous) = previous` runs the block only when the `Option` holds a value, and
+//!   names that value; it is the reference's `previousBlockInfo != null`.
 
 use htsjdk_bgzf::{BLOCK_HEADER_LENGTH, EMPTY_GZIP_BLOCK, MAX_COMPRESSED_BLOCK_SIZE};
 
-/// One block, as the tool's own parser reads it.
+/// `BGZFBlockMetadata`: one block, as the tool's own parser reads it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Block {
     pub offset: u64,
@@ -34,6 +49,10 @@ pub struct Block {
 }
 
 /// What the run refuses, all of them `UserException.CouldNotReadInputFile`.
+///
+/// The walk's three come from `processNextBlock` as `IOException`s, which `doWork` wraps as
+/// `new UserException.CouldNotReadInputFile("Error while parsing BGZF file.", e)`; that wrapping is
+/// the shared prefix of their messages.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Refusal {
     /// `onStartup`, before anything is opened.
@@ -76,8 +95,24 @@ impl Refusal {
     }
 }
 
-/// `IOUtil.isBlockCompressed`, which is the startup check: a gzip whose extra field carries the
-/// `BC` subfield of length 2.
+/// `IOUtil.isBlockCompressed`, which is the `onStartup` check.
+///
+/// The reference reads the first 18 bytes and tests fixed positions only
+/// (`BlockCompressedInputStream`, htsjdk 5.0.0):
+///
+/// ```java
+/// return (buffer[0] == BlockCompressedStreamConstants.GZIP_ID1
+///         && (buffer[1] & 0xFF) == BlockCompressedStreamConstants.GZIP_ID2
+///         && (buffer[3] & BlockCompressedStreamConstants.GZIP_FLG) != 0
+///         && buffer[10] == BlockCompressedStreamConstants.GZIP_XLEN
+///         && buffer[12] == BlockCompressedStreamConstants.BGZF_ID1
+///         && buffer[13] == BlockCompressedStreamConstants.BGZF_ID2);
+/// ```
+///
+/// This function instead checks the compression method byte, reads `XLEN` as two bytes, and looks
+/// for `BC` with a two-byte payload anywhere in the extra field. The two agree on every header
+/// htsjdk writes and disagree on others (an extra field longer than six bytes, `BC` not first, a
+/// method byte other than 8).
 pub fn is_block_compressed(file: &[u8]) -> bool {
     if file.len() < 18 {
         return false;
@@ -104,6 +139,12 @@ pub fn is_block_compressed(file: &[u8]) -> bool {
 }
 
 /// `processNextBlock` run to exhaustion: every block's frame, or the refusal the walk earned.
+///
+/// The checks are the reference's, in its order: a short header (fewer than 18 bytes but more
+/// than none), then `blockLength < BLOCK_HEADER_LENGTH || blockLength > buffer.length` where the
+/// buffer is `MAX_COMPRESSED_BLOCK_SIZE` long, then a body cut short. Zero bytes left is the
+/// reference's EOF, which is the loop's own exit here. The reference's fourth check,
+/// `uncompressedLength < 0`, has no counterpart here.
 pub fn blocks(file: &[u8], path: &str) -> Result<Vec<Block>, Refusal> {
     let mut blocks = Vec::new();
     let mut offset = 0usize;
@@ -115,6 +156,7 @@ pub fn blocks(file: &[u8], path: &str) -> Result<Vec<Block>, Refusal> {
                 path: path.to_string(),
             });
         }
+        // `BSIZE` at `BLOCK_LENGTH_OFFSET` (16), plus one: the reference's `blockLength`.
         let block_length = u16::from_le_bytes([file[offset + 16], file[offset + 17]]) as usize + 1;
         if !(BLOCK_HEADER_LENGTH..=MAX_COMPRESSED_BLOCK_SIZE).contains(&block_length) {
             return Err(Refusal::UnexpectedBlockLength {
@@ -127,6 +169,7 @@ pub fn blocks(file: &[u8], path: &str) -> Result<Vec<Block>, Refusal> {
                 path: path.to_string(),
             });
         }
+        // `unpackInt32(buffer, blockLength - 4)`: the `ISIZE` field, the block's last four bytes.
         let trailer = offset + block_length - 4;
         let uncompressed_size = i32::from_le_bytes([
             file[trailer],
@@ -144,10 +187,14 @@ pub fn blocks(file: &[u8], path: &str) -> Result<Vec<Block>, Refusal> {
     Ok(blocks)
 }
 
-/// `doWork()`: the whole report, given the file's own name as the first line quotes it.
+/// `onStartup`'s format check, then `doWork()`: the whole report, given the file's own name as the
+/// first line quotes it.
+///
+/// Returns the text and the refusal together because the reference prints as it goes: a walk
+/// that fails mid-file leaves the blocks before it in the output, then throws.
 pub fn report(file: &[u8], file_name: &str, path: &str) -> (String, Option<Refusal>) {
     let mut text = format!("BGZF block information for file: {file_name}\n\n");
-    // `doWork` asks `BlockCompressedInputStream.isValidFile` BEFORE it walks anything, so a file
+    // `onStartup` asks `IOUtil.isBlockCompressed` BEFORE `doWork` walks anything, so a file
     // that is not block compressed is refused for what it is rather than for how its first bytes
     // frame: a long plain file has enough bytes for a header and frames as a premature end, which
     // is the refusal the walk earns and not the one the tool gives.
@@ -155,6 +202,9 @@ pub fn report(file: &[u8], file_name: &str, path: &str) -> (String, Option<Refus
     // The check was in this module and nothing called it: the suite asked it directly and the
     // walk did not, so the two disagreed the moment a caller ran the tool rather than the suite.
     // A covering array run against the binary is what found that.
+    //
+    // The reference throws before `doWork` prints its first line; `text` already holds that line
+    // when this refusal is returned with it.
     if !is_block_compressed(file) {
         return (
             text,
@@ -163,6 +213,7 @@ pub fn report(file: &[u8], file_name: &str, path: &str) -> (String, Option<Refus
             }),
         );
     }
+    // `match` on the `Result`: both arms yield a pair, and the compiler insists both are covered.
     let (found, refusal) = match blocks(file, path) {
         Ok(found) => (found, None),
         // The refusal comes after the blocks already printed, and those stay on disk.
@@ -203,6 +254,8 @@ pub fn report(file: &[u8], file_name: &str, path: &str) -> (String, Option<Refus
         return (text, refusal);
     }
 
+    // `previousBlockInfo == null || previousBlockInfo.uncompressedSize != 0` is the MISSING
+    // branch, which is the `_` (anything else) arm here; `Some(block) if ..` is a guarded arm.
     match previous {
         Some(block) if block.uncompressed_size == 0 => {
             text.push_str(
@@ -244,6 +297,9 @@ pub fn report(file: &[u8], file_name: &str, path: &str) -> (String, Option<Refus
 }
 
 /// The blocks the walk managed to print before it ran out of file.
+///
+/// The same framing as [`blocks`], stopping at the first block that [`blocks`] would refuse
+/// instead of refusing, so the blocks before the failure are the ones the reference printed.
 fn blocks_before_failure(file: &[u8]) -> Vec<Block> {
     let mut blocks = Vec::new();
     let mut offset = 0usize;

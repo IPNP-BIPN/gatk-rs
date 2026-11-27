@@ -1,5 +1,7 @@
-//! `ReadMetadata`, `LibraryStatistics` and `IntHistogram.CDF` (GATK 4.6.2.0): what
-//! `CalcMetadataSpark` computes, the first step of the SV pipeline.
+//! `ReadMetadata`, `LibraryStatistics` and `IntHistogram.CDF` (GATK 4.7.0.0; `ReadMetadata.java`,
+//! `LibraryStatistics.java`, `IntHistogram.java`, `SVReadFilter.java` and `CalcMetadataSpark.java`
+//! are unchanged since 4.6.2.0): what `CalcMetadataSpark` computes, the first step of the SV
+//! pipeline.
 //!
 //! # A partition at a time
 //!
@@ -7,15 +9,15 @@
 //! included. [`MetadataBuilder`] takes them in order, and what crosses from one to the next is what
 //! the reference's `collect` and `combineMaps` carry: each partition's map comes back through Kryo
 //! into a table sized for it, and is poured into one accumulator, whose order is what the library
-//! lines are printed in. `CalcMetadataSpark` still reports a single partition and its runner refuses
-//! a BAM Disq would have cut.
+//! lines are printed in. `CalcMetadataSpark` still reports a single partition and its runner
+//! refuses a BAM Disq would have cut.
 //!
 //! # Every read is reached through the unpaired trap
 //!
-//! `isTemplateLenTestable` asks about the mate of any primary read that passes the evidence bar, and
-//! `mateIsUnmapped` throws on an unpaired read rather than answering. A single-ended BAM with a good
-//! alignment therefore stops the tool, unless the bar is what stops the read first: mapping quality
-//! under 20 or under 45 aligned bases.
+//! `isTemplateLenTestable` asks about the mate of any primary read that passes the evidence bar,
+//! and `mateIsUnmapped` throws on an unpaired read rather than answering. A single-ended BAM with a
+//! good alignment therefore stops the tool, unless the bar is what stops the read first: mapping
+//! quality under 20 or under 45 aligned bases.
 //!
 //! # The binary form is what a buffer happened to flush
 //!
@@ -24,15 +26,29 @@
 //!     new ReadMetadata.Serializer().write(new Kryo(), new Output(os), readMetadata);
 //! ```
 //!
-//! Nothing flushes that `Output`, so `--write-as-binary` leaves the file holding only the bytes that
-//! overflowed Kryo's 4096-byte buffer, and the stream's tail is lost. [`FlushedOutput`] follows the
-//! buffer, since which bytes survive depends on the size of each write.
+//! Nothing flushes that `Output`, so `--write-as-binary` leaves the file holding only the bytes
+//! that overflowed Kryo's 4096-byte buffer, and the stream's tail is lost. `FlushedOutput` follows
+//! the buffer, since which bytes survive depends on the size of each write.
 //!
 //! # Fractions of nothing
 //!
-//! A library with no testable template divides zero by zero, so its whole CDF is NaN. A binary search
-//! over NaNs goes by `floatToIntBits` and lands at index zero, so the median is 0 and both deviations
-//! are 0, and the histogram line prints a run of zeroes because `Math.round(NaN)` is 0.
+//! A library with no testable template divides zero by zero, so its whole CDF is NaN. A binary
+//! search over NaNs goes by `floatToIntBits` and lands at index zero, so the median is 0 and both
+//! deviations are 0, and the histogram line prints a run of zeroes because `Math.round(NaN)` is 0.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<String>` is "a string or nothing": Java's nullable `String`, with the null checked by
+//!   the compiler. A library name is one, because `readGroupToLibraryMap.get(...)` may be null;
+//! - `Result<T, MetadataFailure>` is "a `T` or the exception the Java would throw", and `?` after
+//!   a call hands that exception straight to the caller, as an uncaught Java throw would;
+//! - `JavaHashMap` is this port's `java.util.HashMap`: it iterates in the order the Java one would,
+//!   and its `check()` returns an error when a bucket ever reached `TREEIFY_THRESHOLD`, whose
+//!   order the port does not reproduce, rather than guessing;
+//! - `x as i32` and `x as f32` are Java's `(int)` and `(float)` casts; `u8`, `u16`, `i32`, `i64`,
+//!   `f32` and `usize` are unsigned byte, unsigned short, `int`, `long`, `float` and an unsigned
+//!   index type Java lacks;
+//! - a function's last expression is its return value.
 
 use gatk_engine::java_hash::{HashOrderError, JavaHashCode, JavaHashMap};
 use gatk_engine::kryo::Output;
@@ -45,9 +61,11 @@ use htsjdk_bam::tag::{Tag, TagValue};
 /// `maxTrackedFragmentLength`, which `CalcMetadataSpark` fixes.
 pub const MAX_TRACKED_FRAGMENT_LENGTH: usize = 10000;
 
-/// `FindBreakpointEvidenceSparkArgumentCollection`'s defaults: `CalcMetadataSpark` builds one and
-/// sets nothing.
-/// `SVReadFilter`'s arguments and the histogram's size, whose defaults are `CalcMetadataSpark`'s.
+/// `SVReadFilter`'s arguments and the histogram's size.
+///
+/// The defaults are `FindBreakpointEvidenceSparkArgumentCollection`'s (`minEvidenceMapQ = 20`,
+/// `minEvidenceMatchLength = 45`, `allowedShortFragmentOverhang = 10`): `CalcMetadataSpark` builds
+/// one with `new` and sets nothing, and passes `10000` as the tracked length.
 #[derive(Debug, Clone, Copy)]
 pub struct MetadataArguments {
     pub min_evidence_mapq: u8,
@@ -67,16 +85,23 @@ impl Default for MetadataArguments {
     }
 }
 
-/// `PartitionBounds.UNMAPPED`.
+/// `PartitionBounds.UNMAPPED`: the contig a partition with no mapped primary read reports, since
+/// `contigNameToID.get(null)` is null.
 pub const UNMAPPED: i32 = i32::MAX;
 
-/// The partitions Disq cut a BAM into, each read as often as a stage asks for it, since holding them
-/// all is what a split exists to avoid.
+/// The partitions Disq cut a BAM into, each read as often as a stage asks for it, since holding
+/// them all is what a split exists to avoid.
 pub trait ReadPartitions {
     fn count(&self) -> usize;
     fn reads(&self, partition: usize) -> Result<Vec<BamRecord>, ReadsError>;
 }
 
+/// `ReadMetadata.MIN_COVERAGE`, the floor the reported coverage is raised to:
+///
+/// ```java
+/// final float cov = (float)nReadBases / nRefBases;
+/// if ( cov >= MIN_COVERAGE ) coverage = cov;
+/// ```
 const MIN_COVERAGE: f32 = 10.0;
 
 /// What stops the constructor.
@@ -86,6 +111,7 @@ pub enum MetadataFailure {
     Unpaired,
     /// `nReadBases / nReads` with no mapped primary read.
     NoReads,
+    /// A `HashMap` whose iteration order the port does not reproduce (`JavaHashMap::check`).
     Order(HashOrderError),
 }
 
@@ -95,6 +121,8 @@ impl From<HashOrderError> for MetadataFailure {
     }
 }
 
+/// `ReadMetadata.PartitionBounds`: one partition's first and last mapped primary positions, as
+/// contig ids, and the reference span it covers (`PartitionStatistics.span`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PartitionBounds {
     pub first_contig: i32,
@@ -104,7 +132,8 @@ pub struct PartitionBounds {
     pub span: i32,
 }
 
-/// `IntHistogram.CDF`.
+/// `IntHistogram.CDF`: the cumulative fraction of observations at or below each bin, and the
+/// total they are fractions of.
 #[derive(Debug, Clone)]
 pub struct Cdf {
     pub fractions: Vec<f32>,
@@ -112,7 +141,15 @@ pub struct Cdf {
 }
 
 impl Cdf {
+    /// `CDF(IntHistogram)`. Each fraction is a `float` division, so the CDF is rounded per bin:
+    ///
+    /// ```java
+    /// sum += intHistogram.getNObservations(observedValue);
+    /// cdfFractions[observedValue] = (float)sum / nCounts;
+    /// ```
     fn new(histogram: &[i64], total: i64) -> Cdf {
+        // The closure below (`|count| { ... }`, Java's lambda) may update `sum` because it is
+        // declared `mut`; Java's lambdas cannot assign a captured local, hence the loop there.
         let mut sum = 0i64;
         let fractions = histogram
             .iter()
@@ -127,8 +164,15 @@ impl Cdf {
         }
     }
 
-    /// `internalPopStat`.
+    /// `internalPopStat`: the first bin whose cumulative fraction reaches `fraction`, so an
+    /// observed value rather than an interpolated one.
+    ///
+    /// ```java
+    /// final int idx = Arrays.binarySearch(cdfFractions, popFraction);
+    /// return idx < 0 ? -idx - 1 : idx;
+    /// ```
     pub fn pop_stat(&self, fraction: f32) -> i32 {
+        // `index if index < 0 =>` is a match arm with a guard: Java's ternary on the result.
         match binary_search_floats(&self.fractions, fraction) {
             index if index < 0 => -index - 1,
             index => index,
@@ -137,6 +181,11 @@ impl Cdf {
 }
 
 /// `Arrays.binarySearch(float[], float)`, whose ties go by `floatToIntBits`.
+///
+/// Written out rather than with Rust's `binary_search`, which needs a total order `f32` does not
+/// have and may return any of several equal matches. The JDK's contract is what is followed: an
+/// exact match returns its index, a miss returns `-(insertion point) - 1`, and a NaN compares
+/// above every number, which is what puts the search over an all-NaN CDF at index zero.
 fn binary_search_floats(values: &[f32], key: f32) -> i32 {
     let mut low = 0i32;
     let mut high = values.len() as i32 - 1;
@@ -162,7 +211,8 @@ fn binary_search_floats(values: &[f32], key: f32) -> i32 {
     -(low + 1)
 }
 
-/// `Float.floatToIntBits`: one NaN.
+/// `Float.floatToIntBits`: every NaN collapses to the one canonical pattern `0x7fc00000`, unlike
+/// `floatToRawIntBits`. `to_bits()` is the raw pattern as unsigned; `as i32` reinterprets it.
 fn float_to_int_bits(value: f32) -> i32 {
     if value.is_nan() {
         0x7fc0_0000
@@ -171,7 +221,14 @@ fn float_to_int_bits(value: f32) -> i32 {
     }
 }
 
-/// `LibraryStatistics`.
+/// `LibraryStatistics`, built from a library's raw counts as its constructor does:
+///
+/// ```java
+/// coverage = (float)nBases / nRefBases;
+/// meanBaseQuality = (float)totalBaseQuality / nBases;
+/// this.nReads = nReads;
+/// readStartFrequency = (float)nReads / nRefBases;
+/// ```
 #[derive(Debug, Clone)]
 pub struct LibraryStatistics {
     pub cdf: Cdf,
@@ -188,12 +245,16 @@ pub struct LibraryStatistics {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LibraryName(pub Option<String>);
 
+/// `HashMap` hashes a null key as zero, and any other as its `String.hashCode`.
 impl JavaHashCode for LibraryName {
     fn java_hash_code(&self) -> i32 {
         self.0.as_ref().map_or(0, JavaHashCode::java_hash_code)
     }
 }
 
+/// `ReadMetadata.LibraryRawStatistics`: `fragment_sizes` is its `IntHistogram`'s `counts`, sized
+/// `maxTrackedValue + 2` so the last bin collects every longer fragment, and `observations` is
+/// that histogram's `totalObservations`.
 #[derive(Clone)]
 struct RawStatistics {
     fragment_sizes: Vec<i64>,
@@ -203,6 +264,8 @@ struct RawStatistics {
     total_base_quality: i64,
 }
 
+/// `ReadMetadata`. The maps are `JavaHashMap`s because their iteration order is what the text and
+/// binary forms are written in.
 #[derive(Debug, Clone)]
 pub struct ReadMetadata {
     pub cross_contig_ignore: Vec<i32>,
@@ -219,12 +282,14 @@ pub struct ReadMetadata {
     pub libraries: JavaHashMap<LibraryName, LibraryStatistics>,
 }
 
-/// `SVUtils.hashMapCapacity`.
+/// `SVUtils.hashMapCapacity`, `return (int)((nElements*4L)/3) + 1;`. The capacity matters because
+/// it fixes the table size, and with it the iteration order of the map.
 fn hash_map_capacity(elements: usize) -> usize {
     (elements as u64 * 4 / 3) as usize + 1
 }
 
-/// `CigarUtils.countAlignedBases`: `CigarOperator.isAlignment`.
+/// `CigarUtils.countAlignedBases`: the summed length of the `M`, `=` and `X` elements, which are
+/// those `CigarOperator.isAlignment` answers true for. `matches!` is a one-line pattern test.
 fn aligned_bases(record: &BamRecord) -> i64 {
     record
         .cigar
@@ -235,6 +300,7 @@ fn aligned_bases(record: &BamRecord) -> i64 {
         .sum()
 }
 
+// The SAM flag bits `GATKRead`'s accessors read.
 const PAIRED: u16 = 0x1;
 const UNMAPPED_FLAG: u16 = 0x4;
 const MATE_UNMAPPED: u16 = 0x8;
@@ -245,7 +311,10 @@ const QC_FAIL: u16 = 0x200;
 const DUPLICATE: u16 = 0x400;
 const SUPPLEMENTARY: u16 = 0x800;
 
-/// `SVReadFilter.isMappedPrimary`.
+/// `SVReadFilter.isMappedPrimary`: `notJunk` (not a duplicate, not QC-failed), `!isUnmapped()`,
+/// and `isPrimaryLine` (neither secondary nor supplementary). `isUnmapped` is the adapter's:
+/// `samRecord.getReadUnmappedFlag()`, a reference name that is null or `*`, or
+/// `samRecord.getAlignmentStart() == SAMRecord.NO_ALIGNMENT_START`.
 fn is_mapped_primary(record: &BamRecord) -> bool {
     record.flags & (DUPLICATE | QC_FAIL | UNMAPPED_FLAG | SECONDARY | SUPPLEMENTARY) == 0
         && record.reference_index >= 0
@@ -253,6 +322,21 @@ fn is_mapped_primary(record: &BamRecord) -> bool {
 }
 
 /// `SVReadFilter.isTemplateLenTestable`, given a mapped primary read.
+///
+/// ```java
+/// return isEvidence(read) && isPrimaryLine(read) &&
+///         !read.mateIsUnmapped() &&
+///         !read.isReverseStrand() &&
+///         read.mateIsReverseStrand() &&
+///         read.getContig().equals(read.getMateContig()) &&
+///         read.getStart() - allowedShortFragmentOverhang <= read.getMateStart();
+/// ```
+///
+/// The read is already mapped and primary, so `isEvidence` reduces to the two thresholds. The
+/// order of the `&&` is the point: `mateIsUnmapped` begins with
+/// `Utils.validate(isPaired(), "Cannot get mate information for an unpaired read");`, so an
+/// unpaired read that passes the thresholds is an exception ([`MetadataFailure::Unpaired`]) and
+/// one that fails them is merely not testable.
 fn is_template_length_testable(
     record: &BamRecord,
     arguments: &MetadataArguments,
@@ -277,7 +361,17 @@ fn is_template_length_testable(
 }
 
 impl LibraryStatistics {
-    /// `getZishScore`, over a size that is not negative.
+    /// `getZishScore`, over a size that is not negative: the distance from the median in units
+    /// of the median deviation on that side.
+    ///
+    /// ```java
+    /// if ( diff == 0 ) return 0.0f;
+    /// if ( diff > 0 ) return 1.0f * diff / positiveMAD;
+    /// return 1.0f * diff / negativeMAD;
+    /// ```
+    ///
+    /// The Java's `if ( fragmentSize < 0 )` `GATKException` is not here: the caller passes a
+    /// size it has already made non-negative.
     pub fn zish_score(&self, fragment_size: i32) -> f32 {
         let difference = fragment_size - self.median;
         if difference == 0 {
@@ -291,7 +385,7 @@ impl LibraryStatistics {
 }
 
 impl ReadMetadata {
-    /// `ignoreCrossContigID`.
+    /// `ignoreCrossContigID`: whether `contig` is in the cross-contig ignore set.
     pub fn ignore_cross_contig(&self, contig: i32) -> bool {
         self.cross_contig_ignore.contains(&contig)
     }
@@ -314,14 +408,20 @@ impl ReadMetadata {
         builder.finish()
     }
 
-    /// `getMedianPartitionSpan`.
+    /// `getMedianPartitionSpan`: the upper median of the sorted spans, `spans[length/2]`. An
+    /// unstable sort is safe because equal `int`s are indistinguishable.
     pub fn median_partition_span(&self) -> i32 {
         let mut spans: Vec<i32> = self.partitions.iter().map(|bounds| bounds.span).collect();
         spans.sort_unstable();
         spans[spans.len() / 2]
     }
 
-    /// `ReadMetadata.writeMetadata`.
+    /// `ReadMetadata.writeMetadata`: the text form.
+    ///
+    /// The floats are printed with `Float.toString`, which is not Rust's float formatting, hence
+    /// `jmath`'s port of it. A null library prints as `NoGroup`. Each histogram bin is written
+    /// back from its fraction rather than from the counts, as
+    /// `Math.round(templateSizeCDF.getFraction(idx) * totalObservations)`.
     pub fn text(&self) -> String {
         use jmath::to_string::float_to_string as float;
         let mut text = format!(
@@ -348,6 +448,8 @@ impl ReadMetadata {
             text.push_str("template size cumulative counts:");
             for fraction in &stats.cdf.fractions {
                 // A float times a long is a float, and `Math.round(float)` is an int.
+                // `Math.round(float)` is floor(x + 1/2) taken exactly; widening to `f64` first
+                // makes the `+ 0.5` exact, and `as i32` saturates and sends NaN to 0 as Java does.
                 let cumulative = fraction * stats.cdf.counts as f32;
                 text.push_str(&format!(
                     "\t{}",
@@ -370,7 +472,11 @@ impl ReadMetadata {
         text
     }
 
-    /// `Serializer.write` through an `Output` nothing flushes.
+    /// `Serializer.write` through an `Output` nothing flushes: `ReadMetadata.serialize`'s fields in
+    /// its order, of which only the bytes Kryo's buffer pushed out reach the file.
+    ///
+    /// The first field is `crossContigIgnoreSet.size()`, written as zero because
+    /// `CalcMetadataSpark`, the only tool that writes this form, passes `Collections.emptySet()`.
     pub fn flushed_binary(&self) -> Vec<u8> {
         let mut output = FlushedOutput::default();
         output.write_int(0); // The cross-contig ignore set, which is empty here.
@@ -419,7 +525,10 @@ impl ReadMetadata {
     }
 }
 
-/// The constructor, whose `mapPartitions` is the caller's loop.
+/// The `ReadMetadata` constructor, whose `mapPartitions` is the caller's loop.
+///
+/// `<'a>` says the builder borrows the header for as long as it lives (the lifetime `'a`), rather
+/// than copying it.
 pub struct MetadataBuilder<'a> {
     header: &'a SamHeader,
     arguments: MetadataArguments,
@@ -433,6 +542,8 @@ pub struct MetadataBuilder<'a> {
 }
 
 impl<'a> MetadataBuilder<'a> {
+    /// The maps the constructor builds from the header, each sized with `hashMapCapacity`: contig
+    /// name to index, and read-group id to `LB` (null when the group has none).
     pub fn new(
         header: &'a SamHeader,
         arguments: MetadataArguments,
@@ -463,6 +574,10 @@ impl<'a> MetadataBuilder<'a> {
     }
 
     /// `PartitionStatistics`, then its way through `collect` and into the accumulator.
+    ///
+    /// The span is the reference length the partition's reads cover, summed contig by contig:
+    /// minus the first start, plus each contig's last end when the contig changes, minus the next
+    /// contig's first start, plus the final end. "End" is `getEnd() + 1` throughout, as the Java's.
     pub fn add_partition(&mut self, records: &[BamRecord]) -> Result<(), MetadataFailure> {
         let arguments = &self.arguments;
         // Its map is a plain `new HashMap<>()`.
@@ -478,6 +593,8 @@ impl<'a> MetadataBuilder<'a> {
             last_end: -1,
             span: 0,
         };
+        // `if let (Some(..), Some(..)) = ..` runs the block only when the list has a first and a
+        // last read, so this is the Java's `if ( !mappedReadItr.hasNext() )` early return inverted.
         if let (Some(first), Some(last)) = (mapped.first(), mapped.last()) {
             let mut span = -first.alignment_start;
             let mut contig = first.reference_index;
@@ -492,12 +609,16 @@ impl<'a> MetadataBuilder<'a> {
                     Some(TagValue::Str(id)) => Some(id.to_string()),
                     _ => None,
                 };
+                // `readGroupToLibraryMap.get(mappedRead.getReadGroup())`: null for no `RG`, for a
+                // group the header lacks, and for a group with no `LB`. `.flatten()` merges the
+                // first two nulls with the third.
                 let library = LibraryName(
                     group
                         .and_then(|id| self.read_group_to_library.get(&id).cloned())
                         .flatten(),
                 );
                 let testable = is_template_length_testable(record, arguments)?;
+                // `computeIfAbsent`: insert a fresh entry once, then update it in place.
                 if !raw.contains_key(&library) {
                     raw.insert(
                         library.clone(),
@@ -513,11 +634,14 @@ impl<'a> MetadataBuilder<'a> {
                 let stats = raw.get_mut(&library).expect("just inserted");
                 stats.reads += 1;
                 stats.bases += aligned_bases(record);
+                // Java sums `byte`s, which are signed, hence `as i8`; its `summedQuals` is an `int`
+                // and this sum is wider, which differs only past 2^31 / 127 bases in one read.
                 stats.total_base_quality += record
                     .base_qualities
                     .iter()
                     .map(|quality| i64::from(*quality as i8))
                     .sum::<i64>();
+                // `addObservation(Math.abs(templateLength))`, the last bin taking all longer ones.
                 if testable {
                     let size = record.inferred_insert_size.unsigned_abs() as usize;
                     let last_bin = stats.fragment_sizes.len() - 1;
@@ -536,6 +660,8 @@ impl<'a> MetadataBuilder<'a> {
             };
         }
         raw.check()?;
+        // The Java pushes `UNMAPPED` per contig id that `contigNameToID` lacks; a mapped read's
+        // contig is always in the header, so only the empty partition reaches it.
         self.partitions.push(partition);
         let reads: i64 = raw.iter().map(|(_, stats)| stats.reads).sum();
         self.max_reads_in_partition = self.max_reads_in_partition.max(reads);
@@ -568,7 +694,19 @@ impl<'a> MetadataBuilder<'a> {
     }
 
     /// The constructor past its `collect`.
+    ///
+    /// ```java
+    /// avgReadLen = (int)(nReadBases / nReads);
+    /// nRefBases = header.getSequenceDictionary().getSequences()
+    ///         .stream().mapToLong(SAMSequenceRecord::getSequenceLength).sum();
+    /// final float cov = (float)nReadBases / nRefBases;
+    /// ```
+    ///
+    /// `nReadBases / nReads` is a `long` division, so no mapped primary read is an
+    /// `ArithmeticException` ([`MetadataFailure::NoReads`]).
     pub fn finish(self) -> Result<ReadMetadata, MetadataFailure> {
+        // Takes the builder apart into its fields (`..` ignores the rest); `self` is consumed,
+        // so a finished builder cannot be used again.
         let MetadataBuilder {
             header,
             cross_contig_ignore,
@@ -592,6 +730,8 @@ impl<'a> MetadataBuilder<'a> {
         let coverage = bases as f32 / ref_bases as f32;
         let total_quality: i64 = raw.iter().map(|(_, stats)| stats.total_base_quality).sum();
 
+        // `new HashMap<>(SVUtils.hashMapCapacity(combinedMaps.size()))`, filled by `forEach` in
+        // the accumulator's iteration order.
         let mut libraries = JavaHashMap::with_capacity(hash_map_capacity(raw.len()));
         for (name, stats) in raw.iter() {
             let cdf = Cdf::new(&stats.fragment_sizes, stats.observations);
@@ -651,6 +791,7 @@ struct FlushedOutput {
 const KRYO_BUFFER: usize = 4096;
 
 impl FlushedOutput {
+    /// `Output.require`: flush everything buffered when `needed` bytes do not fit.
     fn require(&mut self, needed: usize) {
         if KRYO_BUFFER - (self.bytes.len() - self.flushed) < needed {
             self.flushed = self.bytes.len();
@@ -672,6 +813,9 @@ impl FlushedOutput {
         self.write_int(float_to_int_bits(value));
     }
 
+    /// `Output.writeString`: the bytes are this port's Kryo encoding, and only how they cross the
+    /// buffer is modelled here. An ASCII string of more than one character fills whatever room is
+    /// left, flushing when the buffer is full; anything else asks `require(1)` per byte.
     fn write_string(&mut self, value: Option<&str>) {
         let mut encoded = Output::new();
         encoded.write_string(value);

@@ -20,7 +20,42 @@
 //!    read N`, where N is the number of reads counted so far and the name is the read held as the
 //!    first of a pair at that moment.
 //!
-//! Ported from `org.broadinstitute.hellbender.tools.AnalyzeSaturationMutagenesis` (GATK 4.6.2.0).
+//! Ported from `org.broadinstitute.hellbender.tools.AnalyzeSaturationMutagenesis` (GATK 4.7.0.0;
+//! `AnalyzeSaturationMutagenesis.java` is unchanged since 4.6.2.0).
+//!
+//! # The tool's state is static, and this is one `Run`
+//!
+//! The arguments, the amplicon and every counter the reference keeps are static fields of the
+//! tool class. `reference` and `codonTracker` are assigned in `onTraversalStart`, but the counts
+//! are initialised once per JVM and never reset:
+//!
+//! ```java
+//! private static final ReportTypeCounts readCounts = new ReportTypeCounts();
+//! ```
+//!
+//! so two runs in one JVM add up. A command line runs the tool once per JVM, so a [`Run`] that
+//! starts from zero is what it observes. The static helpers that read `minQ`, `minLength` and
+//! the other static arguments are methods here that read [`Settings`] instead.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, AsmError>` is "a `T` or the exception the reference would throw"; [`AsmError`]
+//!   names the Java class. `?` after a call hands that exception straight back to the caller,
+//!   which is Java's unchecked exception propagating out of the call site.
+//! - `Option<T>` is "a `T` or nothing", the compiler-checked form of a reference that may be
+//!   `null`. `Some(x)` holds a value and `None` is the `null`.
+//! - `let Some(x) = y else { ... };` takes the value out of `y`, or runs the block, which must
+//!   leave the function or loop. Java would write `if (y == null) { ... }` and then use `y`.
+//! - `match` is a `switch` the compiler checks for completeness; an arm such as
+//!   `Some(present) if present.ref_index == ref_index =>` matches only when the guard after `if`
+//!   is true, and `_ =>` is `default:`.
+//! - `x as i8` reinterprets a byte as signed, which is what Java's `byte` already is: the read's
+//!   bases and qualities are stored here as unsigned `u8`, so every comparison that Java makes on
+//!   a signed `byte` casts first. `as usize` turns a Java `int` into an index.
+//! - `&mut self` is a method that may change the run; `&self` one that only reads it.
+//! - `|x| ...` is a lambda. A function's last expression, without a `;`, is its return value.
+//! - `wrapping_add` is Java's `int` addition, which wraps on overflow; Rust's `+` is allowed to
+//!   stop the program instead.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -40,14 +75,24 @@ pub const DEFAULT_CODON_TRANSLATION: &str =
 /// `GATKException`, which is what every failure inside the pass is wrapped in.
 pub const GATK_EXCEPTION: &str = "org.broadinstitute.hellbender.exceptions.GATKException";
 
+/// `NO_CALL`: the call an `Snv` carries on the side that has no base, the read's for a
+/// deletion and the reference's for an insertion.
 const NO_CALL: u8 = b'-';
+/// `UPPERCASE_MASK`, `0xDF`: clearing bit 5 turns an ASCII lower-case letter into its upper
+/// case, so a soft-masked `a` in the reference or the read compares equal to `A`.
 const UPPERCASE_MASK: u8 = 0xDF;
+/// `CodonTracker`'s row layout: one count per codon value (`0..64`), then the in-frame indels
+/// (`NFS`) and the frame shifts (`FS`), the last two columns of `.codonCounts`.
 const N_REGULAR_CODONS: usize = 64;
 const FRAME_PRESERVING_INDEL_INDEX: usize = 64;
 const FRAME_SHIFTING_INDEL_INDEX: usize = 65;
 const CODON_COUNT_ROW_SIZE: usize = 66;
+/// `CodonTracker.NO_FRAME_SHIFT_CODON`: what `findFrameShift` answers when the read stays in
+/// frame.
 const NO_FRAME_SHIFT_CODON: i32 = -1;
 
+/// `LABEL_FOR_CODON_VALUE`: a codon value is its three bases in base four over `ACGT`, first
+/// base most significant, so value 14 (`0b00_11_10`) is `ATG`.
 const LABEL_FOR_CODON_VALUE: [&str; 64] = [
     "AAA", "AAC", "AAG", "AAT", "ACA", "ACC", "ACG", "ACT", "AGA", "AGC", "AGG", "AGT", "ATA",
     "ATC", "ATG", "ATT", "CAA", "CAC", "CAG", "CAT", "CCA", "CCC", "CCG", "CCT", "CGA", "CGC",
@@ -57,20 +102,30 @@ const LABEL_FOR_CODON_VALUE: [&str; 64] = [
 ];
 
 /// The tool's own arguments, at the values the command line gave them.
+///
+/// The static `@Argument` fields, one per command-line argument, with the reference's
+/// defaults. The integer types are the Java fields' own (`int`, `long`), so the comparisons
+/// and the overflow behave as the reference's do.
 #[derive(Debug, Clone)]
 pub struct Settings {
     pub min_q: i32,
     pub min_length: i32,
     pub min_flanking_length: i32,
     pub min_mapq: i32,
+    /// `--orf`, kept as text: [`Run::start`] parses it, and most of its refusals quote it whole.
     pub orf: String,
     pub min_variant_observations: i64,
     pub find_large_deletions: bool,
+    /// `--min-alt-length`: the clip a primary alignment needs at one end before
+    /// `--find-large-deletions` looks at its `SA` tag.
     pub min_alt_length: i32,
     /// `--codon-translation`, as the UTF-16 units `charAt` indexes.
     pub codon_translation: Vec<u16>,
     pub paired_mode: bool,
+    /// `--dont-ignore-disjoint-pairs`: combine the mates of a pair that do not overlap, rather
+    /// than count the first of pair alone and reject the other as `ignoredMate`.
     pub dont_ignore_disjoint_pairs: bool,
+    /// `--write-rejected-reads`: keep the rejected reads for the `.rejected.bam`.
     pub write_rejected_reads: bool,
 }
 
@@ -93,7 +148,7 @@ impl Default for Settings {
     }
 }
 
-/// Why a run stopped.
+/// Why a run stopped: the reference exception's class and message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AsmError {
     /// A `UserException`, whose message the handler prints in its banner.
@@ -119,6 +174,9 @@ impl AsmError {
 }
 
 /// An array index past the end, which Java raises as `ArrayIndexOutOfBoundsException`.
+///
+/// The message is the JVM's own wording for that exception. The tool lets that exception
+/// reach the traversal's `catch`, which wraps it (see [`Run::traverse`]).
 fn out_of_bounds(index: i64, length: usize) -> AsmError {
     AsmError::Internal {
         class: "java.lang.ArrayIndexOutOfBoundsException",
@@ -126,6 +184,9 @@ fn out_of_bounds(index: i64, length: usize) -> AsmError {
     }
 }
 
+/// `array[index]` with Java's bounds check: Rust's own indexing would stop the program instead
+/// of raising an exception the traversal can wrap. `&[T]` is a borrowed, read-only view of an
+/// array of any element type `T`; `T: Copy` limits it to plain values such as `u8` and `i32`.
 fn at<T: Copy>(array: &[T], index: i64) -> Result<T, AsmError> {
     if index < 0 || index as usize >= array.len() {
         return Err(out_of_bounds(index, array.len()));
@@ -151,6 +212,8 @@ pub enum ReportType {
     NoFlank,
 }
 
+/// `ReportType.values()`, which is the order `writeReportTypeCounts` walks. The census module's
+/// enum has its own order; this one is the Java declaration's.
 const REPORT_TYPES: [ReportType; 9] = [
     ReportType::Unmapped,
     ReportType::LowQuality,
@@ -164,7 +227,8 @@ const REPORT_TYPES: [ReportType; 9] = [
 ];
 
 impl ReportType {
-    /// The `XX` value a rejected read is tagged with, or none for the types that are not rejections.
+    /// `attributeValue`: the `XX` value a rejected read is tagged with, or none for the types
+    /// that are not rejections.
     pub fn attribute_value(self) -> Option<&'static str> {
         match self {
             ReportType::Unmapped => Some("unmapped"),
@@ -177,6 +241,8 @@ impl ReportType {
         }
     }
 
+    /// `label`: the name the `.readCounts` census writes, which is not the constant's.
+    /// `&'static str` is a string fixed into the program, which is Java's string literal.
     pub fn label(self) -> &'static str {
         match self {
             ReportType::Unmapped => "Unmapped Reads",
@@ -191,6 +257,8 @@ impl ReportType {
         }
     }
 
+    /// `Enum.ordinal()`: the position in `REPORT_TYPES`. Rust has no built-in ordinal for an
+    /// enum used this way, so the table is searched.
     fn ordinal(self) -> usize {
         REPORT_TYPES
             .iter()
@@ -200,6 +268,8 @@ impl ReportType {
 }
 
 /// `ReportTypeCounts`.
+///
+/// `long[] counts = new long[ReportType.values().length]`, indexed by `ordinal()`.
 #[derive(Debug, Clone, Default)]
 struct ReportTypeCounts {
     counts: [i64; 9],
@@ -222,6 +292,9 @@ impl ReportTypeCounts {
 // ================================================================================================
 
 /// `Interval`: 0-based, half-open.
+///
+/// The constructor's refusal of a negative start or a reversed interval is kept, because it is
+/// a `GATKException` the traversal wraps; the fields are `int`, as in the Java.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Interval {
     start: i32,
@@ -248,6 +321,8 @@ impl Interval {
 }
 
 /// `SNV`: one base call that differs from the amplicon. The quality is not part of its identity.
+///
+/// `quality` is a raw `byte`, compared as signed wherever the Java compares it.
 #[derive(Debug, Clone, Copy)]
 struct Snv {
     ref_index: i32,
@@ -276,6 +351,10 @@ impl Snv {
 }
 
 /// `IntervalCounter`: molecules counted by where they start and how far they reach.
+///
+/// A triangular matrix indexed first by start and then by length: row `start` has room for
+/// every length from `0` to `reference_length - start`. `Vec<Vec<i64>>` is Java's `long[][]`,
+/// a list of rows of different lengths.
 struct IntervalCounter {
     counts: Vec<Vec<i64>>,
 }
@@ -308,6 +387,8 @@ impl IntervalCounter {
         Ok(())
     }
 
+    /// `countSpanners`: the molecules whose span contains `[start, end)`, which is every row that
+    /// starts at or before `start` and every length in that row that reaches `end`.
     fn count_spanners(&self, start: i32, end: i32) -> Result<i64, AsmError> {
         if start < 0 || end < start || end as usize > self.counts.len() {
             return Err(AsmError::gatk(format!("illegal span: [{start},{end})")));
@@ -329,6 +410,9 @@ impl IntervalCounter {
 }
 
 /// `Reference`: the amplicon, upper-cased, and what the molecules covered of it.
+///
+/// `coverage` counts molecules per reference base; `coverage_size_histogram` counts molecules
+/// by how many reference bases they covered, which is `.coverageLengthCounts`.
 struct Reference {
     sequence: Vec<u8>,
     coverage: Vec<i64>,
@@ -347,6 +431,8 @@ impl Reference {
         }
     }
 
+    /// `updateCoverage`: one more molecule over each base of each interval, and one more in the
+    /// histogram bucket for the sum of the intervals' sizes, which it also returns.
     fn update_coverage(&mut self, intervals: &[Interval]) -> Result<i32, AsmError> {
         let mut coverage_length = 0;
         for interval in intervals {
@@ -372,6 +458,10 @@ impl Reference {
 ///
 /// `contigs` is how many sequences the reference declares; `bases` are the first one's, already
 /// upper-cased and with IUPAC codes flattened to `N` the way `queryAndPrefetch` returns them.
+///
+/// The reference upper-cases in place (`refSeq[idx] &= UPPERCASE_MASK`) inside the `switch`, and
+/// refuses at the first base that is not then one of `ACGT`. `iter_mut()` walks the copy with a
+/// writable reference to each byte, and `*base` is the byte it points at.
 pub fn amplicon(contigs: usize, bases: &[u8]) -> Result<Vec<u8>, AsmError> {
     if contigs != 1 {
         return Err(AsmError::user(format!(
@@ -394,6 +484,8 @@ pub fn amplicon(contigs: usize, bases: &[u8]) -> Result<Vec<u8>, AsmError> {
 // Codons.
 // ================================================================================================
 
+/// `CodonVariationType`. Only equality is ever asked of it, so its declaration order does not
+/// matter here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CodonVariationType {
     Frameshift,
@@ -402,6 +494,8 @@ enum CodonVariationType {
     Modification,
 }
 
+/// `CodonVariation`: one altered codon. `codon_value` is `-1` for a frame shift or a deletion,
+/// as the Java's factory methods set it.
 #[derive(Debug, Clone, Copy)]
 struct CodonVariation {
     codon_id: i32,
@@ -440,11 +534,21 @@ impl CodonVariation {
     }
 }
 
+/// `CodonTracker.isStop`: `TAA`, `TAG` and `TGA` as codon values.
+///
+/// ```java
+/// final int STOP_OCH = 0x30;
+/// final int STOP_AMB = 0x32;
+/// final int STOP_OPA = 0x38;
+/// ```
 fn is_stop(codon_value: i32) -> bool {
     codon_value == 0x30 || codon_value == 0x32 || codon_value == 0x38
 }
 
 /// `"ACGT".indexOf(base)`.
+///
+/// The `-1` for anything else is kept: OR-ed into a codon value it sets every bit, as the Java's
+/// `| "ACGT".indexOf(...)` does. The callers only reach it with `ACGT`.
 fn base_value(base: u8) -> i32 {
     match base {
         b'A' => 0,
@@ -469,6 +573,10 @@ fn java_split(text: &str, separator: char) -> Vec<&str> {
 }
 
 /// `Integer.parseInt`.
+///
+/// An optional sign and ASCII digits, nothing else; out-of-range values fail as they do in Java.
+/// `strip_prefix` drops one leading `+` or `-` when there is one, and `.ok()` turns Rust's parse
+/// error into `None`, the `NumberFormatException` the callers catch.
 fn parse_int(text: &str) -> Option<i32> {
     if text.is_empty() {
         return None;
@@ -481,6 +589,9 @@ fn parse_int(text: &str) -> Option<i32> {
 }
 
 /// `CodonTracker`: the ORF, its wild-type codons and what was observed at each.
+///
+/// `codon_counts` is `long[nCodons][CODON_COUNT_ROW_SIZE]`, written out as `.codonCounts`;
+/// `ref_codon_values` is the wild-type codon value of each codon of the ORF.
 struct CodonTracker {
     reference: Vec<u8>,
     exons: Vec<Interval>,
@@ -489,6 +600,8 @@ struct CodonTracker {
 }
 
 impl CodonTracker {
+    /// The `CodonTracker` constructor: the ORF parsed and checked, then the reference read into
+    /// codons, in the Java's order, so the first refusal raised is the Java's.
     fn new(orf: &str, reference: &[u8]) -> Result<Self, AsmError> {
         let exons = Self::exons(orf, reference.len() as i32)?;
         let codons = (exons.iter().map(Interval::size).sum::<i32>() / 3) as usize;
@@ -501,6 +614,13 @@ impl CodonTracker {
         })
     }
 
+    /// `getExons`: `--orf`'s one-based inclusive pairs as zero-based half-open intervals.
+    ///
+    /// The checks run per pair in the Java's order (shape, start an integer and at least one, end
+    /// an integer, end not before start, end inside the reference), and the sortedness check runs
+    /// inside the loop after each pair is added, so an unsorted list is refused before a later
+    /// malformed pair is read. Every per-pair message but the 1-based one carries the whole
+    /// `--orf` text.
     fn exons(orf: &str, reference_length: i32) -> Result<Vec<Interval>, AsmError> {
         let mut exons: Vec<Interval> = Vec::new();
         for pair in java_split(orf, ',') {
@@ -543,6 +663,8 @@ impl CodonTracker {
         Ok(exons)
     }
 
+    /// `parseReferenceIntoCodons`: the wild-type codon values, two bits per base, with a stop
+    /// codon anywhere but last refused.
     fn parse_reference_into_codons(
         reference: &[u8],
         exons: &[Interval],
@@ -574,6 +696,7 @@ impl CodonTracker {
         Ok(values)
     }
 
+    /// `isExonic`: whether a reference index lies inside one of the (sorted) exons.
     fn is_exonic(&self, index: i32) -> bool {
         for exon in &self.exons {
             if exon.start > index {
@@ -586,6 +709,8 @@ impl CodonTracker {
         false
     }
 
+    /// `exonicBaseIndex`: how many ORF bases lie before a reference index. For an intronic index
+    /// that is the first base of the next exon, so dividing by three gives the next codon.
     fn exonic_base_index(&self, index: i32) -> i32 {
         let mut count = 0;
         for exon in &self.exons {
@@ -601,6 +726,9 @@ impl CodonTracker {
         count
     }
 
+    /// `findFrameShift`: the codon at which the read's exonic indels leave it out of frame, or
+    /// `NO_FRAME_SHIFT_CODON` when the deletions and insertions come back into frame. `lead_lag`
+    /// counts inserted bases up and deleted bases down, and resets at plus or minus three.
     fn find_frame_shift(&self, snvs: &[Snv]) -> i32 {
         let mut codon_id = NO_FRAME_SHIFT_CODON;
         let mut lead_lag = 0;
@@ -631,10 +759,20 @@ impl CodonTracker {
         codon_id
     }
 
-    /// `encodeSNVsAsCodons`.
+    /// `encodeSNVsAsCodons`: a read's base differences as codon differences.
+    ///
+    /// From each exonic variant, the codon it falls in is rebuilt base by base from the read
+    /// (variant bases) and the amplicon (the rest), two bits at a time, until the read is back in
+    /// frame at a codon boundary; each finished codon that differs from the wild type is one
+    /// variation. Written as the Java is, step for step, because the early returns (a stop codon,
+    /// the last codon, the end of the amplicon) and the `codon_id -= 1` after an insertion decide
+    /// which codons the `.variantCounts` row names.
     fn encode_snvs_as_codons(&self, snvs: &[Snv]) -> Result<Vec<CodonVariation>, AsmError> {
         let mut variations = Vec::new();
         let mut next = 0usize;
+        // `snvs` is walked through one index, `next`, shared by this search and the advance inside
+        // the loop below, as the Java shares one `snvIterator`. The first variant taken must be
+        // exonic and not an insertion before the ORF's first base.
         let mut snv: Option<Snv> = None;
         let orf_start = self.exons[0].start;
         while next < snvs.len() {
@@ -651,6 +789,8 @@ impl CodonTracker {
         let mut frame_shift_codon_id = self.find_frame_shift(snvs);
         let last_exon_end = self.exons[self.exons.len() - 1].end;
         let codon_total = self.ref_codon_values.len() as i32;
+        // `while let Some(current) = snv` loops while `snv` holds a variant: `while ( snv != null
+        // )`.
         while let Some(current) = snv {
             let mut ref_index = current.ref_index;
             if ref_index >= last_exon_end {
@@ -666,6 +806,8 @@ impl CodonTracker {
                     break;
                 }
             }
+            // `ok_or_else` turns `None` (no exon found) into the Java's `GATKException`, and `?`
+            // throws it.
             let mut current_exon = current_exon.ok_or_else(|| {
                 AsmError::gatk("can't find current exon, even though refIndex should be exonic.")
             })?;
@@ -687,6 +829,8 @@ impl CodonTracker {
             loop {
                 let mut codon_value_altered = false;
                 let mut bump_ref_index = false;
+                // The Java's `if` is the other way round; the arm below with the guard is its
+                // `else`, the variant sitting at this reference base.
                 match snv {
                     Some(present) if present.ref_index == ref_index => {
                         if present.variant_call == NO_CALL {
@@ -723,6 +867,8 @@ impl CodonTracker {
                             }
                         }
                     }
+                    // `snv == null || snv.getRefIndex() != refIndex`: no variant at this base, so
+                    // the wild-type base goes into the codon.
                     _ => {
                         let base = at(&self.reference, ref_index as i64)?;
                         codon_value = (codon_value << 2) | base_value(base);
@@ -732,6 +878,8 @@ impl CodonTracker {
                 }
                 if bump_ref_index {
                     ref_index += 1;
+                    // `exon_cursor` is where the exon search above stopped, so this is the Java's
+                    // `exonIterator.next()` continuing the same iterator.
                     if ref_index == current_exon.end && exon_cursor < self.exons.len() {
                         current_exon = self.exons[exon_cursor];
                         exon_cursor += 1;
@@ -766,6 +914,9 @@ impl CodonTracker {
                         codon_value = 0;
                     }
                 }
+                // The Java's `do { ... } while ( leadLag != 0 || codonPhase != 0 );`: Rust has no
+                // do-while, so the loop runs at least once and the condition is tested here, at its
+                // end.
                 if lead_lag == 0 && codon_phase == 0 {
                     break;
                 }
@@ -774,6 +925,12 @@ impl CodonTracker {
         Ok(variations)
     }
 
+    /// `reportVariantCodonCounts`: one count per codon the molecule fully covers, the observed
+    /// value where a variation lies and the wild type elsewhere.
+    ///
+    /// `starting` rounds the first covered ORF base up to a codon boundary and `ending` rounds the
+    /// end down, so a partly covered codon is not counted. A codon with any in-frame indel counts
+    /// once in `NFS`, however many indels it holds.
     fn report_variant_codon_counts(
         &mut self,
         coverage: Interval,
@@ -782,6 +939,9 @@ impl CodonTracker {
         let starting = (self.exonic_base_index(coverage.start) + 2) / 3;
         let ending = self.exonic_base_index(coverage.end) / 3;
         let mut cursor = 0usize;
+        // The Java's `hasNext() ? next() : null` over the variations, as a lambda that advances
+        // `cursor`. It takes the cursor as `&mut usize`, a writable borrow of the local, so the
+        // loop below can still read `cursor` between calls.
         let next = |cursor: &mut usize| {
             let found = variations.get(*cursor).copied();
             if found.is_some() {
@@ -819,6 +979,9 @@ impl CodonTracker {
                             }
                         }
                         current = next(&mut cursor);
+                        // `is_none_or` is true for `None` or for a value the test accepts: the
+                        // Java's `while ( codonVariation != null && codonVariation.getCodonId() ==
+                        // codonId )`, negated.
                         if current.is_none_or(|c| c.codon_id != codon_id) {
                             break;
                         }
@@ -837,6 +1000,7 @@ impl CodonTracker {
         Ok(())
     }
 
+    /// `reportWildCodonCounts`: the wild-type value of every codon the molecule fully covers.
     fn report_wild_codon_counts(&mut self, coverage: Interval) -> Result<(), AsmError> {
         let starting = (self.exonic_base_index(coverage.start) + 2) / 3;
         let ending = self.exonic_base_index(coverage.end) / 3;
@@ -849,6 +1013,10 @@ impl CodonTracker {
 }
 
 /// `CodonVariationGroup`: codon variations that one HGVS term describes.
+///
+/// `'a` is a lifetime: the group borrows the wild-type codon values and the translation from
+/// the tracker and the settings rather than copying them, and the compiler checks that it does
+/// not outlive them. `alt_calls` is the Java's `StringBuilder` of amino-acid `char`s.
 struct CodonVariationGroup<'a> {
     ref_codon_values: &'a [i32],
     translation: &'a [u16],
@@ -893,10 +1061,14 @@ impl<'a> CodonVariationGroup<'a> {
         group
     }
 
+    /// `isEmpty`: a group begun by a frame shift that has gathered nothing but synonymous codons.
     fn is_empty(&self) -> bool {
         self.sub_count + self.ins_count + self.del_count == 0
     }
 
+    /// `addVariation`: whether the variation joins this group. A skipped codon ends a group that is
+    /// not a frame shift; a frame shift always starts a new one; a synonymous modification ends a
+    /// non-frame-shift group and is otherwise only appended once the group holds something.
     fn add(&mut self, variation: CodonVariation) -> bool {
         let codon_id = variation.codon_id;
         if codon_id > self.ending_codon + 1 && !self.is_frame_shift {
@@ -940,6 +1112,10 @@ impl<'a> CodonVariationGroup<'a> {
         utf16(&[self.translation[self.ref_codon_values[codon as usize] as usize]])
     }
 
+    /// `asHGVSString`: the group in HGVS protein nomenclature.
+    ///
+    /// It takes `&mut self` because, like the Java, it moves `starting_codon` back one for a pure
+    /// insertion, and the moved value is what the rest of the string reads.
     fn hgvs(&mut self) -> String {
         let alts = utf16(&self.alt_calls);
         let mut text = String::new();
@@ -980,6 +1156,9 @@ impl<'a> CodonVariationGroup<'a> {
     }
 }
 
+/// A Java `char` sequence back to text. The translation string is kept as UTF-16 units so that
+/// `charAt` indexes the same unit the Java does; `from_utf16_lossy` replaces a lone surrogate
+/// with U+FFFD rather than failing.
 fn utf16(units: &[u16]) -> String {
     String::from_utf16_lossy(units)
 }
@@ -992,6 +1171,9 @@ fn utf16(units: &[u16]) -> String {
 ///
 /// `snvs` is `None` for a pair whose mates disagree over their overlap, which is the reference's
 /// null list.
+///
+/// `#[derive(Default)]` gives an empty coverage and `snvs: None`; every report the run builds
+/// sets both fields itself.
 #[derive(Debug, Clone, Default)]
 struct ReadReport {
     coverage: Vec<Interval>,
@@ -999,6 +1181,7 @@ struct ReadReport {
 }
 
 impl ReadReport {
+    /// `ReadReport.NULL_REPORT`: no coverage and an empty, not null, variant list.
     fn null() -> Self {
         ReadReport {
             coverage: Vec::new(),
@@ -1014,12 +1197,18 @@ impl ReadReport {
         self.coverage[self.coverage.len() - 1].end
     }
 
+    /// `getVariations()`, with the null list read as empty: `combineVariations` asks only for
+    /// emptiness and iterates, and both see an empty list the same way.
     fn variations(&self) -> &[Snv] {
         self.snvs.as_deref().unwrap_or(&[])
     }
 }
 
 /// `CigarUtils.countClippedBases(cigar, tail)`: soft and hard clips at one end.
+///
+/// The Java counts soft clips and hard clips in two passes from the same end, each stopping at
+/// the first element that is not a clip; one pass summing both is the same total and raises the
+/// same `IllegalArgumentException`s.
 fn count_clipped_bases(cigar: &Cigar, left: bool) -> Result<i32, AsmError> {
     let is_clip = |op: Op| matches!(op, Op::S | Op::H);
     let size = cigar.elements.len();
@@ -1046,6 +1235,8 @@ fn count_clipped_bases(cigar: &Cigar, left: bool) -> Result<i32, AsmError> {
     })
 }
 
+/// `GATKRead.getAttributeAsString`: the tag's value as text, or `None` (the Java's `null`) when
+/// it is absent. Only the `SA` tag is asked for, and it is a string.
 fn string_tag(record: &BamRecord, name: &[u8; 2]) -> Option<String> {
     match record.tags.get(Tag::new(name))? {
         TagValue::Str(text) => Some(text.clone()),
@@ -1056,6 +1247,10 @@ fn string_tag(record: &BamRecord, name: &[u8; 2]) -> Option<String> {
     }
 }
 
+/// `ReadReport.replaceCigar`: `first` minus its last element (the clip), a `D` of
+/// `deletion_length`, then `second` minus its first element, with the match after it shortened
+/// by `overlap_length` when the two alignments overlap on the read. `&first[..n]` is a borrowed
+/// slice of the first `n` elements, Java's `subList(0, n)`.
 fn replace_cigar(
     first: &[CigarElement],
     overlap_length: i32,
@@ -1081,6 +1276,12 @@ fn replace_cigar(
 }
 
 /// The state of one run: the arguments, the amplicon, the counts, and the rejected reads.
+///
+/// `variation_counts` is the reference's `HopscotchMap<SNVCollectionCount, ...>`: one entry per
+/// distinct list of variants, with its count and the sum of its coverage (`int`, so it wraps
+/// as the Java's does). The hash map's own order is never observable, because
+/// `getVariationEntries` sorts before writing, so a list in first-seen order with an index by
+/// key is enough. `rejected` is `None` unless `--write-rejected-reads` was given.
 pub struct Run {
     settings: Settings,
     reference: Reference,
@@ -1099,6 +1300,8 @@ pub struct Run {
 }
 
 /// Which census a processed report is counted in.
+/// Which of `unpairedCounts` and `disjointPairCounts` `processReport` is handed; the
+/// overlapping census is only ever bumped by `updateCountsForPair` directly.
 #[derive(Clone, Copy)]
 enum Census {
     Unpaired,
@@ -1143,6 +1346,12 @@ impl Run {
         })
     }
 
+    /// `read.setAttribute("XX", reportType.attributeValue)` and `rejectedReadsBAMWriter.addRead`,
+    /// when there is a writer. A `null` value removes the tag, as `setAttribute` does.
+    ///
+    /// The address of the record (`read as *const BamRecord as usize`, the pointer as a number) is
+    /// kept with the copy so that `Run::settle_step` can tell two writes of the same Java object
+    /// apart from two different reads. It is only compared, never followed.
     fn write_rejected(&mut self, read: &mut BamRecord, kind: ReportType) {
         if let Some(rejected) = &mut self.rejected {
             match kind.attribute_value() {
@@ -1183,6 +1392,7 @@ impl Run {
         }
     }
 
+    /// `rejectRead`: counted in the read census, written when asked, and an empty report back.
     fn reject_read(&mut self, read: &mut BamRecord, kind: ReportType) -> ReadReport {
         self.read_counts.bump(kind);
         self.write_rejected(read, kind);
@@ -1196,6 +1406,8 @@ impl Run {
         let mut start = 0usize;
         let mut high = 0;
         while start < qualities.len() {
+            // `quals[readStart] < minQ` compares a signed `byte`: `as i8` reinterprets the stored
+            // byte, then `as i32` widens it to `int`, so a quality above 127 is low.
             if (qualities[start] as i8 as i32) < min_q {
                 high = 0;
             } else {
@@ -1233,6 +1445,8 @@ impl Run {
             return Ok(trim);
         }
         if read::is_proper_pair(read) {
+            // `Math.abs(read.getFragmentLength())`: `wrapping_abs` keeps Java's answer for `int`'s
+            // minimum, which is the minimum itself, still negative.
             let fragment = read::fragment_length(read).wrapping_abs();
             if read::is_reverse_strand(read) {
                 let minimum_start = read::length(read) as i32 - fragment;
@@ -1257,6 +1471,10 @@ impl Run {
     ///
     /// The READ is changed, not a copy of its cigar, so a rejected read is written with the
     /// alignment this made.
+    ///
+    /// Each `continue` is one of the Java's: a malformed `SA` entry, a mapq that is low or not an
+    /// integer, the other strand, a cigar that does not parse or has fewer than two elements, read
+    /// intervals that gap or overlap by more than two bases, or a start that is not an integer.
     fn find_large_deletions(&self, read: &mut BamRecord) -> Result<(), AsmError> {
         let cigar = read.cigar.clone();
         if cigar.elements.len() < 2 {
@@ -1330,6 +1548,13 @@ impl Run {
     }
 
     /// The `ReadReport(GATKRead, Interval, byte[])` constructor.
+    ///
+    /// One walk along the cigar from the alignment start, stepping the read for every operator but
+    /// `D` and the reference for every one but `I`, recording a difference at each base inside the
+    /// trim and on the reference. A leading soft clip is treated as a match placed before the
+    /// alignment start (`refIndex -= cigarElementCount; // this can go negative and that's ok.`),
+    /// so a read starting just before the amplicon still reports its first bases. Any other
+    /// operator (`N`, `H`, `P`, `=`, `X`) reached inside the trim is a `GATKException`.
     fn read_report(&self, read: &mut BamRecord, trim: Interval) -> Result<ReadReport, AsmError> {
         if self.settings.find_large_deletions {
             self.find_large_deletions(read)?;
@@ -1433,6 +1658,9 @@ impl Run {
     }
 
     /// `getReadReport`.
+    ///
+    /// Every read's length counts toward `Total base calls`, rejected or not, and a read with
+    /// a long enough trim that still covers no reference base is LOW_QUALITY too.
     fn get_read_report(&mut self, read: &mut BamRecord) -> Result<ReadReport, AsmError> {
         self.total_base_calls += read::length(read) as i64;
         if read::is_unmapped(read)
@@ -1455,6 +1683,8 @@ impl Run {
         Ok(report)
     }
 
+    /// `hasCleanFlanks`: `minFlankingLength` covered bases before the first variant and after the
+    /// last, clamped to the amplicon's ends, so a variant near an end needs only what exists.
     fn has_clean_flanks(&self, report: &ReadReport, snvs: &[Snv]) -> bool {
         let flank = self.settings.min_flanking_length;
         let left = snvs.is_empty() || 0.max(snvs[0].ref_index - flank) >= report.first_ref_index();
@@ -1466,6 +1696,10 @@ impl Run {
     }
 
     /// `ReadReport.updateCounts`.
+    ///
+    /// The tests run in the Java's order, and only a report that passes all of them changes the
+    /// coverage and the codon counts. `snv.quality as i8` is the Java's signed `byte` against
+    /// `minQ`, so a quality above 127 fails as negative.
     fn update_counts(&mut self, report: &ReadReport) -> Result<ReportType, AsmError> {
         if report.coverage.is_empty() {
             return Ok(ReportType::LowQuality);
@@ -1497,6 +1731,8 @@ impl Run {
             Some(&index) => {
                 let entry = &mut self.variation_counts[index];
                 entry.1 += 1;
+                // `bumpCount`: one more observation, and `totalRefCoverage += refCoverage` on an
+                // `int`.
                 entry.2 = entry.2.wrapping_add(coverage);
             }
             None => {
@@ -1508,6 +1744,7 @@ impl Run {
         Ok(ReportType::CalledVariant)
     }
 
+    /// The counts a `Census` names, borrowed writably so the caller can bump them.
     fn census(&mut self, census: Census) -> &mut ReportTypeCounts {
         match census {
             Census::Unpaired => &mut self.unpaired_counts,
@@ -1515,7 +1752,8 @@ impl Run {
         }
     }
 
-    /// `processReport`.
+    /// `processReport`: counted in the given census, and written to the rejected reads when
+    /// the type is a rejection.
     fn process_report(
         &mut self,
         read: &mut BamRecord,
@@ -1531,6 +1769,12 @@ impl Run {
     }
 
     /// `updateCountsForPair`.
+    ///
+    /// A mate with no coverage leaves the other to be counted alone, in the disjoint census.
+    /// Mates whose spans overlap or are adjacent (`overlapStart <= overlapEnd`, the end being
+    /// exclusive) are combined and counted once in the overlapping census; disjoint mates are
+    /// combined only under `--dont-ignore-disjoint-pairs`, and then nothing is written to the
+    /// rejected reads whatever the outcome, because that branch of the Java writes nothing.
     fn update_counts_for_pair(
         &mut self,
         read1: &mut BamRecord,
@@ -1574,6 +1818,8 @@ impl Run {
         Ok(())
     }
 
+    /// `processReport(read, getReadReport(read), unpairedCounts)`, which is also `processRead1`
+    /// apart from its `Read ... has no mate.` warning on the log.
     fn process_alone(&mut self, read: &mut BamRecord) -> Result<(), AsmError> {
         let report = self.get_read_report(read)?;
         self.process_report(read, &report, Census::Unpaired)
@@ -1586,6 +1832,8 @@ impl Run {
     pub fn traverse(&mut self, reads: Vec<BamRecord>) -> Result<(), AsmError> {
         let mut held_name = String::new();
         let result = self.traverse_inner(reads, &mut held_name);
+        // The Java passes the cause to the `GATKException`; what reaches the user is the message,
+        // so the cause is dropped here. `map_err` rewrites the error and passes a success through.
         result.map_err(|_cause| {
             AsmError::gatk(format!(
                 "Caught unexpected exception on read {}: {}",
@@ -1595,6 +1843,9 @@ impl Run {
         })
     }
 
+    /// The body of `traverse`'s `try`. `held_name` is written before every step so that the
+    /// wrapper sees the name `read1` holds when the failure happens; `filter` is the
+    /// `PRIMARY_LINE` read filter.
     fn traverse_inner(
         &mut self,
         reads: Vec<BamRecord>,
@@ -1669,10 +1920,19 @@ impl Run {
         ])
     }
 
+    /// `codonTranslation.charAt(value)`, as a one-character string.
     fn translation(&self, value: i32) -> String {
         utf16(&[self.settings.codon_translation[value as usize]])
     }
 
+    /// `getVariationEntries` and `writeVariationCounts`: the variant lists seen at least
+    /// `--min-variant-obs` times, sorted, one row each.
+    ///
+    /// The sort is `SNVCollectionCount.compareTo`: variant by variant on reference index, then
+    /// reference call, then variant call (the calls as signed `byte`s), with a list that is a
+    /// prefix of another first. A `Vec` of tuples compares exactly that way. The mean coverage is
+    /// `float` arithmetic (`1.f * totalRefCoverage / count`), widened to `double` only for
+    /// `DecimalFormat("0.0")`, which is why it is computed in `f32`.
     fn variation_counts_report(&self) -> Result<String, AsmError> {
         let mut entries: Vec<&(Vec<Snv>, i64, i32)> = self
             .variation_counts
@@ -1716,6 +1976,7 @@ impl Run {
         Ok(out)
     }
 
+    /// `isSynonymous`: a modification whose amino acid is the wild type's.
     fn is_synonymous(&self, variation: &CodonVariation) -> bool {
         let translation = &self.settings.codon_translation;
         variation.kind == CodonVariationType::Modification
@@ -1724,6 +1985,9 @@ impl Run {
                     [self.codon_tracker.ref_codon_values[variation.codon_id as usize] as usize]
     }
 
+    /// `describeVariantsAsCodons`: the row's codon columns. The count, then each variation as DNA,
+    /// then as an amino acid (`S` synonymous, `N` nonsense, `M` missense), then the HGVS groups
+    /// separated by `;`. A group still open at the end is written only if it holds something.
     fn describe_variants_as_codons(&self, out: &mut String, snvs: &[Snv]) -> Result<(), AsmError> {
         let variations = self.codon_tracker.encode_snvs_as_codons(snvs)?;
         if variations.is_empty() {
@@ -1832,6 +2096,7 @@ impl Run {
         Ok(())
     }
 
+    /// `writeRefCoverage`.
     fn ref_coverage_report(&self) -> String {
         let mut out = String::from("RefPos\tCoverage\n");
         for (index, coverage) in self.reference.coverage.iter().enumerate() {
@@ -1840,6 +2105,7 @@ impl Run {
         out
     }
 
+    /// `writeCodonCounts`: each data row ends with a tab before its total, as the header does.
     fn codon_counts_report(&self) -> String {
         let mut out = String::new();
         for label in LABEL_FOR_CODON_VALUE {
@@ -1860,6 +2126,8 @@ impl Run {
         out
     }
 
+    /// `writeCodonFractions`: `String.format("%6.2f", 100. * count / total)` per cell, so a codon
+    /// no molecule covered divides zero by zero.
     fn codon_fractions_report(&self) -> String {
         let mut out = String::from("Codon");
         for label in LABEL_FOR_CODON_VALUE {
@@ -1890,6 +2158,8 @@ impl Run {
         counts
     }
 
+    /// `writeAACounts`: the header comes from the first codon's keys; every row has the same keys,
+    /// since they are the translation string's distinct characters.
     fn aa_counts_report(&self) -> String {
         let mut out = String::new();
         for (codon_id, row) in self.codon_tracker.codon_counts.iter().enumerate() {
@@ -1906,6 +2176,8 @@ impl Run {
         out
     }
 
+    /// `writeAAFractions`: the fractions are over the whole row's total, `NFS` and `FS` included,
+    /// so a row's amino-acid fractions need not add to 100.
     fn aa_fractions_report(&self) -> String {
         let mut out = String::new();
         for (codon_id, row) in self.codon_tracker.codon_counts.iter().enumerate() {
@@ -1928,6 +2200,9 @@ impl Run {
         out
     }
 
+    /// `writeReadCounts`: the census, with each level's percentage over a different denominator.
+    /// The overlapping line counts reads, `2 * overlappingPairCounts.totalCounts()`, while the rows
+    /// under it count pairs.
     fn read_counts_report(&self) -> String {
         let percent = |part: i64, whole: i64| decimal_format(100.0 * part as f64 / whole as f64, 3);
         let mut out = String::new();
@@ -1983,6 +2258,8 @@ impl Run {
         out
     }
 
+    /// `writeCoverageSizeHistogram`: the empty tail trimmed (`peel off the empty tail -- but always
+    /// print the 1st 100 entries`), and bucket zero never written.
     fn coverage_length_report(&self) -> String {
         let histogram = &self.reference.coverage_size_histogram;
         let mut length = histogram.len();
@@ -2000,6 +2277,7 @@ impl Run {
     }
 }
 
+/// `writeReportTypeCounts`: the non-zero types, in declaration order.
 fn type_counts(out: &mut String, counts: &ReportTypeCounts) {
     let total = counts.total();
     for kind in REPORT_TYPES {
@@ -2022,6 +2300,9 @@ fn combine(report1: &ReadReport, report2: &ReadReport) -> Result<ReadReport, Asm
     })
 }
 
+/// `combineCoverage`: the two coverage lists merged by start, with intervals that touch or
+/// overlap joined (`curInterval.getEnd() < testInterval.getStart()` is what keeps two apart).
+/// On equal starts the second report's interval is taken first, as the Java's `<` does.
 fn combine_coverage(report1: &ReadReport, report2: &ReadReport) -> Result<Vec<Interval>, AsmError> {
     let first = &report1.coverage;
     let second = &report2.coverage;
@@ -2063,6 +2344,13 @@ fn combine_coverage(report1: &ReadReport, report2: &ReadReport) -> Result<Vec<In
     Ok(combined)
 }
 
+/// `combineVariations`: the two variant lists merged by reference index, or `None` (the Java's
+/// `null`, read later as INCONSISTENT) when they disagree inside the overlap.
+///
+/// A variant inside `[overlapStart, overlapEnd)` that the other mate lacks is a disagreement,
+/// and so is a different variant at the same index. Where both agree the higher-quality copy
+/// is kept, the second on a tie. When either list is empty the other is returned unchecked, so
+/// a mate with no variants never makes a pair inconsistent.
 fn combine_variations(report1: &ReadReport, report2: &ReadReport) -> Option<Vec<Snv>> {
     if report1.variations().is_empty() {
         return report2.snvs.clone();
@@ -2135,6 +2423,9 @@ pub fn decimal_format(value: f64, places: usize) -> String {
 }
 
 /// `String.format("%6.2f", value)`.
+///
+/// The scale-2 rounding is [`format_decimals`]'s, and `{:>6}` right-aligns it to width 6 as the
+/// `6` in `%6.2f` does.
 fn percent_field(value: f64) -> String {
     format!("{:>6}", format_decimals(value, 2))
 }

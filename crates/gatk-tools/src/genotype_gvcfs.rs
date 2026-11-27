@@ -31,6 +31,19 @@
 //! `QD` past 35 is replaced by a Gaussian draw from `Utils.getRandomGenerator()`, one stream per
 //! run. [`Engine::call_region`] therefore takes the generator from its caller, so that the value a
 //! site gets depends on how many draws the sites before it took, as it does in the reference.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Vec<(String, Value)>` is an attribute map kept as a list of pairs, so insertion order is
+//!   the order written, as Java's `LinkedHashMap` keeps it; `put` below is its `put`;
+//! - `Option<T>` is a value or nothing, `Result<T, EngineError>` a value or a Java exception by
+//!   class and message, and `?` after a call hands that error to the caller;
+//! - `let Some(x) = y else { return ...; };` unwraps or takes the early exit;
+//! - `|x| ...` is a closure (a Java lambda); `&dyn Fn(..)` is a borrowed function-typed argument,
+//!   Java's functional interface parameter, and `FnMut` one that may change its own state;
+//! - `matches!(x, A | B)` is true when `x` is one of the listed patterns;
+//! - `Engine<'a>` borrows data (the merger's inputs) for the lifetime `'a`; it changes nothing
+//!   at run time.
 
 use gatk_annotation::catalogue::{Entry, Kind};
 use gatk_annotation::info_annotation::{AnnotationValue, InfoFieldAnnotation};
@@ -75,6 +88,7 @@ pub struct AnnotationEngine {
     pub founder_ids: Vec<String>,
 }
 
+/// The annotation crate's value type mapped to the VCF writer's; an `Int` widens to `i64`.
 pub(crate) fn value_of(annotation: AnnotationValue) -> Value {
     match annotation {
         AnnotationValue::Int(value) => Value::Int(value as i64),
@@ -94,6 +108,7 @@ pub(crate) fn put(attributes: &mut Vec<(String, Value)>, key: &str, value: Value
     }
 }
 
+/// `vc.getAttribute(key)`: the first attribute with that key, or `None`.
 pub(crate) fn attribute<'a>(vc: &'a VariantContext, key: &str) -> Option<&'a Value> {
     vc.attributes
         .iter()
@@ -213,6 +228,10 @@ impl AnnotationEngine {
 }
 
 /// `annotationShouldBeSkippedForHomRefSites`: the rank sums and the two MQs.
+///
+/// The reference tests `instanceof RankSumTest`, `instanceof RMSMappingQuality` and
+/// `instanceof AS_RMSMappingQuality`; `RankSumTest` is matched here by the names of the subclasses
+/// the catalogue carries.
 fn annotation_should_be_skipped_for_hom_ref_sites(entry: &Entry) -> bool {
     matches!(
         entry.name,
@@ -489,7 +508,8 @@ pub struct Engine<'a> {
     pub notes: MergeNotes,
 }
 
-/// `getVariantSubsetToProcess`: with non-variants included, a record starting at the locus wins.
+/// `GenotypeGVCFs.getVariantSubsetToProcess`: with non-variants included, a record starting at
+/// the locus wins over the ones only spanning it.
 fn variant_subset_to_process(
     start: i64,
     variants: &[VariantContext],
@@ -531,6 +551,9 @@ pub fn is_properly_polymorphic(vc: &VariantContext) -> bool {
 }
 
 /// `excludeFromAnnotations`: a hom-ref or no-call with no depth and a GQ of 0.
+///
+/// `is_none_or` is true for `None` or a value passing the test: `!oldGT.hasDP() ||
+/// oldGT.getDP() == 0`.
 fn exclude_from_annotations(genotype: &Genotype) -> bool {
     (crate::reference_confidence_merger::is_hom_ref(genotype)
         || crate::reference_confidence_merger::is_no_call(genotype))
@@ -567,7 +590,13 @@ fn int_of(value: &Value) -> Result<i32, EngineError> {
     }
 }
 
-/// `cleanupGenotypeAnnotations(vc, createRefGTs, keepSB)`.
+/// `GenotypeGVCFsEngine.cleanupGenotypeAnnotations(vc, createRefGTs, keepSB)`.
+///
+/// Per genotype: `MIN_DP` replaces `DP` and is removed; `SB` goes unless kept; a hom-var's `PGT`
+/// becomes `1|1`; a variant site's genotype with depth but no AD gets `AD = [depth, 0, ...]`.
+/// With `createRefGTs` (the monomorphic, forced branch) a genotype with depth and a GQ is called
+/// `0/0` when the GQ is positive, a no-call otherwise, and its GQ moves to `RGQ`; one without is
+/// a no-call with no GQ or DP. Either way its PLs go: "the PLs are technically no longer usable".
 pub fn cleanup_genotype_annotations(
     vc: &VariantContext,
     create_ref_gts: bool,
@@ -608,6 +637,7 @@ pub fn cleanup_genotype_annotations(
                     built.alleles = vec![Allele::no_call(); old.ploidy()];
                 }
                 built.gq = None;
+                // `attrs.put(GATKVCFConstants.REFERENCE_GENOTYPE_QUALITY, oldGT.getGQ())`.
                 attrs.push((
                     REFERENCE_GENOTYPE_QUALITY.to_string(),
                     Value::Int(gq as i64),
@@ -626,6 +656,11 @@ pub fn cleanup_genotype_annotations(
 }
 
 /// `ReferenceConfidenceVariantContextMerger.generateAnnotationValueVector`.
+///
+/// `indices` maps each output allele to its index in the original record. Number=A drops the
+/// reference and reads `values[index - 1]`; Number=R reads `values[index]`; any other count is
+/// kept whole. `checked_sub` and `values.get` yield `None` instead of failing on an index out of
+/// range (the `usize::MAX` an allele missing from the original gets), so that entry is skipped.
 fn annotation_value_vector(number: &Cardinality, values: &[Value], indices: &[usize]) -> Value {
     match number {
         Cardinality::A => Value::List(
@@ -647,6 +682,10 @@ fn annotation_value_vector(number: &Cardinality, values: &[Value], indices: &[us
 
 impl Engine<'_> {
     /// `callRegion(loc, variants, ref, ...)`: merge, then re-genotype.
+    ///
+    /// The merger is asked to remove `<NON_REF>` (the `true` argument). The `.expect` states that
+    /// a merge given a reference base always returns a record; it would panic, not return an
+    /// error, if that stopped holding.
     pub fn call_region(
         &mut self,
         contig: &str,
@@ -676,7 +715,8 @@ impl Engine<'_> {
         self.regenotype(&merged, force_output, random)
     }
 
-    /// `subsetAlleleSpecificFormatFields`.
+    /// `subsetAlleleSpecificFormatFields`: every FORMAT field whose header count is not 1 is cut
+    /// to the alleles kept; a field the header does not declare is left alone.
     fn subset_allele_specific_format_fields(
         &self,
         genotypes: &[Genotype],
@@ -713,6 +753,16 @@ impl Engine<'_> {
     }
 
     /// `regenotypeVC(originalVC, ref, features, includeNonVariants)`.
+    ///
+    /// Two stages, as in the reference. First a variant with depth is re-genotyped (by the
+    /// forced-output engine when `include_non_variants`) and kept only when properly polymorphic
+    /// or forced; a record that is not a variant with depth passes through unchanged. Then a
+    /// result for which `isPolymorphicInSamples()` holds and `DP` is positive is annotated with
+    /// every annotation, while the forced monomorphic branch builds the `0/0` genotypes first and
+    /// annotates with `annotationShouldBeSkippedForHomRefSites`.
+    ///
+    /// `include_non_variants` here is the caller's `force_output`, which also covers
+    /// `--force-output-intervals`.
     fn regenotype(
         &mut self,
         original: &VariantContext,
@@ -734,6 +784,7 @@ impl Engine<'_> {
                 let with_annotations =
                     self.annotations
                         .finalize_annotations(&with_genotyping, original, random)?;
+                // `relevantIndices`: each kept allele's index in the original record.
                 let relevant: Vec<usize> = regenotyped
                     .alleles
                     .iter()
@@ -844,6 +895,10 @@ pub fn walk(
     random: &mut JavaRandom,
 ) -> Result<Vec<VariantContext>, WalkFailure> {
     let mut out = Vec::new();
+    // One site: call it, and keep it when output is forced or it is not a lone `*`
+    // (`forceOutput || !GATKVariantContextUtils.isSpanningDeletionOnly(regenotypedVC)`). An
+    // `IllegalStateException` is tagged with the first overlapping record, which is what the
+    // walker's wrapper names.
     let mut emit = |engine: &mut Engine<'_>,
                     contig: &str,
                     start: i64,

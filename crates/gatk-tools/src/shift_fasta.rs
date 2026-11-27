@@ -1,4 +1,5 @@
-//! Ported from `org.broadinstitute.hellbender.tools.walkers.fasta.ShiftFasta` (GATK 4.6.2.0).
+//! Ported from `org.broadinstitute.hellbender.tools.walkers.fasta.ShiftFasta` (GATK 4.7.0.0;
+//! `ShiftFasta.java` is unchanged since 4.6.2.0).
 //!
 //! Rotates every contig of a reference and writes four files: the shifted FASTA (with its index and
 //! dictionary, from [`htsjdk_bam::fasta_writer`]), a chain file that shifts coordinates back, and a
@@ -9,10 +10,11 @@
 //!
 //! # A contig that is not shifted is dropped
 //!
-//! `shiftContig` does its work only when `0 < offset < contigLength`. Otherwise it logs and returns,
-//! so that contig appears in NO output file: not unshifted in the FASTA, not in the index, not in
-//! the dictionary, not in the chain. A shifted reference can therefore have fewer contigs than the
-//! reference it came from, which is the sort of thing a caller notices later rather than sooner.
+//! `shiftContig` does its work only when `0 < offset < contigLength`. Otherwise it logs and
+//! returns, so that contig appears in NO output file: not unshifted in the FASTA, not in the
+//! index, not in the dictionary, not in the chain. A shifted reference can therefore have fewer
+//! contigs than the reference it came from, which is the sort of thing a caller notices later
+//! rather than sooner.
 //!
 //! # The two halves are appended separately
 //!
@@ -20,12 +22,28 @@
 //! a running count rather than per call, so the join between the halves falls mid-line. Writing the
 //! concatenation in one call would produce the same bytes; writing a newline between them would
 //! not, and this records which of those the reference does.
+//!
+//! ```java
+//! refWriter.startSequence(seqName, basesPerLine);
+//! // swap the bases
+//! refWriter.appendBases(basesAtEnd).appendBases(basesAtStart);
+//! ```
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, E>` is "a value or an error", how a Java exception is modelled here; `?` after a
+//!   call hands its error to this function's caller, and `.map_err(ShiftError::Writer)` first
+//!   wraps the callee's error in this module's type (an enum variant can be called like a
+//!   function);
+//! - `x as i32` converts a number to Java's `int`; from a wider type it truncates silently;
+//! - `for (index, (name, length)) in contigs.iter().enumerate()` walks the list with a counter
+//!   and unpacks each `(name, length)` pair in place.
 
 use htsjdk_bam::fasta_writer::{FastaOutputs, FastaReferenceWriter, FastaWriterError};
 
 use gatk_engine::reference::{ReferenceError, ReferenceFileSource};
 
-/// What the tool refuses.
+/// What the tool refuses, one variant per kind of Java exception the ported paths reach.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ShiftError {
     /// `UserException.BadInput`: an offset list that is not one per contig.
@@ -77,6 +95,16 @@ pub struct ShiftOutputs {
 /// `doWork`, on a reference already open.
 ///
 /// `offsets` is `--shift-offset-list`: empty means half of each contig's own length.
+///
+/// `doWork` is `traverse` and `shiftContig` over every dictionary record in order:
+///
+/// ```java
+/// int shiftOffset = shiftOffsetsIt == null ? contigLength/2 : shiftOffsetsIt.next();
+/// if (shiftOffset > 0 && shiftOffset < contigLength) {
+/// ```
+///
+/// The offset list is consumed one entry per contig, skipped contigs included, which is why it is
+/// indexed by the contig's position rather than by a count of contigs shifted.
 pub fn run(
     reference: &mut ReferenceFileSource,
     offsets: &[i32],
@@ -97,7 +125,8 @@ pub fn run(
         intervals: String::new(),
         shifted_intervals: String::new(),
     };
-    // `chainId` starts at one and counts across contigs, so the second contig's records are 3 and 4.
+    // `chainId` starts at one and counts across contigs, so the second contig's records are 3
+    // and 4.
     let mut chain_id = 1;
 
     for (index, (name, length)) in contigs.iter().enumerate() {
@@ -116,6 +145,9 @@ pub fn run(
         let bases = reference
             .query(name, 1, contig_length)
             .map_err(ShiftError::Reference)?;
+        // `split_at` gives two read-only views of the one buffer, `[0, offset)` and
+        // `[offset, len)`: Java's `Arrays.copyOf(bases, shiftOffset)` and
+        // `Arrays.copyOfRange(bases, shiftOffset, bases.length)`, without the copies.
         let (start, end) = bases.split_at(offset as usize);
         let shift_back_offset = bases.len() as i32 - offset;
 
@@ -126,7 +158,10 @@ pub fn run(
         writer.append_bases(end).map_err(ShiftError::Writer)?;
         writer.append_bases(start).map_err(ShiftError::Writer)?;
 
-        // `addToChainFile`: two records, each followed by its own length and a blank line.
+        // `addToChainFile`: two records, each followed by its own length and a blank line. The
+        // arguments are in `createChainString`'s order, as the Java passes them:
+        // `createChainString(seqName, shiftBackOffset, contigLength, shiftOffset, bases.length, 0,
+        // shiftBackOffset, chainId++)`.
         outputs.chain.push_str(&chain_string(
             name,
             shift_back_offset,
@@ -171,6 +206,10 @@ pub fn run(
 }
 
 /// `createChainString`: thirteen tab-separated fields, the contig named twice.
+///
+/// The shift-back coordinates come BEFORE the forward ones in the line, though they come after
+/// them in the argument list: `items` lists `shiftBackStart, shiftBackEnd` in the first block and
+/// `start, end` in the second, and `String.join("\t", items)` writes them in that order.
 #[allow(clippy::too_many_arguments)]
 fn chain_string(
     name: &str,

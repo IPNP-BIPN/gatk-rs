@@ -7,8 +7,8 @@
 //! `SimpleNovelAdjacencyInterpreter`, `NovelAdjacencyAndAltHaplotype.toSimpleOrBNDTypes`,
 //! `SimpleSVType`, `BreakEndVariantType`, `CpxVariantInterpreter`,
 //! `CpxVariantInducingAssemblyContig`, `CpxVariantCanonicalRepresentation`, `CpxVariantType`,
-//! `ContigAlignmentsModifier.clipAlignmentInterval`, `SegmentedCpxVariantSimpleVariantExtractor` and
-//! `AnnotatedVariantProducer.filterMergedVariantList`.
+//! `ContigAlignmentsModifier.clipAlignmentInterval`, `SegmentedCpxVariantSimpleVariantExtractor`
+//! and `AnnotatedVariantProducer.filterMergedVariantList`.
 //!
 //! Three things in them are not what they look like:
 //!
@@ -19,6 +19,20 @@
 //!   strand switch are an incomplete picture and never reach `toSimpleOrBNDTypes`;
 //! * **`getInsFromOneEnd`'s rear insertion of a segment that opens the arrangement carries the
 //!   front anchor**, which is the base before the segment, so its REF is not the base at its POS.
+//!
+//! # Reading this file without reading Rust
+//!
+//! The idioms of the parent module, [`super`], recur here (`Result<T, Failed>` and `?`,
+//! `Option`, borrowed `&[T]` slices, iterator chains, `wrapping_*` hashing); its header explains
+//! them. Four more appear only here:
+//!
+//! - `use super::*;` brings in every item of the parent module, private ones included, so the
+//!   shared `Alignment`, `Chimera` and `NovelAdjacency` are the same types in both files.
+//! - `pairs.windows(2)` yields each overlapping pair of neighbours, `[a, b]`, `[b, c]`, ...;
+//!   Java's loop over `i` and `i + 1`.
+//! - `if let [only] = list.as_slice()` matches a list of exactly one element and binds it.
+//! - `<'a>` on a function is a lifetime: the records it returns are borrowed from the `records`
+//!   argument and cannot outlive it. It changes no behaviour.
 
 use super::*;
 use gatk_engine::cigar_builder::CigarBuilder;
@@ -47,10 +61,12 @@ const EVENT_SIZE_THRESHOLD: i32 = SIZE_LOWER_BOUND - 1;
 /// `AssemblyContigWithFineTunedAlignments.NO_GOOD_MAPPING_TO_NON_CANONICAL_CHROMOSOME`.
 const NO_NON_CANONICAL: &str = "NONE";
 
+/// `AlignmentInterval.getSizeOnRead`.
 fn size_on_read(alignment: &Alignment) -> i32 {
     alignment.end_on_contig - alignment.start_on_contig + 1
 }
 
+/// `AlignmentInterval.containsOnRead`: `one`'s contig span holds `two`'s, ends included.
 fn contains_on_read(one: &Alignment, two: &Alignment) -> bool {
     one.start_on_contig <= two.start_on_contig && one.end_on_contig >= two.end_on_contig
 }
@@ -100,10 +116,12 @@ pub struct FineTuned {
 }
 
 impl FineTuned {
+    /// `getHeadAlignment`: the first alignment along the contig.
     fn head(&self) -> &Alignment {
         &self.contig.alignments[0]
     }
 
+    /// `getTailAlignment`: the last alignment along the contig.
     fn tail(&self) -> &Alignment {
         &self.contig.alignments[self.contig.alignments.len() - 1]
     }
@@ -142,7 +160,8 @@ impl FineTuned {
         }
     }
 
-    /// `getAlignmentSignatureBasicType`, as `AssemblyContigsClassifiedByAlignmentSignatures` sorts it.
+    /// `getAlignmentSignatureBasicType`, as `AssemblyContigsClassifiedByAlignmentSignatures`
+    /// sorts it.
     fn class(&self) -> Signature {
         if self.ambiguous || self.incomplete() {
             Signature::Unknown
@@ -160,6 +179,9 @@ impl FineTuned {
     }
 
     /// `getReasonForAlignmentClassificationFailure`.
+    ///
+    /// As an index into [`Classified::unknown_reads`]'s three lists: 0 ambiguous, 1 incomplete,
+    /// 2 uninformative. These are not the Java enum's ordinals, which list `INCOMPLETE` first.
     fn reason(&self) -> Result<usize, Failed> {
         if self.ambiguous {
             Ok(0)
@@ -253,6 +275,10 @@ fn configuration_score(
 }
 
 /// `Math.ulp`, of a value that is never infinite here.
+///
+/// The next double above `|value|` is the one whose bits are one greater. Zero's neighbour is
+/// the smallest subnormal, which is `Math.ulp(0.0)`. `Double.MAX_VALUE` is not handled, as no
+/// configuration score comes near it.
 fn ulp(value: f64) -> f64 {
     let magnitude = value.abs();
     if magnitude == 0.0 {
@@ -261,6 +287,8 @@ fn ulp(value: f64) -> f64 {
     f64::from_bits(magnitude.to_bits() + 1) - magnitude
 }
 
+/// The largest `AS` among the alignments to canonical chromosomes, 0 when there are none
+/// (`.mapToInt(ai -> ai.alnScore).max().orElse(0)`).
 fn maximum_canonical_score(alignments: &[Alignment], canonical: &[String]) -> i32 {
     alignments
         .iter()
@@ -271,6 +299,11 @@ fn maximum_canonical_score(alignments: &[Alignment], canonical: &[String]) -> i3
 }
 
 /// `pickBestConfigurations`.
+///
+/// Every subset of the distinct good alignments is scored, and every subset within
+/// `Math.max(Math.ulp(s), scoreDiffTolerance)` of the best is kept; this tool passes a
+/// tolerance of 0. Guava's `Sets.powerSet` refuses more than 30 elements, which the refusal
+/// below reproduces.
 fn pick_best_configurations(
     contig: &Contig,
     canonical: &[String],
@@ -285,6 +318,8 @@ fn pick_best_configurations(
     }
     let maximum = maximum_canonical_score(alignments, canonical);
     // `heuristicSpeedUpWhenFacingManyMappings`.
+    // `partition` splits the list in two by the predicate, accepted ones first, both in input
+    // order.
     let (mut good, bad): (Vec<Alignment>, Vec<Alignment>) = if alignments.len() > 10 {
         alignments.iter().cloned().partition(|alignment| {
             (!canonical.contains(&alignment.span.contig) && alignment.score > maximum)
@@ -329,6 +364,8 @@ fn pick_best_configurations(
         ));
     }
     let subsets = 1u64 << distinct.len();
+    // Each bit pattern of `mask` names one subset, the empty one included. `mask >> bit & 1`
+    // is bit `bit` of the mask (`>>` binds tighter than `&`).
     let configuration_of = |mask: u64| {
         let mut configuration: Vec<Alignment> = distinct
             .iter()
@@ -369,6 +406,10 @@ fn pick_best_configurations(
 }
 
 /// `filterSecondaryConfigurationsByMappingQualityThreshold`.
+///
+/// Of several best configurations, keep the one whose lowest MQ is above 0 if exactly one is;
+/// otherwise keep them all. An empty configuration's minimum is the threshold itself
+/// (`orElse(mqThreshold)`), so it is never above.
 fn filter_secondary_configurations(configurations: Vec<Mappings>) -> Vec<Mappings> {
     if configurations.len() == 1 {
         return configurations;
@@ -394,6 +435,10 @@ fn filter_secondary_configurations(configurations: Vec<Mappings>) -> Vec<Mapping
 }
 
 /// `splitGapsAndDropAlignmentContainedByOtherOnRead`.
+///
+/// Each alignment with a gap of 50 or more is split; then any piece another piece contains on
+/// the contig is moved to the bad list (more than once, if more than one contains it), and
+/// `retain` removes every copy of it, as `List.removeAll` does.
 fn split_gaps_and_drop_contained(configuration: Mappings) -> Result<Mappings, Failed> {
     let mut split = Vec::with_capacity(configuration.good.len());
     for alignment in configuration.good {
@@ -439,10 +484,14 @@ fn remove_non_unique_mappings(mappings: Mappings) -> Mappings {
         }
     }
     let count = selected.len();
+    // `getMaxOverlapPairs`: `front[i]` and `rear[i]` are the most bases alignment `i` shares with
+    // one before it and one after it, -1 for none. The inner search stops at the first alignment
+    // that overlaps no more, relying on the contig order, as the Java's `break` does.
     let mut front = vec![-1; count];
     let mut rear = vec![-1; count];
     for index in 0..count.saturating_sub(1) {
         let mut maximum = -1;
+        // Only read when `maximum > 0`, by which point the loop has set it.
         let mut target = usize::MAX;
         for other in index + 1..count {
             let overlap = overlap_on_contig(&selected[index], &selected[other]);
@@ -501,6 +550,9 @@ fn fine_tuned(contig: &Contig, mappings: Mappings, ambiguous: bool) -> FineTuned
 }
 
 /// `reconstructContigFromBestConfiguration`.
+///
+/// More than one best configuration makes one ambiguous contig each, ordered by fewer
+/// alignments, then fewer summed mismatches; `sort_by_key` is stable, as `Stream.sorted` is.
 fn reconstruct(contig: &Contig, canonical: &[String]) -> Result<Vec<FineTuned>, Failed> {
     let mut configurations =
         filter_secondary_configurations(pick_best_configurations(contig, canonical)?);
@@ -536,6 +588,8 @@ fn reconstruct(contig: &Contig, canonical: &[String]) -> Result<Vec<FineTuned>, 
 }
 
 /// `AssemblyContigsClassifiedByAlignmentSignatures`.
+///
+/// Only the three lists the tool reads further; a `NORMAL` contig is dropped.
 pub struct Classified {
     unknown: Vec<FineTuned>,
     simple: Vec<FineTuned>,
@@ -543,6 +597,10 @@ pub struct Classified {
 }
 
 /// `SvDiscoverFromLocalAssemblyContigAlignmentsSpark.preprocess`.
+///
+/// Secondary lines (`0x100`) are dropped, the rest grouped by read name in `AppendOnlyMap`
+/// order and parsed without splitting gaps; contigs failing `hasGoodMQ` are dropped, the rest
+/// reconstructed from their best configurations and sorted by signature.
 pub fn preprocess(
     records: &[BamRecord],
     header: &SamHeader,
@@ -594,6 +652,7 @@ impl Classified {
             .filter(|record| reasons.iter().any(|(name, _)| *name == record.read_name))
             .collect();
         sorted.sort_by(|one, two| one.read_name.cmp(&two.read_name));
+        // `[T; 3]` is a fixed-size array of three lists, one per reason.
         let mut sets: [Vec<&BamRecord>; 3] = [Vec::new(), Vec::new(), Vec::new()];
         for record in sorted {
             // `collectAsMap`, where the last of a name wins.
@@ -615,10 +674,12 @@ struct TypedCall {
     deletion: bool,
 }
 
+/// `Allele.create(bases, isRef)`, its refusal as this file's message.
 fn allele(bases: &[u8], is_reference: bool) -> Result<Allele, Failed> {
     Allele::create(bases, is_reference).map_err(|error| format!("{error:?}"))
 }
 
+/// `Allele.create(symbol, false)` for a symbolic ALT such as `<DEL>` or a breakend.
 fn symbolic(symbol: &str) -> Result<Allele, Failed> {
     Allele::from_str(symbol, false).map_err(|error| format!("{error:?}"))
 }
@@ -680,6 +741,8 @@ fn deletion_call(
 }
 
 /// `NovelAdjacencyAndAltHaplotype.isCandidateForFatInsertion`.
+///
+/// A replacement whose deleted reference span is under 50 bases.
 fn fat_insertion(adjacency: &NovelAdjacency) -> bool {
     adjacency.kind == ChimeraType::Replacement
         && adjacency.right.end - adjacency.left.start < SIZE_LOWER_BOUND
@@ -761,6 +824,10 @@ fn tandem_call(
 }
 
 /// The mates of `BreakEndVariantType`'s subclasses.
+///
+/// Two records, one per breakpoint, each with the other as its mate. The ALT is the VCF
+/// breakend notation: the bracket direction and side follow the strand switch, and the
+/// inserted sequence is reverse-complemented on the mate that reads it from the other strand.
 fn breakend_calls(
     adjacency: &NovelAdjacency,
     reference: &mut dyn Reference,
@@ -860,6 +927,8 @@ fn breakend_calls(
 }
 
 /// `NovelAdjacencyAndAltHaplotype.toSimpleOrBNDTypes`.
+///
+/// A `match` over every chimera type: the compiler refuses one that leaves a type out.
 fn typed_calls(
     adjacency: &NovelAdjacency,
     reference: &mut dyn Reference,
@@ -914,6 +983,9 @@ fn typed_calls(
 }
 
 /// What `produceAnnotatedVcFromAssemblyEvidence` makes of one type.
+///
+/// A breakend has no `END`, so the CNV annotation sees the -1 the Java's would, and it carries
+/// no `SEQ_ALT_HAPLOTYPE`.
 fn annotated_call(
     call: &TypedCall,
     adjacency: &NovelAdjacency,
@@ -934,6 +1006,7 @@ fn annotated_call(
     Ok(variant)
 }
 
+/// `VariantContextBuilder.rmAttribute` on what is already built.
 fn remove(variant: &mut VariantContext, key: &str) {
     variant.attributes.retain(|(name, _)| name != key);
 }
@@ -1024,14 +1097,16 @@ impl SimpleCalls {
     }
 }
 
-/// [`sort_variants`], for the runner's writes.
+/// The parent module's `sort_variants`, for the runner's writes.
 pub fn sorted(variants: &[VariantContext], header: &SamHeader) -> Vec<VariantContext> {
     let mut copy = variants.to_vec();
     sort_variants(&mut copy, header);
     copy
 }
 
-/// `CigarOperator.isPadding` or `N`, which `computeNewRefSpanAndCigar` refuses.
+/// `ContigAlignmentsModifier.clipAlignmentInterval`, with `computeNewRefSpanAndCigar` and
+/// `computeNewReadSpan`: `clip` contig bases taken off the 5' end, or the 3' end when
+/// `from_3_prime`, and the reference span shortened by the reference bases they covered.
 fn clip_alignment(input: &Alignment, clip: i32, from_3_prime: bool) -> Result<Alignment, Failed> {
     if clip < 0 {
         return Err(format!(
@@ -1045,6 +1120,7 @@ fn clip_alignment(input: &Alignment, clip: i32, from_3_prime: bool) -> Result<Al
             input.packed()
         ));
     }
+    // `CigarOperator.isPadding` or `N`, which `computeNewRefSpanAndCigar` refuses.
     if input
         .cigar
         .iter()
@@ -1080,6 +1156,7 @@ fn clip_alignment(input: &Alignment, clip: i32, from_3_prime: bool) -> Result<Al
     if from_3_prime {
         middle.reverse();
     }
+    // `new CigarElement(length, op)`, as a small lambda.
     let element = |length: i32, op: Op| CigarElement {
         length: length as u32,
         op,
@@ -1162,6 +1239,8 @@ fn clip_alignment(input: &Alignment, clip: i32, from_3_prime: bool) -> Result<Al
     if from_3_prime {
         section.reverse();
     }
+    // The Java's `CigarBuilder` over the left clips, the new middle and the right clips
+    // (`ContigAlignmentsModifier.java:171`).
     let mut builder = CigarBuilder::new(true);
     for current in left.iter().chain(&section).chain(&right) {
         builder
@@ -1212,6 +1291,9 @@ fn clip_alignment(input: &Alignment, clip: i32, from_3_prime: bool) -> Result<Al
 }
 
 /// `CpxVariantInterpreter.yieldOverlapToAlignmentTwo`.
+///
+/// Whether the overlap between two neighbouring alignments is clipped from `one`'s 3' end
+/// (true) rather than from `two`'s 5' end.
 fn yield_overlap_to_two(one: &Alignment, two: &Alignment, header: &SamHeader) -> bool {
     if one.span.contig == two.span.contig {
         if one.forward != two.forward {
@@ -1225,6 +1307,10 @@ fn yield_overlap_to_two(one: &Alignment, two: &Alignment, header: &SamHeader) ->
 }
 
 /// `CpxVariantInterpreter.deOverlapAlignments`.
+///
+/// Walks neighbouring pairs: a split piece contained in the previous one is dropped, an
+/// overlap is clipped from one side (never from the head; from the tail only when the head is
+/// the other side), and a piece left with fewer than two contig bases is dropped.
 fn de_overlap_alignments(
     original: &[Alignment],
     header: &SamHeader,
@@ -1285,12 +1371,16 @@ fn de_overlap_alignments(
 }
 
 /// `CpxVariantInducingAssemblyContig.Jump`.
+///
+/// The one-base reference location an alignment leaves from, the one the next lands on, and
+/// the unaligned contig bases between them (0 when they abut).
 struct Jump {
     start: Interval,
     landing: Interval,
     gap: i32,
 }
 
+/// `new Jump(one, two)`, which refuses alignments that overlap on the contig.
 fn jump(one: &Alignment, two: &Alignment) -> Result<Jump, Failed> {
     if overlap_on_contig(one, two) > 0 {
         return Err("assumption that input alignments DO NOT overlap is violated.".to_string());
@@ -1312,6 +1402,7 @@ fn jump(one: &Alignment, two: &Alignment) -> Result<Jump, Failed> {
     })
 }
 
+/// `SimpleInterval.intersect`, for intervals the caller knows overlap.
 fn intersect(one: &Interval, two: &Interval) -> Interval {
     Interval {
         contig: one.contig.clone(),
@@ -1373,6 +1464,7 @@ struct Canonical {
     alternate: Vec<u8>,
 }
 
+/// `CpxVariantCanonicalRepresentation.equals`, its four fields.
 impl PartialEq for Canonical {
     fn eq(&self, other: &Self) -> bool {
         self.segments == other.segments
@@ -1526,6 +1618,7 @@ fn canonical_representation(tig: &FineTuned, header: &SamHeader) -> Result<Canon
             (&two.contig, two.start, two.end),
         )
     });
+    // `dedup` drops consecutive equal elements; after the sort, that is every repeat.
     locations.dedup();
     let invalid_location =
         || "List index out of bounds: no segmenting location was found.".to_string();
@@ -2344,8 +2437,8 @@ pub fn multi_segment_variants(
     Ok(variants)
 }
 
-/// `reInterpretMultiSegmentComplexVarThroughAlignmentPairIteration`'s first half: the contigs of the
-/// multi-segment calls, preprocessed anew, to the novel adjacencies of `parseOneContig`.
+/// `reInterpretMultiSegmentComplexVarThroughAlignmentPairIteration`'s first half: the contigs of
+/// the multi-segment calls, preprocessed anew, to the novel adjacencies of `parseOneContig`.
 pub fn pair_iteration_adjacencies(
     calls: &[ComplexCall],
     records: &[BamRecord],
@@ -2372,6 +2465,7 @@ pub fn pair_iteration_adjacencies(
     adjacencies_of(&contigs, header)
 }
 
+/// An attribute as text, an integer one printed, `None` where it is absent.
 fn attribute_text(variant: &VariantContext, key: &str) -> Option<String> {
     variant
         .attributes
@@ -2384,6 +2478,7 @@ fn attribute_text(variant: &VariantContext, key: &str) -> Option<String> {
         })
 }
 
+/// An attribute as an integer, 0 where it is absent or not one.
 fn attribute_int(variant: &VariantContext, key: &str) -> i32 {
     variant
         .attributes
@@ -2566,6 +2661,7 @@ struct AnnotatedKey {
 }
 
 impl AnnotatedKey {
+    /// The key a record's interval, ID, `SVTYPE`, `SVLEN` and alleles make.
     fn of(variant: &VariantContext) -> Self {
         Self {
             interval: Interval {

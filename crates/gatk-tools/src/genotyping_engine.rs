@@ -4,7 +4,8 @@
 //! `org.broadinstitute.hellbender.tools.walkers.genotyper.GenotypingEngine`,
 //! `org.broadinstitute.hellbender.tools.walkers.genotyper.MinimalGenotypingEngine` and
 //! `org.broadinstitute.hellbender.tools.walkers.genotyper.AlleleSubsettingUtils`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `GenotypingEngine.java`, `MinimalGenotypingEngine.java` and
+//! `AlleleSubsettingUtils.java` are unchanged since 4.6.2.0).
 //!
 //! Given a merged record whose samples carry likelihoods, the engine decides the site's QUAL, which
 //! alternates survive, and every sample's call against the alleles kept.
@@ -30,6 +31,20 @@
 //! them, and one whose likelihoods are flat or absent keeps its original call, matched to the
 //! alleles kept. A hom-ref or no-call with a GQ of 0 is made a no-call first, and one with a DP of
 //! 0 as well loses everything but its name.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[f64]` is a borrowed, read-only view of an array; `&mut Genotype` a writable reference
+//!   the function edits in place, the way Java mutates a `GenotypeBuilder`;
+//! - `Option<T>` is a value or nothing (`Some(v)` / `None`), Java's nullable reference with the
+//!   check enforced; `Result<T, EngineError>` is a value or an error, how a Java exception is
+//!   carried, and `?` after a call hands the error back to the caller;
+//! - `let Some(x) = y else { ... };` unwraps `y` or takes the early exit in the braces;
+//! - `.iter().map(..).collect()` is a Java stream; `.fold(f64::NEG_INFINITY, f64::max)` is a
+//!   running maximum starting from minus infinity;
+//! - `match` must cover every case of an enum, so a `SubsetMethod` the code forgot would not
+//!   compile; `x as i32` converts, truncating a float toward zero;
+//! - `VecDeque` is a double-ended queue, Java's `ArrayDeque`.
 
 use std::collections::VecDeque;
 
@@ -106,10 +121,16 @@ impl From<gatk_engine::allele_frequency_calculator::AfCalcError> for EngineError
 }
 
 /// The engine, with the upstream deletions it has emitted.
+///
+/// `GenotypingEngine` keeps `upstreamDeletionsLoc`, which is state across sites: the engine must
+/// see the records in genome order, and a `*` is judged by what was emitted before it.
 pub struct GenotypingEngine {
     pub configuration: Configuration,
     calculator: AlleleFrequencyCalculator,
     /// `upstreamDeletionsLoc`: contig, start and end of each deletion emitted so far.
+    ///
+    /// The reference holds them in a `PriorityQueue` ordered by end; this queue is in emission
+    /// order. See `record_deletions` for why the answer is the same.
     upstream_deletions: VecDeque<(String, i64, i64)>,
     /// The genotype prior calculator HaplotypeCaller passes to `calculateGenotypes`; `None` for
     /// the tools that pass null.
@@ -131,6 +152,12 @@ fn is_no_call(genotype: &Genotype) -> bool {
 }
 
 /// `GenotypeLikelihoods.GLsToPLs`: each likelihood less the maximum, times minus ten, rounded.
+///
+/// htsjdk 5.0.0 caps before rounding, with `MAX_PL = Integer.MAX_VALUE`:
+///
+/// ```java
+/// pls[i] = (int) Math.round(Math.min(-10 * (GLs[i] - adjust), MAX_PL));
+/// ```
 pub fn pls_of(likelihoods: &[f64]) -> Vec<i32> {
     let adjust = likelihoods
         .iter()
@@ -275,7 +302,8 @@ impl GenotypePriors {
         ))
     }
 
-    /// `getLog10Priors(ploidy, alleles)`: zero for the hom-ref genotype, and for every other the
+    /// `GenotypePriorCalculator.getLog10Priors(ploidy, alleles)`: zero for the hom-ref genotype,
+    /// and for every other the
     /// sum over its alleles of the het value (raised by the difference per extra copy) or, at
     /// exactly two copies, the hom value.
     pub fn log10_priors(&self, ploidy: usize, alleles: &[Allele]) -> Result<Vec<f64>, EngineError> {
@@ -301,6 +329,9 @@ impl GenotypePriors {
         }
         let genotypes = genotypes_in_canonical_order(ploidy, alleles.len());
         let mut result = vec![0.0; genotypes.len()];
+        // `.enumerate()` pairs each genotype with its index, `.skip(1)` leaves the hom-ref at 0.
+        // A genotype is its allele indices in sorted order, so equal alleles are adjacent and the
+        // inner loop counts each run of copies.
         for (index, genotype) in genotypes.iter().enumerate().skip(1) {
             let mut sum = 0.0;
             let mut a = 0;
@@ -410,7 +441,11 @@ fn gq_log10_from_posteriors(best: usize, posteriors: &[f64]) -> Option<f64> {
     }
 }
 
-/// `makeGenotypeCall(ploidy, gb, method, likelihoods, allelesToUse, originalGT, null)`.
+/// `AlleleSubsettingUtils.makeGenotypeCall(ploidy, gb, method, likelihoods, allelesToUse,
+/// originalGT, null)`.
+///
+/// `genotype` is the builder being filled; `original` is the genotype before subsetting, which
+/// supplies the GQ, DP and call the pre-step and the fallback read.
 pub(crate) fn make_genotype_call(
     ploidy: usize,
     genotype: &mut Genotype,
@@ -460,6 +495,9 @@ pub(crate) fn make_genotype_call_with_priors(
     match method {
         SubsetMethod::SetToNoCall => genotype.alleles = vec![Allele::no_call(); ploidy],
         SubsetMethod::UsePlsToAssign | SubsetMethod::PreferPls => {
+            // `Option::filter` keeps the likelihoods only when the condition holds: PREFER_PLS
+            // ignores flat ones (summing to at least `SUM_GL_THRESH_NOCALL`), USE_PLS_TO_ASSIGN
+            // uses any it is given.
             let informative =
                 likelihoods.filter(|gls| gls.iter().sum::<f64>() < SUM_GL_THRESH_NOCALL);
             let usable = if method == SubsetMethod::PreferPls {
@@ -471,6 +509,8 @@ pub(crate) fn make_genotype_call_with_priors(
                 genotype.alleles = best_match_to_original(targets, &original.alleles);
                 return Ok(());
             };
+            // The most likely genotype, then its alleles: the `best`-th genotype in canonical
+            // order, each allele index mapped to the allele kept.
             let best = max_element_index(gls);
             let called: Vec<Allele> = genotypes_in_canonical_order(ploidy, targets.len())
                 .into_iter()
@@ -865,7 +905,14 @@ impl GenotypingEngine {
         self.use_posteriors_to_calculate_qual = value;
     }
 
-    /// `cannotBeGenotyped`.
+    /// `cannotBeGenotyped`: more alleles than can be genotyped, a called sample without
+    /// likelihoods, or no sample with likelihoods at all.
+    ///
+    /// ```java
+    /// if (vc.getNAlleles() <= GenotypeLikelihoods.MAX_DIPLOID_ALT_ALLELES_THAT_CAN_BE_GENOTYPED
+    /// ```
+    ///
+    /// The reference only logs a warning past the limit; nothing here logs.
     fn cannot_be_genotyped(vc: &VariantContext) -> bool {
         !(vc.alleles.len() <= MAX_DIPLOID_ALT_ALLELES_THAT_CAN_BE_GENOTYPED
             && vc
@@ -876,7 +923,14 @@ impl GenotypingEngine {
             && vc.genotypes.iter().any(|g| g.pl.is_some()))
     }
 
-    /// `recordDeletions`.
+    /// `recordDeletions`: forget the deletions that end before this site or lie on another
+    /// contig, then remember each emitted allele shorter than the reference.
+    ///
+    /// The reference pops while `upstreamDeletionsLoc.peek()` fails `contigsMatch(vc)` or has
+    /// `getEnd() < vc.getStart()`. Java's `peek` is the smallest end; this pops from the oldest.
+    /// The two can keep different stale entries, but a stale entry ends before the site or is on
+    /// another contig, so `is_covered_by_deletion`'s `vc.start <= end` and contig test reject it
+    /// either way.
     fn record_deletions(&mut self, vc: &VariantContext, emitted: &[Allele]) {
         while let Some((contig, _, end)) = self.upstream_deletions.front() {
             if *contig != vc.contig || *end < vc.start {
@@ -898,6 +952,9 @@ impl GenotypingEngine {
     }
 
     /// `isVcCoveredByDeletion`: an upstream deletion starting before the site and reaching it.
+    ///
+    /// Strictly before: a deletion with the same start as the site does not count, which is why
+    /// this is not an overlap test.
     fn is_covered_by_deletion(&self, vc: &VariantContext) -> bool {
         self.upstream_deletions.iter().any(|(contig, start, end)| {
             *contig == vc.contig && *start < vc.start && vc.start <= *end
@@ -906,6 +963,16 @@ impl GenotypingEngine {
 
     /// `calculateOutputAlleleSubset`: the alternates kept, their MLE counts, and whether the site
     /// is monomorphic.
+    ///
+    /// Output and monomorphism are decided separately: a forced or `<NON_REF>` alternate is output
+    /// without making the site variant, since only a plausible, non-spurious alternate clears
+    /// `siteIsMonomorphic`:
+    ///
+    /// ```java
+    /// siteIsMonomorphic &= !(isPlausible && !isSpuriousSpanningDeletion);
+    /// ```
+    ///
+    /// The returned tuple `(a, b, c)` is the Java `OutputAlleleSubset`'s three fields.
     fn output_allele_subset(
         &self,
         result: &AfCalculationResult,
@@ -1004,6 +1071,8 @@ impl GenotypingEngine {
         // under EMIT_ALL_CONFIDENT_SITES any site that does.
         let passes_emit =
             (self.configuration.emit_all_confident_sites || !monomorphic) && passes_call;
+        // `noAllelesOrFirstAlleleIsNotNonRef`, negated: a GVCF site whose first alternate is
+        // `<NON_REF>` is never dropped here.
         let first_is_non_ref = alternatives.first().is_some_and(|a| *a == non_ref());
         if !passes_emit
             && !self.configuration.emit_all_active_sites

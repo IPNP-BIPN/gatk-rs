@@ -1,6 +1,6 @@
 //! `GatherTranches`, ported from
 //! `org.broadinstitute.hellbender.tools.walkers.vqsr.GatherTranches` and `VQSLODTranche`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `GatherTranches.java` and `VQSLODTranche.java` are unchanged since 4.6.2.0).
 //!
 //! The gather that ends a scattered `VariantRecalibrator` run: one VQSLOD tranche file per shard
 //! in, one truth-sensitivity tranche file out.
@@ -8,7 +8,7 @@
 //! # A merged level's Ti/Tv is a ratio of sums
 //!
 //! ```java
-//! double trancheKnownTransitions = (tranche.knownTiTv * tranche.numKnown) / (1 + tranche.knownTiTv);
+//! double trancheKnownTransitions = (tranche.knownTiTv*tranche.numKnown) / (1+tranche.knownTiTv);
 //! sumKnownTransitions += trancheKnownTransitions;
 //! sumKnownTransversions += (tranche.numKnown - trancheKnownTransitions);
 //! ```
@@ -28,6 +28,17 @@
 //!
 //! The walk stops at the first target it cannot advance past, so asking for more sensitivities than
 //! there are levels writes fewer rows than were asked for, without a word.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&str` and `&[T]` are borrowed, read-only views of a string and of a list;
+//! - `Option<T>` is a value or nothing (Java's `null`, checked); `Result<T, E>` is a value or an
+//!   error, how this port carries the reference's exceptions, and `?` passes the error up;
+//! - `let Some(x) = y else { .. }` unwraps `y` or runs the block, which must leave the loop
+//!   or the function;
+//! - `|key| ..` is a closure (a lambda); `.iter().map(..).collect()` is a stream pipeline;
+//! - `x as i64` converts a float to an integer by truncation toward zero, and a NaN becomes 0;
+//! - a function's last expression is its return value.
 
 use gatk_engine::java_format::format_decimals;
 use gatk_engine::tranches::{Mode, TrancheError, TruthSensitivityTranche, EXPECTED_COLUMN_COUNT};
@@ -41,7 +52,7 @@ pub const OUTPUT_VERSION: i32 = 5;
 /// `GatherTranches`'s default truth-sensitivity levels.
 pub const DEFAULT_TRUTH_SENSITIVITY_LEVELS: [f64; 2] = [90.0, 99.0];
 
-/// One row of a VQSLOD tranche file.
+/// One row of a VQSLOD tranche file: the fields `VQSLODTranche` inherits from `Tranche`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct VqslodTranche {
     pub min_vqslod: f64,
@@ -57,6 +68,9 @@ pub struct VqslodTranche {
 
 impl VqslodTranche {
     /// `getTruthSensitivity()`, zero rather than a division when nothing is accessible.
+    ///
+    /// `return accessibleTruthSites > 0 ? callsAtTruthSites / (1.0*accessibleTruthSites) : 0.0;`,
+    /// with the `1.0 *` kept so the operations are the reference's.
     pub fn truth_sensitivity(&self) -> f64 {
         if self.accessible_truth_sites > 0 {
             self.calls_at_truth_sites as f64 / (1.0 * self.accessible_truth_sites as f64)
@@ -70,6 +84,19 @@ impl VqslodTranche {
 ///
 /// The version is checked on the comment line and nowhere else: a file whose columns are right and
 /// whose version line says anything but six is refused before a single row is read.
+///
+/// The first non-comment line is the header, which must have `EXPECTED_COLUMN_COUNT` (eleven)
+/// names; every later line must have as many values as the header, and each value is looked up
+/// by its column name.
+///
+/// Not the reference's in three places:
+/// - Java's `line.split(VALUE_SEPARATOR)` (a `","`) drops trailing empty fields and Rust's
+///   `split(',')` keeps them, so a line ending in a comma has one field more here;
+/// - a value that does not parse falls back to the column's default here, where the reference's
+///   `getRequiredDouble` and `getOptional*` throw `UserException.MalformedFile`;
+/// - the reference sorts the list (`tranches.sort(new TrancheComparator<>())`, by
+///   `callsAtTruthSites`) before returning; this keeps file order. The gather regroups by
+///   VQSLOD, so only two rows of one file at the same VQSLOD would be summed in another order.
 pub fn read_vqslod_tranches(text: &str) -> Result<Vec<VqslodTranche>, TrancheError> {
     let mut header: Option<Vec<String>> = None;
     let mut tranches = Vec::new();
@@ -79,6 +106,8 @@ pub fn read_vqslod_tranches(text: &str) -> Result<Vec<VqslodTranche>, TrancheErr
                 continue;
             }
             // `line.split("\\s+")[3]`, which is the number after `# Version number`.
+            // A version that is not a number reads as -1 and so is refused like a wrong one; the
+            // reference's `Integer.parseInt` would throw a NumberFormatException instead.
             let words: Vec<&str> = line.split_whitespace().collect();
             let version = words
                 .get(3)
@@ -93,6 +122,7 @@ pub fn read_vqslod_tranches(text: &str) -> Result<Vec<VqslodTranche>, TrancheErr
             continue;
         }
         let values: Vec<&str> = line.split(',').collect();
+        // No header yet: this line is the header.
         let Some(names) = &header else {
             if values.len() != EXPECTED_COLUMN_COUNT {
                 return Err(TrancheError::HeaderLength {
@@ -111,12 +141,16 @@ pub fn read_vqslod_tranches(text: &str) -> Result<Vec<VqslodTranche>, TrancheErr
                 line: line.to_string(),
             });
         }
+        // `bindings.get(key)`: the value in the column with that name, or `None` without one.
         let get = |key: &str| -> Option<&str> {
             names
                 .iter()
                 .position(|name| name == key)
                 .map(|index| values[index])
         };
+        // Like `getOptionalDouble`, with the default given; also used for the integer columns,
+        // which go through `f64` and are then cast. `-1.0` is the reference's optional default; the
+        // required columns (`minVQSLod`, `numNovel`, `novelTiTv`) have none, and NaN stands in.
         let number = |key: &str, default: f64| -> f64 {
             get(key).and_then(|v| v.parse().ok()).unwrap_or(default)
         };
@@ -136,6 +170,10 @@ pub fn read_vqslod_tranches(text: &str) -> Result<Vec<VqslodTranche>, TrancheErr
 }
 
 /// `mergeAndConvertTranches(list, mode)`: the shards of ONE VQSLOD level, summed.
+///
+/// Counts are summed; each Ti/Tv is turned back into transitions and transversions before
+/// summing (see the module note). The reference's check that every shard has the same
+/// `minVQSLod` (`IllegalStateException`) cannot fail here, because the caller groups by it.
 pub fn merge_level(shards: &[VqslodTranche], mode: Mode) -> VqslodTranche {
     let index = shards[0].min_vqslod;
     let mut known = 0i64;
@@ -178,12 +216,17 @@ pub fn merge_level(shards: &[VqslodTranche], mode: Mode) -> VqslodTranche {
 /// `mergeAndConvertTranches(map, tsLevels, mode)`: the whole gather.
 ///
 /// `levels` is sorted here, as the reference sorts the caller's list in place.
+///
+/// An empty input or an empty list of levels returns no rows. The reference would throw there:
+/// `tsIter.next()` and `trancheIter.next()` on an empty list are a `NoSuchElementException`.
 pub fn merge_and_convert(
     shards: &[VqslodTranche],
     levels: &[f64],
     mode: Mode,
 ) -> Vec<TruthSensitivityTranche> {
     // A `TreeMap<Double, List<VQSLODTranche>>` walked by `descendingKeySet`.
+    // The distinct levels in first-seen order, then sorted largest first. `==` on `f64` treats
+    // `0.0` and `-0.0` as one key, where `TreeMap`'s `Double.compareTo` keeps two.
     let mut keys: Vec<f64> = Vec::new();
     for shard in shards {
         if !keys.contains(&shard.min_vqslod) {
@@ -210,6 +253,8 @@ pub fn merge_and_convert(
     if merged.is_empty() || targets.is_empty() {
         return gathered;
     }
+    // `tsIter` and `trancheIter` as indices: `current` is the index of `currentTranche`, and
+    // `merged[0]` is consumed by `trancheIter.next()` before the loop.
     let mut target_index = 0;
     let mut target = targets[0];
     let mut sensitivity_delta = 100.0;
@@ -218,7 +263,9 @@ pub fn merge_and_convert(
         let previous_delta = sensitivity_delta;
         let previous = current;
         current += 1;
+        // `abs(targetTS - currentTranche.getTruthSensitivity()*100)`.
         sensitivity_delta = (target - merged[current].truth_sensitivity() * 100.0).abs();
+        // Strictly greater: an equal distance keeps walking.
         if sensitivity_delta > previous_delta {
             gathered.push(convert(&merged[previous], target, mode));
             target_index += 1;
@@ -238,6 +285,8 @@ pub fn merge_and_convert(
     gathered
 }
 
+/// The reference's `new TruthSensitivityTranche(targetTS, ...)`: the matched level, relabelled
+/// with the target sensitivity it answers. The name is not carried over.
 fn convert(tranche: &VqslodTranche, target: f64, mode: Mode) -> TruthSensitivityTranche {
     TruthSensitivityTranche {
         target_truth_sensitivity: target,
@@ -266,6 +315,17 @@ pub fn print_header() -> String {
 ///
 /// The filter name is built from the PREVIOUS row's target sensitivity, or zero for the first, so
 /// the names read as a partition of `0.00` to the last target.
+///
+/// ```java
+/// return String.format("%.2f,%d,%d,%.4f,%.4f,%.4f,VQSRTranche%s%.2fto%.2f,%s,%d,%d,%.4f%n",
+/// ```
+///
+/// For a `TruthSensitivityTranche`, `getTrancheIndex()` is `targetTruthSensitivity`, which is
+/// what the first and the two `%.2f` in the name print. `format_decimals` is the port's
+/// `%.Nf`. The reference first sorts the list by `callsAtTruthSites`
+/// (`Collections.sort( tranches, new TrancheComparator<>())`) and this does not; the gathered
+/// rows come out of the walk in order of falling VQSLOD, so the sort only reorders rows whose
+/// counts fall as the VQSLOD falls.
 pub fn tranches_string(tranches: &[TruthSensitivityTranche]) -> String {
     let mut text = String::new();
     let mut previous = 0.0;

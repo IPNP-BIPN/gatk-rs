@@ -21,10 +21,23 @@
 //! Written from "HDF5 File Format Specification Version 3.0" (The HDF Group), sections II.C
 //! (superblock), IV.A.1.b (version 2 object headers) and IV.A.2 (messages); no HDF5 source was
 //! consulted.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Vec<u8>` is a growable byte array (Java's `ByteArrayOutputStream`); `extend_from_slice`
+//!   appends bytes and `push` one byte. `&[u8]` is a borrowed, read-only view of bytes, and
+//!   `out[a..b]` the bytes from `a` up to but not including `b`;
+//! - `x.to_le_bytes()` is the value's bytes in little-endian order, the format's byte order;
+//! - `x as u8`, `as u16`, `as u32` keep only the low bits, so a value too large for the target
+//!   wraps silently instead of throwing; the places it could are noted where they occur;
+//! - `a.wrapping_add(b)` and `wrapping_sub` are Java's `int` arithmetic, wrapping on overflow
+//!   (a plain `+` on Rust integers panics on overflow in a debug build);
+//! - `BTreeMap` is Java's `TreeMap`: its iteration is in key order, which is what makes the
+//!   layout of a file a function of its contents alone.
 
 use std::collections::BTreeMap;
 
-/// `UNDEF_ADDRESS`, all ones.
+/// The format's undefined address, all ones: "no such structure", or no storage allocated.
 const UNDEFINED: u64 = u64::MAX;
 
 /// What a dataset holds.
@@ -37,6 +50,8 @@ pub enum Data {
 }
 
 /// A file being built: datasets by absolute path. Every group a path names is created.
+///
+/// Inserting the same path twice keeps the last data, as `BTreeMap::insert` replaces.
 #[derive(Debug, Clone, Default)]
 pub struct Hdf5File {
     datasets: BTreeMap<String, Data>,
@@ -50,6 +65,7 @@ struct Group {
 }
 
 impl Hdf5File {
+    /// An empty file: only the root group.
     pub fn new() -> Self {
         Self::default()
     }
@@ -66,6 +82,9 @@ impl Hdf5File {
     }
 
     /// A matrix of doubles, one row after another.
+    ///
+    /// The column count is the first row's length (zero for no rows) and every row is appended
+    /// whole, so the rows are expected to be equally long; nothing checks it.
     pub fn double_matrix(&mut self, path: &str, rows: &[Vec<f64>]) {
         let columns = rows.first().map_or(0, Vec::len) as u64;
         self.datasets.insert(
@@ -77,19 +96,30 @@ impl Hdf5File {
         );
     }
 
+    /// A one-dimensional array of strings, as [`Data::Strings`] stores them.
     pub fn string_array(&mut self, path: &str, values: &[String]) {
         self.datasets
             .insert(path.to_string(), Data::Strings(values.to_vec()));
     }
 
     /// The file's bytes.
+    ///
+    /// **How**: build the group tree from the paths, reserve 48 zero bytes for the superblock,
+    /// write the tree (each object after its children, so every address is known when it is
+    /// referenced), then fill the superblock in, since it needs the end-of-file and root
+    /// addresses that only exist once everything else is written.
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut root = Group::default();
         for (path, data) in &self.datasets {
             let parts: Vec<&str> = path.split('/').filter(|p| !p.is_empty()).collect();
+            // `let Some(x) = y else { .. }`: take the value or the early exit. `split_last` splits
+            // off the dataset's own name from its parent groups, and is `None` for a path with no
+            // name at all ("/" or ""), which is skipped.
             let Some((name, parents)) = parts.split_last() else {
                 continue;
             };
+            // `&mut root` is a writable borrow walked down the tree; `entry(..).or_default()` is
+            // `computeIfAbsent(key, k -> new Group())`.
             let mut group = &mut root;
             for parent in parents {
                 group = group.groups.entry((*parent).to_string()).or_default();
@@ -100,6 +130,9 @@ impl Hdf5File {
         let root_address = write_group(&root, &mut out);
         let end = out.len() as u64;
         let mut superblock = Vec::with_capacity(48);
+        // Superblock version 2: signature, version 2, eight-byte offsets and lengths, no
+        // consistency flags; then the base address (0), the superblock extension (none), the
+        // end-of-file address and the root group's object header, and a checksum of all of it.
         superblock.extend_from_slice(b"\x89HDF\r\n\x1a\n");
         superblock.extend_from_slice(&[2, 8, 8, 0]);
         superblock.extend_from_slice(&0u64.to_le_bytes());
@@ -120,6 +153,10 @@ struct Message {
 }
 
 /// A version 2 object header holding `messages`, appended to `out`; its address is returned.
+///
+/// Each message is its type, a two-byte body length, a flags byte of zero, then the body. The
+/// body length is `as u16`, so a body over 65535 bytes would wrap; no message here carries data,
+/// only addresses and short names, so none comes close.
 fn write_object_header(messages: &[Message], out: &mut Vec<u8>) -> u64 {
     let address = out.len() as u64;
     let size: usize = messages.iter().map(|m| 4 + m.body.len()).sum();
@@ -141,6 +178,9 @@ fn write_object_header(messages: &[Message], out: &mut Vec<u8>) -> u64 {
 }
 
 /// A group, its children first so that their addresses are known when its links are written.
+///
+/// Subgroups are written before datasets, each set in name order, and the links then go out in
+/// name order across both, since `children` is itself a `BTreeMap`.
 fn write_group(group: &Group, out: &mut Vec<u8>) -> u64 {
     let mut children: BTreeMap<&str, u64> = BTreeMap::new();
     for (name, child) in &group.groups {
@@ -165,6 +205,7 @@ fn write_group(group: &Group, out: &mut Vec<u8>) -> u64 {
     });
     for (name, address) in children {
         // Link: version 1; flags 0 means a one-byte name length, a hard link and ASCII.
+        // `name.len() as u8` wraps for a name over 255 bytes.
         let mut link = vec![1u8, 0, name.len() as u8];
         link.extend_from_slice(name.as_bytes());
         link.extend_from_slice(&address.to_le_bytes());
@@ -177,9 +218,16 @@ fn write_group(group: &Group, out: &mut Vec<u8>) -> u64 {
 }
 
 /// A dataset: the raw data first, then the header that points at it.
+///
+/// An empty dataset gets no storage, and its layout points at the undefined address with a size
+/// of zero.
 fn write_dataset(data: &Data, out: &mut Vec<u8>) -> u64 {
     let (shape, datatype, raw): (Vec<u64>, Vec<u8>, Vec<u8>) = match data {
         Data::Doubles { shape, values } => {
+            // Floating point, version 1 (`0x11`); bit field: little-endian, implied leading
+            // mantissa bit, sign at bit 63. Then the size (8), the bit offset (0) and precision
+            // (64), exponent at 52 of 11 bits, mantissa at 0 of 52 bits, and the bias 1023:
+            // IEEE 754 binary64, Java's `double`.
             let mut datatype = vec![0x11, 0x20, 0x3f, 0x00];
             datatype.extend_from_slice(&8u32.to_le_bytes());
             datatype.extend_from_slice(&0u16.to_le_bytes());
@@ -190,8 +238,11 @@ fn write_dataset(data: &Data, out: &mut Vec<u8>) -> u64 {
             (shape.clone(), datatype, raw)
         }
         Data::Strings(values) => {
+            // The longest value's length in BYTES (`String::len` is the UTF-8 byte count), and at
+            // least one, so an array of empty strings still has a non-zero element size.
             let width = values.iter().map(String::len).max().unwrap_or(0).max(1);
-            // Class 3, version 1; null padded, ASCII.
+            // Class 3, version 1; bit field 1: null padded, ASCII. Each value is written then
+            // zero-filled to `width`.
             let mut datatype = vec![0x13, 0x01, 0x00, 0x00];
             datatype.extend_from_slice(&(width as u32).to_le_bytes());
             let mut raw = Vec::with_capacity(width * values.len());
@@ -209,10 +260,13 @@ fn write_dataset(data: &Data, out: &mut Vec<u8>) -> u64 {
         out.extend_from_slice(&raw);
         at
     };
+    // Dataspace version 2: the rank, flags 0 (no maximum dimensions, so the maximum is the
+    // current size), type 1 (simple), then each dimension.
     let mut dataspace = vec![2u8, shape.len() as u8, 0, 1];
     for dimension in &shape {
         dataspace.extend_from_slice(&dimension.to_le_bytes());
     }
+    // Data layout version 3, class 1 (contiguous): the address and the size in bytes.
     let mut layout = vec![3u8, 1];
     layout.extend_from_slice(&address.to_le_bytes());
     layout.extend_from_slice(&(raw.len() as u64).to_le_bytes());
@@ -240,6 +294,12 @@ fn write_dataset(data: &Data, out: &mut Vec<u8>) -> u64 {
 
 /// Bob Jenkins' `hashlittle` from `lookup3.c` with an initial value of zero, which is the
 /// checksum the HDF5 format puts on every version 2 structure.
+///
+/// **How**: twelve bytes at a time through `mix`, then the last one to twelve bytes, zero-padded,
+/// through `final`. The words are read little-endian whatever the platform, and the result
+/// agrees with the published test vectors (see the tests).
+/// A key whose length is a non-zero multiple of twelve sends its last block through `final`, not
+/// `mix`: hence `while rest.len() > 12` rather than `>=`.
 pub fn lookup3(key: &[u8]) -> u32 {
     fn rot(x: u32, k: u32) -> u32 {
         x.rotate_left(k)
@@ -248,6 +308,7 @@ pub fn lookup3(key: &[u8]) -> u32 {
     let mut a: u32 = 0xdeadbeef_u32.wrapping_add(length as u32);
     let mut b = a;
     let mut c = a;
+    // A closure (lambda) assembling up to four bytes, low byte first.
     let word = |chunk: &[u8]| -> u32 {
         let mut w = 0u32;
         for (i, byte) in chunk.iter().enumerate() {
@@ -281,6 +342,7 @@ pub fn lookup3(key: &[u8]) -> u32 {
         b = b.wrapping_add(a);
         rest = &rest[12..];
     }
+    // Only the empty key reaches here with nothing left, and `hashlittle` returns `c` unmixed.
     if rest.is_empty() {
         return c;
     }

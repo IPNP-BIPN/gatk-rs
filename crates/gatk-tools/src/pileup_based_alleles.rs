@@ -1,7 +1,8 @@
 //! Pileup detection, ported from `utils.pileup.PileupBasedAlleles`, the pileup half of
 //! `AssemblyResultSet` (`removeHaplotypesWithBadAlleles`, `injectPileupEvents`,
 //! `makeHaplotypeWithInsertedEvent`) and `AssemblyBasedCallerUtils.getKmerReadCounts` and
-//! `filterPileupHaplotypes` (GATK 4.6.2.0).
+//! `filterPileupHaplotypes` (GATK 4.7.0.0; `PileupBasedAlleles.java`, `AssemblyResultSet.java`,
+//! `AssemblyBasedCallerUtils.java` and `Haplotype.java` are unchanged since 4.6.2.0).
 //!
 //! # Where the pileups come from
 //!
@@ -26,6 +27,20 @@
 //! callers run it on a freshly trimmed set, whose haplotypes have none: `Haplotype.trim` does not
 //! carry the map over. The bad events then act only in HaplotypeCaller's trimmer. The exception is
 //! the fallback after the PD engine gave up, which built the maps on its way.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is a nullable value checked by the compiler. `cond.then_some(x)` is
+//!   `cond ? x : null`, `.filter(|_| cond)` keeps the value only while `cond` holds, and
+//!   `if let Some(x) = y` runs only when there is a value.
+//! - `Result<T, String>` is "a `T` or the Java exception as text"; `?` hands an `Err` to the
+//!   caller as an uncaught throw would.
+//! - `&[T]` is a borrowed read-only view of a list, `&mut T` a writable one; the caller keeps
+//!   ownership. `'a` on a return type says the result points into the argument of that name.
+//! - `as` casts truncate or wrap silently (`as i8` reinterprets a byte as signed, as Java's
+//!   `byte` is); `wrapping_mul`/`wrapping_add` are Java's overflowing `int` arithmetic.
+//! - `impl JavaHashCode for EventKey` gives a key Java's `hashCode()`, so a [`JavaHashMap`]
+//!   iterates it in the order a `java.util.HashMap` would.
 
 use gatk_engine::assembly_region::AssemblyRegion;
 use gatk_engine::assembly_result_set::{AssemblyResultSet, ResultSetError};
@@ -153,6 +168,7 @@ impl LocusSummary {
         let mut elements = Vec::new();
         for element in &context.pileup.elements {
             let base = element.base();
+            // `element.getQual()` is a signed Java `byte`, compared as an `int`.
             let qual = element.qual() as i8 as i32;
             if qual < min_base_quality_score {
                 depth -= 1;
@@ -168,6 +184,8 @@ impl LocusSummary {
             };
             let deletion = (arguments.detect_indels && element.is_before_deletion_start())
                 .then(|| element.length_of_immediately_following_indel());
+            // The Java computes badness only for an element that adds something, as here; the
+            // `onlyTrackDeletions` masking is applied later, per locus.
             if snp.is_none() && insertion.is_none() && deletion.is_none() {
                 continue;
             }
@@ -193,7 +211,10 @@ impl LocusSummary {
 
 /// `addMismatchPercentageToRead`: an `MZ` the read already carries, else the mismatches (the `NM`
 /// tag, or `calculateSamNmTag` over the reference) less the indel bases, per thousand aligned
-/// bases.
+/// bases. `PileupBasedAlleles.java:243` begins
+/// `(int) (MISMATCH_BASES_PERCENTAGE_ADJUSMTENT * adjustedNMScore / (`, the divisor being the
+/// summed lengths of the elements whose operator `isAlignment()` (`M`, `=`, `X`); the indel
+/// bases taken off are those whose operator `isIndel()` (`I`, `D`).
 pub fn mismatch_percentage(read: &BamRecord, contig_bases: &[u8]) -> i32 {
     if let Some(TagValue::Int(value)) = read.tags.get(Tag::new(&MISMATCH_BASES_PERCENTAGE_TAG)) {
         return *value as i32;
@@ -214,6 +235,7 @@ pub fn mismatch_percentage(read: &BamRecord, contig_bases: &[u8]) -> i32 {
             )
         }
     };
+    // A closure summing the lengths of the cigar elements whose operator `keep` accepts.
     let sum = |keep: fn(Op) -> bool| -> i32 {
         read.cigar
             .elements
@@ -231,6 +253,7 @@ pub fn mismatch_percentage(read: &BamRecord, contig_bases: &[u8]) -> i32 {
 /// A read as `isActive`'s pileups hold it: what identifies it among the walker's reads.
 pub type ReadKey = (String, u16, i32);
 
+/// The read's name, flags and alignment start, as a [`ReadKey`].
 pub fn read_key(read: &BamRecord) -> ReadKey {
     (read.read_name.clone(), read.flags, read.alignment_start)
 }
@@ -259,7 +282,10 @@ pub fn tag_mismatch_percentage(
     }
 }
 
-/// `isBadPileupRead`.
+/// `isBadPileupRead`: improperly paired, secondary or carrying `SA`, more than
+/// `badReadEditDistance` mismatches per base, or (when a template length mean and deviation
+/// are given) a template length more than 2.25 deviations from the mean. Each check only
+/// applies when its argument enables it, and all of them only when `badReadThreshold > 0`.
 fn is_bad_pileup_read(
     read: &BamRecord,
     mismatch: i32,
@@ -268,6 +294,7 @@ fn is_bad_pileup_read(
     if arguments.bad_read_threshold <= 0.0 {
         return false;
     }
+    // `isProperlyPaired()`: paired and flagged proper pair.
     let paired = read.flags & flags::READ_PAIRED != 0;
     let proper = paired && read.flags & flags::PROPER_PAIR != 0;
     if arguments.bad_read_proper_pair && !proper {
@@ -294,7 +321,8 @@ fn is_bad_pileup_read(
     false
 }
 
-/// `isBadAssemblyRead`.
+/// `isBadAssemblyRead`: more than `assemblyBadReadEditDistance` mismatches per base, when the
+/// assembly threshold is on.
 fn is_bad_assembly_read(mismatch: i32, arguments: &PileupDetectionArguments) -> bool {
     arguments.assembly_bad_read_threshold > 0.0
         && f64::from(mismatch) / MISMATCH_BASES_PERCENTAGE_ADJUSTMENT
@@ -302,10 +330,23 @@ fn is_bad_assembly_read(mismatch: i32, arguments: &PileupDetectionArguments) -> 
 }
 
 /// An `Event` as a hash key: `HashCodeBuilder` over the start and the two alleles.
+/// `Event.java:127`:
+///
+/// ```java
+/// return new HashCodeBuilder().append(start).append(refAllele).append(altAllele).hashCode();
+/// ```
+///
+/// `HashCodeBuilder` starts at 17 and multiplies by 37 before each field.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EventKey(pub Event);
 
-/// `SimpleAllele.hashCode`.
+/// `SimpleAllele.hashCode` (htsjdk 5.0.0 `SimpleAllele.java:223`):
+///
+/// ```java
+/// return Arrays.hashCode(bases) * 31 + Boolean.hashCode(isRef);
+/// ```
+///
+/// `Boolean.hashCode` is 1231 for true and 1237 for false.
 fn allele_hash(allele: &Allele) -> i32 {
     let bases = allele.display_string();
     byte_array_hash_code(bases.as_bytes())
@@ -339,6 +380,9 @@ impl JavaHashCode for ByteKey {
 /// `int[]{count, badCount, assemblyBadCount}`.
 type Counts = [i32; 3];
 
+/// `incrementCounts`: `computeIfAbsent(key, i -> new int[3])`, then one more support and one
+/// more of each badness the element's read has. The generic `K` stands for the Java's `T`
+/// (a `Byte`, a `String` or an `Integer` key).
 fn increment<K: JavaHashCode + PartialEq + Clone>(
     map: &mut JavaHashMap<K, Counts>,
     key: K,
@@ -353,7 +397,8 @@ fn increment<K: JavaHashCode + PartialEq + Clone>(
     values[2] += i32::from(element.bad_assembly);
 }
 
-/// The events of one map, through `Collectors.toMap` into a `HashMap<Event, int[]>`.
+/// The events of one map, through `Collectors.toMap` into a `HashMap<Event, int[]>`: each entry
+/// in the source map's iteration order, inserted into a fresh map.
 fn to_event_map<K: JavaHashCode + PartialEq + Clone>(
     map: &JavaHashMap<K, Counts>,
     make: impl Fn(&K) -> Result<Event, String>,
@@ -379,6 +424,9 @@ pub fn good_and_bad_pileup_events(
         return Ok((Vec::new(), Vec::new()));
     }
     let threshold = arguments.active_region_phred_threshold;
+    // Below the activity threshold a locus is skipped, unless the next one is active, in which
+    // case only its deletions count: the reference's own comment says DRAGEN counts a deletion
+    // at its first deleted base rather than its anchor.
     for (i, locus) in loci.iter().enumerate() {
         let mut only_track_deletions = false;
         if threshold > 0.0 && locus.activity_score < threshold {
@@ -414,6 +462,9 @@ pub fn good_and_bad_pileup_events(
                 increment(&mut deletions, length as i32, element);
             }
         }
+        // The three `toMap` calls: a SNP is ref base to alt base, an insertion ref base to ref
+        // base plus the inserted bases, a deletion the reference from the anchor over
+        // `length + 1` bases to the anchor base.
         let reference = || Allele::create(&[locus.ref_base], true).map_err(|e| format!("{e:?}"));
         let event = |r: Allele, a: Allele| {
             Event::new(&locus.contig, locus.position, r, a).map_err(|e| e.message())
@@ -440,6 +491,7 @@ pub fn good_and_bad_pileup_events(
                 Allele::create(&[locus.ref_base], false).map_err(|e| format!("{e:?}"))?,
             )
         })?;
+        // `Streams.concat` of the three entry sets, in this order.
         for map in [&snp_events, &insertion_events, &deletion_events] {
             for (key, counts) in map.iter() {
                 if passes_pileup_filters(arguments, counts, locus.depth, key.0.is_indel()) {
@@ -455,7 +507,8 @@ pub fn good_and_bad_pileup_events(
     Ok((events(&good), events(&bad)))
 }
 
-/// `passesPileupFilters`.
+/// `passesPileupFilters`: more than the SNP (or indel) fraction of the depth, at least the
+/// absolute depth, and at most `badReadThreshold` of the support from bad reads.
 fn passes_pileup_filters(
     arguments: &PileupDetectionArguments,
     counts: &Counts,
@@ -473,13 +526,17 @@ fn passes_pileup_filters(
             || f64::from(counts[1]) / f64::from(counts[0]) <= arguments.bad_read_threshold)
 }
 
-/// `failsAssemblyFilters`.
+/// `failsAssemblyFilters`: at least `assemblyBadReadThreshold` of the support from reads bad for
+/// assembly.
 fn fails_assembly_filters(arguments: &PileupDetectionArguments, counts: &Counts) -> bool {
     arguments.assembly_bad_read_threshold > 0.0
         && f64::from(counts[2]) / f64::from(counts[0]) >= arguments.assembly_bad_read_threshold
 }
 
 /// The loci of `region.getAlignmentData()`: those of the region's active span.
+///
+/// `partition_point` is a binary search for the first locus failing the test, so `loci` must
+/// be sorted by position. The result borrows from `loci` rather than copying it.
 pub fn region_loci<'a>(loci: &'a [LocusSummary], region: &AssemblyRegion) -> &'a [LocusSummary] {
     let span = region.span();
     let from = loci.partition_point(|l| l.position < span.start);
@@ -489,6 +546,10 @@ pub fn region_loci<'a>(loci: &'a [LocusSummary], region: &AssemblyRegion) -> &'a
 
 /// The trimmer's events in `HAPLOTYPE_EVENT_COMPARATOR` order: the assembled ones less the bad
 /// pileup events, then the good ones, each added only when the comparator has no equal yet.
+///
+/// `HaplotypeCallerEngine` collects them into a `TreeSet<>(HAPLOTYPE_EVENT_COMPARATOR)` (start,
+/// reference length, alternate allele), which keeps the first of two events it calls equal. A
+/// stable sort followed by `dedup_by` on the same key keeps the first too.
 pub fn events_for_trimming(assembled: &[Event], good: &[Event], bad: &[Event]) -> Vec<Event> {
     let mut events: Vec<Event> = assembled
         .iter()
@@ -508,7 +569,8 @@ pub fn events_for_trimming(assembled: &[Event], good: &[Event], bad: &[Event]) -
     events
 }
 
-/// `Locatable.withinDistanceOf`.
+/// `Locatable.withinDistanceOf`: same contig, and the closed intervals overlap once `other` is
+/// widened by `distance` on each side. With 0 it is `Locatable.overlaps`.
 fn within_distance_of(event: &Event, other: &Event, distance: i32) -> bool {
     event.contig() == other.contig()
         && event.start() <= other.end() + distance
@@ -524,6 +586,8 @@ fn compare_haplotypes(a: &Haplotype, b: &Haplotype) -> std::cmp::Ordering {
 }
 
 /// A `TreeSet<Haplotype>`'s `add`: in order, and nothing the comparator calls equal.
+/// `binary_search_by` answers `Ok` when an equal element exists and `Err(at)` with the position
+/// that keeps the list sorted otherwise.
 fn tree_set_add(set: &mut Vec<Haplotype>, haplotype: Haplotype) {
     match set.binary_search_by(|probe| compare_haplotypes(probe, &haplotype)) {
         Ok(_) => {}
@@ -569,6 +633,12 @@ pub fn remove_haplotypes_with_bad_alleles(
 }
 
 /// `injectPileupEvents(region, args, aligner, goodPileupEvents)` on a trimmed set.
+///
+/// For each good event by start (a stable sort, so events at one start keep the set's order):
+/// skip a SNP near an assembled indel, an event already assembled, or a symbolic one; insert it
+/// into every base haplotype; keep the best `numHaplotypesToIterate` by k-mer support; and add
+/// those to the base haplotypes, which later events are then inserted into too. Finally every
+/// base haplotype is added to the set and the variation events regenerated.
 #[allow(clippy::too_many_arguments)]
 pub fn inject_pileup_events(
     assembly: &mut AssemblyResultSet,
@@ -590,7 +660,9 @@ pub fn inject_pileup_events(
     let assembled = assembly.variation_events(max_mnp_distance).map_err(error)?;
     let assembled_indels: Vec<&Event> = assembled.iter().filter(|e| e.is_indel()).collect();
 
-    // The reference first, then the best scores, five of them, into a `TreeSet`.
+    // The reference first, then the best scores, five of them, into a `TreeSet`. The Java's
+    // `comparingInt(isReference ? 1 : 0).thenComparingDouble(getScore).reversed()` reverses
+    // both keys; `total_cmp` is `Double.compare`'s total order on doubles.
     let mut ranked: Vec<&Haplotype> = assembly.haplotype_list().iter().collect();
     ranked.sort_by(|a, b| {
         b.is_reference()
@@ -669,7 +741,15 @@ pub fn inject_pileup_events(
     Ok(())
 }
 
-/// `isSymbolic`: a no-call, `-`, `*`, or a symbolic allele.
+/// `isSymbolic`: a no-call, `-`, `*`, or a symbolic allele (`AssemblyResultSet.java:773`):
+///
+/// ```java
+/// return a.equals(Allele.NO_CALL)
+///         || a.getDisplayString().equals(String.valueOf(VCFConstants.NULL_ALLELE))
+///         || a.equals(Allele.SPAN_DEL) || a.isSymbolic();
+/// ```
+///
+/// (one Java line, wrapped here to fit).
 pub(crate) fn is_symbolic(allele: &Allele) -> bool {
     let text = allele.display_string();
     allele.is_no_call() || text == "-" || text == "*" || allele.is_symbolic()
@@ -711,6 +791,10 @@ pub(crate) fn make_haplotype_with_inserted_event(
 }
 
 /// `Haplotype.insertAllele(ref, alt, start)`: the new bases, or none.
+///
+/// The alternate replaces `ref.len()` bases at the haplotype index the event's start maps to.
+/// None when the start maps outside the haplotype or into a deletion, or when too few bases
+/// follow it.
 fn insert_allele(base: &Haplotype, event: &Event) -> Result<Option<Vec<u8>>, String> {
     let bases = base.bases();
     let reference = event.ref_allele();
@@ -746,6 +830,9 @@ fn insert_allele(base: &Haplotype, event: &Event) -> Result<Option<Vec<u8>>, Str
 }
 
 /// `getKmerReadCounts`, as far as anything reads it: which k-mers some read holds.
+///
+/// The Java counts each k-mer, but its only reader (`filterPileupHaplotypes`) asks whether the
+/// count is above zero, so a set is enough.
 fn kmer_read_counts(reads: &[BamRecord], kmer_size: usize) -> std::collections::HashSet<Vec<u8>> {
     let mut kmers = std::collections::HashSet::new();
     for read in reads {
@@ -762,6 +849,10 @@ fn kmer_read_counts(reads: &[BamRecord], kmer_size: usize) -> std::collections::
 
 /// `filterPileupHaplotypes`: at most `count`, by the number of their distinct k-mers some read
 /// holds, ties kept as good as the last place and then ordered by bases.
+///
+/// The score counts `kmerizeSequence`'s `LinkedHashSet`, so a k-mer repeated in a haplotype
+/// counts once. The passing score is the `count`-th best, and the survivors are sorted by score
+/// descending, then by `getBaseString`, and cut to `count`.
 fn filter_pileup_haplotypes(
     haplotypes: Vec<Haplotype>,
     read_kmers: &std::collections::HashSet<Vec<u8>>,

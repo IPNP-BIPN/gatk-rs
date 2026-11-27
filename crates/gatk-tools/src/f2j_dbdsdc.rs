@@ -1,5 +1,5 @@
-//! `dbdsdc('U', 'I', n, ...)` as the F2J translation of LAPACK 3.1.1 runs it: the singular values of
-//! an upper bidiagonal matrix and both sets of vectors, which [`crate::f2j_gesdd`] calls.
+//! `dbdsdc('U', 'I', n, ...)` as the F2J translation of LAPACK 3.1.1 runs it: the singular values
+//! of an upper bidiagonal matrix and both sets of vectors, which [`crate::f2j_gesdd`] calls.
 //!
 //! Up to `SMLSIZ` (25) it is `dlasdq`, that is `dbdsqr`. Past it the matrix is scaled to a largest
 //! entry of one, every diagonal entry under the epsilon is raised to it, and `dlasd0` divides: the
@@ -14,9 +14,33 @@
 //!
 //! Ported from LAPACK 3.1.1 (`SRC/dbdsdc.f`, `dbdsqr.f`, `dlasdq.f`, `dlasd0.f` to `dlasd5.f`,
 //! `dlasdt.f`, `dlaed6.f`, `dlamrg.f`, `dlascl.f`, `dlanst.f`, `dlasr.f`) and reference BLAS
-//! (`drot.f`, `dswap.f`, `dscal.f`, `dcopy.f`, `dgemm.f`), BSD 3-Clause, with what F2J does to them:
-//! `MAX` and `MIN` are `Math.max` and `Math.min`, `SIGN` is `Util.dsign`, `x**2` is `Math.pow(x, 2)`,
-//! which HotSpot answers as `x * x`, and `DLAMC3(a, b)` is `a + b`.
+//! (`drot.f`, `dswap.f`, `dscal.f`, `dcopy.f`, `dgemm.f`), BSD 3-Clause, with what F2J does to
+//! them: `MAX` and `MIN` are `Math.max` and `Math.min`, `SIGN` is `Util.dsign`, `x**2` is
+//! `Math.pow(x, 2)`, which HotSpot answers as `x * x`, and `DLAMC3(a, b)` is `a + b`.
+//!
+//! The divide and conquer is checked bit for bit against the oracle by `tests/f2j_dgesdd.rs`,
+//! whose matrices past 25 samples take it.
+//!
+//! # Reading this file without reading Rust
+//!
+//! The routines keep the Fortran's one-based indices, its argument order and its order of
+//! operations. [`crate::f2j_gesdd`]'s header explains slices, tuples for output arguments and
+//! ranges; the pieces of syntax new in this file are:
+//!
+//! - `macro_rules! d { ($i:expr) => { d[$i - 1] }; }` defines `d!(i)` as a textual shorthand for
+//!   `d[i - 1]`, readable and writable, so the body can index as the Fortran does: `d!(m)` is
+//!   `D(M)`;
+//! - `View` stands for a Fortran array argument such as `U(NLF, NLF)` with its `LDU`: an offset
+//!   into one shared buffer, not a copy, and `.sub(i, j)` is passing `A(I, J)` on to a callee;
+//! - `'main: loop { ... continue 'main; }` is a labelled loop: `continue 'main` restarts the outer
+//!   loop from inside an inner one, which is where the Fortran jumps back to its top;
+//! - `split_at_mut(k)` cuts one writable array into two writable halves that may be used at
+//!   once, the way the Fortran hands `WORK(1)` and `WORK(N)` to one call;
+//! - `x as f64`, `x as isize`, `x as usize` are conversions: integer to double is exact here,
+//!   `usize` to `isize` (a signed index) allows the Fortran's `-1` sentinels and strides, and
+//!   double to `usize` truncates toward zero, as Fortran's `INT` does for the non-negative values
+//!   it meets here;
+//! - `[f64; 3]` is a fixed-length array of three doubles, and `*d` copies one.
 
 use crate::f2j_gesdd::{
     dlapy2, dlartg, dlas2, dlasv2, dnrm2, max, max3, min, sign, EPS, SAFE_MINIMUM,
@@ -29,11 +53,14 @@ pub const SMLSIZ: usize = 25;
 /// Where `(1, 1)` of a column-major block sits in its buffer, and the buffer's leading dimension.
 #[derive(Clone, Copy)]
 pub(crate) struct View {
+    /// The buffer index of the block's `(1, 1)`.
     pub at: usize,
+    /// The leading dimension: the buffer distance from one column to the next.
     pub ld: usize,
 }
 
 impl View {
+    /// The whole buffer as one block with leading dimension `ld`.
     pub fn new(ld: usize) -> View {
         View { at: 0, ld }
     }
@@ -52,7 +79,7 @@ impl View {
     }
 }
 
-/// `drot` over two rows of `a`, `count` columns long.
+/// `drot` over two rows of `a`, `count` columns long: row x becomes `c x + s y`, row y `c y - s x`.
 fn rot_rows(a: &mut [f64], v: View, x: usize, y: usize, count: usize, c: f64, s: f64) {
     for j in 1..=count {
         let (ix, iy) = (v.ix(x, j), v.ix(y, j));
@@ -72,12 +99,14 @@ fn rot_columns(a: &mut [f64], v: View, x: usize, y: usize, count: usize, c: f64,
     }
 }
 
+/// `dswap` of two rows of `a`, `count` columns long.
 fn swap_rows(a: &mut [f64], v: View, x: usize, y: usize, count: usize) {
     for j in 1..=count {
         a.swap(v.ix(x, j), v.ix(y, j));
     }
 }
 
+/// `dswap` of two columns of `a`, `count` rows long.
 fn swap_columns(a: &mut [f64], v: View, x: usize, y: usize, count: usize) {
     for i in 1..=count {
         a.swap(v.ix(i, x), v.ix(i, y));
@@ -104,6 +133,8 @@ fn dlasr(
     for step in 0..count {
         let j = if forward { step + 1 } else { count - step };
         let (ctemp, stemp) = (c[j - 1], s[j - 1]);
+        // An identity rotation is skipped, not applied: applying it is not a no-op on a negative
+        // zero or a NaN.
         if ctemp != 1.0 || stemp != 0.0 {
             if left {
                 for i in 1..=n {
@@ -126,11 +157,16 @@ fn dlasr(
 
 /// `dlascl('G', 0, 0, cfrom, cto, ...)`: one multiplication by `cto / cfrom` unless that would
 /// leave the range, then in steps.
+///
+/// Each pass either multiplies by the safe minimum or its reciprocal, moving `cfromc` or `ctoc`
+/// one step toward each other, or, once the ratio is representable, by `ctoc / cfromc` and stops.
+/// The values are multiplied on every pass, so a scaling done in steps rounds at each step.
 fn dlascl(cfrom: f64, cto: f64, values: &mut [f64]) {
     let smlnum = SAFE_MINIMUM;
     let bignum = 1.0 / smlnum;
     let (mut cfromc, mut ctoc) = (cfrom, cto);
     loop {
+        // `(mul, done)` are declared here and assigned once in whichever branch runs.
         let cfrom1 = cfromc * smlnum;
         let cto1 = ctoc / bignum;
         let (mul, done);
@@ -157,6 +193,11 @@ fn dlascl(cfrom: f64, cto: f64, values: &mut [f64]) {
 
 /// `dbdsqr('U', n, ncvt, nru, 0, ...)` with vectors: the values in `d`, decreasing, rows of `vt`
 /// and columns of `u` rotated with them. Returns `info`.
+///
+/// Implicit zero-shift or shifted QR sweeps over the active block `ll..=m`, chasing the bulge
+/// top to bottom (`idir == 1`) or bottom to top (`idir == 2`) as the larger end decides, until
+/// every superdiagonal entry is under `thresh` or the relative test. A non-zero `info` is the
+/// count of superdiagonal entries still non-zero once `iter` passes `MAXITR * n * n`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn dbdsqr(
     n: usize,
@@ -218,11 +259,13 @@ pub(crate) fn dbdsqr(
         let mut oldm: isize = -1;
         let mut idir = 0;
         let mut m = n;
+        // Each pass finds the bottom block not yet converged and does one sweep over it.
         'main: loop {
             if m <= 1 {
                 break;
             }
             if iter > maxit {
+                // `.filter(..).count()`: how many `i` in `1..n` have a non-zero `E(I)`.
                 return (1..n).filter(|&i| e!(i) != 0.0).count();
             }
             smax = d!(m).abs();
@@ -261,6 +304,7 @@ pub(crate) fn dbdsqr(
                 m -= 2;
                 continue 'main;
             }
+            // A new block (or the first pass, the -1 sentinels) chooses its direction again.
             if (ll as isize) > oldm || (m as isize) < oldll {
                 idir = if d!(ll).abs() >= d!(m).abs() { 1 } else { 2 };
             }
@@ -486,7 +530,8 @@ pub(crate) fn dbdsqr(
             }
         }
     }
-    // Smallest to the end, one transposition per vector.
+    // Smallest to the end, one transposition per vector. `<=`, so of equal values the last one
+    // found is moved, which decides which vector goes where.
     for i in 1..n {
         let last = n + 1 - i;
         let mut isub = 1;
@@ -583,6 +628,7 @@ fn dlasdq(
 /// `dlamrg`: the permutation that merges two sorted runs of `a` into increasing order, one-based.
 /// A run read backwards has a stride of -1.
 fn dlamrg(n1: usize, n2: usize, a: &[f64], forward1: bool, forward2: bool, index: &mut [usize]) {
+    // Signed, because a run read backwards steps by -1. `<=` takes from the first run on a tie.
     let (mut n1sv, mut n2sv) = (n1, n2);
     let (step1, step2): (isize, isize) =
         (if forward1 { 1 } else { -1 }, if forward2 { 1 } else { -1 });
@@ -627,6 +673,8 @@ fn dlamrg(n1: usize, n2: usize, a: &[f64], forward1: bool, forward2: bool, index
 fn dlasdt(n: usize, msub: usize) -> (usize, usize, Vec<usize>, Vec<usize>, Vec<usize>) {
     let maxn = n.max(1);
     let temp = jmath::math::log(maxn as f64 / (msub + 1) as f64) / jmath::math::log(2.0);
+    // `as usize` truncates toward zero, Fortran's `INT`; `temp` is not negative, since the only
+    // caller has `n > msub`.
     let lvl = temp as usize + 1;
     let mut inode = vec![0; n + 1];
     let mut ndiml = vec![0; n + 1];
@@ -769,6 +817,7 @@ fn dlaed6(
     } else {
         min((d[0] - tau).abs(), (d[1] - tau).abs())
     };
+    // Copies of the three poles and weights, scaled below when a pole is too near `tau`.
     let mut dscale = *d;
     let mut zscale = *z;
     let mut sclinv = 1.0;
@@ -1714,7 +1763,8 @@ fn dlasd3(
         return 0;
     }
     for value in &mut dsigma[1..=k] {
-        // `DLAMC3(DSIGMA(I), DSIGMA(I)) - DSIGMA(I)`.
+        // `DLAMC3(DSIGMA(I), DSIGMA(I)) - DSIGMA(I)`. On IEEE doubles `(x + x) - x` is `x` unless
+        // `x + x` overflows; it is kept so the operations stay the reference's.
         *value = (*value + *value) - *value;
     }
     let qv = View::new(k);
@@ -1956,6 +2006,7 @@ fn dlasd0(
     let (nlvl, nd, inode, ndiml, ndimr) = dlasdt(n, SMLSIZ);
     // IWORK(IDXQ), one-based.
     let mut idxq = vec![0usize; n + 1];
+    // The leaves, `(nd + 1) / 2` to `nd`: `div_ceil` is division rounding up.
     for i in nd.div_ceil(2)..=nd {
         let ic = inode[i];
         let nl = ndiml[i];
@@ -1999,6 +2050,7 @@ fn dlasd0(
             idxq[ic + j] = j;
         }
     }
+    // Merge up the tree, the deepest level first; `1 << (lvl - 1)` is `2**(LVL - 1)`.
     for lvl in (1..=nlvl).rev() {
         let (lf, ll) = if lvl == 1 {
             (1, 1)
@@ -2053,6 +2105,8 @@ pub(crate) fn dbdsdc(
         d[0] = d[0].abs();
         return 0;
     }
+    // `dlaset` both to the identity. `&mut *u` lends `u` to the loop again without giving it up,
+    // so it is still usable after.
     for matrix in [&mut *u, &mut *vt] {
         matrix.fill(0.0);
         for i in 0..n {
@@ -2076,12 +2130,16 @@ pub(crate) fn dbdsdc(
         }
         dlascl(orgnrm, 1.0, &mut d[..n]);
         dlascl(orgnrm, 1.0, &mut e[..n - 1]);
+        // The raising the module note describes: a diagonal entry under the epsilon becomes it,
+        // keeping its sign.
         for value in d[..n].iter_mut() {
             if value.abs() < EPS {
                 *value = sign(EPS, *value);
             }
         }
         let nm1 = n - 1;
+        // Split the matrix where a superdiagonal entry is under the epsilon, and solve each block
+        // with `dlasd0`. A last 1 by 1 block is solved in place.
         let mut start = 1;
         for i in 1..=nm1 {
             if e[i - 1].abs() < EPS || i == nm1 {

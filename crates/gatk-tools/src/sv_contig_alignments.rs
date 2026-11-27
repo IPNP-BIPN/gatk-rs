@@ -12,6 +12,24 @@
 //! `org.broadinstitute.hellbender.tools.spark.sv.discovery.alignment.AlignedContig`,
 //! `org.broadinstitute.hellbender.tools.spark.sv.discovery.alignment.AssemblyContigWithFineTunedAlignments`
 //! and the parts of `org.broadinstitute.hellbender.utils.read.CigarUtils` they call.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, SvError>` is "a `T`, or the exception the Java would have thrown"; [`SvError`]
+//!   carries the exception's class name and message. A `?` after a call passes such an error
+//!   straight up to the caller, which is Java's `throws` at that one call site.
+//! - `Option<T>` is "a `T` or nothing", the compiler-checked form of a Java reference that may be
+//!   `null`; `unwrap_or(x)` is Java's `orElse(x)`.
+//! - `&[T]` is a borrowed, read-only view of a list: the function reads it, the caller keeps it.
+//!   `&mut Vec<T>` is the writable form, the one way a function here changes a caller's list.
+//! - `.iter().filter(..).map(..).sum()` is Java's `stream().filter(..).mapToInt(..).sum()`, and
+//!   `|x| ...` is a lambda. A `match` must name every case, so adding an operator to [`CigarOp`]
+//!   makes every unhandled `match` a compile error rather than a silent default.
+//! - `#[derive(PartialEq)]` compares every field, in the order declared. For
+//!   [`AlignmentInterval`] that is the same set of fields `AlignmentInterval.equals` compares, so
+//!   `contains`, `retain` and `==` below agree with Java's `List.contains` and `removeAll`.
+//! - The last expression of a body, written without `;`, is its value; `return` is only written
+//!   for an early exit.
 
 use std::cmp::Ordering;
 use std::fmt;
@@ -33,11 +51,14 @@ pub const USER_EXCEPTION: &str = "org.broadinstitute.hellbender.exceptions.UserE
 /// What the interpretation threw: the exception's class and its message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SvError {
+    /// The fully qualified Java class name, one of the constants above.
     pub class: &'static str,
+    /// What `getMessage()` would return.
     pub message: String,
 }
 
 impl SvError {
+    /// `impl Into<String>` accepts either a borrowed `&str` or an owned `String` as the message.
     pub fn new(class: &'static str, message: impl Into<String>) -> SvError {
         SvError {
             class,
@@ -66,7 +87,10 @@ pub enum CigarOp {
 }
 
 impl CigarOp {
+    /// `CigarOperator.characterToEnum`, as `None` where the Java throws on an unknown letter.
     pub fn from_char(character: char) -> Option<CigarOp> {
+        // The `match` yields the operator, and the `_` arm leaves the whole function early with
+        // `None` instead.
         Some(match character {
             'M' => CigarOp::M,
             'I' => CigarOp::I,
@@ -81,6 +105,7 @@ impl CigarOp {
         })
     }
 
+    /// `CigarOperator.enumToCharacter`, the letter `TextCigarCodec.encode` prints.
     pub fn to_char(self) -> char {
         match self {
             CigarOp::M => 'M',
@@ -95,6 +120,7 @@ impl CigarOp {
         }
     }
 
+    /// `consumesReadBases`. `matches!(x, A | B)` is `x == A || x == B`.
     pub fn consumes_read_bases(self) -> bool {
         matches!(
             self,
@@ -102,6 +128,7 @@ impl CigarOp {
         )
     }
 
+    /// `consumesReferenceBases`.
     pub fn consumes_reference_bases(self) -> bool {
         matches!(
             self,
@@ -109,14 +136,17 @@ impl CigarOp {
         )
     }
 
+    /// `isClipping`: `return this == S || this == H;`.
     pub fn is_clipping(self) -> bool {
         matches!(self, CigarOp::S | CigarOp::H)
     }
 
+    /// `isIndel`: `return this == I || this == D;`, so a skipped region `N` is not a gap here.
     pub fn is_indel(self) -> bool {
         matches!(self, CigarOp::I | CigarOp::D)
     }
 
+    /// `isAlignment`: `return this == M || this == X || this == EQ;`.
     pub fn is_alignment(self) -> bool {
         matches!(self, CigarOp::M | CigarOp::Eq | CigarOp::X)
     }
@@ -128,6 +158,11 @@ pub struct Cigar(pub Vec<(i32, CigarOp)>);
 
 impl Cigar {
     /// `TextCigarCodec.decode`, with `*` for the empty cigar.
+    ///
+    /// `None` is a cigar the codec would not accept: an operator with no length before it, an
+    /// unknown operator letter, or digits with no operator after them (the final `is_empty`
+    /// check). The codec throws a different exception for each; this keeps only the refusal. A
+    /// length past `i32::MAX` is also `None` here, where the codec's `length * 10` wraps.
     pub fn parse(text: &str) -> Option<Cigar> {
         if text == "*" {
             return Some(Cigar::default());
@@ -138,14 +173,17 @@ impl Cigar {
             if character.is_ascii_digit() {
                 length.push(character);
             } else {
+                // `?` on an `Option` returns `None` from `parse` at once if the letter is unknown.
                 let op = CigarOp::from_char(character)?;
                 elements.push((length.parse().ok()?, op));
                 length.clear();
             }
         }
+        // `cond.then_some(x)` is `cond ? Some(x) : None`.
         length.is_empty().then_some(Cigar(elements))
     }
 
+    /// `Cigar.isEmpty`: no elements, which is what `*` decodes to.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -183,6 +221,10 @@ impl Cigar {
     }
 
     /// `CigarUtils.countClippedBases(cigar, tail, type)` for one clipping operator.
+    ///
+    /// Walks in from one end (`left` is `Tail.LEFT`) and stops at the first operator that is not a
+    /// clip. A cigar of one non-clipping element has no clips; an empty one, a lone clip, or a
+    /// cigar that is clips end to end is the reference's `IllegalArgumentException`.
     fn count_clipped_of(&self, left: bool, kind: CigarOp) -> Result<i32, SvError> {
         let size = self.0.len();
         if size < 2 {
@@ -196,6 +238,8 @@ impl Cigar {
         }
         let mut result = 0;
         for n in 0..size {
+            // `self.0` is the tuple struct's one field, the element list. Java's
+            // `final int index = (tail == Tail.LEFT ? n : size - n - 1);`
             let (length, op) = self.0[if left { n } else { size - n - 1 }];
             if !op.is_clipping() {
                 return Ok(result);
@@ -210,6 +254,9 @@ impl Cigar {
     }
 
     /// `CigarUtils.countClippedBases(cigar, tail)`: soft and hard clips at one end.
+    ///
+    /// Soft first, then hard, each with its own refusal, so the error a fully clipped cigar reports
+    /// is the soft-clip walk's.
     pub fn count_clipped_bases(&self, left: bool) -> Result<i32, SvError> {
         Ok(self.count_clipped_of(left, CigarOp::S)? + self.count_clipped_of(left, CigarOp::H)?)
     }
@@ -228,6 +275,8 @@ impl Cigar {
                 format!("start {start} or distance {ref_dist} is non-positive."),
             ));
         }
+        // `Lists.reverse(cigar.getCigarElements())` when walking backward. A copy here, where
+        // Guava's is a reversed view; nothing writes to it, so the two read the same.
         let elements: Vec<(i32, CigarOp)> = if backward {
             self.0.iter().rev().copied().collect()
         } else {
@@ -254,6 +303,7 @@ impl Cigar {
                 continue;
             }
             if op.consumes_reference_bases() {
+                // `a.max(b)` is `Math.max(a, b)`.
                 ref_consumed += length - (skip - before).max(0);
             }
             if ref_consumed >= ref_dist {
@@ -263,6 +313,8 @@ impl Cigar {
                     - if op.consumes_read_bases() { excess } else { 0 });
             }
         }
+        // The missing space after the cigar, and "red start", are the reference's own text,
+        // kept so the message matches it (`CigarUtils.java:454`).
         Err(SvError::new(
             ILLEGAL_ARGUMENT,
             format!(
@@ -272,6 +324,7 @@ impl Cigar {
     }
 }
 
+/// `Display` is Rust's `toString()`: it is what `format!("{cigar}")` and `.to_string()` print.
 impl fmt::Display for Cigar {
     /// `TextCigarCodec.encode`.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -315,6 +368,7 @@ impl Interval {
         }
     }
 
+    /// `SimpleInterval.size`: `end - start + 1`, the span being closed at both ends.
     pub fn size(&self) -> i32 {
         self.end - self.start + 1
     }
@@ -324,11 +378,13 @@ impl Interval {
         self.contig == other.contig && self.start <= other.end && other.start <= self.end
     }
 
+    /// `contains`: same contig, and `other` lies wholly inside, ends included.
     pub fn contains(&self, other: &Interval) -> bool {
         self.contig == other.contig && self.start <= other.start && self.end >= other.end
     }
 }
 
+/// `SimpleInterval.toString`: `contig:start-end`.
 impl fmt::Display for Interval {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}:{}-{}", self.contig, self.start, self.end)
@@ -347,12 +403,15 @@ pub struct Dictionary {
 impl Dictionary {
     /// `getSequenceIndex`, -1 where the contig is absent.
     pub fn index(&self, contig: &str) -> i32 {
+        // `position` is `Option<usize>`; `map_or` turns the absent case into -1 and casts the
+        // index to `int` (`as` would truncate past `i32::MAX`, which no dictionary reaches).
         self.names
             .iter()
             .position(|name| name == contig)
             .map_or(-1, |index| index as i32)
     }
 
+    /// The contig's length, `None` where the dictionary does not hold it.
     pub fn length(&self, contig: &str) -> Option<i32> {
         let index = self.index(contig);
         (index >= 0).then(|| self.lengths[index as usize])
@@ -376,6 +435,8 @@ impl Dictionary {
         first: &Interval,
         second: &Interval,
     ) -> Result<Ordering, SvError> {
+        // `Ordering::then` falls through to the next key only on a tie, as `thenComparing`
+        // does.
         Ok(self
             .compare_contigs(&first.contig, &second.contig)?
             .then(first.start.cmp(&second.start))
@@ -385,6 +446,10 @@ impl Dictionary {
 
 /// One SAM line of an assembled contig, as `GATKRead` exposes it to the tool.
 #[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// The fields are what the tool reads off the record: the strand and supplementary flags, the
+/// alignment span, the SAM cigar (along the reference, not yet inverted), MQ, bases, and the
+/// `NM` and `AS` tags where present.
 pub struct ContigRead {
     pub name: String,
     /// `GATKRead.isUnmapped`: the flag, or no contig, or no start.
@@ -422,6 +487,7 @@ pub enum AlnModType {
 }
 
 impl AlnModType {
+    /// `AlnModType.toString`, which prints `ModTypeString.O`, `H`, `E` or `S`.
     fn code(self) -> &'static str {
         match self {
             AlnModType::None => "O",
@@ -434,6 +500,7 @@ impl AlnModType {
 
 /// `AlignmentInterval.NO_NM` and `NO_AS`.
 pub const NO_NM: i32 = -1;
+/// See [`NO_NM`].
 pub const NO_AS: i32 = -1;
 
 /// `AlignmentInterval`: one alignment of a contig, with its cigar along the contig's 5' to 3'
@@ -538,6 +605,7 @@ impl AlignmentInterval {
         })
     }
 
+    /// `containsGapOfEqualOrLargerSize`: an `I` or `D` of at least `gap` bases.
     pub fn contains_gap_of_equal_or_larger_size(&self, gap: i32) -> bool {
         self.cigar
             .0
@@ -545,14 +613,17 @@ impl AlignmentInterval {
             .any(|(length, op)| op.is_indel() && *length >= gap)
     }
 
+    /// `getSizeOnRead`: the contig bases this alignment covers.
     pub fn size_on_read(&self) -> i32 {
         self.end_in_contig - self.start_in_contig + 1
     }
 
+    /// `containsOnRef`: the reference span holds `other`'s.
     pub fn contains_on_ref(&self, other: &AlignmentInterval) -> bool {
         self.reference_span.contains(&other.reference_span)
     }
 
+    /// `containsOnRead`: the contig span holds `other`'s, ends included.
     pub fn contains_on_read(&self, other: &AlignmentInterval) -> bool {
         self.start_in_contig <= other.start_in_contig && self.end_in_contig >= other.end_in_contig
     }
@@ -576,6 +647,7 @@ impl AlignmentInterval {
             self.cigar_along_reference(),
             self.map_qual
         );
+        // An absent `NM` with a present `AS` prints `.` in NM's place, so the AS stays sixth.
         if self.mismatches != NO_NM || self.aln_score != NO_AS {
             text.push(',');
             if self.mismatches == NO_NM {
@@ -607,6 +679,9 @@ impl AlignmentInterval {
 }
 
 /// `AlignmentInterval.overlapOnContig`.
+///
+/// Bases on the contig both alignments cover, never negative. The `+ 1` turns the closed ends
+/// into half-open ones, so two spans that only touch overlap by zero.
 pub fn overlap_on_contig(one: &AlignmentInterval, two: &AlignmentInterval) -> i32 {
     ((one.end_in_contig + 1).min(two.end_in_contig + 1)
         - one.start_in_contig.max(two.start_in_contig))
@@ -634,6 +709,7 @@ pub fn split_gapped_alignment(
     sensitivity: i32,
     unclipped_contig_len: i32,
 ) -> Result<Vec<AlignmentInterval>, SvError> {
+    // `&` borrows the list without copying it; `grab` below reads the same borrow.
     let elements = &one.cigar.0;
     let mut count = elements.len();
     if count <= 1 {
@@ -659,6 +735,9 @@ pub fn split_gapped_alignment(
     let (mut start_contig, mut start_index, mut start_ref) = (NOT_SET, 0usize, 0);
     let (mut end_contig, mut end_index, mut end_ref) = (0, 0usize, 0);
     let mut result = Vec::new();
+    // `GapSplitter.grabCurrentInterval`. Java keeps the six boundaries as fields of the splitter;
+    // here they are local variables, and this closure (a lambda that reads `elements`, `one` and
+    // `unclipped_contig_len` from the enclosing function) receives them as arguments instead.
     let grab = |start_contig: i32,
                 start_index: usize,
                 start_ref: i32,
@@ -675,6 +754,8 @@ pub fn split_gapped_alignment(
         if initial_soft > 0 {
             pieces.push((initial_soft, CigarOp::S));
         }
+        // `cigarElements.subList(alignmentStartIdx, alignmentEndIdx)`: `a..b` is half-open, like
+        // `subList`.
         pieces.extend_from_slice(&elements[start_index..end_index]);
         let mut final_soft = unclipped_contig_len - end_contig;
         let last = elements[elements.len() - 1];
@@ -788,11 +869,18 @@ struct GoodAndBadMappings {
 }
 
 /// `List.removeAll`: every element equal to one of `gone` leaves.
+///
+/// `retain` keeps what the predicate accepts, which is the complement of `removeAll`'s test.
+/// Every copy of an element in `gone` leaves, as with `removeAll`.
 fn remove_all(list: &mut Vec<AlignmentInterval>, gone: &[AlignmentInterval]) {
     list.retain(|alignment| !gone.contains(alignment));
 }
 
 /// `Math.ulp(double)`: the distance to the next double of larger magnitude.
+///
+/// The next double above `|value|` is the one whose bit pattern is one greater, which is how
+/// the distance is taken here. `Double.MAX_VALUE` has no finite neighbour above, so it gets the
+/// gap below it instead, two to the 971 (52 binary places under its exponent of 1023).
 fn ulp(value: f64) -> f64 {
     let magnitude = value.abs();
     if magnitude == f64::MAX {
@@ -808,6 +896,8 @@ impl AlignedContig {
         sequence: Vec<u8>,
         mut alignments: Vec<AlignmentInterval>,
     ) -> AlignedContig {
+        // `sort_by` is a stable sort, as Java's `List.sort` is, so alignments the comparator calls
+        // equal keep their input order.
         alignments.sort_by(alignment_order);
         AlignedContig {
             name: name.to_string(),
@@ -817,6 +907,11 @@ impl AlignedContig {
     }
 
     /// `hasGoodMQ`: one alignment above MQ 20, or two, or one carrying a large gap.
+    ///
+    /// The thresholds are strict (`mapQual > ALIGNMENT_MQ_THRESHOLD`), and the gap test is at
+    /// [`STRUCTURAL_VARIANT_SIZE_LOWER_BOUND`], which the reference's
+    /// `GAPPED_ALIGNMENT_BREAK_DEFAULT_SENSITIVITY` is defined as. `is_some_and` is
+    /// `!isEmpty() && get(0).mapQual > 20` in one step.
     pub fn has_good_mq(&self) -> bool {
         if self.alignments.len() < 2 {
             return self
@@ -839,6 +934,11 @@ impl AlignedContig {
     }
 
     /// `reconstructContigFromBestConfiguration`.
+    ///
+    /// The best-scoring configurations, each with large gaps split, low-uniqueness alignments moved
+    /// to the bad list, and a two-alignment configuration that is really one alignment dropped.
+    /// More than one best configuration gives one ambiguous contig each, ordered by
+    /// `getConfigurationComparator`: fewer alignments first, then fewer summed mismatches.
     pub fn reconstruct_from_best_configuration(
         &self,
         canonical: &[String],
@@ -854,6 +954,7 @@ impl AlignedContig {
                     result.push(self.fine_tuned(mappings, true));
                 }
             }
+            // `getConfigurationComparator`. Stable, as `Stream.sorted` is on an ordered stream.
             result.sort_by(|one, two| {
                 one.contig
                     .alignments
@@ -868,6 +969,9 @@ impl AlignedContig {
             });
             Ok(result)
         } else {
+            // `bestConfigurations.get(0)`. `pick_best_configurations` never returns an empty
+            // list (the empty configuration is always scored and the best is always kept), so
+            // this error is not reachable.
             let first = best.into_iter().next().ok_or_else(|| {
                 SvError::new(ILLEGAL_STATE, "no configuration picked for a contig")
             })?;
@@ -880,6 +984,8 @@ impl AlignedContig {
         }
     }
 
+    /// `createContigGivenClassifiedAlignments`. The constructor's `null` non-canonical mapping
+    /// becomes the string `NONE`.
     fn fine_tuned(&self, mappings: GoodAndBadMappings, ambiguous: bool) -> FineTunedContig {
         FineTunedContig {
             contig: AlignedContig::new(&self.name, self.sequence.clone(), mappings.good),
@@ -896,6 +1002,12 @@ impl AlignedContig {
         }
     }
 
+    /// `pickAndFilterConfigurations`, with `SECONDARY_CONFIGURATION_MQ_FILTER_THRESHOLD` at 0.
+    ///
+    /// Of several best configurations, keep only those whose lowest MQ is above 0, but only if
+    /// exactly one is; otherwise keep them all. The Java's `.min().orElse(mqThreshold) >
+    /// mqThreshold` and the `unwrap_or(0) > 0` below agree because the threshold is zero: an
+    /// empty configuration is never above it.
     fn pick_and_filter_configurations(
         &self,
         canonical: &[String],
@@ -923,6 +1035,15 @@ impl AlignedContig {
     }
 
     /// `pickBestConfigurations`: every subset of the good alignments scored, and the best kept.
+    ///
+    /// Step by step as the Java: the speed-up filter past ten alignments, the better non-canonical
+    /// mapping taken out, every subset of what is left scored, and each subset within tolerance of
+    /// the best kept. Equal subsets are compared with `>=` or a tolerance, never `==`:
+    ///
+    /// ```java
+    /// final double tol = Math.max(Math.ulp(s), scoreDiffTolerance);
+    /// return s >= maxScore || maxScore - s <= tol;
+    /// ```
     fn pick_best_configurations(
         &self,
         canonical: &[String],
@@ -935,6 +1056,8 @@ impl AlignedContig {
                 non_canonical: None,
             }]);
         }
+        // `canonicalChromosomes.contains(...)`. `canonical` is a slice here, a `Set` in Java; only
+        // membership is asked of it.
         let is_canonical = |ai: &AlignmentInterval| canonical.contains(&ai.reference_span.contig);
         let max_canonical_score = |list: &[AlignmentInterval]| {
             list.iter()
@@ -943,8 +1066,11 @@ impl AlignedContig {
                 .max()
                 .unwrap_or(0)
         };
+        // `maxCanonicalChrAlignerScore`, over all the alignments, before the speed-up filter.
         let first_max = max_canonical_score(&self.alignments);
         // `heuristicSpeedUpWhenFacingManyMappings`.
+        // `partition` splits one list in two by the predicate, the accepted ones first, each in
+        // input order, as the Java loop adds them.
         let (mut good, bad): (Vec<AlignmentInterval>, Vec<AlignmentInterval>) =
             if self.alignments.len() > 10 {
                 self.alignments.iter().cloned().partition(|ai| {
@@ -954,9 +1080,13 @@ impl AlignedContig {
             } else {
                 (self.alignments.clone(), Vec::new())
             };
+        // `newMaxCanonicalChrAlignerScore`, over what survived the filter.
         let max_canonical = max_canonical_score(&good);
         let non_canonical = better_non_canonical_mapping(canonical, &good, max_canonical);
         if let Some(mapping) = &non_canonical {
+            // `goodMappings.remove(Object)`: the first equal element only. In the Java, at ten
+            // or fewer alignments `goodMappings` is the contig's own list, so the removal also
+            // reaches the contig; here `good` is a copy.
             if let Some(position) = good.iter().position(|ai| ai == mapping) {
                 good.remove(position);
             }
@@ -969,6 +1099,9 @@ impl AlignedContig {
             }
         }
         let mut configurations = Vec::new();
+        // Each bit pattern of `mask` is one subset, the empty one included, as in `powerSet`. The
+        // subsets come out in a different order from Guava's, which only matters where two of them
+        // tie and both are kept; each is then sorted on its own, as the Java does.
         for mask in 0u64..(1u64 << unique.len()) {
             let mut configuration: Vec<AlignmentInterval> = unique
                 .iter()
@@ -983,6 +1116,8 @@ impl AlignedContig {
             .iter()
             .map(|configuration| score_of_configuration(configuration, canonical, max_canonical))
             .collect();
+        // `mapToDouble(...).max()`. The fold starts at negative infinity, which only survives when
+        // there are no scores, the case the Java's `orElseThrow` covers.
         let max_score = scores.iter().copied().fold(f64::NEG_INFINITY, f64::max);
         if max_score == f64::NEG_INFINITY {
             return Err(SvError::new(
@@ -994,6 +1129,7 @@ impl AlignedContig {
             ));
         }
         let mut picked = Vec::new();
+        // `zip` walks the two lists in step, Java's `IntStream.range` over both by index.
         for (configuration, score) in configurations.into_iter().zip(scores) {
             let tolerance = ulp(score).max(tolerance);
             if score >= max_score || max_score - score <= tolerance {
@@ -1013,6 +1149,10 @@ impl AlignedContig {
 
 /// `AlignedContig.getBetterNonCanonicalMapping`: a single non-canonical alignment that explains
 /// the contig at least as well as the canonical ones, taken out of consideration.
+///
+/// Only one non-canonical alignment qualifies, and only against two or more canonical ones
+/// or one canonical one with a large gap. A tie goes to the non-canonical one
+/// (`(canonicalScore > nonCanonicalScore) ? null : nonCanonicalMapping.get(0)`).
 fn better_non_canonical_mapping(
     canonical: &[String],
     good: &[AlignmentInterval],
@@ -1046,6 +1186,10 @@ fn better_non_canonical_mapping(
 
 /// `computeScoreOfConfiguration`: the mapping-quality-weighted read coverage, less the bases two
 /// alignments both claim.
+///
+/// The weight is MQ over 60; a non-canonical alignment that out-scores every canonical one
+/// (by `AS`) gets at least weight one. The `as f64` casts are exact, and match Java's
+/// promotion of `int / double`.
 fn score_of_configuration(
     configuration: &[AlignmentInterval],
     canonical: &[String],
@@ -1068,6 +1212,8 @@ fn score_of_configuration(
         explained += weight * length as f64;
     }
     let mut redundancy = 0;
+    // `saturating_sub(1)` stops at zero for an empty list, where Java's `size() - 1` is -1 and
+    // the loop simply does not run; an unsigned `len() - 1` would instead underflow.
     for i in 0..configuration.len().saturating_sub(1) {
         for j in i + 1..configuration.len() {
             redundancy += overlap_on_contig(&configuration[i], &configuration[j]);
@@ -1077,6 +1223,10 @@ fn score_of_configuration(
 }
 
 /// `splitGapsAndDropAlignmentContainedByOtherOnRead`, the variant the tool uses.
+///
+/// That variant is `splitGaps(mappings, false)`: split each alignment with a gap of 50 or more,
+/// then move to the bad list any piece another piece contains on the contig. A piece can be
+/// added to the bad list more than once, as in the Java.
 fn split_gaps(configuration: GoodAndBadMappings) -> Result<GoodAndBadMappings, SvError> {
     let mut gap_split = Vec::new();
     for alignment in &configuration.good {
@@ -1111,6 +1261,9 @@ fn split_gaps(configuration: GoodAndBadMappings) -> Result<GoodAndBadMappings, S
 
 /// `removeNonUniqueMappings` at MQ 20 and ten unique read bases, which only a configuration of
 /// three or more alignments reaches.
+///
+/// Two passes, `removeDueToLowMQ` (MQ below 20 is bad, so 20 itself is kept) and then
+/// `removeDueToShortReadSpan` (fewer than ten bases not shared with a neighbour is bad).
 fn remove_non_unique_mappings(mappings: GoodAndBadMappings) -> GoodAndBadMappings {
     if mappings.good.len() <= 2 {
         return mappings;
@@ -1154,6 +1307,11 @@ fn remove_non_unique_mappings(mappings: GoodAndBadMappings) -> GoodAndBadMapping
 }
 
 /// `getMaxOverlapPairs`: for each alignment, the largest overlap with one before and one after.
+///
+/// Returned as a list of (alignment, (front, rear)) in input order instead of the Java's
+/// `HashMap`; `remove_non_unique_mappings` reads it back as the map would answer. The inner
+/// search stops at the first alignment that does not overlap more, as the Java's `break` does,
+/// relying on the alignments being sorted by contig start.
 fn max_overlap_pairs(configuration: &[AlignmentInterval]) -> Vec<(AlignmentInterval, (i32, i32))> {
     // (maxFront, maxRear), each an (index, bases) pair, as `TempMaxOverlapInfo` holds them.
     let mut info = vec![((-1, -1), (-1, -1)); configuration.len()];
@@ -1186,6 +1344,8 @@ fn max_overlap_pairs(configuration: &[AlignmentInterval]) -> Vec<(AlignmentInter
 }
 
 /// `alignmentShouldNotBeStitchedTogether`.
+///
+/// True unless the configuration is exactly two alignments that are one alignment split.
 fn not_stitchable(alignments: &[AlignmentInterval]) -> Result<bool, SvError> {
     Ok(alignments.len() != 2
         || !simple_chimera_with_stitchable_alignments(&alignments[0], &alignments[1])?)
@@ -1216,6 +1376,7 @@ pub fn simple_chimera_with_stitchable_alignments(
     {
         return Ok(false);
     }
+    // Forward-strand pieces must ascend on the reference, reverse-strand ones descend.
     let ref_order_swap =
         one.forward_strand != (one.reference_span.start < two.reference_span.start);
     if ref_order_swap {
@@ -1233,6 +1394,8 @@ pub fn simple_chimera_with_stitchable_alignments(
 
 /// `AssemblyContigWithFineTunedAlignments.AlignmentSignatureBasicType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// The Java enum's four values, in its order.
 pub enum AlignmentSignature {
     Normal,
     Unknown,
@@ -1270,6 +1433,8 @@ impl FineTunedContig {
     }
 
     /// `hasIncompletePicture`.
+    ///
+    /// One alignment or none is never incomplete (`hasChimericAlignments` is `size() > 1`).
     fn has_incomplete_picture(&self) -> bool {
         let alignments = &self.contig.alignments;
         if alignments.len() <= 1 {
@@ -1281,6 +1446,9 @@ impl FineTunedContig {
         }
     }
 
+    /// `hasIncompletePictureFromMultipleAlignments`: head and tail on different contigs or
+    /// strands, one tail's span containing the other's, a middle alignment that pokes out of the
+    /// head-to-tail region, or the head after the tail in reference order.
     fn has_incomplete_picture_from_multiple_alignments(&self) -> bool {
         let alignments = &self.contig.alignments;
         let head = &alignments[0];
@@ -1299,6 +1467,7 @@ impl FineTunedContig {
             span_head.start.min(span_tail.start),
             span_head.end.max(span_tail.end),
         );
+        // `[1..len - 1]` is the middle alignments, head and tail excluded.
         let not_complete_dup_region = alignments[1..alignments.len() - 1].iter().any(|middle| {
             middle.reference_span.overlaps(&valid) && !valid.contains(&middle.reference_span)
         });
@@ -1314,6 +1483,11 @@ impl FineTunedContig {
 }
 
 /// `AssemblyContigWithFineTunedAlignments.hasIncompletePictureFromTwoAlignments`.
+///
+/// Different contigs are never incomplete here (the Java: "inter contig mapping will not be
+/// treated as incomplete picture for 2-alignment reads"). One span containing the other is.
+/// With a strand switch, overlapping spans are. On the forward strand, a head that starts past
+/// the tail's start but no later than its end is; the reverse strand mirrors that.
 pub fn has_incomplete_picture_from_two_alignments(
     head: &AlignmentInterval,
     tail: &AlignmentInterval,

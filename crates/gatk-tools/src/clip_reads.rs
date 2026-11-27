@@ -1,4 +1,5 @@
-//! Ported from `org.broadinstitute.hellbender.tools.ClipReads` (GATK 4.6.2.0).
+//! Ported from `org.broadinstitute.hellbender.tools.ClipReads` (GATK 4.7.0.0; `ClipReads.java` is
+//! unchanged since 4.6.2.0).
 //!
 //! The ninth whole tool of the record-transform archetype, and the first that writes a second
 //! output that is not a BAM. Everything it does to a read goes through
@@ -13,7 +14,10 @@
 //!     int baseIndex = read.isReverseStrand() ? readLen - i - 1 : i;
 //!     byte qual = quals[baseIndex];
 //!     clipSum += (qTrimmingThreshold - qual);
-//!     if (clipSum >= 0 && (clipSum >= lastMax)) { lastMax = clipSum; clipPoint = baseIndex; }
+//!     if (clipSum >= 0 && (clipSum >= lastMax)) {
+//!         lastMax = clipSum;
+//!         clipPoint = baseIndex;
+//!     }
 //! }
 //! ```
 //!
@@ -51,8 +55,8 @@
 //! restarting after each match, which is what `find()` does for a pattern with no metacharacter in
 //! it. A sequence containing a regex metacharacter would diverge, and none of the reference's own
 //! callers or tests passes one: the argument is documented as "an exact match algorithm". The bound
-//! is written here rather than assumed away, and it is the only place in this file where the port
-//! is narrower than the reference.
+//! is written here rather than assumed away. It is not the only place the port is narrower than
+//! the reference: see "Where this port reads less than the reference" below.
 //!
 //! The reverse-strand pattern is built with `BaseUtils.simpleReverseComplement`, which **uppercases
 //! whatever it complements** (`a` becomes `T`, not `t`), unlike htsjdk's `SequenceUtil.complement`,
@@ -67,7 +71,8 @@
 //! `overwriteFromStartToStop` takes a `Math.min` against the array length.
 //!
 //! It is also the one place the tool adds something rather than removing bases: `tf` and `tm` are
-//! written onto the read, appending `A` to whatever was there. And it counts `xf` rather than
+//! written onto the read, appending `A` to whatever was there unless that already contains an `A`
+//! (`else if (!curTagValue.contains("A"))`). And it counts `xf` rather than
 //! `xf - 1` five-prime bases, which is off by one against the op it just built; that is the
 //! reference's arithmetic and it is what the statistics file says.
 //!
@@ -75,9 +80,33 @@
 //!
 //! The whole of `apply`, including the write, is inside `read.getName().equals(onlyDoRead)`, so a
 //! read that is not named is not passed through: it is gone. A `--read` that names nothing produces
-//! an empty BAM and a statistics file whose percentages are `NaN`, which is what
-//! `String.format("%.2f", 0.0 / 0)` prints in Java and what
+//! an empty BAM and a statistics file whose percentages are `NaN`, which is what Java's `%.2f`
+//! prints for `(100.0 * nClippedReads) / nTotalReads` when both counts are zero, and what
 //! [`gatk_engine::java_format::format_decimals`] prints here.
+//!
+//! # Where this port reads less than the reference
+//!
+//! Besides the regex bound above, three inputs are read more narrowly than the Java reads them:
+//!
+//! - `-CT 3-5-7`: the Java's `range.split("-")` keeps `elts[0]` and `elts[1]` and ignores the
+//!   rest, so it clips 3-5; [`ClipArguments::cycles`] splits once and refuses the range.
+//! - `XF:Z:5` or `XT:Z:5`: `getAttributeAsInteger` parses a string tag with `Integer.parseInt`;
+//!   the adapter clipper here sees only an integer tag and treats a string one as absent.
+//! - `tf:i:3`: `getAttributeAsString` renders a non-string tag as text and appends to it (`3A`);
+//!   here a non-string tag is treated as absent and replaced by `A`.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&BamRecord` is a borrowed, read-only record; `&mut ClippingData` a borrowed, writable one,
+//!   which is how the clippers update the counters Java reaches through `clipper.getData()`.
+//! - `Option<T>` is "a value or nothing" (Java's nullable `Integer` for a tag), `Result<T, E>` "a
+//!   value or an error", and `?` after either hands the nothing or the error to the caller.
+//! - `let Some(x) = y else { .. };` unwraps `y` or takes the early exit in the block.
+//! - `x as i32` casts between integer widths and truncates silently; `as i64` widens.
+//! - `(0..n).rev()` counts `n - 1` down to `0`: Java's `for (int i = n - 1; i >= 0; i--)`.
+//! - `|..| ..` is a closure (a Java lambda); `matches!(x, A | B)` is
+//!   `EnumSet.of(A, B).contains(x)`.
+//! - `Some(value) if cond =>` in a `match` is a case with an extra guard.
 
 use htsjdk_bam::coordinate;
 use htsjdk_bam::header::SamHeader;
@@ -112,6 +141,7 @@ pub enum ClipReadsError {
     Clip(ClipError),
 }
 
+// `impl From` is what lets `?` turn a `ClipError` into a `ClipReadsError` at the call site.
 impl From<ClipError> for ClipReadsError {
     fn from(error: ClipError) -> Self {
         ClipReadsError::Clip(error)
@@ -131,6 +161,7 @@ pub struct SeqToClip {
 }
 
 impl SeqToClip {
+    /// `new SeqToClip(name, bytez)`, without the two `Pattern`s; see the module note.
     pub fn new(name: &str, bases: &[u8]) -> SeqToClip {
         SeqToClip {
             name: name.to_string(),
@@ -205,10 +236,14 @@ impl ClipArguments {
     ///
     /// The reference wraps the whole parse in one `try`, so a negative start, a stop before the
     /// start, a missing dash and a non-number all raise the same message.
+    ///
+    /// The Java splits on every `-`; this splits once (`splitn(2, '-')`), so a range with a second
+    /// dash is refused here and read as its first two numbers there.
     pub fn cycles(&self) -> Result<Option<Vec<(i32, i32)>>, ClipReadsError> {
         let Some(argument) = &self.cycles_to_clip else {
             return Ok(None);
         };
+        // A closure that builds the one error, so every failure below raises the same message.
         let bad = || ClipReadsError::BadlyFormattedCycles(argument.clone());
         let mut ranges = Vec::new();
         for range in argument.split(',') {
@@ -256,6 +291,7 @@ pub fn parse_clip_sequence_file(text: &str) -> Vec<(String, Vec<u8>)> {
 /// `ClipReads.ClippingData`: the counters, and the per-sequence counts in a `TreeMap`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ClippingData {
+    // The eight counters are the Java's `long` fields of the same names (`nTotalReads` and so on).
     pub n_total_reads: i64,
     pub n_total_bases: i64,
     pub n_clipped_reads: i64,
@@ -280,6 +316,8 @@ impl ClippingData {
         data
     }
 
+    /// `TreeMap.put`: a binary search over the sorted pairs, replacing the value on a hit and
+    /// inserting at the sorted position on a miss (`Err(index)` is where the key would go).
     fn put(&mut self, key: &str, value: i64) {
         match self
             .seq_clip_counts
@@ -290,6 +328,7 @@ impl ClippingData {
         }
     }
 
+    /// `TreeMap.get`, `None` where the Java answers `null`.
     fn get(&self, key: &str) -> Option<i64> {
         self.seq_clip_counts
             .binary_search_by(|(existing, _)| existing.as_bytes().cmp(key.as_bytes()))
@@ -297,6 +336,7 @@ impl ClippingData {
             .map(|index| self.seq_clip_counts[index].1)
     }
 
+    /// `incNQClippedBases`, and the three below: each bumps its own counter and the total.
     pub fn inc_n_q_clipped_bases(&mut self, n: i32) {
         self.n_q_clipped_bases += n as i64;
         self.n_clipped_bases += n as i64;
@@ -522,6 +562,8 @@ fn find_all(haystack: &[u8], needle: &[u8]) -> Vec<(i32, i32)> {
 }
 
 /// `read.getAttributeAsInteger(tag)` for the two adapter tags.
+///
+/// The Java also parses a string-typed tag with `Integer.parseInt`; this answers `None` for one.
 fn attribute_as_integer(read: &BamRecord, tag: &[u8; 2]) -> Option<i32> {
     match read.tags.get(Tag::new(tag)) {
         Some(TagValue::Int(value)) => Some(*value as i32),
@@ -530,6 +572,15 @@ fn attribute_as_integer(read: &BamRecord, tag: &[u8; 2]) -> Option<i32> {
 }
 
 /// `addAdapterTag`: `A` if the tag is absent, else `A` appended unless one is already there.
+///
+/// ```java
+/// String curTagValue = clipper.getRead().getAttributeAsString(tag);
+/// if (curTagValue == null ){
+///     clipper.getRead().setAttribute(tag, "A");
+/// } else if (!curTagValue.contains("A")){
+///     clipper.getRead().setAttribute(tag, curTagValue + "A");
+/// }
+/// ```
 fn add_adapter_tag(read: &mut BamRecord, tag: &[u8; 2]) {
     let current = match read.tags.get(Tag::new(tag)) {
         Some(TagValue::Str(value)) => Some(value.clone()),
@@ -561,6 +612,7 @@ fn clip_adapter(read: &mut BamRecord, data: &mut ClippingData) -> Vec<ClippingOp
         data.inc_n_adapter_clipped_bases(length);
         return ops;
     }
+    // `Option::filter` keeps the value only when the test passes: `(xt != null) && (xt <= ...)`.
     if let Some(xt) = xt.filter(|xt| *xt <= length) {
         ops.push(ClippingOp {
             start: xt - 1,
@@ -658,6 +710,9 @@ pub fn presorted(representation: ClippingRepresentation) -> bool {
 }
 
 /// What a run produces: the output BAM, its index, and the statistics file's text.
+///
+/// Two layers of `Result`: the outer one is a failure to read the input, the inner one a refusal
+/// of this tool's own.
 pub type RunResult = Result<Result<(Vec<u8>, Option<Vec<u8>>, String), ClipReadsError>, ReadsError>;
 
 /// `ClipReads`: every read the traversal reaches, clipped, and the statistics beside them.
@@ -686,6 +741,7 @@ pub fn clip_reads_with(
     level: u32,
     deflater: htsjdk_bgzf::Deflater,
 ) -> RunResult {
+    // Parsed before the traversal, as `onTraversalStart` does, so a bad `-CT` reads no record.
     let cycles = match arguments.cycles() {
         Ok(cycles) => cycles,
         Err(error) => return Ok(Err(error)),
@@ -713,6 +769,8 @@ pub fn clip_reads_with(
             Ok(clipped) => clipped,
             Err(error) => return Ok(Err(error)),
         };
+        // `accumulate`: the length test decides the write only; the counters below count every
+        // read, written or not.
         if clipped.read.read_bases.len() as i32 >= arguments.min_read_length {
             records.push(clipped.read);
         }

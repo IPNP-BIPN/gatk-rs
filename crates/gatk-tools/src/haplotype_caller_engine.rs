@@ -15,6 +15,17 @@
 //! clips with that average as its value.
 //!
 //! The force-calling and pileup-detection branches are not ported.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, E>` is "a value or an error"; [`EngineError`] stands for the exceptions the Java
+//!   throws, and `?` after a call returns its error to the caller at once;
+//! - `Option<T>` is "a value or nothing", Java's nullable reference checked by the compiler;
+//! - `&T` is a read-only borrow and `&mut T` a writable one (only one at a time); `'_` in a type
+//!   such as `ReadPileup<'_>` only says the value borrows from something else;
+//! - `u8` is an unsigned byte, where Java's `byte` is signed: `x as i8` reinterprets the same
+//!   eight bits as Java would read them;
+//! - `usize` is an unsigned index type Java lacks; `as f64` converts it to a `double`.
 
 use gatk_engine::allele_frequency_calculator::{AlleleFrequencyCalculator, Priors};
 use gatk_engine::locus_iterator::AlignmentContext;
@@ -35,7 +46,8 @@ use crate::genotyping_engine::{Configuration, EngineError, GenotypingEngine, Sub
 
 /// `HaplotypeCallerEngine.AVERAGE_HQ_SOFTCLIPS_HQ_BASES_THRESHOLD`.
 const AVERAGE_HQ_SOFTCLIPS_HQ_BASES_THRESHOLD: f64 = 6.0;
-/// `HaplotypeCallerEngine.MAXMIN_CONFIDENCE_FOR_CONSIDERING_A_SITE_AS_POSSIBLE_VARIANT_IN_ACTIVE_REGION_DISCOVERY`.
+/// `HaplotypeCallerEngine`'s
+/// `MAXMIN_CONFIDENCE_FOR_CONSIDERING_A_SITE_AS_POSSIBLE_VARIANT_IN_ACTIVE_REGION_DISCOVERY`.
 const MAXMIN_CONFIDENCE_FOR_ACTIVE_REGION_DISCOVERY: f64 = 4.0;
 /// `HaplotypeCallerEngine.MINIMUM_PUTATIVE_PLOIDY_FOR_ACTIVE_REGION_DISCOVERY`.
 const MINIMUM_PUTATIVE_PLOIDY_FOR_ACTIVE_REGION_DISCOVERY: usize = 2;
@@ -44,7 +56,7 @@ const HQ_BASE_QUALITY_SOFTCLIP_THRESHOLD: u8 = 28;
 /// `ReferenceConfidenceModel.REF_MODEL_DELETION_QUAL`.
 pub const REF_MODEL_DELETION_QUAL: u8 = 30;
 
-/// `ActivityProfileState.Type`.
+/// `ActivityProfileState.Type`, the two kinds `isActive` sets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActivityType {
     None,
@@ -52,6 +64,7 @@ pub enum ActivityType {
 }
 
 impl ActivityType {
+    /// The Java enum constant's `name()`.
     pub fn name(self) -> &'static str {
         match self {
             ActivityType::None => "NONE",
@@ -63,10 +76,13 @@ impl ActivityType {
 /// `ActivityProfileState`, with the original active probability `isActive` sets on it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ActivityState {
+    /// The active probability, `isActiveProb`.
     pub prob: f64,
     pub kind: ActivityType,
     /// `getResultValue()`, null for a locus with no pileup.
     pub result_value: Option<f64>,
+    /// `setOriginalActiveProb(gts[maxElementIndex] - gts[0])`: the best genotype's
+    /// PL-rounded likelihood less the hom-ref one, from the first sample.
     pub original_active_prob: f64,
 }
 
@@ -106,6 +122,16 @@ impl Default for IsActiveArguments {
 }
 
 /// `MathUtils.RunningAverage`: Welford's running mean.
+///
+/// ```java
+/// obs_count++;
+/// double oldMean = mean;
+/// mean += (obs - mean) / obs_count; // update mean
+/// ```
+///
+/// The mean is updated incrementally, as the Java does, rather than summed and divided at the
+/// end; the two can round differently. The Java's running variance `s` is not kept: `isActive`
+/// only reads `mean()`.
 #[derive(Debug, Clone, Default)]
 pub struct RunningAverage {
     mean: f64,
@@ -124,6 +150,9 @@ impl RunningAverage {
 }
 
 /// The active-region evaluator: `isActive` with the engine it builds for it.
+///
+/// `calculator` serves the single-sample shortcut and `engine` the multi-sample genotyping; the
+/// Java reaches both through one `MinimalGenotypingEngine`, which the port splits.
 pub struct ActiveRegionEvaluator {
     arguments: IsActiveArguments,
     ploidy: usize,
@@ -135,6 +164,12 @@ pub struct ActiveRegionEvaluator {
 impl ActiveRegionEvaluator {
     /// `initializeActiveRegionEvaluationGenotyperEngine`: the caller's arguments with a ploidy of
     /// at least two, a calling confidence of at most 4, and variant sites only.
+    ///
+    /// ```java
+    /// activeRegionArgs.outputMode = OutputMode.EMIT_VARIANTS_ONLY;
+    /// ```
+    ///
+    /// The contamination fraction the Java also sets to zero is not modelled here.
     pub fn new(arguments: IsActiveArguments, samples: Vec<String>) -> Self {
         let ploidy = arguments
             .sample_ploidy
@@ -197,6 +232,14 @@ impl ActiveRegionEvaluator {
     }
 
     /// `isActive(context, ref, features)`, `ref_base` being the reference base at the locus.
+    ///
+    /// **What**: the locus's active probability, its soft-clip state and the original active
+    /// probability, as the module header describes.
+    ///
+    /// **Why** each sample's likelihoods go through PLs before being read: the Java stores them
+    /// with `GenotypeBuilder(..).PL(genotypeLikelihoods)` and then reads
+    /// `genotypes.get(0).getLikelihoods().getAsVector()`, which are the PLs over -10. Reading the
+    /// unrounded values would give a different probability.
     pub fn is_active(
         &mut self,
         context: &AlignmentContext<'_>,
@@ -212,7 +255,10 @@ impl ActiveRegionEvaluator {
             });
         }
         // `splitContextBySampleName`: the one sample takes the whole pileup; otherwise each sample
-        // with reads, in the pileup's sample order.
+        // with reads, in the pileup's sample order. The Java's single-sample shortcut is
+        // `Collections.singletonMap(assumedSingleSample, this)`, which never looks at a read
+        // group. In the multi-sample branch, `map_err` turns the splitter's error into the
+        // engine's, and the chain after `?` is Java's `stream().filter(..).collect(..)`.
         let split: Vec<(String, ReadPileup<'_>)> = if self.samples.len() == 1 {
             vec![(
                 self.samples[0].clone(),
@@ -245,6 +291,10 @@ impl ActiveRegionEvaluator {
         }
 
         // What `genotypes.get(0).getLikelihoods().getAsVector()` gives back: the PLs over -10.
+        // With one genotype, `calculateSingleSampleRefVsAnyActiveStateProfileValue`, which is
+        // `alleleFrequencyCalculator.calculateSingleSampleBiallelicNonRefPosterior(
+        // log10GenotypeLikelihoods, true)`; otherwise a full `calculateGenotypes` on the fake
+        // site, `vcOut == null ? 0.0 : QualityUtils.qualToProb(vcOut.getPhredScaledQual())`.
         let first_gls = gls_of(&genotypes[0]);
         let prob = if genotypes.len() == 1 {
             self.calculator
@@ -256,6 +306,7 @@ impl ActiveRegionEvaluator {
             ];
             let mut vc = VariantContext::new(&context.contig, i64::from(context.position), alleles);
             vc.genotypes = GenotypesContext::new(genotypes.clone());
+            // `None` is the Java's `vcOut == null`; `-10 * log10PError` is `getPhredScaledQual()`.
             match self.engine.calculate_genotypes(&vc)? {
                 None => 0.0,
                 Some(out) => qual_to_prob(-10.0 * out.log10_p_error),
@@ -278,6 +329,20 @@ impl ActiveRegionEvaluator {
 
     /// `calcGenotypeLikelihoodsOfRefVsAny(ploidy, pileup, refBase, minBaseQual, hqSoftClips,
     /// false, activeRegionAltMultiplier)`.
+    ///
+    /// `readsWereRealigned` is false here, so the Java's `getDeletionQuality` returns
+    /// `refModelDeletionQuality` for every deletion, `isAltBeforeAssembly` decides `isAlt`, and the
+    /// original-soft-clip skip (`!useSoftClippedBases && readsWereRealigned`) never runs. Each
+    /// counted element then adds, as `applyPileupElementRefVsNonRefLikelihoodAndCount` does:
+    ///
+    /// ```java
+    /// final double readWeight = isAlt ? altReadWeight : 1.0;
+    /// // Homozygous likelihoods don't need the logSum trick.
+    /// result.genotypeLikelihoods[0] += readWeight * (referenceLikelihood + log10Ploidy);
+    /// ```
+    ///
+    /// and likewise the last entry with `nonRefLikelihood`, and the heterozygous entries through
+    /// `approximateLog10SumLog10`, each term weighted the same way.
     fn ref_vs_any_likelihoods(
         &self,
         pileup: &ReadPileup<'_>,
@@ -297,6 +362,8 @@ impl ActiveRegionEvaluator {
             } else {
                 element.qual()
             };
+            // `if ( (qual <= minBaseQual) && (flowBasedModel || !p.isDeletion()))`: the Java
+            // compares two signed bytes, so both are read as `i8` here.
             if (qual as i8) <= (self.arguments.min_base_quality_score as i8)
                 && (self.arguments.flow_based_model || !element.is_deletion())
             {
@@ -304,6 +371,8 @@ impl ActiveRegionEvaluator {
             }
             read_count += 1;
             let is_alt = is_alt_before_assembly(element, ref_base);
+            // `QualityUtils.qualToErrorProbLog10(qual)`: `(double)(qual & 0xFF)` then
+            // `qual * -0.1`, the unsigned value times the constant, kept in that form.
             let qual_to_error_log10 = f64::from(qual) * -0.1;
             let (reference, non_ref) = if is_alt {
                 (
@@ -323,6 +392,10 @@ impl ActiveRegionEvaluator {
             };
             likelihoods[0] += weight * (reference + log10_ploidy);
             likelihoods[count - 1] += weight * (non_ref + log10_ploidy);
+            // `for (int i = 1, j = likelihoodCount - 2; i < likelihoodCount - 1; i++, j--)`:
+            // `.enumerate()` yields `(index, &mut slot)` pairs, and `.take(count - 1).skip(1)`
+            // keeps the indices 1 to `count - 2`, so `i` walks up while `j` walks down beside it.
+            // `*slot +=` writes through the borrowed slot.
             let mut j = count as i64 - 2;
             for (i, slot) in likelihoods.iter_mut().enumerate().take(count - 1).skip(1) {
                 *slot += weight
@@ -332,6 +405,7 @@ impl ActiveRegionEvaluator {
                     );
                 j -= 1;
             }
+            // `hqSoftClips != null` always holds here: `isActive` passes its running average.
             if is_alt && element.is_next_to_soft_clip() {
                 soft_clips.add(f64::from(count_high_quality_soft_clips(
                     element.read,
@@ -347,7 +421,10 @@ impl ActiveRegionEvaluator {
     }
 }
 
-/// `GenotypeLikelihoods.fromPLs(pls).getAsVector()`.
+/// `GenotypeLikelihoods.fromPLs(pls).getAsVector()`: each PL divided by -10.
+///
+/// `expect` aborts with the message if the genotype has no PL; every genotype `is_active` builds
+/// has one.
 fn gls_of(genotype: &Genotype) -> Vec<f64> {
     genotype
         .pl
@@ -358,7 +435,7 @@ fn gls_of(genotype: &Genotype) -> Vec<f64> {
         .collect()
 }
 
-/// `ReferenceConfidenceModel.isAltBeforeAssembly`.
+/// `ReferenceConfidenceModel.isAltBeforeAssembly`: the same seven tests, in the Java's order.
 fn is_alt_before_assembly(element: &PileupElement<'_>, ref_base: u8) -> bool {
     element.base() != ref_base
         || element.is_deletion()
@@ -370,6 +447,10 @@ fn is_alt_before_assembly(element: &PileupElement<'_>, ref_base: u8) -> bool {
 }
 
 /// `AlignmentUtils.countHighQualitySoftClips`: soft-clipped bases of quality above the threshold.
+///
+/// Walks the CIGAR with a read offset: a soft clip counts its bases one by one, any other
+/// read-consuming operator only advances the offset. A quality missing from the record counts as
+/// zero (`unwrap_or(0)`) where the Java's `read.getBaseQuality(alignPos++)` would read the array.
 pub fn count_high_quality_soft_clips(read: &BamRecord, threshold: u8) -> i32 {
     let mut count = 0;
     let mut position = 0usize;

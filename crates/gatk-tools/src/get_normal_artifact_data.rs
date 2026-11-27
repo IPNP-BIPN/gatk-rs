@@ -1,5 +1,5 @@
 //! Ported from `org.broadinstitute.hellbender.tools.walkers.mutect.GetNormalArtifactData`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `GetNormalArtifactData.java` is unchanged since 4.6.2.0).
 //!
 //! The training data for the normal-artifact filter this port already has
 //! ([`gatk_engine::normal_artifact_filter`]). A locus walker over two samples, two rejection rules,
@@ -23,6 +23,16 @@
 //! Indices 0 to 3 are `ACGT`, index 4 is "this element is before an insertion" and index 5 is
 //! "before a deletion start". An index at or above 4 makes the record an `INDEL`, which is how an
 //! indel becomes an allele without ever being a base.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&ReadPileup` is a borrowed, read-only reference; the caller keeps the pileup;
+//! - `[f64; 6]` is a fixed-length array of six doubles, Java's `new double[6]`;
+//! - `impl FnOnce() -> f64` is "any function taking nothing and returning a double, called at
+//!   most once", Java's `DoubleSupplier` used once;
+//! - `x as i32` and `x as usize` convert between number types; a float is truncated toward zero;
+//! - `Box::new(..)` puts the record on the heap, as every Java object is;
+//! - `.expect("..")` takes the value out of a result and aborts with that text on an error.
 
 use gatk_engine::read_pileup::ReadPileup;
 use gatk_readfilter::{self as filters, with_header, Parameterized};
@@ -54,7 +64,10 @@ pub const STANDARD_MUTECT2_READ_FILTERS: [&str; 12] = [
     "WellformedReadFilter",
 ];
 
-/// The conjunction those twelve names make.
+/// The conjunction those twelve names make, tested in that order and stopping at the first
+/// that fails (`&&` short-circuits as in Java).
+///
+/// `ReadLengthReadFilter` is given `i32::MAX` as its maximum, Java's `Integer.MAX_VALUE`.
 pub fn standard_mutect2_read_filter(read: &BamRecord, header: &SamHeader) -> bool {
     Parameterized::MappingQuality {
         min: READ_QUALITY_FILTER_THRESHOLD,
@@ -101,6 +114,10 @@ pub struct NormalArtifactRecord {
 /// slot 4 or 5 and NOT as its base, so an indel-flanking base never contributes to `ACGT`. Only a
 /// base that differs from the reference is counted at all, which is what makes these counts
 /// alternate counts rather than depths.
+///
+/// The reference counts into `int[6]`. These are `f64` so they can go straight to
+/// `max_element_index`, which takes doubles; small whole numbers are exact in either type, and
+/// both maxima are strictly-greater scans in which the first of two equal counts wins.
 pub fn base_counts(pileup: &ReadPileup, reference_base: u8) -> [f64; 6] {
     let mut counts = [0.0; 6];
     for element in &pileup.elements {
@@ -112,6 +129,8 @@ pub fn base_counts(pileup: &ReadPileup, reference_base: u8) -> [f64; 6] {
             counts[5] += 1.0;
         } else if element.base() != reference_base {
             let index = gatk_engine::base_utils::simple_base_to_base_index(element.base());
+            // -1 is `simpleBaseToBaseIndex`'s answer for a byte other than A, C, G, T (either
+            // case) and `*` (which it maps to A's slot); such a base is not counted.
             if index != -1 {
                 counts[index as usize] += 1.0;
             }
@@ -135,6 +154,9 @@ pub enum Outcome {
 ///
 /// `draw` is the next `nextDouble()` from the shared generator, and the caller decides when to
 /// take it -- which is the point: this function says exactly when the reference would have.
+///
+/// `normal` and `tumor` are the locus pileup already split by sample, as the reference's two
+/// `makeFilteredPileup` calls split it (`normalSamples.contains(..)` and its negation).
 pub fn apply(
     normal: &ReadPileup,
     tumor: &ReadPileup,
@@ -143,9 +165,11 @@ pub fn apply(
     draw: impl FnOnce() -> f64,
 ) -> Outcome {
     let normal_counts = base_counts(normal, reference_base);
+    // `MathUtils.maxElementIndex(normalCounts)`.
     let best_allele = gatk_engine::math_utils::max_element_index(&normal_counts, 0, 6);
     let normal_alt_count = normal_counts[best_allele] as i32;
-    // No alternate at all, or so much of one that this is a variant rather than an artefact.
+    // No alternate at all, or so much of one that this is a variant rather than an artefact:
+    // `if (normalAltCount == 0 || normalAltCount > 0.2 * normalPileup.size())`.
     if normal_alt_count == 0 || f64::from(normal_alt_count) > 0.2 * normal.size() as f64 {
         return Outcome::SkippedBeforeDraw;
     }
@@ -160,6 +184,7 @@ pub fn apply(
     )
     .expect("the binomial parameters are valid");
     let tumor_p_value = 1.0 - cumulative;
+    // `Math.max(1 - tumorPValue, 0.05)`.
     let downsampling = (1.0 - tumor_p_value).max(MINIMUM_DOWNSAMPLE_PROBABILITY);
 
     // The draw happens here, BEFORE the last rejection rule, so a locus rejected below has still
@@ -167,6 +192,7 @@ pub fn apply(
     if draw() > downsampling {
         return Outcome::SkippedAfterDraw;
     }
+    // `else if (tumorAltCount > 0.5 * tumorPileup.size())`: too much tumour support.
     if f64::from(tumor_alt_count) > 0.5 * tumor.size() as f64 {
         return Outcome::SkippedAfterDraw;
     }
@@ -192,6 +218,10 @@ pub const COLUMNS: [&str; 6] = [
 ];
 
 /// The whole table: the header, then one line per record.
+///
+/// The downsampling probability goes through `DataLine.set(int, double)`, whose last line is
+/// `return set(index, Double.toString(value));` whatever its rounding branch did, so a
+/// probability of one prints `1.0`. `java_double_to_string` is that `Double.toString`.
 pub fn write(records: &[NormalArtifactRecord]) -> String {
     let mut text = COLUMNS.join("\t");
     text.push('\n');

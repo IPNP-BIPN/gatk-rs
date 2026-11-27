@@ -1,6 +1,9 @@
 //! `Concordance`, ported from
-//! `org.broadinstitute.hellbender.tools.walkers.validation.Concordance` (GATK 4.6.2.0), with
-//! `ConcordanceSummaryRecord` beside it.
+//! `org.broadinstitute.hellbender.tools.walkers.validation.Concordance` (GATK 4.7.0.0; both files
+//! are unchanged since 4.6.2.0), with `ConcordanceSummaryRecord` beside it.
+//!
+//! Java quotes are verbatim apart from line breaks added to fit 100 columns; `...` marks lines
+//! left out.
 //!
 //! The tool [`gatk_engine::concordance_walker`] was written for. Every step of the traversal is
 //! tallied by its state into one of two buckets, and the two buckets are the two rows of a
@@ -9,7 +12,8 @@
 //! # An empty callset reports zero rather than NaN
 //!
 //! ```java
-//! public double getSensitivity() { return (double) truePositives / (truePositives + falseNegatives); }
+//! public double getSensitivity() {
+//!         return (double) truePositives / (truePositives + falseNegatives); }
 //! ...
 //! .set(SENSITIVITY_COLUMN_NAME, record.getSensitivity(), 3)
 //! ```
@@ -28,7 +32,8 @@
 //! # A filtered eval record alone leaves no trace
 //!
 //! ```java
-//! snpCounts.get(ConcordanceState.FALSE_NEGATIVE).longValue() + snpCounts.get(ConcordanceState.FILTERED_FALSE_NEGATIVE).longValue()
+//! snpCounts.get(ConcordanceState.FALSE_NEGATIVE).longValue()
+//!         + snpCounts.get(ConcordanceState.FILTERED_FALSE_NEGATIVE).longValue()
 //! ```
 //!
 //! Five states are counted and four are read: the FN column folds `FILTERED_FALSE_NEGATIVE` into
@@ -40,7 +45,7 @@
 //! # Everything that is not a SNP is an indel
 //!
 //! ```java
-//! if (truthVersusEval.getTruthIfPresentElseEval().isSNP()) { snpCounts... } else { indelCounts... }
+//! if (truthVersusEval.getTruthIfPresentElseEval().isSNP()) {
 //! ```
 //!
 //! One test, and the row it does not choose is labelled `INDEL` whatever the record was: an MNP, a
@@ -49,9 +54,9 @@
 //!
 //! # The truth side drops symbolic records and the eval side keeps them
 //!
-//! `makeTruthVariantFilter` is `!vc.isFiltered() && !vc.isSymbolicOrSV()` against the base class's
-//! `vc -> true`, so a symbolic record written into both files survives on one side only and comes
-//! out a false positive rather than a true positive.
+//! `makeTruthVariantFilter` is `vc -> !vc.isFiltered() && ! vc.isSymbolicOrSV()` against the
+//! base class's `vc -> true`, so a symbolic record written into both files survives on one side
+//! only and comes out a false positive rather than a true positive.
 //!
 //! # Agreement needs the same number of alternates but only truth's first
 //!
@@ -67,22 +72,26 @@
 //! # The filter analysis counts without the flag that asks for it
 //!
 //! ```java
-//! if (filterAnalysis != null && concordanceState == ConcordanceState.FILTERED_TRUE_NEGATIVE || concordanceState == ConcordanceState.FILTERED_FALSE_NEGATIVE) {
+//! if (filterAnalysis != null && concordanceState == ConcordanceState.FILTERED_TRUE_NEGATIVE
+//!         || concordanceState == ConcordanceState.FILTERED_FALSE_NEGATIVE) {
 //! ```
 //!
-//! `&&` binds tighter than `||`, so this is `(flag && FTN) || FFN`: a filtered false negative walks
-//! into the map whether or not `--filter-analysis` was given. Nothing is written when it was not, so
-//! the only way the difference reaches a user is as a crash. The map is keyed by the **eval
-//! header's** FILTER lines and the lookup is unguarded, so a filter the header does not declare is a
-//! null, and the increment on it is a `NullPointerException` on a run that asked for no such table.
-//! [`FilterAnalysis::apply`] keeps the condition in that shape rather than the one the layout
-//! suggests, and returns the null as an error rather than reaching for a record that is not there.
+//! `&&` binds tighter than `||`, so this is `(flag && FTN) || FFN`: a filtered false negative
+//! walks into the map whether or not `--filter-analysis` was given. Nothing is written when it was
+//! not, so the only way the difference reaches a user is as a crash. The map is keyed by the
+//! **eval header's** FILTER lines and the lookup is unguarded, so a filter the header does not
+//! declare is a null, and the increment on it is a `NullPointerException` on a run that asked for
+//! no such table. [`FilterAnalysis::apply`] keeps the condition in that shape rather than the one
+//! the layout suggests, and returns the null as an error rather than reaching for a record that is
+//! not there.
 //!
 //! # One step writes two different records
 //!
 //! ```java
-//! tryToWrite(truePositivesAndFalseNegativesVcfWriter, annotateWithConcordanceState(truthVersusEval.getTruth(), state));
-//! tryToWrite(truePositivesAndFalsePositivesVcfWriter, annotateWithConcordanceState(truthVersusEval.getEval(), state));
+//! tryToWrite(truePositivesAndFalseNegativesVcfWriter,
+//!         annotateWithConcordanceState(truthVersusEval.getTruth(), state));
+//! tryToWrite(truePositivesAndFalsePositivesVcfWriter,
+//!         annotateWithConcordanceState(truthVersusEval.getEval(), state));
 //! ```
 //!
 //! Three of the five states reach two of the three optional VCFs, and never with the same record:
@@ -90,6 +99,17 @@
 //! and a filtered false negative is truth's in `-tpfn` and eval's in `-ftnfn`, labelled `FFN` in
 //! both rather than `FN` in the file documented as false negatives. Only `-tpfn` is written against
 //! the truth header, so its sample column is the truth file's.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&mut self` marks a method that changes the value it is called on; `&self` one that reads it.
+//! - `Result<T, E>` is "a value or an error", which is how the reference's exceptions are
+//!   returned; `?` hands the error to the caller, and `.map_err(..)` converts it first.
+//! - `let Some(x) = y else { return ..; };` unwraps `y` or takes the early exit.
+//! - `.iter_mut().find(..)` finds an element and borrows it writably, so the counters are bumped
+//!   in place: Java's `map.get(filter)` followed by a mutation through the reference.
+//! - `x as f64` converts a `long` to `double`, which Java's `(double)` cast does explicitly too.
+//! - `|name, counts| ..` is a closure, a Java lambda.
 
 use gatk_engine::base_recalibration_engine::round_to_n_decimal_places;
 use gatk_engine::concordance_walker::ConcordanceState;
@@ -105,11 +125,15 @@ pub const COLUMNS: [&str; 6] = ["type", "TP", "FP", "FN", "RECALL", "PRECISION"]
 /// The `EnumMap<ConcordanceState, MutableLong>` of one variant type, all five states of it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Counts {
+    /// `TRUE_POSITIVE`.
     pub true_positive: i64,
+    /// `FALSE_POSITIVE`.
     pub false_positive: i64,
+    /// `FALSE_NEGATIVE`.
     pub false_negative: i64,
     /// Counted here and read nowhere.
     pub filtered_true_negative: i64,
+    /// `FILTERED_FALSE_NEGATIVE`, folded into the FN column.
     pub filtered_false_negative: i64,
 }
 
@@ -144,7 +168,9 @@ impl Counts {
 /// The two buckets, in the order the table writes them.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Summary {
+    /// `snpCounts`.
     pub snp: Counts,
+    /// `indelCounts`: everything that is not a SNP.
     pub indel: Counts,
 }
 
@@ -234,10 +260,15 @@ impl FilterAnalysisError {
 /// `FilterAnalysisRecord`: one filter, and the four counters it accumulates.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FilterAnalysisRecord {
+    /// The FILTER id.
     pub filter: String,
+    /// `tn`: filtered records with no truth beside them.
     pub true_negative: i32,
+    /// `fn`: filtered records at a truth locus.
     pub false_negative: i32,
+    /// `uniq_tn`: the same, counted only when this was the record's one filter.
     pub unique_true_negative: i32,
+    /// `uniq_fn`.
     pub unique_false_negative: i32,
 }
 
@@ -271,6 +302,13 @@ impl FilterAnalysis {
     ///
     /// `requested` is `filterAnalysis != null`, and it is deliberately consulted for one of the two
     /// states only: that is what the reference's precedence says.
+    ///
+    /// ```java
+    /// final Set<String> filters = truthVersusEval.getEval().getFilters();
+    /// final boolean unique = filters.size() == 1;
+    /// filters.stream().map(filterAnalysisRecords::get)
+    ///         .forEach(record -> updateFilterAnalysisRecord(record, concordanceState, unique));
+    /// ```
     pub fn apply(
         &mut self,
         state: ConcordanceState,
@@ -469,7 +507,8 @@ mod tests {
         summary.add(ConcordanceState::FilteredTrueNegative, true);
         assert_eq!(summary.snp.filtered_true_negative, 1);
         assert_eq!(summary.snp.false_negatives(), 1);
-        // The unmatched filtered record is in neither column, so the precision is still exactly one.
+        // The unmatched filtered record is in neither column, so the precision is still exactly
+        // one.
         assert_eq!(
             summary.table().lines().nth(1).expect("the SNP row"),
             "SNP\t1\t0\t1\t0.5\t1.0"

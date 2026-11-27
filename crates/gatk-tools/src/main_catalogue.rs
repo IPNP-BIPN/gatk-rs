@@ -10,8 +10,28 @@
 //! name reaches the suggestion search and the deprecation registry has to answer first.
 //!
 //! Ported from `org.broadinstitute.hellbender.Main` in GATK 4.7.0.0.
+//!
+//! The two classes excluded by name (`Main.java:331-332`):
+//!
+//! ```java
+//! if (clazz.equals(PicardCommandLineProgramExecutor.class) ||
+//!         clazz.equals(CommandLineArgumentValidator.class)) {
+//! ```
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `[&str; 332]` is a fixed-length array of 332 string constants, built into the binary. The
+//!   length is part of the type, so adding a name without changing the number fails to compile.
+//! - `binary_search` returns `Ok(index)` when the value is found and `Err(insertion point)` when
+//!   it is not; `.is_ok()` keeps only "found or not".
 
 /// Every name the dispatcher resolves, sorted.
+///
+/// Sorted by byte value (upper case before lower case, so `ASEReadCounter` precedes
+/// `AccumulateQualityYieldMetrics`), because that is the order `str` compares in and
+/// [`resolves`] searches by halving. The order is the search's, not the reference's:
+/// `Main.extractCommandLineProgram` looks a name up in a `LinkedHashMap` keyed by
+/// `getSimpleName()`, so its own order never reaches a lookup.
 pub const CATALOGUE: [&str; 332] = [
     "ASEReadCounter",
     "AccumulateQualityYieldMetrics",
@@ -347,7 +367,8 @@ pub const CATALOGUE: [&str; 332] = [
     "ViewSam",
 ];
 
-/// Whether the dispatcher resolves this name.
+/// Whether the dispatcher resolves this name: `simpleNameToClass.containsKey(args[0])`, an exact,
+/// case-sensitive match.
 pub fn resolves(name: &str) -> bool {
     CATALOGUE.binary_search(&name).is_ok()
 }

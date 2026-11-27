@@ -1,4 +1,5 @@
-//! Ported from `org.broadinstitute.hellbender.tools.copynumber.FilterIntervals` (GATK 4.6.2.0).
+//! Ported from `org.broadinstitute.hellbender.tools.copynumber.FilterIntervals` (GATK 4.7.0.0;
+//! `FilterIntervals.java` is unchanged since 4.6.2.0).
 //!
 //! The intervals a copy-number panel may use. Three filters over one shared mask, and the answer
 //! depends on the order they run in as much as on the thresholds.
@@ -21,6 +22,19 @@
 //! The annotation ranges and the percentile range are `min <= x && x <= max`, tested by negation so
 //! that a NaN fails. The low-count and extreme-count rules are STRICTLY GREATER on the count of
 //! offending samples, so at fifty per cent one sample of two is not enough.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - The mask is `&mut [bool]`: a writable borrow of the caller's `boolean[] mask`, so each
+//!   filter updates the one array in place, as the reference's methods do. `&[f64]` and
+//!   `&[Vec<f64>]` are read-only borrows of a `double[]` and of a `double[][]`.
+//! - `Result<usize, FilterError>` is "a count or the refusal"; `Err(..)` is the reference's
+//!   `throw`, and the caller passes it on with `?`.
+//! - `(a..b)` is the half-open range `a, a + 1, ..., b - 1`, Java's `IntStream.range(a, b)`;
+//!   `.filter(..).count()` is the stream's `filter(..).count()`, and `|x| ...` is a lambda.
+//! - `as f64` converts a count to `double`, which Java does implicitly in the comparison.
+//! - `#[allow(clippy::neg_cmp_op_on_partial_ord)]` silences a lint that would rewrite
+//!   `!(a <= b)` as `a > b`, which is not the same test when a NaN is involved.
 
 /// `--minimum-gc-content`'s default.
 pub const DEFAULT_MINIMUM_GC_CONTENT: f64 = 0.1;
@@ -82,6 +96,17 @@ impl FilterError {
 }
 
 /// `countNumberPassing`, which THROWS when nothing passes rather than answering zero.
+///
+/// The reference's line, broken here to fit:
+///
+/// ```java
+/// throw new UserException.BadInput(
+///         "Filtering removed all intervals.  Select less strict filtering criteria.");
+/// ```
+///
+/// The reference calls it inside the log message after every filter, so a filter that removes
+/// the last interval refuses the run there, before any later filter runs; every `update_mask_by_`
+/// function below ends with it for that reason.
 fn count_passing(mask: &[bool]) -> Result<usize, FilterError> {
     let passing = mask.iter().filter(|filtered| !**filtered).count();
     if passing == 0 {
@@ -92,7 +117,9 @@ fn count_passing(mask: &[bool]) -> Result<usize, FilterError> {
 
 /// `updateMaskByAnnotationFilter`: fail every interval outside `[minimum, maximum]`.
 ///
-/// The test is written as a negation, which is what makes a NaN annotation fail rather than pass.
+/// The test is written as a negation, which is what makes a NaN annotation fail rather than pass:
+/// `if (!(minValue <= value && value <= maxValue)) {`. An interval already failed is skipped, as
+/// the reference's `.filter(i -> !mask[i])` skips it.
 pub fn update_mask_by_annotation(
     mask: &mut [bool],
     values: &[f64],
@@ -115,6 +142,9 @@ pub fn update_mask_by_annotation(
 ///
 /// `counts[sample][interval]`. The comparison is STRICTLY GREATER against
 /// `percentage * numSamples / 100`, so one sample of two at fifty per cent does not fail it.
+///
+/// "Below" is strictly less: `.filter(c -> c < lowCountFilterCountThreshold)`, with the `int`
+/// threshold widened to `double` (`f64::from` here).
 pub fn update_mask_by_low_counts(
     mask: &mut [bool],
     counts: &[Vec<f64>],
@@ -142,6 +172,13 @@ pub fn update_mask_by_low_counts(
 /// The percentiles are taken over the SURVIVORS at this point, per sample, and a percentile of zero
 /// is short-circuited to a threshold of zero rather than evaluated -- which is what makes
 /// `--extreme-count-filter-minimum-percentile 0` mean "no lower bound".
+///
+/// The percentile is commons-math3's `new Percentile(p).evaluate(filteredCounts)`, whose default
+/// estimation is `LEGACY`; `jmath::percentile` with `EstimationType::Legacy` stands for it.
+///
+/// Every interval of every sample is then tested against that sample's band, already failed or
+/// not, as the reference's inner loop over all `numIntersectedIntervals` does; only the vote
+/// that follows skips the intervals already failed.
 pub fn update_mask_by_extreme_counts(
     mask: &mut [bool],
     counts: &[Vec<f64>],
@@ -151,6 +188,8 @@ pub fn update_mask_by_extreme_counts(
 ) -> Result<usize, FilterError> {
     let samples = counts.len();
     let intervals = mask.len();
+    // `new boolean[numSamples][numIntersectedIntervals]`: `vec![x; n]` is an array of `n`
+    // copies of `x`.
     let mut percentile_mask = vec![vec![false; intervals]; samples];
 
     for (sample, row) in counts.iter().enumerate() {
@@ -200,6 +239,12 @@ pub fn update_mask_by_extreme_counts(
 }
 
 /// The last filter: a contig left with exactly one surviving interval loses it.
+///
+/// The reference counts the survivors per contig with
+/// `Collectors.groupingBy(SimpleInterval::getContig, Collectors.counting())` and then fails each
+/// survivor whose contig's count is one, with a warning. All counts are taken before any interval
+/// is failed, so failing one cannot change another's count. The list of pairs stands for the
+/// map; only lookups are made in it, so its order does not matter.
 pub fn update_mask_by_solitary_intervals(
     mask: &mut [bool],
     contigs: &[String],
@@ -230,7 +275,7 @@ pub fn update_mask_by_solitary_intervals(
     count_passing(mask)
 }
 
-/// One interval of the output.
+/// One interval of the output, a `SimpleInterval`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Interval {
     /// The contig.
