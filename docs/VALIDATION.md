@@ -1835,7 +1835,7 @@ sv.counts.tsv is the table the REFERENCE's own CollectReadCounts wrote, under th
 
 ### PrintReads
 
-Suites: `printreads`, `expanded-command-line`, `tool-argument-declarations`, `tool-argument-enums`.
+Suites: `printreads`, `expanded-command-line`, `tool-argument-declarations`, `tool-argument-enums`, `cram-output`.
 
 Inputs: `reads.bai`, `reads.bam`, `reads.vcf`, `reads2.bai`, `reads2.bam`.
 
