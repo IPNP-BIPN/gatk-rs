@@ -98,7 +98,7 @@ pub fn calculate_ref_confidence(
     ref_bases: &[u8],
     span: &SimpleInterval,
     padded_start: i32,
-    evidence: &[BamRecord],
+    evidence: Vec<&BamRecord>,
     sample: &str,
     ploidy: usize,
     variant_calls: &[VariantContext],
@@ -107,13 +107,14 @@ pub fn calculate_ref_confidence(
     somatic: Option<&SomaticRefConfidence>,
     population: Option<&crate::population_priors::PopulationPriors>,
 ) -> Result<Vec<VariantContext>, EngineError> {
-    let mut reads: Vec<BamRecord> = evidence.to_vec();
-    reads.sort_by(read_utils::compare_read_coordinate);
+    // Sorted as references, not copies: the same stable sort with the same comparator.
+    let mut reads = evidence;
+    reads.sort_by(|a, b| read_utils::compare_read_coordinate(a, b));
     let partition = vec![Some(sample.to_string())];
     let states = ReadStateManager::new(partition.clone(), DownsamplingInfo::NONE)
         .map_err(|e| runtime(format!("{e:?}")))?;
     let contexts = locus_iterator::contexts(
-        &reads,
+        reads,
         partition,
         header,
         LocusIteratorOptions {

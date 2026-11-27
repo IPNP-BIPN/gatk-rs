@@ -154,16 +154,20 @@ impl<'a> PerSampleReadStateManager<'a> {
     /// Returns how many were removed. A malformed cigar surfaces here rather than at construction,
     /// because the first step happened before the state was ever added.
     pub fn update_read_states(&mut self) -> Result<usize, ReadStateError> {
-        let mut removed = 0;
-        let mut kept = Vec::with_capacity(self.states.len());
-        for mut state in std::mem::take(&mut self.states) {
-            match state.machine.step_forward_on_genome() {
-                Ok(None) => removed += 1,
-                Ok(Some(_)) => kept.push(state),
+        // Compacted in place, in order: the same survivors as a fresh `Vec`, without one per base.
+        let mut kept = 0;
+        for index in 0..self.states.len() {
+            match self.states[index].machine.step_forward_on_genome() {
+                Ok(None) => {}
+                Ok(Some(_)) => {
+                    self.states.swap(kept, index);
+                    kept += 1;
+                }
                 Err(error) => return Err(ReadStateError::Malformed(error)),
             }
         }
-        self.states = kept;
+        let removed = self.states.len() - kept;
+        self.states.truncate(kept);
         Ok(removed)
     }
 
@@ -257,6 +261,11 @@ impl<'a> ReadStateManager<'a> {
             let first = self.first().expect("non-empty");
             (first.read.reference_index, first.machine.genome_position())
         };
+        // Nothing starts here, the case at almost every base: the loop below would admit nothing
+        // and draw nothing, so skip building its downsamplers and buckets.
+        if next.alignment_start != alignment_start || next.reference_index != contig_index {
+            return Ok(0);
+        }
 
         // `SamplePartitioner`: one downsampler per sample, and WHICH one is the whole of the
         // difference. Off, it is a `PassThroughDownsampler` and every read bucketed is handed back

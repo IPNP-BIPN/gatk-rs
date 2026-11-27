@@ -56,6 +56,64 @@ now STATUS.md's cost column; the baseline stays in `baseline.json`):
 both directions, which is what an unchanged path does. The other 131 tools moved a median 7% cold
 and 10% steady, at most 45%, the same spread two runs of one commit showed in the baseline.
 
+## 9. HaplotypeCaller's allocations: the pileup iterator, the clipper, reference confidence
+
+**Where the time goes.** A native profile of `HaplotypeCaller -ERC GVCF` on NA12878 chr20:10-11 Mb
+(one thread, glibc kept, entry 7 of #1554): about a tenth of the samples in `malloc` and `free`.
+The first caller is the locus iterator (`Contexts::next` with what it inlines), which allocates
+at every reference base whether or not anything changed there: two `Vec`s of downsamplers and
+buckets in `collect_pending_reads` (one reservoir of the target's capacity per sample when
+downsampling is on) even when no read starts at that base, a fresh `Vec` of kept states in
+`update_read_states`, a pileup `Vec` grown by doubling, and the contig name copied three times.
+Next come whole-read copies: `ReadClipper` copied its read on construction and again in
+`clip_read` before the first op copied it a third time, and every clip in finalisation goes
+through it; `calculate_ref_confidence` copied the region's evidence twice (once to filter it by
+sample, once to sort it) for every GVCF region.
+
+**The optimisation.** `collect_pending_reads` returns before building anything when the next
+pending read does not start at the boundary; `update_read_states` compacts the states in place;
+the pileup `Vec` is sized to the number of states; the contig name is copied twice, not three
+times. `ReadClipper` borrows its read, so a clip makes the one copy its first op makes; the
+evidence is filtered and sorted as references, and the locus iterator takes any iterator of
+references rather than a slice of records.
+
+**Why it cannot move a byte.** The early return takes the path the loop already took when no read
+matched: nothing submitted, no random draw (the reservoir draws only in `submit`), every bucket
+empty, nothing admitted. The in-place compaction keeps the surviving states in the same order and
+steps each machine once, as the copy did; on an error the iteration ends either way. Sorting
+references with the same stable sort and the same comparator gives the same order as sorting
+copies. A copy that nothing mutates is the record it was copied from. Capacities and the number of
+copies of a string are not observable in any output.
+
+**The suites that prove it.** The locus-iterator and read-state suites in `gatk-engine`; the
+HaplotypeCaller and Mutect2 arrays; locally, the GVCF and VCF of the profiled region identical to
+the unchanged binary's.
+
+**Result** (NA12878 chr20, the port on one thread, three interleaved rounds each, outputs
+identical to the unchanged binary's, `GATKCommandLine` aside). Linux arm64, glibc, rustc 1.97.1;
+CPU is user + sys, RAM the peak RSS. GATK 4.7.0.0 on the same rows, same machine, its pinned
+arm64 image, one run each: CPU from `time`, RAM the container's cgroup `memory.peak` (which counts
+its page cache, so it flatters the port slightly).
+
+| Row | port CPU before | after | GATK CPU | after / GATK | port RAM before | after | GATK RAM | after / GATK |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `HaplotypeCaller -ERC GVCF`, 10-11 Mb | 13.56-13.91 s | 12.47-12.74 s (-8.2%) | 41.43 s | 0.30 | 97 MiB | 96 MiB | 1,114 MiB | 0.086 |
+| `HaplotypeCaller`, 10-11 Mb | 7.66-7.75 s | 7.28-7.32 s (-5.2%) | 36.19 s | 0.20 | 95 MiB | 94 MiB | 1,117 MiB | 0.084 |
+| `Mutect2 --ignore-itr-artifacts`, 10-10.2 Mb | 2.58-2.64 s | 2.47-2.54 s (-4.0%) | 20.09 s | 0.12 | 150 MiB | 150 MiB | 1,076 MiB | 0.14 |
+
+On macOS, whose allocator is dearer, the GVCF row's user CPU goes from 11.9-12.9 s to 10.0-10.8 s.
+
+## 10. Resolving a read's group by comparing ids from the end: refused
+
+Tried and measured, not landed. NA12878's read-group ids share a long prefix, and in the
+HaplotypeCaller GVCF profile `memcmp` was about half of `sample_name`'s samples, so
+`read_group::resolve` compared ids from the last byte (same equality, same first match). It moved
+nothing: HaplotypeCaller GVCF and Mutect2 within noise (macOS, three rounds), and
+`CollectF1R2Counts` on chr20:10-15 Mb 20.5 s against 19.8 s (scale session, three alternated runs).
+What costs there is the lookup per pileup element as a whole (the `RG` tag, `Attributes::get("SM")`,
+the `String`), which an id-to-sample table built once per header removes: 19.8 s to 15.4 s
+(-22%), on the scale session's branch.
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are

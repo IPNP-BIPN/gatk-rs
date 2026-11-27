@@ -22,9 +22,6 @@ repository = "https://github.com/IPNP-BIPN/gatk-rs"
 # resolved it. A pin nothing resolves is a pin nothing checks, so the line arrives with its first
 # caller.
 [workspace.dependencies]
-# The `gatk` binary's allocator (#1452): the system malloc was a third of HaplotypeCaller's
-# GVCF time. An allocator changes no arithmetic, so no output byte.
-mimalloc = { version = "0.1.52", default-features = false }
 # BWA-MEM for `BwaSpark` and what is built on it (IPNP-BIPN/gatk-rs#1390): the same owner's MIT
 # reimplementation, because transcribing lh3/bwa is ruled out. Its default features are the
 # binary's allocator, htslib output and FASTQ decompressors, none of which a library call reads.

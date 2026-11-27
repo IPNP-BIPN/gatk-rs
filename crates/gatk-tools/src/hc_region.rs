@@ -1227,7 +1227,11 @@ fn finish_region(
             &reference_haplotype.bases(),
             genotyping_region.span(),
             genotyping_region.padded_span().start,
-            likelihoods.sample_evidence(0).unwrap_or(&[]),
+            likelihoods
+                .sample_evidence(0)
+                .unwrap_or(&[])
+                .iter()
+                .collect(),
             sample,
             context.genotyping.sample_ploidy,
             &calls,
@@ -1279,17 +1283,16 @@ fn reference_model_for_no_variation(
     let padded = region.padded_span().clone();
     let ref_bases = &context.contig_bases[padded.start as usize - 1..padded.end as usize];
     let sample = &context.samples[0];
-    let evidence: Vec<BamRecord> = region
+    let evidence: Vec<&BamRecord> = region
         .reads()
         .iter()
         .filter(|read| sample_name(read, context.header).as_ref() == Some(sample))
-        .cloned()
         .collect();
     calculate_ref_confidence(
         ref_bases,
         region.span(),
         padded.start,
-        &evidence,
+        evidence,
         sample,
         context.genotyping.sample_ploidy,
         &[],

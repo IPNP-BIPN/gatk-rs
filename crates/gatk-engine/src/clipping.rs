@@ -333,15 +333,16 @@ pub fn revert_softclipped_bases(
 
 /// `ReadClipper`: a read plus the clips to apply to it.
 pub struct ReadClipper<'a> {
-    read: BamRecord,
+    // Borrowed: the first op applied makes the one copy a clip needs.
+    read: &'a BamRecord,
     header: Option<&'a SamHeader>,
     ops: Vec<ClippingOp>,
 }
 
 impl<'a> ReadClipper<'a> {
-    pub fn new(read: &BamRecord, header: Option<&'a SamHeader>) -> ReadClipper<'a> {
+    pub fn new(read: &'a BamRecord, header: Option<&'a SamHeader>) -> ReadClipper<'a> {
         ReadClipper {
-            read: read.clone(),
+            read,
             header,
             ops: Vec::new(),
         }
@@ -360,7 +361,7 @@ impl<'a> ReadClipper<'a> {
         if self.ops.is_empty() {
             return Ok(self.read.clone());
         }
-        let mut clipped = self.read.clone();
+        let mut clipped = std::borrow::Cow::Borrowed(self.read);
         for op in &self.ops {
             let read_length = clipped.read_bases.len() as i32;
             if op.start < read_length {
@@ -372,14 +373,14 @@ impl<'a> ReadClipper<'a> {
                 } else {
                     *op
                 };
-                clipped = fixed.apply(algorithm, &clipped, self.header)?;
+                clipped = std::borrow::Cow::Owned(fixed.apply(algorithm, &clipped, self.header)?);
             }
         }
         self.ops.clear();
         if clipped.read_bases.is_empty() {
             return Ok(empty_read(&clipped));
         }
-        Ok(clipped)
+        Ok(clipped.into_owned())
     }
 
     /// `ReadClipper.clipByReferenceCoordinates`: exactly one of the two bounds is `< 0`.
@@ -392,14 +393,14 @@ impl<'a> ReadClipper<'a> {
         if self.read.read_bases.is_empty() {
             return Ok(self.read.clone());
         }
-        if algorithm == ClippingRepresentation::SoftclipBases && read::is_unmapped(&self.read) {
+        if algorithm == ClippingRepresentation::SoftclipBases && read::is_unmapped(self.read) {
             return Err(ClipError::CannotSoftClip);
         }
         let (start, stop) = if ref_start < 0 {
             if ref_stop < 0 {
                 return Err(ClipError::BadCoordinates);
             }
-            let (index, operator) = read_utils::read_index_for_read(&self.read, ref_stop);
+            let (index, operator) = read_utils::read_index_for_read(self.read, ref_stop);
             // A reference coordinate inside a deletion returns the position *after* it, and the
             // stop here is inclusive, so it is decremented: the deletion is left unclipped rather
             // than one base too much being taken.
@@ -414,7 +415,7 @@ impl<'a> ReadClipper<'a> {
             if ref_stop >= 0 {
                 return Err(ClipError::BadCoordinates);
             }
-            let (index, _) = read_utils::read_index_for_read(&self.read, ref_start);
+            let (index, _) = read_utils::read_index_for_read(self.read, ref_start);
             (index, self.read.read_bases.len() as i32 - 1)
         };
 
