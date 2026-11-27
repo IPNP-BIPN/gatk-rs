@@ -214,6 +214,7 @@ pub mod shift_fasta;
 pub mod site_depth_to_baf;
 pub mod sort_vcf;
 pub mod spark_metrics;
+pub mod spark_range_partitioner;
 pub mod split_cram;
 pub mod split_intervals;
 pub mod split_n_cigar_reads;

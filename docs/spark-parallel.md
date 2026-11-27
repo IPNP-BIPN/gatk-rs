@@ -106,13 +106,46 @@ Against a local dump, not a golden, the port matches all 19 counts and, on the 1
 the reference's path, those values. Its full bits on those 15 equal the usual run wherever that was
 measured; the one run that differed was a dump that caught the rare 12-of-5 order.
 
+## A sort past the sample
+
+`sortByKey` cuts a sort with `RangePartitioner`, and its bounds decide where each part, and so each
+BGZF block of the merged BAM, ends. Up to `sampleSizePerPartition` keys per input partition
+(`ceil(3 * 20 * reducers / input partitions)`) the sketch is every key; past it, each input partition
+is a reservoir sample (`SamplingUtils.reservoirSampleAndCount`) drawn with an `XORShiftRandom` seeded
+from `byteswap32(index ^ (shift << 16))`, Scala 2.13's MurmurHash3 under it. `shift` is the id of the
+RDD `rdd.map(_._1)` that the partitioner builds, so it counts the RDDs the tool made before the sort.
+The reference logs it, plus one, as the `MapPartitionsRDD` of the `sortByKey` result stage.
+
+`spark_range_partitioner.rs` ports the sketch and `determineBounds`. The port knows `shift` where it
+was measured in the image, and there it samples; elsewhere it refuses by name when the sample would be
+drawn, as it did before for every tool.
+
+| Tool | The sort | `shift` | Measured stable over |
+| --- | --- | --- | --- |
+| `SortSamSpark` | `writeReads` | 15 | both orders, `-L`, `--read-filter`, no default filters, a smaller split |
+| `ApplyBQSRSpark` | `writeReads` | 16 | |
+| `BQSRPipelineSpark` | `writeReads` | 20 | |
+| `MarkDuplicatesSpark` | the queryname sort, then `writeReads` | 14, 37 | not wired: #1490 and #1469 hold the tool |
+
+Against the arm64 image, `SortSamSpark` over 6652 reads at 3, 4 (by name) and 5 reducers (5 input
+partitions), and both BQSR writers over 542 reads at 4 to 6 reducers, cut their parts at the same
+records and write the same decompressed bytes. The compressed bytes there differ only by that image's
+zlib. The `sort-sam-sampled*`, `apply-bqsr-sampled` and `bqsr-pipeline-sampled` runs of `spark-walkers`
+hold this against the x86-64 oracle.
+
+Still refused: an imbalanced input partition (`fraction * n > sampleSizePerPartition`, which Spark
+samples again with a `BernoulliSampler`), and the sorts of `MarkDuplicatesSpark`,
+`BwaAndMarkDuplicatesPipelineSpark`, `ReadsPipelineSpark`, `RevertSamSpark --sanitize`,
+`CompareDuplicatesSpark`, the aligners and PathSeq, whose `shift` and input partitions are not
+measured.
+
 ## The gaps left in `runners_spark.rs`
 
 13 `PORT_LIMITATION` refusals: cluster masters, CRAM input, `PileupSpark --metadata`, an evidence
 limit and an input larger than one partition in the SV tools, `ParallelCopyGCSDirectoryIntoHDFSSpark`,
 a short `TableFeature` row, an invalid read attribute, an unknown read group in an output map, Disq's
-CRAM writer, R for `--chart` and for `--produce-plot`, and `range_bounds` past
-`sampleSizePerPartition`.
+CRAM writer, R for `--chart` and for `--produce-plot`, and a sampled sort where `shift` is not
+measured (above).
 
-4 `shortcut` comments: the Tribble index bin of 8000, the lost executor's message, the whole-file
-index where Disq merges parts, and sketch partitions at most `sampleSizePerPartition` keys.
+3 `shortcut` comments: the Tribble index bin of 8000, the lost executor's message, and the whole-file
+index where Disq merges parts.
