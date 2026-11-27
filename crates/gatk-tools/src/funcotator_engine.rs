@@ -3681,6 +3681,61 @@ fn replace_classifications(value: &str) -> String {
     text
 }
 
+/// `FuncotatorUtils.B37_SEQUENCE_DICTIONARY`'s names and lengths: GRCh37's 1-22, X, Y and MT.
+const B37_SEQUENCES: [(&str, i32); 25] = [
+    ("1", 249_250_621),
+    ("2", 243_199_373),
+    ("3", 198_022_430),
+    ("4", 191_154_276),
+    ("5", 180_915_260),
+    ("6", 171_115_067),
+    ("7", 159_138_663),
+    ("8", 146_364_022),
+    ("9", 141_213_431),
+    ("10", 135_534_747),
+    ("11", 135_006_516),
+    ("12", 133_851_895),
+    ("13", 115_169_878),
+    ("14", 107_349_540),
+    ("15", 102_531_392),
+    ("16", 90_354_753),
+    ("17", 81_195_210),
+    ("18", 78_077_248),
+    ("19", 59_128_983),
+    ("20", 63_025_520),
+    ("21", 48_129_895),
+    ("22", 51_304_566),
+    ("X", 155_270_560),
+    ("Y", 59_373_566),
+    ("MT", 16_569),
+];
+
+/// `FuncotatorUtils.isSequenceDictionaryUsingB37Reference`: every b37 contig is in the dictionary
+/// at its b37 length.
+///
+/// shortcut: the MD5s the reference also compares when both sides carry one are not checked;
+/// add them if a dictionary with b37 names and lengths but other bases turns up.
+pub fn is_b37_dictionary(sequences: &[htsjdk_bam::header::SequenceRecord]) -> bool {
+    B37_SEQUENCES.iter().all(|(name, length)| {
+        sequences
+            .iter()
+            .any(|record| record.name == *name && record.length == *length)
+    })
+}
+
+/// `FuncotatorUtils.convertB37ContigToHg19Contig`: `3` is `chr3` and `MT` is `chrM`; any other
+/// name is kept.
+///
+/// shortcut: the map's unplaced `GL...` contigs (`chrUn_gl...`, `chr1_gl..._random`) are kept as
+/// written; port them when a data source keyed on them is used.
+pub fn b37_to_hg19_contig(contig: &str) -> String {
+    match contig {
+        "MT" => "chrM".to_string(),
+        _ if B37_SEQUENCES.iter().any(|(name, _)| *name == contig) => format!("chr{contig}"),
+        _ => contig.to_string(),
+    }
+}
+
 /// `mafTransform`.
 fn maf_transform(key: &str, value: &str, reference_version: &str) -> String {
     match key {
@@ -4459,5 +4514,26 @@ impl GeneList {
             self.tsv.write(&contig, start, end, &mut map)?;
         }
         self.tsv.close()
+    }
+}
+
+#[cfg(test)]
+mod b37_tests {
+    use super::{b37_to_hg19_contig, is_b37_dictionary, B37_SEQUENCES};
+    use htsjdk_bam::header::SequenceRecord;
+
+    #[test]
+    fn a_b37_dictionary_is_named_for_hg19() {
+        let mut b37: Vec<SequenceRecord> = B37_SEQUENCES
+            .iter()
+            .map(|(name, length)| SequenceRecord::new(name, *length))
+            .collect();
+        b37.push(SequenceRecord::new("GL000191.1", 106_433));
+        assert!(is_b37_dictionary(&b37));
+        b37[2].length += 1;
+        assert!(!is_b37_dictionary(&b37));
+        assert_eq!(b37_to_hg19_contig("3"), "chr3");
+        assert_eq!(b37_to_hg19_contig("MT"), "chrM");
+        assert_eq!(b37_to_hg19_contig("GL000191.1"), "GL000191.1");
     }
 }
