@@ -6509,20 +6509,28 @@ pub fn print_read_counts(parser: &Parser) -> Outcome {
     // here answer by EXTENSION: `.counts.tsv` for the simple counts and `.rd.txt` for the depth
     // evidence. A file called `counts.tsv` has neither, so it is refused for having no codec
     // rather than read as the table it holds. Measured on four rows of this tool's array.
-    if !(input.ends_with(".counts.tsv") || input.ends_with(".rd.txt")) {
+    // Both codecs take the gzipped name too (`FORMAT_SUFFIX + ".gz"`).
+    let plain = input.strip_suffix(".gz").unwrap_or(&input);
+    if !(plain.ends_with(".counts.tsv") || plain.ends_with(".rd.txt")) {
         return Err(Thrown::user(format!(
             "Cannot read file://{} because no suitable codecs found",
             java_absolute_path(&input)
         )));
     }
-    let text = std::fs::read_to_string(&input).map_err(|_| {
+    let unreadable = || {
         Thrown::user(
             index_feature_file::Refusal::CouldNotReadInputFile {
                 path: input.clone(),
             }
             .message(),
         )
-    })?;
+    };
+    let bytes = std::fs::read(&input).map_err(|_| unreadable())?;
+    let text = if input.ends_with(".gz") {
+        gunzip(&bytes).map_err(|_| unreadable())?
+    } else {
+        String::from_utf8_lossy(&bytes).into_owned()
+    };
 
     // The two headers this tool accepts, told apart the way the codecs tell them apart: a SAM
     // header begins with `@`, a depth header with its column names.
@@ -6583,7 +6591,9 @@ pub fn print_read_counts(parser: &Parser) -> Outcome {
     // header and all, which is what the golden measures and why they are written before the
     // refusal is raised.
     for (path, contents) in run.disk.files() {
-        write_file(&path, contents.as_bytes())?;
+        // The tool's own writer refuses a path it cannot open in these words.
+        std::fs::write(&path, contents.as_bytes())
+            .map_err(|_| Thrown::user(format!("Can't open {path} for output.")))?;
     }
     if let Some(error) = &run.error {
         // The class is borrowed from the error rather than a constant, so it is matched to one of
