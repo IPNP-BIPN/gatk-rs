@@ -8097,17 +8097,19 @@
     },
     "FilterAlignmentArtifacts": {
       "$why": [
-        "faa_ref.fasta is two random contigs and faa.img the reference's own BwaMemIndexImageCreator over it. faa.bam",
-        "and faa2.bam tile both contigs with reads that copy the reference base for base, so NO read supports any",
-        "call: the realignment (the Mutect2 assembler, the PairHMM and BWA-MEM over the unitigs), which this port does",
-        "not carry, has nothing to realign on any row, and what the array measures is the walker around it: which",
-        "calls are read, which are skipped as filtered, and what the output carries. The realignment arguments",
-        "(--kmer-size, --minimum-seed-length, --drop-ratio, --seed-split-factor, the score and mismatch thresholds,",
-        "--max-reasonable-fragment-length, --num-regular-contigs, --indel-start-tolerance) are varied and answer",
-        "nothing on this corpus, which is the honest reading of their rows. --bam-output is not given: it writes the",
-        "assembled haplotypes. --smith-waterman leaves out AVX_ENABLED, which refuses on a machine without AVX and so",
-        "measures the runner's CPU. A plain VCF output with an index is forbidden because its .idx records the",
-        "output's modification time; the command line is held off because it records the date."
+        "faa_ref.fasta is two random contigs and faa.img the reference's own BwaMemIndexImageCreator over it.",
+        "faa.bam and faa2.bam tile both contigs with reads that copy the reference base for base, so NO read",
+        "supports any call: the realignment (the Mutect2 assembler, the PairHMM and BWA-MEM over the",
+        "unitigs), which this port does not carry, has nothing to realign on any row, and what the array",
+        "measures is the walker around it: which calls are read, which are skipped as filtered, and what the",
+        "output carries. The realignment arguments (--kmer-size, --minimum-seed-length, --drop-ratio, --seed-",
+        "split-factor, the score and mismatch thresholds, --max-reasonable-fragment-length, --num-regular-",
+        "contigs, --indel-start-tolerance) are varied and answer nothing on this corpus, which is the honest",
+        "reading of their rows. --bam-output is absent or haplotypes.bam: the writer the tool opens is never",
+        "closed, so the BAM and its .bai are left empty. --smith-waterman leaves out AVX_ENABLED, which",
+        "refuses on a machine without AVX and so measures the runner's CPU. A plain VCF output with an index",
+        "is forbidden because its .idx records the output's modification time; the command line is held off",
+        "because it records the date."
       ],
       "--variant": [
         "/work/fixtures/faa.vcf",
@@ -8127,7 +8129,10 @@
         "/work/out/filtered.vcf",
         "/work/out/filtered.vcf.gz"
       ],
-      "--bam-output": [],
+      "--bam-output": [
+        "<unset>",
+        "/work/out/haplotypes.bam"
+      ],
       "--read-index": [],
       "--sequence-dictionary": [],
       "--smith-waterman": [
