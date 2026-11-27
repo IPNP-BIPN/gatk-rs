@@ -81,6 +81,25 @@ public class PortLimitationDump {
                 "--sequence-dictionary", "inputs/a-directory.dict", "-I", "absent.table",
                 "-O", "{out}/out.table");
 
+        // RevertSamSpark's output map is read on the driver as a TableFeature stream, every group
+        // of the header must be in it, and the files are written in the map's HashMap order, so a
+        // group only the map names fails on its null header after the groups before it are
+        // written. An illegal --attributes-to-clear fails inside a task instead, which leaves
+        // Hadoop's temporary directories named by the job's clock: no case here.
+        final String reverted = bam("revertsamspark", read(1, 100, "XX:Z:a"), read(1, 110, "XX:Z:b"));
+        run("revertsamspark-short-map-row", "RevertSamSpark", "-I", reverted,
+                "--output-by-readgroup", "--output-map",
+                text("revertsamspark-short-map-row.tsv", "READ_GROUP_ID\tOUTPUT\nrg\n"));
+        run("revertsamspark-unknown-group", "RevertSamSpark", "-I", reverted,
+                "--output-by-readgroup", "--output-map",
+                text("revertsamspark-unknown-group.tsv", "READ_GROUP_ID\tOUTPUT\nother\t"
+                        + OUT.resolve("revertsamspark-unknown-group").resolve("other.bam") + "\n"));
+        run("revertsamspark-extra-group", "RevertSamSpark", "-I", reverted,
+                "--output-by-readgroup", "--output-map",
+                text("revertsamspark-extra-group.tsv", "READ_GROUP_ID\tOUTPUT\nrg\t"
+                        + OUT.resolve("revertsamspark-extra-group").resolve("rg.bam") + "\nother\t"
+                        + OUT.resolve("revertsamspark-extra-group").resolve("other.bam") + "\n"));
+
         for (final String input : INPUTS) {
             final Path path = Paths.get(input);
             if (Files.isRegularFile(path)) {
@@ -131,6 +150,15 @@ public class PortLimitationDump {
         INPUTS.add(bam);
         INPUTS.add(dir.resolve(name + ".bai").toString());
         return bam;
+    }
+
+    /** A text input, recorded with the others. */
+    static String text(final String name, final String content) throws Exception {
+        final Path path = Paths.get("inputs", name);
+        Files.createDirectories(path.getParent());
+        Files.writeString(path, content, StandardCharsets.UTF_8);
+        INPUTS.add(path.toString());
+        return path.toString();
     }
 
     static void run(final String name, final String... command) throws Exception {
