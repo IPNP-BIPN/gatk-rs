@@ -414,13 +414,22 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         intervals
     };
 
-    // Each contig read once and shared: the clipper asks for one per read.
+    // A contig read once and shared: the clipper asks for one per read. Only the two contigs
+    // used last are kept, most recent first. A map of every contig visited grew to the whole
+    // reference over a genome (3 GB), and two, not one, because the clipper runs on the reads a
+    // window ahead of the regions, so at a contig boundary the two ask for adjacent contigs.
+    // A contig asked for again after eviction is read again: the same bases, so the same bytes.
     let reference = std::cell::RefCell::new(reference);
-    let bases_of: std::cell::RefCell<std::collections::HashMap<String, std::rc::Rc<Vec<u8>>>> =
-        Default::default();
+    let bases_of: std::cell::RefCell<Vec<(String, std::rc::Rc<Vec<u8>>)>> = Default::default();
     let shared_bases = |contig: &str| -> Result<std::rc::Rc<Vec<u8>>, String> {
-        if let Some(bases) = bases_of.borrow().get(contig) {
-            return Ok(bases.clone());
+        {
+            let mut kept = bases_of.borrow_mut();
+            if let Some(at) = kept.iter().position(|(name, _)| name == contig) {
+                let hit = kept.remove(at);
+                let bases = hit.1.clone();
+                kept.insert(0, hit);
+                return Ok(bases);
+            }
         }
         let mut reference = reference.borrow_mut();
         let length = reference
@@ -434,12 +443,12 @@ pub fn mutect2(parser: &Parser) -> Outcome {
                 .query(contig, 1, length)
                 .map_err(|error| format!("{error:?}"))?,
         );
-        bases_of
-            .borrow_mut()
-            .insert(contig.to_string(), bases.clone());
+        let mut kept = bases_of.borrow_mut();
+        kept.insert(0, (contig.to_string(), bases.clone()));
+        kept.truncate(2);
         Ok(bases)
     };
-    let mut contig_bases = |contig: &str| shared_bases(contig).map(|bases| (*bases).clone());
+    let mut contig_bases = |contig: &str| shared_bases(contig);
 
     // The filters, then `makePostReadFilterTransformer`'s palindrome clipper.
     let filter = read_filter(parser, &filters, &header)?;
