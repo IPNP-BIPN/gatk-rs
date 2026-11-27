@@ -104,7 +104,17 @@ fn main() {
         let many = cpu(&haplotypes, &reads, cores);
         let many_s = seconds(t);
         let t = Instant::now();
-        let dev = gpu::pair_hmm_log10(&haplotypes, &inputs).expect("device path");
+        // A command buffer the device does not finish (GitHub's paravirtual GPU times out on the
+        // largest workload) falls back to the CPU path and answers `None`: a limit of the device,
+        // reported as such, not a difference in bits.
+        let Some(dev) = gpu::pair_hmm_log10(&haplotypes, &inputs) else {
+            println!(
+                "{haplotype_count}x{haplotype_length} hap, {read_count}x{read_length} read | {} | {} | {one_s:.3} | {many_s:.3} | timed out | - | - | -",
+                haplotype_count * read_count,
+                haplotype_count * read_count * haplotype_length * read_length,
+            );
+            continue;
+        };
         let dev_s = seconds(t);
         let bits = |v: &[f64]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
         let same = bits(&one) == bits(&many) && bits(&one) == bits(&dev);
@@ -115,5 +125,6 @@ fn main() {
             one_s / dev_s,
             many_s / dev_s,
         );
+        assert!(same, "the device's bits are not the CPU path's");
     }
 }

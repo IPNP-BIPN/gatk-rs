@@ -220,12 +220,16 @@ jobs:
           brew install autoconf automake libtool llvm
           echo "CC_aarch64_apple_darwin=$(brew --prefix llvm)/bin/clang" >> "$GITHUB_ENV"
 
-      - name: Record the device, its driver and the toolkit
+      - name: Each kernel's speedup beside its byte-equality, then the device, driver and toolkit
+        # gpu_speed exits non-zero if the device's bits are not the CPU path's.
         env:
           GATK_RS_GPU: "1"
         run: |
-          system_profiler SPDisplaysDataType
-          python3 tools/provenance/record.py --out provenance-gpu.json
+          set -o pipefail
+          cargo run --release -p gatk-engine --features gpu --example gpu_speed | tee gpu-speed.txt
+          { echo '### PairHMM on the device'; echo; echo '```'; cat gpu-speed.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          GATK_RS_GPU_DEVICE="$(sed -n 's/^device: \([^;]*\);.*/\1/p' gpu-speed.txt)" \
+            python3 tools/provenance/record.py --out provenance-gpu.json
 
       - name: Every suite on the CPU path, as this runner's own baseline
         # The same binaries, without GATK_RS_GPU. A suite this host cannot pass on its CPU (ISA-L's
@@ -264,7 +268,9 @@ jobs:
         if: always()
         with:
           name: provenance-gpu
-          path: provenance-gpu.json
+          path: |
+            provenance-gpu.json
+            gpu-speed.txt
 
 # The jobs below this line are generated from tools/conformance/manifest.json by
 # tools/conformance/generate_ci.py. Edit the manifest, not this file: the `guard` job

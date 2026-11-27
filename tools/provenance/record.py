@@ -127,7 +127,10 @@ def device():
                 "vendor": gpu.get("spdisplays_vendor"),
             }
             for gpu in gpus
-        ] or None,
+        ]
+        # A virtual machine's system_profiler lists no display; Metal's own name for the device,
+        # as gpu_speed prints it, stands in.
+        or ([{"model": os.environ["GATK_RS_GPU_DEVICE"]}] if os.environ.get("GATK_RS_GPU_DEVICE") else None),
         "driver": command("sw_vers"),
         "toolkit": {"metal-crate": bindings.group(1) if bindings else None},
     }
