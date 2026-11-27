@@ -16,6 +16,10 @@ What is recorded, per tool:
 * `matched`: rows where the port answered exactly as the reference did, refusals included;
 * `share`: `matched / rows`, which is what the dashboard prints.
 
+A t=2 run fills `tools`; any other strength fills its own section (`t3`), one tool at a time, so the
+critical path's t=3 arrays can be measured by a sharded job without the t=2 job erasing them. A
+shard writes `--fragment` instead of the file, and `--merge` folds the fragments in.
+
 What is NOT recorded is the outputs themselves. A Tribble index carries the last-modified time of
 the file it was built from, and the corpus is rebuilt on every run, so two runs of this produce two
 sets of digests. The comparison inside one run is exact; a golden of those digests would flake.
@@ -53,8 +57,10 @@ COMMENT = [
 
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--tool", action="append", required=True)
-    parser.add_argument("--port", required=True, help="the linux/amd64 port binary")
+    parser.add_argument("--tool", action="append")
+    parser.add_argument("--port", help="the linux/amd64 port binary")
+    parser.add_argument("--fragment", help="write this run's tools here instead of measured.json")
+    parser.add_argument("--merge", nargs="+", help="fragments to fold into measured.json")
     parser.add_argument("--t", type=int, default=2)
     parser.add_argument(
         "--corpus-dir",
@@ -67,6 +73,13 @@ def main(argv):
         help="how many tools to run side by side; each row is still one container at a time",
     )
     options = parser.parse_args(argv)
+    if options.merge:
+        for path in options.merge:
+            fragment = json.loads(Path(path).read_text())
+            write(fragment["t"], fragment["tools"])
+        return 0
+    if not options.tool or not options.port:
+        parser.error("--tool and --port are required unless --merge is given")
 
     # The corpus once for every tool. Each array run used to build its own, which was most of a
     # run's time and the same files every time; the containers mount it read-only, so the tools can
@@ -79,6 +92,8 @@ def main(argv):
     # Before the tools run side by side, so that no two of them train into the corpus at once.
     if any(run_array.past_the_interpreter(tool) == "python" for tool in options.tool):
         run_array.train_scorers(fixtures)
+    if any(run_array.uses_gcnv(tool) for tool in options.tool):
+        run_array.build_gcnv(fixtures)
     if any(run_array.past_the_interpreter(tool) == "Rscript" for tool in options.tool):
         run_array.build_port_with_r()
 
@@ -121,11 +136,33 @@ def main(argv):
             "share": float(match["share"]),
         }
 
-    MEASURED.write_text(
-        json.dumps({"$comment": COMMENT, "tools": tools}, indent=2) + "\n"
-    )
-    print(f"wrote {MEASURED.relative_to(REPO)}: {len(tools)} tools")
+    if options.fragment:
+        Path(options.fragment).write_text(json.dumps({"t": options.t, "tools": tools}, indent=2) + "\n")
+        print(f"wrote {options.fragment}: {len(tools)} tools")
+        return 0
+    write(options.t, tools)
+    print(f"wrote {MEASURED.relative_to(REPO)}: {len(tools)} tools at t={options.t}")
     return 0
+
+
+def section(t):
+    return "tools" if t == 2 else f"t{t}"
+
+
+def write(t, tools):
+    """t=2 replaces `tools`, the whole run's; another strength updates its own section tool by tool.
+
+    Every other section is kept as committed.
+    """
+    measured = json.loads(MEASURED.read_text()) if MEASURED.exists() else {}
+    measured["$comment"] = COMMENT
+    if t == 2:
+        measured["tools"] = tools
+    else:
+        level = measured.setdefault(section(t), {})
+        level.update(tools)
+        measured[section(t)] = dict(sorted(level.items()))
+    MEASURED.write_text(json.dumps(measured, indent=2) + "\n")
 
 
 if __name__ == "__main__":
