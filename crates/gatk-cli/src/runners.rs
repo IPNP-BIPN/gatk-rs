@@ -15428,6 +15428,7 @@ fn variant_eval_report(
         first.codec,
         opened.dictionary(),
     )?;
+    output_filter_has_intervals(parser)?;
     let mut reference =
         gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
             .map_err(|error| Thrown::user(format!("{error:?}")))?;
@@ -16716,7 +16717,8 @@ pub fn remove_nearby_indels(parser: &Parser) -> Outcome {
 }
 
 /// The predicate `--variant-output-filtering` builds, which every emitted record passes through.
-type VariantOutputFilter<'a> = Box<dyn Fn(&htsjdk_vcf::variant::VariantContext) -> bool + 'a>;
+pub(crate) type VariantOutputFilter<'a> =
+    Box<dyn Fn(&htsjdk_vcf::variant::VariantContext) -> bool + 'a>;
 
 /// `--variant-output-filtering`, which WRAPS the VCF writer rather than the traversal.
 ///
@@ -16728,7 +16730,7 @@ type VariantOutputFilter<'a> = Box<dyn Fn(&htsjdk_vcf::variant::VariantContext) 
 /// `chr1:1-1000` and ends outside it.
 ///
 /// A mode other than `ANYWHERE` with no `-L` is refused, after the dictionaries are validated.
-fn variant_output_filter<'a>(
+pub(crate) fn variant_output_filter<'a>(
     parser: &Parser,
     intervals: Option<&'a [gatk_engine::interval::SimpleInterval]>,
 ) -> Result<VariantOutputFilter<'a>, Thrown> {
@@ -16776,20 +16778,29 @@ pub fn progress_meter_refusal(parser: &Parser) -> Option<Thrown> {
     if seconds > 0.0 {
         return None;
     }
-    let filtered =
-        scalar(parser, "variant-output-filtering").is_some_and(|mode| mode != "ANYWHERE");
-    let intervals = !arguments(parser, "intervals").is_empty()
-        || !arguments(parser, "exclude-intervals").is_empty();
-    if filtered && !intervals {
-        return Some(Thrown::command_line(
-            "Argument -L or -XL was missing: Intervals are required if --variant-output-filtering \
-             was specified or if the tool uses interval filtering.",
-        ));
+    if let Err(refusal) = output_filter_has_intervals(parser) {
+        return Some(refusal);
     }
     Some(Thrown::non_user(
         "java.lang.IllegalArgumentException",
         "secondsBetweenUpdates must be > 0.0",
     ))
+}
+
+/// The end of `GATKTool.onStartup`: a `--variant-output-filtering` mode other than `ANYWHERE` with
+/// neither `-L` nor `-XL` is refused, whether or not the tool writes a VCF.
+pub(crate) fn output_filter_has_intervals(parser: &Parser) -> Result<(), Thrown> {
+    let filtered =
+        scalar(parser, "variant-output-filtering").is_some_and(|mode| mode != "ANYWHERE");
+    let intervals = !arguments(parser, "intervals").is_empty()
+        || !arguments(parser, "exclude-intervals").is_empty();
+    if filtered && !intervals {
+        return Err(Thrown::command_line(
+            "Argument -L or -XL was missing: Intervals are required if --variant-output-filtering \
+             was specified or if the tool uses interval filtering.",
+        ));
+    }
+    Ok(())
 }
 
 /// `--sites-only-vcf-output`, which builds the writer with `DO_NOT_WRITE_GENOTYPES`.

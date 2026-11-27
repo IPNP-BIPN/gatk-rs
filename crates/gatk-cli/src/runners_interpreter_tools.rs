@@ -905,6 +905,7 @@ pub fn postprocess_germline_cnv_calls(parser: &Parser) -> Outcome {
         }
     }
 
+    crate::runners::output_filter_has_intervals(parser)?;
     check_python_packages(&["gcnvkernel"])?;
     let dictionary = match master {
         Some(master) => master.sequences,
@@ -1495,6 +1496,7 @@ pub fn score_variant_annotations(parser: &Parser) -> Outcome {
         intervals,
         ..
     } = variant_walker_startup(parser, "ScoreVariantAnnotations")?;
+    let keep = crate::runners::variant_output_filter(parser, intervals.as_deref())?;
     let prefix = require(parser, "output");
     let mut file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
         failure: Failure::User,
@@ -1790,7 +1792,8 @@ pub fn score_variant_annotations(parser: &Parser) -> Outcome {
         if sites_only {
             out.genotypes = Vec::new().into();
         }
-        if encoded.is_ok() {
+        // `IntervalFilteringVcfWriter` drops a record at the writer; the scores file holds it still.
+        if encoded.is_ok() && keep(&out) {
             encoded = encoder.encode_into(&out, &mut vcf);
             vcf.push('\n');
         }

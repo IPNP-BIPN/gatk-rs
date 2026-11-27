@@ -4,8 +4,8 @@
   "t": 2,
   "numeric_policy": "strict",
   "arguments_total": 68,
-  "arguments_in_array": 45,
-  "arguments_excluded": 23,
+  "arguments_in_array": 46,
+  "arguments_excluded": 22,
   "excluded": [
     {
       "argument": "--add-output-vcf-command-line",
@@ -148,13 +148,6 @@
       "source": "none"
     },
     {
-      "argument": "--variant-output-filtering",
-      "type": "Mode",
-      "reason": "excluded by the repository: no value is declared for this tool",
-      "held_at": null,
-      "source": "none"
-    },
-    {
       "argument": "--verbosity",
       "type": "LogLevel",
       "reason": "excluded by the repository: log level on stderr, same reason",
@@ -170,8 +163,8 @@
     }
   ],
   "rows": 68,
-  "tuples_total": 5463,
-  "tuples_covered": 5463,
+  "tuples_total": 5887,
+  "tuples_covered": 5887,
   "tuples_forbidden": 0,
   "constraint_notes": [],
   "coverage": 1.0,
@@ -223,7 +216,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[0]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -270,7 +264,8 @@
         "--strat-intervals=null",
         "--stratification-module=null",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -320,7 +315,8 @@
         "--strat-intervals": "fixture[1]",
         "--stratification-module": "fixture[1]",
         "--tmp-dir": "fixture[1]",
-        "--use-jdk-deflater": "false"
+        "--use-jdk-deflater": "false",
+        "--variant-output-filtering": "fixture[1]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -367,7 +363,8 @@
         "--strat-intervals=/work/fixtures/ve_strat.bed",
         "--stratification-module=IntervalStratification",
         "--tmp-dir=/work/tmp2",
-        "--use-jdk-deflater=false"
+        "--use-jdk-deflater=false",
+        "--variant-output-filtering=ANYWHERE"
       ]
     },
     {
@@ -417,7 +414,8 @@
         "--strat-intervals": "fixture[2]",
         "--stratification-module": "fixture[2]",
         "--tmp-dir": "fixture[1]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[2]"
       },
       "arguments": [
         "--add-output-sam-program-record=false",
@@ -464,7 +462,8 @@
         "--strat-intervals=/work/fixtures/ve_strat_noidx.bed",
         "--stratification-module=AlleleCount",
         "--tmp-dir=/work/tmp2",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=STARTS_IN"
       ]
     },
     {
@@ -514,7 +513,8 @@
         "--strat-intervals": "fixture[2]",
         "--stratification-module": "fixture[3]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "false"
+        "--use-jdk-deflater": "false",
+        "--variant-output-filtering": "fixture[3]"
       },
       "arguments": [
         "--add-output-sam-program-record=false",
@@ -561,7 +561,8 @@
         "--strat-intervals=/work/fixtures/ve_strat_noidx.bed",
         "--stratification-module=IndelSize",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=false"
+        "--use-jdk-deflater=false",
+        "--variant-output-filtering=CONTAINED"
       ]
     },
     {
@@ -611,7 +612,8 @@
         "--strat-intervals": "fixture[1]",
         "--stratification-module": "fixture[4]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[1]"
       },
       "arguments": [
         "--add-output-sam-program-record=false",
@@ -658,7 +660,8 @@
         "--strat-intervals=/work/fixtures/ve_strat.bed",
         "--stratification-module=FilterType",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=ANYWHERE"
       ]
     },
     {
@@ -708,7 +711,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[5]",
         "--tmp-dir": "fixture[1]",
-        "--use-jdk-deflater": "false"
+        "--use-jdk-deflater": "false",
+        "--variant-output-filtering": "fixture[3]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -755,7 +759,8 @@
         "--strat-intervals=null",
         "--stratification-module=Sample",
         "--tmp-dir=/work/tmp2",
-        "--use-jdk-deflater=false"
+        "--use-jdk-deflater=false",
+        "--variant-output-filtering=CONTAINED"
       ]
     },
     {
@@ -805,7 +810,8 @@
         "--strat-intervals": "fixture[1]",
         "--stratification-module": "fixture[6]",
         "--tmp-dir": "fixture[1]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[2]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -852,7 +858,8 @@
         "--strat-intervals=/work/fixtures/ve_strat.bed",
         "--stratification-module=JexlExpression",
         "--tmp-dir=/work/tmp2",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=STARTS_IN"
       ]
     },
     {
@@ -902,7 +909,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[7]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "false"
+        "--use-jdk-deflater": "false",
+        "--variant-output-filtering": "fixture[2]"
       },
       "arguments": [
         "--add-output-sam-program-record=false",
@@ -949,7 +957,8 @@
         "--strat-intervals=null",
         "--stratification-module=OneBPIndel",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=false"
+        "--use-jdk-deflater=false",
+        "--variant-output-filtering=STARTS_IN"
       ]
     },
     {
@@ -999,7 +1008,8 @@
         "--strat-intervals": "fixture[1]",
         "--stratification-module": "fixture[3]",
         "--tmp-dir": "fixture[1]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -1046,7 +1056,8 @@
         "--strat-intervals=/work/fixtures/ve_strat.bed",
         "--stratification-module=IndelSize",
         "--tmp-dir=/work/tmp2",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -1096,7 +1107,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[1]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -1143,7 +1155,8 @@
         "--strat-intervals=null",
         "--stratification-module=IntervalStratification",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -1193,7 +1206,8 @@
         "--strat-intervals": "fixture[1]",
         "--stratification-module": "fixture[5]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "false"
+        "--use-jdk-deflater": "false",
+        "--variant-output-filtering": "fixture[1]"
       },
       "arguments": [
         "--add-output-sam-program-record=false",
@@ -1240,7 +1254,8 @@
         "--strat-intervals=/work/fixtures/ve_strat.bed",
         "--stratification-module=Sample",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=false"
+        "--use-jdk-deflater=false",
+        "--variant-output-filtering=ANYWHERE"
       ]
     },
     {
@@ -1290,7 +1305,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[7]",
         "--tmp-dir": "fixture[1]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=false",
@@ -1337,7 +1353,8 @@
         "--strat-intervals=null",
         "--stratification-module=OneBPIndel",
         "--tmp-dir=/work/tmp2",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -1387,7 +1404,8 @@
         "--strat-intervals": "fixture[2]",
         "--stratification-module": "fixture[4]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "false"
+        "--use-jdk-deflater": "false",
+        "--variant-output-filtering": "fixture[1]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -1434,7 +1452,8 @@
         "--strat-intervals=/work/fixtures/ve_strat_noidx.bed",
         "--stratification-module=FilterType",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=false"
+        "--use-jdk-deflater=false",
+        "--variant-output-filtering=ANYWHERE"
       ]
     },
     {
@@ -1484,7 +1503,8 @@
         "--strat-intervals": "fixture[2]",
         "--stratification-module": "fixture[6]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "false"
+        "--use-jdk-deflater": "false",
+        "--variant-output-filtering": "fixture[3]"
       },
       "arguments": [
         "--add-output-sam-program-record=false",
@@ -1531,7 +1551,8 @@
         "--strat-intervals=/work/fixtures/ve_strat_noidx.bed",
         "--stratification-module=JexlExpression",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=false"
+        "--use-jdk-deflater=false",
+        "--variant-output-filtering=CONTAINED"
       ]
     },
     {
@@ -1581,7 +1602,8 @@
         "--strat-intervals": "fixture[2]",
         "--stratification-module": "fixture[2]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "false"
+        "--use-jdk-deflater": "false",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -1628,7 +1650,8 @@
         "--strat-intervals=/work/fixtures/ve_strat_noidx.bed",
         "--stratification-module=AlleleCount",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=false"
+        "--use-jdk-deflater=false",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -1678,7 +1701,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[1]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[3]"
       },
       "arguments": [
         "--add-output-sam-program-record=false",
@@ -1725,7 +1749,8 @@
         "--strat-intervals=null",
         "--stratification-module=IntervalStratification",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=CONTAINED"
       ]
     },
     {
@@ -1775,7 +1800,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[3]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[1]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -1822,7 +1848,8 @@
         "--strat-intervals=null",
         "--stratification-module=IndelSize",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=ANYWHERE"
       ]
     },
     {
@@ -1872,7 +1899,8 @@
         "--strat-intervals": "fixture[1]",
         "--stratification-module": "fixture[7]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[3]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -1919,7 +1947,8 @@
         "--strat-intervals=/work/fixtures/ve_strat.bed",
         "--stratification-module=OneBPIndel",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=CONTAINED"
       ]
     },
     {
@@ -1969,7 +1998,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[6]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -2016,7 +2046,8 @@
         "--strat-intervals=null",
         "--stratification-module=JexlExpression",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -2066,7 +2097,8 @@
         "--strat-intervals": "fixture[2]",
         "--stratification-module": "fixture[0]",
         "--tmp-dir": "fixture[1]",
-        "--use-jdk-deflater": "false"
+        "--use-jdk-deflater": "false",
+        "--variant-output-filtering": "fixture[2]"
       },
       "arguments": [
         "--add-output-sam-program-record=false",
@@ -2113,7 +2145,8 @@
         "--strat-intervals=/work/fixtures/ve_strat_noidx.bed",
         "--stratification-module=null",
         "--tmp-dir=/work/tmp2",
-        "--use-jdk-deflater=false"
+        "--use-jdk-deflater=false",
+        "--variant-output-filtering=STARTS_IN"
       ]
     },
     {
@@ -2163,7 +2196,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[4]",
         "--tmp-dir": "fixture[1]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[2]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -2210,7 +2244,8 @@
         "--strat-intervals=null",
         "--stratification-module=FilterType",
         "--tmp-dir=/work/tmp2",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=STARTS_IN"
       ]
     },
     {
@@ -2247,7 +2282,7 @@
         "--mendelian-violation-qual-threshold": "fixture[0]",
         "--merge-evals": "true",
         "--min-phase-quality": "fixture[0]",
-        "--output": "fixture[0]",
+        "--output": "fixture[1]",
         "--pedigreeValidationType": "SILENT",
         "--read-validation-stringency": "SILENT",
         "--require-strict-allele-match": "false",
@@ -2260,7 +2295,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[4]",
         "--tmp-dir": "fixture[1]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -2294,7 +2330,7 @@
         "--mendelian-violation-qual-threshold=50.0",
         "--merge-evals=true",
         "--min-phase-quality=10.0",
-        "--output=/work/out/ve.txt",
+        "--output=/work/out/ve.txt.gz",
         "--pedigreeValidationType=SILENT",
         "--read-validation-stringency=SILENT",
         "--require-strict-allele-match=false",
@@ -2307,7 +2343,8 @@
         "--strat-intervals=null",
         "--stratification-module=FilterType",
         "--tmp-dir=/work/tmp2",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -2357,7 +2394,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[5]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -2404,7 +2442,8 @@
         "--strat-intervals=null",
         "--stratification-module=Sample",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -2454,7 +2493,8 @@
         "--strat-intervals": "fixture[1]",
         "--stratification-module": "fixture[0]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[3]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -2501,7 +2541,8 @@
         "--strat-intervals=/work/fixtures/ve_strat.bed",
         "--stratification-module=null",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=CONTAINED"
       ]
     },
     {
@@ -2551,7 +2592,8 @@
         "--strat-intervals": "fixture[1]",
         "--stratification-module": "fixture[2]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[1]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -2598,7 +2640,8 @@
         "--strat-intervals=/work/fixtures/ve_strat.bed",
         "--stratification-module=AlleleCount",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=ANYWHERE"
       ]
     },
     {
@@ -2648,7 +2691,8 @@
         "--strat-intervals": "fixture[1]",
         "--stratification-module": "fixture[0]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[1]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -2695,7 +2739,8 @@
         "--strat-intervals=/work/fixtures/ve_strat.bed",
         "--stratification-module=null",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=ANYWHERE"
       ]
     },
     {
@@ -2745,7 +2790,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[1]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[1]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -2792,7 +2838,8 @@
         "--strat-intervals=null",
         "--stratification-module=IntervalStratification",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=ANYWHERE"
       ]
     },
     {
@@ -2842,7 +2889,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[2]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[1]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -2889,7 +2937,8 @@
         "--strat-intervals=null",
         "--stratification-module=AlleleCount",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=ANYWHERE"
       ]
     },
     {
@@ -2913,7 +2962,7 @@
         "--exclude-intervals": "fixture[0]",
         "--gold-standard": "fixture[0]",
         "--ignore-variants-starting-outside-interval": "true",
-        "--interval-exclusion-padding": "fixture[0]",
+        "--interval-exclusion-padding": "fixture[1]",
         "--interval-merging-rule": "ALL",
         "--interval-padding": "fixture[0]",
         "--interval-set-rule": "UNION",
@@ -2939,7 +2988,8 @@
         "--strat-intervals": "fixture[2]",
         "--stratification-module": "fixture[2]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -2960,7 +3010,7 @@
         "--exclude-intervals=null",
         "--gold-standard=null",
         "--ignore-variants-starting-outside-interval=true",
-        "--interval-exclusion-padding=0",
+        "--interval-exclusion-padding=50",
         "--interval-merging-rule=ALL",
         "--interval-padding=0",
         "--interval-set-rule=UNION",
@@ -2986,7 +3036,8 @@
         "--strat-intervals=/work/fixtures/ve_strat_noidx.bed",
         "--stratification-module=AlleleCount",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -2996,7 +3047,7 @@
         "--cloud-index-prefetch-buffer": "fixture[0]",
         "--cloud-prefetch-buffer": "fixture[0]",
         "--combine-variants-distance": "fixture[0]",
-        "--comparison": "fixture[0]",
+        "--comparison": "fixture[1]",
         "--create-output-bam-index": "true",
         "--create-output-bam-md5": "true",
         "--create-output-variant-md5": "true",
@@ -3036,14 +3087,15 @@
         "--strat-intervals": "fixture[2]",
         "--stratification-module": "fixture[1]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[2]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
         "--cloud-index-prefetch-buffer=-1",
         "--cloud-prefetch-buffer=40",
         "--combine-variants-distance=0",
-        "--comparison=null",
+        "--comparison=/work/fixtures/gg_dbsnp.vcf",
         "--create-output-bam-index=true",
         "--create-output-bam-md5=true",
         "--create-output-variant-md5=true",
@@ -3083,7 +3135,8 @@
         "--strat-intervals=/work/fixtures/ve_strat_noidx.bed",
         "--stratification-module=IntervalStratification",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=STARTS_IN"
       ]
     },
     {
@@ -3133,7 +3186,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[3]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[1]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -3180,7 +3234,8 @@
         "--strat-intervals=null",
         "--stratification-module=IndelSize",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=ANYWHERE"
       ]
     },
     {
@@ -3230,7 +3285,8 @@
         "--strat-intervals": "fixture[2]",
         "--stratification-module": "fixture[7]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[3]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -3277,7 +3333,8 @@
         "--strat-intervals=/work/fixtures/ve_strat_noidx.bed",
         "--stratification-module=OneBPIndel",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=CONTAINED"
       ]
     },
     {
@@ -3327,7 +3384,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[1]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -3374,7 +3432,8 @@
         "--strat-intervals=null",
         "--stratification-module=IntervalStratification",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -3424,7 +3483,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[4]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[3]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -3471,7 +3531,8 @@
         "--strat-intervals=null",
         "--stratification-module=FilterType",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=CONTAINED"
       ]
     },
     {
@@ -3521,7 +3582,8 @@
         "--strat-intervals": "fixture[2]",
         "--stratification-module": "fixture[5]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[2]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -3568,7 +3630,8 @@
         "--strat-intervals=/work/fixtures/ve_strat_noidx.bed",
         "--stratification-module=Sample",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=STARTS_IN"
       ]
     },
     {
@@ -3618,7 +3681,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[6]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[1]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -3665,7 +3729,8 @@
         "--strat-intervals=null",
         "--stratification-module=JexlExpression",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=ANYWHERE"
       ]
     },
     {
@@ -3715,7 +3780,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[3]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[2]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -3762,7 +3828,8 @@
         "--strat-intervals=null",
         "--stratification-module=IndelSize",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=STARTS_IN"
       ]
     },
     {
@@ -3812,7 +3879,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[4]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -3859,7 +3927,8 @@
         "--strat-intervals=null",
         "--stratification-module=FilterType",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -3909,7 +3978,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[5]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -3956,7 +4026,8 @@
         "--strat-intervals=null",
         "--stratification-module=Sample",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -4006,7 +4077,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[6]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -4053,7 +4125,8 @@
         "--strat-intervals=null",
         "--stratification-module=JexlExpression",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -4103,7 +4176,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[0]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[1]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -4150,7 +4224,8 @@
         "--strat-intervals=null",
         "--stratification-module=null",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=ANYWHERE"
       ]
     },
     {
@@ -4200,7 +4275,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[3]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -4247,7 +4323,8 @@
         "--strat-intervals=null",
         "--stratification-module=IndelSize",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -4297,7 +4374,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[4]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -4344,7 +4422,8 @@
         "--strat-intervals=null",
         "--stratification-module=FilterType",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -4394,7 +4473,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[5]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -4441,7 +4521,8 @@
         "--strat-intervals=null",
         "--stratification-module=Sample",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -4491,7 +4572,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[6]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -4538,7 +4620,8 @@
         "--strat-intervals=null",
         "--stratification-module=JexlExpression",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -4588,7 +4671,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[0]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -4635,7 +4719,8 @@
         "--strat-intervals=null",
         "--stratification-module=null",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -4685,7 +4770,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[1]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -4732,7 +4818,8 @@
         "--strat-intervals=null",
         "--stratification-module=IntervalStratification",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -4782,7 +4869,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[2]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[3]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -4829,7 +4917,8 @@
         "--strat-intervals=null",
         "--stratification-module=AlleleCount",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=CONTAINED"
       ]
     },
     {
@@ -4879,7 +4968,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[5]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -4926,7 +5016,8 @@
         "--strat-intervals=null",
         "--stratification-module=Sample",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -4976,7 +5067,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[6]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -5023,7 +5115,8 @@
         "--strat-intervals=null",
         "--stratification-module=JexlExpression",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -5073,7 +5166,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[0]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[2]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -5120,7 +5214,8 @@
         "--strat-intervals=null",
         "--stratification-module=null",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=STARTS_IN"
       ]
     },
     {
@@ -5170,7 +5265,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[1]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[3]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -5217,7 +5313,8 @@
         "--strat-intervals=null",
         "--stratification-module=IntervalStratification",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=CONTAINED"
       ]
     },
     {
@@ -5267,7 +5364,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[2]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -5314,7 +5412,8 @@
         "--strat-intervals=null",
         "--stratification-module=AlleleCount",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -5364,7 +5463,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[3]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -5411,7 +5511,8 @@
         "--strat-intervals=null",
         "--stratification-module=IndelSize",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -5461,7 +5562,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[5]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -5508,7 +5610,8 @@
         "--strat-intervals=null",
         "--stratification-module=Sample",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -5558,7 +5661,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[6]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -5605,7 +5709,8 @@
         "--strat-intervals=null",
         "--stratification-module=JexlExpression",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -5655,7 +5760,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[7]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[1]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -5702,7 +5808,8 @@
         "--strat-intervals=null",
         "--stratification-module=OneBPIndel",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=ANYWHERE"
       ]
     },
     {
@@ -5752,7 +5859,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[0]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -5799,7 +5907,8 @@
         "--strat-intervals=null",
         "--stratification-module=null",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -5849,7 +5958,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[3]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -5896,7 +6006,8 @@
         "--strat-intervals=null",
         "--stratification-module=IndelSize",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -5946,7 +6057,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[4]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -5993,7 +6105,8 @@
         "--strat-intervals=null",
         "--stratification-module=FilterType",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -6043,7 +6156,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[6]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -6090,7 +6204,8 @@
         "--strat-intervals=null",
         "--stratification-module=JexlExpression",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -6140,7 +6255,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[7]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -6187,7 +6303,8 @@
         "--strat-intervals=null",
         "--stratification-module=OneBPIndel",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -6237,7 +6354,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[0]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -6284,7 +6402,8 @@
         "--strat-intervals=null",
         "--stratification-module=null",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -6334,7 +6453,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[2]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -6381,7 +6501,8 @@
         "--strat-intervals=null",
         "--stratification-module=AlleleCount",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -6431,7 +6552,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[3]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -6478,7 +6600,8 @@
         "--strat-intervals=null",
         "--stratification-module=IndelSize",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -6528,7 +6651,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[4]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -6575,7 +6699,8 @@
         "--strat-intervals=null",
         "--stratification-module=FilterType",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -6625,7 +6750,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[5]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -6672,7 +6798,8 @@
         "--strat-intervals=null",
         "--stratification-module=Sample",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     },
     {
@@ -6722,7 +6849,8 @@
         "--strat-intervals": "fixture[0]",
         "--stratification-module": "fixture[7]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "true",
+        "--variant-output-filtering": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -6769,7 +6897,8 @@
         "--strat-intervals=null",
         "--stratification-module=OneBPIndel",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=true",
+        "--variant-output-filtering=<unset>"
       ]
     }
   ]
