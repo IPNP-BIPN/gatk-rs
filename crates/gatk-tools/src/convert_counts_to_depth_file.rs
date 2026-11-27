@@ -88,14 +88,65 @@ pub struct Counts {
     pub header: SamHeader,
     pub sample: String,
     pub records: Vec<SimpleCount>,
+    /// The record `decode` refused, if one did, which ends the records before it.
+    pub refused: Option<Refused>,
+}
+
+/// What `SimpleCountCodec.decode` throws for a line, as `Main` reports it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Refused {
+    pub java_class: &'static str,
+    pub message: String,
+    /// `MalformedFile` is a `UserException`; the JVM's own exceptions are not.
+    pub user: bool,
+}
+
+/// `decode` on one record line: the interval's three fields, its validation, then the count, the
+/// order Java evaluates `new SimpleCount(new SimpleInterval(..), parseInt(split[3]))` in.
+fn decode(line: &str) -> Result<SimpleCount, Refused> {
+    // `line.split("\t")`, which drops trailing empty fields but keeps a lone empty one.
+    let mut fields: Vec<&str> = line.split('\t').collect();
+    while fields.len() > 1 && fields.last() == Some(&"") {
+        fields.pop();
+    }
+    let field = |index: usize| {
+        fields.get(index).copied().ok_or_else(|| Refused {
+            java_class: "java.lang.ArrayIndexOutOfBoundsException",
+            message: format!("Index {index} out of bounds for length {}", fields.len()),
+            user: false,
+        })
+    };
+    let number = |index: usize| -> Result<i32, Refused> {
+        field(index)?.parse().map_err(|_| Refused {
+            java_class: "org.broadinstitute.hellbender.exceptions.UserException$MalformedFile",
+            message: format!(
+                "Unknown file is malformed: Line = {line} is not formatted correctly."
+            ),
+            user: true,
+        })
+    };
+    let contig = field(0)?;
+    let (start, end) = (number(1)?, number(2)?);
+    if start <= 0 || end < start {
+        return Err(Refused {
+            java_class: "java.lang.IllegalArgumentException",
+            message: format!("Invalid interval. Contig:{contig} start:{start} end:{end}"),
+            user: false,
+        });
+    }
+    Ok(SimpleCount {
+        contig: contig.to_string(),
+        start,
+        end,
+        count: number(3)?,
+    })
 }
 
 /// `SimpleCountCodec.readActualHeader`, then `decode` over every other line.
 ///
-/// `Err(Ok(..))` is a header the codec refuses; `Err(Err(line))` is a record `decode` refuses,
-/// which Tribble wraps in a message naming an iterator by its identity hash, so only the line is
-/// kept.
-pub fn read_counts(text: &str) -> Result<Counts, Result<HeaderError, String>> {
+/// `Err` is a header the codec refuses; a record `decode` refuses ends the records instead, in
+/// [`Counts::refused`].
+pub fn read_counts(text: &str) -> Result<Counts, HeaderError> {
     let mut lines = text.lines();
     let mut sam = String::new();
     for line in lines.by_ref() {
@@ -105,14 +156,14 @@ pub fn read_counts(text: &str) -> Result<Counts, Result<HeaderError, String>> {
             continue;
         }
         if sam.is_empty() {
-            return Err(Ok(HeaderError::Malformed(
+            return Err(HeaderError::Malformed(
                 "SAM header lines must be at the beginning of the file.",
-            )));
+            ));
         }
         if !line.starts_with(COLUMN_HEADER) {
-            return Err(Ok(HeaderError::Malformed(
+            return Err(HeaderError::Malformed(
                 "File does not have a column header.",
-            )));
+            ));
         }
         break;
     }
@@ -121,34 +172,34 @@ pub fn read_counts(text: &str) -> Result<Counts, Result<HeaderError, String>> {
     // read group with no SM reaches.
     let sample = match read_sample_name(&header) {
         Ok(Some(sample)) if !sample.is_empty() => sample,
-        Ok(_) => return Err(Ok(HeaderError::Sample(PrintError::NullSampleName))),
-        Err(error) => return Err(Ok(HeaderError::Sample(error))),
+        Ok(_) => return Err(HeaderError::Sample(PrintError::NullSampleName)),
+        Err(error) => return Err(HeaderError::Sample(error)),
     };
     let mut records = Vec::new();
     for line in lines {
         if line.starts_with('@') || line.starts_with(COLUMN_HEADER) {
             continue;
         }
-        let fields: Vec<&str> = line.split('\t').collect();
-        let number = |index: usize| {
-            fields
-                .get(index)
-                .and_then(|field| field.parse::<i32>().ok())
-        };
-        match (fields.first(), number(1), number(2), number(3)) {
-            (Some(contig), Some(start), Some(end), Some(count)) => records.push(SimpleCount {
-                contig: contig.to_string(),
-                start,
-                end,
-                count,
-            }),
-            _ => return Err(Err(line.to_string())),
+        match decode(line) {
+            Ok(record) => records.push(record),
+            Err(refused) => {
+                // Tribble's iterator decodes one record ahead, so the record before the refused
+                // line is never handed to the tool either.
+                records.pop();
+                return Ok(Counts {
+                    header,
+                    sample,
+                    records,
+                    refused: Some(refused),
+                });
+            }
         }
     }
     Ok(Counts {
         header,
         sample,
         records,
+        refused: None,
     })
 }
 

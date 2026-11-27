@@ -18368,24 +18368,13 @@ pub fn convert_counts_to_depth_file(parser: &Parser) -> Outcome {
             ),
         });
     }
-    let counts = match convert::read_counts(&text) {
-        Ok(counts) => counts,
-        Err(Ok(header)) => {
-            let (_, message) = convert::header_error_chain(&input, &header).remove(0);
-            return Err(Thrown::non_user(
-                "org.broadinstitute.hellbender.exceptions.GATKException",
-                message,
-            ));
-        }
-        Err(Err(line)) => {
-            return Err(Thrown::non_user(
-                PORT_LIMITATION,
-                format!(
-                    "{input} has a record the counts codec refuses ({line:?}), which Tribble wraps"
-                ),
-            ));
-        }
-    };
+    let counts = convert::read_counts(&text).map_err(|header| {
+        let (_, message) = convert::header_error_chain(&input, &header).remove(0);
+        Thrown::non_user(
+            "org.broadinstitute.hellbender.exceptions.GATKException",
+            message,
+        )
+    })?;
 
     // `validateSequenceDictionaries`, after the features are initialized: the master against the
     // reference. The counts header's dictionary is not one the engine collects.
@@ -18473,7 +18462,16 @@ pub fn convert_counts_to_depth_file(parser: &Parser) -> Outcome {
             ));
         }
     }
-    Ok(None)
+    // A record the codec refused stops the traversal; `closeTool` has written what came before.
+    match counts.refused {
+        Some(refused) if refused.user => Err(Thrown {
+            failure: Failure::User,
+            exception: refused.java_class,
+            message: Some(refused.message),
+        }),
+        Some(refused) => Err(Thrown::non_user(refused.java_class, refused.message)),
+        None => Ok(None),
+    }
 }
 
 /// `PrintSVEvidence`, for depth evidence: several files merged into one, rewritten against one
