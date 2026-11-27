@@ -440,7 +440,9 @@
     "ApplyBQSR": {
       "--input": [
         "/work/fixtures/reads.bam",
-        "/work/fixtures/reads2.bam"
+        "/work/fixtures/reads2.bam",
+        "/work/fixtures/reads.sam",
+        "/work/fixtures/reads.cram"
       ],
       "--output": [
         "/work/out/recalibrated.bam",
@@ -448,7 +450,8 @@
       ],
       "--read-index": [
         "/work/fixtures/reads.bai",
-        "/work/fixtures/reads2.bai"
+        "/work/fixtures/reads2.bai",
+        "/work/fixtures/reads.cram.bai"
       ],
       "--bqsr-recal-file": [
         "/work/fixtures/recal.table",
@@ -2472,7 +2475,9 @@
       ],
       "--unmapped-sam": [
         "/work/fixtures/umi.bam",
-        "/work/fixtures/reads.bam"
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads.sam",
+        "/work/fixtures/reads.cram"
       ],
       "--read-tags": [
         "RX",
@@ -7087,8 +7092,11 @@
         "--input-model is the reference's own --output-model over QD MQ FS SOR. The index is held off because a",
         ".idx records the output's modification time; the command line is held off because it records the date.",
         "--rscript-file without --dont-run-rscript is refused, the pinned container having no Rscript.",
-        "--input, --read-index, --reference and --sequence-dictionary are not given: the tool reads no base",
-        "and no read, and a reference only rewrites the ##contig lines' assembly.",
+        "--input, --read-index and --sequence-dictionary are not given: the tool reads no base and no read.",
+        "--reference is absent or vr_ref.fasta, which holds chr2 alone: the output's ##contig lines come from",
+        "getBestAvailableSequenceDictionary, the call sets' own dictionary, and the reference only names their",
+        "assembly= and the ##reference line, by name. chr20 30x is where the port wrote the reference's",
+        "dictionary instead (gatk-rs#1453).",
         "--output-model is held absent, and the reason is a-rank-is-not-a-byte's: the report prints every mean,",
         "covariance and weight at %.16E, and those digits come out of a variational Bayes loop that calls Math.pow",
         "millions of times. The port's pow is the host libm, which agrees with HotSpot's intrinsic on 99.94% of",
@@ -7236,7 +7244,10 @@
       ],
       "--input": [],
       "--read-index": [],
-      "--reference": [],
+      "--reference": [
+        "null",
+        "/work/fixtures/vr_ref.fasta"
+      ],
       "--sequence-dictionary": [],
       "--max-variants-per-shard": [
         "0"
@@ -8013,8 +8024,11 @@
         "($lists). The HDF5 matrices are compared as their tree of datasets (run_array.py's hdf5_members), since two",
         "runs of the reference already write different bytes. A plain VCF output with an index is forbidden",
         "because its .idx records the output's modification time; the command line is held off because it records",
-        "the date. --input, --read-index, --reference and --sequence-dictionary are not given: the tool reads no base",
-        "and no read, and a reference only rewrites the ##contig lines' assembly."
+        "the date. --input, --read-index and --sequence-dictionary are not given: the tool reads no base and no read.",
+        "--reference is absent or vr_ref.fasta, which holds chr2 alone: the output's ##contig lines come from",
+        "getBestAvailableSequenceDictionary, the call sets' own dictionary, and the reference only names their",
+        "assembly= and the ##reference line, by name. chr20 30x is where the port wrote the reference's",
+        "dictionary instead (gatk-rs#1453)."
       ],
       "$tagged": [
         "--resource"
@@ -8080,7 +8094,10 @@
       ],
       "--input": [],
       "--read-index": [],
-      "--reference": [],
+      "--reference": [
+        "null",
+        "/work/fixtures/vr_ref.fasta"
+      ],
       "--sequence-dictionary": []
     },
     "FilterAlignmentArtifacts": {
@@ -20104,6 +20121,46 @@
         "--exclude-intervals": "null"
       },
       "why": "A filtering mode with no -L or -XL is the one MissingArgument at the end of onStartup, on every such row."
+    },
+    {
+      "tools": [
+        "ApplyBQSR"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/reads.cram",
+        "--read-index": "/work/fixtures/reads.bai"
+      },
+      "why": "An index of another file: GATK reads the CRAM's containers at the BAM's offsets, or the reverse, which measures the fixture pairing rather than the reads."
+    },
+    {
+      "tools": [
+        "ApplyBQSR"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/reads.cram",
+        "--read-index": "/work/fixtures/reads2.bai"
+      },
+      "why": "An index of another file: GATK reads the CRAM's containers at the BAM's offsets, or the reverse, which measures the fixture pairing rather than the reads."
+    },
+    {
+      "tools": [
+        "ApplyBQSR"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/reads.bam",
+        "--read-index": "/work/fixtures/reads.cram.bai"
+      },
+      "why": "An index of another file: GATK reads the CRAM's containers at the BAM's offsets, or the reverse, which measures the fixture pairing rather than the reads."
+    },
+    {
+      "tools": [
+        "ApplyBQSR"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/reads2.bam",
+        "--read-index": "/work/fixtures/reads.cram.bai"
+      },
+      "why": "An index of another file: GATK reads the CRAM's containers at the BAM's offsets, or the reverse, which measures the fixture pairing rather than the reads."
     }
   ],
   "exclude": {

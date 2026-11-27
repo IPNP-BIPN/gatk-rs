@@ -140,6 +140,65 @@ pub fn apply_bqsr_with(
     .map_err(ApplyBqsrError::Reads)
 }
 
+/// [`apply_bqsr_with`] straight to `output`, a read at a time: the reads are recalibrated as the
+/// traversal hands them over and written as they are recalibrated, so neither the reads nor the
+/// output are held. A refusal, the traversal's or the transformer's, comes at the read that causes
+/// it, as in the reference's own loop, and leaves `output` as it was: see
+/// [`crate::sam_output::write_bam_file`]. The inner error is the file's.
+#[allow(clippy::too_many_arguments)]
+pub fn apply_bqsr_to(
+    output: &std::path::Path,
+    source: &ReadsDataSource,
+    recal_text: &str,
+    arguments: &ApplyBqsrArguments,
+    options: &Options,
+    filter: &dyn Fn(&BamRecord) -> bool,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
+) -> Result<Result<crate::sam_output::Written, std::io::Error>, ApplyBqsrError> {
+    // The report and the transformer are refused here, before a read is read, as the reference's
+    // constructor refuses them.
+    let mut report = RecalibrationReport::parse(recal_text).map_err(ApplyBqsrError::Report)?;
+    let transformer = BqsrReadTransformer::new(
+        source.header(),
+        &mut report.tables,
+        &mut report.quantization_info,
+        &report.covariates,
+        arguments,
+    )
+    .map_err(ApplyBqsrError::Transform)?;
+    let records = crate::read_walker::traverse_iter(source, &options.intervals, false, filter)
+        .map_err(ApplyBqsrError::Reads)?;
+    let out_header = header_for_sam_writer(source.header(), TOOL_NAME, options);
+    let write = |recalibrated: &mut dyn Iterator<Item = Result<BamRecord, ReadsError>>| {
+        crate::sam_output::write_bam_file(
+            output,
+            &out_header,
+            recalibrated,
+            options.create_output_bam_index,
+            level,
+            deflater,
+        )
+    };
+    // The writer takes reads errors only; a transformer refusal is kept here and stops it.
+    // One thread: on chr20 six recalibrating threads cost 8% more CPU and twice the memory, and
+    // one already beats the reference's wall time threefold.
+    let mut refused = None;
+    let mut transformer = transformer;
+    let mut recalibrated = records.map(|record| {
+        let record = record?;
+        transformer.apply(&record).map_err(|error| {
+            refused = Some(error);
+            ReadsError::Malformed(String::new())
+        })
+    });
+    let written = write(&mut recalibrated);
+    match (written, refused) {
+        (_, Some(error)) => Err(ApplyBqsrError::Transform(error)),
+        (written, None) => written.map_err(ApplyBqsrError::Reads),
+    }
+}
+
 /// `BQSRReadTransformer` over reads already filtered, which `ApplyBQSR` shares with the two Spark
 /// tools that apply a table. `ApplyBQSRSparkFn` builds one transformer per partition, and one
 /// partition is one transformer.

@@ -2216,18 +2216,23 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
         .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&recal, false)))?;
 
     let path = std::path::Path::new(&input);
-    let bytes = std::fs::read(path)
-        .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&input, false)))?;
+    // The start of the file decides what it is; for BGZF, once the whole file is known to inflate.
+    let bytes = gatk_engine::reads::file_start(path)
+        .ok_or_else(|| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&input, false)))?;
     let compressed = gatk_tools::read_walker_refusal::is_block_compressed(&bytes);
     let is_binary = if compressed {
-        htsjdk_bgzf::read::decompress_all(&bytes)
+        ReadsDataSource::check(path)
+            .and_then(|()| gatk_engine::reads::inflated_start(path))
             .map(|inflated| inflated.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC))
             .unwrap_or(false)
     } else {
         bytes.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC)
     };
-    let named_index = read_index(parser, 1, is_binary, compressed)?;
-    let index = if is_binary {
+    // A CRAM is indexed like a BAM: by its `.crai`, which the transcode turns into a `.bai`.
+    let is_cram = bytes.starts_with(b"CRAM");
+    let indexable = is_binary || is_cram;
+    let named_index = read_index(parser, 1, indexable, compressed)?;
+    let index = if indexable {
         named_index.or_else(|| htsjdk_bam::sam_files::find_index(path))
     } else {
         None
@@ -2235,12 +2240,24 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
     // An index that is not one is refused by its MAGIC, and the refusal WAITS: `initializeReads`
     // opens the file, `initializeIntervals` runs next, and a query that does not resolve is
     // refused before anything asks the index what it is.
-    let (source, bad_index) = match &index {
-        Some(index) => match ReadsDataSource::open(path, index) {
+    let ((source, undecoded), bad_index) = match &index {
+        // A BAM passed the check above, so it is opened without inflating it again; the index is
+        // loaded after, and a refusal of it leaves the source unindexed.
+        Some(index) if is_binary => {
+            let mut source = ReadsDataSource::open_checked(path)
+                .map_err(|error| Thrown::user(format!("{error:?}")))?;
+            let bad_index = source.load_index(index).err().map(|_| {
+                index
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            });
+            ((source, None), bad_index)
+        }
+        Some(index) => match reads_input::open_reads_deferred(parser, path, Some(index)) {
             Ok(source) => (source, None),
             Err(_) => (
-                ReadsDataSource::open_unindexed(path)
-                    .map_err(|error| Thrown::user(format!("{error:?}")))?,
+                reads_input::open_reads_deferred(parser, path, None)?,
                 Some(
                     index
                         .file_name()
@@ -2249,24 +2266,21 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
                 ),
             ),
         },
-        None => (
-            ReadsDataSource::open_unindexed(path)
-                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+        None if is_binary => (
+            (
+                ReadsDataSource::open_checked(path)
+                    .map_err(|error| Thrown::user(format!("{error:?}")))?,
+                None,
+            ),
             None,
         ),
+        None => (reads_input::open_reads_deferred(parser, path, None)?, None),
     };
 
     let header = source.header().clone();
     let master = master_dictionary(parser)?;
     let reference = reference_dictionary(parser)?;
-    if !flag(parser, "disable-sequence-dictionary-validation") {
-        if let Some(master) = &master {
-            validate_against_master(master, "reads", &header.sequences)?;
-            if let Some(reference) = &reference {
-                validate_against_master(master, "reference", &reference.sequences)?;
-            }
-        }
-    }
+    // `initializeIntervals` runs before `validateSequenceDictionaries`.
     let best = master
         .clone()
         .or_else(|| reference.clone())
@@ -2274,6 +2288,13 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
     let intervals = interval_arguments(parser, &best)?
         .map(|parameters| parameters.intervals)
         .unwrap_or_default();
+    reads_input::validate_reads_dictionaries(
+        parser,
+        master.as_ref(),
+        reference.as_ref(),
+        &header,
+        is_cram,
+    )?;
     if !intervals.is_empty() && index.is_none() {
         return Err(Thrown::user(
             "Traversal by intervals was requested but some input files are not indexed.",
@@ -2297,8 +2318,13 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
         command_line: &command_line,
         version: crate::TOOLKIT_VERSION,
     };
+    // A CRAM that does not decode is refused where the traversal reaches the container.
+    if let Some(refusal) = undecoded {
+        return Err(refusal);
+    }
     let (level, deflater) = output_compression(parser);
-    let (bam, bai) = gatk_tools::apply_bqsr::apply_bqsr_with(
+    let written = gatk_tools::apply_bqsr::apply_bqsr_to(
+        std::path::Path::new(&output),
         &source,
         &recal_text,
         &bqsr,
@@ -2318,12 +2344,11 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
         },
         exception: error.java_class(),
         message: Some(error.message()),
-    })?;
-
-    std::fs::write(&output, &bam).map_err(|error| {
+    })?
+    .map_err(|error| {
         Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
     })?;
-    if let Some(bai) = bai {
+    if let Some(bai) = written.index {
         let companion = std::path::Path::new(&output).with_extension("bai");
         std::fs::write(&companion, bai).map_err(|error| {
             Thrown::non_user(
@@ -2334,7 +2359,7 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
     }
     if flag(parser, "create-output-bam-md5") {
         let digest = format!("{output}.md5");
-        std::fs::write(&digest, gatk_tools::gather_bam_files::md5_file(&bam)).map_err(|error| {
+        std::fs::write(&digest, written.md5).map_err(|error| {
             Thrown::non_user(PORT_FAILURE, format!("could not write {digest}: {error}"))
         })?;
     }
@@ -13689,9 +13714,8 @@ pub fn transfer_read_tags(parser: &Parser) -> Outcome {
         )
     })?;
     let read_tags = arguments(parser, "read-tags");
-    let unmapped =
-        gatk_engine::reads::ReadsDataSource::open_unindexed(std::path::Path::new(&unmapped_path))
-            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    // `new ReadsPathDataSource(unmappedSamFile.toPath())`: no reference reaches it.
+    let unmapped = reads_input::open_reads_without_reference(std::path::Path::new(&unmapped_path))?;
 
     let command_line = crate::command_line::expanded("TransferReadTags", parser);
     let options = gatk_tools::sam_output::Options {
@@ -17207,8 +17231,34 @@ fn update_header_contig_lines(
     parser: &Parser,
     header: htsjdk_vcf::header::VcfHeader,
 ) -> Result<htsjdk_vcf::header::VcfHeader, Thrown> {
+    let name_only = flag(parser, "suppress-reference-path");
+    rebuild_contig_lines(parser, header, false, name_only)
+}
+
+/// The same rebuild over `getBestAvailableSequenceDictionary`, as `VariantRecalibrator` and the
+/// `LabeledVariantAnnotationsWalker`s call it, with `referenceNameOnly` true.
+///
+/// A variant walker's best dictionary is the DRIVING variants' own, and the reference's only where
+/// theirs is missing or was synthesized from an index (`IndexUtils.isSequenceDictionaryFromIndex`:
+/// every length unknown). The reference then only names the `assembly=`. Measured on chr20 30x,
+/// where a call set over the whole genome scored against `chr20.fasta` kept every contig.
+pub(crate) fn update_header_contig_lines_best_available(
+    parser: &Parser,
+    header: htsjdk_vcf::header::VcfHeader,
+) -> Result<htsjdk_vcf::header::VcfHeader, Thrown> {
+    rebuild_contig_lines(parser, header, true, true)
+}
+
+fn rebuild_contig_lines(
+    parser: &Parser,
+    header: htsjdk_vcf::header::VcfHeader,
+    prefer_own: bool,
+    name_only: bool,
+) -> Result<htsjdk_vcf::header::VcfHeader, Thrown> {
     let reference = argument(parser, "reference");
+    let own = sequence_dictionary_of(&header);
     let dictionary: Vec<(String, i32)> = match &reference {
+        _ if prefer_own && own.iter().any(|(_, length)| *length != 0) => own,
         Some(path) => {
             let source =
                 gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(path))
@@ -17219,7 +17269,7 @@ fn update_header_contig_lines(
                 .map(|sequence| (sequence.name.clone(), sequence.length))
                 .collect()
         }
-        None => sequence_dictionary_of(&header),
+        None => own,
     };
     if dictionary.is_empty() {
         return Ok(header);
@@ -17251,7 +17301,7 @@ fn update_header_contig_lines(
     if let Some(path) = &reference {
         // `referencePath.toUri()`, which is an ABSOLUTE URI: the runner is handed whatever the
         // command line wrote, so the path is resolved before it is rendered.
-        let value = if flag(parser, "suppress-reference-path") {
+        let value = if name_only {
             let name = std::path::Path::new(path)
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())
@@ -25078,6 +25128,8 @@ pub use interpreter_tools_runner::{
 /// `FilterAlignmentArtifacts`, whose realignment is not ported and whose walker is.
 #[path = "runners_filter_alignment_artifacts.rs"]
 mod filter_alignment_artifacts_runner;
+#[path = "runners_reads_input.rs"]
+mod reads_input;
 pub use filter_alignment_artifacts_runner::filter_alignment_artifacts;
 
 /// `StructuralVariantDiscoverer`: a read walker over the alignments of assembled contigs.

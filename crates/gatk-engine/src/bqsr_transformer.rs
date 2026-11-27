@@ -271,6 +271,45 @@ pub struct BqsrReadTransformer<'a> {
     static_quantized_mapping: Option<Vec<u8>>,
     quantized_quals: Vec<u8>,
     allow_missing_read_groups: bool,
+    /// The terms of each read group's estimates, by its key.
+    estimates: std::collections::HashMap<i32, Estimates>,
+    matrix: PerReadCovariateMatrix,
+}
+
+/// One read group's terms of the estimate, computed when first needed: the posterior by reported
+/// quality, and each special covariate's delta by reported quality and key, with the key's
+/// dimension. NaN is not computed yet, infinity a datum that is absent.
+struct Estimates {
+    posterior: Vec<f64>,
+    specials: Vec<(Vec<f64>, usize)>,
+}
+
+impl Estimates {
+    fn new(tables: &RecalibrationTables, quality_dimension: usize) -> Estimates {
+        Estimates {
+            posterior: vec![f64::NAN; quality_dimension],
+            specials: tables.all_tables[NUM_REQUIRED_COVARITES..]
+                .iter()
+                .map(|table| {
+                    let keys = table.dimensions()[2];
+                    (vec![f64::NAN; quality_dimension * keys], keys)
+                })
+                .collect(),
+        }
+    }
+}
+
+/// `compute()`, kept in `slot` when there is one: NaN there is not computed yet, infinity absent.
+fn cached(slot: Option<&mut f64>, compute: impl FnOnce() -> Option<f64>) -> Option<f64> {
+    match slot {
+        Some(slot) if !slot.is_nan() => (*slot != f64::INFINITY).then_some(*slot),
+        Some(slot) => {
+            let value = compute();
+            *slot = value.unwrap_or(f64::INFINITY);
+            value
+        }
+        None => compute(),
+    }
 }
 
 impl<'a> BqsrReadTransformer<'a> {
@@ -318,6 +357,8 @@ impl<'a> BqsrReadTransformer<'a> {
             static_quantized_mapping,
             quantized_quals: quantization_info.quantized_quals.clone(),
             allow_missing_read_groups: arguments.allow_missing_read_groups,
+            estimates: Default::default(),
+            matrix: PerReadCovariateMatrix::new(0, covariates.size()),
         })
     }
 
@@ -341,7 +382,11 @@ impl<'a> BqsrReadTransformer<'a> {
             set_tag(&mut read, b"OQ", &fastq);
         }
 
-        let mut matrix = PerReadCovariateMatrix::new(read.read_bases.len(), self.covariates.size());
+        let mut matrix = std::mem::replace(
+            &mut self.matrix,
+            PerReadCovariateMatrix::new(0, self.total_covariate_count),
+        );
+        matrix.reset(read.read_bases.len());
         self.covariates
             .populate_per_read_covariate_matrix(&read, self.header, &mut matrix, false)
             .map_err(BqsrError::Covariate)?;
@@ -356,8 +401,7 @@ impl<'a> BqsrReadTransformer<'a> {
             .ok_or(BqsrError::Covariate(CovariateError::NoReadGroupInHeader))?;
         let rg_key = self.covariates.read_group.key_from_value(&identifier);
 
-        let mut recalibrated = read.base_qualities.clone();
-        let pre_update = read.base_qualities.clone();
+        let mut recalibrated = std::mem::take(&mut read.base_qualities);
 
         if rg_key == READ_GROUP_MISSING_IN_RECAL_TABLE_CODE {
             if !self.allow_missing_read_groups {
@@ -367,10 +411,10 @@ impl<'a> BqsrReadTransformer<'a> {
                 ));
             }
             // Quantized, but not recalibrated: the table has nothing to recalibrate it with.
-            for (index, quality) in recalibrated.iter_mut().enumerate() {
+            for quality in recalibrated.iter_mut() {
                 *quality = match &self.static_quantized_mapping {
-                    Some(mapping) => mapping[pre_update[index] as usize],
-                    None => self.quantized_quals[pre_update[index] as usize],
+                    Some(mapping) => mapping[*quality as usize],
+                    None => self.quantized_quals[*quality as usize],
                 };
             }
             read.base_qualities = recalibrated;
@@ -386,8 +430,17 @@ impl<'a> BqsrReadTransformer<'a> {
             .flatten()
             .ok_or_else(|| BqsrError::NoReadGroupDatum(identifier.clone()))?;
 
-        let mut specials: Vec<Option<SharedDatum>> =
-            vec![None; self.total_covariate_count - NUM_REQUIRED_COVARITES];
+        let prior = if self.constant_quality_score_prior > 0.0 {
+            self.constant_quality_score_prior
+        } else {
+            read_group_datum.borrow().reported_quality()
+        };
+        let tables = &*self.tables;
+        let quality_dimension = tables.quality_score_table().dimensions()[1];
+        let slab = self
+            .estimates
+            .entry(rg_key)
+            .or_insert_with(|| Estimates::new(tables, quality_dimension));
 
         // Indexed rather than iterated because the loop both reads and writes the slot, and the
         // reference's own `continue` leaves it untouched.
@@ -396,42 +449,64 @@ impl<'a> BqsrReadTransformer<'a> {
             if (recalibrated[offset] as i32) < self.preserve_q_less_than {
                 continue;
             }
-            // The array is cleared and reused, so a covariate that is skipped this time does not
-            // keep the datum it had last time.
-            specials.iter_mut().for_each(|slot| *slot = None);
-
             let keys = matrix.covariates_at_offset(offset, EventType::BaseSubstitution);
             let reported = keys[BASE_QUALITY_COVARIATE_DEFAULT_INDEX];
-
-            let quality_score_datum = self
-                .tables
-                .quality_score_table()
-                .get3_keys(rg_key, reported, substitution)
+            let quality_slot = usize::try_from(reported)
                 .ok()
-                .flatten();
+                .filter(|quality| *quality < quality_dimension);
 
+            // `hierarchicalBayesianQualityEstimate`, a term at a time: each one is a datum's
+            // empirical quality, which it computes once with the prior of its first call and keeps.
+            // That prior depends only on the read group and the reported quality, so each term is
+            // the same for the same keys, and is kept here by them.
+            let posterior = cached(
+                quality_slot.map(|quality| &mut slab.posterior[quality]),
+                || {
+                    let empirical_for_read_group = read_group_datum
+                        .borrow_mut()
+                        .empirical_quality_with_prior(prior);
+                    Some(
+                        match tables
+                            .quality_score_table()
+                            .get3_keys(rg_key, reported, substitution)
+                            .ok()
+                            .flatten()
+                        {
+                            None => empirical_for_read_group,
+                            Some(datum) => datum
+                                .borrow_mut()
+                                .empirical_quality_with_prior(empirical_for_read_group),
+                        },
+                    )
+                },
+            )
+            .unwrap_or_default();
+            let mut delta = 0.0;
             for j in NUM_REQUIRED_COVARITES..self.total_covariate_count {
                 // A key of -1 is skipped and its datum stays absent, which is why the first bases
                 // of a read, which have no context, are recalibrated from fewer covariates.
-                if keys[j] >= 0 {
-                    specials[j - NUM_REQUIRED_COVARITES] = self.tables.all_tables[j]
-                        .get4_keys(rg_key, reported, keys[j], substitution)
+                let key = keys[j];
+                if key < 0 {
+                    continue;
+                }
+                let special = &mut slab.specials[j - NUM_REQUIRED_COVARITES];
+                let slot = quality_slot
+                    .zip(usize::try_from(key).ok().filter(|key| *key < special.1))
+                    .map(|(quality, key)| &mut special.0[quality * special.1 + key]);
+                let term = cached(slot, || {
+                    tables.all_tables[j]
+                        .get4_keys(rg_key, reported, key, substitution)
                         .ok()
-                        .flatten();
+                        .flatten()
+                        .map(|datum| {
+                            datum.borrow_mut().empirical_quality_with_prior(posterior) - posterior
+                        })
+                });
+                if let Some(term) = term {
+                    delta += term;
                 }
             }
-
-            let prior = if self.constant_quality_score_prior > 0.0 {
-                self.constant_quality_score_prior
-            } else {
-                read_group_datum.borrow().reported_quality()
-            };
-            let raw = hierarchical_bayesian_quality_estimate(
-                prior,
-                Some(&read_group_datum),
-                quality_score_datum.as_ref(),
-                &specials,
-            );
+            let raw = posterior + delta;
             let quantized = self.quantized_quals[bounded_integer_qual(raw) as usize];
             // Quantized twice when the static mapping is on, which the reference's own TODO calls
             // out and this port keeps.
@@ -440,6 +515,7 @@ impl<'a> BqsrReadTransformer<'a> {
                 Some(mapping) => mapping[quantized as usize],
             };
         }
+        self.matrix = matrix;
 
         read.base_qualities = recalibrated;
         Ok(read)
