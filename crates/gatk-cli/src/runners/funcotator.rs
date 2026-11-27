@@ -1172,8 +1172,18 @@ pub fn funcotate_segments(parser: &Parser) -> Outcome {
         .collect();
 
     let parsed = parse_segments(&segments_text, &segments_path)?;
+    // `determineReferenceAndDatasourceCompatibility`: an hg19 run on a b37 dictionary (the best
+    // available one, the reference's here) queries its data sources under hg19 contig names.
+    let to_hg19 = flag(parser, "force-b37-to-hg19-reference-contig-conversion")
+        || (scalar(parser, "ref-version").as_deref() == Some("hg19")
+            && fe::is_b37_dictionary(&reference_header.sequences));
     let mut failure: Option<Thrown> = None;
     for segment in &parsed {
+        let query_contig = if to_hg19 {
+            fe::b37_to_hg19_contig(&segment.contig)
+        } else {
+            segment.contig.clone()
+        };
         let base = fe::Reference::bases(
             &reference,
             &segment.contig,
@@ -1205,20 +1215,24 @@ pub fn funcotate_segments(parser: &Parser) -> Outcome {
         let source = &sources[0];
         let genes_here = genes_over(
             source,
-            &segment.contig,
+            &query_contig,
             fe::Span::new(segment.start, segment.end),
         );
-        let funcotations =
-            match source
-                .factory
-                .create_funcotations(&variant, &reference, &genes_here)
-            {
-                Ok(list) => list,
-                Err(error) => {
-                    failure = Some(engine_thrown(error));
-                    break;
-                }
-            };
+        let funcotations = match source.factory.create_funcotations(
+            // The engine annotates the converted variant; the writers get the original.
+            &fe::Variant {
+                contig: query_contig.clone(),
+                ..variant.clone()
+            },
+            &reference,
+            &genes_here,
+        ) {
+            Ok(list) => list,
+            Err(error) => {
+                failure = Some(engine_thrown(error));
+                break;
+            }
+        };
         let mut map = fe::FuncotationMap::no_transcript(&funcotations);
         let attribute = |name: &str| {
             attributes
