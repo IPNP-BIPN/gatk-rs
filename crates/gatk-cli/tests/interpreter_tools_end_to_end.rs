@@ -306,15 +306,27 @@ fn replay(text: &str, root: &std::path::Path) {
 }
 
 /// With python on the path the reference would run a script the port does not carry, and the
-/// message says so and is the port's own. With R on the path the port runs its rewrite the way
-/// `RScriptExecutor` runs a script, and a status other than nought is that executor's exception.
-/// The refusals ahead of them stay the reference's.
+/// message says so and is the port's own; a user's `--python-script` the port runs the way
+/// `PythonScriptExecutor` does. With R on the path the port runs its rewrite the way
+/// `RScriptExecutor` runs a script. A status other than nought is the executor's exception. The
+/// refusals ahead of them stay the reference's.
 fn with_interpreters(root: &std::path::Path) {
     use std::os::unix::fs::PermissionsExt;
 
     let bin = root.join("bin");
     std::fs::create_dir_all(&bin).expect("a directory");
-    std::fs::write(bin.join("python"), "").expect("a python");
+    let python_called_with = root.join("python-arguments");
+    let python = bin.join("python");
+    std::fs::write(
+        &python,
+        format!(
+            "#!/bin/sh\n[ \"$1\" = -c ] && exit 0\nprintf '%s\\n' \"$@\" > '{}'\necho 'from the script'\nexit 4\n",
+            python_called_with.display()
+        ),
+    )
+    .expect("a python");
+    std::fs::set_permissions(&python, std::fs::Permissions::from_mode(0o755))
+        .expect("an executable");
     let called_with = root.join("rscript-arguments");
     let rscript = bin.join("Rscript");
     std::fs::write(
@@ -378,6 +390,56 @@ fn with_interpreters(root: &std::path::Path) {
             format!("--output_dir={cwd}/interpreter-dump/out/with-r/"),
             "--output_prefix=sample".to_string(),
         ]
+    );
+
+    let ran = gatk_cli::run(&to(&[
+        "TrainVariantAnnotationsModel",
+        "--annotations-hdf5",
+        "interpreter-dump/out/setup-labelled/extract.annot.hdf5",
+        "-O",
+        "interpreter-dump/out/with-python/model",
+        "--model-backend",
+        "PYTHON_SCRIPT",
+        "--python-script",
+        "interpreter-dump/score.py",
+        "--hyperparameters-json",
+        "interpreter-dump/hyperparameters.json",
+        "--mode",
+        "SNP",
+    ]));
+    assert_eq!(ran.status, 3, "{}", ran.stderr);
+    assert!(
+        ran.stderr
+            .contains("org.broadinstitute.hellbender.utils.python.PythonScriptExecutorException")
+            && ran
+                .stderr
+                .contains("python exited with 4\nCommand Line: python ")
+            && ran.stderr.contains("Stdout: from the script"),
+        "{}",
+        ran.stderr
+    );
+    let arguments = std::fs::read_to_string(&python_called_with).expect("the script ran");
+    let arguments: Vec<&str> = arguments.lines().collect();
+    assert_eq!(arguments.len(), 4, "{arguments:?}");
+    assert_eq!(arguments[0], format!("{cwd}/interpreter-dump/score.py"));
+    let subset = arguments[1]
+        .strip_prefix("--annotations_file=")
+        .expect("the annotations");
+    assert!(
+        subset.contains("/subset.annot") && subset.ends_with(".hdf5"),
+        "{subset}"
+    );
+    assert!(
+        !std::path::Path::new(subset).exists(),
+        "a temporary file outlived the run"
+    );
+    assert_eq!(
+        arguments[2],
+        format!("--hyperparameters_json_file={cwd}/interpreter-dump/hyperparameters.json")
+    );
+    assert_eq!(
+        arguments[3],
+        "--output_prefix=interpreter-dump/out/with-python/model.snp"
     );
 
     let ran = gatk_cli::run(&to(&[

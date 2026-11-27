@@ -134,6 +134,7 @@ pub mod htsget_reader;
 pub mod index_feature_file;
 pub mod interval_walker;
 pub mod isolation_forest;
+pub mod javascript_variant_filter;
 pub mod joint_germline_cnv_segmentation;
 pub mod learn_read_orientation_model;
 pub mod left_align_and_trim_variants;

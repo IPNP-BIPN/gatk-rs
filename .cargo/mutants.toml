@@ -23,4 +23,8 @@ exclude_re = [
     # Caught, but by gatk-tools/tests/multi_pass.rs, which a run scoped to gatk-readfilter does
     # not build (checked by hand: both make it fail).
     'replace Counting::filtered_count -> u64 with [01]$',
+    # gatk-barclay. `java_long` stops reading digits once the value is past u64::MAX, only so the
+    # i128 cannot overflow; stopping AT u64::MAX instead refuses the same strings, since anything
+    # from u64::MAX up is already past i64::MAX and refused by the check after the loop.
+    'lib.rs:466:18: replace > with >= in java_long',
 ]

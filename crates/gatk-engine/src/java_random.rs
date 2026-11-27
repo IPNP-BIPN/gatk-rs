@@ -142,7 +142,7 @@ impl JavaRandom {
         // `assert!` panics (stops the program) when its condition is false. It stands in for the
         // reference's rejection of a non-positive bound.
         assert!(bound > 0, "bound must be positive");
-        if (bound & -bound) == bound {
+        if bound.isolate_lowest_one() == bound {
             // A power of two: the high bits of one draw, exactly.
             return (((bound as i64).wrapping_mul(self.next(31) as i64)) >> 31) as i32;
         }
