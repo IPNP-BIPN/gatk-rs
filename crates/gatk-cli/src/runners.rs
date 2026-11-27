@@ -5757,8 +5757,8 @@ pub fn depth_of_coverage(parser: &Parser) -> Outcome {
     let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
         .map_err(reads_traversal_error)?;
 
-    // `ReadUtils.getSamplesFromHeader`: the distinct SM values, in the header's own order, which is
-    // the order the sample columns are written in.
+    // The distinct SM values, which the columns list SORTED: measured on a six-sample header whose
+    // read groups name NA19240 before NA19238, where the reference wrote NA19238 first.
     let mut samples: Vec<String> = Vec::new();
     for group in &header.read_groups {
         if let Some(sample) = group.attributes.get("SM") {
@@ -5767,6 +5767,7 @@ pub fn depth_of_coverage(parser: &Parser) -> Outcome {
             }
         }
     }
+    samples.sort();
     let sample_of = |record: &htsjdk_bam::record::BamRecord| -> String {
         gatk_engine::read_pileup::sample_name(record, &header).unwrap_or_default()
     };
