@@ -58,12 +58,20 @@ public class OracleProbe {
      */
     private static final String EXPECTED_LOCALE = "en_US";
 
+    /**
+     * Set by `--build-arg TIMING_ONLY=1` for the speed-at-scale arm64 runs. GKL is x86-only, so on
+     * aarch64 GATK falls back to its Java code and the deflater pin cannot be tested; such an image
+     * may time GATK but never make a golden, and the probe says so in `golden_capable`.
+     */
+    private static final boolean TIMING_ONLY = "1".equals(System.getenv("ORACLE_TIMING_ONLY"));
+
     private static final String[] REQUIRED_CPU_FLAGS = {"avx", "avx2", "sse4_2"};
 
     public static void main(final String[] args) throws Exception {
         final List<String> failures = new ArrayList<>();
 
         final String arch = System.getProperty("os.arch");
+        final boolean armTiming = TIMING_ONLY && "aarch64".equals(arch);
         final String javaVersion = System.getProperty("java.version");
         final String javaVendor = System.getProperty("java.vendor");
         final String javaMajor = javaVersion.split("\\.")[0];
@@ -106,8 +114,10 @@ public class OracleProbe {
             gklPresent =
                 (Boolean) f.getMethod("usingIntelDeflater").invoke(f.getConstructor().newInstance());
         } catch (final Throwable t) {
-            failures.add("Intel GKL is not usable: " + t
-                    + ". It degrades silently, which is why this is checked.");
+            if (!armTiming) {
+                failures.add("Intel GKL is not usable: " + t
+                        + ". It degrades silently, which is why this is checked.");
+            }
         }
 
         // libdeflate, which does not exist before htsjdk 5.0.0 and defaults to ON from 5.0.0.
@@ -149,7 +159,7 @@ public class OracleProbe {
                     + " is defined against `gatk <Tool>`, which fixes the parser to Barclay.");
         }
 
-        if (!EXPECTED_ARCH.equals(arch)) {
+        if (!EXPECTED_ARCH.equals(arch) && !armTiming) {
             failures.add("os.arch is '" + arch + "', expected '" + EXPECTED_ARCH + "'");
         }
         if (!EXPECTED_JAVA_MAJOR.equals(javaMajor)) {
@@ -167,7 +177,7 @@ public class OracleProbe {
         if (!"0.333333".equals(decimalSample)) {
             failures.add("a decimal formats as '" + decimalSample + "', expected '0.333333'.");
         }
-        if (!gklPresent) {
+        if (!gklPresent && !armTiming) {
             failures.add("usingIntelDeflater is false. The oracle pins the JDK deflater, but a"
                     + " GKL that cannot load means that pin is untested.");
         }
@@ -205,6 +215,7 @@ public class OracleProbe {
         json.append("  \"avx\": ").append(cpuFlags.contains("avx")).append(",\n");
         json.append("  \"avx2\": ").append(cpuFlags.contains("avx2")).append(",\n");
         json.append("  \"avx512f\": ").append(cpuFlags.contains("avx512f")).append(",\n");
+        json.append("  \"golden_capable\": ").append(failures.isEmpty() && !armTiming).append(",\n");
         json.append("  \"contract_satisfied\": ").append(failures.isEmpty()).append("\n");
         json.append("}");
 

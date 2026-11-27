@@ -1,0 +1,133 @@
+name: Speed at scale, one CPU
+
+# The whole chain of speed-scale.yml on one runner type: the oracle image and the port built for
+# it, then the groups of tools/speed/scale.json, then one table.
+
+on:
+  workflow_call:
+    inputs:
+      arch:
+        required: true
+        type: string
+      runner:
+        required: true
+        type: string
+      platform:
+        required: true
+        type: string
+
+jobs:
+  image:
+    name: The oracle image
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: cache
+        uses: actions/cache@v6
+        with:
+          path: /tmp/oracle-image.tar
+          key: gatk-rs-oracle-${{ inputs.arch == 'x86-64' && '' || format('{0}-', inputs.arch) }}${{ hashFiles('tools/oracle/**') }}
+
+      # Built once here and handed to every group, so a rate-limited mirror (Maven Central answered
+      # 429 on run 44801908819) fails one job that retries rather than each group in turn.
+      - name: Build it when the cache misses
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          for attempt in 1 2 3; do
+            docker build --platform ${{ inputs.platform }} \
+              --build-arg TIMING_ONLY=${{ inputs.arch == 'x86-64' && '' || '1' }} \
+              -t gatk-rs-oracle:4.7.0.0 tools/oracle && break
+            [ "$attempt" = 3 ] && exit 1
+            echo "build attempt $attempt failed; retrying"; sleep $((attempt * 120))
+          done
+          docker save gatk-rs-oracle:4.7.0.0 -o /tmp/oracle-image.tar
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: scale-image-${{ inputs.arch }}
+          path: /tmp/oracle-image.tar
+          retention-days: 3
+
+  port:
+    name: The port binary
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: nasm, which is what makes GKL's igzip exact rather than merely valid
+        if: inputs.arch == 'x86-64'
+        run: |
+          sudo apt-get update -qq || echo "apt refresh incomplete; the install below is the gate"
+          sudo apt-get install -y -qq nasm
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          # Pinned; must match rust-toolchain.toml.
+          toolchain: "1.97.1"
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo build --release -p gatk-cli
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: scale-port-binary-${{ inputs.arch }}
+          path: target/release/gatk
+          retention-days: 3
+
+  prep:
+    needs: [image, port]
+    uses: ./.github/workflows/speed-scale-group.yml
+    with: {group: prep, arch: "${{ inputs.arch }}", runner: "${{ inputs.runner }}", platform: "${{ inputs.platform }}"}
+
+  haplotypecaller:
+    needs: prep
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/speed-scale-group.yml
+    with: {group: haplotypecaller, arch: "${{ inputs.arch }}", runner: "${{ inputs.runner }}", platform: "${{ inputs.platform }}"}
+
+  joint:
+    needs: haplotypecaller
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/speed-scale-group.yml
+    with: {group: joint, arch: "${{ inputs.arch }}", runner: "${{ inputs.runner }}", platform: "${{ inputs.platform }}"}
+
+  mutect2:
+    needs: prep
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/speed-scale-group.yml
+    with: {group: mutect2, arch: "${{ inputs.arch }}", runner: "${{ inputs.runner }}", platform: "${{ inputs.platform }}"}
+
+  cnv:
+    needs: prep
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/speed-scale-group.yml
+    with: {group: cnv, arch: "${{ inputs.arch }}", runner: "${{ inputs.runner }}", platform: "${{ inputs.platform }}"}
+
+  table:
+    name: One table
+    needs: [prep, haplotypecaller, joint, mutect2, cnv]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: scale-json-${{ inputs.arch }}-*
+          path: /tmp/groups
+          merge-multiple: true
+
+      - name: Merge the groups
+        run: |
+          python3 tools/speed/bench.py --merge /tmp/groups/scale-*.json \
+            --out /tmp/scale-${{ inputs.arch }}.json | tee /tmp/scale-${{ inputs.arch }}.txt
+          cat /tmp/scale-${{ inputs.arch }}.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: scale-table-${{ inputs.arch }}
+          path: |
+            /tmp/scale-${{ inputs.arch }}.json
+            /tmp/scale-${{ inputs.arch }}.txt

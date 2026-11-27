@@ -1,0 +1,86 @@
+name: Speed at scale
+
+# Milestone S (S.7, #1453): the best-practices chain on chr20 of a 30x WGS (tools/speed/scale.json),
+# the reference and the port in the pinned container at equal thread counts, wall clock, CPU, peak
+# RSS and whether the output bytes agree. Kept out of ci.yml for the reasons speed.yml is, and
+# more: one run is hours of runner time. It runs by hand, nightly, and when its own files change.
+#
+# Once per CPU: x86-64 (ubuntu-latest) and arm64 (ubuntu-24.04-arm), each side native, so the
+# reference on arm64 is GATK as an ARM user runs it (GKL's native code is x86 only). The last job
+# checks that every output's sha256 is the same on both.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 1 * * *"
+  pull_request:
+    paths:
+      - "tools/speed/scale.json"
+      - "tools/speed/scale_data.py"
+      - ".github/workflows/speed-scale*.yml"
+
+concurrency:
+  group: speed-scale-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  data:
+    name: The chr20 data, pinned by sha256
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: key
+        # The files' pins, not the whole of scale.json: editing a step must not fetch the data again.
+        run: |
+          echo "key=scale-data-$(python3 -c "import json,hashlib;print(hashlib.sha256(json.dumps(json.load(open('tools/speed/scale.json'))['files'],sort_keys=True).encode()).hexdigest()[:16])")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v6
+        with:
+          path: /tmp/scale-data
+          key: ${{ steps.key.outputs.key }}
+
+      - name: Derive the data and check every hash
+        run: python3 tools/speed/scale_data.py /tmp/scale-data
+
+      # Handed to the jobs as an artifact: the cache can be evicted in the hours between jobs.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: scale-data
+          path: /tmp/scale-data
+          retention-days: 3
+          compression-level: 0
+
+  x86-64:
+    needs: data
+    uses: ./.github/workflows/speed-scale-arch.yml
+    with:
+      arch: x86-64
+      runner: ubuntu-latest
+      platform: linux/amd64
+
+  arm64:
+    needs: data
+    uses: ./.github/workflows/speed-scale-arch.yml
+    with:
+      arch: arm64
+      runner: ubuntu-24.04-arm
+      platform: linux/arm64
+
+  across:
+    name: The same bytes on every CPU
+    needs: [x86-64, arm64]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: scale-table-*
+          path: /tmp/tables
+
+      - name: Compare every output's sha256 between the CPUs
+        run: |
+          python3 tools/speed/bench.py --across /tmp/tables/*/scale-*.json | tee /tmp/across.txt
+          cat /tmp/across.txt >> "$GITHUB_STEP_SUMMARY"
