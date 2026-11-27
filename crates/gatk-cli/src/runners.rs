@@ -1852,8 +1852,7 @@ pub fn print_reads(parser: &Parser) -> Outcome {
         Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
     })?;
     if let Some(bai) = bai {
-        // The index REPLACES the output's extension: `out.bam` is indexed by `out.bai`.
-        let companion = std::path::Path::new(&output).with_extension("bai");
+        let companion = bai_companion(&output);
         std::fs::write(&companion, bai).map_err(|error| {
             Thrown::non_user(
                 PORT_FAILURE,
@@ -2379,7 +2378,7 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
         Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
     })?;
     if let Some(bai) = bai {
-        let companion = std::path::Path::new(&output).with_extension("bai");
+        let companion = bai_companion(&output);
         std::fs::write(&companion, bai).map_err(|error| {
             Thrown::non_user(
                 PORT_FAILURE,
@@ -10673,8 +10672,8 @@ pub fn print_distant_mates(parser: &Parser) -> Outcome {
     std::fs::write(&output, &bytes)
         .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
     if let Some(bai) = bai {
-        // The index REPLACES the output's extension, and the digest APPENDS to it.
-        let companion = std::path::Path::new(&output).with_extension("bai");
+        // The digest APPENDS to the output's name, where the index replaces a `.bam`.
+        let companion = bai_companion(&output);
         std::fs::write(&companion, bai).map_err(|error| {
             Thrown::non_user(
                 PORT_FAILURE,
@@ -10805,7 +10804,7 @@ pub fn fix_misencoded_base_quality_reads(parser: &Parser) -> Outcome {
     std::fs::write(&output, &bytes)
         .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
     if let Some(bai) = bai {
-        let companion = std::path::Path::new(&output).with_extension("bai");
+        let companion = bai_companion(&output);
         std::fs::write(&companion, bai).map_err(|error| {
             Thrown::non_user(
                 PORT_FAILURE,
@@ -12499,7 +12498,7 @@ pub fn split_reads(parser: &Parser) -> Outcome {
             )
         })?;
         if let Some(index) = &file.index {
-            let companion = path.with_extension("bai");
+            let companion = bai_companion(&path.to_string_lossy());
             std::fs::write(&companion, index).map_err(|error| {
                 Thrown::non_user(
                     PORT_FAILURE,
@@ -13084,6 +13083,31 @@ fn reads_traversal_error(error: gatk_engine::reads::ReadsError) -> Thrown {
     }
 }
 
+/// `BAMFileWriter.createBamIndex`: `out.bam` is indexed by `out.bai`, any other name gets `.bai`
+/// appended (`out.tmp.bai`).
+fn bai_companion(output: &str) -> std::path::PathBuf {
+    match output.strip_suffix(".bam") {
+        Some(stem) => format!("{stem}.bai").into(),
+        None => format!("{output}.bai").into(),
+    }
+}
+
+/// A BAM the port wrote, as the SAM text htsjdk's SAM writer prints for the same header and records.
+fn bam_as_sam(bytes: &[u8]) -> Result<Vec<u8>, Thrown> {
+    let failed = |what: String| Thrown::non_user(PORT_FAILURE, what);
+    let bam =
+        htsjdk_bgzf::read::decompress_all(bytes).map_err(|error| failed(format!("{error:?}")))?;
+    let reader =
+        htsjdk_bam::reader::BamReader::new(&bam).map_err(|error| failed(format!("{error:?}")))?;
+    let header = reader.header.text.clone();
+    let records = reader
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| failed(format!("{error:?}")))?;
+    htsjdk_bam::sam_file::write_sam(&header, &records)
+        .map(String::into_bytes)
+        .ok_or_else(|| failed("records failed to encode as SAM".to_string()))
+}
+
 /// A BAM and the two files that follow it, written the way every read walker here writes them.
 fn write_bam(
     parser: &Parser,
@@ -13091,13 +13115,22 @@ fn write_bam(
     bytes: &[u8],
     bai: Option<Vec<u8>>,
 ) -> Result<Option<String>, Thrown> {
+    // `SAMFileWriterFactory.makeWriter` picks the format by extension: a `.sam` is the text, and
+    // `makeSAMWriter` never indexes.
+    let sam;
+    let (bytes, bai) = if output.ends_with(".sam") {
+        sam = bam_as_sam(bytes)?;
+        (sam.as_slice(), None)
+    } else {
+        (bytes, bai)
+    };
     std::fs::write(output, bytes)
         .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
     // htsjdk's writer builds an index only for a `SO:coordinate` file, whatever
     // `--create-output-bam-index` says: an unsorted or queryname BAM is written without one.
     let bai = bai.filter(|_| is_coordinate_sorted(bytes));
     if let Some(bai) = bai {
-        let companion = std::path::Path::new(output).with_extension("bai");
+        let companion = bai_companion(output);
         std::fs::write(&companion, bai).map_err(|error| {
             Thrown::non_user(
                 PORT_FAILURE,
