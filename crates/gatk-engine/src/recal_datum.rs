@@ -1,5 +1,6 @@
 //! `RecalDatum` and `EventType`, ported from
-//! `org.broadinstitute.hellbender.utils.recalibration` (GATK 4.6.2.0).
+//! `org.broadinstitute.hellbender.utils.recalibration` (GATK 4.7.0.0; `RecalDatum.java` and
+//! `EventType.java` are unchanged since 4.6.2.0).
 //!
 //! A recalibration table is an array of these. Every number `BaseRecalibrator` writes into a report
 //! and every number `ApplyBQSR` reads back out of one comes from a `RecalDatum`, so this is where
@@ -53,20 +54,38 @@
 //!
 //! # The smoothing is applied twice, with different arithmetic each time
 //!
-//! One error and two observations, added as doubles in [`RecalDatum::empirical_error_rate`] and
-//! added to `(long)(mismatches + 0.5)` in `calc_empirical_quality`. That cast truncates after
-//! adding a half, which is not the same as rounding: it is what makes half a mismatch count as one
-//! and 0.49999 count as none, and both were measured.
+//! One error and two observations. In [`RecalDatum::empirical_error_rate`] the error is added to
+//! the divided mismatch count as a `double` and the observations are added to the `long` count
+//! before it is widened; in `calc_empirical_quality` the error is added to
+//! `(long)(mismatches + 0.5)`. That cast truncates after adding a half, which is not the same as
+//! rounding: it is what makes half a mismatch count as one and 0.49999 count as none, and both
+//! were measured.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, RecalDatumError>` is "a `T` or one of the refusals below"; it is how this codebase
+//!   models a method that throws. `Err(..)` is the throw, `Ok(..)` the return, and a `?` after a
+//!   call passes the callee's error up unchanged. `Option<T>` is "a `T` or nothing", used here
+//!   where the reference would throw on a bad index or name.
+//! - A method taking `&self` only reads the datum; one taking `&mut self` may write it. The
+//!   empirical quality getters take `&mut self` because they fill the cache.
+//! - `as` between number types is Java's cast. Float to integer truncates toward zero, saturates
+//!   at the ends of the range and turns NaN into zero, as Java's `(int)` and `(long)` do; integer
+//!   to a narrower integer keeps the low bits, as Java's `(byte)` does.
+//! - `#[derive(Clone)]` generates a field-by-field copy, the copy constructor.
+//! - `&'static str` is a string constant that lives for the whole run: a Java string literal.
 
 use std::sync::LazyLock;
 
 use crate::java_format::format_decimals;
 use crate::math_utils::{max_element_index, qual_to_error_prob};
 
-/// `SAMUtils.MAX_PHRED_SCORE`, the ceiling every empirical quality is clamped to.
+/// `RecalDatum.MAX_RECALIBRATED_Q_SCORE`, which is `SAMUtils.MAX_PHRED_SCORE`: the ceiling every
+/// empirical quality is clamped to.
 pub const MAX_RECALIBRATED_Q_SCORE: i32 = 93;
 
-/// The largest difference between an empirical and a reported quality the prior is tabulated for.
+/// `RecalDatum.MAX_GATK_USABLE_Q_SCORE`: the largest difference between an empirical and a
+/// reported quality the prior is tabulated for.
 pub const MAX_GATK_USABLE_Q_SCORE: i32 = 40;
 
 /// `QualityUtils.MAX_REASONABLE_Q_SCORE`, the top of the range the posterior is maximised over.
@@ -76,17 +95,21 @@ pub const MAX_GATK_USABLE_Q_SCORE: i32 = 40;
 /// prior value.
 pub const MAX_REASONABLE_Q_SCORE: i32 = 60;
 
-/// See the module note. The constant, not the number the comment beside it names.
+/// `RecalDatum.MULTIPLIER`. See the module note. The constant, not the number the comment beside it
+/// names.
 const MULTIPLIER: f64 = 100_000.0;
 
-/// One error and one non-error observation, added so a datum with no errors is not quality
-/// infinity.
+/// `RecalDatum.SMOOTHING_CONSTANT`: one error and one non-error observation, added so a datum with
+/// no errors is not quality infinity. An `int` in the reference, which Java widens to `long` when
+/// it meets a count; an `i64` here, because Rust does not widen implicitly.
 const SMOOTHING_CONSTANT: i64 = 1;
 
-/// The sentinel that means "not computed yet", which every setter writes back.
+/// `RecalDatum.UNINITIALIZED_EMPIRICAL_QUALITY`: the sentinel that means "not computed yet",
+/// which `combine`, every incrementer and every setter but `setEmpiricalQuality` write back.
 const UNINITIALIZED_EMPIRICAL_QUALITY: i32 = -1;
 
-/// `Integer.MAX_VALUE - 1`, above which the binomial's counts are rescaled to fit an `int`.
+/// `RecalDatum.MAX_NUMBER_OF_OBSERVATIONS`, `Integer.MAX_VALUE - 1`, above which the binomial's
+/// counts are rescaled to fit an `int`.
 const MAX_NUMBER_OF_OBSERVATIONS: i64 = i32::MAX as i64 - 1;
 
 /// Every argument `RecalDatum` refuses, with the words the reference refuses it in.
@@ -170,6 +193,11 @@ fn java_double(value: f64) -> String {
 ///
 /// **`FastMath.PI` and not `Math.PI`.** The two happen to be the same double, which the suite
 /// asserts rather than assumes.
+///
+/// `LazyLock::new(|| ...)` is the static initialiser: the lambda runs once, on first use, and
+/// every later read gets the same array. The reference's loop is
+/// `for ( int i = 0; i <= MAX_GATK_USABLE_Q_SCORE; i++ )`, over
+/// `new NormalDistribution(null, mean, sigma)`.
 static LOG_PRIOR_CACHE: LazyLock<[f64; (MAX_GATK_USABLE_Q_SCORE + 1) as usize]> =
     LazyLock::new(|| {
         // The reference names both, so this does too, even though the mean is zero.
@@ -193,11 +221,13 @@ pub fn log_prior_cache() -> &'static [f64] {
 
 /// `RecalDatum.getLogPrior(qualityScore, priorQualityScore)`.
 ///
-/// **The cast runs before the absolute value.** The reference is
+/// **The difference is truncated, not rounded.** The reference is
 /// `Math.min(Math.abs((int) (qualityScore - priorQualityScore)), MAX_GATK_USABLE_Q_SCORE)`, so a
-/// difference of `-0.5` becomes `(int) -0.5 = 0` and then `0`, where taking the absolute value
-/// first would have given `1` and a different prior. Measured: a quality of 29.5 against a prior of
-/// 30 gets the same value as 30 against 30.
+/// difference of `-0.5` becomes `(int) -0.5 = 0`, where rounding its magnitude would have given
+/// `1` and a different prior. Measured: a quality of 29.5 against a prior of 30 gets the same value
+/// as 30 against 30. Truncation is symmetric about zero, so casting before or after the absolute
+/// value gives the same index for every difference within `int` range; the order shows only where
+/// the cast saturates, which the inline note below covers.
 ///
 /// **A NaN prior gives difference zero.** `(int)` of NaN is zero in Java, and a saturating `as`
 /// cast is zero in Rust, so both index the cache at its first entry. That is reachable:
@@ -232,12 +262,16 @@ pub fn get_log_binomial_likelihood(
         return 0.0;
     }
 
+    // The parameters are declared `mut` so the body may reassign them, as the reference
+    // reassigns its non-final `nObservations` and `nErrors`.
     if n_observations > MAX_NUMBER_OF_OBSERVATIONS {
         let fraction = MAX_NUMBER_OF_OBSERVATIONS as f64 / n_observations as f64;
         n_errors = jmath::math::round(n_errors as f64 * fraction);
         n_observations = MAX_NUMBER_OF_OBSERVATIONS;
     }
 
+    // `as i32` is the reference's `(int)` narrowing, which keeps the low 32 bits. After the
+    // rescale above the observation count fits, so it changes nothing here.
     let log_likelihood = log_binomial_probability(
         n_observations as i32,
         n_errors as i32,
@@ -253,8 +287,13 @@ pub fn get_log_binomial_likelihood(
 /// `BinomialDistribution.logProbability(k)` from commons-math3, which is the one line
 /// `MathUtils.logBinomialProbability` is.
 ///
+/// ```java
+/// return new BinomialDistribution(null, n, p).logProbability(k);
+/// ```
+///
 /// The saddle point expansion under it is already ported, in `jmath`, for the Fisher strand
 /// annotation. What is here is the wrapper: the two guards the distribution puts in front of it.
+/// Note the argument order: `n` before `k` here, as in `MathUtils`, and `k` first in `jmath`.
 fn log_binomial_probability(n: i32, k: i32, p: f64) -> f64 {
     if n == 0 {
         return if k == 0 { 0.0 } else { f64::NEG_INFINITY };
@@ -278,6 +317,9 @@ pub fn bayesian_estimate_of_empirical_quality(
     prior_mean_quality_score: f64,
 ) -> i32 {
     let bins = (MAX_REASONABLE_Q_SCORE + 1) as usize;
+    // `(0..bins).map(|q| ...).collect()` is the reference's
+    // `new IndexRange(0, numQualityScoreBins).mapToDouble(q -> ...)`: `|q| ...` is the lambda, and
+    // each element is prior plus likelihood, added in that order.
     let log_posteriors: Vec<f64> = (0..bins)
         .map(|q| {
             get_log_prior(q as f64, prior_mean_quality_score)
@@ -299,6 +341,7 @@ pub struct RecalDatum {
     reported_quality: f64,
     /// [`UNINITIALIZED_EMPIRICAL_QUALITY`] until computed. See the module note on caching.
     empirical_quality: i32,
+    /// Stored as read: not scaled.
     num_observations: i64,
     /// **Multiplied by [`MULTIPLIER`]**. Read it with [`RecalDatum::num_mismatches`].
     num_mismatches: f64,
@@ -352,13 +395,17 @@ impl RecalDatum {
     /// is the only reachable error here and it is why this returns a `Result`.
     ///
     /// The counts go through the public getter and the incrementer, so the mismatch count is
-    /// divided by [`MULTIPLIER`] and multiplied by it again rather than copied across.
+    /// divided by `MULTIPLIER` and multiplied by it again rather than copied across.
     ///
     /// **The sign of that NaN belongs to the processor.** `0.0 / 0.0` is the floating-point
     /// indefinite on x86-64, whose sign bit is set, and the default NaN on AArch64, whose sign bit
     /// is clear. Reference and port agree wherever they are run together and differ across
     /// architectures, so it is the one value in the golden compared as a NaN rather than as bits.
     pub fn combine(&mut self, other: &RecalDatum) -> Result<(), RecalDatumError> {
+        // The reference's order: both expected-error counts first, from the reported qualities
+        // as they were; then the counts; then the new quality from the new total.
+        // A `?` after a call hands that call's error straight back to this method's caller, which
+        // is the exception escaping `calcExpectedErrors` in the reference.
         let expected_num_errors = self.calc_expected_errors()? + other.calc_expected_errors()?;
         self.increment(other.num_observations(), other.num_mismatches());
         self.reported_quality =
@@ -384,6 +431,7 @@ impl RecalDatum {
         Ok(())
     }
 
+    /// `getReportedQuality()`.
     pub fn reported_quality(&self) -> f64 {
         self.reported_quality
     }
@@ -393,14 +441,18 @@ impl RecalDatum {
     /// Two narrowings, and the outer one is where a quality comes back **negative**: a reported
     /// quality of 200 answers -56, and 127.5 rounds half-up to 128 and answers -128.
     pub fn reported_quality_as_byte(&self) -> i8 {
+        // `as i32` then `as i8` are Java's `(int)` and `(byte)`. An integer-to-narrower-integer
+        // `as` keeps the low bits, so both wrap rather than clamp, as Java's narrowings do.
         jmath::math::round(self.reported_quality) as i32 as i8
     }
 
     /// `getEmpiricalErrorRate()`: errors over observations, smoothed, or exactly zero when there is
     /// nothing to divide.
     ///
-    /// The smoothing is added to the counts as **integers** before the widening, which is the
-    /// reference's `numObservations + SMOOTHING_CONSTANT + SMOOTHING_CONSTANT` on a `long`.
+    /// The two smoothings are added differently. The error is added to the already divided
+    /// mismatch count as a `double`; the two observations are added as **integers**, before the
+    /// widening, which is the reference's
+    /// `numObservations + SMOOTHING_CONSTANT + SMOOTHING_CONSTANT` on a `long`.
     pub fn empirical_error_rate(&self) -> f64 {
         if self.num_observations == 0 {
             0.0
@@ -471,10 +523,13 @@ impl RecalDatum {
         )
     }
 
+    /// `getNumObservations()`.
     pub fn num_observations(&self) -> i64 {
         self.num_observations
     }
 
+    /// `setNumObservations`: refuses a negative count and clears the cache, even when the count is
+    /// the one already held. See the module note.
     pub fn set_num_observations(&mut self, num_observations: i64) -> Result<(), RecalDatumError> {
         if num_observations < 0 {
             return Err(RecalDatumError::NegativeObservations);
@@ -489,6 +544,7 @@ impl RecalDatum {
         self.num_mismatches / MULTIPLIER
     }
 
+    /// `setNumMismatches`: refuses a negative count, multiplies on the way in, clears the cache.
     pub fn set_num_mismatches(&mut self, num_mismatches: f64) -> Result<(), RecalDatumError> {
         if num_mismatches < 0.0 {
             return Err(RecalDatumError::NegativeMismatches);
@@ -550,6 +606,8 @@ impl RecalDatum {
     /// which the reference itself marks `TODO: why add 0.5?`. Half a mismatch becomes one error and
     /// 0.49999 becomes none, and the golden carries both.
     fn calc_empirical_quality(&mut self, prior_quality_score: f64) {
+        // `as i64` is Java's `(long)` cast: truncation toward zero, saturating at the ends of the
+        // `long` range, and NaN to zero.
         let mismatches = (self.num_mismatches() + 0.5) as i64 + SMOOTHING_CONSTANT;
         let observations = self.num_observations + SMOOTHING_CONSTANT + SMOOTHING_CONSTANT;
         let empirical_qual =
@@ -560,6 +618,14 @@ impl RecalDatum {
 
 /// `EventType`: the three kinds of error a recalibration table counts, and therefore the three
 /// tables a recalibration report holds.
+///
+/// ```java
+/// BASE_SUBSTITUTION("M", "Base Substitution"),
+/// BASE_INSERTION("I", "Base Insertion"),
+/// BASE_DELETION("D", "Base Deletion");
+/// ```
+///
+/// The two constructor strings are [`EventType::representation`] and [`EventType::pretty_print`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EventType {
     BaseSubstitution,
@@ -579,6 +645,9 @@ impl EventType {
     /// `eventFrom(int)`, which indexes the cached values array directly. Out of range is
     /// `ArrayIndexOutOfBoundsException` in the reference and `None` here.
     pub fn from_index(index: i32) -> Option<EventType> {
+        // `usize::try_from(index).ok()` is `None` for a negative index rather than a wrapped,
+        // huge unsigned one, so -1 is out of range here as it is in Java; `.and_then` runs the
+        // lambda only when there is a value.
         usize::try_from(index).ok().and_then(|i| {
             if i < EventType::VALUES.len() {
                 Some(EventType::VALUES[i])
@@ -591,6 +660,8 @@ impl EventType {
     /// `eventFrom(String)`, matched against the one-letter representation and not against the enum
     /// name. Unknown is `IllegalArgumentException("Event %s does not exist.")` in the reference.
     pub fn from_representation(representation: &str) -> Option<EventType> {
+        // `.find` returns the first element the lambda accepts, or `None`: the reference's
+        // `for` loop that returns on the first match.
         EventType::VALUES
             .into_iter()
             .find(|event| event.representation() == representation)
@@ -623,7 +694,7 @@ impl EventType {
         }
     }
 
-    /// The ordinal, which is how a recalibration table addresses its third dimension.
+    /// `ordinal()`, which is how a recalibration table addresses its last dimension.
     pub fn ordinal(&self) -> usize {
         match self {
             EventType::BaseSubstitution => 0,
@@ -648,7 +719,7 @@ mod tests {
 
     #[test]
     fn the_cast_in_the_prior_runs_before_the_absolute_value() {
-        // Half a point below the prior. Casting first gives zero; taking the absolute value first
+        // Half a point below the prior. The cast truncates -0.5 to zero; rounding its magnitude
         // would have given one, and a different entry of the cache.
         assert_eq!(get_log_prior(29.5, 30.0), get_log_prior(30.0, 30.0));
         assert_ne!(get_log_prior(29.0, 30.0), get_log_prior(30.0, 30.0));

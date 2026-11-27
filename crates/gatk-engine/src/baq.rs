@@ -1,4 +1,5 @@
-//! `BAQ`, ported from `org.broadinstitute.hellbender.utils.baq` (GATK 4.6.2.0).
+//! `BAQ`, ported from `org.broadinstitute.hellbender.utils.baq` (GATK 4.7.0.0; `BAQ.java` is
+//! unchanged since 4.6.2.0).
 //!
 //! Base Alignment Quality: a hidden Markov model that caps each base's quality by how confidently
 //! the aligner could have placed it. `BaseRecalibrator` runs it over every read before counting, so
@@ -13,26 +14,46 @@
 //! An exact match against a reference with no internal repeat scores up to 91. The same kind of
 //! exact match against `ACACACAC...` scores 4 everywhere, because the model cannot tell the
 //! placements apart. That contrast is the whole point of the algorithm, and both cases are in the
-//! golden.
+//! golden: rows `hmm exact` and `hmm repeat` of `baq.txt.gz`.
 //!
 //! # And most of the emission table is one
 //!
 //! ```java
 //! for ( int i = 0; i < 256; i++ )
 //!     for ( int j = 0; j < 256; j++ )
-//!         for ( int q = 0; q <= SAMUtils.MAX_PHRED_SCORE; q++ )
+//!         for ( int q = 0; q <= SAMUtils.MAX_PHRED_SCORE; q++ ) {
 //!             EPSILONS[i][j][q] = 1.0;
-//! for ( char b1 : "ACGTacgt".toCharArray() ) { ... }
+//!         }
+//!
+//! for ( char b1 : "ACGTacgt".toCharArray() ) {
+//!     ...
 //! ```
 //!
-//! Only the sixteen ACGT-by-acgt pairs are ever filled. **An `N` against an `A` therefore has an
-//! emission probability of one**, which is not a special case in the algorithm: it is what the
-//! uninitialised table holds. The golden shows the consequence: a read with an `N` scores
-//! `43,46,78,83,86,77,62,45` where the same read with a real mismatch drops to
-//! `43,46,60,49,46,46,46,42`. The `N` costs almost nothing and the mismatch costs a lot.
+//! Only the sixty-four pairs drawn from `ACGTacgt` on both sides are ever filled: sixteen base
+//! pairs, in either case. **An `N` against an `A` therefore has an emission probability of one**,
+//! which is not a special case in the algorithm: it is what the uninitialised table holds. The
+//! golden shows the consequence: a read with an `N` scores `43,46,78,83,86,77,62,45` (row
+//! `hmm n-in-read`) where the same read with a real mismatch drops to `43,46,60,49,46,46,46,42`
+//! (row `hmm mismatch`). The `N` costs almost nothing and the mismatch costs a lot.
 //!
 //! The floor at `minBaseQual` is applied to the **emission's** quality only, leaving the read's own
 //! byte alone: `qual2prob[q < minBaseQual ? minBaseQual : q]`.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[u8]` is a borrowed, read-only view of a `byte[]`, and `&mut [i32]` a writable one: that is
+//!   how `hmm_glocal` fills the caller's `state` and `q` arrays in place, as the reference does.
+//! - `u8` is an unsigned byte where Java's `byte` is signed; the bits are the same.
+//! - `Result<T, BaqError>` is "a `T` or one of the refusals below", this codebase's model of a
+//!   method that throws; `?` rethrows a callee's error. `Option<T>` is "a `T` or nothing", the
+//!   reference's `null` return.
+//! - `let Some(x) = y else { return ...; };` unwraps `y` or takes the early exit.
+//! - `a..b` is a half-open range and `a..=b` a closed one; `.rev()` walks it backwards, Java's
+//!   `for (k = end; k >= beg; --k)`.
+//! - Rust lets a function hold only one writable reference into a vector at a time.
+//!   `f.split_at_mut(i)` splits the matrix into rows `0..i` and `i..`, so row `i - 1` can be read
+//!   while row `i` is written, as the reference's `fi1` and `fi` are.
+//! - `x as usize` and `x as i32` are casts; an index must be `usize`, unsigned.
 
 use std::sync::LazyLock;
 
@@ -57,9 +78,13 @@ const MAX_PHRED_SCORE: usize = 93;
 
 /// The two emission constants, named as the reference names them.
 const EM: f64 = 0.33333333333;
+/// `EI`, the emission probability of an inserted base.
 const EI: f64 = 0.25;
 
-/// `BAQ.qual2prob`: `10^(-q/10)` for every byte value.
+/// `BAQ.qual2prob`: `10^(-q/10)` for every byte value, `qual2prob[i] = Math.pow(10, -i / 10.);`.
+///
+/// `-i` is the `int` negated before the division by a `double`; negating the widened value gives
+/// the same double. `LazyLock` runs the initialiser once, on first use: a static initialiser.
 static QUAL_TO_PROB: LazyLock<[f64; 256]> = LazyLock::new(|| {
     let mut table = [0.0; 256];
     for (i, slot) in table.iter_mut().enumerate() {
@@ -73,7 +98,7 @@ pub fn qual_to_prob_table() -> &'static [f64; 256] {
     &QUAL_TO_PROB
 }
 
-/// `convertFromPhredScale`.
+/// `convertFromPhredScale`: `return (Math.pow(10, (-x) / 10.));`.
 fn convert_from_phred_scale(x: f64) -> f64 {
     pow10(-x / 10.0)
 }
@@ -97,6 +122,7 @@ pub enum BaqError {
 }
 
 impl BaqError {
+    /// The exception's message, which the golden compares.
     pub fn message(&self) -> String {
         match self {
             BaqError::QualityLengthMismatch => {
@@ -131,7 +157,8 @@ pub struct Baq {
     band_width: i32,
     /// Every quality below this is raised to it, **for the emission only**.
     min_base_qual: u8,
-    /// `EPSILONS`, flattened. See the module note: everything outside the sixteen ACGT pairs is one.
+    /// `EPSILONS`, flattened to one vector indexed `ref * 256 * 94 + read * 94 + qual`. See the
+    /// module note: everything outside the `ACGTacgt` pairs is one.
     epsilons: Vec<f64>,
 }
 
@@ -143,7 +170,8 @@ impl Default for Baq {
 }
 
 impl Baq {
-    /// `new BAQ(gapOpenPenalty)`, whose argument is Phred scaled.
+    /// `new BAQ(gapOpenPenalty)`, whose argument is Phred scaled. The other three are the
+    /// reference's field initialisers: `ce = 0.1`, `cb = DEFAULT_BANDWIDTH`, `minBaseQual = 4`.
     pub fn new(gap_open_penalty: f64) -> Baq {
         Baq::with_parameters(
             convert_from_phred_scale(gap_open_penalty),
@@ -171,23 +199,28 @@ impl Baq {
         baq
     }
 
+    /// `getMinBaseQual()`.
     pub fn min_base_qual(&self) -> u8 {
         self.min_base_qual
     }
 
+    /// `getGapOpenProb()`.
     pub fn gap_open_prob(&self) -> f64 {
         self.gap_open_prob
     }
 
+    /// `getGapExtensionProb()`.
     pub fn gap_extension_prob(&self) -> f64 {
         self.gap_extension_prob
     }
 
+    /// `getBandWidth()`.
     pub fn band_width(&self) -> i32 {
         self.band_width
     }
 
-    /// `initializeCachedData`: fill everything with one, then overwrite the sixteen base pairs.
+    /// `initializeCachedData`: fill everything with one, then overwrite the sixty-four `ACGTacgt`
+    /// pairs, `1 - qual` for the same base in either case and `qual * EM` otherwise.
     fn initialize_cached_data(&mut self) {
         let qualities = MAX_PHRED_SCORE + 1;
         self.epsilons = vec![1.0; 256 * 256 * qualities];
@@ -209,6 +242,10 @@ impl Baq {
     ///
     /// The three indexes are Java `byte`s widened to `int`, so a base above 127 would index
     /// negatively and throw. Nothing produces one: bases come out of a BAM and are ASCII.
+    ///
+    /// A quality above 93 is past the reference's third dimension, `SAMUtils.MAX_PHRED_SCORE+1`,
+    /// and throws there. The flattened index here runs into the next base's row instead. A SAM
+    /// quality is at most 93, so only an out-of-specification file reaches the difference.
     pub fn calc_epsilon(&self, reference: u8, read: u8, qual: u8) -> f64 {
         let qualities = MAX_PHRED_SCORE + 1;
         self.epsilons
@@ -221,9 +258,15 @@ impl Baq {
     /// factored, because the reference's own banner says this code is kept in sync with samtools
     /// and any rearrangement would make the two harder to compare.
     ///
-    /// **The forward pass rescales and the backward pass divides by the same factors**, which is why
-    /// `s` is carried between them and why the posterior at the end is a ratio of differently scaled
-    /// numbers.
+    /// **The forward pass rescales and the backward pass scales by the same factors**, which is
+    /// why `s` is carried between them and why the posterior at the end is a ratio of differently
+    /// scaled numbers.
+    ///
+    /// **The order of every floating-point operation is the reference's**, and the inline notes
+    /// mark the places where the obvious rewrite would change a bit: the first forward row
+    /// divides by its sum while every later row multiplies by `1./sum`; `b[l_query]` divides
+    /// twice in sequence; each three-term sum adds left to right. The output is compared byte for
+    /// byte by the ten `hmm` rows of `baq.txt.gz`.
     ///
     /// Fills `state` and `q` in place from `qstart`, and answers 0 as the reference does.
     #[allow(clippy::too_many_arguments)]
@@ -252,6 +295,7 @@ impl Baq {
         let l_query_usize = l_query as usize;
 
         // The band width, narrowed and then widened again by three separate tests in this order.
+        // `.abs()` here is on an `i32`, Java's `Math.abs(int)`.
         let mut bw = if l_ref > l_query { l_ref } else { l_query };
         if self.band_width < (l_ref - l_query).abs() {
             bw = (l_ref - l_query).abs() + 3;
@@ -269,6 +313,9 @@ impl Baq {
         let mut b = vec![vec![0.0f64; width]; l_query_usize + 1];
         let mut s = vec![0.0f64; l_query_usize + 2];
 
+        // `sM = sI = 1. / (2 * l_query + 2)`: the reference forms the denominator in `int`
+        // arithmetic, this in `double`; both are exact for any read length, so the quotient is
+        // the same.
         let s_m = 1.0 / (2.0 * l_query as f64 + 2.0);
         let s_i = s_m;
         let b_m = (1.0 - self.gap_open_prob) / l_ref as f64;
@@ -276,6 +323,8 @@ impl Baq {
 
         let cd = self.gap_open_prob;
         let ce = self.gap_extension_prob;
+        // The transition matrix, row-major: the reference writes `m[0*3+0]`, `m[0*3+1]` and so on,
+        // which are `m[0]`, `m[1]`, ... here.
         let mut m = [0.0f64; 9];
         m[0] = (1.0 - cd - cd) * (1.0 - s_m);
         m[1] = cd * (1.0 - s_m);
@@ -308,7 +357,8 @@ impl Baq {
             let begin = set_u(bw, 1, beg) as usize;
             let stop = set_u(bw, 1, end) as usize + 2;
             // The rescale is over a RANGE OF CELLS of one row, not over its values: the bounds come
-            // from the band and the row is longer than them.
+            // from the band and the row is longer than them. This row DIVIDES by the sum,
+            // `fi[k] /= sum`; the rows below multiply by its reciprocal.
             for slot in f[1][begin..=stop].iter_mut() {
                 *slot /= sum;
             }
@@ -334,12 +384,14 @@ impl Baq {
                 let v11 = set_u(bw, i - 1, k - 1) as usize;
                 let v10 = set_u(bw, i - 1, k) as usize;
                 let v01 = set_u(bw, i, k - 1) as usize;
+                // Row `i - 1` to read and row `i` to write; see the note on `split_at_mut` above.
                 let (previous, current) = f.split_at_mut(i as usize);
                 let fi1 = &previous[i as usize - 1];
                 let fi = &mut current[0];
                 fi[u] = e * (m[0] * fi1[v11] + m[3] * fi1[v11 + 1] + m[6] * fi1[v11 + 2]);
                 fi[u + 1] = EI * (m[1] * fi1[v10] + m[4] * fi1[v10 + 1]);
                 fi[u + 2] = m[2] * fi[v01] + m[8] * fi[v01 + 2];
+                // `(fi[u] + fi[u+1]) + fi[u+2]`, then added to `sum`: the reference's grouping.
                 sum += fi[u] + fi[u + 1] + fi[u + 2];
             }
             s[i as usize] = sum;
@@ -373,6 +425,8 @@ impl Baq {
                 continue;
             }
             let u = u as usize;
+            // Two divisions in sequence, `sM / s[l_query] / s[l_query+1]`, not one division by
+            // the product of the two scale factors.
             b[l_query_usize][u] = s_m / s[l_query_usize] / s[l_query_usize + 1];
             b[l_query_usize][u + 1] = s_i / s[l_query_usize] / s[l_query_usize + 1];
         }
@@ -466,9 +520,13 @@ impl Baq {
             }
             max /= sum;
             state[qstart + i as usize - 1] = max_k;
-            // `-4.343 * log(1 - max) + .499` is `10*log10(1-max)` with the rounding folded in, and
-            // the cast truncates rather than rounding.
+            // BAQ.java:337. `-4.343` times the natural logarithm is approximately
+            // `-10*log10(1-max)`, the Phred value of `max`, with `10/ln 10` rounded to 4.343; the
+            // reference's own comment reads `// = 10*log10(1-max)`. `+ .499` then the truncating
+            // cast is a rounding that sends an exact half down. Like Java's `(int)`, `as i32`
+            // saturates, so `max == 1` (an infinite Phred) becomes `i32::MAX` and then 99.
             let k = (-4.343 * jmath::math::log(1.0 - max) + 0.499) as i32;
+            // `k > 100? 99 : ...`: above 100 is 99, and exactly 100 stays 100.
             q[qstart + i as usize - 1] = if k > 100 {
                 99
             } else if k < self.min_base_qual as i32 {
@@ -501,8 +559,15 @@ pub fn state_aligned_position(state: i32) -> i32 {
 
 /// `encodeBQTag(read, baq)`: the **difference** between the quality and the BAQ, not the BAQ.
 ///
-/// `(char)(quality - baq + 64)`, so a read whose BAQ equals its quality carries a tag of all `@`,
-/// and a BAQ above the quality encodes below `@` rather than being refused.
+/// Each byte is the base quality plus 64 minus the BAQ, in `int`s, stored as `(byte)tag`
+/// (BAQ.java:391-393, 400), so a read whose BAQ equals its quality carries a tag of all `@`, and
+/// a BAQ above the quality encodes below `@`.
+///
+/// **The reference refuses both ends and this refuses neither.** It throws on `if ( tag < 0 )`
+/// and on `if ( tag > Byte.MAX_VALUE )` (BAQ.java:395-399). Here a negative value becomes the
+/// character zero, and a value above 127 becomes a non-ASCII character, which is two bytes once
+/// the string is turned back into bytes. The upper end is reachable with BAQ on: a base quality of
+/// 68 or more whose BAQ is floored to 4 gives 128.
 pub fn encode_bq_tag(qualities: &[u8], baq: &[u8]) -> String {
     qualities
         .iter()
@@ -510,6 +575,8 @@ pub fn encode_bq_tag(qualities: &[u8], baq: &[u8]) -> String {
         .map(|(quality, baq)| {
             // The arithmetic is on Java `int`s, so it can leave the byte range before the cast.
             let bq = 64 + *quality as i32 - *baq as i32;
+            // `bq as u32` of a negative value wraps to a number no character has, so `from_u32`
+            // answers `None` and the fallback is the character zero.
             char::from_u32(bq as u32).unwrap_or('\u{0}')
         })
         .collect()
@@ -518,8 +585,13 @@ pub fn encode_bq_tag(qualities: &[u8], baq: &[u8]) -> String {
 /// `calcBAQFromTag(read, overwriteOriginalQuals, useRawQualsIfNoBAQTag)`: the tag decoded back into
 /// qualities.
 ///
-/// The tag holds a difference, so the quality is `min(rawQual, rawQual - (tag - 64))`. Where there
-/// is no tag, `useRawQualsIfNoBAQTag` decides between the raw qualities and a refusal.
+/// The tag holds a difference, so the quality is `rawQual - (tag - 64)`, with **no** minimum: the
+/// reference's `int newval =  rawQuals[i] - baq[i] + 64;` (BAQ.java:436), and a tag below `@`
+/// gives a quality above the raw one, which the test below checks. Where there is no tag,
+/// `useRawQualsIfNoBAQTag` decides between the raw qualities and a refusal.
+///
+/// `.zip` stops at the shorter of qualities and tag, where the reference indexes the tag at every
+/// quality and would throw on a short tag.
 pub fn calc_baq_from_tag(
     name: &str,
     locus: &str,
@@ -673,8 +745,14 @@ fn first_insertion_offset(record: &BamRecord) -> Option<i32> {
 /// the **last** insertion's offset, unclamped. A ten-base read at 50 needs 47-62; the same read
 /// with a leading `3I` needs 44-59.
 ///
-/// The contig is a parameter because a `BamRecord` carries a reference **index** and the reference's
-/// `read.getContig()` resolves it through the header.
+/// ```java
+/// final int start = Math.max(readStart - offset - ReadUtils.getFirstInsertionOffset(read), 1);
+/// final int stop = read.getEnd() + offset + ReadUtils.getLastInsertionOffset(read);
+/// ```
+///
+/// The contig is a parameter because a `BamRecord` carries a reference **index** and the
+/// reference's `read.getContig()` resolves it through the header. `None` is an empty cigar, where
+/// the reference's `getCigarElement(0)` would throw.
 pub fn reference_window_for_read(
     record: &BamRecord,
     contig: &str,
@@ -694,6 +772,9 @@ pub fn reference_window_for_read(
 ///
 /// Soft clips move the offset but are **not** included in the range, and a cigar with an `N` or a
 /// read clipped entirely away answers nothing at all, which is how those reads get no BAQ.
+///
+/// `Option<(i32, i32)>` is "a pair or nothing", the reference's `Pair<Integer,Integer>` or `null`.
+/// The reference's `default:` throw has no counterpart: the `match` names every operator.
 fn calculate_query_range(record: &BamRecord) -> Option<(i32, i32)> {
     let mut query_start: i32 = -1;
     let mut query_stop: i32 = -1;
@@ -723,13 +804,21 @@ fn calculate_query_range(record: &BamRecord) -> Option<(i32, i32)> {
 /// `BAQCalculationResult`: what one read's pass produced.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BaqCalculationResult {
+    /// `rawQuals`, the read's own qualities.
     pub raw_quals: Vec<u8>,
+    /// `bq`, the model's qualities, capped by the walk in [`Baq::calc_baq_from_hmm`].
     pub bq: Vec<u8>,
+    /// `state`, one packed alignment state per base: see [`state_aligned_position`].
     pub state: Vec<i32>,
 }
 
 impl Baq {
     /// `calcBAQFromHMM(ref, query, quals, queryStart, queryEnd)`.
+    ///
+    /// The reference's three guards, `queryStart < 0`, `queryEnd < 0` and `queryEnd < queryStart`,
+    /// are not here. From [`Baq::calc_baq_from_hmm`] they cannot fail, because
+    /// `calculate_query_range` answers only `0 <= start < end`; called directly, a bad range
+    /// reaches `hmm_glocal`'s own checks instead, with their messages.
     pub fn calc_baq_from_hmm_bases(
         &self,
         reference: &[u8],
@@ -749,6 +838,8 @@ impl Baq {
             query,
             query_start,
             query_len,
+            // A copy of the qualities, because `result` is lent out writable for `state` and `bq`
+            // in the same call and Rust allows no read of it alongside.
             &result.raw_quals.clone(),
             &mut result.state,
             &mut result.bq,
@@ -775,6 +866,7 @@ impl Baq {
         reference: &[u8],
         ref_offset: i32,
     ) -> Result<Option<BaqCalculationResult>, BaqError> {
+        // `Ok(None)` is the reference's `return null`; an `Err` is one of its exceptions.
         let Some((query_start, query_end)) = calculate_query_range(record) else {
             return Ok(None);
         };
@@ -826,7 +918,8 @@ impl Baq {
         Ok(Some(result))
     }
 
-    /// `capBaseByBAQ(oq, bq, state, expectedPos)`.
+    /// `capBaseByBAQ(oq, bq, state, expectedPos)`: `minBaseQual` for an indel state or a base
+    /// aligned away from `expectedPos`, otherwise `bq < oq ? bq : oq`.
     pub fn cap_base_by_baq(&self, oq: u8, bq: u8, state: i32, expected_pos: i32) -> u8 {
         if state_is_indel(state) || state_aligned_position(state) != expected_pos {
             self.min_base_qual

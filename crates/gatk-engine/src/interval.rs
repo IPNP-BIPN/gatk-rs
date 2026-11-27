@@ -1,5 +1,6 @@
 //! Ported from `org.broadinstitute.hellbender.utils.SimpleInterval`, `GenomeLoc`,
-//! `GenomeLocParser`, `IntervalUtils` and `htsjdk.samtools.util.OverlapDetector` (GATK 4.6.2.0).
+//! `GenomeLocParser`, `IntervalUtils` and `htsjdk.samtools.util.OverlapDetector` (GATK 4.7.0.0;
+//! the four GATK files are unchanged since 4.6.2.0).
 //!
 //! Intervals are 1-based and **closed at both ends**, which is the first thing to get wrong: a
 //! half-open port agrees on every interval of length one and disagrees by a base everywhere else,
@@ -12,11 +13,25 @@
 //! query against the sequence dictionary and produces *every* valid interpretation, then refuses
 //! the query if there is more than one. `IntervalUtils.getResolvedIntervals` is that resolution,
 //! and it splits on the **last** colon, not the first.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<SimpleInterval>` is "an interval or nothing". Where the reference's constructor
+//!   throws `IllegalArgumentException` on bad positions, or a method returns `null`, these answer
+//!   `None`.
+//! - `Result<T, ParseError>` is "a `T` or one of the refusals below", and `?` after a call returns
+//!   its error from the enclosing function at once.
+//! - `&query[a..b]` is Java's `substring(a, b)`. Rust counts bytes where Java counts UTF-16 units;
+//!   the indices here come from finding the ASCII `:` and `-`, so the two agree.
+//! - `let Some(x) = y else { return ...; };` unwraps an `Option` or takes the early exit.
 
 use htsjdk_bam::header::SamHeader;
 use htsjdk_bam::overlap::OverlapDetector;
 
 /// `SimpleInterval`: a contig with a 1-based, closed `[start, end]`.
+///
+/// The fields are public, so a struct literal skips the validation [`SimpleInterval::new`]
+/// makes, which the reference's constructor never does.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SimpleInterval {
     pub contig: String,
@@ -24,9 +39,11 @@ pub struct SimpleInterval {
     pub end: i32,
 }
 
-/// `SimpleInterval.END_OF_CONTIG`.
+/// `SimpleInterval.END_OF_CONTIG`, a `String` `"+"` upstream (for `endsWith`), a `char` here.
 const END_OF_CONTIG: char = '+';
+/// `SimpleInterval.CONTIG_SEPARATOR`.
 const CONTIG_SEPARATOR: char = ':';
+/// `SimpleInterval.START_END_SEPARATOR`.
 const START_END_SEPARATOR: char = '-';
 
 impl SimpleInterval {
@@ -47,16 +64,22 @@ impl SimpleInterval {
         })
     }
 
-    /// `SimpleInterval.isValid`.
+    /// `SimpleInterval.isValid`: `contig != null && start > 0 && end >= start`. The contig cannot
+    /// be null here, so only the positions are tested.
     pub fn is_valid(start: i32, end: i32) -> bool {
         start > 0 && end >= start
     }
 
     /// `SimpleInterval.parsePositionThrowOnFailure`: commas are stripped, so `1,000,000` parses.
+    ///
+    /// `return Integer.parseInt(pos.replaceAll(",", ""));`. `None` is the
+    /// `NumberFormatException`; `.parse().ok()` turns the parse's `Result` into an `Option`.
     pub fn parse_position(text: &str) -> Option<i32> {
         text.replace(',', "").parse().ok()
     }
 
+    /// `SimpleInterval.overlaps(Locatable)`, which is `overlapsWithMargin(other, 0)`: same contig
+    /// and the closed spans share a base. The locatable is passed as its three parts.
     pub fn overlaps(&self, contig: &str, start: i32, end: i32) -> bool {
         self.contig == contig && self.start <= end && start <= self.end
     }
@@ -71,6 +94,7 @@ impl SimpleInterval {
         self.contig == other.contig && self.start <= other.start && self.end >= other.end
     }
 
+    /// [`Self::overlaps`] against another interval.
     pub fn overlaps_interval(&self, other: &SimpleInterval) -> bool {
         self.overlaps(&other.contig, other.start, other.end)
     }
@@ -90,6 +114,10 @@ impl SimpleInterval {
 
     /// `SimpleInterval.expandWithinContig`, which is `trimIntervalToContig` on the padded bounds
     /// and therefore inherits its `None`.
+    ///
+    /// The reference first refuses a negative padding (`Utils.validateArg(padding >= 0, "padding
+    /// must be >= 0")`). This does not, so a negative padding shrinks the interval here; callers
+    /// that can pass one check it themselves.
     pub fn expand_within_contig(&self, padding: i32, contig_length: i32) -> Option<SimpleInterval> {
         trim_interval_to_contig(
             &self.contig,
@@ -106,6 +134,9 @@ impl SimpleInterval {
 /// The null is the point. An interval entirely off the contig is not an error and not an empty
 /// interval: it is a null that the caller has to notice. `AssemblyRegion`'s padding constructor
 /// does not, and reports the failure as a null padded span.
+///
+/// The reference also refuses a `contigLength` below 1 (`Utils.validateArg(contigLength >= 1,
+/// ...)`); here such a length answers `None`, because every start is then off the contig.
 pub fn trim_interval_to_contig(
     contig: &str,
     start: i32,
@@ -121,14 +152,18 @@ pub fn trim_interval_to_contig(
     }
 }
 
-/// What a query string can resolve to, kept apart from a plain failure.
+/// Why [`parse_interval`] refused a query. Upstream every refusal is a
+/// `UserException.MalformedGenomeLoc`, with different messages; which variant is chosen here is
+/// decided by the tests in [`parse_interval`], not by which reference branch threw.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
-    /// The query names no contig the dictionary declares.
+    /// No reading resolved, and the text before the query's *first* colon is not a contig.
     UnknownContig(String),
-    /// Two valid readings, for instance a contig literally named like an interval query.
+    /// Two valid readings, for instance a contig literally named like an interval query:
+    /// `getUnambiguousInterval` on a list of more than one.
     Ambiguous(String),
-    /// The positions are not a valid interval, or did not parse as numbers.
+    /// No reading resolved, and the text before the query's first colon is a contig: the
+    /// positions are not a valid interval, or did not parse as numbers.
     MalformedPositions(String),
 }
 
@@ -137,6 +172,10 @@ pub enum ParseError {
 /// The order matters and is the reference's: the whole-string-as-a-contig reading comes first, so
 /// a query that is both a contig name and an interval query resolves to the contig when the second
 /// reading turns out to be malformed.
+///
+/// Where the reference throws for malformed positions (when the whole-contig reading did not
+/// apply), this answers an empty list and leaves the refusal to [`parse_interval`]. The
+/// reference's `Utils.validateArg(!intervalQueryString.isEmpty(), ...)` is not repeated.
 pub fn resolved_intervals(query: &str, header: &SamHeader) -> Vec<SimpleInterval> {
     let mut resolved = Vec::new();
     if let Some(sequence) = header.sequences.iter().find(|s| s.name == query) {
@@ -156,12 +195,17 @@ pub fn resolved_intervals(query: &str, header: &SamHeader) -> Vec<SimpleInterval
         return resolved;
     };
 
+    // `positions` is `Some((start, end))` when both numbers parsed, `None` for the reference's
+    // `NumberFormatException`. `rfind` is `lastIndexOf`, `None` for -1.
     let last_dash = query.rfind(START_END_SEPARATOR);
+    // `strip_suffix` is `endsWith` plus the `substring(.., length() - 1)` that drops the `+`.
     let positions = if let Some(rest) = query.strip_suffix(END_OF_CONTIG) {
         // "prefix:nnn+" runs to the end of the contig.
         SimpleInterval::parse_position(&rest[last_colon + 1..])
             .map(|start| (start, prefix_sequence.length))
     } else if last_dash.is_some_and(|dash| dash > last_colon) {
+        // `lastDashIndex > lastColonIndex`; `is_some_and` is false for a missing dash, as -1 is
+        // never greater than a found colon. `Option::zip` is `Some` only when both parse.
         let dash = last_dash.unwrap();
         SimpleInterval::parse_position(&query[last_colon + 1..dash])
             .zip(SimpleInterval::parse_position(&query[dash + 1..]))
@@ -184,12 +228,19 @@ pub fn resolved_intervals(query: &str, header: &SamHeader) -> Vec<SimpleInterval
 }
 
 /// `GenomeLocParser.parseGenomeLoc`: one query string to one interval, or an error.
+///
+/// The reference first answers `GenomeLoc.UNMAPPED` for the string `unmapped` in any case
+/// (`isUnmappedGenomeLocString`); a `SimpleInterval` cannot hold that, and this has no such
+/// branch, so `unmapped` is an unknown contig here.
 pub fn parse_interval(query: &str, header: &SamHeader) -> Result<SimpleInterval, ParseError> {
     let query = query.trim();
     let resolved = resolved_intervals(query, header);
     match resolved.len() {
         // The reference distinguishes these two: an unknown contig and a malformed position are
         // different messages, and the second only surfaces when nothing else parsed.
+        //
+        // The contig tested here is the text before the *first* colon, where
+        // `resolved_intervals` splits on the last one.
         0 => {
             let contig = query.split(CONTIG_SEPARATOR).next().unwrap_or(query);
             if header.sequences.iter().any(|s| s.name == contig) {
@@ -198,12 +249,14 @@ pub fn parse_interval(query: &str, header: &SamHeader) -> Result<SimpleInterval,
                 Err(ParseError::UnknownContig(query.to_string()))
             }
         }
+        // Exactly one reading: take it out of the list.
         1 => Ok(resolved.into_iter().next().unwrap()),
         _ => Err(ParseError::Ambiguous(query.to_string())),
     }
 }
 
-/// `IntervalMergingRule`, whose default is `ALL`.
+/// `IntervalMergingRule`, whose default is `ALL`. `#[default]` marks the variant
+/// `MergingRule::default()` answers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MergingRule {
     /// Merge overlapping *and* adjacent intervals. `IntervalOverlapReadFilter` uses this one.
@@ -218,6 +271,10 @@ pub enum MergingRule {
 /// The sort is `GenomeLoc.compareTo`, which orders by *contig index* and not by contig name, so
 /// the dictionary's order is what decides. Sorting by name would put `chr10` before `chr2` and
 /// merge two intervals that the reference keeps apart.
+///
+/// A contig missing from the dictionary would sort last (`usize::MAX`); it cannot reach the sort,
+/// because [`parse_interval`] has already refused it. `sort_by_key` is stable, and two intervals
+/// with the same key are equal, so stability does not show.
 pub fn load_intervals(
     queries: &[String],
     header: &SamHeader,
@@ -239,6 +296,16 @@ pub fn load_intervals(
 }
 
 /// `IntervalUtils.mergeIntervalLocations` over a sorted list.
+///
+/// ```java
+/// if (prev.overlapsP(curr)) {
+///     prev = prev.merge(curr);
+/// } else if (prev.contiguousP(curr) && (rule == null || rule == IntervalMergingRule.ALL)) {
+///     prev = prev.merge(curr);
+/// ```
+///
+/// The contig test is by name here and by `contigIndex` upstream, which agree for contigs from
+/// one dictionary.
 pub fn merge_interval_locations(
     intervals: Vec<SimpleInterval>,
     rule: MergingRule,
@@ -247,6 +314,7 @@ pub fn merge_interval_locations(
         return intervals;
     }
     let mut merged: Vec<SimpleInterval> = Vec::new();
+    // At least two intervals, so the first `next()` is `Some`; `unwrap` takes it.
     let mut iter = intervals.into_iter();
     let mut previous = iter.next().unwrap();
     for current in iter {
@@ -259,6 +327,7 @@ pub fn merge_interval_locations(
             && (previous.start - 1) <= current.end
             && (current.start - 1) <= previous.end;
         if overlaps || (contiguous && rule == MergingRule::All) {
+            // `GenomeLoc.merge`: the smaller start and the larger stop.
             previous = SimpleInterval {
                 contig: previous.contig,
                 start: previous.start.min(current.start),
@@ -297,6 +366,8 @@ pub fn build_detector(intervals: Vec<SimpleInterval>) -> OverlapDetector<SimpleI
 }
 
 /// `OverlapDetector.overlapsAny` for a locatable whose contig may be absent.
+///
+/// `None` is the null contig of an unmapped read (see [`build_detector`]), which overlaps nothing.
 pub fn overlaps_any(
     detector: &OverlapDetector<SimpleInterval>,
     contig: Option<&str>,

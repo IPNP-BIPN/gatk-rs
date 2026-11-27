@@ -1,5 +1,5 @@
 //! Ported from `org.broadinstitute.hellbender.engine.ReferenceContext` and `ReadsContext`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `ReferenceContext.java` and `ReadsContext.java` are unchanged since 4.6.2.0).
 //!
 //! These are what a walker is handed at each position: the bases around it and the reads over it.
 //! Every annotation and every caller reads its inputs through them, so a window off by one base is
@@ -14,13 +14,25 @@
 //!  * near a contig edge the window is **smaller than asked for**, silently, and
 //!    `numWindowLeadingBases` reports what was actually obtained rather than what was requested;
 //!  * `getBases(leading, trailing)` expands from the **window**, not from the interval. After
-//!    `setWindow(10, 10)`, asking for five more bases each side gives thirty bases, not twenty:
-//!    the expansions compose rather than replace;
+//!    `setWindow(10, 10)`, asking for five more bases each side gives the interval plus fifteen
+//!    on each side, not plus five: the expansions compose rather than replace;
 //!  * `getBase()` indexes the window by `interval.start - window.start`, so it is the base at the
 //!    interval's start whatever the window did, including when cropping shortened the lead.
 //!
 //! And what comes back is not the FASTA's bytes: every query goes through the upper-casing and
 //! IUPAC flattening documented in [`crate::reference`].
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<SimpleInterval>` is a nullable interval; `None` is the reference's `null`, and most
+//!   of the null checks below are a `match` or a `let ... else` on it.
+//! - `Result<T, ContextError>` is "a `T` or a refusal"; `Err` is where the reference throws. A `?`
+//!   returns the callee's error from the function at once, and `impl From<ReferenceError>` is what
+//!   lets `?` wrap a query's own error as `ContextError::Reference`.
+//! - `&mut self` on a method means it may change the context (here, fill the cache); `&self` means
+//!   it only reads. `&mut ReferenceFileSource` is the same for the data source.
+//! - `let (Some(a), Some(b)) = (x, y) else { ... };` unwraps two `Option`s at once, or takes the
+//!   early exit if either is `None`.
 
 use crate::interval::SimpleInterval;
 use crate::reference::{ReferenceError, ReferenceFileSource};
@@ -32,12 +44,14 @@ pub enum ContextError {
     NegativeWindow,
     /// `trimToContigLength`: the reference has no such contig. A `UserException`.
     ContigNotInReference(String),
-    /// The window does not contain the interval, or a padding is negative.
+    /// The window does not contain the interval, or a padding is negative. Also where the
+    /// reference would fail on a null or an out-of-range index rather than validate.
     InvalidArgument,
     /// The query itself failed; see [`ReferenceError`].
     Reference(ReferenceError),
 }
 
+/// Lets `?` turn a [`ReferenceError`] into a [`ContextError`].
 impl From<ReferenceError> for ContextError {
     fn from(error: ReferenceError) -> Self {
         ContextError::Reference(error)
@@ -51,8 +65,11 @@ impl From<ReferenceError> for ContextError {
 /// window drops it, is the reference's and is kept.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReferenceContext {
+    /// `interval`: where the walker is.
     interval: Option<SimpleInterval>,
+    /// `window`: the interval expanded and cropped to the contig, or `None` when the interval is.
     window: Option<SimpleInterval>,
+    /// `cachedSequence`: the window's bases once `getBases()` has queried them.
     cached: Option<Vec<u8>>,
     /// Whether there is a backing data source. Separate from the window on purpose: a context
     /// with no reference still has a window, and only its *bases* are empty.
@@ -84,6 +101,7 @@ impl ReferenceContext {
     ///
     /// A non-zero window would need the sequence dictionary to crop, and with no data source the
     /// reference throws a `NullPointerException` there; that is [`ContextError::InvalidArgument`].
+    /// The negative test comes first, as `setWindow` makes it before it crops.
     pub fn without_source(
         interval: Option<SimpleInterval>,
         leading: i32,
@@ -107,6 +125,9 @@ impl ReferenceContext {
     ///
     /// `interval == None` is the "no known location" case, which answers every query with an
     /// empty array rather than an error.
+    ///
+    /// The constructor is `setWindow(windowLeadingBases, windowTrailingBases)` on a fresh context,
+    /// so its refusals are `setWindow`'s.
     pub fn new(
         source: &ReferenceFileSource,
         interval: Option<SimpleInterval>,
@@ -139,6 +160,10 @@ impl ReferenceContext {
     }
 
     /// `new ReferenceContext(dataSource, interval, window)`: an explicit window, still cropped.
+    ///
+    /// The two `Utils.validateArg` checks, in order: a window needs an interval, and the window
+    /// must contain the interval. The cropped window takes the interval's contig, as upstream
+    /// (`new SimpleInterval(interval.getContig(), ...)`).
     pub fn with_window(
         source: &ReferenceFileSource,
         interval: Option<SimpleInterval>,
@@ -162,7 +187,8 @@ impl ReferenceContext {
                     end: trim_to_contig_length(source, &interval.contig, window.end)?,
                 })
             }
-            // The windowless case: the window *is* the interval.
+            // The windowless case: the window *is* the interval. `_` matches every remaining
+            // combination of the pair, which the compiler checks is all of them.
             _ => interval.clone(),
         };
         Ok(ReferenceContext {
@@ -178,15 +204,21 @@ impl ReferenceContext {
         self.backed
     }
 
+    /// `getInterval`. `.as_ref()` lends the interval out without copying it.
     pub fn interval(&self) -> Option<&SimpleInterval> {
         self.interval.as_ref()
     }
 
+    /// `getWindow`.
     pub fn window(&self) -> Option<&SimpleInterval> {
         self.window.as_ref()
     }
 
     /// `setWindow`: negative counts throw, and a `(0, 0)` window is the interval itself.
+    ///
+    /// The reference throws a `GATKException` with a different message for each side ("Reference
+    /// window starts after the current interval", "Reference window ends before the current
+    /// interval"); both are [`ContextError::NegativeWindow`] here.
     pub fn set_window(
         &mut self,
         source: &ReferenceFileSource,
@@ -198,6 +230,7 @@ impl ReferenceContext {
         }
         self.window = match &self.interval {
             None => None,
+            // `Some(..) if ..` is a match arm with an extra condition, tried before the next arm.
             Some(interval) if leading == 0 && trailing == 0 => Some(interval.clone()),
             Some(interval) => Some(SimpleInterval {
                 contig: interval.contig.clone(),
@@ -219,7 +252,7 @@ impl ReferenceContext {
         }
     }
 
-    /// `numWindowTrailingBases`.
+    /// `numWindowTrailingBases`: as [`Self::num_window_leading_bases`], at the contig end.
     pub fn num_window_trailing_bases(&self) -> i32 {
         match (&self.interval, &self.window) {
             (Some(interval), Some(window)) => window.end - interval.end,
@@ -227,7 +260,8 @@ impl ReferenceContext {
         }
     }
 
-    /// `getBases()`: the whole window, cached.
+    /// `getBases()`: the whole window, cached. Empty with no data source or no window, as the
+    /// reference's `dataSource == null || window == null` test answers.
     pub fn bases(&mut self, source: &mut ReferenceFileSource) -> Result<Vec<u8>, ContextError> {
         if !self.backed {
             return Ok(Vec::new());
@@ -238,10 +272,15 @@ impl ReferenceContext {
         if self.cached.is_none() {
             self.cached = Some(source.query(&window.contig, window.start, window.end)?);
         }
+        // The cache was filled just above, so `unwrap_or_default` never takes its default. The
+        // clone hands the caller its own copy; the reference returns the cached array itself.
         Ok(self.cached.clone().unwrap_or_default())
     }
 
     /// `getBases(window)`: an arbitrary window, trimmed, and **not** cached.
+    ///
+    /// The reference first answers empty when `dataSource == null`; this has no such test, so a
+    /// context built without a source still queries the source it is handed.
     pub fn bases_of(
         &self,
         source: &mut ReferenceFileSource,
@@ -257,6 +296,13 @@ impl ReferenceContext {
     /// This is the one that surprises. On a context already built with `setWindow(10, 10)`, asking
     /// for five more each side returns the interval plus fifteen on each side, because the counts
     /// are added to the window's bounds rather than the interval's.
+    ///
+    /// ```java
+    /// trimToContigStart(window.getStart() - windowLeadingBases),
+    /// trimToContigLength(window.getContig(), window.getEnd() + windowTrailingBases)
+    /// ```
+    ///
+    /// As with [`Self::bases_of`], the reference's `dataSource == null` test is not repeated here.
     pub fn bases_expanded(
         &self,
         source: &mut ReferenceFileSource,
@@ -272,6 +318,12 @@ impl ReferenceContext {
     }
 
     /// `getForwardBases()`: from the interval's start to the end of the window.
+    ///
+    /// ```java
+    /// return new String(bases).substring(mid).getBytes();
+    /// ```
+    ///
+    /// A missing interval or window answers empty here, where the reference dereferences them.
     pub fn forward_bases(
         &mut self,
         source: &mut ReferenceFileSource,
@@ -294,6 +346,9 @@ impl ReferenceContext {
         let (Some(interval), Some(window)) = (&self.interval, &self.window) else {
             return Err(ContextError::InvalidArgument);
         };
+        // `getBases()[interval.getStart() - window.getStart()]`. `.get(index)` answers `None`
+        // past the end, where the reference throws `ArrayIndexOutOfBoundsException`, as it does on
+        // a context with no data source (empty bases).
         let index = (interval.start - window.start) as usize;
         bases
             .get(index)
@@ -306,6 +361,18 @@ impl ReferenceContext {
     /// The null case is a real answer rather than a failure: at a contig edge the window cannot
     /// expand to the requested size, and the reference declines to return a shorter kmer. A port
     /// that padded or truncated would give every caller a kmer the reference never produced.
+    ///
+    /// ```java
+    /// final SimpleInterval newWindow = new SimpleInterval(window.getContig(), center, center)
+    ///         .expandWithinContig(numBasesOnEachSide, getContigLength(window.getContig()));
+    ///
+    /// if (newWindow.getEnd() - newWindow.getStart() < 2*numBasesOnEachSide){
+    ///     return null;
+    /// }
+    /// ```
+    ///
+    /// `Ok(None)` is that `null`; an `Err` is where the reference throws, whether by a
+    /// `validateArg` or by dereferencing a null window or trimmed interval.
     pub fn kmer_around(
         &self,
         source: &mut ReferenceFileSource,
@@ -332,11 +399,13 @@ impl ReferenceContext {
     }
 }
 
-/// `trimToContigStart`.
+/// `trimToContigStart`: `Math.max(start, 1)`.
 fn trim_to_contig_start(start: i32) -> i32 {
     start.max(1)
 }
 
+/// The dictionary length of `contig`, refused with the reference's `UserException` ("Given
+/// reference file does not have data at the requested contig") when the contig is absent.
 fn contig_length(source: &ReferenceFileSource, contig: &str) -> Result<usize, ContextError> {
     source
         .sequence_length(contig)
@@ -365,9 +434,14 @@ pub struct ReadsContext<'a> {
 }
 
 /// The `ReadFilter` a context may carry, which is `null` for most walkers.
+///
+/// `Box<dyn Fn(..) -> bool + 'a>` is an owned closure that may borrow data for `'a`: a
+/// `Predicate<GATKRead>` held by the context.
 pub type ReadFilterFn<'a> = Box<dyn Fn(&htsjdk_bam::record::BamRecord) -> bool + 'a>;
 
 impl<'a> ReadsContext<'a> {
+    /// `new ReadsContext(dataSource, interval, readFilter)`; `None` for any of the three is the
+    /// reference's `null`.
     pub fn new(
         source: Option<&'a crate::reads::ReadsDataSource>,
         interval: Option<SimpleInterval>,
@@ -380,15 +454,22 @@ impl<'a> ReadsContext<'a> {
         }
     }
 
+    /// `hasBackingDataSource`.
     pub fn has_backing_data_source(&self) -> bool {
         self.source.is_some()
     }
 
+    /// `getInterval`.
     pub fn interval(&self) -> Option<&SimpleInterval> {
         self.interval.as_ref()
     }
 
     /// `iterator()`, and `iterator(interval)` when given one.
+    ///
+    /// `None` here means `iterator()`, which is `iterator(this.interval)`; there is no way to ask
+    /// for the reference's `iterator(null)`, which would answer empty. The reads are collected
+    /// rather than streamed, and the filter keeps what `ReadFilteringIterator` would yield, in
+    /// the same order.
     pub fn reads(
         &self,
         interval: Option<&SimpleInterval>,
@@ -397,6 +478,8 @@ impl<'a> ReadsContext<'a> {
         let (Some(source), Some(interval)) = (self.source, interval) else {
             return Ok(Vec::new());
         };
+        // `std::slice::from_ref` views the single interval as a one-element list, which is what
+        // the source's query takes.
         let records = source.query(std::slice::from_ref(interval))?;
         Ok(match &self.filter {
             None => records,

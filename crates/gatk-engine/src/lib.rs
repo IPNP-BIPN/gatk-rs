@@ -1,9 +1,99 @@
 //! The GATK engine, ported from `org.broadinstitute.hellbender.engine` and the utilities it rests
-//! on (GATK 4.6.2.0).
+//! on. The target is GATK 4.7.0.0; each module's own header names the Java files it ports and the
+//! version it was checked against.
 //!
 //! The first thing here is intervals, because they are what `-L` means and what every walker
 //! restricts itself to. A tool given the wrong interval reads the wrong data and every number it
 //! produces is wrong in a way no downstream comparison can attribute.
+//!
+//! # A map of the modules
+//!
+//! Every module below is listed once, under what it ports. The tools themselves live in the
+//! `gatk-tools` crate; this crate is what they share.
+//!
+//! **Intervals and arguments** (`utils.IntervalUtils`, `GenomeLoc`, the argument collections):
+//! [`interval`] resolves one `-L` string; [`interval_args`] and [`interval_arguments`] are the
+//! collection that combines several with padding and set rules; [`feature_intervals`] is `-L`
+//! given a feature file; [`interval_list_scatter`] is Picard's `IntervalList` scatter modes.
+//!
+//! **Data sources and traversal** (`org.broadinstitute.hellbender.engine`): [`reads`],
+//! [`mod@reference`], [`features`] and [`variant_source`] are the read, reference and feature data
+//! sources; [`context`] is the `ReferenceContext` and `ReadsContext` a walker is handed;
+//! [`context_iterator`], [`locus_iterator`], [`read_states`] and [`alignment_state`] are the locus
+//! traversal under `LocusWalker`; [`locus_shards`], [`activity_profile`], [`assembly_region`],
+//! [`assembly_region_iterator`] and [`assembly_region_walker`] are the assembly-region traversal;
+//! [`multi_feature_walker`] and [`concordance_walker`] are the two walker bases that merge several
+//! inputs.
+//!
+//! **Downsampling and the shared random streams** (`utils.downsampling`, and the two static
+//! generators in `utils.Utils`): [`downsampling`] and [`allele_biased_downsampling`];
+//! [`java_random`] (`java.util.Random`, from its specification), [`well19937c`] and
+//! [`permutation`] (commons-math3, Apache 2.0).
+//!
+//! **Reads, cigars and pileups** (`utils.read`, `utils.clipping`, `utils.pileup`): [`read`],
+//! [`read_utils`] and [`read_group`] are the `GATKRead` accessors; [`cigar_builder`],
+//! [`cigar_utils`], [`clipping`] and [`alignment_utils`] build, clip and left-align cigars;
+//! [`read_realignment`] realigns reads through their best haplotype; [`sa_tag`] is the `SA` tag;
+//! [`base_utils`] is what a base is; [`pileup`], [`read_pileup`] and [`sam_pileup`] are pileups;
+//! [`fragment`] groups a read pair's evidence; [`overhang_fixing_manager`] is the overhang
+//! clipping of `SplitNCigarReads`.
+//!
+//! **Local assembly** (`tools.walkers.haplotypecaller`): [`assembly_based_caller_utils`],
+//! [`assembly_region_trimmer`], [`assembly_result_set`], [`read_threading_assembler`],
+//! [`read_threading_graph`], [`seq_graph`], [`kbest_haplotype`] and [`graph_dot`] take a region's
+//! reads to candidate haplotypes; [`haplotype`], [`haplotype_alignment`],
+//! [`partially_determined`] and [`event_map`] are the haplotype and the variants it carries;
+//! [`smith_waterman`] is the aligner; [`pileup_read_error_corrector`] is
+//! `--error-correction-log-odds`; [`allele_mapping`] turns haplotypes into the alleles genotyped;
+//! [`genotyper_debug`] is `--debug-genotyper-output`.
+//!
+//! **Likelihoods and genotyping** (`utils.pairhmm`, `utils.genotyper`, `tools.walkers.genotyper`):
+//! [`pair_hmm`], [`pd_pair_hmm`], [`pair_hmm_likelihood_engine`] and [`dragstr`] score reads
+//! against haplotypes; [`baq`] is base alignment quality (`utils.baq`); [`allele_likelihoods`] and
+//! [`allele_list`] are the likelihood matrix and its axes; [`genotype_index`],
+//! [`genotype_likelihood_calculator`], [`dragen_genotypes`], [`allele_frequency_calculator`] and
+//! [`subset_alleles`] are genotyping and QUAL; [`variant_context_utils`], [`tandem_repeat_units`]
+//! and [`variant_getters`] are the `GATKVariantContextUtils` and `VariantContextGetters` pieces the
+//! callers and annotations use.
+//!
+//! **Mutect2 and its filters** (`tools.walkers.mutect`): [`somatic_likelihoods`];
+//! [`filtering_engine`], [`mutect_engine`], [`accumulate_data`] and [`apply_filters`] are
+//! `Mutect2FilteringEngine` and its passes; [`mutect_filter_list`], [`mutect_hard_filters`],
+//! [`allele_filter`], [`contamination_filter`], [`germline_filter`], [`haplotype_filter`],
+//! [`normal_artifact_filter`], [`slippage_filter`] and [`strand_artifact_filter`] are the
+//! filters; [`error_probabilities`], [`filtering_stats`] and [`threshold_calculator`] are what
+//! the filters produce; [`somatic_clustering_model`] and [`allele_fraction_cluster`] are the
+//! clustering model.
+//!
+//! **Contamination and validation** (`tools.walkers.contamination`, `tools.walkers.validation`):
+//! [`contamination_model`], [`contamination_segmenter`], [`contamination_tables`],
+//! [`pileup_summary`] and [`kernel_segmenter`] are `CalculateContamination`;
+//! [`allele_pileup_counter`], [`basic_somatic_short_mutation_validator`], [`beta_binomial`] and
+//! [`somatic_validation_power`] are the basic short-mutation validator.
+//!
+//! **Base recalibration** (`utils.recalibration`, `transformers`): [`base_recalibration_engine`],
+//! [`covariates`], [`recal_datum`], [`recalibration_tables`], [`qual_quantizer`],
+//! [`recal_utils`], [`recalibration_report`] and [`bqsr_transformer`]; [`gatk_report`] is the
+//! report format they are written in.
+//!
+//! **Numerics** (`utils.MathUtils` and its neighbours, and the commons-math3 classes GATK calls):
+//! [`math_utils`], [`natural_log_utils`], [`fisher_exact`], [`mann_whitney`] and [`histogram`];
+//! [`brent_optimizer`], [`singular_value_decomposition`], [`persistence_optimizer`] and
+//! [`copy_number_mcmc`].
+//!
+//! **Behaviour of libraries outside GATK that shows in the output**: [`java_format`] (`%f`),
+//! [`java_hash`] (the iteration order a `HashSet` gives), [`java_regex`] (a measured
+//! `java.util.regex` subset), [`jexl`] (Commons JEXL 2.1.1) and [`kryo`] (Kryo 4's `Output`).
+//! Each header says how that behaviour was established.
+//!
+//! **PathSeq's k-mer file**: [`hopscotch`] is GATK's own `tools.spark.utils.LongHopscotchSet`,
+//! whose iteration order the file written through `kryo` carries.
+//!
+//! **Tables and files**: [`tsv_table`] (`utils.tsv`), [`tranches`] (VQSR's tranches file) and
+//! [`sample_db`] (pedigrees).
+//!
+//! **[`gpu`]**: a second implementation of paths that are already byte-identical, shipped only
+//! while it produces the same bytes.
 
 pub mod accumulate_data;
 pub mod activity_profile;

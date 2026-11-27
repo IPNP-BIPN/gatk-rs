@@ -3,7 +3,10 @@
 //! `CalculateContamination` reaches this class through `ContaminationSegmenter`, and it is the only
 //! thing in the port that needs a singular value decomposition. This module carries the part the
 //! `kernel-segmentation` golden pins directly: the subsampled kernel matrix that
-//! [`crate::singular_value_decomposition`] is handed.
+//! [`crate::singular_value_decomposition`] is handed. The same golden
+//! (`crates/gatk-engine/tests/data/kernel_segmentation.txt.gz`) holds the changepoints this module
+//! returns: `changepoints two-steps 29,59`, `changepoints flat (none)`, five for the ramp.
+//! `ModelSegments` reaches it too, through `find_changepoints_of`.
 //!
 //! # The subsample is seeded, and the seed is the whole comparison
 //!
@@ -14,8 +17,10 @@
 //! and every comparison downstream would be meaningless rather than wrong.
 //!
 //! Note the reference draws **with replacement** and does not sort: the same data point can appear
-//! twice in the subsample, and the matrix then has repeated rows, which is where the rank
-//! deficiency the decomposition reports comes from.
+//! twice in the subsample, and the matrix then has repeated rows. Two points with the same value
+//! give repeated rows as well, and in the golden that is what decides the rank: the `two-steps`
+//! series has three levels and three singular values above rounding noise, `flat` has one level
+//! and five exact zeros, and the `ramp`, whose every point differs, has none.
 //!
 //! # Which `exp` the kernel uses depends on the caller
 //!
@@ -23,6 +28,23 @@
 //! and is [`jmath::fast_math::exp`] here. The `kernel-segmentation` dump calls `Math.exp`, so the
 //! golden's matrices are the platform's. The kernel is a parameter for exactly that reason: this
 //! module does not choose one, the caller does, and the two are not the same function.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[f64]` is a borrowed, read-only view of a `double[]`; `&[Vec<f64>]` the same of a
+//!   `double[][]` (Java's `RealMatrix` here, rows outer). `Vec` is an array that owns its storage.
+//! - `K: Fn(f64, f64) -> f64 + Copy` is the kernel, Java's `BiFunction<DATA, DATA, Double>`
+//!   without the boxing. `Copy` lets one kernel be handed to several helpers. `|a, b| ...` is a
+//!   lambda, and `move` makes it keep its own copy of what it captures.
+//! - The `_of` functions take any data type `T` and borrow each point as `&T`; the `f64` versions
+//!   wrap them, and `*a` reads the value behind a borrowed `&f64`.
+//! - `.iter().map(..).collect()` is Java's `stream().map(..).collect(..)`, and
+//!   `.fold(start, |best, value| ..)` is `reduce` with a starting value.
+//! - `if let Some(i) = list.iter().position(..)` runs its body only when a match was found;
+//!   `.expect("..")` takes the value out of an `Option` and stops the program, with that message,
+//!   if there is none.
+//! - `usize` is an unsigned index type: subtracting past zero is a crash, not a negative number,
+//!   so a Java `int` expression that dips below zero is reordered where noted.
 
 use crate::java_random::JavaRandom;
 
@@ -33,7 +55,16 @@ pub const SEGMENTATION_KERNEL_VARIANCE: f64 = 0.025;
 ///
 /// The reference folds each fraction to its minor allele fraction first, `min(af, 1 - af)`, so a
 /// site at 0.8 and a site at 0.2 are the same point to the kernel. `FastMath.min` propagates NaN,
-/// which `f64::min` does not, so the fold is written out.
+/// which `f64::min` does not, so the fold is written out. `ContaminationSegmenter.java:25`:
+///
+/// ```java
+/// final double maf1 = FastMath.min(ps1.getAltFraction(), 1 - ps1.getAltFraction());
+/// ```
+///
+/// and the line after it the same for `ps2`. The next line, `ContaminationSegmenter.java:27`,
+/// takes commons-math's own exponential of
+/// `-MathUtils.square(maf1 - maf2)/(2 * SEGMENTATION_KERNEL_VARIANCE)`, in that order: square,
+/// negate, then divide.
 pub fn segmentation_kernel(first: f64, second: f64) -> f64 {
     let maf1 = java_min(first, 1.0 - first);
     let maf2 = java_min(second, 1.0 - second);
@@ -67,6 +98,21 @@ fn java_min(a: f64, b: f64) -> f64 {
 /// The matrix is filled the reference's way, lower triangle first with each value mirrored, then
 /// the diagonal. That matters: the diagonal is `kernel(x, x)` computed separately rather than
 /// assumed to be one, so a kernel that is not exactly one on the diagonal keeps its value.
+/// `KernelSegmenter.java:213-220`:
+///
+/// ```java
+/// for (int i = 0; i < numSubsample; i++) {
+///     for (int j = 0; j < i; j++) {
+///         final double value = kernel.apply(dataSubsample.get(i), dataSubsample.get(j));
+///         subKernelMatrix.setEntry(i, j, value);
+///         subKernelMatrix.setEntry(j, i, value);
+///     }
+///     subKernelMatrix.setEntry(i, i, kernel.apply(dataSubsample.get(i), dataSubsample.get(i)));
+/// }
+/// ```
+///
+/// The kernel is called as `kernel(row point, column point)` with the row's index the larger, so
+/// a kernel that is not symmetric in its last bit still fills the matrix the reference's way.
 pub fn sub_kernel_matrix<K>(data: &[f64], dimension: usize, kernel: K) -> Vec<Vec<f64>>
 where
     K: Fn(f64, f64) -> f64,
@@ -97,6 +143,11 @@ where
 /// The indices of the subsampled points: all of them in order when the dimension reaches the
 /// data size, else `rng.nextInt(size)` drawn once per point, with replacement, from
 /// `new Random(1216)`.
+///
+/// The reference subsamples `data` itself, as a list of points (`KernelSegmenter.java:206-208`);
+/// the port keeps the indices, which pick the same points in the same order. `num_subsample` is
+/// `Math.min(kernelApproximationDimension, data.size())` (`KernelSegmenter.java:204`), and the
+/// generator is a fresh one per call, so every caller in this file sees the same draws.
 fn subsample_indices(size: usize, dimension: usize) -> Vec<usize> {
     let mut rng = JavaRandom::new(RANDOM_SEED);
     let num_subsample = dimension.min(size);
@@ -109,7 +160,8 @@ fn subsample_indices(size: usize, dimension: usize) -> Vec<usize> {
     }
 }
 
-/// `KernelSegmenter.EPSILON`, which is not the decomposition's epsilon.
+/// `KernelSegmenter.EPSILON`, which is not the decomposition's epsilon: `1E-10` at
+/// `KernelSegmenter.java:89`.
 pub const EPSILON: f64 = 1e-10;
 
 /// `ChangepointSortOrder`.
@@ -130,6 +182,10 @@ pub enum ChangepointSortOrder {
 ///
 /// The two matrix walks are the reference's, and so is the multiplication order: commons-math
 /// accumulates `sum += row[i] * column[i]` in index order, so the sum is written the same way here.
+///
+/// The inverse roots are `KernelSegmenter.java:228`,
+/// `.map(Math::sqrt).map(x -> 1. / (x + EPSILON))`: square root first, then the epsilon added,
+/// then the reciprocal, which is the order below.
 pub fn reduced_observation_matrix<K>(data: &[f64], dimension: usize, kernel: K) -> Vec<Vec<f64>>
 where
     K: Fn(f64, f64) -> f64 + Copy,
@@ -163,7 +219,9 @@ where
         }
     }
 
-    // `reducedKernelMatrix`: every data point against every subsampled point.
+    // `reducedKernelMatrix`: every data point against every subsampled point. `iter_mut()` hands
+    // out each row (then each entry) as a writable reference, `enumerate()` pairs it with its
+    // index, and `*entry = ..` writes through the reference.
     let mut reduced = vec![vec![0.0; num_subsample]; data.len()];
     for (i, row) in reduced.iter_mut().enumerate() {
         for (j, entry) in row.iter_mut().enumerate() {
@@ -171,6 +229,7 @@ where
         }
     }
 
+    // `reducedKernelMatrix.multiply(subKernelUMatrix)` (`KernelSegmenter.java:243`).
     let mut product = vec![vec![0.0; num_subsample]; data.len()];
     for row in 0..data.len() {
         for column in 0..num_subsample {
@@ -220,6 +279,12 @@ struct Cost {
 }
 
 /// `calculateSegmentCost`, both indices inclusive, wrapping when `start > end`.
+///
+/// The cost is Eq. 11 of the paper the reference cites, built by recurrence: each added point
+/// `tau'` adds its diagonal term to `D`, `2 Z_tau' . W + K_tau'tau'` to `V`, and its row to `W`.
+/// The dot product is taken before the row is added, statement by statement as the reference has
+/// it (`KernelSegmenter.java:409-417`). The cost is `D - V / (indices.size() + 1)`, an `int`
+/// count that Java promotes to `double`, which `as f64` does here.
 fn segment_cost(start: usize, end: usize, reduced: &[Vec<f64>], diagonal: &[f64]) -> Cost {
     let n = reduced.len();
     let p = if n == 0 { 0 } else { reduced[0].len() };
@@ -230,7 +295,8 @@ fn segment_cost(start: usize, end: usize, reduced: &[Vec<f64>], diagonal: &[f64]
     let squares: Vec<f64> = w.iter().map(|value| value * value).collect();
     let mut v = crate::copy_number_mcmc::double_stream_sum(&squares);
 
-    // The reference wraps around the beginning of the data when the segment does.
+    // The reference wraps around the beginning of the data when the segment does. `.chain` is
+    // `IntStream.concat`: the tail of the data, then its head.
     let indices: Vec<usize> = if start <= end {
         ((start + 1)..(end + 1)).collect()
     } else {
@@ -258,6 +324,9 @@ fn window_costs(reduced: &[Vec<f64>], diagonal: &[f64], window_size: usize) -> V
     let n = reduced.len();
     let p = if n == 0 { 0 } else { reduced[0].len() };
 
+    // `int start = (center - windowSize + 1 + N) % N;` in the reference. The terms are reordered so
+    // the unsigned sum never goes below zero: `findChangepointCandidates` only calls this with
+    // `2 * windowSize <= N`, so `n - window_size` is never negative and the value is the same.
     let mut center = 0usize;
     let mut start = (center + n - window_size + 1) % n;
     let mut end = (center + window_size) % n;
@@ -276,6 +345,7 @@ fn window_costs(reduced: &[Vec<f64>], diagonal: &[f64], window_size: usize) -> V
     let window_size_reciprocal = 1.0 / window_size as f64;
 
     // Slide the three segments one point at a time, updating by recurrence rather than recomputing.
+    // The reference's loop variable is `center` itself, declared above; `c` is copied into it.
     for c in 0..n {
         center = c;
         let center_next = (center + 1) % n;
@@ -320,7 +390,9 @@ fn window_costs(reduced: &[Vec<f64>], diagonal: &[f64], window_size: usize) -> V
         right_c = right_d - right_v * window_size_reciprocal;
 
         // The total segment loses the first point and gains the point past the end. Note the half:
-        // it spans two windows, so its reciprocal is halved rather than doubled.
+        // it spans two windows, so its reciprocal is halved rather than doubled. The product is
+        // `(0.5 * total_v) * window_size_reciprocal`, left to right as Java evaluates
+        // `0.5 * totalV * windowSizeReciprocal`, not `total_v * (0.5 * reciprocal)`.
         total_d -= diagonal[start];
         z_dot_w = 0.0;
         for j in 0..p {
@@ -368,13 +440,18 @@ fn changepoint_candidates(
             .expect("the window costs are never empty")
             .minima_indices;
         let mut minima: Vec<usize> = minima;
-        // `List.remove(Object)` removes the first occurrence, and there is only ever one.
+        // `List.remove(Object)` removes the first occurrence, and there is only ever one. It is the
+        // `Object` overload because the reference boxes the index (`KernelSegmenter.java:276`):
+        // `windowCostLocalMinima.remove(Integer.valueOf(0));`, so it removes the value 0 rather
+        // than the element at position 0.
         if let Some(position) = minima.iter().position(|index| *index == 0) {
             minima.remove(position);
         }
         if let Some(position) = minima.iter().position(|index| *index == data_size - 1) {
             minima.remove(position);
         }
+        // The first `maxNumChangepoints` minima at most, the reference's `subList` at
+        // `KernelSegmenter.java:278`.
         candidates.extend(minima.into_iter().take(max_num_changepoints));
     }
     candidates
@@ -383,7 +460,10 @@ fn changepoint_candidates(
 /// `calculateChangepointPenalty`: `A * C + B * C * log(N / (C + EPSILON))`.
 ///
 /// The epsilon keeps the logarithm finite at zero changepoints, where the whole term is multiplied
-/// by zero anyway. `Math.log` is correctly rounded, which is what [`jmath::math::log`] implements.
+/// by zero anyway. `Math.log` was measured correctly rounded on the conformance corpus
+/// (htsjdk-rs decision 0006), which is what [`jmath::math::log`] implements. The reference is
+/// `KernelSegmenter.java:375-376`, the same products in the same order; `num_data` is an `int`
+/// divided by a `double` there, which `as f64` reproduces.
 fn changepoint_penalty(
     num_changepoints: usize,
     linear_factor: f64,
@@ -409,8 +489,11 @@ struct Segment {
 
 /// `selectChangepoints`: merge the cheapest adjacent pair until one segment is left.
 ///
-/// The changepoints come out in the order they were merged away, which is increasing cost, and the
-/// penalty then decides how many of them to keep.
+/// Each step merges the adjacent pair whose merge raises the total cost least (the largest
+/// `costsForMergingSegmentPairs`), and its mergepoint is inserted at the **front** of the list
+/// (`changepoints.add(0, mergepoint)`, `KernelSegmenter.java:357`). So the changepoints come out
+/// in the reverse of the order they were merged away, the last one merged first. The penalty then
+/// decides how many of the leading ones to keep.
 fn select_changepoints(
     candidates: &[usize],
     max_num_changepoints: usize,
@@ -426,7 +509,8 @@ fn select_changepoints(
         .map(|count| changepoint_penalty(count, linear_factor, log_linear_factor, num_data))
         .collect();
 
-    // `sorted().distinct()`, then the starts shifted by one and clamped to the last index.
+    // `sorted().distinct()`, then the starts shifted by one and clamped to the last index. An
+    // unstable sort is safe here: equal integers cannot be told apart, so the order is the same.
     let mut sorted: Vec<usize> = candidates.to_vec();
     sorted.sort_unstable();
     sorted.dedup();
@@ -461,6 +545,8 @@ fn select_changepoints(
         .map(|i| costs_for_pairs[i] - costs_for_merged[i])
         .collect();
 
+    // `starts` always holds the leading 0, so `num_segments - 1` cannot go below zero. With no
+    // candidates there is one segment and nothing to merge.
     for _ in 0..(num_segments - 1) {
         // `Collections.max` keeps the first of equal values, and `indexOf` then finds that first
         // one, so ties go to the leftmost pair.
@@ -537,11 +623,14 @@ fn select_changepoints(
                 best
             }
         });
+    // `Collections.min` then `indexOf`, as for the maximum above: the first of equal minima wins,
+    // so a tie keeps fewer changepoints.
     let optimal = with_penalties
         .iter()
         .position(|value| value.to_bits() == minimum.to_bits())
         .expect("the minimum is in the list");
 
+    // `changepoints.subList(0, numChangepointsOptimal)`.
     changepoints.truncate(optimal);
     changepoints
 }
@@ -552,7 +641,9 @@ fn select_changepoints(
 /// checking the transcription than a struct would be.
 ///
 /// The argument checks the reference makes are the caller's business here: this port is reached
-/// from `ContaminationSegmenter`, which passes constants. The two early returns are kept, because
+/// from `ContaminationSegmenter`, which passes constants, and from `ModelSegments`, whose tool
+/// refuses empty or non-positive window sizes itself before the call (`model_segments_tool.rs`).
+/// The two early returns are kept, because
 /// they are the reference's answers rather than its refusals: no changepoints requested, or no
 /// data, and the list is empty.
 #[allow(clippy::too_many_arguments)]

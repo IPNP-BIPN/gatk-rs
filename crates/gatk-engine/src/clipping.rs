@@ -1,5 +1,5 @@
 //! Ported from `org.broadinstitute.hellbender.utils.clipping.ClippingOp`, `ClippingRepresentation`
-//! and `ReadClipper` (GATK 4.6.2.0).
+//! and `ReadClipper` (GATK 4.7.0.0; all three Java files are unchanged since 4.6.2.0).
 //!
 //! Clipping rewrites the read itself: its bases, its qualities, its cigar, its alignment start and,
 //! for a flow read group, some of its tags. Everything downstream reads the clipped read, so a
@@ -10,12 +10,26 @@
 //!  * a hard clip that would remove every base returns an **empty read**, which is unmapped with a
 //!    mapping quality of zero and no attributes except its read group. It is not a read of length
 //!    zero at the old position;
-//!  * a soft clip cannot take the whole read. `applySoftClipBases` caps the clip two bases short
-//!    (GATK issue #2022), and the cap uses the *capped* stop for the cigar and the **uncapped**
-//!    stop for the alignment-start shift;
+//!  * a soft clip cannot take the whole read (GATK issue #2022). `applySoftClipBases` returns a
+//!    read of two bases or fewer unclipped, and caps the stop at `start + length - 2`, which on a
+//!    left clip leaves one base aligned (op 0..9 on a `10M` read clips 0..8) and on a right clip
+//!    never bites. The cap uses the *capped* stop for the cigar and the **uncapped** stop for the
+//!    alignment-start shift;
 //!  * reverting soft clips can move a read's start before the contig, which SAM cannot represent.
 //!    The reference sets the position to 1, hard-clips the overhang away, and sets it to 1 again,
 //!    because the first assignment is what makes the read's cached length right for the clip.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<BamRecord, ClipError>` is "a read, or what the reference throws". `?` after a call
+//!   hands that call's error to the caller, and `impl From<CigarError> for ClipError` below is what
+//!   lets a builder error pass through `?` in a function that returns a `ClipError`.
+//! - `record.clone()` is the reference's `read.copy()`: a full, independent copy. A function that
+//!   takes `&BamRecord` can only read the record; one that takes `&mut BamRecord` may change it.
+//! - `Option<&SamHeader>` is a header or nothing. It is only consulted for the flow-order test,
+//!   which the reference makes through the read's own header link.
+//! - `let Some(x) = y else { return };` unwraps `y` or leaves the function, and
+//!   `if let Some(x) = y { .. }` runs the block only when `y` holds a value.
 
 use htsjdk_bam::cigar::{Cigar, Op};
 use htsjdk_bam::header::SamHeader;
@@ -37,19 +51,26 @@ pub enum ClippingRepresentation {
     WriteQ0s,
     /// Both.
     WriteNsQ0s,
+    /// The cigar soft-clips the bases; only a tail, never the middle.
     SoftclipBases,
+    /// The bases, qualities and per-base tags are cut out and the cigar hard-clips them; only a
+    /// tail.
     HardclipBases,
+    /// Every soft clip becomes aligned again. The op's span is ignored.
     RevertSoftclippedBases,
 }
 
 /// What the reference throws rather than returning a read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClipError {
-    /// `applySoftClipBases`: soft-clipping an unmapped read, or the middle of a read.
+    /// Soft-clipping an unmapped read, or the middle of a read. Upstream this is three exceptions:
+    /// `applySoftClipBases`'s `IllegalArgumentException` (unmapped) and `IllegalStateException`
+    /// (middle), and `clipByReferenceCoordinates`'s `GATKException` (unmapped).
     CannotSoftClip,
     /// A cigar the builder refuses; see [`CigarError`].
     Cigar(CigarError),
-    /// `clipByReferenceCoordinates`: the arguments do not describe one tail.
+    /// `clipByReferenceCoordinates`: the arguments do not describe one tail, or the read offsets
+    /// they resolve to are out of order, out of the read, or in its middle. A `GATKException`.
     BadCoordinates,
     /// An `arraycopy` past the end of the array the reference copies from.
     IndexOutOfBounds,
@@ -67,7 +88,12 @@ const HARD_CLIPPED_TAGS: [&[u8; 2]; 7] = [b"tp", b"kr", b"ti", b"kh", b"kf", b"k
 /// `ReadUtils.emptyRead`.
 ///
 /// Unmapped, mapping quality zero, no cigar, no bases, no qualities, and **no attributes except
-/// the read group**, which is copied back after the rest are cleared.
+/// the read group**, which is copied back after the rest are cleared. Everything else, the name,
+/// the other flags, the position and the mate fields, is the original read's.
+///
+/// The reference re-sets the group through a string (`String readGroup = read.getReadGroup();`,
+/// `ReadUtils.java:797`); this copies the tag value as it was, which is the same for the string
+/// `RG` that SAM defines.
 pub fn empty_read(record: &BamRecord) -> BamRecord {
     let read_group = record
         .tags
@@ -92,6 +118,10 @@ pub fn empty_read(record: &BamRecord) -> BamRecord {
 /// Applies **only** to reads in a read group that declares a flow order, and only to a fixed
 /// whitelist of tags whose length matches the original read's. Everything else is left alone, so a
 /// hard clip on an ordinary read touches no tag at all.
+///
+/// The reference clips arrays of every element type: `byte[]`, `short[]`, `int[]` and `float[]`
+/// (`SAMRecordToGATKReadAdapter.java:797-804`), and strings. This clips byte arrays and strings
+/// only, so a whitelisted tag held as a `B:s`, `B:i` or `B:f` array keeps its full length here.
 fn hard_clip_attributes(
     record: &mut BamRecord,
     header: Option<&SamHeader>,
@@ -125,8 +155,9 @@ fn hard_clip_attributes(
                 }
                 htsjdk_bam::tag::TagValue::Str(text[new_start..new_start + new_length].to_string())
             }
-            // Any other type is left alone: the reference skips a value that is neither an array
-            // nor a string.
+            // Anything else is left alone. The reference skips a value that is neither an array nor
+            // a string (`SAMRecordToGATKReadAdapter.java:783`), but it clips the wider arrays this
+            // arm also catches; see the note above.
             _ => continue,
         };
         record.tags.insert(tag, clipped);
@@ -136,12 +167,14 @@ fn hard_clip_attributes(
 /// `ClippingOp`: a half-open-looking but **inclusive** span of read offsets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ClippingOp {
+    /// First read offset clipped, from 0.
     pub start: i32,
+    /// Last read offset clipped, **inclusive**: `ClippingOp(0, 9)` clips ten bases.
     pub stop: i32,
 }
 
 impl ClippingOp {
-    /// `ClippingOp.apply`.
+    /// `ClippingOp.apply`: one clip, in the chosen representation, on a copy of the read.
     pub fn apply(
         &self,
         algorithm: ClippingRepresentation,
@@ -175,7 +208,13 @@ impl ClippingOp {
         }
     }
 
-    /// `overwriteFromStartToStop`, which stops at the array's end rather than failing.
+    /// `overwriteFromStartToStop`: `Arrays.fill(arr, start, Math.min(arr.length, stop + 1),
+    /// newVal);` (`ClippingOp.java:120`).
+    ///
+    /// The end is capped at the array's length, so a stop past it does not fail. The start is not:
+    /// when it lies past a shorter array (a read whose qualities are absent, under `WriteQ0s`), the
+    /// reference's `Arrays.fill` is asked for a range that starts after it ends and refuses it.
+    /// This does nothing instead.
     fn overwrite(&self, values: &mut [u8], new_value: u8) {
         let start = self.start as usize;
         let stop = (self.stop as usize + 1).min(values.len());
@@ -184,6 +223,7 @@ impl ClippingOp {
         }
     }
 
+    /// `applyWriteNs`.
     fn write_ns(&self, record: &mut BamRecord) {
         // Nucleotide.N.encodeAsByte() is upper-case N.
         let mut bases = record.read_bases.clone();
@@ -191,13 +231,22 @@ impl ClippingOp {
         record.read_bases = bases;
     }
 
+    /// `applyWriteQ0s`.
     fn write_q0s(&self, record: &mut BamRecord) {
         let mut quals = record.base_qualities.clone();
         self.overwrite(&mut quals, 0);
         record.base_qualities = quals;
     }
 
-    /// `applySoftClipBases`.
+    /// `applySoftClipBases`: see the module note for the cap and the asymmetry it introduces.
+    ///
+    /// ```java
+    /// final int myStop = Math.min(stop, start + readCopied.getLength() - 2);
+    /// ```
+    ///
+    /// (`ClippingOp.java:94`.) The cigar is then
+    /// `CigarUtils.clipCigar(oldCigar, start, myStop + 1, CigarOperator.SOFT_CLIP)` (line 98) and
+    /// the shift `CigarUtils.alignmentStartShift(oldCigar, stop + 1)` (line 101).
     fn soft_clip_bases(&self, record: &BamRecord) -> Result<BamRecord, ClipError> {
         if read::is_unmapped(record) {
             return Err(ClipError::CannotSoftClip);
@@ -226,7 +275,10 @@ impl ClippingOp {
     }
 }
 
-/// `ClippingOp.applyHardClipBases`.
+/// `ClippingOp.applyHardClipBases`: cut read offsets `start` to `stop` (inclusive) out of the read.
+///
+/// `start == 0` is a left clip and moves the alignment start; anything else is a right clip. An
+/// unmapped read keeps no cigar.
 pub fn hard_clip_bases(
     record: &BamRecord,
     start: i32,
@@ -245,6 +297,7 @@ pub fn hard_clip_bases(
     } else {
         clip_cigar(&record.cigar, start, stop + 1, Op::H)?
     };
+    // The surviving bases start after the clip on a left clip, at 0 on a right one.
     let copy_start = if start == 0 { (stop + 1) as usize } else { 0 };
     let new_length = new_length as usize;
 
@@ -280,6 +333,8 @@ pub fn hard_clip_bases(
             if quals.len() < end {
                 return Err(ClipError::IndexOutOfBounds);
             }
+            // `ReadUtils.setInsertionBaseQualities`, which stores the qualities as FASTQ text:
+            // `SAMUtils.phredToFastq`, each quality plus 33 as a character.
             let text: String = quals[copy_start..end]
                 .iter()
                 .map(|&q| (q + 33) as char)
@@ -297,7 +352,20 @@ pub fn hard_clip_bases(
     Ok(clipped)
 }
 
-/// `ClippingOp.applyRevertSoftClippedBases`.
+/// `ClippingOp.applyRevertSoftClippedBases`: turn the soft clips back into aligned bases and move
+/// the start back by their length.
+///
+/// A read with no clip at either end (soft **or** hard, the reference's `isClipping()`) comes back
+/// unchanged. Where the reverted start would fall before the contig, the reference's comment
+/// (`ClippingOp.java:142-144`) gives the reason for the double assignment:
+///
+/// ```java
+/// // be 1 after the hard clip operation, set it to 1 explicitly. We have to set it twice:
+/// // once before the hard clip (to reset the alignment stop / read length in read implementations
+/// // that cache these values, such as SAMRecord), and again after the hard clip.
+/// ```
+///
+/// The second assignment is skipped when the hard clip left an empty, unmapped read.
 pub fn revert_softclipped_bases(
     record: &BamRecord,
     header: Option<&SamHeader>,
@@ -332,6 +400,9 @@ pub fn revert_softclipped_bases(
 }
 
 /// `ReadClipper`: a read plus the clips to apply to it.
+///
+/// The reference's `wasClipped` flag is not kept, and its `extraBasesToClip` is an argument of
+/// [`hard_clip_soft_clipped_bases`], the one method that reads it.
 pub struct ReadClipper<'a> {
     read: BamRecord,
     header: Option<&'a SamHeader>,
@@ -339,6 +410,7 @@ pub struct ReadClipper<'a> {
 }
 
 impl<'a> ReadClipper<'a> {
+    /// `new ReadClipper(read)`. The read is copied, so the caller's is never changed.
     pub fn new(read: &BamRecord, header: Option<&'a SamHeader>) -> ReadClipper<'a> {
         ReadClipper {
             read: read.clone(),
@@ -347,6 +419,7 @@ impl<'a> ReadClipper<'a> {
         }
     }
 
+    /// `addOp`.
     pub fn add_op(&mut self, op: ClippingOp) {
         self.ops.push(op);
     }
@@ -356,6 +429,11 @@ impl<'a> ReadClipper<'a> {
     /// An op whose start is past the current read is skipped entirely, and one whose stop is past
     /// it is shortened: the read shrinks as ops are applied, so the second op of a pair is
     /// interpreted against a read the first one already cut.
+    ///
+    /// The reference returns the read untouched when `ops == null` (`ReadClipper.java:134`). Its
+    /// list, once cleared by an earlier `clipRead`, is empty but not null, so a second call on an
+    /// empty read goes on to `emptyRead`; this tests for an empty list and returns the read. No
+    /// function in this file calls `clip_read` twice on one clipper.
     pub fn clip_read(&mut self, algorithm: ClippingRepresentation) -> Result<BamRecord, ClipError> {
         if self.ops.is_empty() {
             return Ok(self.read.clone());
@@ -399,10 +477,17 @@ impl<'a> ReadClipper<'a> {
             if ref_stop < 0 {
                 return Err(ClipError::BadCoordinates);
             }
+            // `(index, operator)` unpacks the pair the lookup returns, Java's `Pair<Integer,
+            // CigarOperator>` with `getLeft()` and `getRight()`.
             let (index, operator) = read_utils::read_index_for_read(&self.read, ref_stop);
             // A reference coordinate inside a deletion returns the position *after* it, and the
             // stop here is inclusive, so it is decremented: the deletion is left unclipped rather
             // than one base too much being taken.
+            //
+            // When the coordinate is not in the read at all the operator is absent. The reference
+            // then calls `getRight().consumesReadBases()` on `null` (`ReadClipper.java:441`) and
+            // throws a `NullPointerException`; here the test is false, the stop becomes -2, and
+            // the `start > stop` check below refuses with `BadCoordinates`.
             let stop = index
                 - if operator.is_some_and(|op| op.consumes_read_bases()) {
                     0
@@ -436,7 +521,8 @@ impl<'a> ReadClipper<'a> {
     }
 }
 
-/// `ReadClipper.hardClipByReferenceCoordinatesLeftTail`.
+/// `ReadClipper.hardClipByReferenceCoordinatesLeftTail`: hard-clip everything up to and including
+/// reference position `ref_stop`.
 pub fn hard_clip_by_reference_coordinates_left_tail(
     read: &BamRecord,
     header: Option<&SamHeader>,
@@ -449,7 +535,8 @@ pub fn hard_clip_by_reference_coordinates_left_tail(
     )
 }
 
-/// `ReadClipper.hardClipByReferenceCoordinatesRightTail`.
+/// `ReadClipper.hardClipByReferenceCoordinatesRightTail`: hard-clip everything from reference
+/// position `ref_start` on.
 pub fn hard_clip_by_reference_coordinates_right_tail(
     read: &BamRecord,
     header: Option<&SamHeader>,
@@ -482,7 +569,11 @@ pub fn hard_clip_both_ends_by_reference_coordinates(
     hard_clip_by_reference_coordinates_left_tail(&left_tail, header, left)
 }
 
-/// `ReadClipper.hardClipToRegion`.
+/// `ReadClipper.hardClipToRegion`: keep only the part of the read inside `[ref_start, ref_stop]`.
+///
+/// The test uses the alignment span (`getStart()`, `getEnd()`), so soft-clipped bases do not count
+/// towards reaching the region, unlike [`soft_clip_to_region_including_clipped_bases`]. A read
+/// entirely outside it becomes an empty read.
 pub fn hard_clip_to_region(
     read: &BamRecord,
     header: Option<&SamHeader>,
@@ -506,7 +597,7 @@ pub fn hard_clip_to_region(
     }
 }
 
-/// `ReadClipper.revertSoftClippedBases`.
+/// `ReadClipper.revertSoftClippedBases`: [`revert_softclipped_bases`] through `clipRead`.
 pub fn revert_soft_clipped_bases(
     read: &BamRecord,
     header: Option<&SamHeader>,
@@ -537,6 +628,7 @@ pub fn clip_low_qual_ends(
     // absent has an empty array, and `getBaseQuality` runs past its end rather than answering.
     let read_length = read.read_bases.len() as i32;
     // Java compares `byte`s, signed: a threshold of -1 (`(byte) (0 - 1)`) clips nothing.
+    // `as i8` reinterprets the same eight bits as signed, so 255 becomes -1, as Java's `byte` is.
     let low_qual = low_qual as i8;
     let quality =
         |index: i32| -> Option<i8> { read.base_qualities.get(index as usize).map(|&q| q as i8) };
@@ -580,9 +672,11 @@ pub fn clip_low_qual_ends(
 ///
 /// Two things here are the reference's rather than the obvious implementation's:
 ///
-///  * only the **first** soft clip on each side is recorded. `cutLeft` is overwritten by every
-///    leading soft clip and `cutRight` by every trailing one, so a cigar with two soft clips on
-///    the same side keeps the last one seen, not their union;
+///  * every soft clip overwrites the cut for its side (`ReadClipper.java:294` and `297`), so the
+///    **last** one seen wins. On the left that is harmless: `cutLeft` is the end of the last
+///    leading soft clip, measured from the read's start, so `2S3S5M` cuts 0..4 and takes both. On
+///    the right it is not: `cutRight` is the start of the last trailing soft clip, so `5M2S3S`
+///    cuts 7..9 and the `2S` stays soft;
 ///  * the right cut is applied **first**, because applying the left one would shift every read
 ///    coordinate the right cut is expressed in. The reference's own comment says "extremely
 ///    important", and it is: the ops are interpreted against a read the previous op has shortened.
@@ -727,8 +821,9 @@ pub fn soft_clip_to_region_including_clipped_bases(
 /// `ReadClipper.softClipByReadCoordinates`.
 ///
 /// Clipping the whole read by read coordinates returns an empty read rather than an error, which
-/// is where this differs from the reference-coordinate path: there, a clip covering everything
-/// goes through `clipRead` and comes back empty by arithmetic; here it is checked up front.
+/// is where this differs from the reference-coordinate path: there, a soft clip covering
+/// everything goes through `clipRead`, and the cap in `applySoftClipBases` leaves one base
+/// aligned; here it is checked up front.
 pub fn soft_clip_by_read_coordinates(
     read: &BamRecord,
     header: Option<&SamHeader>,

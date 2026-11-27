@@ -114,7 +114,7 @@ const MIN_TREEIFY_CAPACITY: usize = 64;
 /// `gatk-engine/tests/ac_builder.rs`, which checks it against the golden
 /// `tests/data/ac_builder.txt.gz` (its `thirteen` probe crosses the growth point).
 ///
-/// A crowded bucket is refused only once the table has at least [`MIN_TREEIFY_CAPACITY`] buckets;
+/// A crowded bucket is refused only once the table has at least `MIN_TREEIFY_CAPACITY` buckets;
 /// below that the simple layout is answered.
 pub fn hash_set_order(names: &[String]) -> Result<Vec<String>, HashOrderError> {
     // Sixteen buckets to start, which is what the measured orders are consistent with.
@@ -312,7 +312,7 @@ impl JavaHashCode for String {
 ///    the order is the order of insertion.
 ///
 /// Iteration is therefore the insertion order, stably sorted by bucket at the final size. The one
-/// state nothing here reproduces is a crowded bucket: from [`TREEIFY_THRESHOLD`] entries on the
+/// state nothing here reproduces is a crowded bucket: from `TREEIFY_THRESHOLD` entries on the
 /// observed layout changes shape, so the map records that it got there and [`Self::check`]
 /// refuses, rather than answering an order that was never measured.
 #[derive(Debug, Clone)]
@@ -324,7 +324,7 @@ pub struct JavaHashMap<K, V> {
     buckets: Vec<Vec<(K, V)>>,
     /// The entry count, Java's `size()`.
     len: usize,
-    /// The first bucket that reached [`TREEIFY_THRESHOLD`] entries, kept so [`Self::check`] can
+    /// The first bucket that reached `TREEIFY_THRESHOLD` entries, kept so [`Self::check`] can
     /// refuse even after removals shrank it. Unlike [`hash_set_order`], this is recorded at any
     /// table size.
     crowded: Option<HashOrderError>,
@@ -532,7 +532,7 @@ impl<K: JavaHashCode + PartialEq + Clone, V> JavaHashMap<K, V> {
     }
 
     /// Whether the order this answers was ever measured: a bucket that reached
-    /// [`TREEIFY_THRESHOLD`] entries is refused, even if it later shrank.
+    /// `TREEIFY_THRESHOLD` entries is refused, even if it later shrank.
     pub fn check(&self) -> Result<(), HashOrderError> {
         match &self.crowded {
             Some(error) => Err(error.clone()),

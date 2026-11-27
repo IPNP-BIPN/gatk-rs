@@ -1,6 +1,6 @@
 //! Ported from `org.broadinstitute.hellbender.utils.locusiterator.ReadStateManager`,
 //! `.PerSampleReadStateManager`, `.SamplePartitioner` and `.LIBSDownsamplingInfo`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; all four files are unchanged since 4.6.2.0).
 //!
 //! Between the per-read state machines and the pileup sits a bookkeeping layer that decides which
 //! reads enter, under which sample, and when they leave. Four of its behaviours change what a
@@ -20,13 +20,25 @@
 //!  * **a read with no read group has the null sample**, and a read whose sample was not declared
 //!    at construction is a hard error rather than a new bucket.
 //!
-//! # What this refuses
+//! # Downsampling
 //!
-//! Downsampling is not ported. `ReservoirDownsampler` and `LevelingDownsampler` draw from
-//! `Utils.getRandomGenerator`, so reproducing them means reproducing Java's `Random` and the exact
-//! sequence of draws; until that exists, [`DownsamplingInfo::performing`] is refused rather than
-//! approximated. The default is off (`--max-depth-per-sample 0` gives `NO_DOWNSAMPLING`), which is
-//! the path every suite here exercises.
+//! With [`DownsamplingInfo::performing`] set, both of the reference's downsamplers run, each on its
+//! own shared stream passed in by the caller: the per-sample `ReservoirDownsampler` that decides
+//! which reads enter draws from a [`JavaRandom`] (`Utils.getRandomGenerator()`), and the
+//! `LevelingDownsampler` that thins a sample over its target draws from a [`Well19937c`]
+//! (`Utils.getRandomDataGenerator()`). The default is off (`--max-depth-per-sample 0` gives
+//! `NO_DOWNSAMPLING`), and then neither draws.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `ReadState<'a>` and the managers carry a lifetime `'a`: they hold `&'a BamRecord`, borrowed
+//!   reads that the caller owns and that the compiler proves outlive the managers.
+//! - `Result<T, ReadStateError>` is "a `T` or one of the refusals below"; `Err` is where the
+//!   reference throws, and `?` returns a callee's error from the enclosing function at once.
+//! - `std::mem::take(&mut v)` moves the contents out of `v` and leaves it empty, so the loop owns
+//!   each state and can keep or drop it: the reference's `Iterator.remove`.
+//! - `&mut std::collections::VecDeque<_>` is a writable borrowed queue, the reference's
+//!   `PeekableIterator`: `front()` is `peek()` and `pop_front()` is `next()`.
 
 use crate::alignment_state::{AlignmentStateMachine, MalformedRead};
 use crate::downsampling::{LevelingDownsampler, ReservoirDownsampler, SlotSource};
@@ -39,7 +51,9 @@ use htsjdk_bam::record::BamRecord;
 /// `LIBSDownsamplingInfo`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DownsamplingInfo {
+    /// `isPerformDownsampling`.
     pub performing: bool,
+    /// `getToCoverage`: the per-sample target, read only when `performing` is set.
     pub to_coverage: i32,
 }
 
@@ -58,13 +72,15 @@ pub enum ReadStateError {
     UndeclaredSample(Option<String>),
     /// A cigar `AlignmentStateMachine` refuses.
     Malformed(MalformedRead),
-    /// Downsampling, which this port does not reproduce. See the module doc.
+    /// Downsampling refused. No code constructs it: [`ReadStateManager::new`] accepts every
+    /// [`DownsamplingInfo`] and downsampling runs (see the module doc).
     DownsamplingUnsupported,
     /// The leveling downsampler's permutation refused, which is a bug rather than a bad input.
     DownsamplingFailed,
 }
 
-/// One read, and where its state machine currently sits.
+/// One read, and where its state machine currently sits. The reference keeps only the
+/// `AlignmentStateMachine`, which answers `getRead()`; here the read is held beside it.
 ///
 /// The machine borrows the read, so the reads outlive the manager; that is the reference's shape
 /// too, where the `GATKRead` is held by the `AlignmentStateMachine`.
@@ -83,10 +99,12 @@ pub struct PerSampleReadStateManager<'a> {
 }
 
 impl<'a> PerSampleReadStateManager<'a> {
+    /// `isEmpty`.
     pub fn is_empty(&self) -> bool {
         self.states.is_empty()
     }
 
+    /// `size`.
     pub fn size(&self) -> usize {
         self.states.len()
     }
@@ -111,6 +129,10 @@ impl<'a> PerSampleReadStateManager<'a> {
         }
         let mut added = states.len();
         self.states.extend(states);
+        // `isDownsampling() && readStatesByAlignmentStart.size() > downsamplingTarget`: the
+        // reference tests for a leveling downsampler, which exists exactly when the target is not
+        // -1. The reference keeps one downsampler per sample and resets it after each use; a fresh
+        // one per use starts from the same empty state.
         if self.target >= 0 && self.states.len() > self.target as usize {
             let mut downsampler: LevelingDownsampler<ReadState<'a>> =
                 LevelingDownsampler::new(i64::from(self.target));
@@ -121,6 +143,7 @@ impl<'a> PerSampleReadStateManager<'a> {
                 .signal_end_of_input(rng)
                 .map_err(|_| ReadStateError::DownsamplingFailed)?;
             added -= downsampler.discarded();
+            // `flattenByAlignmentStart`: the surviving groups, concatenated in order.
             self.states = downsampler
                 .consume_finalized_items()
                 .into_iter()
@@ -137,6 +160,8 @@ impl<'a> PerSampleReadStateManager<'a> {
         let mut last: Option<i32> = None;
         for state in std::mem::take(&mut self.states) {
             let offset = state.machine.genome_offset();
+            // The reference's `last == null || ... != last.getGenomeOffset()`, with `None` for
+            // the null before the first group.
             if last != Some(offset) {
                 grouped.push(Vec::new());
                 last = Some(offset);
@@ -167,6 +192,7 @@ impl<'a> PerSampleReadStateManager<'a> {
         Ok(removed)
     }
 
+    /// `getFirst`: the earliest-added state, or `None` when empty.
     pub fn first(&self) -> Option<&ReadState<'a>> {
         self.states.first()
     }
@@ -180,12 +206,15 @@ pub struct ReadStateManager<'a> {
     /// Parallel to `samples`, because the reference's `LinkedHashMap` iterates in that order and a
     /// hash map here would not.
     pub by_sample: Vec<PerSampleReadStateManager<'a>>,
+    /// `totalReadStates`: the states across every sample, kept as a running count.
     total_read_states: usize,
     /// `LIBSDownsamplingInfo`, kept because both downsamplers are built from it.
     info: DownsamplingInfo,
 }
 
 impl<'a> ReadStateManager<'a> {
+    /// The constructor: an empty per-sample manager for each declared sample, in order. It never
+    /// refuses; the `Result` is the signature only.
     pub fn new(
         samples: Vec<Option<String>>,
         info: DownsamplingInfo,
@@ -212,15 +241,18 @@ impl<'a> ReadStateManager<'a> {
         })
     }
 
+    /// `size()`.
     pub fn size(&self) -> usize {
         self.total_read_states
     }
 
+    /// `isEmpty`: no states in the system, whatever reads are still to come.
     pub fn is_empty(&self) -> bool {
         self.total_read_states == 0
     }
 
-    /// `getFirst`: the first state of the first non-empty sample, in sample order.
+    /// `getFirst`: the first state of the first non-empty sample, in sample order. `find_map`
+    /// returns the first `Some` the closure produces.
     pub fn first(&self) -> Option<&ReadState<'a>> {
         self.by_sample.iter().find_map(|manager| manager.first())
     }
@@ -248,6 +280,7 @@ impl<'a> ReadStateManager<'a> {
         random: &mut JavaRandom,
         leveling: &mut Well19937c,
     ) -> Result<usize, ReadStateError> {
+        // `if (!iterator.hasNext()) return;`
         let Some(next) = pending.front() else {
             return Ok(0);
         };
@@ -262,7 +295,14 @@ impl<'a> ReadStateManager<'a> {
         // difference. Off, it is a `PassThroughDownsampler` and every read bucketed is handed back
         // in submission order. On, it is a `ReservoirDownsampler(toCoverage, true)`, whose draw is
         // taken from the shared `Utils.getRandomGenerator()` for every read past the target and
-        // whose "expect few overflows" flag is what the second argument sets.
+        // whose "expect few overflows" flag is what the second argument sets. That flag only
+        // picks the reservoir's list type (`expectFewOverflows ? new LinkedList<>() :
+        // new ArrayList<>(targetSampleSize)`), so it has no counterpart here, and
+        // `set_non_random_replacement_mode(false)` spells out the reference's default.
+        //
+        // `bool::then(..)` is `performing ? new ... : null` as an `Option`. The `.max(1)` keeps
+        // the cast to `usize` positive; the reference throws on a target of zero or less, and the
+        // callers here set `performing` only with a positive coverage.
         let mut reservoirs: Vec<Option<ReservoirDownsampler<'a, BamRecord>>> = self
             .samples
             .iter()
@@ -277,12 +317,15 @@ impl<'a> ReadStateManager<'a> {
             .collect();
         let mut buckets: Vec<Vec<&'a BamRecord>> =
             self.samples.iter().map(|_| Vec::new()).collect();
+        // `while (iterator.hasNext() && readStartsAtCurrentPosition(iterator.peek(), ...))`.
         while let Some(read) = pending.front() {
             if read.alignment_start != alignment_start || read.reference_index != contig_index {
                 break;
             }
             let read = pending.pop_front().expect("peeked");
             let sample = sample_of(read, header);
+            // `readsBySample.get(sampleName)` then `Utils.validate(downsampler != null, ...)`:
+            // an undeclared sample is a refusal, not a new bucket.
             let index = self
                 .samples
                 .iter()
@@ -304,6 +347,8 @@ impl<'a> ReadStateManager<'a> {
             }
         }
 
+        // `addReadsToSample` for each sample in declaration order. `buckets.into_iter()` hands
+        // each bucket over by value, so its reads move into the new states.
         let mut admitted = 0;
         for (index, reads) in buckets.into_iter().enumerate() {
             if reads.is_empty() {

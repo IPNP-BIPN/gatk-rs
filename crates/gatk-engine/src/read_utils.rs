@@ -18,6 +18,20 @@
 //! *soft* start rather than the alignment start, so the clipped bases occupy the reference
 //! positions they would have occupied had they aligned. Porting the honest rule, or calling it
 //! with `getStart()`, shifts every answer on a soft-clipped read.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `(i32, Option<Op>)` is a pair, the reference's `Pair<Integer, CigarOperator>`: the first
+//!   value is `getLeft()`, the second `getRight()`, with `None` for its `null`.
+//! - `Option<T>` as a return is the reference's `null`, `Optional.empty()` or, where marked, the
+//!   case where it throws. `?` on an `Option` returns `None` from the function at once.
+//! - `std::cmp::Ordering` is the sign of a Java `compare`: `Less`, `Equal`, `Greater` for
+//!   negative, zero, positive. `a.cmp(&b)` is `Integer.compare(a, b)`, and `x.then(y)` is "`x`,
+//!   unless it is `Equal`, then `y`".
+//! - `.iter().rev().take_while(..)` walks from the back and stops at the first element the test
+//!   rejects.
+//! - `x as i32` converts an unsigned cigar length, flag constant or mapping quality to Java's
+//!   `int`. Every such value here fits, so nothing wraps.
 
 use htsjdk_bam::cigar::{Cigar, Op};
 use htsjdk_bam::record::BamRecord;
@@ -39,7 +53,7 @@ pub fn start(record: &BamRecord) -> i32 {
     }
 }
 
-/// `GATKRead.getEnd()`.
+/// `GATKRead.getEnd()`: the last aligned reference position, or the sentinel for an unmapped read.
 pub fn end(record: &BamRecord) -> i32 {
     if read::is_unmapped(record) {
         UNSET_POSITION
@@ -108,6 +122,12 @@ pub fn unclipped_start(record: &BamRecord) -> i32 {
 }
 
 /// `getUnclippedEnd`: the alignment end plus the soft and hard clips after it.
+///
+/// The adapter's `getUnclippedEnd` answers `ReadConstants.UNSET_POSITION` for an unmapped read
+/// before looking at the cigar (`SAMRecordToGATKReadAdapter.java:142-145`), as [`unclipped_start`]
+/// does. This one has no such test: for an
+/// unmapped read it is 0 plus the trailing clips, which differs when such a read keeps a cigar that
+/// ends in a clip.
 pub fn unclipped_end(record: &BamRecord) -> i32 {
     let trailing: i32 = record
         .cigar
@@ -161,7 +181,8 @@ pub fn adaptor_boundary(record: &BamRecord) -> Option<i32> {
     }
 }
 
-/// `ReadUtils.getLastInsertionOffset`, or `None` where the reference throws.
+/// `ReadUtils.getLastInsertionOffset`: the length of a trailing insertion, else 0; or `None` where
+/// the reference throws.
 ///
 /// It indexes the last cigar element without checking that there is one, so a read with no cigar
 /// raises an IndexOutOfBoundsException rather than answering zero.
@@ -174,11 +195,15 @@ pub fn last_insertion_offset(record: &BamRecord) -> Option<i32> {
     })
 }
 
-/// `BaseUtils.getComplement`, which **throws** on anything that is not ACGTN.
+/// `BaseUtils.getComplement`, which **throws** on anything that is not ACGTN
+/// (`throw new IllegalArgumentException("base must be A, C, G or T. "`, `BaseUtils.java:304`).
+/// Lower case comes back upper case.
 ///
 /// Not a silent identity and not an N: a read of `*` bases, which `BaseUtils.isRegularBase`
 /// happily calls regular, cannot be complemented at all.
 pub fn complement(base: u8) -> Option<u8> {
+    // The `match` is the reference's `switch`. Its last arm leaves the function with `None`,
+    // the throw; every other arm is a value that the outer `Some(..)` wraps.
     Some(match base {
         b'a' | b'A' => b'T',
         b'c' | b'C' => b'G',
@@ -189,7 +214,8 @@ pub fn complement(base: u8) -> Option<u8> {
     })
 }
 
-/// `ReadUtils.getBasesReverseComplement`, or `None` where a base has no complement.
+/// `ReadUtils.getBasesReverseComplement`, or `None` where a base has no complement. The first base
+/// that has none ends the walk, as the reference's throw does.
 pub fn bases_reverse_complement(record: &BamRecord) -> Option<String> {
     let mut out = String::with_capacity(record.read_bases.len());
     for base in record.read_bases.iter().rev() {
@@ -234,7 +260,8 @@ pub fn read_index_for_reference_coordinate(
     (READ_INDEX_NOT_FOUND, None)
 }
 
-/// The same, for a read: the walk starts at the **soft** start.
+/// `ReadUtils.getReadIndexForReferenceCoordinate(read, refCoord)`: the same, for a read, with the
+/// walk starting at the **soft** start.
 pub fn read_index_for_read(record: &BamRecord, ref_coord: i32) -> (i32, Option<Op>) {
     read_index_for_reference_coordinate(soft_start(record), &record.cigar, ref_coord)
 }
@@ -270,9 +297,12 @@ pub fn read_base_at_reference_coordinate(record: &BamRecord, ref_coord: i32) -> 
 
 /// `ReadUtils.getReadBaseQualityAtReferenceCoordinate`.
 ///
-/// Not the mirror of the base accessor: this one tests only that the operator is non-null, where
-/// the other also tests the index, and it indexes the quality array, which a read may not have.
-/// A read with no qualities throws here and answers absent there.
+/// The test is written differently from the base accessor's and means the same: this one checks
+/// the operator for null, `offsetAndOperator.getRight() != null` (`ReadUtils.java:734`), where the
+/// other checks the index for `READ_INDEX_NOT_FOUND` (line 725). The lookup returns both or
+/// neither, so both answer absent at the same coordinates. What differs is the array: this one
+/// indexes the qualities, which a read may not have, so a read with no qualities throws here where
+/// the base accessor answers.
 pub fn read_base_quality_at_reference_coordinate(record: &BamRecord, ref_coord: i32) -> BaseAt {
     if ref_coord < start(record) || end(record) < ref_coord {
         return BaseAt::Absent;
@@ -287,7 +317,8 @@ pub fn read_base_quality_at_reference_coordinate(record: &BamRecord, ref_coord: 
     }
 }
 
-/// `ReadUtils.isInsideRead`.
+/// `ReadUtils.isInsideRead`: within the alignment span, both ends inclusive. Soft clips do not
+/// count.
 pub fn is_inside_read(record: &BamRecord, ref_coord: i32) -> bool {
     ref_coord >= start(record) && ref_coord <= end(record)
 }
@@ -308,6 +339,8 @@ pub const BQSR_BASE_DELETION_QUALITIES: [u8; 2] = *b"BD";
 fn indel_qualities(record: &BamRecord, tag: [u8; 2]) -> Option<Vec<u8>> {
     match record.tags.get(htsjdk_bam::tag::Tag::new(&tag)) {
         Some(htsjdk_bam::tag::TagValue::Str(text)) => {
+            // Each character minus 33. `wrapping_sub` wraps below zero, as Java's `byte`
+            // arithmetic does, where a plain `-` would panic in a debug build.
             Some(text.bytes().map(|b| b.wrapping_sub(33)).collect())
         }
         _ => None,
@@ -324,7 +357,7 @@ pub fn base_insertion_qualities(record: &BamRecord) -> Vec<u8> {
         .unwrap_or_else(|| vec![DEFAULT_INSERTION_DELETION_QUAL; record.base_qualities.len()])
 }
 
-/// `ReadUtils.getBaseDeletionQualities`.
+/// `ReadUtils.getBaseDeletionQualities`: the same, for `BD`.
 pub fn base_deletion_qualities(record: &BamRecord) -> Vec<u8> {
     indel_qualities(record, BQSR_BASE_DELETION_QUALITIES)
         .unwrap_or_else(|| vec![DEFAULT_INSERTION_DELETION_QUAL; record.base_qualities.len()])
@@ -385,6 +418,10 @@ pub fn sam_flags_for_read(read: &BamRecord) -> i32 {
 }
 
 /// `ReadUtils.getMateReferenceIndex`: `-1` when the mate is unmapped, whatever the record stores.
+///
+/// Otherwise the reference looks the mate's contig name up in the header,
+/// `return header.getSequenceIndex(read.getMateContig());` (`ReadUtils.java:218`). This returns the
+/// stored index instead, which is the same for a record decoded against that header.
 pub fn mate_reference_index(read: &BamRecord) -> i32 {
     if read::mate_is_unmapped(read) {
         read::NO_ALIGNMENT_REFERENCE_INDEX
@@ -427,6 +464,9 @@ pub fn compare_coordinates(first: &BamRecord, second: &BamRecord) -> std::cmp::O
 ///
 /// The name is compared with Java's `String.compareTo`, which is UTF-16 code-unit order, and the
 /// flags are the recomputed ones from [`sam_flags_for_read`] rather than the stored word.
+///
+/// The reference compares names only `if ( first.getName() != null && second.getName() != null )`
+/// (`ReadCoordinateComparator.java:45`); this always compares them.
 pub fn compare_read_coordinate(first: &BamRecord, second: &BamRecord) -> std::cmp::Ordering {
     use std::cmp::Ordering;
     let result = compare_coordinates(first, second);

@@ -1,10 +1,22 @@
-//! Ported from `org.broadinstitute.hellbender.utils.read.CigarUtils` (GATK 4.6.2.0): the clipping
-//! half, and `calculateCigar`.
+//! Ported from `org.broadinstitute.hellbender.utils.read.CigarUtils` (GATK 4.7.0.0;
+//! `CigarUtils.java` is unchanged since 4.6.2.0): the clipping half, and `calculateCigar`.
 //!
 //! The clipping functions are what `ReadClipper` runs on: they decide the cigar of every clipped
 //! read, and therefore bytes in every output BAM a clipping tool writes. `calculateCigar` is what
 //! the assembler runs on: it realigns a haplotype to the reference with Smith-Waterman, between two
 //! pads of `N` so that the alignment cannot clip, then trims the pads and left-aligns the indels.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[CigarElement]` and `&Cigar` are borrowed, read-only views; nothing here changes the cigar
+//!   it is given. The clipping functions rebuild through a fresh [`CigarBuilder`].
+//! - `.iter().filter(..).map(..).sum()` is Java's `stream().filter(..).mapToInt(..).sum()`.
+//! - `&dyn SmithWatermanAligner` is a reference to "any implementation of" that trait, which is
+//!   Java's interface-typed parameter.
+//! - `Result<Option<Cigar>, AlignmentError>` is the reference's nullable `Cigar` return plus its
+//!   possible throw: `Ok(None)` is `return null`, `Err(..)` the exception.
+//! - `x as u32` and `x as i32` convert the builder's unsigned lengths to and from Java's `int`;
+//!   they wrap rather than fail, and every length here is a cigar length, far below the limit.
 
 use htsjdk_bam::cigar::{Cigar, CigarElement, Op};
 
@@ -17,6 +29,9 @@ use crate::smith_waterman::{SmithWatermanAligner, SwOverhangStrategy, SwParamete
 /// The distinction from `countRefBasesAndSoftClips`, which excludes hard clips, is what makes the
 /// difference between the span of the read as sequenced and the span of what is left of it. This
 /// one is used to place a read that has already lost bases to hard clipping.
+///
+/// The reference also takes a `[cigarStartIndex, cigarEndIndex)` sub-range. Here the caller slices
+/// the list instead: `&elements[first..second]` is the same sub-range, as a borrowed view.
 pub fn count_ref_bases_and_clips(elements: &[CigarElement]) -> i32 {
     elements
         .iter()
@@ -36,8 +51,16 @@ pub fn count_ref_bases_and_clips(elements: &[CigarElement]) -> i32 {
 ///    do not count towards the read coordinates the clip is expressed in;
 ///  * a deletion that sits exactly at the clip boundary is **dropped**, not clipped, because a
 ///    deletion at the edge of a clip describes nothing. That is the `elementStart != start &&
-///    elementStart != stop` clause, and it is the reason `4M1I1D5M` clipped at 0..1 comes back as
-///    `1S3M1D1I5M` rather than with the deletion where it was.
+///    elementStart != stop` clause (`CigarUtils.java:361`): `3M2D5M` soft-clipped at 0..3 comes
+///    back as `3S5M` (`tests/data/cigar_clipping.txt.gz`, row 338).
+///
+/// A deletion away from the boundary is copied and then rewritten by the builder like any other:
+/// `4M1I1D5M` clipped at 0..1 comes back as `1S3M1D1I5M` (row 430), the `1D` moved ahead of the
+/// `1I` by the builder's deletion-before-insertion rule, not by this function.
+///
+/// The reference first checks `Utils.validateArg(clippingOperator.isClipping(), "Not a clipping
+/// operator");` (`CigarUtils.java:343`). That check is not ported: both callers, in `clipping`,
+/// pass `S` or `H` as a literal.
 pub fn clip_cigar(
     cigar: &Cigar,
     start: i32,
@@ -47,10 +70,13 @@ pub fn clip_cigar(
     let clip_left = start == 0;
     let mut builder = CigarBuilder::default();
 
+    // Read coordinates of the current element: `[element_start, element_end)`, hard clips excluded.
     let mut element_start = 0;
     for element in &cigar.elements {
         let operator = element.op;
         if operator == Op::H {
+            // `*element` copies the element out of the borrowed list; a `CigarElement` is a small
+            // value type, so this is a copy and not a move.
             builder.add(*element)?;
             continue;
         }
@@ -67,6 +93,8 @@ pub fn clip_cigar(
                 builder.add(*element)?;
             }
         } else {
+            // The clip covers some or all of this element. What stays is measured from the clip's
+            // far edge: from `stop` on a left clip, up to `start` on a right one.
             let unclipped_length = if clip_left {
                 element_end - stop
             } else {
@@ -164,7 +192,8 @@ pub fn revert_soft_clips(cigar: &Cigar) -> Result<Cigar, CigarError> {
     builder.make(false)
 }
 
-/// `CigarUtils.SW_PAD`: ten `N`, on both sides of both sequences.
+/// `CigarUtils.SW_PAD`: ten `N`, on both sides of both sequences. `b"..."` is a byte string, the
+/// ASCII bytes of the text, which is what the reference's `String` turns into on `getBytes()`.
 const SW_PAD: &[u8] = b"NNNNNNNNNN";
 
 /// `CigarUtils.calculateCigar`: the cigar of `alt_seq` against `ref_seq`, or `None` when the
@@ -201,6 +230,9 @@ pub fn calculate_cigar(
         }])));
     }
 
+    // `SW_PAD + new String(refSeq) + SW_PAD` and `.getBytes()` (`CigarUtils.java:178-180`), done on
+    // bytes directly. The reference's trip through `String` and back is the identity for ASCII
+    // bases. `[a, b, c].concat()` joins three byte slices into one new `Vec<u8>`.
     let padded_ref = [SW_PAD, ref_seq, SW_PAD].concat();
     let padded_path = [SW_PAD, alt_seq, SW_PAD].concat();
     let alignment = aligner.align(
@@ -218,6 +250,8 @@ pub fn calculate_cigar(
     let base_start = SW_PAD.len() as i32;
     let base_end = padded_path.len() as i32 - SW_PAD.len() as i32 - 1;
     let trimmed = trim_cigar_by_bases(&alignment.cigar, base_start, base_end)?;
+    // Moved out of `trimmed` rather than copied, and made `mut` because the reference appends to
+    // it in place (`nonStandard.add(...)`).
     let mut non_standard = trimmed.cigar;
 
     // Leading deletions removed by the trim shift the alignment start to the right.
@@ -253,6 +287,7 @@ pub fn calculate_cigar(
             op: Op::D,
         });
     }
+    // `resultElements.addAll(...)`.
     result.extend(left_aligned.cigar.elements.iter().copied());
     if total_trailing > 0 {
         result.push(CigarElement {

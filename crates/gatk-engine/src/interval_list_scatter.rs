@@ -1,5 +1,6 @@
 //! Ported from `picard.util.IntervalList.IntervalListScatterMode` and the six classes under it
-//! (Picard 3.4.0, as GATK 4.6.2.0 bundles it).
+//! (Picard 3.5.0, as GATK 4.7.0.0 bundles it; the nine files of `picard.util.IntervalList` are
+//! unchanged since Picard 3.4.0, which GATK 4.6.2.0 bundled).
 //!
 //! The five ways an interval list is divided into shards, which is what `SplitIntervals` and every
 //! scatter-gather pipeline built on it inherits.
@@ -30,22 +31,39 @@
 //!
 //! # The projection is a double division by the shards still to come
 //!
-//! ```java
-//! final double projectedSizeOfRemainingDivisions = (weightRemaining - listWeight(running)) / ((double) scatterCount - intervalsReturned);
-//! ```
+//! The reference's `next()` computes, before each interval it offers,
+//! `(weightRemaining - scatterer.listWeight(runningIntervalList))` divided by
+//! `((double) scatterCount - intervalsReturned)`: the weight not yet placed, spread over the shards
+//! still to come.
 //!
-//! Only the overflow mode reads it, and reading it is what makes that mode's decision depend on
-//! how far into the scatter it is rather than on the list alone.
+//! Only the overflow mode and the distributed-remainder mode read it, and reading it is what
+//! makes their decisions depend on how far into the scatter they are rather than on the list
+//! alone.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - The reference has one `IntervalListScatterer` class per mode; here the five are one `enum`,
+//!   and each method `match`es on the mode where the reference dispatches on the class.
+//!   `matches!(x, A | B)` is "x is one of A, B".
+//! - `i64` is Java's `long`, `i32` its `int`. `i64::from(x)` widens an `int` exactly; `x as i32`
+//!   truncates a `long` to its low 32 bits, as Java's `(int)` does.
+//! - `(Option<Interval>, Option<Interval>)` is `takeSome`'s two-element list, with `None` for
+//!   each `null`.
 
 use htsjdk_bam::interval::{Interval, IntervalList};
 
 /// `IntervalListScatterMode`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScatterMode {
+    /// `IntervalListScattererWithSubdivision`.
     IntervalSubdivision,
+    /// `IntervalListScattererWithoutSubdivision`.
     BalancingWithoutIntervalSubdivision,
+    /// `IntervalListScattererWithoutSubdivisionWithOverflow`.
     BalancingWithoutIntervalSubdivisionWithOverflow,
+    /// `IntervalListScattererByIntervalCount`.
     IntervalCount,
+    /// `IntervalListScattererByIntervalCountWithDistributedRemainder`.
     IntervalCountWithDistributedRemainder,
 }
 
@@ -76,7 +94,8 @@ impl ScatterMode {
         ScatterMode::IntervalCountWithDistributedRemainder,
     ];
 
-    /// Whether the weight of an interval is its bases or the interval itself.
+    /// Whether the weight of an interval is its bases or the interval itself: the three modes
+    /// that extend `IntervalListScattererByBaseCount`, against the two by interval count.
     fn counts_bases(&self) -> bool {
         !matches!(
             self,
@@ -104,7 +123,7 @@ impl ScatterMode {
         !matches!(self, ScatterMode::IntervalSubdivision)
     }
 
-    /// `intervalWeight`.
+    /// `intervalWeight`: `interval.length()` by bases, 1 by count.
     fn interval_weight(&self, interval: &Interval) -> i64 {
         if self.counts_bases() {
             i64::from(interval.length())
@@ -114,6 +133,7 @@ impl ScatterMode {
     }
 
     /// `listWeight`: the base count, which is NOT the unique base count, or the interval count.
+    /// (`intervalList.getBaseCount()` and `intervalList.size()`.)
     pub fn list_weight(&self, list: &IntervalList) -> i64 {
         if self.counts_bases() {
             list.intervals
@@ -126,6 +146,12 @@ impl ScatterMode {
     }
 
     /// `deduceIdealSplitWeight`, on the list the mode has already preprocessed.
+    ///
+    /// The by-base-count form is the one the module note quotes. Its `(int)` cast sits *inside*
+    /// the `max`: a quotient above `Integer.MAX_VALUE` keeps only its low 32 bits there, which for
+    /// a quotient below 2^32 is negative, and the `max` then answers 1. This keeps the quotient in
+    /// `i64` without the cast, so the two part for such a quotient. The interval-count modes cast
+    /// after the `max` (`(int) Math.max(1, ...)`), on a count that cannot reach that size.
     pub fn ideal_split_weight(&self, list: &IntervalList, scatter_count: i32) -> i64 {
         let base = if self.counts_bases() {
             // `getUniqueBaseCount()`, which uniques first whatever the mode does.
@@ -135,6 +161,7 @@ impl ScatterMode {
                 .iter()
                 .map(|interval| i64::from(interval.length()))
                 .sum();
+            // `1.max(x)` is `Math.max(1, x)`.
             1.max(floor_div(unique, i64::from(scatter_count)))
         } else {
             1.max(floor_div(self.list_weight(list), i64::from(scatter_count)))
@@ -142,6 +169,8 @@ impl ScatterMode {
         match self {
             ScatterMode::BalancingWithoutIntervalSubdivision
             | ScatterMode::BalancingWithoutIntervalSubdivisionWithOverflow => {
+                // `IntervalListScattererWithoutSubdivision.deduceIdealSplitWeight`:
+                // `Math.max(widestIntervalLength, splitWidth)`.
                 // `orElse(1)`: an empty list's widest interval is one, not zero.
                 let widest = list
                     .intervals
@@ -156,6 +185,16 @@ impl ScatterMode {
     }
 
     /// `takeSome`: what goes into the shard being built, and what goes back on the queue.
+    ///
+    /// Per mode, as the five classes have it:
+    ///
+    ///  * subdivision: all of it if it fits in `idealSplitWeight - currentSize`, nothing if that is
+    ///    zero, otherwise the first `amount` bases and the rest;
+    ///  * without subdivision: all or nothing by `shouldIncludeInterval`, which the overflow mode
+    ///    widens with `|| idealSplitWeight < projectedSizeOfRemaining`;
+    ///  * by interval count: one more while `amount > 0`;
+    ///  * with distributed remainder: one more while `projectSizeOfRemaining > currentSize`, which
+    ///    ignores the ideal weight entirely.
     fn take_some(
         &self,
         interval: &Interval,
@@ -173,6 +212,7 @@ impl ScatterMode {
                     return (None, Some(interval.clone()));
                 }
                 // The cut keeps the strand and the name on both halves.
+                // `interval.getStart() + (int) amount - 1`, and `+ (int) amount` for the right.
                 let mut left = interval.clone();
                 left.end = interval.start + amount as i32 - 1;
                 let mut right = interval.clone();
@@ -213,6 +253,10 @@ impl ScatterMode {
 }
 
 /// `Math.floorDiv`, which rounds toward negative infinity rather than toward zero.
+///
+/// Rust's `/` on integers truncates toward zero, as Java's does; the correction subtracts one when
+/// there is a remainder and the signs differ. The counts here are not negative, so it never fires
+/// on the inputs this file passes, but it keeps the function the one it is named for.
 fn floor_div(numerator: i64, denominator: i64) -> i64 {
     let quotient = numerator / denominator;
     if (numerator % denominator != 0) && ((numerator < 0) != (denominator < 0)) {
@@ -230,16 +274,22 @@ pub enum ScatterError {
 }
 
 impl ScatterError {
+    /// The class of the exception the reference throws.
     pub fn java_class(&self) -> &'static str {
         "java.lang.IllegalArgumentException"
     }
 
+    /// `throw new IllegalArgumentException("scatterCount < 1");`
     pub fn message(&self) -> String {
         "scatterCount < 1".to_string()
     }
 }
 
 /// `IntervalListScatterer.scatter`, which is the iterator run to exhaustion.
+///
+/// The reference preprocesses twice, in the `IntervalListScatter` constructor and again in
+/// `ScatterState` on the already preprocessed list; this preprocesses once. Each pass of the outer
+/// loop is one `ScatterState.next()`.
 pub fn scatter(
     list: &IntervalList,
     mode: ScatterMode,
@@ -250,6 +300,8 @@ pub fn scatter(
     }
     let processed = mode.preprocess(list);
     let ideal = mode.ideal_split_weight(&processed, scatter_count);
+    // `new ArrayDeque<>(processedIntervals.getIntervals())`: `pop_front` is `pollFirst` and
+    // `push_front` is `addFirst`.
     let mut queue: std::collections::VecDeque<Interval> =
         processed.intervals.iter().cloned().collect();
     let mut weight_remaining = mode.list_weight(&processed);
@@ -272,6 +324,8 @@ pub fn scatter(
             if let Some(back) = give_back {
                 queue.push_front(back);
             }
+            // A `None` first half closes the shard: the reference's `return runningIntervalList`,
+            // which `closed` and the `break` stand for.
             match take {
                 None => {
                     weight_remaining -= mode.list_weight(&running);
@@ -289,6 +343,8 @@ pub fn scatter(
         while let Some(interval) = queue.pop_front() {
             running.intervals.push(interval);
         }
+        // The reference throws `NoSuchElementException` for an empty shard here. The queue was
+        // not empty when this pass began, so the shard cannot be empty and the test always holds.
         if !running.intervals.is_empty() {
             shards.push(running);
         }
