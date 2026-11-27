@@ -843,6 +843,25 @@ fn transcode_reads(
             Thrown::non_user(error.java_exception(), error.message())
         };
         let mut reader = htsjdk_cram::reader::CramReader::new(bytes).map_err(cram_refusal)?;
+        // `initializeReference` and then `validateCRAMDictionaryAgainstReference`, which asks the
+        // reference to carry every contig the reads name, all before the traversal decodes a read.
+        if let Some(dictionary) = reference_dictionary(parser)? {
+            if !flag(parser, "disable-sequence-dictionary-validation") {
+                gatk_tools::sequence_dictionary::validate(
+                    "reference",
+                    &dictionary.sequences,
+                    "reads",
+                    &reader.header.sequences,
+                    true,
+                    false,
+                )
+                .map_err(|refusal| Thrown {
+                    failure: Failure::User,
+                    exception: refusal.java_class(),
+                    message: Some(refusal.message()),
+                })?;
+            }
+        }
         let mut fasta = htsjdk_cram::reader::FastaReference::open(std::path::Path::new(&reference));
         let records = reader.read_all(&mut fasta).map_err(cram_refusal)?;
         let indexed = htsjdk_bam::sam_files::find_index(path).is_some();
@@ -2893,8 +2912,12 @@ pub fn pileup(parser: &Parser) -> Outcome {
         ));
     }
 
-    std::fs::write(&output, &text)
-        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
+    std::fs::write(&output, &text).map_err(|error| {
+        could_not_create_output_file(
+            &output,
+            &format!("exception {output} ({})", java_io_reason(&error)),
+        )
+    })?;
     Ok(None)
 }
 
@@ -3533,7 +3556,14 @@ pub fn annotate_vcf_with_expected_allele_fraction(parser: &Parser) -> Outcome {
     let mut rows = table_text
         .lines()
         .filter(|line| !line.starts_with('#') && !line.trim().is_empty());
-    let columns: Vec<&str> = rows.next().unwrap_or_default().split('\t').collect();
+    let Some(column_line) = rows.next() else {
+        return Err(bad_input(format!(
+            "format error in '{fractions_path}' at line {}: premature end of table: header line \
+             not found",
+            table_text.lines().count()
+        )));
+    };
+    let columns: Vec<&str> = column_line.split('\t').collect();
     let column = |name: &str| -> Result<usize, Thrown> {
         columns
             .iter()
@@ -9271,7 +9301,12 @@ pub fn learn_read_orientation_model(parser: &Parser) -> Outcome {
             let mut out = Vec::new();
             flate2::read::MultiGzDecoder::new(bytes.as_slice())
                 .read_to_end(&mut out)
-                .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{input}: {error}")))?;
+                .map_err(|_| {
+                    Thrown::user(format!(
+                        "Could not extract data from: file://{}",
+                        java_absolute_path(input)
+                    ))
+                })?;
             out
         };
         let mut members = tar_members(&tar);
@@ -10497,6 +10532,27 @@ fn compare_references_read(
         references.push(compare::Reference { column, sequences });
     }
     Ok(references)
+}
+
+/// `UserException.MissingReferenceFaiFile`, which `CachingIndexedFastaSequenceFile.checkAndCreate`
+/// raises for a FASTA with no `.fai` beside it.
+fn missing_fai_refusal(reference: &str) -> Result<(), Thrown> {
+    let fai = format!("{reference}.fai");
+    if std::path::Path::new(reference).exists() && !std::path::Path::new(&fai).exists() {
+        return Err(Thrown {
+            failure: Failure::User,
+            exception:
+                "org.broadinstitute.hellbender.exceptions.UserException$MissingReferenceFaiFile",
+            message: Some(format!(
+                "Fasta index file file://{} for reference file://{} does not exist. Please see \
+                 https://gatk.broadinstitute.org/hc/articles/360035531652-FASTA-Reference-genome-format \
+                 for help creating it.",
+                java_absolute_path(&fai),
+                java_absolute_path(reference)
+            )),
+        });
+    }
+    Ok(())
 }
 
 /// `UserException.CouldNotCreateOutputFile`, whose message names the file first.
@@ -13643,6 +13699,7 @@ pub fn shift_fasta(parser: &Parser) -> Outcome {
     // validates the dictionaries whether or not its traversal uses any of them, so those refusals
     // are this tool's refusals too.
     let master = master_dictionary(parser)?;
+    missing_fai_refusal(&reference_path)?;
     let mut reference =
         gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
             .map_err(|error| Thrown::user(format!("{error:?}")))?;
