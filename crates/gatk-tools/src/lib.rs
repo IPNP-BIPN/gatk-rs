@@ -108,6 +108,7 @@ pub mod genomicsdb_query;
 pub mod genotype_gvcfs;
 pub mod genotyping_engine;
 pub mod get_normal_artifact_data;
+pub mod forward_overlaps;
 pub mod get_pileup_summaries;
 pub mod get_sample_name;
 pub mod given_alleles;
