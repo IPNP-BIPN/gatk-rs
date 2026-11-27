@@ -222,9 +222,15 @@ pub fn filter_bins_containing_only_ns(
     bins: &[Interval],
     bases: impl Fn(&str) -> Vec<u8>,
 ) -> Vec<Interval> {
+    // Fetched once per run of bins on one contig, not once per bin: a chr20 run copied the whole
+    // contig 64,444 times and timed out at 1800 s where GATK takes 2 s (#1453).
+    let mut current: Option<(&str, Vec<u8>)> = None;
     bins.iter()
         .filter(|bin| {
-            let contig = bases(&bin.contig);
+            if current.as_ref().map(|(name, _)| *name) != Some(bin.contig.as_str()) {
+                current = Some((bin.contig.as_str(), bases(&bin.contig)));
+            }
+            let contig = &current.as_ref().expect("just fetched").1;
             let from = (bin.start - 1) as usize;
             let to = (bin.end as usize).min(contig.len());
             !contig[from..to].iter().all(|base| is_n(*base))
@@ -261,4 +267,38 @@ pub fn preprocess(
     let bins = generate_bins(&padded, bin_length);
     let kept = filter_bins_containing_only_ns(&bins, bases);
     Ok(write_list(sequences, &kept))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bin(contig: &str, start: i32, end: i32) -> Interval {
+        Interval {
+            contig: contig.to_string(),
+            start,
+            end,
+        }
+    }
+
+    #[test]
+    fn each_run_of_one_contig_is_fetched_once_and_the_n_filter_holds() {
+        let fetches = std::cell::Cell::new(0);
+        let bins = [
+            bin("a", 1, 2),
+            bin("a", 3, 4),
+            bin("b", 1, 2),
+            bin("a", 1, 2),
+        ];
+        let kept = filter_bins_containing_only_ns(&bins, |contig| {
+            fetches.set(fetches.get() + 1);
+            if contig == "a" {
+                b"NNAc".to_vec()
+            } else {
+                b"nN".to_vec()
+            }
+        });
+        assert_eq!(fetches.get(), 3);
+        assert_eq!(kept, vec![bin("a", 3, 4)]);
+    }
 }
