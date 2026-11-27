@@ -416,28 +416,28 @@
       "share": 1.0
     },
     "DetermineGermlineContigPloidy": {
-      "rows": 32,
-      "accepted": 0,
-      "rejected": 32,
-      "distinct_outputs": 0,
-      "matched": 32,
+      "rows": 18,
+      "accepted": 8,
+      "rejected": 10,
+      "distinct_outputs": 5,
+      "matched": 18,
       "t": 2,
       "share": 1.0
     },
     "GermlineCNVCaller": {
-      "rows": 46,
-      "accepted": 0,
-      "rejected": 46,
-      "distinct_outputs": 0,
-      "matched": 46,
+      "rows": 19,
+      "accepted": 12,
+      "rejected": 7,
+      "distinct_outputs": 12,
+      "matched": 19,
       "t": 2,
       "share": 1.0
     },
     "PostprocessGermlineCNVCalls": {
       "rows": 20,
-      "accepted": 0,
-      "rejected": 20,
-      "distinct_outputs": 0,
+      "accepted": 8,
+      "rejected": 12,
+      "distinct_outputs": 4,
       "matched": 20,
       "t": 2,
       "share": 1.0

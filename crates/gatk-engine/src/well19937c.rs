@@ -158,7 +158,7 @@ impl Well19937c {
     /// consume more than one.
     pub fn next_int_bound(&mut self, n: i32) -> i32 {
         assert!(n > 0, "{n} is smaller than, or equal to, the minimum (0)");
-        if (n & -n) == n {
+        if n.isolate_lowest_one() == n {
             return (((n as i64) * (self.next(31) as i64)) >> 31) as i32;
         }
         loop {
