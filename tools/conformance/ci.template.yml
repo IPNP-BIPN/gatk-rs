@@ -98,7 +98,9 @@ jobs:
         # docs/COMMENTING.md. The guard is a ratchet, not a floor for the whole tree: it fails only
         # when a file on tools/audit/commented.txt drops below the density it was recorded at, so
         # the remaining files are a measured list rather than a feeling.
-        run: python3 tools/audit/comment_density.py --check
+        run: |
+          python3 tools/audit/comment_density.py --check
+          python3 tools/audit/comment_density.py --self-test
 
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings

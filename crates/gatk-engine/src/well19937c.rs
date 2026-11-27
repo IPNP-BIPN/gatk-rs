@@ -36,12 +36,30 @@
 //! platform's, so a port of the *shape* would be bit-wrong in the mantissa while looking right.
 //! It belongs with jmath, and refusing is better than a plausible answer. Nothing GATK reaches
 //! through `RandomDataGenerator.nextPermutation` needs it.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `i32` and `i64` are Java's `int` and `long`. `u32`, `u8` and `usize` are unsigned types Java
+//!   lacks: a `u8` holds the same eight bits as a Java `byte`, and `usize` is the index type.
+//! - `x as T` converts: to a narrower integer it keeps the low bits (Java's `(int)` or `(byte)`),
+//!   to a wider signed one it sign-extends (Java's promotion of `int` to `long`), and between
+//!   signed and unsigned of one width it reinterprets the same bits.
+//! - Rust's `>>` on a signed integer is Java's arithmetic `>>`. Java's `>>>` has no operator here
+//!   and is the private `ushr` at the end of the file.
+//! - `wrapping_mul`, `wrapping_add` and `wrapping_sub` are Java's arithmetic, which wraps silently
+//!   on overflow. Plain `*`, `+` and `-` would panic in a debug build instead.
+//! - `Vec<i32>` is an `int[]` the struct owns. `&[i32]` and `&mut [u8]` are read-only and writable
+//!   borrowed views of an array the caller keeps, and `v[a..b]` is the part from `a` up to but not
+//!   including `b`.
+//! - `&mut self` on a method means it advances this generator in place, not a copy of it.
 
 /// Number of bits in the pool.
 const K: usize = 19937;
 /// `r`, the number of 32-bit blocks the pool is made of: `(K + 31) / 32`.
 const R: usize = K.div_ceil(32);
 
+// The recurrence's three tap offsets into the pool, read in `next` as `v[(index + M1) % R]` and
+// so on.
 const M1: usize = 70;
 const M2: usize = 179;
 const M3: usize = 449;
@@ -53,7 +71,9 @@ const M3: usize = 449;
 /// the same indices directly: same values, no state to keep in step.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Well19937c {
+    /// The pool: `R` ints, used as a ring.
     v: Vec<i32>,
+    /// Where the next draw's recurrence starts; it steps backwards by one per draw.
     index: usize,
 }
 
@@ -64,6 +84,8 @@ impl Well19937c {
     /// `new Well19937c((int) seed)` even when the long fits in an int: the array length changes
     /// how much of the pool the scrambler fills.
     pub fn from_long(seed: i64) -> Self {
+        // `seed >> 32` is the high word (an arithmetic shift, Java's `>>`) and
+        // `seed & 0xffff_ffff` the low one; `as i32` keeps each one's low 32 bits.
         Well19937c::from_int_array(&[(seed >> 32) as i32, (seed & 0xffff_ffff) as i32])
     }
 
@@ -83,6 +105,19 @@ impl Well19937c {
     }
 
     /// `Utils.getRandomDataGenerator()`'s generator: `new Well19937c(47382911L)`.
+    ///
+    /// The static field is initialised with
+    /// `new RandomDataGenerator(new Well19937c(GATK_RANDOM_SEED))`, and:
+    ///
+    /// ```java
+    /// public static RandomDataGenerator getRandomDataGenerator() { return randomDataGenerator; }
+    /// ```
+    ///
+    /// GATK reaches it through `MathUtils.sampleIndicesWithoutReplacement`
+    /// (`return Utils.getRandomDataGenerator().nextPermutation(n, k);`, ported in
+    /// [`crate::permutation`]). As with [`crate::java_random::JavaRandom::gatk`], the Java hands
+    /// out one static instance and this returns a fresh one, so the port creates it once and
+    /// passes the same `&mut Well19937c` to every consumer.
     pub fn gatk() -> Self {
         Well19937c::from_long(crate::java_random::GATK_RANDOM_SEED)
     }
@@ -94,11 +129,14 @@ impl Well19937c {
     /// `int` promoted to `long`, so a negative entry sign-extends and `l >> 30` is an *arithmetic*
     /// shift over 64 bits, not the logical shift over 32 that reading it as unsigned would give.
     pub fn set_seed_ints(&mut self, seed: &[i32]) {
+        // Copy the first `taken` seed entries into the pool; a seed longer than the pool is cut.
         let taken = seed.len().min(R);
         self.v[..taken].copy_from_slice(&seed[..taken]);
         if seed.len() < R {
+            // `a..b` is the half-open range a, a+1, ... b-1: `for (int i = a; i < b; i++)`.
             for i in seed.len()..R {
                 let l = self.v[i - seed.len()] as i64;
+                // `& 0xffff_ffff` then `as i32` keep the low 32 bits of the 64-bit result.
                 self.v[i] = (1_812_433_253i64
                     .wrapping_mul(l ^ (l >> 30))
                     .wrapping_add(i as i64)
@@ -109,7 +147,8 @@ impl Well19937c {
     }
 
     /// `setSeed(long seed)`, which is what `RandomDataGenerator.reSeed(long)` calls and therefore
-    /// what `Utils.resetRandomGenerator()` reaches.
+    /// what `Utils.resetRandomGenerator()` reaches:
+    /// `randomDataGenerator.reSeed(GATK_RANDOM_SEED);`.
     pub fn set_seed_long(&mut self, seed: i64) {
         self.set_seed_ints(&[(seed >> 32) as i32, (seed & 0xffff_ffff) as i32]);
     }
@@ -117,6 +156,8 @@ impl Well19937c {
     /// `protected int next(int bits)`: the WELL19937c recurrence, with the Matsumoto-Kurita
     /// tempering that makes it the "c" variant rather than `Well19937a`.
     pub fn next(&mut self, bits: u32) -> i32 {
+        // `% R` wraps an index past the end of the ring; these are the values the reference's
+        // precomputed tables hold (see the struct note).
         let index_rm1 = (self.index + R - 1) % R;
         let index_rm2 = (self.index + R - 2) % R;
 
@@ -125,20 +166,27 @@ impl Well19937c {
         let vm2 = self.v[(self.index + M2) % R];
         let vm3 = self.v[(self.index + M3) % R];
 
+        // `0x8000_0000u32 as i32` is Java's `int` literal `0x80000000`, which is negative. Rust
+        // refuses an out-of-range `i32` literal, so it is written unsigned and reinterpreted:
+        // the same bits.
         let z0 = (0x8000_0000u32 as i32 & self.v[index_rm1]) ^ (0x7fff_ffff & self.v[index_rm2]);
         let z1 = (v0 ^ (v0 << 25)) ^ (vm1 ^ ushr(vm1, 27));
         let z2 = ushr(vm2, 9) ^ (vm3 ^ ushr(vm3, 1));
         let z3 = z1 ^ z2;
         let mut z4 = z0 ^ (z1 ^ (z1 << 9)) ^ (z2 ^ (z2 << 21)) ^ (z3 ^ ushr(z3, 21));
 
+        // Store the new state; the index then steps backwards, so the ring is walked downwards.
         self.v[self.index] = z3;
         self.v[index_rm1] = z4;
         self.v[index_rm2] &= 0x8000_0000u32 as i32;
         self.index = index_rm1;
 
+        // The tempering. `z4` is a copy of what was just stored, so it alters the output only,
+        // never the pool.
         z4 ^= (z4 << 7) & 0xe46e_1700u32 as i32;
         z4 ^= (z4 << 15) & 0x9b86_8000u32 as i32;
 
+        // The top `bits` bits, by an unsigned shift.
         ushr(z4, 32 - bits)
     }
 
@@ -156,7 +204,12 @@ impl Well19937c {
     /// the same shape as [`crate::java_random::JavaRandom::next_int_bound`]: a power of two takes
     /// the high bits of a single draw, anything else loops until the value is unbiased and so can
     /// consume more than one.
+    ///
+    /// The power-of-two product is a plain `*` where `JavaRandom` writes `wrapping_mul`: both
+    /// factors are below 2^31, so it cannot overflow a long either way.
     pub fn next_int_bound(&mut self, n: i32) -> i32 {
+        // `assert!` panics (stops the program) when false, standing in for the reference's
+        // rejection of a non-positive `n`. `{n}` puts the value into the message.
         assert!(n > 0, "{n} is smaller than, or equal to, the minimum (0)");
         if n.isolate_lowest_one() == n {
             return (((n as i64) * (self.next(31) as i64)) >> 31) as i32;
@@ -179,6 +232,9 @@ impl Well19937c {
     }
 
     /// `nextLong(long n)`.
+    ///
+    /// The same rejection loop as `next_int_bound`, over 63 bits: the first draw is 31 bits, so
+    /// `bits` is never negative.
     pub fn next_long_bound(&mut self, n: i64) -> i64 {
         assert!(n > 0, "{n} is smaller than, or equal to, the minimum (0)");
         loop {
@@ -210,6 +266,9 @@ impl Well19937c {
     /// the length in a way a naive port gets wrong for lengths that are a multiple of four.
     pub fn next_bytes(&mut self, bytes: &mut [u8]) {
         let mut i = 0usize;
+        // `saturating_sub` is subtraction that stops at zero: the length is unsigned, so a plain
+        // `- 3` on a slice shorter than three would panic. Either way the loop below runs only
+        // while at least four bytes remain.
         let end = bytes.len().saturating_sub(3);
         while i < end {
             let random = self.next(32);
@@ -221,6 +280,8 @@ impl Well19937c {
         }
         // Taken unconditionally, even when `i == bytes.len()`.
         let mut random = self.next(32);
+        // At most three bytes remain, so `random` is shifted at most twice before its last use
+        // and the sign bits a `>>` copies in never reach the low byte.
         while i < bytes.len() {
             bytes[i] = (random & 0xff) as u8;
             i += 1;
@@ -230,6 +291,9 @@ impl Well19937c {
 }
 
 /// Java's `>>>` over an `i32`.
+///
+/// Reinterpreting as unsigned first makes Rust's `>>` the logical shift, then the result is
+/// reinterpreted back.
 fn ushr(value: i32, bits: u32) -> i32 {
     ((value as u32) >> bits) as i32
 }
