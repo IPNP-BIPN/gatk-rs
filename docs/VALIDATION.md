@@ -26,14 +26,14 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | AnnotateVcfWithBamDepth | gatk-rs | oracle-backed | 54 suite | 0 suite | 23/23 (100.0%) | 2 | 2535 probes (+5), 0/11 diverge | 6 | 0 | none |
 | AnnotateVcfWithExpectedAlleleFraction | gatk-rs | oracle-backed | 30 suite | 0 suite | 23/23 (100.0%) | 2 | 2436 probes (+2), 0/13 diverge | 4 | 2 | none |
 | ApplyBQSR | gatk-rs | oracle-backed | 36306 suite | 0 suite | 21/21 (100.0%) | 2 | 3123 probes (+8), 0/12 diverge | 6 | 0 | none |
-| ApplyBQSRSpark | gatk-rs | oracle-backed | 5 | 3 | 20/20 (100.0%) | 2 | 3051 probes (+7), 0/12 diverge | 6 | 1 | none |
+| ApplyBQSRSpark | gatk-rs | oracle-backed | 8 | 3 | 20/20 (100.0%) | 2 | 3051 probes (+7), 0/12 diverge | 6 | 1 | none |
 | ApplyVQSR | gatk-rs | oracle-backed | 395 suite | 0 suite | 25/25 (100.0%) | 2 | 2638 probes (+13), 0/17 diverge | 7 | 7 | none |
-| BQSRPipelineSpark | gatk-rs | oracle-backed | 5 | 3 | 23/23 (100.0%) | 2 | 4150 probes (+0), 0/14 diverge | 8 | 1 | none |
+| BQSRPipelineSpark | gatk-rs | oracle-backed | 8 | 3 | 23/23 (100.0%) | 2 | 4150 probes (+0), 0/14 diverge | 8 | 1 | none |
 | BaitDesigner | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | none |
 | BamIndexStats | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | none |
 | BamToBfq | picard-rs | oracle-backed | not vendored | not vendored | 17/17 (100.0%) | 2 | not measured | 0 | 0 | none |
 | BaseRecalibrator | gatk-rs | oracle-backed | 12 suite | 0 suite | 21/21 (100.0%) | 2 | 3759 probes (+28), 0/12 diverge | 8 | 0 | none |
-| BaseRecalibratorSpark | gatk-rs | oracle-backed | 6 | 1 | 22/22 (100.0%) | 2 | 3906 probes (+2), 0/13 diverge | 8 | 1 | none |
+| BaseRecalibratorSpark | gatk-rs | oracle-backed | 9 | 1 | 22/22 (100.0%) | 2 | 3906 probes (+2), 0/13 diverge | 8 | 1 | none |
 | BedToIntervalList | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
 | BpmToNormalizationManifestCsv | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
 | BuildBamIndex | gatk-rs | oracle-backed | 16 suite | 0 suite | 18/18 (100.0%) | 2 | not measured | 7 | 0 | none |
@@ -290,7 +290,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | SiteDepthtoBAF | gatk-rs | oracle-backed | 30 suite | 0 suite | 18/18 (100.0%) | 2 | 2082 probes (+0), 0/7 diverge | 5 | 9 | none |
 | SortGff | picard-rs | oracle-backed | not vendored | not vendored | 14/14 (100.0%) | 2 | not measured | 0 | 0 | none |
 | SortSam | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
-| SortSamSpark | gatk-rs | oracle-backed | 21 | 10 | 23/23 (100.0%) | 2 | 2176 probes (+11), 0/13 diverge | 5 | 1 | none |
+| SortSamSpark | gatk-rs | oracle-backed | 35 | 18 | 23/23 (100.0%) | 2 | 2176 probes (+11), 0/13 diverge | 5 | 1 | none |
 | SortVcf | gatk-rs | oracle-backed | 28 suite | 0 suite | 16/16 (100.0%) | 2 | not measured | 6 | 0 | none |
 | SplitCRAM | gatk-rs | oracle-backed | 31 suite | 0 suite | 11/11 (100.0%) | 2 | 983 probes (+2), 0/7 diverge | 2 | 0 | none |
 | SplitIntervals | gatk-rs | oracle-backed | 78 suite | 0 suite | 25/25 (100.0%) | 2 | 1923 probes (+6), 0/12 diverge | 4 | 0 | none |
