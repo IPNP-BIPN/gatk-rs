@@ -60,7 +60,6 @@
 //! only when the *value* is an `Integer`, so a rejected `0` reports `allowed range [1, 10]` and a
 //! rejected `null` on the same argument reports `allowed range [1.0, 10.0]`.
 
-use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
 /// The string Barclay treats as the absence of a value, and as the rendering of an absent default.
@@ -206,32 +205,6 @@ pub enum ValueClass {
 }
 
 impl ValueClass {
-    /// `Number.class.isAssignableFrom(getUnderlyingFieldClass())`.
-    fn is_number(&self) -> bool {
-        matches!(
-            self,
-            ValueClass::Integer | ValueClass::Double | ValueClass::Float | ValueClass::Long
-        )
-    }
-
-    /// `getUnderlyingFieldClass().getSimpleName()`, which appears in two messages: the failure of
-    /// the `String` constructor and the failure of `Enum.valueOf`.
-    pub fn simple_name(&self) -> &'static str {
-        match self {
-            ValueClass::Integer => "Integer",
-            ValueClass::Double => "Double",
-            ValueClass::Text => "String",
-            ValueClass::Boolean => "Boolean",
-            ValueClass::Tagged => "TaggedPath",
-            ValueClass::Enum { simple_name, .. } => simple_name,
-            ValueClass::Float => "Float",
-            ValueClass::Long => "Long",
-            ValueClass::Byte => "Byte",
-            ValueClass::Constructed { simple_name, .. } => simple_name,
-            ValueClass::Checked { simple_name, .. } => simple_name,
-        }
-    }
-
     /// `constructFromString`: `Enum.valueOf` for an enum, otherwise the `String` constructor.
     ///
     /// The failure of the `String` constructor arrives as an `InvocationTargetException` and is
@@ -423,13 +396,14 @@ impl Error {
 
     /// `new CommandLineException.OutOfRangeArgumentValue(name, min, max, value)`, which is a
     /// `BadArgumentValue` with a range message built from the two bounds.
-    fn out_of_range(name: &str, min: f64, max: f64, value: &Value) -> Self {
+    ///
+    /// `as_int` is `value instanceof Integer`, so a **null** value formats the bounds as doubles
+    /// even on an Integer argument. That is the whole of the difference between "allowed range
+    /// [1, 10]." and "allowed range [1.0, 10.0].". A `Byte` is held as an `Int` here and is not an
+    /// `Integer` there, which is why the caller answers it rather than the value.
+    fn out_of_range(name: &str, min: f64, max: f64, value: &Value, as_int: bool) -> Self {
         // `getValueString`: a null renders as the four characters, not as an empty string.
         let value_string = value.to_java_string();
-        // `asInt` is `value instanceof Integer`, so a **null** value formats the bounds as
-        // doubles even on an Integer argument. That is the whole of the difference between
-        // "allowed range [1, 10]." and "allowed range [1.0, 10.0].".
-        let as_int = matches!(value, Value::Int(_));
         let render = |bound: f64| -> String {
             if as_int {
                 // `Integer.toString((int) Math.rint(v))`.
@@ -530,9 +504,7 @@ pub fn java_float(text: &str) -> Option<f32> {
     }
     // The trailing type suffix is part of the grammar and is dropped before the digits are read.
     let body = match body.as_bytes().last() {
-        Some(b'f' | b'F' | b'd' | b'D') if !body.eq_ignore_ascii_case("infinity") => {
-            &body[..body.len() - 1]
-        }
+        Some(b'f' | b'F' | b'd' | b'D') => &body[..body.len() - 1],
         _ => body,
     };
     if body.is_empty() {
@@ -706,11 +678,9 @@ impl Definition {
     /// matters is that it does not throw. It is also nearly unreachable, for the reason in the
     /// module note.
     pub fn check_argument_range(&self, value: &Value) -> Result<bool, Error> {
-        // "Only validate numeric types because we have already ensured at constructor time that
-        // only numeric types have bounds."
-        if !self.class.is_number() {
-            return Ok(false);
-        }
+        // The reference starts with "Only validate numeric types because we have already ensured
+        // at constructor time that only numeric types have bounds", and returns. That test is not
+        // written out: a field with neither range answers false below whatever its class is.
         let as_double = value.as_number();
         if self.has_bounded_range() && self.is_value_out_of_range(as_double) {
             return Err(Error::out_of_range(
@@ -718,6 +688,7 @@ impl Definition {
                 self.annotation.min_value,
                 self.annotation.max_value,
                 value,
+                matches!(value, Value::Int(_)) && !matches!(self.class, ValueClass::Byte),
             ));
         }
         // The same test, against the same hard bounds. Not a typo here: a transcription.
@@ -725,18 +696,14 @@ impl Definition {
     }
 
     /// `setArgumentValues(parser, stream, preprocessedValues)`.
-    ///
-    /// `append` is the parser's `APPEND_TO_COLLECTIONS` option, whose default is "replace". It is
-    /// the only thing that stops a collection from being cleared before the first value.
     pub fn set_argument_values(
         &mut self,
         values: &[String],
-        append: bool,
         surrogates: &TagSurrogates,
         files: &dyn FileSource,
     ) -> Result<(), Error> {
         if self.is_collection {
-            self.set_collection_values(values, append, surrogates, files)?;
+            self.set_collection_values(values, surrogates, files)?;
         } else {
             self.set_scalar_value(values, surrogates)?;
         }
@@ -793,17 +760,13 @@ impl Definition {
     fn set_collection_values(
         &mut self,
         values: &[String],
-        append: bool,
         surrogates: &TagSurrogates,
         files: &dyn FileSource,
     ) -> Result<(), Error> {
-        let mut collected: Vec<Value> = match (&self.value, append) {
-            // "if this is a collection then we only want to clear it once at the beginning, before
-            // we process any of the values, unless we're in APPEND_TO_COLLECTIONS mode". So the
-            // field's declared contents are discarded the moment the user names the argument.
-            (Value::List(existing), true) => existing.clone(),
-            _ => Vec::new(),
-        };
+        // "if this is a collection then we only want to clear it once at the beginning, before we
+        // process any of the values, unless we're in APPEND_TO_COLLECTIONS mode". GATK never sets
+        // that mode, so the field's declared contents are discarded the moment the user names it.
+        let mut collected: Vec<Value> = Vec::new();
 
         for value in values {
             if value == NULL_ARGUMENT_STRING {
@@ -1282,7 +1245,6 @@ pub struct PluginResolution {
 /// `CommandLineArgumentParser` over a set of definitions.
 pub struct Parser {
     definitions: Vec<Definition>,
-    append_to_collections: bool,
     /// The descriptor's own `validateAndResolvePlugins`, if the caller has one.
     plugin_resolution: Option<PluginResolution>,
     /// The plugins the tool handed the descriptor as defaults, which count as selected.
@@ -1320,7 +1282,6 @@ impl Parser {
     pub fn new(definitions: Vec<Definition>) -> Self {
         Self {
             definitions,
-            append_to_collections: false,
             plugin_resolution: None,
             default_plugins: Vec::new(),
             plugin_validation: None,
@@ -1371,12 +1332,6 @@ impl Parser {
         self
     }
 
-    /// `CommandLineParserOptions.APPEND_TO_COLLECTIONS`, whose absence is "replace".
-    pub fn with_append_to_collections(mut self) -> Self {
-        self.append_to_collections = true;
-        self
-    }
-
     /// `new CommandLineArgumentParser(callerArguments)` over a nested declaration, which it
     /// flattens with [`create_argument_definitions`].
     pub fn from_class(class: &ClassDecl) -> Result<Self, Error> {
@@ -1388,13 +1343,12 @@ impl Parser {
     }
 
     /// `ModeArgumentUtils.setArgValues(parser, argValues, modeName)`: each argument a mode names
-    /// takes the mode's value, unless the command line already set it. Returns the arguments the
-    /// mode did set, in the mode's order, which the reference only logs.
+    /// takes the mode's value, unless the command line already set it. The arguments it did set
+    /// are only logged by the reference, so they are not returned.
     ///
     /// An alias the parser does not know is the reference's `IllegalArgumentException`, which is
     /// a programming error in the mode's table rather than a user's.
-    pub fn set_mode_values(&mut self, pairs: &[(&str, &str)]) -> Result<Vec<String>, Error> {
-        let mut modified = Vec::new();
+    pub fn set_mode_values(&mut self, pairs: &[(&str, &str)]) -> Result<(), Error> {
         for (alias, value) in pairs {
             let index = self.index_of_alias(alias).ok_or_else(|| Error {
                 class: "java.lang.IllegalArgumentException",
@@ -1405,13 +1359,11 @@ impl Parser {
             }
             self.definitions[index].set_argument_values(
                 &[(*value).to_string()],
-                false,
                 &TagSurrogates::default(),
                 &Filesystem,
             )?;
-            modified.push((*alias).to_string());
         }
-        Ok(modified)
+        Ok(())
     }
 
     /// A field assigned directly by the tool after parsing, as `customCommandLineValidation` does
@@ -1424,12 +1376,7 @@ impl Parser {
         })?;
         let definition = &mut self.definitions[index];
         definition.has_been_set = false;
-        definition.set_argument_values(
-            &[value.to_string()],
-            false,
-            &TagSurrogates::default(),
-            &Filesystem,
-        )
+        definition.set_argument_values(&[value.to_string()], &TagSurrogates::default(), &Filesystem)
     }
 
     /// The definition an alias names, if any. `namedArgumentsDefinitionsByAlias`.
@@ -1565,8 +1512,7 @@ impl Parser {
             let Some(values) = parsed.iter().find(|(i, _)| *i == index).map(|(_, v)| v) else {
                 continue;
             };
-            let append = self.append_to_collections;
-            self.definitions[index].set_argument_values(values, append, &surrogates, files)?;
+            self.definitions[index].set_argument_values(values, &surrogates, files)?;
         }
 
         // A tool that DECLARES positional arguments takes them, and refuses two counts: fewer than
@@ -1779,9 +1725,10 @@ impl Parser {
                 // `OptionalArgumentOptionSpec.detectOptionArgument`: the next token is taken only
                 // if it does not look like an option **and** the converter accepts it. So
                 // `--flag maybe` leaves "maybe" on the command line as a positional argument
-                // rather than reporting a bad boolean.
+                // rather than reporting a bad boolean. The first test is not written out: no
+                // spelling the converter accepts starts with a dash, so it never decides.
                 match argv.get(cursor) {
-                    Some(next) if !looks_like_an_option(next) => match strict_boolean(next) {
+                    Some(next) => match strict_boolean(next) {
                         Some(converted) => {
                             cursor += 1;
                             Some(converted)
@@ -2042,12 +1989,31 @@ fn strict_boolean(value: &str) -> Option<String> {
     }
 }
 
-/// The long names of a set of definitions, sorted, for a caller that wants to report on them.
-pub fn long_names(definitions: &[Definition]) -> BTreeSet<String> {
-    definitions
-        .iter()
-        .map(|definition| definition.long_name().to_string())
-        .collect()
+#[cfg(test)]
+mod rint_and_filesystem_tests {
+    use super::{rint, FileSource, Filesystem, IoError};
+
+    /// `Math.rint`'s javadoc: the closest integer, and the EVEN one of two equally close.
+    #[test]
+    fn a_half_rounds_to_even() {
+        for (value, expected) in [
+            (2.5, 2.0),
+            (3.5, 4.0),
+            (-2.5, -2.0),
+            (-3.5, -4.0),
+            (1.4, 1.0),
+        ] {
+            assert_eq!(rint(value), expected, "{value}");
+        }
+    }
+
+    #[test]
+    fn the_filesystem_is_read() {
+        let manifest = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
+        let text = Filesystem.read(manifest).expect("the crate's own manifest");
+        assert!(text.contains("name = \"gatk-barclay\""));
+        assert_eq!(Filesystem.read("/no/such/file.list"), Err(IoError));
+    }
 }
 
 #[cfg(test)]

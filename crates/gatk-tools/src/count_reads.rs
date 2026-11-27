@@ -45,7 +45,12 @@ pub fn count_reads(
     intervals: &[SimpleInterval],
     filter: &dyn Fn(&BamRecord) -> bool,
 ) -> Result<i64, ReadsError> {
-    Ok(crate::read_walker::traverse(source, intervals, filter)?.len() as i64)
+    let mut count = 0;
+    for read in crate::read_walker::traverse_iter(source, intervals, false, filter)? {
+        read?;
+        count += 1;
+    }
+    Ok(count)
 }
 
 /// `CountBases.doWork`: `read.getLength()` per read that reaches `apply`.
@@ -54,8 +59,11 @@ pub fn count_bases(
     intervals: &[SimpleInterval],
     filter: &dyn Fn(&BamRecord) -> bool,
 ) -> Result<i64, ReadsError> {
-    let reads = crate::read_walker::traverse(source, intervals, filter)?;
-    Ok(reads.iter().map(|read| read::length(read) as i64).sum())
+    let mut count = 0;
+    for read in crate::read_walker::traverse_iter(source, intervals, false, filter)? {
+        count += read::length(&read?) as i64;
+    }
+    Ok(count)
 }
 
 /// What either tool writes to `-O`: the number, and nothing else.

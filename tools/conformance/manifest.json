@@ -1910,7 +1910,7 @@
         {
           "dump": "BarclayValueModelDump",
           "golden": "crates/gatk-barclay/tests/data/value_model.txt.gz",
-          "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite. 368 rows over 41 command lines, no corrections. The pair that carries the claim is bounded-below against bounded-null: the same argument and the same bounds, reported as allowed range [1, 10] and as allowed range [1.0, 10.0], because the formatter asks whether the value is an Integer and a null is not."
+          "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite. 368 rows over 41 command lines, no corrections. The pair that carries the claim is bounded-below against bounded-null: the same argument and the same bounds, reported as allowed range [1, 10] and as allowed range [1.0, 10.0], because the formatter asks whether the value is an Integer and a null is not. The rows #1451 added for cargo-mutants were frozen from the candidate artefact of run 44588979586, the existing rows unchanged."
         }
       ]
     },
@@ -1928,7 +1928,7 @@
         {
           "dump": "BarclayTaggedArgumentDump",
           "golden": "crates/gatk-barclay/tests/data/tagged_arguments.txt.gz",
-          "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite. 150 rows over 30 command lines, no corrections. The pair that carries the claim is same-option-tag-and-value-twice against same-tag-different-values: the surrogate key is built from the option string and the value, so the first collides with itself and the second does not."
+          "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite. 150 rows over 30 command lines, no corrections. The pair that carries the claim is same-option-tag-and-value-twice against same-tag-different-values: the surrogate key is built from the option string and the value, so the first collides with itself and the second does not. The rows #1451 added for cargo-mutants were frozen from the candidate artefact of run 44588979586, the existing rows unchanged."
         }
       ]
     },
@@ -6923,7 +6923,7 @@
         {
           "dump": "ToolArgumentValueClassDump",
           "golden": "crates/gatk-tools/tests/data/tool_argument_value_classes.txt.gz",
-          "why": "Twenty-two command lines over one target carrying a field of each class: a path, a URI, a relative path, one that names nothing and an empty one; the same strings through a File; a tag on the taggable class, on the one that is not, and by short name; an empty and a filled collection; a FeatureInput tagged and not; and a Float on both sides of what Float.valueOf accepts, primitive and boxed."
+          "why": "Twenty-two command lines over one target carrying a field of each class: a path, a URI, a relative path, one that names nothing and an empty one; the same strings through a File; a tag on the taggable class, on the one that is not, and by short name; an empty and a filled collection; a FeatureInput tagged and not; and a Float on both sides of what Float.valueOf accepts, primitive and boxed. The rows #1451 added for cargo-mutants were frozen from the candidate artefact of run 44588979586, the existing rows unchanged."
         }
       ]
     },
@@ -6943,7 +6943,7 @@
         {
           "dump": "PluginArgumentOwnershipDump",
           "golden": "crates/gatk-tools/tests/data/plugin_argument_ownership.txt.gz",
-          "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite, and identical to the local smoke run. 62 rows: 28 controlled arguments with their owning filter class, 12 of them required, then the six answers of isDependentArgumentAllowed with and without tool defaults and ten command lines through the trim."
+          "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite, and identical to the local smoke run. 62 rows: 28 controlled arguments with their owning filter class, 12 of them required, then the six answers of isDependentArgumentAllowed with and without tool defaults and ten command lines through the trim. The rows #1451 added for cargo-mutants were frozen from the candidate artefact of run 44588979586, the existing rows unchanged."
         }
       ]
     },
@@ -8707,7 +8707,7 @@
       ],
       "image": "broadinstitute/gatk:4.7.0.0",
       "command": "bash /harness/gcnv_dump.sh",
-      "why": "A MEASUREMENT, NOT A PORT TARGET YET (docs/gcnv-reproducible-oracle.md). Under GATK's own flags pytensor compiles its C with the host's -march and -mfma, MKL picks kernels per CPU and glibc's libm takes FMA variants, and on one emulated AVX2 CPU those choices move 80 of the 132 files. gcnv_frozen_env.sh pins them: baseline x86-64 with -ffp-contract=off for pytensor, Ubuntu's reference BLAS preloaded over MKL, numpy's baseline loops, glibc's libm without FMA or AVX2. The dump is one sha256 per output file; the comment lines name the CPU. The golden is only worth something once runners of different CPU families have produced the same lines. It also carries PostprocessGermlineCNVCalls on every sample (post-s<i>/, plain VCFs) and the shards' bytes (`input` lines), which crates/gatk-cli/tests/gcnv_postprocess_end_to_end.rs replays through the port (docs/gcnv-postprocess.md). Its ploidy/ files are what crates/gatk-cli/tests/gcnv_ploidy_end_to_end.rs compares DetermineGermlineContigPloidy's port with, from the same fixture (docs/gcnv-ploidy.md).",
+      "why": "A MEASUREMENT, NOT A PORT TARGET YET (docs/gcnv-reproducible-oracle.md). Under GATK's own flags pytensor compiles its C with the host's -march and -mfma, MKL picks kernels per CPU and glibc's libm takes FMA variants, and on one emulated AVX2 CPU those choices move 80 of the 132 files. gcnv_frozen_env.sh pins them: baseline x86-64 with -ffp-contract=off for pytensor, Ubuntu's reference BLAS preloaded over MKL, numpy's baseline loops, glibc's libm without FMA or AVX2. The dump is one sha256 per output file; the comment lines name the CPU. The golden is only worth something once runners of different CPU families have produced the same lines. It also carries PostprocessGermlineCNVCalls on every sample (post-s<i>/, plain VCFs) and the shards' bytes (`input` lines), which crates/gatk-cli/tests/gcnv_postprocess_end_to_end.rs replays through the native segmenter and the CLI's Java (docs/gcnv-postprocess.md). Its ploidy/ files are what crates/gatk-cli/tests/gcnv_ploidy_end_to_end.rs compares the native DetermineGermlineContigPloidy with, fed what the CLI hands the script, from the same fixture (docs/gcnv-ploidy.md).",
       "compare": {
         "mode": "lines"
       },

@@ -1,7 +1,7 @@
 //! Conformance for the four value classes against GATK 4.6.2.0 and Barclay 5.0.0.
 //!
 //! Golden from `tools/argument-conformance/ToolArgumentValueClassDump.java`, which parsed
-//! thirty-four command lines against one target carrying a field of each class.
+//! fifty-three command lines against one target carrying a field of each class.
 //!
 //! # What this suite is for
 //!
@@ -166,6 +166,13 @@ fn the_float_grammar_is_javas() {
         ("a-fraction-with-a-leading-space", " 1.5", 1.5),
         ("a-fraction-with-a-trailing-space", "1.5 ", 1.5),
         ("a-fraction-with-a-leading-plus", "+1.5", 1.5),
+        ("a-fraction-in-hexadecimal-with-two-digits", "0x10p0", 16.0),
+        ("a-fraction-in-hexadecimal-with-a-point", "0x1.8p1", 3.0),
+        (
+            "a-fraction-in-hexadecimal-with-two-fraction-digits",
+            "0x1.08p4",
+            16.5,
+        ),
     ];
     for (case, spelling, value) in accepted {
         assert_eq!(outcome(&text, case), "ok", "{case}");
@@ -177,6 +184,11 @@ fn the_float_grammar_is_javas() {
     // The two capitalised words, and the value that overflows into one of them.
     assert_eq!(java_float("Infinity"), Some(f32::INFINITY));
     assert_eq!(java_float("-Infinity"), Some(f32::NEG_INFINITY));
+    assert_eq!(
+        field(&text, "an-infinity-with-a-leading-plus", "fraction"),
+        "Infinity"
+    );
+    assert_eq!(java_float("+Infinity"), Some(f32::INFINITY));
     assert!(java_float("NaN").expect("a value").is_nan());
     assert_eq!(
         field(&text, "a-fraction-out-of-a-floats-range", "fraction"),
@@ -228,6 +240,31 @@ fn the_long_grammar_is_its_own() {
         "{past}"
     );
     assert_eq!(java_long("9223372036854775808"), None);
+    // The same on the other side of zero, and a number past even an i128.
+    for (case, spelling, value) in [
+        ("a-count-below-zero", "-42", -42),
+        (
+            "a-count-at-a-longs-lower-limit",
+            "-9223372036854775808",
+            i64::MIN,
+        ),
+    ] {
+        assert_eq!(field(&text, case, "count"), value.to_string(), "{case}");
+        assert_eq!(java_long(spelling), Some(value), "{spelling}");
+    }
+    for (case, spelling) in [
+        ("a-count-past-a-longs-lower-limit", "-9223372036854775809"),
+        (
+            "a-count-of-forty-digits",
+            "1234567890123456789012345678901234567890",
+        ),
+    ] {
+        assert!(
+            outcome(&text, case).contains("Failure constructing 'Long'"),
+            "{case}"
+        );
+        assert_eq!(java_long(spelling), None, "{spelling}");
+    }
     // The grammar: a leading plus is taken, and a leading space and a hexadecimal literal are not,
     // which is where it parts company with the float.
     assert_eq!(outcome(&text, "a-count-with-a-plus"), "ok");

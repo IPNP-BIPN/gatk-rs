@@ -8,6 +8,10 @@ From one BAM it writes `deflated.bam` (its records `--copies` times behind one h
 htsjdk writes) and `stored.bam` (the same bytes, level 0), checks the tool counts the same reads on
 both, and prints the best wall and CPU time of `--runs` runs each, at one rayon thread and at all.
 The difference at all threads bounds what any inflater, on any device, can take off the tool.
+
+With `--deflate`, the same for the writing side: PrintReads reads `stored.bam` and writes it at
+GATKConfig's level 2, then at level 0, whose deflate is a copy (`samjdk.compression_level`, as
+GATK's Main sets it). The outputs must hold the same records.
 """
 
 import argparse
@@ -42,14 +46,14 @@ def header_length(raw):
     return at
 
 
-def timed(command, threads):
-    environment = dict(os.environ, RAYON_NUM_THREADS=str(threads))
+def timed(command, threads, extra=None):
+    environment = dict(os.environ, RAYON_NUM_THREADS=str(threads), **(extra or {}))
     before = resource.getrusage(resource.RUSAGE_CHILDREN)
     start = time.perf_counter()
     out = subprocess.run(command, env=environment, capture_output=True, text=True, check=True).stdout
     wall = time.perf_counter() - start
     after = resource.getrusage(resource.RUSAGE_CHILDREN)
-    return wall, after.ru_utime - before.ru_utime, out.strip().splitlines()[-1]
+    return wall, after.ru_utime - before.ru_utime, (out.strip().splitlines() or [""])[-1]
 
 
 def main():
@@ -60,6 +64,7 @@ def main():
     parser.add_argument("--tool", default="CountReads")
     parser.add_argument("--copies", type=int, default=20)
     parser.add_argument("--runs", type=int, default=3)
+    parser.add_argument("--deflate", action="store_true")
     arguments = parser.parse_args()
 
     raw = gzip.decompress(open(arguments.bam, "rb").read())
@@ -70,6 +75,8 @@ def main():
     bgzf(files["stored"], data, 0)
 
     cores = os.cpu_count()
+    if arguments.deflate:
+        return deflate_bound(arguments, files["stored"], len(data), cores)
     print(f"{len(data):,} bytes inflated; {arguments.tool}; best of {arguments.runs}")
     print("| file | size | threads | wall | CPU | answer |")
     print("|---|---:|---:|---:|---:|---|")
@@ -82,6 +89,22 @@ def main():
             answers.add(runs[0][2])
             print(f"| {name} | {os.path.getsize(path) / 1e6:.0f} MB | {threads} | {wall:.2f} s | {cpu:.2f} s | {runs[0][2]} |")
     assert len(answers) == 1, f"the two files did not give the same answer: {answers}"
+
+
+def deflate_bound(arguments, stored, size, cores):
+    print(f"{size:,} bytes written; PrintReads from stored blocks; best of {arguments.runs}")
+    print("| level | output | threads | wall | CPU |")
+    print("|---:|---:|---:|---:|---:|")
+    inflated = set()
+    for level in (2, 0):
+        out = os.path.join(arguments.work, f"out-{level}.bam")
+        command = [arguments.port, "PrintReads", "-I", stored, "-O", out]
+        for threads in (1, cores):
+            runs = [timed(command, threads, {"samjdk.compression_level": str(level)}) for _ in range(arguments.runs)]
+            print(f"| {level} | {os.path.getsize(out) / 1e6:.0f} MB | {threads} | {min(r[0] for r in runs):.2f} s | {min(r[1] for r in runs):.2f} s |")
+        raw = gzip.decompress(open(out, "rb").read())
+        inflated.add(raw[header_length(raw):])  # the header's @PG names the output path
+    assert len(inflated) == 1, "the two levels did not write the same records"
 
 
 if __name__ == "__main__":
