@@ -22502,8 +22502,8 @@ impl<'p> SvClusterWalker<'p> {
 
         // `onTraversalStart`: the reference and its dictionary, then the ploidy table.
         let reference_path = argument(parser, "reference").ok_or_else(|| {
-        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
-    })?;
+            Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+        })?;
         let Some(dictionary) = reference_dictionary(parser)? else {
             return Err(Thrown::user("Reference sequence dictionary required"));
         };
