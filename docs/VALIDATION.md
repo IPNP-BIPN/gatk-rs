@@ -151,7 +151,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | FastaReferenceMaker | gatk-rs | oracle-backed | 28 suite | 0 suite | 21/21 (100.0%) | 2 | 2069 probes (+2), 0/11 diverge | 4 | 0 | none |
 | FastqToSam | picard-rs | oracle-backed | not vendored | not vendored | 21/21 (100.0%) | 2 | not measured | 0 | 0 | none |
 | FifoBuffer | picard-rs | oracle-backed | not vendored | not vendored | 10/10 (100.0%) | 2 | not measured | 0 | 0 | none |
-| FilterAlignmentArtifacts | gatk-rs | oracle-backed | 271 suite | 0 suite | 21/21 (100.0%) | 2 | 4865 probes (+2), 0/7 diverge | 6 | 3 | none |
+| FilterAlignmentArtifacts | gatk-rs | oracle-backed | 271 suite | 0 suite | 21/21 (100.0%) | 2 | 4865 probes (+2), 0/7 diverge | 6 | 2 | none |
 | FilterFuncotations | gatk-rs | oracle-backed | 10 suite | 0 suite | 16/16 (100.0%) | 2 | 2477 probes (+0), 0/6 diverge | 2 | 9 | none |
 | FilterIntervals | gatk-rs | oracle-backed | 11 suite | 0 suite | 11/11 (100.0%) | 2 | 2309 probes (+3), 0/7 diverge | 4 | 1 | none |
 | FilterMutectCalls | gatk-rs | oracle-backed | 320 suite | 0 suite | 24/24 (100.0%) | 2 | 3736 probes (+5), 0/13 diverge | 12 | 3 | none |
@@ -1095,9 +1095,9 @@ Suites: `multi-variant-walker`, `filter-alignment-artifacts`.
 
 Inputs: `faa.bam`, `faa.img`, `faa.vcf`, `faa2.bam`, `faa2.vcf`, `faa_ref.fasta`.
 
-Held out: `--bam-output`, `--read-index`, `--sequence-dictionary`.
+Held out: `--read-index`, `--sequence-dictionary`.
 
-faa_ref.fasta is two random contigs and faa.img the reference's own BwaMemIndexImageCreator over it. faa.bam and faa2.bam tile both contigs with reads that copy the reference base for base, so NO read supports any call: the realignment (the Mutect2 assembler, the PairHMM and BWA-MEM over the unitigs), which this port does not carry, has nothing to realign on any row, and what the array measures is the walker around it: which calls are read, which are skipped as filtered, and what the output carries. The realignment arguments (--kmer-size, --minimum-seed-length, --drop-ratio, --seed-split-factor, the score and mismatch thresholds, --max-reasonable-fragment-length, --num-regular-contigs, --indel-start-tolerance) are varied and answer nothing on this corpus, which is the honest reading of their rows. --bam-output is not given: it writes the assembled haplotypes. --smith-waterman leaves out AVX_ENABLED, which refuses on a machine without AVX and so measures the runner's CPU. A plain VCF output with an index is forbidden because its .idx records the output's modification time; the command line is held off because it records the date.
+faa_ref.fasta is two random contigs and faa.img the reference's own BwaMemIndexImageCreator over it. faa.bam and faa2.bam tile both contigs with reads that copy the reference base for base, so NO read supports any call: the realignment (the Mutect2 assembler, the PairHMM and BWA-MEM over the unitigs), which this port does not carry, has nothing to realign on any row, and what the array measures is the walker around it: which calls are read, which are skipped as filtered, and what the output carries. The realignment arguments (--kmer-size, --minimum-seed-length, --drop-ratio, --seed- split-factor, the score and mismatch thresholds, --max-reasonable-fragment-length, --num-regular- contigs, --indel-start-tolerance) are varied and answer nothing on this corpus, which is the honest reading of their rows. --bam-output is absent or haplotypes.bam: the writer the tool opens is never closed, so the BAM and its .bai are left empty. --smith-waterman leaves out AVX_ENABLED, which refuses on a machine without AVX and so measures the runner's CPU. A plain VCF output with an index is forbidden because its .idx records the output's modification time; the command line is held off because it records the date.
 
 ### FilterFuncotations
 
