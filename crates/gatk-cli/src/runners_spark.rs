@@ -19,6 +19,22 @@
 use super::*;
 use gatk_tools::{sv_breakpoints, sv_evidence};
 
+/// [`reference_dictionary`] for a Spark tool, whose `ReferenceFileSparkSource` refuses a missing
+/// FASTA by the path as given rather than by its `file://` URI.
+fn spark_reference_dictionary(parser: &Parser) -> Result<Option<SamHeader>, Thrown> {
+    if let Some(path) = argument(parser, "reference") {
+        if !std::path::Path::new(&path).exists() {
+            return Err(Thrown {
+                failure: Failure::User,
+                exception:
+                    "org.broadinstitute.hellbender.exceptions.UserException$MissingReference",
+                message: Some(format!("The specified fasta file ({path}) does not exist.")),
+            });
+        }
+    }
+    reference_dictionary(parser)
+}
+
 /// `LibraryIdGenerator.UNKNOWN_LIBRARY`.
 const UNKNOWN_LIBRARY: &str = "Unknown Library";
 
@@ -201,7 +217,7 @@ pub(super) fn spark_startup(parser: &Parser, tool: &str) -> Result<SparkStart, T
     spark_context(parser)?;
 
     // `initializeReference`, before the reads.
-    let reference = reference_dictionary(parser)?;
+    let reference = spark_reference_dictionary(parser)?;
 
     // `initializeReads`: `doNotMerge` is the default policy, and these tools keep it.
     let inputs = arguments(parser, "input");
@@ -388,7 +404,7 @@ fn variant_spark_startup(
     variant_walker: bool,
 ) -> Result<(String, Option<Vec<gatk_engine::interval::SimpleInterval>>), Thrown> {
     spark_context(parser)?;
-    let reference = reference_dictionary(parser)?;
+    let reference = spark_reference_dictionary(parser)?;
     let inputs = arguments(parser, "input");
     if inputs.len() > 1 {
         return Err(Thrown::user(
@@ -2821,7 +2837,7 @@ pub fn find_bad_genomic_kmers_spark(parser: &Parser) -> Outcome {
     let tool = "FindBadGenomicKmersSpark";
     resolve_read_filters(parser, tool)?;
     spark_context(parser)?;
-    let dictionary = reference_dictionary(parser)?.ok_or_else(|| {
+    let dictionary = spark_reference_dictionary(parser)?.ok_or_else(|| {
         Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
     })?;
     let inputs = arguments(parser, "input");
@@ -3085,7 +3101,7 @@ fn bwa_engine(parser: &Parser, header: &SamHeader) -> Result<(SamHeader, String)
     })?;
     let mut aligned_header = header.clone();
     if aligned_header.sequences.is_empty() {
-        if let Some(dictionary) = reference_dictionary(parser)? {
+        if let Some(dictionary) = spark_reference_dictionary(parser)? {
             aligned_header.sequences = dictionary.sequences;
         }
     }
@@ -4611,7 +4627,7 @@ pub fn mark_duplicates_spark(parser: &Parser, mode: &Parser) -> Outcome {
     // once, and the checks below still see two.
     let filters = resolve_read_filters(parser, tool)?;
     spark_context(parser)?;
-    let reference = reference_dictionary(parser)?;
+    let reference = spark_reference_dictionary(parser)?;
     let given = arguments(parser, "input");
     let mut inputs: Vec<String> = Vec::new();
     for input in &given {
