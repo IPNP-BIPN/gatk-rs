@@ -193,7 +193,13 @@ pub struct Summaries {
 
 impl Summaries {
     /// `apply` at a locus whose first overlapping record is `variant`.
-    pub fn add(&mut self, variant: &VariantContext, base_counts: [i32; 4], minimum: f64, maximum: f64) {
+    pub fn add(
+        &mut self,
+        variant: &VariantContext,
+        base_counts: [i32; 4],
+        minimum: f64,
+        maximum: f64,
+    ) {
         // The two flags are set by `alleleFrequencyInRange`, which is only reached for a biallelic
         // SNP: a triallelic record with no AF sets neither.
         if is_biallelic_snp(variant) {

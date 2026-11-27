@@ -13578,14 +13578,14 @@ fn pileup_summaries_streamed(
         &|_: &BamRecord| true,
     )
     .ok()?;
-    let records = crate::vcf_stream::Records::new(
-        crate::vcf_stream::Body::Stream(lines),
-        &vcf,
-        header_lines,
-    )
-    .map(|record| record.map(|v| (v.contig.clone(), v.start, v.stop, v)));
+    let records =
+        crate::vcf_stream::Records::new(crate::vcf_stream::Body::Stream(lines), &vcf, header_lines)
+            .map(|record| record.map(|v| (v.contig.clone(), v.start, v.stop, v)));
     let mut cursor = gatk_tools::forward_overlaps::ForwardOverlaps::new(
-        walk.header.sequences.iter().map(|sequence| sequence.name.as_str()),
+        walk.header
+            .sequences
+            .iter()
+            .map(|sequence| sequence.name.as_str()),
         records,
     );
     let mut summaries = gatk_tools::get_pileup_summaries::Summaries::default();

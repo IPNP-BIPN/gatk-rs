@@ -21,12 +21,15 @@ pub enum Stop<E> {
 /// One record of the side file: contig, start, stop and what the caller keeps of it.
 pub type Feature<T> = (String, i64, i64, T);
 
+/// A record whose contig is resolved to its rank in the traversal's order.
+type Ranked<T> = (usize, i64, i64, T);
+
 /// The side file read forward, a locus at a time.
 pub struct ForwardOverlaps<T, E, I: Iterator<Item = Result<Feature<T>, E>>> {
     ranks: HashMap<String, usize>,
     input: I,
     /// The next record not yet taken: its rank, start, stop and payload.
-    ahead: Option<(usize, i64, i64, T)>,
+    ahead: Option<Ranked<T>>,
     /// The current contig's records starting at or before the locus, in file order.
     window: Vec<(i64, i64, T)>,
     contig: Option<usize>,
@@ -54,7 +57,7 @@ impl<T, E, I: Iterator<Item = Result<Feature<T>, E>>> ForwardOverlaps<T, E, I> {
 
     /// The next record on a contig the traversal knows; a record on any other contig overlaps no
     /// locus and is passed over.
-    fn pull(&mut self) -> Result<Option<(usize, i64, i64, T)>, Stop<E>> {
+    fn pull(&mut self) -> Result<Option<Ranked<T>>, Stop<E>> {
         if let Some(ahead) = self.ahead.take() {
             return Ok(Some(ahead));
         }
@@ -126,7 +129,9 @@ mod tests {
     fn answers_what_the_whole_file_answers_when_sorted() {
         let mut seed: u64 = 7;
         let mut next = |bound: u64| {
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             (seed >> 33) % bound
         };
         let contigs = ["c1", "c2", "c3"];
@@ -146,10 +151,8 @@ mod tests {
                 .enumerate()
                 .map(|(i, (c, s, e, _))| (c.clone(), *s, *e, i))
                 .collect();
-            let mut cursor = ForwardOverlaps::new(
-                contigs,
-                indexed.clone().into_iter().map(Ok::<_, ()>),
-            );
+            let mut cursor =
+                ForwardOverlaps::new(contigs, indexed.clone().into_iter().map(Ok::<_, ()>));
             for contig in contigs {
                 let mut position = 0;
                 for _ in 0..next(10) {
@@ -164,10 +167,7 @@ mod tests {
 
     #[test]
     fn stops_when_it_cannot_tell() {
-        let unsorted = vec![
-            ("c1".to_string(), 10, 10, 0),
-            ("c1".to_string(), 5, 5, 1),
-        ];
+        let unsorted = vec![("c1".to_string(), 10, 10, 0), ("c1".to_string(), 5, 5, 1)];
         let mut cursor = ForwardOverlaps::new(["c1"], unsorted.into_iter().map(Ok::<_, ()>));
         assert!(matches!(cursor.first("c1", 20), Err(Stop::Disorder)));
 

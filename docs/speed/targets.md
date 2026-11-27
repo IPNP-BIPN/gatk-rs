@@ -143,7 +143,8 @@ engine's (W12).
 
 **Ratio.** With gnomAD chr20 sites as `-V` (5.6M records) on NA12878 chr20 30x, `-L chr20`
 (W12's case; the pinned scale step uses hapmap), macOS native: the port took 104.6 s CPU and
-8.25 GB. GATK: GATK_ROW.
+8.25 GB. GATK 4.7.0.0, in the arm64 oracle container on the same host: 109.9 s CPU and 1.60 GB
+(peak RSS of the JVM), 106 s wall.
 
 **Where the memory goes.** The decompressed `-V` text, every decoded record, the records sorted
 by start for the overlap search, and a clone of each locus's record kept until the table is
@@ -173,7 +174,8 @@ a missing file) by 8 option sets (`-L chr20`, one and two small intervals, an in
 `-L`). All identical.
 
 **Result.** The same case: 8.25 GB to 108 MB, 104.6 s to 85.8 s CPU (a loaded machine, both
-sides), same table (151,059 lines). GATK_RESULT
+sides), same table (151,059 lines).
+GATK takes 109.9 s CPU and 1.60 GB on it, so the port now uses 0.78 of its CPU and 0.07 of its memory.
 
 ## Not targets yet
 
